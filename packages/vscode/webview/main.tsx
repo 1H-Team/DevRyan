@@ -520,10 +520,13 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
     const connectionStatus = window.__OPENCHAMBER_CONNECTION__?.status;
     const isReady = connectionStatus === 'connected';
     const cliAvailable = window.__OPENCHAMBER_CONNECTION__?.cliAvailable ?? true;
+    const contextModeAvailable = isReady && cliAvailable;
     return new Response(JSON.stringify({ 
       status: isReady ? 'ok' : 'connecting', 
       isOpenCodeReady: isReady,
       cliAvailable,
+      contextModeAvailable,
+      contextModeReadOnlyIndexing: contextModeAvailable,
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },

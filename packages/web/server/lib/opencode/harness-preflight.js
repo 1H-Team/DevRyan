@@ -72,6 +72,219 @@ function readRequestString(req, key) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+function toTokenCount(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.trunc(value)
+    : null;
+}
+
+function getAssistantInfo(entry) {
+  if (!isObject(entry)) return null;
+  const info = isObject(entry.info) ? entry.info : entry;
+  return info.role === 'assistant' ? info : null;
+}
+
+function readTokenCount(source, ...keys) {
+  for (const key of keys) {
+    const count = toTokenCount(source?.[key]);
+    if (count !== null) return count;
+  }
+  return 0;
+}
+
+function buildProviderUsageFromAssistant(info) {
+  const tokens = isObject(info?.tokens) ? info.tokens : null;
+  if (!tokens) return null;
+  const cache = isObject(tokens.cache) ? tokens.cache : {};
+  const cacheCreation = isObject(cache.creation)
+    ? cache.creation
+    : isObject(tokens.cacheCreation)
+      ? tokens.cacheCreation
+      : {};
+  const providerUsage = {
+    uncachedInputTokens: readTokenCount(tokens, 'input', 'inputTokens'),
+    cacheReadInputTokens: readTokenCount(cache, 'read', 'readTokens'),
+    cacheCreationInputTokens: readTokenCount(cache, 'write', 'writeTokens'),
+    outputTokens: readTokenCount(tokens, 'output', 'outputTokens'),
+    reasoningTokens: readTokenCount(tokens, 'reasoning', 'reasoningTokens'),
+    totalTokens: toTokenCount(tokens.total),
+    cacheCreation: {
+      fiveMinuteTokens: toTokenCount(
+        cacheCreation.ephemeral5mInputTokens
+        ?? cacheCreation.ephemeral_5m_input_tokens,
+      ),
+      oneHourTokens: toTokenCount(
+        cacheCreation.ephemeral1hInputTokens
+        ?? cacheCreation.ephemeral_1h_input_tokens,
+      ),
+    },
+  };
+  if (providerUsage.totalTokens === null) {
+    providerUsage.totalTokens = providerUsage.uncachedInputTokens
+      + providerUsage.cacheReadInputTokens
+      + providerUsage.cacheCreationInputTokens
+      + providerUsage.outputTokens
+      + providerUsage.reasoningTokens;
+  }
+  return providerUsage;
+}
+
+function extractAnthropicUsageFromMessages(payload) {
+  const messages = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.data)
+      ? payload.data
+      : [];
+  const usageRecords = messages.flatMap((entry) => {
+    const info = getAssistantInfo(entry);
+    if (!info) return [];
+    const providerID = normalizePath(
+      info.providerID
+      || info.providerId
+      || info.model?.providerID
+      || info.model?.providerId,
+    );
+    if (providerID !== 'anthropic') return [];
+    const providerUsage = buildProviderUsageFromAssistant(info);
+    return providerUsage ? [providerUsage] : [];
+  });
+  if (usageRecords.length === 0) return null;
+  const firstTurnProviderUsage = usageRecords[0];
+  const providerUsage = usageRecords[usageRecords.length - 1];
+  const processedInput = (usage) => usage.uncachedInputTokens
+    + usage.cacheReadInputTokens
+    + usage.cacheCreationInputTokens;
+  return {
+    fixedPrefixTokens: processedInput(firstTurnProviderUsage),
+    requestCount: usageRecords.length,
+    activeContextTokens: providerUsage.totalTokens,
+    cumulativeProcessedInputTokens: usageRecords.reduce(
+      (total, usage) => total + processedInput(usage),
+      0,
+    ),
+    firstTurnProviderUsage,
+    providerUsage,
+  };
+}
+
+function resolveSafeMeridianOrigin(value) {
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== 'http:'
+      || !['127.0.0.1', 'localhost'].includes(url.hostname)
+      || !url.port
+      || url.username
+      || url.password
+    ) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+async function readMeridianTooling({
+  context,
+  dependencies,
+  headers,
+  signal,
+}) {
+  const configUrl = new URL(dependencies.buildOpenCodeUrl('/config/providers'));
+  const directory = normalizePath(context.directory);
+  if (directory) configUrl.searchParams.set('directory', directory);
+  const configResponse = await dependencies.fetchImpl(configUrl, { headers, signal });
+  if (!configResponse.ok) return null;
+  const configPayload = await configResponse.json();
+  const anthropic = asArray(configPayload?.providers)
+    .find((provider) => provider?.id === 'anthropic');
+  const origin = resolveSafeMeridianOrigin(
+    anthropic?.options?.baseURL || anthropic?.baseURL,
+  );
+  if (!origin) return null;
+
+  const sessionID = normalizePath(context.sessionID);
+  const recoveryResponse = await dependencies.fetchImpl(
+    new URL(`/v1/sessions/${encodeURIComponent(sessionID)}/recover`, origin),
+    { headers: { Accept: 'application/json' }, signal },
+  );
+  if (!recoveryResponse.ok) return null;
+  const recovery = await recoveryResponse.json();
+  const claudeSessionID = normalizePath(recovery?.claudeSessionId);
+  if (!claudeSessionID) return null;
+
+  const telemetryUrl = new URL('/telemetry/requests', origin);
+  telemetryUrl.searchParams.set('limit', '100');
+  const telemetryResponse = await dependencies.fetchImpl(telemetryUrl, {
+    headers: { Accept: 'application/json' },
+    signal,
+  });
+  if (!telemetryResponse.ok) return null;
+  const records = await telemetryResponse.json();
+  const metric = asArray(records).find((record) => record?.sdkSessionId === claudeSessionID);
+  const rawToolCount = toTokenCount(metric?.toolCount);
+  const deferredToolCount = toTokenCount(metric?.deferredToolCount)
+    ?? (metric?.hasDeferredTools === false ? 0 : null);
+  if (rawToolCount === null) return null;
+  return {
+    rawToolCount,
+    deferredToolCount,
+    eagerToolCount: deferredToolCount === null
+      ? null
+      : Math.max(0, rawToolCount - deferredToolCount),
+  };
+}
+
+function createHarnessAnthropicUsageReader(dependencies = {}) {
+  if (
+    typeof dependencies.fetchImpl !== 'function'
+    || typeof dependencies.buildOpenCodeUrl !== 'function'
+  ) {
+    return null;
+  }
+  return async function readAnthropicUsage(context = {}) {
+    const sessionID = normalizePath(context.sessionID);
+    if (!sessionID) return null;
+    let headers = {};
+    try {
+      headers = typeof dependencies.getOpenCodeAuthHeaders === 'function'
+        ? await dependencies.getOpenCodeAuthHeaders()
+        : {};
+    } catch {
+      return null;
+    }
+    const url = new URL(dependencies.buildOpenCodeUrl(
+      `/session/${encodeURIComponent(sessionID)}/message`,
+    ));
+    const directory = normalizePath(context.directory);
+    if (directory) url.searchParams.set('directory', directory);
+    url.searchParams.set('limit', '500');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5_000);
+    timeout.unref?.();
+    try {
+      const [usage, tooling] = await Promise.all([
+        dependencies.fetchImpl(url, { headers, signal: controller.signal })
+          .then(async (response) => (
+            response.ok ? extractAnthropicUsageFromMessages(await response.json()) : null
+          ))
+          .catch(() => null),
+        readMeridianTooling({
+          context,
+          dependencies,
+          headers,
+          signal: controller.signal,
+        }).catch(() => null),
+      ]);
+      if (!usage && !tooling) return null;
+      return { ...(usage || {}), tooling };
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+}
+
 function getAgentFrontmatter(agent) {
   if (!isObject(agent)) return {};
   return isObject(agent.frontmatter) ? agent.frontmatter : agent;
@@ -690,6 +903,8 @@ function buildPreflightResult({
   slimRuntime,
   readSkillBody,
   runtimeMode,
+  anthropicUsage,
+  claudeRuntime,
 }) {
   const findings = lintAgentHarness({
     agents,
@@ -710,7 +925,8 @@ function buildPreflightResult({
     hiddenSkills,
     readSkillBody,
     context,
-    anthropicUsage: context.anthropicUsage,
+    anthropicUsage,
+    claudeRuntime,
   });
   const harness = findings.length > 0
     ? createHarnessWarning({
@@ -758,6 +974,54 @@ function createHarnessPreflight(dependencies = {}) {
   )
     ? createHarnessToolManifestReader(dependencies)
     : null;
+  const anthropicUsageReader = createHarnessAnthropicUsageReader(dependencies);
+
+  const recordDiagnostic = (context, result) => {
+    if (typeof dependencies.recordDiagnostic !== 'function') return;
+    const anthropic = result?.contextBudget?.anthropic;
+    const tools = result?.contextBudget?.tools;
+    try {
+      dependencies.recordDiagnostic({
+        type: 'log',
+        event: 'anthropic_context_preflight',
+        sessionID: normalizePath(context.sessionID),
+        directory: normalizePath(context.directory),
+        payload: {
+          runtime: anthropic?.runtime || null,
+          usage: anthropic ? {
+            fixedPrefixTokens: anthropic.fixedPrefix?.tokens ?? null,
+            requestCount: anthropic.requestCount,
+            activeContextTokens: anthropic.activeContextTokens,
+            cumulativeProcessedInputTokens: anthropic.cumulativeProcessedInputTokens,
+            providerUsage: anthropic.providerUsage,
+            tooling: anthropic.tooling,
+          } : null,
+          tools: tools ? {
+            rawItemCount: tools.rawItemCount,
+            uniqueItemCount: tools.uniqueItemCount,
+            duplicateOccurrenceByteCount: tools.duplicateOccurrenceByteCount,
+            exactDuplicateDefinitionByteCount: tools.exactDuplicateDefinitionByteCount,
+            duplicateIds: Array.isArray(tools.duplicateCatalogIds)
+              ? tools.duplicateCatalogIds.slice(0, 50)
+              : null,
+          } : null,
+        },
+      });
+    } catch {
+      // Diagnostics must never block preflight.
+    }
+  };
+
+  const finishRun = (context, result) => {
+    if (maybePromise(result)) {
+      return result.then((resolved) => {
+        recordDiagnostic(context, resolved);
+        return resolved;
+      });
+    }
+    recordDiagnostic(context, result);
+    return result;
+  };
 
   return {
     run(context = {}) {
@@ -803,16 +1067,23 @@ function createHarnessPreflight(dependencies = {}) {
         runtimeMode: typeof dependencies.getRuntimeMode === 'function'
           ? dependencies.getRuntimeMode(resolvedContext)
           : 'managed',
+        anthropicUsage: resolvedContext.anthropicUsage
+          || (typeof dependencies.getAnthropicUsage === 'function'
+            ? dependencies.getAnthropicUsage(resolvedContext)
+            : anthropicUsageReader?.(resolvedContext) || null),
+        claudeRuntime: typeof dependencies.getClaudeRuntime === 'function'
+          ? dependencies.getClaudeRuntime(resolvedContext)
+          : null,
       };
 
       const pending = Object.entries(values).filter(([, value]) => maybePromise(value));
       if (pending.length === 0) {
-        return buildPreflightResult({
+        return finishRun(resolvedContext, buildPreflightResult({
           context: resolvedContext,
           directory: resolvedContext.directory,
           readSkillBody: dependencies.readSkillBody,
           ...values,
-        });
+        }));
       }
 
       return Promise.all(pending.map(([, value]) => value)).then((resolved) => {
@@ -820,12 +1091,12 @@ function createHarnessPreflight(dependencies = {}) {
         pending.forEach(([key], index) => {
           nextValues[key] = resolved[index];
         });
-        return buildPreflightResult({
+        return finishRun(resolvedContext, buildPreflightResult({
           context: resolvedContext,
           directory: resolvedContext.directory,
           readSkillBody: dependencies.readSkillBody,
           ...nextValues,
-        });
+        }));
       });
     },
   };
@@ -837,6 +1108,7 @@ function registerHarnessPreflightRoute(app, preflight) {
     const providerID = readRequestString(req, 'providerID');
     const modelID = readRequestString(req, 'modelID');
     const agent = readRequestString(req, 'agent');
+    const sessionID = readRequestString(req, 'sessionID');
     if (Boolean(providerID) !== Boolean(modelID)) {
       const message = 'providerID and modelID must be provided together';
       res.status(400).json(withHarnessResult({
@@ -859,7 +1131,9 @@ function registerHarnessPreflightRoute(app, preflight) {
       return;
     }
     try {
-      const result = await preflight.run({ directory, providerID, modelID, agent });
+      const context = { directory, providerID, modelID, agent };
+      if (sessionID) context.sessionID = sessionID;
+      const result = await preflight.run(context);
       res.json(result);
     } catch (error) {
       const message = formatErrorMessage(error, 'Harness preflight failed');
@@ -889,7 +1163,9 @@ function registerHarnessPreflightRoute(app, preflight) {
 
 export {
   auditPackagedPromptContext,
+  createHarnessAnthropicUsageReader,
   createHarnessPreflight,
+  extractAnthropicUsageFromMessages,
   lintAgentHarness,
   registerHarnessPreflightRoute,
 };

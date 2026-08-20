@@ -82,6 +82,37 @@ describe('deterministic evaluation graders', () => {
     assert.equal(gradeToolRequirements('inspect', tools('read', 'grep', 'bash', 'edit')).passed, false);
   });
 
+  test('requires Context Mode for broad parent analysis and in the managed Explorer child trace', () => {
+    const broadParent = [
+      { tool: 'mcp__context_mode__ctx_index', status: 'completed', final: true, sessionScope: 'root' },
+      { tool: 'mcp__context_mode__ctx_search', status: 'completed', final: true, sessionScope: 'root' },
+    ];
+    assert.equal(gradeToolRequirements('context-large-analysis', broadParent).passed, true);
+    assert.equal(gradeToolRequirements('context-large-analysis', [
+      { tool: 'read', status: 'completed', final: true, sessionScope: 'root' },
+    ]).passed, false);
+
+    const explorerTrace = [
+      { tool: 'devryan_task', status: 'completed', final: true, sessionScope: 'root' },
+      { tool: 'ctx_index', status: 'completed', final: true, sessionScope: 'child' },
+      { tool: 'ctx_search', status: 'completed', final: true, sessionScope: 'child' },
+    ];
+    assert.equal(gradeToolRequirements('context-explorer-analysis', explorerTrace).passed, true);
+    assert.equal(gradeToolRequirements('context-explorer-analysis', [
+      { tool: 'devryan_task', status: 'completed', final: true, sessionScope: 'root' },
+      { tool: 'ctx_search', status: 'completed', final: true, sessionScope: 'root' },
+    ]).passed, false);
+  });
+
+  test('keeps the bounded lookup control on native inspection tools', () => {
+    assert.equal(gradeToolRequirements('context-bounded-lookup', [
+      { tool: 'read', status: 'completed', final: true, sessionScope: 'root' },
+    ]).passed, true);
+    assert.equal(gradeToolRequirements('context-bounded-lookup', [
+      { tool: 'ctx_execute_file', status: 'completed', final: true, sessionScope: 'root' },
+    ]).passed, false);
+  });
+
   test('bounds Oracle review tools and rejects validation, mutation, or delegation', () => {
     const focused = [
       { tool: 'read', status: 'completed', final: true, sessionScope: 'root' },
@@ -416,7 +447,12 @@ describe('deterministic evaluation graders', () => {
       }],
       results: [{ taskId: 'dvr_task_1', action: 'continue', status: 'completed' }],
     };
-    assert.equal(gradeToolRequirements('managed-change', tools('devryan_task', 'apply_patch', 'bash')).passed, true);
+    const managedTools = [
+      ...tools('devryan_task', 'apply_patch', 'bash'),
+      { tool: 'mcp__context_mode__ctx_execute', status: 'completed', final: true, sessionScope: 'child' },
+    ];
+    assert.equal(gradeToolRequirements('managed-change', managedTools).passed, true);
+    assert.equal(gradeToolRequirements('managed-change', tools('devryan_task', 'apply_patch', 'bash')).passed, false);
     assert.equal(gradeManagedTaskOutcome({ rootSessionId: 'ses_parent', childSessionIds: ['ses_child'], snapshot }).passed, true);
 
     assert.equal(gradeManagedTaskOutcome({

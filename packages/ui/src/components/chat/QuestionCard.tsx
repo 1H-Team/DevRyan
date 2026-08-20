@@ -6,7 +6,7 @@ import { isIMECompositionEvent } from '@/lib/ime';
 import type { QuestionRequest } from '@/types/question';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useSessions } from '@/sync/sync-context';
+import { useSession } from '@/sync/sync-context';
 import * as sessionActions from '@/sync/session-actions';
 import { useI18n } from '@/lib/i18n';
 import { toast } from '@/components/ui/toast';
@@ -72,7 +72,6 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   const respondToQuestion = sessionActions.respondToQuestion;
   const rejectQuestion = sessionActions.rejectQuestion;
   const isMobile = useUIStore((state) => state.isMobile);
-  const sessions = useSessions();
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
 
   // Normalize to an array. Legacy single-request callers still work.
@@ -157,11 +156,13 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     : null;
   const isSubmitting = submissionPending && Boolean(submissionStatus);
 
-  const isFromSubagent = React.useMemo(() => {
-    if (!currentSessionId || !sessionID || sessionID === currentSessionId) return false;
-    const sourceSession = sessions.find((session) => session.id === sessionID);
-    return Boolean(sourceSession?.parentID && sourceSession.parentID === currentSessionId);
-  }, [sessionID, currentSessionId, sessions]);
+  const sourceSession = useSession(sessionID);
+  const isFromSubagent = Boolean(
+    currentSessionId
+    && sessionID
+    && sessionID !== currentSessionId
+    && sourceSession?.parentID === currentSessionId,
+  );
 
   // Flatten unresolved questions while preserving stable request-scoped answer keys.
   const entries = React.useMemo<QuestionEntry[]>(() => {

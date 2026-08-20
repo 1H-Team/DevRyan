@@ -3,11 +3,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import vm from 'node:vm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   CONTEXT_MODE_HOTFIX_INCOMPATIBLE,
   applyContextModeHotfix,
+  resolveContextModeCapability,
+  resolveContextModeReadOnlyIndexingCapability,
   transformContextModeServerSource,
 } from './context-mode-hotfix.js';
 import {
@@ -35,6 +38,14 @@ function getStore() {
         cleanupStaleDBs();
     }
     return _store;
+}
+async function ctxIndexHandler({ content, path }) {
+    if (path) {
+        const pathDenied = checkFilePathDenyPolicy(path, "ctx_index");
+        if (pathDenied)
+            return pathDenied;
+    }
+    return { indexed: path ?? content };
 }
 `;
 
@@ -89,10 +100,54 @@ describe('context-mode provisioning hotfix', () => {
     expect(patched).toContain('createRecoveringContentStore');
     expect(patched).toContain('_store.cleanupStaleSources(14)');
     expect(patched).not.toContain('cleanupStaleContentDBs');
+    expect(patched).toContain('checkProjectBoundary(path, "ctx_index")');
+    expect(patched.indexOf('checkProjectBoundary(path, "ctx_index")'))
+      .toBeLessThan(patched.indexOf('checkFilePathDenyPolicy(path, "ctx_index")'));
     expect(recoverySource).toContain('export const createRecoveringContentStore');
     expect(recoverySource).toContain('isRecoverableContextModeStoreError');
     expect(recoveryModule.isRecoverableContextModeStoreError(new Error('disk I/O error'))).toBe(true);
     expect(transformContextModeServerSource(ORIGINAL_SERVER_SOURCE)).toBe(patched);
+  });
+
+  it('checks every file or directory path before deny policy and leaves inline content alone', async () => {
+    const blockedPaths = new Set([
+      '../outside.md',
+      '/outside/project.md',
+      '/workspace/symlink-escape.md',
+    ]);
+    const checkProjectBoundary = vi.fn((candidate) => (
+      blockedPaths.has(candidate) ? { error: 'outside project' } : null
+    ));
+    const checkFilePathDenyPolicy = vi.fn((candidate) => (
+      candidate === '/workspace/.env' ? { error: 'denied file' } : null
+    ));
+    const executableSource = transformContextModeServerSource(ORIGINAL_SERVER_SOURCE)
+      .replace(/^import .*$/gm, '');
+    const handler = vm.runInNewContext(`${executableSource}\nctxIndexHandler`, {
+      checkProjectBoundary,
+      checkFilePathDenyPolicy,
+    });
+
+    for (const candidate of blockedPaths) {
+      expect(await handler({ path: candidate })).toEqual({ error: 'outside project' });
+    }
+    expect(checkFilePathDenyPolicy).not.toHaveBeenCalledWith('../outside.md', 'ctx_index');
+    expect(checkFilePathDenyPolicy).not.toHaveBeenCalledWith('/outside/project.md', 'ctx_index');
+    expect(checkFilePathDenyPolicy).not.toHaveBeenCalledWith('/workspace/symlink-escape.md', 'ctx_index');
+
+    await expect(handler({ path: '/workspace/file.md' })).resolves.toEqual({
+      indexed: '/workspace/file.md',
+    });
+    await expect(handler({ path: '/workspace/docs' })).resolves.toEqual({
+      indexed: '/workspace/docs',
+    });
+    await expect(handler({ path: '/workspace/.env' })).resolves.toEqual({ error: 'denied file' });
+
+    checkProjectBoundary.mockClear();
+    checkFilePathDenyPolicy.mockClear();
+    await expect(handler({ content: '# Inline docs' })).resolves.toEqual({ indexed: '# Inline docs' });
+    expect(checkProjectBoundary).not.toHaveBeenCalled();
+    expect(checkFilePathDenyPolicy).not.toHaveBeenCalled();
   });
 
   it('fails closed for an unexpected version or source hash', () => {
@@ -109,6 +164,30 @@ describe('context-mode provisioning hotfix', () => {
 
     expect(wrongVersion).toMatchObject({ ok: false, code: CONTEXT_MODE_HOTFIX_INCOMPATIBLE });
     expect(wrongHash).toMatchObject({ ok: false, code: CONTEXT_MODE_HOTFIX_INCOMPATIBLE });
+  });
+});
+
+describe('context-mode capability', () => {
+  const managedReady = {
+    isOpenCodeReady: true,
+    isRestartingOpenCode: false,
+    isExternalOpenCode: false,
+    skipOpenCodeStart: false,
+    configuredOpenCodeHost: '',
+  };
+
+  it('enables indexing only for a ready provisioned managed runtime', () => {
+    expect(resolveContextModeCapability(managedReady)).toBe(true);
+    expect(resolveContextModeReadOnlyIndexingCapability(managedReady)).toBe(true);
+    for (const override of [
+      { isOpenCodeReady: false },
+      { isRestartingOpenCode: true },
+      { isExternalOpenCode: true },
+      { skipOpenCodeStart: true },
+      { configuredOpenCodeHost: 'http://external:4096' },
+    ]) {
+      expect(resolveContextModeCapability({ ...managedReady, ...override })).toBe(false);
+    }
   });
 });
 

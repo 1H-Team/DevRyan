@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
     getAssistantMessageBottomPaddingClass,
+    getAssistantMessageTopPaddingClass,
     hasRenderableAssistantContent,
     shouldHideAssistantAbortArtifact,
 } from './chatMessageLayout';
@@ -11,19 +12,55 @@ describe('getAssistantMessageBottomPaddingClass', () => {
             isUser: false,
             isFollowedByAssistant: false,
             isPlaceholderOnlyStreaming: true,
+            isTranscriptTail: true,
         })).toBe('pb-0');
 
         expect(getAssistantMessageBottomPaddingClass({
             isUser: false,
             isFollowedByAssistant: false,
             isPlaceholderOnlyStreaming: false,
+            isTranscriptTail: false,
         })).toBe('pb-8');
 
         expect(getAssistantMessageBottomPaddingClass({
             isUser: true,
             isFollowedByAssistant: false,
             isPlaceholderOnlyStreaming: true,
+            isTranscriptTail: false,
         })).toBe('pb-0');
+    });
+
+    test('reserves the large gap for turn boundaries, not the transcript tail before live status', () => {
+        expect(getAssistantMessageBottomPaddingClass({
+            isUser: false,
+            isFollowedByAssistant: false,
+            isPlaceholderOnlyStreaming: false,
+            isTranscriptTail: true,
+        })).toBe('pb-0');
+
+        expect(getAssistantMessageBottomPaddingClass({
+            isUser: false,
+            isFollowedByAssistant: true,
+            isPlaceholderOnlyStreaming: false,
+            isTranscriptTail: false,
+        })).toBe('pb-0');
+    });
+});
+
+describe('getAssistantMessageTopPaddingClass', () => {
+    test('preserves first-message header and non-grouped behavior', () => {
+        expect(getAssistantMessageTopPaddingClass({
+            isUser: false,
+            shouldShowHeader: true,
+            stickyUserHeader: true,
+            isMobile: false,
+        })).toBe('pt-6');
+        expect(getAssistantMessageTopPaddingClass({
+            isUser: false,
+            shouldShowHeader: false,
+            stickyUserHeader: true,
+            isMobile: false,
+        })).toBe('pt-0');
     });
 });
 

@@ -20,14 +20,13 @@ describe("ChatInput session directory reads", () => {
 
   test("isolates authoritative context directory resolution from the full composer", () => {
     expect(chatInputSource).toContain(
-      "fallbackDirectory={currentDirectory}",
+      "directory={currentSessionDirectory ?? currentDirectory}",
     )
     expect(
       chatInputSource.match(/useUserMessageHistory\([\s\S]*currentSessionDirectory \?\? undefined/) ?? [],
     ).toHaveLength(1)
-    expect(contextUsageControlSource).toContain("{ suspendPartUpdates: true }")
-    expect(contextUsageControlSource).toContain("useEffectiveDirectory() ?? fallbackDirectory")
-    expect(contextUsageControlSource).toContain("getContextUsageForSession(sessionId, directory)")
+    expect(contextUsageControlSource).toContain("{ contextUsagePartsOnly: true }")
+    expect(contextUsageControlSource).toContain("getProviderContextUsageFromMessages(messages, providers)")
   })
 })
 

@@ -371,6 +371,7 @@ const settingsFieldsForPermission = (principal, permission) => {
 
 export function settingsPageForRequest(requestPath, method = 'GET') {
   const path = String(requestPath || '');
+  if (/^\/config\/settings(?:\/|$)/.test(path)) return 'sessions';
   if (/^\/(?:bug-reports|error-logs)(?:\/|$)/.test(path)) return 'bug-reports';
   if (/^\/admin(?:\/|$)/.test(path)) return 'users';
   // Chat composition needs effective agent-model metadata even when the
@@ -462,6 +463,9 @@ export function buildEffectiveSettings({ principal, hostSettings, userOverrides 
       agents: { hidePermissionsUi: principal?.policy?.featureOverrides?.agents?.hidePermissionsUi === true },
       mcp: { ...(principal?.policy?.featureOverrides?.mcp || {}) },
     },
+    settingsOverrideKeys: [...(allowed || Object.keys(userOverrides))]
+      .filter((key) => Object.prototype.hasOwnProperty.call(userOverrides, key))
+      .sort(),
   };
   return effective;
 }
@@ -471,8 +475,9 @@ export function validateSettingsChanges({ principal, changes, currentEffective }
   if (allowed === null) return { accepted: { ...changes }, rejected: [] };
   const accepted = {};
   const rejected = [];
+  const dedicatedAgentDefaultFields = new Set(['agentModelSelections', 'defaultModel', 'defaultVariant']);
   for (const [key, value] of Object.entries(changes || {})) {
-    if (allowed.has(key)) {
+    if (allowed.has(key) && !dedicatedAgentDefaultFields.has(key)) {
       accepted[key] = value;
       continue;
     }

@@ -42,13 +42,38 @@ export const getAssistantMessageBottomPaddingClass = ({
     isUser,
     isFollowedByAssistant,
     isPlaceholderOnlyStreaming,
+    isTranscriptTail,
 }: {
     isUser: boolean;
     isFollowedByAssistant: boolean;
     isPlaceholderOnlyStreaming: boolean;
+    isTranscriptTail: boolean;
 }): 'pb-0' | 'pb-8' => {
-    if (isUser || isFollowedByAssistant || isPlaceholderOnlyStreaming) {
+    if (isUser || isFollowedByAssistant || isPlaceholderOnlyStreaming || isTranscriptTail) {
         return 'pb-0';
     }
     return 'pb-8';
+};
+
+export const getAssistantMessageTopPaddingClass = ({
+    isUser,
+    shouldShowHeader,
+    stickyUserHeader,
+    isMobile,
+}: {
+    isUser: boolean;
+    shouldShowHeader: boolean;
+    stickyUserHeader: boolean;
+    isMobile: boolean;
+}): 'pt-0' | 'pt-2' | 'pt-3' | 'pt-4' | 'pt-6' => {
+    if (isUser) {
+        return 'pt-0';
+    }
+    if (shouldShowHeader) {
+        if (!stickyUserHeader) {
+            return 'pt-0';
+        }
+        return isMobile ? 'pt-4' : 'pt-6';
+    }
+    return 'pt-0';
 };

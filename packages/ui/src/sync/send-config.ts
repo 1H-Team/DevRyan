@@ -8,6 +8,8 @@ import {
 } from "@/lib/agentSelection"
 import { resolveProviderModelVariant } from "@/lib/providers/variantControls"
 import { isProviderModelAvailable, type ProviderModelAvailability } from "@/lib/providers/modelAvailability"
+import { resolveAgentDefaultSelection } from "@/lib/agentDefaultResolution"
+import type { AgentModelSelection } from "@/lib/agentModelSelection"
 
 /** Internal draft intent: user-chosen vs agent-configured default. Not sent to OpenCode. */
 export type SendConfigModelProvenance = "explicit" | "agent-default"
@@ -39,6 +41,8 @@ export type SendConfigAgent = {
     modelID?: string
   }
   variant?: string | null
+  modelRefs?: string[]
+  councillors?: unknown[]
 }
 
 type StoreModelSelection = { providerId: string; modelId: string } | null
@@ -141,6 +145,7 @@ export function resolveDraftSendSelection(params: {
   draftAgentModelSelection?: StoreModelSelection
   draftAgentModelVariant?: string
   draftSendConfig?: SendConfig | null
+  agentModelSelections?: Record<string, AgentModelSelection>
 }): Required<Pick<SendConfig, "providerID" | "modelID">> & Pick<SendConfig, "agent" | "variant"> {
   const selectableAgents = resolveSelectableAgentOptions(params.agents, [])
   const explicitAgent = findSelectableAgentByName(selectableAgents, clean(params.draftSendConfig?.agent))
@@ -153,8 +158,8 @@ export function resolveDraftSendSelection(params: {
   const defaultAgent = findSelectableAgentByName(selectableAgents, defaultAgentName)
   const agent = explicitAgent ?? requested ?? draft ?? current ?? defaultAgent
 
-  // agent-default means live agent config wins over persisted/mapped draft models.
-  // explicit and legacy (no provenance) keep persisted/map precedence.
+  // agent-default means the account's personal-or-inherited agent default wins
+  // over persisted draft maps. Explicit and legacy drafts retain their picks.
   const honorPersistedDraftModel = normalizeSendConfigModelProvenance(params.draftSendConfig?.modelProvenance) !== "agent-default"
   const explicitModel = honorPersistedDraftModel
     ? findProviderModel(params.providers, params.draftSendConfig?.providerID, params.draftSendConfig?.modelID)
@@ -165,14 +170,22 @@ export function resolveDraftSendSelection(params: {
   const draftModel = honorPersistedDraftModel
     ? findProviderModel(params.providers, params.draftModelSelection?.providerId, params.draftModelSelection?.modelId)
     : null
-  const agentModel = findProviderModel(params.providers, agent?.model?.providerID, agent?.model?.modelID)
-  const configuredAgentProviderID = clean(agent?.model?.providerID)
-  const configuredAgentModelID = clean(agent?.model?.modelID)
+  const accountAgentDefault = agent ? resolveAgentDefaultSelection({
+    agentName: agent.name,
+    agents: params.agents,
+    providers: params.providers,
+    personalSelections: params.agentModelSelections,
+  }) : null
+  const agentModel = findProviderModel(
+    params.providers,
+    accountAgentDefault?.providerId,
+    accountAgentDefault?.modelId,
+  )
   const inputModel = findProviderModel(params.providers, params.inputProviderID, params.inputModelID)
   const currentModel = findProviderModel(params.providers, params.currentProviderID, params.currentModelID)
 
   // Precedence: persisted explicit draft config, explicit per-draft selections,
-  // the selected agent's configured model, then the retained current model.
+  // the selected agent's personal-or-inherited default, then retained current input.
   let providerID: string | undefined
   let modelID: string | undefined
   let variant: string | undefined
@@ -192,14 +205,14 @@ export function resolveDraftSendSelection(params: {
     modelID = params.draftModelSelection?.modelId
     selectedModel = draftModel.model
   } else if (agentModel) {
-    providerID = agent?.model?.providerID
-    modelID = agent?.model?.modelID
-    variant = clean(agent?.variant)
+    providerID = accountAgentDefault?.providerId
+    modelID = accountAgentDefault?.modelId
+    variant = clean(accountAgentDefault?.variant)
     selectedModel = agentModel.model
-  } else if (configuredAgentProviderID && configuredAgentModelID) {
-    providerID = configuredAgentProviderID
-    modelID = configuredAgentModelID
-    variant = clean(agent?.variant)
+  } else if (accountAgentDefault) {
+    providerID = accountAgentDefault.providerId
+    modelID = accountAgentDefault.modelId
+    variant = clean(accountAgentDefault.variant)
   } else if (inputModel) {
     providerID = params.inputProviderID
     modelID = params.inputModelID
@@ -448,6 +461,7 @@ export function resolveCurrentDraftSendConfig(draftId: string | null | undefined
     draftAgentModelSelection: draftAgentModel,
     draftAgentModelVariant: draftAgentVariant,
     draftSendConfig,
+    agentModelSelections: config.agentModelSelections,
   })
 
   return {

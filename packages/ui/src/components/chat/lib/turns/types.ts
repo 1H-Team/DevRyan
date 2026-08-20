@@ -4,6 +4,8 @@ import type {
     ProviderTransportFailureKind,
 } from '@openchamber/orchestration-runtime';
 import type { ResponseStyleLevel } from '@/lib/responseStyle';
+import type { ManagedTaskTurnProjection } from '../../managedTaskDispatch';
+import type { GeneratedImageResult } from '../../message/parts/generatedImageResults';
 
 export type ManagedTransportRecoveryState = 'recovering' | 'recovered' | 'failed';
 
@@ -169,6 +171,7 @@ export interface TurnGroupingContext {
     turnId: string;
     responseStyleLevel?: ResponseStyleLevel;
     activityOwnerMessageId?: string;
+    managedTaskProjection?: ManagedTaskTurnProjection;
     isFirstAssistantInTurn: boolean;
     isLastAssistantInTurn: boolean;
     summaryBody?: string;
@@ -176,6 +179,7 @@ export interface TurnGroupingContext {
     summarySourcePartId?: string;
     activityParts?: TurnActivityRecord[];
     activityGroupSegments?: TurnActivityGroup[];
+    generatedImages?: GeneratedImageResult[];
     headerMessageId?: string;
     hasTools: boolean;
     hasReasoning: boolean;

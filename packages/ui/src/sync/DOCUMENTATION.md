@@ -45,6 +45,14 @@ reuse a token-bearing message before the latest compaction part. Web/Electron
 prefer Meridian, while VS Code and external OpenCode settle on the bounded
 post-compaction message fallback without failing bootstrap.
 
+The composer subscribes to the selected session's message metadata and only
+context-bearing parts (`step-finish`, native compaction, and the legacy exact
+`/compact` marker). Streaming text and unrelated part updates preserve the
+projection reference and do not repaint composer chrome. Positive message-level
+tokens are authoritative; a present but still-zero message token shell falls
+back to the latest measured `step-finish` part. A newer zero-token assistant
+shell does not erase the preceding completed measurement.
+
 ## Directory subscription bootstrap authority
 
 Creating a directory store and bootstrapping its OpenCode runtime are separate
@@ -78,6 +86,16 @@ same controller from the draft key to the created session, and removes that
 exact draft once. Validation, abort, creation, and transport failures release
 only the controller they own, so an explicit retry can claim the draft without
 allowing an older completion to clear or replace a newer owner.
+
+Fresh-draft send resolution and composer display use the same authoritative
+agent-default resolver. Precedence is explicit draft selection, then the
+managed account's personal per-agent default, then live host agent
+configuration, then the existing availability fallback. `agent-default` draft
+provenance records that resolved personal-or-inherited provider/model/thinking
+snapshot; it does not mean host-only. Existing-session selection and captured
+queue rows remain authoritative and are never rewritten when account or host
+defaults change. Provider hydration preserves a captured default until the
+catalog can authoritatively invalidate it.
 
 ## Snapshot materialization non-regression
 
@@ -578,7 +596,7 @@ When OpenCode emits `message.part.updated` before the owning `message.updated`, 
 
 After five minutes of semantic silence, an unchanged authoritative resync becomes actionable for two exact trailing root-assistant shapes. An identified tool call in `pending + input:{} + raw:""` remains an explicit **Stop & Retry** action. An initial shell containing only `step-start` plus one empty reasoning/text part is inert and is stopped automatically. Both paths perform another authoritative resync and exact fingerprint check before aborting; a resumed or replaced stream wins the race and remains running. A confirmed abort opens the existing manual model-recovery card anchored to the authoritative user message, and DevRyan never resends a recovery prompt automatically. Non-empty or previously productive inference, partial input, running/final tools, terminal assistants, provider retries, permission/question blockers, managed dispatches, and active managed children are excluded. Any semantic event, terminal status, session switch/deletion, or directory disposal clears the low-frequency stall record. Confirmed stalls also emit sanitized operational journal marks containing only identity, source, and elapsed duration.
 
-Running `ctx_execute` calls use a separate low-frequency observation record because a long tool call is not evidence of a provider failure. The record preserves exact session/message/part/call identity plus first-observed and last-activity timestamps. The status row shows elapsed time immediately; after five minutes without a semantic update, the watchdog confirms the same call through an authoritative resync and offers a user-controlled **Stop** action. Stop rechecks identity once more before the existing confirmed abort, never kills work automatically, never retries, and never opens model recovery. Progress clears the warning and restarts the silence window; completion, replacement, blockers, session lifecycle cleanup, and directory disposal retire the record. Confirmation emits one sanitized `renderer_long_running_tool_confirmed` mark containing only tool name, source, and elapsed duration.
+Running `ctx_execute` calls use a separate low-frequency observation record because a long tool call is not evidence of a provider failure. The record preserves exact session/message/part/call identity plus first-observed and last-activity timestamps. The status row shows elapsed time immediately; after ten minutes without a semantic update, the watchdog confirms the same call through an authoritative resync and offers a user-controlled **Stop** action. Stop rechecks identity once more before the existing confirmed abort, never kills work automatically, never retries, and never opens model recovery. Progress clears the warning and restarts the silence window; completion, replacement, blockers, session lifecycle cleanup, and directory disposal retire the record. Confirmation emits one sanitized `renderer_long_running_tool_confirmed` mark containing only tool name, source, and elapsed duration.
 
 Reconnect recovery treats its status response as a snapshot, not a live event.
 For every candidate it captures the complete current status before requesting the
@@ -620,9 +638,62 @@ OpenCode ignores `session.abort` while a session sleeps between provider retry a
 
 Direct steering and queued **send now** share the same successful-abort path and record abort display reason `steered`; the explicit Stop action remains `manual`. Send-now performs the steer before claiming the queue, then atomically flushes every claimed item FIFO. Natural idle auto-send never aborts and waits for the pre-existing user turn to have a terminal, parent-correlated assistant response before its first send. Before every later item, the flush likewise requires a terminal assistant message whose `parentID` matches the prior queued transport message ID while live status is idle; an early idle event cannot advance the queue. Queue rows capture a stable queue-item ID, session directory, provider/model/agent/variant/plan mode, and attachments at enqueue time. An OpenCode-compatible, time-sortable transport message ID is assigned immediately before each individual FIFO dispatch—after the preceding assistant turn—and is then preserved across rollback and ambiguous retries. Later, unattempted claimed rows remain without a transport ID until their turn; legacy queue-time IDs without dispatch scope are refreshed before dispatch. Missing directories use the authoritative session lookup.
 
+Plan mode is also preserved into the prompt transport. Immediately before every primary fetch attempt—including queued sends and retries—the transport resolves the current health-advertised `contextModeAvailable` capability (`contextModeReadOnlyIndexing` remains a response compatibility alias). Writable turns explicitly receive canonical and MCP-prefixed Context Mode execution/index/search/statistics/web-fetch grants. Plan turns receive only index/search/statistics/web-fetch, while execution and administration remain disabled. All grants fail closed for external or not-yet-verified runtimes, and Cursor SDK-backed turns remain unchanged. Broad local analysis is instructed to use `ctx_index → ctx_search`, broad web research uses `ctx_fetch_and_index → ctx_search`, and bounded exact lookups remain native.
+
 If an auto-send fails while the transport disconnects, the claimed rows are restored with their dispatch identity intact. The queue hook never dispatches while disconnected and grants that restored idle queue exactly one new attempt on the authoritative disconnected-to-connected edge. A WS-to-SSE switch preserves the current connection state because selecting a fallback transport does not prove that it connected. The SSE SDK also constructs its stream wrapper before opening the response, so SSE publishes recovery only after its first parsed or yielded event; an error response cannot create a transient connected pulse. A steady connected state is not a retry signal, so persistent validation, authorization, or provider failures cannot create an automatic retry loop.
 
+## Session history loader
+
+`SessionMessageLoader` is created once by `SyncProvider` and owns first-page,
+older-page, stale-tail, prefetch, optimistic-shadow, and in-flight state for a
+normalized `(directory, session ID)` key. Metadata and the first message page
+start concurrently in `useSync`; metadata failure never blocks a valid message
+snapshot. The loader materializes a page once after any adaptive expansion, so
+catch-up never replays historical events through the live reducer.
+
+With `sessionFastLoadEnabled`, web/Electron starts at 50 records and expands to
+100 then 150 only when a cursor remains without a user-turn boundary. VS Code
+uses 30, 50, 80, then 120. Disabling the non-persisted flag keeps the same
+correctness owner but restores a 200-record first request and disables intent
+prefetch. Explicit Load Older pages remain 200 records.
+
+Renderable snapshots are stale-while-revalidate for 15 seconds. A stale reopen
+paints from memory immediately and merges a 30-record tail refresh while
+preserving the established older-history cursor. Generation and child-store
+identity guards prevent deletion, directory disposal, and rapid switching from
+accepting late results. Selected-session hydration does not invoke the broad
+focus/reconnect recovery path; only an actually incomplete trailing assistant
+turn may request that recovery.
+
+Intent prefetch is active-directory-only, one request at a time, and limited to
+six queued targets. Rows start exact-session work on pointer-down/click, hover
+after 180 ms, keyboard focus immediately, and settled neighbors after 600 ms.
+Only two non-active prefetched snapshots are retained on web/Electron and one
+in VS Code. No directory-wide runtime bootstrap is performed by prefetch.
+
+`useSessionMessageLoadState(sessionID, directory)` is the exact reactive leaf
+for status, loading kind, error, resolution, retained limit, cursor,
+completeness, and update time. Opt-in performance metrics cover navigation to
+first-visible frame, requests, retries, payload sizes, and materialization; no
+directory, session ID, or message content is emitted.
+
 ## Selector hygiene
+
+Session metadata has an additional subscription boundary. `useSession()` and
+`useSessionDirectory()` subscribe only to the `session` branch of the relevant
+directory stores; message, part, status, permission, and question events do not
+notify them. Cross-directory reads use
+`ChildStoreManager.subscribeSessionLists()` instead of the all-state channel.
+`useSessionDirectory()` returns the directory primitive directly, so a title or
+timestamp replacement for the same session cannot repaint Markdown/tool leaves
+whose effective directory is unchanged.
+
+`useSessionChildren(parentID, directory)` is the canonical direct-child
+projection for mounted chat/task rows. It returns its previous array when child
+membership, ordering, and child object references are unchanged, even if an
+unrelated session is created, updated, or deleted. Use `useSessions()` only for
+surfaces that genuinely render or rank the full structural list; do not scan it
+from message, tool, permission, question, or selection leaves.
 
 Select leaf values, not containers:
 

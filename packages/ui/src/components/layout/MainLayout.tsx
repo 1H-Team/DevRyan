@@ -21,6 +21,7 @@ import { DrawerProvider } from '@/contexts/DrawerContext';
 import { useUIStore } from '@/stores/useUIStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { useDeviceInfo } from '@/lib/device';
+import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { isDesktopShell } from '@/lib/desktop';
@@ -75,6 +76,21 @@ export const MainLayout: React.FC = () => {
     const isMultiRunLauncherOpen = useUIStore((state) => state.isMultiRunLauncherOpen);
     const setMultiRunLauncherOpen = useUIStore((state) => state.setMultiRunLauncherOpen);
     const multiRunLauncherPrefillPrompt = useUIStore((state) => state.multiRunLauncherPrefillPrompt);
+    const effectiveDirectory = useEffectiveDirectory() ?? '';
+    const layoutDirectoryKey = React.useMemo(() => {
+        const raw = effectiveDirectory.replace(/\\/g, '/');
+        const hadUncPrefix = raw.startsWith('//');
+        let normalized = raw.replace(/\/+$/g, '').replace(/\/+/g, '/');
+        if (hadUncPrefix && !normalized.startsWith('//')) normalized = `/${normalized}`;
+        if (!normalized) return raw.startsWith('/') ? '/' : '';
+        return normalized;
+    }, [effectiveDirectory]);
+    const browserPanelState = useUIStore((state) => (
+        layoutDirectoryKey ? state.browserPanelByDirectory[layoutDirectoryKey] : undefined
+    ));
+    const contextPanelState = useUIStore((state) => (
+        layoutDirectoryKey ? state.contextPanelByDirectory[layoutDirectoryKey] : undefined
+    ));
 
     useConfigApplyStatusLifecycle(isSettingsDialogOpen);
 
@@ -266,6 +282,19 @@ export const MainLayout: React.FC = () => {
                 isBottomTerminalOpen: state.isBottomTerminalOpen,
                 rightSidebarAutoClosed: rightSidebarAutoClosedRef.current,
                 bottomTerminalAutoClosed: bottomTerminalAutoClosedRef.current,
+                browserPanelOpen: browserPanelState?.isOpen === true && contextPanelState?.expanded !== true,
+                browserPanelExpanded: browserPanelState?.expanded === true,
+                browserPanelPreferredWidth: browserPanelState?.width ?? 600,
+                contextPanelWidth: contextPanelState?.isOpen === true && contextPanelState.expanded !== true
+                    ? contextPanelState.width ?? 600
+                    : 0,
+                leftSidebarWidth: state.isSidebarOpen
+                    ? Math.min(DESKTOP_SIDEBAR_MAX_WIDTH, Math.max(DESKTOP_SIDEBAR_MIN_WIDTH, state.sidebarWidth || SIDEBAR_CONTENT_WIDTH))
+                    : 0,
+                rightSidebarWidth: Math.min(
+                    DESKTOP_RIGHT_SIDEBAR_MAX_WIDTH,
+                    Math.max(DESKTOP_RIGHT_SIDEBAR_MIN_WIDTH, state.rightSidebarWidth || RIGHT_SIDEBAR_CONTENT_WIDTH),
+                ),
             });
 
             rightSidebarAutoClosedRef.current = decision.rightSidebarAutoClosed;
@@ -307,7 +336,18 @@ export const MainLayout: React.FC = () => {
                 window.clearTimeout(timeoutId);
             }
         };
-    }, [isMobile, isTablet, setBottomTerminalOpen, setRightSidebarOpen]);
+    }, [
+        browserPanelState?.expanded,
+        browserPanelState?.isOpen,
+        browserPanelState?.width,
+        contextPanelState?.expanded,
+        contextPanelState?.isOpen,
+        contextPanelState?.width,
+        isMobile,
+        isTablet,
+        setBottomTerminalOpen,
+        setRightSidebarOpen,
+    ]);
 
     React.useEffect(() => {
         if (typeof window === 'undefined') {

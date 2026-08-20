@@ -43,10 +43,16 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 - `TaskToolSummary.tsx` + `taskToolUtils.ts`
   - Preserve provider-native subagent output across failure and cancellation.
   - Failed or cancelled output is labelled as partial, retains its provider status/reason, and never receives a success check.
+  - The observed Cursor-native Agent Dispatch row reuses this bounded summary renderer for nested activity and terminal output. `MessageBody.tsx` suppresses the ordinary raw task row only when the runtime-owned, versioned Cursor projection is valid; malformed or unprojected task tools keep the standard expandable renderer.
 
 - `toolPresentation.tsx`
   - Shared icon mapping for tool names (`getToolIcon`).
   - Used by both `ProgressiveGroup.tsx` and `ToolPart.tsx`.
+
+- `generatedImageResults.ts` + `GeneratedImageResult.tsx`
+  - Derive completed `gpt_imagegen` PNGs from authoritative tool metadata, replace only matching standalone assistant links, and render an authenticated inline preview.
+  - Image bytes are read through `/api/fs/raw` so web/Electron workspace authorization and the VS Code local-filesystem proxy keep the same contract.
+  - The existing tool-output image dialog owns fullscreen preview behavior.
 
 - `toolRenderUtils.ts`
   - Core classification helpers:
@@ -75,6 +81,33 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Preserves natural Markdown and streaming updates. A leading bold activity title that is directly joined to prose receives render-only paragraph separation; persisted and copied message text remain unchanged.
 
 ## Current important behavior
+
+### Streaming paint ownership
+
+Canonical SSE reduction and the 24 ms event pipeline remain unthrottled by the
+part renderers. `useStreamingTextThrottle` owns only the visible projection for
+assistant text, reasoning, justification, and plan Markdown. Each identity
+renders its first non-empty text synchronously, trailing-coalesces intermediate
+growth to the latest value at most once per 32 ms, and renders terminal text
+immediately after canceling pending work. Temporary shorter streaming snapshots
+cannot truncate visible text; terminal text is authoritative. Copy/export,
+notifications, status, tool state, scrolling, and persisted sync text always
+read canonical state rather than the paint projection.
+
+### Presentation animation ownership
+
+`PlanCardSkeleton.tsx` keeps the existing 8–48 line layout reservation, but the
+line group owns one opacity animation instead of every line owning pulse and
+sweep animations. `useDocumentAnimationState()` is a module-level external
+store with one shared document-visibility listener and one shared
+reduced-motion listener. It is not Zustand state. The bottom status keeps its
+accessible label in flow while an aligned, aria-hidden duplicate supplies a
+transform-only focus sweep; status changes update that stable node without a
+keyed vertical transition. The plan skeleton, bottom status shimmer, retry
+countdown, and active duration labels pause while hidden; labels recompute on
+foreground. Reduced-motion presentation remains readable without a long-lived
+animation. `SessionActiveSpinner.tsx` is not mounted in the current chat tree
+and is outside this performance contract.
 
 - `read` and most search/fetch tools are treated as **static tools** and passive lookup activity rolls up across reasoning text into one dropdown per kind until a hard tool boundary such as shell/question/task.
 - `bash/edit/write/question/task` are **expandable tools** and render via `ToolPart`.

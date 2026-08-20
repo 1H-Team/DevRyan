@@ -157,6 +157,79 @@ const areTurnDiffStatsEqual = (left?: TurnDiffStats, right?: TurnDiffStats): boo
     && left.files === right.files;
 };
 
+const areManagedTaskProjectionsEqual = (
+  left: TurnGroupingContext['managedTaskProjection'],
+  right: TurnGroupingContext['managedTaskProjection'],
+): boolean => {
+  if (left === right) return true;
+  if (!left || !right) return left === right;
+  if (left.ownerMessageId !== right.ownerMessageId) return false;
+  if (left.taskIds.length !== right.taskIds.length) return false;
+  if (left.pendingDispatches.length !== right.pendingDispatches.length) return false;
+  if (left.fallbackTasks.length !== right.fallbackTasks.length) return false;
+  if (left.taskIds.some((taskId, index) => taskId !== right.taskIds[index])) return false;
+  if (left.pendingDispatches.some((dispatch, index) => {
+    const candidate = right.pendingDispatches[index];
+    return dispatch.partId !== candidate?.partId
+      || dispatch.dispatchCallId !== candidate.dispatchCallId
+      || dispatch.agent !== candidate.agent
+      || dispatch.label !== candidate.label
+      || dispatch.status !== candidate.status
+      || dispatch.errorMessage !== candidate.errorMessage;
+  })) return false;
+  return !left.fallbackTasks.some((task, index) => {
+    const candidate = right.fallbackTasks[index];
+    return task.partId !== candidate?.partId
+      || task.taskId !== candidate.taskId
+      || task.dispatchCallId !== candidate.dispatchCallId
+      || task.agent !== candidate.agent
+      || task.label !== candidate.label
+      || task.status !== candidate.status
+      || task.childSessionId !== candidate.childSessionId
+      || task.directory !== candidate.directory;
+  });
+};
+
+const areRelevantGeneratedImagesEqual = (
+  left: TurnGroupingContext,
+  right: TurnGroupingContext,
+  messageId: string,
+): boolean => {
+  const collectRelevantToolIds = (context: TurnGroupingContext): Set<string> => {
+    const ids = new Set<string>();
+    for (const activity of context.activityParts ?? []) {
+      if (activity.messageId === messageId && activity.kind === 'tool') ids.add(activity.id);
+    }
+    for (const segment of context.activityGroupSegments ?? []) {
+      if (segment.anchorMessageId !== messageId) continue;
+      for (const activity of segment.parts) {
+        if (activity.kind === 'tool') ids.add(activity.id);
+      }
+    }
+    return ids;
+  };
+
+  const select = (context: TurnGroupingContext) => {
+    const relevantToolIds = collectRelevantToolIds(context);
+    return (context.generatedImages ?? []).filter((result) => (
+      result.linkedMessageId === messageId || relevantToolIds.has(result.toolPartId)
+    ));
+  };
+
+  const leftImages = select(left);
+  const rightImages = select(right);
+  if (leftImages.length !== rightImages.length) return false;
+  return leftImages.every((result, index) => {
+    const candidate = rightImages[index];
+    return result.toolPartId === candidate?.toolPartId
+      && result.path === candidate.path
+      && result.filename === candidate.filename
+      && result.directory === candidate.directory
+      && result.linkedMessageId === candidate.linkedMessageId
+      && result.linkLabel === candidate.linkLabel;
+  });
+};
+
 const areTurnActivityRecordsEqual = (left: TurnActivityRecord, right: TurnActivityRecord): boolean => {
   return left.id === right.id
     && left.messageId === right.messageId
@@ -284,6 +357,14 @@ export const areRelevantTurnGroupingContextsEqual = (
   if (left.userMessageVariant !== right.userMessageVariant) return false;
   if (left.summarySourceMessageId !== right.summarySourceMessageId) return false;
   if (left.summarySourcePartId !== right.summarySourcePartId) return false;
+  if (!areRelevantGeneratedImagesEqual(left, right, messageId)) return false;
+
+  const managedTaskRelevant = left.managedTaskProjection?.ownerMessageId === messageId
+    || right.managedTaskProjection?.ownerMessageId === messageId;
+  if (managedTaskRelevant && !areManagedTaskProjectionsEqual(
+    left.managedTaskProjection,
+    right.managedTaskProjection,
+  )) return false;
 
   const headerRelevant = left.headerMessageId === messageId || right.headerMessageId === messageId;
   if (headerRelevant && left.headerMessageId !== right.headerMessageId) {

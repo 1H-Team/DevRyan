@@ -69,6 +69,7 @@ export {
   CURSOR_ACP_PROVIDER_ID,
   ensureAnthropicOAuthProviderConfig,
   getProviderSources,
+  removeAntigravityProviderConfig,
   removeProviderConfig,
 } from './providers.js';
 

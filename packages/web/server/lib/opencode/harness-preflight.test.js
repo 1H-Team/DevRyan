@@ -7,10 +7,16 @@ import request from '../../test-supertest.js';
 
 import {
   auditPackagedPromptContext,
+  createHarnessAnthropicUsageReader,
   createHarnessPreflight,
+  extractAnthropicUsageFromMessages,
   lintAgentHarness,
   registerHarnessPreflightRoute,
 } from './harness-preflight.js';
+import {
+  deduplicateExactToolDefinitions,
+  findExactDuplicateDefinitions,
+} from './harness-context-budget.js';
 
 describe('harness preflight', () => {
   it('warns that external runtimes cannot guarantee skill-policy enforcement', () => {
@@ -630,6 +636,11 @@ describe('harness preflight', () => {
     expect(result.contextBudget.tools).toEqual(expect.objectContaining({
       label: 'runtimeCatalogUpperBound',
       mode: 'providerModel',
+      rawItemCount: 3,
+      uniqueItemCount: 2,
+      duplicateOccurrenceByteCount: Buffer.byteLength('writeother', 'utf8')
+        + Buffer.byteLength(JSON.stringify(catalog[2].parameters), 'utf8'),
+      exactDuplicateDefinitionByteCount: 0,
       descriptions: {
         availability: 'available',
         itemCount: 3,
@@ -649,7 +660,38 @@ describe('harness preflight', () => {
         toolIds: ['é_tool', 'write'],
         fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
       })],
+      exactDuplicateDefinitions: [],
     }));
+  });
+
+  it('identifies and removes only byte-identical tool definitions', () => {
+    const shared = {
+      id: 'read',
+      description: 'Read a file',
+      parameters: { type: 'object', properties: { path: { type: 'string' } } },
+    };
+    const conflicting = {
+      ...shared,
+      description: 'Read a file with a plugin override',
+    };
+    const external = {
+      id: 'mcp__buffer__list',
+      description: 'List Buffer entries',
+      parameters: { type: 'object', properties: {} },
+    };
+    const tools = [shared, { ...shared }, conflicting, external];
+
+    expect(findExactDuplicateDefinitions(tools)).toEqual([
+      expect.objectContaining({
+        id: 'read',
+        occurrences: 2,
+        duplicateByteCount: expect.any(Number),
+        fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    ]);
+    expect(deduplicateExactToolDefinitions(tools)).toEqual([shared, conflicting, external]);
+    expect(new Set(deduplicateExactToolDefinitions(tools).map((tool) => tool.id)))
+      .toEqual(new Set(tools.map((tool) => tool.id)));
   });
 
   it('reports an unavailable IDs measurement instead of zero bytes when OpenCode rejects the request', async () => {
@@ -1094,7 +1136,141 @@ describe('harness preflight', () => {
 });
 
 describe('Anthropic context budget projection', () => {
+  it('extracts provider-reported first and latest turn usage without message content', () => {
+    const usage = extractAnthropicUsageFromMessages([
+      {
+        info: {
+          role: 'assistant',
+          providerID: 'anthropic',
+          tokens: {
+            input: 6,
+            output: 14,
+            reasoning: 0,
+            total: 58_055,
+            cache: {
+              read: 0,
+              write: 58_035,
+              creation: { ephemeral_1h_input_tokens: 58_035 },
+            },
+          },
+        },
+        parts: [{ type: 'text', text: 'private assistant output' }],
+      },
+      {
+        info: {
+          role: 'assistant',
+          providerID: 'anthropic',
+          tokens: {
+            input: 20,
+            output: 10,
+            total: 58_065,
+            cache: { read: 58_035, write: 0 },
+          },
+        },
+      },
+    ]);
+
+    expect(usage).toEqual({
+      fixedPrefixTokens: 58_041,
+      requestCount: 2,
+      activeContextTokens: 58_065,
+      cumulativeProcessedInputTokens: 116_096,
+      firstTurnProviderUsage: {
+        uncachedInputTokens: 6,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 58_035,
+        outputTokens: 14,
+        reasoningTokens: 0,
+        totalTokens: 58_055,
+        cacheCreation: { fiveMinuteTokens: null, oneHourTokens: 58_035 },
+      },
+      providerUsage: {
+        uncachedInputTokens: 20,
+        cacheReadInputTokens: 58_035,
+        cacheCreationInputTokens: 0,
+        outputTokens: 10,
+        reasoningTokens: 0,
+        totalTokens: 58_065,
+        cacheCreation: { fiveMinuteTokens: null, oneHourTokens: null },
+      },
+    });
+    expect(JSON.stringify(usage)).not.toContain('private assistant output');
+  });
+
+  it('joins Meridian telemetry by recovered session without exposing raw telemetry', async () => {
+    const calls = [];
+    const fetchImpl = async (input) => {
+      const url = new URL(input);
+      calls.push(url.pathname);
+      if (url.pathname === '/session/session-a/message') {
+        return {
+          ok: true,
+          json: async () => [{
+            info: {
+              role: 'assistant',
+              providerID: 'anthropic',
+              tokens: { input: 6, output: 14, cache: { read: 0, write: 58_035 } },
+            },
+          }],
+        };
+      }
+      if (url.pathname === '/config/providers') {
+        return {
+          ok: true,
+          json: async () => ({
+            providers: [{
+              id: 'anthropic',
+              options: { baseURL: 'http://127.0.0.1:3456', apiKey: 'private' },
+            }],
+          }),
+        };
+      }
+      if (url.pathname === '/v1/sessions/session-a/recover') {
+        return { ok: true, json: async () => ({ claudeSessionId: 'sdk-private-id' }) };
+      }
+      if (url.pathname === '/telemetry/requests') {
+        return {
+          ok: true,
+          json: async () => [{
+            sdkSessionId: 'sdk-private-id',
+            toolCount: 80,
+            deferredToolCount: 74,
+            rawPrompt: 'must not escape',
+          }],
+        };
+      }
+      return { ok: false, json: async () => ({}) };
+    };
+    const reader = createHarnessAnthropicUsageReader({
+      fetchImpl,
+      buildOpenCodeUrl: (pathname) => new URL(pathname, 'http://127.0.0.1:4096'),
+      getOpenCodeAuthHeaders: () => ({ Authorization: 'Basic private' }),
+    });
+
+    const usage = await reader({ sessionID: 'session-a', directory: '/repo' });
+
+    expect(usage).toMatchObject({
+      firstTurnProviderUsage: {
+        cacheCreationInputTokens: 58_035,
+      },
+      tooling: {
+        rawToolCount: 80,
+        eagerToolCount: 6,
+        deferredToolCount: 74,
+      },
+    });
+    expect(calls).toEqual(expect.arrayContaining([
+      '/session/session-a/message',
+      '/config/providers',
+      '/v1/sessions/session-a/recover',
+      '/telemetry/requests',
+    ]));
+    expect(JSON.stringify(usage)).not.toContain('private');
+    expect(JSON.stringify(usage)).not.toContain('must not escape');
+  });
+
   it('separates fixed prefix, request count, active context, and cumulative input', async () => {
+    const journalRecords = [];
     const preflight = createHarnessPreflight({
       getAgents: () => [],
       getSkills: () => [{
@@ -1106,6 +1282,26 @@ describe('Anthropic context budget projection', () => {
       getHiddenSkills: () => [],
       getStaleOverrides: () => [],
       getPackagedAgents: () => [],
+      getClaudeRuntime: () => ({
+        source: 'managed',
+        channel: 'candidate',
+        compatibilityStatus: 'upstream_blocked',
+        runtimeStatus: 'ready',
+        installed: {
+          opencodeWithClaude: '1.8.0',
+          meridian: '1.62.6',
+          agentSdk: '0.2.141',
+          claudeCode: '2.1.98',
+        },
+        managementSources: {
+          opencodeWithClaude: 'managed',
+          meridian: 'managed',
+          agentSdk: 'managed',
+          claudeCode: 'managed',
+        },
+        privatePath: '/Users/private/node_modules',
+      }),
+      recordDiagnostic: (record) => journalRecords.push(record),
     });
 
     const result = await preflight.run({
@@ -1114,6 +1310,13 @@ describe('Anthropic context budget projection', () => {
         requestCount: 40,
         activeContextTokens: 127_040,
         cumulativeProcessedInputTokens: 4_010_214,
+        providerUsage: {
+          uncachedInputTokens: 10,
+          cacheReadInputTokens: 1_990,
+          cacheCreationInputTokens: 0,
+          cacheCreation: { oneHourTokens: 0 },
+        },
+        tooling: { rawToolCount: 80, eagerToolCount: 6, deferredToolCount: 74 },
       },
     });
 
@@ -1126,8 +1329,40 @@ describe('Anthropic context budget projection', () => {
       requestCount: 40,
       activeContextTokens: 127_040,
       cumulativeProcessedInputTokens: 4_010_214,
+      runtime: {
+        source: 'managed',
+        channel: 'candidate',
+        compatibilityStatus: 'upstream_blocked',
+        runtimeStatus: 'ready',
+        versions: {
+          opencodeWithClaude: '1.8.0',
+          meridian: '1.62.6',
+          agentSdk: '0.2.141',
+          claudeCode: '2.1.98',
+        },
+        managementSources: {
+          opencodeWithClaude: 'managed',
+          meridian: 'managed',
+          agentSdk: 'managed',
+          claudeCode: 'managed',
+        },
+      },
+      tooling: { rawToolCount: 80, eagerToolCount: 6, deferredToolCount: 74 },
     });
     expect(result.contextBudget.anthropic.fixedPrefix.transformedBytes)
       .toBeLessThan(result.contextBudget.anthropic.fixedPrefix.originalBytes);
+    expect(journalRecords).toHaveLength(1);
+    expect(journalRecords[0]).toMatchObject({
+      type: 'log',
+      event: 'anthropic_context_preflight',
+      payload: {
+        runtime: result.contextBudget.anthropic.runtime,
+        usage: {
+          fixedPrefixTokens: 2_000,
+          providerUsage: expect.objectContaining({ cacheReadInputTokens: 1_990 }),
+        },
+      },
+    });
+    expect(JSON.stringify(journalRecords[0])).not.toContain('/Users/private');
   });
 });

@@ -1422,6 +1422,88 @@ describe('Cursor SDK worker runtime config', () => {
     await runtime.dispose();
   });
 
+  test('routes persistent-worker Cursor subagent activity into the parent task metadata', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-task-activity-'));
+    const capture = { calls: [], children: [], commands: [] };
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      useNodeWorkerForPrompts: true,
+      spawnImpl: createFakePersistentWorkerSpawn(capture, { autoRespond: false }),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_persistent_task_activity',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+        messageID: 'msg_persistent_task_activity_user',
+        parts: [{ type: 'text', text: 'inspect compatibility' }],
+      },
+    });
+
+    const promptCommand = await waitFor(() => capture.commands.find((entry) => entry.type === 'prompt'));
+    const child = capture.children[0];
+    const emitMessage = (message) => child.emitWorkerEvent({
+      requestID: promptCommand.requestID,
+      type: 'message',
+      message,
+    });
+    emitMessage({
+      type: 'tool_call',
+      call_id: 'cursor_task_1',
+      name: 'task',
+      status: 'running',
+      args: { description: 'Inspect compatibility', subagentType: { kind: 'explore' } },
+    });
+    emitMessage({
+      type: 'task_activity',
+      call_id: 'cursor_task_1',
+      model_call_id: 'model_call_1',
+      update: { type: 'text-delta', text: 'Inspecting files.' },
+    });
+    emitMessage({
+      type: 'task_activity',
+      call_id: 'cursor_task_1',
+      model_call_id: 'model_call_1',
+      update: {
+        type: 'tool-call',
+        call_id: 'nested_read_1',
+        name: 'read',
+        status: 'completed',
+        args: { path: 'package.json' },
+      },
+    });
+    emitMessage({
+      type: 'tool_call',
+      call_id: 'cursor_task_1',
+      name: 'task',
+      status: 'completed',
+      result: 'Done',
+    });
+    child.emitWorkerEvent({ requestID: promptCommand.requestID, type: 'done', status: 'finished' });
+
+    const records = await waitFor(async () => {
+      const next = await runtime.getSessionMessages('ses_persistent_task_activity');
+      return next.some((record) => record.info?.role === 'assistant' && record.info?.finish) ? next : null;
+    });
+    const taskPart = records[1].parts.find((part) => part.type === 'tool' && part.tool === 'task');
+    expect(taskPart?.state?.metadata?.cursorNativeTask).toMatchObject({
+      schemaVersion: 1,
+      source: 'cursor-native',
+      parentCallId: 'cursor_task_1',
+      modelCallId: 'model_call_1',
+      text: 'Inspecting files.',
+      entries: [{
+        id: 'nested_read_1',
+        tool: 'read',
+        state: { status: 'completed', input: { path: 'package.json' } },
+      }],
+    });
+    await runtime.dispose();
+  });
+
   test('sends persistent worker cancel commands for active prompts', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-cancel-'));
     const capture = { calls: [], children: [], commands: [] };

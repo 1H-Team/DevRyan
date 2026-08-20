@@ -325,6 +325,7 @@ describe('OpenCode lifecycle', () => {
     const getManagedOrchestrationEnvironment = vi.fn(async () => ({
       DEVRYAN_ORCHESTRATION_URL: 'http://127.0.0.1:43210/rpc',
       DEVRYAN_ORCHESTRATION_TOKEN: 'opaque-private-token',
+      DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS: '1',
       UNTRUSTED_EXTRA_KEY: 'must-not-be-injected',
     }));
     const runtime = createRuntime({ getManagedOrchestrationEnvironment });
@@ -335,6 +336,7 @@ describe('OpenCode lifecycle', () => {
     expect(getManagedOrchestrationEnvironment).toHaveBeenCalledTimes(1);
     expect(options.env.DEVRYAN_ORCHESTRATION_URL).toBe('http://127.0.0.1:43210/rpc');
     expect(options.env.DEVRYAN_ORCHESTRATION_TOKEN).toBe('opaque-private-token');
+    expect(options.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS).toBe('1');
     expect(options.env.UNTRUSTED_EXTRA_KEY).toBeUndefined();
     await server.close();
   });
@@ -361,6 +363,7 @@ describe('OpenCode lifecycle', () => {
     expect(getManagedOrchestrationEnvironment).toHaveBeenCalledTimes(1);
     expect(options.env.DEVRYAN_ORCHESTRATION_URL).toBeUndefined();
     expect(options.env.DEVRYAN_ORCHESTRATION_TOKEN).toBeUndefined();
+    expect(options.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS).toBeUndefined();
     expect(runtime.__testState.isOpenCodeReady).toBe(true);
     await server.close();
   });

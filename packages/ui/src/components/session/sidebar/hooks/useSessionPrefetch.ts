@@ -2,6 +2,7 @@ import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { getSyncSessionMaterializationStatus } from '@/sync/sync-refs';
+import { streamPerfObserve } from '@/stores/utils/streamDebug';
 import {
   getSidebarSessionDirectory,
   isActiveSidebarHydrationDirectory,
@@ -16,7 +17,12 @@ type Args = {
   currentSessionId: string | null;
   currentDirectory: string | null;
   sortedSessions: Session[];
-  ensureSessionRenderable: (sessionId: string) => Promise<unknown>;
+  prefetchSession: (sessionId: string, directory: string) => Promise<unknown>;
+};
+
+type SessionPrefetchIntent = {
+  schedule: (sessionId: string, directory: string | null, delayMs?: number) => void;
+  cancel: (sessionId: string) => void;
 };
 
 export const selectSessionPrefetchNeighborIds = (input: {
@@ -41,11 +47,12 @@ export const useSessionPrefetch = ({
   currentSessionId,
   currentDirectory,
   sortedSessions,
-  ensureSessionRenderable,
-}: Args): void => {
+  prefetchSession,
+}: Args): SessionPrefetchIntent => {
   const sessionPrefetchTimersRef = React.useRef<Map<string, number>>(new Map());
   const sessionPrefetchQueueRef = React.useRef<string[]>([]);
   const sessionPrefetchInFlightRef = React.useRef<Set<string>>(new Set());
+  const queuedAtRef = React.useRef<Map<string, number>>(new Map());
 
   const pumpSessionPrefetchQueue = React.useCallback(() => {
     if (typeof window === 'undefined') {
@@ -69,19 +76,35 @@ export const useSessionPrefetch = ({
       }
 
       sessionPrefetchInFlightRef.current.add(nextSessionId);
-      void ensureSessionRenderable(nextSessionId)
+      const queuedAt = queuedAtRef.current.get(nextSessionId);
+      queuedAtRef.current.delete(nextSessionId);
+      if (queuedAt !== undefined) {
+        streamPerfObserve('session.load.prefetch.queue_ms', Math.max(0, performance.now() - queuedAt));
+      }
+      const activeDirectory = currentDirectory;
+      if (!activeDirectory) continue;
+      void prefetchSession(nextSessionId, activeDirectory)
         .catch(() => undefined)
         .finally(() => {
           sessionPrefetchInFlightRef.current.delete(nextSessionId);
           pumpSessionPrefetchQueue();
         });
     }
-  }, [ensureSessionRenderable]);
+  }, [currentDirectory, prefetchSession]);
 
-  const scheduleSessionPrefetch = React.useCallback((sessionId: string | null | undefined) => {
+  const cancelSessionPrefetch = React.useCallback((sessionId: string) => {
+    const timer = sessionPrefetchTimersRef.current.get(sessionId);
+    if (timer !== undefined && typeof window !== 'undefined') window.clearTimeout(timer);
+    sessionPrefetchTimersRef.current.delete(sessionId);
+    sessionPrefetchQueueRef.current = sessionPrefetchQueueRef.current.filter((candidate) => candidate !== sessionId);
+    queuedAtRef.current.delete(sessionId);
+  }, []);
+
+  const scheduleSessionPrefetch = React.useCallback((sessionId: string | null | undefined, sessionDirectory: string | null, delayMs = SESSION_PREFETCH_HOVER_DELAY_MS) => {
     if (!sessionId || sessionId === currentSessionId || typeof window === 'undefined') {
       return;
     }
+    if (!currentDirectory || sessionDirectory !== currentDirectory) return;
 
     // Already renderable in sync
     if (getSyncSessionMaterializationStatus(sessionId).renderable) {
@@ -97,7 +120,8 @@ export const useSessionPrefetch = ({
     }
 
     if (sessionPrefetchQueueRef.current.length >= SESSION_PREFETCH_PENDING_LIMIT) {
-      sessionPrefetchQueueRef.current.shift();
+      const dropped = sessionPrefetchQueueRef.current.shift();
+      if (dropped) queuedAtRef.current.delete(dropped);
     }
 
     const existingTimer = sessionPrefetchTimersRef.current.get(sessionId);
@@ -108,10 +132,11 @@ export const useSessionPrefetch = ({
     const timer = window.setTimeout(() => {
       sessionPrefetchTimersRef.current.delete(sessionId);
       sessionPrefetchQueueRef.current.push(sessionId);
+      queuedAtRef.current.set(sessionId, performance.now());
       pumpSessionPrefetchQueue();
-    }, SESSION_PREFETCH_HOVER_DELAY_MS);
+    }, delayMs);
     sessionPrefetchTimersRef.current.set(sessionId, timer);
-  }, [currentSessionId, pumpSessionPrefetchQueue]);
+  }, [currentDirectory, currentSessionId, pumpSessionPrefetchQueue]);
 
   // Wait for the active session to finish loading before prefetching neighbors.
   // On rapid session switches the timer resets, so only the final session triggers prefetch.
@@ -125,19 +150,33 @@ export const useSessionPrefetch = ({
         currentDirectory,
         sortedSessions,
       });
-      neighborIds.forEach(scheduleSessionPrefetch);
+      neighborIds.forEach((sessionId) => scheduleSessionPrefetch(sessionId, currentDirectory, 0));
     }, SESSION_PREFETCH_SETTLE_MS);
     return () => window.clearTimeout(timer);
   }, [currentDirectory, currentSessionId, scheduleSessionPrefetch, sortedSessions]);
 
   React.useEffect(() => {
     const prefetchTimers = sessionPrefetchTimersRef.current;
+    const queuedAt = queuedAtRef.current;
     return () => {
       prefetchTimers.forEach((timer) => {
         clearTimeout(timer);
       });
       prefetchTimers.clear();
       sessionPrefetchQueueRef.current = [];
+      queuedAt.clear();
     };
   }, []);
+
+  React.useEffect(() => {
+    sessionPrefetchTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    sessionPrefetchTimersRef.current.clear();
+    sessionPrefetchQueueRef.current = [];
+    queuedAtRef.current.clear();
+  }, [currentDirectory]);
+
+  return React.useMemo(() => ({
+    schedule: scheduleSessionPrefetch,
+    cancel: cancelSessionPrefetch,
+  }), [cancelSessionPrefetch, scheduleSessionPrefetch]);
 };

@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { AuthAssignment, AuthPrincipal } from '@/lib/authSession';
-import { isIntegrateTempProjectPath, projectManagedAssignments, useProjectsStore } from './useProjectsStore';
+import {
+  isIntegrateTempProjectPath,
+  projectManagedAssignments,
+  sortProjectsAlphabetically,
+  useProjectsStore,
+} from './useProjectsStore';
 
 const assignment = (
   overrides: Partial<AuthAssignment> & Pick<AuthAssignment, 'projectId' | 'publicDirectory'>,
@@ -14,6 +19,46 @@ const assignment = (
 });
 
 describe('managed project projection', () => {
+  test('sorts projects naturally by display name without mutating the source list', () => {
+    const projects = [
+      { id: 'beta', path: '/work/beta', label: 'beta' },
+      { id: 'ten', path: '/work/10-project', label: '10 project' },
+      { id: 'alpha', path: '/work/alpha', label: 'Alpha' },
+      { id: 'two', path: '/work/2-project', label: '2 project' },
+      { id: 'one', path: '/work/1-project', label: '1 project' },
+    ];
+
+    expect(sortProjectsAlphabetically(projects).map((project) => project.id)).toEqual([
+      'one',
+      'two',
+      'ten',
+      'alpha',
+      'beta',
+    ]);
+    expect(projects.map((project) => project.id)).toEqual(['beta', 'ten', 'alpha', 'two', 'one']);
+  });
+
+  test('sorts managed assignments alphabetically while retaining the default project', () => {
+    const result = projectManagedAssignments({
+      assignments: [
+        assignment({
+          projectId: 'zulu',
+          publicDirectory: '/projects/zulu/main',
+          label: 'Zulu',
+          isDefault: true,
+        }),
+        assignment({
+          projectId: 'alpha',
+          publicDirectory: '/projects/alpha/main',
+          label: 'Alpha',
+        }),
+      ],
+    });
+
+    expect(result.projects.map((project) => project.id)).toEqual(['alpha', 'zulu']);
+    expect(result.activeProjectId).toBe('zulu');
+  });
+
   test('replaces host settings projects with the accepted assignments', () => {
     const result = projectManagedAssignments({
       assignments: [

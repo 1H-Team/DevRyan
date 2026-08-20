@@ -419,6 +419,7 @@ class OpencodeService {
   private noStoreFetch: typeof fetch = createNoStoreApiFetch();
   private scopedClients: Map<string, OpencodeClient> = new Map();
   private currentDirectory: string | undefined = undefined;
+  private contextModeAvailable = false;
   private directoryContextQueue: Promise<void> = Promise.resolve();
   private listDirectoryInFlight: Map<string, Promise<FilesystemEntry[]>> = new Map();
   private listDirectoryCache: Map<string, { entries: FilesystemEntry[]; expiresAt: number }> = new Map();
@@ -432,6 +433,22 @@ class OpencodeService {
 
   getBaseUrl(): string {
     return this.baseUrl;
+  }
+
+  setContextModeAvailable(value: unknown): void {
+    this.contextModeAvailable = value === true;
+  }
+
+  getContextModeAvailable(): boolean {
+    return this.contextModeAvailable;
+  }
+
+  setContextModeReadOnlyIndexing(value: unknown): void {
+    this.setContextModeAvailable(value);
+  }
+
+  getContextModeReadOnlyIndexing(): boolean {
+    return this.getContextModeAvailable();
   }
 
   /** Expose the raw SDK client for direct use (e.g., SyncProvider) */
@@ -1118,6 +1135,7 @@ class OpencodeService {
     prefaceTextSynthetic?: boolean;
     agent?: string;
     variant?: string;
+    planMode?: boolean;
     files?: Array<FileInputLite>;
     /** Additional text/file parts to include (for batch sending queued messages) */
     additionalParts?: Array<{
@@ -1292,7 +1310,6 @@ class OpencodeService {
 
     assertProviderCircuitClosed(params.providerID);
 
-    const tools = resolveProviderPromptTools(params.providerID, params.agent);
     let response!: Response;
     postTurnTimingMark({
       sessionId: params.id,
@@ -1305,6 +1322,12 @@ class OpencodeService {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         params.beforeTransport?.();
+        // Resolve the capability immediately before every transport attempt.
+        // Queued sends and retries must not retain a stale indexing grant.
+        const tools = resolveProviderPromptTools(params.providerID, params.agent, {
+          planMode: params.planMode === true,
+          contextModeAvailable: this.contextModeAvailable,
+        });
         response = await fetch(url.toString(), {
           method: 'POST',
           headers: {
@@ -1986,10 +2009,14 @@ class OpencodeService {
       }
       const response = await this.noStoreFetch(healthUrl);
       if (!response.ok) {
+        this.setContextModeAvailable(false);
         return false;
       }
 
       const healthData = await response.json();
+      this.setContextModeAvailable(
+        healthData?.contextModeAvailable ?? healthData?.contextModeReadOnlyIndexing,
+      );
 
       // Check if the upstream API is ready (not just OpenChamber server)
       if (healthData.isOpenCodeReady === false) {
@@ -1998,6 +2025,7 @@ class OpencodeService {
 
       return true;
     } catch {
+      this.setContextModeAvailable(false);
       return false;
     }
   }

@@ -7,6 +7,8 @@ import { configureCursorSdkRipgrep } from './ripgrep-path.js';
 import {
   generateCursorSessionTitle,
 } from './title-generation.js';
+import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
+import { assertCursorSdkNodeCompatibility } from './node-version.js';
 
 const readStdin = async () => {
   let raw = '';
@@ -62,10 +64,6 @@ const writeTiming = (mark, metadata) => {
   });
 };
 
-const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
-
-const readTokenCount = (value) => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0);
-
 const parseSettingSourcesFlag = (raw) => {
   const v = trimString(raw);
   if (!v) return undefined;
@@ -78,100 +76,11 @@ const parseSettingSourcesFlag = (raw) => {
 // DevRyan cursor context trim (default OFF) — see OPENCHAMBER_CURSOR_SETTING_SOURCES.
 const CURSOR_SETTING_SOURCES = parseSettingSourcesFlag(process.env.OPENCHAMBER_CURSOR_SETTING_SOURCES);
 
-const firstStringValue = (...candidates) => {
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string') return candidate;
-  }
-  return '';
-};
-
 const sdkStatusFromRunStatus = (status) => {
   if (status === 'finished') return 'FINISHED';
   if (status === 'error') return 'ERROR';
   if (status === 'cancelled') return 'CANCELLED';
   return 'RUNNING';
-};
-
-const normalizeToolCallStatus = (status) => {
-  const normalized = trimString(status).toLowerCase();
-  if (normalized === 'completed' || normalized === 'complete' || normalized === 'done' || normalized === 'success' || normalized === 'finished') return 'completed';
-  if (normalized === 'error' || normalized === 'failed' || normalized === 'failure') return 'error';
-  if (normalized === 'cancelled' || normalized === 'canceled') return 'cancelled';
-  if (normalized === 'pending') return 'pending';
-  return 'running';
-};
-
-const normalizeInteractionUpdateToSdkMessage = (input) => {
-  const update = isPlainObject(input?.update) ? input.update : input;
-  if (!isPlainObject(update)) return null;
-
-  if (update.type === 'text-delta' || update.type === 'token-delta') {
-    const text = firstStringValue(update.text, update.delta, update.token);
-    return text
-      ? {
-          type: 'assistant',
-          message: {
-            role: 'assistant',
-            content: [{ type: 'text', text }],
-          },
-        }
-      : null;
-  }
-
-  if (update.type === 'thinking-delta') {
-    const text = firstStringValue(update.text, update.delta);
-    return text ? { type: 'thinking', text } : null;
-  }
-
-  if (
-    update.type === 'thinking-completed'
-    || update.type === 'thinking_completed'
-    || update.type === 'thinking-complete'
-  ) {
-    return { type: 'thinking_completed' };
-  }
-
-  if (
-    update.type === 'tool-call-started'
-    || update.type === 'partial-tool-call'
-    || update.type === 'tool-call-completed'
-  ) {
-    const toolCall = isPlainObject(update.toolCall) ? update.toolCall : {};
-    const callID = trimString(update.callId ?? update.call_id ?? toolCall.callId ?? toolCall.call_id ?? toolCall.id);
-    const name = trimString(toolCall.name ?? toolCall.type ?? update.name) || 'tool';
-    const status = update.type === 'tool-call-completed'
-      ? 'completed'
-      : normalizeToolCallStatus(update.status);
-    return {
-      type: 'tool_call',
-      call_id: callID,
-      name,
-      status,
-      ...(hasOwn(toolCall, 'args') ? { args: toolCall.args } : {}),
-      ...(hasOwn(toolCall, 'result') ? { result: toolCall.result } : {}),
-      ...(isPlainObject(toolCall.truncated) ? { truncated: toolCall.truncated } : {}),
-    };
-  }
-
-  if (update.type === 'summary') {
-    const text = trimString(update.summary ?? update.text);
-    return text ? { type: 'task', text } : null;
-  }
-
-  if (update.type === 'turn-ended') {
-    const usage = isPlainObject(update.usage) ? update.usage : null;
-    if (!usage) return null;
-    const tokens = {
-      input: readTokenCount(usage.inputTokens),
-      output: readTokenCount(usage.outputTokens),
-      reasoning: 0,
-      cache: { read: readTokenCount(usage.cacheReadTokens), write: readTokenCount(usage.cacheWriteTokens) },
-    };
-    const hasUsage = tokens.input || tokens.output || tokens.cache.read || tokens.cache.write;
-    return hasUsage ? { type: 'usage', tokens } : null;
-  }
-
-  return null;
 };
 
 const getSdkMessageTextFingerprint = (message) => {
@@ -208,6 +117,7 @@ const createCrossSourceMessageDedupe = (limit = 80) => {
 };
 
 const main = async () => {
+  assertCursorSdkNodeCompatibility();
   const input = await readStdin();
   const apiKey = trimString(input.apiKey);
   const modelID = trimString(input.modelID) || 'auto';

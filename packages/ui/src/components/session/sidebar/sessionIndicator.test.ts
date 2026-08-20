@@ -1,12 +1,47 @@
 import { describe, expect, test } from 'bun:test';
 import {
   collectSessionIndicatorScopeIds,
+  hasWorkingDescendantSession,
   resolveLeadingRailLayout,
   resolveMobileSessionIndicatorPresentation,
   resolveSidebarIndicator,
   resolveSidebarWorkingStatus,
   resolveSubtaskSidebarIndicator,
 } from './sessionIndicator';
+
+describe('hasWorkingDescendantSession', () => {
+  test('keeps a parent active while one of its descendant sessions is working', () => {
+    expect(hasWorkingDescendantSession(['child-idle', 'child-busy'], {
+      session_status: {
+        'child-idle': { type: 'idle' },
+        'child-busy': { type: 'busy' },
+      },
+      permission: {},
+    })).toBe(true);
+  });
+
+  test('settles the parent when every descendant is idle or blocked on permission', () => {
+    expect(hasWorkingDescendantSession(['child-idle', 'child-blocked'], {
+      session_status: {
+        'child-idle': { type: 'idle' },
+        'child-blocked': { type: 'retry' },
+      },
+      permission: {
+        'child-blocked': [{}],
+      },
+    })).toBe(false);
+  });
+
+  test('ignores unrelated session activity outside the parent branch', () => {
+    expect(hasWorkingDescendantSession(['child-idle'], {
+      session_status: {
+        'child-idle': { type: 'idle' },
+        unrelated: { type: 'busy' },
+      },
+      permission: {},
+    })).toBe(false);
+  });
+});
 
 describe('resolveSidebarIndicator', () => {
   test('does not show a completed-plan indicator without unread completion state', () => {

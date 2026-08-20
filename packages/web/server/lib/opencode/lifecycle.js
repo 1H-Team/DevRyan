@@ -829,6 +829,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     const orchestrationToken = typeof orchestrationEnvironmentInput?.DEVRYAN_ORCHESTRATION_TOKEN === 'string'
       ? orchestrationEnvironmentInput.DEVRYAN_ORCHESTRATION_TOKEN.trim()
       : '';
+    const orchestrationAccountDefaults = orchestrationEnvironmentInput?.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS === '1'
+      ? '1'
+      : '';
     if (Boolean(orchestrationUrl) !== Boolean(orchestrationToken)) {
       throw new Error('Managed orchestration bridge URL and token must be provided together');
     }
@@ -897,6 +900,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     delete processEnvironment.OPENCODE_DISABLE_EXTERNAL_SKILLS;
     delete processEnvironment.DEVRYAN_ORCHESTRATION_URL;
     delete processEnvironment.DEVRYAN_ORCHESTRATION_TOKEN;
+    delete processEnvironment.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS;
     delete processEnvironment.DEVRYAN_BROWSER_CDP_DISCOVERY_URL;
     delete processEnvironment.DEVRYAN_BROWSER_CDP_TOKEN;
     delete processEnvironment.DEVRYAN_AGENT_BROWSER_BIN;
@@ -906,6 +910,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     if (orchestrationUrl) {
       processEnvironment.DEVRYAN_ORCHESTRATION_URL = orchestrationUrl;
       processEnvironment.DEVRYAN_ORCHESTRATION_TOKEN = orchestrationToken;
+      if (orchestrationAccountDefaults) {
+        processEnvironment.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS = orchestrationAccountDefaults;
+      }
     }
     if (browserDiscoveryUrl) {
       processEnvironment.DEVRYAN_BROWSER_CDP_DISCOVERY_URL = browserDiscoveryUrl;

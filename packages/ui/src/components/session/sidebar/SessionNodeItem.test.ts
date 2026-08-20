@@ -138,6 +138,14 @@ describe('SessionNodeItem status selectors', () => {
     expect(source).not.toContain('managedOrchestrationSelectors.manualRecoveryFailureKindForChildSession(session.id)');
     expect(source).not.toContain('state.tasksById');
   });
+
+  test('keeps a parent spinner active from narrow descendant and managed-task activity', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source).toContain('hasWorkingDescendantSession(descendantSessionIds, state)');
+    expect(source).toContain('managedOrchestrationSelectors.hasActiveTasksForRoot(');
+    expect(source).toContain('isSessionWorking || hasWorkingDescendant || hasActiveManagedSubtask');
+  });
 });
 
 describe('session sidebar quick hover actions', () => {

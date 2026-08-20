@@ -302,7 +302,7 @@ jobs:
             ./node_modules/.bin/electron-builder --mac --${{ matrix.arch }} --publish=never -c.mac.identity=null -c.mac.notarize=false -c.dmg.sign=false
           fi
 
-      - name: Verify Electron Cursor SDK ripgrep binary
+      - name: Verify Electron Cursor SDK native artifacts
         run: |
           set -euo pipefail
 
@@ -328,12 +328,32 @@ jobs:
             exit 1
           fi
 
-          RG_PATH="$APP_PATH/Contents/Resources/app.asar.unpacked/node_modules/@cursor/$CURSOR_SDK_PLATFORM_PACKAGE/bin/rg"
-          if [ ! -x "$RG_PATH" ]; then
-            echo "Error: executable Cursor SDK ripgrep binary missing: $RG_PATH"
+          CURSOR_PLATFORM_PATH="$APP_PATH/Contents/Resources/app.asar.unpacked/node_modules/@cursor/$CURSOR_SDK_PLATFORM_PACKAGE"
+          if [ ! -d "$CURSOR_PLATFORM_PATH" ]; then
+            echo "Error: Cursor SDK platform package missing: $CURSOR_PLATFORM_PATH"
             find "$APP_PATH/Contents/Resources/app.asar.unpacked/node_modules/@cursor" -maxdepth 4 -print 2>/dev/null || true
             exit 1
           fi
+          for executable in \
+            "$CURSOR_PLATFORM_PATH/bin/rg" \
+            "$CURSOR_PLATFORM_PATH/bin/cursorsandbox"
+          do
+            if [ ! -x "$executable" ]; then
+              echo "Error: executable Cursor SDK artifact missing: $executable"
+              find "$APP_PATH/Contents/Resources/app.asar.unpacked/node_modules/@cursor" -maxdepth 4 -print 2>/dev/null || true
+              exit 1
+            fi
+          done
+          for binding in \
+            "$CURSOR_PLATFORM_PATH/vendor/tree-sitter/binding.node" \
+            "$CURSOR_PLATFORM_PATH/vendor/tree-sitter-bash/binding.node"
+          do
+            if [ ! -f "$binding" ]; then
+              echo "Error: Cursor SDK native binding missing: $binding"
+              find "$APP_PATH/Contents/Resources/app.asar.unpacked/node_modules/@cursor" -maxdepth 4 -print 2>/dev/null || true
+              exit 1
+            fi
+          done
 
       - name: Verify packaged Electron orchestration config
         run: |

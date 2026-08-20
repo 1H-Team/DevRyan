@@ -134,7 +134,7 @@ describe('mobile chat layout refinement', () => {
         expect(mobileStyles).toContain(':root.device-mobile:not(.desktop-runtime) {\n    font-size: 90%;');
         expect(mobileStyles).toContain('font-size: 16px !important; /* Prevents iOS zoom */');
         expect(mobileStyles).toContain('min-height: 36px;');
-        expect(messageBody).toContain("isMobile ? 'gap-y-1' : 'gap-y-1.5'");
+        expect(messageBody).toContain("isMobile ? 'gap-y-2' : 'gap-y-3'");
         expect(messageBody).toContain('isMobile={isMobile}');
         expect(reasoningPart).toContain('isMobile?: boolean');
         expect(reasoningPart).toContain("isMobile ? 'relative pr-2 py-1' : 'relative pr-2 py-1.5'");

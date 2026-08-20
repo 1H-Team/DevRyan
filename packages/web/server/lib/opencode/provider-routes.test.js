@@ -171,6 +171,19 @@ describe('OpenCode provider routes', () => {
     expect(removeProviderConfig).not.toHaveBeenCalledWith('anthropic', '/tmp/project', 'project');
   });
 
+  it('removes both supported Google auth aliases when disconnecting Google', async () => {
+    authModule.removeProviderAuth.mockImplementation((providerId) => (
+      providerId === 'google.oauth'
+    ));
+    const { app } = createApp();
+
+    const response = await request(app).delete('/api/provider/google/auth?scope=all').expect(200);
+
+    expect(authModule.removeProviderAuth).toHaveBeenCalledWith('google');
+    expect(authModule.removeProviderAuth).toHaveBeenCalledWith('google.oauth');
+    expect(response.body.removed).toBe(true);
+  });
+
   it('requires an explicit directory for project-scoped provider disconnects', async () => {
     const removeProviderConfig = vi.fn(() => true);
     const { app } = createApp({

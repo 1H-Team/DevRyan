@@ -75,6 +75,46 @@ describe('getResponsivePanelDecision', () => {
     expect(mobileDecision.bottomTerminalAction).toBe('none');
     expect(mobileDecision.bottomTerminalAutoClosed).toBe(false);
   });
+
+  test('closes the right sidebar when an open Browser would compress chat', () => {
+    const decision = getResponsivePanelDecision({
+      ...baseState,
+      width: 1632,
+      leftSidebarWidth: 318,
+      rightSidebarWidth: 300,
+      browserPanelOpen: true,
+      browserPanelPreferredWidth: 750,
+    });
+
+    expect(decision.rightSidebarAction).toBe('close');
+    expect(decision.rightSidebarAutoClosed).toBe(true);
+  });
+
+  test('restores a Browser-induced close only after the fit buffer is available', () => {
+    const pending = getResponsivePanelDecision({
+      ...baseState,
+      width: 1440,
+      isRightSidebarOpen: false,
+      rightSidebarAutoClosed: true,
+      leftSidebarWidth: 220,
+      rightSidebarWidth: 300,
+      browserPanelOpen: true,
+      browserPanelPreferredWidth: 600,
+    });
+    const ready = getResponsivePanelDecision({
+      ...baseState,
+      width: 1520,
+      isRightSidebarOpen: false,
+      rightSidebarAutoClosed: true,
+      leftSidebarWidth: 220,
+      rightSidebarWidth: 300,
+      browserPanelOpen: true,
+      browserPanelPreferredWidth: 600,
+    });
+
+    expect(pending.rightSidebarAction).toBe('none');
+    expect(ready.rightSidebarAction).toBe('open');
+  });
 });
 
 describe('getAutoClosedAfterPanelVisibilityChange', () => {

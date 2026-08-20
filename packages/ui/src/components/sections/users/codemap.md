@@ -18,6 +18,9 @@ Role-aware shared-host user and access administration inside Settings.
 - `UsersTable.tsx` lists users (row click opens detail; admin-only) with the
   Create User button; `CreateUserDialog.tsx` creates accounts — non-admin roles
   require an initial project and branch, while admins may omit them.
+- `ResetPasswordDialog.tsx` lets an administrator either set and confirm a new
+  password or generate a one-time temporary password; either path revokes the
+  target user's active sessions through the same server reset contract.
 - `UserDetail.tsx` owns the accessible Core Details / Policy Overrides /
   Analytics tab shell. Panels remain mounted so profile, branch, permission,
   capability, and advanced-JSON drafts survive tab changes. Core contains

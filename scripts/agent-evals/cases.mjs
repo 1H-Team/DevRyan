@@ -120,9 +120,35 @@ const oracleDeepContract = `export const reviewContract = Object.freeze({
 });
 `;
 
+const contextAnalysisSource = [
+  'export const CONTEXT_SENTINEL = "bounded-context-control";',
+  ...Array.from({ length: 180 }, (_, index) => {
+    const domain = ['identity', 'session', 'billing'][index % 3];
+    const risk = index % 5 === 0 ? 'elevated' : 'standard';
+    return `export const route${String(index + 1).padStart(3, '0')} = Object.freeze({ domain: "${domain}", risk: "${risk}", ordinal: ${index + 1} });`;
+  }),
+].join('\n');
+
+const contextAnalysisTest = (sourceFilename) => `import assert from 'node:assert/strict';
+import test from 'node:test';
+${sourceModuleLoader(sourceFilename)}
+
+test('exposes the complete generated route inventory', () => {
+  const routes = Object.keys(sourceModule).filter((name) => name.startsWith('route'));
+  assert.equal(routes.length, 180);
+  assert.equal(sourceModule.CONTEXT_SENTINEL, 'bounded-context-control');
+});
+`;
+
 const ORACLE_REVIEW_CASE_IDS = new Set(['oracle-review-focused', 'oracle-review-deep']);
+const CONTEXT_ANALYSIS_CASE_IDS = new Set([
+  'context-large-analysis',
+  'context-explorer-analysis',
+  'context-bounded-lookup',
+]);
 
 const isOracleReviewCase = (caseId) => ORACLE_REVIEW_CASE_IDS.has(caseId);
+const isContextAnalysisCase = (caseId) => CONTEXT_ANALYSIS_CASE_IDS.has(caseId);
 
 export const buildCaseDefinition = (caseId, runFiles) => {
   if (caseId === 'inspect') {
@@ -132,6 +158,35 @@ export const buildCaseDefinition = (caseId, runFiles) => {
         'Inspect this fixture without changing any file.',
         'Use a file read tool, a repository search tool, and a shell tool to run node --test.',
         'Describe only concise findings after the tests finish. Do not write, edit, patch, stage, or create files.',
+      ].join(' '),
+    };
+  }
+  if (caseId === 'context-large-analysis') {
+    return {
+      caseId,
+      prompt: [
+        `Analyze the generated route inventory across ${runFiles.sourceRelativePath} and ${runFiles.testRelativePath} without changing either file.`,
+        'Derive exact counts grouped by domain and risk, identify the sentinel contract, and return a concise summary.',
+        'This is broad, multi-file derived analysis: use at least one applicable ctx_* tool. Do not delegate, write, edit, patch, or create files.',
+      ].join(' '),
+    };
+  }
+  if (caseId === 'context-explorer-analysis') {
+    return {
+      caseId,
+      prompt: [
+        `Use devryan_task to delegate a broad read-only inventory of ${runFiles.sourceRelativePath} and ${runFiles.testRelativePath} to Explorer.`,
+        'The Explorer child must use its safe Context Mode indexing/search tools, derive domain and risk coverage, and report the sentinel contract.',
+        'Wait for the managed result and disposition it with continue. Do not change any file.',
+      ].join(' '),
+    };
+  }
+  if (caseId === 'context-bounded-lookup') {
+    return {
+      caseId,
+      prompt: [
+        `Read only the exact CONTEXT_SENTINEL declaration in ${runFiles.sourceRelativePath} and return its string value.`,
+        'This is a bounded lookup: use a native read or search tool, not broad Context Mode indexing. Do not change any file.',
       ].join(' '),
     };
   }
@@ -153,6 +208,7 @@ export const buildCaseDefinition = (caseId, runFiles) => {
       prompt: [
         `Implement the owned stub in ${runFiles.sourceRelativePath} so ${runFiles.testRelativePath} passes.`,
         'Use devryan_task managed child work for discovery and implementation.',
+        'The writable specialist child must use an execution-capable Context Mode tool while deriving or validating the change.',
         'Start the managed work, wait for every result, and disposition each successful result with continue before resuming.',
         `Do not change ${runFiles.testRelativePath} or any other file. Run node --test ${runFiles.testRelativePath} after managed work settles.`,
       ].join(' '),
@@ -179,6 +235,13 @@ export const buildCaseDefinition = (caseId, runFiles) => {
 
 export const prepareCaseFixture = (caseId, runFiles) => {
   if (caseId === 'inspect') return { baselineSource: null, baselineTest: null };
+  if (isContextAnalysisCase(caseId)) {
+    const baselineSource = contextAnalysisSource;
+    const baselineTest = contextAnalysisTest(path.basename(runFiles.sourcePath));
+    writeRunOwnedFile(runFiles.sourcePath, baselineSource, runFiles);
+    writeRunOwnedFile(runFiles.testPath, baselineTest, runFiles);
+    return { baselineSource, baselineTest };
+  }
   if (isOracleReviewCase(caseId)) {
     const deep = caseId === 'oracle-review-deep';
     const baselineSource = deep ? oracleDeepSource : oracleFocusedSource;
@@ -305,7 +368,7 @@ export const executeEvaluationCase = async (options = {}) => {
   };
   try {
     prepared = prepareCaseFixture(caseId, runFiles);
-    if (caseId !== 'inspect' && !isOracleReviewCase(caseId)) {
+    if (caseId !== 'inspect' && !isContextAnalysisCase(caseId) && !isOracleReviewCase(caseId)) {
       baselineTest = await testRunner({
         fixtureRoot,
         testRelativePath: runFiles.testRelativePath,

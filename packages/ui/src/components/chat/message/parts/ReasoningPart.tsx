@@ -109,7 +109,7 @@ const ReasoningPart = React.memo(({
     const isStreaming = chatRenderMode === 'live' && isActive;
     const throttledText = useStreamingTextThrottle({
         text: textContent,
-        isStreaming,
+        phase: isStreaming ? 'streaming' : 'terminal',
         identityKey: `${messageId}:${part.id ?? 'reasoning'}`,
     });
 

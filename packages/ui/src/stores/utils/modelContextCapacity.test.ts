@@ -14,6 +14,18 @@ describe("resolveModelContextCapacity", () => {
     })
   })
 
+  test("can explicitly prefer the official context window over a lower internal input threshold", () => {
+    expect(resolveModelContextCapacity({
+      limit: { input: 276_000, context: 1_050_000, output: 128_000 },
+    }, undefined, { preferContext: true })).toEqual({
+      capacityLimit: 1_050_000,
+      capacityBasis: "context",
+      inputLimit: 276_000,
+      contextLimit: 1_050_000,
+      outputLimit: 128_000,
+    })
+  })
+
   test("falls back to context when no valid input limit is present", () => {
     expect(resolveModelContextCapacity({ limit: { context: 1_000_000 } })).toEqual({
       capacityLimit: 1_000_000,

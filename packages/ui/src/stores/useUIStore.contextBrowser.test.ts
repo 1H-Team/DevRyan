@@ -179,4 +179,28 @@ describe('useUIStore dedicated browser panel', () => {
     expect(migrated.contextPanelByDirectory[DIRECTORY]?.isOpen).toBe(true);
     expect(migrated.browserPanelByDirectory[DIRECTORY]?.isOpen).toBe(true);
   });
+
+  test('v18 migration fixes retired Chat preferences to their product defaults', () => {
+    const persistApi = (useUIStore as unknown as {
+      persist: {
+        getOptions: () => {
+          migrate?: (state: unknown, version: number) => unknown;
+          partialize?: (state: ReturnType<typeof useUIStore.getState>) => unknown;
+        };
+      };
+    }).persist;
+    const migrated = persistApi.getOptions().migrate?.({
+      chatRenderMode: 'sorted',
+      persistChatDraft: false,
+      inputSpellcheckEnabled: true,
+    }, 17) as Record<string, unknown>;
+    const persisted = persistApi.getOptions().partialize?.(useUIStore.getState()) as Record<string, unknown>;
+
+    expect(migrated.chatRenderMode).toBe('live');
+    expect(migrated.persistChatDraft).toBe(true);
+    expect(migrated.inputSpellcheckEnabled).toBe(false);
+    expect(persisted.chatRenderMode).toBe(undefined);
+    expect(persisted.persistChatDraft).toBe(undefined);
+    expect(persisted.inputSpellcheckEnabled).toBe(undefined);
+  });
 });

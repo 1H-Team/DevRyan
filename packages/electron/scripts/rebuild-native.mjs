@@ -3,10 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { rebuild } from '@electron/rebuild';
-import {
-  resolveCursorSdkSqliteDirectory,
-  resolveWorkspacePackageDirectory,
-} from './native-module-paths.mjs';
+import { resolveWorkspacePackageDirectory } from './native-module-paths.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,7 +15,6 @@ const require = createRequire(import.meta.url);
 const electronPkg = require('electron/package.json');
 const electronVersion = electronPkg.version;
 const betterSqliteDir = resolveWorkspacePackageDirectory(repoRoot, 'packages/web', 'better-sqlite3');
-const cursorSqliteDir = resolveCursorSdkSqliteDirectory(repoRoot);
 const arch = process.env.ELECTRON_BUILDER_ARCH || process.arch;
 
 console.log(`[electron] rebuilding native modules against Electron ${electronVersion}...`);
@@ -40,17 +36,6 @@ await rebuild({
   force: true,
   arch,
   onlyModules: ['better-sqlite3'],
-});
-
-// Bun stores transitive dependencies in its isolated .bun tree, outside the
-// root node_modules scan used by @electron/rebuild. Target Cursor SDK's
-// sqlite3 package directly so its native binding is always shipped.
-await rebuild({
-  buildPath: cursorSqliteDir,
-  electronVersion,
-  force: true,
-  arch,
-  onlyModules: ['sqlite3'],
 });
 
 console.log('[electron] native modules rebuilt successfully');

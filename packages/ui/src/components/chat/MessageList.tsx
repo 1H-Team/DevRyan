@@ -25,7 +25,7 @@ import type { StreamPhase } from './message/types';
 import { normalizeParts } from './message/partUtils';
 import { getToolActivityGroupInfo, normalizeToolName } from './message/parts/toolRenderUtils';
 import { normalizeToolStatus } from '@/lib/toolStatus';
-import { useDirectorySync, useEnsureSessionChildren } from '@/sync/sync-context';
+import { useEnsureSessionChildren, useSessionChildren } from '@/sync/sync-context';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { isPlanModeUserMessage } from '@/lib/messages/actionablePlan';
@@ -46,6 +46,12 @@ import {
     managedOrchestrationSelectors,
     useManagedOrchestrationStore,
 } from '@/stores/useManagedOrchestrationStore';
+import { resolveManagedTaskTurnProjection } from './managedTaskDispatch';
+import {
+    annotateGeneratedImageLinks,
+    extractGeneratedImageResults,
+    type GeneratedImageResult,
+} from './message/parts/generatedImageResults';
 
 // Sessions below the threshold render fully (zero behavior change for the
 // common case); above it, history virtualizes so DOM + observers + highlighted
@@ -55,6 +61,7 @@ import {
 // fully-mounted path.
 const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 80;
 const MESSAGE_LIST_OVERSCAN = 6;
+const EMPTY_GENERATED_IMAGES: GeneratedImageResult[] = [];
 
 const nowMs = (): number => {
     if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -634,6 +641,22 @@ const TurnBlock = React.memo(({
         return byMessageId;
     }, [visibleActivityParts]);
 
+    const managedTaskProjection = React.useMemo(() => resolveManagedTaskTurnProjection(
+        visibleAssistantMessages.map((message) => ({
+            messageId: message.info.id,
+            parts: message.parts,
+        })),
+    ), [visibleAssistantMessages]);
+
+    const generatedImages = React.useMemo(() => {
+        const results = extractGeneratedImageResults(visibleActivityParts);
+        if (results.length === 0) return EMPTY_GENERATED_IMAGES;
+        return annotateGeneratedImageLinks(
+            results,
+            visibleAssistantMessages.map((message) => ({ messageId: message.info.id, parts: message.parts })),
+        );
+    }, [visibleActivityParts, visibleAssistantMessages]);
+
     const recordedTurnPlanMode = useSessionUIStore(
         React.useCallback((state) => (
             state.isUserMessagePlanMode(turn.userMessageId)
@@ -684,6 +707,7 @@ const TurnBlock = React.memo(({
             summarySourcePartId: turn.summary.sourcePartId,
             activityParts: visibleActivityParts,
             activityGroupSegments: visibleActivitySegments,
+            generatedImages,
             headerMessageId: turn.headerMessageId,
             hasTools: turn.hasTools,
             hasReasoning: turn.hasReasoning,
@@ -693,7 +717,7 @@ const TurnBlock = React.memo(({
             isPlanModeSource: isPlanModeSourceTurn,
             lastTodoToolPartId,
         };
-    }, [isPlanModeSourceTurn, responseStyleLevel, turn.diffStats, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summary.sourceMessageId, turn.summary.sourcePartId, turn.summaryText, turn.turnId, turn.userMessage.info, visibleActivityParts, visibleActivitySegments]);
+    }, [generatedImages, isPlanModeSourceTurn, responseStyleLevel, turn.diffStats, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summary.sourceMessageId, turn.summary.sourcePartId, turn.summaryText, turn.turnId, turn.userMessage.info, visibleActivityParts, visibleActivitySegments]);
 
     const renderMessage = React.useCallback(
         (message: ChatMessageEntry) => {
@@ -744,7 +768,9 @@ const TurnBlock = React.memo(({
                     hasReasoning: turn.hasReasoning,
                     isPlanModeSource: turnGroupingContextBase.isPlanModeSource,
                     lastTodoToolPartId: turnGroupingContextBase.lastTodoToolPartId,
+                    generatedImages: turnGroupingContextBase.generatedImages,
                     activityParts: activityPartsByMessageId.get(message.info.id),
+                    managedTaskProjection,
                     ...(shouldAttachFullTurnContext ? {
                         summaryBody: turnGroupingContextBase.summaryBody,
                         summarySourceMessageId: turnGroupingContextBase.summarySourceMessageId,
@@ -800,6 +826,7 @@ const TurnBlock = React.memo(({
             streamingAssistantMessageId,
             activeStreamingPhase,
             activityPartsByMessageId,
+            managedTaskProjection,
             visibleAssistantMessages,
             visibleAssistantIds,
             activityOwnerMessageId,
@@ -1180,10 +1207,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             || chronologicalMessages.some((message) => isUserSubtaskMessage(message));
     }, [chronologicalMessages, taskInvocations.length]);
     const taskChildrenFetch = useEnsureSessionChildren(sessionKey, currentDirectory, shouldEnsureSessionChildren, taskInvocationSignature);
-    const directorySessions = useDirectorySync(React.useCallback((state) => state.session, []), currentDirectory);
-    const childSessions = React.useMemo(() => {
-        return directorySessions.filter((session) => session.parentID === sessionKey);
-    }, [directorySessions, sessionKey]);
+    const childSessions = useSessionChildren(sessionKey, currentDirectory);
     const taskSessionAssignments = React.useMemo(() => {
         return resolveTaskSessionAssignments({
             parentSessionId: sessionKey,

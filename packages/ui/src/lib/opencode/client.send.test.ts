@@ -35,6 +35,7 @@ describe("opencode client sends", () => {
     fetchCalls.length = 0
     waitForWorktreeBootstrapHandler = () => Promise.resolve()
     opencodeClient.setDirectory(undefined)
+    opencodeClient.setContextModeAvailable(false)
     ;(opencodeClient as unknown as { baseUrl: string }).baseUrl = "http://127.0.0.1:5180/api"
     globalThis.fetch = mock((url: string | URL | Request, init?: RequestInit) => {
       const request = typeof Request !== "undefined" && url instanceof Request ? url : undefined
@@ -313,6 +314,157 @@ describe("opencode client sends", () => {
     })
 
     expect(getPromptBody().tools).toBe(undefined)
+  })
+
+  test("adds writable Context Mode grants to primary prompt transport", async () => {
+    opencodeClient.setContextModeAvailable(true)
+
+    await opencodeClient.sendMessage({
+      id: "session-openai-context-mode",
+      providerID: "openai",
+      modelID: "gpt-5.5",
+      text: "analyze the repository",
+      directory: "/repo/openai",
+    })
+
+    expect(getPromptBody().tools).toEqual({
+      ctx_execute: true,
+      mcp__context_mode__ctx_execute: true,
+      ctx_execute_file: true,
+      mcp__context_mode__ctx_execute_file: true,
+      ctx_batch_execute: true,
+      mcp__context_mode__ctx_batch_execute: true,
+      ctx_index: true,
+      mcp__context_mode__ctx_index: true,
+      ctx_search: true,
+      mcp__context_mode__ctx_search: true,
+      ctx_stats: true,
+      mcp__context_mode__ctx_stats: true,
+      ctx_fetch_and_index: true,
+      mcp__context_mode__ctx_fetch_and_index: true,
+      ctx_purge: false,
+      mcp__context_mode__ctx_purge: false,
+      ctx_upgrade: false,
+      mcp__context_mode__ctx_upgrade: false,
+      ctx_insight: false,
+      mcp__context_mode__ctx_insight: false,
+    })
+  })
+
+  test("applies the safe Plan Mode Context policy and fails closed on workspace indexing", async () => {
+    await opencodeClient.sendMessage({
+      id: "session-plan-unverified",
+      providerID: "openai",
+      modelID: "gpt-5.5",
+      agent: "plan",
+      text: "analyze the repository",
+      planMode: true,
+      directory: "/repo/openai",
+    })
+
+    const tools = getPromptBody().tools
+    expect({
+      ctx_execute: tools.ctx_execute,
+      mcpExecute: tools.mcp__context_mode__ctx_execute,
+      ctx_batch_execute: tools.ctx_batch_execute,
+      mcpBatchExecute: tools.mcp__context_mode__ctx_batch_execute,
+      ctx_search: tools.ctx_search,
+      mcpSearch: tools.mcp__context_mode__ctx_search,
+      ctx_fetch_and_index: tools.ctx_fetch_and_index,
+      mcpFetchAndIndex: tools.mcp__context_mode__ctx_fetch_and_index,
+      ctx_index: tools.ctx_index,
+      mcpIndex: tools.mcp__context_mode__ctx_index,
+    }).toEqual({
+      ctx_execute: false,
+      mcpExecute: false,
+      ctx_batch_execute: false,
+      mcpBatchExecute: false,
+      ctx_search: false,
+      mcpSearch: false,
+      ctx_fetch_and_index: false,
+      mcpFetchAndIndex: false,
+      ctx_index: false,
+      mcpIndex: false,
+    })
+  })
+
+  test("allows Plan Mode workspace indexing after managed-runtime verification", async () => {
+    opencodeClient.setContextModeAvailable(true)
+
+    await opencodeClient.sendMessage({
+      id: "session-plan-verified",
+      providerID: "openai",
+      modelID: "gpt-5.5",
+      agent: "plan",
+      text: "analyze the repository",
+      planMode: true,
+      directory: "/repo/openai",
+    })
+
+    const tools = getPromptBody().tools
+    expect({
+      ctx_index: tools.ctx_index,
+      mcpIndex: tools.mcp__context_mode__ctx_index,
+    }).toEqual({
+      ctx_index: true,
+      mcpIndex: true,
+    })
+  })
+
+  test("updates the Context Mode capability from health and accepts the compatibility alias", async () => {
+    globalThis.fetch = mock(() => Promise.resolve(new Response(JSON.stringify({
+      isOpenCodeReady: true,
+      contextModeReadOnlyIndexing: true,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }))) as typeof fetch
+
+    expect(await opencodeClient.checkHealth()).toBe(true)
+    expect(opencodeClient.getContextModeAvailable()).toBe(true)
+
+    globalThis.fetch = mock(() => Promise.resolve(new Response(JSON.stringify({
+      isOpenCodeReady: true,
+      contextModeAvailable: false,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }))) as typeof fetch
+
+    expect(await opencodeClient.checkHealth()).toBe(true)
+    expect(opencodeClient.getContextModeAvailable()).toBe(false)
+  })
+
+  test("re-resolves Plan Mode indexing permission for transport retries", async () => {
+    opencodeClient.setContextModeAvailable(true)
+    let attempt = 0
+    globalThis.fetch = mock((url: string | URL | Request, init?: RequestInit) => {
+      const request = typeof Request !== "undefined" && url instanceof Request ? url : undefined
+      fetchCalls.push({ url: request?.url ?? String(url), init, request })
+      attempt += 1
+      if (attempt === 1) {
+        opencodeClient.setContextModeAvailable(false)
+        return Promise.reject(new TypeError("temporary connection failure"))
+      }
+      return Promise.resolve(new Response(null, { status: 204 }))
+    }) as typeof fetch
+
+    await opencodeClient.sendMessage({
+      id: "session-plan-retry",
+      providerID: "openai",
+      modelID: "gpt-5.5",
+      agent: "plan",
+      text: "analyze the repository",
+      planMode: true,
+      directory: "/repo/openai",
+    })
+
+    const promptBodies = fetchCalls
+      .filter((call) => call.url.includes("/prompt_async"))
+      .map((call) => JSON.parse(String(call.init?.body ?? "{}")))
+    expect(promptBodies).toHaveLength(2)
+    expect(promptBodies[0]?.tools?.ctx_index).toBe(true)
+    expect(promptBodies[1]?.tools?.ctx_index).toBe(false)
   })
 
   test("sends active subtask follow-ups through the v2 immediate prompt endpoint", async () => {

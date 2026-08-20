@@ -12,6 +12,8 @@ import {
 } from '@/stores/useManagedOrchestrationStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { ManagedTaskRow } from './ManagedTaskRow';
+import { CursorNativeTaskRows } from './CursorNativeTaskRows';
+import type { CursorNativeTaskDispatch } from './cursorNativeTaskDispatch';
 import type {
   ManagedTaskDispatchFallback,
   PendingManagedTaskDispatch,
@@ -26,6 +28,7 @@ import {
 
 const EMPTY_PENDING_DISPATCHES: readonly PendingManagedTaskDispatch[] = [];
 const EMPTY_FALLBACK_TASKS: readonly ManagedTaskDispatchFallback[] = [];
+const EMPTY_CURSOR_NATIVE_TASKS: readonly CursorNativeTaskDispatch[] = [];
 const MISSING_DISPATCH_RECOVERY_DELAY_MS = 500;
 
 export const ManagedTaskPreparingRow = React.memo(({
@@ -214,6 +217,7 @@ export const ManagedTaskList = React.memo(({
   pendingDispatches = EMPTY_PENDING_DISPATCHES,
   fallbackTasks = EMPTY_FALLBACK_TASKS,
   recoverMissingDispatches = false,
+  cursorNativeTasks = EMPTY_CURSOR_NATIVE_TASKS,
   onContentChange,
   isMobile = false,
 }: {
@@ -222,6 +226,7 @@ export const ManagedTaskList = React.memo(({
   pendingDispatches?: readonly PendingManagedTaskDispatch[];
   fallbackTasks?: readonly ManagedTaskDispatchFallback[];
   recoverMissingDispatches?: boolean;
+  cursorNativeTasks?: readonly CursorNativeTaskDispatch[];
   onContentChange?: () => void;
   isMobile?: boolean;
 }) => {
@@ -323,22 +328,23 @@ export const ManagedTaskList = React.memo(({
   const showRuntimeWarnings = rootSessionId !== undefined && explicitTaskIds === undefined;
 
   React.useLayoutEffect(() => {
-    if (visibleTaskIds.length > 0 || pendingDispatches.length > 0 || recoveryWarning || snapshotError) {
+    if (visibleTaskIds.length > 0 || pendingDispatches.length > 0 || cursorNativeTasks.length > 0 || recoveryWarning || snapshotError) {
       onContentChange?.();
     }
-  }, [onContentChange, pendingDispatches, recoveryWarning, snapshotError, visibleTaskIds, visibleLimit]);
+  }, [cursorNativeTasks, onContentChange, pendingDispatches, recoveryWarning, snapshotError, visibleTaskIds, visibleLimit]);
 
-  if (!shouldRenderManagedTaskList({
+  const shouldRenderManagedTasks = shouldRenderManagedTaskList({
     available,
     taskCount: visibleTaskIds.length + pendingDispatches.length,
     recoveryWarning: showRuntimeWarnings ? recoveryWarning : null,
     snapshotError: showRuntimeWarnings ? snapshotError : null,
-  })) return null;
+  });
+  if (!shouldRenderManagedTasks && cursorNativeTasks.length === 0) return null;
   return (
     <section
       aria-label={t('chat.managedTasks.title')}
       className={cn(
-        isMobile ? 'w-full px-0 pb-1 pt-1' : 'chat-message-column px-4 pb-2 pt-3',
+        isMobile ? 'w-full px-0' : 'chat-message-column px-4',
       )}
     >
       <div data-managed-task-card="true" className="overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--primary-base)_16%,var(--border))] bg-[color-mix(in_srgb,var(--primary-base)_3%,var(--surface-background))]">
@@ -427,6 +433,18 @@ export const ManagedTaskList = React.memo(({
               </section>
             );
           })}
+          {cursorNativeTasks.length > 0 ? (
+            <section aria-label={t('chat.managedTasks.cursorNative.source')} data-task-source="cursor-native">
+              <div className="flex h-7 items-center gap-1.5 bg-muted/25 px-3 typography-meta text-muted-foreground">
+                <RiAiAgentLine className="size-3.5 shrink-0 text-[var(--primary-base)]" aria-hidden="true" />
+                <span className="truncate">{t('chat.managedTasks.cursorNative.source')}</span>
+                <span className="ml-auto shrink-0 typography-micro text-muted-foreground/70">
+                  {t('chat.managedTasks.cursorNative.observed')}
+                </span>
+              </div>
+              <CursorNativeTaskRows tasks={cursorNativeTasks} isMobile={isMobile} />
+            </section>
+          ) : null}
         </div>
       </div>
     </section>

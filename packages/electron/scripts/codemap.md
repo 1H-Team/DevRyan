@@ -6,7 +6,7 @@ Holds Electron-specific build/packaging helper scripts used by npm/bun tasks.
 ## Design
 Script-first utilities (small Node/shell entrypoints) that run outside runtime code. They orchestrate packaging steps and release metadata, not app behavior.
 
-Native packaging is explicit and fail-closed: `rebuild-native.mjs` resolves each ABI-sensitive dependency from its declaring workspace, and the `afterPack` hook verifies the required bindings and Cursor executable before signing.
+Native packaging is explicit and fail-closed: `rebuild-native.mjs` resolves each declared ABI-sensitive dependency from its declaring workspace, and the `afterPack` hook verifies the app bindings plus Cursor SDK `rg`, `cursorsandbox`, and both tree-sitter bindings before signing. Cursor SDK 1.0.28 relies on built-in `node:sqlite`, so Cursor's old transitive `sqlite3` rebuild path is intentionally absent.
 
 ## Flow
 1. Workspace script invokes a helper in this folder.

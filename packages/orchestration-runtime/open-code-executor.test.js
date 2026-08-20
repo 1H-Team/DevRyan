@@ -4,6 +4,8 @@ import {
   createManagedOpenCodeExecutor,
   isManagedResumeContinuationPrompt,
   isManagedTransientTransportContinuationPrompt,
+  MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT,
+  MANAGED_CONTEXT_MODE_WRITABLE_PROMPT,
   MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT,
   MANAGED_READ_ONLY_PROMPT,
   MANAGED_RESUME_CONTINUATION_PROMPT,
@@ -11,6 +13,29 @@ import {
   MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT,
   MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
 } from './open-code-executor.js';
+
+const WRITABLE_CONTEXT_MODE_TOOLS = Object.freeze({
+  ctx_execute: true,
+  mcp__context_mode__ctx_execute: true,
+  ctx_execute_file: true,
+  mcp__context_mode__ctx_execute_file: true,
+  ctx_batch_execute: true,
+  mcp__context_mode__ctx_batch_execute: true,
+  ctx_index: true,
+  mcp__context_mode__ctx_index: true,
+  ctx_search: true,
+  mcp__context_mode__ctx_search: true,
+  ctx_stats: true,
+  mcp__context_mode__ctx_stats: true,
+  ctx_fetch_and_index: true,
+  mcp__context_mode__ctx_fetch_and_index: true,
+  ctx_purge: false,
+  mcp__context_mode__ctx_purge: false,
+  ctx_upgrade: false,
+  mcp__context_mode__ctx_upgrade: false,
+  ctx_insight: false,
+  mcp__context_mode__ctx_insight: false,
+});
 
 describe('managed continuation prompt recognition', () => {
   test('recognizes writable and read-only timeout/connection continuations exactly', () => {
@@ -120,7 +145,13 @@ describe('managed OpenCode executor', () => {
 
     expect(result.status).toBe('completed');
     expect(prompts).toHaveLength(1);
-    expect(prompts[0].tools).toEqual({ task: false });
+    expect(prompts[0].prompt).toBe(
+      `${MANAGED_CONTEXT_MODE_WRITABLE_PROMPT}\n\nInspect the authentication flow.`,
+    );
+    expect(prompts[0].tools).toEqual({
+      ...WRITABLE_CONTEXT_MODE_TOOLS,
+      task: false,
+    });
   });
 
   test('enforces read-only plan policy in the child prompt and tool surface', async () => {
@@ -147,7 +178,11 @@ describe('managed OpenCode executor', () => {
 
     expect(result.status).toBe('completed');
     expect(prompts).toHaveLength(1);
-    expect(prompts[0].prompt).toBe(`${MANAGED_READ_ONLY_PROMPT}\n\nInspect the authentication flow.`);
+    expect(prompts[0].prompt).toBe([
+      MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT,
+      MANAGED_READ_ONLY_PROMPT,
+      'Inspect the authentication flow.',
+    ].join('\n\n'));
     expect(prompts[0].tools).toMatchObject({
       '*': false,
       task: false,
@@ -155,6 +190,12 @@ describe('managed OpenCode executor', () => {
       glob: true,
       grep: true,
       ast_grep_search: true,
+      ctx_index: true,
+      mcp__context_mode__ctx_index: true,
+      ctx_search: true,
+      mcp__context_mode__ctx_search: true,
+      ctx_fetch_and_index: true,
+      mcp__context_mode__ctx_fetch_and_index: true,
       webfetch: true,
     });
   });
@@ -254,6 +295,88 @@ describe('managed OpenCode executor', () => {
     });
     expect(reads).toBe(1);
     expect(calls.filter(([name]) => name === 'abort')).toHaveLength(1);
+  });
+
+  test('settles the exact Zen free-tier retry without waiting for its multi-hour next attempt', async () => {
+    const calls = [];
+    const statuses = [
+      {
+        type: 'retry',
+        message: 'Free usage exceeded, subscribe to Go',
+        attempt: 1,
+        next: Date.now() + (4 * 60 * 60 * 1_000),
+        action: { reason: 'free_tier_limit' },
+      },
+      { type: 'idle' },
+    ];
+    let reads = 0;
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      async readMessages() {
+        reads += 1;
+        return [assistant({
+          info: { finish: 'tool-calls' },
+          parts: [{ type: 'text', text: 'Partial Zen analysis' }],
+        })];
+      },
+      async abortSession(input) { calls.push(['abort', input]); return true; },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      sleep: async () => undefined,
+      retryStopPollLimit: 4,
+    });
+
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(result).toEqual({
+      status: 'failed',
+      failureReason: 'Free usage exceeded, subscribe to Go',
+      partial: true,
+      recoverablePreview: 'Partial Zen analysis',
+      canonicalRefs: [{ type: 'message', id: 'msg_assistant' }],
+      resumable: true,
+    });
+    expect(reads).toBe(1);
+    expect(calls.filter(([name]) => name === 'abort')).toHaveLength(1);
+  });
+
+  test('canonicalizes a structured free-tier failure when its message is unfamiliar', async () => {
+    const statuses = [
+      {
+        type: 'retry',
+        message: 'Subscribe to continue',
+        action: { reason: 'free_tier_limit' },
+      },
+      { type: 'idle' },
+    ];
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      async readMessages() { return [assistant()]; },
+      async abortSession() { return true; },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      sleep: async () => undefined,
+      retryStopPollLimit: 4,
+    });
+
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      failureReason: 'Provider usage limit reached: Subscribe to continue',
+      resumable: true,
+    });
   });
 
   test('keeps the same child live through a transient provider retry and busy before completing', async () => {
@@ -571,6 +694,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
+        ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
     }]);
@@ -636,9 +760,56 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
+        ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
     }]);
+  });
+
+  test('settles a resumed child immediately when Zen reports structured free-tier exhaustion', async () => {
+    const prompts = [];
+    let accepted = 0;
+    const statuses = [
+      {
+        type: 'retry',
+        message: 'Free usage exceeded, subscribe to Go',
+        action: { reason: 'free_tier_limit' },
+        next: Date.now() + (4 * 60 * 60 * 1_000),
+      },
+      { type: 'idle' },
+    ];
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession(input) { prompts.push(input); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      async readMessages() {
+        return [assistant({
+          info: { finish: 'tool-calls' },
+          parts: [{ type: 'text', text: 'Retained work' }],
+        })];
+      },
+      async abortSession() { return true; },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
+
+    const result = await executor.resume(task({
+      childSessionId: 'ses_child',
+      executionKind: 'resume',
+      status: 'running',
+    }), {
+      async markAccepted() { accepted += 1; return true; },
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      failureReason: 'Free usage exceeded, subscribe to Go',
+      recoverablePreview: 'Retained work',
+      resumable: true,
+    });
+    expect(accepted).toBe(1);
+    expect(prompts).toHaveLength(0);
   });
 
   test('actively continues an idle aborted child exactly once when resume is selected', async () => {
@@ -704,6 +875,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
+        ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
     }]);
@@ -1089,7 +1261,7 @@ describe('managed OpenCode executor', () => {
     expect(prompts[0]).toMatchObject({
       sessionId: 'ses_child',
       prompt: MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
-      tools: { task: false },
+      tools: { ...WRITABLE_CONTEXT_MODE_TOOLS, task: false },
     });
   });
 
@@ -1498,6 +1670,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
+        ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
     }]);
@@ -1813,10 +1986,11 @@ describe('managed OpenCode executor', () => {
       modelId: 'gpt-4.1',
       agent: 'explorer',
       variant: 'fast',
-      prompt: 'Inspect the authentication flow.',
+      prompt: `${MANAGED_CONTEXT_MODE_WRITABLE_PROMPT}\n\nInspect the authentication flow.`,
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
+        ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
     });
@@ -2078,6 +2252,42 @@ describe('managed OpenCode executor', () => {
       state: 'unavailable',
       failureReason: 'Managed child session ses_child is unavailable',
     });
+  });
+
+  test('reconciles a persisted Zen free-tier retry as terminal recovery work', async () => {
+    let aborts = 0;
+    const statuses = [
+      {
+        type: 'retry',
+        message: 'Free usage exceeded, subscribe to Go',
+        action: { reason: 'free_tier_limit' },
+      },
+      { type: 'idle' },
+    ];
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      async readMessages() { return [assistant()]; },
+      async abortSession() { aborts += 1; return true; },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
+
+    await expect(executor.reconcile(task({
+      childSessionId: 'ses_child',
+      status: 'running',
+    }))).resolves.toMatchObject({
+      state: 'terminal',
+      result: {
+        status: 'failed',
+        failureReason: 'Free usage exceeded, subscribe to Go',
+        resumable: true,
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(aborts).toBe(1);
   });
 
   test('defers reconciliation when the child runtime is temporarily unavailable', async () => {

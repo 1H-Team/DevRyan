@@ -6,6 +6,7 @@ const ACTIONS = [
   'start',
   'status',
   'wait',
+  'read_result',
   'cancel',
   'continue',
   'retry',
@@ -23,6 +24,7 @@ const FIXER_MIN_TIMEOUT_SECONDS = 60 * 60;
 const ORACLE_MIN_TIMEOUT_SECONDS = 60 * 60;
 const MAX_TIMEOUT_SECONDS = 24 * 60 * 60;
 const WAIT_TIMEOUT_MS = 25_000;
+const RESULT_PAGE_MAX_BYTES = 8 * 1024;
 const LIVE_TASK_STATUSES = new Set(['queued', 'starting', 'running']);
 const TERMINAL_TASK_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
 const PROVIDER_RECOVERY_SCAN_DELAY_MS = 500;
@@ -68,6 +70,14 @@ const createToolInputInvalidError = (message, details) => {
   error.details = details;
   return error;
 };
+
+const resolveModelResultMode = () => (
+  process.env.DEVRYAN_MANAGED_RESULT_MODE === 'eager' ? 'eager' : 'reference'
+);
+
+const withModelResultMode = (params, resultMode) => (
+  resultMode === 'reference' ? { ...params, resultMode: 'reference' } : params
+);
 
 const getBridge = () => {
   const rawUrl = process.env.DEVRYAN_ORCHESTRATION_URL;
@@ -133,6 +143,44 @@ const isRecord = (value) => (
 );
 
 const isTaskNotFoundError = (error) => error?.code === TASK_NOT_FOUND;
+
+const resultReferenceTextEncoder = new TextEncoder();
+const resultReferenceByteLength = (value) => resultReferenceTextEncoder.encode(value).byteLength;
+
+const validateResultReference = (value, {
+  taskId,
+  envelopeId = null,
+  totalBytes = null,
+  previouslyReturnedBytes = 0,
+} = {}) => {
+  if (
+    !isRecord(value)
+    || value.taskId !== taskId
+    || typeof value.envelopeId !== 'string'
+    || !value.envelopeId.trim()
+    || (envelopeId && value.envelopeId !== envelopeId)
+    || !Number.isSafeInteger(value.totalBytes)
+    || value.totalBytes <= RESULT_PAGE_MAX_BYTES
+    || (totalBytes !== null && value.totalBytes !== totalBytes)
+    || typeof value.text !== 'string'
+    || resultReferenceByteLength(value.text) > RESULT_PAGE_MAX_BYTES
+    || !Number.isSafeInteger(value.returnedBytes)
+    || value.returnedBytes <= previouslyReturnedBytes
+    || value.returnedBytes > value.totalBytes
+    || value.returnedBytes !== previouslyReturnedBytes + resultReferenceByteLength(value.text)
+    || typeof value.complete !== 'boolean'
+    || (value.complete && value.returnedBytes !== value.totalBytes)
+    || (!value.complete && value.returnedBytes >= value.totalBytes)
+    || (value.nextCursor !== null && (typeof value.nextCursor !== 'string' || !value.nextCursor))
+    || value.complete !== (value.nextCursor === null)
+  ) {
+    throw createToolInputInvalidError(
+      `Managed result page for ${taskId} is malformed`,
+      { taskId, state: 'invalid_result_page' },
+    );
+  }
+  return value;
+};
 
 const createStaleTaskReferenceResult = (taskId) => ({
   state: 'stale_task_reference',
@@ -450,7 +498,10 @@ const readAgentCatalog = async (context, client) => {
 };
 
 const resolveAgentExecution = (agents, agentName) => {
-  const agent = agents.find((entry) => entry?.name === agentName);
+  const normalizedAgentName = typeof agentName === 'string' ? agentName.trim().toLowerCase() : '';
+  const agent = agents.find((entry) => (
+    typeof entry?.name === 'string' && entry.name.trim().toLowerCase() === normalizedAgentName
+  ));
   const providerId = typeof agent?.model?.providerID === 'string'
     ? agent.model.providerID.trim()
     : '';
@@ -465,12 +516,41 @@ const resolveAgentExecution = (agents, agentName) => {
   };
 };
 
+const resolveOwnedAgentExecution = async (context, agent, fallbackExecution) => {
+  // Older DevRyan bridges do not expose owner-aware defaults. Admission still
+  // validates the submitted execution, while current bridges advertise this
+  // capability so plan-safe checks can use the account overlay up front.
+  if (process.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS !== '1') return fallbackExecution;
+  const resolved = await callRpc('resolve_agent_execution', {
+    rootSessionId: requireText(context.sessionID, 'context.sessionID'),
+    directory: requireText(context.directory, 'context.directory'),
+    agent: requireText(agent, 'agent'),
+    fallbackExecution,
+  }, { signal: context.abort });
+  const providerId = typeof resolved?.providerId === 'string' ? resolved.providerId.trim() : '';
+  const modelId = typeof resolved?.modelId === 'string' ? resolved.modelId.trim() : '';
+  if (!providerId || !modelId) {
+    throw new Error(`Managed agent ${agent} has no owner-resolved model`);
+  }
+  return {
+    providerId,
+    modelId,
+    variant: typeof resolved.variant === 'string' && resolved.variant.trim()
+      ? resolved.variant.trim()
+      : null,
+  };
+};
+
 const resolveConfiguredAgentExecution = async (args, context, client) => {
   const catalog = await readAgentCatalog(context, client);
+  const agent = requireText(args.agent, 'agent');
+  const configured = catalog.catalogAvailable
+    ? resolveAgentExecution(catalog.agents, agent)
+    : null;
   return {
     catalogAvailable: catalog.catalogAvailable,
-    execution: catalog.catalogAvailable
-      ? resolveAgentExecution(catalog.agents, requireText(args.agent, 'agent'))
+    execution: configured
+      ? await resolveOwnedAgentExecution(context, agent, configured)
       : null,
   };
 };
@@ -529,6 +609,8 @@ const resolveStartExecution = async (args, context, client, invocationPolicy) =>
     };
   }
 
+  execution = await resolveOwnedAgentExecution(context, agentName, execution);
+
   if (!invocationPolicy.readOnly || supportsManagedReadOnlyProvider(execution.providerId)) {
     return { execution, executionNotice: null };
   }
@@ -548,8 +630,11 @@ const resolveStartExecution = async (args, context, client, invocationPolicy) =>
     const planExecution = planAgent
       ? resolveAgentExecution([planAgent], planAgent.name)
       : null;
-    if (planExecution && supportsManagedReadOnlyProvider(planExecution.providerId)) {
-      fallback = planExecution;
+    const ownedPlanExecution = planExecution
+      ? await resolveOwnedAgentExecution(context, planAgent.name, planExecution)
+      : null;
+    if (ownedPlanExecution && supportsManagedReadOnlyProvider(ownedPlanExecution.providerId)) {
+      fallback = ownedPlanExecution;
       fallbackSource = 'the configured Plan agent';
     }
   }
@@ -587,7 +672,7 @@ const requiresManualModelRecovery = (result) => {
   );
 };
 
-const waitForTerminalTask = async (taskId, scoped, signal, initialResult) => {
+const waitForTerminalTask = async (taskId, scoped, signal, initialResult, resultMode) => {
   const expectedTaskId = requireText(taskId, 'wait task_id');
   let result = initialResult;
   while (true) {
@@ -611,11 +696,11 @@ const waitForTerminalTask = async (taskId, scoped, signal, initialResult) => {
     }
 
     if (signal?.aborted) throw signal.reason ?? new Error('Managed task wait aborted');
-    result = await callRpc('wait', {
+    result = await callRpc('wait', withModelResultMode({
       ...scoped,
       taskId: expectedTaskId,
       waitTimeoutMs: WAIT_TIMEOUT_MS,
-    }, { signal });
+    }, resultMode), { signal });
   }
 };
 
@@ -629,7 +714,7 @@ const exposeManualModelRecovery = (result) => (
     : result
 );
 
-const executeAction = async (args, context, client, dispatchCallId = null) => {
+const executeAction = async (args, context, client, dispatchCallId = null, resultMode = 'reference') => {
   const action = requireText(args.action, 'action');
   if (!ACTIONS.includes(action)) throw new Error(`Unsupported managed task action: ${action}`);
 
@@ -660,7 +745,7 @@ const executeAction = async (args, context, client, dispatchCallId = null) => {
       variant: execution.variant,
       timeoutSeconds,
     };
-    const result = await callRpc('submit', {
+    const result = await callRpc('submit', withModelResultMode({
       idempotencyKey: buildIdempotencyKey(context, action, normalizedArgs, dispatchCallId),
       rootSessionId: requireText(context.sessionID, 'context.sessionID'),
       dispatchGroupId: context.agent === 'builder'
@@ -678,7 +763,7 @@ const executeAction = async (args, context, client, dispatchCallId = null) => {
       label: normalizedArgs.label || `Managed ${agent} task`,
       prompt: normalizedArgs.prompt,
       timeoutAt: Date.now() + timeoutSeconds * 1_000,
-    }, { signal: context.abort });
+    }, resultMode), { signal: context.abort });
     return executionNotice && isRecord(result)
       ? { ...result, executionNotice }
       : result;
@@ -686,20 +771,26 @@ const executeAction = async (args, context, client, dispatchCallId = null) => {
 
   const scoped = buildScopedParams(args, context);
   if (action === 'status') {
-    return await callRpc(action, scoped, { signal: context.abort });
+    return await callRpc(action, withModelResultMode(scoped, resultMode), { signal: context.abort });
   }
   if (action === 'wait') {
-    const result = await waitForTerminalTask(scoped.taskId, scoped, context.abort);
+    const result = await waitForTerminalTask(
+      scoped.taskId,
+      scoped,
+      context.abort,
+      undefined,
+      resultMode,
+    );
     return exposeManualModelRecovery(result);
   }
   if (action === 'cancel') {
-    return await callRpc('cancel', {
+    return await callRpc('cancel', withModelResultMode({
       ...scoped,
       cascade: args.cascade === true,
       ...(typeof args.reason === 'string' && args.reason.trim()
         ? { reason: args.reason.trim() }
         : {}),
-    }, { signal: context.abort });
+    }, resultMode), { signal: context.abort });
   }
   if (RESULT_ACTIONS.has(action)) {
     const normalizedOverrides = {
@@ -726,7 +817,7 @@ const executeAction = async (args, context, client, dispatchCallId = null) => {
     ) {
       throw new Error('provider_id and model_id must be supplied together');
     }
-    return await callRpc('acknowledge', {
+    return await callRpc('acknowledge', withModelResultMode({
       ...scoped,
       action,
       idempotencyKey: buildIdempotencyKey(context, action, {
@@ -750,7 +841,7 @@ const executeAction = async (args, context, client, dispatchCallId = null) => {
             ),
           }
         : {}),
-    }, { signal: context.abort });
+    }, resultMode), { signal: context.abort });
   }
 
   throw new Error(`Unsupported managed task action: ${action}`);
@@ -761,6 +852,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
   scheduleTimeout = globalThis.setTimeout,
 } = {}) => {
   const sessionStates = new Map();
+  const modelResultMode = resolveModelResultMode();
   const pendingStartsByArgs = new WeakMap();
   const agentOwnershipCache = new Map();
   const recoveryContinuationsInFlight = new Set();
@@ -1424,10 +1516,11 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     'tool.execute.before': beforeToolExecute,
     tool: {
       devryan_task: tool({
-      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. A completed result accepts only continue. Retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns immediately with manualRecoveryRequired while its durable result stays pending for the user-facing Model Recovery controls, except provider prompt rejection, which requires the one agent recovery to use a reframed prompt in a fresh child. A stale_task_reference or already_dispositioned result requires no repeated wait, disposition, or replacement child; follow its authoritative barrier instruction and continue from the last confirmed parent state when clear. This is distinct from provider-native task orchestration.',
+      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. Large terminal previews return an initial resultReference page; call read_result with each exact nextCursor until complete before dispositioning the result. A completed result accepts only continue. Retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns immediately with manualRecoveryRequired while its durable result stays pending for the user-facing Model Recovery controls, except provider prompt rejection, which requires the one agent recovery to use a reframed prompt in a fresh child. A stale_task_reference or already_dispositioned result requires no repeated wait, disposition, or replacement child; follow its authoritative barrier instruction and continue from the last confirmed parent state when clear. This is distinct from provider-native task orchestration.',
       args: {
-        action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, cancel, continue, retry, resume, or abandon. A completed result accepts only continue; retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns manualRecoveryRequired and remains pending for the user-facing Model Recovery controls. After the user retries, an idle-parent continuation collects the recovered result. Wait stays attached only until the requested task is terminal while DevRyan polls internally; use status for a non-blocking live snapshot. stale_task_reference and already_dispositioned are no-op recovery states and must not trigger a replacement task or repeated acknowledgement.'),
+        action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, read_result, cancel, continue, retry, resume, or abandon. Use read_result only after a terminal wait returns resultReference.nextCursor, and pass each cursor exactly once in order until complete. A completed result accepts only continue; retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns manualRecoveryRequired and remains pending for the user-facing Model Recovery controls. After the user retries, an idle-parent continuation collects the recovered result. Wait stays attached only until the requested task is terminal while DevRyan polls internally; use status for a non-blocking live snapshot. stale_task_reference and already_dispositioned are no-op recovery states and must not trigger a replacement task or repeated acknowledgement.'),
         task_id: tool.schema.string().optional().describe('Managed dvr_task_ ID. Required for every action except start.'),
+        result_cursor: tool.schema.string().optional().describe('Exact resultReference.nextCursor from the preceding wait or read_result page. Required only for read_result.'),
         label: tool.schema.string().optional().describe('Short task label for start or retry.'),
         prompt: tool.schema.string().optional().describe('Full delegated prompt for start, or a retry override. A provider_prompt_rejected retry requires a compact, semantically complete prompt that differs from the rejected prompt.'),
         provider_id: tool.schema.string().optional().describe('Compatibility fallback provider ID when no runtime agent catalog is available. Supply together with model_id; configured agent settings are authoritative.'),
@@ -1447,13 +1540,66 @@ export const DevRyanManagedOrchestrationPlugin = async ({
           ? contextCallID || pendingStart?.callID || null
           : null;
         try {
+          if (action === 'read_result') {
+            const taskId = requireText(args.task_id, 'task_id');
+            const collected = state.collectedResults.get(taskId);
+            if (!collected) {
+              throw createToolInputInvalidError(
+                `Call wait for managed task ${taskId} before read_result`,
+                { taskId, state: 'wait_required' },
+              );
+            }
+            if (typeof args.result_cursor !== 'string' || !args.result_cursor) {
+              throw createToolInputInvalidError(
+                `result_cursor is required for managed task ${taskId}`,
+                { taskId, state: 'result_cursor_required' },
+              );
+            }
+            const resultCursor = args.result_cursor;
+            const paging = collected.resultPaging;
+            if (!paging || paging.complete || !paging.expectedNextCursor) {
+              throw createToolInputInvalidError(
+                `Managed result ${taskId} has no unread pages`,
+                { taskId, state: 'result_complete' },
+              );
+            }
+            if (resultCursor !== paging.expectedNextCursor) {
+              throw createToolInputInvalidError(
+                `result_cursor is stale or out of order for managed task ${taskId}`,
+                { taskId, state: 'result_cursor_mismatch' },
+              );
+            }
+            const result = await callRpc('read_result', {
+              taskId,
+              rootSessionId: requireText(context.sessionID, 'context.sessionID'),
+              directory: requireText(context.directory, 'context.directory'),
+              resultCursor,
+            }, { signal: context.abort });
+            const reference = validateResultReference(result?.resultReference, {
+              taskId,
+              envelopeId: paging.envelopeId,
+              totalBytes: paging.totalBytes,
+              previouslyReturnedBytes: paging.returnedBytes,
+            });
+            collected.resultPaging = {
+              envelopeId: reference.envelopeId,
+              totalBytes: reference.totalBytes,
+              returnedBytes: reference.returnedBytes,
+              expectedNextCursor: reference.nextCursor,
+              complete: reference.complete,
+            };
+            return JSON.stringify(compactManagedTaskToolResult(result), null, 2);
+          }
           if (RESULT_ACTIONS.has(action)) {
             const taskId = requireText(args.task_id, 'task_id');
             const collected = state.collectedResults.get(taskId);
             if (!collected) {
               let current;
               try {
-                current = await callRpc('status', buildScopedParams(args, context), {
+                current = await callRpc('status', withModelResultMode(
+                  buildScopedParams(args, context),
+                  modelResultMode,
+                ), {
                   signal: context.abort,
                 });
               } catch (error) {
@@ -1501,6 +1647,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
               context,
               client,
               dispatchCallId,
+              modelResultMode,
             );
           } catch (error) {
             if (
@@ -1543,10 +1690,41 @@ export const DevRyanManagedOrchestrationPlugin = async ({
             state.collectedResults.delete(requestedTaskId);
             if (TERMINAL_TASK_STATUSES.has(status)) {
               if (!resultTaskId) throw new Error('Managed task wait returned a terminal result without a task ID');
+              const resultEnvelopeId = typeof result?.resultEnvelope?.envelopeId === 'string'
+                ? result.resultEnvelope.envelopeId.trim()
+                : '';
+              let resultReference = null;
+              if (result?.resultReference !== undefined) {
+                if (!resultEnvelopeId) {
+                  throw createToolInputInvalidError(
+                    `Managed result page for ${resultTaskId} has no matching result envelope`,
+                    { taskId: resultTaskId, state: 'invalid_result_page' },
+                  );
+                }
+                resultReference = validateResultReference(result.resultReference, {
+                  taskId: resultTaskId,
+                  envelopeId: resultEnvelopeId,
+                });
+              }
               state.collectedResults.set(resultTaskId, {
                 status,
                 task: result.task,
                 resultEnvelope: result.resultEnvelope,
+                resultPaging: resultReference
+                  ? {
+                      envelopeId: resultReference.envelopeId,
+                      totalBytes: resultReference.totalBytes,
+                      returnedBytes: resultReference.returnedBytes,
+                      expectedNextCursor: resultReference.nextCursor,
+                      complete: resultReference.complete,
+                    }
+                  : {
+                      envelopeId: null,
+                      totalBytes: null,
+                      returnedBytes: 0,
+                      expectedNextCursor: null,
+                      complete: true,
+                    },
               });
             }
           }

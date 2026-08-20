@@ -34,14 +34,24 @@ export const getRequiredPackagedNativeArtifacts = (appPath, arch) => {
       executable: false,
     },
     {
-      name: 'Cursor sqlite3',
-      path: path.join(nodeModulesPath, 'sqlite3', 'build', 'Release', 'node_sqlite3.node'),
-      executable: false,
-    },
-    {
       name: 'Cursor ripgrep',
       path: path.join(nodeModulesPath, '@cursor', `sdk-darwin-${targetArch}`, 'bin', 'rg'),
       executable: true,
+    },
+    {
+      name: 'Cursor sandbox',
+      path: path.join(nodeModulesPath, '@cursor', `sdk-darwin-${targetArch}`, 'bin', 'cursorsandbox'),
+      executable: true,
+    },
+    {
+      name: 'Cursor tree-sitter',
+      path: path.join(nodeModulesPath, '@cursor', `sdk-darwin-${targetArch}`, 'vendor', 'tree-sitter', 'binding.node'),
+      executable: false,
+    },
+    {
+      name: 'Cursor tree-sitter-bash',
+      path: path.join(nodeModulesPath, '@cursor', `sdk-darwin-${targetArch}`, 'vendor', 'tree-sitter-bash', 'binding.node'),
+      executable: false,
     },
   ];
 };

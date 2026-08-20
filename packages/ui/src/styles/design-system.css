@@ -31,7 +31,7 @@
     /* Fixed built-in agent glyph colors; intentionally independent of theme tokens. */
     --agent-icon-builder-color: #969DA9;
     --agent-icon-council-color: #92400E;
-    --agent-icon-orchestrator-color: #0072C3;
+    --agent-icon-orchestrator-color: #000000;
     --agent-icon-designer-color: #9333EA;
     --agent-icon-fixer-color: #DC2626;
     --agent-icon-explorer-color: #16A34A;

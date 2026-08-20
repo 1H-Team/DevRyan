@@ -668,14 +668,20 @@ function App({ apis }: AppProps) {
 
   React.useEffect(() => {
     let cancelled = false;
+    opencodeClient.setContextModeAvailable(false);
 
     const run = async () => {
       const res = await fetch('/health', { method: 'GET' }).catch(() => null);
       if (!res || !res.ok || cancelled) return;
       const data = (await res.json().catch(() => null)) as null | {
         planModeExperimentalEnabled?: unknown;
+        contextModeAvailable?: unknown;
+        contextModeReadOnlyIndexing?: unknown;
       };
       if (!data || cancelled) return;
+      opencodeClient.setContextModeAvailable(
+        data.contextModeAvailable ?? data.contextModeReadOnlyIndexing,
+      );
       const raw = data.planModeExperimentalEnabled;
       const enabled = raw === true || raw === 1 || raw === '1' || raw === 'true';
       setPlanModeEnabled(enabled);

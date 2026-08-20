@@ -97,6 +97,23 @@ export interface ManagedTaskResultEnvelope {
   followUpTaskId: string | null;
 }
 
+export type ManagedResultMode = 'eager' | 'reference';
+
+export interface ManagedResultReference {
+  taskId: string;
+  envelopeId: string;
+  totalBytes: number;
+  text: string;
+  returnedBytes: number;
+  nextCursor: string | null;
+  complete: boolean;
+}
+
+export class ManagedResultReferenceError extends Error {
+  code: 'invalid_result_cursor' | 'result_reference_mismatch';
+  constructor(code: 'invalid_result_cursor' | 'result_reference_mismatch', message: string);
+}
+
 export interface ManagedTaskEvent {
   type: 'openchamber:managed-task';
   properties: {
@@ -207,6 +224,9 @@ export interface ManagedOpenCodeTransport {
     message?: string;
     attempt?: number;
     next?: number;
+    action?: {
+      reason?: string;
+    };
   } | null>;
   readMessages(input: ManagedOpenCodeTransportInput): Promise<Array<{
     info?: Record<string, unknown>;
@@ -378,15 +398,50 @@ export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT: string;
 export const MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT: string;
 export const MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT: string;
 export const MANAGED_READ_ONLY_PROMPT: string;
+export const MANAGED_CONTEXT_MODE_WRITABLE_PROMPT: string;
+export const MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT: string;
 export function isManagedTransientTransportContinuationPrompt(value: unknown): boolean;
 export function isManagedResumeContinuationPrompt(value: unknown): boolean;
 export function isManagedRetryInPlacePrompt(value: unknown): boolean;
 export const DEFAULT_MANAGED_TERMINAL_MAX_RECORDS: number;
 export const DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS: number;
 export const DEFAULT_MANAGED_LEDGER_MAX_BYTES: number;
+export const MANAGED_RESULT_PAGE_MAX_BYTES: number;
+export const MANAGED_RESULT_MODES: readonly ManagedResultMode[];
 
 export function formatManagedTaskDisplayName(label: string): string;
+export function resolveManagedResultMode(value?: unknown): ManagedResultMode;
+export function managedResultPayloadMatches(
+  task: Partial<ManagedTaskRecord> | ManagedTaskEventRecord,
+  resultEnvelope: ManagedTaskResultEnvelope,
+): boolean;
+export function projectManagedTaskResult<TTask extends Record<string, unknown>>(
+  task: TTask,
+  resultEnvelope: ManagedTaskResultEnvelope | null | undefined,
+  resultMode?: ManagedResultMode,
+): {
+  task: TTask | Omit<TTask, 'recoverablePreview'>;
+  resultEnvelope?: ManagedTaskResultEnvelope | Omit<ManagedTaskResultEnvelope, 'recoverablePreview'>;
+  resultReference?: ManagedResultReference;
+};
+export function projectManagedResultEnvelope(
+  task: Partial<ManagedTaskRecord> | ManagedTaskEventRecord,
+  resultEnvelope: ManagedTaskResultEnvelope,
+  resultMode?: ManagedResultMode,
+): {
+  resultEnvelope: ManagedTaskResultEnvelope | Omit<ManagedTaskResultEnvelope, 'recoverablePreview'>;
+  resultReference?: ManagedResultReference;
+};
+export function readManagedResultReference(input: {
+  task: Partial<ManagedTaskRecord> | ManagedTaskEventRecord;
+  resultEnvelope: ManagedTaskResultEnvelope;
+  resultCursor: string;
+}): ManagedResultReference;
+export function createKeyedSingleFlight(): {
+  run<T>(key: string, operation: () => T | PromiseLike<T>): Promise<T>;
+};
 export function classifyProviderRetryFailure(value: unknown): ManagedTaskFailureKind;
+export function classifyProviderRetryStatus(value: unknown): ManagedTaskFailureKind;
 export function classifyProviderTransportFailure(
   name: unknown,
   detail: unknown,
@@ -446,7 +501,14 @@ export function compactManagedOrchestrationState(state: ManagedOrchestrationStat
 export function resolveProviderPromptTools(
   providerId: unknown,
   agent?: unknown,
-  options?: { readOnly?: boolean },
+  options?: {
+    readOnly?: boolean;
+    planMode?: boolean;
+    /** Verified managed OpenCode capability advertised by `/api/health`. */
+    contextModeAvailable?: boolean;
+    /** Verified managed-runtime capability advertised by `/api/health`. */
+    contextModeReadOnlyIndexing?: boolean;
+  },
 ): Readonly<Record<string, boolean>> | undefined;
 export const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED: 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED';
 export const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE: string;

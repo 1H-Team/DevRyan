@@ -77,7 +77,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
   const isStreaming = streamPhase === 'streaming' || streamPhase === 'cooldown';
   const throttledPlanText = useStreamingTextThrottle({
     text: planText,
-    isStreaming,
+    phase: isStreaming ? 'streaming' : 'terminal',
     identityKey: `${sourceMessageId}:plan-card`,
   });
   const displayPlanText = resolvePlanCardDisplayText({

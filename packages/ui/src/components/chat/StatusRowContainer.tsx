@@ -12,7 +12,6 @@ import {
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { StatusRow } from './StatusRow';
 import { isManagedTaskToolName } from './message/parts/toolRenderUtils';
-import { getAssistantToolStatusPhrase } from '@/hooks/assistantStatusFormatting';
 import {
     managedOrchestrationSelectors,
     useManagedOrchestrationStore,
@@ -35,15 +34,52 @@ import {
 } from '@/stores/useLongRunningToolStore';
 import { stopLongRunningTool } from '@/sync/long-running-tool-recovery';
 import { formatElapsedDuration } from '@/lib/duration';
+import { useDocumentAnimationState } from '@/hooks/useDocumentAnimationState';
+
+type ManagedDelegationStatusPhase = 'starting' | 'waiting' | null;
+
+const MANAGED_START_ACTIONS = new Set(['start', 'retry']);
+const MANAGED_WAIT_ACTIONS = new Set([
+    'status',
+    'wait',
+    'cancel',
+    'continue',
+    'resume',
+    'recover_in_place',
+    'retry_in_place',
+    'abandon',
+]);
+
+// Exported for focused regression tests. The scheduler phase wins once a
+// child is actually running; before its first durable task event, the live
+// start call keeps the status truthful while the Agent Dispatch card prepares.
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveManagedDelegationStatusPhase = ({
+    rootPhase,
+    activeToolName,
+    activeToolAction,
+}: {
+    rootPhase: ManagedDelegationStatusPhase;
+    activeToolName?: string;
+    activeToolAction?: string;
+}): ManagedDelegationStatusPhase => {
+    if (rootPhase === 'waiting') return 'waiting';
+    if (!isManagedTaskToolName(activeToolName ?? '')) return rootPhase;
+    const action = activeToolAction?.trim().toLowerCase();
+    if (action && MANAGED_WAIT_ACTIONS.has(action)) return 'waiting';
+    if (action && MANAGED_START_ACTIONS.has(action)) return 'starting';
+    return rootPhase ?? 'starting';
+};
 
 const useElapsedToolLabel = (startedAt: number | undefined): string | null => {
     const [, setTick] = React.useState(0);
+    const { isVisible } = useDocumentAnimationState();
 
     React.useEffect(() => {
-        if (typeof startedAt !== 'number') return;
+        if (typeof startedAt !== 'number' || !isVisible) return;
         const timer = window.setInterval(() => setTick((tick) => tick + 1), 1_000);
         return () => window.clearInterval(timer);
-    }, [startedAt]);
+    }, [isVisible, startedAt]);
 
     if (typeof startedAt !== 'number') return null;
     const duration = formatElapsedDuration(startedAt, undefined);
@@ -176,6 +212,10 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         () => managedOrchestrationSelectors.hasActiveTasksForRoot(currentSessionId ?? ''),
         [currentSessionId],
     ));
+    const managedRootDelegationPhase = useManagedOrchestrationStore(React.useMemo(
+        () => managedOrchestrationSelectors.delegationPhaseForRoot(currentSessionId ?? ''),
+        [currentSessionId],
+    ));
     const currentManagedTask = useManagedOrchestrationStore(React.useMemo(
         () => managedOrchestrationSelectors.latestTaskForChildSession(currentSessionId ?? ''),
         [currentSessionId],
@@ -194,6 +234,11 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             && isManagedTaskToolName(working.activeToolName ?? '')
         )
     ));
+    const managedDelegationPhase = resolveManagedDelegationStatusPhase({
+        rootPhase: managedRootDelegationPhase,
+        activeToolName: working.activeToolName,
+        activeToolAction: working.activeToolAction,
+    });
     const showWorkingPlaceholder = shouldRenderStatusRowAssistantStatus(
         working.isWorking,
         managedChildOwnsIdleStatus,
@@ -210,8 +255,13 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         assistantStatusText = managedChildGenericStatusText;
         assistantIsGenericStatus = false;
     }
-    if (managedBarrierOwnsStatus) {
-        assistantStatusText = getAssistantToolStatusPhrase('devryan_task');
+    if (managedBarrierOwnsStatus || (
+        working.activePartType === 'tool'
+        && isManagedTaskToolName(working.activeToolName ?? '')
+    )) {
+        assistantStatusText = managedDelegationPhase === 'starting'
+            ? t('chat.statusRow.managedTasks.starting')
+            : t('chat.statusRow.managedTasks.waiting');
         assistantIsGenericStatus = false;
     }
     if (longRunningPresentation && !longRunningPresentation.actionable) {

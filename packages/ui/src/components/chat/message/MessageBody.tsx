@@ -56,6 +56,7 @@ import {
     type ToolActivityGroupInfo,
 } from './parts/toolRenderUtils';
 import { ManagedTaskList } from '../ManagedTaskList';
+import { resolveCursorNativeTaskDispatches } from '../cursorNativeTaskDispatch';
 import {
     resolveManagedTaskDispatch,
     resolveManagedTaskFallbacks,
@@ -69,7 +70,7 @@ import { isToolPartFinalizedForDisplay } from './parts/toolDisplayState';
 import TurnActivity from '../components/TurnActivity';
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { useSessions } from '@/sync/sync-context';
+import { useSession } from '@/sync/sync-context';
 import { useI18n } from '@/lib/i18n';
 import { extractLoopbackUrls } from '@/lib/url';
 import {
@@ -82,6 +83,7 @@ import { scanConsecutiveReasoningParts } from './reasoningGrouping';
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const, transform: 'translateZ(0)' };
 const MESSAGE_FOOTER_CONTAINER_STYLE = { containerType: 'inline-size' as const, containerName: 'message-footer' };
 const INLINE_MESSAGE_ACTIONS_CLASS_NAME = 'mt-2 mb-1 flex items-center justify-start gap-1.5';
+const STACKED_MESSAGE_ACTIONS_CLASS_NAME = 'flex items-center justify-start gap-1.5';
 
 type SubtaskPartLike = Part & {
     type: 'subtask';
@@ -919,6 +921,15 @@ const AssistantMessageBody = React.memo(({
     const awaitingMessageCompletion = !isMessageCompleted;
     const shouldRecoverMissingManagedDispatches = streamPhase === 'completed';
     const animateActivityRows = awaitingMessageCompletion || Boolean(turnGroupingContext?.isWorking);
+    const cursorNativeTaskProjection = React.useMemo(() => {
+        const tasks = resolveCursorNativeTaskDispatches(parts);
+        return {
+            tasks,
+            partIds: new Set(tasks.map((task) => task.partId)),
+        };
+    }, [parts]);
+    const cursorNativeTasks = cursorNativeTaskProjection.tasks;
+    const cursorNativeTaskPartIds = cursorNativeTaskProjection.partIds;
     const visibleParts = React.useMemo(() => {
         return collapseSupersededTodoWrites(parts, turnGroupingContext?.lastTodoToolPartId ?? null)
             .filter((part) => !isEmptyTextPart(part))
@@ -926,6 +937,7 @@ const AssistantMessageBody = React.memo(({
                 const rawPart = part as Record<string, unknown>;
                 return rawPart.type !== 'compaction';
             })
+            .filter((part) => part.type !== 'tool' || !cursorNativeTaskPartIds.has(part.id))
             .filter((part) => {
                 // Hidden tools (e.g. create_plan, which is surfaced as the rich
                 // Implementation Plan card) must never render as their own row.
@@ -943,26 +955,35 @@ const AssistantMessageBody = React.memo(({
                     arr[index + 1]?.type,
                 );
             });
-    }, [parts, turnGroupingContext?.lastTodoToolPartId]);
+    }, [cursorNativeTaskPartIds, parts, turnGroupingContext?.lastTodoToolPartId]);
 
-    const managedTaskDispatch = React.useMemo(
+    const localManagedTaskDispatch = React.useMemo(
         () => resolveManagedTaskDispatch(visibleParts),
         [visibleParts],
     );
-    const managedTaskFallbacks = React.useMemo(
+    const localManagedTaskFallbacks = React.useMemo(
         () => resolveManagedTaskFallbacks(
             turnGroupingContext?.activityParts?.map((activity) => activity.part) ?? visibleParts,
         ),
         [turnGroupingContext?.activityParts, visibleParts],
     );
+    const turnManagedTaskProjection = turnGroupingContext?.managedTaskProjection;
+    const ownsTurnManagedTaskProjection = turnManagedTaskProjection?.ownerMessageId === messageId;
+    const managedTaskCardProjection = turnGroupingContext
+        ? (ownsTurnManagedTaskProjection ? turnManagedTaskProjection : null)
+        : {
+            taskIds: localManagedTaskDispatch.taskIds,
+            pendingDispatches: localManagedTaskDispatch.pendingDispatches,
+            fallbackTasks: localManagedTaskFallbacks,
+        };
     const managedBarrierLocked = useManagedOrchestrationStore(React.useMemo(
         () => managedOrchestrationSelectors.hasUndispositionedTasksForRoot(sessionId ?? ''),
         [sessionId],
     ));
     const suppressLiveManagedControlReasoning = managedBarrierLocked
         && !isMessageCompleted
-        && managedTaskDispatch.taskIds.length === 0
-        && managedTaskDispatch.pendingDispatches.length === 0;
+        && localManagedTaskDispatch.taskIds.length === 0
+        && localManagedTaskDispatch.pendingDispatches.length === 0;
 
     const toolParts = React.useMemo(() => {
         return visibleParts.filter((part): part is ToolPartType => part.type === 'tool');
@@ -1083,7 +1104,8 @@ const AssistantMessageBody = React.memo(({
     const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
     const projects = useProjectsStore((state) => state.projects);
     const effectiveDirectory = useEffectiveDirectory();
-    const sessions = useSessions();
+    const currentSession = useSession(currentSessionId, effectiveDirectory);
+    const messageSession = useSession(sessionId, effectiveDirectory);
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const showSplitAssistantMessageActions = useUIStore((state) => state.showSplitAssistantMessageActions);
     const isSortedRenderMode = chatRenderMode === 'sorted';
@@ -1092,20 +1114,6 @@ const AssistantMessageBody = React.memo(({
     const isLastAssistantInTurn = turnGroupingContext?.isLastAssistantInTurn ?? false;
     const hasStopFinish = messageFinish === 'stop';
     const isCursorAssistantProvider = isCursorProvider(providerID);
-
-    const currentSession = React.useMemo(() => {
-        if (!currentSessionId) {
-            return null;
-        }
-        return sessions.find((session) => session.id === currentSessionId) ?? null;
-    }, [currentSessionId, sessions]);
-
-    const messageSession = React.useMemo(() => {
-        if (!sessionId) {
-            return null;
-        }
-        return sessions.find((session) => session.id === sessionId) ?? null;
-    }, [sessionId, sessions]);
 
     const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
     const messageProjectRef = React.useMemo(() => {
@@ -1404,8 +1412,8 @@ const AssistantMessageBody = React.memo(({
         }
 
         let lastIndex = -1;
-        for (let index = 0; index < managedTaskDispatch.contentParts.length; index += 1) {
-            const part = managedTaskDispatch.contentParts[index];
+        for (let index = 0; index < localManagedTaskDispatch.contentParts.length; index += 1) {
+            const part = localManagedTaskDispatch.contentParts[index];
             if (!part || part.type !== 'text') {
                 continue;
             }
@@ -1420,7 +1428,7 @@ const AssistantMessageBody = React.memo(({
         }
 
         return lastIndex;
-    }, [activityByPart, managedTaskDispatch.contentParts, shouldDeferSortedInlineText, shouldShowStandaloneMessageActions]);
+    }, [activityByPart, localManagedTaskDispatch.contentParts, shouldDeferSortedInlineText, shouldShowStandaloneMessageActions]);
 
     const shouldRenderStandaloneActionsAfterContent = shouldShowStandaloneMessageActions
         && !isCursorAssistantProvider
@@ -1477,6 +1485,7 @@ const AssistantMessageBody = React.memo(({
                             diffStats={turnGroupingContext.diffStats}
                             providerID={providerID}
                             responseStyleLevel={turnGroupingContext.responseStyleLevel}
+                            generatedImages={turnGroupingContext.generatedImages}
                         />
                     </div>
                 );
@@ -1492,7 +1501,7 @@ const AssistantMessageBody = React.memo(({
         let hasRenderedPlanCard = false;
         let globalTextGroupOffset = 0;
         let hasSeenTextGroup = false;
-        while (i < managedTaskDispatch.contentParts.length) {
+        while (i < localManagedTaskDispatch.contentParts.length) {
             // An actionable Plan-mode response ends at its Plan card. Providers
             // may append late reasoning/tool parts after the final plan text;
             // keep those authoritative parts in sync state, but do not let them
@@ -1501,7 +1510,7 @@ const AssistantMessageBody = React.memo(({
                 break;
             }
 
-            const part = managedTaskDispatch.contentParts[i];
+            const part = localManagedTaskDispatch.contentParts[i];
 
             if (part.type === 'text') {
                 const activity = activityByPart.get(part);
@@ -1527,8 +1536,8 @@ const AssistantMessageBody = React.memo(({
                 }
                 const textGroup: Part[] = [part];
                 let groupEndIndex = i;
-                while (groupEndIndex + 1 < managedTaskDispatch.contentParts.length) {
-                    const nextPart = managedTaskDispatch.contentParts[groupEndIndex + 1];
+                while (groupEndIndex + 1 < localManagedTaskDispatch.contentParts.length) {
+                    const nextPart = localManagedTaskDispatch.contentParts[groupEndIndex + 1];
                     if (!nextPart || nextPart.type !== 'text') {
                         break;
                     }
@@ -1585,6 +1594,9 @@ const AssistantMessageBody = React.memo(({
                                         isMessageCompleted={isMessageCompleted}
                                         isMobile={isMobile}
                                         onContentChange={onContentChange}
+                                        generatedImages={turnGroupingContext?.generatedImages}
+                                        directory={messageSession?.directory ?? effectiveDirectory ?? undefined}
+                                        onShowPopup={onShowPopup}
                                     />
                                 </div>
                             );
@@ -1618,6 +1630,9 @@ const AssistantMessageBody = React.memo(({
                                 isMessageCompleted={isMessageCompleted}
                                 isMobile={isMobile}
                                 onContentChange={onContentChange}
+                                generatedImages={turnGroupingContext?.generatedImages}
+                                directory={messageSession?.directory ?? effectiveDirectory ?? undefined}
+                                onShowPopup={onShowPopup}
                             />
                         </div>
                     );
@@ -1626,8 +1641,8 @@ const AssistantMessageBody = React.memo(({
                     .map((textPart) => (textPart as { id?: unknown }).id)
                     .filter((id): id is string => typeof id === 'string' && id.length > 0);
                 let hasToolAfterTextGroup = false;
-                for (let partIndex = groupEndIndex + 1; partIndex < managedTaskDispatch.contentParts.length; partIndex += 1) {
-                    if (managedTaskDispatch.contentParts[partIndex]?.type === 'tool') {
+                for (let partIndex = groupEndIndex + 1; partIndex < localManagedTaskDispatch.contentParts.length; partIndex += 1) {
+                    if (localManagedTaskDispatch.contentParts[partIndex]?.type === 'tool') {
                         hasToolAfterTextGroup = true;
                         break;
                     }
@@ -1658,13 +1673,13 @@ const AssistantMessageBody = React.memo(({
             }
 
             if (part.type === 'reasoning') {
-                const groupEndIndex = scanConsecutiveReasoningParts(managedTaskDispatch.contentParts, i);
+                const groupEndIndex = scanConsecutiveReasoningParts(localManagedTaskDispatch.contentParts, i);
                 if (shouldRenderReasoning(showReasoningTraces) && !suppressLiveManagedControlReasoning) {
                     if (groupEndIndex > i) {
                         rendered.push(
                             <ReasoningGroup
                                 key={getReasoningPartRenderKey(messageId, part.id, i)}
-                                entries={managedTaskDispatch.contentParts
+                                entries={localManagedTaskDispatch.contentParts
                                     .slice(i, groupEndIndex + 1)
                                     .map((reasoningPart) => ({ part: reasoningPart, messageId }))}
                                 providerID={providerID}
@@ -1731,6 +1746,7 @@ const AssistantMessageBody = React.memo(({
                                 onContentChange={onContentChange}
                                 animateTailText={liveFileActivityGroup.activities.some((activity) => animatedToolIdsLookup.has(activity.id))}
                                 animateRows={true}
+                                generatedImages={turnGroupingContext?.generatedImages}
                             />
                         );
                     }
@@ -1776,13 +1792,16 @@ const AssistantMessageBody = React.memo(({
                                     toolName={singleToolName}
                                     activities={[makeToolActivity(singleToolPart)]}
                                     animateTailText={animatedToolIdsLookup.has(singleToolPart.id)}
+                                    generatedImages={turnGroupingContext?.generatedImages}
+                                    onShowPopup={onShowPopup}
+                                    onContentChange={onContentChange}
                                 />
                             </ToolRevealOnMount>
                         </FadeInOnReveal>
                     );
                 };
 
-                const burst = collectToolActivityBurst(managedTaskDispatch.contentParts, i, (candidate: Part) => {
+                const burst = collectToolActivityBurst(localManagedTaskDispatch.contentParts, i, (candidate: Part) => {
                     if (candidate.type !== 'tool') {
                         return null;
                     }
@@ -1829,6 +1848,7 @@ const AssistantMessageBody = React.memo(({
                                 onContentChange={onContentChange}
                                 animateTailText={activities.some((groupedActivity) => animatedToolIdsLookup.has(groupedActivity.id))}
                                 animateRows={true}
+                                generatedImages={turnGroupingContext?.generatedImages}
                             />
                         );
                     });
@@ -1876,6 +1896,9 @@ const AssistantMessageBody = React.memo(({
                                     },
                                 ]}
                                 animateTailText={animatedToolIdsLookup.has(toolPart.id)}
+                                generatedImages={turnGroupingContext?.generatedImages}
+                                onShowPopup={onShowPopup}
+                                onContentChange={onContentChange}
                             />
                         </ToolRevealOnMount>
                     </FadeInOnReveal>
@@ -1898,6 +1921,7 @@ const AssistantMessageBody = React.memo(({
         chatRenderMode,
         collapsedPreviewCount,
         expandedTools,
+        effectiveDirectory,
         isMessageCompleted,
         isPlanModeSource,
         isPlanRevisionModeSource,
@@ -1913,9 +1937,10 @@ const AssistantMessageBody = React.memo(({
         messageActionButtons,
         messagePlan,
         messageProjectRef?.path,
+        messageSession?.directory,
         messageSession?.slug,
         messageSession?.time?.created,
-        managedTaskDispatch,
+        localManagedTaskDispatch,
         sessionId,
         onContentChange,
         onShowPopup,
@@ -2019,53 +2044,51 @@ const AssistantMessageBody = React.memo(({
               style={CONTAIN_LAYOUT_STYLE}
           >
               <TextSelectionMenu containerRef={messageContentRef} />
-              <div>
-                 <div
-                     className={cn(
-                         'message-content-text flex flex-col leading-relaxed overflow-hidden text-foreground/90',
-                         isMobile ? 'gap-y-1' : 'gap-y-1.5',
-                     )}
-                     data-session-output-stack="true"
-                 >
+              <div
+                  className={cn(
+                      'message-content-text flex flex-col leading-relaxed overflow-hidden text-foreground/90',
+                      isMobile ? 'gap-y-2' : 'gap-y-3',
+                  )}
+                  data-session-output-stack="true"
+              >
                     {renderedParts}
-                     {showErrorMessage && (
-                         <FadeInOnReveal key="assistant-error">
-                             <div
-                                 data-assistant-transport-recovery={assistantTransportRecovery}
-                                 className={cn(
-                                     'group/assistant-text relative break-words max-w-full',
-                                     errorVariant === 'plain'
-                                         ? 'text-muted-foreground'
-                                         : cn(
-                                             'p-3 rounded-lg border',
-                                             errorVariant === 'info'
-                                                 ? 'bg-[var(--status-info-background)] border-[var(--status-info-border)]'
-                                                 : 'bg-[var(--status-error-background)] border-[var(--status-error-border)]',
-                                         ),
-                                 )}
-                             >
-                                 <div className={cn(errorVariant !== 'plain' && 'flex items-start gap-2')}>
-                                     {errorVariant !== 'plain' && (
-                                         <ErrorIcon className={cn(
-                                             'mt-0.5 h-4 w-4 shrink-0',
-                                             errorVariant === 'info' ? 'text-[var(--status-info)]' : 'text-[var(--status-error)]',
-                                         )} />
-                                     )}
-                                     <div className={cn('min-w-0 break-words', errorVariant !== 'plain' && 'flex-1')}>
-                                         <SimpleMarkdownRenderer
-                                             content={errorMessage ?? ''}
-                                             onShowPopup={onShowPopup}
-                                             className="[&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0"
-                                        />
-                                    </div>
+                    {showErrorMessage && (
+                        <FadeInOnReveal key="assistant-error">
+                            <div
+                                data-assistant-transport-recovery={assistantTransportRecovery}
+                                className={cn(
+                                    'group/assistant-text relative break-words max-w-full',
+                                    errorVariant === 'plain'
+                                        ? 'text-muted-foreground'
+                                        : cn(
+                                            'p-3 rounded-lg border',
+                                            errorVariant === 'info'
+                                                ? 'bg-[var(--status-info-background)] border-[var(--status-info-border)]'
+                                                : 'bg-[var(--status-error-background)] border-[var(--status-error-border)]',
+                                        ),
+                                )}
+                            >
+                                <div className={cn(errorVariant !== 'plain' && 'flex items-start gap-2')}>
+                                    {errorVariant !== 'plain' && (
+                                        <ErrorIcon className={cn(
+                                            'mt-0.5 h-4 w-4 shrink-0',
+                                            errorVariant === 'info' ? 'text-[var(--status-info)]' : 'text-[var(--status-error)]',
+                                        )} />
+                                    )}
+                                    <div className={cn('min-w-0 break-words', errorVariant !== 'plain' && 'flex-1')}>
+                                        <SimpleMarkdownRenderer
+                                            content={errorMessage ?? ''}
+                                            onShowPopup={onShowPopup}
+                                            className="[&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0"
+                                       />
+                                   </div>
                                 </div>
                             </div>
-                        </FadeInOnReveal>
-                    )}
-                </div>
+                       </FadeInOnReveal>
+                   )}
                 <MessageFilesDisplay files={parts} onShowPopup={onShowPopup} />
                 {shouldRenderStandaloneActionsAfterContent && (
-                    <div className={INLINE_MESSAGE_ACTIONS_CLASS_NAME} data-message-actions="true">
+                    <div className={STACKED_MESSAGE_ACTIONS_CLASS_NAME} data-message-actions="true">
                         <div className="flex items-center gap-1.5" data-message-action-group="true">
                             {messageActionButtons}
                         </div>
@@ -2073,7 +2096,7 @@ const AssistantMessageBody = React.memo(({
                 )}
                 {shouldShowTurnFooter && (
                     <div
-                        className="mt-2 mb-1 flex items-center justify-start gap-3"
+                        className="flex items-center justify-start gap-3"
                         style={MESSAGE_FOOTER_CONTAINER_STYLE}
                     >
                         <div className="flex items-center gap-1.5" data-message-action-group="true">
@@ -2112,18 +2135,22 @@ const AssistantMessageBody = React.memo(({
                         </div>
                     </div>
                 )}
-                {(managedTaskDispatch.taskIds.length > 0 || managedTaskDispatch.pendingDispatches.length > 0) ? (
+                {(
+                    (managedTaskCardProjection?.taskIds.length ?? 0) > 0
+                    || (managedTaskCardProjection?.pendingDispatches.length ?? 0) > 0
+                    || cursorNativeTasks.length > 0
+                ) ? (
                     <ManagedTaskList
                         rootSessionId={sessionId}
-                        taskIds={managedTaskDispatch.taskIds}
-                        pendingDispatches={managedTaskDispatch.pendingDispatches}
-                        fallbackTasks={managedTaskFallbacks}
+                        taskIds={managedTaskCardProjection?.taskIds ?? []}
+                        pendingDispatches={managedTaskCardProjection?.pendingDispatches ?? []}
+                        fallbackTasks={managedTaskCardProjection?.fallbackTasks ?? []}
+                        cursorNativeTasks={cursorNativeTasks}
                         recoverMissingDispatches={shouldRecoverMissingManagedDispatches}
                         onContentChange={onContentChange}
                         isMobile={isMobile}
                     />
                 ) : null}
-
             </div>
         </div>
     );

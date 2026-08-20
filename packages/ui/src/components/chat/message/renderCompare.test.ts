@@ -71,6 +71,65 @@ describe('areRelevantTurnGroupingContextsEqual', () => {
 
     expect(areRelevantTurnGroupingContextsEqual(firstOwner, nextOwner, 'assistant-1', false)).toBe(false);
   });
+
+  test('treats Agent Dispatch ownership changes as relevant to the previous and next owners', () => {
+    const firstOwner = createTurnContext({
+      managedTaskProjection: {
+        ownerMessageId: 'assistant-1',
+        taskIds: ['dvr_task_one'],
+        pendingDispatches: [],
+        fallbackTasks: [],
+      },
+    });
+    const nextOwner = createTurnContext({
+      managedTaskProjection: {
+        ownerMessageId: 'assistant-2',
+        taskIds: ['dvr_task_one', 'dvr_task_two'],
+        pendingDispatches: [],
+        fallbackTasks: [],
+      },
+    });
+
+    expect(areRelevantTurnGroupingContextsEqual(firstOwner, nextOwner, 'assistant-1', false)).toBe(false);
+    expect(areRelevantTurnGroupingContextsEqual(firstOwner, nextOwner, 'assistant-2', false)).toBe(false);
+  });
+
+  test('treats task-row changes as relevant to the current Agent Dispatch owner', () => {
+    const first = createTurnContext({
+      managedTaskProjection: {
+        ownerMessageId: 'assistant-2',
+        taskIds: ['dvr_task_one'],
+        pendingDispatches: [],
+        fallbackTasks: [],
+      },
+    });
+    const second = createTurnContext({
+      managedTaskProjection: {
+        ownerMessageId: 'assistant-2',
+        taskIds: ['dvr_task_one', 'dvr_task_two'],
+        pendingDispatches: [],
+        fallbackTasks: [],
+      },
+    });
+
+    expect(areRelevantTurnGroupingContextsEqual(first, second, 'assistant-2', false)).toBe(false);
+    expect(areRelevantTurnGroupingContextsEqual(first, second, 'assistant-1', false)).toBe(true);
+  });
+
+  test('limits generated-image projection changes to the linked message', () => {
+    const first = createTurnContext({ generatedImages: [] });
+    const second = createTurnContext({
+      generatedImages: [{
+        toolPartId: 'image-tool',
+        path: '/repo/apple.png',
+        filename: 'apple.png',
+        linkedMessageId: 'assistant-2',
+      }],
+    });
+
+    expect(areRelevantTurnGroupingContextsEqual(first, second, 'assistant-2', false)).toBe(false);
+    expect(areRelevantTurnGroupingContextsEqual(first, second, 'assistant-1', false)).toBe(true);
+  });
 });
 
 describe('areRenderRelevantMessagesEqual', () => {

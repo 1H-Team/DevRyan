@@ -17,6 +17,7 @@ import { formatAgentLabel } from './mobileControlsUtils';
 import {
   resolveManagedTaskDispatch,
   resolveManagedTaskFallbacks,
+  resolveManagedTaskTurnProjection,
 } from './managedTaskDispatch';
 import {
   collapseManagedTaskLineages,
@@ -25,6 +26,7 @@ import {
 } from './managedTaskListWindow';
 import { navigateToManagedTaskChild } from './managedTaskNavigation';
 import { getSameChildFollowUpTaskId } from './managedTaskRetryLineage';
+import type { CursorNativeTaskDispatch } from './cursorNativeTaskDispatch';
 
 mock.module('@/components/ui/ProviderLogo', () => ({
   ProviderLogo: ({ providerId }: { providerId: string }) => React.createElement('img', { src: `/logos/${providerId}.svg` }),
@@ -90,6 +92,39 @@ describe('managed task presentation', () => {
     expect(dict['chat.managedTasks.child.open']).toBe('Open Subtask');
     expect(dict['chat.managedTasks.summary.queued']).toBe('Queued...');
     expect(dict['chat.managedTasks.summary.running']).toBe('Running...');
+    expect(dict['chat.statusRow.managedTasks.starting']).toBe('Starting subagent delegation');
+    expect(dict['chat.statusRow.managedTasks.waiting']).toBe('Waiting for subagent output');
+  });
+
+  test('renders Cursor-native tasks as an observed Agent Dispatch source without managed controls', () => {
+    const cursorNativeTask: CursorNativeTaskDispatch = {
+      partId: 'cursor-task-part',
+      callId: 'cursor-task-call',
+      description: 'Inspect Cursor compatibility',
+      agent: 'Explorer',
+      model: { id: 'composer-2.5' },
+      modelLabel: 'Composer 2.5',
+      status: 'running',
+      text: 'Reading the runtime.',
+      output: '',
+      entries: [],
+      stepCount: 1,
+      truncated: false,
+    };
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ManagedTaskList taskIds={[]} cursorNativeTasks={[cursorNativeTask]} />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('Agent Dispatch');
+    expect(html).toContain('Cursor native');
+    expect(html).toContain('Observed');
+    expect(html).toContain('Inspect Cursor compatibility');
+    expect(html).toContain('Explorer · Composer 2.5 · Running...');
+    expect(html).not.toContain('Open Subtask');
+    expect(html).not.toContain('Retry Status');
+    expect(html).not.toContain('Cancel');
   });
 
   test('keeps same-child recovery in the original Agent Dispatch row', () => {
@@ -219,7 +254,9 @@ describe('managed task presentation', () => {
     const task = {
       ...terminalTask('failed'),
       dispatchGroupId: 'msg_parent',
-      failureReason: 'Usage limit reached',
+      providerId: 'opencode',
+      modelId: 'nemotron-3.5-lightning-free',
+      failureReason: 'Free usage exceeded, subscribe to Go',
     };
     const envelope = createManagedTaskResultEnvelope(task, {
       sequence: 1,
@@ -235,11 +272,11 @@ describe('managed task presentation', () => {
           resultEnvelope={envelope}
           childActive
           providers={[{
-            id: 'github-copilot',
-            name: 'GitHub Copilot',
+            id: 'opencode',
+            name: 'OpenCode Zen',
             models: [{
-              id: 'gpt-4.1',
-              name: 'GPT 4.1',
+              id: 'nemotron-3.5-lightning-free',
+              name: 'Nemotron 3.5 Lightning Free',
               variants: { low: {}, high: {} },
             }],
           }]}
@@ -251,7 +288,7 @@ describe('managed task presentation', () => {
 
     expect(projected.agentRetryAvailable).toBe(false);
     expect(projected.failureKind).toBe('provider_usage_limit');
-    expect(html).toContain('GitHub Copilot rate limit reached for GPT 4.1.');
+    expect(html).toContain('OpenCode Zen rate limit reached for Nemotron 3.5 Lightning Free.');
     expect(html).toContain('Error');
     expect(html).toContain('Choose a model to continue this subtask');
     expect(html).toContain('Try Again');
@@ -767,18 +804,159 @@ describe('managed task presentation', () => {
     expect(designerDispatch.taskIds).toEqual(['dvr_task_designer']);
   });
 
-  test('renders each Agent Dispatch from its message-local projection', () => {
+  test('consolidates separate same-turn launches at the final dispatch message', () => {
+    const projection = resolveManagedTaskTurnProjection([
+      {
+        messageId: 'assistant-explorer',
+        parts: [{
+          id: 'explorer-start',
+          type: 'tool',
+          tool: 'devryan_task',
+          state: {
+            status: 'completed',
+            input: { action: 'start', agent: 'explorer', label: 'inspect-runtime' },
+            output: JSON.stringify({ task: { taskId: 'dvr_task_explorer' } }),
+          },
+        }] as never,
+      },
+      {
+        messageId: 'assistant-wait',
+        parts: [{
+          id: 'wait-part',
+          type: 'tool',
+          tool: 'devryan_task',
+          state: {
+            status: 'completed',
+            input: { action: 'wait', taskIds: ['dvr_task_explorer'] },
+          },
+        }] as never,
+      },
+      {
+        messageId: 'assistant-designer',
+        parts: [{
+          id: 'designer-start',
+          type: 'tool',
+          tool: 'devryan_task',
+          state: {
+            status: 'completed',
+            input: { action: 'start', agent: 'designer', label: 'review-layout' },
+            output: JSON.stringify({ task: { taskId: 'dvr_task_designer' } }),
+          },
+        }] as never,
+      },
+    ]);
+
+    expect(projection.ownerMessageId).toBe('assistant-designer');
+    expect(projection.taskIds).toEqual(['dvr_task_explorer', 'dvr_task_designer']);
+    expect(projection.pendingDispatches).toEqual([]);
+  });
+
+  test('keeps provisional and authoritative launches ordered while ignoring duplicate events', () => {
+    const projection = resolveManagedTaskTurnProjection([
+      {
+        messageId: 'assistant-provisional',
+        parts: [{
+          id: 'fixer-start',
+          type: 'tool',
+          tool: 'devryan_task',
+          callID: 'call_fixer',
+          state: {
+            status: 'running',
+            input: { action: 'start', agent: 'fixer', label: 'normalize-review-text' },
+          },
+        }] as never,
+      },
+      {
+        messageId: 'assistant-authoritative',
+        parts: [{
+          id: 'designer-start',
+          type: 'tool',
+          tool: 'devryan_task',
+          state: {
+            status: 'completed',
+            input: { action: 'retry', agent: 'designer', label: 'refine-public-card' },
+            output: JSON.stringify({ followUpTask: { task: { taskId: 'dvr_task_designer' } } }),
+          },
+        }] as never,
+      },
+      {
+        messageId: 'assistant-duplicate',
+        parts: [{
+          id: 'designer-start-duplicate',
+          type: 'tool',
+          tool: 'devryan_task',
+          state: {
+            status: 'completed',
+            input: { action: 'retry', agent: 'designer', label: 'refine-public-card' },
+            output: JSON.stringify({ followUpTask: { task: { taskId: 'dvr_task_designer' } } }),
+          },
+        }] as never,
+      },
+    ]);
+
+    expect(projection.ownerMessageId).toBe('assistant-authoritative');
+    expect(projection.taskIds).toEqual(['dvr_task_designer']);
+    expect(projection.pendingDispatches.map((dispatch) => dispatch.partId)).toEqual(['fixer-start']);
+  });
+
+  test('reconciles a provisional row when the authoritative task appears in a later message', () => {
+    const task = {
+      taskId: 'dvr_task_fixer',
+      dispatchCallId: 'call_fixer',
+      agent: 'fixer',
+      label: 'normalize-review-text',
+      status: 'running',
+      childSessionId: 'ses_fixer',
+      directory: '/workspace',
+    };
+    const projection = resolveManagedTaskTurnProjection([
+      {
+        messageId: 'assistant-provisional',
+        parts: [{
+          id: 'fixer-start',
+          type: 'tool',
+          tool: 'devryan_task',
+          callID: 'call_fixer',
+          state: {
+            status: 'running',
+            input: { action: 'start', agent: 'fixer', label: 'normalize-review-text' },
+          },
+        }] as never,
+      },
+      {
+        messageId: 'assistant-authoritative',
+        parts: [{
+          id: 'fixer-complete',
+          type: 'tool',
+          tool: 'devryan_task',
+          state: {
+            status: 'completed',
+            input: { action: 'start', agent: 'fixer', label: 'normalize-review-text' },
+            output: JSON.stringify({ task }),
+          },
+        }] as never,
+      },
+    ]);
+
+    expect(projection.ownerMessageId).toBe('assistant-authoritative');
+    expect(projection.taskIds).toEqual(['dvr_task_fixer']);
+    expect(projection.pendingDispatches).toEqual([]);
+    expect(projection.fallbackTasks).toEqual([{ partId: 'fixer-complete', ...task }]);
+  });
+
+  test('renders the same-turn Agent Dispatch from one turn-level owner', () => {
     const messageListSource = readFileSync(fileURLToPath(new URL('./MessageList.tsx', import.meta.url)), 'utf8');
     const messageBodySource = readFileSync(fileURLToPath(new URL('./message/MessageBody.tsx', import.meta.url)), 'utf8');
     const managedTaskListSource = readFileSync(fileURLToPath(new URL('./ManagedTaskList.tsx', import.meta.url)), 'utf8');
 
-    expect(messageListSource).not.toContain('resolveManagedTaskTurnPlacement');
-    expect(messageListSource).not.toContain('managedTaskOwnerMessageId');
-    expect(messageBodySource).not.toContain('managedTaskProjection');
+    expect(messageListSource).toContain('resolveManagedTaskTurnProjection');
+    expect(messageListSource).toContain('managedTaskProjection,');
+    expect(messageBodySource).toContain('turnGroupingContext?.managedTaskProjection');
+    expect(messageBodySource).toContain('turnManagedTaskProjection?.ownerMessageId === messageId');
     expect(messageBodySource).toContain('rootSessionId={sessionId}');
-    expect(messageBodySource).toContain('taskIds={managedTaskDispatch.taskIds}');
-    expect(messageBodySource).toContain('pendingDispatches={managedTaskDispatch.pendingDispatches}');
-    expect(messageBodySource).toContain('fallbackTasks={managedTaskFallbacks}');
+    expect(messageBodySource).toContain('taskIds={managedTaskCardProjection?.taskIds ?? []}');
+    expect(messageBodySource).toContain('pendingDispatches={managedTaskCardProjection?.pendingDispatches ?? []}');
+    expect(messageBodySource).toContain('fallbackTasks={managedTaskCardProjection?.fallbackTasks ?? []}');
     expect(messageBodySource).toContain("shouldRecoverMissingManagedDispatches = streamPhase === 'completed'");
     expect(messageBodySource).toContain('recoverMissingDispatches={shouldRecoverMissingManagedDispatches}');
     expect(messageBodySource).not.toContain('recoverMissingDispatches={isMessageCompleted}');
@@ -787,6 +965,81 @@ describe('managed task presentation', () => {
     expect(managedTaskListSource).toContain('managedOrchestrationSelectors.taskIdForDispatchCall');
     expect(managedTaskListSource).toContain('fallbackTasksByDispatchCallId.get(dispatch.dispatchCallId)');
     expect(managedTaskListSource).toContain('loadSnapshot({ rootSessionId })');
+  });
+
+  test('renders two same-turn task rows inside one Agent Dispatch card', () => {
+    const fallbacks = [
+      {
+        partId: 'fixer-start',
+        taskId: 'dvr_task_fixer',
+        dispatchCallId: 'call_fixer',
+        agent: 'fixer',
+        label: 'normalize-review-text-boundary',
+        status: 'running' as const,
+        childSessionId: 'ses_fixer',
+        directory: '/workspace',
+      },
+      {
+        partId: 'designer-start',
+        taskId: 'dvr_task_designer',
+        dispatchCallId: 'call_designer',
+        agent: 'designer',
+        label: 'refine-public-review-card',
+        status: 'running' as const,
+        childSessionId: 'ses_designer',
+        directory: '/workspace',
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ManagedTaskList
+          taskIds={fallbacks.map((task) => task.taskId)}
+          fallbackTasks={fallbacks}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html.match(/data-managed-task-card="true"/g)).toHaveLength(1);
+    expect(html.match(/<h3[^>]*>Agent Dispatch<\/h3>/g)).toHaveLength(1);
+    expect(html).toContain('Fixer');
+    expect(html).toContain('Designer');
+    expect(html).toContain('Normalize Review Text Boundary');
+    expect(html).toContain('Refine Public Review Card');
+    expect(html.match(/Open Subtask/g)).toHaveLength(2);
+  });
+
+  test('keeps dispatch consolidation scoped to each user turn', () => {
+    const firstTurn = resolveManagedTaskTurnProjection([{
+      messageId: 'assistant-turn-one',
+      parts: [{
+        id: 'turn-one-start',
+        type: 'tool',
+        tool: 'devryan_task',
+        state: {
+          status: 'completed',
+          input: { action: 'start' },
+          output: JSON.stringify({ task: { taskId: 'dvr_task_turn_one' } }),
+        },
+      }] as never,
+    }]);
+    const secondTurn = resolveManagedTaskTurnProjection([{
+      messageId: 'assistant-turn-two',
+      parts: [{
+        id: 'turn-two-start',
+        type: 'tool',
+        tool: 'devryan_task',
+        state: {
+          status: 'completed',
+          input: { action: 'start' },
+          output: JSON.stringify({ task: { taskId: 'dvr_task_turn_two' } }),
+        },
+      }] as never,
+    }]);
+
+    expect(firstTurn.ownerMessageId).toBe('assistant-turn-one');
+    expect(firstTurn.taskIds).toEqual(['dvr_task_turn_one']);
+    expect(secondTurn.ownerMessageId).toBe('assistant-turn-two');
+    expect(secondTurn.taskIds).toEqual(['dvr_task_turn_two']);
   });
 
   test('surfaces an active managed start before an authoritative task id exists', () => {
@@ -1099,7 +1352,9 @@ describe('managed task presentation', () => {
     const mobileStyles = readFileSync(fileURLToPath(new URL('../../styles/mobile.css', import.meta.url)), 'utf8');
 
     expect(source).toContain('isMobile?: boolean');
-    expect(source).toContain("isMobile ? 'w-full px-0 pb-1 pt-1'");
+    expect(source).toContain("isMobile ? 'w-full px-0' : 'chat-message-column px-4'");
+    expect(source).not.toContain('pb-1 pt-1');
+    expect(source).not.toContain('pb-2 pt-3');
     expect(source).toContain('data-managed-task-card="true"');
     expect(mobileStyles).toContain('[data-managed-task-card="true"]');
     expect(mobileStyles).toContain('overflow: hidden !important;');

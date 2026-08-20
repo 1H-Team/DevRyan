@@ -3,6 +3,8 @@ import { isPlanControlTitle, summarizeText } from '../text/summarization.js';
 const GENERATED_NEW_SESSION_TITLE_PATTERN = /^new session\s*-\s*\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z$/i;
 const DEFAULT_SESSION_TITLE = 'Untitled Session';
 const SESSION_TITLE_MAX_LENGTH = 80;
+const SESSION_IDLE_POLL_INTERVAL_MS = 250;
+const SESSION_IDLE_WAIT_TIMEOUT_MS = 120_000;
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 const normalizeWhitespace = (value) => trimString(value).replace(/\s+/g, ' ');
@@ -46,6 +48,10 @@ export const createStandardSessionTitleRuntime = ({
   fetchImpl = fetch,
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders = () => ({}),
+  sleep = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+  now = () => Date.now(),
+  sessionIdlePollIntervalMs = SESSION_IDLE_POLL_INTERVAL_MS,
+  sessionIdleWaitTimeoutMs = SESSION_IDLE_WAIT_TIMEOUT_MS,
   logger = console,
 } = {}) => {
   const pendingBySession = new Map();
@@ -68,6 +74,12 @@ export const createStandardSessionTitleRuntime = ({
     if (typeof buildOpenCodeUrl !== 'function') return null;
     const query = trimString(directory) ? `?directory=${encodeURIComponent(trimString(directory))}` : '';
     return buildOpenCodeUrl(`/session${query}`, '');
+  };
+
+  const buildSessionStatusUrl = (directory) => {
+    if (typeof buildOpenCodeUrl !== 'function') return null;
+    const query = trimString(directory) ? `?directory=${encodeURIComponent(trimString(directory))}` : '';
+    return buildOpenCodeUrl(`/session/status${query}`, '');
   };
 
   const readJson = async (url) => {
@@ -98,6 +110,21 @@ export const createStandardSessionTitleRuntime = ({
     return Boolean(response?.ok);
   };
 
+  const waitForSessionIdle = async (sessionID, directory) => {
+    const timeoutMs = Math.max(0, Number(sessionIdleWaitTimeoutMs) || 0);
+    const pollIntervalMs = Math.max(1, Number(sessionIdlePollIntervalMs) || 1);
+    const deadline = now() + timeoutMs;
+
+    while (true) {
+      const statuses = await readJson(buildSessionStatusUrl(directory));
+      if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)) return false;
+      const status = statuses[sessionID];
+      if (!status || status.type === 'idle') return true;
+      if (now() >= deadline) return false;
+      await sleep(Math.min(pollIntervalMs, Math.max(1, deadline - now())));
+    }
+  };
+
   const run = async ({ sessionID, directory, text }) => {
     if (!trimString(sessionID)) return false;
 
@@ -114,6 +141,11 @@ export const createStandardSessionTitleRuntime = ({
       directory: trimString(directory) || undefined,
     }));
     if (!generatedTitle || isPlanControlTitle(generatedTitle) || generatedTitle === observedTitle) return false;
+
+    // A title PATCH advances OpenCode's session revision. Wait for the active
+    // provider turn to settle so session-keyed transports (notably Claude via
+    // Meridian) do not reject the in-flight request as stale.
+    if (!await waitForSessionIdle(sessionID, directory)) return false;
 
     const current = await readJson(buildSessionUrl(sessionID, directory));
     const currentTitle = trimString(current?.title);

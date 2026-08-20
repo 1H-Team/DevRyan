@@ -194,6 +194,7 @@ export const createEvaluationClient = (options = {}) => {
     async promptSession(sessionId, directory, selection, prompt, signal) {
       const tools = resolveProviderPromptTools(selection.providerId, selection.agent, {
         readOnly: normalizeString(selection.agent).toLowerCase() === 'oracle',
+        contextModeAvailable: normalizeString(selection.providerId).toLowerCase() !== 'cursor-acp',
       });
       return await request(appendQuery(`/session/${encodeURIComponent(sessionId)}/prompt_async`, { directory }), {
         method: 'POST',

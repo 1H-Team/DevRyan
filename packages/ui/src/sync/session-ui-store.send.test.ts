@@ -497,6 +497,7 @@ const originalOpencodeClientMethods = {
   getDirectory: testOpencodeClient.getDirectory.bind(testOpencodeClient),
   setDirectory: testOpencodeClient.setDirectory.bind(testOpencodeClient),
   getSdkClient: testOpencodeClient.getSdkClient.bind(testOpencodeClient),
+  getContextModeAvailable: testOpencodeClient.getContextModeAvailable.bind(testOpencodeClient),
   sendCommand: testOpencodeClient.sendCommand.bind(testOpencodeClient),
   sendMessage: testOpencodeClient.sendMessage.bind(testOpencodeClient),
   sendImmediateSubtaskPrompt: testOpencodeClient.sendImmediateSubtaskPrompt.bind(testOpencodeClient),
@@ -515,6 +516,7 @@ const installOpencodeClientMock = () => {
       },
     },
   })
+  testOpencodeClientRecord.getContextModeAvailable = () => true
   testOpencodeClientRecord.sendCommand = (params: Record<string, unknown>) => {
     sendCommandCalls.push(params)
     return Promise.resolve({ data: true })
@@ -610,6 +612,10 @@ const expectPlanModeInstructionContract = (text: string) => {
   expect(text).toContain("Preserve every prior requirement, decision, constraint, and file reference")
   expect(text).toContain("complete, self-contained replacement plan")
   expect(text).toContain("Never return only a patch, diff, addendum, or abbreviated delta")
+  expect(text).toContain("ctx_index followed by batched ctx_search")
+  expect(text).toContain("ctx_fetch_and_index followed by batched ctx_search")
+  expect(text).toContain("ctx_execute, ctx_execute_file, and ctx_batch_execute are intentionally unavailable")
+  expect(text).toContain("do not retry Context Mode")
 }
 
 const createPdfAttachment = () => ({
@@ -3559,7 +3565,14 @@ describe("session-ui-store send routing", () => {
   })
 
   test("plan mode synthetic instruction follows the plan.md layout contract", () => {
-    expectPlanModeInstructionContract(buildPlanModeSyntheticInstruction())
+    expectPlanModeInstructionContract(buildPlanModeSyntheticInstruction(true))
+  })
+
+  test("plan mode synthetic instruction omits Context Mode routing when unavailable", () => {
+    const instruction = buildPlanModeSyntheticInstruction(false)
+    expect(instruction).not.toContain("ctx_index")
+    expect(instruction).not.toContain("Context Mode storage failure")
+    expect(instruction).toContain("Plan output format")
   })
 
   test("plan mode send injects the structured plan layout instruction", async () => {
@@ -3579,6 +3592,7 @@ describe("session-ui-store send routing", () => {
     )
 
     expect(sendMessageCalls[0]?.prefaceTextSynthetic).toBe(true)
+    expect(sendMessageCalls[0]?.planMode).toBe(true)
     expectPlanModeInstructionContract(String(sendMessageCalls[0]?.prefaceText ?? ""))
     expect(sendMessageCalls[0]?.additionalParts).toBe(undefined)
   })
@@ -3603,6 +3617,7 @@ describe("session-ui-store send routing", () => {
     expect(sendMessageCalls[0]?.additionalParts).toEqual([
       { text: "Implementation instructions", synthetic: true, files: undefined },
     ])
+    expect(sendMessageCalls[0]?.planMode).toBe(false)
   })
 
   test("PlanCard implementation send keeps the saved plan path synthetic without file attachments", async () => {
@@ -4671,6 +4686,7 @@ describe("session-ui-store send routing", () => {
     expect(sendMessageCalls[0]?.providerID).toBe("provider-selected")
     expect(sendMessageCalls[0]?.modelID).toBe("model-selected")
     expect(sendMessageCalls[0]?.variant).toBe("fast")
+    expect(sendMessageCalls[0]?.planMode).toBe(true)
     expect(sendMessageCalls[0]?.prefaceTextSynthetic).toBe(true)
     expectPlanModeInstructionContract(String(sendMessageCalls[0]?.prefaceText ?? ""))
     expect(sendMessageCalls[0]?.additionalParts).toBe(undefined)

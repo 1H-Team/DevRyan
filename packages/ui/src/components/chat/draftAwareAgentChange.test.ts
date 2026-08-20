@@ -205,7 +205,7 @@ describe('applyDraftAwareAgentChange', () => {
         });
     });
 
-    test('keeps the target agent configured model explicit when it is unavailable', () => {
+    test('falls back when the target agent model is explicitly unavailable', () => {
         const unavailableModel = {
             ...createModel('opencode', 'unavailable-model'),
             available: false,
@@ -238,9 +238,9 @@ describe('applyDraftAwareAgentChange', () => {
             selectionActions(),
         );
 
-        expect(useConfigStore.getState().currentModelId).toBe('unavailable-model');
+        expect(useConfigStore.getState().currentModelId).toBe('small');
         expect(useConfigStore.getState().currentVariant).toBe(undefined);
-        expect(resolveCurrentDraftSendConfig(DRAFT_ID)?.modelID).toBe('unavailable-model');
+        expect(resolveCurrentDraftSendConfig(DRAFT_ID)?.modelID).toBe('small');
     });
 
     test('records draft send config when cycling agents on a new draft', () => {

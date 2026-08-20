@@ -104,7 +104,102 @@ function toOptionalCount(value) {
     : null;
 }
 
-function buildAnthropicMeasurement(visibleSkills, usage) {
+function readCount(source, ...keys) {
+  for (const key of keys) {
+    const value = source?.[key];
+    const count = toOptionalCount(value);
+    if (count !== null) return count;
+  }
+  return null;
+}
+
+function sanitizeRuntimeVersion(value) {
+  const normalized = normalizeString(value);
+  return normalized && normalized.length <= 64 && /^[a-z0-9.+_-]+$/i.test(normalized)
+    ? normalized
+    : null;
+}
+
+function buildClaudeRuntimeMeasurement(runtime) {
+  if (!runtime || typeof runtime !== 'object') return null;
+  const allowedCompatibilityStatuses = new Set([
+    'validated',
+    'user_managed',
+    'drifted',
+    'upstream_blocked',
+  ]);
+  const allowedRuntimeStatuses = new Set(['ready', 'missing', 'drifted']);
+  const allowedSources = new Set(['managed', 'user-managed']);
+  const allowedChannels = new Set(['candidate', 'control']);
+  const versions = runtime.installed && typeof runtime.installed === 'object'
+    ? runtime.installed
+    : {};
+  const managementSources = runtime.managementSources
+    && typeof runtime.managementSources === 'object'
+    ? runtime.managementSources
+    : {};
+  const sanitizeSource = (value) => (allowedSources.has(value) ? value : null);
+  return {
+    source: allowedSources.has(runtime.source) ? runtime.source : null,
+    channel: allowedChannels.has(runtime.channel) ? runtime.channel : null,
+    compatibilityStatus: allowedCompatibilityStatuses.has(runtime.compatibilityStatus)
+      ? runtime.compatibilityStatus
+      : null,
+    runtimeStatus: allowedRuntimeStatuses.has(runtime.runtimeStatus) ? runtime.runtimeStatus : null,
+    versions: {
+      opencodeWithClaude: sanitizeRuntimeVersion(versions.opencodeWithClaude),
+      meridian: sanitizeRuntimeVersion(versions.meridian),
+      agentSdk: sanitizeRuntimeVersion(versions.agentSdk),
+      claudeCode: sanitizeRuntimeVersion(versions.claudeCode),
+    },
+    managementSources: {
+      opencodeWithClaude: sanitizeSource(managementSources.opencodeWithClaude),
+      meridian: sanitizeSource(managementSources.meridian),
+      agentSdk: sanitizeSource(managementSources.agentSdk),
+      claudeCode: sanitizeSource(managementSources.claudeCode),
+    },
+  };
+}
+
+function buildProviderUsageMeasurement(usage) {
+  if (!usage || typeof usage !== 'object') return null;
+  const cache = usage.cache && typeof usage.cache === 'object' ? usage.cache : {};
+  const cacheCreation = usage.cacheCreation && typeof usage.cacheCreation === 'object'
+    ? usage.cacheCreation
+    : {};
+  return {
+    uncachedInputTokens: readCount(usage, 'uncachedInputTokens', 'inputTokens', 'input'),
+    cacheReadInputTokens: readCount(
+      usage,
+      'cacheReadInputTokens',
+      'cacheReadTokens',
+    ) ?? readCount(cache, 'read'),
+    cacheCreationInputTokens: readCount(
+      usage,
+      'cacheCreationInputTokens',
+      'cacheWriteTokens',
+    ) ?? readCount(cache, 'write'),
+    outputTokens: readCount(usage, 'outputTokens', 'output'),
+    reasoningTokens: readCount(usage, 'reasoningTokens', 'reasoning'),
+    totalTokens: readCount(usage, 'totalTokens', 'total'),
+    cacheCreation: {
+      fiveMinuteTokens: readCount(
+        cacheCreation,
+        'fiveMinuteTokens',
+        'ephemeral5mInputTokens',
+        'ephemeral_5m_input_tokens',
+      ),
+      oneHourTokens: readCount(
+        cacheCreation,
+        'oneHourTokens',
+        'ephemeral1hInputTokens',
+        'ephemeral_1h_input_tokens',
+      ),
+    },
+  };
+}
+
+function buildAnthropicMeasurement(visibleSkills, usage, claudeRuntime) {
   const original = renderAnthropicSkillCatalog(visibleSkills, false);
   const transformed = renderAnthropicSkillCatalog(visibleSkills, true);
   const originalBytes = Buffer.byteLength(original, 'utf8');
@@ -123,6 +218,14 @@ function buildAnthropicMeasurement(visibleSkills, usage) {
     requestCount: toOptionalCount(usage?.requestCount),
     activeContextTokens: toOptionalCount(usage?.activeContextTokens),
     cumulativeProcessedInputTokens: toOptionalCount(usage?.cumulativeProcessedInputTokens),
+    firstTurnProviderUsage: buildProviderUsageMeasurement(usage?.firstTurnProviderUsage),
+    providerUsage: buildProviderUsageMeasurement(usage?.providerUsage || usage),
+    tooling: {
+      rawToolCount: readCount(usage?.tooling, 'rawToolCount', 'toolCount'),
+      eagerToolCount: readCount(usage?.tooling, 'eagerToolCount'),
+      deferredToolCount: readCount(usage?.tooling, 'deferredToolCount'),
+    },
+    runtime: buildClaudeRuntimeMeasurement(claudeRuntime),
   };
 }
 
@@ -218,6 +321,65 @@ function stableJsonValue(value) {
   return value;
 }
 
+function serializeCanonicalToolDefinition(tool) {
+  return JSON.stringify(stableJsonValue({
+    id: tool?.id,
+    description: tool?.description,
+    parameters: tool?.parameters,
+  }));
+}
+
+function getToolDefinitionByteCount(tool) {
+  return countUtf8Bytes([
+    typeof tool?.id === 'string' ? tool.id : '',
+    typeof tool?.description === 'string' ? tool.description : '',
+    JSON.stringify(tool?.parameters) || '',
+  ]);
+}
+
+function findExactDuplicateDefinitions(tools) {
+  const groups = new Map();
+  for (const tool of tools) {
+    const serialized = serializeCanonicalToolDefinition(tool);
+    const existing = groups.get(serialized) || [];
+    existing.push(tool);
+    groups.set(serialized, existing);
+  }
+  return [...groups.entries()]
+    .filter(([, entries]) => entries.length > 1)
+    .map(([serialized, entries]) => ({
+      id: entries[0].id,
+      fingerprint: crypto.createHash('sha256').update(serialized).digest('hex'),
+      occurrences: entries.length,
+      duplicateByteCount: getToolDefinitionByteCount(entries[0]) * (entries.length - 1),
+    }));
+}
+
+function deduplicateExactToolDefinitions(tools) {
+  const seen = new Set();
+  const retained = [];
+  for (const tool of asArray(tools)) {
+    const serialized = serializeCanonicalToolDefinition(tool);
+    if (seen.has(serialized)) continue;
+    seen.add(serialized);
+    retained.push(tool);
+  }
+  return retained;
+}
+
+function countDuplicateOccurrenceBytes(tools) {
+  const seenIds = new Set();
+  let byteCount = 0;
+  for (const tool of tools) {
+    if (seenIds.has(tool.id)) {
+      byteCount += getToolDefinitionByteCount(tool);
+    } else {
+      seenIds.add(tool.id);
+    }
+  }
+  return byteCount;
+}
+
 function findDuplicateSchemas(tools) {
   const groups = new Map();
   for (const tool of tools) {
@@ -243,6 +405,7 @@ function buildHarnessContextBudget({
   readSkillBody,
   context,
   anthropicUsage,
+  claudeRuntime,
 } = {}) {
   const toolIds = asArray(toolManifest?.toolIds).filter((toolId) => typeof toolId === 'string');
   const mode = toolManifest?.selector?.mode || 'idsOnly';
@@ -269,11 +432,22 @@ function buildHarnessContextBudget({
     packagedAgentPrompts: buildPackagedPromptMeasurement(packagedAgents),
     visibleSkillCatalogMetadata: buildSkillCatalogMeasurement(visibleSkills),
     visibleOnDemandSkillBodies: buildSkillBodyMeasurement(resolvedBodyItems),
-    anthropic: buildAnthropicMeasurement(visibleSkills, anthropicUsage),
+    anthropic: buildAnthropicMeasurement(visibleSkills, anthropicUsage, claudeRuntime),
     tools: {
       label: 'runtimeCatalogUpperBound',
       mode,
       duplicatesRetained: true,
+      rawItemCount: catalogAvailability === 'available' ? catalogTools.length : null,
+      uniqueItemCount: catalogAvailability === 'available'
+        ? new Set(catalogTools.map((tool) => tool.id)).size
+        : null,
+      duplicateOccurrenceByteCount: catalogAvailability === 'available'
+        ? countDuplicateOccurrenceBytes(catalogTools)
+        : null,
+      exactDuplicateDefinitionByteCount: catalogAvailability === 'available'
+        ? findExactDuplicateDefinitions(catalogTools)
+          .reduce((total, group) => total + group.duplicateByteCount, 0)
+        : null,
       ids: {
         availability: idsAvailability,
         itemCount: idsAvailability === 'available' ? toolIds.length : null,
@@ -299,6 +473,9 @@ function buildHarnessContextBudget({
       duplicateSchemas: catalogAvailability === 'available'
         ? findDuplicateSchemas(catalogTools)
         : null,
+      exactDuplicateDefinitions: catalogAvailability === 'available'
+        ? findExactDuplicateDefinitions(catalogTools)
+        : null,
     },
   });
 
@@ -306,4 +483,10 @@ function buildHarnessContextBudget({
   return pending.length > 0 ? Promise.all(bodyItems).then(finish) : finish(bodyItems);
 }
 
-export { buildHarnessContextBudget, findDuplicateIds, findDuplicateSchemas };
+export {
+  buildHarnessContextBudget,
+  deduplicateExactToolDefinitions,
+  findDuplicateIds,
+  findDuplicateSchemas,
+  findExactDuplicateDefinitions,
+};

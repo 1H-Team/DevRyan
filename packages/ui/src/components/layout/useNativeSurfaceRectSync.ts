@@ -48,6 +48,7 @@ export const useNativeSurfaceRectSync = (
     if (!element || typeof window === 'undefined' || typeof document === 'undefined') return;
 
     let animationFrame = 0;
+    let queuedMeasureFrame = 0;
     let hardStopTimer: ReturnType<typeof setTimeout> | null = null;
     let settleTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -57,6 +58,14 @@ export const useNativeSurfaceRectSync = (
       if (sameRect(lastRectRef.current, next)) return;
       lastRectRef.current = next;
       callbackRef.current(next);
+    };
+
+    const scheduleMeasure = () => {
+      if (queuedMeasureFrame) return;
+      queuedMeasureFrame = window.requestAnimationFrame(() => {
+        queuedMeasureFrame = 0;
+        measure();
+      });
     };
 
     const stopActivityLoop = (measureFinalRect = true) => {
@@ -106,9 +115,9 @@ export const useNativeSurfaceRectSync = (
     };
 
     measure();
-    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(scheduleMeasure) : null;
     observer?.observe(element);
-    window.addEventListener('resize', measure);
+    window.addEventListener('resize', scheduleMeasure);
     document.addEventListener('transitionrun', handleTransitionStart, true);
     document.addEventListener('transitionstart', handleTransitionStart, true);
     document.addEventListener('transitionend', handleTransitionEnd, true);
@@ -120,9 +129,10 @@ export const useNativeSurfaceRectSync = (
 
     return () => {
       stopActivityLoop(false);
+      if (queuedMeasureFrame) window.cancelAnimationFrame(queuedMeasureFrame);
       observer?.disconnect();
       window.clearInterval(pollTimer);
-      window.removeEventListener('resize', measure);
+      window.removeEventListener('resize', scheduleMeasure);
       document.removeEventListener('transitionrun', handleTransitionStart, true);
       document.removeEventListener('transitionstart', handleTransitionStart, true);
       document.removeEventListener('transitionend', handleTransitionEnd, true);

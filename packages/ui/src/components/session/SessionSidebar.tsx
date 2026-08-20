@@ -42,6 +42,7 @@ import { SidebarHeader } from './sidebar/SidebarHeader';
 import { SidebarFooter } from './sidebar/SidebarFooter';
 import { SidebarProjectsList } from './sidebar/SidebarProjectsList';
 import { SessionNodeItem } from './sidebar/SessionNodeItem';
+import { beginSessionNavigation } from '@/sync/session-load-performance';
 import type { SessionSearchDialogItem } from './sidebar/SessionSearchDialog';
 import { listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
 import {
@@ -402,6 +403,13 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const gitBranches = useGitAllBranches();
 
   const sync = useSync();
+  const prepareSession = React.useCallback((sessionId: string, sessionDirectory: string) => {
+    beginSessionNavigation(sessionId, sessionDirectory);
+    void sync.ensureSessionRenderable(sessionId, {
+      directory: sessionDirectory,
+      reason: 'selected',
+    });
+  }, [sync]);
   const liveSessions = useAllLiveSessions();
   const sessionUserActivity = useAllSessionUserActivity();
   const hasLoadedGlobalSessions = useGlobalSessionsStore((state) => state.hasLoaded);
@@ -742,6 +750,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     setActiveMainTab,
     setSessionSwitcherOpen,
     setCurrentSession,
+    prepareSession,
     updateSessionTitle,
     shareSession,
     unshareSession,
@@ -1203,11 +1212,11 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     deleteNewSessionDraft(draftId);
   }, [deleteNewSessionDraft]);
 
-  useSessionPrefetch({
+  const sessionPrefetchIntent = useSessionPrefetch({
     currentSessionId,
     currentDirectory,
     sortedSessions,
-    ensureSessionRenderable: sync.ensureSessionRenderable,
+    prefetchSession: sync.prefetchSession,
   });
 
   const desktopHeaderActionButtonClass =
@@ -1262,6 +1271,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         handleCancelEdit={handleCancelEdit}
         toggleParent={toggleParent}
         handleSessionSelect={handleSessionSelect}
+        prepareSession={prepareSession}
+        scheduleSessionPrefetch={sessionPrefetchIntent.schedule}
+        cancelSessionPrefetch={sessionPrefetchIntent.cancel}
         handleSessionDoubleClick={handleSessionDoubleClick}
         togglePinnedSession={togglePinnedSession}
         copiedSessionId={copiedSessionId}
@@ -1303,6 +1315,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       handleCancelEdit,
       toggleParent,
       handleSessionSelect,
+      prepareSession,
+      sessionPrefetchIntent,
       handleSessionDoubleClick,
       togglePinnedSession,
       copiedSessionId,

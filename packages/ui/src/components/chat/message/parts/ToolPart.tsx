@@ -13,7 +13,7 @@ import { toolDisplayStyles } from '@/lib/typography';
 import { LazySyntaxHighlighter as SyntaxHighlighter } from '@/components/chat/LazySyntaxHighlighter';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { useDirectorySync, useSessionMessageRecords, useEnsureSessionMessages } from '@/sync/sync-context';
+import { useSessionChildren, useSessionMessageRecords, useEnsureSessionMessages } from '@/sync/sync-context';
 import { getSyncChildStores } from '@/sync/sync-refs';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionActivity } from '@/hooks/useSessionActivity';
@@ -1529,13 +1529,10 @@ const ToolPart: React.FC<ToolPartProps> = ({
     }), [taskParentSessionId, taskPartIdentity.callID, taskPartIdentity.id, taskPartIdentity.messageID]);
     const taskAssignment = useTaskSessionAssignment(taskInvocationKey);
     const taskSessionLinkContext = useTaskSessionLinkContext();
-    const directorySessions = useDirectorySync(React.useCallback((state) => state.session, []), currentDirectory);
-    const fallbackChildSessions = React.useMemo(() => {
-        if (!isTaskTool || !taskParentSessionId) {
-            return EMPTY_TASK_CHILD_SESSIONS;
-        }
-        return directorySessions.filter((session) => session.parentID === taskParentSessionId);
-    }, [directorySessions, isTaskTool, taskParentSessionId]);
+    const taskChildSessions = useSessionChildren(taskParentSessionId, currentDirectory);
+    const fallbackChildSessions = isTaskTool && taskParentSessionId
+        ? taskChildSessions
+        : EMPTY_TASK_CHILD_SESSIONS;
     const childSessionFallbackId = React.useMemo(() => {
         if (!isTaskTool || explicitTaskSessionId || taskAssignment?.sessionId) {
             return undefined;

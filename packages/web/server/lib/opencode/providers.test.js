@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   ensureAnthropicOAuthProviderConfig,
   getProviderSources,
+  removeAntigravityProviderConfig,
 } from './providers.js';
 
 let tempDir = null;
@@ -125,5 +126,32 @@ describe('provider config helpers', () => {
 
     expect(sources.user.exists).toBe(true);
     expect(sources.user.path).toBe(userConfigPath);
+  });
+
+  it('removes only Antigravity models from the shared Google provider config', () => {
+    const projectDir = makeProjectDir();
+    const configPath = join(projectDir, '.opencode', 'opencode.json');
+    mkdirSync(join(projectDir, '.opencode'), { recursive: true });
+    writeFileSync(configPath, JSON.stringify({
+      provider: {
+        google: {
+          npm: '@ai-sdk/google',
+          models: {
+            'antigravity-gemini-3-pro': { name: 'Gemini 3 Pro (Antigravity)' },
+            'gemini-2.5-pro': { name: 'Gemini 2.5 Pro' },
+          },
+        },
+      },
+    }), 'utf8');
+
+    expect(removeAntigravityProviderConfig(projectDir, 'project')).toBe(true);
+
+    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    expect(config.provider.google).toEqual({
+      npm: '@ai-sdk/google',
+      models: {
+        'gemini-2.5-pro': { name: 'Gemini 2.5 Pro' },
+      },
+    });
   });
 });

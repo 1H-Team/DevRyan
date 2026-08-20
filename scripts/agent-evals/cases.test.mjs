@@ -85,6 +85,7 @@ describe('evaluation case fixtures', () => {
     const prepared = prepareCaseFixture('managed-change', runFiles);
 
     assert.match(definition.prompt, /devryan_task/);
+    assert.match(definition.prompt, /execution-capable Context Mode tool/);
     assert.match(definition.prompt, /wait/);
     assert.match(definition.prompt, /continue/);
     assert.match(definition.prompt, new RegExp(runFiles.sourceRelativePath));
@@ -115,6 +116,36 @@ describe('evaluation case fixtures', () => {
       args: ['--test'],
       options: { shell: false },
     });
+  });
+
+  test('seeds broad parent, Explorer-child, and bounded Context Mode routing fixtures', async () => {
+    const fixtureRoot = makeFixture();
+    const starting = assertFixtureReady(fixtureRoot);
+    for (const caseId of [
+      'context-large-analysis',
+      'context-explorer-analysis',
+      'context-bounded-lookup',
+    ]) {
+      const runFiles = allocateRunFiles(fixtureRoot, caseId);
+      const prepared = prepareCaseFixture(caseId, runFiles);
+      const definition = buildCaseDefinition(caseId, runFiles);
+
+      assert.match(prepared.baselineSource, /CONTEXT_SENTINEL/);
+      assert.equal((prepared.baselineSource.match(/export const route/g) ?? []).length, 180);
+      assert.match(definition.prompt, new RegExp(runFiles.sourceRelativePath.replaceAll('.', '\\.')));
+      assert.match(definition.prompt, /Context Mode|ctx_\*|native read or search/);
+      if (caseId === 'context-explorer-analysis') {
+        assert.match(definition.prompt, /devryan_task/);
+        assert.match(definition.prompt, /Explorer child/);
+      }
+      const testResult = await runNodeTests({
+        fixtureRoot,
+        testRelativePath: runFiles.testRelativePath,
+        timeoutMs: 5_000,
+      });
+      assert.equal(testResult.exitCode, 0, testResult.stderr);
+      assert.equal(cleanupRunFiles({ fixtureRoot, runFiles, startingManifest: starting }).restored, true);
+    }
   });
 
   test('seeds bounded focused and deep Oracle review fixtures without executable tests', () => {
@@ -293,6 +324,12 @@ export function summarizeEvalValues(values) {
           childSessionIds: ['ses_child'],
           tools: [
             { tool: 'devryan_task', status: 'completed', final: true },
+            {
+              tool: 'ctx_execute_file',
+              status: 'completed',
+              final: true,
+              sessionScope: 'child',
+            },
             { tool: 'apply_patch', status: 'completed', final: true },
             { tool: 'bash', status: 'completed', final: true },
           ],

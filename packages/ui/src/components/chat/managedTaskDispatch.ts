@@ -39,6 +39,18 @@ export type ManagedTaskDispatchFallback = {
   directory: string;
 };
 
+export type ManagedTaskTurnProjection = {
+  ownerMessageId: string | null;
+  taskIds: string[];
+  pendingDispatches: PendingManagedTaskDispatch[];
+  fallbackTasks: ManagedTaskDispatchFallback[];
+};
+
+export type ManagedTaskTurnMessage = {
+  messageId: string;
+  parts: readonly Part[];
+};
+
 const MANAGED_TASK_STATUSES = new Set<ManagedTaskStatus>([
   'queued',
   'starting',
@@ -246,4 +258,59 @@ export const resolveManagedTaskDispatch = (parts: readonly Part[]) => {
     : projectedContentParts;
 
   return { contentParts, taskIds, pendingDispatches };
+};
+
+export const resolveManagedTaskTurnProjection = (
+  messages: readonly ManagedTaskTurnMessage[],
+): ManagedTaskTurnProjection => {
+  const taskIds: string[] = [];
+  const pendingDispatches: PendingManagedTaskDispatch[] = [];
+  const seenTaskIds = new Set<string>();
+  const seenPendingPartIds = new Set<string>();
+  const allParts: Part[] = [];
+  let ownerMessageId: string | null = null;
+
+  for (const message of messages) {
+    allParts.push(...message.parts);
+    const dispatch = resolveManagedTaskDispatch(message.parts);
+    let addedFreshDispatch = false;
+
+    for (const taskId of dispatch.taskIds) {
+      if (seenTaskIds.has(taskId)) continue;
+      seenTaskIds.add(taskId);
+      taskIds.push(taskId);
+      addedFreshDispatch = true;
+    }
+
+    for (const pendingDispatch of dispatch.pendingDispatches) {
+      if (seenPendingPartIds.has(pendingDispatch.partId)) continue;
+      seenPendingPartIds.add(pendingDispatch.partId);
+      pendingDispatches.push(pendingDispatch);
+      addedFreshDispatch = true;
+    }
+
+    if (addedFreshDispatch) ownerMessageId = message.messageId;
+  }
+
+  const allFallbackTasks = resolveManagedTaskFallbacks(allParts);
+  const authoritativeDispatchCallIds = new Set(allFallbackTasks
+    .filter((task) => seenTaskIds.has(task.taskId) && task.dispatchCallId)
+    .map((task) => task.dispatchCallId as string));
+  const reconciledPendingDispatches = pendingDispatches.filter((dispatch) => (
+    !dispatch.dispatchCallId || !authoritativeDispatchCallIds.has(dispatch.dispatchCallId)
+  ));
+  const pendingDispatchCallIds = new Set(reconciledPendingDispatches
+    .map((dispatch) => dispatch.dispatchCallId)
+    .filter((dispatchCallId): dispatchCallId is string => Boolean(dispatchCallId)));
+  const fallbackTasks = allFallbackTasks.filter((task) => (
+    seenTaskIds.has(task.taskId)
+    || Boolean(task.dispatchCallId && pendingDispatchCallIds.has(task.dispatchCallId))
+  ));
+
+  return {
+    ownerMessageId,
+    taskIds,
+    pendingDispatches: reconciledPendingDispatches,
+    fallbackTasks,
+  };
 };

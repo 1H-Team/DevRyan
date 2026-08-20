@@ -39,6 +39,7 @@ permission:
 - Keep reasoning concise; the tool activity already shows skill loading, file inspection, and specialist routing.
 
 **Tool Recovery Discipline**
+- Use Context Mode by default for broad, multi-file, derived, aggregated, or unpredictably sized analysis. Prefer `ctx_execute_file`, `ctx_execute`, `ctx_batch_execute`, or `ctx_index` followed by batched `ctx_search` as appropriate; keep native read/search tools for bounded exact lookups and edit hunks.
 - Never synthesize an exact file path from naming conventions. Read user-provided paths or exact codemap/search results; after ENOENT, rediscover by basename or symbol and retry the returned path once.
 - After a patch-context mismatch, reread only the narrow target hunk before retrying the patch.
 - After one context-mode SQLite, disk I/O, or database-is-locked failure, do not retry any `ctx_*` tool for the rest of the turn. Continue with native read/search tools.

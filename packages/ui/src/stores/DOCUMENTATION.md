@@ -57,11 +57,14 @@ legacy drafts that persist both provider and model) may preserve a different mod
 ambient directory or reload state cannot make the display diverge from send-time
 agent-default routing.
 
-Managed non-admin accounts persist each per-agent provider, model, and optional
-thinking variant together in their settings overrides. Fresh drafts restore that
-selection atomically. Legacy model-only selections inherit a matching account-default
-variant first, then the matching configured agent variant, before using the provider's
-normal concrete fallback; explicit persisted variants remain authoritative.
+Managed non-admin accounts keep sparse per-agent provider, model, and optional
+thinking overrides as account-global state, never directory snapshots. Only an
+explicit Save in Settings → Sessions persists one through the server; composer
+changes remain draft/session scoped. Reset removes the sparse key so the next
+fresh draft inherits the live host agent model and variant. The shared resolver
+uses personal override, live host agent configuration, then model-availability
+fallback, normalizing thinking through the selected provider model. Council is
+host-managed and ignores stale personal entries.
 
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
 
@@ -86,6 +89,8 @@ These stores coordinate persistent project/session metadata across multiple view
 
 For a managed principal, `useProjectsStore.ts` derives the visible project registry and
 active project from the authenticated assignment snapshot during settings hydration.
+Project lists are naturally alphabetized by their display name at startup (numbers before
+letters), while explicit drag-and-drop reordering remains available for the current runtime.
 Each repository keeps the server-owned UUID and contains an ordered branch projection;
 the store does not generate path-based replacement IDs or apply browser-local visual
 metadata overrides. Assignment-provided icon, image, background, and color fields replace

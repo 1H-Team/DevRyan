@@ -171,6 +171,7 @@ describe('VS Code plugin discovery', () => {
         'opencode-antigravity-auth',
         '@rama_nigg/open-cursor',
         'opencode-with-claude',
+        'opencode-gpt-imagegen',
         'context-mode',
         'oh-my-opencode-slim',
         'superpowers',
@@ -282,6 +283,32 @@ describe('VS Code Cursor SDK config handling', () => {
     expect(overlayConfig.provider?.['cursor-acp']).toBeUndefined();
     expect(overlayConfig.provider?.openai).toBeUndefined();
     expect(JSON.stringify(readJson(configPath))).toContain('@rama_nigg/open-cursor@latest');
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  it('removes only Antigravity models from a project Google provider config', async () => {
+    const { removeAntigravityProviderConfig } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-antigravity-project-'));
+    const configPath = path.join(projectDir, '.opencode', 'opencode.json');
+    writeJson(configPath, {
+      provider: {
+        google: {
+          npm: '@ai-sdk/google',
+          models: {
+            'antigravity-gemini-3-pro': { name: 'Gemini 3 Pro (Antigravity)' },
+            'gemini-2.5-pro': { name: 'Gemini 2.5 Pro' },
+          },
+        },
+      },
+    });
+
+    expect(removeAntigravityProviderConfig(projectDir, 'project')).toBe(true);
+    expect(readJson(configPath).provider.google).toEqual({
+      npm: '@ai-sdk/google',
+      models: {
+        'gemini-2.5-pro': { name: 'Gemini 2.5 Pro' },
+      },
+    });
     fs.rmSync(projectDir, { recursive: true, force: true });
   });
 

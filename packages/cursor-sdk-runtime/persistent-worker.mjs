@@ -9,16 +9,14 @@ import {
   generateCursorSessionTitle,
 } from './title-generation.js';
 import { createAgentCache } from './agent-cache.js';
+import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
+import { assertCursorSdkNodeCompatibility } from './node-version.js';
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 
 const isPlainObject = (value) => (
   value !== null && typeof value === 'object' && !Array.isArray(value)
 );
-
-const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
-
-const readTokenCount = (value) => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0);
 
 const parseSettingSourcesFlag = (raw) => {
   const v = trimString(raw);
@@ -33,13 +31,6 @@ const parseSettingSourcesFlag = (raw) => {
 // comma list of cursor setting layers (project,user,team,mdm,plugins,all) or "none" to
 // load none, trimming ambient rules/settings context sent to the cursor-agent runtime.
 const CURSOR_SETTING_SOURCES = parseSettingSourcesFlag(process.env.OPENCHAMBER_CURSOR_SETTING_SOURCES);
-
-const firstStringValue = (...candidates) => {
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string') return candidate;
-  }
-  return '';
-};
 
 // Upper bound on how long we wait for an SDK run cancel to settle before we
 // force the request to finish. Prevents a hung cancel from leaving the host
@@ -75,88 +66,6 @@ const finalStatusFromSdkStatus = (status) => {
   if (normalized === 'FINISHED' || normalized === 'FINISH' || normalized === 'SUCCESS' || normalized === 'STOP' || normalized === 'COMPLETED') return 'success';
   if (normalized === 'ERROR' || normalized === 'FAILED' || normalized === 'FAILURE') return 'error';
   if (normalized === 'CANCELLED' || normalized === 'CANCELED' || normalized === 'EXPIRED') return 'cancelled';
-  return null;
-};
-
-const normalizeToolCallStatus = (status) => {
-  const normalized = trimString(status).toLowerCase();
-  if (normalized === 'completed' || normalized === 'complete' || normalized === 'done' || normalized === 'success' || normalized === 'finished') return 'completed';
-  if (normalized === 'error' || normalized === 'failed' || normalized === 'failure') return 'error';
-  if (normalized === 'cancelled' || normalized === 'canceled') return 'cancelled';
-  if (normalized === 'pending') return 'pending';
-  return 'running';
-};
-
-const normalizeInteractionUpdateToSdkMessage = (input) => {
-  const update = isPlainObject(input?.update) ? input.update : input;
-  if (!isPlainObject(update)) return null;
-
-  if (update.type === 'text-delta' || update.type === 'token-delta') {
-    const text = firstStringValue(update.text, update.delta, update.token);
-    return text
-      ? {
-          type: 'assistant',
-          message: {
-            role: 'assistant',
-            content: [{ type: 'text', text }],
-          },
-        }
-      : null;
-  }
-
-  if (update.type === 'thinking-delta') {
-    const text = firstStringValue(update.text, update.delta);
-    return text ? { type: 'thinking', text } : null;
-  }
-
-  if (
-    update.type === 'thinking-completed'
-    || update.type === 'thinking_completed'
-    || update.type === 'thinking-complete'
-  ) {
-    return { type: 'thinking_completed' };
-  }
-
-  if (
-    update.type === 'tool-call-started'
-    || update.type === 'partial-tool-call'
-    || update.type === 'tool-call-completed'
-  ) {
-    const toolCall = isPlainObject(update.toolCall) ? update.toolCall : {};
-    const callID = trimString(update.callId ?? update.call_id ?? toolCall.callId ?? toolCall.call_id ?? toolCall.id);
-    const name = trimString(toolCall.name ?? toolCall.type ?? update.name) || 'tool';
-    const status = update.type === 'tool-call-completed'
-      ? 'completed'
-      : normalizeToolCallStatus(update.status);
-    return {
-      type: 'tool_call',
-      call_id: callID,
-      name,
-      status,
-      ...(hasOwn(toolCall, 'args') ? { args: toolCall.args } : {}),
-      ...(hasOwn(toolCall, 'result') ? { result: toolCall.result } : {}),
-      ...(isPlainObject(toolCall.truncated) ? { truncated: toolCall.truncated } : {}),
-    };
-  }
-
-  if (update.type === 'summary') {
-    const text = trimString(update.summary ?? update.text);
-    return text ? { type: 'task', text } : null;
-  }
-
-  if (update.type === 'turn-ended') {
-    const usage = isPlainObject(update.usage) ? update.usage : null;
-    if (!usage) return null;
-    const tokens = {
-      input: readTokenCount(usage.inputTokens),
-      output: readTokenCount(usage.outputTokens),
-      reasoning: 0,
-      cache: { read: readTokenCount(usage.cacheReadTokens), write: readTokenCount(usage.cacheWriteTokens) },
-    };
-    const hasUsage = tokens.input || tokens.output || tokens.cache.read || tokens.cache.write;
-    return hasUsage ? { type: 'usage', tokens } : null;
-  }
-
   return null;
 };
 
@@ -258,6 +167,7 @@ const agentCache = createAgentCache({
   },
 });
 const activeRuns = new Map();
+assertCursorSdkNodeCompatibility();
 const cursorSdk = await import('@cursor/sdk');
 configureCursorSdkRipgrep(cursorSdk, { env: process.env });
 const { Agent } = cursorSdk;

@@ -57,7 +57,7 @@ import { useProviderRecoveryStore } from '@/stores/useProviderRecoveryStore';
 import { useI18n } from '@/lib/i18n';
 import { resolveEffectivePlanIndicatorState, type PlanIndicatorState } from '@/sync/plan-indicator';
 import { useNotificationStore } from '@/sync/notification-store';
-import { resolveLeadingRailLayout, resolveSidebarIndicator, resolveSidebarWorkingStatus, resolveSubtaskSidebarIndicator } from './sessionIndicator';
+import { hasWorkingDescendantSession, resolveLeadingRailLayout, resolveSidebarIndicator, resolveSidebarWorkingStatus, resolveSubtaskSidebarIndicator } from './sessionIndicator';
 import type { SessionIndicator } from './sessionIndicator';
 import { useSessionLifecycleStatus } from '@/hooks/useSessionLifecycleStatus';
 import { SidebarSpinner } from './SidebarSpinner';
@@ -105,6 +105,9 @@ type Props = {
   handleCancelEdit: () => void;
   toggleParent: (sessionId: string) => void;
   handleSessionSelect: (sessionId: string, sessionDirectory: string | null, isMissingDirectory: boolean, projectId?: string | null) => void;
+  prepareSession: (sessionId: string, sessionDirectory: string) => void;
+  scheduleSessionPrefetch: (sessionId: string, sessionDirectory: string | null, delayMs?: number) => void;
+  cancelSessionPrefetch: (sessionId: string) => void;
   handleSessionDoubleClick: () => void;
   togglePinnedSession: (sessionId: string) => void;
   copiedSessionId: string | null;
@@ -290,6 +293,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     handleCancelEdit,
     toggleParent,
     handleSessionSelect,
+    prepareSession,
+    scheduleSessionPrefetch,
+    cancelSessionPrefetch,
     handleSessionDoubleClick,
     togglePinnedSession,
     copiedSessionId,
@@ -384,6 +390,17 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const isSessionWorking = useIsSessionWorking(session.id, sessionDirectory ?? undefined);
   const sessionParentId = (session as Session & { parentID?: string | null }).parentID ?? null;
   const isRootSession = !sessionParentId;
+  const descendantSessionIds = React.useMemo(
+    () => isRootSession ? collectNodeDescendantIds(node) : EMPTY_SESSION_IDS,
+    [collectNodeDescendantIds, isRootSession, node],
+  );
+  const hasWorkingDescendant = useDirectorySync(
+    React.useCallback(
+      (state) => hasWorkingDescendantSession(descendantSessionIds, state),
+      [descendantSessionIds],
+    ),
+    sessionDirectory ?? undefined,
+  );
   const managedSubtaskAgent = useManagedOrchestrationStore(React.useMemo(
     () => managedOrchestrationSelectors.latestTaskAgentForChildSession(
       isRootSession ? '' : session.id,
@@ -401,8 +418,8 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 
     // Parent chats surface pending subagent questions inline; keep the sidebar
     // indicator on the parent/root row only instead of showing child-row dots.
-    return [session.id, ...collectNodeDescendantIds(node)];
-  }, [collectNodeDescendantIds, isRootSession, node, session.id]);
+    return [session.id, ...descendantSessionIds];
+  }, [descendantSessionIds, isRootSession, session.id]);
   const hasUnreadError = useNotificationStore(
     React.useCallback((state) => {
       if (questionScopeSessionIds.length === 0) return false;
@@ -443,6 +460,12 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     ),
     [isRootSession, session.id],
   ));
+  const hasActiveManagedSubtask = useManagedOrchestrationStore(React.useMemo(
+    () => managedOrchestrationSelectors.hasActiveTasksForRoot(
+      isRootSession ? session.id : '',
+    ),
+    [isRootSession, session.id],
+  ));
   const parentOwnedRecoveryTaskId = useManagedOrchestrationStore(React.useMemo(
     () => managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession(
       isRootSession ? '' : session.id,
@@ -450,7 +473,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     [isRootSession, session.id],
   ));
   const sidebarIsWorking = resolveSidebarWorkingStatus({
-    isWorking: isSessionWorking && !hasPrimaryRecovery,
+    isWorking: (isSessionWorking || hasWorkingDescendant || hasActiveManagedSubtask) && !hasPrimaryRecovery,
     pendingQuestionCount,
     planState: planIndicatorState,
   });
@@ -897,6 +920,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     }
     if (event.button === 2 || (event.button === 0 && event.ctrlKey && !selectionModeEnabled)) {
       suppressNextSelectRef.current = true;
+      return;
+    }
+    if (event.button === 0 && !selectionModeEnabled && sessionDirectory && !isMissingDirectory) {
+      prepareSession(session.id, sessionDirectory);
     }
   };
 
@@ -1115,6 +1142,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                 onPointerUp={handleRowPointerEnd}
                 onPointerCancel={handleRowPointerEnd}
                 onMouseDown={handleRowMouseDown}
+                onMouseEnter={() => scheduleSessionPrefetch(session.id, sessionDirectory)}
+                onMouseLeave={() => cancelSessionPrefetch(session.id)}
+                onFocus={() => scheduleSessionPrefetch(session.id, sessionDirectory, 0)}
                 onAuxClick={handleRowAuxClick}
                 onClick={(event) => handleRowSelect(event)}
                 onDoubleClick={(e) => {

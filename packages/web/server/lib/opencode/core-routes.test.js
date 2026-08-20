@@ -18,7 +18,11 @@ describe('core-routes', () => {
       gracefulShutdown: vi.fn(async (opts) => {
         shutdownOpts = opts;
       }),
-      getHealthSnapshot: () => ({ status: 'ok' }),
+      getHealthSnapshot: () => ({
+        status: 'ok',
+        contextModeAvailable: true,
+        contextModeReadOnlyIndexing: true,
+      }),
       openchamberVersion: '1.0.0',
       runtimeName: 'test',
       serverStartedAt: '2026-01-01T00:00:00.000Z',
@@ -38,7 +42,11 @@ describe('core-routes', () => {
 
     expect(response.status).toBe(200);
     expect(response.type).toBe('application/json');
-    expect(response.body).toMatchObject({ status: 'ok' });
+    expect(response.body).toMatchObject({
+      status: 'ok',
+      contextModeAvailable: true,
+      contextModeReadOnlyIndexing: true,
+    });
     expect(response.headers['x-devryan-instance-id']).toBe('instance-test-id');
     expect(response.text).not.toContain('<!doctype html>');
   });

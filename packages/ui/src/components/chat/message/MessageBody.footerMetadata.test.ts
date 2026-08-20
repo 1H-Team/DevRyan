@@ -30,7 +30,7 @@ describe('MessageBody footer metadata', () => {
         const footerEnd = code.indexOf('{(managedTaskDispatch.taskIds.length', footerStart);
         const footer = code.slice(footerStart, footerEnd);
 
-        expect(footer).toContain('className="mt-2 mb-1 flex items-center justify-start gap-3"');
+        expect(footer).toContain('className="flex items-center justify-start gap-3"');
         expect(footer).toContain('className="flex items-center gap-1.5" data-message-action-group="true"');
         expect(footer).toContain('<div className="flex items-center gap-1.5">');
     });

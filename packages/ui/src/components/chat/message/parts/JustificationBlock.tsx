@@ -42,7 +42,7 @@ const JustificationBlock: React.FC<JustificationBlockProps> = ({
     const isStreaming = chatRenderMode === 'live' && !isMessageCompleted;
     const throttledText = useStreamingTextThrottle({
         text: textContent,
-        isStreaming,
+        phase: isStreaming ? 'streaming' : 'terminal',
         identityKey: `${messageId}:${part.id ?? 'justification'}`,
     });
 

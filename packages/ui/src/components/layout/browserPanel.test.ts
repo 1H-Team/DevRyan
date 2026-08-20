@@ -24,11 +24,14 @@ describe('dedicated Browser panel', () => {
     expect(panel).toContain('closeManualBrowserStripTab(directoryKey, tabId)');
     expect(panel).toContain('closeBrowserLeaseStripTab(directoryKey, leaseId)');
     expect(panel).toContain('workspace || leaseTabs.length > 0');
+    expect(panel).toContain('resolveBrowserPanelWidth');
+    expect(panel).toContain("window.addEventListener('pointermove', handleMove, true)");
+    expect(panel).toContain('onLostPointerCapture');
   });
 
   test('persists panel state and carries the collision-safe v17 migration', () => {
     expect(store).toContain('browserPanelByDirectory: state.browserPanelByDirectory');
-    expect(store).toContain('version: 17,');
+    expect(store).toContain('version: 18,');
     expect(store).toContain('// v16 -> v17: Browser becomes a dedicated sibling panel.');
     expect(store).toContain("return tab.mode === 'browser'");
   });

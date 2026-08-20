@@ -66,6 +66,10 @@ export {
   useSessionPermissions,
   useSessionQuestions,
   useSessions,
+  useSession,
+  useSessionDirectory,
+  useSessionChildren,
+  useSessionMessageLoadState,
   useSyncSDK,
   useSyncDirectory,
   useChildStoreManager,
@@ -76,6 +80,7 @@ export {
   useUserMessageHistory,
   buildSessionMessageRecordsSnapshot,
 } from "./sync-context"
+export type { SessionMessageLoadState, SessionMessageLoadKind } from "./session-message-loader"
 
 // Sync operations
 export { useSync } from "./use-sync"

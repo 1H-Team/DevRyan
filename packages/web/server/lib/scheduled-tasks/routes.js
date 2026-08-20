@@ -1,3 +1,5 @@
+import { computeNextRunAt } from './runtime.js';
+
 const asNonEmptyString = (value) => {
   if (typeof value !== 'string') {
     return null;
@@ -235,7 +237,9 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
         : sanitizeProjects(settings?.projects || []);
 
       let enabledCount = 0;
+      let pendingCount = 0;
       let runningCount = 0;
+      const nowMs = Date.now();
 
       for (const project of projects) {
         try {
@@ -243,6 +247,9 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
           for (const task of tasks) {
             if (task?.enabled) {
               enabledCount += 1;
+              if (Number.isFinite(computeNextRunAt(task, nowMs))) {
+                pendingCount += 1;
+              }
             }
             if (task?.state?.lastStatus === 'running') {
               runningCount += 1;
@@ -254,8 +261,10 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
 
       return res.json({
         hasEnabledScheduledTasks: enabledCount > 0,
+        hasPendingScheduledTasks: pendingCount > 0,
         hasRunningScheduledTasks: runningCount > 0,
         enabledScheduledTasksCount: enabledCount,
+        pendingScheduledTasksCount: pendingCount,
         runningScheduledTasksCount: runningCount,
       });
     } catch (error) {

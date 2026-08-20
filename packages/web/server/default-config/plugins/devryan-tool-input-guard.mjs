@@ -3,7 +3,20 @@ const CONTEXT_EXECUTE_TOOLS = new Set([
   'mcp__context_mode__ctx_execute',
 ]);
 
+const READ_TOOLS = new Set(['read', 'oc_read']);
 const SHELL_TOOLS = new Set(['bash', 'shell']);
+
+const BINARY_READ_EXTENSIONS = new Set([
+  '.7z', '.a', '.aac', '.aiff', '.apk', '.avif', '.avi', '.bin', '.bmp', '.bz2',
+  '.class', '.dmg', '.doc', '.docx', '.eot', '.exe', '.flac', '.gif', '.gz', '.heic',
+  '.heif', '.ico', '.jar', '.jpeg', '.jpg', '.m4a', '.m4v', '.mkv', '.mov', '.mp3',
+  '.mp4', '.mpeg', '.mpg', '.o', '.ogg', '.otf', '.pdf', '.png', '.ppt', '.pptx',
+  '.rar', '.so', '.tar', '.tif', '.tiff', '.ttf', '.wav', '.webm', '.webp', '.woff',
+  '.woff2', '.xls', '.xlsx', '.xz', '.zip',
+]);
+
+const BINARY_SAMPLE_LENGTH = 4_096;
+const BINARY_READ_BLOCKED_CODE = 'DEVRYAN_BINARY_READ_BLOCKED';
 
 export const DEFAULT_SHELL_TIMEOUT_MS = 240_000;
 export const MIN_SHELL_TIMEOUT_MS = 1_000;
@@ -25,6 +38,84 @@ const inputError = (message) => {
   return error;
 };
 
+const getReadPath = (args) => {
+  if (!isRecord(args)) return '';
+  for (const candidate of [args.path, args.filePath, args.file_path, args.file]) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return '';
+};
+
+const getPathExtension = (value) => {
+  const normalized = typeof value === 'string'
+    ? value.trim().replaceAll('\\', '/').toLowerCase()
+    : '';
+  const basename = normalized.slice(normalized.lastIndexOf('/') + 1);
+  const dotIndex = basename.lastIndexOf('.');
+  return dotIndex > 0 ? basename.slice(dotIndex) : '';
+};
+
+const isKnownBinaryReadPath = (value) => BINARY_READ_EXTENSIONS.has(getPathExtension(value));
+
+const hasBinaryMagic = (value) => (
+  value.startsWith('\uFFFDPNG\r\n\u001a\n')
+  || value.startsWith('\u0089PNG\r\n\u001a\n')
+  || value.startsWith('GIF87a')
+  || value.startsWith('GIF89a')
+  || value.startsWith('%PDF-')
+  || value.startsWith('PK\u0003\u0004')
+  || value.startsWith('PK\u0005\u0006')
+  || value.startsWith('PK\u0007\u0008')
+  || (value.startsWith('RIFF') && value.slice(8, 12) === 'WEBP')
+);
+
+const looksLikeBinaryReadOutput = (value) => {
+  if (typeof value !== 'string' || !value) return false;
+  const sample = value.slice(0, BINARY_SAMPLE_LENGTH);
+  if (hasBinaryMagic(sample) || sample.includes('\u0000')) return true;
+
+  let invalidCharacters = 0;
+  let controlCharacters = 0;
+  for (const character of sample) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (character === '\uFFFD') invalidCharacters += 1;
+    if (
+      (codePoint >= 0 && codePoint <= 8)
+      || codePoint === 11
+      || codePoint === 12
+      || (codePoint >= 14 && codePoint <= 26)
+      || (codePoint >= 28 && codePoint <= 31)
+      || codePoint === 127
+    ) {
+      controlCharacters += 1;
+    }
+  }
+
+  return (
+    (invalidCharacters >= 3 && invalidCharacters / sample.length >= 0.01)
+    || (controlCharacters >= 8 && controlCharacters / sample.length >= 0.05)
+  );
+};
+
+const renderBlockedBinaryRead = (readPath = '') => {
+  const extension = getPathExtension(readPath);
+  const fileHint = extension ? ` (${extension})` : '';
+  return `${BINARY_READ_BLOCKED_CODE}: Native read returned binary data${fileHint}. Raw bytes were removed before entering model context. Use an appropriate image, document, archive, media, or metadata inspection tool; do not retry the raw read.`;
+};
+
+const shouldBlockReadResult = (output) => looksLikeBinaryReadOutput(output);
+
+const sanitizeReadToolPart = (part) => {
+  if (!isRecord(part) || part.type !== 'tool' || !READ_TOOLS.has(part.tool)) return;
+  if (!isRecord(part.state) || typeof part.state.output !== 'string') return;
+  const readPath = getReadPath(part.state.input);
+  if (!shouldBlockReadResult(part.state.output)) return;
+  part.state = {
+    ...part.state,
+    output: renderBlockedBinaryRead(readPath),
+  };
+};
+
 const hasMultipleAbsoluteTargets = (value) => {
   if (typeof value !== 'string') return false;
   const matches = value.match(ABSOLUTE_PATH_START_PATTERN);
@@ -39,8 +130,12 @@ const validateGrepInput = (args) => {
 };
 
 const validateReadInput = (args) => {
-  if (isRecord(args) && typeof args.path === 'string' && args.path.trim()) return;
-  throw inputError('read.path must be a non-empty string.');
+  const readPath = getReadPath(args);
+  if (!readPath) throw inputError('read.path must be a non-empty string.');
+  if (!isKnownBinaryReadPath(readPath)) return;
+  throw inputError(
+    `read cannot load binary files${getPathExtension(readPath) ? ` with extension ${getPathExtension(readPath)}` : ''} as text. Use an appropriate image, document, archive, media, or metadata inspection tool; do not retry the raw read.`,
+  );
 };
 
 const validateContextExecuteInput = (args) => {
@@ -78,7 +173,7 @@ const enforceShellTimeout = (args) => {
 
 export const DevRyanToolInputGuardPlugin = async () => ({
   'tool.execute.before': async (input, output) => {
-    if (input?.tool === 'read') {
+    if (READ_TOOLS.has(input?.tool)) {
       validateReadInput(output?.args);
       return;
     }
@@ -94,6 +189,26 @@ export const DevRyanToolInputGuardPlugin = async () => ({
       enforceShellTimeout(output?.args);
     }
   },
+  'tool.execute.after': async (input, output) => {
+    if (!READ_TOOLS.has(input?.tool) || !isRecord(output) || typeof output.output !== 'string') return;
+    const readPath = getReadPath(input?.args);
+    if (!shouldBlockReadResult(output.output)) return;
+    output.output = renderBlockedBinaryRead(readPath);
+  },
+  'experimental.chat.messages.transform': async (_input, output) => {
+    if (!Array.isArray(output?.messages)) return;
+    for (const message of output.messages) {
+      if (!Array.isArray(message?.parts)) continue;
+      for (const part of message.parts) sanitizeReadToolPart(part);
+    }
+  },
 });
+
+export const __test = {
+  getPathExtension,
+  isKnownBinaryReadPath,
+  looksLikeBinaryReadOutput,
+  renderBlockedBinaryRead,
+};
 
 export default DevRyanToolInputGuardPlugin;

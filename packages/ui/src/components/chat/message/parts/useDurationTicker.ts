@@ -1,4 +1,5 @@
 import React from 'react';
+import { useDocumentAnimationState } from '@/hooks/useDocumentAnimationState';
 
 type Subscriber = (now: number) => void;
 
@@ -57,14 +58,15 @@ const subscribeToTicker = (intervalMs: number, subscriber: Subscriber): (() => v
 
 export const useDurationTickerNow = (active: boolean, intervalMs: number = 250): number => {
     const [now, setNow] = React.useState(() => Date.now());
+    const { isVisible } = useDocumentAnimationState();
 
     React.useEffect(() => {
-        if (!active) {
+        if (!active || !isVisible) {
             return;
         }
 
         return subscribeToTicker(intervalMs, setNow);
-    }, [active, intervalMs]);
+    }, [active, intervalMs, isVisible]);
 
     return now;
 };

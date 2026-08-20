@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { canReceiveProjectMetadataEvent, registerScheduledTaskRoutes } from './routes.js';
 
@@ -39,7 +39,44 @@ const dependencies = (tasks) => ({
   writeSseEvent: vi.fn(),
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
 describe('personal scheduled-task routes', () => {
+  it('reports future schedules separately from enabled records', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-16T14:00:00.000Z'));
+    const tasks = [
+      {
+        id: 'expired',
+        ownerUserId: 'user-1',
+        enabled: true,
+        schedule: { kind: 'once', date: '2026-04-16', time: '13:30', timezone: 'UTC' },
+        state: { lastStatus: 'idle' },
+      },
+      {
+        id: 'future',
+        ownerUserId: 'user-1',
+        enabled: true,
+        schedule: { kind: 'once', date: '2026-04-16', time: '15:30', timezone: 'UTC' },
+        state: { lastStatus: 'idle' },
+      },
+    ];
+    const { app, route } = createRegistry();
+    registerScheduledTaskRoutes(app, dependencies(tasks));
+    const res = response();
+
+    await route('GET', '/api/openchamber/scheduled-tasks/status')({ principal: developer }, res);
+
+    expect(res.payload).toMatchObject({
+      enabledScheduledTasksCount: 2,
+      hasEnabledScheduledTasks: true,
+      pendingScheduledTasksCount: 1,
+      hasPendingScheduledTasks: true,
+    });
+  });
+
   it('scopes project metadata events to administrators and assigned projects', () => {
     expect(canReceiveProjectMetadataEvent({ isAdmin: true, projectIds: new Set() }, 'project-1')).toBe(true);
     expect(canReceiveProjectMetadataEvent({ isAdmin: false, projectIds: new Set(['project-1']) }, 'project-1')).toBe(true);

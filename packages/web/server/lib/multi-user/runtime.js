@@ -110,6 +110,12 @@ import {
   filterProtectedDotenvReferences,
   shouldHideProtectedDotenv,
 } from './dotenv-visibility.js';
+import {
+  findManagedAgent,
+  isSingleModelManagedAgent,
+  resolveManagedAgentExecution,
+  validatePersonalAgentDefault,
+} from './managed-agent-defaults.js';
 
 const APP_SESSION_COOKIE = 'oc_app_session';
 const ACCESS_INVITE_COOKIE = 'oc_access_invite';
@@ -342,7 +348,7 @@ const restrictedGitRoute = (req) => {
 
 const hostGlobalMutation = (req) => {
   if (!STATE_CHANGING_METHODS.has(req.method)) return false;
-  if (req.path === '/config/settings') return false;
+  if (/^\/config\/settings(?:\/|$)/.test(req.path)) return false;
   if (/^\/projects\/[^/]+\/(?:branch-target|scheduled-tasks(?:\/[^/]+)?(?:\/run)?)$/.test(req.path)) return false;
   if (req.method === 'POST' && [
     '/browser/targets',
@@ -688,6 +694,7 @@ export async function createMultiUserRuntime({
   let reconcileSessionOwnership = async () => ({ repaired: 0, ambiguous: 0 });
   let ensureOwnedSession = async () => false;
   let loopbackPasskeyController = null;
+  let listManagedConfigAgents = null;
   const auditOutbox = await createAuditOutbox({
     dataDirectory: config.dataDirectory,
     supabase,
@@ -758,6 +765,39 @@ export async function createMultiUserRuntime({
         if (mutationTails.get(key) === tail) mutationTails.delete(key);
       });
     };
+  };
+
+  const readSettingsOverrides = async (userId) => {
+    const policy = await supabase.rest('user_policies', {
+      query: {
+        user_id: `eq.${escapeFilterValue(userId)}`,
+        select: 'settings_overrides',
+        limit: 1,
+      },
+      maybeSingle: true,
+    });
+    return policy?.settings_overrides && typeof policy.settings_overrides === 'object'
+      && !Array.isArray(policy.settings_overrides)
+      ? policy.settings_overrides
+      : {};
+  };
+
+  const mutatePersonalSettings = async (principal, mutate) => {
+    const releaseMutation = await acquireMutationKey(`settings:${principal.id}`);
+    try {
+      const current = await readSettingsOverrides(principal.id);
+      const next = await mutate({ ...current });
+      await supabase.rest('user_policies', {
+        method: 'POST',
+        body: { user_id: principal.id, settings_overrides: next },
+        prefer: 'resolution=merge-duplicates,return=minimal',
+      });
+      principal.settingsOverrides = next;
+      principalCache.clear();
+      return next;
+    } finally {
+      releaseMutation();
+    }
   };
 
   const githubAssignmentConflict = (owner = null) => Object.assign(
@@ -2435,6 +2475,79 @@ export async function createMultiUserRuntime({
     };
   };
 
+  const resolveSessionAgentExecution = async ({
+    rootSessionId,
+    directory = '',
+    agent,
+    fallbackExecution = null,
+  } = {}) => {
+    const sessionId = typeof rootSessionId === 'string' ? rootSessionId.trim() : '';
+    if (!sessionId) {
+      throw Object.assign(new Error('Managed orchestration root session is required'), {
+        statusCode: 400,
+        code: 'managed_orchestration_owner_unavailable',
+      });
+    }
+    const owner = await sessionOwnership(sessionId);
+    if (!owner || owner.archived_at) {
+      throw Object.assign(new Error('Managed orchestration session ownership is unavailable'), {
+        statusCode: 503,
+        code: 'managed_orchestration_owner_unavailable',
+      });
+    }
+    const principal = await loadPrincipal(owner.user_id);
+    if (!principal) {
+      throw Object.assign(new Error('Managed orchestration account is unavailable'), {
+        statusCode: 503,
+        code: 'managed_orchestration_owner_unavailable',
+      });
+    }
+    const planContext = await resolveOwnedSessionPlanContext(principal, sessionId, directory);
+    if (!planContext) {
+      throw Object.assign(new Error('Managed orchestration session ownership does not match the requested directory'), {
+        statusCode: 403,
+        code: 'managed_orchestration_owner_mismatch',
+      });
+    }
+
+    const hasAgentCatalog = typeof listManagedConfigAgents === 'function';
+    const agents = hasAgentCatalog ? listManagedConfigAgents(planContext.directory) : [];
+    if (hasAgentCatalog && !findManagedAgent(agents, agent)) {
+      throw Object.assign(new Error('Managed agent is not available'), {
+        statusCode: 409,
+        code: 'managed_agent_model_unavailable',
+      });
+    }
+    const resolved = resolveManagedAgentExecution({
+      agents,
+      agentName: agent,
+      settingsOverrides: principal.role === 'admin' ? {} : principal.settingsOverrides,
+    });
+    if (resolved) return resolved;
+
+    const providerId = typeof fallbackExecution?.providerId === 'string'
+      ? fallbackExecution.providerId.trim()
+      : '';
+    const modelId = typeof fallbackExecution?.modelId === 'string'
+      ? fallbackExecution.modelId.trim()
+      : '';
+    if (providerId && modelId) {
+      return {
+        providerId,
+        modelId,
+        variant: typeof fallbackExecution?.variant === 'string' && fallbackExecution.variant.trim()
+          ? fallbackExecution.variant.trim()
+          : null,
+        agentName: typeof agent === 'string' ? agent.trim() : '',
+        source: 'fallback',
+      };
+    }
+    throw Object.assign(new Error('Managed agent has no executable model'), {
+      statusCode: 409,
+      code: 'managed_agent_model_unavailable',
+    });
+  };
+
   const ownsSession = async (principal, sessionId) => {
     if (principal?.scope !== 'managed') return true;
     if (provisionalSessionIds.has(sessionId)) return false;
@@ -2752,8 +2865,12 @@ export async function createMultiUserRuntime({
     readSettingsFromDiskMigrated,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    listConfigAgents: listConfigAgentsForDirectory,
     getConfigApplyMutationResponse = () => ({ requiresReload: false }),
   } = {}) => {
+    if (typeof listConfigAgentsForDirectory === 'function') {
+      listManagedConfigAgents = listConfigAgentsForDirectory;
+    }
     if (typeof app.use === 'function') {
       app.use(createDotenvVisibilityMiddleware());
     }
@@ -4380,22 +4497,25 @@ export async function createMultiUserRuntime({
         if (req.principal.role === 'admin') return next();
         try {
           const hostSettings = await readSettingsFromDiskMigrated();
-          const currentEffective = buildEffectiveSettings({
-            principal: req.principal, hostSettings, userOverrides: req.principal.settingsOverrides,
+          let accepted = {};
+          let previousSettings = {};
+          const settingsOverrides = await mutatePersonalSettings(req.principal, (currentOverrides) => {
+            const currentEffective = buildEffectiveSettings({
+              principal: req.principal, hostSettings, userOverrides: currentOverrides,
+            });
+            const validated = validateSettingsChanges({
+              principal: req.principal, changes: req.body || {}, currentEffective,
+            });
+            if (validated.rejected.length > 0) {
+              throw Object.assign(new Error('One or more settings are managed by an administrator'), {
+                statusCode: 403,
+                fields: validated.rejected,
+              });
+            }
+            accepted = validated.accepted;
+            previousSettings = Object.fromEntries(Object.keys(accepted).map((field) => [field, currentEffective[field]]));
+            return { ...currentOverrides, ...accepted };
           });
-          const { accepted, rejected } = validateSettingsChanges({
-            principal: req.principal, changes: req.body || {}, currentEffective,
-          });
-          if (rejected.length > 0) return jsonError(res, 403, 'One or more settings are managed by an administrator', { fields: rejected });
-          const settingsOverrides = { ...req.principal.settingsOverrides, ...accepted };
-          await supabase.rest('user_policies', {
-            method: 'POST',
-            body: { user_id: req.principal.id, settings_overrides: settingsOverrides },
-            prefer: 'resolution=merge-duplicates,return=minimal',
-          });
-          req.principal.settingsOverrides = settingsOverrides;
-          principalCache.clear();
-          const previousSettings = Object.fromEntries(Object.keys(accepted).map((field) => [field, currentEffective[field]]));
           const nextSettings = Object.fromEntries(Object.keys(accepted).map((field) => [field, accepted[field]]));
           await audit(req.principal, 'settings.updated', {
             targetType: 'user',
@@ -4405,6 +4525,116 @@ export async function createMultiUserRuntime({
               changes: buildSafeFieldDeltas(previousSettings, nextSettings),
               changedBy: 'user',
             },
+          });
+          return res.json(buildEffectiveSettings({ principal: req.principal, hostSettings, userOverrides: settingsOverrides }));
+        } catch (error) {
+          return jsonError(res, error?.statusCode || 500, error.message, error?.fields ? { fields: error.fields } : {});
+        }
+      });
+
+      const requirePersonalSettingsAccount = (req, res) => {
+        if (req.principal?.scope !== 'managed' || req.principal.role === 'admin') {
+          jsonError(res, 403, 'Personal defaults are available only to managed non-administrator accounts');
+          return false;
+        }
+        return true;
+      };
+
+      const getPersonalAgentCatalog = (principal) => {
+        if (typeof listManagedConfigAgents !== 'function') {
+          throw Object.assign(new Error('Agent catalog is unavailable'), { statusCode: 503 });
+        }
+        const directory = getDefaultAssignment(principal)?.repositoryPath || null;
+        return listManagedConfigAgents(directory);
+      };
+
+      app.put('/api/config/settings/agent-defaults/:agentName', async (req, res) => {
+        if (!requirePersonalSettingsAccount(req, res)) return;
+        try {
+          const hostSettings = await readSettingsFromDiskMigrated();
+          const validated = validatePersonalAgentDefault({
+            agentName: req.params.agentName,
+            payload: req.body,
+            agents: getPersonalAgentCatalog(req.principal),
+          });
+          const settingsOverrides = await mutatePersonalSettings(req.principal, (current) => {
+            const selections = current.agentModelSelections && typeof current.agentModelSelections === 'object'
+              && !Array.isArray(current.agentModelSelections)
+              ? { ...current.agentModelSelections }
+              : {};
+            for (const name of Object.keys(selections)) {
+              if (name.trim().toLowerCase() === validated.agentName.toLowerCase()) delete selections[name];
+            }
+            selections[validated.agentName] = validated.selection;
+            return { ...current, agentModelSelections: selections };
+          });
+          await audit(req.principal, 'settings.agent_default_updated', {
+            targetType: 'user',
+            targetId: req.principal.id,
+            metadata: {
+              agentName: validated.agentName,
+              fields: Object.keys(validated.selection).sort(),
+              changedBy: 'user',
+            },
+          });
+          return res.json(buildEffectiveSettings({ principal: req.principal, hostSettings, userOverrides: settingsOverrides }));
+        } catch (error) {
+          return jsonError(res, error?.statusCode || 500, error.message, error?.code ? { code: error.code } : {});
+        }
+      });
+
+      app.delete('/api/config/settings/agent-defaults/:agentName', async (req, res) => {
+        if (!requirePersonalSettingsAccount(req, res)) return;
+        try {
+          const agents = getPersonalAgentCatalog(req.principal);
+          const agent = findManagedAgent(agents, req.params.agentName);
+          if (!agent) return jsonError(res, 404, 'Agent not found');
+          if (!isSingleModelManagedAgent(agent)) {
+            return jsonError(res, 409, 'This agent is managed by the host and cannot have a personal model default', {
+              code: 'AGENT_DEFAULT_HOST_MANAGED',
+            });
+          }
+          const hostSettings = await readSettingsFromDiskMigrated();
+          const canonicalName = String(agent.name || '').trim();
+          const settingsOverrides = await mutatePersonalSettings(req.principal, (current) => {
+            const selections = current.agentModelSelections && typeof current.agentModelSelections === 'object'
+              && !Array.isArray(current.agentModelSelections)
+              ? { ...current.agentModelSelections }
+              : {};
+            for (const name of Object.keys(selections)) {
+              if (name.trim().toLowerCase() === canonicalName.toLowerCase()) delete selections[name];
+            }
+            const next = { ...current };
+            if (Object.keys(selections).length > 0) next.agentModelSelections = selections;
+            else delete next.agentModelSelections;
+            return next;
+          });
+          await audit(req.principal, 'settings.agent_default_reset', {
+            targetType: 'user',
+            targetId: req.principal.id,
+            metadata: { agentName: canonicalName, changedBy: 'user' },
+          });
+          return res.json(buildEffectiveSettings({ principal: req.principal, hostSettings, userOverrides: settingsOverrides }));
+        } catch (error) { return jsonError(res, error?.statusCode || 500, error.message); }
+      });
+
+      app.delete('/api/config/settings/overrides/:field', async (req, res) => {
+        if (!requirePersonalSettingsAccount(req, res)) return;
+        const field = String(req.params.field || '');
+        if (!['defaultAgent', 'defaultPlanMode'].includes(field)) {
+          return jsonError(res, 400, 'Only defaultAgent and defaultPlanMode can be reset here');
+        }
+        try {
+          const hostSettings = await readSettingsFromDiskMigrated();
+          const settingsOverrides = await mutatePersonalSettings(req.principal, (current) => {
+            const next = { ...current };
+            delete next[field];
+            return next;
+          });
+          await audit(req.principal, 'settings.default_reset', {
+            targetType: 'user',
+            targetId: req.principal.id,
+            metadata: { field, changedBy: 'user' },
           });
           return res.json(buildEffectiveSettings({ principal: req.principal, hostSettings, userOverrides: settingsOverrides }));
         } catch (error) { return jsonError(res, error?.statusCode || 500, error.message); }
@@ -4807,6 +5037,7 @@ export async function createMultiUserRuntime({
     publicizeValue,
     ownsSession,
     resolveOwnedSessionPlanContext,
+    resolveSessionAgentExecution,
     canSessionTokenHashAccess,
     audit,
     resolveManagedProject,

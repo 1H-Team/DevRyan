@@ -3,7 +3,7 @@ import { RiCheckLine, RiCloseLine, RiFileEditLine, RiGlobalLine, RiPencilAiLine,
 import { cn } from '@/lib/utils';
 import type { PermissionRequest, PermissionResponse } from '@/types/permission';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useSessions } from '@/sync/sync-context';
+import { useSession } from '@/sync/sync-context';
 import * as sessionActions from '@/sync/session-actions';
 import { LazySyntaxHighlighter as SyntaxHighlighter } from '@/components/chat/LazySyntaxHighlighter';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
@@ -98,13 +98,13 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
   const [isResponding, setIsResponding] = React.useState(false);
   const [hasResponded, setHasResponded] = React.useState(false);
   const respondToPermission = sessionActions.respondToPermission;
-  const sessions = useSessions();
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-  const isFromSubagent = React.useMemo(() => {
-    if (!currentSessionId || permission.sessionID === currentSessionId) return false;
-    const sourceSession = sessions.find((session) => session.id === permission.sessionID);
-    return Boolean(sourceSession?.parentID && sourceSession.parentID === currentSessionId);
-  }, [permission.sessionID, currentSessionId, sessions]);
+  const sourceSession = useSession(permission.sessionID);
+  const isFromSubagent = Boolean(
+    currentSessionId
+    && permission.sessionID !== currentSessionId
+    && sourceSession?.parentID === currentSessionId,
+  );
   const { currentTheme } = useThemeSystem();
   const syntaxTheme = React.useMemo(() => generateSyntaxTheme(currentTheme), [currentTheme]);
 

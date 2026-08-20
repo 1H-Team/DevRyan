@@ -15,7 +15,7 @@ const cssGeneratorSource = () => readFileSync(
 const FIXED_ICON_COLORS = {
   builder: { variable: '--agent-icon-builder-color', value: '#969DA9' },
   council: { variable: '--agent-icon-council-color', value: '#92400E' },
-  orchestrator: { variable: '--agent-icon-orchestrator-color', value: '#0072C3' },
+  orchestrator: { variable: '--agent-icon-orchestrator-color', value: '#000000' },
   designer: { variable: '--agent-icon-designer-color', value: '#9333EA' },
   fixer: { variable: '--agent-icon-fixer-color', value: '#DC2626' },
   explorer: { variable: '--agent-icon-explorer-color', value: '#16A34A' },

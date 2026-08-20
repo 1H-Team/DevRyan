@@ -7,6 +7,8 @@ export const GITHUB_COPILOT_PROVIDER_ID = 'github-copilot';
 export const GITHUB_COPILOT_UPSTREAM_PROVIDER_ID = 'copilot';
 export const GITHUB_COPILOT_PROVIDER_NAME = 'GitHub Copilot';
 export const GITHUB_COPILOT_PROVIDER_ALIASES = [GITHUB_COPILOT_PROVIDER_ID, GITHUB_COPILOT_UPSTREAM_PROVIDER_ID];
+export const GOOGLE_PROVIDER_ID = 'google';
+export const GOOGLE_PROVIDER_AUTH_ALIASES = [GOOGLE_PROVIDER_ID, 'google.oauth'];
 
 const isPlainObject = (value) => (
   value !== null
@@ -57,7 +59,9 @@ export const syncGitHubCopilotAuthAliases = ({ readAuthFile, writeAuthFile }) =>
 export const getProviderIntegrationLookupIds = (providerId) => (
   isGitHubCopilotProviderId(providerId)
     ? GITHUB_COPILOT_PROVIDER_ALIASES
-    : [normalizeProviderId(providerId)].filter(Boolean)
+    : normalizeProviderId(providerId) === GOOGLE_PROVIDER_ID
+      ? GOOGLE_PROVIDER_AUTH_ALIASES
+      : [normalizeProviderId(providerId)].filter(Boolean)
 );
 
 export const hasGitHubCopilotProviderModels = (payload) => {

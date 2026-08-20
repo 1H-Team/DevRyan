@@ -30,7 +30,13 @@ describe('DevRyan default plugin catalog', () => {
       {
         pluginId: 'opencode-with-claude',
         shippedSpec: './node_modules/opencode-with-claude/dist/index.js',
-        version: '1.6.18',
+        version: '1.8.0',
+        delivery: 'installed-local',
+      },
+      {
+        pluginId: 'opencode-gpt-imagegen',
+        shippedSpec: './node_modules/opencode-gpt-imagegen/dist/index.js',
+        version: '0.1.10',
         delivery: 'installed-local',
       },
       {
@@ -42,7 +48,7 @@ describe('DevRyan default plugin catalog', () => {
       {
         pluginId: 'oh-my-opencode-slim',
         shippedSpec: './plugins/devryan-oh-my-opencode-slim.mjs',
-        version: '2.0.5',
+        version: '2.2.15',
         delivery: 'installed-local',
       },
       {

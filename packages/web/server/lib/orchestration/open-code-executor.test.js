@@ -1,13 +1,47 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT } from '@openchamber/orchestration-runtime';
+import {
+  MANAGED_CONTEXT_MODE_WRITABLE_PROMPT,
+  MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
+} from '@openchamber/orchestration-runtime';
 
 import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
+
+const WRITABLE_CONTEXT_MODE_TOOLS = Object.freeze({
+  ctx_execute: true,
+  mcp__context_mode__ctx_execute: true,
+  ctx_execute_file: true,
+  mcp__context_mode__ctx_execute_file: true,
+  ctx_batch_execute: true,
+  mcp__context_mode__ctx_batch_execute: true,
+  ctx_index: true,
+  mcp__context_mode__ctx_index: true,
+  ctx_search: true,
+  mcp__context_mode__ctx_search: true,
+  ctx_stats: true,
+  mcp__context_mode__ctx_stats: true,
+  ctx_fetch_and_index: true,
+  mcp__context_mode__ctx_fetch_and_index: true,
+  ctx_purge: false,
+  mcp__context_mode__ctx_purge: false,
+  ctx_upgrade: false,
+  mcp__context_mode__ctx_upgrade: false,
+  ctx_insight: false,
+  mcp__context_mode__ctx_insight: false,
+});
 
 const jsonResponse = (body, init = {}) => new Response(JSON.stringify(body), {
   status: init.status ?? 200,
   headers: { 'content-type': 'application/json' },
 });
+
+const waitForCondition = async (condition) => {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error('Timed out waiting for test condition');
+};
 
 describe('web managed OpenCode executor transport', () => {
   it('uses the managed OpenCode HTTP contract with directory and auth isolation', async () => {
@@ -73,11 +107,182 @@ describe('web managed OpenCode executor transport', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
+        ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
-      parts: [{ type: 'text', text: 'Inspect the project.' }],
+      parts: [{
+        type: 'text',
+        text: `${MANAGED_CONTEXT_MODE_WRITABLE_PROMPT}\n\nInspect the project.`,
+      }],
     });
     expect(requests.every((request) => request.init.headers.authorization === 'Basic opaque')).toBe(true);
+  });
+
+  it('preserves structured Zen free-tier status metadata for immediate recovery', async () => {
+    const requests = [];
+    let statusReads = 0;
+    const fetchImpl = vi.fn(async (url, init = {}) => {
+      requests.push({ url: String(url), init });
+      const pathname = new URL(url).pathname;
+      if (pathname === '/session/status') {
+        statusReads += 1;
+        return jsonResponse({
+          ses_child: statusReads === 1
+            ? {
+              type: 'retry',
+              message: 'Subscribe to continue',
+              action: { reason: 'free_tier_limit' },
+              next: Date.now() + (4 * 60 * 60 * 1_000),
+            }
+            : { type: 'idle' },
+        });
+      }
+      if (pathname.endsWith('/message')) {
+        return jsonResponse([{
+          info: { id: 'msg_partial', role: 'assistant', finish: 'tool-calls' },
+          parts: [{ type: 'text', text: 'Partial work' }],
+        }]);
+      }
+      if (pathname.endsWith('/abort')) return new Response(null, { status: 204 });
+      throw new Error(`Unexpected request ${init.method} ${pathname}`);
+    });
+    const executor = createWebManagedOpenCodeExecutor({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
+      fetchImpl,
+      pollIntervalMs: 0,
+    });
+
+    await expect(executor.observe({
+      taskId: 'dvr_task_zen_limit',
+      childSessionId: 'ses_child',
+      directory: '/workspace',
+      providerId: 'opencode',
+    })).resolves.toMatchObject({
+      status: 'failed',
+      failureReason: 'Provider usage limit reached: Subscribe to continue',
+      recoverablePreview: 'Partial work',
+      resumable: true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests.some(({ url, init }) => (
+      new URL(url).pathname.endsWith('/abort') && init.method === 'POST'
+    ))).toBe(true);
+  });
+
+  it('single-flights overlapping status observers by exact URL and polls again after settlement', async () => {
+    let releaseStatus;
+    const firstStatusGate = new Promise((resolve) => { releaseStatus = resolve; });
+    let statusRequests = 0;
+    const fetchImpl = vi.fn(async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname === '/session/status') {
+        statusRequests += 1;
+        if (statusRequests === 1) await firstStatusGate;
+        return jsonResponse({
+          ses_alpha: { type: 'idle' },
+          ses_beta: { type: 'idle' },
+        });
+      }
+      if (parsed.pathname.endsWith('/message')) {
+        const sessionId = parsed.pathname.split('/')[2];
+        return jsonResponse([{
+          info: { id: `msg_${sessionId}`, role: 'assistant', finish: 'stop' },
+          parts: [{ type: 'text', text: `${sessionId} result` }],
+        }]);
+      }
+      throw new Error(`Unexpected request ${parsed.pathname}`);
+    });
+    const executor = createWebManagedOpenCodeExecutor({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
+      fetchImpl,
+      pollIntervalMs: 0,
+      idleStablePolls: 1,
+    });
+    const observe = (sessionId) => executor.observe({
+      taskId: `dvr_task_${sessionId}`,
+      childSessionId: sessionId,
+      directory: '/workspace',
+      providerId: 'openai',
+    });
+
+    const alpha = observe('ses_alpha');
+    const beta = observe('ses_beta');
+    await waitForCondition(() => statusRequests === 1);
+    releaseStatus();
+    await expect(Promise.all([alpha, beta])).resolves.toMatchObject([
+      { status: 'completed', recoverablePreview: 'ses_alpha result' },
+      { status: 'completed', recoverablePreview: 'ses_beta result' },
+    ]);
+    expect(statusRequests).toBe(1);
+
+    await expect(observe('ses_alpha')).resolves.toMatchObject({ status: 'completed' });
+    expect(statusRequests).toBe(2);
+  });
+
+  it('does not share status requests across directory or resolved-port URL changes', async () => {
+    const statusGates = [];
+    const statusUrls = [];
+    let activePort = 4096;
+    const fetchImpl = vi.fn(async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname === '/session/status') {
+        statusUrls.push(parsed.toString());
+        let release;
+        const gate = new Promise((resolve) => { release = resolve; });
+        statusGates.push(release);
+        await gate;
+        return jsonResponse({
+          ses_one: { type: 'idle' },
+          ses_two: { type: 'idle' },
+          ses_port_a: { type: 'idle' },
+          ses_port_b: { type: 'idle' },
+        });
+      }
+      if (parsed.pathname.endsWith('/message')) {
+        const sessionId = parsed.pathname.split('/')[2];
+        return jsonResponse([{
+          info: { id: `msg_${sessionId}`, role: 'assistant', finish: 'stop' },
+          parts: [{ type: 'text', text: 'done' }],
+        }]);
+      }
+      throw new Error(`Unexpected request ${parsed.pathname}`);
+    });
+    const executor = createWebManagedOpenCodeExecutor({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:${activePort}${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      fetchImpl,
+      pollIntervalMs: 0,
+      idleStablePolls: 1,
+    });
+    const observe = (sessionId, directory) => executor.observe({
+      taskId: `dvr_task_${sessionId}`,
+      childSessionId: sessionId,
+      directory,
+      providerId: 'openai',
+    });
+
+    const differentDirectories = [
+      observe('ses_one', '/workspace/one'),
+      observe('ses_two', '/workspace/two'),
+    ];
+    await waitForCondition(() => statusUrls.length === 2);
+    statusGates.splice(0).forEach((release) => release());
+    await Promise.all(differentDirectories);
+    expect(new Set(statusUrls.map((url) => new URL(url).search))).toEqual(new Set([
+      '?directory=%2Fworkspace%2Fone',
+      '?directory=%2Fworkspace%2Ftwo',
+    ]));
+
+    const firstPort = observe('ses_port_a', '/workspace/port');
+    await waitForCondition(() => statusUrls.length === 3);
+    activePort = 4097;
+    const secondPort = observe('ses_port_b', '/workspace/port');
+    await waitForCondition(() => statusUrls.length === 4);
+    statusGates.splice(0).forEach((release) => release());
+    await Promise.all([firstPort, secondPort]);
+    expect(statusUrls.slice(2).map((url) => new URL(url).port)).toEqual(['4096', '4097']);
   });
 
   it('defers same-child reconciliation while the managed runtime port is unavailable', async () => {
@@ -170,7 +375,12 @@ describe('web managed OpenCode executor transport', () => {
       agent: 'fixer',
       model: { providerID: 'github-copilot', modelID: 'gpt-4.1' },
       variant: 'high',
-      tools: { task: false },
+      tools: {
+        'resend_*': false,
+        'mcp__resend__*': false,
+        ...WRITABLE_CONTEXT_MODE_TOOLS,
+        task: false,
+      },
       parts: [{ type: 'text', text: MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT }],
     });
     // OpenCode must mint the id. A task-derived one is not ordered like an
@@ -275,7 +485,10 @@ describe('web managed OpenCode executor transport', () => {
         agent: 'builder',
         model: { providerID: 'cursor-acp', modelID: 'composer-2' },
         variant: 'fast',
-        parts: [{ type: 'text', text: 'Implement the change.' }],
+        parts: [{
+          type: 'text',
+          text: 'Implement the change.',
+        }],
         tools: { task: false },
       },
     });

@@ -1181,6 +1181,69 @@ function removeProviderConfig(providerId, workingDirectory, scope = 'user') {
   return true;
 }
 
+function isAntigravityModel(modelId, model) {
+  const name = isPlainObject(model) && typeof model.name === 'string' ? model.name : '';
+  return modelId.startsWith('antigravity-') || /\s+\(Antigravity\)$/i.test(name);
+}
+
+function removeAntigravityProviderConfig(workingDirectory, scope = 'user') {
+  const layers = readConfigLayers(workingDirectory);
+  let targetPath = layers.paths.userPath;
+
+  if (scope === 'project') {
+    if (!workingDirectory) {
+      throw new Error('Working directory is required for project scope');
+    }
+    targetPath = layers.paths.projectPath || targetPath;
+  } else if (scope === 'custom') {
+    if (!layers.paths.customPath) {
+      return false;
+    }
+    targetPath = layers.paths.customPath;
+  }
+
+  const targetConfig = getConfigForPath(layers, targetPath);
+  let changed = false;
+
+  for (const containerKey of ['provider', 'providers']) {
+    const container = isPlainObject(targetConfig[containerKey]) ? targetConfig[containerKey] : null;
+    const google = isPlainObject(container?.google) ? container.google : null;
+    const models = isPlainObject(google?.models) ? google.models : null;
+    if (!container || !google || !models) continue;
+
+    const antigravityModelIds = Object.keys(models).filter((modelId) => (
+      isAntigravityModel(modelId, models[modelId])
+    ));
+    if (antigravityModelIds.length === 0) continue;
+
+    for (const modelId of antigravityModelIds) {
+      delete models[modelId];
+    }
+    if (Object.keys(models).length === 0) {
+      delete google.models;
+    } else {
+      google.models = models;
+    }
+    if (Object.keys(google).length === 0) {
+      delete container.google;
+    } else {
+      container.google = google;
+    }
+    if (Object.keys(container).length === 0) {
+      delete targetConfig[containerKey];
+    } else {
+      targetConfig[containerKey] = container;
+    }
+    changed = true;
+  }
+
+  if (!changed) return false;
+
+  writeConfig(targetConfig, targetPath || CONFIG_FILE);
+  console.log(`Removed Antigravity models from config: ${targetPath}`);
+  return true;
+}
+
 export {
   ANTHROPIC_OAUTH_DEFAULT_BASE_URL,
   ANTHROPIC_OAUTH_PLUGIN_NAME,
@@ -1196,5 +1259,6 @@ export {
   fetchCursorAcpProxyHealth,
   getCursorAcpRuntimeStatus,
   getProviderSources,
+  removeAntigravityProviderConfig,
   removeProviderConfig,
 };

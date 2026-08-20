@@ -15,7 +15,62 @@ const messageRecords = (text = 'Fix OpenAI session title summarization') => ([{
   ],
 }]);
 
+const createRuntime = (options = {}) => createStandardSessionTitleRuntime({
+  ...options,
+  fetchImpl: vi.fn(async (...args) => {
+    if (String(args[0]).includes('/session/status')) return response({});
+    return options.fetchImpl(...args);
+  }),
+});
+
 describe('standard session title runtime', () => {
+  it('waits for authoritative session idle before patching a generated title', async () => {
+    const events = [];
+    let statusReads = 0;
+    const fetchImpl = vi.fn(async (url, options = {}) => {
+      const target = String(url);
+      if (target.includes('/message')) {
+        events.push('messages');
+        return response(messageRecords('Repair Claude title race'));
+      }
+      if (target.includes('/session/status')) {
+        statusReads += 1;
+        events.push(statusReads === 1 ? 'status-busy' : 'status-idle');
+        return response(statusReads === 1 ? { ses_1: { type: 'busy' } } : {});
+      }
+      if (options.method === 'PATCH') {
+        events.push('patch');
+        return response({ id: 'ses_1', title: 'Repair Claude Title Race' });
+      }
+      events.push('session');
+      return response({ id: 'ses_1', title: 'New session - 2026-07-12T12:00:00.000Z' });
+    });
+    const runtime = createStandardSessionTitleRuntime({
+      generateTitle: vi.fn(async () => {
+        events.push('generated');
+        return 'Repair Claude Title Race';
+      }),
+      fetchImpl,
+      buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      sleep: vi.fn(async () => events.push('sleep')),
+      logger: { warn: vi.fn() },
+    });
+
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+
+    expect(events).toEqual([
+      'messages',
+      'session',
+      'generated',
+      'status-busy',
+      'sleep',
+      'status-idle',
+      'session',
+      'patch',
+    ]);
+  });
+
   it('generates and persists an AI title from the earliest visible user text', async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(response(messageRecords()))
@@ -23,7 +78,7 @@ describe('standard session title runtime', () => {
       .mockResolvedValueOnce(response({ id: 'ses_1', title: 'New session - 2026-07-12T12:00:00.000Z' }))
       .mockResolvedValueOnce(response({ id: 'ses_1', title: 'Fix OpenAI Session Titles' }));
     const generateTitle = vi.fn(async () => 'Fix OpenAI Session Titles');
-    const runtime = createStandardSessionTitleRuntime({
+    const runtime = createRuntime({
       generateTitle,
       fetchImpl,
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
@@ -53,7 +108,7 @@ describe('standard session title runtime', () => {
       .mockResolvedValueOnce(response({ id: 'ses_1', title: 'New session - 2026-07-12T12:00:00.000Z' }))
       .mockResolvedValueOnce(response({ id: 'ses_1', title: 'Fix OpenAI Session Titles' }));
     const generateTitle = vi.fn(async () => 'Fix OpenAI Session Titles');
-    const runtime = createStandardSessionTitleRuntime({
+    const runtime = createRuntime({
       generateTitle,
       fetchImpl,
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
@@ -86,7 +141,7 @@ describe('standard session title runtime', () => {
       .mockResolvedValueOnce(response({ id: 'ses_1', title: '<!--plan-->' }))
       .mockResolvedValueOnce(response({ id: 'ses_1', title: '<!--plan-->' }))
       .mockResolvedValueOnce(response({ id: 'ses_1', title: 'Repair Anthropic title fallback' }));
-    const runtime = createStandardSessionTitleRuntime({
+    const runtime = createRuntime({
       fetchImpl,
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
       getOpenCodeAuthHeaders: () => ({}),
@@ -114,7 +169,7 @@ describe('standard session title runtime', () => {
       .mockResolvedValueOnce(response(messageRecords()))
       .mockResolvedValueOnce(response({ id: 'ses_1', title: 'Fix OpenAI session title summarization' }));
     const generateTitle = vi.fn(async () => 'Ignored AI Title');
-    const runtime = createStandardSessionTitleRuntime({
+    const runtime = createRuntime({
       generateTitle,
       fetchImpl,
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
@@ -136,7 +191,7 @@ describe('standard session title runtime', () => {
       .mockResolvedValueOnce(response({ id: 'ses_1', title: 'Untitled Session' }))
       .mockResolvedValueOnce(response({ id: 'ses_1', title: 'Renamed by user' }));
     const generateTitle = vi.fn(() => titlePromise);
-    const runtime = createStandardSessionTitleRuntime({
+    const runtime = createRuntime({
       generateTitle,
       fetchImpl,
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
@@ -160,7 +215,7 @@ describe('standard session title runtime', () => {
       .mockResolvedValueOnce(response({ id: 'ses_1', title: controlTitle }))
       .mockResolvedValueOnce(response({ id: 'ses_1', title: controlTitle }))
       .mockResolvedValueOnce(response({ id: 'ses_1', title: 'Repair Anthropic Session Titles' }));
-    const runtime = createStandardSessionTitleRuntime({
+    const runtime = createRuntime({
       generateTitle: vi.fn(async () => 'Repair Anthropic Session Titles'),
       fetchImpl,
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
@@ -185,7 +240,7 @@ describe('standard session title runtime', () => {
       .mockResolvedValueOnce(response({ id: 'ses_1', title: 'Untitled Session' }))
       .mockResolvedValueOnce(response({ id: 'ses_1', title: '<!--plan-->' }))
       .mockResolvedValueOnce(response({ id: 'ses_1', title: 'Repair Anthropic Session Titles' }));
-    const runtime = createStandardSessionTitleRuntime({
+    const runtime = createRuntime({
       generateTitle: vi.fn(async () => 'Repair Anthropic Session Titles'),
       fetchImpl,
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
@@ -209,7 +264,7 @@ describe('standard session title runtime', () => {
       .mockResolvedValueOnce(response({ id: 'ses_marker', title: '<!--plan-->' }))
       .mockResolvedValueOnce(response({ id: 'ses_marker', title: 'Repair Anthropic Session Titles' }));
     const generateTitle = vi.fn(async () => 'Repair Anthropic Session Titles');
-    const runtime = createStandardSessionTitleRuntime({
+    const runtime = createRuntime({
       generateTitle,
       fetchImpl,
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
@@ -238,7 +293,7 @@ describe('standard session title runtime', () => {
     let resolveSessions;
     const sessionsPromise = new Promise((resolve) => { resolveSessions = resolve; });
     const fetchImpl = vi.fn(() => sessionsPromise);
-    const runtime = createStandardSessionTitleRuntime({
+    const runtime = createRuntime({
       generateTitle: vi.fn(),
       fetchImpl,
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
@@ -259,7 +314,7 @@ describe('standard session title runtime', () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(response(messageRecords('Plan the Anthropic title repair')))
       .mockResolvedValueOnce(response({ id: 'ses_1', title: 'Untitled Session' }));
-    const runtime = createStandardSessionTitleRuntime({
+    const runtime = createRuntime({
       generateTitle: vi.fn(async () => '<!--plan-->'),
       fetchImpl,
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
@@ -285,7 +340,7 @@ describe('standard session title runtime', () => {
       .mockRejectedValueOnce(new Error('title unavailable'))
       .mockResolvedValueOnce('Recovered Session Title');
     const warn = vi.fn();
-    const runtime = createStandardSessionTitleRuntime({
+    const runtime = createRuntime({
       generateTitle,
       fetchImpl,
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,

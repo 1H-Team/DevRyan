@@ -3,6 +3,7 @@ import { RiAiAgentLine, RiBrainAi3Line, RiFlashlightFill, RiUser3Line } from '@r
 import { cn } from '@/lib/utils';
 import { getAgentColor, getAgentIconColor } from '@/lib/agentColors';
 import { useProviderLogo } from '@/hooks/useProviderLogo';
+import { shouldPreserveProviderLogoColor } from '@/lib/providers/logoPresentation';
 import { ChatMetadataBadge } from '../ChatMetadataBadge';
 import { formatAgentLabel, formatEffortLabel } from '../mobileControlsUtils';
 import { getMessageHeaderDisplay } from './messageHeaderDisplay';
@@ -24,6 +25,11 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, model
         [modelID, modelName, providerID],
     );
     const { src: logoSrc, onError: handleLogoError, hasLogo } = useProviderLogo(displayProviderID);
+    const preservesBrandColor = shouldPreserveProviderLogoColor(displayProviderID);
+    let logoFilter = isDarkTheme ? 'brightness(0.9) contrast(1.1) invert(1)' : 'brightness(0.9) contrast(1.1)';
+    if (preservesBrandColor) {
+        logoFilter = 'none';
+    }
     const thinkingLabel = variant ? formatEffortLabel(variant, { providerId: providerID }) : undefined;
     const fastIcon = fastEnabled ? (
         <RiFlashlightFill className="h-3 w-3 text-[var(--status-warning)]" aria-label="Fast Mode" />
@@ -34,9 +40,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, model
             src={logoSrc}
             alt={`${displayProviderID} logo`}
             className="h-4 w-4 flex-shrink-0"
-            style={{
-                filter: isDarkTheme ? 'brightness(0.9) contrast(1.1) invert(1)' : 'brightness(0.9) contrast(1.1)',
-            }}
+            style={{ filter: logoFilter }}
             onError={handleLogoError}
         />
     ) : (

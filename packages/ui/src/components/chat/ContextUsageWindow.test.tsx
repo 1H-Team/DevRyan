@@ -91,6 +91,22 @@ describe("ContextUsageWindow", () => {
     expect(markup).not.toContain("width:125%")
   })
 
+  test("offers compaction only for an available measured session", () => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider>
+        <ContextUsageWindow
+          usage={usage}
+          availability="available"
+          onClose={() => {}}
+          onCompact={() => {}}
+          triggerRef={triggerRef}
+        />
+      </I18nProvider>,
+    )
+
+    expect(markup).toContain("Compact")
+  })
+
   test("renders a muted free space row when capacity is known", () => {
     const markup = renderToStaticMarkup(
       <I18nProvider>

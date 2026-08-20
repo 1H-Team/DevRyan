@@ -528,6 +528,8 @@ describe('preview bridge lifecycle', () => {
     expect(script).toContain("type: 'render-ready'");
     expect(script).toContain("document.addEventListener('readystatechange'");
     expect(script).toContain('handOffExternalNavigation');
+    expect(script).toContain("outerHTML: clip(element.outerHTML || '', 6000)");
+    expect(script).toContain("post({ type: 'select', target");
   });
 
   it('presents the target route to the SPA while keeping requests on the registered proxy', async () => {

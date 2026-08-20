@@ -245,6 +245,7 @@ describe('managed orchestration contract', () => {
 
     expect(toManagedTaskEvent(terminal('Provider connection ended')).properties.task.agentRetryAvailable).toBe(true);
     expect(toManagedTaskEvent(terminal('out of usage')).properties.task.agentRetryAvailable).toBe(false);
+    expect(toManagedTaskEvent(terminal('Free usage exceeded, subscribe to Go')).properties.task.agentRetryAvailable).toBe(false);
     expect(toManagedTaskEvent(terminal('Usage limit reached')).properties.task.agentRetryAvailable).toBe(false);
     expect(toManagedTaskEvent(terminal("You've hit your session limit · resets 7:30pm")).properties.task.agentRetryAvailable).toBe(false);
     expect(toManagedTaskEvent(terminal(

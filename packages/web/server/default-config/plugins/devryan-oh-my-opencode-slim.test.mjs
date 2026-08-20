@@ -38,13 +38,14 @@ describe('DevRyan Oh My OpenCode Slim wrapper', () => {
     fs.mkdirSync(path.dirname(entrypointPath), { recursive: true });
     fs.writeFileSync(
       path.join(packageRoot, 'package.json'),
-      JSON.stringify({ name: 'oh-my-opencode-slim', version: '2.0.5', type: 'module' }),
+      JSON.stringify({ name: 'oh-my-opencode-slim', version: '2.2.15', type: 'module' }),
       'utf8',
     );
     fs.writeFileSync(entrypointPath, `
       export default async () => ({
         agent: { slim: {} },
         'experimental.chat.system.transform': async () => {},
+        tool: { task_status: { description: 'preserve runtime tool hooks' } },
         config: async (config) => {
           config.agent = { slim: {} };
           config.default_agent = 'slim';
@@ -56,6 +57,9 @@ describe('DevRyan Oh My OpenCode Slim wrapper', () => {
     const plugin = await DevRyanOhMyOpenCodeSlimPlugin({});
     expect(plugin).not.toHaveProperty('agent');
     expect(plugin).not.toHaveProperty('experimental.chat.system.transform');
+    expect(plugin.tool).toEqual({
+      task_status: { description: 'preserve runtime tool hooks' },
+    });
 
     const config = { agent: { builder: {} }, default_agent: 'builder' };
     await plugin.config(config);

@@ -4,7 +4,10 @@ import path from 'node:path';
 
 import {
   createManagedTaskRecord,
+  createManagedTaskResultEnvelope,
+  MANAGED_CONTEXT_MODE_WRITABLE_PROMPT,
   type ManagedOrchestrationState,
+  type ManagedResultReference,
   type ManagedTaskExecutorResult,
   type ManagedTaskRecord,
   type ManagedTaskResultEnvelope,
@@ -91,6 +94,67 @@ const createPersistence = () => {
     async load() { return state; },
     async save(value: ManagedOrchestrationState) { state = structuredClone(value); },
   };
+};
+
+const createTerminalPair = (
+  suffix: string,
+  recoverablePreview: string,
+  overrides: {
+    sequence?: number;
+    status?: ManagedTaskRecord['status'];
+    failureReason?: string | null;
+    partial?: boolean;
+    resumable?: boolean;
+  } = {},
+) => {
+  const queued = createManagedTaskRecord({
+    taskId: `dvr_task_${suffix}`,
+    idempotencyKey: `terminal-${suffix}`,
+    rootSessionId: 'ses_root',
+    parentTaskId: null,
+    childSessionId: `ses_child_${suffix}`,
+    directory: '/workspace',
+    sequence: overrides.sequence ?? 1,
+    mode: 'orchestrator',
+    providerId: 'openai',
+    modelId: 'gpt-5.6-sol',
+    agent: 'explorer',
+    variant: 'high',
+    label: `Terminal ${suffix}`,
+    prompt: `Complete ${suffix}.`,
+    attempt: 1,
+    priorTaskId: null,
+    executionKind: 'start',
+    createdAt: 1_000,
+    timeoutAt: null,
+  });
+  const task: ManagedTaskRecord = {
+    ...queued,
+    status: overrides.status ?? 'completed',
+    startedAt: 1_100,
+    finishedAt: 1_200,
+    failureReason: overrides.failureReason ?? null,
+    partial: overrides.partial ?? false,
+    recoverablePreview,
+    canonicalRefs: [{ type: 'message', id: `msg_${suffix}` }],
+  };
+  const resultEnvelope = createManagedTaskResultEnvelope(task, {
+    sequence: (overrides.sequence ?? 1) + 100,
+    createdAt: 1_300,
+    resumable: overrides.resumable ?? false,
+  });
+  return { task, resultEnvelope };
+};
+
+const getResultReference = (value: unknown): ManagedResultReference => {
+  if (!value || typeof value !== 'object' || !('resultReference' in value)) {
+    throw new TypeError('expected managed result reference wrapper');
+  }
+  const reference = value.resultReference;
+  if (!reference || typeof reference !== 'object') {
+    throw new TypeError('expected managed result reference');
+  }
+  return reference as ManagedResultReference;
 };
 
 const deferred = () => {
@@ -325,6 +389,236 @@ describe('VS Code managed orchestration owner', () => {
       })).rejects.toMatchObject({ code: 'invalid_request', statusCode: 400 });
     }
     expect(waitForTask).toHaveBeenCalledTimes(3);
+    await runtime.shutdown();
+  });
+
+  it('keeps private results eager by default, pages explicit references, and leaves snapshots eager', async () => {
+    const preview = `large:${'🙂e\u0301'.repeat(2_000)}:result`;
+    const { task, resultEnvelope } = createTerminalPair('reference', preview);
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      getTask: vi.fn((taskId: string) => taskId === task.taskId ? task : null),
+      getResultEnvelope: vi.fn((taskId: string) => taskId === task.taskId ? resultEnvelope : null),
+      listTasks: vi.fn(() => [task]),
+      listResultEnvelopes: vi.fn(() => [resultEnvelope]),
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    } as unknown as ManagedTaskScheduler;
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      scheduler,
+      persistence: createPersistence(),
+      executor: {
+        async start() { throw new Error('must not start'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+    });
+    const scope = {
+      taskId: task.taskId,
+      rootSessionId: task.rootSessionId,
+      directory: task.directory,
+    };
+
+    await expect(runtime.handleRpc({ method: 'status', params: scope })).resolves.toMatchObject({
+      task: { recoverablePreview: preview },
+      resultEnvelope: { recoverablePreview: preview },
+    });
+    const projected = await runtime.handleRpc({
+      method: 'status',
+      params: { ...scope, resultMode: 'reference' },
+    });
+    expect(projected).toMatchObject({
+      task: expect.not.objectContaining({ recoverablePreview: expect.anything() }),
+      resultEnvelope: expect.objectContaining({
+        failureReason: null,
+        canonicalRefs: resultEnvelope.canonicalRefs,
+        action: null,
+      }),
+    });
+
+    let reference = getResultReference(projected);
+    const pages = [reference.text];
+    while (!reference.complete) {
+      const page = await runtime.handleRpc({
+        method: 'read_result',
+        params: { ...scope, resultCursor: reference.nextCursor },
+      });
+      reference = getResultReference(page);
+      pages.push(reference.text);
+    }
+    expect(pages.join('')).toBe(preview);
+
+    const snapshot = await runtime.getSnapshot({ rootSessionId: task.rootSessionId });
+    expect(snapshot.tasks).toMatchObject([{ recoverablePreview: preview }]);
+    expect(snapshot.resultEnvelopes).toMatchObject([{ recoverablePreview: preview }]);
+    await expect(runtime.handleRpc({
+      method: 'status',
+      params: { ...scope, resultMode: 'lazy' },
+    })).rejects.toMatchObject({ code: 'invalid_request', statusCode: 400 });
+    await runtime.shutdown();
+  });
+
+  it('projects submit, status, wait, cascade, acknowledgement, and nested follow-up wrappers', async () => {
+    const preview = 'x'.repeat(9_000);
+    const original = createTerminalPair('original', preview, { sequence: 1 });
+    const descendant = createTerminalPair('descendant', preview, { sequence: 2 });
+    const followUp = createTerminalPair('follow_up', preview, { sequence: 3 });
+    const acknowledgedEnvelope: ManagedTaskResultEnvelope = {
+      ...original.resultEnvelope,
+      acknowledgedAt: 2_000,
+      action: 'retry',
+      followUpTaskId: followUp.task.taskId,
+    };
+    const tasks = new Map<string, ManagedTaskRecord>([
+      [original.task.taskId, original.task],
+      [descendant.task.taskId, descendant.task],
+      [followUp.task.taskId, followUp.task],
+    ]);
+    const envelopes = new Map<string, ManagedTaskResultEnvelope>([
+      [original.task.taskId, acknowledgedEnvelope],
+      [descendant.task.taskId, descendant.resultEnvelope],
+      [followUp.task.taskId, followUp.resultEnvelope],
+    ]);
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      submit: vi.fn(async () => original.task),
+      getTask: vi.fn((taskId: string) => tasks.get(taskId) ?? null),
+      getResultEnvelope: vi.fn((taskId: string) => envelopes.get(taskId) ?? null),
+      waitForTask: vi.fn(async () => original.task),
+      cancelTask: vi.fn(async () => [original.task, descendant.task]),
+      acknowledgeResult: vi.fn(async () => ({
+        envelope: acknowledgedEnvelope,
+        followUpTask: followUp.task,
+      })),
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    } as unknown as ManagedTaskScheduler;
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      scheduler,
+      persistence: createPersistence(),
+      executor: {
+        async start() { throw new Error('must not start'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+      now: () => 10_000,
+    });
+    const scope = {
+      taskId: original.task.taskId,
+      rootSessionId: original.task.rootSessionId,
+      directory: original.task.directory,
+      resultMode: 'reference',
+    };
+    const responses = [
+      await runtime.handleRpc({ method: 'submit', params: {
+        ...submitParams(1),
+        resultMode: 'reference',
+      } }),
+      await runtime.handleRpc({ method: 'status', params: scope }),
+      await runtime.handleRpc({ method: 'wait', params: scope }),
+      await runtime.handleRpc({ method: 'cancel', params: { ...scope, cascade: true } }),
+      await runtime.handleRpc({ method: 'acknowledge', params: {
+        ...scope,
+        action: 'retry',
+        idempotencyKey: 'ack-reference',
+      } }),
+    ];
+
+    for (const response of responses) {
+      expect(JSON.stringify(response)).not.toContain('recoverablePreview');
+    }
+    expect(responses[0]).toHaveProperty('resultReference');
+    expect(responses[3]).toMatchObject({
+      tasks: [
+        { resultReference: { taskId: original.task.taskId } },
+        { resultReference: { taskId: descendant.task.taskId } },
+      ],
+    });
+    expect(responses[4]).toMatchObject({
+      resultReference: { taskId: original.task.taskId },
+      followUpTask: { resultReference: { taskId: followUp.task.taskId } },
+    });
+    await runtime.shutdown();
+  });
+
+  it('matches web strict scope, missing-result, malformed-cursor, and mismatch errors', async () => {
+    const preview = 'x'.repeat(9_000);
+    const pair = createTerminalPair('cursor_errors', preview);
+    let retainedEnvelope: ManagedTaskResultEnvelope | null = pair.resultEnvelope;
+    const getTaskMock = vi.fn((taskId: string) => taskId === pair.task.taskId ? pair.task : null);
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      getTask: getTaskMock,
+      getResultEnvelope: vi.fn(() => retainedEnvelope),
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    } as unknown as ManagedTaskScheduler;
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      scheduler,
+      persistence: createPersistence(),
+      executor: {
+        async start() { throw new Error('must not start'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+    });
+    const scope = {
+      taskId: pair.task.taskId,
+      rootSessionId: pair.task.rootSessionId,
+      directory: pair.task.directory,
+    };
+    const projected = await runtime.handleRpc({
+      method: 'status',
+      params: { ...scope, resultMode: 'reference' },
+    });
+    const nextCursor = getResultReference(projected).nextCursor;
+    expect(typeof nextCursor).toBe('string');
+    if (typeof nextCursor !== 'string') throw new Error('expected a result cursor');
+    const resultCursor = nextCursor;
+
+    for (const params of [
+      { ...scope, rootSessionId: 'ses_other', resultCursor },
+      { ...scope, directory: '/other', resultCursor },
+      { taskId: scope.taskId, directory: scope.directory, resultCursor },
+      { taskId: scope.taskId, rootSessionId: scope.rootSessionId, resultCursor },
+    ]) {
+      await expect(runtime.handleRpc({ method: 'read_result', params }))
+        .rejects.toMatchObject({ code: 'task_scope_mismatch', statusCode: 403 });
+    }
+    await expect(runtime.handleRpc({
+      method: 'read_result',
+      params: { ...scope, resultCursor: 'malformed' },
+    })).rejects.toMatchObject({ code: 'invalid_result_cursor', statusCode: 400 });
+
+    retainedEnvelope = null;
+    await expect(runtime.handleRpc({ method: 'read_result', params: { ...scope, resultCursor } }))
+      .rejects.toMatchObject({ code: 'result_not_found', statusCode: 404 });
+    retainedEnvelope = { ...pair.resultEnvelope, envelopeId: 'dvr_result_replaced_2' };
+    await expect(runtime.handleRpc({ method: 'read_result', params: { ...scope, resultCursor } }))
+      .rejects.toMatchObject({ code: 'result_reference_mismatch', statusCode: 409 });
+    retainedEnvelope = { ...pair.resultEnvelope, failureReason: 'contract mismatch' };
+    await expect(runtime.handleRpc({
+      method: 'status',
+      params: { ...scope, resultMode: 'reference' },
+    })).resolves.toMatchObject({
+      task: { recoverablePreview: preview },
+      resultEnvelope: { recoverablePreview: preview },
+    });
+    await expect(runtime.handleRpc({ method: 'read_result', params: { ...scope, resultCursor } }))
+      .rejects.toMatchObject({ code: 'result_reference_mismatch', statusCode: 409 });
+
+    getTaskMock.mockReturnValueOnce(null);
+    await expect(runtime.handleRpc({ method: 'read_result', params: { ...scope, resultCursor } }))
+      .rejects.toMatchObject({ code: 'task_not_found', statusCode: 404 });
     await runtime.shutdown();
   });
 
@@ -1138,8 +1432,19 @@ describe('VS Code managed orchestration owner', () => {
     expect(normal.recoverablePreview).toBe('normal result');
     const promptRequest = requests.find(({ url }) => new URL(url).pathname.endsWith('/prompt_async'));
     expect(JSON.parse(String(promptRequest?.init?.body))).toMatchObject({
-      tools: { 'resend_*': false, 'mcp__resend__*': false },
-      parts: [{ type: 'text', text: '  preserve prompt whitespace\n' }],
+      tools: expect.objectContaining({
+        'resend_*': false,
+        'mcp__resend__*': false,
+        ctx_execute: true,
+        mcp__context_mode__ctx_execute: true,
+        ctx_index: true,
+        mcp__context_mode__ctx_index: true,
+        task: false,
+      }),
+      parts: [{
+        type: 'text',
+        text: `${MANAGED_CONTEXT_MODE_WRITABLE_PROMPT}\n\n  preserve prompt whitespace\n`,
+      }],
     });
 
     const cursor = await executor.start({
@@ -1151,6 +1456,190 @@ describe('VS Code managed orchestration owner', () => {
     }, control);
     expect(cursor.recoverablePreview).toBe('cursor result');
     expect(cursorSdkRuntime.handlePromptAsync).toHaveBeenCalledTimes(1);
+    expect(requests.filter(({ url }) => new URL(url).pathname === '/session/status')).toHaveLength(1);
+  });
+
+  it('preserves structured Zen free-tier status metadata for immediate recovery', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    let statusReads = 0;
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, init });
+      const pathname = new URL(url).pathname;
+      if (pathname === '/session/status') {
+        statusReads += 1;
+        return new Response(JSON.stringify({
+          ses_zen: statusReads === 1
+            ? {
+              type: 'retry',
+              message: 'Subscribe to continue',
+              action: { reason: 'free_tier_limit' },
+              next: Date.now() + (4 * 60 * 60 * 1_000),
+            }
+            : { type: 'idle' },
+        }));
+      }
+      if (pathname.endsWith('/message')) {
+        return new Response(JSON.stringify([{
+          info: { id: 'msg_partial', role: 'assistant', finish: 'tool-calls' },
+          parts: [{ type: 'text', text: 'Partial work' }],
+        }]));
+      }
+      if (pathname.endsWith('/abort')) return new Response(null, { status: 204 });
+      throw new Error(`unexpected request ${init?.method} ${pathname}`);
+    });
+    const executor = createVsCodeManagedOpenCodeExecutor({
+      manager: {
+        getApiUrl: () => 'http://127.0.0.1:4096',
+        getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
+      },
+      fetchImpl,
+      pollIntervalMs: 0,
+    });
+
+    await expect(executor.observe!({
+      ...queuedTask(99),
+      childSessionId: 'ses_zen',
+      status: 'running',
+    }, {
+      async setChildSessionId() { return true; },
+      async markAccepted() { return true; },
+    })).resolves.toMatchObject({
+      status: 'failed',
+      failureReason: 'Provider usage limit reached: Subscribe to continue',
+      recoverablePreview: 'Partial work',
+      resumable: true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests.some(({ url, init }) => (
+      new URL(url).pathname.endsWith('/abort') && init?.method === 'POST'
+    ))).toBe(true);
+  });
+
+  it('single-flights overlapping status observers by exact URL and polls again after settlement', async () => {
+    let releaseStatus!: () => void;
+    const firstStatusGate = new Promise<void>((resolve) => { releaseStatus = resolve; });
+    let statusRequests = 0;
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/session/status') {
+        statusRequests += 1;
+        if (statusRequests === 1) await firstStatusGate;
+        return new Response(JSON.stringify({
+          ses_alpha: { type: 'idle' },
+          ses_beta: { type: 'idle' },
+        }));
+      }
+      if (url.pathname.endsWith('/message')) {
+        const sessionId = url.pathname.split('/')[2];
+        return new Response(JSON.stringify([{
+          info: { id: `msg_${sessionId}`, role: 'assistant', finish: 'stop' },
+          parts: [{ type: 'text', text: `${sessionId} result` }],
+        }]));
+      }
+      throw new Error(`unexpected request ${url.pathname}`);
+    });
+    const executor = createVsCodeManagedOpenCodeExecutor({
+      manager: {
+        getApiUrl: () => 'http://127.0.0.1:4096',
+        getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
+      },
+      fetchImpl,
+      pollIntervalMs: 0,
+      idleStablePolls: 1,
+    });
+    const observe = (sessionId: string) => executor.observe!({
+      ...queuedTask(sessionId === 'ses_alpha' ? 201 : 202),
+      taskId: `dvr_task_${sessionId}`,
+      childSessionId: sessionId,
+      directory: '/workspace',
+      providerId: 'openai',
+      status: 'running',
+    }, {
+      async setChildSessionId() { return true; },
+      async markAccepted() { return true; },
+    });
+
+    const alpha = observe('ses_alpha');
+    const beta = observe('ses_beta');
+    await vi.waitFor(() => expect(statusRequests).toBe(1));
+    releaseStatus();
+    await expect(Promise.all([alpha, beta])).resolves.toMatchObject([
+      { status: 'completed', recoverablePreview: 'ses_alpha result' },
+      { status: 'completed', recoverablePreview: 'ses_beta result' },
+    ]);
+    expect(statusRequests).toBe(1);
+
+    await expect(observe('ses_alpha')).resolves.toMatchObject({ status: 'completed' });
+    expect(statusRequests).toBe(2);
+  });
+
+  it('does not share status requests across directory or resolved-port URL changes', async () => {
+    const statusUrls: string[] = [];
+    const releaseStatusRequests: Array<() => void> = [];
+    let activePort = 4096;
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/session/status') {
+        statusUrls.push(url.toString());
+        await new Promise<void>((resolve) => { releaseStatusRequests.push(resolve); });
+        return new Response(JSON.stringify({
+          ses_one: { type: 'idle' },
+          ses_two: { type: 'idle' },
+          ses_port_a: { type: 'idle' },
+          ses_port_b: { type: 'idle' },
+        }));
+      }
+      if (url.pathname.endsWith('/message')) {
+        const sessionId = url.pathname.split('/')[2];
+        return new Response(JSON.stringify([{
+          info: { id: `msg_${sessionId}`, role: 'assistant', finish: 'stop' },
+          parts: [{ type: 'text', text: 'done' }],
+        }]));
+      }
+      throw new Error(`unexpected request ${url.pathname}`);
+    });
+    const executor = createVsCodeManagedOpenCodeExecutor({
+      manager: {
+        getApiUrl: () => `http://127.0.0.1:${activePort}`,
+        getOpenCodeAuthHeaders: () => ({}),
+      },
+      fetchImpl,
+      pollIntervalMs: 0,
+      idleStablePolls: 1,
+    });
+    const observe = (sessionId: string, directory: string, index: number) => executor.observe!({
+      ...queuedTask(index),
+      taskId: `dvr_task_${sessionId}`,
+      childSessionId: sessionId,
+      directory,
+      providerId: 'openai',
+      status: 'running',
+    }, {
+      async setChildSessionId() { return true; },
+      async markAccepted() { return true; },
+    });
+
+    const differentDirectories = [
+      observe('ses_one', '/workspace/one', 203),
+      observe('ses_two', '/workspace/two', 204),
+    ];
+    await vi.waitFor(() => expect(statusUrls).toHaveLength(2));
+    releaseStatusRequests.splice(0).forEach((release) => release());
+    await Promise.all(differentDirectories);
+    expect(new Set(statusUrls.map((url) => new URL(url).search))).toEqual(new Set([
+      '?directory=%2Fworkspace%2Fone',
+      '?directory=%2Fworkspace%2Ftwo',
+    ]));
+
+    const firstPort = observe('ses_port_a', '/workspace/port', 205);
+    await vi.waitFor(() => expect(statusUrls).toHaveLength(3));
+    activePort = 4097;
+    const secondPort = observe('ses_port_b', '/workspace/port', 206);
+    await vi.waitFor(() => expect(statusUrls).toHaveLength(4));
+    releaseStatusRequests.splice(0).forEach((release) => release());
+    await Promise.all([firstPort, secondPort]);
+    expect(statusUrls.slice(2).map((url) => new URL(url).port)).toEqual(['4096', '4097']);
   });
 
   it('uses the scheduler abort signal for a normal-provider abort request', async () => {

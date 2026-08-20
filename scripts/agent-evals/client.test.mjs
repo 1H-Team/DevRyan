@@ -18,6 +18,29 @@ import {
   runSessionTurn,
 } from './client.mjs';
 
+const WRITABLE_CONTEXT_MODE_TOOLS = Object.freeze({
+  ctx_execute: true,
+  mcp__context_mode__ctx_execute: true,
+  ctx_execute_file: true,
+  mcp__context_mode__ctx_execute_file: true,
+  ctx_batch_execute: true,
+  mcp__context_mode__ctx_batch_execute: true,
+  ctx_index: true,
+  mcp__context_mode__ctx_index: true,
+  ctx_search: true,
+  mcp__context_mode__ctx_search: true,
+  ctx_stats: true,
+  mcp__context_mode__ctx_stats: true,
+  ctx_fetch_and_index: true,
+  mcp__context_mode__ctx_fetch_and_index: true,
+  ctx_purge: false,
+  mcp__context_mode__ctx_purge: false,
+  ctx_upgrade: false,
+  mcp__context_mode__ctx_upgrade: false,
+  ctx_insight: false,
+  mcp__context_mode__ctx_insight: false,
+});
+
 const servers = new Set();
 
 afterEach(async () => {
@@ -731,6 +754,7 @@ describe('DevRyan loopback evaluation client', () => {
       agent: 'builder',
       model: { providerID: 'provider-pinned', modelID: 'model-pinned' },
       variant: 'high',
+      tools: WRITABLE_CONTEXT_MODE_TOOLS,
       parts: [{ type: 'text', text: 'secret prompt that must remain in memory only' }],
     });
     assert.equal(promptRequest.headers.authorization, undefined);
@@ -781,17 +805,20 @@ describe('DevRyan loopback evaluation client', () => {
     assert.deepEqual(bodies[0].tools, {
       'resend_*': false,
       'mcp__resend__*': false,
+      ...WRITABLE_CONTEXT_MODE_TOOLS,
     });
-    assert.equal(Object.hasOwn(bodies[1], 'tools'), false);
+    assert.deepEqual(bodies[1].tools, WRITABLE_CONTEXT_MODE_TOOLS);
     assert.deepEqual(bodies[2].tools, {
       task: false,
       invalid: false,
+      ...WRITABLE_CONTEXT_MODE_TOOLS,
     });
     assert.deepEqual(bodies[3].tools, {
       'resend_*': false,
       'mcp__resend__*': false,
       task: false,
       invalid: false,
+      ...WRITABLE_CONTEXT_MODE_TOOLS,
     });
     assert.equal(bodies[4].tools['*'], false);
     assert.equal(bodies[4].tools.read, true);

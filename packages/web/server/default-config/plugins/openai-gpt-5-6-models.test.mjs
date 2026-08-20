@@ -40,7 +40,7 @@ const codexCatalogModel = (id, limit = {}) => ({
 });
 
 describe("OpenAI GPT-5.6 provider model normalization", () => {
-  test("pins Codex OAuth context and compaction limits for supported models and fast rows", async () => {
+  test("pins official Codex OAuth context windows and 256k compaction for supported models and fast rows", async () => {
     const hooks = await OpenAIGpt56ModelsPlugin();
     await hooks.config({});
     const ids = [
@@ -62,14 +62,33 @@ describe("OpenAI GPT-5.6 provider model normalization", () => {
     }, { auth: { type: "oauth" } });
 
     for (const id of ids) {
+      const expectedContext = id.startsWith("gpt-5.4-mini") ? 400_000 : 1_050_000;
       expect(models[id].limit).toEqual({
-        context: 258_400,
-        input: 264_800,
+        context: expectedContext,
+        input: 276_000,
         output: 128_000,
         providerMetadata: "preserve-limit-metadata",
       });
       expect(models[id].providerMetadata).toBe("preserve-model-metadata");
-      expect(models[id].limit.input - 20_000).toBe(244_800);
+      expect(models[id].limit.input - 20_000).toBe(256_000);
+    }
+  });
+
+  test("incorporates an explicit OpenCode reservation without moving the 256k threshold", async () => {
+    const hooks = await OpenAIGpt56ModelsPlugin();
+    await hooks.config({ compaction: { reserved: 7_500 } });
+    const models = await hooks.provider.models({
+      models: {
+        "gpt-5.4": codexCatalogModel("gpt-5.4"),
+        "gpt-5.4-mini": codexCatalogModel("gpt-5.4-mini"),
+      },
+    }, { auth: { type: "oauth" } });
+
+    expect(models["gpt-5.4"].limit.context).toBe(1_050_000);
+    expect(models["gpt-5.4-mini"].limit.context).toBe(400_000);
+    for (const id of ["gpt-5.4", "gpt-5.4-mini"]) {
+      expect(models[id].limit.input).toBe(263_500);
+      expect(models[id].limit.input - 7_500).toBe(256_000);
     }
   });
 
@@ -102,8 +121,8 @@ describe("OpenAI GPT-5.6 provider model normalization", () => {
       },
     }, { auth: { type: "oauth" } });
 
-    expect(models["gpt-5.5"].limit.input).toBe(252_800);
-    expect(models["gpt-5.5"].limit.input - 8_000).toBe(244_800);
+    expect(models["gpt-5.5"].limit.input).toBe(264_000);
+    expect(models["gpt-5.5"].limit.input - 8_000).toBe(256_000);
     expect(models["gpt-6"]).toEqual({
       ...unknown,
       variants: {

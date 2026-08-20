@@ -32,6 +32,22 @@ describe('normalizeInteractionUpdateToSdkMessage: tool calls', () => {
     })?.status).toBe('completed');
   });
 
+  test('derives errors from the Cursor SDK result union', () => {
+    const result = { status: 'error', error: { message: 'read denied' } };
+
+    expect(normalizeInteractionUpdateToSdkMessage({
+      type: 'tool-call-completed',
+      callId: 'call_result_error',
+      toolCall: { type: 'read', args: { path: 'private.txt' }, result },
+    })).toMatchObject({
+      type: 'tool_call',
+      call_id: 'call_result_error',
+      name: 'read',
+      status: 'error',
+      result,
+    });
+  });
+
   test('retains partial tool output while the call is running', () => {
     const result = { processed: 3, remaining: 2 };
 

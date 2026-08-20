@@ -182,6 +182,7 @@ export const createManagedOrchestrationPrivateHost = (options = {}) => {
         environment = Object.freeze({
           DEVRYAN_ORCHESTRATION_URL: `http://${LOOPBACK_ADDRESS}:${address.port}/rpc`,
           DEVRYAN_ORCHESTRATION_TOKEN: token,
+          DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS: '1',
         });
         resolve(environment);
       });

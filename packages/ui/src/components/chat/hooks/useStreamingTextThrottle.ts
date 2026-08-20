@@ -1,147 +1,194 @@
 import React from 'react';
 
+export type StreamingTextPaintPhase = 'streaming' | 'terminal';
+
 interface UseStreamingTextThrottleInput {
     text: string;
-    isStreaming: boolean;
+    phase: StreamingTextPaintPhase;
     throttleMs?: number;
     identityKey?: string;
 }
 
-export const DEFAULT_STREAMING_TEXT_THROTTLE_MS = 16;
+export const DEFAULT_STREAMING_TEXT_THROTTLE_MS = 32;
 
 export const computeStreamingThrottleDelay = (lastEmitAt: number, now: number, throttleMs: number): number => {
     const elapsed = now - lastEmitAt;
-    return Math.max(0, throttleMs - elapsed);
+    return Math.min(throttleMs, Math.max(0, throttleMs - elapsed));
 };
 
-interface StreamingThrottleState {
-    timer: ReturnType<typeof setTimeout> | null;
-    rafId: number | null;
-    pendingText: string;
-    lastEmitAt: number;
+type StreamingTextThrottleUpdate = Required<Pick<UseStreamingTextThrottleInput, 'text' | 'phase' | 'throttleMs'>> & {
+    identityKey: string;
+};
+
+type TimerHandle = ReturnType<typeof setTimeout>;
+
+export interface StreamingTextThrottleScheduler {
+    now(): number;
+    setTimeout(callback: () => void, delayMs: number): TimerHandle;
+    clearTimeout(timer: TimerHandle): void;
 }
 
-const clearTimer = (state: StreamingThrottleState): void => {
-    if (!state.timer) {
-        return;
-    }
-    clearTimeout(state.timer);
-    state.timer = null;
+const defaultScheduler: StreamingTextThrottleScheduler = {
+    now: () => Date.now(),
+    setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+    clearTimeout: (timer) => clearTimeout(timer),
 };
 
-const clearRaf = (state: StreamingThrottleState): void => {
-    if (state.rafId === null) {
-        return;
-    }
-    cancelAnimationFrame(state.rafId);
-    state.rafId = null;
-};
-
-export const useStreamingTextThrottle = ({
+const normalizeUpdate = ({
     text,
-    isStreaming,
+    phase,
     throttleMs = DEFAULT_STREAMING_TEXT_THROTTLE_MS,
     identityKey,
-}: UseStreamingTextThrottleInput): string => {
-    const [throttledText, setThrottledText] = React.useState(text);
-    const latestTextRef = React.useRef(text);
-    const throttledTextRef = React.useRef(throttledText);
+}: UseStreamingTextThrottleInput): StreamingTextThrottleUpdate => ({
+    text,
+    phase,
+    throttleMs: Math.max(0, throttleMs),
+    identityKey: identityKey ?? '',
+});
 
-    const stateRef = React.useRef<StreamingThrottleState>({
-        timer: null,
-        rafId: null,
-        pendingText: text,
-        lastEmitAt: 0,
-    });
+/**
+ * Render-only controller. Canonical text continues to update in sync state;
+ * this controller only limits how often the visible projection is committed.
+ */
+export class StreamingTextThrottleController {
+    private identityKey: string;
+    private displayedText: string;
+    private pendingText: string;
+    private lastEmitAt: number;
+    private timer: TimerHandle | null = null;
+    private onEmit: (text: string) => void = () => {};
 
-    React.useEffect(() => {
-        latestTextRef.current = text;
-    }, [text]);
+    constructor(
+        initial: UseStreamingTextThrottleInput,
+        private readonly scheduler: StreamingTextThrottleScheduler = defaultScheduler,
+    ) {
+        const update = normalizeUpdate(initial);
+        this.identityKey = update.identityKey;
+        this.displayedText = update.text;
+        this.pendingText = update.text;
+        this.lastEmitAt = update.phase === 'streaming' && update.text.length > 0
+            ? scheduler.now()
+            : 0;
+    }
 
-    React.useEffect(() => {
-        throttledTextRef.current = throttledText;
-    }, [throttledText]);
+    getRenderText(input: UseStreamingTextThrottleInput): string {
+        const update = normalizeUpdate(input);
+        if (update.identityKey !== this.identityKey || update.phase === 'terminal') {
+            return update.text;
+        }
+        if (this.displayedText.length === 0 && update.text.length > 0) {
+            return update.text;
+        }
+        if (update.text.length < this.displayedText.length) {
+            return this.displayedText;
+        }
+        return this.displayedText;
+    }
 
-    React.useEffect(() => {
-        const state = stateRef.current;
-        clearTimer(state);
-        clearRaf(state);
-        state.pendingText = latestTextRef.current;
-        state.lastEmitAt = 0;
-        setThrottledText(latestTextRef.current);
-    }, [identityKey]);
+    update(input: UseStreamingTextThrottleInput, onEmit: (text: string) => void): void {
+        const update = normalizeUpdate(input);
+        this.onEmit = onEmit;
 
-    React.useEffect(() => {
-        const state = stateRef.current;
-        state.pendingText = text;
-        const currentThrottled = throttledTextRef.current;
-        const stableText = isStreaming && currentThrottled.length > text.length ? currentThrottled : text;
-
-        const emitPendingText = () => {
-            state.lastEmitAt = Date.now();
-            setThrottledText((prev) => {
-                if (isStreaming && prev.length > state.pendingText.length) {
-                    return prev;
-                }
-                return state.pendingText;
-            });
-        };
-
-        if (!isStreaming) {
-            clearTimer(state);
-            clearRaf(state);
-            setThrottledText(stableText);
+        if (update.identityKey !== this.identityKey) {
+            this.cancelTimer();
+            this.identityKey = update.identityKey;
+            this.pendingText = update.text;
+            this.displayedText = update.text;
+            this.lastEmitAt = update.phase === 'streaming' && update.text.length > 0
+                ? this.scheduler.now()
+                : 0;
+            this.onEmit(update.text);
             return;
         }
 
-        const useRaf = throttleMs <= DEFAULT_STREAMING_TEXT_THROTTLE_MS
-            && typeof requestAnimationFrame === 'function';
+        this.pendingText = update.text;
 
-        if (useRaf) {
-            clearTimer(state);
-            if (state.rafId !== null) {
-                return () => {
-                    clearRaf(state);
-                };
-            }
-            state.rafId = requestAnimationFrame(() => {
-                state.rafId = null;
-                emitPendingText();
-            });
-            return () => {
-                clearRaf(state);
-            };
-        }
-
-        const now = Date.now();
-        const remaining = computeStreamingThrottleDelay(state.lastEmitAt, now, throttleMs);
-
-        if (remaining <= 0) {
-            clearTimer(state);
-            clearRaf(state);
-            emitPendingText();
+        if (update.phase === 'terminal') {
+            this.cancelTimer();
+            this.displayedText = update.text;
+            this.lastEmitAt = this.scheduler.now();
+            this.onEmit(update.text);
             return;
         }
 
-        clearTimer(state);
-        clearRaf(state);
-        state.timer = setTimeout(() => {
-            state.timer = null;
-            emitPendingText();
-        }, remaining);
+        if (update.text.length < this.displayedText.length) {
+            this.cancelTimer();
+            return;
+        }
 
-        return () => {
-            clearTimer(state);
-        };
-    }, [isStreaming, text, throttleMs]);
+        if (this.displayedText.length === 0 && update.text.length > 0) {
+            this.cancelTimer();
+            this.displayedText = update.text;
+            this.lastEmitAt = this.scheduler.now();
+            this.onEmit(update.text);
+            return;
+        }
+
+        if (update.text === this.displayedText) {
+            this.cancelTimer();
+            return;
+        }
+
+        const delay = computeStreamingThrottleDelay(
+            this.lastEmitAt,
+            this.scheduler.now(),
+            update.throttleMs,
+        );
+        this.cancelTimer();
+        if (delay === 0) {
+            this.emitPending();
+            return;
+        }
+
+        this.timer = this.scheduler.setTimeout(() => {
+            this.timer = null;
+            this.emitPending();
+        }, delay);
+    }
+
+    dispose(): void {
+        this.cancelTimer();
+        this.onEmit = () => {};
+    }
+
+    private emitPending(): void {
+        if (this.pendingText.length < this.displayedText.length) {
+            return;
+        }
+        if (this.pendingText === this.displayedText) {
+            return;
+        }
+
+        this.displayedText = this.pendingText;
+        this.lastEmitAt = this.scheduler.now();
+        this.onEmit(this.displayedText);
+    }
+
+    private cancelTimer(): void {
+        if (this.timer === null) return;
+        this.scheduler.clearTimeout(this.timer);
+        this.timer = null;
+    }
+}
+
+export const useStreamingTextThrottle = (input: UseStreamingTextThrottleInput): string => {
+    const controllerRef = React.useRef<StreamingTextThrottleController | null>(null);
+    if (controllerRef.current === null) {
+        controllerRef.current = new StreamingTextThrottleController(input);
+    }
+
+    const [, forceCommit] = React.useReducer((version: number) => version + 1, 0);
+    const controller = controllerRef.current;
+    const renderText = controller.getRenderText(input);
+    const { identityKey, phase, text, throttleMs } = input;
 
     React.useEffect(() => {
-        const state = stateRef.current;
-        return () => {
-            clearTimer(state);
-            clearRaf(state);
-        };
-    }, []);
+        controller.update({ identityKey, phase, text, throttleMs }, () => {
+            forceCommit();
+        });
+    }, [controller, identityKey, phase, text, throttleMs]);
 
-    return throttledText;
+    React.useEffect(() => () => controller.dispose(), [controller]);
+
+    return renderText;
 };

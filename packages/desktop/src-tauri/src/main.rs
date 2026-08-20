@@ -168,13 +168,15 @@ const DISCORD_INVITE_URL: &str = "https://discord.gg/ZYRSdnwwKA";
 static QUIT_CONFIRMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static QUIT_CONFIRMATION_PENDING: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
-static QUIT_RISK_HAS_ENABLED_SCHEDULED_TASKS: std::sync::atomic::AtomicBool =
+static QUIT_RISK_HAS_PENDING_SCHEDULED_TASKS: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 static QUIT_RISK_HAS_RUNNING_SCHEDULED_TASKS: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
-static QUIT_RISK_ENABLED_SCHEDULED_TASKS_COUNT: AtomicU32 = AtomicU32::new(0);
+static QUIT_RISK_PENDING_SCHEDULED_TASKS_COUNT: AtomicU32 = AtomicU32::new(0);
 static QUIT_RISK_RUNNING_SCHEDULED_TASKS_COUNT: AtomicU32 = AtomicU32::new(0);
 static QUIT_RISK_HAS_ACTIVE_TUNNEL: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+static QUIT_RISK_VERIFICATION_FAILED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 static QUIT_RISK_POLLER_STARTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -188,7 +190,8 @@ fn should_require_quit_confirmation() -> bool {
 
     QUIT_RISK_HAS_ACTIVE_TUNNEL.load(Ordering::Relaxed)
         || QUIT_RISK_HAS_RUNNING_SCHEDULED_TASKS.load(Ordering::Relaxed)
-        || QUIT_RISK_HAS_ENABLED_SCHEDULED_TASKS.load(Ordering::Relaxed)
+        || QUIT_RISK_HAS_PENDING_SCHEDULED_TASKS.load(Ordering::Relaxed)
+        || QUIT_RISK_VERIFICATION_FAILED.load(Ordering::Relaxed)
 }
 
 #[cfg(target_os = "macos")]
@@ -197,7 +200,8 @@ fn quit_confirmation_message() -> String {
 
     let has_active_tunnel = QUIT_RISK_HAS_ACTIVE_TUNNEL.load(Ordering::Relaxed);
     let running_tasks_count = QUIT_RISK_RUNNING_SCHEDULED_TASKS_COUNT.load(Ordering::Relaxed);
-    let enabled_tasks_count = QUIT_RISK_ENABLED_SCHEDULED_TASKS_COUNT.load(Ordering::Relaxed);
+    let pending_tasks_count = QUIT_RISK_PENDING_SCHEDULED_TASKS_COUNT.load(Ordering::Relaxed);
+    let verification_failed = QUIT_RISK_VERIFICATION_FAILED.load(Ordering::Relaxed);
 
     let mut reasons: Vec<String> = Vec::new();
     if has_active_tunnel {
@@ -210,19 +214,22 @@ fn quit_confirmation_message() -> String {
             if running_tasks_count == 1 { "" } else { "s" }
         ));
     }
-    if enabled_tasks_count > 0 {
+    if pending_tasks_count > 0 {
         reasons.push(format!(
-            "{} enabled scheduled task{}",
-            enabled_tasks_count,
-            if enabled_tasks_count == 1 { "" } else { "s" }
+            "{} pending scheduled task{}",
+            pending_tasks_count,
+            if pending_tasks_count == 1 { "" } else { "s" }
         ));
+    }
+    if verification_failed {
+        reasons.push("background activity that could not be verified".to_string());
     }
 
     if reasons.is_empty() {
         "Background processes (sidecar, SSH sessions) will be stopped.".to_string()
     } else {
         format!(
-            "OpenChamber detected {}. Quitting now will stop sidecar/background processes and may interrupt pending work.",
+            "DevRyan detected {}. Quitting now will stop sidecar/background processes and may interrupt pending work.",
             reasons.join(", ")
         )
     }
@@ -2129,10 +2136,10 @@ async fn wait_for_local_opencode_ready_with(
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ScheduledTasksQuitRiskResponse {
-    has_enabled_scheduled_tasks: bool,
+    has_pending_scheduled_tasks: bool,
     has_running_scheduled_tasks: bool,
     #[serde(default)]
-    enabled_scheduled_tasks_count: u32,
+    pending_scheduled_tasks_count: u32,
     #[serde(default)]
     running_scheduled_tasks_count: u32,
 }
@@ -2147,6 +2154,13 @@ struct TunnelStatusResponse {
 #[cfg(target_os = "macos")]
 async fn refresh_quit_risk_flags(local_base_url: &str) {
     use std::sync::atomic::Ordering;
+
+    QUIT_RISK_PENDING_SCHEDULED_TASKS_COUNT.store(0, Ordering::Relaxed);
+    QUIT_RISK_RUNNING_SCHEDULED_TASKS_COUNT.store(0, Ordering::Relaxed);
+    QUIT_RISK_HAS_PENDING_SCHEDULED_TASKS.store(false, Ordering::Relaxed);
+    QUIT_RISK_HAS_RUNNING_SCHEDULED_TASKS.store(false, Ordering::Relaxed);
+    QUIT_RISK_HAS_ACTIVE_TUNNEL.store(false, Ordering::Relaxed);
+    QUIT_RISK_VERIFICATION_FAILED.store(true, Ordering::Relaxed);
 
     let trimmed = local_base_url.trim_end_matches('/');
     if trimmed.is_empty() {
@@ -2169,28 +2183,45 @@ async fn refresh_quit_risk_flags(local_base_url: &str) {
     let tunnel_future = client.get(tunnel_url).send();
     let (scheduled_result, tunnel_result) = tokio::join!(scheduled_future, tunnel_future);
 
+    let mut scheduled_verified = false;
     if let Ok(response) = scheduled_result {
         if response.status().is_success() {
             if let Ok(payload) = response.json::<ScheduledTasksQuitRiskResponse>().await {
-                let enabled_count = payload.enabled_scheduled_tasks_count;
+                let pending_count = payload.pending_scheduled_tasks_count;
                 let running_count = payload.running_scheduled_tasks_count;
-                QUIT_RISK_ENABLED_SCHEDULED_TASKS_COUNT.store(enabled_count, Ordering::Relaxed);
+                QUIT_RISK_PENDING_SCHEDULED_TASKS_COUNT.store(pending_count, Ordering::Relaxed);
                 QUIT_RISK_RUNNING_SCHEDULED_TASKS_COUNT.store(running_count, Ordering::Relaxed);
-                QUIT_RISK_HAS_ENABLED_SCHEDULED_TASKS
-                    .store(payload.has_enabled_scheduled_tasks || enabled_count > 0, Ordering::Relaxed);
+                QUIT_RISK_HAS_PENDING_SCHEDULED_TASKS
+                    .store(payload.has_pending_scheduled_tasks || pending_count > 0, Ordering::Relaxed);
                 QUIT_RISK_HAS_RUNNING_SCHEDULED_TASKS
                     .store(payload.has_running_scheduled_tasks || running_count > 0, Ordering::Relaxed);
+                scheduled_verified = true;
             }
         }
     }
+    if !scheduled_verified {
+        QUIT_RISK_PENDING_SCHEDULED_TASKS_COUNT.store(0, Ordering::Relaxed);
+        QUIT_RISK_RUNNING_SCHEDULED_TASKS_COUNT.store(0, Ordering::Relaxed);
+        QUIT_RISK_HAS_PENDING_SCHEDULED_TASKS.store(false, Ordering::Relaxed);
+        QUIT_RISK_HAS_RUNNING_SCHEDULED_TASKS.store(false, Ordering::Relaxed);
+    }
 
+    let mut tunnel_verified = false;
     if let Ok(response) = tunnel_result {
         if response.status().is_success() {
             if let Ok(payload) = response.json::<TunnelStatusResponse>().await {
                 QUIT_RISK_HAS_ACTIVE_TUNNEL.store(payload.active, Ordering::Relaxed);
+                tunnel_verified = true;
             }
         }
     }
+    if !tunnel_verified {
+        QUIT_RISK_HAS_ACTIVE_TUNNEL.store(false, Ordering::Relaxed);
+    }
+    QUIT_RISK_VERIFICATION_FAILED.store(
+        !scheduled_verified || !tunnel_verified,
+        Ordering::Relaxed,
+    );
 }
 
 #[cfg(target_os = "macos")]
@@ -4186,6 +4217,23 @@ mod tests {
         Arc,
     };
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn scheduled_task_quit_risk_response_uses_pending_contract() {
+        let payload: ScheduledTasksQuitRiskResponse = serde_json::from_value(serde_json::json!({
+            "hasPendingScheduledTasks": true,
+            "hasRunningScheduledTasks": false,
+            "pendingScheduledTasksCount": 2,
+            "runningScheduledTasksCount": 0,
+            "enabledScheduledTasksCount": 3
+        }))
+        .expect("pending scheduled-task quit-risk payload");
+
+        assert!(payload.has_pending_scheduled_tasks);
+        assert_eq!(payload.pending_scheduled_tasks_count, 2);
+        assert!(!payload.has_running_scheduled_tasks);
+    }
 
     fn unique_settings_path(test_name: &str) -> PathBuf {
         let nanos = SystemTime::now()

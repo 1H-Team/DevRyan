@@ -20,6 +20,7 @@ describe('managed orchestration private host', () => {
     try {
       expect(environment.DEVRYAN_ORCHESTRATION_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/rpc$/);
       expect(environment.DEVRYAN_ORCHESTRATION_TOKEN.length).toBeGreaterThanOrEqual(32);
+      expect(environment.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS).toBe('1');
       expect(host.getDiagnostics()).toMatchObject({
         address: '127.0.0.1',
         activeRequests: 0,

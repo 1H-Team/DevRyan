@@ -10,6 +10,7 @@ export const ACTIVE_SESSION_STATUS_STALE_MS = 20_000
 export const ACTIVE_SESSION_RECOVERY_COOLDOWN_MS = 15_000
 export const ACTIVE_SESSION_RECOVERY_MAX_COOLDOWN_MS = 60_000
 export const PROVIDER_STALL_SEMANTIC_SILENCE_MS = 5 * 60_000
+export const LONG_RUNNING_TOOL_SEMANTIC_SILENCE_MS = 10 * 60_000
 
 export function getActiveSessionRecoveryCooldownMs(failureCount = 0): number {
   const normalizedFailureCount = Number.isFinite(failureCount)
@@ -283,7 +284,7 @@ export function shouldConfirmLongRunningTool(input: {
   before: LongRunningToolFingerprint | null | undefined
   after: LongRunningToolFingerprint | null | undefined
 }): boolean {
-  const thresholdMs = input.thresholdMs ?? PROVIDER_STALL_SEMANTIC_SILENCE_MS
+  const thresholdMs = input.thresholdMs ?? LONG_RUNNING_TOOL_SEMANTIC_SILENCE_MS
   return !input.managedChildActive
     && input.silentForMs >= thresholdMs
     && Boolean(input.after)

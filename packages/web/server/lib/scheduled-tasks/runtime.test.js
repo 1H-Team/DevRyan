@@ -27,6 +27,9 @@ const createTask = (overrides = {}) => ({
 const createTaskConfigRuntime = (initialTasks) => {
   let tasks = initialTasks.map((task) => structuredClone(task));
   return {
+    replaceTasks(nextTasks) {
+      tasks = nextTasks.map((task) => structuredClone(task));
+    },
     listScheduledTasks: vi.fn(async () => tasks.map((task) => structuredClone(task))),
     updateScheduledTaskState: vi.fn(async (_projectID, taskID, patch) => {
       const index = tasks.findIndex((task) => task.id === taskID);
@@ -182,6 +185,92 @@ describe('scheduled-tasks runtime helpers', () => {
 });
 
 describe('scheduled-tasks managed project execution', () => {
+  it('separates enabled records from schedules with a future execution', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-16T14:00:00.000Z'));
+    const tasks = [
+      createTask({
+        id: 'expired-once',
+        schedule: { kind: 'once', date: '2026-04-16', time: '13:30', timezone: 'UTC' },
+      }),
+      createTask({
+        id: 'future-once',
+        schedule: { kind: 'once', date: '2026-04-16', time: '15:30', timezone: 'UTC' },
+      }),
+      createTask({ id: 'future-daily' }),
+      createTask({ id: 'disabled', enabled: false }),
+    ];
+    const { runtime } = createRuntime({
+      tasks,
+      projects: [{ id: 'project-1', path: '/repo' }],
+    });
+
+    await runtime.start();
+    expect(runtime.getStatus()).toMatchObject({
+      hasEnabledScheduledTasks: true,
+      enabledScheduledTasksCount: 3,
+      hasPendingScheduledTasks: true,
+      pendingScheduledTasksCount: 2,
+      hasRunningScheduledTasks: false,
+      runningScheduledTasksCount: 0,
+    });
+    runtime.stop();
+  });
+
+  it('clears quit risk after task deletion and project removal are synchronized', async () => {
+    const projects = [{ id: 'project-1', path: '/repo' }];
+    const { runtime, projectConfigRuntime } = createRuntime({
+      tasks: [createTask()],
+      projects,
+    });
+
+    await runtime.start();
+    expect(runtime.getStatus().pendingScheduledTasksCount).toBe(1);
+
+    projectConfigRuntime.replaceTasks([]);
+    await runtime.syncProject('project-1');
+    expect(runtime.getStatus().pendingScheduledTasksCount).toBe(0);
+
+    projectConfigRuntime.replaceTasks([createTask()]);
+    await runtime.syncProject('project-1');
+    expect(runtime.getStatus().pendingScheduledTasksCount).toBe(1);
+    projects.splice(0, projects.length);
+    await runtime.syncAllProjects();
+    expect(runtime.getStatus().pendingScheduledTasksCount).toBe(0);
+    runtime.stop();
+  });
+
+  it('reports a running task independently from its future schedule', async () => {
+    let finishRun;
+    const runGate = new Promise((resolve) => {
+      finishRun = resolve;
+    });
+    const task = createTask({
+      schedule: { kind: 'once', date: '2025-01-01', time: '00:00', timezone: 'UTC' },
+    });
+    const { runtime, client } = createRuntime({
+      tasks: [task],
+      projects: [{ id: 'project-1', path: '/repo' }],
+    });
+    client.session.command.mockImplementation(() => runGate);
+
+    await runtime.start();
+    const run = runtime.runNow('project-1', task.id);
+    for (let attempt = 0; attempt < 20 && client.session.command.mock.calls.length === 0; attempt += 1) {
+      await Promise.resolve();
+    }
+    expect(client.session.command).toHaveBeenCalled();
+    expect(runtime.getStatus()).toMatchObject({
+      pendingScheduledTasksCount: 0,
+      hasRunningScheduledTasks: true,
+      runningScheduledTasksCount: 1,
+    });
+
+    finishRun({ data: true });
+    await run;
+    expect(runtime.getStatus().runningScheduledTasksCount).toBe(0);
+    runtime.stop();
+  });
+
   it('restores and manually runs an owner-scoped task without a local settings path', async () => {
     const task = createTask({
       ownerUserId: 'user-1',

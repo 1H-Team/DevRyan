@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProviderLogo } from '@/hooks/useProviderLogo';
+import { shouldPreserveProviderLogoColor } from '@/lib/providers/logoPresentation';
 import { cn } from '@/lib/utils';
 
 interface ProviderLogoProps {
@@ -16,6 +17,7 @@ export const ProviderLogo: React.FC<ProviderLogoProps> = ({
     onError: externalOnError
 }) => {
     const { src, onError: handleInternalError, hasLogo } = useProviderLogo(providerId);
+    const preservesBrandColor = shouldPreserveProviderLogoColor(providerId);
 
     const handleError = React.useCallback(() => {
         handleInternalError();
@@ -30,7 +32,7 @@ export const ProviderLogo: React.FC<ProviderLogoProps> = ({
         <img
             src={src}
             alt={alt || `${providerId} logo`}
-            className={cn('dark:invert object-contain', className)}
+            className={cn(!preservesBrandColor && 'dark:invert', 'object-contain', className)}
             onError={handleError}
         />
     );

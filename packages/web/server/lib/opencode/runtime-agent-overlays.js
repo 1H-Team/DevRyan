@@ -537,6 +537,11 @@ const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
       })
     : [];
   const overlays = [
+    // DevRyan owns provider-neutral session titles and persists them only after
+    // the active turn is idle. Disable OpenCode's built-in title agent so it
+    // cannot advance a session-keyed provider transport while the main request
+    // is still waiting.
+    { agent: { title: { disable: true } } },
     options.githubCopilotProviderOverlay,
     options.openAITimeoutOverlay,
     buildRemoteMcpTimeoutOverlay(workingDirectory, options),
@@ -567,6 +572,12 @@ const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
       next.mcp = {
         ...(isPlainObject(merged.mcp) ? merged.mcp : {}),
         ...(isPlainObject(overlay.mcp) ? overlay.mcp : {}),
+      };
+    }
+    if (isPlainObject(merged.agent) || isPlainObject(overlay.agent)) {
+      next.agent = {
+        ...(isPlainObject(merged.agent) ? merged.agent : {}),
+        ...(isPlainObject(overlay.agent) ? overlay.agent : {}),
       };
     }
     return next;

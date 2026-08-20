@@ -27,7 +27,6 @@ import { usePwaDetection } from '@/hooks/usePwaDetection';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { CODE_FONT_OPTIONS, DEFAULT_MONO_FONT, DEFAULT_UI_FONT, UI_FONT_OPTIONS, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
 import { useI18n } from '@/lib/i18n';
-import { useConfigStore } from '@/stores/useConfigStore';
 import {
     CHAT_WIDTH_STEP,
     DEFAULT_CHAT_WIDTH,
@@ -167,50 +166,6 @@ const USER_MESSAGE_RENDERING_OPTIONS: Option<'markdown' | 'plain'>[] = [
     },
 ];
 
-const CHAT_RENDER_MODE_OPTIONS: Option<'sorted' | 'live'>[] = [
-    {
-        id: 'sorted',
-        labelKey: 'settings.openchamber.visual.option.chatRenderMode.sorted.label',
-        descriptionKey: 'settings.openchamber.visual.option.chatRenderMode.sorted.description',
-    },
-    {
-        id: 'live',
-        labelKey: 'settings.openchamber.visual.option.chatRenderMode.live.label',
-        descriptionKey: 'settings.openchamber.visual.option.chatRenderMode.live.description',
-    },
-];
-
-const MESSAGE_STREAM_TRANSPORT_OPTIONS: Option<'auto' | 'ws' | 'sse'>[] = [
-    {
-        id: 'auto',
-        labelKey: 'settings.openchamber.visual.option.messageTransport.auto.label',
-        descriptionKey: 'settings.openchamber.visual.option.messageTransport.auto.description',
-    },
-    {
-        id: 'ws',
-        labelKey: 'settings.openchamber.visual.option.messageTransport.ws.label',
-        descriptionKey: 'settings.openchamber.visual.option.messageTransport.ws.description',
-    },
-    {
-        id: 'sse',
-        labelKey: 'settings.openchamber.visual.option.messageTransport.sse.label',
-        descriptionKey: 'settings.openchamber.visual.option.messageTransport.sse.description',
-    },
-];
-
-const ACTIVITY_RENDER_MODE_OPTIONS: Option<'collapsed' | 'summary'>[] = [
-    {
-        id: 'collapsed',
-        labelKey: 'settings.openchamber.visual.option.activityRenderMode.collapsed.label',
-        descriptionKey: 'settings.openchamber.visual.option.activityRenderMode.collapsed.description',
-    },
-    {
-        id: 'summary',
-        labelKey: 'settings.openchamber.visual.option.activityRenderMode.summary.label',
-        descriptionKey: 'settings.openchamber.visual.option.activityRenderMode.summary.description',
-    },
-];
-
 const TIME_FORMAT_OPTIONS: Option<'auto' | '12h' | '24h'>[] = [
     {
         id: 'auto',
@@ -249,7 +204,7 @@ const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' 
     return mode === 'markdown' ? 'markdown' : 'plain';
 };
 
-export type VisibleSetting = 'theme' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'fontSize' | 'chatWidth' | 'terminalFontSize' | 'spacing' | 'inputBarOffset' | 'mermaidRendering' | 'userMessageRendering' | 'chatRenderMode' | 'messageTransport' | 'activityRenderMode' | 'collapsibleUserMessages' | 'stickyUserHeader' | 'splitAssistantMessageActions' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'reasoning' | 'showToolFileIcons' | 'expandedTools' | 'queueMode' | 'terminalQuickKeys' | 'persistDraft' | 'inputSpellcheck';
+export type VisibleSetting = 'theme' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'fontSize' | 'chatWidth' | 'terminalFontSize' | 'spacing' | 'inputBarOffset' | 'mermaidRendering' | 'userMessageRendering' | 'collapsibleUserMessages' | 'stickyUserHeader' | 'splitAssistantMessageActions' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'reasoning' | 'showToolFileIcons' | 'expandedTools' | 'queueMode' | 'terminalQuickKeys';
 
 interface OpenChamberVisualSettingsProps {
     /** Which settings to show. If undefined, shows all. */
@@ -275,10 +230,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setStickyUserHeader = useUIStore(state => state.setStickyUserHeader);
     const chatWidth = useUIStore(state => state.chatWidth);
     const setChatWidth = useUIStore(state => state.setChatWidth);
-    const chatRenderMode = useUIStore(state => state.chatRenderMode);
-    const setChatRenderMode = useUIStore(state => state.setChatRenderMode);
-    const activityRenderMode = useUIStore(state => state.activityRenderMode);
-    const setActivityRenderMode = useUIStore(state => state.setActivityRenderMode);
     const fontSize = useUIStore(state => state.fontSize);
     const setFontSize = useUIStore(state => state.setFontSize);
     const terminalFontSize = useUIStore(state => state.terminalFontSize);
@@ -301,10 +252,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setShowTerminalQuickKeysOnDesktop = useUIStore(state => state.setShowTerminalQuickKeysOnDesktop);
     const queueModeEnabled = useMessageQueueStore(state => state.queueModeEnabled);
     const setQueueMode = useMessageQueueStore(state => state.setQueueMode);
-    const persistChatDraft = useUIStore(state => state.persistChatDraft);
-    const setPersistChatDraft = useUIStore(state => state.setPersistChatDraft);
-    const inputSpellcheckEnabled = useUIStore(state => state.inputSpellcheckEnabled);
-    const setInputSpellcheckEnabled = useUIStore(state => state.setInputSpellcheckEnabled);
     const showToolFileIcons = useUIStore(state => state.showToolFileIcons);
     const setShowToolFileIcons = useUIStore(state => state.setShowToolFileIcons);
     const showExpandedBashTools = useUIStore(state => state.showExpandedBashTools);
@@ -319,9 +266,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setShowSplitAssistantMessageActions = useUIStore(state => state.setShowSplitAssistantMessageActions);
     const showMobileSessionStatusBar = useUIStore(state => state.showMobileSessionStatusBar);
     const setShowMobileSessionStatusBar = useUIStore(state => state.setShowMobileSessionStatusBar);
-    const messageStreamTransport = useConfigStore((state) => state.settingsMessageStreamTransport);
-    const setMessageStreamTransport = useConfigStore((state) => state.setSettingsMessageStreamTransport);
-    const isSettingsDialogOpen = useUIStore(state => state.isSettingsDialogOpen);
     const {
         themeMode,
         setThemeMode,
@@ -331,54 +275,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         setLightThemePreference,
         setDarkThemePreference,
     } = useThemeSystem();
-
-    const [chatRenderPreviewTick, setChatRenderPreviewTick] = React.useState(0);
-
-    const shouldAnimateChatPreview = isSettingsDialogOpen
-        && (visibleSettings ? visibleSettings.includes('chatRenderMode') : true);
-
-    React.useEffect(() => {
-        if (!shouldAnimateChatPreview) {
-            return;
-        }
-
-        // Use requestAnimationFrame for smoother animation without setInterval overhead
-        let rafId: number | null = null;
-        let lastTime = Date.now();
-        
-        const tick = () => {
-            const now = Date.now();
-            // Update every ~420ms
-            if (now - lastTime >= 420) {
-                setChatRenderPreviewTick((prev) => (prev + 1) % 24);
-                lastTime = now;
-            }
-            rafId = requestAnimationFrame(tick);
-        };
-        
-        // Only run when visible
-        if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-            rafId = requestAnimationFrame(tick);
-        }
-        
-        const onVisibility = () => {
-            if (document.visibilityState === 'visible' && rafId === null) {
-                rafId = requestAnimationFrame(tick);
-            } else if (document.visibilityState !== 'visible' && rafId !== null) {
-                cancelAnimationFrame(rafId);
-                rafId = null;
-            }
-        };
-        
-        document.addEventListener('visibilitychange', onVisibility);
-
-        return () => {
-            document.removeEventListener('visibilitychange', onVisibility);
-            if (rafId !== null) {
-                cancelAnimationFrame(rafId);
-            }
-        };
-    }, [shouldAnimateChatPreview]);
 
     const handleUserMessageRenderingModeChange = React.useCallback((mode: 'markdown' | 'plain') => {
         setUserMessageRenderingMode(mode);
@@ -399,26 +295,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         setShowSplitAssistantMessageActions(enabled);
         void updateDesktopSettings({ showSplitAssistantMessageActions: enabled });
     }, [setShowSplitAssistantMessageActions]);
-
-    const handleInputSpellcheckChange = React.useCallback((enabled: boolean) => {
-        setInputSpellcheckEnabled(enabled);
-        void updateDesktopSettings({ inputSpellcheckEnabled: enabled });
-    }, [setInputSpellcheckEnabled]);
-
-    const handleChatRenderModeChange = React.useCallback((mode: 'sorted' | 'live') => {
-        setChatRenderMode(mode);
-        void updateDesktopSettings({ chatRenderMode: mode });
-    }, [setChatRenderMode]);
-
-    const handleMessageStreamTransportChange = React.useCallback((mode: 'auto' | 'ws' | 'sse') => {
-        setMessageStreamTransport(mode);
-        void updateDesktopSettings({ messageStreamTransport: mode });
-    }, [setMessageStreamTransport]);
-
-    const handleActivityRenderModeChange = React.useCallback((mode: 'collapsed' | 'summary') => {
-        setActivityRenderMode(mode);
-        void updateDesktopSettings({ activityRenderMode: mode });
-    }, [setActivityRenderMode]);
 
     const handleMermaidRenderingModeChange = React.useCallback((mode: 'svg' | 'ascii') => {
         setMermaidRenderingMode(mode);
@@ -494,9 +370,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const hasNavigationSettings = shouldShow('terminalQuickKeys') && !isMobile;
     const hasBehaviorSettings = shouldShow('mermaidRendering')
         || shouldShow('userMessageRendering')
-        || shouldShow('chatRenderMode')
-        || shouldShow('messageTransport')
-        || (shouldShow('activityRenderMode') && chatRenderMode === 'sorted')
         || shouldShow('collapsibleUserMessages')
         || shouldShow('stickyUserHeader')
         || shouldShow('splitAssistantMessageActions')
@@ -505,10 +378,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         || shouldShow('dotfiles')
         || shouldShow('reasoning')
         || shouldShow('queueMode')
-        || shouldShow('persistDraft')
         || shouldShow('showToolFileIcons')
-        || shouldShow('expandedTools')
-        || (!isMobile && shouldShow('inputSpellcheck'));
+        || shouldShow('expandedTools');
 
     const showPwaInstallNameSetting = shouldShow('pwaInstallName') && isWebRuntime() && browserTab && !isDesktopShell() && !isVSCode;
     const showPwaOrientationSetting = shouldShow('pwaOrientation') && isWebRuntime() && !isDesktopShell() && !isVSCode;
@@ -1169,156 +1040,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
 
 
 
-                            {(shouldShow('userMessageRendering') || shouldShow('mermaidRendering') || shouldShow('chatRenderMode') || shouldShow('messageTransport') || (shouldShow('activityRenderMode') && chatRenderMode === 'sorted') || (shouldShow('diffLayout') && !isVSCode)) && (
+                            {(shouldShow('userMessageRendering') || shouldShow('mermaidRendering') || (shouldShow('diffLayout') && !isVSCode)) && (
                                 <div className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(0,16rem)_minmax(0,16rem)] md:justify-start md:gap-x-2">
-                                    {shouldShow('chatRenderMode') && (
-                                        <section className="p-2 md:col-span-2">
-                                            <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.chatRenderMode')}</h4>
-                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.chatRenderModeAria')} className="mt-1 grid w-full max-w-[26rem] grid-cols-1 gap-3 sm:grid-cols-2">
-                                                {CHAT_RENDER_MODE_OPTIONS.map((option) => {
-                                                    const selected = chatRenderMode === option.id;
-                                                    const previewPhase = chatRenderPreviewTick % 12;
-                                                    return (
-                                                        <button
-                                                            key={option.id}
-                                                            type="button"
-                                                            onClick={() => handleChatRenderModeChange(option.id)}
-                                                            aria-pressed={selected}
-                                                            className={cn(
-                                                                'flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors',
-                                                                selected
-                                                                    ? 'border-primary bg-primary/5'
-                                                                    : 'border-border hover:border-border/80 hover:bg-muted/50'
-                                                            )}
-                                                        >
-                                                            <span className={cn('typography-ui-label', selected ? 'text-foreground' : 'text-muted-foreground')}>
-                                                                {tUnsafe(option.labelKey)}
-                                                            </span>
-                                                            <div className="mt-2 w-full rounded-md border border-border/60 bg-muted/30 p-2">
-                                                                {option.id === 'live' ? (
-                                                                    <div className="space-y-1.5">
-                                                                        {[0, 1, 2].map((index) => {
-                                                                            const rowStart = index * 3 + 1;
-                                                                            const rowProgressPhase = previewPhase - rowStart + 1;
-                                                                            const rowProgress = rowProgressPhase <= 0
-                                                                                ? 0
-                                                                                : rowProgressPhase === 1
-                                                                                    ? 42
-                                                                                    : rowProgressPhase === 2
-                                                                                        ? 68
-                                                                                        : 92;
-                                                                            const visible = rowProgress > 0;
-                                                                            return (
-                                                                                <div
-                                                                                    key={index}
-                                                                                    className={cn(
-                                                                                        'flex items-center gap-1.5 transition-all duration-300 motion-reduce:transition-none',
-                                                                                        visible ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'
-                                                                                    )}
-                                                                                >
-                                                                                    <span className="h-2 w-2 shrink-0 rounded-full bg-muted-foreground/55" />
-                                                                                    <span
-                                                                                        className="h-1.5 rounded bg-muted-foreground/30 transition-all duration-300 motion-reduce:transition-none"
-                                                                                        style={{ width: `${rowProgress}%` }}
-                                                                                    />
-                                                                                </div>
-                                                                            );
-                                                                        })}
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="space-y-1.5">
-                                                                        {[0, 1, 2].map((index) => {
-                                                                            const visible = previewPhase >= (index + 1) * 3;
-                                                                            return (
-                                                                                <div
-                                                                                    key={index}
-                                                                                    className={cn(
-                                                                                        'flex items-center gap-1.5 transition-all duration-300 motion-reduce:transition-none',
-                                                                                        visible ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'
-                                                                                    )}
-                                                                                >
-                                                                                    <span className="h-2 w-2 shrink-0 rounded-full bg-muted-foreground/55" />
-                                                                                    <span
-                                                                                        className="h-1.5 rounded bg-muted-foreground/30"
-                                                                                        style={{ width: '92%' }}
-                                                                                    />
-                                                                                </div>
-                                                                            );
-                                                                        })}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        </section>
-                                    )}
-
-                                    {shouldShow('messageTransport') && (
-                                        <section className="p-2 md:col-span-2">
-                                            <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.messageStreamTransport')}</h4>
-                                            <div className="mt-1 flex max-w-[24rem] flex-col gap-2">
-                                                <div className="flex flex-wrap items-center gap-1">
-                                                    {MESSAGE_STREAM_TRANSPORT_OPTIONS.map((option) => (
-                                                        <Button
-                                                            key={option.id}
-                                                            variant="chip"
-                                                            size="xs"
-                                                            aria-pressed={messageStreamTransport === option.id}
-                                                            className="!font-normal"
-                                                            onClick={() => handleMessageStreamTransportChange(option.id)}
-                                                        >
-                                                            {tUnsafe(option.labelKey)}
-                                                        </Button>
-                                                    ))}
-                                                </div>
-                                                <span className="typography-meta text-muted-foreground">
-                                                    {(() => {
-                                                        const option = MESSAGE_STREAM_TRANSPORT_OPTIONS.find((item) => item.id === messageStreamTransport);
-                                                        return option?.descriptionKey ? tUnsafe(option.descriptionKey) : '';
-                                                    })()}
-                                                </span>
-                                            </div>
-                                        </section>
-                                    )}
-
-                                    {shouldShow('activityRenderMode') && chatRenderMode === 'sorted' && (
-                                        <section className="p-2 md:col-span-2">
-                                            <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.activityDefault')}</h4>
-                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.activityDefaultAria')} className="mt-0.5 space-y-0">
-                                                {ACTIVITY_RENDER_MODE_OPTIONS.map((option) => {
-                                                    const selected = activityRenderMode === option.id;
-                                                    return (
-                                                        <div
-                                                            key={option.id}
-                                                            role="button"
-                                                            tabIndex={0}
-                                                            aria-pressed={selected}
-                                                            onClick={() => handleActivityRenderModeChange(option.id)}
-                                                            onKeyDown={(event) => {
-                                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                                    event.preventDefault();
-                                                                    handleActivityRenderModeChange(option.id);
-                                                                }
-                                                            }}
-                                                            className="flex w-full items-center gap-2 py-0 text-left"
-                                                        >
-                                                            <Radio
-                                                                checked={selected}
-                                                                onChange={() => handleActivityRenderModeChange(option.id)}
-                                                                ariaLabel={t('settings.openchamber.visual.field.activityDefaultModeAria', { option: tUnsafe(option.labelKey) })}
-                                                            />
-                                                            <span className={cn('typography-ui-label font-normal', selected ? 'text-foreground' : 'text-foreground/50')}>
-                                                                {tUnsafe(option.labelKey)}
-                                                            </span>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </section>
-                                    )}
-
                                     {shouldShow('expandedTools') && (
                                         <section className="p-2 md:col-span-2 space-y-0.5">
                                             <div className="typography-ui-header font-medium text-foreground py-1.5">{t('settings.openchamber.visual.section.showToolsOpenedByDefault')}</div>
@@ -1513,7 +1236,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 </div>
                             )}
 
-                            {(shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || shouldShow('splitAssistantMessageActions') || (shouldShow('mobileStatusBar') && isMobile) || shouldShow('dotfiles') || shouldShow('queueMode') || shouldShow('persistDraft') || shouldShow('showToolFileIcons') || (!isMobile && shouldShow('inputSpellcheck')) || shouldShow('reasoning')) && (
+                            {(shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || shouldShow('splitAssistantMessageActions') || (shouldShow('mobileStatusBar') && isMobile) || shouldShow('dotfiles') || shouldShow('queueMode') || shouldShow('showToolFileIcons') || shouldShow('reasoning')) && (
                                 <section className="p-2 space-y-0.5">
                                     {shouldShow('reasoning') && (
                                         <div
@@ -1726,52 +1449,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                     </TooltipContent>
                                                 </Tooltip>
                                             </div>
-                                        </div>
-                                    )}
-
-                                    {shouldShow('persistDraft') && (
-                                        <div
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={persistChatDraft}
-                                            onClick={() => setPersistChatDraft(!persistChatDraft)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    setPersistChatDraft(!persistChatDraft);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={persistChatDraft}
-                                                onChange={setPersistChatDraft}
-                                                ariaLabel={t('settings.openchamber.visual.field.persistDraftMessagesAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.persistDraftMessages')}</span>
-                                        </div>
-                                    )}
-
-                                    {!isMobile && shouldShow('inputSpellcheck') && (
-                                        <div
-                                            className="group flex cursor-pointer items-center gap-2 py-1.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={inputSpellcheckEnabled}
-                                            onClick={() => handleInputSpellcheckChange(!inputSpellcheckEnabled)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    handleInputSpellcheckChange(!inputSpellcheckEnabled);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={inputSpellcheckEnabled}
-                                                onChange={handleInputSpellcheckChange}
-                                                ariaLabel={t('settings.openchamber.visual.field.enableSpellcheckInTextInputsAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.enableSpellcheckInTextInputs')}</span>
                                         </div>
                                     )}
 

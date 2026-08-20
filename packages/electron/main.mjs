@@ -18,6 +18,12 @@ import { MacosSpeechManager } from './speech-manager.mjs';
 import { clearElectronRuntimeCaches, getElectronRuntimeCacheInfo } from './cache-maintenance.mjs';
 import { createKeepAwakeController } from './keep-awake-controller.mjs';
 import { finishQuitAfterCleanup } from './quit-cleanup.mjs';
+import {
+  buildQuitRiskSnapshot,
+  emptyQuitRisk,
+  quitConfirmationMessage,
+  shouldRequireQuitConfirmation,
+} from './quit-risk.mjs';
 import { persistWindowState } from './window-state-persistence.mjs';
 import {
   buildStartupErrorHtml as buildStartupErrorHtmlFromSettings,
@@ -214,35 +220,7 @@ const NATIVE_BROWSER_AUTH_CACHE_MS = 5_000;
 const NATIVE_BROWSER_REVALIDATE_MS = 10_000;
 let nativeBrowserRevalidationTimer = null;
 
-const quitRisk = {
-  hasActiveTunnel: false,
-  hasRunningScheduledTasks: false,
-  hasEnabledScheduledTasks: false,
-  runningScheduledTasksCount: 0,
-  enabledScheduledTasksCount: 0,
-};
-
-const shouldRequireQuitConfirmation = () =>
-  quitRisk.hasActiveTunnel
-  || quitRisk.hasRunningScheduledTasks
-  || quitRisk.hasEnabledScheduledTasks;
-
-const quitConfirmationMessage = () => {
-  const reasons = [];
-  if (quitRisk.hasActiveTunnel) {
-    reasons.push('an active tunnel');
-  }
-  if (quitRisk.runningScheduledTasksCount > 0) {
-    reasons.push(`${quitRisk.runningScheduledTasksCount} running scheduled task${quitRisk.runningScheduledTasksCount === 1 ? '' : 's'}`);
-  }
-  if (quitRisk.enabledScheduledTasksCount > 0) {
-    reasons.push(`${quitRisk.enabledScheduledTasksCount} enabled scheduled task${quitRisk.enabledScheduledTasksCount === 1 ? '' : 's'}`);
-  }
-  if (reasons.length === 0) {
-    return 'Background processes (sidecar, SSH sessions) will be stopped.';
-  }
-  return `DevRyan detected ${reasons.join(', ')}. Quitting now will stop sidecar/background processes and may interrupt pending work.`;
-};
+const quitRisk = emptyQuitRisk();
 
 const prepareForQuit = ({ installingUpdate = false } = {}) => {
   state.quitRequested = true;
@@ -295,7 +273,7 @@ const performConfirmedQuit = () => {
 const requestQuitWithConfirmation = async () => {
   await refreshQuitRiskFlags();
 
-  if (!shouldRequireQuitConfirmation()) {
+  if (!shouldRequireQuitConfirmation(quitRisk)) {
     performConfirmedQuit();
     return;
   }
@@ -320,7 +298,7 @@ const requestQuitWithConfirmation = async () => {
       type: 'warning',
       title: 'Quit DevRyan?',
       message: 'Quit DevRyan?',
-      detail: quitConfirmationMessage(),
+      detail: quitConfirmationMessage(quitRisk),
       buttons: ['Quit', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
@@ -339,23 +317,26 @@ const refreshQuitRiskFlags = async () => {
   if (state.serverHandle && typeof state.serverHandle.getQuitRiskStatus === 'function') {
     try {
       const status = await state.serverHandle.getQuitRiskStatus();
-      const scheduled = status?.scheduledTasks;
-      if (scheduled && typeof scheduled === 'object') {
-        const enabledCount = Number(scheduled.enabledScheduledTasksCount ?? 0);
-        const runningCount = Number(scheduled.runningScheduledTasksCount ?? 0);
-        quitRisk.enabledScheduledTasksCount = Number.isFinite(enabledCount) ? enabledCount : 0;
-        quitRisk.runningScheduledTasksCount = Number.isFinite(runningCount) ? runningCount : 0;
-        quitRisk.hasEnabledScheduledTasks = Boolean(scheduled.hasEnabledScheduledTasks) || quitRisk.enabledScheduledTasksCount > 0;
-        quitRisk.hasRunningScheduledTasks = Boolean(scheduled.hasRunningScheduledTasks) || quitRisk.runningScheduledTasksCount > 0;
+      if (status?.scheduledTasks && typeof status.scheduledTasks === 'object'
+        && status?.tunnel && typeof status.tunnel === 'object') {
+        Object.assign(quitRisk, buildQuitRiskSnapshot({
+          scheduledTasks: status.scheduledTasks,
+          tunnel: status.tunnel,
+        }));
+        return;
       }
-      quitRisk.hasActiveTunnel = Boolean(status?.tunnel?.active);
-      return;
     } catch {
     }
   }
 
   const base = typeof state.sidecarUrl === 'string' ? state.sidecarUrl.trim().replace(/\/$/, '') : '';
-  if (!base) return;
+  if (!base) {
+    Object.assign(quitRisk, buildQuitRiskSnapshot({
+      scheduledTasksVerified: false,
+      tunnelVerified: false,
+    }));
+    return;
+  }
 
   const scheduledUrl = `${base}/api/openchamber/scheduled-tasks/status`;
   const tunnelUrl = `${base}/api/openchamber/tunnel/status`;
@@ -372,18 +353,12 @@ const refreshQuitRiskFlags = async () => {
 
   const [scheduled, tunnel] = await Promise.all([fetchJson(scheduledUrl), fetchJson(tunnelUrl)]);
 
-  if (scheduled && typeof scheduled === 'object') {
-    const enabledCount = Number(scheduled.enabledScheduledTasksCount ?? 0);
-    const runningCount = Number(scheduled.runningScheduledTasksCount ?? 0);
-    quitRisk.enabledScheduledTasksCount = Number.isFinite(enabledCount) ? enabledCount : 0;
-    quitRisk.runningScheduledTasksCount = Number.isFinite(runningCount) ? runningCount : 0;
-    quitRisk.hasEnabledScheduledTasks = Boolean(scheduled.hasEnabledScheduledTasks) || quitRisk.enabledScheduledTasksCount > 0;
-    quitRisk.hasRunningScheduledTasks = Boolean(scheduled.hasRunningScheduledTasks) || quitRisk.runningScheduledTasksCount > 0;
-  }
-
-  if (tunnel && typeof tunnel === 'object') {
-    quitRisk.hasActiveTunnel = Boolean(tunnel.active);
-  }
+  Object.assign(quitRisk, buildQuitRiskSnapshot({
+    scheduledTasks: scheduled,
+    tunnel,
+    scheduledTasksVerified: Boolean(scheduled && typeof scheduled === 'object'),
+    tunnelVerified: Boolean(tunnel && typeof tunnel === 'object'),
+  }));
 };
 
 const settingsFilePath = () => {

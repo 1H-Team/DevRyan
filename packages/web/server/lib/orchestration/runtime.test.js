@@ -4,7 +4,10 @@ import path from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { createManagedTaskRecord } from '@openchamber/orchestration-runtime';
+import {
+  createManagedTaskRecord,
+  createManagedTaskResultEnvelope,
+} from '@openchamber/orchestration-runtime';
 
 import { createWebManagedOrchestrationRuntime } from './runtime.js';
 
@@ -35,6 +38,46 @@ const createPersistence = () => {
     async load() { return snapshot; },
     async save(value) { snapshot = structuredClone(value); },
   };
+};
+
+const createTerminalPair = (suffix, recoverablePreview, overrides = {}) => {
+  const queued = createManagedTaskRecord({
+    taskId: `dvr_task_${suffix}`,
+    idempotencyKey: `terminal-${suffix}`,
+    rootSessionId: 'ses_root',
+    parentTaskId: null,
+    childSessionId: `ses_child_${suffix}`,
+    directory: '/workspace',
+    sequence: overrides.sequence ?? 1,
+    mode: 'orchestrator',
+    providerId: 'openai',
+    modelId: 'gpt-5.6-sol',
+    agent: 'explorer',
+    variant: 'high',
+    label: `Terminal ${suffix}`,
+    prompt: `Complete ${suffix}.`,
+    attempt: 1,
+    priorTaskId: null,
+    executionKind: 'start',
+    createdAt: 1_000,
+    timeoutAt: null,
+  });
+  const task = {
+    ...queued,
+    status: overrides.status ?? 'completed',
+    startedAt: 1_100,
+    finishedAt: 1_200,
+    failureReason: overrides.failureReason ?? null,
+    partial: overrides.partial ?? false,
+    recoverablePreview,
+    canonicalRefs: [{ type: 'message', id: `msg_${suffix}` }],
+  };
+  const resultEnvelope = createManagedTaskResultEnvelope(task, {
+    sequence: (overrides.sequence ?? 1) + 100,
+    createdAt: 1_300,
+    resumable: overrides.resumable ?? false,
+  });
+  return { task, resultEnvelope };
 };
 
 const createWaitScheduler = () => {
@@ -189,6 +232,70 @@ describe('web managed orchestration runtime', () => {
     await runtime.shutdown();
   });
 
+  it('repeats owner model resolution at admission while preserving plan-safe and Council executions', async () => {
+    const resolveAgentExecution = vi.fn(async () => ({
+      providerId: 'anthropic',
+      modelId: 'claude-sonnet-4-6',
+      variant: 'high',
+      source: 'personal',
+    }));
+    let taskIndex = 0;
+    const runtime = createWebManagedOrchestrationRuntime({
+      persistence: createPersistence(),
+      executor: {
+        async start() { return await new Promise(() => {}); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return {}; },
+      },
+      resolveAgentExecution,
+      createTaskId: () => `dvr_task_owner_${++taskIndex}`,
+      createLeaseToken: () => `dvr_lease_owner_${taskIndex}`,
+      now: () => 10_000,
+    });
+
+    const personal = await runtime.handleRpc({ method: 'submit', params: submitParams(1) });
+    expect(personal.task).toMatchObject({
+      providerId: 'anthropic',
+      modelId: 'claude-sonnet-4-6',
+      variant: 'high',
+    });
+
+    resolveAgentExecution.mockResolvedValueOnce({
+      providerId: 'cursor-acp',
+      modelId: 'composer-2.5',
+      variant: 'high',
+      source: 'personal',
+    });
+    const planSafe = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(2, {
+        readOnly: true,
+        providerId: 'openai',
+        modelId: 'gpt-5.6-sol',
+        variant: 'medium',
+      }),
+    });
+    expect(planSafe.task).toMatchObject({
+      providerId: 'openai',
+      modelId: 'gpt-5.6-sol',
+      variant: 'medium',
+    });
+
+    const council = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(3, {
+        deadlineClass: 'council',
+        providerId: 'openai',
+        modelId: 'gpt-5.5',
+        agent: 'councillor',
+      }),
+    });
+    expect(council.task).toMatchObject({ providerId: 'openai', modelId: 'gpt-5.5' });
+    expect(resolveAgentExecution).toHaveBeenCalledTimes(2);
+    await runtime.shutdown();
+  });
+
   it('exposes durable provider-recovery continuations through the private bridge', async () => {
     const continuations = [{
       sourceTaskId: 'dvr_task_limited',
@@ -251,6 +358,216 @@ describe('web managed orchestration runtime', () => {
       })).rejects.toMatchObject({ code: 'invalid_request', statusCode: 400 });
     }
     expect(scheduler.waitForTask).toHaveBeenCalledTimes(3);
+    await runtime.shutdown();
+  });
+
+  it('keeps private results eager by default, pages explicit references, and leaves UI snapshots eager', async () => {
+    const preview = `large:${'🙂e\u0301'.repeat(2_000)}:result`;
+    const { task, resultEnvelope } = createTerminalPair('reference', preview);
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      getTask: vi.fn((taskId) => taskId === task.taskId ? task : null),
+      getResultEnvelope: vi.fn((taskId) => taskId === task.taskId ? resultEnvelope : null),
+      listTasks: vi.fn(() => [task]),
+      listResultEnvelopes: vi.fn(() => [resultEnvelope]),
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    };
+    const runtime = createWebManagedOrchestrationRuntime({
+      scheduler,
+      persistence: createPersistence(),
+      executor: { async start() { throw new Error('must not start'); } },
+    });
+    const scope = {
+      taskId: task.taskId,
+      rootSessionId: task.rootSessionId,
+      directory: task.directory,
+    };
+
+    const eager = await runtime.handleRpc({ method: 'status', params: scope });
+    expect(eager).toMatchObject({
+      task: { recoverablePreview: preview },
+      resultEnvelope: { recoverablePreview: preview },
+    });
+    expect(eager).not.toHaveProperty('resultReference');
+
+    const projected = await runtime.handleRpc({
+      method: 'status',
+      params: { ...scope, resultMode: 'reference' },
+    });
+    expect(projected.task).not.toHaveProperty('recoverablePreview');
+    expect(projected.resultEnvelope).not.toHaveProperty('recoverablePreview');
+    expect(projected.resultEnvelope).toMatchObject({
+      failureReason: null,
+      canonicalRefs: resultEnvelope.canonicalRefs,
+      action: null,
+    });
+
+    let reference = projected.resultReference;
+    const pages = [reference.text];
+    while (!reference.complete) {
+      const page = await runtime.handleRpc({
+        method: 'read_result',
+        params: { ...scope, resultCursor: reference.nextCursor },
+      });
+      reference = page.resultReference;
+      pages.push(reference.text);
+    }
+    expect(pages.join('')).toBe(preview);
+
+    const snapshot = await runtime.getSnapshot({ rootSessionId: task.rootSessionId });
+    expect(snapshot.tasks[0].recoverablePreview).toBe(preview);
+    expect(snapshot.resultEnvelopes[0].recoverablePreview).toBe(preview);
+    await expect(runtime.handleRpc({
+      method: 'status',
+      params: { ...scope, resultMode: 'lazy' },
+    })).rejects.toMatchObject({ code: 'invalid_request', statusCode: 400 });
+
+    await runtime.shutdown();
+  });
+
+  it('projects every model-facing task-result wrapper only after a matching retained envelope', async () => {
+    const preview = 'x'.repeat(9_000);
+    const original = createTerminalPair('original', preview, { sequence: 1 });
+    const descendant = createTerminalPair('descendant', preview, { sequence: 2 });
+    const followUp = createTerminalPair('follow_up', preview, { sequence: 3 });
+    const acknowledgedEnvelope = {
+      ...original.resultEnvelope,
+      acknowledgedAt: 2_000,
+      action: 'retry',
+      followUpTaskId: followUp.task.taskId,
+    };
+    const tasks = new Map([
+      [original.task.taskId, original.task],
+      [descendant.task.taskId, descendant.task],
+      [followUp.task.taskId, followUp.task],
+    ]);
+    const envelopes = new Map([
+      [original.task.taskId, acknowledgedEnvelope],
+      [descendant.task.taskId, descendant.resultEnvelope],
+      [followUp.task.taskId, followUp.resultEnvelope],
+    ]);
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      submit: vi.fn(async () => original.task),
+      getTask: vi.fn((taskId) => tasks.get(taskId) ?? null),
+      getResultEnvelope: vi.fn((taskId) => envelopes.get(taskId) ?? null),
+      waitForTask: vi.fn(async () => original.task),
+      cancelTask: vi.fn(async () => [original.task, descendant.task]),
+      acknowledgeResult: vi.fn(async () => ({
+        envelope: acknowledgedEnvelope,
+        followUpTask: followUp.task,
+      })),
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    };
+    const runtime = createWebManagedOrchestrationRuntime({
+      scheduler,
+      persistence: createPersistence(),
+      executor: { async start() { throw new Error('must not start'); } },
+      now: () => 10_000,
+    });
+    const scope = {
+      taskId: original.task.taskId,
+      rootSessionId: original.task.rootSessionId,
+      directory: original.task.directory,
+      resultMode: 'reference',
+    };
+
+    const responses = [
+      await runtime.handleRpc({ method: 'submit', params: {
+        ...submitParams(1),
+        resultMode: 'reference',
+      } }),
+      await runtime.handleRpc({ method: 'status', params: scope }),
+      await runtime.handleRpc({ method: 'wait', params: scope }),
+      await runtime.handleRpc({ method: 'cancel', params: { ...scope, cascade: true } }),
+      await runtime.handleRpc({ method: 'acknowledge', params: {
+        ...scope,
+        action: 'retry',
+        idempotencyKey: 'ack-reference',
+      } }),
+    ];
+
+    for (const response of responses) {
+      expect(JSON.stringify(response)).not.toContain('recoverablePreview');
+    }
+    expect(responses[0]).toHaveProperty('resultReference');
+    expect(responses[3].tasks).toHaveLength(2);
+    expect(responses[3].tasks.every((entry) => entry.resultReference)).toBe(true);
+    expect(responses[4]).toMatchObject({
+      resultReference: { taskId: original.task.taskId },
+      followUpTask: { resultReference: { taskId: followUp.task.taskId } },
+    });
+
+    await runtime.shutdown();
+  });
+
+  it('enforces strict result scope and stable cursor errors without mutating scheduler state', async () => {
+    const preview = 'x'.repeat(9_000);
+    const pair = createTerminalPair('cursor_errors', preview);
+    let retainedEnvelope = pair.resultEnvelope;
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      getTask: vi.fn((taskId) => taskId === pair.task.taskId ? pair.task : null),
+      getResultEnvelope: vi.fn(() => retainedEnvelope),
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    };
+    const runtime = createWebManagedOrchestrationRuntime({
+      scheduler,
+      persistence: createPersistence(),
+      executor: { async start() { throw new Error('must not start'); } },
+    });
+    const scope = {
+      taskId: pair.task.taskId,
+      rootSessionId: pair.task.rootSessionId,
+      directory: pair.task.directory,
+    };
+    const projected = await runtime.handleRpc({
+      method: 'status',
+      params: { ...scope, resultMode: 'reference' },
+    });
+    const resultCursor = projected.resultReference.nextCursor;
+
+    for (const params of [
+      { ...scope, rootSessionId: 'ses_other', resultCursor },
+      { ...scope, directory: '/other', resultCursor },
+      { taskId: scope.taskId, directory: scope.directory, resultCursor },
+      { taskId: scope.taskId, rootSessionId: scope.rootSessionId, resultCursor },
+    ]) {
+      await expect(runtime.handleRpc({ method: 'read_result', params }))
+        .rejects.toMatchObject({ code: 'task_scope_mismatch', statusCode: 403 });
+    }
+    await expect(runtime.handleRpc({
+      method: 'read_result',
+      params: { ...scope, resultCursor: 'malformed' },
+    })).rejects.toMatchObject({ code: 'invalid_result_cursor', statusCode: 400 });
+
+    retainedEnvelope = null;
+    await expect(runtime.handleRpc({ method: 'read_result', params: { ...scope, resultCursor } }))
+      .rejects.toMatchObject({ code: 'result_not_found', statusCode: 404 });
+    retainedEnvelope = { ...pair.resultEnvelope, envelopeId: 'dvr_result_replaced_2' };
+    await expect(runtime.handleRpc({ method: 'read_result', params: { ...scope, resultCursor } }))
+      .rejects.toMatchObject({ code: 'result_reference_mismatch', statusCode: 409 });
+    retainedEnvelope = { ...pair.resultEnvelope, failureReason: 'contract mismatch' };
+    const mismatch = await runtime.handleRpc({
+      method: 'status',
+      params: { ...scope, resultMode: 'reference' },
+    });
+    expect(mismatch.task.recoverablePreview).toBe(preview);
+    expect(mismatch.resultEnvelope.recoverablePreview).toBe(preview);
+    expect(mismatch).not.toHaveProperty('resultReference');
+    await expect(runtime.handleRpc({ method: 'read_result', params: { ...scope, resultCursor } }))
+      .rejects.toMatchObject({ code: 'result_reference_mismatch', statusCode: 409 });
+
+    scheduler.getTask.mockReturnValueOnce(null);
+    await expect(runtime.handleRpc({ method: 'read_result', params: { ...scope, resultCursor } }))
+      .rejects.toMatchObject({ code: 'task_not_found', statusCode: 404 });
+    expect(scheduler.getResultEnvelope).not.toHaveBeenCalledWith('dvr_task_mutated');
     await runtime.shutdown();
   });
 

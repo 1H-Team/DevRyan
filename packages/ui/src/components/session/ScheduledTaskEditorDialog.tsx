@@ -23,6 +23,7 @@ import { getOrderedThinkingVariants, resolveThinkingVariant } from '@/lib/provid
 import { resolveAvailableProviderModel } from '@/lib/providers/modelAvailability';
 import type { ProjectEntry } from '@/lib/api/types';
 import { useAuthPrincipal } from '@/lib/authSession';
+import { resolveScheduledTaskBranchOptions } from './scheduledTaskBranchOptions';
 
 const WEEKDAY_INDEXES = [0, 1, 2, 3, 4, 5, 6] as const;
 const NO_VARIANT_VALUE = '__no_variant__';
@@ -617,18 +618,10 @@ export function ScheduledTaskEditorDialog(props: {
   const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);
   const weekStartPreference = useUIStore((state) => state.weekStartPreference);
   const isMobile = useUIStore((state) => state.isMobile);
-  const branchOptions = React.useMemo(() => {
-    const branches = principal.scope === 'managed' && principal.role !== 'admin'
-      ? principal.assignments
-        .filter((assignment) => assignment.projectId === project?.id)
-        .map((assignment) => ({
-          name: assignment.branchName,
-          directory: assignment.publicDirectory,
-          isDefault: assignment.isDefault,
-        }))
-      : project?.branches || [];
-    return [...new Map(branches.map((branch) => [branch.name, branch])).values()];
-  }, [principal.assignments, principal.role, principal.scope, project?.branches, project?.id]);
+  const branchOptions = React.useMemo(
+    () => resolveScheduledTaskBranchOptions({ principal, project, task }),
+    [principal, project, task],
+  );
   const defaultBranchName = React.useMemo(
     () => branchOptions.find((branch) => branch.isDefault)?.name || branchOptions[0]?.name || task?.target?.branchName || '',
     [branchOptions, task?.target?.branchName],

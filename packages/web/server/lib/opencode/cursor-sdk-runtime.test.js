@@ -2989,6 +2989,118 @@ describe('Cursor SDK runtime', () => {
     expect(assistant?.parts?.find((part) => part.type === 'text')?.text).toBe('I will fix it next.');
   });
 
+  it('persists bounded Cursor-native subagent activity on the parent task tool', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      emitEvent: () => {},
+      createPromptRun: async () => ({
+        cancel: async () => {},
+        stream: async function* stream() {
+          yield {
+            type: 'message',
+            message: {
+              type: 'tool_call',
+              call_id: 'task_activity_1',
+              name: 'task',
+              status: 'running',
+              args: {
+                description: 'Inspect Cursor compatibility',
+                prompt: 'Trace the runtime',
+                subagentType: { kind: 'explore', name: 'Explorer' },
+                model: { id: 'composer-2.5' },
+              },
+            },
+          };
+          yield {
+            type: 'message',
+            message: {
+              type: 'task_activity',
+              call_id: 'task_activity_1',
+              model_call_id: 'model_call_1',
+              update: { type: 'text-delta', text: 'Reading the runtime.' },
+            },
+          };
+          yield {
+            type: 'message',
+            message: {
+              type: 'task_activity',
+              call_id: 'task_activity_1',
+              model_call_id: 'model_call_1',
+              update: {
+                type: 'tool-call',
+                call_id: 'nested_read_1',
+                name: 'read',
+                status: 'completed',
+                args: { path: 'packages/cursor-sdk-runtime/index.js' },
+                result: { status: 'success' },
+              },
+            },
+          };
+          yield {
+            type: 'message',
+            message: {
+              type: 'tool_call',
+              call_id: 'task_activity_1',
+              name: 'task',
+              status: 'completed',
+              result: {
+                status: 'success',
+                value: {
+                  agentId: 'cursor-agent-1',
+                  resultSuffix: 'Compatibility inspected.',
+                  transcriptPath: '/Users/example/private/transcript.jsonl',
+                  conversationSteps: [{ private: true }],
+                },
+              },
+            },
+          };
+        },
+      }),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_task_activity',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+        messageID: 'msg_task_activity_user',
+        parts: [{ type: 'text', text: 'inspect compatibility' }],
+      },
+    });
+
+    const records = await waitFor(async () => {
+      const current = await runtime.getSessionMessages('ses_task_activity');
+      return current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
+        ? current
+        : null;
+    });
+    const assistant = records?.find((record) => record.info?.role === 'assistant');
+    const taskPart = assistant?.parts?.find((part) => part.type === 'tool' && part.tool === 'task');
+
+    expect(taskPart?.state?.metadata?.cursorNativeTask).toMatchObject({
+      schemaVersion: 1,
+      source: 'cursor-native',
+      parentCallId: 'task_activity_1',
+      modelCallId: 'model_call_1',
+      text: 'Reading the runtime.',
+      entries: [{
+        id: 'nested_read_1',
+        tool: 'read',
+        state: {
+          status: 'completed',
+          input: { path: 'packages/cursor-sdk-runtime/index.js' },
+          output: { status: 'success' },
+        },
+      }],
+    });
+    expect(taskPart?.output).toContain('Compatibility inspected.');
+    expect(taskPart?.output).not.toContain('transcriptPath');
+    expect(taskPart?.output).not.toContain('conversationSteps');
+  });
+
   it('surfaces a diagnostic when Cursor ends the parent run immediately after a task', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const runtime = createCursorSdkRuntime({

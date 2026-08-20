@@ -9,6 +9,8 @@ import {
 } from './provider-capabilities.js';
 import { formatManagedTaskDisplayName } from './contract.js';
 import {
+  PROVIDER_USAGE_LIMIT_FAILURE_KIND,
+  classifyProviderRetryStatus,
   classifyProviderTransportFailure,
   isDefiniteProviderUsageLimit,
 } from './provider-retry-policy.js';
@@ -41,6 +43,8 @@ export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT = 'Continue the task 
 export const MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous model connection was interrupted. Do not repeat completed work.';
 export const MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous model ended before providing a final answer. Reuse completed work and tool results, retry only missing work, and return the requested final output.';
 export const MANAGED_READ_ONLY_PROMPT = '[devryan-managed-read-only:v1] The parent session is in plan mode. Inspect and report only. Do not edit, create, delete, rename, or move files; do not run commands that mutate the workspace; and do not delegate work.';
+export const MANAGED_CONTEXT_MODE_WRITABLE_PROMPT = '[devryan-context-mode-routing:v1] Use Context Mode by default when analysis is broad, multi-file, derived, aggregated, or unpredictably large: prefer ctx_execute_file, ctx_execute, ctx_batch_execute, or ctx_index followed by batched ctx_search as appropriate. Use native read/search tools for bounded exact lookups, navigation, and edit hunks. After one Context Mode storage failure, use bounded native tools for the rest of this turn and do not retry Context Mode.';
+export const MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT = '[devryan-context-mode-read-only-routing:v1] For broad or multi-file workspace analysis, prefer ctx_index followed by batched ctx_search. For large web research, prefer ctx_fetch_and_index followed by batched ctx_search. Use native read/search tools for bounded exact lookups. ctx_execute, ctx_execute_file, and ctx_batch_execute are intentionally unavailable. After one Context Mode storage failure, use bounded native tools for the rest of this turn and do not retry Context Mode.';
 const MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPTS = Object.freeze([
   MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT,
   MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
@@ -95,6 +99,14 @@ const defaultSleep = (delayMs, { signal } = {}) => new Promise((resolve, reject)
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 
+const getProviderUsageLimitFailureReason = (status) => {
+  const message = trimString(status?.statusMessage);
+  if (isDefiniteProviderUsageLimit(message)) return message;
+  return message
+    ? `Provider usage limit reached: ${message}`
+    : 'Provider usage limit reached';
+};
+
 const assertReadOnlyProviderSupport = (task) => {
   if (!task.readOnly || supportsManagedReadOnlyProvider(task.providerId)) return;
   const error = new Error(MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE);
@@ -117,11 +129,28 @@ const resolveTaskPrompt = (task, prompt) => (
     : prompt
 );
 
+const taskHasContextMode = (task) => (
+  trimString(task.providerId).toLowerCase() !== 'cursor-acp'
+);
+
+const resolveInitialTaskPrompt = (task) => {
+  if (!taskHasContextMode(task)) {
+    return resolveTaskPrompt(task, task.prompt);
+  }
+  const routingPrompt = task.readOnly
+    ? MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT
+    : MANAGED_CONTEXT_MODE_WRITABLE_PROMPT;
+  return `${routingPrompt}\n\n${resolveTaskPrompt(task, task.prompt)}`;
+};
+
 const resolveTaskPromptTools = (task) => ({
   ...resolveProviderPromptTools(
     task.providerId,
     task.agent,
-    { readOnly: task.readOnly },
+    {
+      readOnly: task.readOnly,
+      contextModeAvailable: taskHasContextMode(task),
+    },
   ),
   // Managed tasks are already child sessions. Keep all further delegation
   // root-owned even when project agent permissions expose OpenCode's task tool.
@@ -624,6 +653,8 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     statusMessage: trimString(status?.message),
     statusAttempt: Number.isFinite(status?.attempt) ? status.attempt : null,
     statusNext: Number.isFinite(status?.next) ? status.next : null,
+    statusActionReason: trimString(status?.action?.reason),
+    statusFailureKind: classifyProviderRetryStatus(status),
   });
 
   // Liveness only. Deliberately does NOT read messages: the transcript can run to
@@ -735,6 +766,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
 
   const retryStatusIdentity = (status) => [
     trimString(status?.message),
+    trimString(status?.action?.reason),
     Number.isFinite(status?.attempt) ? status.attempt : '',
     Number.isFinite(status?.next) ? status.next : '',
   ].join('\u0000');
@@ -786,6 +818,32 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     return await startRetryStop(task, status);
   };
 
+  const settleProviderUsageLimit = (task, observation) => {
+    if (
+      observation.statusType !== 'retry'
+      || observation.statusFailureKind !== PROVIDER_USAGE_LIMIT_FAILURE_KIND
+    ) {
+      return null;
+    }
+    void startRetryStop(task, {
+      type: observation.statusType,
+      message: observation.statusMessage,
+      attempt: observation.statusAttempt,
+      next: observation.statusNext,
+      ...(observation.statusActionReason
+        ? { action: { reason: observation.statusActionReason } }
+        : {}),
+    });
+    return {
+      status: 'failed',
+      failureReason: getProviderUsageLimitFailureReason(observation),
+      partial: observation.hasUsefulWork,
+      recoverablePreview: observation.recoverablePreview,
+      canonicalRefs: observation.canonicalRefs,
+      resumable: true,
+    };
+  };
+
   const waitForTerminal = async (task, waitOptions = {}) => {
     if (!task.childSessionId) {
       throw new Error(`Managed task ${task.taskId} has no child session`);
@@ -817,7 +875,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         const liveStatus = normalizeStatusFields(status);
         if (
           LIVE_STATUS_TYPES.has(liveStatus.statusType)
-          && !(liveStatus.statusType === 'retry' && isDefiniteProviderUsageLimit(liveStatus.statusMessage))
+          && !(
+            liveStatus.statusType === 'retry'
+            && liveStatus.statusFailureKind === PROVIDER_USAGE_LIMIT_FAILURE_KIND
+          )
         ) {
           firstTransientFailureAt = null;
           // A live child is not settled, so it clears any pending empty-terminal
@@ -936,25 +997,8 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
           resumable: true,
         };
       }
-      if (
-        observation.statusType === 'retry'
-        && isDefiniteProviderUsageLimit(observation.statusMessage)
-      ) {
-        void startRetryStop(task, {
-          type: observation.statusType,
-          message: observation.statusMessage,
-          attempt: observation.statusAttempt,
-          next: observation.statusNext,
-        });
-        return {
-          status: 'failed',
-          failureReason: observation.statusMessage,
-          partial: observation.hasUsefulWork,
-          recoverablePreview: observation.recoverablePreview,
-          canonicalRefs: observation.canonicalRefs,
-          resumable: true,
-        };
-      }
+      const providerUsageLimit = settleProviderUsageLimit(task, observation);
+      if (providerUsageLimit) return providerUsageLimit;
       // The tail of the previous attempt is not this attempt's result. A resume or
       // retry dispatched moments after an abort would otherwise read the killed turn's
       // error and terminalize instantly, before the child had run a single token. This
@@ -1091,7 +1135,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       modelId: task.modelId,
       agent: task.agent,
       variant: task.variant,
-      prompt: resolveTaskPrompt(task, task.prompt),
+      prompt: resolveInitialTaskPrompt(task),
       tools: resolveTaskPromptTools(task),
     });
     await retainCheckpoint({
@@ -1140,7 +1184,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       const liveStatus = normalizeStatusFields(status);
       if (
         LIVE_STATUS_TYPES.has(liveStatus.statusType)
-        && !(liveStatus.statusType === 'retry' && isDefiniteProviderUsageLimit(liveStatus.statusMessage))
+        && !(
+          liveStatus.statusType === 'retry'
+          && liveStatus.statusFailureKind === PROVIDER_USAGE_LIMIT_FAILURE_KIND
+        )
       ) {
         // Still live past the settle window: a genuinely running child, not teardown.
         await retainInPlaceAcceptance(task, control, 'before resumed live observation');
@@ -1151,6 +1198,12 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       if (!isTransientObservationError(error)) throw error;
       await retainInPlaceAcceptance(task, control, 'before resumed observation');
       return await waitForTerminal(task);
+    }
+
+    const providerUsageLimit = settleProviderUsageLimit(task, observation);
+    if (providerUsageLimit) {
+      await retainInPlaceAcceptance(task, control, 'before accepting provider-limit result');
+      return providerUsageLimit;
     }
 
     const terminal = toTerminalResult(observation);
@@ -1273,6 +1326,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         };
       }
       const observation = await readObservation(task);
+      const providerUsageLimit = settleProviderUsageLimit(task, observation);
+      if (providerUsageLimit) {
+        return { state: 'terminal', result: providerUsageLimit };
+      }
       if (observation.continuationPending) {
         return { state: 'live' };
       }

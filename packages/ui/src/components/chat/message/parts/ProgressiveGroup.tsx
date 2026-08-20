@@ -46,6 +46,7 @@ import { PatchFilesList, ToolPathList, ToolUrlList, type ToolPathEntry } from '.
 import { StaticToolRow } from './StaticToolRow';
 import { areActivityListsEqual, getToolReadOffset } from './activityRowUtils';
 import { AnimatedCounter } from '@/components/ui/AnimatedCounter';
+import { cn } from '@/lib/utils';
 import {
     getContextDirectoryForPath,
     getRelativePathFromDirectory,
@@ -62,6 +63,7 @@ import {
     coalesceConsecutiveReasoningRows,
     type ReasoningGroupRow,
 } from '../reasoningGrouping';
+import type { GeneratedImageResult } from './generatedImageResults';
 
 interface ProgressiveGroupProps {
     parts: TurnActivityPart[];
@@ -81,6 +83,7 @@ interface ProgressiveGroupProps {
     renderJustificationActions?: (activity: TurnActivityPart) => React.ReactNode;
     providerID?: string | null;
     responseStyleLevel?: ResponseStyleLevel;
+    generatedImages?: GeneratedImageResult[];
 }
 
 /**
@@ -234,6 +237,9 @@ interface StaticGroupedToolRowProps {
     activities: TurnActivityPart[];
     animateTailText: boolean;
     animateRows: boolean;
+    generatedImages?: GeneratedImageResult[];
+    onShowPopup?: (content: ToolPopupContent) => void;
+    onContentChange?: (reason?: ContentChangeReason) => void;
 }
 
 const StaticGroupedToolRow: React.FC<StaticGroupedToolRowProps> = ({
@@ -241,12 +247,18 @@ const StaticGroupedToolRow: React.FC<StaticGroupedToolRowProps> = ({
     activities,
     animateTailText,
     animateRows,
+    generatedImages,
+    onShowPopup,
+    onContentChange,
 }) => {
     const content = (
         <StaticToolRow
             toolName={toolName}
             activities={activities}
             animateTailText={animateTailText}
+            generatedImages={generatedImages}
+            onShowPopup={onShowPopup}
+            onContentChange={onContentChange}
         />
     );
 
@@ -267,6 +279,9 @@ const MemoStaticGroupedToolRow = React.memo(StaticGroupedToolRow, (prev, next) =
     return prev.toolName === next.toolName
         && prev.animateTailText === next.animateTailText
         && prev.animateRows === next.animateRows
+        && prev.generatedImages === next.generatedImages
+        && prev.onShowPopup === next.onShowPopup
+        && prev.onContentChange === next.onContentChange
         && areActivityListsEqual(prev.activities, next.activities);
 });
 
@@ -281,6 +296,7 @@ interface GroupedToolActivityRowProps {
     onContentChange?: (reason?: ContentChangeReason) => void;
     animateTailText: boolean;
     animateRows: boolean;
+    generatedImages?: GeneratedImageResult[];
 }
 
 const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
@@ -294,6 +310,7 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
     onContentChange,
     animateTailText,
     animateRows,
+    generatedImages,
 }) => {
     const { t } = useI18n();
     const [isExpanded, setIsExpanded] = React.useState(false);
@@ -442,10 +459,13 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
                     toolName={toolName}
                     activities={[activity]}
                     animateTailText={animateTailText}
+                    generatedImages={generatedImages}
+                    onShowPopup={onShowPopup}
+                    onContentChange={onContentChange}
                 />
             );
         });
-    }, [activities, animateTailText, expandedTools, groupInfo.representativeToolName, isMobile, onContentChange, onShowPopup, onToggleTool, syntaxTheme]);
+    }, [activities, animateTailText, expandedTools, generatedImages, groupInfo.representativeToolName, isMobile, onContentChange, onShowPopup, onToggleTool, syntaxTheme]);
 
     const expandedDetails = React.useMemo(() => {
         if (groupInfo.kind === 'patch' && patchFiles.length > 0) {
@@ -468,6 +488,9 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
             toolName="devryan_browser"
             activities={activities}
             animateTailText={animateTailText}
+            generatedImages={generatedImages}
+            onShowPopup={onShowPopup}
+            onContentChange={onContentChange}
         />
     ) : (
         <div className="w-full min-w-0">
@@ -540,6 +563,7 @@ export const GroupedToolActivityRow = React.memo(GroupedToolActivityRowInner, (p
         && prev.onContentChange === next.onContentChange
         && prev.animateTailText === next.animateTailText
         && prev.animateRows === next.animateRows
+        && prev.generatedImages === next.generatedImages
         && areActivityListsEqual(prev.activities, next.activities);
 });
 
@@ -652,6 +676,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     renderJustificationActions,
     providerID,
     responseStyleLevel,
+    generatedImages,
 }) => {
     void _streamPhase;
     const previewCount = showHeader && !isExpanded
@@ -767,6 +792,9 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         activities={row.activities}
                         animateTailText={row.activities.some((activity) => animatedToolIds?.has(activity.id))}
                         animateRows={animateRows}
+                        generatedImages={generatedImages}
+                        onShowPopup={onShowPopup}
+                        onContentChange={onContentChange}
                     />
                 );
 
@@ -784,6 +812,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         onContentChange={onContentChange}
                         animateTailText={row.activities.some((activity) => animatedToolIds?.has(activity.id))}
                         animateRows={animateRows}
+                        generatedImages={generatedImages}
                     />
                 );
 
@@ -814,7 +843,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     if (!showHeader) {
         return (
             <FadeInOnReveal>
-                <div className="space-y-1.5">{renderedRows}</div>
+                <div className={cn(isMobile ? 'space-y-2' : 'space-y-3')}>{renderedRows}</div>
             </FadeInOnReveal>
         );
     }
@@ -856,7 +885,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                                 +{previewHiddenCount} More...
                             </button>
                         ) : null}
-                        <div className="space-y-1.5">{renderedRows}</div>
+                        <div className={cn(isMobile ? 'space-y-2' : 'space-y-3')}>{renderedRows}</div>
                     </div>
                 ) : null}
             </div>

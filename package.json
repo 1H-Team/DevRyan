@@ -1,6 +1,6 @@
 {
   "name": "openchamber-monorepo",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "OpenChamber monorepo workspace for web, ui, and desktop runtimes",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "packages/*"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.13.0"
   },
   "keywords": [
     "opencode",
@@ -23,6 +23,7 @@
   "scripts": {
     "dev": "node ./scripts/dev.mjs",
     "agent:eval": "node ./scripts/agent-evals/main.mjs",
+    "perf:electron": "node ./scripts/perf/electron-resource-benchmark.mjs",
     "build": "bun run --filter '*' build",
     "build:web": "bun run --cwd packages/web build",
     "build:ui": "bun run --cwd packages/ui build",
@@ -101,7 +102,7 @@
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@lezer/highlight": "^1.2.3",
     "@octokit/rest": "^22.0.1",
-    "@opencode-ai/sdk": "^1.18.18",
+    "@opencode-ai/sdk": "^1.18.19",
     "@base-ui/react": "^1.6.0",
     "@remixicon/react": "^4.9.0",
     "@types/react-syntax-highlighter": "^15.5.13",

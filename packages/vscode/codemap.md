@@ -8,13 +8,14 @@ VS Code extension runtime: hosts DevRyan inside VS Code (sidebar + editor panels
   - `src/extension.ts`: activation, command registration, provider wiring.
   - `src/ChatViewProvider.ts`, `AgentManagerPanelProvider.ts`, `SessionEditorPanelProvider.ts`: UI container controllers.
 - **Bridge router pattern**: `src/bridge.ts` dispatches typed messages to focused runtime handlers (`bridge-*-runtime.ts`) for git/fs/config/system/proxy domains.
-- **Connection manager abstraction**: `src/opencode.ts` encapsulates managed/external OpenCode, status transitions, auth header generation, binary detection, restarts, isolated context-mode storage, and idle-gated SQLITE_IOERR recovery.
+- **Connection manager abstraction**: `src/opencode.ts` encapsulates managed/external OpenCode, status transitions, auth header generation, binary detection, restarts, isolated context-mode storage, and idle-gated SQLITE_IOERR recovery. The webview health shim advertises read-only Context Mode indexing only after the provisioned local CLI is connected and available.
 - **Cross-host policy reuse**: `@openchamber/shared-runtime` supplies safe-archive, revisioned configuration-apply, and selected provider-quota behavior; `@openchamber/harness-runtime` supplies durable worktree receipts, post-checkout hook execution, and exact shell-command deadline recovery. `commandDeadlineRuntime.ts` adapts authenticated message/status/abort requests and authoritative event publication to the extension host.
 - **Managed-orchestration owner**: the extension host owns one persisted scheduler with unbounded immediate admission, a private loopback tool bridge, OpenCode/Cursor child executor, scoped bridge routes including confirmed primary-agent handoff and durable provider-recovery parent continuation discovery, and shutdown ordering. External OpenCode connections do not receive this private runtime.
 - **SSE proxy layer**: extension host mediates streamed events to webview without exposing unrestricted local APIs.
 - **Theme/CSP-aware webview bootstrap**: `webviewHtml.ts` generates strict HTML shell with injected runtime config and initial loading state.
 - **Measured webview build graph**: `vite.config.ts` emits `dist/webview/.vite/manifest.json` so the shared root checker can enforce the normal chat startup graph without making tests depend on build output.
 - **Build-metadata discipline**: `vite.config.ts` intentionally omits volatile build-time constants from the measured webview entry; the bootstrap retains useful startup and runtime-config diagnostics without logging a build timestamp.
+- **Cursor host compatibility**: the extension manifest requires VS Code 1.101 or newer so the extension host satisfies the shared Cursor SDK runtime's Node.js 22.13 minimum.
 
 ## Flow
 1. VS Code activates the extension, creates the managed-orchestration owner, and initializes the OpenCode manager. Managed launches receive only the validated private bridge URL/token pair.

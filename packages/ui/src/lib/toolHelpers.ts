@@ -171,6 +171,12 @@ export const TOOL_METADATA: Record<string, ToolMetadata> = {
      outputLanguage: 'text',
      inputFields: []
    },
+   gpt_imagegen: {
+     displayName: 'GPT Image Generation',
+     category: 'ai',
+     outputLanguage: 'text',
+     inputFields: []
+   },
    question: {
       displayName: 'Question',
       category: 'ai',
@@ -234,7 +240,7 @@ function formatContextModeToolDisplayName(toolName: string): string | null {
   }
 
   const displayAction = formatFallbackToolDisplayName(actionName);
-  return displayAction ? `C-Mode: ${displayAction}` : null;
+  return displayAction ? `Context Mode: ${displayAction}` : null;
 }
 
 export function getToolMetadata(toolName: string): ToolMetadata {

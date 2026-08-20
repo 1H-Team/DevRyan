@@ -139,6 +139,9 @@ describe('agent evaluation CLI configuration', () => {
     );
     assert.deepEqual(EVALUATION_CASE_IDS, [
       'inspect',
+      'context-large-analysis',
+      'context-explorer-analysis',
+      'context-bounded-lookup',
       'repair-and-test',
       'managed-change',
       'oracle-review-focused',

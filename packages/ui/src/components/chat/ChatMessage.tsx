@@ -42,7 +42,12 @@ import { isPlanModeUserMessage } from '@/lib/messages/actionablePlan';
 import { getModelVariantDisplayState, getOrderedThinkingVariants } from '@/lib/providers/variantControls';
 import { resolveUserMessageRevertSessionId } from './chatMessageActions';
 import { classifyAssistantError, classifySteeredAbortFallback } from './message/assistantError';
-import { getAssistantMessageBottomPaddingClass, hasRenderableAssistantContent, shouldHideAssistantAbortArtifact } from './chatMessageLayout';
+import {
+    getAssistantMessageBottomPaddingClass,
+    getAssistantMessageTopPaddingClass,
+    hasRenderableAssistantContent,
+    shouldHideAssistantAbortArtifact,
+} from './chatMessageLayout';
 import { shouldSuppressIntermediateAssistantStatusText } from './message/assistantInlineActions';
 import { isEditToolName, isShellToolName, normalizeToolName } from './message/parts/toolRenderUtils';
 
@@ -628,6 +633,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         if (!nextRole) return false;
         return !nextRole.isUser && nextRole.role === 'assistant';
     }, [hasTurnGrouping, isLastAssistantInTurn, isUser, nextRole]);
+    const isTranscriptTail = !isUser && isLatestMessage && (
+        !hasTurnGrouping || isLastAssistantInTurn
+    );
 
     const streamPhase: StreamPhase = React.useMemo(() => {
         if (isMessageCompleted) {
@@ -1074,10 +1082,16 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         isUser,
         isFollowedByAssistant,
         isPlaceholderOnlyStreaming,
+        isTranscriptTail,
     });
-    const assistantTopPaddingClass = !isUser && shouldShowHeader
-        ? (stickyUserHeader ? (isMobile ? 'pt-4' : 'pt-6') : 'pt-0')
-        : 'pt-0';
+    const headerMessageId = assistantHeaderMessageId ?? turnGroupingContext?.headerMessageId;
+    const isContinuationAssistant = !isUser && Boolean(headerMessageId && message.info.id !== headerMessageId);
+    const assistantTopPaddingClass = getAssistantMessageTopPaddingClass({
+        isUser,
+        shouldShowHeader,
+        stickyUserHeader,
+        isMobile,
+    });
     const userMessageRadius = 'var(--radius-xl)';
 
     return (
@@ -1086,6 +1100,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                 className={cn(
                     'group w-full',
                     isUser ? (isMobile ? 'pt-2' : 'pt-6') : assistantTopPaddingClass,
+                    isContinuationAssistant && 'assistant-continuation-spacing',
                     messageBottomPaddingClass
                 )}
                 id={`message-${message.info.id}`}

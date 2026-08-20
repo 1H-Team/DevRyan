@@ -87,6 +87,12 @@ describe('Cursor SDK model discovery', () => {
     expect(provider.models['composer-2.5']).toMatchObject({
       id: 'composer-2.5',
       name: 'Composer 2.5',
+      options: {
+        cursorSdkModel: {
+          id: 'composer-2.5',
+          params: [{ id: 'fast', value: 'false' }],
+        },
+      },
     });
     expect(provider.models['composer-2.5-fast']).toMatchObject({
       id: 'composer-2.5-fast',

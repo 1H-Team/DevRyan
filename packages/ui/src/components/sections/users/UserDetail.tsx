@@ -30,6 +30,7 @@ import { TunnelPresetPickerDialog, type TunnelPresetSelection } from './TunnelPr
 import { SettingsPermissionOverrideMatrix } from './SettingsPermissionMatrix';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { UserAnalytics } from './UserAnalytics';
+import { ResetPasswordDialog } from './ResetPasswordDialog';
 import {
   capabilityLabels,
   formatBranchOption,
@@ -79,6 +80,7 @@ export const UserDetail: React.FC<UserDetailProps> = ({
   onTemporaryPassword,
 }) => {
   const [busy, setBusy] = React.useState(false);
+  const [resetPasswordOpen, setResetPasswordOpen] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'core' | 'policy' | 'analytics'>('core');
   const [settingsPolicyOpen, setSettingsPolicyOpen] = React.useState(true);
   const [capabilityPolicyOpen, setCapabilityPolicyOpen] = React.useState(true);
@@ -136,17 +138,6 @@ export const UserDetail: React.FC<UserDetailProps> = ({
       toast.success('Profile saved');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to save profile');
-    } finally { setBusy(false); }
-  };
-
-  const resetPassword = async () => {
-    setBusy(true);
-    try {
-      const payload = await requestJson<{ temporaryPassword: string }>(`/api/admin/users/${encodeURIComponent(user.id)}/reset-password`, { method: 'POST' });
-      onTemporaryPassword(payload.temporaryPassword);
-      toast.success('Temporary password generated');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to reset password');
     } finally { setBusy(false); }
   };
 
@@ -507,7 +498,7 @@ export const UserDetail: React.FC<UserDetailProps> = ({
               </Button>
             )}
             {isAdmin && (
-              <Button variant="outline" size="sm" onClick={() => void resetPassword()} disabled={busy}>
+              <Button variant="outline" size="sm" onClick={() => setResetPasswordOpen(true)} disabled={busy}>
                 <RiKey2Line className="h-4 w-4" /> Reset Password
               </Button>
             )}
@@ -519,6 +510,13 @@ export const UserDetail: React.FC<UserDetailProps> = ({
           </div>
         </div>
       </SettingsSection>
+
+      <ResetPasswordDialog
+        user={user}
+        open={resetPasswordOpen}
+        onOpenChange={setResetPasswordOpen}
+        onTemporaryPassword={onTemporaryPassword}
+      />
 
       <SettingsSection
           title="Projects & Branches"

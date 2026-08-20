@@ -33,10 +33,10 @@ export default {
         rawBytes: 17_286_557,
         gzipBytes: 4_006_124,
       },
-      // Measured 4,493,412 raw / 1,309,883 gzip; budgets add 5% headroom.
+      // Measured 4,726,549 raw / 1,387,036 gzip; budgets add 5% headroom.
       budgets: {
-        rawBytes: 4_718_082,
-        gzipBytes: 1_375_377,
+        rawBytes: 4_962_877,
+        gzipBytes: 1_456_388,
       },
       minimumGzipReductionPercent: 30,
     },

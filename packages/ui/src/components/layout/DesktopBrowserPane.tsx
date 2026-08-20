@@ -79,6 +79,7 @@ import { PreviewConsolePanel } from './PreviewConsolePanel';
 import { BrowserTabStrip, type BrowserTabStripItem } from './BrowserTabStrip';
 import { useGuestRetention } from './useGuestRetention';
 import { useNativeSurfaceRectSync, type NativeSurfaceRect } from './useNativeSurfaceRectSync';
+import { setNativeSurfaceOccupancy } from './nativeSurfaceOccupancy';
 import {
   createEmptyPreviewDiagnosticsState,
   formatPreviewConsoleText,
@@ -539,13 +540,25 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
     const height = snapshot?.devToolsOpen
       ? Math.max(MIN_BROWSER_HEIGHT, rect.height - devToolsHeight)
       : rect.height;
+    const occupiedX = Math.round(left);
+    const occupiedY = rect.y;
+    const occupiedWidth = Math.max(1, Math.round(width));
+    const occupiedHeight = Math.max(1, Math.round(rect.height));
+    setNativeSurfaceOccupancy(surfaceId, visible ? {
+      x: occupiedX,
+      y: occupiedY,
+      width: occupiedWidth,
+      height: occupiedHeight,
+      right: occupiedX + occupiedWidth,
+      bottom: occupiedY + occupiedHeight,
+    } : null);
     void invokeDesktop('desktop_browser_surface_layout', {
       surfaceId,
       visible,
       bounds: {
-        x: Math.round(left),
+        x: occupiedX,
         y: rect.y,
-        width: Math.max(1, Math.round(width)),
+        width: occupiedWidth,
         height: Math.max(1, Math.round(height)),
       },
     }).catch(() => {});
@@ -567,7 +580,10 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
   useNativeSurfaceRectSync(contentRef, syncLayout);
 
   React.useLayoutEffect(() => () => {
-    if (surfaceId) void invokeDesktop('desktop_browser_surface_layout', { surfaceId, visible: false }).catch(() => {});
+    if (surfaceId) {
+      setNativeSurfaceOccupancy(surfaceId, null);
+      void invokeDesktop('desktop_browser_surface_layout', { surfaceId, visible: false }).catch(() => {});
+    }
   }, [surfaceId]);
 
   React.useEffect(() => () => {
@@ -619,22 +635,20 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
       return;
     }
     setInspecting(true);
-    void invokeDesktop<unknown>('desktop_browser_surface_inspect', { surfaceId })
-      .then(async (target) => {
+    void invokeDesktop<{
+      target: unknown;
+      capture: { mime: string; base64: string; width: number; height: number; cssWidth: number; cssHeight: number; devicePixelRatio: number };
+    } | null>('desktop_browser_surface_inspect', { surfaceId })
+      .then(async (result) => {
         setInspecting(false);
+        const target = result?.target;
         if (!isPreviewElementMetadata(target)) return;
         const sessionKey = currentSessionId ?? (currentDraftId ? `draft:${currentDraftId}` : newSessionDraftOpen ? 'draft' : null);
         if (!sessionKey) {
           toast.error(t('contextPanel.preview.inspect.attachNoSession'));
           return;
         }
-        const capture = await invokeDesktop<{
-          base64: string;
-          width: number;
-          height: number;
-          cssWidth: number;
-          cssHeight: number;
-        }>('desktop_browser_capture_page', { surfaceId });
+        const capture = result?.capture;
         let screenshotAttached = false;
         if (capture) {
           const file = await desktopAnnotationToFile(
@@ -644,6 +658,7 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
             capture.cssWidth,
             capture.cssHeight,
             target,
+            capture.mime,
           );
           if (file) {
             await addAttachedFile(file);
@@ -659,7 +674,7 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
           code: formatPreviewAnnotationMarkdown({
             pageUrl: currentUrl,
             viewport: { width: capture?.cssWidth ?? 0, height: capture?.cssHeight ?? 0 },
-            devicePixelRatio: window.devicePixelRatio || 1,
+            devicePixelRatio: capture?.devicePixelRatio ?? (window.devicePixelRatio || 1),
             target,
             screenshotAttached,
             intro: screenshotAttached

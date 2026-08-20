@@ -1,4 +1,5 @@
 import {
+  createKeyedSingleFlight,
   createManagedOpenCodeExecutor,
 } from '@openchamber/orchestration-runtime';
 import { CURSOR_PROVIDER_ID } from '@openchamber/cursor-sdk-runtime';
@@ -51,9 +52,10 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
   const messagesRequestTimeoutMs = options.messagesRequestTimeoutMs
     ?? DEFAULT_MESSAGES_REQUEST_TIMEOUT_MS;
   const cursorSdkRuntime = options.cursorSdkRuntime ?? null;
+  const statusSingleFlight = createKeyedSingleFlight();
 
-  const requestJson = async (pathname, requestOptions = {}) => {
-    const response = await fetchImpl(options.buildOpenCodeUrl(pathname, ''), {
+  const requestJsonUrl = async (url, requestOptions = {}) => {
+    const response = await fetchImpl(url, {
       method: requestOptions.method ?? 'GET',
       headers: {
         accept: 'application/json',
@@ -80,6 +82,10 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
       throw error;
     }
   };
+
+  const requestJson = async (pathname, requestOptions = {}) => (
+    await requestJsonUrl(options.buildOpenCodeUrl(pathname, ''), requestOptions)
+  );
 
   const buildPromptBody = (input) => ({
     ...(input.messageId ? { messageID: input.messageId } : {}),
@@ -156,9 +162,11 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
           : {};
         return statuses?.[input.sessionId] ?? null;
       }
-      const statuses = await requestJson(appendDirectory('/session/status', input.directory), {
-        label: 'session.status',
-      });
+      const pathname = appendDirectory('/session/status', input.directory);
+      const statusUrl = String(options.buildOpenCodeUrl(pathname, ''));
+      const statuses = await statusSingleFlight.run(statusUrl, async () => (
+        await requestJsonUrl(statusUrl, { label: 'session.status' })
+      ));
       return statuses?.[input.sessionId] ?? null;
     },
     async readMessages(input) {

@@ -2038,8 +2038,8 @@ export const useUIStore = create<UIStore>()(
           set({ showReasoningTraces: value });
         },
 
-        setChatRenderMode: (value) => {
-          set({ chatRenderMode: value });
+        setChatRenderMode: () => {
+          set({ chatRenderMode: 'live' });
         },
 
         setActivityRenderMode: (value) => {
@@ -2549,11 +2549,11 @@ export const useUIStore = create<UIStore>()(
         setSummaryThreshold: (value) => { set({ summaryThreshold: value }); },
         setSummaryLength: (value) => { set({ summaryLength: value }); },
         setMaxLastMessageLength: (value) => { set({ maxLastMessageLength: value }); },
-        setPersistChatDraft: (value) => {
-          set({ persistChatDraft: value });
+        setPersistChatDraft: () => {
+          set({ persistChatDraft: true });
         },
-        setInputSpellcheckEnabled: (value) => {
-          set({ inputSpellcheckEnabled: value });
+        setInputSpellcheckEnabled: () => {
+          set({ inputSpellcheckEnabled: false });
         },
         setShowToolFileIcons: (value) => {
           set({ showToolFileIcons: value });
@@ -2640,7 +2640,7 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createJSONStorage(() => getSafeStorage()),
-        version: 17,
+        version: 18,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
             return persistedState;
@@ -2828,6 +2828,13 @@ export const useUIStore = create<UIStore>()(
           }
           state.browserPanelByDirectory = clampBrowserPanelRoots(browserPanelByDirectory, 20);
 
+          // v17 -> v18: these former Chat settings are now fixed product behavior.
+          if (version < 18) {
+            state.chatRenderMode = 'live';
+            state.persistChatDraft = true;
+            state.inputSpellcheckEnabled = false;
+          }
+
           return state;
         },
         partialize: (state) => ({
@@ -2852,7 +2859,6 @@ export const useUIStore = create<UIStore>()(
           isSessionCreateDialogOpen: state.isSessionCreateDialogOpen,
           // Note: isSettingsDialogOpen intentionally NOT persisted
           showReasoningTraces: state.showReasoningTraces,
-          chatRenderMode: state.chatRenderMode,
           activityRenderMode: state.activityRenderMode,
           showDeletionDialog: state.showDeletionDialog,
           autoDeleteEnabled: state.autoDeleteEnabled,
@@ -2890,8 +2896,6 @@ export const useUIStore = create<UIStore>()(
           summaryThreshold: state.summaryThreshold,
           summaryLength: state.summaryLength,
           maxLastMessageLength: state.maxLastMessageLength,
-          persistChatDraft: state.persistChatDraft,
-          inputSpellcheckEnabled: state.inputSpellcheckEnabled,
           chatWidth: state.chatWidth,
           showToolFileIcons: state.showToolFileIcons,
           showExpandedBashTools: state.showExpandedBashTools,

@@ -3130,6 +3130,59 @@ export const removeProviderConfig = (providerId: string, workingDirectory?: stri
   return true;
 };
 
+const isAntigravityModel = (modelId: string, model: unknown): boolean => {
+  const name = isPlainObject(model) && typeof model.name === 'string' ? model.name : '';
+  return modelId.startsWith('antigravity-') || /\s+\(Antigravity\)$/i.test(name);
+};
+
+export const removeAntigravityProviderConfig = (
+  workingDirectory?: string,
+  scope: 'user' | 'project' | 'custom' = 'user',
+): boolean => {
+  const layers = readConfigLayers(workingDirectory);
+  let targetPath: string | null | undefined = layers.paths.userPath;
+
+  if (scope === 'project') {
+    if (!workingDirectory) throw new Error('Working directory is required for project scope');
+    targetPath = layers.paths.projectPath ?? targetPath;
+  } else if (scope === 'custom') {
+    if (!layers.paths.customPath) return false;
+    targetPath = layers.paths.customPath;
+  }
+
+  const targetConfig = getConfigForPath(layers, targetPath) as Record<string, unknown>;
+  let changed = false;
+
+  for (const containerKey of ['provider', 'providers']) {
+    const container = isPlainObject(targetConfig[containerKey])
+      ? targetConfig[containerKey] as Record<string, unknown>
+      : null;
+    const google = isPlainObject(container?.google)
+      ? container.google as Record<string, unknown>
+      : null;
+    const models = isPlainObject(google?.models)
+      ? google.models as Record<string, unknown>
+      : null;
+    if (!container || !google || !models) continue;
+
+    const modelIds = Object.keys(models).filter((modelId) => isAntigravityModel(modelId, models[modelId]));
+    if (modelIds.length === 0) continue;
+
+    for (const modelId of modelIds) delete models[modelId];
+    if (Object.keys(models).length === 0) delete google.models;
+    else google.models = models;
+    if (Object.keys(google).length === 0) delete container.google;
+    else container.google = google;
+    if (Object.keys(container).length === 0) delete targetConfig[containerKey];
+    else targetConfig[containerKey] = container;
+    changed = true;
+  }
+
+  if (!changed) return false;
+  writeConfig(targetConfig, targetPath || CONFIG_FILE);
+  return true;
+};
+
 export const deleteCommand = (commandName: string, workingDirectory?: string) => {
   let deleted = false;
 

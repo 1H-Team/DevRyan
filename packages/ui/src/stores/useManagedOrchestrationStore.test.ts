@@ -681,6 +681,44 @@ describe('managed orchestration store', () => {
     expect(selector(store.getState())).toBe(false);
   });
 
+  test('projects a scalar root delegation phase across parallel startup, running, and disposition', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const selector = managedOrchestrationSelectors.delegationPhaseForRoot('ses_root');
+
+    expect(selector(store.getState())).toBeNull();
+    store.getState().ingestEvent(taskEvent(projectedTask(1, 'queued')));
+    store.getState().ingestEvent(taskEvent(projectedTask(2, 'starting', {
+      childSessionId: 'ses_child_2',
+    })));
+    expect(selector(store.getState())).toBe('starting');
+
+    store.getState().ingestEvent(taskEvent(projectedTask(1, 'running', {
+      childSessionId: 'ses_child_1',
+    })));
+    expect(selector(store.getState())).toBe('waiting');
+
+    const terminalStore = createManagedOrchestrationStore({ api: fakeApi() });
+    const completedRecord = taskRecord(3, 'completed', {
+      childSessionId: 'ses_child_3',
+      finishedAt: 4_000,
+    });
+    const completed = toManagedTaskEvent(completedRecord).properties.task;
+    const envelope = createManagedTaskResultEnvelope(completedRecord, {
+      sequence: 3,
+      createdAt: 4_000,
+      resumable: false,
+    });
+    terminalStore.getState().ingestEvent(taskEvent(completed, envelope));
+    expect(selector(terminalStore.getState())).toBe('waiting');
+
+    terminalStore.getState().ingestEvent(taskEvent(completed, {
+      ...envelope,
+      action: 'continue',
+      acknowledgedAt: 4_100,
+    }));
+    expect(selector(terminalStore.getState())).toBeNull();
+  });
+
   test('reconciles a late snapshot without overwriting a newer event', async () => {
     const snapshot = deferred<ManagedOrchestrationSnapshot>();
     const store = createManagedOrchestrationStore({

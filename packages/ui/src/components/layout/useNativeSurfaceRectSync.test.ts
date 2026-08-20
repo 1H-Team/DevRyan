@@ -9,8 +9,9 @@ describe('native browser surface rect synchronization', () => {
     expect(source).toContain('const sameRect =');
     expect(source).toContain('readRoundedRect(element)');
     expect(source).toContain('if (sameRect(lastRectRef.current, next)) return;');
-    expect(source).toContain('new ResizeObserver(measure)');
-    expect(source).toContain("window.addEventListener('resize', measure)");
+    expect(source).toContain('new ResizeObserver(scheduleMeasure)');
+    expect(source).toContain("window.addEventListener('resize', scheduleMeasure)");
+    expect(source).toContain('if (queuedMeasureFrame) return;');
   });
 
   test('tracks width transitions and imperative panel drags with a bounded rAF loop', () => {

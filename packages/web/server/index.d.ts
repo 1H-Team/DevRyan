@@ -8,9 +8,24 @@ export interface WebUiServerController {
   getOpenCodePort: () => number | null;
   getManagedOrchestrationDiagnostics: () => unknown;
   getBrowserLeaseDiagnostics: () => { activeLeases: number };
+  getQuitRiskStatus: () => WebUiServerQuitRiskStatus;
   isReady: () => boolean;
   restartOpenCode: () => Promise<void>;
   stop: (options?: { exitProcess?: boolean }) => Promise<void>;
+}
+
+export interface ScheduledTasksStatus {
+  hasEnabledScheduledTasks: boolean;
+  hasPendingScheduledTasks: boolean;
+  hasRunningScheduledTasks: boolean;
+  enabledScheduledTasksCount: number;
+  pendingScheduledTasksCount: number;
+  runningScheduledTasksCount: number;
+}
+
+export interface WebUiServerQuitRiskStatus {
+  tunnel: { active: boolean };
+  scheduledTasks: ScheduledTasksStatus;
 }
 
 export interface BrowserLeaseMetadata {

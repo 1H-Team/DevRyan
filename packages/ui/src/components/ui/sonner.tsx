@@ -3,6 +3,9 @@
 import * as React from "react"
 import { Toaster as Sonner } from "sonner"
 import type { ToasterProps } from "sonner"
+import { isElectronShell } from "@/lib/desktop"
+import { useNativeSurfaceOccupancy } from "@/components/layout/nativeSurfaceOccupancy"
+import { resolveAdaptiveToastPlacement } from "@/components/layout/toastPlacement"
 
 const SHADOW_DARK =
   "inset 0 1px 0 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 0 1px rgba(0,0,0,0.36), 0 1px 1px -0.5px rgba(0,0,0,0.22), 0 3px 3px -1.5px rgba(0,0,0,0.20), 0 6px 6px -3px rgba(0,0,0,0.16)"
@@ -76,16 +79,43 @@ function usePinnedToastStyles(shadow: string) {
   }, [shadow])
 }
 
-const Toaster = ({ ...props }: ToasterProps) => {
+const Toaster = ({
+  style: providedStyle,
+  position: providedPosition,
+  offset: providedOffset,
+  visibleToasts: providedVisibleToasts,
+  ...props
+}: ToasterProps) => {
   const isDark = useIsDarkTheme()
   const shadow = isDark ? SHADOW_DARK : SHADOW_LIGHT
+  const occupancy = useNativeSurfaceOccupancy()
+  const isElectron = React.useMemo(() => isElectronShell(), [])
+  const [viewportWidth, setViewportWidth] = React.useState(() => (
+    typeof window === "undefined" ? 1024 : window.innerWidth
+  ))
   usePinnedToastStyles(shadow)
+
+  React.useEffect(() => {
+    if (!isElectron || typeof window === "undefined") return
+    const update = () => setViewportWidth(window.innerWidth)
+    window.addEventListener("resize", update)
+    return () => window.removeEventListener("resize", update)
+  }, [isElectron])
+
+  const adaptivePlacement = React.useMemo(() => (
+    isElectron && occupancy
+      ? resolveAdaptiveToastPlacement(viewportWidth, occupancy)
+      : null
+  ), [isElectron, occupancy, viewportWidth])
 
   return (
     <Sonner
       theme={isDark ? "dark" : "light"}
       className="toaster group"
       closeButton={false}
+      position={adaptivePlacement?.position ?? providedPosition}
+      offset={adaptivePlacement?.offset ?? providedOffset}
+      visibleToasts={adaptivePlacement?.visibleToasts ?? providedVisibleToasts}
       toastOptions={{
         classNames: {
           toast:
@@ -126,6 +156,12 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--info-bg": "var(--surface-elevated)",
           "--info-text": "var(--foreground)",
           "--info-border": "transparent",
+          ...providedStyle,
+          ...(adaptivePlacement ? {
+            "--width": `${adaptivePlacement.width}px`,
+            width: `${adaptivePlacement.width}px`,
+            maxWidth: "calc(100vw - 32px)",
+          } : null),
         } as React.CSSProperties
       }
       {...props}

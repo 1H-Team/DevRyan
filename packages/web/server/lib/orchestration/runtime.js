@@ -4,6 +4,10 @@ import {
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
   MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
   MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE,
+  projectManagedResultEnvelope,
+  projectManagedTaskResult as projectManagedTaskResultForMode,
+  readManagedResultReference,
+  resolveManagedResultMode,
   supportsManagedReadOnlyAgent,
   supportsManagedReadOnlyProvider,
   toManagedTaskEvent,
@@ -71,6 +75,9 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   managed_retry_limit_reached: 409,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED: 409,
   MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED: 409,
+  managed_agent_model_unavailable: 409,
+  managed_orchestration_owner_mismatch: 403,
+  managed_orchestration_owner_unavailable: 503,
   CONTEXT_MODE_RECOVERY_PENDING: 503,
   provider_prompt_rejection_requires_fresh_retry: 409,
   provider_prompt_rejection_requires_reframed_prompt: 409,
@@ -85,6 +92,8 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   parent_scope_mismatch: 403,
   result_already_acknowledged: 409,
   result_already_acknowledging: 409,
+  invalid_result_cursor: 400,
+  result_reference_mismatch: 409,
   result_not_found: 404,
   result_not_provider_usage_limited: 409,
   result_not_resumable: 409,
@@ -168,6 +177,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const isManagedOpenCode = options.isManagedOpenCode ?? (() => true);
   const getWorkAdmissionBlock = options.getWorkAdmissionBlock ?? (() => null);
   const publishEvent = options.publishEvent ?? (() => undefined);
+  const resolveAgentExecution = typeof options.resolveAgentExecution === 'function'
+    ? options.resolveAgentExecution
+    : null;
   const persistence = options.persistence ?? createAtomicManagedOrchestrationLedger({
     dataDirectory: options.dataDirectory,
     logger,
@@ -299,15 +311,29 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     return task;
   };
 
-  const projectTaskResult = (task) => {
-    const envelope = scheduler.getResultEnvelope(task.taskId);
-    return {
-      task: projectTask(task, envelope),
-      ...(envelope ? { resultEnvelope: envelope } : {}),
-    };
+  const getResultReadScopedTask = (params) => {
+    const task = getScopedTask(params);
+    const directory = typeof params?.directory === 'string' ? params.directory.trim() : '';
+    if (!directory || task.directory !== directory) {
+      throw createRuntimeError(
+        'task_scope_mismatch',
+        `managed task ${task.taskId} does not belong to the requesting directory`,
+        403,
+      );
+    }
+    return task;
   };
 
-  const projectHandoffResult = (scope, result) => ({
+  const projectTaskResult = (task, resultMode) => {
+    const envelope = scheduler.getResultEnvelope(task.taskId);
+    return projectManagedTaskResultForMode(
+      projectTask(task, envelope),
+      envelope,
+      resultMode,
+    );
+  };
+
+  const projectHandoffResult = (scope, result, resultMode) => ({
     rootSessionId: scope.rootSessionId,
     fromMode: scope.fromMode,
     toMode: scope.toMode,
@@ -315,19 +341,46 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     tasks: result.taskIds
       .map((taskId) => scheduler.getTask(taskId))
       .filter(Boolean)
-      .map(projectTaskResult),
+      .map((task) => projectTaskResult(task, resultMode)),
     failures: result.failures,
   });
 
+  const resolveAdmittedAgentExecution = async (params, readOnly) => {
+    const requested = {
+      providerId: typeof params.providerId === 'string' ? params.providerId.trim() : '',
+      modelId: typeof params.modelId === 'string' ? params.modelId.trim() : '',
+      variant: typeof params.variant === 'string' && params.variant.trim() ? params.variant.trim() : null,
+    };
+    if (!resolveAgentExecution || params.deadlineClass === 'council') return requested;
+    const resolved = await resolveAgentExecution({
+      rootSessionId: params.rootSessionId,
+      directory: params.directory,
+      agent: params.agent,
+      fallbackExecution: requested,
+    });
+    if (
+      readOnly
+      && !supportsManagedReadOnlyProvider(resolved.providerId)
+      && requested.providerId
+      && requested.modelId
+      && supportsManagedReadOnlyProvider(requested.providerId)
+    ) {
+      return requested;
+    }
+    return resolved;
+  };
+
   const handleRpcInternal = async ({ method, params = {} }, context = {}) => {
     await ensureInitialized();
+    const resultMode = resolveManagedResultMode(params.resultMode);
     switch (method) {
       case 'submit': {
         assertWorkAdmission();
         const timeoutAt = resolveSubmitTimeoutAt(params, now);
         const readOnly = resolveReadOnly(params);
         const agent = typeof params.agent === 'string' ? params.agent.trim() : '';
-        const providerId = typeof params.providerId === 'string' ? params.providerId.trim() : '';
+        const admittedExecution = await resolveAdmittedAgentExecution(params, readOnly);
+        const providerId = admittedExecution.providerId;
         if (readOnly && agent && !supportsManagedReadOnlyAgent(agent)) {
           throw createRuntimeError(
             MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
@@ -352,15 +405,15 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           directory: params.directory,
           mode: params.mode,
           readOnly,
-          providerId: params.providerId,
-          modelId: params.modelId,
+          providerId: admittedExecution.providerId,
+          modelId: admittedExecution.modelId,
           agent: params.agent,
-          variant: params.variant ?? null,
+          variant: admittedExecution.variant ?? null,
           label: params.label,
           prompt: params.prompt,
           timeoutAt,
         });
-        return projectTaskResult(task);
+        return projectTaskResult(task, resultMode);
       }
       case 'wait': {
         const task = getScopedTask(params);
@@ -369,7 +422,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           signal: context.signal,
           ...(waitTimeoutMs === undefined ? {} : { timeoutMs: waitTimeoutMs }),
         });
-        return projectTaskResult(settled);
+        return projectTaskResult(settled, resultMode);
       }
       case 'wait_result_action': {
         const task = getScopedTask(params);
@@ -380,8 +433,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           ? scheduler.getTask(resultEnvelope.followUpTaskId)
           : null;
         return {
-          resultEnvelope,
-          followUpTask: followUpTask ? projectTaskResult(followUpTask) : null,
+          ...projectManagedResultEnvelope(task, resultEnvelope, resultMode),
+          followUpTask: followUpTask ? projectTaskResult(followUpTask, resultMode) : null,
         };
       }
       case 'barrier': {
@@ -426,10 +479,10 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             fromMode: scope.fromMode,
             toMode: scope.toMode,
           });
-        return projectHandoffResult(scope, result);
+        return projectHandoffResult(scope, result, resultMode);
       }
       case 'status': {
-        return projectTaskResult(getScopedTask(params));
+        return projectTaskResult(getScopedTask(params), resultMode);
       }
       case 'snapshot': {
         const rootSessionId = typeof params.rootSessionId === 'string'
@@ -449,8 +502,26 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             : {}),
         });
         return Array.isArray(cancelled)
-          ? { tasks: cancelled.map((entry) => projectTaskResult(entry)) }
-          : projectTaskResult(cancelled);
+          ? { tasks: cancelled.map((entry) => projectTaskResult(entry, resultMode)) }
+          : projectTaskResult(cancelled, resultMode);
+      }
+      case 'read_result': {
+        const task = getResultReadScopedTask(params);
+        const resultEnvelope = scheduler.getResultEnvelope(task.taskId);
+        if (!resultEnvelope) {
+          throw createRuntimeError(
+            'result_not_found',
+            `managed result for task ${task.taskId} was not found`,
+            404,
+          );
+        }
+        return {
+          resultReference: readManagedResultReference({
+            task,
+            resultEnvelope,
+            resultCursor: params.resultCursor,
+          }),
+        };
       }
       case 'acknowledge': {
         const task = getScopedTask(params);
@@ -461,21 +532,30 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           timeoutAt: resolveRequestedTimeoutAt(params, now),
           agent: params.agent || task.agent,
         }, now);
+        const agentRetryExecution = ['retry', 'resume'].includes(params.action) && params.agent
+          ? await resolveAdmittedAgentExecution({ ...params, rootSessionId: task.rootSessionId, directory: task.directory }, task.readOnly)
+          : null;
         const result = await scheduler.acknowledgeResult(task.taskId, {
           action: params.action,
           idempotencyKey: params.idempotencyKey,
-          ...(params.providerId ? { providerId: params.providerId } : {}),
-          ...(params.modelId ? { modelId: params.modelId } : {}),
+          ...(agentRetryExecution?.providerId
+            ? { providerId: agentRetryExecution.providerId }
+            : (params.providerId ? { providerId: params.providerId } : {})),
+          ...(agentRetryExecution?.modelId
+            ? { modelId: agentRetryExecution.modelId }
+            : (params.modelId ? { modelId: params.modelId } : {})),
           ...(params.agent ? { agent: params.agent } : {}),
-          ...(params.variant !== undefined ? { variant: params.variant } : {}),
+          ...(agentRetryExecution
+            ? { variant: agentRetryExecution.variant ?? null }
+            : (params.variant !== undefined ? { variant: params.variant } : {})),
           ...(params.label ? { label: params.label } : {}),
           ...(params.prompt ? { prompt: params.prompt } : {}),
           timeoutAt,
         });
         return {
-          resultEnvelope: result.envelope,
+          ...projectManagedResultEnvelope(task, result.envelope, resultMode),
           followUpTask: result.followUpTask
-            ? projectTaskResult(result.followUpTask)
+            ? projectTaskResult(result.followUpTask, resultMode)
             : null,
         };
       }

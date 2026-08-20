@@ -1,12 +1,15 @@
 import React from 'react';
 import { AgentSelector } from '@/components/sections/commands/AgentSelector';
 import { Checkbox } from '@/components/ui/checkbox';
+import { toast } from '@/components/ui';
+import { Button } from '@/components/ui/button';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useAgentsStore } from '@/stores/useAgentsStore';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { useI18n } from '@/lib/i18n';
 import { formatAgentDisplayName } from '@/lib/agentDisplay';
+import { getAuthPrincipal } from '@/lib/authSession';
 import {
   isHiddenBuiltinAgentOption,
   isSelectablePrimaryAgentOption,
@@ -23,11 +26,17 @@ export const DefaultsSettings: React.FC = () => {
   const setSettingsDefaultPlanMode = useConfigStore((state) => state.setSettingsDefaultPlanMode);
   const setSettingsDefaultFileViewerPreview = useConfigStore((state) => state.setSettingsDefaultFileViewerPreview);
   const settingsDefaultFileViewerPreview = useConfigStore((state) => state.settingsDefaultFileViewerPreview);
+  const settingsOverrideKeys = useConfigStore((state) => state.settingsOverrideKeys);
+  const resetPersonalSettingsOverride = useConfigStore((state) => state.resetPersonalSettingsOverride);
   const configAgents = useConfigStore((state) => state.agents);
   const agentsStoreAgents = useAgentsStore((state) => state.agents);
 
   const [defaultAgent, setDefaultAgent] = React.useState<string | undefined>();
   const [isLoading, setIsLoading] = React.useState(true);
+  const principal = getAuthPrincipal();
+  const isManagedPersonal = principal.scope === 'managed' && principal.role !== 'admin';
+  const defaultAgentIsPersonal = settingsOverrideKeys.includes('defaultAgent');
+  const defaultPlanModeIsPersonal = settingsOverrideKeys.includes('defaultPlanMode');
   const selectableDefaultAgents = React.useMemo(
     () => resolveSelectableAgentOptions(configAgents, agentsStoreAgents),
     [agentsStoreAgents, configAgents]
@@ -106,17 +115,49 @@ export const DefaultsSettings: React.FC = () => {
 
       try {
         await updateDesktopSettings({ defaultAgent: newValue ?? '' });
+        if (isManagedPersonal) {
+          useConfigStore.setState((state) => ({
+            settingsOverrideKeys: [...new Set([...state.settingsOverrideKeys, 'defaultAgent'])].sort(),
+          }));
+        }
       } catch (error) {
         console.warn('Failed to save default agent:', error);
       }
     },
-    [selectableDefaultAgents, setAgent, setSettingsDefaultAgent]
+    [isManagedPersonal, selectableDefaultAgents, setAgent, setSettingsDefaultAgent]
   );
 
   const handlePlanModeChange = React.useCallback((next: boolean) => {
     setSettingsDefaultPlanMode(next);
-    updateDesktopSettings({ defaultPlanMode: next }).catch(console.warn);
-  }, [setSettingsDefaultPlanMode]);
+    updateDesktopSettings({ defaultPlanMode: next }).then(() => {
+      if (isManagedPersonal) {
+        useConfigStore.setState((state) => ({
+          settingsOverrideKeys: [...new Set([...state.settingsOverrideKeys, 'defaultPlanMode'])].sort(),
+        }));
+      }
+    }).catch(console.warn);
+  }, [isManagedPersonal, setSettingsDefaultPlanMode]);
+
+  const handleResetDefaultAgent = React.useCallback(async () => {
+    try {
+      await resetPersonalSettingsOverride('defaultAgent');
+      const inheritedAgent = useConfigStore.getState().settingsDefaultAgent;
+      setDefaultAgent(inheritedAgent);
+      if (inheritedAgent) setAgent(inheritedAgent, { agents: selectableDefaultAgents });
+      toast.success('Default agent now follows the host setting');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to reset the default agent');
+    }
+  }, [resetPersonalSettingsOverride, selectableDefaultAgents, setAgent]);
+
+  const handleResetDefaultPlanMode = React.useCallback(async () => {
+    try {
+      await resetPersonalSettingsOverride('defaultPlanMode');
+      toast.success('Plan mode now follows the host setting');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to reset plan mode');
+    }
+  }, [resetPersonalSettingsOverride]);
 
   const handleTogglePlanMode = React.useCallback(() => {
     handlePlanModeChange(!settingsDefaultPlanMode);
@@ -156,24 +197,51 @@ export const DefaultsSettings: React.FC = () => {
           </div>
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-fit sm:flex-initial">
             <AgentSelector agentName={resolvedDefaultAgent} onChange={handleAgentChange} filter={isSelectablePrimaryAgentOption} />
+            {isManagedPersonal ? (
+              <>
+                <span className="typography-micro text-muted-foreground">
+                  {defaultAgentIsPersonal ? 'Personal' : 'Inherited'}
+                </span>
+                <Button size="xs" variant="outline" onClick={handleResetDefaultAgent} disabled={!defaultAgentIsPersonal}>
+                  Reset
+                </Button>
+              </>
+            ) : null}
           </div>
         </div>
 
-        <div
-          className="group flex cursor-pointer items-center gap-2 py-1"
-          role="button"
-          tabIndex={0}
-          aria-pressed={settingsDefaultPlanMode}
-          onClick={handleTogglePlanMode}
-          onKeyDown={(event) => {
-            if (event.key === ' ' || event.key === 'Enter') {
-              event.preventDefault();
-              handleTogglePlanMode();
-            }
-          }}
-        >
-          <Checkbox checked={settingsDefaultPlanMode} onChange={handlePlanModeChange} ariaLabel={t('settings.openchamber.defaults.field.defaultPlanModeAria')} />
-          <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.defaultPlanMode')}</span>
+        <div className="flex items-center gap-2 py-1">
+          <div
+            className="group flex min-w-0 cursor-pointer items-center gap-2"
+            role="button"
+            tabIndex={0}
+            aria-pressed={settingsDefaultPlanMode}
+            onClick={handleTogglePlanMode}
+            onKeyDown={(event) => {
+              if (event.key === ' ' || event.key === 'Enter') {
+                event.preventDefault();
+                handleTogglePlanMode();
+              }
+            }}
+          >
+            <Checkbox checked={settingsDefaultPlanMode} onChange={handlePlanModeChange} ariaLabel={t('settings.openchamber.defaults.field.defaultPlanModeAria')} />
+            <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.defaultPlanMode')}</span>
+          </div>
+          {isManagedPersonal ? (
+            <>
+              <span className="typography-micro text-muted-foreground">
+                {defaultPlanModeIsPersonal ? 'Personal' : 'Inherited'}
+              </span>
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => void handleResetDefaultPlanMode()}
+                disabled={!defaultPlanModeIsPersonal}
+              >
+                Reset
+              </Button>
+            </>
+          ) : null}
         </div>
 
         <div

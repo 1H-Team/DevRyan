@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 30_258;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 30_891;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -357,6 +357,8 @@ describe('packaged agent defaults', () => {
       'Each `wait` stays attached while DevRyan repeats bounded polling slices internally',
     );
     expect(content).toContain('use `status` only when a non-blocking live snapshot is explicitly needed');
+    expect(content).toContain('call `read_result` with that exact cursor and each returned next cursor in order');
+    expect(content).toContain('`read_result` never acknowledges the envelope');
     expect(content).toContain('Only after every result is dispositioned may you resume local work');
     expect(content).toContain('successful result requires `continue` after `wait`');
   });
@@ -472,11 +474,19 @@ describe('packaged agent defaults', () => {
   });
 
   it('specialist prompts stay compact while preserving terminal-status guardrails', () => {
-    for (const agentName of ['designer', 'explorer', 'fixer', 'librarian', 'oracle']) {
+    const maxLineCounts = {
+      designer: 95,
+      explorer: 102,
+      fixer: 96,
+      librarian: 95,
+      oracle: 95,
+    };
+
+    for (const [agentName, maxLineCount] of Object.entries(maxLineCounts)) {
       const content = fs.readFileSync(path.join(AGENTS_DIR, `${agentName}.md`), 'utf8');
       const lineCount = content.trimEnd().split('\n').length;
 
-      expect(lineCount, `${agentName}.md line count`).toBeLessThanOrEqual(95);
+      expect(lineCount, `${agentName}.md line count`).toBeLessThanOrEqual(maxLineCount);
       expect(content).toContain('On unrecoverable provider/tool errors, return a final `**Status:** blocked` line with a concise reason.');
       expect(content).toContain('Avoid repeated progress-only messages such as "continuing" or "implementing" without a terminal status marker.');
       expect(content).toContain('Do not use `git status`, `git diff`, `git diff --stat`, or `git diff --check` to determine whether you made edits.');

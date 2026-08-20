@@ -929,6 +929,7 @@ describe('syncRuntimeAgentOverlays', () => {
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8')
       .then((content) => JSON.parse(content)))
       .resolves.toEqual({
+        agent: { title: { disable: true } },
         mcp: {
           ...BLOCKED_MCP_TOMBSTONES,
           'slow-remote': {
@@ -983,6 +984,7 @@ describe('syncRuntimeAgentOverlays', () => {
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8')
       .then((content) => JSON.parse(content)))
       .resolves.toEqual({
+        agent: { title: { disable: true } },
         mcp: {
           ...BLOCKED_MCP_TOMBSTONES,
           'slow-remote': {
@@ -1032,6 +1034,7 @@ describe('syncRuntimeAgentOverlays', () => {
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8')
       .then((content) => JSON.parse(content)))
       .resolves.toEqual({
+        agent: { title: { disable: true } },
         mcp: {
           ...BLOCKED_MCP_TOMBSTONES,
           supabase: {
@@ -1091,6 +1094,7 @@ describe('syncRuntimeAgentOverlays', () => {
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8')
       .then((content) => JSON.parse(content)))
       .resolves.toEqual({
+        agent: { title: { disable: true } },
         mcp: BLOCKED_MCP_TOMBSTONES,
       });
     expect(result.configUpdated).toBe(true);
@@ -1119,6 +1123,7 @@ describe('syncRuntimeAgentOverlays', () => {
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8')
       .then((content) => JSON.parse(content)))
       .resolves.toEqual({
+        agent: { title: { disable: true } },
         mcp: {
           ...Object.fromEntries(
             Object.entries(BLOCKED_MCP_TOMBSTONES).filter(([name]) => name !== 'ghgrep'),
@@ -1202,6 +1207,7 @@ describe('syncRuntimeAgentOverlays', () => {
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8')
       .then((content) => JSON.parse(content)))
       .resolves.toEqual({
+        agent: { title: { disable: true } },
         mcp: {
           ...BLOCKED_MCP_TOMBSTONES,
           'slow-remote': {
@@ -1265,6 +1271,7 @@ describe('syncRuntimeAgentOverlays', () => {
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8')
       .then((content) => JSON.parse(content)))
       .resolves.toEqual({
+        agent: { title: { disable: true } },
         mcp: BLOCKED_MCP_TOMBSTONES,
         plugin: [
           './plugins/council-session.js',
@@ -1419,6 +1426,7 @@ describe('syncRuntimeAgentOverlays', () => {
     ));
     expect(runtimeConfig.provider?.openai).toBeUndefined();
     expect(runtimeConfig.provider?.anthropic).toBeUndefined();
+    expect(runtimeConfig.agent?.title).toEqual({ disable: true });
   });
 
   it('adds bounded OpenAI connection and total-request liveness timeouts for OAuth auth', async () => {

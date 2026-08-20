@@ -20,6 +20,7 @@ vi.mock('@openchamber/cursor-sdk-runtime', () => ({
 
 vi.mock('./opencodeConfig', () => ({
   removeProviderConfig: vi.fn(),
+  removeAntigravityProviderConfig: vi.fn(),
   getProviderSources: vi.fn(),
   ensureAnthropicOAuthProviderConfig: vi.fn(),
   getAgentConfig: vi.fn(),
@@ -27,9 +28,12 @@ vi.mock('./opencodeConfig', () => ({
 }));
 
 vi.mock('./opencodeAuth', () => ({
+  getAntigravityAccountsSource: vi.fn(() => ({ exists: false, path: null })),
   getProviderAuth: vi.fn(),
+  getProviderAuthLookupIds: vi.fn((providerId) => [providerId]),
   readAuthFile: vi.fn(() => ({})),
-  removeProviderAuth: vi.fn(),
+  removeAntigravityAccounts: vi.fn(),
+  removeProviderAuthForLookupIds: vi.fn(),
   writeAuthFile: vi.fn(),
 }));
 

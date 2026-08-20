@@ -148,6 +148,8 @@ describe('multi-user policy', () => {
       ['/git/identities', 'GET', 'git'],
       ['/github/auth/start', 'POST', 'users'],
       ['/config/themes', 'GET', 'appearance'],
+      ['/config/settings', 'PUT', 'sessions'],
+      ['/config/settings/agent-defaults/Orchestrator', 'DELETE', 'sessions'],
     ];
     for (const [path, method, page] of ownedRoutes) {
       expect(settingsPageForRequest(path, method)).toBe(page);

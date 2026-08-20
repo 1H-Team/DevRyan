@@ -8,6 +8,10 @@ export type ResolvedModelContextCapacity = {
     outputLimit: number | null;
 };
 
+export type ModelContextCapacityOptions = {
+    preferContext?: boolean;
+};
+
 export const UNAVAILABLE_MODEL_CONTEXT_CAPACITY: ResolvedModelContextCapacity = {
     capacityLimit: null,
     capacityBasis: "unavailable",
@@ -32,6 +36,7 @@ const readLimit = (source: unknown): Record<string, unknown> | null => {
 export const resolveModelContextCapacity = (
     model: unknown,
     variant?: string | null,
+    options: ModelContextCapacityOptions = {},
 ): ResolvedModelContextCapacity => {
     const modelLimit = readLimit(model);
     const normalizedVariant = typeof variant === "string" ? variant.trim() : "";
@@ -43,6 +48,16 @@ export const resolveModelContextCapacity = (
     const inputLimit = positiveLimit(variantLimit?.input) ?? positiveLimit(modelLimit?.input);
     const contextLimit = positiveLimit(variantLimit?.context) ?? positiveLimit(modelLimit?.context);
     const outputLimit = positiveLimit(variantLimit?.output) ?? positiveLimit(modelLimit?.output);
+
+    if (options.preferContext && contextLimit !== null) {
+        return {
+            capacityLimit: contextLimit,
+            capacityBasis: "context",
+            inputLimit,
+            contextLimit,
+            outputLimit,
+        };
+    }
 
     if (inputLimit !== null && (contextLimit === null || inputLimit <= contextLimit)) {
         return {

@@ -44,6 +44,7 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 ## Where To Change Things
 
 - **Shared UI, views, stores, hooks, theme, chat, settings** → start in `packages/ui/codemap.md`, then the relevant `packages/ui/src/**/codemap.md`.
+- **Session history click latency, adaptive message pages, intent prefetch, or first-visible metrics** → `packages/ui/src/sync/codemap.md`, `packages/ui/src/sync/session-message-loader.ts`, `packages/ui/src/sync/session-load-performance.ts`, and `packages/ui/src/components/session/sidebar/hooks/useSessionPrefetch.ts`.
 - **Server routes, OpenCode integration, terminal/git/GitHub/quota/TTS/skills/session-plan APIs** → start in `packages/web/codemap.md`, then `packages/web/server/codemap.md` and `packages/web/server/lib/codemap.md`.
 - **Cross-host ZIP installation safety, batched configuration apply state, or provider quota normalization** → `packages/shared-runtime/codemap.md` and `packages/shared-runtime/DOCUMENTATION.md`; host adapters remain in web and VS Code.
 - **Cloudflare tunnel lifecycle, stable origin relay, public reachability, link exchange, and Remote Tunnel settings UI** → `packages/web/server/lib/tunnels/DOCUMENTATION.md`, `packages/web/server/lib/opencode/DOCUMENTATION.md`, and `packages/ui/src/components/sections/openchamber/TunnelSettings.tsx`.

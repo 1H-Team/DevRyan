@@ -13,6 +13,7 @@ import {
   haveSamePendingToolInputStallFingerprint,
   haveSameLongRunningToolFingerprint,
   haveSameProviderStallFingerprint,
+  LONG_RUNNING_TOOL_SEMANTIC_SILENCE_MS,
   mergeAuthoritativeSessionStatuses,
   mergeRecoveredSessionStatuses,
   shouldConfirmLongRunningTool,
@@ -505,7 +506,7 @@ describe("getReconnectCandidateSessionIds", () => {
     expect(getLongRunningToolFingerprint({ state: child, sessionID: "active" })).toBeNull()
   })
 
-  test("confirms only an unchanged Context Mode call after five minutes without a managed child", () => {
+  test("confirms only an unchanged Context Mode call after ten minutes without a managed child", () => {
     const fingerprint = {
       kind: "long-running-tool",
       sessionID: "active",
@@ -518,25 +519,25 @@ describe("getReconnectCandidateSessionIds", () => {
 
     expect(shouldConfirmLongRunningTool({
       managedChildActive: false,
-      silentForMs: 299_999,
+      silentForMs: LONG_RUNNING_TOOL_SEMANTIC_SILENCE_MS - 1,
       before: fingerprint,
       after: fingerprint,
     })).toBe(false)
     expect(shouldConfirmLongRunningTool({
       managedChildActive: false,
-      silentForMs: 300_000,
+      silentForMs: LONG_RUNNING_TOOL_SEMANTIC_SILENCE_MS,
       before: fingerprint,
       after: fingerprint,
     })).toBe(true)
     expect(shouldConfirmLongRunningTool({
       managedChildActive: true,
-      silentForMs: 300_000,
+      silentForMs: LONG_RUNNING_TOOL_SEMANTIC_SILENCE_MS,
       before: fingerprint,
       after: fingerprint,
     })).toBe(false)
     expect(shouldConfirmLongRunningTool({
       managedChildActive: false,
-      silentForMs: 300_000,
+      silentForMs: LONG_RUNNING_TOOL_SEMANTIC_SILENCE_MS,
       before: fingerprint,
       after: { ...fingerprint, callID: "call-2" },
     })).toBe(false)

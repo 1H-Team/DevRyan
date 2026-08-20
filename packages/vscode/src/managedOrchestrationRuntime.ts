@@ -4,6 +4,10 @@ import {
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
   MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
   MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE,
+  projectManagedResultEnvelope,
+  projectManagedTaskResult as projectManagedTaskResultForMode,
+  readManagedResultReference,
+  resolveManagedResultMode,
   supportsManagedReadOnlyAgent,
   supportsManagedReadOnlyProvider,
   toManagedTaskEvent,
@@ -115,6 +119,8 @@ const ERROR_STATUS_BY_CODE: Record<string, number> = {
   parent_scope_mismatch: 403,
   result_already_acknowledged: 409,
   result_already_acknowledging: 409,
+  invalid_result_cursor: 400,
+  result_reference_mismatch: 409,
   result_not_found: 404,
   result_not_provider_usage_limited: 409,
   result_not_resumable: 409,
@@ -364,17 +370,41 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
     return task;
   };
 
-  const projectTaskResult = (task: NonNullable<ReturnType<ManagedTaskScheduler['getTask']>>) => {
+  const getResultReadScopedTask = (params: Record<string, unknown>) => {
+    const taskId = requireString(params, 'taskId');
+    const task = scheduler.getTask(taskId);
+    if (!task) throw createRuntimeError('task_not_found', `managed task ${taskId} was not found`, 404);
+    const rootSessionId = optionalString(params, 'rootSessionId');
+    const directory = optionalString(params, 'directory');
+    if (!rootSessionId || task.rootSessionId !== rootSessionId) {
+      throw createRuntimeError(
+        'task_scope_mismatch',
+        `managed task ${task.taskId} does not belong to the requesting root session`,
+        403,
+      );
+    }
+    if (!directory || task.directory !== directory) {
+      throw createRuntimeError(
+        'task_scope_mismatch',
+        `managed task ${task.taskId} does not belong to the requesting directory`,
+        403,
+      );
+    }
+    return task;
+  };
+
+  const projectTaskResult = (
+    task: NonNullable<ReturnType<ManagedTaskScheduler['getTask']>>,
+    resultMode?: 'eager' | 'reference',
+  ) => {
     const envelope = scheduler.getResultEnvelope(task.taskId);
-    return {
-      task: projectTask(task),
-      ...(envelope ? { resultEnvelope: envelope } : {}),
-    };
+    return projectManagedTaskResultForMode(projectTask(task), envelope, resultMode);
   };
 
   const projectHandoffResult = (
     scope: ReturnType<typeof normalizeHandoffParams>,
     result: Awaited<ReturnType<ManagedTaskScheduler['inspectAgentHandoff']>>,
+    resultMode?: 'eager' | 'reference',
   ) => ({
     rootSessionId: scope.rootSessionId,
     fromMode: scope.fromMode,
@@ -383,7 +413,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
     tasks: result.taskIds
       .map((taskId) => scheduler.getTask(taskId))
       .filter((task): task is NonNullable<typeof task> => Boolean(task))
-      .map(projectTaskResult),
+      .map((task) => projectTaskResult(task, resultMode)),
     failures: result.failures,
   });
 
@@ -393,6 +423,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
   ) => {
     await ensureInitialized();
     const params = request.params ?? {};
+    const resultMode = resolveManagedResultMode(params.resultMode);
     switch (request.method) {
       case 'submit': {
         assertWorkAdmission();
@@ -432,7 +463,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
           prompt: requireContentString(params, 'prompt'),
           timeoutAt,
         });
-        return projectTaskResult(task);
+        return projectTaskResult(task, resultMode);
       }
       case 'wait': {
         const task = getScopedTask(params);
@@ -440,7 +471,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
         return projectTaskResult(await scheduler.waitForTask(task.taskId, {
           signal: context.signal,
           ...(waitTimeoutMs === undefined ? {} : { timeoutMs: waitTimeoutMs }),
-        }));
+        }), resultMode);
       }
       case 'wait_result_action': {
         const task = getScopedTask(params);
@@ -451,8 +482,8 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
           ? scheduler.getTask(resultEnvelope.followUpTaskId)
           : null;
         return {
-          resultEnvelope,
-          followUpTask: followUpTask ? projectTaskResult(followUpTask) : null,
+          ...projectManagedResultEnvelope(task, resultEnvelope, resultMode),
+          followUpTask: followUpTask ? projectTaskResult(followUpTask, resultMode) : null,
         };
       }
       case 'barrier':
@@ -484,10 +515,10 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
             fromMode: scope.fromMode,
             toMode: scope.toMode,
           });
-        return projectHandoffResult(scope, result);
+        return projectHandoffResult(scope, result, resultMode);
       }
       case 'status':
-        return projectTaskResult(getScopedTask(params));
+        return projectTaskResult(getScopedTask(params), resultMode);
       case 'snapshot':
         return await getSnapshot({ rootSessionId: requireString(params, 'rootSessionId') });
       case 'cancel': {
@@ -497,8 +528,26 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
           ? await scheduler.cancelTask(task.taskId, { cascade: true, ...(reason ? { reason } : {}) })
           : await scheduler.cancelTask(task.taskId, { cascade: false, ...(reason ? { reason } : {}) });
         return Array.isArray(cancelled)
-          ? { tasks: cancelled.map(projectTaskResult) }
-          : projectTaskResult(cancelled);
+          ? { tasks: cancelled.map((entry) => projectTaskResult(entry, resultMode)) }
+          : projectTaskResult(cancelled, resultMode);
+      }
+      case 'read_result': {
+        const task = getResultReadScopedTask(params);
+        const resultEnvelope = scheduler.getResultEnvelope(task.taskId);
+        if (!resultEnvelope) {
+          throw createRuntimeError(
+            'result_not_found',
+            `managed result for task ${task.taskId} was not found`,
+            404,
+          );
+        }
+        return {
+          resultReference: readManagedResultReference({
+            task,
+            resultEnvelope,
+            resultCursor: typeof params.resultCursor === 'string' ? params.resultCursor : '',
+          }),
+        };
       }
       case 'acknowledge': {
         const task = getScopedTask(params);
@@ -526,8 +575,10 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
           timeoutAt,
         });
         return {
-          resultEnvelope: result.envelope,
-          followUpTask: result.followUpTask ? projectTaskResult(result.followUpTask) : null,
+          ...projectManagedResultEnvelope(task, result.envelope, resultMode),
+          followUpTask: result.followUpTask
+            ? projectTaskResult(result.followUpTask, resultMode)
+            : null,
         };
       }
       default:

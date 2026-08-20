@@ -82,13 +82,7 @@ const getMessageParts = (message: ContextTokenMessage): Part[] => {
     return "parts" in message && Array.isArray(message.parts) ? message.parts : [];
 };
 
-export const extractTokenBreakdownFromMessage = (message: ContextTokenMessage): ExtractedTokenBreakdown => {
-    const info = getMessageInfo(message);
-    const tokenCandidate = (info as { tokens?: unknown }).tokens;
-    const source = tokenCandidate !== undefined
-        ? tokenCandidate
-        : (getMessageParts(message).find((part) => (part as { tokens?: unknown }).tokens !== undefined) as { tokens?: unknown } | undefined)?.tokens;
-
+const extractTokenBreakdown = (source: unknown): ExtractedTokenBreakdown => {
     if (typeof source === "number") {
         return {
             ...EMPTY_EXTRACTED_BREAKDOWN,
@@ -118,6 +112,31 @@ export const extractTokenBreakdownFromMessage = (message: ContextTokenMessage): 
         cacheWrite,
         total,
     };
+};
+
+const hasMeasuredTokens = (breakdown: ExtractedTokenBreakdown): boolean => (
+    breakdown.total > 0
+    || breakdown.input > 0
+    || breakdown.output > 0
+    || breakdown.reasoning > 0
+    || breakdown.cacheRead > 0
+    || breakdown.cacheWrite > 0
+);
+
+export const extractTokenBreakdownFromMessage = (message: ContextTokenMessage): ExtractedTokenBreakdown => {
+    const info = getMessageInfo(message);
+    const messageBreakdown = extractTokenBreakdown((info as { tokens?: unknown }).tokens);
+    if (hasMeasuredTokens(messageBreakdown)) return messageBreakdown;
+
+    const parts = getMessageParts(message);
+    for (let index = parts.length - 1; index >= 0; index -= 1) {
+        const part = parts[index] as { type?: unknown; tokens?: unknown };
+        if (part.type !== "step-finish") continue;
+        const partBreakdown = extractTokenBreakdown(part.tokens);
+        if (hasMeasuredTokens(partBreakdown)) return partBreakdown;
+    }
+
+    return messageBreakdown;
 };
 
 export const extractTokensFromMessage = (message: { info: Message; parts: Part[] }): number => {

@@ -2,10 +2,48 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   resolveManagedChildGenericStatusText,
+  resolveManagedDelegationStatusPhase,
   resolveLongRunningToolPresentation,
   resolveStatusRowAssistantDisplay,
   shouldRenderStatusRowAssistantStatus,
 } from './StatusRowContainer';
+
+describe('resolveManagedDelegationStatusPhase', () => {
+  test('shows startup copy for provisional and authoritative pre-running dispatches', () => {
+    expect(resolveManagedDelegationStatusPhase({
+      rootPhase: null,
+      activeToolName: 'devryan_task',
+      activeToolAction: 'start',
+    })).toBe('starting');
+    expect(resolveManagedDelegationStatusPhase({
+      rootPhase: 'starting',
+    })).toBe('starting');
+  });
+
+  test('switches to waiting as soon as any authoritative child is running', () => {
+    expect(resolveManagedDelegationStatusPhase({
+      rootPhase: 'waiting',
+      activeToolName: 'devryan_task',
+      activeToolAction: 'start',
+    })).toBe('waiting');
+  });
+
+  test('treats explicit managed control calls as waiting, even while children start', () => {
+    expect(resolveManagedDelegationStatusPhase({
+      rootPhase: 'starting',
+      activeToolName: 'devryan_task',
+      activeToolAction: 'wait',
+    })).toBe('waiting');
+  });
+
+  test('does not replace an unrelated active tool status', () => {
+    expect(resolveManagedDelegationStatusPhase({
+      rootPhase: null,
+      activeToolName: 'bash',
+      activeToolAction: 'start',
+    })).toBeNull();
+  });
+});
 
 describe('resolveManagedChildGenericStatusText', () => {
   const copy = {
@@ -109,7 +147,7 @@ describe('resolveLongRunningToolPresentation', () => {
       }, null);
 
       expect(presentation?.elapsed).toBeNull();
-      expect(presentation?.tool).toBe('C-Mode: Execute');
+      expect(presentation?.tool).toBe('Context Mode: Execute');
       expect(presentation?.actionable).toBe(false);
     }
   });
@@ -119,7 +157,7 @@ describe('resolveLongRunningToolPresentation', () => {
       tool: 'ctx_execute',
       confirmedAt: 300_000,
     }, '5m 0s')).toEqual({
-      tool: 'C-Mode: Execute',
+      tool: 'Context Mode: Execute',
       elapsed: '5m 0s',
       actionable: true,
     });

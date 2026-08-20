@@ -99,7 +99,7 @@ const createDeps = (openCodeSkills = [], overrides = {}) => ({
   })),
   checkForOpenCodeUpdates: vi.fn(async ({ currentVersion, supportedVersion }) => ({
     currentVersion,
-    latestVersion: '1.18.18',
+    latestVersion: '1.18.19',
     supportedVersion,
     updateAvailable: true,
     supportStatus: 'supported',
@@ -113,7 +113,7 @@ const createCtx = (workingDirectory = '/tmp/project') => ({
     restart: vi.fn(async () => {}),
     getDebugInfo: vi.fn(() => ({
       cliPath: '/usr/local/bin/opencode',
-      version: '1.18.18',
+      version: '1.18.19',
     })),
   },
 });
@@ -128,21 +128,21 @@ describe('handleConfigBridgeMessage OpenCode resolution', () => {
 
     expect(response?.success).toBe(true);
     expect(response?.data).toMatchObject({
-      targetVersion: '1.18.18',
-      detectedVersion: '1.18.18',
-      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.18 --no-modify-path',
+      targetVersion: '1.18.19',
+      detectedVersion: '1.18.19',
+      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.19 --no-modify-path',
     });
   });
 });
 
 describe('handleConfigBridgeMessage OpenCode update check', () => {
   it.each([
-    ['managed', '1.18.18'],
+    ['managed', '1.18.19'],
     ['external', '1.18.10'],
   ])('uses the active %s runtime version', async (mode, version) => {
     const checkForOpenCodeUpdates = vi.fn(async ({ currentVersion, supportedVersion }) => ({
       currentVersion,
-      latestVersion: '1.18.18',
+      latestVersion: '1.18.19',
       supportedVersion,
       updateAvailable: true,
       supportStatus: currentVersion === supportedVersion ? 'supported' : 'older',
@@ -162,13 +162,13 @@ describe('handleConfigBridgeMessage OpenCode update check', () => {
 
     expect(checkForOpenCodeUpdates).toHaveBeenCalledWith({
       currentVersion: version,
-      supportedVersion: '1.18.18',
+      supportedVersion: '1.18.19',
     });
     expect(response).toMatchObject({
       success: true,
       data: {
         currentVersion: version,
-        latestVersion: '1.18.18',
+        latestVersion: '1.18.19',
       },
     });
   });

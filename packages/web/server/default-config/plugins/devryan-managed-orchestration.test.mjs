@@ -29,10 +29,14 @@ const { DevRyanManagedOrchestrationPlugin } = await import('./devryan-managed-or
 
 const originalUrl = process.env.DEVRYAN_ORCHESTRATION_URL;
 const originalToken = process.env.DEVRYAN_ORCHESTRATION_TOKEN;
+const originalAccountDefaults = process.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS;
+const originalResultMode = process.env.DEVRYAN_MANAGED_RESULT_MODE;
 
 beforeEach(() => {
   process.env.DEVRYAN_ORCHESTRATION_URL = 'http://127.0.0.1:43210/rpc';
   process.env.DEVRYAN_ORCHESTRATION_TOKEN = 'private-token';
+  delete process.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS;
+  delete process.env.DEVRYAN_MANAGED_RESULT_MODE;
 });
 
 afterEach(() => {
@@ -41,6 +45,10 @@ afterEach(() => {
   else process.env.DEVRYAN_ORCHESTRATION_URL = originalUrl;
   if (originalToken === undefined) delete process.env.DEVRYAN_ORCHESTRATION_TOKEN;
   else process.env.DEVRYAN_ORCHESTRATION_TOKEN = originalToken;
+  if (originalAccountDefaults === undefined) delete process.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS;
+  else process.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS = originalAccountDefaults;
+  if (originalResultMode === undefined) delete process.env.DEVRYAN_MANAGED_RESULT_MODE;
+  else process.env.DEVRYAN_MANAGED_RESULT_MODE = originalResultMode;
 });
 
 const context = (overrides = {}) => ({
@@ -762,6 +770,7 @@ describe('DevRyan managed orchestration plugin', () => {
       providerId: 'github-copilot',
       modelId: 'gpt-4.1',
       agent: 'explorer',
+      resultMode: 'reference',
       timeoutAt: expect.any(Number),
     });
     expect(requests[0].body.params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 1_800_000);
@@ -926,6 +935,7 @@ describe('DevRyan managed orchestration plugin', () => {
     ]);
     expect(requests.every((request) => request.params.rootSessionId === 'ses_root')).toBe(true);
     expect(requests.every((request) => request.params.directory === '/workspace')).toBe(true);
+    expect(requests.every((request) => request.params.resultMode === 'reference')).toBe(true);
     expect(requests.find((request) => request.method === 'wait').params.waitTimeoutMs).toBe(25_000);
     expect(requests.find((request) => request.method === 'acknowledge').params.action).toBe('retry');
   });
@@ -1372,6 +1382,366 @@ describe('DevRyan managed orchestration plugin', () => {
     });
   });
 
+  it('reads reference pages sequentially without acknowledging or advancing on invalid pages', async () => {
+    const requests = [];
+    let rejectFinalPageOnce = true;
+    const initialReference = {
+      taskId: 'dvr_task_paged',
+      envelopeId: 'dvr_result_paged_1',
+      totalBytes: 17_000,
+      text: 'a'.repeat(8_192),
+      returnedBytes: 8_192,
+      nextCursor: 'cursor-page-2',
+      complete: false,
+    };
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      if (request.method === 'wait') {
+        return rpcResponse({
+          task: { taskId: 'dvr_task_paged', status: 'completed' },
+          resultEnvelope: {
+            taskId: 'dvr_task_paged',
+            envelopeId: 'dvr_result_paged_1',
+            action: null,
+          },
+          resultReference: initialReference,
+        });
+      }
+      if (request.method === 'read_result' && request.params.resultCursor === 'cursor-page-2') {
+        return rpcResponse({ resultReference: {
+          ...initialReference,
+          text: 'b'.repeat(8_192),
+          returnedBytes: 16_384,
+          nextCursor: 'cursor-page-3',
+        } });
+      }
+      if (request.method === 'read_result' && request.params.resultCursor === 'cursor-page-3') {
+        if (rejectFinalPageOnce) {
+          rejectFinalPageOnce = false;
+          return rpcResponse({ code: 'invalid_result_cursor', message: 'temporary cursor rejection' }, 400);
+        }
+        return rpcResponse({ resultReference: {
+          ...initialReference,
+          text: 'c'.repeat(616),
+          returnedBytes: 17_000,
+          nextCursor: null,
+          complete: true,
+        } });
+      }
+      if (request.method === 'acknowledge') {
+        return rpcResponse({
+          resultEnvelope: { taskId: 'dvr_task_paged', action: 'continue' },
+          followUpTask: null,
+        });
+      }
+      throw new Error(`Unexpected request ${request.method}`);
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'read_result',
+      task_id: 'dvr_task_paged',
+      result_cursor: 'cursor-page-2',
+    }, context())).rejects.toMatchObject({
+      code: 'DEVRYAN_TOOL_INPUT_INVALID',
+      details: { state: 'wait_required' },
+    });
+
+    const waited = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_paged',
+    }, context()));
+    expect(waited.resultReference).toEqual(initialReference);
+    expect(requests[0].params.resultMode).toBe('reference');
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'read_result',
+      task_id: 'dvr_task_paged',
+      result_cursor: 'cursor-page-3',
+    }, context())).rejects.toMatchObject({
+      code: 'DEVRYAN_TOOL_INPUT_INVALID',
+      details: { state: 'result_cursor_mismatch' },
+    });
+    const second = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'read_result',
+      task_id: 'dvr_task_paged',
+      result_cursor: 'cursor-page-2',
+    }, context()));
+    expect(second.resultReference).toMatchObject({
+      returnedBytes: 16_384,
+      nextCursor: 'cursor-page-3',
+    });
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'read_result',
+      task_id: 'dvr_task_paged',
+      result_cursor: 'cursor-page-2',
+    }, context())).rejects.toMatchObject({
+      code: 'DEVRYAN_TOOL_INPUT_INVALID',
+      details: { state: 'result_cursor_mismatch' },
+    });
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'read_result',
+      task_id: 'dvr_task_paged',
+      result_cursor: 'cursor-page-3',
+    }, context())).rejects.toMatchObject({ code: 'invalid_result_cursor' });
+    const finalPage = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'read_result',
+      task_id: 'dvr_task_paged',
+      result_cursor: 'cursor-page-3',
+    }, context()));
+    expect(finalPage.resultReference).toMatchObject({
+      returnedBytes: 17_000,
+      nextCursor: null,
+      complete: true,
+    });
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'read_result',
+      task_id: 'dvr_task_paged',
+      result_cursor: 'cursor-page-3',
+    }, context())).rejects.toMatchObject({
+      code: 'DEVRYAN_TOOL_INPUT_INVALID',
+      details: { state: 'result_complete' },
+    });
+
+    expect(requests.map(({ method }) => method)).toEqual([
+      'wait',
+      'read_result',
+      'read_result',
+      'read_result',
+    ]);
+    expect(requests.filter(({ method }) => method === 'read_result').every(
+      ({ params }) => !Object.hasOwn(params, 'resultMode'),
+    )).toBe(true);
+    expect(requests.map(({ method }) => method)).not.toContain('barrier_status');
+    expect(requests.map(({ method }) => method)).not.toContain('acknowledge');
+
+    await plugin.tool.devryan_task.execute({
+      action: 'continue',
+      task_id: 'dvr_task_paged',
+    }, context());
+    expect(requests.at(-1)).toMatchObject({
+      method: 'acknowledge',
+      params: { resultMode: 'reference', action: 'continue' },
+    });
+  });
+
+  it.each([
+    [
+      'premature completion',
+      {
+        task: { taskId: 'dvr_task_malformed_page', status: 'completed' },
+        resultEnvelope: {
+          taskId: 'dvr_task_malformed_page',
+          envelopeId: 'dvr_result_malformed_page_1',
+          action: null,
+        },
+        resultReference: {
+          taskId: 'dvr_task_malformed_page',
+          envelopeId: 'dvr_result_malformed_page_1',
+          totalBytes: 9_000,
+          text: 'a'.repeat(8_192),
+          returnedBytes: 8_192,
+          nextCursor: null,
+          complete: true,
+        },
+      },
+    ],
+    [
+      'a missing envelope identity',
+      {
+        task: { taskId: 'dvr_task_malformed_page', status: 'completed' },
+        resultEnvelope: { taskId: 'dvr_task_malformed_page', action: null },
+        resultReference: {
+          taskId: 'dvr_task_malformed_page',
+          envelopeId: 'dvr_result_malformed_page_1',
+          totalBytes: 9_000,
+          text: 'a'.repeat(8_192),
+          returnedBytes: 8_192,
+          nextCursor: 'cursor-page-2',
+          complete: false,
+        },
+      },
+    ],
+  ])('rejects reference pages with %s and does not cache them', async (_label, result) => {
+    vi.stubGlobal('fetch', vi.fn(async () => rpcResponse(result)));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_malformed_page',
+    }, context())).rejects.toMatchObject({
+      code: 'DEVRYAN_TOOL_INPUT_INVALID',
+      details: { state: 'invalid_result_page' },
+    });
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'read_result',
+      task_id: 'dvr_task_malformed_page',
+      result_cursor: 'cursor-page-2',
+    }, context())).rejects.toMatchObject({
+      code: 'DEVRYAN_TOOL_INPUT_INVALID',
+      details: { state: 'wait_required' },
+    });
+  });
+
+  it('requires another terminal wait after plugin restart before paging retained output', async () => {
+    const requests = [];
+    const initialReference = {
+      taskId: 'dvr_task_restart_page',
+      envelopeId: 'dvr_result_restart_page_1',
+      totalBytes: 9_000,
+      text: 'a'.repeat(8_192),
+      returnedBytes: 8_192,
+      nextCursor: 'restart-cursor',
+      complete: false,
+    };
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      if (request.method === 'wait') {
+        return rpcResponse({
+          task: { taskId: initialReference.taskId, status: 'failed' },
+          resultEnvelope: {
+            taskId: initialReference.taskId,
+            envelopeId: initialReference.envelopeId,
+            action: null,
+          },
+          resultReference: initialReference,
+        });
+      }
+      if (request.method === 'read_result') {
+        return rpcResponse({ resultReference: {
+          ...initialReference,
+          text: 'b'.repeat(808),
+          returnedBytes: 9_000,
+          nextCursor: null,
+          complete: true,
+        } });
+      }
+      throw new Error(`Unexpected request ${request.method}`);
+    }));
+    const firstPlugin = await DevRyanManagedOrchestrationPlugin();
+    await firstPlugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: initialReference.taskId,
+    }, context());
+
+    const restartedPlugin = await DevRyanManagedOrchestrationPlugin();
+    await expect(restartedPlugin.tool.devryan_task.execute({
+      action: 'read_result',
+      task_id: initialReference.taskId,
+      result_cursor: 'restart-cursor',
+    }, context())).rejects.toMatchObject({
+      code: 'DEVRYAN_TOOL_INPUT_INVALID',
+      details: { state: 'wait_required' },
+    });
+    await restartedPlugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: initialReference.taskId,
+    }, context());
+    await expect(restartedPlugin.tool.devryan_task.execute({
+      action: 'read_result',
+      task_id: initialReference.taskId,
+      result_cursor: 'restart-cursor',
+    }, context())).resolves.toContain('"complete": true');
+    expect(requests.map(({ method }) => method)).toEqual(['wait', 'wait', 'read_result']);
+  });
+
+  it('keeps exact eager mode serialization and omits the resultMode RPC parameter', async () => {
+    process.env.DEVRYAN_MANAGED_RESULT_MODE = 'eager';
+    const recoverablePreview = `eager:${'x'.repeat(9_000)}`;
+    const canonicalRefs = [{ type: 'message', id: 'msg_eager' }];
+    const requests = [];
+    const response = {
+      task: {
+        taskId: 'dvr_task_eager',
+        status: 'completed',
+        partial: false,
+        failureReason: null,
+        recoverablePreview,
+        canonicalRefs,
+      },
+      resultEnvelope: {
+        taskId: 'dvr_task_eager',
+        envelopeId: 'dvr_result_eager_1',
+        status: 'completed',
+        partial: false,
+        failureReason: null,
+        recoverablePreview,
+        canonicalRefs,
+        action: null,
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      if (request.method === 'wait') return rpcResponse(response);
+      if (request.method === 'acknowledge') {
+        return rpcResponse({
+          resultEnvelope: { ...response.resultEnvelope, action: 'continue' },
+          followUpTask: null,
+        });
+      }
+      throw new Error(`Unexpected request ${request.method}`);
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    const output = await plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_eager',
+    }, context());
+    expect(output).toBe(JSON.stringify({
+      task: {
+        taskId: 'dvr_task_eager',
+        status: 'completed',
+        partial: false,
+      },
+      resultEnvelope: response.resultEnvelope,
+    }, null, 2));
+    await plugin.tool.devryan_task.execute({
+      action: 'continue',
+      task_id: 'dvr_task_eager',
+    }, context());
+    expect(requests.every(({ params }) => !Object.hasOwn(params, 'resultMode'))).toBe(true);
+  });
+
+  it('captures the exact eager override at plugin startup and applies changes only after restart', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      return rpcResponse({ task: { taskId: request.params.taskId, status: 'running' } });
+    }));
+
+    process.env.DEVRYAN_MANAGED_RESULT_MODE = 'eager';
+    const eagerPlugin = await DevRyanManagedOrchestrationPlugin();
+    delete process.env.DEVRYAN_MANAGED_RESULT_MODE;
+    await eagerPlugin.tool.devryan_task.execute({
+      action: 'status',
+      task_id: 'dvr_task_eager_startup',
+    }, context());
+
+    const referencePlugin = await DevRyanManagedOrchestrationPlugin();
+    await referencePlugin.tool.devryan_task.execute({
+      action: 'status',
+      task_id: 'dvr_task_reference_restart',
+    }, context());
+
+    process.env.DEVRYAN_MANAGED_RESULT_MODE = 'EAGER';
+    const exactValuePlugin = await DevRyanManagedOrchestrationPlugin();
+    await exactValuePlugin.tool.devryan_task.execute({
+      action: 'status',
+      task_id: 'dvr_task_uppercase_override',
+    }, context());
+
+    expect(requests.map(({ params }) => params.resultMode)).toEqual([
+      undefined,
+      'reference',
+      'reference',
+    ]);
+  });
+
   it('compacts nested results without hiding divergent task payloads', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       ok: true,
@@ -1787,6 +2157,57 @@ describe('DevRyan managed orchestration plugin', () => {
       providerId: 'opencode-go',
       modelId: 'deepseek-v4-flash',
       variant: 'medium',
+    });
+  });
+
+  it('resolves the root-session owner account default before submitting a child task', async () => {
+    process.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS = '1';
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      if (request.method === 'resolve_agent_execution') {
+        return rpcResponse({
+          providerId: 'anthropic',
+          modelId: 'claude-sonnet-4-6',
+          variant: 'high',
+          source: 'personal',
+        });
+      }
+      return rpcResponse({ task: { taskId: 'dvr_task_owner_default' } });
+    }));
+    const client = {
+      app: {
+        agents: vi.fn(async () => ({ data: [{
+          name: 'Orchestrator',
+          model: { providerID: 'openai', modelID: 'gpt-5.6-sol' },
+          variant: 'medium',
+        }] })),
+      },
+    };
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'orchestrator',
+      prompt: 'Coordinate the bounded implementation.',
+    }, context());
+
+    expect(requests.map((request) => request.method)).toEqual(['resolve_agent_execution', 'submit']);
+    expect(requests[0].params).toMatchObject({
+      rootSessionId: 'ses_root',
+      directory: '/workspace',
+      agent: 'orchestrator',
+      fallbackExecution: {
+        providerId: 'openai',
+        modelId: 'gpt-5.6-sol',
+        variant: 'medium',
+      },
+    });
+    expect(requests[1].params).toMatchObject({
+      providerId: 'anthropic',
+      modelId: 'claude-sonnet-4-6',
+      variant: 'high',
     });
   });
 

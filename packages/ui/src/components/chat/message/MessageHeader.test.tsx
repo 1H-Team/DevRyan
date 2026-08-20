@@ -28,4 +28,11 @@ describe('MessageHeader', () => {
         expect(code).toContain('trailingIcon={fastIcon}');
         expect(code).toContain('text-[var(--status-warning)]');
     });
+
+    test('preserves the Claude logo brand color in every theme', () => {
+        const code = source();
+
+        expect(code).toContain('shouldPreserveProviderLogoColor(displayProviderID)');
+        expect(code).toContain("if (preservesBrandColor) {\n        logoFilter = 'none';");
+    });
 });

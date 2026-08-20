@@ -5,6 +5,7 @@ import {
   MANAGED_TASK_TIMEOUT_REASON_PREFIX,
   classifyManagedTaskFailure,
   classifyProviderRetryFailure,
+  classifyProviderRetryStatus,
   classifyProviderTransportFailure,
   isManagedTaskDeadlineExceeded,
   isProviderPromptRejected,
@@ -35,12 +36,28 @@ describe('classifyProviderRetryFailure', () => {
 
   it.each([
     ['Usage limit reached', 'provider_usage_limit'],
+    ['Free usage exceeded, subscribe to Go', 'provider_usage_limit'],
     ['Invalid prompt: required field messages is missing', null],
     ['The prompt was flagged for review', null],
     ['A policy violation occurred in a tool response', null],
     ['Provider connection ended', null],
   ])('does not broaden %s beyond its verified class', (message, expected) => {
     expect(classifyProviderRetryFailure(message)).toBe(expected);
+  });
+
+  it('prefers OpenCode structured free-tier exhaustion over retry message wording', () => {
+    expect(classifyProviderRetryStatus({
+      type: 'retry',
+      message: 'Subscribe to continue',
+      action: { reason: 'free_tier_limit' },
+    })).toBe('provider_usage_limit');
+  });
+
+  it.each([
+    { type: 'retry', message: 'temporarily unavailable' },
+    { type: 'retry', message: 'temporarily unavailable', action: { reason: 'provider_busy' } },
+  ])('keeps unrelated retry status live: $message', (status) => {
+    expect(classifyProviderRetryStatus(status)).toBeNull();
   });
 });
 

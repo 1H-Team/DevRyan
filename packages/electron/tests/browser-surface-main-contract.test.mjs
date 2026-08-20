@@ -149,4 +149,21 @@ describe('main-owned browser surface contract', () => {
     expect(block.indexOf('bridge.bindLeaseGuest')).toBeLessThan(block.indexOf("state: 'ready'"));
     expect(block).not.toContain('guest_bind_timeout');
   });
+
+  test('returns one correlated element annotation capture after removing the inspector overlay', () => {
+    const scriptStart = managerSource.indexOf('const BROWSER_INSPECT_SCRIPT =');
+    const scriptEnd = managerSource.indexOf('\n\nexport const createBrowserSurfaceManager', scriptStart);
+    const script = managerSource.slice(scriptStart, scriptEnd);
+    const inspectStart = managerSource.indexOf('const inspect = async');
+    const inspectEnd = managerSource.indexOf('\n\n  const destroy', inspectStart);
+    const inspect = managerSource.slice(inspectStart, inspectEnd);
+
+    expect(script).toContain("outerHTML: String(element.outerHTML || '')");
+    expect(script.indexOf('overlay.remove();')).toBeLessThan(script.indexOf('requestAnimationFrame(() => requestAnimationFrame(resolvePaint))'));
+    expect(script).toContain('target: metadata(element)');
+    expect(inspect).toContain('const image = await surface.view.webContents.capturePage();');
+    expect(inspect).toContain("mime: 'image/png'");
+    expect(inspect).toContain('target: result.target');
+    expect(inspect.indexOf('executeJavaScript(')).toBeLessThan(inspect.indexOf('capturePage()'));
+  });
 });

@@ -287,6 +287,21 @@ describe("applyDirectoryEvent", () => {
     expect((draft.part.msg_reasoning_1[0] as { text?: string }).text).toBe(text)
   })
 
+  test("applies token-only assistant message updates after completion", () => {
+    const completed = {
+      ...completedAssistantMessage("msg_1", "ses_1", 1, 2),
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    } as unknown as Message
+    const draft = state({ message: { ses_1: [completed] } })
+    const measured = {
+      ...completed,
+      tokens: { total: 1_200, input: 200, output: 50, reasoning: 25, cache: { read: 900, write: 25 } },
+    } as unknown as Message
+
+    expect(applyDirectoryEvent(draft, messageUpdatedEvent(measured))).toBe(true)
+    expect(draft.message.ses_1[0]).toBe(measured)
+  })
+
   test("applies part update without materialization when owning message exists", () => {
     const draft = state({
       message: { ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as never] },

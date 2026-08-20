@@ -227,6 +227,7 @@ const createHarness = async ({
   const mutableOwnershipRows = ownershipRows.map((row) => ({ ...row }));
   const mutableOpenCodeSessions = openCodeSessions.map((session) => structuredClone(session));
   const mutableActivityRows = activityRows.map((row) => structuredClone(row));
+  const mutableUserPolicies = userPolicies.map((row) => structuredClone(row));
   const mutableAccessRows = accessRows;
   const mutableBranchRows = branchRows;
   const projectsById = new Map(projects.map((project) => [project.id, { ...project }]));
@@ -618,7 +619,13 @@ const createHarness = async ({
     }
     if (table === 'user_policies') {
       const userId = url.searchParams.get('user_id')?.replace(/^eq\./, '');
-      return jsonResponse(userPolicies.filter((row) => !userId || row.user_id === userId));
+      if (method === 'POST') {
+        const index = mutableUserPolicies.findIndex((row) => row.user_id === body.user_id);
+        if (index >= 0) mutableUserPolicies[index] = { ...mutableUserPolicies[index], ...body };
+        else mutableUserPolicies.push({ ...body });
+        return jsonResponse([]);
+      }
+      return jsonResponse(mutableUserPolicies.filter((row) => !userId || row.user_id === userId));
     }
     if (table === 'role_policies') {
       return jsonResponse([]);
@@ -694,6 +701,7 @@ const createHarness = async ({
     projectsById,
     getAccessRows: () => mutableAccessRows.map((row) => ({ ...row })),
     getBranchRows: () => mutableBranchRows.map((row) => ({ ...row })),
+    getUserPolicy: (userId) => mutableUserPolicies.find((row) => row.user_id === userId) || null,
     setAppSessionUnavailable(value) { appSessionUnavailable = value; },
     setOwnershipArchiveUnavailable(value) { ownershipArchiveUnavailable = value; },
     setOpenCodeDeleteUnavailable(value) { openCodeDeleteUnavailable = value; },
@@ -2769,6 +2777,264 @@ describe('multi-user authentication runtime', () => {
     }, forbiddenResponse);
     expect(forbiddenResponse.statusCode).toBe(403);
     expect(harness.onManagedProjectMetadataChanged).toHaveBeenCalledTimes(3);
+  });
+
+  it('persists isolated per-agent defaults without lost updates and supports explicit reset', async () => {
+    const harness = await createHarness({
+      userPolicies: [{
+        user_id: USER_IDS.developer,
+        settings_overrides: { themeId: 'personal-theme' },
+      }, {
+        user_id: USER_IDS.admin,
+        settings_overrides: { agentModelSelections: { Orchestrator: { providerId: 'openai', modelId: 'admin-model' } } },
+      }],
+    });
+    const login = await passwordLogin(harness, { role: 'developer' });
+    const handlers = registerAdminRoutes(harness, {
+      readSettingsFromDiskMigrated: async () => ({
+        defaultAgent: 'Orchestrator',
+        defaultPlanMode: true,
+        themeId: 'host-theme',
+      }),
+      listConfigAgents: () => [{
+        name: 'Orchestrator',
+        model: { providerID: 'openai', modelID: 'gpt-5.6-sol' },
+        variant: 'medium',
+        modelRefs: ['openai/gpt-5.6-sol'],
+      }, {
+        name: 'Builder',
+        model: { providerID: 'openai', modelID: 'gpt-5.6-terra' },
+        variant: 'high',
+        modelRefs: ['openai/gpt-5.6-terra'],
+      }, {
+        name: 'Council',
+        model: { providerID: 'openai', modelID: 'gpt-5.6-sol' },
+        modelRefs: ['openai/gpt-5.6-sol', 'anthropic/claude-sonnet-4-6'],
+      }],
+    });
+    const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+    const put = handlers.get('PUT /api/config/settings/agent-defaults/:agentName');
+
+    const orchestratorResponse = makeResponse();
+    const builderResponse = makeResponse();
+    await Promise.all([
+      put({
+        body: { providerId: 'openai', modelId: 'gpt-5.6-sol', variant: 'xhigh' },
+        params: { agentName: 'orchestrator' },
+        principal,
+      }, orchestratorResponse),
+      put({
+        body: { providerId: 'anthropic', modelId: 'claude-sonnet-4-6', variant: 'high' },
+        params: { agentName: 'Builder' },
+        principal,
+      }, builderResponse),
+    ]);
+
+    expect(orchestratorResponse.statusCode).toBe(200);
+    expect(builderResponse.statusCode).toBe(200);
+    expect(harness.getUserPolicy(USER_IDS.developer).settings_overrides).toEqual({
+      themeId: 'personal-theme',
+      agentModelSelections: {
+        Orchestrator: { providerId: 'openai', modelId: 'gpt-5.6-sol', variant: 'xhigh' },
+        Builder: { providerId: 'anthropic', modelId: 'claude-sonnet-4-6', variant: 'high' },
+      },
+    });
+    expect(harness.getUserPolicy(USER_IDS.admin).settings_overrides.agentModelSelections.Orchestrator.modelId)
+      .toBe('admin-model');
+
+    const refreshed = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+    expect(refreshed.settingsOverrides.agentModelSelections.Builder.modelId).toBe('claude-sonnet-4-6');
+    const settingsResponse = makeResponse();
+    await handlers.get('GET /api/config/settings')({ principal: refreshed }, settingsResponse, vi.fn());
+    expect(settingsResponse.payload.multiUser.settingsOverrideKeys).toEqual(['agentModelSelections', 'themeId']);
+
+    const malformedResponse = makeResponse();
+    await put({
+      body: { providerId: 'openai', modelId: 'gpt-5.6-sol', variant: 'medium', secret: 'nope' },
+      params: { agentName: 'Orchestrator' },
+      principal: refreshed,
+    }, malformedResponse);
+    expect(malformedResponse.statusCode).toBe(400);
+
+    const councilResponse = makeResponse();
+    await put({
+      body: { providerId: 'openai', modelId: 'gpt-5.6-sol', variant: 'medium' },
+      params: { agentName: 'Council' },
+      principal: refreshed,
+    }, councilResponse);
+    expect(councilResponse.statusCode).toBe(409);
+    expect(councilResponse.payload.code).toBe('AGENT_DEFAULT_HOST_MANAGED');
+
+    const resetResponse = makeResponse();
+    await handlers.get('DELETE /api/config/settings/agent-defaults/:agentName')({
+      params: { agentName: 'ORCHESTRATOR' },
+      principal: refreshed,
+    }, resetResponse);
+    expect(resetResponse.statusCode).toBe(200);
+    expect(harness.getUserPolicy(USER_IDS.developer).settings_overrides.agentModelSelections)
+      .toEqual({ Builder: { providerId: 'anthropic', modelId: 'claude-sonnet-4-6', variant: 'high' } });
+
+    const genericSettingsResponse = makeResponse();
+    await handlers.get('PUT /api/config/settings')({
+      body: { defaultAgent: 'Builder', defaultPlanMode: false },
+      principal: refreshed,
+    }, genericSettingsResponse, vi.fn());
+    expect(genericSettingsResponse.statusCode).toBe(200);
+    const resetFieldResponse = makeResponse();
+    await handlers.get('DELETE /api/config/settings/overrides/:field')({
+      params: { field: 'defaultAgent' },
+      principal: refreshed,
+    }, resetFieldResponse);
+    expect(resetFieldResponse.payload.defaultAgent).toBe('Orchestrator');
+    expect(resetFieldResponse.payload.multiUser.settingsOverrideKeys).not.toContain('defaultAgent');
+
+    const audit = harness.auditEvents.find((event) => event.action === 'settings.agent_default_updated');
+    expect(audit?.metadata).toEqual({
+      agentName: expect.any(String),
+      fields: expect.any(Array),
+      changedBy: 'user',
+    });
+    expect(JSON.stringify(audit?.metadata)).not.toContain('gpt-5.6-sol');
+    expect(JSON.stringify(audit?.metadata)).not.toContain('claude-sonnet-4-6');
+  });
+
+  it('resolves managed child execution from root ownership without affecting administrators or Council', async () => {
+    const repositoryPath = await createGitRepo();
+    const projectId = '73333333-3333-4333-8333-333333333333';
+    const secondDeveloperId = '33333333-3333-4333-8333-333333333333';
+    const harness = await createHarness({
+      profiles: [
+        fixtureProfile('developer'),
+        fixtureProfile('admin'),
+        fixtureProfile('developer', {
+          id: secondDeveloperId,
+          email: 'second-developer@example.test',
+          display_name: 'Second Developer',
+          account_kind: 'human',
+        }),
+      ],
+      projects: [{
+        id: projectId,
+        label: 'Managed project',
+        repository_path: repositoryPath,
+        remote_url: null,
+        default_branch: 'main',
+        status: 'active',
+      }],
+      accessRows: [
+        { user_id: USER_IDS.developer, project_id: projectId, is_default: true, github_account_id: null },
+        { user_id: USER_IDS.admin, project_id: projectId, is_default: true, github_account_id: null },
+        { user_id: secondDeveloperId, project_id: projectId, is_default: true, github_account_id: null },
+      ],
+      branchRows: [
+        { user_id: USER_IDS.developer, project_id: projectId, branch_name: 'developer', workspace_path: repositoryPath, is_default: true },
+        { user_id: USER_IDS.admin, project_id: projectId, branch_name: 'main', workspace_path: repositoryPath, is_default: true },
+        { user_id: secondDeveloperId, project_id: projectId, branch_name: 'second', workspace_path: repositoryPath, is_default: true },
+      ],
+      ownershipRows: [
+        {
+          session_id: 'ses_developer_root',
+          user_id: USER_IDS.developer,
+          project_id: projectId,
+          branch_name: 'developer',
+          public_directory: repositoryPath,
+          archived_at: null,
+        },
+        {
+          session_id: 'ses_admin_root',
+          user_id: USER_IDS.admin,
+          project_id: projectId,
+          branch_name: 'main',
+          public_directory: repositoryPath,
+          archived_at: null,
+        },
+        {
+          session_id: 'ses_second_developer_root',
+          user_id: secondDeveloperId,
+          project_id: projectId,
+          branch_name: 'second',
+          public_directory: repositoryPath,
+          archived_at: null,
+        },
+      ],
+      userPolicies: [{
+        user_id: USER_IDS.developer,
+        settings_overrides: {
+          agentModelSelections: {
+            ORCHESTRATOR: { providerId: 'anthropic', modelId: 'claude-sonnet-4-6', variant: 'high' },
+            Council: { providerId: 'anthropic', modelId: 'must-not-run' },
+          },
+        },
+      }, {
+        user_id: USER_IDS.admin,
+        settings_overrides: {
+          agentModelSelections: {
+            Orchestrator: { providerId: 'anthropic', modelId: 'admin-must-not-run' },
+          },
+        },
+      }],
+    });
+    const agents = [{
+      name: 'Orchestrator',
+      model: { providerID: 'openai', modelID: 'gpt-5.6-sol' },
+      variant: 'medium',
+      modelRefs: ['openai/gpt-5.6-sol'],
+    }, {
+      name: 'Council',
+      model: { providerID: 'openai', modelID: 'gpt-5.6-sol' },
+      variant: 'medium',
+      modelRefs: ['openai/gpt-5.6-sol', 'anthropic/claude-sonnet-4-6'],
+    }];
+    registerAdminRoutes(harness, { listConfigAgents: () => agents });
+
+    await expect(harness.runtime.resolveSessionAgentExecution({
+      rootSessionId: 'ses_developer_root',
+      directory: repositoryPath,
+      agent: 'orchestrator',
+    })).resolves.toMatchObject({
+      providerId: 'anthropic',
+      modelId: 'claude-sonnet-4-6',
+      variant: 'high',
+      source: 'personal',
+    });
+    await expect(harness.runtime.resolveSessionAgentExecution({
+      rootSessionId: 'ses_admin_root',
+      directory: repositoryPath,
+      agent: 'Orchestrator',
+    })).resolves.toMatchObject({
+      providerId: 'openai',
+      modelId: 'gpt-5.6-sol',
+      source: 'inherited',
+    });
+    await expect(harness.runtime.resolveSessionAgentExecution({
+      rootSessionId: 'ses_second_developer_root',
+      directory: repositoryPath,
+      agent: 'Orchestrator',
+    })).resolves.toMatchObject({
+      providerId: 'openai',
+      modelId: 'gpt-5.6-sol',
+      source: 'inherited',
+    });
+    await expect(harness.runtime.resolveSessionAgentExecution({
+      rootSessionId: 'ses_developer_root',
+      directory: repositoryPath,
+      agent: 'Council',
+    })).resolves.toMatchObject({
+      providerId: 'openai',
+      modelId: 'gpt-5.6-sol',
+      source: 'host-managed',
+    });
+    await expect(harness.runtime.resolveSessionAgentExecution({
+      rootSessionId: 'ses_missing',
+      directory: repositoryPath,
+      agent: 'Orchestrator',
+    })).rejects.toMatchObject({ code: 'managed_orchestration_owner_unavailable', statusCode: 503 });
+    await expect(harness.runtime.resolveSessionAgentExecution({
+      rootSessionId: 'ses_developer_root',
+      directory: repositoryPath,
+      agent: 'Unknown agent',
+      fallbackExecution: { providerId: 'openai', modelId: 'must-not-run' },
+    })).rejects.toMatchObject({ code: 'managed_agent_model_unavailable', statusCode: 409 });
   });
 
   it('unregisters a managed project, drops grants, and hides it from the admin list', async () => {

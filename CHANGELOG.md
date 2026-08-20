@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- OpenCode: update the bundled SDK dependency and managed runtime target to 1.18.19 across web, UI, VS Code, and the workspace lockfile.
+
+## [1.1.5] - 2026-08-19
+
+- Sessions: add adaptive first-page history loading, stale-while-revalidate snapshots, bounded intent prefetch, focused session subscriptions, and opt-in first-visible performance metrics across web, Electron, and VS Code.
+- Chat: throttle only visible streaming Markdown projections, preserve canonical transcript state, pause presentation animations while hidden or reduced-motion, and reduce status, skeleton, and sidebar render work.
+- Orchestration: classify structured provider usage limits, coalesce matching status reads, and expose paged references for large managed-task results with scoped, parity-tested web and VS Code contracts.
+- Desktop: warn on quit only for active tunnels, running work, or future pending schedules; fail closed when background risk cannot be verified; and keep Electron and legacy Tauri behavior aligned.
+- Performance: add a deterministic Electron resource benchmark with loopback streaming fixtures, Chromium traces, memory sampling, and baseline acceptance gates.
+- Release: bump DevRyan workspace, Electron, VS Code, web, runtime packages, and legacy desktop metadata to 1.1.5.
+
 ## [1.1.4] - 2026-08-18
 
 - Harness: enforce four-minute shell defaults with a one-hour ceiling, persist privacy-bounded exact-call deadlines, and reconcile overdue commands safely across web, Electron, and VS Code without replaying them.

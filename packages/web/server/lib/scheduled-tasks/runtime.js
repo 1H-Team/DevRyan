@@ -784,10 +784,15 @@ export const createScheduledTasksRuntime = (deps) => {
 
   const getStatus = () => {
     let enabledCount = 0;
+    let pendingCount = 0;
+    const nowMs = Date.now();
     for (const taskMap of tasksByProject.values()) {
       for (const task of taskMap.values()) {
         if (task?.enabled) {
           enabledCount += 1;
+          if (Number.isFinite(computeNextRunAt(task, nowMs))) {
+            pendingCount += 1;
+          }
         }
       }
     }
@@ -795,8 +800,10 @@ export const createScheduledTasksRuntime = (deps) => {
     const runningCount = runningTaskKeys.size;
     return {
       hasEnabledScheduledTasks: enabledCount > 0,
+      hasPendingScheduledTasks: pendingCount > 0,
       hasRunningScheduledTasks: runningCount > 0,
       enabledScheduledTasksCount: enabledCount,
+      pendingScheduledTasksCount: pendingCount,
       runningScheduledTasksCount: runningCount,
     };
   };

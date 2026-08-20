@@ -5,12 +5,21 @@ import * as vscode from 'vscode';
 import { randomUUID } from 'crypto';
 import {
   removeProviderConfig,
+  removeAntigravityProviderConfig,
   getProviderSources,
   ensureAnthropicOAuthProviderConfig,
   getAgentConfig,
   listConfigAgents,
 } from './opencodeConfig';
-import { getProviderAuth, readAuthFile, removeProviderAuth, writeAuthFile } from './opencodeAuth';
+import {
+  getAntigravityAccountsSource,
+  getProviderAuth,
+  getProviderAuthLookupIds,
+  readAuthFile,
+  removeAntigravityAccounts,
+  removeProviderAuthForLookupIds,
+  writeAuthFile,
+} from './opencodeAuth';
 import {
   fetchQuotaForProvider,
   listConfiguredQuotaProviders,
@@ -843,18 +852,28 @@ export async function handleSystemBridgeMessage(
         if (normalizedScope === 'auth') {
           removed = providerId === CURSOR_ACP_PROVIDER_ID
             ? clearCursorSdkAuth({ readAuth: readAuthFile, writeAuth: writeAuthFile })
-            : removeProviderAuth(providerId);
+            : providerId === 'antigravity'
+              ? removeAntigravityAccounts()
+              : removeProviderAuthForLookupIds(providerId);
         } else if (normalizedScope === 'user' || normalizedScope === 'project' || normalizedScope === 'custom') {
           removed = removeProviderConfig(providerId, workingDirectory, normalizedScope);
         } else if (normalizedScope === 'all') {
           const authRemoved = providerId === CURSOR_ACP_PROVIDER_ID
             ? clearCursorSdkAuth({ readAuth: readAuthFile, writeAuth: writeAuthFile })
-            : removeProviderAuth(providerId);
-          const userRemoved = removeProviderConfig(providerId, workingDirectory, 'user');
+            : providerId === 'antigravity'
+              ? removeAntigravityAccounts()
+              : removeProviderAuthForLookupIds(providerId);
+          const userRemoved = providerId === 'antigravity'
+            ? removeAntigravityProviderConfig(workingDirectory, 'user')
+            : removeProviderConfig(providerId, workingDirectory, 'user');
           const projectRemoved = workingDirectory
-            ? removeProviderConfig(providerId, workingDirectory, 'project')
+            ? providerId === 'antigravity'
+              ? removeAntigravityProviderConfig(workingDirectory, 'project')
+              : removeProviderConfig(providerId, workingDirectory, 'project')
             : false;
-          const customRemoved = removeProviderConfig(providerId, workingDirectory, 'custom');
+          const customRemoved = providerId === 'antigravity'
+            ? removeAntigravityProviderConfig(workingDirectory, 'custom')
+            : removeProviderConfig(providerId, workingDirectory, 'custom');
           removed = authRemoved || userRemoved || projectRemoved || customRemoved;
         } else {
           return { id, type, success: false, error: 'Invalid scope' };
@@ -921,7 +940,7 @@ export async function handleSystemBridgeMessage(
         const sources = getProviderSources(providerId, workingDirectory);
         const authLookupIds = ['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude'].includes(providerId)
           ? [providerId, 'anthropic', 'claude']
-          : [providerId];
+          : getProviderAuthLookupIds(providerId);
         const auth = authLookupIds.map((id) => getProviderAuth(id)).find(Boolean);
         if (providerId === CURSOR_ACP_PROVIDER_ID) {
           sources.auth.exists = Boolean(
@@ -933,6 +952,9 @@ export async function handleSystemBridgeMessage(
           );
         } else {
           sources.auth.exists = Boolean(auth);
+        }
+        if (providerId === 'antigravity') {
+          sources.auth = getAntigravityAccountsSource();
         }
         return { id, type, success: true, data: { providerId, sources } };
       } catch (error) {

@@ -16,6 +16,7 @@ describe("getToolMetadata", () => {
       ["StructuredOutput", "Structured Output"],
       ["council", "Council"],
       ["devryan_task", "Devryan Task"],
+      ["gpt_imagegen", "GPT Image Generation"],
     ])
 
     for (const [tool, displayName] of expectedNames) {
@@ -47,13 +48,13 @@ describe("getToolMetadata", () => {
   });
 
   test("prefixes direct Context Mode tool names", () => {
-    expect(getToolMetadata("ctx_execute_file").displayName).toBe("C-Mode: Execute File");
-    expect(getToolMetadata("ctx_execute").displayName).toBe("C-Mode: Execute");
-    expect(getToolMetadata("ctx_future_action").displayName).toBe("C-Mode: Future Action");
+    expect(getToolMetadata("ctx_execute_file").displayName).toBe("Context Mode: Execute File");
+    expect(getToolMetadata("ctx_execute").displayName).toBe("Context Mode: Execute");
+    expect(getToolMetadata("ctx_future_action").displayName).toBe("Context Mode: Future Action");
   });
 
   test("prefixes canonical MCP-wrapped Context Mode tool names", () => {
-    expect(getToolMetadata("mcp__context-mode__ctx_execute_file").displayName).toBe("C-Mode: Execute File");
-    expect(getToolMetadata("mcp__context_mode__ctx_execute").displayName).toBe("C-Mode: Execute");
+    expect(getToolMetadata("mcp__context-mode__ctx_execute_file").displayName).toBe("Context Mode: Execute File");
+    expect(getToolMetadata("mcp__context_mode__ctx_execute").displayName).toBe("Context Mode: Execute");
   });
 });

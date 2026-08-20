@@ -1,5 +1,12 @@
 import React from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { useDocumentAnimationState } from '@/hooks/useDocumentAnimationState';
+import { cn } from '@/lib/utils';
+import {
+  formatRetryCountdown,
+  getRetryCountdownBoundaryDelayMs,
+  getRetryCountdownSeconds,
+  toRetryTargetTimestamp,
+} from './workingPlaceholderTiming';
 
 interface WorkingPlaceholderProps {
   isWorking: boolean;
@@ -12,45 +19,30 @@ interface WorkingPlaceholderProps {
 
 const STATUS_DISPLAY_TIME_MS = 1200;
 
-const EPOCH_SECONDS_THRESHOLD = 1_000_000_000;
-const EPOCH_MILLISECONDS_THRESHOLD = 1_000_000_000_000;
-
-const toRetryTargetTimestamp = (next: number): number => {
-  if (next >= EPOCH_MILLISECONDS_THRESHOLD) {
-    return next;
-  }
-  if (next >= EPOCH_SECONDS_THRESHOLD) {
-    return next * 1000;
-  }
-  return Date.now() + next;
-};
-
-const formatRetryCountdown = (seconds: number): string => {
-  if (seconds < 60) {
-    return `${seconds}s`;
-  }
-
-  if (seconds < 3600) {
-    const minutes = Math.floor(seconds / 60);
-    const remainderSeconds = seconds % 60;
-    return remainderSeconds > 0 ? `${minutes}m ${remainderSeconds}s` : `${minutes}m`;
-  }
-
-  if (seconds < 86400) {
-    const hours = Math.floor(seconds / 3600);
-    const remainderMinutes = Math.floor((seconds % 3600) / 60);
-    return remainderMinutes > 0 ? `${hours}h ${remainderMinutes}m` : `${hours}h`;
-  }
-
-  const days = Math.floor(seconds / 86400);
-  const remainderHours = Math.floor((seconds % 86400) / 3600);
-  if (remainderHours > 0) {
-    return `${days}d ${remainderHours}h`;
-  }
-
-  return `${days}d`;
-
-};
+export function StatusShimmerText({
+  text,
+  shouldAnimate,
+  className,
+}: {
+  text: string;
+  shouldAnimate: boolean;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn('oc-live-status-shimmer', className)}
+      data-animation-state={shouldAnimate ? 'running' : 'paused'}
+      data-live-status-shimmer="true"
+    >
+      <span className="oc-live-status-shimmer__label">{text}</span>
+      <span aria-hidden="true" className="oc-live-status-shimmer__focus">
+        <span className="oc-live-status-shimmer__counter">
+          <span className="oc-live-status-shimmer__aligned">{text}</span>
+        </span>
+      </span>
+    </span>
+  );
+}
 
 export function WorkingPlaceholder({
   isWorking,
@@ -59,7 +51,7 @@ export function WorkingPlaceholder({
   isWaitingForPermission,
   retryInfo,
 }: WorkingPlaceholderProps) {
-  const shouldReduceMotion = useReducedMotion() === true;
+  const { isVisible, shouldAnimate } = useDocumentAnimationState();
   const [displayedText, setDisplayedText] = React.useState<string | null>(null);
   const [displayedPermission, setDisplayedPermission] = React.useState<boolean>(false);
   const displayedTextRef = React.useRef(displayedText);
@@ -72,26 +64,40 @@ export function WorkingPlaceholder({
   const processQueueTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Countdown state for retry mode
-  const [retryCountdown, setRetryCountdown] = React.useState<number | null>(null);
+  const [retryCountdownLabel, setRetryCountdownLabel] = React.useState<string | null>(null);
+  const retryAttempt = retryInfo?.attempt;
+  const rawRetryNext = retryInfo?.next;
+  const retryTargetAt = React.useMemo(() => {
+    void retryAttempt;
+    if (!rawRetryNext || rawRetryNext <= 0) return null;
+    return toRetryTargetTimestamp(rawRetryNext);
+  }, [rawRetryNext, retryAttempt]);
 
   React.useEffect(() => {
-    const rawNext = retryInfo?.next;
-    if (!rawNext || rawNext <= 0) {
-      setRetryCountdown(null);
+    if (retryTargetAt === null) {
+      setRetryCountdownLabel((current) => current === null ? current : null);
       return;
     }
 
-    const retryTargetAt = toRetryTargetTimestamp(rawNext);
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     const update = () => {
-      const remaining = Math.max(0, retryTargetAt - Date.now());
-      setRetryCountdown(Math.ceil(remaining / 1000));
+      const now = Date.now();
+      const seconds = getRetryCountdownSeconds(retryTargetAt, now);
+      const nextLabel = seconds > 0 ? formatRetryCountdown(seconds) : null;
+      setRetryCountdownLabel((current) => current === nextLabel ? current : nextLabel);
+
+      if (!isVisible || seconds === 0) return;
+      const delay = getRetryCountdownBoundaryDelayMs(retryTargetAt, now);
+      if (delay === null) return;
+      timer = setTimeout(update, delay);
     };
 
     update();
-    const id = setInterval(update, 500);
-    return () => clearInterval(id);
-  }, [retryInfo?.next, retryInfo?.attempt]);
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [isVisible, retryTargetAt]);
 
   const clearTimers = React.useCallback(() => {
     if (processQueueTimerRef.current) {
@@ -109,7 +115,7 @@ export function WorkingPlaceholder({
   }, [clearTimers]);
 
   const scheduleQueueProcess = React.useCallback(() => {
-    if (processQueueTimerRef.current) return;
+    if (!isVisible || processQueueTimerRef.current) return;
     const elapsed = Date.now() - statusShownAtRef.current;
     const remaining = Math.max(0, STATUS_DISPLAY_TIME_MS - elapsed);
     processQueueTimerRef.current = setTimeout(() => {
@@ -120,7 +126,7 @@ export function WorkingPlaceholder({
         showStatus(queued.text, queued.permission);
       }
     }, remaining);
-  }, [showStatus]);
+  }, [isVisible, showStatus]);
 
   React.useEffect(() => {
     if (!isWorking) {
@@ -143,6 +149,12 @@ export function WorkingPlaceholder({
     const incomingGeneric = Boolean(isGenericStatus) && !incomingPermission;
 
     if (!incomingText) {
+      return;
+    }
+
+    if (!isVisible) {
+      clearTimers();
+      queuedStatusRef.current = { text: incomingText, permission: incomingPermission };
       return;
     }
 
@@ -173,6 +185,7 @@ export function WorkingPlaceholder({
     statusText,
     isGenericStatus,
     isWaitingForPermission,
+    isVisible,
     retryInfo,
     clearTimers,
     showStatus,
@@ -189,8 +202,8 @@ export function WorkingPlaceholder({
   // (e.g. an out-of-usage / rate-limit message) so the user knows why.
   if (retryInfo) {
     const attemptLabel = retryInfo.attempt && retryInfo.attempt > 1 ? ` (attempt ${retryInfo.attempt})` : '';
-    const countdownLabel = retryCountdown !== null && retryCountdown > 0
-      ? ` in ${formatRetryCountdown(retryCountdown)}`
+    const countdownLabel = retryCountdownLabel
+      ? ` in ${retryCountdownLabel}`
       : '';
     const retryText = `Retrying${countdownLabel}${attemptLabel}`;
     const retryReason = typeof retryInfo.message === 'string' ? retryInfo.message.trim() : '';
@@ -203,12 +216,11 @@ export function WorkingPlaceholder({
         aria-label={retryReason ? `${retryText} — ${retryReason}` : retryText}
       >
         <span className="typography-ui-header flex min-w-0 items-center">
-          <span
-            className="oc-text-shimmer whitespace-nowrap"
-            data-shimmer-text={retryText}
-          >
-            {retryText}
-          </span>
+          <StatusShimmerText
+            text={retryText}
+            shouldAnimate={shouldAnimate}
+            className="shrink-0"
+          />
           {retryReason ? (
             <span className="truncate">&nbsp;— {retryReason}</span>
           ) : null}
@@ -226,31 +238,17 @@ export function WorkingPlaceholder({
   return (
     <div
       className={
-        'flex h-full items-center text-muted-foreground pl-0.5'
+        'flex h-full min-w-0 max-w-full items-center text-muted-foreground pl-0.5'
       }
       role="status"
       aria-live={displayedPermission ? 'assertive' : 'polite'}
       data-waiting={displayedPermission ? 'true' : undefined}
     >
-      <span className="sr-only">{label}</span>
-      <span
-        aria-hidden="true"
-        className="typography-ui-header relative inline-flex overflow-hidden"
-      >
-        <AnimatePresence mode="popLayout" initial={false}>
-          <motion.span
-            key={label}
-            initial={shouldReduceMotion ? false : { y: 12, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={shouldReduceMotion ? { opacity: 0 } : { y: -12, opacity: 0 }}
-            transition={{ duration: shouldReduceMotion ? 0 : 0.25, ease: 'easeOut' }}
-            className="oc-text-shimmer whitespace-nowrap"
-            data-shimmer-text={label}
-          >
-            {label}
-          </motion.span>
-        </AnimatePresence>
-      </span>
+      <StatusShimmerText
+        text={label}
+        shouldAnimate={shouldAnimate}
+        className="typography-ui-header"
+      />
     </div>
   );
 }

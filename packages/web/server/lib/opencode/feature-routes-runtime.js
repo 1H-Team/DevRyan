@@ -86,6 +86,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
 
     const {
       getProviderSources,
+      removeAntigravityProviderConfig,
       removeProviderConfig,
       ensureAnthropicOAuthProviderConfig,
     } = await import('./index.js');
@@ -115,6 +116,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       validateDirectoryPath,
       resolveProjectDirectory,
       getProviderSources,
+      removeAntigravityProviderConfig,
       removeProviderConfig,
       ensureAnthropicOAuthProviderConfig,
       markConfigChange,

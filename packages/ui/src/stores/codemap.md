@@ -6,6 +6,12 @@ Zustand store layer for persisted and session-local client state: UI preferences
 ## Design
 - **Store-per-domain**: each feature has a focused store (`useUIStore`, `useConfigStore`, `useGitStore`, `useSkillsStore`, etc.) to limit cross-feature coupling.
 - **Managed project projection**: `useProjectsStore.ts` treats the accepted managed principal's assignment list as authoritative immediately at principal acceptance and again during settings hydration. It groups assigned branches by project, replaces stale host-path projects with public `/projects/*` entries, and selects the default assignment before app effects mount. Git-integrate temp directories (`devryan-integrate-*`) are ignored by `addProject` and stripped during settings sanitization so leftover conflict worktrees cannot reappear in the admin sidebar.
+- **Managed account defaults**: `useConfigStore.ts` keeps sparse per-agent
+  model/thinking overrides account-global, reports personal override keys from
+  settings hydration, and persists/resets them only through explicit Sessions
+  settings actions. `lib/agentDefaultResolution.ts` is shared with send
+  resolution; composer and directory selection stores never write account
+  defaults.
 - **Cold-runtime status leaf**: `useAgentRuntimeWarmupStore.ts` carries only the currently warming directory so generic assistant busy rows can show honest project-preparation status without subscribing app chrome to live session collections.
 - **Middleware stack**: many stores use `persist` + `devtools`; persistence uses `getSafeStorage()` for environment-safe access.
 - **Utility-first reducers**: `utils/*` centralizes reusable transforms/projectors (stream debug, message/context utilities, permission helpers).

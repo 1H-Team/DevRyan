@@ -84,6 +84,66 @@ describe("getContextUsageFromMessages", () => {
     expect(usage?.activeInputTokens).toBe(700)
     expect(usage?.lastMessageId).toBe("assistant-1")
   })
+
+  test("uses the latest measured step-finish when message tokens are present but still zero", () => {
+    const usage = getContextUsageFromMessages([{
+      info: makeMessage({
+        id: "assistant-1",
+        role: "assistant",
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      }),
+      parts: [
+        {
+          id: "part-1",
+          type: "step-finish",
+          tokens: { input: 400, output: 25, reasoning: 5, cache: { read: 100, write: 0 } },
+        } as never,
+        {
+          id: "part-2",
+          type: "step-finish",
+          tokens: { input: 700, output: 50, reasoning: 10, cache: { read: 200, write: 25 } },
+        } as never,
+      ],
+    }], capacity(10_000))
+
+    expect(usage?.activeInputTokens).toBe(925)
+    expect(usage?.lastOutputTokens).toBe(50)
+  })
+
+  test("keeps positive message tokens authoritative over terminal part tokens", () => {
+    const usage = getContextUsageFromMessages([{
+      info: makeMessage({
+        id: "assistant-1",
+        role: "assistant",
+        tokens: { input: 800, output: 30, reasoning: 0, cache: { read: 100, write: 0 } },
+      }),
+      parts: [{
+        id: "part-1",
+        type: "step-finish",
+        tokens: { input: 100, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
+      } as never],
+    }], capacity(10_000))
+
+    expect(usage?.activeInputTokens).toBe(900)
+    expect(usage?.lastOutputTokens).toBe(30)
+  })
+
+  test("ignores malformed and non-positive message and terminal token values", () => {
+    const usage = getContextUsageFromMessages([{
+      info: makeMessage({
+        id: "assistant-1",
+        role: "assistant",
+        tokens: { total: Number.NaN, input: -10, output: "5", cache: { read: -1, write: null } },
+      }),
+      parts: [{
+        id: "part-1",
+        type: "step-finish",
+        tokens: { input: -100, output: Number.POSITIVE_INFINITY },
+      } as never],
+    }], capacity(10_000))
+
+    expect(usage).toBeNull()
+  })
 })
 
 describe("getProviderContextUsageFromMessages", () => {
@@ -109,6 +169,79 @@ describe("getProviderContextUsageFromMessages", () => {
     expect(usage?.lastMessageId).toBe("assistant-large")
     expect(usage?.capacityLimit).toBe(20_000)
     expect(usage?.percentage).toBe(10)
+  })
+
+  test("shows official context windows for supported OpenAI OAuth models", () => {
+    const officialModels = [
+      ["gpt-5.4", 1_050_000],
+      ["gpt-5.4-fast", 1_050_000],
+      ["gpt-5.4-mini", 400_000],
+      ["gpt-5.4-mini-fast", 400_000],
+      ["gpt-5.5", 1_050_000],
+      ["gpt-5.5-fast", 1_050_000],
+      ["gpt-5.6-sol", 1_050_000],
+      ["gpt-5.6-sol-fast", 1_050_000],
+      ["gpt-5.6-terra", 1_050_000],
+      ["gpt-5.6-terra-fast", 1_050_000],
+      ["gpt-5.6-luna", 1_050_000],
+      ["gpt-5.6-luna-fast", 1_050_000],
+    ] as const
+    const oauthProviders: ContextUsageProviderLike[] = [{
+      id: "openai",
+      authType: "oauth",
+      models: officialModels.map(([id, context]) => ({
+        id,
+        limit: { input: 276_000, context, output: 128_000 },
+      })),
+    }]
+
+    for (const [modelID, expectedCapacity] of officialModels) {
+      const usage = getProviderContextUsageFromMessages([
+        makeMessage({
+          id: `assistant-${modelID}`,
+          role: "assistant",
+          providerID: "openai",
+          modelID,
+          tokens: { input: 100_000 },
+        }),
+      ], oauthProviders)
+
+      expect(usage?.capacityLimit).toBe(expectedCapacity)
+      expect(usage?.capacityBasis).toBe("context")
+      expect(usage?.inputLimit).toBe(276_000)
+    }
+  })
+
+  test("keeps input capacity authoritative outside the supported OpenAI OAuth rows", () => {
+    const message = (providerID: string, modelID: string) => [makeMessage({
+      id: `assistant-${providerID}-${modelID}`,
+      role: "assistant",
+      providerID,
+      modelID,
+      tokens: { input: 100_000 },
+    })]
+    const limit = { input: 276_000, context: 1_050_000, output: 128_000 }
+
+    const apiUsage = getProviderContextUsageFromMessages(message("openai", "gpt-5.4"), [{
+      id: "openai",
+      authType: "api",
+      models: [{ id: "gpt-5.4", limit }],
+    }])
+    const unknownOAuthUsage = getProviderContextUsageFromMessages(message("openai", "gpt-6"), [{
+      id: "openai",
+      authType: "oauth",
+      models: [{ id: "gpt-6", limit }],
+    }])
+    const anthropicUsage = getProviderContextUsageFromMessages(message("anthropic", "claude"), [{
+      id: "anthropic",
+      authType: "oauth",
+      models: [{ id: "claude", limit }],
+    }])
+
+    for (const usage of [apiUsage, unknownOAuthUsage, anthropicUsage]) {
+      expect(usage?.capacityLimit).toBe(276_000)
+      expect(usage?.capacityBasis).toBe("input")
+    }
   })
 
   test("keeps measured tokens but makes capacity unavailable without message provenance", () => {

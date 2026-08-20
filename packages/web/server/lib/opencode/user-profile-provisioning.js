@@ -18,6 +18,15 @@ import {
   removeDevRyanManagedLegacyPluginSpecs,
 } from './managed-plugins.js';
 import { applyManagedMeridianSdkFeaturePolicy } from './meridian-sdk-features.js';
+import {
+  CLAUDE_RUNTIME_MANAGED_OVERRIDES,
+  COMPATIBILITY_MARKER_RELATIVE_PATH,
+  buildClaudeRuntimeCompatibilityMarker,
+  inspectClaudeRuntimeCompatibility,
+  mergeManagedClaudeRuntimeDependencies,
+  mergeManagedClaudeRuntimeOverrides,
+  readClaudeRuntimeCompatibilityMarker,
+} from './claude-runtime-compatibility.js';
 
 const DEFAULT_CONFIG_ROOT = path.resolve(process.cwd(), 'server', 'default-config');
 const DEFAULT_PROFILE_ROOT = path.join(DEFAULT_CONFIG_ROOT, 'user-profile');
@@ -26,7 +35,6 @@ const MERIDIAN_POLICY_MARKER_RELATIVE_PATH = path.join(
   '.openchamber',
   'meridian-sdk-features-policy.json',
 );
-const MERIDIAN_PACKAGE = '@rynfar/meridian';
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const hashContent = (content) => crypto.createHash('sha256').update(content).digest('hex');
@@ -50,21 +58,41 @@ const mergeOpenCodeConfig = (current, baseline) => ({
   },
 });
 
-const mergePackageJson = (current, baseline) => {
+const mergePackageJson = (
+  current,
+  baseline,
+  previousClaudeRuntimeMarker,
+  { assumePreviouslyManaged = false } = {},
+) => {
   const currentDependencies = isRecord(current.dependencies) ? current.dependencies : {};
-  const dependencies = {
+  const baselineDependencies = {
     ...currentDependencies,
     ...(isRecord(baseline.dependencies) ? baseline.dependencies : {}),
     ...DEVRYAN_MANAGED_PROFILE_DEPENDENCIES,
   };
-  const explicitMeridianPin = currentDependencies[MERIDIAN_PACKAGE];
-  if (typeof explicitMeridianPin === 'string' && explicitMeridianPin.trim()) {
-    dependencies[MERIDIAN_PACKAGE] = explicitMeridianPin;
-  }
+  const claudeRuntimeDependencies = mergeManagedClaudeRuntimeDependencies(
+    current,
+    { ...baseline, dependencies: baselineDependencies },
+    previousClaudeRuntimeMarker,
+    { assumePreviouslyManaged },
+  );
+  const claudeRuntimeOverrides = mergeManagedClaudeRuntimeOverrides(
+    current,
+    baseline,
+    previousClaudeRuntimeMarker,
+    { assumePreviouslyManaged },
+  );
   return {
-    ...baseline,
-    ...current,
-    dependencies,
+    packageJson: {
+      ...baseline,
+      ...current,
+      dependencies: claudeRuntimeDependencies.dependencies,
+      overrides: claudeRuntimeOverrides.overrides,
+    },
+    claudeRuntimeSources: {
+      ...claudeRuntimeDependencies.sources,
+      ...claudeRuntimeOverrides.sources,
+    },
   };
 };
 
@@ -114,6 +142,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       contextModeHotfixReinstall: null,
       warnings: [],
       meridianPolicy: null,
+      claudeRuntime: null,
       managedPluginIssues: [],
     };
 
@@ -211,8 +240,26 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     const packagePath = pathApi.join(configDirectory, 'package.json');
     const baselinePackage = readJson(fsApi, pathApi.join(profileRoot, 'package.json'));
     const currentPackage = readJson(fsApi, packagePath);
-    const desiredPackage = mergePackageJson(currentPackage, baselinePackage);
+    const previousClaudeRuntimeMarker = readClaudeRuntimeCompatibilityMarker(configDirectory, {
+      fs: fsApi,
+      path: pathApi,
+    });
+    let packageOwnedByManifest = false;
+    try {
+      const currentPackageContent = fsApi.readFileSync(packagePath, 'utf8');
+      packageOwnedByManifest = previousFiles['package.json']?.hash === hashContent(currentPackageContent);
+    } catch {
+      packageOwnedByManifest = false;
+    }
+    const packageMerge = mergePackageJson(
+      currentPackage,
+      baselinePackage,
+      previousClaudeRuntimeMarker,
+      { assumePreviouslyManaged: packageOwnedByManifest },
+    );
+    const desiredPackage = packageMerge.packageJson;
     const dependenciesChanged = JSON.stringify(currentPackage.dependencies || {}) !== JSON.stringify(desiredPackage.dependencies || {});
+    const overridesChanged = JSON.stringify(currentPackage.overrides || {}) !== JSON.stringify(desiredPackage.overrides || {});
     // package.json is assembled from the current user file plus managed defaults,
     // so writing that merged result cannot discard unrelated user fields. Allow
     // newly managed dependencies to land even when another package field changed
@@ -323,7 +370,10 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     }
 
     const dependencyNames = Object.keys(desiredPackage.dependencies || {});
-    const missingDependency = dependencyNames.some((name) => (
+    const missingDependency = [
+      ...dependencyNames,
+      ...Object.keys(CLAUDE_RUNTIME_MANAGED_OVERRIDES),
+    ].some((name) => (
       !fsApi.existsSync(pathApi.join(configDirectory, 'node_modules', ...name.split('/')))
     ));
     const managedPluginIssuesBeforeInstall = inspectManagedPluginInstallation({
@@ -331,7 +381,22 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       fs: fsApi,
       path: pathApi,
     });
-    if (dependenciesChanged || missingDependency || managedPluginIssuesBeforeInstall.length > 0) {
+    const claudeRuntimeBeforeInstall = inspectClaudeRuntimeCompatibility({
+      configDirectory,
+      packageJson: desiredPackage,
+      marker: previousClaudeRuntimeMarker,
+      sources: packageMerge.claudeRuntimeSources,
+      fs: fsApi,
+      path: pathApi,
+    });
+    const claudeRuntimeNeedsInstall = claudeRuntimeBeforeInstall.runtimeStatus !== 'ready';
+    if (
+      dependenciesChanged
+      || overridesChanged
+      || missingDependency
+      || managedPluginIssuesBeforeInstall.length > 0
+      || claudeRuntimeNeedsInstall
+    ) {
       result.install = await runCommand('bun', ['install', '--ignore-scripts'], { cwd: configDirectory, env: process.env });
       if (!result.install.ok) {
         result.ok = false;
@@ -376,6 +441,54 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
         result.ok = false;
         result.error = `Managed OpenCode plugin validation failed after provisioning: ${issueSummary}`;
       }
+    }
+
+    result.claudeRuntime = inspectClaudeRuntimeCompatibility({
+      configDirectory,
+      packageJson: desiredPackage,
+      marker: previousClaudeRuntimeMarker,
+      sources: packageMerge.claudeRuntimeSources,
+      fs: fsApi,
+      path: pathApi,
+    });
+    if (
+      result.ok
+      && result.claudeRuntime.source === 'managed'
+      && result.claudeRuntime.runtimeStatus !== 'ready'
+    ) {
+      result.ok = false;
+      result.error = `Managed Claude runtime installation remained ${result.claudeRuntime.runtimeStatus} after provisioning`;
+    }
+    const compatibilityMarkerPath = pathApi.join(
+      configDirectory,
+      COMPATIBILITY_MARKER_RELATIVE_PATH,
+    );
+    const compatibilityMarkerContent = `${JSON.stringify(buildClaudeRuntimeCompatibilityMarker({
+      sources: packageMerge.claudeRuntimeSources,
+      runtime: result.claudeRuntime,
+    }), null, 2)}\n`;
+    let previousCompatibilityMarkerContent = null;
+    try {
+      previousCompatibilityMarkerContent = fsApi.readFileSync(compatibilityMarkerPath, 'utf8');
+    } catch {
+      previousCompatibilityMarkerContent = null;
+    }
+    if (previousCompatibilityMarkerContent !== compatibilityMarkerContent) {
+      fsApi.mkdirSync(pathApi.dirname(compatibilityMarkerPath), { recursive: true });
+      fsApi.writeFileSync(compatibilityMarkerPath, compatibilityMarkerContent, 'utf8');
+      result.changed = true;
+      (previousCompatibilityMarkerContent === null ? result.written : result.updated)
+        .push(compatibilityMarkerPath);
+    }
+    if (result.claudeRuntime.runtimeStatus !== 'ready') {
+      result.warnings.push(
+        `Claude runtime compatibility is ${result.claudeRuntime.runtimeStatus}; `
+        + 'run user-profile provisioning again after repairing the managed packages.',
+      );
+    } else if (result.claudeRuntime.compatibilityStatus === 'upstream_blocked') {
+      result.warnings.push(
+        'Claude Code 2.1.98 is selected for its lower cached-input prefix; the broader cross-provider context target remains upstream-blocked.',
+      );
     }
 
     return result;

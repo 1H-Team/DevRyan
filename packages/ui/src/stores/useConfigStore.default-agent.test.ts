@@ -221,7 +221,7 @@ describe("useConfigStore default agent selection", () => {
     })
   })
 
-  test("managed fresh drafts inherit High for a legacy GPT 5.6 Sol model-only selection", () => {
+  test("managed fresh drafts normalize a personal model-only default to the provider thinking fallback", () => {
     setManagedDeveloper()
     useSessionUIStore.setState({
       currentSessionId: null,
@@ -286,12 +286,12 @@ describe("useConfigStore default agent selection", () => {
       agent: "Orchestrator",
       providerID: "openai",
       modelID: "gpt-5.6-sol",
-      variant: "high",
+      variant: "medium",
     })
-    expect(send.variant).toBe("high")
+    expect(send.variant).toBe("medium")
   })
 
-  test("fresh drafts show the agent's configured variant over a stale managed persisted variant", () => {
+  test("fresh drafts show a managed account's personal thinking default", () => {
     setManagedDeveloper()
     useConfigStore.setState({
       providers: [{
@@ -318,12 +318,10 @@ describe("useConfigStore default agent selection", () => {
 
     useConfigStore.getState().applyDefaultsToCurrent()
 
-    // The draft send path ignores agentModelSelections and uses the agent's
-    // configured variant, so the composer must display that same value.
-    expect(useConfigStore.getState().currentVariant).toBe("high")
+    expect(useConfigStore.getState().currentVariant).toBe("medium")
   })
 
-  test("managed developer fresh draft displays the variant the send resolves despite a stale saved selection", () => {
+  test("managed developer fresh draft displays the same personal variant the send resolves", () => {
     setManagedDeveloper()
     setOrchestratorSolFixture()
     useConfigStore.setState({
@@ -334,11 +332,11 @@ describe("useConfigStore default agent selection", () => {
 
     useConfigStore.getState().applyDefaultsToCurrent()
 
-    expect(useConfigStore.getState().currentVariant).toBe("high")
-    expect(resolveCurrentDraftSendConfig("draft-sol").variant).toBe("high")
+    expect(useConfigStore.getState().currentVariant).toBe("medium")
+    expect(resolveCurrentDraftSendConfig("draft-sol").variant).toBe("medium")
   })
 
-  test("fresh drafts show the agent's configured variant over managed account defaults for the same model", () => {
+  test("fresh drafts use the managed agent default without consulting legacy scalar model settings", () => {
     setManagedDeveloper()
     useConfigStore.setState({
       providers: [{
@@ -367,9 +365,7 @@ describe("useConfigStore default agent selection", () => {
 
     useConfigStore.getState().setAgent("Orchestrator")
 
-    // Account defaults are not consulted by the draft send path either; the
-    // agent's configured variant is what a fresh draft will send.
-    expect(useConfigStore.getState().currentVariant).toBe("high")
+    expect(useConfigStore.getState().currentVariant).toBe("medium")
   })
 
   test("normalizes unsupported managed variants to the provider fallback", () => {

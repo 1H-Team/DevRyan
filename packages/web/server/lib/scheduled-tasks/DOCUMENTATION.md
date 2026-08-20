@@ -38,6 +38,9 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
   - `syncAllProjects()`
   - `syncProject(projectId)`
   - `runNow(projectId, taskId)`
+  - `getStatus()` returns total enabled records separately from pending schedules
+    that have a future execution; desktop quit protection uses the pending and
+    running counts, so expired one-time records do not block quitting.
 
 ## Public exports (routes.js)
 
@@ -49,6 +52,11 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
   - `POST /api/projects/:projectId/scheduled-tasks/:taskId/run`
   - `GET /api/openchamber/scheduled-tasks/status`
   - `GET /api/openchamber/events`
+
+The status response preserves `hasEnabledScheduledTasks` and
+`enabledScheduledTasksCount` for management compatibility. Quit-risk consumers
+must use `hasPendingScheduledTasks` / `pendingScheduledTasksCount` together with
+the running-task fields.
 
 Managed non-admin users can list, create, edit, delete, and run only their own tasks. Administrators can manage all personal and legacy ownerless tasks. All mutations require the standard CSRF header.
 

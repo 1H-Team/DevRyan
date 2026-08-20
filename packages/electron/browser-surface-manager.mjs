@@ -95,6 +95,7 @@ const BROWSER_INSPECT_SCRIPT = `new Promise((resolve) => {
       frame: 'top',
       tag: element.tagName.toLowerCase(),
       text: String(element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 500),
+      outerHTML: String(element.outerHTML || '').replace(/\\0/g, '').trim().slice(0, 6000),
       selector: element.id ? '#' + cssEscape(element.id) : path,
       path,
       bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
@@ -131,14 +132,17 @@ const BROWSER_INSPECT_SCRIPT = `new Promise((resolve) => {
     if (window.__devryanBrowserCancelInspect === cancel) delete window.__devryanBrowserCancelInspect;
   };
   const cancel = () => { cleanup(); overlay.remove(); resolve(null); };
-  const click = (event) => {
+  const click = async (event) => {
     event.preventDefault();
     event.stopPropagation();
     const element = document.elementFromPoint(event.clientX, event.clientY);
-    const result = element ? metadata(element) : null;
     cleanup();
     overlay.remove();
-    resolve(result);
+    await new Promise((resolvePaint) => requestAnimationFrame(() => requestAnimationFrame(resolvePaint)));
+    resolve(element ? {
+      target: metadata(element),
+      viewport: { width: window.innerWidth, height: window.innerHeight, devicePixelRatio: window.devicePixelRatio || 1 },
+    } : null);
   };
   const keydown = (event) => { if (event.key === 'Escape') cancel(); };
   window.__devryanBrowserCancelInspect = cancel;
@@ -983,7 +987,21 @@ export const createBrowserSurfaceManager = ({
       cancel === true ? BROWSER_INSPECT_CANCEL_SCRIPT : BROWSER_INSPECT_SCRIPT,
       true,
     );
-    return cancel === true ? { cancelled: true } : result;
+    if (cancel === true) return { cancelled: true };
+    if (!result?.target || !result?.viewport) return null;
+    const image = await surface.view.webContents.capturePage();
+    return {
+      target: result.target,
+      capture: {
+        mime: 'image/png',
+        base64: image.toPNG().toString('base64'),
+        width: image.getSize().width,
+        height: image.getSize().height,
+        cssWidth: result.viewport.width,
+        cssHeight: result.viewport.height,
+        devicePixelRatio: result.viewport.devicePixelRatio,
+      },
+    };
   };
 
   const destroy = (surface, reason = 'released') => {

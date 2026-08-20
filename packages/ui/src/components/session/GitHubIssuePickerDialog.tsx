@@ -36,7 +36,8 @@ import { createWorktreeSessionForNewBranch } from '@/lib/worktreeSessionCreator'
 import { generateBranchSlug } from '@/lib/git/branchNameGenerator';
 import type { GitHubIssue, GitHubIssueComment, GitHubIssuesListResult, GitHubIssueSummary, GitHubRepoSelector } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
-import { useAuthPrincipal } from '@/lib/authSession';
+import { getAuthPrincipal, useAuthPrincipal } from '@/lib/authSession';
+import { resolveAgentDefaultSelection } from '@/lib/agentDefaultResolution';
 
 const isPrimaryAgent = (mode?: string) => mode === 'primary' || mode === 'all' || mode === undefined || mode === null;
 const normalizeAgentName = (name?: string | null) => name?.trim().toLowerCase() ?? '';
@@ -243,16 +244,23 @@ export function GitHubIssuePickerDialog({
     return resolvePreferredAgentName(visibleAgents, configState.settingsDefaultAgent);
   }, []);
 
-  const resolveAgentModelSelection = React.useCallback((agentName?: string): { providerID: string; modelID: string } | null => {
+  const resolveAgentModelSelection = React.useCallback((agentName?: string): { providerID: string; modelID: string; variant?: string } | null => {
     if (!agentName) return null;
     const configState = useConfigStore.getState();
-    const agent = configState.getVisibleAgents().find((entry) => entry.name === agentName);
-    const providerID = agent?.model?.providerID;
-    const modelID = agent?.model?.modelID;
-    if (!providerID || !modelID) return null;
-    const provider = configState.providers.find((entry) => entry.id === providerID);
-    if (!provider?.models.some((model) => model.id === modelID)) return null;
-    return { providerID, modelID };
+    const principal = getAuthPrincipal();
+    const resolved = resolveAgentDefaultSelection({
+      agentName,
+      agents: configState.getVisibleAgents(),
+      providers: configState.providers,
+      personalSelections: principal.scope === 'managed' && principal.role !== 'admin'
+        ? configState.agentModelSelections
+        : undefined,
+    });
+    return resolved ? {
+      providerID: resolved.providerId,
+      modelID: resolved.modelId,
+      ...(resolved.variant ? { variant: resolved.variant } : {}),
+    } : null;
   }, []);
 
   const resolveAgentVariant = React.useCallback((agentName: string | undefined, providerID: string, modelID: string): string | undefined => {
@@ -420,7 +428,7 @@ export function GitHubIssuePickerDialog({
         return;
       }
 
-      const variant = resolveAgentVariant(agentName, providerID, modelID);
+      const variant = defaultModel?.variant ?? resolveAgentVariant(agentName, providerID, modelID);
 
       try {
         useContextStore.getState().saveSessionModelSelection(sessionId, providerID, modelID);

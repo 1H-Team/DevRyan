@@ -11,13 +11,40 @@ describe('session output spacing', () => {
         const source = read('MessageBody.tsx');
 
         expect(source).toContain('message-content-text flex flex-col leading-relaxed');
-        expect(source).toContain("isMobile ? 'gap-y-1' : 'gap-y-1.5'");
+        expect(source).toContain("isMobile ? 'gap-y-2' : 'gap-y-3'");
         expect(source).toContain('data-session-output-stack="true"');
+        const stackMarker = source.indexOf('data-session-output-stack="true"');
+        const managedTaskList = source.lastIndexOf('<ManagedTaskList');
+        const stackEnd = source.indexOf('\n            </div>\n        </div>\n    );', managedTaskList);
+        expect(stackMarker).toBeGreaterThan(-1);
+        expect(managedTaskList).toBeGreaterThan(stackMarker);
+        expect(stackEnd).toBeGreaterThan(managedTaskList);
+        expect(source).toContain('const STACKED_MESSAGE_ACTIONS_CLASS_NAME = \'flex items-center justify-start gap-1.5\'');
+        expect(source).toContain('className="flex items-center justify-start gap-3"');
+        expect(source).not.toContain('className="mt-2 mb-1 flex items-center justify-start gap-3"');
         expect(source).not.toContain('key={`progressive-group-${segment.id}`} className="mb-3"');
         expect(source).not.toContain("'group/assistant-text relative mt-3 break-words max-w-full'");
         // Exterior markdown edge-margins are now stripped via scoped CSS, not
         // partial last-child utilities on the parent stack.
         expect(source).not.toContain('[&_p:last-child]:mb-0');
+    });
+
+    test('uses the same full rhythm step at the live status boundary after dispatch cards', () => {
+        const source = read('../ChatContainer.tsx');
+
+        expect(source).toContain("isMobile ? 'mt-2' : 'mt-3'");
+        expect(source).not.toContain("isMobile ? 'mt-1.5' : 'mt-2'");
+    });
+
+    test('uses the same rhythm for rendered assistant continuation messages only', () => {
+        const message = read('../ChatMessage.tsx');
+        const css = read('../../../index.css');
+
+        expect(message).toContain("isContinuationAssistant && 'assistant-continuation-spacing'");
+        expect(css).toContain('.assistant-continuation-spacing:has([data-session-output-stack="true"] > *)');
+        expect(css).toContain('padding-top: 0.75rem;');
+        expect(css).toContain('.device-mobile .assistant-continuation-spacing');
+        expect(css).toContain('padding-top: 0.5rem;');
     });
 
     test('flattens markdown exterior margins inside the session output stack', () => {
@@ -51,7 +78,7 @@ describe('session output spacing', () => {
 
         expect(progressiveGroup).not.toContain('className="mt-1 mb-2 space-y-1.5"');
         expect(progressiveGroup).not.toContain('className="mt-1 mb-2"');
-        expect(progressiveGroup).toContain('className="space-y-1.5"');
+        expect(progressiveGroup.match(/isMobile \? 'space-y-2' : 'space-y-3'/g)).toHaveLength(2);
         expect(planCard).not.toContain('className="my-4 overflow-hidden rounded-xl');
         expect(planCard).toContain('className="overflow-hidden rounded-xl border border-border bg-card"');
 

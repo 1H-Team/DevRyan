@@ -27,6 +27,7 @@ type Args = {
   setActiveMainTab: (tab: MainTab) => void;
   setSessionSwitcherOpen: (open: boolean) => void;
   setCurrentSession: (sessionId: string | null, directoryHint?: string | null) => void;
+  prepareSession?: (sessionId: string, directory: string) => void;
   updateSessionTitle: (id: string, title: string) => Promise<void>;
   shareSession: (id: string) => Promise<Session | null>;
   unshareSession: (id: string) => Promise<Session | null>;
@@ -66,6 +67,11 @@ export const useSessionActions = (args: Args) => {
     (sessionId: string, sessionDirectory?: string | null, disabled?: boolean, projectId?: string | null) => {
       if (disabled) {
         return;
+      }
+
+      const targetDirectory = sessionDirectory ?? args.currentDirectory;
+      if (targetDirectory) {
+        args.prepareSession?.(sessionId, targetDirectory);
       }
 
       const resetSessionSearch = () => {

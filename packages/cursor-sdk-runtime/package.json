@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/cursor-sdk-runtime",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "private": true,
   "type": "module",
   "main": "./index.js",
@@ -9,7 +9,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@cursor/sdk": "^1.0.13",
+    "@cursor/sdk": "1.0.28",
     "@modelcontextprotocol/sdk": "1.29.0",
     "zod": "^4.3.6"
   }

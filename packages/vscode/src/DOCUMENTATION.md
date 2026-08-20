@@ -6,6 +6,8 @@ The extension copies root `opencode.json`, agents, runtime-safe plugins, and san
 
 This document describes backend runtime modules used by the VS Code extension bridge (`packages/vscode/src/bridge.ts`).
 
+The extension manifest targets VS Code 1.101 or newer. This keeps the extension host on a Node runtime compatible with the shared `@cursor/sdk` 1.0.28 requirement (Node.js 22.13+); the shared Cursor runtime also fails with an actionable error before SDK import when that invariant is violated.
+
 ## Purpose
 
 Keep `bridge.ts` as a thin orchestration layer that delegates message handling to cohesive domain runtimes while preserving API behavior.
@@ -89,7 +91,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     mark exact scopes; restart ownership remains here rather than in UI prompts.
 
 - `opencodeVersionPolicy.ts`
-  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.18 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
+  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.19 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
 
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers. Shared settings migrate the legacy wide-chat boolean to the numeric chat-width preference before returning it to the webview.
@@ -129,7 +131,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 - `managedOrchestrationRuntime.ts`
   - Composes the one VS Code-owned `@openchamber/orchestration-runtime` scheduler.
   - Rejects an unsupported read-only provider with `MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED` and rejects read-only Designer dispatch with `MANAGED_READ_ONLY_AGENT_UNSUPPORTED` before scheduler persistence or event publication, matching web/Electron admission behavior.
-  - Immediately admits every eligible DevRyan-managed child without an artificial concurrency cap, enforces a minimum 60-minute Fixer/Oracle deadline and a 30-minute floor for other ordinary specialists on starts and follow-ups, preserves the private Council three-minute deadline class, makes retry/resume/retry-in-place inherit at least the source task's full window while accepting larger explicit extensions, preserves timeout causes with bounded abort-request cancellation and same-child resumability after failed immediate recovery, scopes task access, clamps optional positive-safe-integer wait slices to 25 seconds, exposes abortable `wait_result_action` recovery synchronization, unbounded root `barrier`, and non-blocking `barrier_status` RPCs, performs inspection-first confirmed agent handoff, preserves deterministic admission/cancellation, requires explicit user-selected same-child `retry_in_place` for provider-limit recovery, requires provider prompt rejection recovery to use one rewritten-prompt fresh child, returns recovered lineage to the pending parent tool invocation, maps manual and prompt-rejection policy conflicts to HTTP 409, retains legacy `recover_in_place` ledger compatibility, and reports external-runtime unavailability.
+  - Immediately admits every eligible DevRyan-managed child without an artificial concurrency cap, enforces a minimum 60-minute Fixer/Oracle deadline and a 30-minute floor for other ordinary specialists on starts and follow-ups, preserves the private Council three-minute deadline class, makes retry/resume/retry-in-place inherit at least the source task's full window while accepting larger explicit extensions, preserves timeout causes with bounded abort-request cancellation and same-child resumability after failed immediate recovery, scopes task access, clamps optional positive-safe-integer wait slices to 25 seconds, supports eager-by-default private result projection plus strictly task/root/directory-scoped stateless `read_result` pages without scheduler mutation, exposes abortable `wait_result_action` recovery synchronization, unbounded root `barrier`, and non-blocking `barrier_status` RPCs, performs inspection-first confirmed agent handoff, preserves deterministic admission/cancellation, requires explicit user-selected same-child `retry_in_place` for provider-limit recovery, requires provider prompt rejection recovery to use one rewritten-prompt fresh child, returns recovered lineage to the pending parent tool invocation, maps manual and prompt-rejection policy conflicts to HTTP 409, retains legacy `recover_in_place` ledger compatibility, reports external-runtime unavailability, and uses the shared managed executor so OpenCode-backed child starts and continuations retain the same writable/read-only Context Mode grants as web/Electron while Cursor SDK turns remain unchanged.
   - Publishes safe task projections without private dispatch groups, identity-only compaction removals, and corrupt-ledger recovery warnings to open webviews.
 
 - `managedOrchestrationPersistence.ts`
@@ -140,10 +142,10 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Bounds request bodies, aborts active requests during shutdown, and never exposes the token through the webview bridge.
 
 - `managedOpenCodeExecutor.ts`
-  - Creates canonical OpenCode child sessions and routes normal providers through OpenCode HTTP.
+  - Creates canonical OpenCode child sessions and routes normal providers through OpenCode HTTP. Pending status reads share only an exact fully resolved URL within this executor; settled requests, directory/port changes, and Cursor SDK status never share that transport operation.
   - Routes `cursor-acp` prompts, status, messages, aborts, and stale-child state cleanup through the shared Cursor SDK owner.
   - Enforces scheduler lease checkpoints before prompt and after provider acceptance; a stale fresh child is aborted and deleted from OpenCode instead of being prompted or left orphaned.
-  - Applies the shared Copilot prompt-tool policy through `@openchamber/orchestration-runtime`, whose observer keeps provider retries live, recovers transient polling failures against the same child, and retains partial output on non-retryable interruption. Its typed 503 API-URL unavailability also feeds the shared deadline-bounded reconciliation retry, preserving the canonical child while the VS Code runtime reconnects.
+  - Applies the shared Copilot prompt-tool policy through `@openchamber/orchestration-runtime`, whose observer keeps transient provider retries live, immediately settles structured OpenCode `free_tier_limit` retries for Model Recovery, recovers transient polling failures against the same child, and retains partial output on non-retryable interruption. Its typed 503 API-URL unavailability also feeds the shared deadline-bounded reconciliation retry, preserving the canonical child while the VS Code runtime reconnects.
 
 - `bridge-orchestration-runtime.ts`
   - Maps snapshot/status/cancel/acknowledge/handoff requests from the webview to the scoped runtime contract.

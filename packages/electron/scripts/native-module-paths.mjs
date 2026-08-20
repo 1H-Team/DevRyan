@@ -8,17 +8,3 @@ export const resolveWorkspacePackageDirectory = (repoRoot, workspaceDirectory, p
   const dependencyPackagePath = workspaceRequire.resolve(`${packageName}/package.json`);
   return fs.realpathSync(path.dirname(dependencyPackagePath));
 };
-
-export const resolveCursorSdkSqliteDirectory = (repoRoot) => {
-  const cursorRuntimePackagePath = path.resolve(
-    repoRoot,
-    'packages',
-    'cursor-sdk-runtime',
-    'package.json',
-  );
-  const cursorRuntimeRequire = createRequire(cursorRuntimePackagePath);
-  const cursorSdkEntryPath = cursorRuntimeRequire.resolve('@cursor/sdk');
-  const cursorSdkRequire = createRequire(cursorSdkEntryPath);
-  const sqlitePackagePath = cursorSdkRequire.resolve('sqlite3/package.json');
-  return fs.realpathSync(path.dirname(sqlitePackagePath));
-};

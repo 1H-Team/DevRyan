@@ -4,6 +4,7 @@
     "./node_modules/opencode-antigravity-auth/dist/index.js",
     "./node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js",
     "./node_modules/opencode-with-claude/dist/index.js",
+    "./node_modules/opencode-gpt-imagegen/dist/index.js",
     "./node_modules/context-mode/build/adapters/opencode/plugin.js",
     "./plugins/devryan-oh-my-opencode-slim.mjs",
     "./plugins/devryan-superpowers.mjs",

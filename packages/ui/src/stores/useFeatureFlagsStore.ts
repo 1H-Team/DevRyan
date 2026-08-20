@@ -9,6 +9,13 @@ type FeatureFlagsStore = {
    */
   messageListVirtualizationEnabled: boolean;
   setMessageListVirtualizationEnabled: (enabled: boolean) => void;
+  /**
+   * Adaptive first-page loading and bounded session intent prefetch. Default
+   * on; disabling keeps the authoritative loader but restores 200-message
+   * on-click pages and suppresses background prefetch.
+   */
+  sessionFastLoadEnabled: boolean;
+  setSessionFastLoadEnabled: (enabled: boolean) => void;
 };
 
 export const useFeatureFlagsStore = create<FeatureFlagsStore>((set) => ({
@@ -16,4 +23,6 @@ export const useFeatureFlagsStore = create<FeatureFlagsStore>((set) => ({
   setPlanModeEnabled: (enabled) => set({ planModeEnabled: enabled }),
   messageListVirtualizationEnabled: true,
   setMessageListVirtualizationEnabled: (enabled) => set({ messageListVirtualizationEnabled: enabled }),
+  sessionFastLoadEnabled: true,
+  setSessionFastLoadEnabled: (enabled) => set({ sessionFastLoadEnabled: enabled }),
 }));

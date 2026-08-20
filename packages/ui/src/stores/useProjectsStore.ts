@@ -137,6 +137,20 @@ const deriveProjectLabel = (path: string): string => {
   return raw.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
+const projectNameCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base',
+});
+
+export const sortProjectsAlphabetically = (projects: ProjectEntry[]): ProjectEntry[] => (
+  [...projects].sort((left, right) => {
+    const leftName = left.label?.trim() || deriveProjectLabel(left.path);
+    const rightName = right.label?.trim() || deriveProjectLabel(right.path);
+    const nameComparison = projectNameCollator.compare(leftName, rightName);
+    return nameComparison || projectNameCollator.compare(left.path, right.path);
+  })
+);
+
 const sanitizeProjectIconImage = (value: unknown): ProjectEntry['iconImage'] | undefined => {
   if (!value || typeof value !== 'object') {
     return undefined;
@@ -326,7 +340,7 @@ export const projectManagedAssignments = (
     grouped.get(projectId)?.push({ ...assignment, projectId, publicDirectory });
   }
 
-  const projects = orderedIds.flatMap((projectId) => {
+  const projects = sortProjectsAlphabetically(orderedIds.flatMap((projectId) => {
     const assignments = grouped.get(projectId) ?? [];
     const primary = assignments.find((assignment) => assignment.isDefault) ?? assignments[0];
     if (!primary) return [];
@@ -364,7 +378,7 @@ export const projectManagedAssignments = (
       label: primary.label.trim() || existing?.label || deriveProjectLabel(primary.publicDirectory),
       ...(branches.length > 0 ? { branches } : {}),
     }];
-  });
+  }));
 
   const defaultAssignment = principal.assignments.find((assignment) => assignment.isDefault)
     ?? principal.assignments[0];
@@ -429,7 +443,8 @@ const persistProjects = (projects: ProjectEntry[], activeProjectId: string | nul
   void updateDesktopSettings({ projects, activeProjectId: activeProjectId ?? undefined });
 };
 
-const initialProjects = readPersistedProjects();
+const initialProjects = sortProjectsAlphabetically(readPersistedProjects());
+let shouldSortNextSettingsSync = true;
 const isVSCodeProjectsRuntime = (() => {
   if (typeof window === 'undefined') return false;
   const runtimeApis = (window as unknown as { __OPENCHAMBER_RUNTIME_APIS__?: { runtime?: { isVSCode?: boolean } } })
@@ -527,14 +542,14 @@ const createVSCodeWorkspaceProjects = (
     return null;
   }
   const now = Date.now();
-  const projects = effectiveFolders
+  const projects = sortProjectsAlphabetically(effectiveFolders
     .map((folder) => createVSCodeWorkspaceProject(
       folder,
       existingProjects.find((project) => project.path === folder.path) ?? null,
       now,
       normalizedActivePath,
     ))
-    .filter((project): project is ProjectEntry => project !== null);
+    .filter((project): project is ProjectEntry => project !== null));
 
   if (projects.length === 0) {
     return null;
@@ -1002,7 +1017,11 @@ export const useProjectsStore = create<ProjectsStore>()(
       const managedProjection = principal.scope === 'managed' && principal.role !== 'admin'
         ? projectManagedAssignments(principal, [...settingsProjects, ...current.projects])
         : null;
-      const incomingProjects = managedProjection?.projects ?? settingsProjects;
+      const projectedProjects = managedProjection?.projects ?? settingsProjects;
+      const incomingProjects = shouldSortNextSettingsSync
+        ? sortProjectsAlphabetically(projectedProjects)
+        : projectedProjects;
+      shouldSortNextSettingsSync = false;
       const incomingActive = managedProjection?.activeProjectId ?? settingsActive;
 
       // Race guard: settings load can return empty projects during app

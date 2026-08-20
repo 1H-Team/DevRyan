@@ -54,6 +54,8 @@ const IMMUTABLE_PROJECTED_TASK_FIELDS = [
 ] as const satisfies readonly (keyof ManagedTaskEventRecord)[];
 const EMPTY_TASK_IDS: readonly string[] = Object.freeze([]);
 
+export type ManagedRootDelegationPhase = 'starting' | 'waiting' | null;
+
 type ManagedOrchestrationWarningEvent = {
   type: 'openchamber:managed-orchestration-warning';
   properties: { message: string };
@@ -1093,6 +1095,28 @@ export const managedOrchestrationSelectors = {
       const task = state.tasksById[taskId];
       return Boolean(task && !isTerminalManagedTaskStatus(task.status));
     });
+  },
+  delegationPhaseForRoot: (rootSessionId: string) => (
+    state: ManagedOrchestrationStore
+  ): ManagedRootDelegationPhase => {
+    const taskIds = state.taskIdsByRootId[rootSessionId] ?? EMPTY_TASK_IDS;
+    let hasStartingTask = false;
+    let hasUndispositionedTerminalTask = false;
+    for (const taskId of taskIds) {
+      const task = state.tasksById[taskId];
+      if (!task) continue;
+      if (task.status === 'running') return 'waiting';
+      if (task.status === 'queued' || task.status === 'starting') {
+        hasStartingTask = true;
+        continue;
+      }
+      const envelope = state.resultEnvelopesByTaskId[taskId];
+      if (!envelope || envelope.action === null) {
+        hasUndispositionedTerminalTask = true;
+      }
+    }
+    if (hasStartingTask) return 'starting';
+    return hasUndispositionedTerminalTask ? 'waiting' : null;
   },
   hasManualRecoveryForRoot: (rootSessionId: string) => (
     state: ManagedOrchestrationStore

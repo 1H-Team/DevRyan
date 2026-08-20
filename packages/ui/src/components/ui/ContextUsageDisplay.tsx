@@ -138,7 +138,12 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
   const contextContent = (
     <>
       {!isMobile && !hideIcon && (
-        effectiveAvailability === 'loading' ? (
+        effectiveAvailability === 'idle' ? (
+          <ContextUsageProgressIcon
+            percentage={0}
+            className="h-4 w-4 text-muted-foreground/50"
+          />
+        ) : effectiveAvailability === 'loading' ? (
           <RiLoader4Line className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
         ) : hasKnownCapacity ? (
           <ContextUsageProgressIcon
@@ -153,7 +158,12 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
         <span className={cn('font-medium inline-flex items-center gap-1.5', valueClassName)}>
           {showPercentIcon ? (
             <>
-              {effectiveAvailability === 'loading' ? (
+              {effectiveAvailability === 'idle' ? (
+                <ContextUsageProgressIcon
+                  percentage={0}
+                  className={cn('h-3.5 w-3.5', percentIconClassName, 'text-muted-foreground/50')}
+                />
+              ) : effectiveAvailability === 'loading' ? (
                 <RiLoader4Line
                   className={cn('h-3.5 w-3.5 animate-spin text-muted-foreground', percentIconClassName)}
                   aria-hidden="true"
@@ -185,7 +195,12 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
         </span>
       )}
       {hideValue && showPercentIcon && (
-        effectiveAvailability === 'loading' ? (
+        effectiveAvailability === 'idle' ? (
+          <ContextUsageProgressIcon
+            percentage={0}
+            className={cn('h-3.5 w-3.5', percentIconClassName, 'text-muted-foreground/50')}
+          />
+        ) : effectiveAvailability === 'loading' ? (
           <RiLoader4Line
             className={cn('h-3.5 w-3.5 animate-spin text-muted-foreground', percentIconClassName)}
             aria-hidden="true"

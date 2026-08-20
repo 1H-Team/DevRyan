@@ -45,14 +45,16 @@ describe('managed plugin manifest', () => {
       'unpdf': '1.8.0',
       'opencode-antigravity-auth': '1.6.0',
       '@rama_nigg/open-cursor': '2.5.4',
-      'opencode-with-claude': '1.6.18',
+      'opencode-with-claude': '1.8.0',
+      'opencode-gpt-imagegen': '0.1.10',
       'context-mode': '1.0.169',
-      'oh-my-opencode-slim': '2.0.5',
+      'oh-my-opencode-slim': '2.2.15',
     });
     expect(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS).toEqual([
       './node_modules/opencode-antigravity-auth/dist/index.js',
       './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
       './node_modules/opencode-with-claude/dist/index.js',
+      './node_modules/opencode-gpt-imagegen/dist/index.js',
       './node_modules/context-mode/build/adapters/opencode/plugin.js',
       './plugins/devryan-oh-my-opencode-slim.mjs',
       './plugins/devryan-superpowers.mjs',
@@ -97,6 +99,7 @@ describe('managed plugin manifest', () => {
     expect(tauriProfileConfig.plugin).not.toContain('./plugins/devryan-skill-context.mjs');
     expect(tauriPackage.dependencies).not.toHaveProperty('unpdf');
     expect(tauriPackage.dependencies).not.toHaveProperty('mammoth');
+    expect(tauriPackage.dependencies['oh-my-opencode-slim']).toBe('2.0.5');
     for (const config of [webProfileConfig, webRootConfig, tauriProfileConfig, tauriRootConfig]) {
       for (const spec of config.plugin || []) {
         expect(spec).toMatch(/^\.\//);
@@ -128,7 +131,9 @@ describe('managed plugin manifest', () => {
       '@rama_nigg/open-cursor@latest',
       'cursor-acp',
       ['opencode-with-claude@1.6.18', { enabled: true }],
+      'opencode-gpt-imagegen@latest',
       'context-mode@1.0.169',
+      'oh-my-opencode-slim@2.0.5',
       'superpowers@git+https://github.com/obra/superpowers.git',
       './plugins/devryan-oh-my-opencode-slim.mjs',
     ])).toEqual([
@@ -136,9 +141,10 @@ describe('managed plugin manifest', () => {
       './node_modules/opencode-antigravity-auth/dist/index.js',
       './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
       ['./node_modules/opencode-with-claude/dist/index.js', { enabled: true }],
+      './node_modules/opencode-gpt-imagegen/dist/index.js',
       './node_modules/context-mode/build/adapters/opencode/plugin.js',
-      './plugins/devryan-superpowers.mjs',
       './plugins/devryan-oh-my-opencode-slim.mjs',
+      './plugins/devryan-superpowers.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);

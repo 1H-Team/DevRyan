@@ -19,6 +19,9 @@ ownership, directory opacity, and audit control plane.
   server-only Supabase transport, and encrypted token persistence.
 - `policy.js`: exact role templates, canonical settings Read/Edit permissions,
   sparse per-user overrides, route/field ownership, and capability evaluation.
+- `managed-agent-defaults.js`: validates sparse single-model per-account
+  provider/model/thinking defaults and resolves personal, inherited, or
+  host-managed execution without exposing Supabase or mutating agent files.
 - `session-ownership-index.js`, `session-visibility.js`, `session-folders.js`:
   private hot-path ownership enforcement, managed global-list pagination and
   strict reconciliation matching, and server-backed per-principal folder state.
@@ -74,6 +77,10 @@ ownership, directory opacity, and audit control plane.
    to one active user; archived tombstones and ambiguous matches remain hidden.
 10. Revocation closes live connections and archives affected ownership records;
    shared real worktrees are never moved or removed by visibility-grant changes.
+11. Explicit managed settings saves serialize per principal. Fresh drafts and
+   owned child dispatches overlay sparse personal agent defaults on the live
+   host catalog; resets restore live inheritance. Council always uses its
+   host-managed multi-model roster.
 
 ## Integration
 

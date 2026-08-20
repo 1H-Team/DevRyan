@@ -34,7 +34,7 @@ const pluginsResponse = () => Response.json({
       displayName: "OpenCode with Claude",
       shippedSpec: "./node_modules/opencode-with-claude/dist/index.js",
       effectiveSpec: "./node_modules/opencode-with-claude/dist/index.js",
-      version: "1.6.18",
+      version: "1.8.0",
       delivery: "installed-local",
       sourcePath: "default-config/user-profile/package.json",
       kind: "default",

@@ -7,7 +7,7 @@ import {
     selectAssistantStatusRecord,
 } from "./useAssistantStatus";
 
-const toolPart = (id: string, tool: string, status: string): Part => ({
+const toolPart = (id: string, tool: string, status: string, action?: string): Part => ({
     id,
     sessionID: "ses_1",
     messageID: "msg_assistant",
@@ -15,6 +15,7 @@ const toolPart = (id: string, tool: string, status: string): Part => ({
     tool,
     state: {
         status,
+        ...(action ? { input: { action } } : {}),
         time: {
             start: 1,
             ...(status === "completed" ? { end: 2 } : {}),
@@ -80,6 +81,16 @@ describe("getAssistantActivePartStatus", () => {
         ])).toEqual({
             activePartType: "editing",
             activeToolName: "edit",
+        });
+    });
+
+    test("exposes the active tool action for phase-aware managed dispatch copy", () => {
+        expect(getAssistantActivePartStatus([
+            toolPart("dispatch_1", "devryan_task", "running", "start"),
+        ])).toEqual({
+            activePartType: "tool",
+            activeToolName: "devryan_task",
+            activeToolAction: "start",
         });
     });
 

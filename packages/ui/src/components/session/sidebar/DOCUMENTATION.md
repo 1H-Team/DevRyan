@@ -42,7 +42,7 @@
 
 - `hooks/useSessionActions.ts`: Centralizes session row actions (select/open, rename, share/unshare, archive/delete, confirmations).
 - `hooks/useSessionSearchEffects.ts`: Handles search open/close UX and input focus behavior.
-- `hooks/useSessionPrefetch.ts`: Prefetches messages for nearby/active sessions to improve perceived load speed.
+- `hooks/useSessionPrefetch.ts`: Runs the active-directory-only intent queue: 180 ms hover, immediate keyboard focus, and previous/next neighbors after a stable 600 ms selection. It cancels abandoned timers, permits one request at a time, and caps pending work at six.
 - `hooks/useSidebarUserActivityHydration.ts`: Restores historical user-message recency for root sessions in the current directory; inactive projects use deterministic session metadata until selected or updated live.
 - `hooks/useSidebarArchivedAssistantActivityHydration.ts`: Restores archived assistant-response recency from any safe cached messages, but performs network hydration only for the current directory.
 - `hooks/useDirectoryStatusProbe.ts`: Probes and caches directory existence status for session/path indicators.

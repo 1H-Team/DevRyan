@@ -1,6 +1,5 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
-import { useUIStore } from '@/stores/useUIStore';
 import { useI18n } from '@/lib/i18n';
 
 interface CommitInputProps {
@@ -22,12 +21,10 @@ export const CommitInput: React.FC<CommitInputProps> = ({
   placeholder,
   disabled = false,
   hasTouchInput = false,
-  isMobile = false,
   trailingAction,
 }) => {
   const { t } = useI18n();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
-  const inputSpellcheckEnabled = useUIStore((state) => state.inputSpellcheckEnabled);
 
   // Auto-resize based on content (layout phase to avoid mount flicker)
   React.useLayoutEffect(() => {
@@ -72,7 +69,7 @@ export const CommitInput: React.FC<CommitInputProps> = ({
         disabled={disabled}
         autoCorrect={hasTouchInput ? 'on' : 'off'}
         autoCapitalize={hasTouchInput ? 'sentences' : 'off'}
-        spellCheck={isMobile || inputSpellcheckEnabled}
+        spellCheck={false}
         className={cn(
         'min-w-0 flex-1 resize-none bg-transparent px-3 py-1.5 typography-ui-label text-foreground placeholder:text-muted-foreground',
           'outline-none disabled:cursor-not-allowed'

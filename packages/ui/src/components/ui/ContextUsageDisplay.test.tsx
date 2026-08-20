@@ -62,11 +62,14 @@ describe("ContextUsageDisplay", () => {
     expect(markup).not.toContain("/ 0")
   })
 
-  test("keeps an informative trigger visible before a session exists", () => {
+  test("shows a muted empty ring before a session exists", () => {
     const markup = renderDisplay(null, "idle")
 
     expect(markup).toContain("Context Usage: Start a chat to measure context usage.")
     expect(markup).toContain("Unavailable")
+    expect(markup).toContain("text-muted-foreground/50")
+    expect(markup).toContain("<circle")
+    expect(markup).not.toContain("<path")
     expect(markup).not.toContain("0%")
   })
 

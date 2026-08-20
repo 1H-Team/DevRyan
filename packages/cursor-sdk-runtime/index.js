@@ -21,6 +21,15 @@ import {
   normalizeCursorSessionTitle,
 } from './title-generation.js';
 import { createCursorQuestionRuntime } from './cursor-question-runtime.js';
+import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
+import { assertCursorSdkNodeCompatibility } from './node-version.js';
+import {
+  CURSOR_NATIVE_TASK_METADATA_KEY,
+  mergeCursorNativeTaskActivity,
+  sanitizeCursorTaskResult,
+} from './cursor-native-task.js';
+
+export { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
 
 export const CURSOR_PROVIDER_ID = 'cursor-acp';
 
@@ -105,11 +114,15 @@ const isPlainObject = (value) => (
 );
 
 const SYNTHETIC_WORKSPACE_PATCH_METADATA_KEY = 'syntheticWorkspacePatch';
+const RUNTIME_RESERVED_TOOL_METADATA_KEYS = new Set([
+  SYNTHETIC_WORKSPACE_PATCH_METADATA_KEY,
+  CURSOR_NATIVE_TASK_METADATA_KEY,
+]);
 
 const sanitizeProviderToolMetadata = (value) => {
   if (!isPlainObject(value)) return {};
   return Object.fromEntries(
-    Object.entries(value).filter(([key]) => key !== SYNTHETIC_WORKSPACE_PATCH_METADATA_KEY),
+    Object.entries(value).filter(([key]) => !RUNTIME_RESERVED_TOOL_METADATA_KEYS.has(key)),
   );
 };
 
@@ -291,8 +304,6 @@ const areRuntimeValuesEqual = (left, right) => left === right || safeJson(left) 
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 
-const readTokenCount = (value) => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0);
-
 const parseSettingSourcesFlag = (raw) => {
   const v = trimString(raw);
   if (!v) return undefined;
@@ -306,89 +317,6 @@ const parseSettingSourcesFlag = (raw) => {
 // list of cursor setting layers (project,user,team,mdm,plugins,all) or "none" to load
 // none — trims ambient rules/settings context the cursor-agent assembles per turn.
 const CURSOR_SETTING_SOURCES = parseSettingSourcesFlag(process.env.OPENCHAMBER_CURSOR_SETTING_SOURCES);
-
-const firstStringValue = (...candidates) => {
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string') return candidate;
-  }
-  return '';
-};
-
-export const normalizeInteractionUpdateToSdkMessage = (input) => {
-  const update = isPlainObject(input?.update) ? input.update : input;
-  if (!isPlainObject(update)) return null;
-
-  if (update.type === 'text-delta' || update.type === 'token-delta') {
-    const text = firstStringValue(update.text, update.delta, update.token);
-    return text
-      ? {
-          type: 'assistant',
-          message: {
-            role: 'assistant',
-            content: [{ type: 'text', text }],
-          },
-        }
-      : null;
-  }
-
-  if (update.type === 'thinking-delta') {
-    const text = firstStringValue(update.text, update.delta);
-    return text ? { type: 'thinking', text } : null;
-  }
-
-  if (
-    update.type === 'thinking-completed'
-    || update.type === 'thinking_completed'
-    || update.type === 'thinking-complete'
-  ) {
-    return { type: 'thinking_completed' };
-  }
-
-  if (
-    update.type === 'tool-call-started'
-    || update.type === 'partial-tool-call'
-    || update.type === 'tool-call-completed'
-  ) {
-    const toolCall = isPlainObject(update.toolCall) ? update.toolCall : {};
-    const callID = trimString(update.callId ?? update.call_id ?? toolCall.callId ?? toolCall.call_id ?? toolCall.id);
-    const name = trimString(toolCall.name ?? toolCall.type ?? update.name) || 'tool';
-    const explicitStatus = trimString(update.status);
-    const status = explicitStatus
-      ? normalizeToolCallStatus(explicitStatus)
-      : update.type === 'tool-call-completed'
-        ? 'completed'
-        : 'running';
-    return {
-      type: 'tool_call',
-      call_id: callID,
-      name,
-      status,
-      ...(hasOwn(toolCall, 'args') ? { args: toolCall.args } : {}),
-      ...(hasOwn(toolCall, 'result') ? { result: toolCall.result } : {}),
-      ...(isPlainObject(toolCall.truncated) ? { truncated: toolCall.truncated } : {}),
-    };
-  }
-
-  if (update.type === 'summary') {
-    const text = trimString(update.summary ?? update.text);
-    return text ? { type: 'task', text } : null;
-  }
-
-  if (update.type === 'turn-ended') {
-    const usage = isPlainObject(update.usage) ? update.usage : null;
-    if (!usage) return null;
-    const tokens = {
-      input: readTokenCount(usage.inputTokens),
-      output: readTokenCount(usage.outputTokens),
-      reasoning: 0,
-      cache: { read: readTokenCount(usage.cacheReadTokens), write: readTokenCount(usage.cacheWriteTokens) },
-    };
-    const hasUsage = tokens.input || tokens.output || tokens.cache.read || tokens.cache.write;
-    return hasUsage ? { type: 'usage', tokens } : null;
-  }
-
-  return null;
-};
 
 const mergeToolDataIntoState = (part) => {
   if (!isPlainObject(part) || part.type !== 'tool') {
@@ -1167,7 +1095,7 @@ const addSdkModelRecord = (records, model) => {
       id: sdkModelId,
       name,
       description,
-      options: { cursorSdkModel: createCursorSdkModelSelection(sdkModelId, []) },
+      options: { cursorSdkModel: createFallbackCursorSdkModelSelection(sdkModelId) },
     });
     return;
   }
@@ -1650,7 +1578,8 @@ export function createCursorSdkRuntime(options = {}) {
   const readAuth = typeof options.readAuth === 'function' ? options.readAuth : () => ({});
   const env = isPlainObject(options.env) ? options.env : process.env;
   const storageDir = trimString(options.storageDir) || defaultStorageDir();
-  const rawLoadSdk = typeof options.loadSdk === 'function' ? options.loadSdk : () => importRuntimeModule('@cursor/sdk');
+  const hasInjectedLoadSdk = typeof options.loadSdk === 'function';
+  const rawLoadSdk = hasInjectedLoadSdk ? options.loadSdk : () => importRuntimeModule('@cursor/sdk');
   const ripgrepPath = trimString(options.ripgrepPath);
   const initialRipgrepResolution = resolveCursorRipgrepPath({
     explicitRipgrepPath: ripgrepPath,
@@ -1663,6 +1592,9 @@ export function createCursorSdkRuntime(options = {}) {
     resolvedSource: initialRipgrepResolution.source,
   };
   const loadSdk = async () => {
+    if (!hasInjectedLoadSdk) {
+      assertCursorSdkNodeCompatibility();
+    }
     const sdk = await rawLoadSdk();
     lastRipgrepStatus = configureCursorSdkRipgrep(sdk, {
       explicitRipgrepPath: ripgrepPath,
@@ -1675,7 +1607,7 @@ export function createCursorSdkRuntime(options = {}) {
     || workerPath.replace(/node-worker\.mjs$/, 'persistent-worker.mjs');
   const workerConfig = resolveCursorSdkWorkerRuntimeConfig({
     env,
-    hasInjectedLoadSdk: typeof options.loadSdk === 'function',
+    hasInjectedLoadSdk,
     requestedNodeBinary: options.nodeBinary,
     requestedUseNodeWorkerForPrompts: options.useNodeWorkerForPrompts,
     requestedWorkerCwd: options.workerCwd,
@@ -4370,6 +4302,9 @@ export function createCursorSdkRuntime(options = {}) {
         let previousContentKind = null;
         let lastCursorTaskToolPartID = null;
         const cursorTaskSummariesByPartId = new Map();
+        const cursorTaskActivityByPartId = new Map();
+        let cursorTaskActivityDirty = false;
+        let lastCursorTaskActivityEmitAt = 0;
 
         const finalizeActiveReasoningPart = async (completed = now()) => {
           if (!activeReasoningPartID) return false;
@@ -4428,6 +4363,55 @@ export function createCursorSdkRuntime(options = {}) {
             await emitRecordDelta(assistantRecord);
           }
           return changed;
+        };
+
+        const flushCursorTaskActivity = async () => {
+          if (!cursorTaskActivityDirty) return false;
+          cursorTaskActivityDirty = false;
+          lastCursorTaskActivityEmitAt = now();
+          await emitRecordDelta(assistantRecord);
+          return true;
+        };
+
+        const applyCursorTaskActivity = async (message) => {
+          const partID = getToolPartID(message.call_id);
+          const existing = assistantRecord.parts.find((part) => part.id === partID);
+          const existingState = isPlainObject(existing?.state) ? existing.state : {};
+          const existingMetadata = {
+            ...(isPlainObject(existing?.metadata) ? existing.metadata : {}),
+            ...(isPlainObject(existingState.metadata) ? existingState.metadata : {}),
+          };
+          const current = cursorTaskActivityByPartId.get(partID)
+            || existingMetadata[CURSOR_NATIVE_TASK_METADATA_KEY];
+          const projection = mergeCursorNativeTaskActivity(current, message);
+          if (!projection) return false;
+          cursorTaskActivityByPartId.set(partID, projection);
+          if (!existing || existing.type !== 'tool') return false;
+
+          const metadata = {
+            ...existingMetadata,
+            [CURSOR_NATIVE_TASK_METADATA_KEY]: projection,
+          };
+          const changed = upsertAssistantPart({
+            ...existing,
+            metadata,
+            state: {
+              ...existingState,
+              metadata,
+            },
+          });
+          if (!changed) return false;
+
+          cursorTaskActivityDirty = true;
+          const nestedStatus = trimString(message.update?.status);
+          const terminalNestedUpdate = nestedStatus === 'completed'
+            || nestedStatus === 'error'
+            || nestedStatus === 'cancelled'
+            || message.update?.type === 'step-completed';
+          if (terminalNestedUpdate || now() - lastCursorTaskActivityEmitAt >= 50) {
+            await flushCursorTaskActivity();
+          }
+          return true;
         };
 
         for (;;) {
@@ -4547,6 +4531,8 @@ export function createCursorSdkRuntime(options = {}) {
             }
           } else if (message.type === 'thinking_completed') {
             await finalizeActiveReasoningPart();
+          } else if (message.type === 'task_activity') {
+            await applyCursorTaskActivity(message);
           } else if (message.type === 'tool_call') {
             if (previousContentKind === 'thinking') {
               await finalizeActiveReasoningPart();
@@ -4566,13 +4552,19 @@ export function createCursorSdkRuntime(options = {}) {
             const existingTime = isPlainObject(existingState.time) ? existingState.time : {};
             const startedAt = existingTime.start || now();
             const existingSummary = cursorTaskSummariesByPartId.get(partID);
+            const isCursorTask = isCursorTaskTool(message.name || existing?.tool);
+            const cursorNativeTask = isCursorTask
+              ? cursorTaskActivityByPartId.get(partID)
+              : null;
             const existingOutput = typeof existing?.output === 'string'
               ? existing.output
               : (typeof existingState.output === 'string' ? existingState.output : '');
             const hasResult = hasOwn(message, 'result');
             const hasRetainedPartialOutput = Boolean(trimString(existingOutput || existingSummary));
             const shouldPreservePartialOutput = incomingStatus === 'error' && hasRetainedPartialOutput;
-            const resultOutput = hasResult ? safeJson(message.result) : '';
+            const resultOutput = hasResult
+              ? safeJson(isCursorTask ? sanitizeCursorTaskResult(message.result) : message.result)
+              : '';
             const output = shouldPreservePartialOutput
               ? existingOutput || existingSummary || ''
               : hasResult
@@ -4589,6 +4581,7 @@ export function createCursorSdkRuntime(options = {}) {
               ...sanitizeProviderToolMetadata(existingState.metadata),
               ...sanitizeProviderToolMetadata(message.metadata),
               ...(existingSummary ? { cursorTaskSummary: existingSummary } : {}),
+              ...(cursorNativeTask ? { [CURSOR_NATIVE_TASK_METADATA_KEY]: cursorNativeTask } : {}),
             };
             const toolPart = {
               id: partID,
@@ -4610,7 +4603,7 @@ export function createCursorSdkRuntime(options = {}) {
                 },
               },
             };
-            if (isCursorTaskTool(message.name)) {
+            if (isCursorTask) {
               lastCursorTaskToolPartID = partID;
             }
             const partChanged = upsertAssistantPart(toolPart);
@@ -4620,6 +4613,8 @@ export function createCursorSdkRuntime(options = {}) {
               : false;
             previousContentKind = 'tool';
             if (partChanged || planTextChanged) {
+              cursorTaskActivityDirty = false;
+              lastCursorTaskActivityEmitAt = now();
               await emitRecordDelta(assistantRecord);
             }
             if (isTerminalToolStatus && isWorkspaceMutationCandidateTool(message.name)) {
@@ -4641,6 +4636,7 @@ export function createCursorSdkRuntime(options = {}) {
             }
           }
         }
+        await flushCursorTaskActivity();
         const result = await waitForFinalRunResult(finalResultWaitTimeoutMs);
         finalStatus = applyFinalRunResult(result) || finalStatus;
       } catch (error) {

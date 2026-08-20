@@ -991,6 +991,7 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
       frame: 'top',
       tag: element.tagName.toLowerCase(),
       text: clip(element.innerText || element.textContent || ''),
+      outerHTML: clip(element.outerHTML || '', 6000),
       selector: buildSelector(element),
       path: ancestry.map((entry) => entry.tag).join(' > '),
       bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },

@@ -4,6 +4,9 @@ import path from 'node:path';
 
 export const EVALUATION_CASE_IDS = Object.freeze([
   'inspect',
+  'context-large-analysis',
+  'context-explorer-analysis',
+  'context-bounded-lookup',
   'repair-and-test',
   'managed-change',
   'oracle-review-focused',

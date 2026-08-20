@@ -18,6 +18,7 @@ export type PreviewElementMetadata = {
   frame: 'top';
   tag: string;
   text: string;
+  outerHTML: string;
   selector: string;
   path: string;
   bounds: { x: number; y: number; width: number; height: number };
@@ -27,18 +28,97 @@ export type PreviewElementMetadata = {
   ancestry: Array<{ tag: string; id?: string; className?: string; selectorPart: string }>;
 };
 
+const MAX_PREVIEW_OUTER_HTML_LENGTH = 6_000;
+export const PREVIEW_ANNOTATION_CROP_PADDING = 12;
+
 export const isPreviewElementMetadata = (value: unknown): value is PreviewElementMetadata => {
   if (!value || typeof value !== 'object') return false;
   const record = value as Partial<PreviewElementMetadata>;
   const bounds = record.bounds;
+  const center = record.center;
   return typeof record.tag === 'string'
+    && typeof record.text === 'string'
+    && typeof record.outerHTML === 'string'
+    && record.outerHTML.length <= MAX_PREVIEW_OUTER_HTML_LENGTH
     && typeof record.selector === 'string'
     && typeof record.path === 'string'
     && Boolean(bounds)
-    && typeof bounds?.x === 'number'
-    && typeof bounds?.y === 'number'
-    && typeof bounds?.width === 'number'
-    && typeof bounds?.height === 'number';
+    && [bounds?.x, bounds?.y, bounds?.width, bounds?.height, center?.x, center?.y].every(Number.isFinite)
+    && Boolean(record.attributes) && typeof record.attributes === 'object'
+    && Boolean(record.computedStyle) && typeof record.computedStyle === 'object'
+    && Array.isArray(record.ancestry)
+    && record.ancestry.every((entry) => Boolean(entry) && typeof entry.selectorPart === 'string');
+};
+
+export const normalizePreviewOuterHTML = (value: string): string => {
+  const normalized = value.replace(/\0/g, '').trim();
+  if (normalized.length <= MAX_PREVIEW_OUTER_HTML_LENGTH) return normalized;
+  return `${normalized.slice(0, MAX_PREVIEW_OUTER_HTML_LENGTH - 1)}…`;
+};
+
+const fencedHtml = (value: string): string | null => {
+  const markup = normalizePreviewOuterHTML(value);
+  if (!markup) return null;
+  const longestBacktickRun = Math.max(0, ...(markup.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = '`'.repeat(Math.max(3, longestBacktickRun + 1));
+  return [`${fence}html`, markup, fence].join('\n');
+};
+
+export type PreviewElementCropRect = { x: number; y: number; width: number; height: number };
+
+export const resolvePreviewElementCropRect = ({
+  bounds,
+  viewportWidth,
+  viewportHeight,
+  padding = PREVIEW_ANNOTATION_CROP_PADDING,
+}: {
+  bounds: PreviewElementMetadata['bounds'];
+  viewportWidth: number;
+  viewportHeight: number;
+  padding?: number;
+}): PreviewElementCropRect | null => {
+  if (![bounds.x, bounds.y, bounds.width, bounds.height, viewportWidth, viewportHeight, padding].every(Number.isFinite)) return null;
+  if (bounds.width <= 0 || bounds.height <= 0 || viewportWidth <= 0 || viewportHeight <= 0) return null;
+
+  const visibleLeft = Math.max(0, bounds.x);
+  const visibleTop = Math.max(0, bounds.y);
+  const visibleRight = Math.min(viewportWidth, bounds.x + bounds.width);
+  const visibleBottom = Math.min(viewportHeight, bounds.y + bounds.height);
+  if (visibleRight <= visibleLeft || visibleBottom <= visibleTop) return null;
+
+  const x = Math.max(0, Math.floor(visibleLeft - Math.max(0, padding)));
+  const y = Math.max(0, Math.floor(visibleTop - Math.max(0, padding)));
+  const right = Math.min(viewportWidth, Math.ceil(visibleRight + Math.max(0, padding)));
+  const bottom = Math.min(viewportHeight, Math.ceil(visibleBottom + Math.max(0, padding)));
+  return { x, y, width: right - x, height: bottom - y };
+};
+
+export const resolvePreviewElementPixelCrop = ({
+  bounds,
+  viewportWidth,
+  viewportHeight,
+  imageWidth,
+  imageHeight,
+  padding = PREVIEW_ANNOTATION_CROP_PADDING,
+}: {
+  bounds: PreviewElementMetadata['bounds'];
+  viewportWidth: number;
+  viewportHeight: number;
+  imageWidth: number;
+  imageHeight: number;
+  padding?: number;
+}): PreviewElementCropRect | null => {
+  if (![imageWidth, imageHeight].every(Number.isFinite) || imageWidth <= 0 || imageHeight <= 0) return null;
+  const crop = resolvePreviewElementCropRect({ bounds, viewportWidth, viewportHeight, padding });
+  if (!crop) return null;
+  const xScale = imageWidth / viewportWidth;
+  const yScale = imageHeight / viewportHeight;
+  const x = Math.max(0, Math.floor(crop.x * xScale));
+  const y = Math.max(0, Math.floor(crop.y * yScale));
+  const right = Math.min(imageWidth, Math.ceil((crop.x + crop.width) * xScale));
+  const bottom = Math.min(imageHeight, Math.ceil((crop.y + crop.height) * yScale));
+  if (right <= x || bottom <= y) return null;
+  return { x, y, width: right - x, height: bottom - y };
 };
 
 export const formatPreviewAnnotationMarkdown = ({
@@ -67,6 +147,7 @@ export const formatPreviewAnnotationMarkdown = ({
   const ancestry = target.ancestry
     .map((entry) => entry.selectorPart)
     .join(' > ');
+  const markup = fencedHtml(target.outerHTML);
 
   return [
     `${introLabel}:`,
@@ -82,7 +163,28 @@ export const formatPreviewAnnotationMarkdown = ({
     `- Bounds: x=${Math.round(bounds.x)}, y=${Math.round(bounds.y)}, width=${Math.round(bounds.width)}, height=${Math.round(bounds.height)}`,
     `- Center: x=${Math.round(center.x)}, y=${Math.round(center.y)}`,
     `Styles: display=${styles.display}; position=${styles.position}; font=${styles.fontWeight} ${styles.fontSize} / ${styles.lineHeight} ${styles.fontFamily}; color=${styles.color}; background=${styles.backgroundColor}; z-index=${styles.zIndex}`,
+    markup ? 'Rendered HTML:' : null,
+    markup,
   ].filter((line): line is string => typeof line === 'string').join('\n');
+};
+
+const refreshPreviewTargetBounds = (
+  iframe: HTMLIFrameElement,
+  target: PreviewElementMetadata,
+): PreviewElementMetadata => {
+  try {
+    const element = iframe.contentDocument?.querySelector(target.selector);
+    if (!element || typeof element.getBoundingClientRect !== 'function') return target;
+    const rect = element.getBoundingClientRect();
+    return {
+      ...target,
+      bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      center: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
+      outerHTML: normalizePreviewOuterHTML(element.outerHTML || target.outerHTML),
+    };
+  } catch {
+    return target;
+  }
 };
 
 const captureNativeDesktopScreenshot = async (
@@ -107,27 +209,9 @@ const captureNativeDesktopScreenshot = async (
 
     const width = Math.max(1, image.naturalWidth || capture.width || Math.floor(rect.width));
     const height = Math.max(1, image.naturalHeight || capture.height || Math.floor(rect.height));
-    const maxOutputWidth = 1200;
-    const outputScale = Math.min(1, maxOutputWidth / width);
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.floor(width * outputScale);
-    canvas.height = Math.floor(height * outputScale);
-    const context = canvas.getContext('2d');
-    if (!context) return null;
-
-    context.scale(outputScale, outputScale);
-    context.drawImage(image, 0, 0, width, height);
-    const xScale = width / Math.max(1, rect.width);
-    const yScale = height / Math.max(1, rect.height);
-    context.fillStyle = 'rgba(37, 99, 235, 0.28)';
-    context.strokeStyle = 'rgb(37, 99, 235)';
-    context.lineWidth = Math.max(2, 2 * xScale);
-    context.fillRect(target.bounds.x * xScale, target.bounds.y * yScale, target.bounds.width * xScale, target.bounds.height * yScale);
-    context.strokeRect(target.bounds.x * xScale, target.bounds.y * yScale, target.bounds.width * xScale, target.bounds.height * yScale);
-
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
-    if (!blob) return null;
-    return new File([blob], `preview-annotation-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    const cssWidth = iframe.contentWindow?.innerWidth || iframe.clientWidth || rect.width;
+    const cssHeight = iframe.contentWindow?.innerHeight || iframe.clientHeight || rect.height;
+    return desktopAnnotationToFile(capture.base64, width, height, cssWidth, cssHeight, target, capture.mime);
   } catch (error) {
     console.warn('[preview] failed to capture native annotation screenshot:', error);
     return null;
@@ -139,9 +223,10 @@ export const renderPreviewScreenshot = async (
   target: PreviewElementMetadata,
 ): Promise<File | null> => {
   if (typeof window === 'undefined') return null;
-  const native = await captureNativeDesktopScreenshot(iframe, target);
+  const refreshedTarget = refreshPreviewTargetBounds(iframe, target);
+  const native = await captureNativeDesktopScreenshot(iframe, refreshedTarget);
   if (native) return native;
-  return captureIframeDomScreenshot(iframe, target);
+  return captureIframeDomScreenshot(iframe, refreshedTarget);
 };
 
 export const desktopAnnotationToFile = async (
@@ -151,6 +236,7 @@ export const desktopAnnotationToFile = async (
   cssWidth: number,
   cssHeight: number,
   target: PreviewElementMetadata,
+  mime = 'image/jpeg',
 ): Promise<File | null> => {
   if (!base64) return null;
   try {
@@ -158,32 +244,29 @@ export const desktopAnnotationToFile = async (
     await new Promise<void>((resolve, reject) => {
       image.onload = () => resolve();
       image.onerror = () => reject(new Error('Failed to load desktop browser screenshot'));
-      image.src = `data:image/jpeg;base64,${base64}`;
+      image.src = `data:${mime};base64,${base64}`;
     });
 
     const width = Math.max(1, image.naturalWidth || screenshotWidth);
     const height = Math.max(1, image.naturalHeight || screenshotHeight);
-    const maxOutputWidth = 1200;
-    const outputScale = Math.min(1, maxOutputWidth / width);
+    const crop = resolvePreviewElementPixelCrop({
+      bounds: target.bounds,
+      viewportWidth: cssWidth || width,
+      viewportHeight: cssHeight || height,
+      imageWidth: width,
+      imageHeight: height,
+    });
+    if (!crop) return null;
     const canvas = document.createElement('canvas');
-    canvas.width = Math.floor(width * outputScale);
-    canvas.height = Math.floor(height * outputScale);
+    canvas.width = crop.width;
+    canvas.height = crop.height;
     const context = canvas.getContext('2d');
     if (!context) return null;
 
-    context.scale(outputScale, outputScale);
-    context.drawImage(image, 0, 0, width, height);
-    const xScale = width / Math.max(1, cssWidth || width);
-    const yScale = height / Math.max(1, cssHeight || height);
-    context.fillStyle = 'rgba(37, 99, 235, 0.14)';
-    context.strokeStyle = 'rgb(37, 99, 235)';
-    context.lineWidth = Math.max(2, 2 * xScale);
-    context.fillRect(target.bounds.x * xScale, target.bounds.y * yScale, target.bounds.width * xScale, target.bounds.height * yScale);
-    context.strokeRect(target.bounds.x * xScale, target.bounds.y * yScale, target.bounds.width * xScale, target.bounds.height * yScale);
-
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+    context.drawImage(image, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
     if (!blob) return null;
-    return new File([blob], `browser-annotation-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    return new File([blob], `browser-annotation-${Date.now()}.png`, { type: 'image/png' });
   } catch {
     return null;
   }

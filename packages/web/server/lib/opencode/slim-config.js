@@ -12,7 +12,7 @@ import {
 } from './shared.js';
 
 const SLIM_PLUGIN_PACKAGE_NAME = 'oh-my-opencode-slim';
-const SLIM_MANAGED_VERSION = '2.0.5';
+const SLIM_MANAGED_VERSION = '2.2.15';
 const DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE = 'devryan-oh-my-opencode-slim.mjs';
 const DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC = `./plugins/${DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE}`;
 const SLIM_SCOPE = 'slim';

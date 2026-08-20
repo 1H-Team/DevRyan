@@ -74,7 +74,7 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
   if (profilePackage.dependencies[SLIM_PLUGIN_PACKAGE_NAME] !== SLIM_MANAGED_VERSION) {
     throw new Error(`Missing default Slim dependency: ${SLIM_PLUGIN_PACKAGE_NAME}@${SLIM_MANAGED_VERSION}`);
   }
-  if (profilePackage.dependencies['opencode-with-claude'] !== '1.6.18') {
+  if (profilePackage.dependencies['opencode-with-claude'] !== '1.8.0') {
     throw new Error(`Missing default Claude dependency: ${ANTHROPIC_OAUTH_PLUGIN_SPEC}`);
   }
   for (const [packageName, version] of Object.entries({
@@ -109,8 +109,14 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
       applyContextModeHotfix: () => ({ ok: true, changed: false }),
       runCommand: async (_command, _args, { cwd }) => {
         const dependencies = readJson(path.join(cwd, 'package.json')).dependencies || {};
-        for (const dependency of Object.keys(dependencies)) {
-          fs.mkdirSync(path.join(cwd, 'node_modules', ...dependency.split('/')), { recursive: true });
+        const overrides = readJson(path.join(cwd, 'package.json')).overrides || {};
+        for (const [packageName, version] of Object.entries({ ...dependencies, ...overrides })) {
+          const packageRoot = path.join(cwd, 'node_modules', ...packageName.split('/'));
+          fs.mkdirSync(packageRoot, { recursive: true });
+          fs.writeFileSync(path.join(packageRoot, 'package.json'), `${JSON.stringify({
+            name: packageName,
+            version,
+          })}\n`);
         }
         for (const plugin of DEVRYAN_MANAGED_PLUGINS) {
           const pluginDependencies = [

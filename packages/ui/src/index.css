@@ -402,42 +402,110 @@ textarea[data-chat-input="true"]:focus-visible {
   }
 }
 
-@keyframes oc-text-shimmer {
+@keyframes oc-live-status-focus {
   0% {
-    background-position: 200% 0;
+    transform: translate3d(0, 0, 0);
   }
   100% {
-    background-position: -200% 0;
+    transform: translate3d(100%, 0, 0);
   }
 }
 
-.oc-text-shimmer {
-  --oc-shimmer-base: var(--muted-foreground);
-  --oc-shimmer-highlight: color-mix(in oklch, var(--foreground) 92%, transparent);
-  position: relative;
-  display: inline-block;
-  color: var(--oc-shimmer-base);
-  -webkit-text-fill-color: currentColor;
+@keyframes oc-live-status-focus-counter {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-100%, 0, 0);
+  }
 }
 
-.oc-text-shimmer::after {
-  content: attr(data-shimmer-text);
+.oc-live-status-shimmer {
+  --oc-live-status-focus-width: 4.5rem;
+  --oc-live-status-highlight: var(--foreground);
+  position: relative;
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.oc-live-status-shimmer__label,
+.oc-live-status-shimmer__aligned {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-live-status-shimmer__focus {
   position: absolute;
-  inset: 0;
+  inset-block: 0;
+  right: auto;
+  left: calc(-1 * var(--oc-live-status-focus-width));
+  width: calc(100% + var(--oc-live-status-focus-width) + var(--oc-live-status-focus-width));
+  color: var(--oc-live-status-highlight);
+  text-shadow: 0 0 0.3rem color-mix(in srgb, var(--foreground) 18%, transparent);
+  opacity: 0;
   pointer-events: none;
-  background-image: linear-gradient(
-    100deg,
-    transparent 40%,
-    var(--oc-shimmer-highlight) 50%,
-    transparent 60%
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    rgb(0 0 0 / 12%) 0.675rem,
+    rgb(0 0 0 / 55%) 1.575rem,
+    black 2.25rem,
+    rgb(0 0 0 / 55%) 2.925rem,
+    rgb(0 0 0 / 12%) 3.825rem,
+    transparent var(--oc-live-status-focus-width),
+    transparent 100%
   );
-  background-size: 200% 100%;
-  background-repeat: no-repeat;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  animation: oc-text-shimmer 2.2s linear infinite;
+  mask-repeat: no-repeat;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    rgb(0 0 0 / 12%) 0.675rem,
+    rgb(0 0 0 / 55%) 1.575rem,
+    black 2.25rem,
+    rgb(0 0 0 / 55%) 2.925rem,
+    rgb(0 0 0 / 12%) 3.825rem,
+    transparent var(--oc-live-status-focus-width),
+    transparent 100%
+  );
+  -webkit-mask-repeat: no-repeat;
+}
+
+.oc-live-status-shimmer[data-animation-state="running"] .oc-live-status-shimmer__focus {
+  opacity: 1;
+  animation: oc-live-status-focus 2.2s linear infinite;
+  will-change: transform;
+}
+
+.oc-live-status-shimmer__counter {
+  width: 100%;
+}
+
+.oc-live-status-shimmer[data-animation-state="running"] .oc-live-status-shimmer__counter {
+  animation: oc-live-status-focus-counter 2.2s linear infinite;
+  will-change: transform;
+}
+
+.oc-live-status-shimmer__aligned {
+  width: calc(100% - var(--oc-live-status-focus-width) - var(--oc-live-status-focus-width));
+  margin-left: var(--oc-live-status-focus-width);
+}
+
+/* Provider output can span multiple assistant messages in one logical turn.
+   Apply the shared rhythm only when the continuation actually rendered a row;
+   control-only/empty siblings must not become phantom spacer blocks. */
+.assistant-continuation-spacing:has([data-session-output-stack="true"] > *) {
+  padding-top: 0.75rem;
+}
+
+.device-mobile .assistant-continuation-spacing:has([data-session-output-stack="true"] > *) {
+  padding-top: 0.5rem;
 }
 
 @keyframes oc-file-mention-marquee {
@@ -559,13 +627,9 @@ svg.animate-spin {
   }
 }
 
-@keyframes oc-plan-skeleton-sweep {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
+.oc-plan-skeleton-lines[data-animation-state="running"] {
+  animation: oc-plan-skeleton-pulse 1.6s ease-in-out infinite alternate;
+  will-change: opacity;
 }
 
 .oc-plan-skeleton-line {
@@ -581,27 +645,20 @@ svg.animate-spin {
     color-mix(in oklch, var(--foreground) 6%, transparent) 50%,
     transparent 80%
   );
-  background-size: 200% 100%;
+  background-size: 100% 100%;
   background-repeat: no-repeat;
-  animation:
-    oc-plan-skeleton-pulse 1.6s ease-in-out infinite alternate,
-    oc-plan-skeleton-sweep 2.6s linear infinite;
-  will-change: opacity, background-position;
 }
-/* Seven-line cycle with slight duration jitter so long plans never read as a
-   uniform repeating wave. */
-.oc-plan-skeleton-line:nth-child(7n+1) { animation-delay:  0.00s, 0.00s; animation-duration: 1.55s, 2.6s; width: 100%; }
-.oc-plan-skeleton-line:nth-child(7n+2) { animation-delay:  0.08s, 0.20s; animation-duration: 1.70s, 2.7s; width: 96%;  }
-.oc-plan-skeleton-line:nth-child(7n+3) { animation-delay:  0.18s, 0.45s; animation-duration: 1.50s, 2.5s; width: 88%;  }
-.oc-plan-skeleton-line:nth-child(7n+4) { animation-delay:  0.28s, 0.65s; animation-duration: 1.65s, 2.8s; width: 100%; }
-.oc-plan-skeleton-line:nth-child(7n+5) { animation-delay:  0.36s, 0.85s; animation-duration: 1.45s, 2.4s; width: 78%;  }
-.oc-plan-skeleton-line:nth-child(7n+6) { animation-delay:  0.46s, 1.05s; animation-duration: 1.60s, 2.6s; width: 92%;  }
-.oc-plan-skeleton-line:nth-child(7n+7) { animation-delay:  0.55s, 1.25s; animation-duration: 1.75s, 2.9s; width: 64%;  }
+.oc-plan-skeleton-line:nth-child(7n+1) { width: 100%; }
+.oc-plan-skeleton-line:nth-child(7n+2) { width: 96%;  }
+.oc-plan-skeleton-line:nth-child(7n+3) { width: 88%;  }
+.oc-plan-skeleton-line:nth-child(7n+4) { width: 100%; }
+.oc-plan-skeleton-line:nth-child(7n+5) { width: 78%;  }
+.oc-plan-skeleton-line:nth-child(7n+6) { width: 92%;  }
+.oc-plan-skeleton-line:nth-child(7n+7) { width: 64%;  }
 
 @media (prefers-reduced-motion: reduce) {
-  .oc-plan-skeleton-line {
+  .oc-plan-skeleton-lines {
     animation: none;
-    background-image: none;
     opacity: 0.6;
   }
 }
@@ -1762,10 +1819,14 @@ input[aria-label="Terminal input"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .oc-text-shimmer::after {
-    content: none;
+  .oc-live-status-shimmer__focus,
+  .oc-live-status-shimmer__counter {
     animation: none;
-    background-image: none;
+    will-change: auto;
+  }
+
+  .oc-live-status-shimmer__focus {
+    opacity: 0;
   }
 
   .marquee-text--auto,

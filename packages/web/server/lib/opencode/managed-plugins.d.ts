@@ -2,10 +2,12 @@ export type DevRyanManagedPluginId =
   | 'opencode-antigravity-auth'
   | '@rama_nigg/open-cursor'
   | 'opencode-with-claude'
+  | 'opencode-gpt-imagegen'
   | 'context-mode'
   | 'oh-my-opencode-slim'
   | 'superpowers'
   | 'devryan-skill-context'
+  | 'devryan-document-reader'
   | 'openai-tool-schema-sanitizer';
 
 export type DevRyanManagedPluginDelivery = 'installed-local' | 'bundled-file' | 'curated-skills';

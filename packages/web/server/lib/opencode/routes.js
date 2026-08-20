@@ -139,6 +139,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     validateDirectoryPath,
     resolveProjectDirectory,
     getProviderSources,
+    removeAntigravityProviderConfig = () => false,
     removeProviderConfig,
     ensureAnthropicOAuthProviderConfig,
     markConfigChange,
@@ -1168,9 +1169,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       const { getProviderAuth } = await getAuthLibrary();
       const authLookupIds = ['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude'].includes(providerId)
         ? [providerId, 'anthropic', 'claude']
-        : isGitHubCopilotProviderId(providerId)
-        ? getProviderIntegrationLookupIds(providerId)
-        : [providerId];
+        : getProviderIntegrationLookupIds(providerId);
       const auth = authLookupIds.map((id) => getProviderAuth(id)).find(Boolean);
       if (providerId === CURSOR_ACP_PROVIDER_ID) {
         sources.sources.auth.exists = Boolean(
@@ -1242,8 +1241,12 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
           : providerId === ANTIGRAVITY_PROVIDER_ID
           ? await removeAntigravityAccounts()
           : await removeProviderAuthForLookupIds(getProviderIntegrationLookupIds(providerId));
-        const userRemoved = removeProviderConfig(providerId, null, 'user');
-        const customRemoved = removeProviderConfig(providerId, null, 'custom');
+        const userRemoved = providerId === ANTIGRAVITY_PROVIDER_ID
+          ? removeAntigravityProviderConfig(null, 'user')
+          : removeProviderConfig(providerId, null, 'user');
+        const customRemoved = providerId === ANTIGRAVITY_PROVIDER_ID
+          ? removeAntigravityProviderConfig(null, 'custom')
+          : removeProviderConfig(providerId, null, 'custom');
         removed = authRemoved || userRemoved || customRemoved;
       } else {
         return res.status(400).json({ error: 'Invalid scope' });

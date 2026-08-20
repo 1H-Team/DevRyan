@@ -16,6 +16,15 @@ const beforeTool = async (tool, args) => {
   );
 };
 
+const afterTool = async (hooks, tool, output, args = {}) => {
+  const result = { title: '', output, metadata: { source: 'native' } };
+  await hooks['tool.execute.after'](
+    { tool, sessionID: 'session-1', callID: 'call-1', args },
+    result,
+  );
+  return result;
+};
+
 afterEach(() => {
   delete globalThis.__DEVRYAN_GUARD_EXECUTED__;
 });
@@ -50,8 +59,134 @@ describe('DevRyan tool input guard plugin', () => {
     });
   });
 
-  test('allows a valid read path', async () => {
-    await expect(beforeTool('read', { path: '/tmp/project/file.ts' })).resolves.toBeUndefined();
+  test.each(['read', 'oc_read'])('rejects known binary paths before %s executes', async (tool) => {
+    for (const readPath of [
+      '/tmp/project/image.png',
+      '/tmp/project/IMAGE.JPEG',
+      '/tmp/project/report.pdf',
+      '/tmp/project/archive.zip',
+      '/tmp/project/font.woff2',
+      '/tmp/project/audio.mp3',
+      '/tmp/project/video.mp4',
+      '/tmp/project/program.exe',
+    ]) {
+      await expect(beforeTool(tool, { path: readPath })).rejects.toMatchObject({
+        code: 'DEVRYAN_TOOL_INPUT_INVALID',
+        message: expect.stringContaining('read cannot load binary files'),
+      });
+    }
+  });
+
+  test.each(['read', 'oc_read'])('allows textual paths through %s', async (tool) => {
+    for (const readPath of [
+      '/tmp/project/file.ts',
+      '/tmp/project/README.md',
+      '/tmp/project/data.json',
+      '/tmp/project/runtime.log',
+      '/tmp/project/icon.svg',
+      '/tmp/project/extensionless',
+    ]) {
+      await expect(beforeTool(tool, { path: readPath })).resolves.toBeUndefined();
+    }
+  });
+
+  test('accepts compatibility read path aliases', async () => {
+    await expect(beforeTool('oc_read', { filePath: '/tmp/project/file.ts' })).resolves.toBeUndefined();
+  });
+
+  test('removes raw PNG bytes from a completed read result', async () => {
+    const hooks = await DevRyanToolInputGuardPlugin();
+    const rawPng = '\uFFFDPNG\r\n\u001a\n\u0000\u0000\u0000\rIHDR\u0000\u0000\u0001w\uFFFD\uFFFD\u0001';
+
+    const result = await afterTool(hooks, 'read', rawPng, { path: '/tmp/project/extensionless' });
+
+    expect(result.output).toContain('DEVRYAN_BINARY_READ_BLOCKED');
+    expect(result.output).not.toContain('IHDR');
+    expect(result.metadata).toEqual({ source: 'native' });
+  });
+
+  test('detects misleadingly named binary output without affecting Unicode text', async () => {
+    const hooks = await DevRyanToolInputGuardPlugin();
+    const binary = `header${'\uFFFD\u0001'.repeat(40)}`;
+    const unicode = 'مرحبا 👋 café\nOne literal replacement character: \uFFFD';
+
+    const [blocked, preserved] = await Promise.all([
+      afterTool(hooks, 'oc_read', binary, { path: '/tmp/project/payload.data' }),
+      afterTool(hooks, 'read', unicode, { path: '/tmp/project/notes.txt' }),
+    ]);
+
+    expect(blocked.output).toContain('DEVRYAN_BINARY_READ_BLOCKED');
+    expect(preserved.output).toBe(unicode);
+  });
+
+  test('scrubs historical binary read results only in the provider-bound copy', async () => {
+    const hooks = await DevRyanToolInputGuardPlugin();
+    const canonical = {
+      messages: [{
+        info: { role: 'assistant' },
+        parts: [
+          {
+            type: 'tool',
+            tool: 'read',
+            state: {
+              status: 'completed',
+              input: { path: '/tmp/project/auth-login.png' },
+              output: '\uFFFDPNG\r\n\u001a\nraw bytes',
+            },
+          },
+          {
+            type: 'tool',
+            tool: 'grep',
+            state: { status: 'completed', input: {}, output: 'matching text' },
+          },
+          {
+            type: 'file',
+            filename: 'photo.png',
+            mime: 'image/png',
+            url: 'data:image/png;base64,AQID',
+          },
+        ],
+      }],
+    };
+    const providerCopy = structuredClone(canonical);
+
+    await hooks['experimental.chat.messages.transform']({}, providerCopy);
+
+    expect(providerCopy.messages[0].parts[0].state.output).toContain('DEVRYAN_BINARY_READ_BLOCKED');
+    expect(providerCopy.messages[0].parts[1].state.output).toBe('matching text');
+    expect(providerCopy.messages[0].parts[2]).toEqual(canonical.messages[0].parts[2]);
+    expect(canonical.messages[0].parts[0].state.output).toContain('raw bytes');
+  });
+
+  test('does not change unrelated completed tool results', async () => {
+    const hooks = await DevRyanToolInputGuardPlugin();
+    const output = '\uFFFDPNG\r\n\u001a\nraw bytes';
+    const result = await afterTool(hooks, 'custom_tool', output, { path: '/tmp/project/image.png' });
+    expect(result.output).toBe(output);
+  });
+
+  test('preserves textual read errors and ANSI logs even for binary-named paths', async () => {
+    const hooks = await DevRyanToolInputGuardPlugin();
+    const textualError = 'File not found: /tmp/project/missing.png';
+    const ansiLog = '\u001b[31merror\u001b[0m: still ordinary text\n'.repeat(20);
+
+    const providerCopy = {
+      messages: [{
+        parts: [{
+          type: 'tool',
+          tool: 'read',
+          state: {
+            input: { path: '/tmp/project/missing.png' },
+            output: textualError,
+          },
+        }],
+      }],
+    };
+    await hooks['experimental.chat.messages.transform']({}, providerCopy);
+    const logResult = await afterTool(hooks, 'read', ansiLog, { path: '/tmp/project/runtime.log' });
+
+    expect(providerCopy.messages[0].parts[0].state.output).toBe(textualError);
+    expect(logResult.output).toBe(ansiLog);
   });
 
   test('allows valid JavaScript without executing it', async () => {

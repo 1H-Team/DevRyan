@@ -158,6 +158,9 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 ## Main files
 
 - `runtime.js`: principal/session lifecycle, authorization, admin/settings/session routes.
+- `managed-agent-defaults.js`: bounded single-model agent-default validation and
+  personal-over-host execution resolution. Composite agents such as Council are
+  deliberately host-managed.
 - `auth-compat.js`: mixed-schema policy reads, structured auth dependency errors,
   and strict agent-test identity discovery/selection.
 - `supabase-client.js`: Auth Admin, password/refresh, and PostgREST transport.
@@ -192,6 +195,27 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   values are returned; Edit determines which changes and page-owned mutations
   are accepted. `settings_pages` remains a legacy Read projection while
   `settings_permissions` and `settings_permission_overrides` are authoritative.
+- `user_policies.settings_overrides` is also the service-only store for sparse
+  account defaults: `defaultAgent`, `defaultPlanMode`, and
+  `agentModelSelections[agentName]`. `GET /api/config/settings` reports the
+  fields personally owned by the current principal in
+  `multiUser.settingsOverrideKeys`; browser principals never receive direct
+  Supabase table access.
+- Managed non-admins explicitly save or reset one validated single-model agent
+  default through `PUT`/`DELETE
+  /api/config/settings/agent-defaults/:agentName`; `DELETE
+  /api/config/settings/overrides/:field` resets `defaultAgent` or
+  `defaultPlanMode`. Per-user mutations are serialized and re-read the latest
+  policy row inside the lock, so concurrent saves for different agents cannot
+  lose each other. These routes never mutate host agent files or request an
+  OpenCode configuration apply. Audit metadata contains only the agent/field
+  identity and operation, never provider, model, or thinking values.
+- Executable defaults resolve from a personal per-agent override, then the live
+  host agent configuration. Existing UI availability fallback remains the final
+  display/send boundary. Durable root-session ownership selects the principal
+  for managed child dispatch; missing ownership, stale assignment, or directory
+  mismatch fails closed. Administrators use the live host execution, and
+  Council keeps its shared ordered host roster.
 - `role_policies.can_use_browser` stores the role default. Sparse
   `user_policies.capabilities.browser` values override it; an absent override
   inherits the role. Missing role columns are projected as the enabled product

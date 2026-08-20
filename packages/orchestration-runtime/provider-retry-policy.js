@@ -4,6 +4,14 @@ const normalizeProviderRetryMessage = (value) => (
     : ''
 );
 
+const normalizeProviderRetryActionReason = (value) => (
+  typeof value === 'string' ? value.trim().toLowerCase() : ''
+);
+
+const PROVIDER_USAGE_LIMIT_ACTION_REASONS = new Set([
+  'free_tier_limit',
+]);
+
 export const PROVIDER_USAGE_LIMIT_FAILURE_KIND = 'provider_usage_limit';
 export const PROVIDER_PROMPT_REJECTED_FAILURE_KIND = 'provider_prompt_rejected';
 export const DEADLINE_EXCEEDED_FAILURE_KIND = 'deadline_exceeded';
@@ -88,6 +96,7 @@ export const classifyProviderRetryFailure = (value) => {
     return PROVIDER_PROMPT_REJECTED_FAILURE_KIND;
   }
   return message.includes('out of usage')
+    || message.includes('usage exceeded')
     || message.includes('usage limit')
     || message.includes('hit your limit')
     || message.includes('session limit')
@@ -99,6 +108,14 @@ export const classifyProviderRetryFailure = (value) => {
     || message.includes('insufficient quota')
     ? PROVIDER_USAGE_LIMIT_FAILURE_KIND
     : null;
+};
+
+export const classifyProviderRetryStatus = (value) => {
+  const actionReason = normalizeProviderRetryActionReason(value?.action?.reason);
+  if (PROVIDER_USAGE_LIMIT_ACTION_REASONS.has(actionReason)) {
+    return PROVIDER_USAGE_LIMIT_FAILURE_KIND;
+  }
+  return classifyProviderRetryFailure(value?.message);
 };
 
 export const isDefiniteProviderUsageLimit = (value) => {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useSessions } from '@/sync/sync-context';
+import { useSession } from '@/sync/sync-context';
 import { useInputStore } from '@/sync/input-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -71,7 +71,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
   const projects = useProjectsStore((state) => state.projects);
   const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
   const effectiveDirectory = useEffectiveDirectory();
-  const sessions = useSessions();
+  const currentSession = useSession(currentSessionId, effectiveDirectory);
 
   React.useEffect(() => {
     isMenuVisibleRef.current = position.show;
@@ -339,13 +339,6 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     hideMenu();
     window.getSelection()?.removeAllRanges();
   }, [selectedText, hideMenu]);
-
-  const currentSession = React.useMemo(() => {
-    if (!currentSessionId) {
-      return null;
-    }
-    return sessions.find((session) => session.id === currentSessionId) ?? null;
-  }, [currentSessionId, sessions]);
 
   const currentProjectRef = React.useMemo(() => {
     const directory = effectiveDirectory

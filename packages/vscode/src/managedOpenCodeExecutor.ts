@@ -1,5 +1,6 @@
 import { CURSOR_PROVIDER_ID } from '@openchamber/cursor-sdk-runtime';
 import {
+  createKeyedSingleFlight,
   createManagedOpenCodeExecutor,
   type ManagedOpenCodeTransport,
   type ManagedTaskExecutor,
@@ -11,6 +12,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const MAX_ERROR_BODY_LENGTH = 2_000;
 
 type RuntimeError = Error & { code?: string; statusCode?: number };
+type ManagedOpenCodeStatus = NonNullable<Awaited<ReturnType<ManagedOpenCodeTransport['readStatus']>>>;
 
 export type VsCodeCursorSdkRuntimeAdapter = {
   handlePromptAsync(input: {
@@ -18,7 +20,7 @@ export type VsCodeCursorSdkRuntimeAdapter = {
     directory: string;
     body: Record<string, unknown>;
   }): Promise<{ handled?: boolean; status?: number; body?: { error?: string } | null }>;
-  getSessionStatus(): Record<string, { type?: string }>;
+  getSessionStatus(): Record<string, ManagedOpenCodeStatus>;
   getSessionMessages(sessionId: string): Promise<Array<{
     info?: Record<string, unknown>;
     parts?: Record<string, unknown>[];
@@ -61,9 +63,21 @@ export const createVsCodeManagedOpenCodeExecutor = (options: {
   const fetchImpl = options.fetchImpl ?? fetch;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const cursorSdkRuntime = options.cursorSdkRuntime ?? null;
+  const statusSingleFlight = createKeyedSingleFlight();
 
-  const requestJson = async (
-    pathname: string,
+  const resolveRequestUrl = (pathname: string) => {
+    const baseUrl = options.manager.getApiUrl();
+    if (!baseUrl) {
+      const error: RuntimeError = new Error('OpenCode API URL is unavailable');
+      error.code = 'managed_runtime_unavailable';
+      error.statusCode = 503;
+      throw error;
+    }
+    return new URL(pathname, `${baseUrl.replace(/\/+$/, '')}/`);
+  };
+
+  const requestJsonUrl = async (
+    url: URL,
     requestOptions: {
       method?: string;
       body?: unknown;
@@ -72,14 +86,7 @@ export const createVsCodeManagedOpenCodeExecutor = (options: {
       signal?: AbortSignal;
     } = {},
   ) => {
-    const baseUrl = options.manager.getApiUrl();
-    if (!baseUrl) {
-      const error: RuntimeError = new Error('OpenCode API URL is unavailable');
-      error.code = 'managed_runtime_unavailable';
-      error.statusCode = 503;
-      throw error;
-    }
-    const response = await fetchImpl(new URL(pathname, `${baseUrl.replace(/\/+$/, '')}/`), {
+    const response = await fetchImpl(url, {
       method: requestOptions.method ?? 'GET',
       headers: {
         accept: 'application/json',
@@ -111,6 +118,17 @@ export const createVsCodeManagedOpenCodeExecutor = (options: {
       throw error;
     }
   };
+
+  const requestJson = async (
+    pathname: string,
+    requestOptions: {
+      method?: string;
+      body?: unknown;
+      label?: string;
+      allowNotFound?: boolean;
+      signal?: AbortSignal;
+    } = {},
+  ) => await requestJsonUrl(resolveRequestUrl(pathname), requestOptions);
 
   const transport: ManagedOpenCodeTransport = {
     async createSession(input) {
@@ -174,11 +192,12 @@ export const createVsCodeManagedOpenCodeExecutor = (options: {
       if (input.providerId === CURSOR_PROVIDER_ID) {
         return cursorSdkRuntime?.getSessionStatus()?.[input.sessionId] ?? null;
       }
-      const result = await requestJson(appendDirectory('/session/status', input.directory), {
-        label: 'session.status',
-      });
+      const statusUrl = resolveRequestUrl(appendDirectory('/session/status', input.directory));
+      const result = await statusSingleFlight.run(statusUrl.toString(), async () => (
+        await requestJsonUrl(statusUrl, { label: 'session.status' })
+      ));
       return isRecord(result) && isRecord(result[input.sessionId])
-        ? result[input.sessionId] as { type?: string }
+        ? result[input.sessionId] as ManagedOpenCodeStatus
         : null;
     },
     async readMessages(input) {

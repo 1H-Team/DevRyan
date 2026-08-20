@@ -42,17 +42,21 @@ import { useStreamingStore } from '@/sync/streaming';
 import {
     useSessionMessageCount,
     useSessionMessageRecords,
-    useSessions,
+    useSession,
     useDirectorySync,
     useSessionStatus,
     useSyncDirectory,
+    useSessionMessageLoadState,
 } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
-import { useSessionMessagePagination } from '@/sync/message-pagination-store';
 import { getSessionMaterializationStatus } from '@/sync/materialization';
-import { getAllSyncSessions } from '@/sync/sync-refs';
 import { isSessionWorkingFromState } from '@/sync/session-working';
 import { useI18n } from '@/lib/i18n';
+import {
+    completeSessionNavigation,
+    markSessionNavigationLoaderStarted,
+    markSessionNavigationReactCommitted,
+} from '@/sync/session-load-performance';
 
 const EMPTY_MESSAGES: Array<{ info: Message; parts: Part[] }> = [];
 const EMPTY_PERMISSIONS: PermissionRequest[] = [];
@@ -257,7 +261,7 @@ const ChatViewport = React.memo(({
                             onContentChange={handleMessageContentChange}
                         />
 
-                        <div className="mb-3">
+                        <div className={cn('mb-3', isMobile ? 'mt-2' : 'mt-3')}>
                             <StatusRowContainer />
                         </div>
 
@@ -355,7 +359,13 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
     const sync = useSync();
     const syncDirectory = useSyncDirectory();
     const ensureSessionRenderable = React.useCallback(
-        (sessionId: string) => sync.ensureSessionRenderable(sessionId, { directory: currentSessionDirectory }),
+        (sessionId: string) => {
+            markSessionNavigationLoaderStarted(sessionId, currentSessionDirectory);
+            return sync.ensureSessionRenderable(sessionId, {
+                directory: currentSessionDirectory,
+                reason: 'selected',
+            });
+        },
         [sync, currentSessionDirectory],
     );
     const loadMoreMessages = React.useCallback(
@@ -400,13 +410,13 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
         () => getLatestCompactionBoundaryAt(sessionMessages),
         [sessionMessages],
     );
-    const messagePagination = useSessionMessagePagination(
+    const messageLoadState = useSessionMessageLoadState(
+        currentSessionId ?? '',
         currentSessionDirectory ?? syncDirectory,
-        currentSessionId,
     );
 
-    // Sessions from sync system
-    const sessions = useSessions(currentSessionDirectory ?? undefined);
+    const currentSession = useSession(currentSessionId, currentSessionDirectory ?? undefined);
+    const parentSession = useSession(currentSession?.parentID);
 
     // Plan-proposed transitions live in the sync layer (sync-context.tsx →
     // detectAndMarkPlanProposed on session.idle) so background sessions get
@@ -494,27 +504,17 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
         if (!currentSessionId) return null;
         return {
             limit: sessionMessages.length,
-            complete: messagePagination.initialized
-                ? messagePagination.complete || !messagePagination.cursor
+            complete: messageLoadState.resolved
+                ? messageLoadState.complete || !messageLoadState.cursor
                 : true,
-            loading: messagePagination.loading,
+            loading: messageLoadState.status === 'loading',
         };
-    }, [currentSessionId, messagePagination, sessionMessages.length]);
+    }, [currentSessionId, messageLoadState, sessionMessages.length]);
 
     const { isMobile } = useDeviceInfo();
     const draftOpen = Boolean(currentDraftId && newSessionDraft?.open);
     const isDesktopExpandedInput = isExpandedInput && !isMobile;
     const messageListRef = React.useRef<MessageListHandle | null>(null);
-
-    const parentSession = React.useMemo(() => {
-        if (!currentSessionId) return null;
-        const current = sessions.find((session) => session.id === currentSessionId);
-        const parentID = current?.parentID;
-        if (!parentID) return null;
-        return sessions.find((session) => session.id === parentID)
-            ?? getAllSyncSessions().find((session) => session.id === parentID)
-            ?? null;
-    }, [currentSessionId, sessions]);
 
     const handleReturnToParentSession = React.useCallback(() => {
         if (!parentSession) return;
@@ -713,6 +713,17 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
         Boolean(currentSessionId)
         && !hasRenderableSessionSnapshot;
 
+    React.useLayoutEffect(() => {
+        if (!currentSessionId || sessionMessages.length === 0) return;
+        const sessionId = currentSessionId;
+        const sessionDirectory = currentSessionDirectory;
+        markSessionNavigationReactCommitted(sessionId, sessionDirectory);
+        const frame = window.requestAnimationFrame(() => {
+            completeSessionNavigation(sessionId, sessionDirectory);
+        });
+        return () => window.cancelAnimationFrame(frame);
+    }, [currentSessionDirectory, currentSessionId, sessionMessages.length]);
+
     React.useEffect(() => {
         if (!currentSessionId) return;
         if (lastScrolledSessionRef.current === currentSessionId) return;
@@ -756,11 +767,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
         );
         const statusType = sessionStatusForCurrent?.type;
         const statusAllowsFocusResync = statusType !== 'busy' && statusType !== 'retry';
-        const needsFocusResync = statusAllowsFocusResync && (
-            !sessionStatusForCurrent
-            || hasStaleTrailingAssistant
-            || !hasRenderableSessionSnapshot
-        );
+        // Missing history/status during a cold selection is owned by the exact-key
+        // loader. The broad focus recovery remains only for a genuinely stale
+        // incomplete assistant turn, preventing a duplicate 30-message request.
+        const needsFocusResync = statusAllowsFocusResync && hasStaleTrailingAssistant;
         if (needsFocusResync) {
             const resyncKey = `${currentSessionDirectory ?? ''}\n${currentSessionId}`;
             if (focusResyncInFlightRef.current.has(resyncKey)) {
@@ -777,7 +787,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
     }, [
         currentSessionId,
         currentSessionDirectory,
-        hasRenderableSessionSnapshot,
         sessionMessageInfos,
         sessionStatusForCurrent,
         sync,
@@ -815,6 +824,29 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
 
     if (!currentSessionId) {
         return null;
+    }
+
+    if (messageLoadState.status === 'error' && sessionMessages.length === 0 && !sessionIsWorking) {
+        return (
+            <div className="relative flex h-full flex-col bg-background">
+                {returnToParentButton}
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+                    <p className="typography-ui-label text-muted-foreground">Session history could not be loaded.</p>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void sync.ensureSessionRenderable(currentSessionId, {
+                            directory: currentSessionDirectory,
+                            force: true,
+                            reason: 'force',
+                        })}
+                    >
+                        Retry
+                    </Button>
+                </div>
+                <ChatInput scrollToBottom={resumeToLatestInstant} />
+            </div>
+        );
     }
 
 	if (isSessionHydrating && sessionMessages.length === 0 && !sessionIsWorking) {

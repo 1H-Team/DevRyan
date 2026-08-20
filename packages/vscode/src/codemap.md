@@ -27,10 +27,10 @@ VS Code extension-host implementation: activation lifecycle, command surface, we
 - `claudeAuthStatus.ts` and `anthropicOAuthPlugin.ts` mirror the web/Electron safe auth-status contract and pinned Claude proxy migration policy.
 - `quotaCredentials.ts` owns allowlisted private managed quota files and explicit read-only Cursor import; `quotaProviders.ts` owns quota-source precedence and keeps those credentials separate from Cursor SDK execution auth. z.ai, Kimi, Codex, xAI, and DeepSeek use `@openchamber/shared-runtime` adapters.
 - `skillsCatalog.ts` adapts ClawdHub transport and destination policy to the shared safe-archive installer.
-- `managedOrchestrationRuntime.ts` composes the VS Code-owned scheduler and scoped RPC contract, including pre-admission read-only provider compatibility and implementation-only Designer checks, validated 25-second maximum wait slices, unbounded root barrier inspection, and confirmed agent handoff.
+- `managedOrchestrationRuntime.ts` composes the VS Code-owned scheduler and scoped RPC contract, including pre-admission read-only provider compatibility and implementation-only Designer checks, validated 25-second maximum wait slices, eager/reference result projection, strictly scoped stateless `read_result` paging, unbounded root barrier inspection, and confirmed agent handoff.
 - `managedOrchestrationPersistence.ts` owns the private atomic extension-storage ledger, legacy dispatch-group hydration, and corrupt-ledger quarantine.
 - `managedOrchestrationHost.ts` owns the bearer-authenticated IPv4 loopback bridge used only by managed OpenCode plugins.
-- `managedOpenCodeExecutor.ts` owns canonical normal-provider and Cursor child-session execution, including stale fresh-child cleanup through both OpenCode and the Cursor state owner.
+- `managedOpenCodeExecutor.ts` owns canonical normal-provider and Cursor child-session execution, including per-executor exact-URL status single-flight and stale fresh-child cleanup through both OpenCode and the Cursor state owner.
 - `bridge-orchestration-runtime.ts` adapts scoped webview requests, including safe handoff projections, without exposing private task inputs or bridge credentials.
 
 ## Flow

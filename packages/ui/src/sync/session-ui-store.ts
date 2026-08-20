@@ -261,9 +261,13 @@ async function autoUnarchiveAfterSuccessfulSend(sessionId: string | null | undef
 // Decision: keep the runtime plan-mode prompt in this shared UI module instead
 // of reading plan.md at send time, so web/Electron/VS Code use the same
 // synchronous contract even when project agent files are unavailable or stale.
-export const buildPlanModeSyntheticInstruction = (): string => [
+export const buildPlanModeSyntheticInstruction = (contextModeAvailable: boolean): string => [
   "User has requested to enter plan mode.",
   "Produce an implementation plan only; do not edit files, run modifying commands, or make changes yet.",
+  ...(contextModeAvailable ? [
+    "For broad or multi-file workspace analysis, use ctx_index followed by batched ctx_search. For large web research, use ctx_fetch_and_index followed by batched ctx_search.",
+    "Use native read, grep, glob, and ls for bounded exact lookups, or after one Context Mode storage failure. ctx_execute, ctx_execute_file, and ctx_batch_execute are intentionally unavailable in plan mode; do not retry Context Mode after that storage failure in the same turn.",
+  ] : []),
   "Use the authoritative same-session planning history as context. Treat the latest visible user prompt as a revision of the most recent plan unless the user explicitly asks for a separate, independent plan.",
   "Preserve every prior requirement, decision, constraint, and file reference that the user has not explicitly changed, including useful work from an interrupted or partial planning turn.",
   "For a revision, emit a complete, self-contained replacement plan containing both the preserved context and the requested changes. Never return only a patch, diff, addendum, or abbreviated delta.",
@@ -370,9 +374,6 @@ async function routeMessage(params: {
     }),
   )
 
-  const planModePrefaceText = params.planMode === true
-    ? buildPlanModeSyntheticInstruction()
-    : undefined
   const additionalParts = handoffAdditionalParts
 
   assertPdfAttachmentsSupported({
@@ -487,22 +488,28 @@ async function routeMessage(params: {
     },
     signal: params.lifecycleCallbacks?.signal,
     preserveProviderRecovery: params.lifecycleCallbacks?.preserveProviderRecovery,
-    send: (messageID) => opencodeClient.sendMessage({
-      id: params.sessionId,
-      providerID: params.providerID,
-      modelID: params.modelID,
-      text: params.content,
-      prefaceText: planModePrefaceText,
-      prefaceTextSynthetic: planModePrefaceText ? true : undefined,
-      agent: effectiveAgent,
-      variant: params.variant,
-      files: params.files,
-      additionalParts,
-      messageId: messageID,
-      directory: messageDirectory,
-      signal: params.lifecycleCallbacks?.signal,
-      beforeTransport: assertTransportAllowed,
-    }).then(() => {}),
+    send: (messageID) => {
+      const planModePrefaceText = params.planMode === true
+        ? buildPlanModeSyntheticInstruction(opencodeClient.getContextModeAvailable())
+        : undefined
+      return opencodeClient.sendMessage({
+        id: params.sessionId,
+        providerID: params.providerID,
+        modelID: params.modelID,
+        text: params.content,
+        prefaceText: planModePrefaceText,
+        prefaceTextSynthetic: planModePrefaceText ? true : undefined,
+        agent: effectiveAgent,
+        variant: params.variant,
+        planMode: params.planMode,
+        files: params.files,
+        additionalParts,
+        messageId: messageID,
+        directory: messageDirectory,
+        signal: params.lifecycleCallbacks?.signal,
+        beforeTransport: assertTransportAllowed,
+      }).then(() => {})
+    },
   })
   await autoUnarchiveAfterSuccessfulSend(params.sessionId)
   return true

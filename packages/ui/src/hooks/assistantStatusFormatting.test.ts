@@ -10,8 +10,8 @@ describe("getAssistantToolStatusPhrase", () => {
     });
 
     test("prefixes Context Mode tool names", () => {
-        expect(getAssistantToolStatusPhrase("ctx_execute_file")).toBe("using C-Mode: Execute File");
-        expect(getAssistantToolStatusPhrase("mcp__context-mode__ctx_execute")).toBe("using C-Mode: Execute");
+        expect(getAssistantToolStatusPhrase("ctx_execute_file")).toBe("using Context Mode: Execute File");
+        expect(getAssistantToolStatusPhrase("mcp__context-mode__ctx_execute")).toBe("using Context Mode: Execute");
     });
 
     test("keeps built-in status phrases unchanged", () => {

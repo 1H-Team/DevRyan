@@ -53,6 +53,7 @@ import {
 import { createCanonicalOpenCodeEventProcessor } from './lib/event-stream/canonical-ingestion.js';
 import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/search.js';
 import { createOpenCodeLifecycleRuntime } from './lib/opencode/lifecycle.js';
+import { resolveContextModeCapability } from './lib/opencode/context-mode-hotfix.js';
 import { createConfigApplyCoordinator, createConfigChangeMarker } from '@openchamber/shared-runtime';
 import { syncPackagedAgents } from './lib/opencode/packaged-agent-sync.js';
 import { syncRuntimeAgentOverlays } from './lib/opencode/runtime-agent-overlays.js';
@@ -90,6 +91,7 @@ import { createTurnTimingRuntime, registerTurnTimingRoutes } from './lib/opencod
 import { createAgentRuntimeWarmup, registerAgentRuntimeWarmupRoute } from './lib/opencode/agent-runtime-warmup.js';
 import { createProjectPrewarmRuntime } from './lib/opencode/project-prewarm-runtime.js';
 import { createHarnessPreflight, registerHarnessPreflightRoute } from './lib/opencode/harness-preflight.js';
+import { inspectClaudeRuntimeCompatibility } from './lib/opencode/claude-runtime-compatibility.js';
 import { resolveApprovedSkills } from './lib/opencode/skill-policy.js';
 import { getAgentConfig, getAgentSources, listConfigAgents, listStaleAgentModelOverrides } from './lib/opencode/agents.js';
 import { listPackagedAgents } from './lib/opencode/packaged-agents.js';
@@ -1642,6 +1644,13 @@ async function main(options = {}) {
       const launchSpec = resolvedOpencodeBinary && !useWslForOpencode
         ? resolveManagedOpenCodeLaunchSpec(resolvedOpencodeBinary)
         : null;
+      const contextModeAvailable = resolveContextModeCapability({
+        isOpenCodeReady,
+        isRestartingOpenCode,
+        isExternalOpenCode,
+        skipOpenCodeStart: ENV_SKIP_OPENCODE_START,
+        configuredOpenCodeHost: ENV_CONFIGURED_OPENCODE_HOST,
+      });
       return {
         openCodePort,
         openCodeVersion: openCodePort ? openCodeVersion : null,
@@ -1666,6 +1675,8 @@ async function main(options = {}) {
         bunBinaryResolved: resolvedBunBinary || null,
         desktopNotifyEnabled: ENV_DESKTOP_NOTIFY,
         planModeExperimentalEnabled: PLAN_MODE_EXPERIMENT_ENABLED,
+        contextModeAvailable,
+        contextModeReadOnlyIndexing: contextModeAvailable,
         multiUserControlPlane: multiUserRuntime.getControlPlaneStatus?.() ?? {
           state: multiUserRuntime.enabled ? 'unknown' : 'disabled',
           lastErrorCode: null,
@@ -1716,6 +1727,7 @@ async function main(options = {}) {
     readSettingsFromDiskMigrated,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    listConfigAgents,
     getConfigApplyMutationResponse: (principal) => {
       const applyStatus = configApplyCoordinator.getStatus({
         canForceRestart: canForceConfigRestart(principal),
@@ -1759,6 +1771,12 @@ async function main(options = {}) {
       || ENV_CONFIGURED_OPENCODE_HOST
     ),
     getWorkAdmissionBlock: harnessRuntime.getPromptAdmissionBlock,
+    resolveAgentExecution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
+      ?? params.fallbackExecution,
+    auxiliaryRpcHandlers: {
+      resolve_agent_execution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
+        ?? params.fallbackExecution,
+    },
     logger: console,
   });
   registerManagedOrchestrationRoutes(app, {
@@ -1881,6 +1899,8 @@ async function main(options = {}) {
     getRuntimeMode: () => (isExternalOpenCode || ENV_SKIP_OPENCODE_START ? 'external' : 'managed'),
     getPackagedAgents: () => listPackagedAgents(),
     readSkillBody: (skill) => parseMdFile(skill.path).body,
+    getClaudeRuntime: () => inspectClaudeRuntimeCompatibility(),
+    recordDiagnostic: (entry) => harnessRuntime.record(entry),
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     fetchImpl: fetch,

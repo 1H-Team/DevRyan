@@ -3,8 +3,11 @@ export type DevRyanDefaultPluginId =
   | '@rama_nigg/open-cursor'
   | 'oh-my-opencode-slim'
   | 'opencode-with-claude'
+  | 'opencode-gpt-imagegen'
   | 'context-mode'
   | 'superpowers'
+  | 'devryan-skill-context'
+  | 'devryan-document-reader'
   | 'openai-tool-schema-sanitizer';
 
 export type DevRyanDefaultPlugin = {
@@ -25,6 +28,7 @@ export const DEVRYAN_DEFAULT_PLUGIN_IDS: Readonly<{
   OPEN_CURSOR: '@rama_nigg/open-cursor';
   SLIM: 'oh-my-opencode-slim';
   CLAUDE: 'opencode-with-claude';
+  GPT_IMAGEGEN: 'opencode-gpt-imagegen';
   CONTEXT_MODE: 'context-mode';
   SUPERPOWERS: 'superpowers';
   OPENAI_TOOL_SCHEMA_SANITIZER: 'openai-tool-schema-sanitizer';

@@ -797,7 +797,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const isVSCode = isVSCodeRuntime();
     const inputBarOffset = useUIStore((state) => state.inputBarOffset);
     const persistChatDraft = useUIStore((state) => state.persistChatDraft);
-    const inputSpellcheckEnabled = useUIStore((state) => state.inputSpellcheckEnabled);
     const isExpandedInput = useUIStore((state) => state.isExpandedInput);
     const setExpandedInput = useUIStore((state) => state.setExpandedInput);
     const setTimelineDialogOpen = useUIStore((state) => state.setTimelineDialogOpen);
@@ -4571,7 +4570,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                 disabled={!currentSessionId && !newSessionDraftOpen}
                                 autoCorrect={isMobile ? "on" : "off"}
                                 autoCapitalize={isMobile ? "sentences" : "off"}
-                                spellCheck={isMobile || inputSpellcheckEnabled}
+                                spellCheck={false}
                                 fillContainer={isDesktopExpanded}
                                 outerClassName={cn('ring-0 bg-transparent shadow-none hover:bg-transparent focus-within:ring-0', isDesktopExpanded && 'flex-1 min-h-0')}
                                 className={cn(
@@ -4686,7 +4685,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     {showContextUsageButton ? (
                                         <ComposerContextUsageControl
                                             sessionId={currentSessionId}
-                                            fallbackDirectory={currentDirectory}
+                                            directory={currentSessionDirectory ?? currentDirectory}
                                             footerIconButtonClass={footerIconButtonClass}
                                             iconSizeClass={iconSizeClass}
                                             onCompact={handleContextCompact}

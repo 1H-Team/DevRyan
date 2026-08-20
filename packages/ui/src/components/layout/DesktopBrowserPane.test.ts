@@ -44,6 +44,11 @@ describe('shared browser surface shell', () => {
     expect(source).toContain("'desktop_browser_devtools_set_open'");
   });
 
+  test('publishes and clears native surface occupancy for renderer overlays', () => {
+    expect(source).toContain('setNativeSurfaceOccupancy(surfaceId, visible ? {');
+    expect(source).toContain('setNativeSurfaceOccupancy(surfaceId, null);');
+  });
+
   test('aligns toolbar controls and uses picture-in-picture placement icons', () => {
     expect(source).toContain("const BROWSER_TOOLBAR_BUTTON_CLASS = 'size-7 p-0 leading-none';");
     expect(source).toContain("const BROWSER_TOOLBAR_ICON_CLASS = 'size-3.5';");
@@ -114,7 +119,9 @@ describe('Electron browser surface', () => {
   });
 
   test('retains annotation capture and resizable native DevTools by surface id', () => {
-    expect(source).toContain("'desktop_browser_capture_page', { surfaceId }");
+    expect(source).toContain("'desktop_browser_surface_inspect', { surfaceId }");
+    expect(source).toContain('const capture = result?.capture;');
+    expect(source).not.toContain("'desktop_browser_capture_page', { surfaceId }");
     expect(source).toContain('desktopAnnotationToFile(');
     expect(source).toContain('role="separator"');
     expect(source).toContain("window.addEventListener('pointermove', onMove)");
@@ -259,6 +266,7 @@ describe('standalone web browser surface', () => {
     expect(source).toContain("send({ type: 'closed', state: stateRef.current ?? undefined })");
     expect(source).toContain("type: 'attach-console'");
     expect(source).toContain("type: 'attach-annotation'");
+    expect(source).toContain("message.type === 'attach-annotation' && message.attachment && isPreviewElementMetadata(message.attachment.target)");
     expect(source).toContain('pendingNavigationRef.current');
     expect(source).toContain('reconcileWebBrowserDisplayUrl(value, currentUrl)');
   });

@@ -26,9 +26,13 @@ const CODEX_USER_AGENT = "codex_cli_rs/0.0.0 (OpenCode)";
 const OPENCODE_COMPACTION_BUFFER = 20_000;
 const OPENCODE_OUTPUT_TOKEN_MAX = 32_000;
 
-const CODEX_272K_LIMITS = Object.freeze({
-  context: 258_400,
-  autoCompact: 244_800,
+const CODEX_1_05M_LIMITS = Object.freeze({
+  context: 1_050_000,
+  autoCompact: 256_000,
+});
+const CODEX_400K_LIMITS = Object.freeze({
+  context: 400_000,
+  autoCompact: 256_000,
 });
 const CODEX_128K_LIMITS = Object.freeze({
   context: 121_600,
@@ -40,18 +44,18 @@ const CODEX_128K_LIMITS = Object.freeze({
 const CODEX_LIMITS_BY_MODEL_ID = new Map([
   ["gpt-5.3-codex-spark", CODEX_128K_LIMITS],
   ["gpt-5.3-codex-spark-fast", CODEX_128K_LIMITS],
-  ["gpt-5.4", CODEX_272K_LIMITS],
-  ["gpt-5.4-fast", CODEX_272K_LIMITS],
-  ["gpt-5.4-mini", CODEX_272K_LIMITS],
-  ["gpt-5.4-mini-fast", CODEX_272K_LIMITS],
-  ["gpt-5.5", CODEX_272K_LIMITS],
-  ["gpt-5.5-fast", CODEX_272K_LIMITS],
-  ["gpt-5.6-sol", CODEX_272K_LIMITS],
-  ["gpt-5.6-sol-fast", CODEX_272K_LIMITS],
-  ["gpt-5.6-terra", CODEX_272K_LIMITS],
-  ["gpt-5.6-terra-fast", CODEX_272K_LIMITS],
-  ["gpt-5.6-luna", CODEX_272K_LIMITS],
-  ["gpt-5.6-luna-fast", CODEX_272K_LIMITS],
+  ["gpt-5.4", CODEX_1_05M_LIMITS],
+  ["gpt-5.4-fast", CODEX_1_05M_LIMITS],
+  ["gpt-5.4-mini", CODEX_400K_LIMITS],
+  ["gpt-5.4-mini-fast", CODEX_400K_LIMITS],
+  ["gpt-5.5", CODEX_1_05M_LIMITS],
+  ["gpt-5.5-fast", CODEX_1_05M_LIMITS],
+  ["gpt-5.6-sol", CODEX_1_05M_LIMITS],
+  ["gpt-5.6-sol-fast", CODEX_1_05M_LIMITS],
+  ["gpt-5.6-terra", CODEX_1_05M_LIMITS],
+  ["gpt-5.6-terra-fast", CODEX_1_05M_LIMITS],
+  ["gpt-5.6-luna", CODEX_1_05M_LIMITS],
+  ["gpt-5.6-luna-fast", CODEX_1_05M_LIMITS],
 ]);
 
 const isPlainObject = (value) => (

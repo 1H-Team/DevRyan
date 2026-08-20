@@ -20,9 +20,11 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { BrowserTabsBar, DesktopBrowserPane, ManualBrowserWorkspacePane } from './DesktopBrowserPane';
 import { closeBrowserLeaseStripTab, closeManualBrowserStripTab } from './browserPanelClose';
 import { isBrowserPanelRuntimeSupported } from './browserRuntime';
+import {
+  clampBrowserPanelPreferredWidth,
+  resolveBrowserPanelWidth,
+} from './browserPanelLayout';
 
-const BROWSER_PANEL_MIN_WIDTH = 360;
-const BROWSER_PANEL_MAX_WIDTH = 1400;
 const BROWSER_PANEL_DEFAULT_WIDTH = 600;
 const EMPTY_BROWSER_LEASE_TABS: never[] = [];
 
@@ -37,8 +39,7 @@ const normalizeDirectoryKey = (value: string): string => {
 };
 
 const clampWidth = (value: number): number => {
-  if (!Number.isFinite(value)) return BROWSER_PANEL_DEFAULT_WIDTH;
-  return Math.min(BROWSER_PANEL_MAX_WIDTH, Math.max(BROWSER_PANEL_MIN_WIDTH, Math.round(value)));
+  return clampBrowserPanelPreferredWidth(value);
 };
 
 const BrowserLeasePane: React.FC<{ leaseId: string; active: boolean }> = React.memo(({ leaseId, active }) => {
@@ -120,11 +121,51 @@ export const BrowserPanel: React.FC = () => {
     ? activeLeaseId
     : null;
   const [isResizing, setIsResizing] = React.useState(false);
+  const [availableWidth, setAvailableWidth] = React.useState<number | null>(null);
   const panelRef = React.useRef<HTMLElement | null>(null);
+  const resizeHandleRef = React.useRef<HTMLDivElement | null>(null);
   const startXRef = React.useRef(0);
-  const startWidthRef = React.useRef(width);
+  const startPreferredWidthRef = React.useRef(width);
+  const resizingPreferredWidthRef = React.useRef<number | null>(null);
   const resizingWidthRef = React.useRef<number | null>(null);
   const activeResizePointerIDRef = React.useRef<number | null>(null);
+
+  React.useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const workspace = panel?.parentElement;
+    if (!panel || !workspace || !isOpen) {
+      setAvailableWidth(null);
+      return;
+    }
+
+    const contextPanel = Array.from(workspace.children).find((child) => (
+      child instanceof HTMLElement && child.dataset.contextPanel === 'true'
+    ));
+    const measure = () => {
+      const workspaceWidth = workspace.getBoundingClientRect().width;
+      const contextWidth = contextPanel instanceof HTMLElement
+        && contextPanel.getAttribute('aria-hidden') !== 'true'
+        && !contextPanelExpanded
+        ? contextPanel.getBoundingClientRect().width
+        : 0;
+      const next = Math.max(0, Math.round(workspaceWidth - contextWidth));
+      setAvailableWidth((current) => current === next ? current : next);
+    };
+
+    measure();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    observer?.observe(workspace);
+    if (contextPanel instanceof HTMLElement) observer?.observe(contextPanel);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [contextPanelExpanded, isOpen]);
+
+  const appliedWidth = availableWidth === null
+    ? width
+    : resolveBrowserPanelWidth({ preferredWidth: width, availableWidth });
 
   React.useEffect(() => {
     ensureBrowserAgentListeners();
@@ -147,37 +188,57 @@ export const BrowserPanel: React.FC = () => {
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* fallback pointer events still run */ }
     activeResizePointerIDRef.current = event.pointerId;
     startXRef.current = event.clientX;
-    startWidthRef.current = width;
-    resizingWidthRef.current = width;
+    startPreferredWidthRef.current = width;
+    resizingPreferredWidthRef.current = width;
+    resizingWidthRef.current = appliedWidth;
     setIsResizing(true);
-    applyLiveWidth(width);
+    applyLiveWidth(appliedWidth);
     event.preventDefault();
-  }, [applyLiveWidth, directoryKey, isExpanded, isOpen, width]);
+  }, [appliedWidth, applyLiveWidth, directoryKey, isExpanded, isOpen, width]);
 
-  const handleResizeMove = React.useCallback((event: React.PointerEvent) => {
-    if (!isResizing || activeResizePointerIDRef.current !== event.pointerId) return;
-    const nextWidth = clampWidth(startWidthRef.current + startXRef.current - event.clientX);
+  const updateResize = React.useCallback((pointerId: number, clientX: number) => {
+    if (activeResizePointerIDRef.current !== pointerId) return;
+    const preferredWidth = clampWidth(startPreferredWidthRef.current + startXRef.current - clientX);
+    const nextWidth = availableWidth === null
+      ? preferredWidth
+      : resolveBrowserPanelWidth({ preferredWidth, availableWidth });
     if (resizingWidthRef.current === nextWidth) return;
+    resizingPreferredWidthRef.current = preferredWidth;
     resizingWidthRef.current = nextWidth;
     applyLiveWidth(nextWidth);
-  }, [applyLiveWidth, isResizing]);
+  }, [applyLiveWidth, availableWidth]);
 
-  const handleResizeEnd = React.useCallback((event: React.PointerEvent) => {
-    if (!directoryKey || activeResizePointerIDRef.current !== event.pointerId) return;
-    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* capture may already be released */ }
-    const finalWidth = clampWidth(resizingWidthRef.current ?? width);
+  const finishResize = React.useCallback((pointerId: number) => {
+    if (!directoryKey || activeResizePointerIDRef.current !== pointerId) return;
+    const finalPreferredWidth = resizingPreferredWidthRef.current ?? width;
     activeResizePointerIDRef.current = null;
+    try { resizeHandleRef.current?.releasePointerCapture(pointerId); } catch { /* capture may already be released */ }
+    resizingPreferredWidthRef.current = null;
     resizingWidthRef.current = null;
     setIsResizing(false);
-    setBrowserPanelWidth(directoryKey, finalWidth);
+    setBrowserPanelWidth(directoryKey, finalPreferredWidth);
   }, [directoryKey, setBrowserPanelWidth, width]);
+
+  React.useEffect(() => {
+    if (!isResizing) return;
+    const handleMove = (event: PointerEvent) => updateResize(event.pointerId, event.clientX);
+    const handleEnd = (event: PointerEvent) => finishResize(event.pointerId);
+    window.addEventListener('pointermove', handleMove, true);
+    window.addEventListener('pointerup', handleEnd, true);
+    window.addEventListener('pointercancel', handleEnd, true);
+    return () => {
+      window.removeEventListener('pointermove', handleMove, true);
+      window.removeEventListener('pointerup', handleEnd, true);
+      window.removeEventListener('pointercancel', handleEnd, true);
+    };
+  }, [finishResize, isResizing, updateResize]);
 
   const panelStyle: React.CSSProperties = !isOpen
     ? { width: '100%', minWidth: '100%', maxWidth: '100%' }
     : isExpanded
       ? { ['--oc-browser-panel-width' as string]: '100%', width: '100%', minWidth: '100%', maxWidth: '100%' }
       : {
-        ['--oc-browser-panel-width' as string]: `${isResizing ? resizingWidthRef.current ?? width : width}px`,
+        ['--oc-browser-panel-width' as string]: `${isResizing ? resizingWidthRef.current ?? appliedWidth : appliedWidth}px`,
         width: 'var(--oc-browser-panel-width)',
         minWidth: 'var(--oc-browser-panel-width)',
         maxWidth: 'var(--oc-browser-panel-width)',
@@ -236,12 +297,14 @@ export const BrowserPanel: React.FC = () => {
       {directoryKey ? <BrowserLeaseRootPruner directory={directoryKey} /> : null}
       {isOpen && !isExpanded ? (
         <div
+          ref={resizeHandleRef}
           data-panel-resize-handle="browser-panel"
           className="group absolute left-0 top-0 z-30 h-full w-2 cursor-col-resize"
           onPointerDown={handleResizeStart}
-          onPointerMove={handleResizeMove}
-          onPointerUp={handleResizeEnd}
-          onPointerCancel={handleResizeEnd}
+          onPointerMove={(event) => updateResize(event.pointerId, event.clientX)}
+          onPointerUp={(event) => finishResize(event.pointerId)}
+          onPointerCancel={(event) => finishResize(event.pointerId)}
+          onLostPointerCapture={(event) => finishResize(event.pointerId)}
           role="separator"
           aria-orientation="vertical"
           aria-label={t('contextPanel.actions.resizePanelAria')}

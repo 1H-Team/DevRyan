@@ -29,6 +29,7 @@ interface WorkingSummary {
     compactionDeadline: number | null;
     activePartType?: 'text' | 'tool' | 'reasoning' | 'editing';
     activeToolName?: string;
+    activeToolAction?: string;
     wasAborted: boolean;
     abortActive: boolean;
     lastCompletionId: string | null;
@@ -51,6 +52,7 @@ export type AssistantActivePartType = 'text' | 'tool' | 'reasoning' | 'editing' 
 export interface AssistantActivePartStatus {
     activePartType: AssistantActivePartType;
     activeToolName: string | undefined;
+    activeToolAction?: string;
 }
 
 interface AssistantActivePartStatusOptions {
@@ -192,6 +194,17 @@ const getToolDisplayName = (part: ToolPart): string => {
     return typeof candidate.name === 'string' ? candidate.name : 'tool';
 };
 
+const getToolAction = (part: ToolPart): string | undefined => {
+    const state = part.state as { input?: unknown } | undefined;
+    if (!state?.input || typeof state.input !== 'object' || Array.isArray(state.input)) {
+        return undefined;
+    }
+    const action = (state.input as Record<string, unknown>).action;
+    return typeof action === 'string' && action.trim().length > 0
+        ? action.trim().toLowerCase()
+        : undefined;
+};
+
 const EDITING_TOOLS = new Set(['edit', 'write', 'multiedit', 'apply_patch']);
 
 const isToolLive = (part: ToolPart): boolean => {
@@ -234,6 +247,7 @@ export const getAssistantActivePartStatus = (
                     return {
                         activePartType: EDITING_TOOLS.has(normalizedToolName) ? 'editing' : 'tool',
                         activeToolName: toolName,
+                        activeToolAction: getToolAction(part),
                     };
                 }
 
@@ -370,6 +384,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
     interface ParsedStatusResult {
         activePartType: AssistantActivePartType;
         activeToolName: string | undefined;
+        activeToolAction?: string;
         statusText: string;
         isGenericStatus: boolean;
     }
@@ -385,7 +400,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
             return { activePartType: undefined, activeToolName: undefined, statusText: 'working', isGenericStatus: true };
         }
 
-        const { activePartType, activeToolName } = getAssistantActivePartStatus(lastAssistant.parts ?? [], {
+        const { activePartType, activeToolName, activeToolAction } = getAssistantActivePartStatus(lastAssistant.parts ?? [], {
             isTerminalAssistantMessage: isTerminalSyncAssistantMessage(lastAssistant.info),
         });
 
@@ -423,7 +438,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
             return getRandomWorkingPhrase();
         })();
 
-        return { activePartType, activeToolName, statusText, isGenericStatus };
+        return { activePartType, activeToolName, activeToolAction, statusText, isGenericStatus };
     }, [sessionMessages]);
 
     const abortState = React.useMemo(() => {
@@ -488,6 +503,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
             compactionDeadline: null,
             activePartType: isWorking ? parsedStatus.activePartType : undefined,
             activeToolName: isWorking ? parsedStatus.activeToolName : undefined,
+            activeToolAction: isWorking ? parsedStatus.activeToolAction : undefined,
             wasAborted: false,
             abortActive: false,
             lastCompletionId: null,

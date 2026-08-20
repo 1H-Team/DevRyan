@@ -132,6 +132,42 @@ const STALE_FILE_CLEANUP_PATCHED = [
   '        }',
   '        catch { /* best-effort */ }',
 ].join('\n');
+const CTX_INDEX_PATH_POLICY_ORIGINAL = [
+  '    if (path) {',
+  '        const pathDenied = checkFilePathDenyPolicy(path, "ctx_index");',
+  '        if (pathDenied)',
+  '            return pathDenied;',
+  '    }',
+].join('\n');
+const CTX_INDEX_PATH_POLICY_PATCHED = [
+  '    if (path) {',
+  '        // DevRyan hotfix: read-only indexing must stay inside the verified project boundary.',
+  '        const boundaryDenied = checkProjectBoundary(path, "ctx_index");',
+  '        if (boundaryDenied)',
+  '            return boundaryDenied;',
+  '        const pathDenied = checkFilePathDenyPolicy(path, "ctx_index");',
+  '        if (pathDenied)',
+  '            return pathDenied;',
+  '    }',
+].join('\n');
+
+export const resolveContextModeCapability = ({
+  isOpenCodeReady,
+  isRestartingOpenCode,
+  isExternalOpenCode,
+  skipOpenCodeStart,
+  configuredOpenCodeHost,
+} = {}) => Boolean(
+  isOpenCodeReady
+  && !isRestartingOpenCode
+  && !isExternalOpenCode
+  && !skipOpenCodeStart
+  && !configuredOpenCodeHost
+);
+
+// Compatibility alias for callers introduced when indexing was the only
+// prompt-level Context Mode grant.
+export const resolveContextModeReadOnlyIndexingCapability = resolveContextModeCapability;
 
 const sha256 = (content) => crypto.createHash('sha256').update(content).digest('hex');
 
@@ -151,11 +187,17 @@ export const transformContextModeServerSource = (source) => {
     STORE_CONSTRUCTION_PATCHED,
     'store construction',
   );
-  return replaceExactlyOnce(
+  patched = replaceExactlyOnce(
     patched,
     STALE_FILE_CLEANUP_ORIGINAL,
     STALE_FILE_CLEANUP_PATCHED,
     'stale file cleanup',
+  );
+  return replaceExactlyOnce(
+    patched,
+    CTX_INDEX_PATH_POLICY_ORIGINAL,
+    CTX_INDEX_PATH_POLICY_PATCHED,
+    'ctx_index project boundary',
   );
 };
 
@@ -218,7 +260,8 @@ export const applyContextModeHotfix = ({
       const originalCandidate = serverSource
         .replace(STORE_IMPORT_PATCHED, STORE_IMPORT_ORIGINAL)
         .replace(STORE_CONSTRUCTION_PATCHED, STORE_CONSTRUCTION_ORIGINAL)
-        .replace(STALE_FILE_CLEANUP_PATCHED, STALE_FILE_CLEANUP_ORIGINAL);
+        .replace(STALE_FILE_CLEANUP_PATCHED, STALE_FILE_CLEANUP_ORIGINAL)
+        .replace(CTX_INDEX_PATH_POLICY_PATCHED, CTX_INDEX_PATH_POLICY_ORIGINAL);
       patchedSource = transformContextModeServerSource(originalCandidate);
     } catch (error) {
       return incompatible(`Context-mode server source is incompatible: ${error?.message || error}`, {
@@ -230,7 +273,8 @@ export const applyContextModeHotfix = ({
   const originalCandidate = serverSource
     .replace(STORE_IMPORT_PATCHED, STORE_IMPORT_ORIGINAL)
     .replace(STORE_CONSTRUCTION_PATCHED, STORE_CONSTRUCTION_ORIGINAL)
-    .replace(STALE_FILE_CLEANUP_PATCHED, STALE_FILE_CLEANUP_ORIGINAL);
+    .replace(STALE_FILE_CLEANUP_PATCHED, STALE_FILE_CLEANUP_ORIGINAL)
+    .replace(CTX_INDEX_PATH_POLICY_PATCHED, CTX_INDEX_PATH_POLICY_ORIGINAL);
   const observedOriginalSha256 = sha256(originalCandidate);
   if (observedOriginalSha256 !== expectedOriginalSha256) {
     return incompatible('Context-mode server source hash is incompatible', {

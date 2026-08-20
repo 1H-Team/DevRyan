@@ -66,6 +66,11 @@ type SessionChildIdentity = {
   id: string;
 };
 
+type SessionBranchActivityState = {
+  session_status: Record<string, { type?: string } | undefined>;
+  permission: Record<string, readonly unknown[] | undefined>;
+};
+
 const QUESTION_REQUIRED_INDICATOR: SessionIndicator = {
   className: 'bg-status-info',
   labelKey: 'sessions.sidebar.session.status.questionRequired',
@@ -117,6 +122,17 @@ export function collectSessionIndicatorScopeIds(
   }
 
   return scope;
+}
+
+export function hasWorkingDescendantSession(
+  descendantSessionIds: readonly string[],
+  state: SessionBranchActivityState,
+): boolean {
+  return descendantSessionIds.some((sessionId) => {
+    if ((state.permission[sessionId]?.length ?? 0) > 0) return false;
+    const status = state.session_status[sessionId];
+    return status !== undefined && status.type !== 'idle';
+  });
 }
 
 export function resolveSidebarIndicator({

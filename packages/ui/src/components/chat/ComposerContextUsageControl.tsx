@@ -3,13 +3,14 @@ import * as React from 'react';
 import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
 import { useProviderBackedContextUsage } from '@/hooks/useProviderBackedContextUsage';
 import { useStableSessionContextUsage } from '@/hooks/useStableSessionContextUsage';
-import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { resolveContextUsageAvailability } from '@/lib/contextUsagePresentation';
 import { cn } from '@/lib/utils';
 import { useConfigStore } from '@/stores/useConfigStore';
+import { getProviderContextUsageFromMessages } from '@/stores/utils/contextUsageUtils';
 import {
     useDirectorySync,
     useEnsureSessionChildren,
+    useSessionChildren,
     useSessionMessageRecords,
     useSessionMessagesResolved,
     useSyncResyncSession,
@@ -20,7 +21,7 @@ import { ContextUsageWindow } from './ContextUsageWindow';
 
 interface ComposerContextUsageControlProps {
     sessionId: string | null;
-    fallbackDirectory: string | null;
+    directory: string | null;
     footerIconButtonClass: string;
     iconSizeClass: string;
     onCompact: (sessionId: string) => void;
@@ -28,7 +29,7 @@ interface ComposerContextUsageControlProps {
 
 export const ComposerContextUsageControl = React.memo<ComposerContextUsageControlProps>(({
     sessionId,
-    fallbackDirectory,
+    directory,
     footerIconButtonClass,
     iconSizeClass,
     onCompact,
@@ -37,15 +38,14 @@ export const ComposerContextUsageControl = React.memo<ComposerContextUsageContro
     const triggerRef = React.useRef<HTMLButtonElement>(null);
     const providers = useConfigStore((state) => state.providers);
     const getContextUsageForSession = useSessionUIStore((state) => state.getContextUsageForSession);
-    const directory = useEffectiveDirectory() ?? fallbackDirectory;
     const messages = useSessionMessageRecords(
         sessionId ?? '',
         directory ?? undefined,
-        { suspendPartUpdates: true },
+        { contextUsagePartsOnly: true },
     );
     const messagesResolved = useSessionMessagesResolved(sessionId ?? '', directory ?? undefined);
-    const childSessionsSnapshot = useDirectorySync(
-        React.useCallback((state) => (open ? state.session : null), [open]),
+    const childSessionsSnapshot = useSessionChildren(
+        open ? sessionId : null,
         directory ?? undefined,
     );
     const childMessagesSnapshot = useDirectorySync(
@@ -53,22 +53,21 @@ export const ComposerContextUsageControl = React.memo<ComposerContextUsageContro
         directory ?? undefined,
     );
 
+    const messageUsage = React.useMemo(() => (
+        getProviderContextUsageFromMessages(messages, providers)
+    ), [messages, providers]);
     const fallbackUsage = React.useMemo(() => {
-        // `messages` is intentionally a dependency even though the scoped helper
-        // reads the same child store imperatively. It makes token-bearing
-        // message replacements reactive without subscribing the full composer.
-        void messages;
-        void providers;
+        if (!open) return messageUsage;
         void childSessionsSnapshot;
         void childMessagesSnapshot;
-        return getContextUsageForSession(sessionId, directory);
+        return getContextUsageForSession(sessionId, directory) ?? messageUsage;
     }, [
         childMessagesSnapshot,
         childSessionsSnapshot,
         directory,
         getContextUsageForSession,
-        messages,
-        providers,
+        messageUsage,
+        open,
         sessionId,
     ]);
     const providerBackedUsage = useProviderBackedContextUsage({

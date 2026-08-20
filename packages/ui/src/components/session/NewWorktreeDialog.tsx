@@ -47,6 +47,8 @@ import { useSelectionStore } from '@/sync/selection-store';
 import * as sessionActions from '@/sync/session-actions';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useContextStore } from '@/stores/contextStore';
+import { resolveAgentDefaultSelection } from '@/lib/agentDefaultResolution';
+import { getAuthPrincipal } from '@/lib/authSession';
 import { validateWorktreeCreate, createWorktree } from '@/lib/worktrees/worktreeManager';
 import {
   clearWorktreeBootstrapState,
@@ -544,16 +546,23 @@ export function NewWorktreeDialog({
     return resolvePreferredAgentName(visibleAgents, configState.settingsDefaultAgent);
   }, []);
 
-  const resolveAgentModelSelection = React.useCallback((agentName?: string): { providerID: string; modelID: string } | null => {
+  const resolveAgentModelSelection = React.useCallback((agentName?: string): { providerID: string; modelID: string; variant?: string } | null => {
     if (!agentName) return null;
     const configState = useConfigStore.getState();
-    const agent = configState.getVisibleAgents().find((entry) => entry.name === agentName);
-    const providerID = agent?.model?.providerID;
-    const modelID = agent?.model?.modelID;
-    if (!providerID || !modelID) return null;
-    const provider = configState.providers.find((entry) => entry.id === providerID);
-    if (!provider?.models.some((model) => model.id === modelID)) return null;
-    return { providerID, modelID };
+    const principal = getAuthPrincipal();
+    const resolved = resolveAgentDefaultSelection({
+      agentName,
+      agents: configState.getVisibleAgents(),
+      providers: configState.providers,
+      personalSelections: principal.scope === 'managed' && principal.role !== 'admin'
+        ? configState.agentModelSelections
+        : undefined,
+    });
+    return resolved ? {
+      providerID: resolved.providerId,
+      modelID: resolved.modelId,
+      ...(resolved.variant ? { variant: resolved.variant } : {}),
+    } : null;
   }, []);
 
   const resolveAgentVariant = React.useCallback((agentName: string | undefined, providerID: string, modelID: string): string | undefined => {
@@ -645,7 +654,7 @@ export function NewWorktreeDialog({
       return;
     }
 
-    const variant = resolveAgentVariant(agentName, providerID, modelID);
+    const variant = defaultModel?.variant ?? resolveAgentVariant(agentName, providerID, modelID);
 
     applySessionModelAndAgentDefaults({
       sessionId: args.sessionId,

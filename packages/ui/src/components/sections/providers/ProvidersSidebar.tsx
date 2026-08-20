@@ -108,7 +108,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
       try {
         const response = await fetch(`/api/provider/${encodeURIComponent(providerId)}/auth?scope=all`, {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
         });
 
         const payload = await response.json().catch(() => null);
