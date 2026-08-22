@@ -1,13 +1,13 @@
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
-import { opencodeClient } from '@/lib/opencode/client';
+import { probeDirectoryAvailability, type DirectoryAvailability } from '@/lib/directoryStatus';
 import { mapWithConcurrency } from '@/lib/concurrency';
 import { normalizePath } from '../utils';
 
 type ProjectLike = { path: string };
 
-type DirectoryStatusValue = 'unknown' | 'exists' | 'missing';
+type DirectoryStatusValue = DirectoryAvailability;
 
 type Args = {
   sortedSessions: Session[];
@@ -38,36 +38,6 @@ function saveMissingCache(cache: MissingCache): void {
     getSafeStorage().setItem(MISSING_CACHE_KEY, JSON.stringify(cache));
   } catch {
     // ignore quota errors
-  }
-}
-
-async function probeDirectory(directory: string): Promise<DirectoryStatusValue> {
-  try {
-    await opencodeClient.listLocalDirectory(directory);
-    return 'exists';
-  } catch (error) {
-    const looksLikeSdkWorktree =
-      directory.includes('/opencode/worktree/') ||
-      directory.includes('/.opencode/data/worktree/') ||
-      directory.includes('/.local/share/opencode/worktree/');
-
-    const reachable = await opencodeClient.probeDirectory(directory).catch(() => false);
-    if (reachable) {
-      return 'exists';
-    }
-
-    const message = error instanceof Error ? error.message.toLowerCase() : '';
-    const definitelyMissing =
-      message.includes('enoent') ||
-      message.includes('not found') ||
-      message.includes('does not exist') ||
-      message.includes('no such file');
-
-    if (definitelyMissing || looksLikeSdkWorktree) {
-      return 'missing';
-    }
-
-    return 'unknown';
   }
 }
 
@@ -154,7 +124,7 @@ export const useDirectoryStatusProbe = ({
     let cacheChanged = false;
 
     void mapWithConcurrency(toProbe, PROBE_CONCURRENCY, async (directory) => {
-      const status = await probeDirectory(directory);
+      const status = await probeDirectoryAvailability(directory);
 
       // Update missing cache
       if (status === 'missing') {

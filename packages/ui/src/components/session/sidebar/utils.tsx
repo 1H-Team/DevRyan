@@ -629,12 +629,6 @@ export const isSessionOwnedByProject = (
   ownership: SessionProjectOwnership,
 ): boolean => ownership.get(session.id) === normalizePath(projectRoot);
 
-export const formatProjectLabel = (label: string): string => {
-  return label
-    .replace(/[-_]/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-};
-
 export const renderHighlightedText = (text: string, query: string): React.ReactNode => {
   if (!query) {
     return text;

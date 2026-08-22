@@ -22,7 +22,7 @@ const baseStatus = (files) => ({
 });
 
 describe('commit message host context collection', () => {
-  it('fetches status and recent history together, deduplicates paths, and uses one scoped diff per file', async () => {
+  it('fetches status and recent history together, deduplicates paths, and uses one batched scoped diff', async () => {
     let statusStarted = false;
     let logStarted = false;
     let releaseStatus;
@@ -39,9 +39,7 @@ describe('commit message host context collection', () => {
       await logReady;
       return { all: Array.from({ length: 8 }, (_, index) => ({ message: `fix: subject ${index}` })) };
     });
-    const getDiff = vi.fn(async (_directory, options) => (
-      options.path === 'src/new.ts' ? 'Binary files differ' : '+const fast = true'
-    ));
+    const getDiff = vi.fn(async () => '+const fast = true');
 
     const pending = collectCommitMessageContext({
       directory: '/repo',
@@ -52,10 +50,9 @@ describe('commit message host context collection', () => {
       getDiff,
     });
 
-    await vi.waitFor(() => {
-      expect(statusStarted).toBe(true);
-      expect(logStarted).toBe(true);
-    });
+    await Promise.resolve();
+    expect(statusStarted).toBe(true);
+    expect(logStarted).toBe(true);
     releaseStatus();
     releaseLog();
 
@@ -67,21 +64,17 @@ describe('commit message host context collection', () => {
         stagedOnly: true,
         recentCommitSubjects: Array.from({ length: 6 }, (_, index) => `fix: subject ${index}`),
         selectedFiles: [
-          expect.objectContaining({ path: 'src/app.ts', diff: '+const fast = true' }),
-          expect.objectContaining({ path: 'src/new.ts', index: '?', diffNote: 'binary file (diff omitted)' }),
+          expect.objectContaining({ path: 'src/app.ts' }),
+          expect.objectContaining({ path: 'src/new.ts', index: '?' }),
         ],
+        patch: '+const fast = true',
       },
     });
     expect(getStatus).toHaveBeenCalledOnce();
     expect(getLog).toHaveBeenCalledWith('/repo', { maxCount: 6 });
-    expect(getDiff).toHaveBeenCalledTimes(2);
-    expect(getDiff).toHaveBeenNthCalledWith(1, '/repo', {
-      path: 'src/app.ts',
-      staged: true,
-      contextLines: 1,
-    });
-    expect(getDiff).toHaveBeenNthCalledWith(2, '/repo', {
-      path: 'src/new.ts',
+    expect(getDiff).toHaveBeenCalledOnce();
+    expect(getDiff).toHaveBeenCalledWith('/repo', {
+      paths: ['src/app.ts', 'src/new.ts'],
       staged: true,
       contextLines: 1,
     });
@@ -107,7 +100,7 @@ describe('commit message host context collection', () => {
     expect(getDiff).not.toHaveBeenCalled();
   });
 
-  it('enforces per-file and total diff budgets with explicit notes', async () => {
+  it('enforces a total combined patch budget and preserves line statistics', async () => {
     const files = ['a.ts', 'b.ts', 'large.ts'].map((filePath) => statusFile(filePath));
     const result = await collectCommitMessageContext({
       directory: '/repo',
@@ -120,22 +113,21 @@ describe('commit message host context collection', () => {
       getDiff: vi.fn(async () => '1234567890'),
       limits: {
         ...COMMIT_DRAFT_CONTEXT_LIMITS,
-        diffConcurrency: 1,
-        maxDiffCharsPerFile: 5,
         maxTotalDiffChars: 8,
       },
     });
 
     expect(result.status).toBe('ready');
     expect(result.context.selectedFiles).toEqual([
-      expect.objectContaining({ path: 'a.ts', diff: '12345', diffNote: 'diff truncated' }),
-      expect.objectContaining({ path: 'b.ts', diff: '123', diffNote: 'diff truncated' }),
-      expect.objectContaining({ path: 'large.ts', diffNote: 'large change (201 lines; diff omitted)' }),
+      expect.objectContaining({ path: 'a.ts' }),
+      expect.objectContaining({ path: 'b.ts' }),
+      expect.objectContaining({ path: 'large.ts', insertions: 201, deletions: 0 }),
     ]);
-    expect(result.context.selectedFiles.reduce((total, file) => total + (file.diff?.length || 0), 0)).toBe(8);
+    expect(result.context.patch).toHaveLength(8);
+    expect(result.context.patchNote).toBe('combined patch truncated');
   });
 
-  it('caps diff collection at six concurrent workers', async () => {
+  it('uses at most two concurrent batch diff reads for large selections', async () => {
     const files = Array.from({ length: 12 }, (_, index) => statusFile(`src/file-${index}.ts`));
     let active = 0;
     let peak = 0;
@@ -155,8 +147,9 @@ describe('commit message host context collection', () => {
       getDiff,
     });
 
-    expect(getDiff).toHaveBeenCalledTimes(files.length);
-    expect(peak).toBe(6);
+    expect(getDiff).toHaveBeenCalledTimes(2);
+    expect(peak).toBe(2);
+    expect(getDiff.mock.calls[0][1].paths).toHaveLength(files.length);
   });
 
   it('validates selected paths after deduplication and caps unique paths at 200', async () => {

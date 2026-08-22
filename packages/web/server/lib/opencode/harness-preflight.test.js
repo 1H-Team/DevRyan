@@ -1168,6 +1168,18 @@ describe('Anthropic context budget projection', () => {
           },
         },
       },
+      {
+        info: {
+          role: 'assistant',
+          providerID: 'anthropic',
+          tokens: {
+            input: 0,
+            output: 0,
+            total: 0,
+            cache: { read: 0, write: 0 },
+          },
+        },
+      },
     ]);
 
     expect(usage).toEqual({
@@ -1291,7 +1303,7 @@ describe('Anthropic context budget projection', () => {
           opencodeWithClaude: '1.8.0',
           meridian: '1.62.6',
           agentSdk: '0.2.141',
-          claudeCode: '2.1.98',
+          claudeCode: '2.1.215',
         },
         managementSources: {
           opencodeWithClaude: 'managed',
@@ -1338,7 +1350,7 @@ describe('Anthropic context budget projection', () => {
           opencodeWithClaude: '1.8.0',
           meridian: '1.62.6',
           agentSdk: '0.2.141',
-          claudeCode: '2.1.98',
+          claudeCode: '2.1.215',
         },
         managementSources: {
           opencodeWithClaude: 'managed',

@@ -7,6 +7,7 @@ import {
   ensureAnthropicOAuthProviderConfig,
   getProviderSources,
   removeAntigravityProviderConfig,
+  removeProviderConfig,
 } from './providers.js';
 
 let tempDir = null;
@@ -153,5 +154,64 @@ describe('provider config helpers', () => {
         'gemini-2.5-pro': { name: 'Gemini 2.5 Pro' },
       },
     });
+  });
+
+  it('reports nested Antigravity models as an active provider source', () => {
+    const projectDir = makeProjectDir();
+    const configPath = join(projectDir, '.opencode', 'opencode.json');
+    mkdirSync(join(projectDir, '.opencode'), { recursive: true });
+    writeFileSync(configPath, JSON.stringify({
+      provider: {
+        google: {
+          models: {
+            'antigravity-gemini-3-pro': { name: 'Gemini 3 Pro (Antigravity)' },
+            'gemini-2.5-pro': { name: 'Gemini 2.5 Pro' },
+          },
+        },
+      },
+    }), 'utf8');
+
+    const sources = getProviderSources('antigravity', projectDir).sources;
+
+    expect(sources.project.exists).toBe(true);
+    expect(sources.project.path).toBe(configPath);
+  });
+
+  it('removes provider config only from the explicitly targeted project', () => {
+    const projectsRoot = makeProjectDir();
+    const activeProject = join(projectsRoot, 'active');
+    const unrelatedProject = join(projectsRoot, 'unrelated');
+    const writeProjectConfig = (projectDir) => {
+      const configPath = join(projectDir, '.opencode', 'opencode.json');
+      mkdirSync(join(projectDir, '.opencode'), { recursive: true });
+      writeFileSync(configPath, JSON.stringify({
+        provider: {
+          google: { models: { 'gemini-2.5-pro': { name: 'Gemini 2.5 Pro' } } },
+        },
+      }), 'utf8');
+      return configPath;
+    };
+    const activeConfig = writeProjectConfig(activeProject);
+    const unrelatedConfig = writeProjectConfig(unrelatedProject);
+
+    expect(removeProviderConfig('google', activeProject, 'project')).toBe(true);
+    expect(JSON.parse(readFileSync(activeConfig, 'utf8')).provider?.google).toBeUndefined();
+    expect(JSON.parse(readFileSync(unrelatedConfig, 'utf8')).provider?.google).toBeDefined();
+  });
+
+  it('classifies and removes Google config aliases together', () => {
+    const projectDir = makeProjectDir();
+    const configPath = join(projectDir, '.opencode', 'opencode.json');
+    mkdirSync(join(projectDir, '.opencode'), { recursive: true });
+    writeFileSync(configPath, JSON.stringify({
+      provider: {
+        google: { models: { gemini: { name: 'Gemini' } } },
+        'google.oauth': { options: { legacy: true } },
+      },
+    }), 'utf8');
+
+    expect(getProviderSources('google', projectDir).sources.project.exists).toBe(true);
+    expect(removeProviderConfig('google', projectDir, 'project')).toBe(true);
+    expect(JSON.parse(readFileSync(configPath, 'utf8')).provider).toBeUndefined();
   });
 });

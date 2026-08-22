@@ -77,6 +77,10 @@ export function getSyncChildStores(): ChildStoreManager {
   return _childStores
 }
 
+export function getSyncChildStoresIfInitialized(): ChildStoreManager | null {
+  return _childStores
+}
+
 export function getSyncDirectory(): string {
   return _directory
 }

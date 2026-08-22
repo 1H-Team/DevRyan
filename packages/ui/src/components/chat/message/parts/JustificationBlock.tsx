@@ -5,7 +5,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import { ReasoningTimelineBlock } from './ReasoningPart';
 
-type PartWithText = Part & { text?: string; content?: string; time?: { start?: number; end?: number } };
+type PartWithText = Part & { text?: string; content?: string };
 
 const formatJustificationText = (text: string): string => {
     if (typeof text !== 'string' || text.trim().length === 0) {
@@ -38,7 +38,6 @@ const JustificationBlock: React.FC<JustificationBlockProps> = ({
     const partWithText = part as PartWithText;
     const rawText = partWithText.text || partWithText.content || '';
     const textContent = React.useMemo(() => formatJustificationText(rawText), [rawText]);
-    const time = partWithText.time;
     const isStreaming = chatRenderMode === 'live' && !isMessageCompleted;
     const throttledText = useStreamingTextThrottle({
         text: textContent,
@@ -57,8 +56,6 @@ const JustificationBlock: React.FC<JustificationBlockProps> = ({
             variant="justification"
             onContentChange={onContentChange}
             blockId={part.id || `${messageId}-justification`}
-            time={time}
-            showDuration={chatRenderMode !== 'sorted'}
             isStreaming={isStreaming}
             isMobile={isMobile}
             actions={actions}

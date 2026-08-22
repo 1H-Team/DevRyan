@@ -10,7 +10,6 @@ import {
   listConfiguredQuotaProviders,
   resolveCursorQuotaCredential,
   resolveOllamaCloudCredential,
-  resolveOpenCodeGoCredentials,
 } from '../src/quotaProviders';
 import * as webCodex from '../../web/server/lib/quota/providers/codex.js';
 import * as webDeepSeek from '../../web/server/lib/quota/providers/deepseek.js';
@@ -146,108 +145,6 @@ describe('VS Code Cursor ACP quota provider', () => {
   });
 });
 
-describe('VS Code OpenCode Go quota provider', () => {
-  test('maps dashboard rolling weekly and monthly usage to quota windows', async () => {
-    const fetchImpl = async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({}),
-      text: async () => [
-        'rollingUsage:$R[1]={usagePercent:3,resetInSec:17460}',
-        'weeklyUsage:$R[2]={usagePercent:14,resetInSec:482400}',
-        'monthlyUsage:$R[3]={usagePercent:83,resetInSec:1569600}',
-      ].join('\n'),
-    });
-
-    const result = await fetchQuotaForProvider('opencode-go', {
-      readAuth: () => ({
-        'opencode-go': {
-          usageWorkspaceId: 'wrk_abc123',
-          usageAuthCookie: 'Fe26.2**secret-cookie',
-        },
-      }),
-      fetchImpl,
-    });
-
-    expect(result.providerId).toBe('opencode-go');
-    expect(result.providerName).toBe('OpenCode Go');
-    expect(result.ok).toBe(true);
-    expect(result.usage?.windows.rolling).toMatchObject({
-      usedPercent: 3,
-      windowSeconds: 5 * 60 * 60,
-      description: '$12 of usage every 5 hours.',
-    });
-    expect(result.usage?.windows.weekly).toMatchObject({
-      usedPercent: 14,
-      windowSeconds: 7 * 24 * 60 * 60,
-      description: '$30 of usage per week.',
-    });
-    expect(result.usage?.windows.monthly).toMatchObject({
-      usedPercent: 83,
-      windowSeconds: 30 * 24 * 60 * 60,
-      description: '$60 of usage per month.',
-    });
-    expect(JSON.stringify(result)).not.toContain('secret-cookie');
-  });
-
-  test('maps dashboard usage when the page renders direct serialized objects', async () => {
-    const originalDateNow = Date.now;
-    Date.now = () => Date.parse('2026-07-08T12:00:00.000Z');
-    const fetchImpl = async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({}),
-      text: async () => [
-        '"rollingUsage":{"usagePercent":3,"resetInSec":17460}',
-        'weeklyUsage:{usagePercent:14,resetInSec:482400}',
-        'monthlyUsage:$R[3]={"usagePercent":83,"resetInSec":1569600}',
-      ].join('\n'),
-    });
-
-    try {
-      const result = await fetchQuotaForProvider('opencode-go', {
-        readAuth: () => ({
-          'opencode-go': {
-            usageWorkspaceId: 'wrk_abc123',
-            usageAuthCookie: 'Fe26.2**secret-cookie',
-          },
-        }),
-        fetchImpl,
-      });
-
-      expect(result.ok).toBe(true);
-      expect(result.usage?.windows.rolling).toMatchObject({
-        usedPercent: 3,
-        resetAfterSeconds: 17460,
-      });
-      expect(result.usage?.windows.weekly).toMatchObject({
-        usedPercent: 14,
-        resetAfterSeconds: 482400,
-      });
-      expect(result.usage?.windows.monthly).toMatchObject({
-        usedPercent: 83,
-        resetAfterSeconds: 1569600,
-      });
-    } finally {
-      Date.now = originalDateNow;
-    }
-  });
-
-  test('prefers managed OpenCode Go credentials over legacy auth fields', () => {
-    expect(resolveOpenCodeGoCredentials({
-      env: {},
-      readManagedCredential: () => ({ workspaceId: 'wrk_managed', authCookie: 'managed' }),
-      readAuth: () => ({
-        'opencode-go': { usageWorkspaceId: 'wrk_legacy', usageAuthCookie: 'legacy' },
-      }),
-    })).toMatchObject({
-      workspaceId: 'wrk_managed',
-      authCookie: 'managed',
-      source: 'managed',
-    });
-  });
-});
-
 describe('VS Code Ollama Cloud quota provider', () => {
   test('uses the managed cookie before preserving the legacy fallback', () => {
     expect(resolveOllamaCloudCredential({
@@ -268,6 +165,12 @@ describe('shared web and VS Code quota provider parity', () => {
     status,
     headers: { get: () => null },
     json: async () => structuredClone(payload),
+    arrayBuffer: async () => {
+      const bytes = payload instanceof Uint8Array
+        ? payload
+        : new TextEncoder().encode(JSON.stringify(payload));
+      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    },
   });
 
   test('discovers the same configured touched providers in the same order', () => {
@@ -352,9 +255,11 @@ describe('shared web and VS Code quota provider parity', () => {
       vscodeFetch: fetchDeepSeekQuota,
     },
   ])('emits exactly equal normalized $name results', async ({ auth, payload, webFetch, vscodeFetch }) => {
-    const fetchFactory = () => async (url: string) => (
-      url.includes('rate-limit-reset-credits') ? ok({}, 404) : ok(payload)
-    );
+    const fetchFactory = () => async (url: string) => {
+      if (url.includes('rate-limit-reset-credits')) return ok({}, 404);
+      if (url.includes('ConsumerUiSvc/GetRemainingResets')) return ok(new Uint8Array());
+      return ok(payload);
+    };
     const webResult = await webFetch({ readAuth: () => auth, fetchImpl: fetchFactory(), now: fixedNow });
     const vscodeResult = await vscodeFetch({ readAuth: () => auth, fetchImpl: fetchFactory(), now: fixedNow });
 
@@ -372,6 +277,9 @@ describe('shared web and VS Code quota provider parity', () => {
       fetchImpl: async (url) => {
         if (url.includes('/oauth2/token')) {
           return ok({ access_token: 'new', refresh_token: 'new-refresh', expires_in: 3600 });
+        }
+        if (url.includes('ConsumerUiSvc/GetRemainingResets')) {
+          return ok(new Uint8Array());
         }
         billingCalls += 1;
         return billingCalls === 1

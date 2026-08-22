@@ -23,6 +23,7 @@ function readAuthFile() {
 }
 
 function writeAuthFile(auth) {
+  let temporaryFile = null;
   try {
     if (!fs.existsSync(OPENCODE_DATA_DIR)) {
       fs.mkdirSync(OPENCODE_DATA_DIR, { recursive: true });
@@ -34,12 +35,28 @@ function writeAuthFile(auth) {
       console.log(`Created auth backup: ${backupFile}`);
     }
 
-    fs.writeFileSync(AUTH_FILE, JSON.stringify(auth, null, 2), 'utf8');
+    temporaryFile = `${AUTH_FILE}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(temporaryFile, JSON.stringify(auth, null, 2), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    fs.renameSync(temporaryFile, AUTH_FILE);
+    temporaryFile = null;
     console.log('Successfully wrote auth file');
   } catch (error) {
     console.error('Failed to write auth file:', error);
     throw new Error('Failed to write OpenCode auth configuration');
+  } finally {
+    if (temporaryFile) {
+      try { fs.unlinkSync(temporaryFile); } catch {}
+    }
   }
+}
+
+function mutateAuthFile(mutator) {
+  if (typeof mutator !== 'function') throw new Error('Auth mutator is required');
+  const latest = readAuthFile();
+  const result = mutator(latest);
+  if (result === false) return false;
+  writeAuthFile(result && typeof result === 'object' ? result : latest);
+  return true;
 }
 
 function removeProviderAuth(providerId) {
@@ -73,6 +90,7 @@ function listProviderAuths() {
 export {
   readAuthFile,
   writeAuthFile,
+  mutateAuthFile,
   removeProviderAuth,
   getProviderAuth,
   listProviderAuths,

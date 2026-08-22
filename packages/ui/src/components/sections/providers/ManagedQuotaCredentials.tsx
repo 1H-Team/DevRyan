@@ -7,11 +7,10 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { quotaRefreshCoordinator } from '@/stores/useQuotaStore';
 
-export type ManagedQuotaProviderId = 'opencode-go' | 'ollama-cloud' | 'cursor-acp';
+export type ManagedQuotaProviderId = 'ollama-cloud' | 'cursor-acp' | 'opencode';
 
 type CredentialStatus = {
   configured: boolean;
-  workspaceId?: string;
   credentialKind?: 'dashboard' | 'oauth' | 'cookie';
   hasRefreshToken?: boolean;
   effectiveSource?: 'environment' | 'token-file' | 'managed' | 'legacy' | null;
@@ -35,9 +34,9 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
   const [status, setStatus] = React.useState<CredentialStatus>({ configured: false });
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState<'save' | 'delete' | 'validate' | 'import' | null>(null);
+  const [cookie, setCookie] = React.useState('');
   const [workspaceId, setWorkspaceId] = React.useState('');
   const [authCookie, setAuthCookie] = React.useState('');
-  const [cookie, setCookie] = React.useState('');
   const [cursorMode, setCursorMode] = React.useState<'dashboard' | 'oauth'>('dashboard');
   const [sessionToken, setSessionToken] = React.useState('');
   const [accessToken, setAccessToken] = React.useState('');
@@ -45,20 +44,21 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
 
   const title = providerId === 'cursor-acp'
     ? t('settings.providers.page.auth.cursorUsageTitle')
-    : providerId === 'opencode-go'
-      ? t('settings.providers.page.auth.openCodeGoUsageTitle')
+    : providerId === 'opencode'
+      ? t('settings.providers.page.auth.openCodeZenUsageTitle')
       : t('settings.providers.page.auth.ollamaCloudUsageTitle');
   const description = providerId === 'cursor-acp'
     ? cursorMode === 'dashboard'
       ? t('settings.providers.page.auth.cursorUsageDescription')
       : t('settings.providers.page.auth.cursorOAuthDescription')
-    : providerId === 'opencode-go'
-      ? t('settings.providers.page.auth.openCodeGoUsageDescription')
+    : providerId === 'opencode'
+      ? t('settings.providers.page.auth.openCodeZenUsageDescription')
       : t('settings.providers.page.auth.ollamaCloudUsageDescription');
 
   const clearSecrets = React.useCallback(() => {
-    setAuthCookie('');
     setCookie('');
+    setWorkspaceId('');
+    setAuthCookie('');
     setSessionToken('');
     setAccessToken('');
     setRefreshToken('');
@@ -76,8 +76,8 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
         throw new Error(parseResponseError(payload, t('settings.providers.page.toast.managedQuotaStatusFailed')));
       }
       setStatus(payload);
-      setWorkspaceId(typeof payload.workspaceId === 'string' ? payload.workspaceId : '');
-      if (payload.credentialKind === 'oauth' || payload.credentialKind === 'dashboard') {
+      if (providerId === 'cursor-acp'
+        && (payload.credentialKind === 'oauth' || payload.credentialKind === 'dashboard')) {
         setCursorMode(payload.credentialKind);
       }
     } catch (error) {
@@ -97,10 +97,13 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
   }, [clearSecrets, loadStatus]);
 
   const buildCredential = () => {
-    if (providerId === 'opencode-go') {
-      return { workspaceId: workspaceId.trim(), authCookie: authCookie.trim() };
-    }
     if (providerId === 'ollama-cloud') return { cookie: cookie.trim() };
+    if (providerId === 'opencode') {
+      return {
+        workspaceId: workspaceId.trim(),
+        authCookie: authCookie.trim(),
+      };
+    }
     if (cursorMode === 'dashboard') return { sessionToken: sessionToken.trim() };
     return {
       ...(accessToken.trim() ? { accessToken: accessToken.trim() } : {}),
@@ -135,8 +138,8 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
       if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
         const nextStatus = payload as CredentialStatus;
         setStatus(nextStatus);
-        setWorkspaceId(typeof nextStatus.workspaceId === 'string' ? nextStatus.workspaceId : '');
-        if (nextStatus.credentialKind === 'oauth' || nextStatus.credentialKind === 'dashboard') {
+        if (providerId === 'cursor-acp'
+          && (nextStatus.credentialKind === 'oauth' || nextStatus.credentialKind === 'dashboard')) {
           setCursorMode(nextStatus.credentialKind);
         }
       } else {
@@ -210,23 +213,24 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
         </div>
       ) : null}
 
-      {providerId === 'opencode-go' ? (
-        <div className="grid gap-2 sm:grid-cols-[minmax(0,0.45fr)_minmax(0,0.55fr)]">
+      {providerId === 'opencode' ? (
+        <div className="grid gap-2 sm:grid-cols-2">
           <Input
-            id="opencode-go-usage-workspace-id"
+            id="opencode-zen-workspace-id"
+            type="text"
             value={workspaceId}
             onChange={(event) => setWorkspaceId(event.target.value)}
-            placeholder={t('settings.providers.page.auth.openCodeGoWorkspacePlaceholder')}
+            placeholder={t('settings.providers.page.auth.openCodeZenWorkspaceIdPlaceholder')}
             className="font-mono text-xs"
             autoComplete="off"
-            maxLength={16_384}
+            maxLength={30}
           />
           <Input
-            id="opencode-go-usage-auth-cookie"
+            id="opencode-zen-auth-cookie"
             type="password"
             value={authCookie}
             onChange={(event) => setAuthCookie(event.target.value)}
-            placeholder={t('settings.providers.page.auth.openCodeGoAuthCookiePlaceholder')}
+            placeholder={t('settings.providers.page.auth.openCodeZenAuthCookiePlaceholder')}
             className="font-mono text-xs"
             autoComplete="off"
             maxLength={16_384}

@@ -63,14 +63,20 @@ import {
 } from "./reconnect-recovery"
 import { stopStalledProviderAndOfferRecovery } from "./provider-stall-recovery"
 import { hasMessageRecordInfo, unwrapMessageRecordsResult } from "./message-fetch"
+import { messagesBefore, sortMessagesChronologically } from "./message-order"
 import {
   addPendingPartDelta,
   applyPendingPartDeltasToState,
+  buildProvisionalPartFromPendingDeltas,
+  clearPartTypeHintsForDirectory,
   clearPendingPartDeltasForDirectory,
   clearPendingPartDeltasForMessages,
   consumePendingPartDeltas,
+  getPartTypeHint,
   hasPendingPartDeltasForMessages,
   readPendingPartDeltaFromEvent,
+  recordPartTypeHintFromEvent,
+  type PartTypeHintStore,
   type PendingPartDeltaStore,
 } from "./pending-part-deltas"
 import { opencodeClient } from "@/lib/opencode/client"
@@ -179,7 +185,7 @@ import {
   refreshProviderContextUsage,
   useProviderContextUsageStore,
 } from "@/stores/useProviderContextUsageStore"
-import { extractTokenBreakdownFromMessage } from "@/stores/utils/tokenUtils"
+import { getContextUsageRequestState } from "@/stores/utils/contextUsageUtils"
 import {
   selectSessionById,
   selectSessionChildren,
@@ -506,9 +512,10 @@ const SESSION_MATERIALIZATION_RETRY_DELAYS_MS = [250, 1_000, 2_500] as const
 // symptom). Only fires when deltas are genuinely stuck, so normal streaming is
 // unaffected.
 const PENDING_DELTA_DRAIN_MAX_RETRIES = 4
-const PENDING_DELTA_DRAIN_RETRY_MS = 300
+const PENDING_DELTA_DRAIN_RETRY_MS = 150
 const pendingSessionMaterializations = new Map<string, PendingSessionMaterialization>() // key: directory:sessionID
 const pendingPartDeltas: PendingPartDeltaStore = new Map()
+const pendingPartTypeHints: PartTypeHintStore = new Map()
 type SessionLifecycleRestoration = {
   promise: Promise<void>
   detectsTurnCompletion: boolean
@@ -709,6 +716,59 @@ function bufferPendingPartDelta(directory: string, payload: Event) {
   const pending = readPendingPartDeltaFromEvent(payload)
   if (!pending) return
   addPendingPartDelta(pendingPartDeltas, directory, pending)
+}
+
+/**
+ * When a buffered delta belongs to a message the store already knows, render it
+ * now as a provisional part instead of waiting for the refetch drain (which can
+ * take multiple 150ms retries plus network RTTs — the xai/Grok "output appears
+ * late" symptom). Returns true when a provisional part was inserted, in which
+ * case the caller skips the session materialization for this event: the refetch
+ * snapshot wouldn't contain the streamed part yet and would clobber it.
+ */
+function materializeProvisionalPartForBufferedDelta(
+  directory: string,
+  payload: Event,
+  store: StoreApi<DirectoryStore>,
+  routingIndex: EventRoutingIndex,
+): boolean {
+  const pendingInput = readPendingPartDeltaFromEvent(payload)
+  if (!pendingInput) return false
+
+  const { messageID, partID } = pendingInput
+  const state = store.getState()
+  const sessionID = resolveSessionIdForMessage(state, routingIndex, messageID)
+  if (!sessionID) return false
+
+  const owningMessage = (state.message[sessionID] ?? EMPTY_MESSAGES)
+    .find((message) => message.id === messageID)
+  if (!owningMessage || owningMessage.role !== "assistant") return false
+  if (state.part[messageID]?.some((part) => part.id === partID)) return false
+
+  const pending = consumePendingPartDeltas(pendingPartDeltas, directory, messageID, partID)
+  if (pending.length === 0) return false
+
+  const provisional = buildProvisionalPartFromPendingDeltas(
+    messageID,
+    partID,
+    sessionID,
+    pending,
+    getPartTypeHint(pendingPartTypeHints, directory, partID),
+  )
+  if (!provisional) {
+    for (const pendingDelta of pending) {
+      addPendingPartDelta(pendingPartDeltas, directory, pendingDelta)
+    }
+    return false
+  }
+
+  store.setState({
+    part: {
+      ...state.part,
+      [messageID]: [...(state.part[messageID] ?? []), provisional],
+    },
+  })
+  return true
 }
 
 function replayPendingPartDeltasForEvent(
@@ -1251,6 +1311,7 @@ const releaseDirectoryOwnedSyncState = (
   releaseSessionActionDirectory(directory)
   clearSessionChildrenForDirectory(sessionChildrenFetches, directory)
   clearPendingPartDeltasForDirectory(pendingPartDeltas, directory)
+  clearPartTypeHintsForDirectory(pendingPartTypeHints, directory)
   clearDirectoryMaterializations(pendingSessionMaterializations, directory)
   for (const [key, restoration] of lifecycleRestorationsBySession) {
     if (key.startsWith(`${directory}\u0000`)) {
@@ -2477,9 +2538,9 @@ export async function resyncDirectoryAfterReconnect(
     if (!session || !records) return
 
     const materializedRecords = records.filter(hasMessageRecordInfo)
-    const nextMessages = materializedRecords
-      .map((record) => stripMessageDiffSnapshots(record.info))
-      .sort((a, b) => cmp(a.id, b.id))
+    const nextMessages = sortMessagesChronologically(
+      materializedRecords.map((record) => stripMessageDiffSnapshots(record.info)),
+    )
     const nextSession = normalizeChatOwnedDiffSummary(
       stripSessionDiffSnapshots(session) as Session & { summary?: SessionSummaryDiffStats | null },
       nextMessages as Array<Message & { summary?: SessionSummaryDiffStats | null }>,
@@ -2722,28 +2783,6 @@ function handleEvent(
     }
   }
 
-  if (payload.type === "message.updated") {
-    const info = (payload.properties as { info?: Message }).info as (Message & {
-      providerID?: unknown
-      time?: { completed?: unknown }
-    }) | undefined
-    if (
-      info?.role === "assistant"
-      && info.providerID === "anthropic"
-      && typeof info.time?.completed === "number"
-    ) {
-      const tokens = extractTokenBreakdownFromMessage(info)
-      const activeInputTokens = tokens.input + tokens.cacheRead + tokens.cacheWrite
-      const storeKey = getProviderContextUsageStoreKey(info.sessionID, resolvedDirectory)
-      const compactionRevision = useProviderContextUsageStore.getState().compactionRevisions.get(storeKey) ?? 0
-      void refreshProviderContextUsage({
-        sessionID: info.sessionID,
-        directory: resolvedDirectory,
-        requestKey: JSON.stringify([info.id, activeInputTokens, info.time.completed, compactionRevision]),
-      })
-    }
-  }
-
   if (payload.type === "session.status") {
     const sessionID = getSessionIdFromPayload(payload)
     if (sessionID) {
@@ -2774,6 +2813,36 @@ function handleEvent(
     if (sessionID) {
       useProviderStallStore.getState().clearStall(sessionID)
       useLongRunningToolStore.getState().clearTool(sessionID)
+      if (
+        payload.type === "session.idle"
+        && resolvedDirectory === _activeDirectory
+        && sessionID === _activeSession
+      ) {
+        const messages = store.getState().message[sessionID] ?? EMPTY_MESSAGES
+        const requestState = getContextUsageRequestState(messages)
+        if (requestState.providerID === "anthropic" && requestState.lastMessageId) {
+          const latestMessage = messages.find((message) => message.id === requestState.lastMessageId) as
+            | (Message & { time?: { completed?: unknown; created?: unknown } })
+            | undefined
+          const updatedAt = typeof latestMessage?.time?.completed === "number"
+            ? latestMessage.time.completed
+            : typeof latestMessage?.time?.created === "number"
+              ? latestMessage.time.created
+              : 0
+          const storeKey = getProviderContextUsageStoreKey(sessionID, resolvedDirectory)
+          const compactionRevision = useProviderContextUsageStore.getState().compactionRevisions.get(storeKey) ?? 0
+          void refreshProviderContextUsage({
+            sessionID,
+            directory: resolvedDirectory,
+            requestKey: JSON.stringify([
+              requestState.lastMessageId,
+              requestState.activeInputTokens,
+              updatedAt,
+              compactionRevision,
+            ]),
+          })
+        }
+      }
     }
   }
 
@@ -2973,8 +3042,19 @@ function handleEvent(
   responsivenessPerfCount(reducerChanged ? "sync.event.changed" : "sync.event.noop")
   const materializationResult = typeof reducerResult === "boolean" ? undefined : reducerResult.materialization
 
+  // Record the announced part type from every raw part.updated — including ones
+  // the reducer skipped — so buffered deltas can materialize with the right type.
+  recordPartTypeHintFromEvent(pendingPartTypeHints, resolvedDirectory, payload)
+
+  let provisionalPartApplied = false
   if (!reducerChanged && materializationResult && payload.type === "message.part.delta") {
     bufferPendingPartDelta(resolvedDirectory, payload)
+    provisionalPartApplied = materializeProvisionalPartForBufferedDelta(
+      resolvedDirectory,
+      payload,
+      store,
+      routingIndex,
+    )
   }
 
   if (reducerChanged) {
@@ -3047,8 +3127,10 @@ function handleEvent(
   }
 
   // Snapshot materialization is driven by typed reducer outcomes, not by
-  // inferring meaning from a generic false/no-change result.
-  if (materializationResult) {
+  // inferring meaning from a generic false/no-change result. Skipped when the
+  // orphaned delta was rendered as a provisional part: the server snapshot
+  // wouldn't contain the streamed part yet and the refetch would clobber it.
+  if (materializationResult && !provisionalPartApplied) {
     const materializationSessionID = materializationResult.sessionID
       ?? getSessionIdFromPayload(payload)
       ?? resolveSessionIdForMessage(store.getState(), routingIndex, materializationResult.messageID)
@@ -3944,14 +4026,14 @@ export function useSessionMessages(sessionID: string, directory?: string) {
 
 /**
  * Get visible session messages — filters out reverted messages.
- * Filters out reverted messages (id >= session.revert.messageID).
+ * Splits reverted messages at the exact marker's chronological position.
  */
 export function useVisibleSessionMessages(sessionID: string, directory?: string) {
   const messages = useSessionMessages(sessionID, directory)
   const revertMessageID = useSessionRevertMessageID(sessionID, directory)
   return useMemo(() => {
     if (!revertMessageID) return messages
-    return messages.filter((m) => m.id < revertMessageID)
+    return messagesBefore(messages, revertMessageID)
   }, [messages, revertMessageID])
 }
 
@@ -4152,6 +4234,53 @@ export function useSession(sessionID?: string | null, directory?: string) {
   return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
+const selectFirstUserTextFromState = (
+  state: { message: Record<string, Message[]>; part: Record<string, Part[]> } | undefined,
+  sessionID: string,
+): string => {
+  const messages = state?.message?.[sessionID]
+  if (!messages?.length) return ""
+  for (const message of messages) {
+    if (message.role !== "user") continue
+    const text = (state?.part?.[message.id] ?? [])
+      .filter((part) => part.type === "text" && (part as { synthetic?: boolean }).synthetic !== true)
+      .map((part) => (typeof (part as { text?: unknown }).text === "string" ? ((part as { text: string }).text).trim() : ""))
+      .filter(Boolean)
+      .join(" ")
+    if (text) return text
+  }
+  return ""
+}
+
+/**
+ * First non-synthetic user text for a session, for deriving a display title
+ * while the stored title is still a placeholder. Pass a null sessionID to
+ * opt out entirely — the hook then never subscribes, so rows with a real
+ * title cost nothing. Returns "" until the session's messages are loaded.
+ */
+export function useSessionFirstUserText(sessionID?: string | null, directory?: string): string {
+  const { childStores, directory: activeDirectory } = useSyncSystem()
+  const targetDirectory = directory ?? activeDirectory
+  const getSnapshot = useCallback(() => {
+    if (!sessionID || !targetDirectory) return ""
+    return selectFirstUserTextFromState(childStores.getChild(targetDirectory)?.getState(), sessionID)
+  }, [childStores, sessionID, targetDirectory])
+
+  const subscribe = useCallback((notify: () => void) => {
+    if (!sessionID || !targetDirectory) return () => {}
+    const store = childStores.ensureChild(targetDirectory, {
+      bootstrap: shouldBootstrapDirectorySubscription(targetDirectory, activeDirectory),
+    })
+    return store.subscribe((state, previous) => {
+      if (state.message !== previous.message || state.part !== previous.part) {
+        notify()
+      }
+    })
+  }, [activeDirectory, childStores, sessionID, targetDirectory])
+
+  return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
 /** Get one session directory by id for a directory */
 export function useSessionDirectory(sessionID?: string | null, directory?: string): string | undefined {
   const { childStores, directory: activeDirectory } = useSyncSystem()
@@ -4257,6 +4386,17 @@ const getFirstTextFromParts = (parts: Part[]): string => {
 
 type SessionMessageRecord = { info: Message; parts: Part[] }
 
+export const buildUserMessageHistory = (records: SessionMessageRecord[]): string[] => {
+  const history: string[] = []
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const message = records[index]
+    if (message.info.role !== 'user') continue
+    const text = getFirstTextFromParts(message.parts)
+    if (text.length > 0) history.push(text)
+  }
+  return history
+}
+
 type SessionMessageRecordsSnapshot = {
   sessionID: string
   sourceMessages: Message[]
@@ -4310,7 +4450,7 @@ function getVisibleMessagesForSession(state: State, sessionID: string, previous?
 
   return {
     sourceMessages,
-    visibleMessages: revertMessageID ? sourceMessages.filter((message) => message.id < revertMessageID) : sourceMessages,
+    visibleMessages: revertMessageID ? messagesBefore(sourceMessages, revertMessageID) : sourceMessages,
     revertMessageID,
   }
 }
@@ -4384,19 +4524,7 @@ export function useSessionTextMessages(sessionID: string, directory?: string): S
 
 export function useUserMessageHistory(sessionID: string, directory?: string): string[] {
   const records = useSessionMessageRecords(sessionID, directory)
-  const userMessages = useMemo(() => records.filter((record) => record.info.role === 'user'), [records])
-
-  return useMemo(() => {
-    const history: string[] = []
-    for (let index = userMessages.length - 1; index >= 0; index -= 1) {
-      const message = userMessages[index]
-      const text = getFirstTextFromParts(message.parts)
-      if (text.length > 0) {
-        history.push(text)
-      }
-    }
-    return history
-  }, [userMessages])
+  return useMemo(() => buildUserMessageHistory(records), [records])
 }
 
 /**

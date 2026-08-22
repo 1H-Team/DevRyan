@@ -11,6 +11,7 @@ import { retry } from "./retry"
 import { stripMessageDiffSnapshots } from "./sanitize"
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
 import { mergeOptimisticPage, type OptimisticItem } from "./optimistic"
+import { insertMessageChronologically, sortMessagesChronologically } from "./message-order"
 import { hasMessageRecordInfo, normalizeMessageFetchLimit, unwrapMessageRecordsResult } from "./message-fetch"
 import { updateSessionUserActivityFromMessages } from "./session-user-activity"
 import { clearSessionPrefetch, getSessionPrefetch, setSessionPrefetch } from "./session-prefetch-cache"
@@ -279,8 +280,7 @@ export class SessionMessageLoader {
     const current = store.getState()
     const messages = [...(current.message[target.sessionID] ?? [])]
     if (!messages.some((message) => message.id === input.message.id)) {
-      messages.push(input.message)
-      messages.sort((left, right) => left.id.localeCompare(right.id))
+      messages.splice(0, messages.length, ...insertMessageChronologically(messages, input.message))
     }
     const message = { ...current.message, [target.sessionID]: messages }
     const part = { ...current.part, [input.message.id]: input.parts.filter((candidate) => Boolean(candidate?.id)) }
@@ -516,7 +516,7 @@ export class SessionMessageLoader {
       recordCount = records.length
       const session = records
         .map((record) => stripMessageDiffSnapshots(record.info))
-        .sort((left, right) => left.id.localeCompare(right.id))
+      const orderedSession = sortMessagesChronologically(session)
       const partsByMessageID = new Map<string, Part[]>()
       for (const record of records) {
         partsByMessageID.set(record.info.id, (record.parts ?? []).filter((part) => Boolean(part?.id)))
@@ -524,7 +524,7 @@ export class SessionMessageLoader {
       const cursor = result.response?.headers?.get?.("x-next-cursor") ?? undefined
       const complete = !cursor || records.length < requestLimit
       finish("complete", { retryCount: Math.max(0, attempts - 1), recordCount })
-      return { session, partsByMessageID, cursor: complete ? undefined : cursor, complete }
+      return { session: orderedSession, partsByMessageID, cursor: complete ? undefined : cursor, complete }
     } catch (error) {
       finish("error", { retryCount: Math.max(0, attempts - 1), recordCount })
       throw error

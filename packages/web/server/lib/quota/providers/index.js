@@ -16,6 +16,7 @@ import * as google from './google/index.js';
 import * as kimi from './kimi.js';
 import * as nanogpt from './nanogpt.js';
 import * as openai from './openai.js';
+import * as opencode from './opencode.js';
 import * as opencodeGo from './opencode-go.js';
 import * as openrouter from './openrouter.js';
 import * as zai from './zai.js';
@@ -128,6 +129,12 @@ const registry = {
     isConfigured: ollamaCloud.isConfigured,
     fetchQuota: ollamaCloud.fetchQuota
   },
+  opencode: {
+    providerId: opencode.providerId,
+    providerName: opencode.providerName,
+    isConfigured: opencode.isConfigured,
+    fetchQuota: opencode.fetchQuota
+  },
   'opencode-go': {
     providerId: opencodeGo.providerId,
     providerName: opencodeGo.providerName,
@@ -145,6 +152,8 @@ const providerAliases = new Map([
   ['cursor', 'cursor-acp'],
   ['grok', 'xai'],
   ['xai-oauth', 'xai'],
+  ['zen', 'opencode'],
+  ['opencode-zen', 'opencode'],
 ]);
 
 const resolveProviderId = (providerId) => providerAliases.get(providerId) ?? providerId;
@@ -210,5 +219,6 @@ export const fetchNanoGptQuota = nanogpt.fetchQuota;
 export const fetchMinimaxCodingPlanQuota = minimaxCodingPlan.fetchQuota;
 export const fetchMinimaxCnCodingPlanQuota = minimaxCnCodingPlan.fetchQuota;
 export const fetchOllamaCloudQuota = ollamaCloud.fetchQuota;
+export const fetchOpenCodeZenQuota = opencode.fetchQuota;
 export const fetchOpenCodeGoQuota = opencodeGo.fetchQuota;
 export const fetchZhipuaiQuota = zhipuaiCodingPlan.fetchQuota;

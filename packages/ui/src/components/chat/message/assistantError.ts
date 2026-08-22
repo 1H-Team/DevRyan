@@ -9,6 +9,7 @@ import {
   isLikelyCertificateVerificationFailure,
   stripWrappedJsonQuotes,
 } from "@/lib/messages/transientStreamError"
+import { isClaudeThirdPartyUsageClassificationError } from "@/lib/messages/claudeThirdPartyUsage"
 import type {
   ManagedAbortRecoveryPresentation,
   ManagedTransportRecoveryPresentation,
@@ -52,6 +53,8 @@ const getTransportFailureCopy = (
       return "Your prompt was accepted, but the model provider stopped sending response data before the stream liveness timeout."
     case "connection_failure":
       return "Your prompt was accepted, but the model provider connection failed before the turn finished."
+    case "provider_queue_timeout":
+      return "The model provider dropped this request from its queue before starting it. This is a provider-side capacity failure, not a problem with your prompt."
   }
 }
 
@@ -102,6 +105,14 @@ export function classifyAssistantError(
     return {
       text: `The provider rejected the request and OpenCode is retrying automatically. Press Stop to cancel and switch models.\n\`${detail}\``,
       variant: "info",
+    }
+  }
+
+  if (isClaudeThirdPartyUsageClassificationError(detail)) {
+    return {
+      text: "Anthropic classified this DevRyan turn as third-party usage. Your Claude subscription quota may still be available. Use Model Recovery to enable Claude compatibility mode and retry explicitly.",
+      variant: "error",
+      retryable: true,
     }
   }
 
@@ -196,8 +207,12 @@ export function classifyAssistantError(
     }
   }
 
+  // Unrecognized provider errors are far more often transient than terminal, and
+  // without `retryable` the user is left with a dead end and no affordance at
+  // all. Offering a retry costs nothing when the failure really is permanent.
   return {
     text: `The model provider could not complete this turn:\n\`${detail}\``,
     variant: "error",
+    retryable: true,
   }
 }

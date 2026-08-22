@@ -20,6 +20,10 @@ const deps = {
   base64EncodeUtf8: (text: string) => Buffer.from(text).toString('base64'),
   getCachedCursorProvider: vi.fn(() => null as Record<string, unknown> | null),
   refreshCursorProvider: vi.fn(),
+  getXaiPromptToolOverrides: vi.fn(() => null as Record<string, false> | null),
+  supportsXaiProvider: vi.fn((providerID: unknown) => providerID === 'xai'),
+  refreshXaiProviderPayload: vi.fn(async () => undefined),
+  refreshXaiToolModel: vi.fn(async () => undefined),
 };
 
 const context = {
@@ -37,6 +41,11 @@ afterEach(() => {
   deps.getCachedCursorProvider.mockReset();
   deps.getCachedCursorProvider.mockReturnValue(null);
   deps.refreshCursorProvider.mockReset();
+  deps.getXaiPromptToolOverrides.mockReset();
+  deps.getXaiPromptToolOverrides.mockReturnValue(null);
+  deps.supportsXaiProvider.mockClear();
+  deps.refreshXaiProviderPayload.mockReset();
+  deps.refreshXaiToolModel.mockReset();
   context.postMessage.mockReset();
 });
 
@@ -73,6 +82,44 @@ describe('VS Code prompt admission proxy', () => {
     });
     expect(recordPrompt).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('merges cached Grok duplicate-tool overrides before forwarding', async () => {
+    const recordPrompt = vi.fn();
+    const recordPromptAccepted = vi.fn();
+    setVsCodeHarnessRuntime({
+      getPromptAdmissionBlock: () => null,
+      recordPrompt,
+      lifecycle: { recordPromptAccepted },
+    } as never);
+    deps.getXaiPromptToolOverrides.mockReturnValue({
+      mcp__context_mode__ctx_search: false,
+    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+    const response = await handleProxyBridgeMessage({
+      id: 'prompt-grok-cached-tools',
+      type: 'api:proxy',
+      payload: {
+        method: 'POST',
+        path: '/session/ses_1/prompt_async?directory=%2Frepo',
+        bodyBase64: Buffer.from(JSON.stringify({
+          model: { providerID: 'xai', modelID: 'grok-4.6' },
+          messageID: 'msg_client_1',
+          tools: { unique_tool: true },
+          parts: [],
+        })).toString('base64'),
+      },
+    }, context as never, deps);
+
+    expect((response?.data as { status: number }).status).toBe(204);
+    const forwarded = JSON.parse((fetchSpy.mock.calls[0]?.[1]?.body as Buffer).toString('utf8'));
+    expect(forwarded.tools).toEqual({
+      unique_tool: true,
+      mcp__context_mode__ctx_search: false,
+    });
+    expect(deps.refreshXaiToolModel).not.toHaveBeenCalled();
+    expect(recordPromptAccepted).toHaveBeenCalledTimes(1);
   });
 });
 

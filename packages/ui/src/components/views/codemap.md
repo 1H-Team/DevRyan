@@ -9,5 +9,7 @@ Container components coordinate layout regions and feature module composition. `
 ## Flow
 Navigation selects a view; view binds data hooks and renders feature sections.
 
+`GitView.tsx` treats generated commit highlights as body details, inserting a validated subject followed by a blank line and bounded bullet list. Host warnings disclose when the shared fast local fallback supplied the draft.
+
 ## Integration
 Connected to router/state stores and feature component trees.

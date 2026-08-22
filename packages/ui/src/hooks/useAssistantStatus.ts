@@ -35,6 +35,8 @@ interface WorkingSummary {
     lastCompletionId: string | null;
     isComplete: boolean;
     retryInfo: { attempt?: number; next?: number; message?: string } | null;
+    providerID?: string;
+    hasStreamedActivity: boolean;
 }
 
 interface FormingSummary {
@@ -95,6 +97,8 @@ const DEFAULT_WORKING: WorkingSummary = {
     lastCompletionId: null,
     isComplete: false,
     retryInfo: null,
+    providerID: undefined,
+    hasStreamedActivity: false,
 };
 
 const EMPTY_MESSAGES: Message[] = [];
@@ -275,6 +279,38 @@ export const getAssistantActivePartStatus = (
 };
 
 /**
+ * Whether the assistant message has produced any real output yet.
+ *
+ * A text-less reasoning part that has already closed does not count: xAI opens
+ * one during its silent pre-token window, and treating it as output would hide
+ * the deterministic provider-waiting copy that window exists for.
+ */
+export const hasAssistantStreamedActivity = (parts: readonly Part[] | undefined): boolean => {
+    for (const part of parts ?? []) {
+        if (part.type === 'tool') {
+            return true;
+        }
+
+        const rawContent = getLegacyTextContent(part) ?? '';
+        const hasText = typeof rawContent === 'string' && rawContent.trim().length > 0;
+
+        if (part.type === 'text') {
+            if (hasText) return true;
+            continue;
+        }
+
+        if (part.type === 'reasoning') {
+            // Any reasoning part means the turn has produced output — even an
+            // empty, already-ended one (xai/Grok emits those), so the provider
+            // waiting copy must yield to the normal status ladder.
+            return true;
+        }
+    }
+
+    return false;
+};
+
+/**
  * Returns a snapshot of assistant activity for the given session.
  *
  * Pass `sessionId` explicitly when you need per-session status (e.g. the
@@ -387,22 +423,28 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
         activeToolAction?: string;
         statusText: string;
         isGenericStatus: boolean;
+        providerID?: string;
+        hasStreamedActivity: boolean;
     }
 
     const parsedStatus = React.useMemo<ParsedStatusResult>(() => {
         if (sessionMessages.length === 0) {
-            return { activePartType: undefined, activeToolName: undefined, statusText: 'working', isGenericStatus: true };
+            return { activePartType: undefined, activeToolName: undefined, statusText: 'working', isGenericStatus: true, hasStreamedActivity: false };
         }
 
         const lastAssistant = selectAssistantStatusRecord(sessionMessages);
 
         if (!lastAssistant) {
-            return { activePartType: undefined, activeToolName: undefined, statusText: 'working', isGenericStatus: true };
+            return { activePartType: undefined, activeToolName: undefined, statusText: 'working', isGenericStatus: true, hasStreamedActivity: false };
         }
 
         const { activePartType, activeToolName, activeToolAction } = getAssistantActivePartStatus(lastAssistant.parts ?? [], {
             isTerminalAssistantMessage: isTerminalSyncAssistantMessage(lastAssistant.info),
         });
+        const hasStreamedActivity = hasAssistantStreamedActivity(lastAssistant.parts ?? []);
+        const providerID = typeof (lastAssistant.info as { providerID?: unknown }).providerID === 'string'
+            ? (lastAssistant.info as { providerID: string }).providerID.trim().toLowerCase()
+            : undefined;
 
         const WORKING_PHRASES = [
             'working',
@@ -438,7 +480,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
             return getRandomWorkingPhrase();
         })();
 
-        return { activePartType, activeToolName, activeToolAction, statusText, isGenericStatus };
+        return { activePartType, activeToolName, activeToolAction, statusText, isGenericStatus, providerID, hasStreamedActivity };
     }, [sessionMessages]);
 
     const abortState = React.useMemo(() => {
@@ -509,6 +551,8 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
             lastCompletionId: null,
             isComplete: false,
             retryInfo,
+            providerID: isWorking ? parsedStatus.providerID : undefined,
+            hasStreamedActivity: isWorking ? parsedStatus.hasStreamedActivity : false,
         };
     }, [activityPhase, isPhaseWorking, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, sessionRetryMessage, visibleRetryStatus, effectiveDirectory, warmingDirectory]);
 

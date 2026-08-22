@@ -14,6 +14,8 @@ export default {
         // the vendor-syntax manual chunk (see packages/web/vite-chunking.ts).
         { id: 'syntax-highlighter-chunk', identities: ['vendor-syntax'] },
         { id: 'markdown-renderer-chunk', identities: ['MarkdownRendererImpl'] },
+        { id: 'tool-output-dialog-chunk', identities: ['ToolOutputDialog'] },
+        { id: 'assistant-image-gallery-chunk', identities: ['GeneratedImageResult'] },
         { id: 'mini-chat-app-chunk', identities: ['renderElectronMiniChatApp'] },
         { id: 'terminal-view-chunk', identities: ['TerminalView'] },
         {
@@ -53,6 +55,7 @@ export default {
         { id: 'syntax-highlighter-chunk', identities: ['prism'] },
         { id: 'markdown-renderer-chunk', identities: ['MarkdownRendererImpl'] },
         { id: 'tool-output-dialog-chunk', identities: ['ToolOutputDialog'] },
+        { id: 'assistant-image-gallery-chunk', identities: ['GeneratedImageResult'] },
         { id: 'lazy-vscode-view-chunks', identities: ['AgentManagerView', 'SettingsView'] },
         {
           id: 'lazy-session-dialog-chunks',

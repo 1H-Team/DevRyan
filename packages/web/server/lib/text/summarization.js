@@ -64,6 +64,8 @@ Your response should be ready to speak immediately.`;
 }
 
 const SUMMARIZE_TIMEOUT_MS = 30_000;
+const SUMMARIZE_RETRY_DELAY_MS = 400;
+const SUMMARIZE_TRANSIENT_RETRIES = 1;
 const PLAN_CONTROL_TITLE_PATTERN = /^<(?:!|--)[!-]*plan-+>$/i;
 
 export function isPlanControlTitle(text) {
@@ -85,6 +87,69 @@ export const isUnavailableZenModelError = (error) => {
   const detail = String(error.detail || '').toLowerCase();
   return /(?:model[^\n]*(?:not found|unavailable|unsupported|unknown|invalid)|(?:not found|unavailable|unsupported|unknown)[^\n]*model)/.test(detail);
 };
+
+// Failures that mean "this model is not usable by us" rather than "try again":
+// a retired/unknown model id, or one this account is not entitled to. Zen serves
+// paid models alongside free ones and answers 401 for a paid id with no API key,
+// so switching models is the only useful recovery.
+export const isUnusableZenModelError = (error) => (
+  isUnavailableZenModelError(error)
+  || (error instanceof ZenApiError && [401, 402, 403].includes(error.status))
+);
+
+// Failures worth retrying against the same model: rate limits, upstream faults,
+// timeouts, transport errors, and an empty completion.
+/**
+ * A model that just answered 429 will almost certainly answer 429 again on the
+ * next session. Remembering that for a short while turns a guaranteed wasted
+ * attempt into an immediate advance to the next model in the rotation.
+ *
+ * Live evidence (2026-08-21): 23 consecutive title generations failed, every one
+ * of them burning attempts on `deepseek-v4-flash-free` (400/401 "Free promotion
+ * has ended") and then on a rate-limited fallback.
+ */
+// Exponential backoff with jitter. A flat 400ms retry against a rate-limited
+// endpoint is very likely to be rate-limited again.
+const backoffDelayMs = (baseMs, attempt) => {
+  const exponential = baseMs * (2 ** Math.max(0, attempt - 1));
+  const capped = Math.min(exponential, 8_000);
+  return Math.round(capped * (0.5 + Math.random() * 0.5));
+};
+
+const ZEN_MODEL_COOLDOWN_MS = 5 * 60 * 1_000;
+const zenModelCooldowns = new Map();
+
+export const isRateLimitedZenError = (error) => (
+  error instanceof ZenApiError && error.status === 429
+);
+
+const markZenModelCoolingDown = (model, now) => {
+  if (model) zenModelCooldowns.set(model, now + ZEN_MODEL_COOLDOWN_MS);
+};
+
+const isZenModelCoolingDown = (model, now) => {
+  const until = zenModelCooldowns.get(model);
+  if (until === undefined) return false;
+  if (until <= now) {
+    zenModelCooldowns.delete(model);
+    return false;
+  }
+  return true;
+};
+
+export const __resetZenModelCooldowns = () => zenModelCooldowns.clear();
+
+export const isTransientZenError = (error) => {
+  if (error instanceof ZenApiError) {
+    return error.status === 408 || error.status === 429 || error.status >= 500;
+  }
+  if (error?.name === 'AbortError') return true;
+  return /timed out|no text|fetch failed|network|socket|ECONN|EAI_AGAIN/i.test(String(error?.message || ''));
+};
+
+const wait = (delayMs) => (
+  delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve()
+);
 
 export async function generateZenText({
   prompt,
@@ -334,7 +399,17 @@ function fallbackByMode(text, maxLength, mode) {
   return sanitizeByMode(text, mode);
 }
 
-export async function summarizeText({ text, threshold = 200, maxLength = 500, zenModel, mode = 'tts' }) {
+export async function summarizeText({
+  text,
+  threshold = 200,
+  maxLength = 500,
+  zenModel,
+  fallbackZenModel,
+  zenModelRotation,
+  retryDelayMs = SUMMARIZE_RETRY_DELAY_MS,
+  now = Date.now,
+  mode = 'tts',
+}) {
   if (!text || text.length <= threshold) {
     return {
       summary: fallbackByMode(text || '', maxLength, mode),
@@ -343,47 +418,52 @@ export async function summarizeText({ text, threshold = 200, maxLength = 500, ze
     };
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SUMMARIZE_TIMEOUT_MS);
+  const prompt = `${buildSummarizationPrompt(maxLength, mode)}\n\nText to summarize:\n${text}`;
+  const primaryModel = typeof zenModel === 'string' && zenModel.trim() ? zenModel.trim() : 'gpt-5-nano';
 
-  try {
-    const prompt = buildSummarizationPrompt(maxLength, mode);
-    const model = zenModel || 'gpt-5-nano';
-    const endpoint = getZenCompletionEndpoint(model);
-    const response = await fetch(`https://opencode.ai/zen/v1/${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(endpoint === 'responses'
-        ? {
-            model,
-            input: [{ role: 'user', content: `${prompt}\n\nText to summarize:\n${text}` }],
-            stream: false,
-            reasoning: { effort: 'low' },
-          }
-        : {
-            model,
-            messages: [{ role: 'user', content: `${prompt}\n\nText to summarize:\n${text}` }],
-            stream: false,
-          }),
-      signal: controller.signal,
-    });
+  // Rotation. `zenModelRotation` is the ordered preference list; the legacy
+  // `fallbackZenModel` stays supported and lands at the end. Duplicates and
+  // blanks are dropped so a single-model caller behaves exactly as before.
+  const rotation = [];
+  for (const candidate of [primaryModel, ...(Array.isArray(zenModelRotation) ? zenModelRotation : []), fallbackZenModel]) {
+    const normalized = typeof candidate === 'string' ? candidate.trim() : '';
+    if (normalized && !rotation.includes(normalized)) rotation.push(normalized);
+  }
 
-    if (!response.ok) {
-      const errorBody = await response.json().catch(() => ({}));
-      console.error('[Summarize] zen API error:', response.status, errorBody);
-      return {
-        summary: fallbackByMode(text, maxLength, mode),
-        summarized: false,
-        reason: `zen API returned ${response.status}`,
-      };
-    }
+  // A model in cooldown is tried only if every model is cooling down — never
+  // give up entirely just because the whole rotation was recently rate-limited.
+  const startedAt = now();
+  const warm = rotation.filter((candidate) => !isZenModelCoolingDown(candidate, startedAt));
+  const order = warm.length > 0 ? warm : rotation;
 
-    const data = await response.json();
-    const summary = endpoint === 'responses'
-      ? extractZenOutputText(data)
-      : extractZenChatCompletionText(data);
+  let modelIndex = 0;
+  let model = order[0] ?? primaryModel;
+  let usedFallbackModel = false;
+  let transientRetriesLeft = SUMMARIZE_TRANSIENT_RETRIES;
+  let attempt = 0;
+  // Counts only real same-model waits. Deriving the backoff from `attempt`
+  // would grow the delay for every model we merely rotated past, turning a
+  // single 400ms wait into multiple seconds on a long rotation.
+  let backoffCount = 0;
+  let lastError = null;
 
-    if (summary) {
+  const advanceModel = () => {
+    modelIndex += 1;
+    if (modelIndex >= order.length) return false;
+    model = order[modelIndex];
+    usedFallbackModel = true;
+    transientRetriesLeft = SUMMARIZE_TRANSIENT_RETRIES;
+    return true;
+  };
+
+  // One attempt per model plus a small allowance for same-model transient
+  // retries. Unbounded growth here is what made an all-models-down run take
+  // seconds of pure backoff.
+  const maxAttempts = order.length + SUMMARIZE_TRANSIENT_RETRIES + 1;
+  while (attempt < maxAttempts) {
+    attempt += 1;
+    try {
+      const summary = await generateZenText({ prompt, zenModel: model });
       const sanitized = sanitizeByMode(summary, mode);
       const finalSummary = mode === 'note'
         ? (sanitized && sanitized !== sanitizeForNote(text) ? sanitized : distillNoteFallback(text, maxLength))
@@ -394,30 +474,65 @@ export async function summarizeText({ text, threshold = 200, maxLength = 500, ze
         summarized: true,
         originalLength: text.length,
         summaryLength: clippedSummary.length,
+        model,
+        attempts: attempt,
+        usedFallbackModel,
       };
-    }
+    } catch (error) {
+      lastError = error;
+      console.error(
+        `[Summarize] ${mode} generation failed (model=${model}, attempt=${attempt}${usedFallbackModel ? ', fallback model' : ''}):`,
+        error?.message || error,
+      );
 
-    return {
-      summary: fallbackByMode(text, maxLength, mode),
-      summarized: false,
-      reason: 'No response from model',
-    };
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      console.error('[Summarize] Request timed out');
-      return {
-        summary: fallbackByMode(text, maxLength, mode),
-        summarized: false,
-        reason: 'Request timed out',
-      };
+      // A model we cannot use is never worth retrying as-is — advance at once.
+      if (isUnusableZenModelError(error)) {
+        markZenModelCoolingDown(model, now());
+        if (advanceModel()) continue;
+        break;
+      }
+
+      if (isRateLimitedZenError(error)) {
+        // Remember the rate limit so later sessions skip this model outright.
+        markZenModelCoolingDown(model, now());
+        // A different model is a different rate-limit bucket, so switching is
+        // immediate — backing off first would just add dead wall-clock time.
+        if (advanceModel()) continue;
+        // Nothing else to try: only now is waiting on the same model worthwhile.
+        if (transientRetriesLeft > 0) {
+          transientRetriesLeft -= 1;
+          backoffCount += 1;
+          await wait(backoffDelayMs(retryDelayMs, backoffCount));
+          continue;
+        }
+        break;
+      }
+
+      if (isTransientZenError(error)) {
+        // Prefer a different model over waiting: it is both faster and more
+        // likely to succeed than retrying an endpoint that just failed.
+        // Waiting is reserved for the case where nothing else is left, which
+        // bounds total backoff to SUMMARIZE_TRANSIENT_RETRIES delays no matter
+        // how long the rotation is.
+        if (advanceModel()) continue;
+        if (transientRetriesLeft > 0) {
+          transientRetriesLeft -= 1;
+          backoffCount += 1;
+          await wait(backoffDelayMs(retryDelayMs, backoffCount));
+          continue;
+        }
+      }
+
+      break;
     }
-    console.error('[Summarize] Error:', error);
-    return {
-      summary: fallbackByMode(text, maxLength, mode),
-      summarized: false,
-      reason: error.message,
-    };
-  } finally {
-    clearTimeout(timer);
   }
+
+  console.error(`[Summarize] ${mode} generation exhausted ${attempt} attempt(s); falling back for model=${primaryModel}`);
+  return {
+    summary: fallbackByMode(text, maxLength, mode),
+    summarized: false,
+    reason: lastError?.message || 'Zen generation failed',
+    attempts: attempt,
+    usedFallbackModel,
+  };
 }

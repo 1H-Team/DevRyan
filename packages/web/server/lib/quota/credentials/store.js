@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 
 export const MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES = 16 * 1024;
 export const MANAGED_QUOTA_PROVIDER_IDS = Object.freeze([
-  'opencode-go',
+  'opencode',
   'ollama-cloud',
   'cursor-acp',
 ]);
@@ -115,6 +115,17 @@ export const deleteQuotaCredential = (providerId, options = {}) => {
     if (stat.isDirectory()) {
       throw new QuotaCredentialError('INVALID_CREDENTIAL', 'Stored credential is invalid');
     }
+    fsImpl.unlinkSync(target);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+};
+
+export const deleteLegacyOpenCodeGoQuotaCredential = (options = {}) => {
+  const fsImpl = options.fsImpl ?? fs;
+  const pathImpl = options.pathImpl ?? path;
+  const target = pathImpl.join(getQuotaCredentialsDirectory(options), 'opencode-go.json');
+  try {
     fsImpl.unlinkSync(target);
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error;

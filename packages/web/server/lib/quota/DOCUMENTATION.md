@@ -11,7 +11,7 @@ This module fetches quota and usage signals for supported providers in the web s
 - `packages/web/server/lib/quota/credentials/`: allowlisted managed-credential normalization, private atomic storage, and explicit Cursor import.
 - `packages/web/server/lib/quota/providers/google/`: Google/Gemini and Antigravity auth-source-specific API and transform modules.
 - `packages/web/server/lib/quota/utils/`: shared auth, transform, and formatting helpers.
-- `@openchamber/shared-runtime/lib/quota-adapters.js`: injected request/parsing contract shared with the VS Code host for z.ai, Kimi, Codex, xAI, and DeepSeek.
+- `@openchamber/shared-runtime/lib/quota-adapters.js`: injected request/parsing contract shared with the VS Code host for OpenCode Zen, z.ai, Kimi, Codex, xAI, and DeepSeek.
 
 ## Supported provider IDs (dispatcher)
 
@@ -30,7 +30,8 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | `kimi-for-coding` | Kimi for Coding | `providers/kimi.js` | `kimi-for-coding`, `kimi` |
 | `nano-gpt` | NanoGPT | `providers/nanogpt.js` | `nano-gpt`, `nanogpt`, `nano_gpt` |
 | `openrouter` | OpenRouter | `providers/openrouter.js` | `openrouter` |
-| `opencode-go` | OpenCode Go | `providers/opencode-go.js` | `opencode-go`, `opencodego`, `go`; environment pair, managed credential, then legacy auth usage fields |
+| `opencode` | OpenCode Zen | `providers/opencode.js` | Managed `{ workspaceId, authCookie }` dashboard credential; aliases `zen`, `opencode-zen` |
+| `opencode-go` | OpenCode Go | `providers/opencode-go.js` | First safe `key`, `token`, or `access` value from the existing provider auth entry |
 | `zai-coding-plan` | z.ai | `providers/zai.js` | `zai-coding-plan`, `zai`, `z.ai` |
 | `xai` | xAI | `providers/xai.js` | `xai`, `grok`, `xai-oauth` OAuth access/refresh tokens |
 | `zhipuai-coding-plan` | Zhipu AI Coding Plan | `providers/zhipuai-coding-plan.js` | `zhipuai-coding-plan`, `zhipuai`, `zhipu` |
@@ -48,9 +49,9 @@ The reset-credit endpoint is undocumented and can change independently of the st
 
 ## Shared provider adapters
 
-z.ai, Kimi, Codex, xAI, and DeepSeek host modules are deliberately thin: credential discovery and persistence stay in the host, while requests and payload normalization live in `@openchamber/shared-runtime`. This keeps web/Electron and VS Code output equivalent and makes adapters independently testable with injected `fetch` and clock functions.
+OpenCode Zen, z.ai, Kimi, Codex, xAI, DeepSeek, and OpenCode Go host modules are deliberately thin: credential discovery and persistence stay in the host, while requests and payload normalization live in `@openchamber/shared-runtime`. This keeps web/Electron and VS Code output equivalent and makes adapters independently testable with injected `fetch` and clock functions.
 
-xAI requests the pinned CLI billing endpoint with manual redirect handling. Redirects are rejected, and an HTTP 401 permits one refresh-and-retry when a refresh token and host persistence callback are available; otherwise the result asks the user to re-authenticate. DeepSeek maps available currency balances to value-only rows because the API does not expose a percentage window.
+xAI requests the pinned CLI billing endpoint with manual redirect handling. Redirects are rejected, and an HTTP 401 permits one refresh-and-retry when a refresh token and host persistence callback are available; otherwise the result asks the user to re-authenticate. After billing succeeds, the shared adapter uses the effective OAuth access token for a bounded, best-effort request to the private `https://grok.com/prod_mc_billing.ConsumerUiSvc/GetRemainingResets` gRPC-Web method. It exposes only the number and expiry dates of valid banked resets through the existing reset-credit contract; provider token IDs remain private and redemption is intentionally unsupported. Empty inventories are omitted. Authentication, protocol, redirect, timeout, oversized-body, and parse failures preserve the successful billing result and add a sanitized warning. DeepSeek maps available currency balances to value-only rows because the API does not expose a percentage window.
 
 ## Internal-only provider module
 - `providers/openai.js` exists for logic parity/reuse but is intentionally not registered for dispatcher ID routing.
@@ -77,16 +78,22 @@ Active context is `inputTokens + cacheReadTokens + cacheWriteTokens`. `lastOutpu
 
 ## OpenCode Go usage source
 
-OpenCode Go usage is dashboard-backed because OpenCode documents Go model endpoints but not a stable usage API. `providers/opencode-go.js` resolves a complete environment credential first, then the managed credential, then `auth["opencode-go"].usageWorkspaceId` + `auth["opencode-go"].usageAuthCookie`. It fetches `https://opencode.ai/workspace/<workspaceId>/go` with manual redirect handling and parses the server-rendered `rollingUsage`, `weeklyUsage`, and `monthlyUsage` fields into the shared quota window shape. The provider is considered configured when either the Go API key or usage credentials exist; if only the API key exists, the quota result returns a configured setup error instead of hiding the provider.
+OpenCode Go usage uses the bearer-authenticated JSON endpoint `https://opencode.ai/zen/go/v1/usage`. Each host discovers the API key from the existing provider auth entry in `key`, `token`, then `access` order, rejecting newline-bearing values. The shared adapter maps `usage.rolling`, `usage.weekly`, and `usage.monthly` to `5h`, `weekly`, and `monthly`, skips malformed windows with warnings, rejects redirects, and never sends cookies or workspace IDs. After a successful refresh only, each host removes the retired managed dashboard credential and deletes only `usageWorkspaceId` and `usageAuthCookie` from the latest `opencode-go` auth entry through the atomic auth mutation path; all other provider fields and providers are preserved. Cleanup failure leaves usage successful and adds a sanitized warning.
+
+## OpenCode Zen usage source
+
+OpenCode Zen is a separate canonical provider (`opencode`) and reads the authenticated workspace billing page at exactly `https://opencode.ai/workspace/{workspaceId}/billing`. It accepts only a strict `wrk_…` workspace ID and the value of the `auth` cookie. Redirects, cookie/header injection, untrusted final URLs, 401/403/404 responses, and inaccessible workspaces are rejected as authentication failures. Requests time out after 15 seconds and responses are capped at 512 KiB; credentials and response bodies are never logged.
+
+The shared adapter extracts exactly one bounded SolidJS billing hydration object without evaluating page code. It converts microcents to dollars and emits one Credits progress row whose used share is current-month spend divided by current-month spend plus the available balance. Monthly-limit and auto-reload details are intentionally not exposed. Usage whose authoritative timestamp is outside the current UTC month is treated as zero. An ordinary Zen API key is not a configured quota source because OpenCode does not expose a balance endpoint authenticated by that key.
 
 ## Managed quota credentials
 
-The managed layer is additive and does not replace or mutate existing provider auth. Canonical provider IDs are `opencode-go`, `ollama-cloud`, and `cursor-acp`; HTTP callers may use `cursor` as an alias for `cursor-acp`, but discovery exposes only the canonical row.
+The managed layer is additive and does not replace or mutate existing provider auth. Canonical provider IDs are `opencode`, `ollama-cloud`, and `cursor-acp`; HTTP callers may use `zen`/`opencode-zen` and `cursor` as aliases, but discovery exposes only canonical rows. OpenCode Go's retired dashboard form is no longer exposed.
 
 - Files live under `${OPENCHAMBER_DATA_DIR ?? ~/.config/openchamber}/quota/<provider>.json`.
 - Provider IDs are allowlisted before path construction. Directories use mode `0700`; temporary and final files use `0600`; writes use same-directory atomic rename with exact temporary-file cleanup.
-- Payloads are bounded to 16 KB in the route and storage host, use exact provider-specific shapes, and reject CR/LF/NUL injection, unknown fields, mixed Cursor dashboard/OAuth forms, and invalid workspace IDs.
-- Status responses contain only `configured`, optional safe metadata (`workspaceId`, `credentialKind`, `hasRefreshToken`, `effectiveSource`), and a fixed mask. Secrets and secret fragments are never returned or logged.
+- Payloads are bounded to 16 KB in the route and storage host, use exact provider-specific shapes, and reject CR/LF/NUL injection, unknown fields, mixed Cursor dashboard/OAuth forms, and malformed OpenCode Zen workspace/cookie values.
+- Status responses contain only `configured`, optional safe metadata (`credentialKind`, `hasRefreshToken`, `effectiveSource`), and a fixed mask. Secrets and secret fragments are never returned or logged.
 - `configured` describes only the managed file. `effectiveSource` may still report an environment, token-file, or legacy fallback after deletion.
 
 Routes are registered before the generic provider route:
@@ -101,7 +108,7 @@ Stable error codes are `UNSUPPORTED_PROVIDER`, `INVALID_CREDENTIAL`, `NOT_CONFIG
 
 Credential precedence is intentional:
 
-1. OpenCode Go: explicit environment pair → managed credential → legacy OpenCode auth usage fields.
+1. OpenCode Zen: managed dashboard credential only.
 2. Cursor: explicit environment OAuth → explicit token-file OAuth → managed OAuth/dashboard → legacy dashboard session token.
 3. Ollama Cloud: managed cookie → legacy cookie file.
 

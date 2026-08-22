@@ -405,7 +405,9 @@ export const AttachedVSCodeFileChips = memo(() => {
         ))}
       </div>
       <React.Suspense fallback={null}>
-        <ToolOutputDialog popup={popupContent} onOpenChange={handlePopupChange} syntaxTheme={{}} isMobile={isMobile} />
+        {popupContent.open ? (
+          <ToolOutputDialog popup={popupContent} onOpenChange={handlePopupChange} syntaxTheme={{}} isMobile={isMobile} />
+        ) : null}
       </React.Suspense>
     </>
   );
@@ -486,7 +488,9 @@ export const AttachedFilesList = memo(() => {
         )}
       </div>
       <React.Suspense fallback={null}>
-        <ToolOutputDialog popup={popupContent} onOpenChange={handlePopupChange} syntaxTheme={{}} isMobile={isMobile} />
+        {popupContent.open ? (
+          <ToolOutputDialog popup={popupContent} onOpenChange={handlePopupChange} syntaxTheme={{}} isMobile={isMobile} />
+        ) : null}
       </React.Suspense>
     </>
   );

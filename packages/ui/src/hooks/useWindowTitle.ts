@@ -3,23 +3,18 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { isDesktopShell, isTauriShell } from '@/lib/desktop';
 import { desktopHostsGet, locationMatchesHost, redactSensitiveUrl } from '@/lib/desktopHosts';
 import { setDesktopWindowTitle } from '@/lib/desktopNative';
+import { resolveProjectDisplayName } from '@/lib/projectDisplayName';
 
 const APP_TITLE = 'DevRyan';
 
-const formatProjectLabel = (label: string): string => {
-  return label.replace(/[-_]/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
-};
-
-const getProjectNameFromPath = (path: string): string => {
-  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
-  const segments = normalized.split('/').filter(Boolean);
-  return segments[segments.length - 1] ?? '';
-};
-
-const buildWindowTitle = (projectLabel: string | null, instanceLabel: string | null): string => {
+export const buildWindowTitle = (projectLabel: string | null, instanceLabel: string | null): string => {
   const parts = [projectLabel, instanceLabel, APP_TITLE].filter((part): part is string => typeof part === 'string' && part.trim().length > 0);
   return parts.join(' | ');
 };
+
+export const resolveWindowProjectLabel = (project: { label?: string | null; path: string } | null): string | null => (
+  project ? resolveProjectDisplayName(project) : null
+);
 
 export const useWindowTitle = () => {
   const activeProject = useProjectsStore((state) => {
@@ -34,17 +29,7 @@ export const useWindowTitle = () => {
       return null;
     }
 
-    const label = activeProject.label?.trim();
-    if (label) {
-      return formatProjectLabel(label);
-    }
-
-    const pathName = getProjectNameFromPath(activeProject.path);
-    if (pathName) {
-      return formatProjectLabel(pathName);
-    }
-
-    return null;
+    return resolveWindowProjectLabel(activeProject);
   }, [activeProject]);
 
   const [instanceLabel, setInstanceLabel] = React.useState<string | null>(null);

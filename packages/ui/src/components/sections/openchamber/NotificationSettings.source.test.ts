@@ -19,9 +19,18 @@ describe('NotificationSettings Plan Ready controls', () => {
   });
 
   test('renders the Plan Ready template after Completion in the responsive grid', () => {
-    expect(source).toContain("(['completion', 'planReady', 'subtask', 'error', 'question'] as const)");
+    expect(source).toContain("(['completion', 'planReady', 'subtask', 'error', 'question', 'permission'] as const)");
     expect(source).toContain('grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-3');
     expect(source).toContain("planReady: 'settings.notifications.page.template.event.planReady'");
+  });
+
+  test('renders an independently configurable Permissions Needed event', () => {
+    expect(source).toContain('aria-pressed={notifyOnPermission}');
+    expect(source).toContain("ariaLabel={t('settings.notifications.page.events.permissionAria')}");
+    expect(source).toContain('onChange={setNotifyOnPermission}');
+    expect(messages).toContain("'settings.notifications.page.events.permissionLabel': 'Permissions Needed'");
+    expect(messages).toContain("'settings.notifications.page.template.event.permission': 'Permissions Needed'");
+    expect(autoSave).toContain('diff.notifyOnPermission = current.notifyOnPermission');
   });
 
   test('uses the exact default title and message copy', () => {

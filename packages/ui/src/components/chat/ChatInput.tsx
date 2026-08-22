@@ -51,6 +51,7 @@ import { FileMentionAutocomplete, type FileMentionHandle } from './FileMentionAu
 import { CommandAutocomplete, type CommandAutocompleteHandle, type CommandInfo } from './CommandAutocomplete';
 import { SkillAutocomplete, type SkillAutocompleteHandle } from './SkillAutocomplete';
 import { cn, formatDirectoryName } from '@/lib/utils';
+import { resolveProjectDisplayName } from '@/lib/projectDisplayName';
 import { ModelControls } from './ModelControls';
 import { parseAgentMentions } from '@/lib/messages/agentMentions';
 import { StatusRow } from './StatusRow';
@@ -292,11 +293,7 @@ const normalizePath = (value?: string | null): string | null => {
 };
 
 const getProjectDisplayLabel = (project: { label?: string; path: string }): string => {
-    const label = project.label?.trim();
-    if (label) {
-        return label;
-    }
-    return formatDirectoryName(project.path);
+    return resolveProjectDisplayName(project);
 };
 
 const getProjectIconColor = (projectColor?: string | null): string | undefined => {

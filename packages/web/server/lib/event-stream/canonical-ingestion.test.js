@@ -13,6 +13,7 @@ describe('createCanonicalOpenCodeEventProcessor', () => {
       recordMultiUserActivity: vi.fn(async () => undefined),
       processEvidence: vi.fn(async () => undefined),
       processBrowserLease: vi.fn(async () => undefined),
+      processSessionTitle: vi.fn(async () => undefined),
       onSessionDeleted: vi.fn(),
     };
     const processEvent = createCanonicalOpenCodeEventProcessor(callbacks);
@@ -61,5 +62,20 @@ describe('createCanonicalOpenCodeEventProcessor', () => {
 
     expect(processCommandDeadline).toHaveBeenCalledOnce();
     expect(processCommandDeadline).toHaveBeenCalledWith(payload);
+  });
+
+  it('forwards authoritative session events to the title runtime', async () => {
+    const processSessionTitle = vi.fn(async () => true);
+    const processEvent = createCanonicalOpenCodeEventProcessor({ processSessionTitle });
+    const payload = {
+      type: 'session.status',
+      properties: { sessionID: 'ses_1', status: { type: 'idle' } },
+    };
+
+    processEvent(payload);
+    await Promise.resolve();
+
+    expect(processSessionTitle).toHaveBeenCalledOnce();
+    expect(processSessionTitle).toHaveBeenCalledWith(payload);
   });
 });

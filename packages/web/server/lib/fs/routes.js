@@ -1,6 +1,7 @@
 import { createDeterministicGitReadCache } from './git-read-cache.js';
 
 const EXEC_JOB_TTL_MS = 30 * 60 * 1000;
+const IMAGE_ASSET_GRANT_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 
 const createCommandTimeoutMs = () => {
   const raw = Number(process.env.OPENCHAMBER_FS_EXEC_TIMEOUT_MS);
@@ -470,6 +471,7 @@ export const registerFsRoutes = (app, dependencies) => {
     buildAugmentedPath,
     resolveGitBinaryForSpawn,
     openchamberUserConfigRoot,
+    authorizeImageAssetGrant,
   } = dependencies;
 
   const execJobs = new Map();
@@ -832,31 +834,49 @@ export const registerFsRoutes = (app, dependencies) => {
 
   app.get('/api/fs/raw', async (req, res) => {
     const filePath = typeof req.query.path === 'string' ? req.query.path.trim() : '';
+    const assetGrant = typeof req.query.assetGrant === 'string' ? req.query.assetGrant.trim() : '';
     if (!filePath) {
       return res.status(400).json({ error: 'Path is required' });
     }
 
     try {
-      const resolved = await resolveReadPathFromContext({
-        req,
-        targetPath: filePath,
-        resolveProjectDirectory,
-        path,
-        os,
-        normalizeDirectoryPath,
-        openchamberUserConfigRoot,
-      });
-      if (!resolved.ok) {
-        return res.status(400).json({ error: resolved.error });
-      }
+      let canonicalPath;
+      if (assetGrant) {
+        canonicalPath = await fsPromises.realpath(path.resolve(filePath));
+        if (!IMAGE_ASSET_GRANT_EXTENSIONS.has(path.extname(canonicalPath).toLowerCase())) {
+          return res.status(403).json({ error: 'Image asset grant does not allow this format' });
+        }
+        const authorized = typeof authorizeImageAssetGrant === 'function'
+          && await authorizeImageAssetGrant({
+            token: assetGrant,
+            principal: req.principal,
+            canonicalPath,
+          });
+        if (!authorized) {
+          return res.status(403).json({ error: 'Image asset grant is invalid or expired' });
+        }
+      } else {
+        const resolved = await resolveReadPathFromContext({
+          req,
+          targetPath: filePath,
+          resolveProjectDirectory,
+          path,
+          os,
+          normalizeDirectoryPath,
+          openchamberUserConfigRoot,
+        });
+        if (!resolved.ok) {
+          return res.status(400).json({ error: resolved.error });
+        }
 
-      const [canonicalPath, canonicalBase] = await Promise.all([
-        fsPromises.realpath(resolved.resolved),
-        fsPromises.realpath(resolved.base).catch(() => path.resolve(resolved.base)),
-      ]);
-
-      if (!isPathWithinRoot(canonicalPath, canonicalBase, path, os)) {
-        return res.status(403).json({ error: 'Access to file denied' });
+        const [resolvedCanonicalPath, canonicalBase] = await Promise.all([
+          fsPromises.realpath(resolved.resolved),
+          fsPromises.realpath(resolved.base).catch(() => path.resolve(resolved.base)),
+        ]);
+        if (!isPathWithinRoot(resolvedCanonicalPath, canonicalBase, path, os)) {
+          return res.status(403).json({ error: 'Access to file denied' });
+        }
+        canonicalPath = resolvedCanonicalPath;
       }
 
       const stats = await fsPromises.stat(canonicalPath);

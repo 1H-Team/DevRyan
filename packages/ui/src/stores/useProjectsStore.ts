@@ -14,6 +14,7 @@ import { getAuthPrincipal, type AuthPrincipal } from '@/lib/authSession';
 import { toast } from '@/components/ui';
 import { updateManagedProject, type ManagedProjectMetadataPatch } from '@/lib/managedProjectsApi';
 import { formatMessage, useI18nStore, type I18nKey } from '@/lib/i18n/store';
+import { getExactProjectBasename, resolveProjectDisplayName } from '@/lib/projectDisplayName';
 
 /** Pick a color key that's least used among existing projects */
 const pickAutoColor = (projects: ProjectEntry[]): string => {
@@ -127,7 +128,7 @@ export const isIntegrateTempProjectPath = (value: string): boolean => {
   return base.startsWith(INTEGRATE_TMP_PREFIX);
 };
 
-const deriveProjectLabel = (path: string): string => {
+const legacyGeneratedLabel = (path: string): string => {
   const normalized = normalizeProjectPath(path);
   if (!normalized || normalized === '/') {
     return 'Root';
@@ -137,6 +138,25 @@ const deriveProjectLabel = (path: string): string => {
   return raw.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
+const deriveProjectLabel = (path: string): string => getExactProjectBasename(normalizeProjectPath(path));
+
+export const normalizeGeneratedProjectLabels = (projects: ProjectEntry[]): {
+  projects: ProjectEntry[];
+  changed: boolean;
+} => {
+  let changed = false;
+  const normalized = projects.map((project) => {
+    const exactLabel = deriveProjectLabel(project.path);
+    const legacyLabel = legacyGeneratedLabel(project.path);
+    if (project.label === legacyLabel && project.label !== exactLabel) {
+      changed = true;
+      return { ...project, label: exactLabel };
+    }
+    return project;
+  });
+  return { projects: changed ? normalized : projects, changed };
+};
+
 const projectNameCollator = new Intl.Collator(undefined, {
   numeric: true,
   sensitivity: 'base',
@@ -144,8 +164,8 @@ const projectNameCollator = new Intl.Collator(undefined, {
 
 export const sortProjectsAlphabetically = (projects: ProjectEntry[]): ProjectEntry[] => (
   [...projects].sort((left, right) => {
-    const leftName = left.label?.trim() || deriveProjectLabel(left.path);
-    const rightName = right.label?.trim() || deriveProjectLabel(right.path);
+    const leftName = resolveProjectDisplayName(left);
+    const rightName = resolveProjectDisplayName(right);
     const nameComparison = projectNameCollator.compare(leftName, rightName);
     return nameComparison || projectNameCollator.compare(left.path, right.path);
   })
@@ -1017,7 +1037,12 @@ export const useProjectsStore = create<ProjectsStore>()(
       const managedProjection = principal.scope === 'managed' && principal.role !== 'admin'
         ? projectManagedAssignments(principal, [...settingsProjects, ...current.projects])
         : null;
-      const projectedProjects = managedProjection?.projects ?? settingsProjects;
+      const normalization = principal.scope === 'managed' && principal.role !== 'admin'
+        ? { projects: settingsProjects, changed: false }
+        : normalizeGeneratedProjectLabels(settingsProjects);
+      const normalizedSettingsProjects = normalization.projects;
+      const generatedLabelNormalizationChanged = normalization.changed;
+      const projectedProjects = managedProjection?.projects ?? normalizedSettingsProjects;
       const incomingProjects = shouldSortNextSettingsSync
         ? sortProjectsAlphabetically(projectedProjects)
         : projectedProjects;
@@ -1045,12 +1070,18 @@ export const useProjectsStore = create<ProjectsStore>()(
       const projectsChanged = JSON.stringify(current.projects) !== JSON.stringify(incomingProjects);
       const activeChanged = current.activeProjectId !== incomingActive;
 
-      if (!projectsChanged && !activeChanged) {
+      if (!projectsChanged && !activeChanged && !generatedLabelNormalizationChanged) {
         return;
       }
 
-      set({ projects: incomingProjects, activeProjectId: incomingActive });
-      cacheProjects(incomingProjects, incomingActive);
+      if (projectsChanged || activeChanged) {
+        set({ projects: incomingProjects, activeProjectId: incomingActive });
+      }
+      if (generatedLabelNormalizationChanged) {
+        persistProjects(incomingProjects, incomingActive);
+      } else {
+        cacheProjects(incomingProjects, incomingActive);
+      }
 
       if (incomingActive) {
         const activeProject = incomingProjects.find((project) => project.id === incomingActive);

@@ -1256,12 +1256,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                 </div>
             </div>
             <React.Suspense fallback={null}>
-                <ToolOutputDialog
-                    popup={popupContent}
-                    onOpenChange={handlePopupChange}
-                    syntaxTheme={syntaxTheme}
-                    isMobile={isMobile}
-                />
+                {popupContent.open ? (
+                    <ToolOutputDialog
+                        popup={popupContent}
+                        onOpenChange={handlePopupChange}
+                        syntaxTheme={syntaxTheme}
+                        isMobile={isMobile}
+                    />
+                ) : null}
             </React.Suspense>
         </>
     );

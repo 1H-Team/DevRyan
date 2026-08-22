@@ -4,29 +4,24 @@ import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui';
 import { useConfigStore } from '@/stores/useConfigStore';
+import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { quotaRefreshCoordinator } from '@/stores/useQuotaStore';
 import { RiAddLine, RiDeleteBinLine, RiStackLine } from '@remixicon/react';
 import { cn } from '@/lib/utils';
-import { recordConfigMutationResponse } from '@/stores/useConfigApplyStore';
+import { recordConfigMutationResponse, useConfigApplyStore } from '@/stores/useConfigApplyStore';
 import { useI18n } from '@/lib/i18n';
 import { splitAntigravityProviderForDisplay } from '@/lib/providers/antigravity';
 import { getProviderDisplayName } from '@/lib/providers/display';
 import { getProviderModelsForDisplay, sortProvidersByDisplayName } from './providerSorting';
+import {
+  disconnectProvider,
+  hasActiveProviderSource,
+  shouldShowConnectedProvider,
+  useProviderDisconnectStore,
+  type ProviderSources,
+} from './providerConnectionState';
 
 const ADD_PROVIDER_ID = '__add_provider__';
-
-interface ProviderSourceInfo {
-  exists: boolean;
-  path?: string | null;
-}
-
-interface ProviderSources {
-  auth: ProviderSourceInfo;
-  user: ProviderSourceInfo;
-  project: ProviderSourceInfo;
-  custom?: ProviderSourceInfo;
-  anthropicOAuth?: ProviderSourceInfo;
-}
 
 interface ProvidersSidebarProps {
   onItemSelect?: () => void;
@@ -35,15 +30,29 @@ interface ProvidersSidebarProps {
 export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect }) => {
   const { t } = useI18n();
   const rawProviders = useConfigStore((state) => state.directoryScoped.__global__?.providers ?? state.providers);
-  const providers = React.useMemo(
+  const discoveredProviders = React.useMemo(
     () => splitAntigravityProviderForDisplay(rawProviders),
     [rawProviders]
   );
   const selectedProviderId = useConfigStore((state) => state.selectedProviderId);
   const setSelectedProvider = useConfigStore((state) => state.setSelectedProvider);
   const loadProviders = useConfigStore((state) => state.loadProviders);
+  const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
+  const appliedRevision = useConfigApplyStore((state) => state.status?.appliedRevision ?? 0);
+  const pendingRevisionByProvider = useProviderDisconnectStore((state) => state.pendingRevisionByProvider);
+  const sourceRefreshRevision = useProviderDisconnectStore((state) => state.sourceRefreshRevision);
+  const markDisconnectRequested = useProviderDisconnectStore((state) => state.markRequested);
+  const reconcileAppliedRevision = useProviderDisconnectStore((state) => state.reconcileAppliedRevision);
   const [sourcesByProvider, setSourcesByProvider] = React.useState<Record<string, ProviderSources>>({});
   const [disconnectingProviderId, setDisconnectingProviderId] = React.useState<string | null>(null);
+  const providers = React.useMemo(
+    () => discoveredProviders.filter((provider) => shouldShowConnectedProvider(
+      provider.id,
+      sourcesByProvider[provider.id],
+      Object.prototype.hasOwnProperty.call(pendingRevisionByProvider, provider.id),
+    )),
+    [discoveredProviders, pendingRevisionByProvider, sourcesByProvider],
+  );
   const sortedProviders = React.useMemo(
     () => sortProvidersByDisplayName(providers, sourcesByProvider),
     [providers, sourcesByProvider]
@@ -54,7 +63,11 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
   }, [loadProviders]);
 
   React.useEffect(() => {
-    if (providers.length === 0) {
+    reconcileAppliedRevision(appliedRevision);
+  }, [appliedRevision, reconcileAppliedRevision]);
+
+  React.useEffect(() => {
+    if (discoveredProviders.length === 0) {
       setSourcesByProvider({});
       return;
     }
@@ -63,9 +76,12 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
     setSourcesByProvider({});
 
     const loadAllSources = async () => {
-      const tasks = providers.map(async (provider) => {
+      const tasks = discoveredProviders.map(async (provider) => {
         try {
-          const response = await fetch(`/api/provider/${encodeURIComponent(provider.id)}/source`, {
+          const query = currentDirectory?.trim()
+            ? `?directory=${encodeURIComponent(currentDirectory.trim())}`
+            : '';
+          const response = await fetch(`/api/provider/${encodeURIComponent(provider.id)}/source${query}`, {
             method: 'GET',
             headers: { Accept: 'application/json' },
           });
@@ -97,7 +113,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
     return () => {
       cancelled = true;
     };
-  }, [providers]);
+  }, [currentDirectory, discoveredProviders, sourceRefreshRevision]);
 
   const bgClass = 'bg-background';
 
@@ -106,20 +122,13 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
       setDisconnectingProviderId(providerId);
 
       try {
-        const response = await fetch(`/api/provider/${encodeURIComponent(providerId)}/auth?scope=all`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
-        });
-
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) {
-          const message = payload?.error || t('settings.providers.page.toast.providerDisconnectFailed');
-          throw new Error(message);
-        }
-
-        toast.success(t('settings.providers.page.toast.providerDisconnected'));
-        recordConfigMutationResponse(payload);
-        await loadProviders({ directory: null });
+        const payload = await disconnectProvider(providerId, currentDirectory);
+        const applyStatus = recordConfigMutationResponse(payload);
+        markDisconnectRequested(providerId, payload);
+        toast.success(applyStatus?.pending
+          ? t('settings.providers.page.toast.providerDisconnectQueued')
+          : t('settings.providers.page.toast.providerDisconnected'));
+        if (!applyStatus?.pending) await loadProviders({ directory: null, force: true });
         quotaRefreshCoordinator.settingsChanged();
       } catch (error) {
         console.error('Failed to disconnect provider:', error);
@@ -128,7 +137,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
         setDisconnectingProviderId(null);
       }
     },
-    [loadProviders, t]
+    [currentDirectory, loadProviders, markDisconnectRequested, t]
   );
 
   return (
@@ -163,12 +172,11 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
           <>
             {sortedProviders.map((provider) => {
               const sources = sourcesByProvider[provider.id];
-              const canDisconnect = Boolean(
-                sources?.auth.exists ||
-                sources?.user.exists ||
-                sources?.custom?.exists ||
-                sources?.anthropicOAuth?.exists
+              const isDisconnectPending = Object.prototype.hasOwnProperty.call(
+                pendingRevisionByProvider,
+                provider.id,
               );
+              const canDisconnect = hasActiveProviderSource(sources) && !isDisconnectPending;
 
               return (
                 <ProviderListItem
@@ -178,6 +186,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
                   canDisconnect={canDisconnect}
                   sources={sources}
                   isDisconnecting={disconnectingProviderId === provider.id}
+                  isDisconnectPending={isDisconnectPending}
                   onSelect={() => {
                     setSelectedProvider(provider.id);
                     onItemSelect?.();
@@ -199,9 +208,10 @@ const ProviderListItem: React.FC<{
   sources?: ProviderSources;
   canDisconnect?: boolean;
   isDisconnecting?: boolean;
+  isDisconnectPending?: boolean;
   onSelect: () => void;
   onDisconnect?: () => void;
-}> = ({ provider, selectedProviderId, sources, canDisconnect = false, isDisconnecting = false, onSelect, onDisconnect }) => {
+}> = ({ provider, selectedProviderId, sources, canDisconnect = false, isDisconnecting = false, isDisconnectPending = false, onSelect, onDisconnect }) => {
   const { t } = useI18n();
   const modelCount = getProviderModelsForDisplay(
     provider as { id?: string; models?: Array<{ id?: string; name?: string }> },
@@ -228,8 +238,11 @@ const ProviderListItem: React.FC<{
         <span className="typography-ui-label font-normal truncate flex-1 min-w-0 text-foreground">
           {providerName}
         </span>
-        <span className="typography-micro w-7 flex-shrink-0 text-right tabular-nums text-muted-foreground/60">
-          {modelCount}
+        <span className={cn(
+          'typography-micro flex-shrink-0 text-right tabular-nums text-muted-foreground/60',
+          isDisconnectPending ? 'w-auto' : 'w-7',
+        )}>
+          {isDisconnectPending ? t('settings.providers.page.state.disconnectPendingShort') : modelCount}
         </span>
       </button>
       <div className="h-6 w-6 flex-shrink-0">

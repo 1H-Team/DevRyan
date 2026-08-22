@@ -1,29 +1,8 @@
-import React from 'react';
 import { readFileSync } from 'node:fs';
+import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, mock, test } from 'bun:test';
 import type { Part } from '@opencode-ai/sdk/v2';
-
-mock.module('motion/react', () => ({
-    AnimatePresence: ({ children }: React.PropsWithChildren) => <>{children}</>,
-    motion: {
-        div: ({
-            children,
-            initial: _initial,
-            animate: _animate,
-            exit: _exit,
-            transition: _transition,
-            ...props
-        }: React.PropsWithChildren<Record<string, unknown>>) => {
-            void _initial;
-            void _animate;
-            void _exit;
-            void _transition;
-            return <div {...props}>{children}</div>;
-        },
-    },
-    useReducedMotion: () => false,
-}));
 
 mock.module('../../MarkdownRenderer', () => ({
     MarkdownRenderer: ({ content }: { content: string }) => <p>{content}</p>,
@@ -33,59 +12,235 @@ mock.module('@/stores/useUIStore', () => ({
     useUIStore: (selector: (state: { chatRenderMode: 'live' }) => unknown) => selector({ chatRenderMode: 'live' }),
 }));
 
-const { default: ReasoningGroup } = await import('./ReasoningGroup');
+mock.module('@/lib/i18n', () => ({
+    useI18n: () => ({
+        t: (key: string, variables?: Record<string, string>) => {
+            const message = ({
+                'chat.reasoning.thinking': 'Thinking…',
+                'chat.reasoning.thought': 'Thought',
+                'chat.reasoning.thoughtFor': 'Thought for {duration}',
+                'chat.reasoning.expand': 'Expand reasoning',
+                'chat.reasoning.collapse': 'Collapse reasoning',
+            } as Record<string, string>)[key] ?? key;
+            return message.replace(/\{(\w+)\}/g, (_, name: string) => variables?.[name] ?? '');
+        },
+    }),
+}));
 
-const reasoningPart = (id: string, text: string, active = false): Part => ({
+const {
+    default: ReasoningGroup,
+    ReasoningDisclosure,
+} = await import('./ReasoningGroup');
+const {
+    formatReasoningDuration,
+    getReasoningDurationMilliseconds,
+} = await import('./reasoningDuration');
+const { isReasoningDisclosureToggleKey } = await import('./reasoningDisclosureKeyboard');
+
+const clippedXaiPreview = `CLIPPED${'x'.repeat(193)}...`;
+
+const reasoningPart = ({
+    id,
+    text,
+    start = 1_000,
+    end = 2_000,
+}: {
+    id: string;
+    text: string;
+    start?: number;
+    end?: number | null;
+}): Part => ({
     id,
     messageID: 'message-1',
     sessionID: 'session-1',
     type: 'reasoning',
     text,
-    time: active ? { start: 1_000 } : { start: 1_000, end: 2_000 },
+    time: end === null ? { start } : { start, end },
 } as Part);
 
-const renderGroup = (parts: Part[]): string => renderToStaticMarkup(
-    <ReasoningGroup
-        entries={parts.map((part) => ({ part, messageId: 'message-1' }))}
-        providerID="openai"
-    />,
+const entries = (parts: Part[]) => parts.map((part) => ({ part, messageId: 'message-1' }));
+
+const renderGroup = (
+    parts: Part[],
+    options: { providerID?: string; isMessageCompleted?: boolean; isMobile?: boolean } = {},
+): string => renderToStaticMarkup(
+    <ReasoningGroup entries={entries(parts)} providerID="openai" {...options} />,
 );
 
-describe('ReasoningGroup', () => {
-    test('keeps the single-entry case pixel-equivalent with no disclosure affordance', () => {
-        const html = renderGroup([reasoningPart('reasoning-1', 'Only line.')]);
-
-        expect(html).toContain('Only line.');
-        expect(html).not.toContain('data-reasoning-group');
-        expect(html).not.toContain('<button');
-        expect(html.match(/data-message-text-export-root="true"/g)).toHaveLength(1);
+describe('reasoning duration presentation', () => {
+    test('formats whole seconds, minutes, and hours exactly', () => {
+        expect(formatReasoningDuration(56_000)).toBe('56s');
+        expect(formatReasoningDuration(95_000)).toBe('1m 35s');
+        expect(formatReasoningDuration(3_723_000)).toBe('1h 2m 3s');
+        expect(formatReasoningDuration(1)).toBe('1s');
+        expect(formatReasoningDuration(0)).toBe('0s');
     });
 
-    test('collapses three entries to the latest line while preserving every export root', () => {
-        const html = renderGroup([
-            reasoningPart('reasoning-1', 'First line.'),
-            reasoningPart('reasoning-2', 'Second line.'),
-            reasoningPart('reasoning-3', 'Latest line.', true),
+    test('uses the wall-clock span across adjacent parts, including overlap', () => {
+        const groupEntries = entries([
+            reasoningPart({ id: 'r1', text: 'First.', start: 10_000, end: 50_000 }),
+            reasoningPart({ id: 'r2', text: 'Second.', start: 40_000, end: 105_000 }),
         ]);
 
-        expect(html).toContain('data-reasoning-group="true"');
-        expect(html).toContain('aria-hidden="true"');
-        expect(html).toContain('inert=""');
-        expect(html).toContain('aria-expanded="false"');
-        expect(html).toContain('aria-label="Show 2 earlier reasoning lines"');
-        expect(html).not.toContain('+2');
-        expect(html).toContain('Latest line.');
-        expect(html.match(/data-message-text-export-root="true"/g)).toHaveLength(3);
-        expect(html).not.toContain('data-reasoning-shimmer');
+        expect(getReasoningDurationMilliseconds(groupEntries)).toBe(95_000);
     });
 
-    test('keeps the disclosure state wired to expansion and collapse semantics', () => {
-        const source = readFileSync(new URL('./ReasoningGroup.tsx', import.meta.url), 'utf8');
+    test('rejects missing, negative, reversed, and non-finite timing', () => {
+        expect(getReasoningDurationMilliseconds(entries([
+            reasoningPart({ id: 'missing', text: 'Active.', end: null }),
+        ]))).toBeNull();
+        expect(getReasoningDurationMilliseconds(entries([
+            reasoningPart({ id: 'negative', text: 'Broken.', start: -1_000, end: 4_000 }),
+        ]))).toBeNull();
+        expect(getReasoningDurationMilliseconds(entries([
+            reasoningPart({ id: 'reversed', text: 'Broken.', start: 5_000, end: 4_000 }),
+        ]))).toBeNull();
+        expect(getReasoningDurationMilliseconds(entries([
+            reasoningPart({ id: 'complete', text: 'Complete.', start: 1_000, end: 2_000 }),
+            reasoningPart({ id: 'incomplete', text: 'Incomplete.', start: 2_000, end: null }),
+        ]))).toBeNull();
+        expect(getReasoningDurationMilliseconds(entries([
+            reasoningPart({ id: 'non-finite', text: 'Broken.', start: Number.POSITIVE_INFINITY, end: 4_000 }),
+        ]))).toBeNull();
+        expect(formatReasoningDuration(Number.NaN)).toBeNull();
+        expect(formatReasoningDuration(-1)).toBeNull();
+    });
+});
 
-        expect(source).toContain('aria-expanded={isExpanded}');
-        expect(source).toContain('onClick={() => setIsExpanded((expanded) => !expanded)}');
-        expect(source).toContain("isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'");
-        expect(source).toContain('inert={!isExpanded}');
-        expect(source).toContain('group-hover/reasoning:opacity-100');
+describe('ReasoningGroup', () => {
+    test('recognizes the native Enter and Space activation keys only', () => {
+        expect(isReasoningDisclosureToggleKey('Enter')).toBe(true);
+        expect(isReasoningDisclosureToggleKey(' ')).toBe(true);
+        expect(isReasoningDisclosureToggleKey('Escape')).toBe(false);
+    });
+
+    test('collapses a completed single part into an exact duration disclosure', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-1', text: 'Only line.', start: 1_000, end: 57_000 }),
+        ], { isMessageCompleted: true });
+
+        expect(html).toContain('data-reasoning-group="true"');
+        expect(html).toContain('data-reasoning-disclosure-active="false"');
+        expect(html).toContain('aria-expanded="false"');
+        expect(html).toContain('aria-label="Expand reasoning: Thought for 56s"');
+        expect(html).toContain('Thought for 56s');
+        expect(html).not.toContain('Only line.');
+    });
+
+    test('keeps an active multi-part run compact without changing expansion state', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-1', text: 'First line.', start: 1_000, end: 2_000 }),
+            reasoningPart({ id: 'reasoning-2', text: 'Latest line.', start: 2_000, end: null }),
+        ]);
+
+        expect(html).toContain('data-reasoning-disclosure-active="true"');
+        expect(html).toContain('aria-expanded="false"');
+        expect(html).toContain('aria-label="Expand reasoning: Thinking…"');
+        expect(html).toContain('Thinking…');
+        expect(html).not.toContain('First line.');
+        expect(html).not.toContain('Latest line.');
+    });
+
+    test('renders every entry in source order only when explicitly expanded', () => {
+        const groupEntries = entries([
+            reasoningPart({ id: 'reasoning-1', text: 'First line.', start: 0, end: 50_000 }),
+            reasoningPart({ id: 'reasoning-2', text: 'Second line.', start: 50_000, end: 95_000 }),
+        ]);
+        const html = renderToStaticMarkup(
+            <ReasoningDisclosure
+                entries={groupEntries}
+                providerID="openai"
+                isMessageCompleted
+                isExpanded
+                onExpandedChange={() => undefined}
+            />,
+        );
+
+        expect(html).toContain('aria-expanded="true"');
+        expect(html).toContain('aria-label="Collapse reasoning: Thought for 1m 35s"');
+        expect(html.indexOf('First line.')).toBeLessThan(html.indexOf('Second line.'));
+        expect(html.match(/data-message-text-export-root="true"/g)).toHaveLength(2);
+    });
+
+    test('falls back to Thought after terminal completion with incomplete timing', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-aborted', text: 'Interrupted.', start: 1_000, end: null }),
+        ], { isMessageCompleted: true });
+
+        expect(html).toContain('aria-label="Expand reasoning: Thought"');
+        expect(html).not.toContain('Thinking…');
+        expect(html).not.toContain('Thought for');
+    });
+
+    test('renders an empty active reasoning shell but omits an empty terminal part', () => {
+        expect(renderGroup([
+            reasoningPart({ id: 'reasoning-empty-active', text: '', end: null }),
+        ])).toContain('Thinking…');
+        expect(renderGroup([
+            reasoningPart({ id: 'reasoning-empty-terminal', text: '' }),
+        ], { isMessageCompleted: true })).toBe('');
+    });
+
+    test('renders no wrapper when every entry is a clipped xAI preview', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-clipped-1', text: clippedXaiPreview }),
+            reasoningPart({ id: 'reasoning-clipped-2', text: clippedXaiPreview }),
+        ], { providerID: 'xai', isMessageCompleted: true });
+
+        expect(html).toBe('');
+    });
+
+    test('excludes clipped xAI previews before duration aggregation', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-1', text: 'Visible line.', start: 1_000, end: 57_000 }),
+            reasoningPart({ id: 'reasoning-clipped', text: clippedXaiPreview, start: 57_000, end: 200_000 }),
+        ], { providerID: 'xai', isMessageCompleted: true });
+
+        expect(html).toContain('Thought for 56s');
+        expect(html).not.toContain('Visible line.');
+        expect(html).not.toContain('CLIPPED');
+    });
+
+    test('uses a full-width 44px target on mobile', () => {
+        const html = renderToStaticMarkup(
+            <ReasoningDisclosure
+                entries={entries([reasoningPart({ id: 'reasoning-mobile', text: 'Mobile thought.' })])}
+                isMessageCompleted
+                isMobile
+                isExpanded
+                onExpandedChange={() => undefined}
+            />,
+        );
+
+        expect(html).toContain('min-h-11 w-full py-2');
+        expect(html).toContain('motion-reduce:transition-none');
+        expect(html).toContain('motion-reduce:animate-none');
+    });
+
+    test('keeps the 44px target at narrow responsive widths without touch detection', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-responsive', text: 'Responsive thought.' }),
+        ], { isMessageCompleted: true });
+
+        expect(html).toContain('max-md:min-h-11 max-md:w-full max-md:py-2');
+        expect(html).toContain('group/reasoning max-md:w-full');
+    });
+
+    test('forces the disclosure panel animation off for reduced motion', () => {
+        const styles = readFileSync(new URL('../../../../index.css', import.meta.url), 'utf8');
+        const reducedMotionRule = styles.slice(styles.indexOf('@media (prefers-reduced-motion: reduce)', styles.indexOf('.markdown-content.markdown-reasoning')));
+        const html = renderToStaticMarkup(
+            <ReasoningDisclosure
+                entries={entries([reasoningPart({ id: 'reduced', text: 'Reasoning.' })])}
+                isMessageCompleted
+                isExpanded
+                onExpandedChange={() => undefined}
+            />,
+        );
+
+        expect(html).toContain('data-reasoning-disclosure-content="true"');
+        expect(reducedMotionRule).toContain('[data-reasoning-disclosure-content="true"]');
+        expect(reducedMotionRule).toContain('animation: none !important;');
+        expect(reducedMotionRule).toContain('transition: none !important;');
     });
 });

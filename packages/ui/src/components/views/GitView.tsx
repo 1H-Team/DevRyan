@@ -1161,7 +1161,20 @@ export const GitView: React.FC = () => {
         return;
       }
 
-      setCommitMessage(generatedSubject);
+      const generatedDetails = (result.commits[0]?.highlights ?? [])
+        .map((detail) => detail.trim())
+        .filter(Boolean)
+        .slice(0, 4);
+      setCommitMessage([
+        generatedSubject,
+        ...(generatedDetails.length > 0
+          ? ['', ...generatedDetails.map((detail) => `- ${detail}`)]
+          : []),
+      ].join('\n'));
+      const warning = result.warnings?.find((value) => typeof value === 'string' && value.trim());
+      if (warning) {
+        toast.warning(t('gitView.toast.generateCommitMessageFallback'), { description: warning });
+      }
     } catch (error) {
       if (!isCurrentRequest()) {
         return;

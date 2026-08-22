@@ -13,6 +13,7 @@ import {
   mergeConfigs,
   writeConfig,
 } from './shared.js';
+import { isInvalidJsoncError, parseConfigJsonc } from './jsonc-config.js';
 
 // ============== MCP CONFIG HELPERS ==============
 
@@ -44,12 +45,10 @@ const MCP_RECOVERY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber'
 function readJsonFileIfPresent(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return {};
   try {
-    const content = fs.readFileSync(filePath, 'utf8').trim();
-    if (!content) return {};
-    const parsed = JSON.parse(content);
-    return isPlainObject(parsed) ? parsed : {};
+    return parseConfigJsonc(fs.readFileSync(filePath, 'utf8'), filePath);
   } catch (error) {
-    throw new Error(`Failed to read ${path.basename(filePath)}: ${error.message}`);
+    if (isInvalidJsoncError(error)) throw error;
+    throw new Error(`Failed to read ${path.basename(filePath)}`);
   }
 }
 

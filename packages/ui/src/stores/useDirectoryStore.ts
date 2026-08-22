@@ -19,6 +19,7 @@ interface DirectoryStore {
   isSwitchingDirectory: boolean;
 
   setDirectory: (path: string, options?: { showOverlay?: boolean }) => void;
+  recoverMissingDirectory: (missingPath: string, fallbackPath: string) => boolean;
   goBack: () => void;
   goForward: () => void;
   goToParent: () => void;
@@ -295,6 +296,33 @@ export const useDirectoryStore = create<DirectoryStore>()(
             isSwitchingDirectory: false,
           };
         });
+      },
+
+      recoverMissingDirectory: (missingPath: string, fallbackPath: string) => {
+        const state = get();
+        const missing = resolveDirectoryPath(missingPath, state.homeDirectory);
+        const fallback = resolveDirectoryPath(fallbackPath, state.homeDirectory);
+        if (!missing || !fallback || normalizeDirectoryPath(state.currentDirectory) !== missing) return false;
+
+        const history = state.directoryHistory
+          .map((entry) => resolveDirectoryPath(entry, state.homeDirectory))
+          .filter((entry) => entry !== missing && entry !== fallback);
+        history.push(fallback);
+
+        opencodeClient.setDirectory(fallback);
+        invalidateFileSearchCache(missing);
+        invalidateFileSearchCache(fallback);
+        safeStorage.setItem('lastDirectory', fallback);
+        persistDirectorySettings({ lastDirectory: fallback });
+        set({
+          currentDirectory: fallback,
+          directoryHistory: history,
+          historyIndex: history.length - 1,
+          hasPersistedDirectory: true,
+          isHomeReady: true,
+          isSwitchingDirectory: false,
+        });
+        return true;
       },
 
       goBack: () => {

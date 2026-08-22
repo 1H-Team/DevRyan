@@ -353,11 +353,13 @@ export const SessionDialogs: React.FC = () => {
         const normalizedWorktreePath = normalizeProjectDirectory(worktree.path);
         const normalizedProjectPath = normalizeProjectDirectory(projectRef.path);
         try {
-            await removeProjectWorktree(
+            const removedPath = await removeProjectWorktree(
                 projectRef,
                 worktree,
                 { deleteRemoteBranch: shouldRemoveRemote, deleteLocalBranch }
             );
+            const { recoverMissingActiveDirectory } = await import('@/lib/directoryRecovery');
+            await recoverMissingActiveDirectory(removedPath, undefined, projectRef.path);
 
             const draftDirectory = normalizeProjectDirectory(newSessionDraft?.directoryOverride);
             if (
@@ -373,10 +375,6 @@ export const SessionDialogs: React.FC = () => {
                 }, { force: true });
             }
 
-            if (normalizeProjectDirectory(currentDirectory) === normalizedWorktreePath && normalizedProjectPath) {
-                useDirectoryStore.getState().setDirectory(normalizedProjectPath, { showOverlay: false });
-            }
-
             return true;
         } catch (error) {
             toast.error(t('sessions.sidebar.sessionDialogs.worktree.errorRemoveTitle'), {
@@ -384,7 +382,7 @@ export const SessionDialogs: React.FC = () => {
             });
             return false;
         }
-    }, [canRemoveRemoteBranches, canRemoveWorktrees, currentDirectory, deleteDialogShouldRemoveRemote, getProjectRefForWorktree, newSessionDraft?.directoryOverride, newSessionDraft?.open, setDraftBootstrapPendingDirectory, setNewSessionDraftTarget, t]);
+    }, [canRemoveRemoteBranches, canRemoveWorktrees, deleteDialogShouldRemoveRemote, getProjectRefForWorktree, newSessionDraft?.directoryOverride, newSessionDraft?.open, setDraftBootstrapPendingDirectory, setNewSessionDraftTarget, t]);
 
     const handleConfirmDelete = React.useCallback(async () => {
         if (!deleteDialog) {

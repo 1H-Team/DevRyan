@@ -40,14 +40,19 @@ export const useProviderBackedContextUsage = ({
     : compactionRequestKey;
 
   React.useEffect(() => {
-    if (!normalizedSessionID || isCompactionSnapshotPending || fallback?.providerID !== 'anthropic') return;
+    if (
+      !normalizedSessionID
+      || entry
+      || isCompactionSnapshotPending
+      || fallback?.providerID !== 'anthropic'
+    ) return;
     if (!getRegisteredRuntimeAPIs()?.contextUsage) return;
     void refreshProviderContextUsage({
       sessionID: normalizedSessionID,
       directory,
       requestKey,
     });
-  }, [directory, fallback?.providerID, isCompactionSnapshotPending, normalizedSessionID, requestKey]);
+  }, [directory, entry, fallback?.providerID, isCompactionSnapshotPending, normalizedSessionID, requestKey]);
 
   if (isCompactionSnapshotPending) {
     if (entry?.status === 'available' && entry.snapshot) {

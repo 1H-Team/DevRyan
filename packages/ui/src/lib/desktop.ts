@@ -84,6 +84,7 @@ export type DesktopSettings = {
   notifyOnPlanReady?: boolean;
   notifyOnError?: boolean;
   notifyOnQuestion?: boolean;
+  notifyOnPermission?: boolean;
 
   // Per-event notification templates
   notificationTemplates?: {
@@ -91,6 +92,7 @@ export type DesktopSettings = {
     planReady: { title: string; message: string };
     error: { title: string; message: string };
     question: { title: string; message: string };
+    permission: { title: string; message: string };
     subtask: { title: string; message: string };
   };
 

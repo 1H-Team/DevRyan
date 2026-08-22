@@ -20,10 +20,6 @@ import { areActivityListsEqual, getToolReadOffset } from './activityRowUtils';
 import { isActivityRunning } from './activityTools';
 import { normalizeToolName } from './toolRenderUtils';
 import { buildTodoSummary, formatCompactTodoTotal } from '../../lib/todoSummary';
-import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
-import type { ToolPopupContent } from '../types';
-import GeneratedImageResult from './GeneratedImageResult';
-import type { GeneratedImageResult as GeneratedImageResultRecord } from './generatedImageResults';
 
 const getFirstToolPath = (...records: Array<Record<string, unknown> | undefined>): string | null => {
     for (const record of records) {
@@ -175,10 +171,7 @@ const StaticToolRowInner: React.FC<{
     toolName: string;
     activities: TurnActivityPart[];
     animateTailText: boolean;
-    generatedImages?: GeneratedImageResultRecord[];
-    onShowPopup?: (content: ToolPopupContent) => void;
-    onContentChange?: (reason?: ContentChangeReason) => void;
-}> = ({ toolName, activities, animateTailText, generatedImages = [], onShowPopup, onContentChange }) => {
+}> = ({ toolName, activities, animateTailText }) => {
     const showToolFileIcons = useUIStore((state) => state.showToolFileIcons);
     const displayName = getToolMetadata(toolName).displayName;
     const icon = getToolIcon(toolName);
@@ -241,13 +234,8 @@ const StaticToolRowInner: React.FC<{
         || normalizedToolName === 'ripgrep'
         || normalizedToolName === 'glob';
     const isFetchGroup = normalizedToolName === 'webfetch' || normalizedToolName === 'fetch' || normalizedToolName === 'curl' || normalizedToolName === 'wget';
-    const activityIds = React.useMemo(() => new Set(activities.map((activity) => activity.id)), [activities]);
-    const unlinkedGeneratedImages = React.useMemo(() => generatedImages.filter((result) => (
-        !result.linkedMessageId && activityIds.has(result.toolPartId)
-    )), [activityIds, generatedImages]);
-
     return (
-        <div className="w-full min-w-0 space-y-2">
+        <div className="w-full min-w-0">
           <div className={cn('flex w-full items-center gap-x-1.5 pr-2 pl-px py-1.5 rounded-xl min-w-0')}>
             <div className="inline-flex h-5 items-center flex-shrink-0" style={{ color: 'var(--tools-icon)' }}>
                 {icon}
@@ -322,15 +310,6 @@ const StaticToolRowInner: React.FC<{
                 </Text>
             ) : null}
           </div>
-          {unlinkedGeneratedImages.map((result) => (
-              <GeneratedImageResult
-                  key={result.toolPartId}
-                  result={result}
-                  directory={currentDirectory || undefined}
-                  onShowPopup={onShowPopup}
-                  onContentChange={onContentChange}
-              />
-          ))}
         </div>
     );
 };
@@ -338,8 +317,5 @@ const StaticToolRowInner: React.FC<{
 export const StaticToolRow = React.memo(StaticToolRowInner, (prev, next) => {
     return prev.toolName === next.toolName
         && prev.animateTailText === next.animateTailText
-        && prev.generatedImages === next.generatedImages
-        && prev.onShowPopup === next.onShowPopup
-        && prev.onContentChange === next.onContentChange
         && areActivityListsEqual(prev.activities, next.activities);
 });

@@ -5,7 +5,7 @@ import type {
 } from '@openchamber/orchestration-runtime';
 import type { ResponseStyleLevel } from '@/lib/responseStyle';
 import type { ManagedTaskTurnProjection } from '../../managedTaskDispatch';
-import type { GeneratedImageResult } from '../../message/parts/generatedImageResults';
+import type { AssistantImageMessage } from '../../message/parts/generatedImageResults';
 
 export type ManagedTransportRecoveryState = 'recovering' | 'recovered' | 'failed';
 
@@ -179,7 +179,7 @@ export interface TurnGroupingContext {
     summarySourcePartId?: string;
     activityParts?: TurnActivityRecord[];
     activityGroupSegments?: TurnActivityGroup[];
-    generatedImages?: GeneratedImageResult[];
+    assistantImageMessages?: AssistantImageMessage[];
     headerMessageId?: string;
     hasTools: boolean;
     hasReasoning: boolean;

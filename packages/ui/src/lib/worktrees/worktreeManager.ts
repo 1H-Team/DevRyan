@@ -303,7 +303,7 @@ export async function removeProjectWorktree(project: ProjectRef, worktree: Workt
   deleteRemoteBranch?: boolean;
   deleteLocalBranch?: boolean;
   remoteName?: string;
-}): Promise<void> {
+}): Promise<string> {
   const projectDirectory = normalizePath(project.path);
 
   const deleteRemote = Boolean(options?.deleteRemoteBranch);
@@ -316,6 +316,9 @@ export async function removeProjectWorktree(project: ProjectRef, worktree: Workt
   if (!raw?.success) {
     throw new Error('Worktree removal failed');
   }
+  const removedPath = typeof raw.removedPath === 'string' && raw.removedPath.trim()
+    ? normalizePath(raw.removedPath)
+    : normalizePath(worktree.path);
 
   clearWorktreeBootstrapState(worktree.path);
 
@@ -355,4 +358,5 @@ export async function removeProjectWorktree(project: ProjectRef, worktree: Workt
   if (deleteRemote && branchName) {
     await deleteRemoteBranch(projectDirectory, { branch: branchName, remote: remoteName }).catch(() => undefined);
   }
+  return removedPath;
 }

@@ -53,9 +53,7 @@ export const createNotificationTemplateRuntime = (deps) => {
 
   const formatProjectLabel = (label) => {
     if (!label || typeof label !== 'string') return '';
-    return label
-      .replace(/[-_]/g, ' ')
-      .replace(/\b\w/g, (char) => char.toUpperCase());
+    return label;
   };
 
   const resolveNotificationTemplate = (template, variables) => {

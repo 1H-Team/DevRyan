@@ -202,3 +202,58 @@ export const collapseSupersededTodoWrites = (parts: Part[], keepPartId?: string 
         return true;
     });
 };
+
+type MergeableTextPart = Part & {
+    id?: string;
+    text?: string;
+    content?: string;
+    value?: string;
+    time?: { start?: number; end?: number };
+};
+
+export const mergeConsecutiveTextParts = (parts: Part[]): Part => {
+    if (parts.length <= 1) {
+        return parts[0];
+    }
+
+    const displayParts = collapseExactDuplicateAdjacentTextParts(parts);
+    if (displayParts.length <= 1) {
+        return displayParts[0] ?? parts[0];
+    }
+
+    const firstPart = displayParts[0] as MergeableTextPart;
+    // Keep the transport's own whitespace at each seam; only fabricate a soft
+    // break when the split point carries none. Trimming the seams used to
+    // manufacture markdown artifacts — a list split right after its marker
+    // rendered an empty "1." item, and mid-sentence splits lost their space.
+    const mergedText = displayParts
+        .map((part) => extractTextContent(part))
+        .filter((text) => text.trim().length > 0)
+        .reduce((accumulated, text) => {
+            if (!accumulated) return text;
+            const seamHasWhitespace = /\s$/.test(accumulated) || /^\s/.test(text);
+            return seamHasWhitespace ? accumulated + text : `${accumulated}\n${text}`;
+        }, '');
+    const finalizedTextParts = displayParts
+        .map((part) => part as MergeableTextPart)
+        .filter((part) => typeof part.time?.end !== 'undefined');
+    const lastFinalizedPart = finalizedTextParts[finalizedTextParts.length - 1];
+    const allPartsFinalized = finalizedTextParts.length === displayParts.length;
+    const mergedTime = allPartsFinalized && typeof firstPart.time?.start === 'number'
+        ? { start: firstPart.time.start, end: lastFinalizedPart?.time?.end }
+        : firstPart.time;
+
+    // Decision: merge only adjacent text parts for rendering so a plan split by the
+    // message transport is detected as one plan, while tool/reasoning boundaries stay intact.
+    const mergedPart = {
+        ...firstPart,
+        id: displayParts
+            .map((part, index) => (part as MergeableTextPart).id ?? `text-${index}`)
+            .join(':merged:'),
+        text: mergedText,
+        content: undefined,
+        value: undefined,
+        time: mergedTime,
+    };
+    return mergedPart as unknown as Part;
+};

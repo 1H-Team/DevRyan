@@ -243,6 +243,27 @@ const normalizeArguments = (value) => {
   });
 };
 
+/**
+ * agent-browser evaluates an `eval` snippet as a bare expression, so a snippet
+ * using `await` fails with "await is only valid in async functions" and one
+ * using `return` fails with "Illegal return statement". Three of the four
+ * browser tool failures on 2026-08-21 were exactly these two errors.
+ *
+ * Wrapping in an async IIFE makes both work while leaving a plain expression
+ * (the common case) evaluating to the same value.
+ */
+const ASYNC_WRAP_REQUIRED_PATTERN = /(?:^|[^.\w$])(?:await|return)\s/;
+const ALREADY_WRAPPED_PATTERN = /^\s*\(\s*(?:async\s*)?(?:function\b|\()/;
+
+export const wrapBrowserEvalSnippet = (snippet) => {
+  if (typeof snippet !== 'string') return snippet;
+  const trimmed = snippet.trim();
+  if (!trimmed) return snippet;
+  if (!ASYNC_WRAP_REQUIRED_PATTERN.test(trimmed)) return snippet;
+  if (ALREADY_WRAPPED_PATTERN.test(trimmed)) return snippet;
+  return `(async () => { ${trimmed} })()`;
+};
+
 const validateInvocation = (commandInput, argsInput) => {
   const command = requireText(commandInput, 'command').toLowerCase();
   if (!/^[a-z][a-z0-9-]*$/.test(command)) {
@@ -277,6 +298,12 @@ const validateInvocation = (commandInput, argsInput) => {
       );
     }
   }
+  // The first non-flag argument to `eval` is the snippet itself.
+  if (command === 'eval') {
+    const snippetIndex = args.findIndex((argument) => !argument.startsWith('-'));
+    if (snippetIndex >= 0) args[snippetIndex] = wrapBrowserEvalSnippet(args[snippetIndex]);
+  }
+
   return { command, args };
 };
 

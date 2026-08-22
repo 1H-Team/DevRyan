@@ -9,9 +9,14 @@ import { mkdtemp, mkdir, writeFile, symlink, rm, readFile, access } from 'fs/pro
 
 import { registerFsRoutes } from './routes.js';
 
-const createApp = ({ workspace, configRoot, spawn = vi.fn() }) => {
+const createApp = ({ workspace, configRoot, spawn = vi.fn(), authorizeImageAssetGrant } = {}) => {
   const app = express();
   app.use(express.json());
+  app.use((req, _res, next) => {
+    const principalId = req.headers['x-test-principal'];
+    if (typeof principalId === 'string') req.principal = { id: principalId, scope: 'managed' };
+    next();
+  });
   let jobCounter = 0;
   registerFsRoutes(app, {
     os,
@@ -24,6 +29,7 @@ const createApp = ({ workspace, configRoot, spawn = vi.fn() }) => {
     buildAugmentedPath: () => process.env.PATH || '',
     resolveGitBinaryForSpawn: () => 'git',
     openchamberUserConfigRoot: configRoot,
+    authorizeImageAssetGrant,
   });
   return app;
 };
@@ -287,6 +293,46 @@ describe('fs mutation routes', () => {
     expect(response.headers['content-disposition']).toContain('attachment;');
     expect(response.headers['content-disposition']).toContain('filename="resume-.txt"');
     expect(response.headers['content-disposition']).toContain("filename*=UTF-8''r%C3%A9sum%C3%A9-%E8%B3%87%E6%96%99.txt");
+  });
+
+  it('serves only the exact path and principal accepted by an assistant image grant', async () => {
+    const target = path.join(outsideDir, 'generated.png');
+    await writeFile(target, Buffer.from([1, 2, 3]));
+    const canonicalTarget = await fs.promises.realpath(target);
+    const authorizeImageAssetGrant = vi.fn(async ({ token, principal, canonicalPath }) => (
+      token === 'valid-grant'
+      && principal?.id === 'user-1'
+      && canonicalPath === canonicalTarget
+    ));
+    const app = createApp({ workspace, configRoot, authorizeImageAssetGrant });
+
+    const success = await request(app)
+      .get('/api/fs/raw')
+      .set('x-test-principal', 'user-1')
+      .query({ path: target, assetGrant: 'valid-grant' });
+    expect(success.status).toBe(200);
+    expect(success.body).toEqual(Buffer.from([1, 2, 3]));
+
+    const wrongPrincipal = await request(app)
+      .get('/api/fs/raw')
+      .set('x-test-principal', 'user-2')
+      .query({ path: target, assetGrant: 'valid-grant' });
+    expect(wrongPrincipal.status).toBe(403);
+    expect(authorizeImageAssetGrant).toHaveBeenCalledTimes(2);
+  });
+
+  it('never allows an SVG through an assistant image grant', async () => {
+    const target = path.join(outsideDir, 'generated.svg');
+    await writeFile(target, '<svg xmlns="http://www.w3.org/2000/svg"/>', 'utf8');
+    const authorizeImageAssetGrant = vi.fn(async () => true);
+
+    const response = await request(createApp({ workspace, configRoot, authorizeImageAssetGrant }))
+      .get('/api/fs/raw')
+      .set('x-test-principal', 'user-1')
+      .query({ path: target, assetGrant: 'valid-grant' });
+
+    expect(response.status).toBe(403);
+    expect(authorizeImageAssetGrant).not.toHaveBeenCalled();
   });
 
   it('caches repeated foreground allowlisted git read commands by cwd', async () => {

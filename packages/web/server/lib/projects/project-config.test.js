@@ -1,19 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import os from 'os';
 import path from 'path';
-import { mkdtemp, rm, readFile, writeFile } from 'fs/promises';
+import fsPromises, { mkdtemp, rm, readFile, writeFile } from 'fs/promises';
 import { createProjectConfigRuntime } from './project-config.js';
 
 const createRuntime = async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'oc-scheduled-project-config-'));
   const runtime = createProjectConfigRuntime({
-    fsPromises: await import('fs/promises'),
+    fsPromises,
     path,
     projectsDirPath: tempRoot,
     createTaskID: () => 'task-fixed-id',
   });
   return {
     runtime,
+    tempRoot,
     cleanup: async () => {
       await rm(tempRoot, { recursive: true, force: true });
     },
@@ -182,6 +183,127 @@ describe('project-config runtime', () => {
       expect(saved.evidenceCheckpoints).toEqual({ enabled: true });
       expect(saved.projectNotes).toBe('keep me');
       expect(saved.customFutureField).toEqual({ enabled: true });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('normalizes lastScheduledFor without changing the version-2 format', async () => {
+    const { runtime, cleanup } = await createRuntime();
+    try {
+      const result = await runtime.upsertScheduledTask('project-test', {
+        name: 'Claimed task',
+        enabled: true,
+        schedule: { kind: 'daily', time: '09:00', timezone: 'UTC' },
+        execution: { prompt: 'run', providerID: 'openai', modelID: 'gpt-4.1' },
+        state: { lastScheduledFor: 123.6 },
+      });
+
+      expect(result.task.state.lastScheduledFor).toBe(124);
+      const saved = JSON.parse(await readFile(runtime.resolveProjectConfigPath('project-test'), 'utf8'));
+      expect(saved.version).toBe(2);
+      expect(saved.scheduledTasks[0].state.lastScheduledFor).toBe(124);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('serializes independent runtime mutations without losing task or evidence state', async () => {
+    const { runtime: firstRuntime, tempRoot, cleanup } = await createRuntime();
+    const secondRuntime = createProjectConfigRuntime({
+      fsPromises,
+      path,
+      projectsDirPath: tempRoot,
+      createTaskID: () => 'second-task-id',
+    });
+    try {
+      await Promise.all([
+        firstRuntime.upsertScheduledTask('shared-project', {
+          id: 'first-task',
+          name: 'First task',
+          enabled: true,
+          schedule: { kind: 'daily', time: '09:00', timezone: 'UTC' },
+          execution: { prompt: 'first', providerID: 'openai', modelID: 'gpt-4.1' },
+        }),
+        secondRuntime.upsertScheduledTask('shared-project', {
+          id: 'second-task',
+          name: 'Second task',
+          enabled: true,
+          schedule: { kind: 'weekly', times: ['10:00'], weekdays: [1], timezone: 'UTC' },
+          execution: { prompt: 'second', providerID: 'openai', modelID: 'gpt-4.1' },
+        }),
+        secondRuntime.setEvidenceCheckpoints('shared-project', { enabled: true }),
+      ]);
+
+      const tasks = await firstRuntime.listScheduledTasks('shared-project');
+      expect(tasks.map((task) => task.id).sort()).toEqual(['first-task', 'second-task']);
+      expect(await firstRuntime.getEvidenceCheckpoints('shared-project')).toEqual({ enabled: true });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('allows only one conditional occurrence claim across independent runtimes', async () => {
+    const { runtime: firstRuntime, tempRoot, cleanup } = await createRuntime();
+    const secondRuntime = createProjectConfigRuntime({
+      fsPromises,
+      path,
+      projectsDirPath: tempRoot,
+      createTaskID: () => 'unused',
+    });
+    try {
+      await firstRuntime.upsertScheduledTask('shared-project', {
+        id: 'task-to-claim',
+        name: 'Claim once',
+        enabled: true,
+        schedule: { kind: 'daily', time: '09:00', timezone: 'UTC' },
+        execution: { prompt: 'run', providerID: 'openai', modelID: 'gpt-4.1' },
+        state: { nextRunAt: 500 },
+      });
+
+      const claim = (runtime) => runtime.updateScheduledTaskStateConditionally(
+        'shared-project',
+        'task-to-claim',
+        (task) => task.state.nextRunAt === 500 && task.state.lastScheduledFor !== 500,
+        { statePatch: { lastScheduledFor: 500, lastStatus: 'running' } },
+      );
+      const results = await Promise.all([claim(firstRuntime), claim(secondRuntime)]);
+
+      expect(results.filter((result) => result.updated)).toHaveLength(1);
+      expect((await firstRuntime.listScheduledTasks('shared-project'))[0].state.lastScheduledFor).toBe(500);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('releases the in-process chain after a cross-process lock timeout', async () => {
+    const { tempRoot, cleanup } = await createRuntime();
+    let currentTime = 0;
+    const runtime = createProjectConfigRuntime({
+      fsPromises,
+      path,
+      projectsDirPath: tempRoot,
+      projectLockOptions: {
+        timeoutMs: 2,
+        retryMs: 1,
+        now: () => currentTime,
+        wait: async (milliseconds) => { currentTime += milliseconds; },
+        isProcessAlive: () => true,
+      },
+    });
+    const lockPath = `${runtime.resolveProjectConfigPath('locked-project')}.lock`;
+    try {
+      await writeFile(lockPath, JSON.stringify({
+        ownerToken: 'live-owner',
+        pid: process.pid,
+        createdAt: 0,
+      }));
+
+      await expect(runtime.setEvidenceCheckpoints('locked-project', { enabled: true }))
+        .rejects.toMatchObject({ code: 'LOCK_TIMEOUT' });
+      await rm(lockPath, { force: true });
+      await expect(runtime.setEvidenceCheckpoints('locked-project', { enabled: true }))
+        .resolves.toEqual({ enabled: true });
     } finally {
       await cleanup();
     }

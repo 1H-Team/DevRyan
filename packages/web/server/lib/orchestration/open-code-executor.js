@@ -13,6 +13,13 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 // the 10s budget used by status/prompt/abort — a transcript that cannot be read
 // inside the budget used to stall the managed task until its hard deadline.
 const DEFAULT_MESSAGES_REQUEST_TIMEOUT_MS = 120_000;
+// Creating a child session and posting its first prompt are NOT fast
+// control-plane calls: OpenCode initializes the session, resolves the agent
+// catalog, and (for a cold provider) may wait on a tool-catalog warm-up. Under
+// the shared 10s budget a create that had already succeeded server-side threw
+// client-side, orphaning the child session and leaving the orchestrator to
+// re-dispatch — one of the ways duplicate subagents appear.
+const DEFAULT_DISPATCH_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_ERROR_BODY_LENGTH = 2_000;
 
 const appendDirectory = (pathname, directory, extra = {}) => {
@@ -51,6 +58,8 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const messagesRequestTimeoutMs = options.messagesRequestTimeoutMs
     ?? DEFAULT_MESSAGES_REQUEST_TIMEOUT_MS;
+  const dispatchRequestTimeoutMs = options.dispatchRequestTimeoutMs
+    ?? DEFAULT_DISPATCH_REQUEST_TIMEOUT_MS;
   const cursorSdkRuntime = options.cursorSdkRuntime ?? null;
   const statusSingleFlight = createKeyedSingleFlight();
 
@@ -104,6 +113,7 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
       return await requestJson(appendDirectory('/session', input.directory), {
         method: 'POST',
         label: 'session.create',
+        timeoutMs: dispatchRequestTimeoutMs,
         body: {
           title: input.title,
           ...(input.parentSessionId ? { parentID: input.parentSessionId } : {}),
@@ -142,6 +152,7 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
         {
           method: 'POST',
           label: 'session.prompt_async',
+          timeoutMs: dispatchRequestTimeoutMs,
           body,
         },
       );

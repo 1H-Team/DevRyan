@@ -32,6 +32,7 @@ import {
   isLikelyFilePath,
   normalizePath,
 } from './fileReferenceHelpers';
+import { streamMarkdownBlocks, type MarkdownStreamBlock } from './markdownStreamingBlocks';
 
 const useCurrentMermaidTheme = () => {
   const themeSystem = useOptionalThemeSystem();
@@ -517,51 +518,6 @@ const stripLeadingFrontmatter = (markdown: string): string => {
 };
 
 export type MarkdownVariant = 'assistant' | 'tool' | 'reasoning';
-
-type MarkdownStreamBlock = {
-  key: string;
-  raw: string;
-  src: string;
-  mode: 'full' | 'live';
-};
-
-const fnv1a32 = (input: string): string => {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
-  }
-  return hash.toString(16);
-};
-
-const buildMarkdownCacheKey = (baseKey: string, raw: string, index: number, mode: 'full' | 'live'): string => {
-  const sample = raw.length > 400 ? `${raw.slice(0, 200)}${raw.slice(-200)}` : raw;
-  return `${baseKey}:${index}:${mode}:${raw.length}:${fnv1a32(sample)}`;
-};
-
-const buildStreamingMarkdownBlockKey = (baseKey: string, index: number): string => {
-  return `${baseKey}:stream:${index}`;
-};
-
-const streamMarkdownBlocks = (text: string, live: boolean, baseKey: string): MarkdownStreamBlock[] => {
-  if (!live) {
-    return [{
-      key: buildMarkdownCacheKey(baseKey, text, 0, 'full'),
-      raw: text,
-      src: text,
-      mode: 'full',
-    }];
-  }
-
-  // During streaming, defer full marked.lexer passes until completion.
-  // A single live block keeps token updates cheap while preserving layout.
-  return [{
-    key: buildStreamingMarkdownBlockKey(baseKey, 0),
-    raw: text,
-    src: text,
-    mode: 'live',
-  }];
-};
 
 const useStableMarkdownBlocks = (text: string, live: boolean, baseKey: string): MarkdownStreamBlock[] => {
   const previousRef = React.useRef<MarkdownStreamBlock[]>([]);

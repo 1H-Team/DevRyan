@@ -11,12 +11,12 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
-import { formatDirectoryName, formatPathForDisplay, cn } from '@/lib/utils';
+import { formatPathForDisplay, cn } from '@/lib/utils';
 import type { SessionGroup } from './types';
 import type { SortableDragHandleProps } from './sortableItems';
 import { SortableGroupItem, SortableProjectItem } from './sortableItems';
 import { SessionSidebarMotionRow } from './SessionSidebarMotionRow';
-import { formatProjectLabel } from './utils';
+import { resolveProjectDisplayName } from '@/lib/projectDisplayName';
 import { useI18n } from '@/lib/i18n';
 import type { MainTab } from '@/stores/useUIStore';
 
@@ -142,11 +142,10 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
               {props.sectionsForRender.map((section) => {
                 const project = section.project;
                 const projectKey = project.id;
-                const projectLabel = formatProjectLabel(
-                  project.label?.trim()
-                  || formatDirectoryName(project.normalizedPath, props.homeDirectory)
-                  || project.normalizedPath,
-                );
+                const projectLabel = resolveProjectDisplayName({
+                  label: project.label,
+                  path: project.normalizedPath,
+                });
                 const projectDescription = formatPathForDisplay(project.normalizedPath, props.homeDirectory);
                 const isCollapsed = props.collapsedProjects.has(projectKey);
                 const isActiveProject = projectKey === props.activeProjectId;

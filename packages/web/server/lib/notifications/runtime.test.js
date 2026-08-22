@@ -899,4 +899,58 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.ui).toHaveLength(1);
     expect(calls.push).toHaveLength(1);
   });
+
+  it('sends a Permissions Needed notification with the requested folder', async () => {
+    vi.useFakeTimers();
+    const { runtime, calls } = createRuntime({
+      notifyOnPermission: true,
+      notificationTemplates: {
+        permission: { title: 'Permissions needed', message: 'Folder access is required: {last_message}' },
+      },
+    });
+
+    await runtime.maybeSendPushForTrigger({
+      type: 'permission.asked',
+      properties: {
+        sessionID: 'ses_1',
+        id: 'perm_folder_1',
+        permission: 'external_directory',
+        patterns: ['/workspace/shared/**'],
+      },
+    });
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0]).toMatchObject({
+      kind: 'permission',
+      title: 'Permissions needed',
+      body: 'Folder access is required: /workspace/shared/**',
+      sessionId: 'ses_1',
+    });
+    expect(calls.ui).toHaveLength(1);
+    expect(calls.push[0].data.type).toBe('permission');
+  });
+
+  it('lets Permissions Needed be disabled independently from Agent Questions', async () => {
+    vi.useFakeTimers();
+    const { runtime, calls } = createRuntime({
+      notifyOnQuestion: true,
+      notifyOnPermission: false,
+    });
+
+    await runtime.maybeSendPushForTrigger({
+      type: 'permission.asked',
+      properties: {
+        sessionID: 'ses_1',
+        id: 'perm_folder_2',
+        permission: 'external_directory',
+        patterns: ['/workspace/private/**'],
+      },
+    });
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(calls.desktop).toHaveLength(0);
+    expect(calls.ui).toHaveLength(0);
+    expect(calls.push).toHaveLength(0);
+  });
 });

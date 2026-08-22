@@ -8,6 +8,7 @@ import { useTerminalStore } from '@/stores/useTerminalStore';
 import { quotaRefreshCoordinator } from '@/stores/useQuotaStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +18,7 @@ import {
 import { toast } from '@/components/ui';
 import { RiStackLine, RiToolsLine, RiBrainAi3Line, RiFileImageLine, RiArrowDownSLine, RiCheckLine, RiSearchLine, RiInformationLine, RiEyeLine, RiEyeOffLine, RiErrorWarningLine, RiLoader4Line } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { recordConfigMutationResponse } from '@/stores/useConfigApplyStore';
+import { recordConfigMutationResponse, useConfigApplyStore } from '@/stores/useConfigApplyStore';
 import { cn } from '@/lib/utils';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
@@ -48,12 +49,25 @@ import {
 import type { ModelMetadata } from '@/types';
 import { useI18n } from '@/lib/i18n';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import {
+  getClaudePromptMode,
+  setClaudeCompatibilityMode,
+  type ClaudePromptModeState,
+} from '@/lib/claudePromptModeApi';
+import {
+  disconnectProvider,
+  getProviderConnectionState,
+  hasActiveProviderSource,
+  shouldShowConnectedProvider,
+  useProviderDisconnectStore,
+  type ProviderSources,
+} from './providerConnectionState';
 
 const ADD_PROVIDER_ID = '__add_provider__';
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
 const GOOGLE_PROVIDER_ID = 'google';
-const OPENCODE_GO_PROVIDER_ID = 'opencode-go';
 const OLLAMA_CLOUD_PROVIDER_ID = 'ollama-cloud';
+const OPENCODE_ZEN_PROVIDER_ID = 'opencode';
 const AUTH_PROVIDER_ID_KEY = '__authProviderId';
 const AUTH_METHOD_INDEX_KEY = '__authMethodIndex';
 
@@ -65,19 +79,6 @@ interface AuthMethod {
   help?: string;
   method?: number;
   [key: string]: unknown;
-}
-
-interface ProviderSourceInfo {
-  exists: boolean;
-  path?: string | null;
-}
-
-interface ProviderSources {
-  auth: ProviderSourceInfo;
-  user: ProviderSourceInfo;
-  project: ProviderSourceInfo;
-  custom?: ProviderSourceInfo;
-  anthropicOAuth?: ProviderSourceInfo;
 }
 
 interface ClaudeCliStatus {
@@ -170,7 +171,7 @@ export const ProvidersPage: React.FC = () => {
   const { t } = useI18n();
   const { terminal } = useRuntimeAPIs();
   const rawProviders = useConfigStore((state) => state.directoryScoped.__global__?.providers ?? state.providers);
-  const providers = React.useMemo(
+  const discoveredProviders = React.useMemo(
     () => splitAntigravityProviderForDisplay(rawProviders),
     [rawProviders]
   );
@@ -204,16 +205,37 @@ export const ProvidersPage: React.FC = () => {
   const [showAuthPanel, setShowAuthPanel] = React.useState(false);
   const [claudeCliStatus, setClaudeCliStatus] = React.useState<ClaudeCliStatus | null>(null);
   const [claudeCliStatusLoading, setClaudeCliStatusLoading] = React.useState(false);
+  const [claudePromptMode, setClaudePromptMode] = React.useState<ClaudePromptModeState | null>(null);
+  const [claudePromptModeLoading, setClaudePromptModeLoading] = React.useState(false);
+  const [claudePromptModeUpdating, setClaudePromptModeUpdating] = React.useState(false);
+  const [claudePromptModeError, setClaudePromptModeError] = React.useState<string | null>(null);
   const [cursorRuntimeStatus, setCursorRuntimeStatus] = React.useState<CursorAcpRuntimeStatus | null>(null);
+  const appliedRevision = useConfigApplyStore((state) => state.status?.appliedRevision ?? 0);
+  const pendingRevisionByProvider = useProviderDisconnectStore((state) => state.pendingRevisionByProvider);
+  const sourceRefreshRevision = useProviderDisconnectStore((state) => state.sourceRefreshRevision);
+  const markDisconnectRequested = useProviderDisconnectStore((state) => state.markRequested);
+  const reconcileAppliedRevision = useProviderDisconnectStore((state) => state.reconcileAppliedRevision);
+  const providers = React.useMemo(
+    () => discoveredProviders.filter((provider) => shouldShowConnectedProvider(
+      provider.id,
+      providerSources[provider.id],
+      Object.prototype.hasOwnProperty.call(pendingRevisionByProvider, provider.id),
+    )),
+    [discoveredProviders, pendingRevisionByProvider, providerSources],
+  );
 
   React.useEffect(() => {
     void loadProviders({ directory: null });
   }, [loadProviders]);
 
   React.useEffect(() => {
-    if (!selectedProviderId && providers.length > 0) {
-      setSelectedProvider(providers[0].id);
-    }
+    reconcileAppliedRevision(appliedRevision);
+  }, [appliedRevision, reconcileAppliedRevision]);
+
+  React.useEffect(() => {
+    if (selectedProviderId === ADD_PROVIDER_ID) return;
+    if (providers.some((provider) => provider.id === selectedProviderId)) return;
+    setSelectedProvider(providers[0]?.id ?? ADD_PROVIDER_ID);
   }, [providers, selectedProviderId, setSelectedProvider]);
 
   React.useEffect(() => {
@@ -331,8 +353,8 @@ export const ProvidersPage: React.FC = () => {
   const activeManagedQuotaProviderId = React.useMemo<ManagedQuotaProviderId | null>(() => {
     const providerId = selectedProviderId === ADD_PROVIDER_ID ? candidateProviderId : selectedProviderId;
     return providerId === CURSOR_ACP_PROVIDER_ID
-      || providerId === OPENCODE_GO_PROVIDER_ID
       || providerId === OLLAMA_CLOUD_PROVIDER_ID
+      || providerId === OPENCODE_ZEN_PROVIDER_ID
       ? providerId
       : null;
   }, [candidateProviderId, selectedProviderId]);
@@ -375,6 +397,30 @@ export const ProvidersPage: React.FC = () => {
   React.useEffect(() => {
     void refreshClaudeCliStatus();
   }, [refreshClaudeCliStatus]);
+
+  const refreshClaudePromptMode = React.useCallback(async () => {
+    if (!activeAnthropicProviderId) {
+      setClaudePromptMode(null);
+      setClaudePromptModeError(null);
+      setClaudePromptModeLoading(false);
+      return;
+    }
+    setClaudePromptModeLoading(true);
+    setClaudePromptModeError(null);
+    try {
+      setClaudePromptMode(await getClaudePromptMode());
+    } catch (error) {
+      setClaudePromptModeError(
+        error instanceof Error ? error.message : t('settings.providers.page.claudeCompatibility.loadFailed'),
+      );
+    } finally {
+      setClaudePromptModeLoading(false);
+    }
+  }, [activeAnthropicProviderId, t]);
+
+  React.useEffect(() => {
+    void refreshClaudePromptMode();
+  }, [refreshClaudePromptMode]);
 
   const refreshCursorRuntimeStatus = React.useCallback(async () => {
     if (!activeCursorAcpProviderId) {
@@ -443,18 +489,20 @@ export const ProvidersPage: React.FC = () => {
   );
 
   React.useEffect(() => {
-    if (!selectedProviderId || selectedProviderId === ADD_PROVIDER_ID) {
+    if (discoveredProviders.length === 0) {
+      setProviderSources({});
       return;
     }
 
     let cancelled = false;
-
-    void loadProviderSources(selectedProviderId, { cancelled: () => cancelled });
+    for (const provider of discoveredProviders) {
+      void loadProviderSources(provider.id, { cancelled: () => cancelled });
+    }
 
     return () => {
       cancelled = true;
     };
-  }, [loadProviderSources, selectedProviderId]);
+  }, [discoveredProviders, loadProviderSources, sourceRefreshRevision]);
 
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
   const selectedSources = selectedProviderId ? providerSources[selectedProviderId] : undefined;
@@ -462,6 +510,12 @@ export const ProvidersPage: React.FC = () => {
   const selectedProviderSupportsApiKey = selectedProvider ? providerSupportsApiKey(selectedProvider.id) : false;
   const selectedProviderIsCursor = isCursorAcpProviderId(selectedProvider?.id);
   const cursorSdkConfigured = cursorRuntimeStatus?.sdkAuthConfigured === true;
+  const selectedDisconnectPending = selectedProvider
+    ? Object.prototype.hasOwnProperty.call(pendingRevisionByProvider, selectedProvider.id)
+    : false;
+  const selectedConnectionState = selectedProvider
+    ? getProviderConnectionState(selectedProvider.id, selectedSources, selectedDisconnectPending)
+    : 'loading';
 
   const resolveAuthMethodTarget = React.useCallback((providerId: string, methodIndex: number) => {
     const method = authMethodsByProvider[providerId]?.[methodIndex];
@@ -890,6 +944,25 @@ export const ProvidersPage: React.FC = () => {
     }
   };
 
+  const handleClaudeCompatibilityChange = async (compatibilityMode: boolean) => {
+    if (claudePromptModeUpdating || claudePromptMode?.editable === false) return;
+    setClaudePromptModeUpdating(true);
+    setClaudePromptModeError(null);
+    try {
+      const next = await setClaudeCompatibilityMode(compatibilityMode);
+      setClaudePromptMode(next);
+      toast.success(compatibilityMode
+        ? t('settings.providers.page.claudeCompatibility.enabled')
+        : t('settings.providers.page.claudeCompatibility.disabled'));
+    } catch (error) {
+      setClaudePromptModeError(
+        error instanceof Error ? error.message : t('settings.providers.page.claudeCompatibility.updateFailed'),
+      );
+    } finally {
+      setClaudePromptModeUpdating(false);
+    }
+  };
+
   const handleConfigureCursorAcp = async () => {
     const busyKey = 'cursor-configure';
     setAuthBusyKey(busyKey);
@@ -923,24 +996,17 @@ export const ProvidersPage: React.FC = () => {
     setAuthBusyKey(busyKey);
 
     try {
-      const response = await fetch(`/api/provider/${encodeURIComponent(providerId)}/auth?scope=all`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
-      });
-
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message = payload?.error || t('settings.providers.page.toast.providerDisconnectFailed');
-        throw new Error(message);
-      }
-
-      toast.success(t('settings.providers.page.toast.providerDisconnected'));
-      recordConfigMutationResponse(payload);
-      await loadProviders({ directory: null });
+      const payload = await disconnectProvider(providerId, currentDirectory);
+      const applyStatus = recordConfigMutationResponse(payload);
+      markDisconnectRequested(providerId, payload);
+      toast.success(applyStatus?.pending
+        ? t('settings.providers.page.toast.providerDisconnectQueued')
+        : t('settings.providers.page.toast.providerDisconnected'));
+      if (!applyStatus?.pending) await loadProviders({ directory: null, force: true });
       quotaRefreshCoordinator.settingsChanged();
     } catch (error) {
       console.error('Failed to disconnect provider:', error);
-      toast.error(t('settings.providers.page.toast.providerDisconnectFailed'));
+      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.providerDisconnectFailed'));
     } finally {
       setAuthBusyKey(null);
     }
@@ -1065,6 +1131,42 @@ export const ProvidersPage: React.FC = () => {
     );
   };
 
+  const renderClaudeCompatibilityMode = () => (
+    <div className="flex min-w-0 flex-col gap-2 py-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+      <div className="min-w-0">
+        <div className="typography-ui-label text-foreground">
+          {t('settings.providers.page.claudeCompatibility.title')}
+        </div>
+        <div className="typography-meta text-muted-foreground">
+          {claudePromptMode?.editable === false
+            ? t('settings.providers.page.claudeCompatibility.externalReadOnly')
+            : t('settings.providers.page.claudeCompatibility.description')}
+        </div>
+        {claudePromptModeError ? (
+          <div role="alert" className="typography-meta mt-1 text-[var(--status-error)]">
+            {claudePromptModeError}
+          </div>
+        ) : null}
+      </div>
+      <div className="flex shrink-0 items-center gap-2 pt-0.5">
+        {claudePromptModeLoading ? (
+          <RiLoader4Line className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+        ) : null}
+        <Switch
+          aria-label={t('settings.providers.page.claudeCompatibility.title')}
+          checked={claudePromptMode?.compatibilityMode === true}
+          disabled={
+            claudePromptModeLoading
+            || claudePromptModeUpdating
+            || !claudePromptMode
+            || claudePromptMode.editable === false
+          }
+          onCheckedChange={(checked) => void handleClaudeCompatibilityChange(checked)}
+        />
+      </div>
+    </div>
+  );
+
   if (!isAddMode && providers.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -1146,7 +1248,8 @@ export const ProvidersPage: React.FC = () => {
                           {(() => {
                             const filtered = unconnectedProviders.filter(p => {
                               const query = providerSearchQuery.toLowerCase();
-                              return (p.name || p.id).toLowerCase().includes(query) || p.id.toLowerCase().includes(query);
+                              return getProviderDisplayName(p).toLowerCase().includes(query)
+                                || p.id.toLowerCase().includes(query);
                             });
                             if (filtered.length === 0) {
                               return <p className="py-4 text-center typography-meta text-muted-foreground">{t('settings.providers.page.connect.noProvidersFound')}</p>;
@@ -1163,7 +1266,7 @@ export const ProvidersPage: React.FC = () => {
                               >
                                 <span className="flex items-center gap-2 min-w-0">
                                   <ProviderLogo providerId={provider.id} className="h-4 w-4 flex-shrink-0" />
-                                  <span className="truncate">{provider.name || provider.id}</span>
+                                  <span className="truncate">{getProviderDisplayName(provider)}</span>
                                 </span>
                                 {candidateProviderId === provider.id && (
                                   <RiCheckLine className="h-4 w-4 text-[var(--primary-base)]" />
@@ -1228,7 +1331,10 @@ export const ProvidersPage: React.FC = () => {
                   )}
 
                   {isAnthropicOAuthProviderId(candidateProviderId) && (
-                    renderClaudeCodeAuth()
+                    <>
+                      {renderClaudeCodeAuth()}
+                      {renderClaudeCompatibilityMode()}
+                    </>
                   )}
 
                   {activeCursorAcpProviderId === candidateProviderId && (
@@ -1413,6 +1519,7 @@ export const ProvidersPage: React.FC = () => {
               size="xs"
               className="!font-normal"
               onClick={() => setShowAuthPanel((prev) => !prev)}
+              disabled={selectedDisconnectPending}
             >
               {showAuthPanel
                 ? t('settings.providers.page.actions.hide')
@@ -1425,14 +1532,26 @@ export const ProvidersPage: React.FC = () => {
           <section className="px-2 pb-2 pt-0">
             {!showAuthPanel ? (
               <div className="flex items-center gap-1.5 py-1.5">
-                {selectedProviderIsCursor && !cursorSdkConfigured ? null : <RiCheckLine className="w-4 h-4 text-[var(--status-success)] shrink-0" />}
+                {selectedConnectionState === 'disconnect_pending' ? (
+                  <RiLoader4Line className="h-4 w-4 shrink-0 animate-spin text-[var(--status-warning)]" aria-hidden="true" />
+                ) : selectedConnectionState === 'not_connected' || (selectedProviderIsCursor && !cursorSdkConfigured) ? null : (
+                  <RiCheckLine className="w-4 h-4 text-[var(--status-success)] shrink-0" />
+                )}
                 <span className="typography-ui-label text-foreground">
-                  {selectedProviderIsCursor && !cursorSdkConfigured
+                  {selectedConnectionState === 'disconnect_pending'
+                    ? t('settings.providers.page.state.disconnectPending')
+                    : selectedConnectionState === 'not_connected'
+                      ? t('settings.providers.page.auth.notConnected')
+                      : selectedProviderIsCursor && !cursorSdkConfigured
                     ? t('settings.providers.page.auth.cursorSetupRequired')
                     : t('settings.providers.page.auth.connected')}
                 </span>
                 <span className="typography-meta text-muted-foreground ml-1">
-                  {selectedProviderIsCursor && !cursorSdkConfigured
+                  {selectedConnectionState === 'disconnect_pending'
+                    ? t('settings.providers.page.state.disconnectPendingHint')
+                    : selectedConnectionState === 'not_connected'
+                      ? t('settings.providers.page.auth.connectToUse')
+                      : selectedProviderIsCursor && !cursorSdkConfigured
                     ? t('settings.providers.page.auth.cursorSetupRequiredHint')
                     : t('settings.providers.page.auth.useReconnectHint')}
                 </span>
@@ -1596,6 +1715,19 @@ export const ProvidersPage: React.FC = () => {
           </section>
         </div>
 
+        {isAnthropicOAuthProviderId(selectedProvider.id) ? (
+          <div className="mb-8">
+            <div className="mb-1 px-1">
+              <h3 className="typography-ui-header font-medium text-foreground">
+                {t('settings.providers.page.claudeCompatibility.sectionTitle')}
+              </h3>
+            </div>
+            <section className="px-2 pb-2 pt-0">
+              {renderClaudeCompatibilityMode()}
+            </section>
+          </div>
+        ) : null}
+
         {/* Connection Details */}
         <div className="mb-8">
           <div className="mb-1 px-1">
@@ -1605,12 +1737,17 @@ export const ProvidersPage: React.FC = () => {
           <section className="px-2 pb-2 pt-0">
             <div className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
               <div className="flex min-w-0 flex-col">
-                {selectedSources && (selectedSources.auth.exists || selectedSources.user.exists || selectedSources.custom?.exists) ? (
+                {selectedDisconnectPending ? (
+                  <span className="typography-meta text-[var(--status-warning)]">
+                    {t('settings.providers.page.state.disconnectPendingHint')}
+                  </span>
+                ) : selectedSources && hasActiveProviderSource(selectedSources) ? (
                   <span className="typography-meta text-muted-foreground">
                     {t('settings.providers.page.connectionDetails.configuredIn')}{' '}
                     {[
                       selectedSources.auth.exists ? t('settings.providers.page.connectionDetails.source.authCredentials') : null,
                       selectedSources.user.exists ? t('settings.providers.page.connectionDetails.source.userConfig') : null,
+                      selectedSources.project.exists ? t('settings.providers.page.connectionDetails.source.projectConfig') : null,
                       selectedSources.custom?.exists ? t('settings.providers.page.connectionDetails.source.customConfig') : null,
                     ].filter(Boolean).join(', ')}
                   </span>
@@ -1619,15 +1756,21 @@ export const ProvidersPage: React.FC = () => {
                 )}
               </div>
 
-              <Button
-                variant="ghost"
-                size="xs"
-                className="!font-normal text-[var(--status-error)] hover:text-[var(--status-error)]"
-                onClick={() => handleDisconnectProvider(selectedProvider.id)}
-                disabled={authBusyKey === `disconnect:${selectedProvider.id}`}
-              >
-                {authBusyKey === `disconnect:${selectedProvider.id}` ? t('settings.providers.page.actions.disconnecting') : t('settings.providers.page.actions.disconnect')}
-              </Button>
+              {(hasActiveProviderSource(selectedSources) || selectedDisconnectPending) ? (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="!font-normal text-[var(--status-error)] hover:text-[var(--status-error)]"
+                  onClick={() => handleDisconnectProvider(selectedProvider.id)}
+                  disabled={selectedDisconnectPending || authBusyKey === `disconnect:${selectedProvider.id}`}
+                >
+                  {selectedDisconnectPending
+                    ? t('settings.providers.page.actions.disconnectPending')
+                    : authBusyKey === `disconnect:${selectedProvider.id}`
+                      ? t('settings.providers.page.actions.disconnecting')
+                      : t('settings.providers.page.actions.disconnect')}
+                </Button>
+              ) : null}
             </div>
           </section>
         </div>

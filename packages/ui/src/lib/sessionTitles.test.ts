@@ -102,4 +102,24 @@ describe("session title helpers", () => {
       fallback: "Untitled Session",
     })).toBe("Review Privacy")
   })
+
+  test("derives a title from the user text when the stored title is the untitled placeholder", () => {
+    expect(resolveDisplaySessionTitle({
+      title: "Untitled Session",
+      latestUserText: "fix the login bug",
+      fallback: "Untitled Session",
+    })).toBe("Fix login bug")
+    expect(resolveDisplaySessionTitle({
+      title: "untitled session",
+      latestUserText: "fix the login bug",
+      fallback: "Untitled Session",
+    })).toBe("Fix login bug")
+  })
+
+  test("keeps the fallback for the untitled placeholder when no user text is loaded", () => {
+    expect(resolveDisplaySessionTitle({
+      title: "Untitled Session",
+      fallback: "Untitled Session",
+    })).toBe("Untitled Session")
+  })
 })

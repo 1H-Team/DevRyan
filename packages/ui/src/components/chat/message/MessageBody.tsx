@@ -5,7 +5,6 @@ import UserTextPart from './parts/UserTextPart';
 import ToolPart from './parts/ToolPart';
 import AssistantTextPart from './parts/AssistantTextPart';
 import PlanCard from './parts/PlanCard';
-import ReasoningPart from './parts/ReasoningPart';
 import ReasoningGroup from './parts/ReasoningGroup';
 import JustificationBlock from './parts/JustificationBlock';
 import { MessageFilesDisplay } from '../FileAttachment';
@@ -14,7 +13,7 @@ import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
 import type { StreamPhase, ToolPopupContent, AgentMentionInfo } from './types';
 import type { ManagedTransportRecoveryState, TurnGroupingContext } from '../lib/turns/types';
 import { cn } from '@/lib/utils';
-import { collapseExactDuplicateAdjacentTextParts, collapseSupersededTodoWrites, isEmptyTextPart, extractTextContent } from './partUtils';
+import { collapseExactDuplicateAdjacentTextParts, collapseSupersededTodoWrites, isEmptyTextPart, extractTextContent, mergeConsecutiveTextParts } from './partUtils';
 import { FadeInOnReveal } from './FadeInOnReveal';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -25,7 +24,7 @@ import { SimpleMarkdownRenderer } from '../MarkdownRenderer';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
-import { resolveMessagePlanCard } from '@/lib/messages/actionablePlan';
+import { findPlanCardReasoningPartIndex, resolveMessagePlanCard, splitReasoningPartPlan } from '@/lib/messages/actionablePlan';
 import {
     buildPlanCardRenderSegments,
     shouldStopAfterPlanCard,
@@ -79,6 +78,9 @@ import {
     shouldRenderReasoning,
 } from './reasoningRenderPolicy';
 import { scanConsecutiveReasoningParts } from './reasoningGrouping';
+import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
+
+const AssistantImageGallery = /* @__PURE__ */ lazyWithChunkRecovery(() => import('./parts/GeneratedImageResult'));
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const, transform: 'translateZ(0)' };
 const MESSAGE_FOOTER_CONTAINER_STYLE = { containerType: 'inline-size' as const, containerName: 'message-footer' };
@@ -105,53 +107,6 @@ type ShellActionPartLike = Part & {
         output?: unknown;
         status?: unknown;
     };
-};
-
-type MergeableTextPart = Part & {
-    id?: string;
-    text?: string;
-    content?: string;
-    value?: string;
-    time?: { start?: number; end?: number };
-};
-
-const mergeConsecutiveTextParts = (parts: Part[]): Part => {
-    if (parts.length <= 1) {
-        return parts[0];
-    }
-
-    const displayParts = collapseExactDuplicateAdjacentTextParts(parts);
-    if (displayParts.length <= 1) {
-        return displayParts[0] ?? parts[0];
-    }
-
-    const firstPart = displayParts[0] as MergeableTextPart;
-    const mergedText = displayParts
-        .map((part) => extractTextContent(part).trim())
-        .filter((text) => text.length > 0)
-        .join('\n');
-    const finalizedTextParts = displayParts
-        .map((part) => part as MergeableTextPart)
-        .filter((part) => typeof part.time?.end !== 'undefined');
-    const lastFinalizedPart = finalizedTextParts[finalizedTextParts.length - 1];
-    const allPartsFinalized = finalizedTextParts.length === displayParts.length;
-    const mergedTime = allPartsFinalized && typeof firstPart.time?.start === 'number'
-        ? { start: firstPart.time.start, end: lastFinalizedPart?.time?.end }
-        : firstPart.time;
-
-    // Decision: merge only adjacent text parts for rendering so a plan split by the
-    // message transport is detected as one plan, while tool/reasoning boundaries stay intact.
-    const mergedPart = {
-        ...firstPart,
-        id: displayParts
-            .map((part, index) => (part as MergeableTextPart).id ?? `text-${index}`)
-            .join(':merged:'),
-        text: mergedText,
-        content: undefined,
-        value: undefined,
-        time: mergedTime,
-    };
-    return mergedPart as unknown as Part;
 };
 
 const isSubtaskPart = (part: Part): part is SubtaskPartLike => {
@@ -1406,6 +1361,51 @@ const AssistantMessageBody = React.memo(({
         />
     ), [assistantPlanText, hasCopyableText, isTouchContext, onCopyMessage]);
 
+    const planRevision = usePlanRevisionPresentation(messageId, turnGroupingContext?.turnId);
+    // Continuation-turn members inherit the revision's plan-mode status so a
+    // plan emitted by a synthetic continuation resolves like its user-authored
+    // origin turn would.
+    const isPlanRevisionModeSource = isPlanModeSource || planRevision.entry?.isPlanModeRevision === true;
+    // Only the revision's selected source message mounts the PlanCard; earlier
+    // siblings consume their superseded plan bodies without a card.
+    const mountPlanCard = planRevision.role !== 'before-source';
+    const isPlanRevisionPostSourceMessage = planRevision.role === 'after-source';
+
+    // Plan detection must measure the exact text the render loop will emit:
+    // justification-classified parts are skipped by the loop and duplicate
+    // adjacent text parts are collapsed inside mergeConsecutiveTextParts, so
+    // resolving over raw visibleParts desynchronizes the plan offsets until
+    // groupEnd <= planStart silently drops the card.
+    const planResolutionParts = React.useMemo(() => (
+        collapseExactDuplicateAdjacentTextParts(
+            localManagedTaskDispatch.contentParts.filter((part) => (
+                part.type !== 'text' || activityByPart.get(part)?.kind !== 'justification'
+            )),
+        )
+    ), [activityByPart, localManagedTaskDispatch.contentParts]);
+
+    const messagePlan = React.useMemo(
+        () => (sessionId != null ? resolveMessagePlanCard(planResolutionParts, { isPlanModeSource: isPlanRevisionModeSource }) : null),
+        [isPlanRevisionModeSource, planResolutionParts, sessionId],
+    );
+
+    // Id of the reasoning part hosting the plan card, when the plan was emitted
+    // on the reasoning channel (Grok does this). Keyed by part id, not index —
+    // the render loop iterates contentParts while plan resolution runs over the
+    // filtered planResolutionParts.
+    const planCardReasoningPartId = React.useMemo(() => {
+        if (messagePlan?.source !== 'reasoning') return null;
+        const index = findPlanCardReasoningPartIndex(planResolutionParts, { isPlanModeSource: isPlanRevisionModeSource });
+        const part = index >= 0 ? planResolutionParts[index] : undefined;
+        const id = (part as { id?: unknown } | undefined)?.id;
+        return typeof id === 'string' && id.length > 0 ? id : null;
+    }, [isPlanRevisionModeSource, messagePlan?.source, planResolutionParts]);
+
+    // A resolved plan must render even when the message's finish is not 'stop'
+    // (Grok reports 'tool-calls'/'length' on plan turns); the Implement action
+    // stays gated on streamPhase === 'completed' in planCardReveal.
+    const deferSortedInlineText = shouldDeferSortedInlineText && !messagePlan;
+
     const lastRenderableTextPartIndex = React.useMemo(() => {
         if (!shouldShowStandaloneMessageActions) {
             return -1;
@@ -1417,7 +1417,7 @@ const AssistantMessageBody = React.memo(({
             if (!part || part.type !== 'text') {
                 continue;
             }
-            if (shouldDeferSortedInlineText) {
+            if (deferSortedInlineText) {
                 continue;
             }
             const activity = activityByPart.get(part);
@@ -1428,26 +1428,11 @@ const AssistantMessageBody = React.memo(({
         }
 
         return lastIndex;
-    }, [activityByPart, localManagedTaskDispatch.contentParts, shouldDeferSortedInlineText, shouldShowStandaloneMessageActions]);
+    }, [activityByPart, deferSortedInlineText, localManagedTaskDispatch.contentParts, shouldShowStandaloneMessageActions]);
 
     const shouldRenderStandaloneActionsAfterContent = shouldShowStandaloneMessageActions
         && !isCursorAssistantProvider
         && lastRenderableTextPartIndex < 0;
-
-    const planRevision = usePlanRevisionPresentation(messageId, turnGroupingContext?.turnId);
-    // Continuation-turn members inherit the revision's plan-mode status so a
-    // plan emitted by a synthetic continuation resolves like its user-authored
-    // origin turn would.
-    const isPlanRevisionModeSource = isPlanModeSource || planRevision.entry?.isPlanModeRevision === true;
-    // Only the revision's selected source message mounts the PlanCard; earlier
-    // siblings consume their superseded plan bodies without a card.
-    const mountPlanCard = planRevision.role !== 'before-source';
-    const isPlanRevisionPostSourceMessage = planRevision.role === 'after-source';
-
-    const messagePlan = React.useMemo(
-        () => (sessionId != null ? resolveMessagePlanCard(visibleParts, { isPlanModeSource: isPlanRevisionModeSource }) : null),
-        [isPlanRevisionModeSource, sessionId, visibleParts],
-    );
 
     const renderedParts = React.useMemo(() => {
         const rendered: React.ReactNode[] = [];
@@ -1485,7 +1470,6 @@ const AssistantMessageBody = React.memo(({
                             diffStats={turnGroupingContext.diffStats}
                             providerID={providerID}
                             responseStyleLevel={turnGroupingContext.responseStyleLevel}
-                            generatedImages={turnGroupingContext.generatedImages}
                         />
                     </div>
                 );
@@ -1514,7 +1498,7 @@ const AssistantMessageBody = React.memo(({
 
             if (part.type === 'text') {
                 const activity = activityByPart.get(part);
-                if (shouldDeferSortedInlineText) {
+                if (deferSortedInlineText) {
                     i += 1;
                     continue;
                 }
@@ -1594,9 +1578,6 @@ const AssistantMessageBody = React.memo(({
                                         isMessageCompleted={isMessageCompleted}
                                         isMobile={isMobile}
                                         onContentChange={onContentChange}
-                                        generatedImages={turnGroupingContext?.generatedImages}
-                                        directory={messageSession?.directory ?? effectiveDirectory ?? undefined}
-                                        onShowPopup={onShowPopup}
                                     />
                                 </div>
                             );
@@ -1630,9 +1611,6 @@ const AssistantMessageBody = React.memo(({
                                 isMessageCompleted={isMessageCompleted}
                                 isMobile={isMobile}
                                 onContentChange={onContentChange}
-                                generatedImages={turnGroupingContext?.generatedImages}
-                                directory={messageSession?.directory ?? effectiveDirectory ?? undefined}
-                                onShowPopup={onShowPopup}
                             />
                         </div>
                     );
@@ -1674,33 +1652,81 @@ const AssistantMessageBody = React.memo(({
 
             if (part.type === 'reasoning') {
                 const groupEndIndex = scanConsecutiveReasoningParts(localManagedTaskDispatch.contentParts, i);
-                if (shouldRenderReasoning(showReasoningTraces) && !suppressLiveManagedControlReasoning) {
-                    if (groupEndIndex > i) {
+                const groupParts = localManagedTaskDispatch.contentParts.slice(i, groupEndIndex + 1);
+                const planPartPos = planCardReasoningPartId != null
+                    ? groupParts.findIndex((candidate) => (candidate as { id?: unknown }).id === planCardReasoningPartId)
+                    : -1;
+
+                // The plan was emitted on the reasoning channel: render the
+                // pre-plan thought text as reasoning, then mount the plan card
+                // here — the text branch can never mount it because its offset
+                // math only counts text parts. The card renders even with
+                // reasoning traces hidden; reasoning parts after the plan are
+                // post-plan content and are suppressed like post-plan text.
+                if (planPartPos >= 0 && messagePlan && sessionId != null) {
+                    if (shouldRenderReasoning(showReasoningTraces) && !suppressLiveManagedControlReasoning) {
+                        const planPart = groupParts[planPartPos];
+                        const planPartText = (planPart as { text?: string }).text ?? '';
+                        const prePlanText = splitReasoningPartPlan(planPartText)?.preambleText ?? '';
+                        const thoughtEntries = groupParts.slice(0, planPartPos).map((reasoningPart) => ({ part: reasoningPart, messageId }));
+                        if (prePlanText.trim().length > 0) {
+                            thoughtEntries.push({
+                                part: {
+                                    ...planPart,
+                                    id: `${(planPart as { id?: string }).id ?? 'reasoning'}__pre-plan`,
+                                    text: prePlanText,
+                                } as Part,
+                                messageId,
+                            });
+                        }
+                        if (thoughtEntries.length > 0) {
+                            rendered.push(
+                                <ReasoningGroup
+                                    key={getReasoningPartRenderKey(messageId, part.id, i)}
+                                    entries={thoughtEntries}
+                                    providerID={providerID}
+                                    responseStyleLevel={turnGroupingContext?.responseStyleLevel}
+                                    onContentChange={onContentChange}
+                                    isMessageCompleted={isMessageCompleted}
+                                    isMobile={isMobile}
+                                />
+                            );
+                        }
+                    }
+                    if (mountPlanCard && messagePlan.planText.trim().length > 0) {
                         rendered.push(
-                            <ReasoningGroup
-                                key={getReasoningPartRenderKey(messageId, part.id, i)}
-                                entries={localManagedTaskDispatch.contentParts
-                                    .slice(i, groupEndIndex + 1)
-                                    .map((reasoningPart) => ({ part: reasoningPart, messageId }))}
-                                providerID={providerID}
-                                responseStyleLevel={turnGroupingContext?.responseStyleLevel}
-                                onContentChange={onContentChange}
-                                isMobile={isMobile}
-                            />
-                        );
-                    } else {
-                        rendered.push(
-                            <ReasoningPart
-                                key={getReasoningPartRenderKey(messageId, part.id, i)}
-                                part={part}
-                                messageId={messageId}
-                                providerID={providerID}
-                                responseStyleLevel={turnGroupingContext?.responseStyleLevel}
-                                onContentChange={onContentChange}
-                                isMobile={isMobile}
-                            />
+                            <div key={`assistant-reasoning-plan-${messageId}-${i}`}>
+                                <PlanCard
+                                    sessionId={sessionId as string}
+                                    sourceMessageId={messageId}
+                                    streamPhase={streamPhase}
+                                    planText={messagePlan.planText.trimStart()}
+                                    projectPath={messageProjectRef?.path ?? null}
+                                    sessionCreated={messageSession?.time?.created ?? null}
+                                    sessionSlug={messageSession?.slug ?? null}
+                                />
+                            </div>
                         );
                     }
+                    hasRenderedPlanCard = true;
+                    i = groupEndIndex + 1;
+                    continue;
+                }
+
+                if (shouldRenderReasoning(showReasoningTraces) && !suppressLiveManagedControlReasoning) {
+                    rendered.push(
+                        <ReasoningGroup
+                            key={getReasoningPartRenderKey(messageId, part.id, i)}
+                            entries={localManagedTaskDispatch.contentParts
+                                .slice(i, groupEndIndex + 1)
+                                .map((reasoningPart) => ({ part: reasoningPart, messageId }))}
+                            providerID={providerID}
+                            responseStyleLevel={turnGroupingContext?.responseStyleLevel}
+                            onContentChange={onContentChange}
+                            isMessageCompleted={isMessageCompleted}
+                            isMobile={isMobile}
+                        />
+                    );
                 }
                 i = groupEndIndex + 1;
                 continue;
@@ -1746,7 +1772,6 @@ const AssistantMessageBody = React.memo(({
                                 onContentChange={onContentChange}
                                 animateTailText={liveFileActivityGroup.activities.some((activity) => animatedToolIdsLookup.has(activity.id))}
                                 animateRows={true}
-                                generatedImages={turnGroupingContext?.generatedImages}
                             />
                         );
                     }
@@ -1792,9 +1817,6 @@ const AssistantMessageBody = React.memo(({
                                     toolName={singleToolName}
                                     activities={[makeToolActivity(singleToolPart)]}
                                     animateTailText={animatedToolIdsLookup.has(singleToolPart.id)}
-                                    generatedImages={turnGroupingContext?.generatedImages}
-                                    onShowPopup={onShowPopup}
-                                    onContentChange={onContentChange}
                                 />
                             </ToolRevealOnMount>
                         </FadeInOnReveal>
@@ -1848,7 +1870,6 @@ const AssistantMessageBody = React.memo(({
                                 onContentChange={onContentChange}
                                 animateTailText={activities.some((groupedActivity) => animatedToolIdsLookup.has(groupedActivity.id))}
                                 animateRows={true}
-                                generatedImages={turnGroupingContext?.generatedImages}
                             />
                         );
                     });
@@ -1896,9 +1917,6 @@ const AssistantMessageBody = React.memo(({
                                     },
                                 ]}
                                 animateTailText={animatedToolIdsLookup.has(toolPart.id)}
-                                generatedImages={turnGroupingContext?.generatedImages}
-                                onShowPopup={onShowPopup}
-                                onContentChange={onContentChange}
                             />
                         </ToolRevealOnMount>
                     </FadeInOnReveal>
@@ -1921,7 +1939,6 @@ const AssistantMessageBody = React.memo(({
         chatRenderMode,
         collapsedPreviewCount,
         expandedTools,
-        effectiveDirectory,
         isMessageCompleted,
         isPlanModeSource,
         isPlanRevisionModeSource,
@@ -1936,8 +1953,8 @@ const AssistantMessageBody = React.memo(({
         messageId,
         messageActionButtons,
         messagePlan,
+        planCardReasoningPartId,
         messageProjectRef?.path,
-        messageSession?.directory,
         messageSession?.slug,
         messageSession?.time?.created,
         localManagedTaskDispatch,
@@ -1950,7 +1967,7 @@ const AssistantMessageBody = React.memo(({
         shouldShowTool,
         streamPhase,
         showReasoningTraces,
-        shouldDeferSortedInlineText,
+        deferSortedInlineText,
         suppressLiveManagedControlReasoning,
         syntaxTheme,
         toggleActivityGroup,
@@ -2052,6 +2069,19 @@ const AssistantMessageBody = React.memo(({
                   data-session-output-stack="true"
               >
                     {renderedParts}
+                    {isLastAssistantInTurn
+                        && isMessageCompleted
+                        && (turnGroupingContext?.assistantImageMessages?.length ?? 0) > 0 ? (
+                        <React.Suspense fallback={null}>
+                            <AssistantImageGallery
+                                messages={turnGroupingContext?.assistantImageMessages ?? []}
+                                sessionId={sessionId}
+                                directory={messageSession?.directory ?? effectiveDirectory ?? undefined}
+                                onShowPopup={onShowPopup}
+                                onContentChange={(reason) => onContentChange?.(reason, messageId)}
+                            />
+                        </React.Suspense>
+                    ) : null}
                     {showErrorMessage && (
                         <FadeInOnReveal key="assistant-error">
                             <div

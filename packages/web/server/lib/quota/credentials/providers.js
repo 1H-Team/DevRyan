@@ -8,7 +8,6 @@ import {
 
 const MAX_VALUE_BYTES = 16 * 1024;
 const SECRET_MASK = '••••••••';
-const WORKSPACE_ID_PATTERN = /^wrk_[a-zA-Z0-9]+$/;
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -24,19 +23,18 @@ const cleanValue = (value) => {
   return trimmed;
 };
 
-const normalizeOpenCodeGoCredential = (value) => {
-  if (!isRecord(value) || !hasOnlyKeys(value, ['workspaceId', 'authCookie'])) return null;
-  const workspaceId = cleanValue(value.workspaceId);
-  let authCookie = cleanValue(value.authCookie);
-  if (authCookie.startsWith('auth=')) authCookie = authCookie.slice(5).trim();
-  if (!WORKSPACE_ID_PATTERN.test(workspaceId) || !authCookie) return null;
-  return { workspaceId, authCookie };
-};
-
 const normalizeOllamaCloudCredential = (value) => {
   if (!isRecord(value) || !hasOnlyKeys(value, ['cookie'])) return null;
   const cookie = cleanValue(value.cookie);
   return cookie ? { cookie } : null;
+};
+
+const normalizeOpenCodeZenCredential = (value) => {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['workspaceId', 'authCookie'])) return null;
+  const workspaceId = cleanValue(value.workspaceId);
+  const authCookie = cleanValue(value.authCookie);
+  if (!/^wrk_[0-9A-HJKMNP-TV-Z]{26}$/.test(workspaceId) || /[\s;]/.test(authCookie)) return null;
+  return { workspaceId, authCookie };
 };
 
 const normalizeCursorCredential = (value) => {
@@ -56,7 +54,7 @@ const normalizeCursorCredential = (value) => {
 };
 
 export const managedQuotaCredentialNormalizers = Object.freeze({
-  'opencode-go': normalizeOpenCodeGoCredential,
+  opencode: normalizeOpenCodeZenCredential,
   'ollama-cloud': normalizeOllamaCloudCredential,
   'cursor-acp': normalizeCursorCredential,
 });
@@ -99,14 +97,6 @@ export const getManagedQuotaCredentialStatus = (providerId, options = {}) => {
   const credential = readManagedQuotaCredential(canonical, options);
   if (!credential) return { configured: false };
 
-  if (canonical === 'opencode-go') {
-    return {
-      configured: true,
-      workspaceId: credential.workspaceId,
-      credentialKind: 'dashboard',
-      secretMasked: SECRET_MASK,
-    };
-  }
   if (canonical === 'cursor-acp') {
     const credentialKind = credential.sessionToken ? 'dashboard' : 'oauth';
     return {
@@ -115,6 +105,13 @@ export const getManagedQuotaCredentialStatus = (providerId, options = {}) => {
       ...(credentialKind === 'oauth'
         ? { hasRefreshToken: Boolean(credential.refreshToken) }
         : {}),
+      secretMasked: SECRET_MASK,
+    };
+  }
+  if (canonical === 'opencode') {
+    return {
+      configured: true,
+      credentialKind: 'dashboard',
       secretMasked: SECRET_MASK,
     };
   }

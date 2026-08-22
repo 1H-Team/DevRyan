@@ -1,4 +1,5 @@
 import type { Message, Session } from "@opencode-ai/sdk/v2/client"
+import { messagesBefore } from "./message-order"
 
 export type RevertTransactionStatus = "pending" | "confirmed" | "failed"
 
@@ -13,6 +14,7 @@ export type RevertTransaction = {
 
 export type RevertAwareState = {
   session?: Session[]
+  message?: Record<string, Message[] | undefined>
   revert_transaction?: Record<string, RevertTransaction | undefined>
 }
 
@@ -73,7 +75,15 @@ export function isMessageHiddenByRevert(
 ): boolean {
   if (!sessionID) return false
   const revertMessageID = getEffectiveSessionRevertMessageID(state, sessionID)
-  return Boolean(revertMessageID && messageID >= revertMessageID)
+  if (!revertMessageID) return false
+  const transaction = state.revert_transaction?.[sessionID]
+  if (transaction?.status !== "failed" && transaction?.hiddenMessageIDs?.has(messageID)) {
+    return true
+  }
+  const messages = state.message?.[sessionID]
+  if (!messages) return false
+  const visible = messagesBefore(messages, revertMessageID)
+  return visible !== messages && !visible.some((message) => message.id === messageID)
 }
 
 export function hasActiveRevertTransactions(state: RevertAwareState): boolean {
@@ -108,13 +118,5 @@ export function filterMessagesForRevert(
   revertMessageID: string | undefined,
 ): Message[] | readonly Message[] {
   if (!revertMessageID) return messages
-  let firstHiddenIndex = -1
-  for (let index = 0; index < messages.length; index += 1) {
-    if (messages[index].id >= revertMessageID) {
-      firstHiddenIndex = index
-      break
-    }
-  }
-  if (firstHiddenIndex < 0) return messages
-  return messages.slice(0, firstHiddenIndex)
+  return messagesBefore(messages, revertMessageID)
 }

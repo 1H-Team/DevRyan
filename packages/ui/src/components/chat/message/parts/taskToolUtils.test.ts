@@ -281,8 +281,8 @@ describe('task tool metadata helpers', () => {
         } as never, 'child-session', [nextRecord]);
 
         expect(patch.message?.['child-session']?.map((message) => message.id)).toEqual([
-            'assistant-new',
             'assistant-old',
+            'assistant-new',
         ]);
         expect(patch.part?.['assistant-old']?.[0]).toBe(cachedPart);
         expect(patch.part?.['assistant-new']?.[0]?.id).toBe('text-new');

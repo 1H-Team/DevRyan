@@ -5,6 +5,7 @@ const DEFAULT_NOTIFICATION_TEMPLATES = {
   planReady: { title: 'Plan ready', message: 'A plan is ready for review' },
   error: { title: 'Tool error', message: '{last_message}' },
   question: { title: 'Input needed', message: '{last_message}' },
+  permission: { title: 'Permissions needed', message: 'Folder access is required: {last_message}' },
   subtask: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
 };
 
@@ -13,12 +14,14 @@ const LEGACY_COMPLETION_NOTIFICATION_TEMPLATES = [
   { title: '{agent_name} is ready', message: '{last_message}' },
 ];
 
-const THEME_CATALOG_VERSION = 2;
+const THEME_CATALOG_VERSION = 3;
 const DEFAULT_LIGHT_THEME_ID = 'devryan-default-light';
 const DEFAULT_DARK_THEME_ID = 'devryan-default-dark';
-const LEGACY_DEFAULT_THEME_IDS = {
+const REMOVED_THEME_IDS = {
+  'carbonfox-light': DEFAULT_LIGHT_THEME_ID,
   'onedarkpro-light': DEFAULT_LIGHT_THEME_ID,
   'carbonfox-dark': DEFAULT_DARK_THEME_ID,
+  'onedarkpro-dark': DEFAULT_DARK_THEME_ID,
 };
 
 const ensureNotificationTemplateShape = (templates) => {
@@ -598,7 +601,7 @@ export const createSettingsRuntime = (deps) => {
       if (typeof themeId !== 'string') {
         return themeId;
       }
-      return LEGACY_DEFAULT_THEME_IDS[themeId] || themeId;
+      return REMOVED_THEME_IDS[themeId] || themeId;
     };
 
     return {
@@ -678,6 +681,12 @@ export const createSettingsRuntime = (deps) => {
     }
     if (typeof settings.notifyOnQuestion !== 'boolean') {
       next.notifyOnQuestion = true;
+      changed = true;
+    }
+    if (typeof settings.notifyOnPermission !== 'boolean') {
+      next.notifyOnPermission = typeof settings.notifyOnQuestion === 'boolean'
+        ? settings.notifyOnQuestion
+        : true;
       changed = true;
     }
 

@@ -89,6 +89,22 @@ describe('Claude Usage rendering', () => {
     expect(markup).toContain('2%');
     expect(markup).toContain('Resets');
   });
+
+  test('supports an always-green OpenCode Credits card at high usage', () => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider>
+        <UsageCard
+          title="credits"
+          window={{ ...usageWindow(95, 0), valueLabel: '$95.00 used / $5.00 available' }}
+          progressTone="success"
+        />
+      </I18nProvider>,
+    );
+
+    expect(markup).toContain('$95.00 used / $5.00 available');
+    expect(markup).toContain('background-color:var(--status-success)');
+    expect(markup).not.toContain('background-color:var(--status-error)');
+  });
 });
 
 function providerResult(providerId: 'xai' | 'deepseek'): ProviderResult {

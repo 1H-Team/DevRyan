@@ -14,7 +14,7 @@ Own filesystem API behavior for the web server runtime, including workspace-boun
     - `GET /api/fs/home`
     - `POST /api/fs/mkdir`
     - `GET /api/fs/read`
-    - `GET /api/fs/raw`
+  - `GET /api/fs/raw`
     - `GET /api/fs/stat`
     - `POST /api/fs/write`
     - `POST /api/fs/delete`
@@ -31,6 +31,9 @@ Own filesystem API behavior for the web server runtime, including workspace-boun
   - Cache TTL defaults to 30 seconds and can be disabled with `OPENCHAMBER_GIT_READ_CACHE_TTL_MS=0`.
   - Failures, non-allowlisted commands, multi-command jobs, and background jobs bypass the cache.
   - Enforces workspace boundary checks with active project + worktree fallback support.
+  - Accepts a short-lived `assetGrant` only for assistant gallery files prepared
+    by the image-assets module. The grant is revalidated against the request
+    principal and exact canonical path; ordinary raw-file policy is unchanged.
   - `GET /api/fs/stat` supports `optional=true` for UI existence probes; expected misses return `{ exists: false, isFile: false }` with HTTP 200 while non-optional callers keep strict 400/403/404 behavior.
 - `createDeterministicGitReadCache(options)` from `git-read-cache.js`
   - Caches by resolved cwd and normalized command.

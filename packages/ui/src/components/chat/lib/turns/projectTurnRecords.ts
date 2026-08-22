@@ -1,3 +1,4 @@
+import { isPlanModeUserMessage } from '@/lib/messages/actionablePlan';
 import { projectTurnActivity } from './projectTurnActivity';
 import { projectTurnIndexes } from './projectTurnIndexes';
 import { projectPlanTurnTraceIndex } from './projectPlanTurnTraceIndex';
@@ -299,6 +300,11 @@ export const projectTurnRecords = (
             assistantMessages: turn.assistantMessages,
             summarySourceMessageId: turn.summary.sourceMessageId,
             summarySourcePartId: turn.summary.sourcePartId,
+            isPlanModeTurn: isPlanModeUserMessage(
+                turn.userMessage.info,
+                turn.userMessage.parts,
+                effectiveOptions.recordedPlanModeMessageIds?.has(turn.userMessage.info.id) ?? false,
+            ),
         });
         turn.activityParts = activity.activityParts;
         turn.activitySegments = activity.activitySegments;

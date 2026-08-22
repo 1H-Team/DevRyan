@@ -1,4 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import fsPromises from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { createProjectConfigRuntime } from '../projects/project-config.js';
 import {
   computeNextRunAt,
   createScheduledTasksRuntime,
@@ -26,7 +30,7 @@ const createTask = (overrides = {}) => ({
 
 const createTaskConfigRuntime = (initialTasks) => {
   let tasks = initialTasks.map((task) => structuredClone(task));
-  return {
+  const runtime = {
     replaceTasks(nextTasks) {
       tasks = nextTasks.map((task) => structuredClone(task));
     },
@@ -44,6 +48,37 @@ const createTaskConfigRuntime = (initialTasks) => {
       return { task: structuredClone(task), tasks: tasks.map((entry) => structuredClone(entry)) };
     }),
   };
+  runtime.updateScheduledTaskStateConditionally = vi.fn(async (
+    _projectID,
+    taskID,
+    predicate,
+    createUpdate,
+  ) => {
+    const index = tasks.findIndex((task) => task.id === taskID);
+    if (index < 0) return { updated: false, task: null, tasks };
+    const currentTask = tasks[index];
+    if (!predicate(currentTask)) {
+      return {
+        updated: false,
+        task: structuredClone(currentTask),
+        tasks: tasks.map((task) => structuredClone(task)),
+      };
+    }
+    const update = typeof createUpdate === 'function'
+      ? createUpdate(currentTask)
+      : createUpdate;
+    tasks[index] = {
+      ...currentTask,
+      ...(typeof update?.enabled === 'boolean' ? { enabled: update.enabled } : {}),
+      state: { ...currentTask.state, ...(update?.statePatch || update || {}) },
+    };
+    return {
+      updated: true,
+      task: structuredClone(tasks[index]),
+      tasks: tasks.map((task) => structuredClone(task)),
+    };
+  });
+  return runtime;
 };
 
 const createClient = () => ({
@@ -373,6 +408,207 @@ describe('scheduled-tasks managed project execution', () => {
     expect(client.session.create).toHaveBeenCalledWith(expect.objectContaining({
       directory: '/local/project',
     }));
+    runtime.stop();
+  });
+});
+
+describe('scheduled-tasks cross-process occurrence claims', () => {
+  const scheduleCases = [
+    ['daily', { kind: 'daily', times: ['08:00'], timezone: 'UTC' }],
+    ['weekly', { kind: 'weekly', times: ['08:00'], weekdays: [1], timezone: 'UTC' }],
+    ['cron', { kind: 'cron', cron: '0 8 * * *', timezone: 'UTC' }],
+    ['one-time', { kind: 'once', date: '2026-08-17', time: '08:00', timezone: 'UTC' }],
+  ];
+
+  it.each(scheduleCases)('dispatches one %s occurrence across two runtimes', async (_label, schedule) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-17T07:59:00.000Z'));
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'devryan-scheduler-claim-'));
+    const createConfigRuntime = () => createProjectConfigRuntime({
+      fsPromises,
+      path,
+      projectsDirPath: tempRoot,
+      projectLockOptions: { wait: async () => {}, retryMs: 1 },
+    });
+    const firstConfig = createConfigRuntime();
+    const secondConfig = createConfigRuntime();
+    const clients = [createClient(), createClient()];
+    const createScheduler = (projectConfigRuntime, client) => createScheduledTasksRuntime({
+      projectConfigRuntime,
+      listProjects: vi.fn(async () => [{ id: 'project-1', path: '/repo' }]),
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: vi.fn(async () => {}),
+      createClient: () => client,
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+    const firstScheduler = createScheduler(firstConfig, clients[0]);
+    const secondScheduler = createScheduler(secondConfig, clients[1]);
+
+    try {
+      await firstConfig.upsertScheduledTask('project-1', {
+        id: 'shared-task',
+        name: 'Shared task',
+        enabled: true,
+        schedule,
+        execution: {
+          providerID: 'provider-1',
+          modelID: 'model-1',
+          prompt: '/wake',
+        },
+      });
+
+      await firstScheduler.start();
+      await secondScheduler.start();
+      const scheduledFor = Date.parse('2026-08-17T08:00:00.000Z');
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      let persistedTask;
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        [persistedTask] = await firstConfig.listScheduledTasks('project-1');
+        if (persistedTask?.state?.lastScheduledFor === scheduledFor
+          && persistedTask.state.lastStatus !== 'running') {
+          break;
+        }
+      }
+
+      const dispatchCount = clients.reduce(
+        (total, client) => total + client.session.create.mock.calls.length,
+        0,
+      );
+      expect(dispatchCount).toBe(1);
+      expect(persistedTask.state.lastScheduledFor).toBe(scheduledFor);
+      expect(persistedTask.state.lastStatus).toBe('success');
+      if (schedule.kind === 'once') {
+        expect(persistedTask.enabled).toBe(false);
+        expect(persistedTask.state.nextRunAt).toBeUndefined();
+      } else {
+        expect(persistedTask.state.nextRunAt).toBeGreaterThan(scheduledFor);
+      }
+
+      const restartClient = createClient();
+      const restartScheduler = createScheduler(createConfigRuntime(), restartClient);
+      await restartScheduler.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(restartClient.session.create).not.toHaveBeenCalled();
+      restartScheduler.stop();
+    } finally {
+      firstScheduler.stop();
+      secondScheduler.stop();
+      await fsPromises.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('releases its slot and records a scheduled claim lock failure without dispatching', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-17T07:59:00.000Z'));
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const dueAt = Date.parse('2026-08-17T08:00:00.000Z');
+    const { runtime, projectConfigRuntime, client } = createRuntime({
+      tasks: [createTask({ state: { nextRunAt: dueAt } })],
+      projects: [{ id: 'project-1', path: '/repo' }],
+    });
+    const timeoutError = Object.assign(new Error('Timed out acquiring cross-process file lock'), {
+      code: 'LOCK_TIMEOUT',
+    });
+    projectConfigRuntime.updateScheduledTaskStateConditionally.mockRejectedValueOnce(timeoutError);
+
+    await runtime.start();
+    await vi.advanceTimersByTimeAsync(60_000);
+    for (let attempt = 0; attempt < 20
+      && projectConfigRuntime.updateScheduledTaskStateConditionally.mock.calls.length < 2;
+      attempt += 1) {
+      await Promise.resolve();
+    }
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(projectConfigRuntime.updateScheduledTaskStateConditionally).toHaveBeenCalledTimes(2);
+    expect(runtime.getStatus().runningScheduledTasksCount).toBe(0);
+    runtime.stop();
+  });
+
+  it('claims a persisted past occurrence once without arming a loser zero-delay timer', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-17T08:01:00.000Z'));
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const dueAt = Date.parse('2026-08-17T08:00:00.000Z');
+    const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'devryan-scheduler-past-'));
+    const createConfigRuntime = () => createProjectConfigRuntime({
+      fsPromises,
+      path,
+      projectsDirPath: tempRoot,
+      projectLockOptions: { wait: async () => {}, retryMs: 1 },
+    });
+    const firstConfig = createConfigRuntime();
+    const secondConfig = createConfigRuntime();
+    const clients = [createClient(), createClient()];
+    const createScheduler = (projectConfigRuntime, client) => createScheduledTasksRuntime({
+      projectConfigRuntime,
+      listProjects: vi.fn(async () => [{ id: 'project-1', path: '/repo' }]),
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      createClient: () => client,
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+    const schedulers = [
+      createScheduler(firstConfig, clients[0]),
+      createScheduler(secondConfig, clients[1]),
+    ];
+
+    try {
+      await firstConfig.upsertScheduledTask('project-1', createTask({
+        id: 'past-task',
+        state: { nextRunAt: dueAt },
+      }));
+      await schedulers[0].start();
+      await schedulers[1].start();
+      await vi.advanceTimersByTimeAsync(0);
+
+      let persistedTask;
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        [persistedTask] = await firstConfig.listScheduledTasks('project-1');
+        if (persistedTask?.state?.lastStatus === 'success') break;
+      }
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(clients.reduce(
+        (total, client) => total + client.session.create.mock.calls.length,
+        0,
+      )).toBe(1);
+      expect(persistedTask.state.lastScheduledFor).toBe(dueAt);
+      expect(persistedTask.state.nextRunAt).toBeGreaterThan(Date.now());
+    } finally {
+      schedulers.forEach((scheduler) => scheduler.stop());
+      await fsPromises.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('returns a successful manual session with persistError after both terminal writes fail', async () => {
+    const now = Date.parse('2026-08-17T07:00:00.000Z');
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const { runtime, projectConfigRuntime } = createRuntime({
+      tasks: [createTask({ state: { nextRunAt: Date.parse('2026-08-17T08:00:00.000Z') } })],
+      projects: [{ id: 'project-1', path: '/repo' }],
+    });
+    await runtime.start();
+    const defaultUpdate = projectConfigRuntime.updateScheduledTaskState.getMockImplementation();
+    const persistenceError = new Error('state store unavailable');
+    projectConfigRuntime.updateScheduledTaskState
+      .mockImplementationOnce(defaultUpdate)
+      .mockRejectedValueOnce(persistenceError)
+      .mockRejectedValueOnce(persistenceError);
+
+    const result = await runtime.runNow('project-1', 'task-1');
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: 'success',
+      sessionID: 'session-1',
+      persistError: 'state store unavailable',
+    });
+    expect(projectConfigRuntime.updateScheduledTaskState).toHaveBeenCalledTimes(3);
+    expect(runtime.getStatus().runningScheduledTasksCount).toBe(0);
     runtime.stop();
   });
 });

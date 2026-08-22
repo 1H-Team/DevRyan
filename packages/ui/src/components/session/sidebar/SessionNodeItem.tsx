@@ -33,7 +33,7 @@ import {
   RiWindowLine,
 } from '@remixicon/react';
 import { cn } from '@/lib/utils';
-import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
+import { isPlaceholderSessionTitle, resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { canUseElectronDesktopIPC, invokeDesktop, isVSCodeRuntime } from '@/lib/desktop';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
@@ -41,7 +41,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { buildExportFilename, formatSessionAsMarkdown, getExportRevealLabelKey, revealExportedMarkdown } from '@/lib/exportSession';
 import type { ChildSessionExport } from '@/lib/exportSession';
 import { saveSessionExportMarkdown } from '@/lib/sessionExportSave';
-import { buildSessionMessageRecordsSnapshot, useDirectoryStore, useDirectorySync, useIsSessionWorking, useSession, useSessionPermissions } from '@/sync/sync-context';
+import { buildSessionMessageRecordsSnapshot, useDirectoryStore, useDirectorySync, useIsSessionWorking, useSession, useSessionFirstUserText, useSessionPermissions } from '@/sync/sync-context';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSync } from '@/sync/use-sync';
 import { useViewportStore } from '@/sync/viewport-store';
@@ -480,8 +480,14 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const directoryState = sessionDirectory ? directoryStatus.get(sessionDirectory) : null;
   const isMissingDirectory = directoryState === 'missing';
   const isActive = currentSessionId === session.id;
+  const needsDerivedTitle = isPlaceholderSessionTitle(resolvedSession.title);
+  const firstUserText = useSessionFirstUserText(
+    needsDerivedTitle ? session.id : null,
+    sessionDirectory ?? undefined,
+  );
   const sessionTitle = resolveDisplaySessionTitle({
     title: resolvedSession.title,
+    latestUserText: firstUserText || undefined,
     fallback: t('sessions.sidebar.session.untitled'),
   });
   const hasChildren = node.children.length > 0;

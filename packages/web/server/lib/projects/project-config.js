@@ -1,6 +1,6 @@
 import { DateTime, IANAZone } from 'luxon';
 import parser from 'cron-parser';
-import { writeFileAtomic } from '@openchamber/harness-runtime';
+import { withCrossProcessFileLock, writeFileAtomic } from '@openchamber/harness-runtime';
 
 const PROJECT_CONFIG_VERSION = 2;
 const MAX_TASK_NAME_LENGTH = 80;
@@ -245,6 +245,11 @@ const normalizeState = (value, fallback) => {
   const nextRunAt = typeof source.nextRunAt === 'number' && Number.isFinite(source.nextRunAt)
     ? Math.max(0, Math.round(source.nextRunAt))
     : undefined;
+  const lastScheduledFor = typeof source.lastScheduledFor === 'number'
+    && Number.isFinite(source.lastScheduledFor)
+    && source.lastScheduledFor >= 0
+    ? Math.round(source.lastScheduledFor)
+    : undefined;
   const lastSessionId = asNonEmptyString(source.lastSessionId);
   const lastErrorRaw = asNonEmptyString(source.lastError);
   const lastError = lastErrorRaw ? clampLength(lastErrorRaw, MAX_LAST_ERROR_LENGTH) : undefined;
@@ -260,6 +265,7 @@ const normalizeState = (value, fallback) => {
     ...(typeof lastRunAt === 'number' ? { lastRunAt } : {}),
     ...(typeof lastDurationMs === 'number' ? { lastDurationMs } : {}),
     ...(typeof nextRunAt === 'number' ? { nextRunAt } : {}),
+    ...(typeof lastScheduledFor === 'number' ? { lastScheduledFor } : {}),
     ...(lastSessionId ? { lastSessionId } : {}),
     ...(lastError ? { lastError } : {}),
   };
@@ -345,6 +351,7 @@ export const createProjectConfigRuntime = (deps) => {
     path,
     projectsDirPath,
     createTaskID,
+    projectLockOptions = {},
   } = deps;
 
   const taskIDFactory = typeof createTaskID === 'function'
@@ -426,7 +433,10 @@ export const createProjectConfigRuntime = (deps) => {
     };
 
     await fsPromises.mkdir(parentDirectory, { recursive: true });
-    await writeFileAtomic(filePath, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
+    await writeFileAtomic(filePath, `${JSON.stringify(merged, null, 2)}\n`, {
+      mode: 0o600,
+      fs: fsPromises,
+    });
   };
 
   const withProjectWriteLock = async (projectID, mutate) => {
@@ -436,12 +446,16 @@ export const createProjectConfigRuntime = (deps) => {
     const next = new Promise((resolve) => {
       release = resolve;
     });
-    const chained = previous.finally(() => next);
+    const chained = previous.then(() => next, () => next);
     writeLocks.set(key, chained);
 
-    await previous;
+    await previous.catch(() => undefined);
     try {
-      return await mutate();
+      return await withCrossProcessFileLock(
+        `${resolveProjectConfigPath(projectID)}.lock`,
+        mutate,
+        { ...projectLockOptions, fs: projectLockOptions.fs ?? fsPromises },
+      );
     } finally {
       release();
       const current = writeLocks.get(key);
@@ -540,7 +554,12 @@ export const createProjectConfigRuntime = (deps) => {
     });
   };
 
-  const updateScheduledTaskState = async (projectID, taskID, statePatch) => {
+  const updateScheduledTaskStateConditionally = async (
+    projectID,
+    taskID,
+    predicate,
+    createUpdate,
+  ) => {
     return withProjectWriteLock(projectID, async () => {
       const normalizedTaskID = asNonEmptyString(taskID);
       if (!normalizedTaskID) {
@@ -550,13 +569,23 @@ export const createProjectConfigRuntime = (deps) => {
       const current = await readProjectConfigFromDisk(projectID);
       const taskIndex = current.scheduledTasks.findIndex((task) => task.id === normalizedTaskID);
       if (taskIndex === -1) {
-        return { task: null, tasks: current.scheduledTasks };
+        return { updated: false, task: null, tasks: current.scheduledTasks };
       }
 
       const currentTask = current.scheduledTasks[taskIndex];
-      const patchObject = statePatch && typeof statePatch === 'object' ? statePatch : {};
+      if (typeof predicate === 'function' && !predicate(currentTask, current)) {
+        return { updated: false, task: currentTask, tasks: current.scheduledTasks };
+      }
+      const update = typeof createUpdate === 'function'
+        ? createUpdate(currentTask, current)
+        : createUpdate;
+      const updateObject = update && typeof update === 'object' ? update : {};
+      const patchObject = updateObject.statePatch && typeof updateObject.statePatch === 'object'
+        ? updateObject.statePatch
+        : updateObject;
       const nextTask = {
         ...currentTask,
+        ...(typeof updateObject.enabled === 'boolean' ? { enabled: updateObject.enabled } : {}),
         state: normalizeState(
           {
             ...currentTask.state,
@@ -576,10 +605,21 @@ export const createProjectConfigRuntime = (deps) => {
       });
 
       return {
+        updated: true,
         task: nextTask,
         tasks: nextTasks,
       };
     });
+  };
+
+  const updateScheduledTaskState = async (projectID, taskID, statePatch) => {
+    const result = await updateScheduledTaskStateConditionally(
+      projectID,
+      taskID,
+      () => true,
+      { statePatch },
+    );
+    return { task: result.task, tasks: result.tasks };
   };
 
   return {
@@ -587,6 +627,7 @@ export const createProjectConfigRuntime = (deps) => {
     upsertScheduledTask,
     deleteScheduledTask,
     updateScheduledTaskState,
+    updateScheduledTaskStateConditionally,
     getEvidenceCheckpoints,
     setEvidenceCheckpoints,
     resolveProjectConfigPath,

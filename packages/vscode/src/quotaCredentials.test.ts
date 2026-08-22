@@ -29,6 +29,20 @@ describe('VS Code managed quota credentials', () => {
     expect(() => canonicalizeManagedQuotaProviderId('../cursor')).toThrowError(
       expect.objectContaining({ code: 'UNSUPPORTED_PROVIDER' }),
     );
+    expect(() => canonicalizeManagedQuotaProviderId('opencode-go')).toThrowError(
+      expect.objectContaining({ code: 'UNSUPPORTED_PROVIDER' }),
+    );
+    expect(assertManagedQuotaCredential('opencode', {
+      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
+      authCookie: 'signed-cookie',
+    }).credential).toEqual({
+      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
+      authCookie: 'signed-cookie',
+    });
+    expect(() => assertManagedQuotaCredential('opencode', {
+      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
+      authCookie: 'first; second=smuggled',
+    })).toThrowError(expect.objectContaining({ code: 'INVALID_CREDENTIAL' }));
     expect(() => assertManagedQuotaCredential('cursor-acp', {
       sessionToken: 'dashboard',
       accessToken: 'oauth',
@@ -50,5 +64,18 @@ describe('VS Code managed quota credentials', () => {
     expect(JSON.stringify(status)).not.toContain('never-return-this');
     deleteManagedQuotaCredential('cursor-acp');
     expect(getManagedQuotaCredentialStatus('cursor-acp')).toEqual({ configured: false });
+  });
+
+  it('returns only safe OpenCode Zen dashboard status metadata', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-zen-quota-'));
+    temporaryDirectories.push(directory);
+    process.env.OPENCHAMBER_DATA_DIR = directory;
+    const status = writeManagedQuotaCredential('opencode', {
+      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
+      authCookie: 'never-return-this',
+    });
+    expect(status).toEqual({ configured: true, credentialKind: 'dashboard', secretMasked: '••••••••' });
+    expect(JSON.stringify(status)).not.toContain('wrk_');
+    expect(JSON.stringify(status)).not.toContain('never-return-this');
   });
 });

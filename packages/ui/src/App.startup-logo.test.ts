@@ -8,31 +8,24 @@ const testDir = dirname(fileURLToPath(import.meta.url))
 const source = () => readFileSync(resolve(testDir, "App.tsx"), "utf8")
 
 describe("StartupReadinessScreen logo", () => {
-  test("uses theme-aware DevRyan logos for the loading indicator", () => {
+  test("uses the shared large-logo loading screen for every startup phase", () => {
     const code = source()
 
-    expect(code).toContain("import devRyanBlackLogoUrl from '@/assets/DevRyanBlack.svg'")
-    expect(code).toContain("import devRyanWhiteLogoUrl from '@/assets/DevRyanWhite.svg'")
-    expect(code).toContain("const root = document.documentElement")
-    expect(code).toContain("root.classList.contains('dark')")
-    expect(code).toContain("root.getAttribute('data-splash-variant') === 'dark'")
-    expect(code).toContain("root.getAttribute('data-splash-variant') === 'system'")
-    expect(code).toContain("window.matchMedia('(prefers-color-scheme: dark)').matches")
-    expect(code).toContain("const variant = currentTheme?.metadata?.variant")
-    expect(code).toContain("setLogoPrefersDark(variant === 'dark')")
-    expect(code).toContain("const logoUrl = logoPrefersDark ? devRyanWhiteLogoUrl : devRyanBlackLogoUrl")
-    expect(code).toContain('src={logoUrl}')
-    expect(code).toContain('className="flex size-[4.5rem] items-center justify-center rounded-full border border-border"')
-    expect(code).toContain('className="size-12 animate-pulse pointer-events-none"')
-    expect(code).not.toContain("size-2 animate-pulse rounded-full bg-primary")
-    expect(code).not.toContain("size-10 items-center")
-    expect(code).not.toContain("className=\"size-7 animate-pulse pointer-events-none\"")
+    expect(code).toContain("import { RuntimeLoadingScreen } from '@/components/ui/RuntimeLoadingScreen'")
+    expect(code).toContain('<RuntimeLoadingScreen')
+    expect(code).toContain('message={statusText}')
+    expect(code).toContain("state={isError ? 'error' : 'loading'}")
+    expect(code).not.toContain("import devRyanBlackLogoUrl")
+    expect(code).not.toContain("import devRyanWhiteLogoUrl")
+    expect(code).not.toContain('rounded-full border border-border')
+    expect(code).not.toContain('animate-pulse pointer-events-none')
   })
 
-  test("keeps the destructive indicator for startup errors", () => {
+  test("keeps startup retry behavior inside the unified screen", () => {
     const code = source()
 
-    expect(code).toContain("size-2 rounded-full bg-destructive")
-    expect(code).toContain("isError ? 'Startup needs attention' : 'Starting DevRyan'")
+    expect(code).toContain('onRetry={isError ? onRetry : undefined}')
+    expect(code).toContain('isRetrying={isRetrying}')
+    expect(code).not.toContain('size-2 rounded-full bg-destructive')
   })
 })

@@ -148,17 +148,18 @@ function extractAnthropicUsageFromMessages(payload) {
     const providerUsage = buildProviderUsageFromAssistant(info);
     return providerUsage ? [providerUsage] : [];
   });
-  if (usageRecords.length === 0) return null;
-  const firstTurnProviderUsage = usageRecords[0];
-  const providerUsage = usageRecords[usageRecords.length - 1];
   const processedInput = (usage) => usage.uncachedInputTokens
     + usage.cacheReadInputTokens
     + usage.cacheCreationInputTokens;
+  const tokenBearingUsageRecords = usageRecords.filter((usage) => processedInput(usage) > 0);
+  if (tokenBearingUsageRecords.length === 0) return null;
+  const firstTurnProviderUsage = tokenBearingUsageRecords[0];
+  const providerUsage = tokenBearingUsageRecords[tokenBearingUsageRecords.length - 1];
   return {
     fixedPrefixTokens: processedInput(firstTurnProviderUsage),
-    requestCount: usageRecords.length,
+    requestCount: tokenBearingUsageRecords.length,
     activeContextTokens: providerUsage.totalTokens,
-    cumulativeProcessedInputTokens: usageRecords.reduce(
+    cumulativeProcessedInputTokens: tokenBearingUsageRecords.reduce(
       (total, usage) => total + processedInput(usage),
       0,
     ),

@@ -1787,7 +1787,7 @@ export async function getStatus(directory, options = {}) {
   }
 }
 
-export async function getDiff(directory, { path, staged = false, contextLines = 3 } = {}) {
+export async function getDiff(directory, { path, paths, staged = false, contextLines = 3 } = {}) {
   const git = await createGit(directory);
 
   try {
@@ -1801,8 +1801,11 @@ export async function getDiff(directory, { path, staged = false, contextLines = 
       args.push('--cached');
     }
 
-    if (path) {
-      args.push('--', path);
+    const selectedPaths = Array.isArray(paths)
+      ? paths.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim())
+      : path ? [path] : [];
+    if (selectedPaths.length > 0) {
+      args.push('--', ...selectedPaths);
     }
 
     const diff = await git.raw(args);
@@ -1810,19 +1813,21 @@ export async function getDiff(directory, { path, staged = false, contextLines = 
       return diff;
     }
 
-    if (staged || !path) {
+    if (staged || selectedPaths.length !== 1) {
       return diff;
     }
 
+    const [singlePath] = selectedPaths;
+
     try {
-      await git.raw(['ls-files', '--error-unmatch', path]);
+      await git.raw(['ls-files', '--error-unmatch', singlePath]);
       return diff;
     } catch {
       const noIndexArgs = ['diff', '--no-color'];
       if (typeof contextLines === 'number' && !Number.isNaN(contextLines)) {
         noIndexArgs.push(`-U${Math.max(0, contextLines)}`);
       }
-      noIndexArgs.push('--no-index', '--', '/dev/null', path);
+      noIndexArgs.push('--no-index', '--', '/dev/null', singlePath);
       try {
         const noIndexDiff = await git.raw(noIndexArgs);
         return noIndexDiff;
@@ -3339,7 +3344,7 @@ const removeWorktreeNow = async (directory, input, targetDirectory, bootstrapRun
 
     await bootstrapRuntime.markRemoved(targetDirectory);
 
-    return true;
+    return { removedPath: targetCanonical };
   }
 
   await runGitCommandOrThrow(
@@ -3367,7 +3372,7 @@ const removeWorktreeNow = async (directory, input, targetDirectory, bootstrapRun
 
   await bootstrapRuntime.markRemoved(matchedEntry.worktree);
 
-  return true;
+  return { removedPath: await canonicalPath(matchedEntry.worktree) };
 };
 
 export async function removeWorktree(directory, input = {}) {

@@ -205,9 +205,12 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.notifyOnQuestion === 'boolean') {
       result.notifyOnQuestion = candidate.notifyOnQuestion;
     }
+    if (typeof candidate.notifyOnPermission === 'boolean') {
+      result.notifyOnPermission = candidate.notifyOnPermission;
+    }
     if (candidate.notificationTemplates && typeof candidate.notificationTemplates === 'object') {
       const templates = {};
-      for (const event of ['completion', 'planReady', 'error', 'question', 'subtask']) {
+      for (const event of ['completion', 'planReady', 'error', 'question', 'permission', 'subtask']) {
         const entry = candidate.notificationTemplates[event];
         if (!entry || typeof entry !== 'object') continue;
         if (typeof entry.title !== 'string' || typeof entry.message !== 'string') continue;
@@ -250,6 +253,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.autoDeleteAfterDays === 'number' && Number.isFinite(candidate.autoDeleteAfterDays)) {
       const normalizedDays = Math.max(1, Math.min(365, Math.round(candidate.autoDeleteAfterDays)));
       result.autoDeleteAfterDays = normalizedDays;
+    }
+    if (candidate.sessionRetentionAction === 'archive' || candidate.sessionRetentionAction === 'delete') {
+      result.sessionRetentionAction = candidate.sessionRetentionAction;
     }
     if (candidate.tunnelBootstrapTtlMs === null) {
       result.tunnelBootstrapTtlMs = null;

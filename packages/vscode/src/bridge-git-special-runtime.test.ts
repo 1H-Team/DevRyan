@@ -52,7 +52,7 @@ describe('VS Code direct commit message generation', () => {
         status: 200,
         statusText: 'OK',
         json: async () => ({
-          choices: [{ message: { content: 'fix(ui): generate source commit message' } }],
+          choices: [{ message: { content: '{"subject":"fix(ui): generate source commit message","details":["Generate the commit draft","Avoid session startup"]}' } }],
         }),
       } as Response;
     });
@@ -72,17 +72,20 @@ describe('VS Code direct commit message generation', () => {
       id: '1',
       type: 'api:git/commit-message',
       success: true,
-      data: { subject: 'fix(ui): generate source commit message', highlights: [] },
+      data: {
+        subject: 'fix(ui): generate source commit message',
+        highlights: ['Generate the commit draft', 'Avoid session startup'],
+      },
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const requestedUrl = String(fetchMock.mock.calls[0][0]);
     const requestPayload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(requestedUrl).toBe('https://opencode.ai/zen/v1/chat/completions');
-    expect(requestPayload.model).toBe('deepseek-v4-flash-free');
-    expect(requestPayload.max_tokens).toBe(64);
+    expect(requestPayload.model).toBe('nemotron-3.5-lightning-free');
+    expect(requestPayload.max_tokens).toBe(220);
     expect(requestPayload.reasoning_effort).toBe('none');
-    expect(requestPayload.stop).toEqual(['\n']);
-    expect(timeoutSpy).toHaveBeenCalledWith(60_000);
+    expect(requestPayload.stop).toBeUndefined();
+    expect(timeoutSpy.mock.calls[0][0]).toBeLessThanOrEqual(4_500);
     expect(requestedUrl).not.toMatch(/session|prompt_async/);
   });
 
@@ -123,9 +126,10 @@ describe('VS Code direct commit message generation', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('https://opencode.ai/zen/v1/chat/completions');
     const requestPayload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(requestPayload.model).toBe('big-pickle');
+    expect(requestPayload.reasoning_effort).toBe('none');
   });
 
-  it('collects the selected worktree context in the extension host with one diff per file', async () => {
+  it('collects the selected worktree context in the extension host with batched diffs', async () => {
     vi.mocked(gitService.getGitStatus).mockResolvedValue({
       current: 'main',
       tracking: 'origin/main',
@@ -166,7 +170,7 @@ describe('VS Code direct commit message generation', () => {
         status: 200,
         statusText: 'OK',
         json: async () => ({
-          choices: [{ message: { content: 'perf(git): speed commit message drafts' } }],
+          choices: [{ message: { content: '{"subject":"perf(git): speed commit message drafts","details":["Batch selected diffs","Bound provider latency"]}' } }],
         }),
       } as Response;
     });
@@ -193,19 +197,24 @@ describe('VS Code direct commit message generation', () => {
       success: true,
       data: {
         status: 'complete',
-        commits: [{ subject: 'perf(git): speed commit message drafts', highlights: [] }],
+        commits: [{
+          subject: 'perf(git): speed commit message drafts',
+          highlights: ['Batch selected diffs', 'Bound provider latency'],
+        }],
       },
     });
     expect(gitService.getGitStatus).toHaveBeenCalledWith('/repo');
     expect(gitService.getGitLog).toHaveBeenCalledWith('/repo', { maxCount: 6 });
-    expect(gitService.getGitDiff).toHaveBeenCalledTimes(2);
-    expect(gitService.getGitDiff).toHaveBeenCalledWith('/repo', 'src/app.ts', true, 1);
-    expect(gitService.getGitDiff).toHaveBeenCalledWith('/repo', 'src/new.ts', true, 1);
-    expect(execGit).toHaveBeenCalledOnce();
+    expect(gitService.getGitDiff).not.toHaveBeenCalled();
+    expect(execGit).toHaveBeenCalledTimes(2);
     expect(execGit).toHaveBeenCalledWith(['diff', '--cached', '--numstat'], '/repo');
+    expect(execGit).toHaveBeenCalledWith(
+      ['diff', '--no-color', '-U1', '--cached', '--', 'src/app.ts', 'src/new.ts'],
+      '/repo',
+    );
     const requestPayload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(requestPayload.messages[0].content).toContain('Prefer a git scope');
-    expect(requestPayload.messages[0].content).toContain('binary file (diff omitted)');
+    expect(requestPayload.messages[0].content).toContain('src/new.ts');
   });
 
   it('rejects malformed output and missing worktree context', async () => {

@@ -6,6 +6,8 @@ import {
   fetchCodexQuotaAdapter,
   fetchDeepSeekQuotaAdapter,
   fetchKimiQuotaAdapter,
+  fetchOpenCodeZenQuotaAdapter,
+  fetchOpenCodeGoQuotaAdapter,
   fetchXaiQuotaAdapter,
   fetchZaiQuotaAdapter,
   refreshXaiOAuthToken,
@@ -14,12 +16,13 @@ import {
   type CursorDashboardCredential,
   type CursorOAuthCredential,
   type ManagedQuotaCredential,
+  type OpenCodeZenCredential,
   type OllamaCloudCredential,
-  type OpenCodeGoCredential,
+  deleteLegacyOpenCodeGoQuotaCredential,
   readManagedQuotaCredential,
   writeManagedQuotaCredential,
 } from './quotaCredentials';
-import { writeAuthFile as writeOpenCodeAuthFile } from './opencodeAuth';
+import { mutateAuthFile, writeAuthFile as writeOpenCodeAuthFile } from './opencodeAuth';
 
 type AuthEntry = Record<string, unknown> | string;
 type AuthFile = Record<string, AuthEntry>;
@@ -88,6 +91,8 @@ type FetchQuotaOptions = {
   writeManagedCredential?: (providerId: string, credential: ManagedQuotaCredential) => unknown;
   readTokenFile?: (filePath: string) => string;
   readLegacyOllamaCookie?: () => string | null;
+  deleteLegacyOpenCodeGoCredential?: () => void;
+  mutateOpenCodeAuth?: typeof mutateAuthFile;
   claudeProxyBaseUrl?: string | null;
   claudeProxyConfigured?: boolean;
   isExternalRuntime?: boolean;
@@ -234,26 +239,6 @@ const resolveGoogleWindow = (sourceId: GoogleAuthSource['sourceId'], resetAt: nu
 
 const ZAI_TOKEN_WINDOW_SECONDS: Record<number, number> = { 3: 3600 };
 const OPENCODE_GO_ALIASES = ['opencode-go', 'opencodego', 'go'];
-const OPENCODE_GO_WORKSPACE_ID_PATTERN = /^wrk_[a-zA-Z0-9]+$/;
-const OPENCODE_GO_DASHBOARD_USAGE_ERROR = 'OpenCode Go usage tracking requires OPENCODE_GO_WORKSPACE_ID and OPENCODE_GO_AUTH_COOKIE, or usageWorkspaceId and usageAuthCookie in auth["opencode-go"].';
-const OPENCODE_GO_AUTH_COOKIE_ERROR = 'OpenCode Go dashboard authentication failed. Update OPENCODE_GO_AUTH_COOKIE or auth["opencode-go"].usageAuthCookie.';
-const OPENCODE_GO_WINDOW_DEFINITIONS = {
-  rolling: {
-    label: 'rolling',
-    windowSeconds: 5 * 60 * 60,
-    description: '$12 of usage every 5 hours.',
-  },
-  weekly: {
-    label: 'weekly',
-    windowSeconds: 7 * 24 * 60 * 60,
-    description: '$30 of usage per week.',
-  },
-  monthly: {
-    label: 'monthly',
-    windowSeconds: 30 * 24 * 60 * 60,
-    description: '$60 of usage per month.',
-  },
-} as const;
 
 const readAuthFile = (): AuthFile => {
   if (!fs.existsSync(AUTH_FILE)) {
@@ -458,10 +443,12 @@ export const listConfiguredQuotaProviders = ({
   claudeProxyConfigured = false,
   isExternalRuntime = false,
   readAuth = readAuthFile,
+  readManagedCredential = readManagedQuotaCredential,
 }: {
   claudeProxyConfigured?: boolean;
   isExternalRuntime?: boolean;
   readAuth?: () => AuthFile;
+  readManagedCredential?: (providerId: string) => ManagedQuotaCredential | null;
 } = {}) => {
   const auth = readAuth();
   const configured = new Set<string>();
@@ -548,8 +535,12 @@ export const listConfiguredQuotaProviders = ({
     configured.add('ollama-cloud');
   }
 
+  if (resolveOpenCodeZenCredential({ readManagedCredential }).credential) {
+    configured.add('opencode');
+  }
+
   const openCodeGo = resolveOpenCodeGoCredentials({ readAuth: () => auth });
-  if (openCodeGo.apiConfigured || openCodeGo.usageConfigured) {
+  if (openCodeGo.apiConfigured) {
     configured.add('opencode-go');
   }
 
@@ -628,216 +619,88 @@ export const fetchDeepSeekQuota = async (options: FetchQuotaOptions = {}): Promi
 export const resolveOpenCodeGoCredentials = (options: FetchQuotaOptions = {}) => {
   const auth = options.readAuth?.() ?? readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, OPENCODE_GO_ALIASES)) as Record<string, unknown> | null;
-  const apiKey = asNonEmptyString(entry?.key) ?? asNonEmptyString(entry?.token) ?? asNonEmptyString(entry?.access);
-  const env = options.env ?? process.env;
-  const environmentWorkspaceId = asNonEmptyString(env.OPENCODE_GO_WORKSPACE_ID);
-  const environmentAuthCookie = asNonEmptyString(env.OPENCODE_GO_AUTH_COOKIE);
-  const managed = (options.readManagedCredential ?? readManagedQuotaCredential)('opencode-go') as OpenCodeGoCredential | null;
-  const legacyWorkspaceId = asNonEmptyString(entry?.usageWorkspaceId);
-  const legacyAuthCookie = asNonEmptyString(entry?.usageAuthCookie);
-
-  let workspaceId: string | null = null;
-  let authCookie: string | null = null;
-  let source: 'environment' | 'managed' | 'legacy' | null = null;
-  if (environmentWorkspaceId || environmentAuthCookie) {
-    workspaceId = environmentWorkspaceId;
-    authCookie = environmentAuthCookie;
-    source = 'environment';
-  } else if (managed) {
-    workspaceId = managed.workspaceId;
-    authCookie = managed.authCookie;
-    source = 'managed';
-  } else if (legacyWorkspaceId || legacyAuthCookie) {
-    workspaceId = legacyWorkspaceId;
-    authCookie = legacyAuthCookie;
-    source = 'legacy';
-  }
-
+  const values = [entry?.key, entry?.token, entry?.access];
+  const apiKey = values
+    .map((value) => asNonEmptyString(value))
+    .find((value) => Boolean(value) && !/[\r\n]/.test(value as string)) ?? null;
   return {
     apiConfigured: Boolean(apiKey),
-    usageConfigured: Boolean(workspaceId && authCookie),
-    workspaceId,
-    authCookie,
-    source,
+    apiKey,
+    source: apiKey ? 'auth' as const : null,
   };
 };
 
-const extractBalancedObjectLiteral = (source: string, openBraceIndex: number): string | null => {
-  let depth = 0;
-  let stringQuote: '"' | "'" | null = null;
-  let escaped = false;
-
-  for (let index = openBraceIndex; index < source.length; index += 1) {
-    const char = source[index];
-
-    if (stringQuote) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === '\\') {
-        escaped = true;
-      } else if (char === stringQuote) {
-        stringQuote = null;
-      }
-      continue;
-    }
-
-    if (char === '"' || char === "'") {
-      stringQuote = char;
-      continue;
-    }
-
-    if (char === '{') {
-      depth += 1;
-    } else if (char === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        return source.slice(openBraceIndex, index + 1);
-      }
-    }
-  }
-
-  return null;
+export const resolveOpenCodeZenCredential = (options: FetchQuotaOptions = {}) => {
+  const managed = (options.readManagedCredential ?? readManagedQuotaCredential)('opencode');
+  const record = asObject(managed);
+  const workspaceId = asNonEmptyString(record?.workspaceId);
+  const authCookie = asNonEmptyString(record?.authCookie);
+  const credential = workspaceId && authCookie
+    ? { workspaceId, authCookie } satisfies OpenCodeZenCredential
+    : null;
+  return {
+    credential,
+    source: credential ? 'managed' as const : null,
+  };
 };
 
-const parseObjectLiteral = (objectLiteral: string): Record<string, unknown> | null => {
-  try {
-    const jsonLike = objectLiteral.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1"$2"$3');
-    return JSON.parse(jsonLike) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-};
-
-const extractOpenCodeGoUsageObject = (html: string, key: keyof typeof OPENCODE_GO_WINDOW_DEFINITIONS): Record<string, unknown> | null => {
-  const pattern = new RegExp(`["']?${key}Usage["']?\\s*[:=]?\\s*(?:\\$R\\[\\d+\\]\\s*=\\s*)?\\{`, 'g');
-  let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(html)) !== null) {
-    const openBraceIndex = match.index + match[0].lastIndexOf('{');
-    const objectLiteral = extractBalancedObjectLiteral(html, openBraceIndex);
-    if (!objectLiteral) continue;
-
-    const usage = parseObjectLiteral(objectLiteral);
-    if (usage) return usage;
-  }
-
-  return null;
-};
-
-const buildOpenCodeGoUsage = (html: string): ProviderUsage => {
-  const windows: Record<string, UsageWindow> = {};
-  const now = Date.now();
-
-  for (const [key, definition] of Object.entries(OPENCODE_GO_WINDOW_DEFINITIONS) as Array<[keyof typeof OPENCODE_GO_WINDOW_DEFINITIONS, typeof OPENCODE_GO_WINDOW_DEFINITIONS[keyof typeof OPENCODE_GO_WINDOW_DEFINITIONS]]>) {
-    const usage = extractOpenCodeGoUsageObject(html, key);
-    if (!usage) continue;
-
-    const resetInSec = toNumber(usage.resetInSec);
-    windows[definition.label] = toUsageWindow({
-      usedPercent: toNumber(usage.usagePercent),
-      windowSeconds: definition.windowSeconds,
-      resetAt: resetInSec === null ? null : now + resetInSec * 1000,
-      description: definition.description,
-    });
-  }
-
-  if (Object.keys(windows).length === 0) {
-    throw new Error('OpenCode Go dashboard usage fields were not found. The website structure may have changed.');
-  }
-
-  return { windows };
-};
-
-export const validateOpenCodeGoQuotaCredential = async (
-  credential: OpenCodeGoCredential,
-  fetchImpl: QuotaFetch = fetch,
-): Promise<ProviderUsage> => {
-  if (!OPENCODE_GO_WORKSPACE_ID_PATTERN.test(credential.workspaceId)) {
-    throw new Error('Invalid OpenCode Go workspace ID format.');
-  }
-  const response = await fetchImpl(`https://opencode.ai/workspace/${encodeURIComponent(credential.workspaceId)}/go`, {
-    method: 'GET',
-    headers: {
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      Cookie: `auth=${credential.authCookie}`,
-      'User-Agent': 'DevRyan quota provider',
-    },
-    redirect: 'manual',
-    signal: AbortSignal.timeout(15_000),
+export const fetchOpenCodeZenQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
+  const { credential } = resolveOpenCodeZenCredential(options);
+  return fetchOpenCodeZenQuotaAdapter({
+    credential,
+    fetchImpl: options.fetchImpl ?? fetch,
+    now: options.now ?? Date.now,
   });
-  if (response.status === 401 || response.status === 403 || (response.status >= 300 && response.status < 400)) {
-    throw new Error(OPENCODE_GO_AUTH_COOKIE_ERROR);
+};
+
+export const validateOpenCodeZenQuotaCredential = async (
+  credential: OpenCodeZenCredential,
+  options: FetchQuotaOptions = {},
+): Promise<OpenCodeZenCredential> => {
+  const result = await fetchOpenCodeZenQuotaAdapter({
+    credential,
+    fetchImpl: options.fetchImpl ?? fetch,
+    now: options.now ?? Date.now,
+  });
+  if (!result.ok) throw new Error('OpenCode Zen dashboard credential could not be validated.');
+  return credential;
+};
+
+const cleanOpenCodeGoLegacyCredentials = (options: FetchQuotaOptions): string[] => {
+  let failed = false;
+  try {
+    (options.deleteLegacyOpenCodeGoCredential ?? deleteLegacyOpenCodeGoQuotaCredential)();
+  } catch {
+    failed = true;
   }
-  if (!response.ok) throw new Error(`OpenCode Go dashboard request failed: ${response.status}`);
-  if (typeof response.text !== 'function') {
-    throw new Error('OpenCode Go dashboard response did not include HTML content.');
+  try {
+    (options.mutateOpenCodeAuth ?? mutateAuthFile)((auth) => {
+      const entry = auth['opencode-go'];
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+      if (!Object.hasOwn(entry, 'usageWorkspaceId') && !Object.hasOwn(entry, 'usageAuthCookie')) return false;
+      delete entry.usageWorkspaceId;
+      delete entry.usageAuthCookie;
+      return auth;
+    });
+  } catch {
+    failed = true;
   }
-  return buildOpenCodeGoUsage(await response.text());
+  return failed ? ['OpenCode Go usage refreshed, but legacy credential cleanup failed.'] : [];
 };
 
 export const fetchOpenCodeGoQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
-  const fetchImpl = options.fetchImpl ?? fetch;
   const credentials = resolveOpenCodeGoCredentials(options);
+  const result = await fetchOpenCodeGoQuotaAdapter({
+    credential: { apiKey: credentials.apiKey ?? '' },
+    fetchImpl: options.fetchImpl ?? fetch,
+    now: options.now ?? Date.now,
+  });
+  if (!result.ok) return result;
 
-  if (!credentials.apiConfigured && !credentials.usageConfigured) {
-    return buildResult({
-      providerId: 'opencode-go',
-      providerName: 'OpenCode Go',
-      ok: false,
-      configured: false,
-      error: 'Not configured',
-    });
-  }
-
-  if (!credentials.usageConfigured) {
-    return buildResult({
-      providerId: 'opencode-go',
-      providerName: 'OpenCode Go',
-      ok: false,
-      configured: true,
-      error: OPENCODE_GO_DASHBOARD_USAGE_ERROR,
-    });
-  }
-
-  if (!credentials.workspaceId || !OPENCODE_GO_WORKSPACE_ID_PATTERN.test(credentials.workspaceId)) {
-    return buildResult({
-      providerId: 'opencode-go',
-      providerName: 'OpenCode Go',
-      ok: false,
-      configured: true,
-      error: 'Invalid OpenCode Go workspace ID format.',
-    });
-  }
-  if (!credentials.authCookie) {
-    return buildResult({
-      providerId: 'opencode-go',
-      providerName: 'OpenCode Go',
-      ok: false,
-      configured: true,
-      error: OPENCODE_GO_DASHBOARD_USAGE_ERROR,
-    });
-  }
-
-  try {
-    return buildResult({
-      providerId: 'opencode-go',
-      providerName: 'OpenCode Go',
-      ok: true,
-      configured: true,
-      usage: await validateOpenCodeGoQuotaCredential({
-        workspaceId: credentials.workspaceId,
-        authCookie: credentials.authCookie,
-      }, fetchImpl),
-    });
-  } catch (error) {
-    return buildResult({
-      providerId: 'opencode-go',
-      providerName: 'OpenCode Go',
-      ok: false,
-      configured: true,
-      error: error instanceof Error ? error.message : 'Request failed',
-    });
-  }
+  const cleanupWarnings = cleanOpenCodeGoLegacyCredentials(options);
+  return cleanupWarnings.length > 0
+    ? { ...result, warnings: [...(result.warnings ?? []), ...cleanupWarnings] }
+    : result;
 };
 
 const getCursorUsageSessionToken = (auth: AuthFile): string | null => {
@@ -2615,6 +2478,10 @@ export const fetchQuotaForProvider = async (providerId: string, options: FetchQu
     case 'grok':
     case 'xai-oauth':
       return fetchXaiQuota(options);
+    case 'opencode':
+    case 'zen':
+    case 'opencode-zen':
+      return fetchOpenCodeZenQuota(options);
     case 'opencode-go':
       return fetchOpenCodeGoQuota(options);
     case 'cursor-acp':

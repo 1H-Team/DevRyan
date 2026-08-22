@@ -112,6 +112,18 @@ const VisualSectionContent: React.FC = () => {
     const isVSCode = isVSCodeRuntime();
     return <OpenChamberVisualSettings visibleSettings={[
         'theme',
+        'userMessageRendering',
+        'mermaidRendering',
+        'reasoning',
+        'showToolFileIcons',
+        'expandedTools',
+        'collapsibleUserMessages',
+        'stickyUserHeader',
+        'splitAssistantMessageActions',
+        'diffLayout',
+        'mobileStatusBar',
+        'dotfiles',
+        'queueMode',
         'pwaInstallName',
         'pwaOrientation',
         'mobileKeyboardMode',

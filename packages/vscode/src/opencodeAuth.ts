@@ -40,6 +40,7 @@ export const readAuthFile = (): AuthFile => {
 };
 
 export const writeAuthFile = (auth: Record<string, AuthEntry | string>): void => {
+  let temporaryFile: string | null = null;
   try {
     if (!fs.existsSync(OPENCODE_DATA_DIR)) {
       fs.mkdirSync(OPENCODE_DATA_DIR, { recursive: true });
@@ -50,11 +51,30 @@ export const writeAuthFile = (auth: Record<string, AuthEntry | string>): void =>
       fs.copyFileSync(AUTH_FILE, backupFile);
     }
 
-    fs.writeFileSync(AUTH_FILE, JSON.stringify(auth, null, 2), 'utf8');
+    temporaryFile = `${AUTH_FILE}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(temporaryFile, JSON.stringify(auth, null, 2), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    fs.renameSync(temporaryFile, AUTH_FILE);
+    temporaryFile = null;
   } catch (error) {
     console.error('Failed to write auth file:', error);
     throw new Error('Failed to write OpenCode auth configuration');
+  } finally {
+    if (temporaryFile) {
+      try { fs.unlinkSync(temporaryFile); } catch {
+        // Best-effort cleanup must not hide the original write failure.
+      }
+    }
   }
+};
+
+export const mutateAuthFile = (
+  mutator: (auth: AuthFile) => AuthFile | false | void,
+): boolean => {
+  const latest = readAuthFile();
+  const result = mutator(latest);
+  if (result === false) return false;
+  writeAuthFile(result && typeof result === 'object' ? result : latest);
+  return true;
 };
 
 export const removeProviderAuth = (providerId: string): boolean => {

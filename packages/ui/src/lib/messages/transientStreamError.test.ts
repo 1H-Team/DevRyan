@@ -81,3 +81,28 @@ describe("classifyTransientProviderFailure", () => {
     expect(classifyTransientProviderFailure("AbortError", "The operation timed out while cancelling")).toBeNull()
   })
 })
+
+describe("xAI provider-queue failures", () => {
+  // Verbatim from opencode.log on 2026-08-21. Before the classifier fix these
+  // returned null (the trailing "abort." matched the non-transport pattern),
+  // so no auto-retry ran and the UI showed a dead-end error.
+  const QUEUE_TIMEOUT = "Request 8f1d57cc-e1b2-9ec5-9dbc-f3ff661ceab0-n0-part0-a0-2 timed out in queue, abort."
+  const UNAVAILABLE = "Service temporarily unavailable. The model did not respond to this request."
+
+  test("classifies the queue timeout as a transport failure", () => {
+    expect(classifyTransientProviderFailure("UnknownError", QUEUE_TIMEOUT)).toBe("provider_queue_timeout")
+  })
+
+  test("classifies the temporarily-unavailable variant", () => {
+    expect(classifyTransientProviderFailure("UnknownError", UNAVAILABLE)).toBe("provider_queue_timeout")
+  })
+
+  test("marks both as transient so the retry path engages", () => {
+    expect(isLikelyTransientStreamFailure("UnknownError", QUEUE_TIMEOUT)).toBe(true)
+    expect(isLikelyTransientStreamFailure("UnknownError", UNAVAILABLE)).toBe(true)
+  })
+
+  test("still treats a real user abort as non-transient", () => {
+    expect(classifyTransientProviderFailure("MessageAbortedError", "Aborted")).toBe(null)
+  })
+})

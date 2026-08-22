@@ -83,6 +83,44 @@ const idempotencyIndexKey = (rootSessionId, idempotencyKey) => (
   `${rootSessionId}\u0000${idempotencyKey}`
 );
 
+/**
+ * Window during which an identical in-flight dispatch is collapsed onto the
+ * task that is already running. Long enough to cover an orchestrator re-issuing
+ * a dispatch over several turns (observed live 2026-08-21: three dispatches of
+ * the same task spanning 50s), short enough that a deliberate re-run later in
+ * the session is never blocked.
+ */
+export const DUPLICATE_DISPATCH_WINDOW_MS = 10 * 60 * 1_000;
+
+/**
+ * The `idempotencyKey` the plugin builds folds in both `context.messageID` and
+ * `dispatchCallId`, so it only ever collapses a literal retry of one tool call.
+ * It cannot catch the failure seen in the wild: the orchestrator believing its
+ * dispatch did not take effect and re-issuing it — with slightly different
+ * wording — in the NEXT assistant message. That produces a different messageID,
+ * a different callID and a different prompt hash, so nothing collides and a
+ * second subagent runs the same work.
+ *
+ * Normalizing away the structured scaffolding and formatting leaves a
+ * fingerprint stable across those rewordings without being so loose that
+ * genuinely different prompts collide.
+ */
+const dispatchFingerprint = (input) => {
+  const prompt = typeof input?.prompt === 'string' ? input.prompt : '';
+  const normalized = prompt
+    .toLowerCase()
+    .replace(/^\s*(?:find|scope|goal|task|context|deliverable|report|return)\s*:/gm, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  if (!normalized) return null;
+  return [
+    input?.rootSessionId ?? '',
+    input?.directory ?? '',
+    input?.agent ?? '',
+    normalized,
+  ].join('\u0000');
+};
+
 export const compareManagedTaskQueueOrder = (left, right) => (
   left.sequence - right.sequence
   || left.createdAt - right.createdAt
@@ -886,6 +924,26 @@ export const createManagedTaskScheduler = (options = {}) => {
       const indexKey = idempotencyIndexKey(input.rootSessionId, input.idempotencyKey);
       const existingTaskId = idempotencyIndex.get(indexKey);
       if (existingTaskId) return cloneTask(tasks.get(existingTaskId));
+
+      // Content-scoped duplicate guard. Only collapses onto a task that is
+      // STILL RUNNING — a finished task never blocks a fresh dispatch, so
+      // re-running the same work later is unaffected. `allowDuplicate` is the
+      // deliberate escape hatch for parallel fan-out of one agent.
+      if (input.allowDuplicate !== true && !input.parentTaskId) {
+        const fingerprint = dispatchFingerprint(input);
+        if (fingerprint) {
+          // Must use the injected clock, not Date.now(): the scheduler is
+          // constructed with a `now` option and task.createdAt comes from it.
+          const at = now();
+          for (const candidate of tasks.values()) {
+            if (candidate.rootSessionId !== input.rootSessionId) continue;
+            if (!ACTIVE_STATUSES.has(candidate.status)) continue;
+            if (at - candidate.createdAt > DUPLICATE_DISPATCH_WINDOW_MS) continue;
+            if (dispatchFingerprint(candidate) !== fingerprint) continue;
+            return cloneTask(candidate);
+          }
+        }
+      }
 
       assertManagedReadOnlyAgentSupport(input);
 

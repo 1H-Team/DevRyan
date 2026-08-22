@@ -715,7 +715,7 @@ describe('DevRyan managed orchestration plugin', () => {
       'does not impose a managed concurrency cap',
     );
     expect(plugin.tool.devryan_task.args.timeout_seconds.description).toContain(
-      'Defaults to 3600 for Fixer and Oracle',
+      'Defaults to 3600 for Designer, Fixer, and Oracle',
     );
     expect(plugin.tool.devryan_task.args.timeout_seconds.description).toContain(
       '1800 for other ordinary specialists',
@@ -778,7 +778,7 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests[1].body.params.idempotencyKey).toBe(requests[0].body.params.idempotencyKey);
   });
 
-  it('defaults ordinary deadlines to 30 minutes, enforces 60 minutes for Fixer and Oracle, and caps at 24 hours', async () => {
+  it('defaults ordinary deadlines to 30 minutes, enforces 60 minutes for Designer, Fixer, and Oracle, and caps at 24 hours', async () => {
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       requests.push(JSON.parse(init.body));
@@ -807,12 +807,20 @@ describe('DevRyan managed orchestration plugin', () => {
     }, context({ messageID: 'msg_second' }));
     await plugin.tool.devryan_task.execute({
       action: 'start',
+      agent: 'designer',
+      prompt: 'Implement within the Designer deadline floor.',
+      provider_id: 'openai',
+      model_id: 'gpt-5.6-sol',
+      timeout_seconds: 1_800,
+    }, context({ messageID: 'msg_third' }));
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
       agent: 'fixer',
       prompt: 'Fix within the Fixer deadline floor.',
       provider_id: 'openai',
       model_id: 'gpt-5.6-luna',
       timeout_seconds: 1_800,
-    }, context({ messageID: 'msg_third' }));
+    }, context({ messageID: 'msg_fourth' }));
     await plugin.tool.devryan_task.execute({
       action: 'start',
       agent: 'oracle',
@@ -820,7 +828,7 @@ describe('DevRyan managed orchestration plugin', () => {
       provider_id: 'openai',
       model_id: 'gpt-5.6-sol',
       timeout_seconds: 1_800,
-    }, context({ messageID: 'msg_fourth' }));
+    }, context({ messageID: 'msg_fifth' }));
 
     expect(requests[0].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 1_800_000);
     expect(requests[0].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 1_800_000);
@@ -830,15 +838,17 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests[2].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
     expect(requests[3].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 3_600_000);
     expect(requests[3].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
+    expect(requests[4].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 3_600_000);
+    expect(requests[4].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
   });
 
-  it('clamps an explicit Fixer recovery window to 60 minutes', async () => {
+  it.each(['designer', 'fixer'])('clamps an explicit %s recovery window to 60 minutes', async (agent) => {
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       const request = JSON.parse(init.body);
       requests.push(request);
       const result = request.method === 'wait'
-        ? { task: { taskId: 'dvr_task_fixer_recovery', status: 'failed' } }
+        ? { task: { taskId: 'dvr_task_specialist_recovery', status: 'failed' } }
         : { accepted: true };
       return new Response(JSON.stringify({ ok: true, result }), {
         status: 200,
@@ -849,18 +859,18 @@ describe('DevRyan managed orchestration plugin', () => {
 
     await plugin.tool.devryan_task.execute({
       action: 'wait',
-      task_id: 'dvr_task_fixer_recovery',
+      task_id: 'dvr_task_specialist_recovery',
     }, context());
     await plugin.tool.devryan_task.execute({
       action: 'retry',
-      task_id: 'dvr_task_fixer_recovery',
-      agent: 'fixer',
+      task_id: 'dvr_task_specialist_recovery',
+      agent,
       timeout_seconds: 1_800,
     }, context());
 
     expect(requests[1]).toMatchObject({
       method: 'acknowledge',
-      params: { action: 'retry', agent: 'fixer', timeoutSeconds: 3_600 },
+      params: { action: 'retry', agent, timeoutSeconds: 3_600 },
     });
   });
 
@@ -3097,5 +3107,129 @@ describe('DevRyan managed orchestration plugin', () => {
     }), { status: 404, headers: { 'content-type': 'application/json' } })));
     await expect(plugin.tool.devryan_task.execute({ action: 'status', task_id: 'dvr_task_1' }, context()))
       .rejects.toThrow('task was not found');
+  });
+});
+
+describe('dispatch result wording', () => {
+  const clientWithTurn = () => ({
+    session: {
+      messages: vi.fn(async () => ({ data: [
+        { info: { id: 'msg_001', role: 'user' }, parts: [{ type: 'text', text: 'Map the routing flow.' }] },
+        {
+          info: {
+            id: 'msg_002', role: 'assistant', parentID: 'msg_001',
+            providerID: 'xai', modelID: 'grok-4.6',
+          },
+          parts: [],
+        },
+      ] })),
+    },
+  });
+
+  const stubSubmit = (task) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ ok: true, result: { task } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )));
+  };
+
+  it('tells the model the task is running and must not be dispatched again', async () => {
+    // Without this the raw envelope only says `"status": "starting"`, which an
+    // orchestrator read as "queued but not dispatched" and re-issued twice.
+    stubSubmit({
+      taskId: 'dvr_task_abc',
+      label: 'Map support live-chat routing flow',
+      agent: 'explorer',
+      status: 'starting',
+      childSessionId: 'ses_child',
+      dispatchCallId: 'toolu_same',
+    });
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client: clientWithTurn() });
+
+    const output = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'explorer',
+      prompt: 'Map the support live-chat routing flow.',
+      provider_id: 'xai',
+      model_id: 'grok-4.6',
+    }, context({ messageID: 'msg_002', callID: 'toolu_same' })));
+
+    expect(output.dispatched).toBe(true);
+    expect(output.instructions).toContain('DISPATCHED');
+    expect(output.instructions).toContain('dvr_task_abc');
+    expect(output.instructions).toContain('ses_child');
+    expect(output.instructions).toContain('Do NOT dispatch this task again');
+    expect(output.instructions).toContain('"wait"');
+  });
+
+  it('says ALREADY RUNNING when the scheduler collapsed the dispatch', async () => {
+    // The scheduler returns the pre-existing task, whose dispatchCallId belongs
+    // to the FIRST call — that mismatch is how we know it was collapsed.
+    stubSubmit({
+      taskId: 'dvr_task_first',
+      label: 'Map support live-chat routing flow',
+      agent: 'explorer',
+      status: 'running',
+      childSessionId: 'ses_child',
+      dispatchCallId: 'toolu_first',
+    });
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client: clientWithTurn() });
+
+    const output = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'explorer',
+      prompt: 'Map the support live-chat routing flow.',
+      provider_id: 'xai',
+      model_id: 'grok-4.6',
+    }, context({ messageID: 'msg_002', callID: 'toolu_second' })));
+
+    expect(output.instructions).toContain('ALREADY RUNNING');
+    expect(output.instructions).toContain('A second subagent was NOT started');
+    expect(output.instructions).toContain('dvr_task_first');
+  });
+
+  it('forwards allow_duplicate to the scheduler', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      requests.push(JSON.parse(init.body));
+      return new Response(
+        JSON.stringify({ ok: true, result: { task: { taskId: 'dvr_task_x', agent: 'explorer' } } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client: clientWithTurn() });
+
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'explorer',
+      prompt: 'Map the support live-chat routing flow.',
+      provider_id: 'xai',
+      model_id: 'grok-4.6',
+      allow_duplicate: true,
+    }, context({ messageID: 'msg_002', callID: 'toolu_dup' }));
+
+    expect(requests[0].params.allowDuplicate).toBe(true);
+  });
+
+  it('defaults allowDuplicate to false', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      requests.push(JSON.parse(init.body));
+      return new Response(
+        JSON.stringify({ ok: true, result: { task: { taskId: 'dvr_task_y', agent: 'explorer' } } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client: clientWithTurn() });
+
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'explorer',
+      prompt: 'Map the support live-chat routing flow.',
+      provider_id: 'xai',
+      model_id: 'grok-4.6',
+    }, context({ messageID: 'msg_002', callID: 'toolu_nodup' }));
+
+    expect(requests[0].params.allowDuplicate).toBe(false);
   });
 });

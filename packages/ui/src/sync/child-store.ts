@@ -236,6 +236,10 @@ export class ChildStoreManager {
     return this.releaseDirectory(directory)
   }
 
+  discardDirectory(directory: string): boolean {
+    return this.releaseDirectory(directory)
+  }
+
   runEviction(skip?: string) {
     const stores = [...this.children.keys()]
     if (stores.length === 0) return

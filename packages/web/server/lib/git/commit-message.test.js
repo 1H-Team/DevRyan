@@ -9,7 +9,6 @@ import {
   generateCommitMessageDirect,
   normalizeGeneratedCommitSubject,
 } from './commit-message.js';
-import { ZenApiError } from '../text/summarization.js';
 
 const context = {
   branch: 'feature/source-generation',
@@ -29,8 +28,8 @@ describe('direct commit message generation', () => {
   it('builds a staged-worktree prompt with non-authoritative guidance', () => {
     const prompt = buildCommitMessagePrompt(context, 'Prefer a ui scope');
 
-    expect(prompt).toContain('Respect the staged-only scope');
-    expect(prompt).toContain('"stagedOnly": true');
+    expect(prompt).toContain('respect staged-only scope');
+    expect(prompt).toContain('"stagedOnly":true');
     expect(prompt).toContain('Git context');
     expect(prompt).toContain('Prefer a ui scope');
     expect(prompt).toContain('remain authoritative');
@@ -42,14 +41,17 @@ describe('direct commit message generation', () => {
     expect(normalizeGeneratedCommitSubject('[{"subject":"docs: explain source generation"}]')).toBe('docs: explain source generation');
   });
 
-  it('rejects malformed, punctuated, and oversized subjects', () => {
+  it('rejects malformed subjects and repairs punctuation and oversized summaries', () => {
     expect(() => normalizeGeneratedCommitSubject('Update commit generation')).toThrow(/conventional commit/);
-    expect(() => normalizeGeneratedCommitSubject('fix: update commit generation.')).toThrow(/period/);
-    expect(() => normalizeGeneratedCommitSubject(`fix: ${'x'.repeat(80)}`)).toThrow(/exceeds 72/);
+    expect(normalizeGeneratedCommitSubject('fix: update commit generation.')).toBe('fix: update commit generation');
+    expect(normalizeGeneratedCommitSubject(`fix: ${'fast generation '.repeat(8)}`).length).toBeLessThanOrEqual(72);
   });
 
   it('calls only the injected direct text transport and returns one subject', async () => {
-    const requestText = vi.fn(async () => 'fix(git): generate worktree commit message');
+    const requestText = vi.fn(async () => JSON.stringify({
+      subject: 'fix(git): generate worktree commit message',
+      details: ['Generate a direct commit draft', 'Avoid OpenCode sessions'],
+    }));
 
     const result = await generateCommitMessageDirect({
       context,
@@ -58,17 +60,18 @@ describe('direct commit message generation', () => {
       requestText,
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       subject: 'fix(git): generate worktree commit message',
-      highlights: [],
+      highlights: ['Generate a direct commit draft', 'Avoid OpenCode sessions'],
+      _generation: { source: 'ai', providerOutcome: 'complete' },
     });
     expect(requestText).toHaveBeenCalledWith(expect.objectContaining({
       zenModel: 'gpt-5-nano',
-      timeoutMs: COMMIT_GENERATION_TIMEOUT_MS,
       chatMaxTokens: COMMIT_GENERATION_CHAT_MAX_TOKENS,
+      chatReasoningEffort: 'none',
       responsesMaxOutputTokens: COMMIT_GENERATION_RESPONSES_MAX_OUTPUT_TOKENS,
-      stop: ['\n'],
     }));
+    expect(requestText.mock.calls[0][0].timeoutMs).toBeLessThanOrEqual(COMMIT_GENERATION_TIMEOUT_MS);
     expect(requestText.mock.calls.flat().join(' ')).not.toMatch(/\/session|prompt_async/);
   });
 
@@ -77,17 +80,30 @@ describe('direct commit message generation', () => {
 
     await generateCommitMessageDirect({ context, requestText });
 
+    expect(COMMIT_GENERATION_DEFAULT_ZEN_MODEL).toBe('nemotron-3.5-lightning-free');
     expect(requestText).toHaveBeenCalledWith(expect.objectContaining({
       zenModel: COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
-      timeoutMs: COMMIT_GENERATION_TIMEOUT_MS,
       chatReasoningEffort: 'none',
     }));
   });
 
-  it('retries only explicit unavailable-model failures with a different cached fallback', async () => {
-    const requestText = vi.fn()
-      .mockRejectedValueOnce(new ZenApiError(404, 'model deepseek-v4-flash-free not found'))
-      .mockResolvedValueOnce('fix(git): use cached free model');
+  it('disables hidden reasoning for explicit model overrides', async () => {
+    const requestText = vi.fn(async () => 'fix(git): generate worktree commit message');
+
+    await generateCommitMessageDirect({
+      context,
+      zenModel: 'big-pickle',
+      requestText,
+    });
+
+    expect(requestText).toHaveBeenCalledWith(expect.objectContaining({
+      zenModel: 'big-pickle',
+      chatReasoningEffort: 'none',
+    }));
+  });
+
+  it('does not retry provider failures inside the speed budget and returns a local draft', async () => {
+    const requestText = vi.fn().mockRejectedValue(new Error('model unavailable'));
     const onTiming = vi.fn();
 
     const result = await generateCommitMessageDirect({
@@ -98,28 +114,16 @@ describe('direct commit message generation', () => {
       onTiming,
     });
 
-    expect(result.subject).toBe('fix(git): use cached free model');
-    expect(requestText).toHaveBeenCalledTimes(2);
-    expect(requestText.mock.calls.map(([request]) => request.zenModel)).toEqual([
-      COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
-      'big-pickle',
-    ]);
-    expect(onTiming).toHaveBeenCalledWith(expect.objectContaining({ retried: true }));
+    expect(result._generation.source).toBe('local_fallback');
+    expect(result.subject).toMatch(/^chore\(ui\): /);
+    expect(requestText).toHaveBeenCalledOnce();
+    expect(onTiming).toHaveBeenCalledWith(expect.objectContaining({ retried: false, providerOutcome: 'error' }));
   });
 
-  it.each([
-    new ZenApiError(429, 'rate limit exceeded'),
-    new ZenApiError(401, 'authentication failed'),
-    new ZenApiError(500, 'server error'),
-    new Error('Zen generation timed out'),
-  ])('does not retry non-availability failures: %s', async (error) => {
-    const requestText = vi.fn().mockRejectedValue(error);
-
-    await expect(generateCommitMessageDirect({
-      context,
-      fallbackZenModel: 'big-pickle',
-      requestText,
-    })).rejects.toBe(error);
-    expect(requestText).toHaveBeenCalledOnce();
+  it('skips the provider when every candidate is cooling down', async () => {
+    const requestText = vi.fn();
+    const result = await generateCommitMessageDirect({ context, requestText, skipProvider: true });
+    expect(result._generation.source).toBe('local_fallback');
+    expect(requestText).not.toHaveBeenCalled();
   });
 });

@@ -51,6 +51,16 @@ describe('decideProviderErrorRecovery', () => {
     })).toEqual({ reason: 'unknown certificate verification error' });
   });
 
+  test('offers manual recovery for Claude third-party usage classification errors', () => {
+    const reason = 'Claude Code returned an error result: API Error: 400 Third-party apps now draw from your extra usage, not your plan limits. Add more at claude.ai/settings/usage and keep going.';
+    expect(decideProviderErrorRecovery({
+      messages: [user, assistant(reason)],
+      observedActiveUserMessageId: 'user-1',
+      queuedMessageCount: 0,
+      blockingRequestCount: 0,
+    })).toEqual({ reason });
+  });
+
   test('does not offer recovery for stale, blocked, or authentication failures', () => {
     const base = {
       messages: [user, assistant('Streaming response failed')],
@@ -130,6 +140,16 @@ describe('decideProviderRetryLoopRecovery', () => {
       message: 'Rate limited',
       next: 10,
     })).toEqual({ reason: 'Rate limited' });
+  });
+
+  test('stops a Claude third-party usage classifier retry on the first attempt', () => {
+    const reason = 'API Error: 400 Third-party apps now draw from your extra usage, not your plan limits. Subprocess stderr: Warning: ignored';
+    expect(decideProviderRetryLoopRecovery({
+      type: 'retry',
+      attempt: 1,
+      message: reason,
+      next: 10,
+    })).toEqual({ reason });
   });
 
   test('stops a transient provider retry loop at the bounded attempt limit', () => {

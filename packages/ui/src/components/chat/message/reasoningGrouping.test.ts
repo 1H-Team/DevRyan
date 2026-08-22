@@ -2,9 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import type { Part } from '@opencode-ai/sdk/v2';
 import {
     coalesceConsecutiveReasoningRows,
+    filterKnownClippedXaiReasoningActivities,
     hasDisplayableReasoningText,
     scanConsecutiveReasoningParts,
 } from './reasoningGrouping';
+
+const clippedXaiPreview = `${'x'.repeat(200)}...`;
 
 const part = (type: Part['type'], id: string, text?: string): Part => ({
     id,
@@ -68,5 +71,52 @@ describe('reasoning grouping', () => {
         expect(coalesceConsecutiveReasoningRows<{ id: string }, typeof row>([row])).toEqual([row]);
         expect(hasDisplayableReasoningText(part('reasoning', 'empty', '  \n '))).toBe(false);
         expect(hasDisplayableReasoningText(part('reasoning', 'content', 'Useful summary.'))).toBe(true);
+    });
+
+    test('treats only finalized clipped xAI previews as non-displayable', () => {
+        const clippedPart = {
+            ...part('reasoning', 'clipped', clippedXaiPreview),
+            time: { start: 1_000, end: 2_000 },
+        } as Part;
+
+        expect(hasDisplayableReasoningText(clippedPart, 'xai')).toBe(false);
+        expect(hasDisplayableReasoningText(clippedPart, 'openai')).toBe(true);
+        expect(hasDisplayableReasoningText(clippedPart)).toBe(true);
+    });
+
+    test('filters clipped xAI rows without reallocating unaffected activity lists', () => {
+        type Activity = {
+            id: string;
+            kind: string;
+            part: Part;
+            providerID?: string;
+        };
+        const clippedPart = {
+            ...part('reasoning', 'clipped', clippedXaiPreview),
+            time: { start: 1_000, end: 2_000 },
+        } as Part;
+        const visibleReasoning: Activity = {
+            id: 'visible',
+            kind: 'reasoning',
+            part: part('reasoning', 'visible', 'Complete reasoning.'),
+        };
+        const tool: Activity = {
+            id: 'tool',
+            kind: 'tool',
+            part: part('tool', 'tool'),
+        };
+        const activities: Activity[] = [
+            tool,
+            { id: 'clipped', kind: 'reasoning', part: clippedPart, providerID: 'xai' },
+            visibleReasoning,
+        ];
+
+        expect(filterKnownClippedXaiReasoningActivities(activities, 'openai')).toEqual([
+            tool,
+            visibleReasoning,
+        ]);
+
+        const unaffected = [tool, visibleReasoning];
+        expect(filterKnownClippedXaiReasoningActivities(unaffected, 'xai')).toBe(unaffected);
     });
 });

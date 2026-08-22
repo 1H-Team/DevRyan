@@ -456,3 +456,363 @@ describe('projectTurnRecords', () => {
         expect(next.planTraceIndex).toBe(previous.planTraceIndex);
     });
 });
+
+describe('plan-bearing text justification exemption', () => {
+    const structuredPlanText = [
+        '# Grok Plan Without Sentinel',
+        '',
+        '## Context',
+        '',
+        'Why this change is needed.',
+        '',
+        '## Implementation',
+        '',
+        '1. Do the work.',
+        '',
+        '## Verification',
+        '',
+        '1. Run the tests.',
+    ].join('\n');
+
+    const findActivity = (
+        projection: ReturnType<typeof projectTurnRecords>,
+        partId: string,
+    ) => projection.turns[0]?.activityParts.find((record) => record.part.id === partId);
+
+    test('a sentinel plan part in a tool-bearing message with finish tool-calls is not justification', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            finish: 'tool-calls',
+            parts: [
+                createToolPart('a1', 'a1-tool', 'read'),
+                createPlanPart('a1', 'Grok Plan'),
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+        expect(findActivity(projection, 'a1-plan')).toBe(undefined);
+    });
+
+    test('a trailing sign-off stays justification while the plan part is exempt', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            finish: 'tool-calls',
+            parts: [
+                createToolPart('a1', 'a1-tool', 'read'),
+                createPlanPart('a1', 'Grok Plan'),
+                createTextPart('a1', 'a1-signoff', 'Let me know if you want changes.'),
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+        expect(findActivity(projection, 'a1-plan')).toBe(undefined);
+        expect(findActivity(projection, 'a1-signoff')?.kind).toBe('justification');
+    });
+
+    test('a structured sentinel-less plan is exempt only for plan-mode turns', () => {
+        const planModeUser = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1, planMode: true });
+        const normalUser = createMessageEntry({ id: 'u2', role: 'user', createdAt: 1 });
+        const assistantFor = (parentID: string) => createMessageEntry({
+            id: `${parentID}-a`,
+            role: 'assistant',
+            parentID,
+            createdAt: 2,
+            finish: 'tool-calls',
+            parts: [
+                createToolPart(`${parentID}-a`, `${parentID}-a-tool`, 'read'),
+                createTextPart(`${parentID}-a`, `${parentID}-a-plan`, structuredPlanText),
+            ],
+        });
+
+        const planModeProjection = projectTurnRecords([planModeUser, assistantFor('u1')]);
+        expect(findActivity(planModeProjection, 'u1-a-plan')).toBe(undefined);
+
+        const normalProjection = projectTurnRecords([normalUser, assistantFor('u2')]);
+        expect(findActivity(normalProjection, 'u2-a-plan')?.kind).toBe('justification');
+    });
+
+    // Grok interleaves tool calls mid-plan: the plan spans several text parts,
+    // none of which is plan-bearing alone — only the message-level joined text is.
+    const fragmentedPlanAssistant = (parentID: string) => createMessageEntry({
+        id: `${parentID}-a`,
+        role: 'assistant',
+        parentID,
+        createdAt: 2,
+        finish: 'tool-calls',
+        parts: [
+            createTextPart(`${parentID}-a`, `${parentID}-a-frag1`, '# Grok Plan\n\nIntro prose.'),
+            createToolPart(`${parentID}-a`, `${parentID}-a-tool1`, 'read'),
+            createTextPart(`${parentID}-a`, `${parentID}-a-frag2`, '## Implementation\n\n1. Do the work.'),
+            createToolPart(`${parentID}-a`, `${parentID}-a-tool2`, 'grep'),
+            createTextPart(`${parentID}-a`, `${parentID}-a-frag3`, '## Verification\n\n1. Run the tests.'),
+            createTextPart(`${parentID}-a`, `${parentID}-a-narration`, 'I will index the homepage next.'),
+        ],
+    });
+
+    test('plan fragments interleaved with tool calls are exempt from justification in plan-mode turns', () => {
+        const planModeUser = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1, planMode: true });
+
+        const projection = projectTurnRecords([planModeUser, fragmentedPlanAssistant('u1')]);
+        expect(findActivity(projection, 'u1-a-frag1')).toBe(undefined);
+        expect(findActivity(projection, 'u1-a-frag2')).toBe(undefined);
+        expect(findActivity(projection, 'u1-a-frag3')).toBe(undefined);
+        expect(findActivity(projection, 'u1-a-narration')).toBe(undefined);
+    });
+
+    test('the same fragmented message keeps justification in a non-plan-mode turn', () => {
+        const normalUser = createMessageEntry({ id: 'u2', role: 'user', createdAt: 1 });
+
+        const projection = projectTurnRecords([normalUser, fragmentedPlanAssistant('u2')]);
+        expect(findActivity(projection, 'u2-a-frag1')?.kind).toBe('justification');
+        expect(findActivity(projection, 'u2-a-frag2')?.kind).toBe('justification');
+        expect(findActivity(projection, 'u2-a-frag3')?.kind).toBe('justification');
+        expect(findActivity(projection, 'u2-a-narration')?.kind).toBe('justification');
+    });
+
+    test('a plan-mode tool-bearing message without plan content keeps justification', () => {
+        const planModeUser = createMessageEntry({ id: 'u3', role: 'user', createdAt: 1, planMode: true });
+        const assistant = createMessageEntry({
+            id: 'u3-a',
+            role: 'assistant',
+            parentID: 'u3',
+            createdAt: 2,
+            finish: 'tool-calls',
+            parts: [
+                createToolPart('u3-a', 'u3-a-tool', 'read'),
+                createTextPart('u3-a', 'u3-a-narration', 'Just narration, no plan headings.'),
+            ],
+        });
+
+        const projection = projectTurnRecords([planModeUser, assistant]);
+        expect(findActivity(projection, 'u3-a-narration')?.kind).toBe('justification');
+    });
+});
+
+describe('plan rendered as a thought (Grok, 2026-08-21)', () => {
+    const findActivity = (
+        projection: ReturnType<typeof projectTurnRecords>,
+        partId: string,
+    ) => projection.turns[0]?.activityParts.find((record) => record.part.id === partId);
+
+    const structuredPlan = (heading = '#') => [
+        `${heading} Support Chat Routing Plan`,
+        '',
+        `${heading}# Context`,
+        '',
+        'Signed-out visitors cannot reach an agent.',
+        '',
+        `${heading}# Implementation`,
+        '',
+        '1. Fix the routing function.',
+        '',
+        `${heading}# Verification`,
+        '',
+        '1. Run the migration tests.',
+    ].join('\n');
+
+    test('a plan drafted inside a reasoning part is not ALSO rendered as a thought', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1, planMode: true });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            finish: 'tool-calls',
+            parts: [
+                createToolPart('a1', 'a1-tool', 'read'),
+                createReasoningPart('a1', 'a1-reasoning', structuredPlan()),
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+        // The plan card mounts from this reasoning part, so it must not appear
+        // in the activity timeline as well.
+        expect(findActivity(projection, 'a1-reasoning')).toBe(undefined);
+    });
+
+    test('an ordinary reasoning part in a plan-mode turn still renders as a thought', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1, planMode: true });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            finish: 'tool-calls',
+            parts: [
+                createToolPart('a1', 'a1-tool', 'read'),
+                createReasoningPart('a1', 'a1-reasoning', 'Let me look at the routing function first.'),
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+        expect(findActivity(projection, 'a1-reasoning')?.kind).toBe('reasoning');
+    });
+
+    test('when the plan is in the text parts the reasoning part stays a thought', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1, planMode: true });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            finish: 'tool-calls',
+            parts: [
+                createToolPart('a1', 'a1-tool', 'read'),
+                createReasoningPart('a1', 'a1-reasoning', 'Thinking about the shape of the plan.'),
+                createPlanPart('a1', 'Routing Plan'),
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+        expect(findActivity(projection, 'a1-reasoning')?.kind).toBe('reasoning');
+        expect(findActivity(projection, 'a1-plan')).toBe(undefined);
+    });
+
+    test('a plan written with ### section headings is exempt from the justification bucket', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1, planMode: true });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            finish: 'tool-calls',
+            parts: [
+                createToolPart('a1', 'a1-tool', 'read'),
+                createTextPart('a1', 'a1-plan-h3', structuredPlan('##')),
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+        expect(findActivity(projection, 'a1-plan-h3')).toBe(undefined);
+    });
+
+    test('a plan split across two assistant messages is exempt in both', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1, planMode: true });
+        const first = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            finish: 'tool-calls',
+            parts: [
+                // One recognized heading only -> NOT plan-bearing on its own.
+                createTextPart('a1', 'a1-plan-head', '# Support Chat Routing Plan\n\nSigned-out visitors cannot reach an agent.'),
+                createToolPart('a1', 'a1-tool', 'read'),
+            ],
+        });
+        const second = createMessageEntry({
+            id: 'a2',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 3,
+            finish: 'tool-calls',
+            parts: [
+                // One recognized heading only -> NOT plan-bearing on its own.
+                createTextPart('a2', 'a2-plan-tail', '## Implementation\n\n1. Fix the routing function.'),
+                createToolPart('a2', 'a2-tool', 'read'),
+            ],
+        });
+
+        const projection = projectTurnRecords([user, first, second]);
+        // Neither fragment is plan-bearing on its own; only the turn-level join is.
+        expect(findActivity(projection, 'a1-plan-head')).toBe(undefined);
+        expect(findActivity(projection, 'a2-plan-tail')).toBe(undefined);
+    });
+
+    test('non-plan-mode turns are unaffected by the turn-level exemption', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            finish: 'tool-calls',
+            parts: [
+                createToolPart('a1', 'a1-tool', 'read'),
+                createTextPart('a1', 'a1-text', structuredPlan()),
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+        expect(findActivity(projection, 'a1-text')?.kind).toBe('justification');
+    });
+});
+
+describe('plan-mode recorded only locally (Grok, 2026-08-22)', () => {
+    const findActivity = (
+        projection: ReturnType<typeof projectTurnRecords>,
+        partId: string,
+    ) => projection.turns[0]?.activityParts.find((record) => record.part.id === partId);
+
+    const reasoningPlan = [
+        'Perfect! The exact model ID is in the catalog.',
+        '<!--plan-->',
+        '# Zen API No Text Diagnosis',
+        '',
+        '## Context',
+        '',
+        'The error occurs when the API returns 200 with empty content.',
+    ].join('\n');
+
+    const buildTurn = (planModeMetadata: boolean) => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1, planMode: planModeMetadata });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            finish: 'tool-calls',
+            parts: [
+                createToolPart('a1', 'a1-tool', 'read'),
+                createReasoningPart('a1', 'a1-reasoning', reasoningPlan),
+            ],
+        });
+        return [user, assistant];
+    };
+
+    test('recordedPlanModeMessageIds alone enables the plan exemptions', () => {
+        // No plan-mode metadata and no synthetic instruction part — the flag
+        // lives only in the locally recorded set, the common local case.
+        const projection = projectTurnRecords(buildTurn(false), {
+            recordedPlanModeMessageIds: new Set(['u1']),
+        });
+        expect(findActivity(projection, 'a1-reasoning')).toBe(undefined);
+    });
+
+    test('without any plan-mode signal the reasoning part stays a thought', () => {
+        const projection = projectTurnRecords(buildTurn(false));
+        expect(findActivity(projection, 'a1-reasoning')?.kind).toBe('reasoning');
+    });
+
+    test('a plan straddling the reasoning and text channels exempts both halves', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            finish: 'tool-calls',
+            parts: [
+                createToolPart('a1', 'a1-tool', 'read'),
+                createReasoningPart('a1', 'a1-plan-head', 'Thinking.\n<!--plan-->\n# Routing Plan\n\n## Context\n\nWhy.'),
+                createTextPart('a1', 'a1-plan-tail', '## Implementation\n\n1. Fix it.\n\n## Verification\n\n1. Run tests.'),
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant], {
+            recordedPlanModeMessageIds: new Set(['u1']),
+        });
+        // The reasoning head hosts the plan card; the text tail is plan
+        // continuation — neither may land in the thought/justification bucket.
+        expect(findActivity(projection, 'a1-plan-head')).toBe(undefined);
+        expect(findActivity(projection, 'a1-plan-tail')).toBe(undefined);
+    });
+});

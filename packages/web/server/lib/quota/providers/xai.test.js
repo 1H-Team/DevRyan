@@ -7,6 +7,12 @@ const response = (payload, status = 200) => ({
   status,
   headers: { get: () => null },
   json: async () => payload,
+  arrayBuffer: async () => {
+    const bytes = payload instanceof Uint8Array
+      ? payload
+      : new TextEncoder().encode(JSON.stringify(payload));
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  },
 });
 
 describe('xAI web quota provider OAuth refresh', () => {
@@ -34,6 +40,9 @@ describe('xAI web quota provider OAuth refresh', () => {
             refresh_token: 'new-refresh',
             expires_in: '3600',
           });
+        }
+        if (url.includes('ConsumerUiSvc/GetRemainingResets')) {
+          return response(new Uint8Array());
         }
         billingCalls += 1;
         return billingCalls === 1

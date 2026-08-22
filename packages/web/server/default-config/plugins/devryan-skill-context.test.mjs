@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import {
+import { DevRyanSkillContextPlugin, __test } from './devryan-skill-context.mjs';
+
+// Constants live on `__test` because OpenCode's plugin loader rejects any module
+// with a non-function named export.
+const {
   ANTHROPIC_SKILL_CATALOG_DESCRIPTION_LIMIT,
-  DevRyanSkillContextPlugin,
   EXTERNAL_SKILL_REFERENCE_POLICY_MARKER,
   SKILL_CONTEXT_POLICY_MARKER,
   SKILL_CONTEXT_REUSE_MARKER,
-} from './devryan-skill-context.mjs';
+} = __test;
 
 let fixtureSequence = 0;
 
@@ -100,6 +103,21 @@ Use the skill tool to load a skill when a task matches its description.
     );
 
     expect(output.system).toEqual([system]);
+  });
+
+  it.each(['xai', 'grok', 'xai-oauth'])('compacts skill metadata for Grok provider alias %s', async (providerID) => {
+    const plugin = await DevRyanSkillContextPlugin();
+    const system = `<available_skills><skill><name>context-mode</name><description>${'Verbose details. '.repeat(30)}</description><location>/private/skill/SKILL.md</location></skill></available_skills>`;
+    const output = { system: [system] };
+
+    await plugin['experimental.chat.system.transform'](
+      { model: { providerID } },
+      output,
+    );
+
+    expect(output.system[0]).toContain('<name>context-mode</name>');
+    expect(output.system[0]).not.toContain('<location>');
+    expect(Buffer.byteLength(output.system[0], 'utf8')).toBeLessThan(Buffer.byteLength(system, 'utf8'));
   });
 
   it('idempotently guides skill and ctx_execute_file while leaving unrelated tools unchanged', async () => {
@@ -285,5 +303,92 @@ Use the skill tool to load a skill when a task matches its description.
     expect(outputs(transformedRemoved)).toEqual([full]);
     expect(outputs(transformedMarkerThenFull)[0]).toContain(SKILL_CONTEXT_REUSE_MARKER);
     expect(outputs(transformedMarkerThenFull)[1]).toBe(full);
+  });
+});
+
+describe('skill alias resolution', () => {
+  // Real shapes observed in the 1Health repo on 2026-08-21, where the model
+  // called the directory slug and the tool failed with "not found" even though
+  // every one of these skills existed on disk.
+  const catalog = [
+    { name: 'Accessibility (a11y)', location: '/repo/.agents/skills/accessibility/SKILL.md' },
+    { name: '1Health Vitest', location: '/repo/.agents/skills/1health-vitest/SKILL.md' },
+    { name: 'Linear', location: '/repo/.agents/skills/linear/SKILL.md' },
+    { name: '1Health Data Layer', location: '/repo/.agents/skills/1health-data-layer/SKILL.md' },
+  ];
+
+  const makePlugin = () => DevRyanSkillContextPlugin({
+    client: { app: { skills: async () => ({ data: catalog }) } },
+    directory: '/repo',
+  });
+
+  const runBefore = async (requested) => {
+    const hooks = await makePlugin();
+    const output = { args: { name: requested } };
+    await hooks['tool.execute.before']({ tool: 'skill' }, output);
+    return output.args.name;
+  };
+
+  it('rewrites a directory slug to the registered display name', async () => {
+    expect(await runBefore('1health-vitest')).toBe('1Health Vitest');
+    expect(await runBefore('1health-data-layer')).toBe('1Health Data Layer');
+  });
+
+  it('resolves a slug that is a prefix of the registered name', async () => {
+    expect(await runBefore('accessibility')).toBe('Accessibility (a11y)');
+  });
+
+  it('resolves case-insensitively', async () => {
+    expect(await runBefore('linear')).toBe('Linear');
+  });
+
+  it('leaves an already-correct canonical name untouched', async () => {
+    expect(await runBefore('1Health Vitest')).toBe('1Health Vitest');
+  });
+
+  it('leaves an unknown name untouched so the tool reports it honestly', async () => {
+    expect(await runBefore('definitely-not-a-skill')).toBe('definitely-not-a-skill');
+  });
+
+  it('ignores tools other than skill', async () => {
+    const hooks = await makePlugin();
+    const output = { args: { name: 'accessibility' } };
+    await hooks['tool.execute.before']({ tool: 'read' }, output);
+    expect(output.args.name).toBe('accessibility');
+  });
+
+  it('does not throw when the catalog cannot be read', async () => {
+    const hooks = await DevRyanSkillContextPlugin({
+      client: { app: { skills: async () => { throw new Error('boom'); } } },
+    });
+    const output = { args: { name: 'accessibility' } };
+    await expect(hooks['tool.execute.before']({ tool: 'skill' }, output)).resolves.toBeUndefined();
+    expect(output.args.name).toBe('accessibility');
+  });
+
+  it('rewrites the not-found error with slugs and a suggestion', async () => {
+    const hooks = await makePlugin();
+    const output = { output: 'Skill "1health-serch" not found. Available skills: Accessibility (a11y), Linear' };
+    await hooks['tool.execute.after']({ tool: 'skill' }, output);
+
+    expect(output.output).toContain('accessibility (Accessibility (a11y))');
+    expect(output.output).toContain('1health-vitest (1Health Vitest)');
+    // "Linear" and its slug normalize identically, so it renders once.
+    expect(output.output).toContain('Linear');
+    expect(output.output).not.toContain('linear (Linear)');
+  });
+
+  it('suggests the closest match in the not-found error', async () => {
+    const hooks = await makePlugin();
+    const output = { output: 'Skill "accessibility" not found. Available skills: Linear' };
+    await hooks['tool.execute.after']({ tool: 'skill' }, output);
+    expect(output.output).toContain('Did you mean "Accessibility (a11y)"?');
+  });
+
+  it('leaves successful skill output alone', async () => {
+    const hooks = await makePlugin();
+    const output = { output: '# Accessibility\nsome real skill body' };
+    await hooks['tool.execute.after']({ tool: 'skill' }, output);
+    expect(output.output).toBe('# Accessibility\nsome real skill body');
   });
 });

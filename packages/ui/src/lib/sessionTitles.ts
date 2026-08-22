@@ -152,6 +152,15 @@ export const deriveSessionTitleFromUserText = (
   return `${normalized.slice(0, MAX_DERIVED_TITLE_LENGTH - 3).trimEnd()}...`
 }
 
+export const isPlaceholderSessionTitle = (title?: string | null): boolean => {
+  const normalized = typeof title === "string" ? normalizeTitleWhitespace(title) : ""
+  return !normalized
+    || normalized.toLowerCase() === DEFAULT_SESSION_TITLE.toLowerCase()
+    || isCursorAcpErrorTitle(normalized)
+    || isGeneratedNewSessionTitle(normalized)
+    || isPlanControlSessionTitle(normalized)
+}
+
 export const resolveDisplaySessionTitle = ({
   title,
   latestUserText,
@@ -164,12 +173,7 @@ export const resolveDisplaySessionTitle = ({
   const normalizedTitle = typeof title === "string"
     ? collapseAdjacentDuplicateTitleWords(normalizeTitleWhitespace(title))
     : ""
-  if (
-    !normalizedTitle
-    || isCursorAcpErrorTitle(normalizedTitle)
-    || isGeneratedNewSessionTitle(normalizedTitle)
-    || isPlanControlSessionTitle(normalizedTitle)
-  ) {
+  if (isPlaceholderSessionTitle(normalizedTitle)) {
     return deriveSessionTitleFromUserText(latestUserText, fallback)
   }
   const smartTitle = deriveSmartTitleFromUserText(normalizedTitle)

@@ -721,3 +721,39 @@ export const resolveFileReadPath = async (targetPath: string): Promise<FsReadPat
     return { ok: false, status: 500, error: 'Failed to resolve file path' };
   }
 };
+
+export const resolveWorkspaceFileReadPath = async (
+  targetPath: string,
+  directoryHint = '',
+): Promise<FsReadPathResolution> => {
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!workspaceRoot) {
+    return { ok: false, status: 403, error: 'Workspace image is unavailable' };
+  }
+  const hintedRoot = directoryHint.trim();
+  if (hintedRoot && path.resolve(hintedRoot) !== path.resolve(workspaceRoot)) {
+    return { ok: false, status: 403, error: 'Workspace image is unavailable' };
+  }
+  const trimmed = targetPath.trim();
+  if (!trimmed) return { ok: false, status: 400, error: 'Path is required' };
+  const resolvedTarget = resolveUserPath(trimmed, workspaceRoot);
+  if (!resolvedTarget) return { ok: false, status: 400, error: 'Path is required' };
+  const lexicalPath = path.resolve(resolvedTarget);
+  if (!isPathInside(lexicalPath, workspaceRoot)) {
+    return { ok: false, status: 403, error: 'Workspace image is unavailable' };
+  }
+  try {
+    const [canonicalPath, canonicalRoot] = await Promise.all([
+      fs.promises.realpath(lexicalPath),
+      fs.promises.realpath(workspaceRoot),
+    ]);
+    if (!isPathInside(canonicalPath, canonicalRoot)) {
+      return { ok: false, status: 403, error: 'Workspace image is unavailable' };
+    }
+    return { ok: true, resolvedPath: canonicalPath };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err?.code === 'ENOENT') return { ok: false, status: 404, error: 'File not found' };
+    return { ok: false, status: 500, error: 'Failed to resolve file path' };
+  }
+};

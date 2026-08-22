@@ -14,10 +14,6 @@ import {
   canonicalizeManagedQuotaProviderId,
 } from './credentials/store.js';
 import {
-  fetchOpenCodeGoUsage,
-  resolveOpenCodeGoCredentials,
-} from './providers/opencode-go.js';
-import {
   fetchOllamaCloudUsage,
   resolveOllamaCloudCredential,
 } from './providers/ollama-cloud.js';
@@ -25,6 +21,10 @@ import {
   resolveCursorQuotaCredential,
   validateCursorQuotaCredential,
 } from './providers/cursor-acp.js';
+import {
+  resolveOpenCodeZenCredential,
+  validateOpenCodeZenCredential,
+} from './providers/opencode.js';
 import {
   createMeridianClaudeContextUsageClient,
   resolveSafeClaudeQuotaUrl,
@@ -103,9 +103,8 @@ const defaultCredentialRuntime = {
   readCredential: readManagedQuotaCredential,
   writeCredential: writeManagedQuotaCredential,
   validate: async (providerId, credential) => {
-    if (providerId === 'opencode-go') {
-      await fetchOpenCodeGoUsage(credential);
-      return credential;
+    if (providerId === 'opencode') {
+      return validateOpenCodeZenCredential(credential);
     }
     if (providerId === 'ollama-cloud') {
       await fetchOllamaCloudUsage(credential);
@@ -114,7 +113,7 @@ const defaultCredentialRuntime = {
     return validateCursorQuotaCredential(credential);
   },
   getEffectiveSource: (providerId) => {
-    if (providerId === 'opencode-go') return resolveOpenCodeGoCredentials().source;
+    if (providerId === 'opencode') return resolveOpenCodeZenCredential().source;
     if (providerId === 'ollama-cloud') return resolveOllamaCloudCredential().source;
     return resolveCursorQuotaCredential().source;
   },

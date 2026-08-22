@@ -467,6 +467,20 @@ export function createEventPipeline(input: EventPipelineInput) {
     d.coalesced.delete(partUpdatedKey(props.messageID, props.partID))
   }
 
+  // Mirror of the above: a delta arriving after a queued part snapshot must not
+  // coalesce into a slot BEFORE that snapshot, or the flush applies the newer
+  // delta first and the stale snapshot then overwrites it — dropping the delta's
+  // text mid-stream.
+  const invalidateDeltaCoalescingAfterPartUpdated = (d: DirectoryQueue, payload: Event) => {
+    if (payload.type !== "message.part.updated") return
+    const part = (payload.properties as { part?: { id?: string; messageID?: string } }).part
+    if (!part?.messageID || !part.id) return
+    const prefix = `message.part.delta:${part.messageID}:${part.id}:`
+    for (const coalescedKey of d.coalesced.keys()) {
+      if (coalescedKey.startsWith(prefix)) d.coalesced.delete(coalescedKey)
+    }
+  }
+
   const flushDir = (directory: string) => {
     const d = directories.get(directory)
     if (!d) return
@@ -661,6 +675,7 @@ export function createEventPipeline(input: EventPipelineInput) {
     }
     const d = getOrCreateDir(routedDirectory)
     invalidatePartUpdatedCoalescingAfterDelta(d, normalizedPayload)
+    invalidateDeltaCoalescingAfterPartUpdated(d, normalizedPayload)
     const k = key(normalizedPayload)
     if (k) {
       const i = d.coalesced.get(k)

@@ -37,11 +37,11 @@ class MemoryStorage implements Storage {
 }
 
 describe('theme catalog migration', () => {
-  test('moves legacy Default selections to dedicated DevRyan IDs', () => {
+  test('moves removed theme selections to dedicated DevRyan IDs', () => {
     const result = migrateThemeCatalogSettings({
       themeId: 'onedarkpro-light',
-      lightThemeId: 'onedarkpro-light',
-      darkThemeId: 'carbonfox-dark',
+      lightThemeId: 'carbonfox-light',
+      darkThemeId: 'onedarkpro-dark',
     });
 
     expect(result).toEqual({
@@ -55,7 +55,7 @@ describe('theme catalog migration', () => {
     });
   });
 
-  test('migrates only legacy Default IDs in mixed selections', () => {
+  test('migrates only removed IDs in mixed selections', () => {
     const result = migrateThemeCatalogSettings({
       lightThemeId: 'custom-light',
       darkThemeId: 'carbonfox-dark',
@@ -65,25 +65,32 @@ describe('theme catalog migration', () => {
     expect(result.settings.darkThemeId).toBe(DEFAULT_DARK_THEME_ID);
   });
 
-  test('does not reinterpret intentional upstream selections after version 2', () => {
+  test('migrates removed selections from the previous catalog version', () => {
     const settings = {
       lightThemeId: 'onedarkpro-light',
       darkThemeId: 'carbonfox-dark',
-      themeCatalogVersion: THEME_CATALOG_VERSION,
+      themeCatalogVersion: THEME_CATALOG_VERSION - 1,
     };
 
-    expect(migrateThemeCatalogSettings(settings)).toEqual({ settings, changed: false });
+    expect(migrateThemeCatalogSettings(settings)).toEqual({
+      changed: true,
+      settings: {
+        lightThemeId: DEFAULT_LIGHT_THEME_ID,
+        darkThemeId: DEFAULT_DARK_THEME_ID,
+        themeCatalogVersion: THEME_CATALOG_VERSION,
+      },
+    });
   });
 
   test('updates browser-local theme IDs and records the migration version', () => {
     const storage = new MemoryStorage();
-    storage.setItem('selectedThemeId', 'carbonfox-dark');
-    storage.setItem('lightThemeId', 'onedarkpro-light');
-    storage.setItem('darkThemeId', 'carbonfox-dark');
+    storage.setItem('selectedThemeId', 'carbonfox-light');
+    storage.setItem('lightThemeId', 'carbonfox-light');
+    storage.setItem('darkThemeId', 'onedarkpro-dark');
 
     migrateThemeCatalogLocalStorage(storage);
 
-    expect(storage.getItem('selectedThemeId')).toBe(DEFAULT_DARK_THEME_ID);
+    expect(storage.getItem('selectedThemeId')).toBe(DEFAULT_LIGHT_THEME_ID);
     expect(storage.getItem('lightThemeId')).toBe(DEFAULT_LIGHT_THEME_ID);
     expect(storage.getItem('darkThemeId')).toBe(DEFAULT_DARK_THEME_ID);
     expect(storage.getItem('themeCatalogVersion')).toBe(String(THEME_CATALOG_VERSION));

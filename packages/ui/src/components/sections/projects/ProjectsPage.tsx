@@ -13,6 +13,7 @@ import { ProjectActionsSection } from '@/components/sections/projects/ProjectAct
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useI18n } from '@/lib/i18n';
 import { TurnEvidenceSettingsSection } from './TurnEvidenceSettingsSection';
+import { resolveProjectDisplayName } from '@/lib/projectDisplayName';
 
 export const ProjectsPage: React.FC = () => {
   const { t } = useI18n();
@@ -79,7 +80,7 @@ export const ProjectsPage: React.FC = () => {
       setIconBackground(null);
       return;
     }
-    setName(selectedProject.label ?? '');
+    setName(resolveProjectDisplayName(selectedProject));
     setIcon(selectedProject.icon ?? null);
     setColor(selectedProject.color ?? null);
     setIconBackground(selectedProject.iconBackground ?? null);

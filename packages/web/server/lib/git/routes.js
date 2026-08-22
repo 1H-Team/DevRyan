@@ -3,9 +3,10 @@ import {
   COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
   generateCommitMessageDirect,
 } from './commit-message.js';
-import { collectCommitMessageContext } from './commit-message-context.js';
+import { collectCommitMessageContext, validateCommitMessageSelectedFiles } from './commit-message-context.js';
 import { requireManagedAssignedBranch } from '../multi-user/branch-authorization.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
+import { COMMIT_DRAFT_DEADLINE_MS, createCommitModelCooldowns } from '@openchamber/shared-runtime';
 
 const extractGitErrorText = (error) => {
   const message = typeof error?.message === 'string' ? error.message : '';
@@ -31,6 +32,37 @@ const sendGitError = (res, error, fallback) => res.status(error?.statusCode || 5
   ...(Array.isArray(error?.conflictFiles) ? { conflictFiles: error.conflictFiles } : {}),
 });
 
+const COMMIT_CONTEXT_DEADLINE_MS = 1_500;
+
+const collectCommitContextWithinDeadline = async ({ promise, selectedFiles, stagedOnly }) => {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve({
+          status: 'ready',
+          context: {
+            branch: '',
+            tracking: null,
+            scope: stagedOnly ? 'staged-only' : 'staged-and-unstaged',
+            stagedOnly,
+            selectedFiles: selectedFiles.map((filePath) => ({
+              path: filePath,
+              index: '?',
+              workingDir: '?',
+            })),
+            recentCommitSubjects: [],
+            contextWarning: 'Git context exceeded the speed budget; generated from selected file metadata',
+          },
+        }), COMMIT_CONTEXT_DEADLINE_MS);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+};
+
 export function registerGitRoutes(app, {
   resolveZenModel = async (override) => override || 'gpt-5-nano',
   resolveCommitZenModel,
@@ -41,6 +73,7 @@ export function registerGitRoutes(app, {
   registerCommitTemplateRoutes(app);
 
   let gitLibraries = null;
+  const commitModelCooldowns = createCommitModelCooldowns();
   const getGitLibraries = async () => {
     if (!gitLibraries) {
       gitLibraries = typeof loadGitLibraries === 'function'
@@ -114,17 +147,20 @@ export function registerGitRoutes(app, {
         model: details.model,
         catalogState: details.catalogState,
         retried: details.retried === true,
+        source: details.source,
+        providerOutcome: details.providerOutcome,
       });
     } catch {
       // Diagnostics must never break commit-message generation.
     }
   };
 
-  const runCommitMessageGeneration = async ({ context, guidance, requestedModel, timings }) => {
+  const runCommitMessageGeneration = async ({ context, guidance, requestedModel, timings, deadlineAt }) => {
     const modelStartedAt = Date.now();
     const selection = await resolveCommitModelSelection(requestedModel);
     timings.modelMs = Date.now() - modelStartedAt;
-    timings.model = selection.model;
+    const selectedModel = commitModelCooldowns.select(selection.model, selection.fallbackModel);
+    timings.model = selectedModel;
     timings.catalogState = selection.catalogState;
     let generatorTiming = null;
     const providerStartedAt = Date.now();
@@ -133,8 +169,10 @@ export function registerGitRoutes(app, {
       message = await generateCommitMessage({
         context,
         guidance,
-        zenModel: selection.model,
-        fallbackZenModel: selection.fallbackModel,
+        zenModel: selectedModel,
+        fallbackZenModel: null,
+        deadlineAt,
+        skipProvider: !selectedModel,
         onTiming: (value) => {
           generatorTiming = value;
         },
@@ -144,11 +182,21 @@ export function registerGitRoutes(app, {
       timings.parseMs = generatorTiming?.parseMs ?? 0;
       timings.retried = generatorTiming?.retried === true;
     }
+    const generation = message?._generation || {};
+    if (generation.providerOutcome === 'deadline' || generation.providerOutcome === 'error') {
+      commitModelCooldowns.markUnhealthy(selectedModel);
+    }
     return {
-      message,
-      model: selection.model,
+      message: {
+        subject: message.subject,
+        highlights: Array.isArray(message.highlights) ? message.highlights : [],
+      },
+      warning: typeof generation.warning === 'string' ? generation.warning : null,
+      source: generation.source || 'ai',
+      providerOutcome: generation.providerOutcome || 'complete',
+      model: selectedModel,
       catalogState: selection.catalogState,
-      retried: generatorTiming?.retried === true,
+      retried: false,
     };
   };
 
@@ -897,6 +945,7 @@ export function registerGitRoutes(app, {
         guidance: typeof guidance === 'string' ? guidance : undefined,
         requestedModel: requestedModel || COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
         timings,
+        deadlineAt: startedAt + COMMIT_DRAFT_DEADLINE_MS,
       });
       timings.totalMs = Date.now() - startedAt;
       timingDetails = {
@@ -906,10 +955,12 @@ export function registerGitRoutes(app, {
         model: generated.model,
         catalogState: generated.catalogState,
         retried: generated.retried,
+        source: generated.source,
+        providerOutcome: generated.providerOutcome,
       };
       setCommitServerTiming(res, timings);
       recordCommitGenerationTiming(req, timings, timingDetails);
-      res.json({ message: generated.message });
+      res.json({ message: generated.message, ...(generated.warning ? { warnings: [generated.warning] } : {}) });
     } catch (error) {
       timings.totalMs = Date.now() - startedAt;
       timingDetails = {
@@ -949,13 +1000,18 @@ export function registerGitRoutes(app, {
       } = req.body || {};
       const { getStatus, getLog, getDiff } = await getGitLibraries();
       const contextStartedAt = Date.now();
-      const contextResult = await collectCommitMessageContext({
-        directory,
-        selectedFiles,
+      const validatedSelectedFiles = validateCommitMessageSelectedFiles(selectedFiles);
+      const contextResult = await collectCommitContextWithinDeadline({
+        promise: collectCommitMessageContext({
+          directory,
+          selectedFiles: validatedSelectedFiles,
+          stagedOnly: stagedOnly === true,
+          getStatus,
+          getLog,
+          getDiff,
+        }),
+        selectedFiles: validatedSelectedFiles,
         stagedOnly: stagedOnly === true,
-        getStatus,
-        getLog,
-        getDiff,
       });
       timings.contextMs = Date.now() - contextStartedAt;
       if (contextResult.status === 'blocked') {
@@ -972,6 +1028,7 @@ export function registerGitRoutes(app, {
         guidance: typeof guidance === 'string' ? guidance : undefined,
         requestedModel: requestedModel || COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
         timings,
+        deadlineAt: startedAt + COMMIT_DRAFT_DEADLINE_MS,
       });
       timings.totalMs = Date.now() - startedAt;
       timingDetails = {
@@ -981,10 +1038,18 @@ export function registerGitRoutes(app, {
         model: generated.model,
         catalogState: generated.catalogState,
         retried: generated.retried,
+        source: generated.source,
+        providerOutcome: generated.providerOutcome,
       };
       setCommitServerTiming(res, timings);
       recordCommitGenerationTiming(req, timings, timingDetails);
-      return res.json({ status: 'complete', commits: [generated.message] });
+      return res.json({
+        status: 'complete',
+        commits: [generated.message],
+        ...((generated.warning || contextResult.context.contextWarning) ? {
+          warnings: [generated.warning, contextResult.context.contextWarning].filter(Boolean),
+        } : {}),
+      });
     } catch (error) {
       timings.totalMs = Date.now() - startedAt;
       timingDetails = {
@@ -1321,7 +1386,10 @@ export function registerGitRoutes(app, {
         directory: worktreeDirectory,
         deleteLocalBranch: req.body?.deleteLocalBranch === true,
       });
-      res.json({ success: Boolean(result) });
+      res.json({
+        success: Boolean(result),
+        removedPath: typeof result?.removedPath === 'string' ? result.removedPath : worktreeDirectory,
+      });
     } catch (error) {
       console.error('Failed to remove worktree:', error);
       res.status(error?.statusCode || 500).json({

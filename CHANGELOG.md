@@ -4,7 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- OpenCode: update the bundled SDK dependency and managed runtime target to 1.18.19 across web, UI, VS Code, and the workspace lockfile.
+## [1.1.6] - 2026-08-20
+
+- Chat: render completed assistant PNG, JPEG, GIF, and WebP references in one lazy responsive gallery, with secure message-scoped local-file authorization, bounded generated-file grants, and matching web/Electron/VS Code parsing rules.
+- Scheduling: claim due occurrences under a cross-process lock before execution, advance one-time and recurring schedules atomically, and retry terminal-state persistence to prevent duplicate runs across server processes and restarts.
+- Sessions: preserve canonical message ordering through out-of-order updates, improve missing-directory recovery and project naming, and keep live completion, queued input, and window-title state aligned without broad render fanout.
+- Providers: share OpenCode Go quota normalization across web and VS Code, verify duplicate xAI tool aliases by matching catalog schemas before disabling them, and preserve JSONC configuration comments during runtime updates.
+- OpenCode: update the bundled SDK dependency and managed runtime target to 1.18.21 and the packaged Claude Code runtime to 2.1.215.
+- UI: refine overlay scrollbar behavior, image and activity presentation, project selectors, provider credentials, sidebar status, and the Grok waiting state with focused regression coverage.
+- Runtime parity: harden filesystem, Git, proxy keepalive, configuration, quota, and image-asset contracts across web, Electron, and VS Code.
+- Sessions: never name a session after the prompt that started it — titles are now persisted only from a real model-generated summary, title summarization retries transient provider failures and falls back to a second free model before giving up, and the UI treats placeholder or generated titles as untitled until that summary exists.
+- Startup: bound OpenCode user-plugin installs with a timeout and degrade a failed install to a warning instead of aborting boot, and surface bootstrap progress on the Electron startup splash instead of a bare logo.
+- Providers: warm the xAI tool-catalog dedupe overrides on a cold start under a dedicated timeout so the first Grok prompt no longer ships the duplicated MCP tool catalog, and render provisional parts for buffered streaming deltas using durable part-type hints.
+- Chat: keep the provider waiting state from overriding the normal status ladder once a turn has streamed any activity, and detect plan-card sentinels that models emit with backticks or internal spaces so structured plans still render as plan cards.
+- Release: bump DevRyan workspace, Electron, VS Code, web, shared runtimes, and legacy desktop metadata to 1.1.6.
 
 ## [1.1.5] - 2026-08-19
 

@@ -83,6 +83,94 @@ describe('agent runtime warmup', () => {
     }));
   });
 
+  it('prewarms the Grok tool catalog without creating a prompt', async () => {
+    const warmXaiToolCatalog = vi.fn(async () => true);
+    const warmup = createAgentRuntimeWarmup({
+      buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      fetchImpl: vi.fn(async () => Response.json({})),
+      discoverSkills: () => [],
+      readSkillFile: vi.fn(),
+      warmXaiToolCatalog,
+      now: () => 1_000,
+    });
+
+    const result = await warmup.warm({ directory: '/project', timeoutMs: 1_000 });
+
+    expect(warmXaiToolCatalog).toHaveBeenCalledWith({
+      directory: '/project',
+      signal: expect.anything(),
+    });
+    expect(result.tasks.map((task) => task.name)).toEqual([
+      'health',
+      'config',
+      'providers',
+      'agents',
+      'sessionStatus',
+      'opencodeSkills',
+      'xaiTools',
+      'mcp',
+      'commands',
+      'skills',
+    ]);
+  });
+
+  it('gives the Grok tool-catalog warm its own budget beyond the core timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveWarm;
+      const warmXaiToolCatalog = vi.fn(() => new Promise((resolve) => { resolveWarm = resolve; }));
+      const warmup = createAgentRuntimeWarmup({
+        buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        fetchImpl: vi.fn(async () => Response.json({})),
+        discoverSkills: () => [],
+        readSkillFile: vi.fn(),
+        warmXaiToolCatalog,
+      });
+
+      const warmPromise = warmup.warm({ directory: '/project', timeoutMs: 1_000 });
+      // Past the core budget but inside the xai budget: the warm must survive.
+      await vi.advanceTimersByTimeAsync(8_000);
+      resolveWarm(true);
+      const result = await warmPromise;
+
+      const xaiTask = result.tasks.find((task) => task.name === 'xaiTools');
+      expect(xaiTask).toEqual(expect.objectContaining({ name: 'xaiTools', status: 'ready' }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('aborts the Grok tool-catalog warm when its own budget elapses', async () => {
+    vi.useFakeTimers();
+    try {
+      let observedSignal;
+      const warmXaiToolCatalog = vi.fn(({ signal }) => {
+        observedSignal = signal;
+        return new Promise(() => {});
+      });
+      const warmup = createAgentRuntimeWarmup({
+        buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        fetchImpl: vi.fn(async () => Response.json({})),
+        discoverSkills: () => [],
+        readSkillFile: vi.fn(),
+        warmXaiToolCatalog,
+      });
+
+      const warmPromise = warmup.warm({ directory: '/project', timeoutMs: 1_000, xaiTimeoutMs: 2_000 });
+      await vi.advanceTimersByTimeAsync(3_000);
+      const result = await warmPromise;
+
+      const xaiTask = result.tasks.find((task) => task.name === 'xaiTools');
+      expect(xaiTask).toEqual(expect.objectContaining({ name: 'xaiTools', status: 'timeout' }));
+      expect(observedSignal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('warms only skills returned by the approved-skill resolver', async () => {
     const readSkillFile = vi.fn(() => 'skill content');
     const resolveApprovedSkills = vi.fn(() => [

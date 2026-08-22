@@ -20,6 +20,7 @@ describe('quota provider metadata', () => {
       'NanoGPT',
       'Ollama Cloud',
       'OpenCode Go',
+      'OpenCode Zen',
       'OpenRouter',
       'xAI',
       'z.ai',

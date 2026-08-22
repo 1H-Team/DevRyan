@@ -20,6 +20,7 @@ const AGENT_OWNERSHIP_CACHE_TTL_MS = 30_000;
 const AGENT_OWNERSHIP_MESSAGE_LIMIT = 20;
 const DEFAULT_TIMEOUT_SECONDS = 30 * 60;
 const MIN_TIMEOUT_SECONDS = DEFAULT_TIMEOUT_SECONDS;
+const DESIGNER_MIN_TIMEOUT_SECONDS = 60 * 60;
 const FIXER_MIN_TIMEOUT_SECONDS = 60 * 60;
 const ORACLE_MIN_TIMEOUT_SECONDS = 60 * 60;
 const MAX_TIMEOUT_SECONDS = 24 * 60 * 60;
@@ -53,6 +54,7 @@ const RECOVERY_CONTINUATION_STALE_MS = 60_000;
 
 const resolveMinimumTimeoutSeconds = (agent) => {
   const normalizedAgent = typeof agent === 'string' ? agent.trim().toLowerCase() : '';
+  if (normalizedAgent === 'designer') return DESIGNER_MIN_TIMEOUT_SECONDS;
   if (normalizedAgent === 'fixer') return FIXER_MIN_TIMEOUT_SECONDS;
   if (normalizedAgent === 'oracle') return ORACLE_MIN_TIMEOUT_SECONDS;
   return MIN_TIMEOUT_SECONDS;
@@ -95,6 +97,36 @@ const getBridge = () => {
     throw new Error('DevRyan managed orchestration bridge must use the private IPv4 loopback host');
   }
   return { url: url.toString(), token };
+};
+
+/**
+ * The raw submit envelope reports `"status": "starting"` and nothing else. On
+ * 2026-08-21 an orchestrator read three successive successful dispatches as
+ * having failed — its own reasoning said "the prior turn queued Explorer
+ * discovery", then "the Explorer discovery I queued earlier wasn't actually
+ * dispatched" — and re-issued the same task twice, running three identical
+ * subagents. The envelope needs to state, in words, that the work is already
+ * underway and how to collect it.
+ */
+const annotateDispatchResult = (result, dispatchCallId) => {
+  if (!isRecord(result) || !isRecord(result.task)) return result;
+  const { task } = result;
+  const alreadyRunning = task.dispatchCallId && dispatchCallId && task.dispatchCallId !== dispatchCallId;
+  const label = typeof task.label === 'string' && task.label ? task.label : task.agent;
+
+  const dispatched = alreadyRunning
+    ? `ALREADY RUNNING. This exact task was already dispatched earlier in this session and is still running as task ${task.taskId} ("${label}"). A second subagent was NOT started.`
+    : `DISPATCHED. Task ${task.taskId} ("${label}", agent "${task.agent}") is now running${task.childSessionId ? ` in child session ${task.childSessionId}` : ''}.`;
+
+  return {
+    ...result,
+    dispatched: true,
+    instructions: [
+      dispatched,
+      'Do NOT dispatch this task again — the work is underway and re-dispatching duplicates it.',
+      `Call devryan_task with action "wait" and taskId "${task.taskId}" to block until it finishes and collect its result.`,
+    ].join(' '),
+  };
 };
 
 const buildIdempotencyKey = (context, action, args, dispatchCallId = null) => {
@@ -752,6 +784,7 @@ const executeAction = async (args, context, client, dispatchCallId = null, resul
         ? null
         : requireText(context.messageID, 'context.messageID'),
       dispatchCallId,
+      allowDuplicate: args.allow_duplicate === true,
       parentTaskId: null,
       directory: requireText(context.directory, 'context.directory'),
       mode: context.agent === 'builder' ? 'builder' : 'orchestrator',
@@ -764,9 +797,10 @@ const executeAction = async (args, context, client, dispatchCallId = null, resul
       prompt: normalizedArgs.prompt,
       timeoutAt: Date.now() + timeoutSeconds * 1_000,
     }, resultMode), { signal: context.abort });
-    return executionNotice && isRecord(result)
+    const withNotice = executionNotice && isRecord(result)
       ? { ...result, executionNotice }
       : result;
+    return annotateDispatchResult(withNotice, dispatchCallId);
   }
 
   const scoped = buildScopedParams(args, context);
@@ -1493,16 +1527,25 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       state.knownBarrier = true;
       invokingAgent ??= await requireInvokingAgent(rootSessionId, input?.callID);
       if (invokingAgent === 'builder') return;
-      const taskIds = Array.isArray(barrier.taskIds) ? barrier.taskIds.join(', ') : '';
+      const taskIdList = Array.isArray(barrier.taskIds) ? barrier.taskIds : [];
+      const taskIds = taskIdList.join(', ');
+      // Be explicit about the ONE call that can make progress. The generic
+      // "use devryan_task wait" wording left an orchestrator retrying ordinary
+      // tools — on 2026-08-21 five consecutive ctx_search/bash/grep calls all
+      // failed against this barrier, each burning a full turn.
+      const nextCall = taskIdList.length > 0
+        ? `devryan_task with action "wait" and task_id "${taskIdList[0]}"`
+        : 'devryan_task with action "wait"';
+      const blockedNote = `Every tool except devryan_task will keep failing until the barrier clears, so do not retry ${toolName} or try a different tool. Call ${nextCall} now.`;
       if (barrier.state === 'active') {
         throw new Error(
           `Parent work is blocked by active managed tasks${taskIds ? `: ${taskIds}` : ''}. `
-          + 'Use devryan_task wait for each task before continuing parent work.',
+          + blockedNote,
         );
       }
       throw new Error(
         `Parent work is blocked by managed task results${taskIds ? `: ${taskIds}` : ''}. `
-        + 'Use devryan_task wait for each result, then continue, retry, resume, or abandon it.',
+        + `${blockedNote} Once it returns, disposition the result with continue, retry, resume, or abandon.`,
       );
     }
     if (!state.knownBarrier) return;
@@ -1527,7 +1570,8 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         model_id: tool.schema.string().optional().describe('Compatibility fallback model ID when no runtime agent catalog is available. Supply together with provider_id; configured agent settings are authoritative.'),
         agent: tool.schema.string().optional().describe('Agent name for start or an optional retry/resume override.'),
         variant: tool.schema.string().optional().describe('Optional compatibility fallback variant. The configured agent variant is authoritative when the runtime catalog is available.'),
-        timeout_seconds: tool.schema.number().int().min(MIN_TIMEOUT_SECONDS).max(MAX_TIMEOUT_SECONDS).optional().describe('Timeout in seconds. Defaults to 3600 for Fixer and Oracle and 1800 for other ordinary specialists. Use 7200 when a closed task also owns builds or browser verification. On retry, resume, and retry_in_place it extends the window, which otherwise inherits the original task\'s.'),
+        timeout_seconds: tool.schema.number().int().min(MIN_TIMEOUT_SECONDS).max(MAX_TIMEOUT_SECONDS).optional().describe('Timeout in seconds. Defaults to 3600 for Designer, Fixer, and Oracle and 1800 for other ordinary specialists. Use 7200 when a closed task also owns builds or browser verification. On retry, resume, and retry_in_place it extends the window, which otherwise inherits the original task\'s.'),
+        allow_duplicate: tool.schema.boolean().optional().describe('For start only: permit a second task with the same agent and effectively the same prompt while the first is still running. DevRyan otherwise collapses such a start onto the running task, because a repeated dispatch is far more often the model re-issuing work it already started than a deliberate parallel fan-out. Set this only when you genuinely want the same agent working the same prompt twice at once.'),
         cascade: tool.schema.boolean().optional().describe('For cancel only: also cancel explicit managed descendants.'),
         reason: tool.schema.string().optional().describe('Optional cancellation reason.'),
       },

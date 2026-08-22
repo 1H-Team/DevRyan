@@ -7,14 +7,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { RiArrowDownSLine, RiFolderLine } from '@remixicon/react';
-import { useProjectsStore } from '@/stores/useProjectsStore';
+import { sortProjectsAlphabetically, useProjectsStore } from '@/stores/useProjectsStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
-
-const formatProjectLabel = (label: string): string => {
-  return label.replace(/[-_]/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
-};
+import { resolveProjectDisplayName } from '@/lib/projectDisplayName';
 
 export const SettingsProjectSelector: React.FC<{ className?: string }> = ({ className }) => {
   const { t } = useI18n();
@@ -25,7 +22,7 @@ export const SettingsProjectSelector: React.FC<{ className?: string }> = ({ clas
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
 
   const sortedProjects = React.useMemo(() => {
-    return [...projects].sort((a, b) => (a.label || a.path).localeCompare(b.label || b.path));
+    return sortProjectsAlphabetically(projects);
   }, [projects]);
 
   const activeProject = React.useMemo(() => {
@@ -39,10 +36,9 @@ export const SettingsProjectSelector: React.FC<{ className?: string }> = ({ clas
     return null;
   }
 
-  const rawLabel = activeProject?.label && activeProject.label.trim().length > 0
-    ? activeProject.label
-    : (activeProject?.path.split('/').filter(Boolean).pop() || activeProject?.path || t('settings.shared.projectSelector.fallbackProject'));
-  const label = formatProjectLabel(rawLabel);
+  const label = activeProject
+    ? resolveProjectDisplayName(activeProject, t('settings.shared.projectSelector.fallbackProject'))
+    : t('settings.shared.projectSelector.fallbackProject');
 
   return (
     <div className={cn(className)}>
@@ -73,10 +69,7 @@ export const SettingsProjectSelector: React.FC<{ className?: string }> = ({ clas
             }}
           >
             {sortedProjects.map((project) => {
-              const raw = project.label?.trim()
-                ? project.label.trim()
-                : (project.path.split('/').filter(Boolean).pop() || project.path);
-              const itemLabel = formatProjectLabel(raw);
+              const itemLabel = resolveProjectDisplayName(project);
               return (
                 <DropdownMenuRadioItem key={project.id} value={project.id}>
                   <span className="min-w-0 truncate typography-ui">{itemLabel}</span>

@@ -16,6 +16,6 @@
   },
   "overrides": {
     "@anthropic-ai/claude-agent-sdk": "0.2.141",
-    "@anthropic-ai/claude-code": "2.1.98"
+    "@anthropic-ai/claude-code": "2.1.215"
   }
 }

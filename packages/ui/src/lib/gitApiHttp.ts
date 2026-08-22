@@ -662,7 +662,10 @@ export async function createGitWorktree(directory: string, payload: CreateGitWor
   return response.json();
 }
 
-export async function deleteGitWorktree(directory: string, payload: RemoveGitWorktreePayload): Promise<{ success: boolean }> {
+export async function deleteGitWorktree(
+  directory: string,
+  payload: RemoveGitWorktreePayload,
+): Promise<{ success: boolean; removedPath?: string }> {
   const response = await fetch(buildUrl(`${API_BASE}/worktrees`, directory), {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },

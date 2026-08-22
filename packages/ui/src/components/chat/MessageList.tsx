@@ -47,11 +47,7 @@ import {
     useManagedOrchestrationStore,
 } from '@/stores/useManagedOrchestrationStore';
 import { resolveManagedTaskTurnProjection } from './managedTaskDispatch';
-import {
-    annotateGeneratedImageLinks,
-    extractGeneratedImageResults,
-    type GeneratedImageResult,
-} from './message/parts/generatedImageResults';
+import type { AssistantImageMessage } from './message/parts/generatedImageResults';
 
 // Sessions below the threshold render fully (zero behavior change for the
 // common case); above it, history virtualizes so DOM + observers + highlighted
@@ -61,7 +57,19 @@ import {
 // fully-mounted path.
 const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 80;
 const MESSAGE_LIST_OVERSCAN = 6;
-const EMPTY_GENERATED_IMAGES: GeneratedImageResult[] = [];
+const EMPTY_ASSISTANT_IMAGE_MESSAGES: AssistantImageMessage[] = [];
+const ASSISTANT_IMAGE_SOURCE_HINT = /(?:data:image\/(?:png|jpeg|gif|webp)(?:;|,)|(?:\.|%2e)(?:png|jpe?g|gif|webp)(?:[?#\s<>"')\]]|$))/i;
+
+const partMayContainAssistantImage = (part: Part): boolean => {
+    if (part.type === 'text') {
+        const value = part as Part & { text?: unknown; content?: unknown; value?: unknown };
+        return [value.text, value.content, value.value]
+            .some((candidate) => typeof candidate === 'string' && ASSISTANT_IMAGE_SOURCE_HINT.test(candidate));
+    }
+    if (part.type !== 'tool') return false;
+    const output = (part as Part & { state?: { metadata?: { out?: unknown } } }).state?.metadata?.out;
+    return typeof output === 'string' && ASSISTANT_IMAGE_SOURCE_HINT.test(output);
+};
 
 const nowMs = (): number => {
     if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -648,14 +656,21 @@ const TurnBlock = React.memo(({
         })),
     ), [visibleAssistantMessages]);
 
-    const generatedImages = React.useMemo(() => {
-        const results = extractGeneratedImageResults(visibleActivityParts);
-        if (results.length === 0) return EMPTY_GENERATED_IMAGES;
-        return annotateGeneratedImageLinks(
-            results,
-            visibleAssistantMessages.map((message) => ({ messageId: message.info.id, parts: message.parts })),
-        );
-    }, [visibleActivityParts, visibleAssistantMessages]);
+    const assistantImageMessages = React.useMemo(() => {
+        const responseComplete = visibleAssistantMessages.length > 0
+            && visibleAssistantMessages.every((message) => {
+                const completed = (message.info.time as { completed?: unknown } | undefined)?.completed;
+                return typeof completed === 'number' && Number.isFinite(completed) && completed > 0;
+            });
+        if (!responseComplete) return EMPTY_ASSISTANT_IMAGE_MESSAGES;
+        const messages = visibleAssistantMessages.map((message) => ({
+            messageId: message.info.id,
+            parts: message.parts,
+        }));
+        return messages.some((message) => message.parts.some(partMayContainAssistantImage))
+            ? messages
+            : EMPTY_ASSISTANT_IMAGE_MESSAGES;
+    }, [visibleAssistantMessages]);
 
     const recordedTurnPlanMode = useSessionUIStore(
         React.useCallback((state) => (
@@ -707,7 +722,7 @@ const TurnBlock = React.memo(({
             summarySourcePartId: turn.summary.sourcePartId,
             activityParts: visibleActivityParts,
             activityGroupSegments: visibleActivitySegments,
-            generatedImages,
+            assistantImageMessages,
             headerMessageId: turn.headerMessageId,
             hasTools: turn.hasTools,
             hasReasoning: turn.hasReasoning,
@@ -717,7 +732,7 @@ const TurnBlock = React.memo(({
             isPlanModeSource: isPlanModeSourceTurn,
             lastTodoToolPartId,
         };
-    }, [generatedImages, isPlanModeSourceTurn, responseStyleLevel, turn.diffStats, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summary.sourceMessageId, turn.summary.sourcePartId, turn.summaryText, turn.turnId, turn.userMessage.info, visibleActivityParts, visibleActivitySegments]);
+    }, [assistantImageMessages, isPlanModeSourceTurn, responseStyleLevel, turn.diffStats, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summary.sourceMessageId, turn.summary.sourcePartId, turn.summaryText, turn.turnId, turn.userMessage.info, visibleActivityParts, visibleActivitySegments]);
 
     const renderMessage = React.useCallback(
         (message: ChatMessageEntry) => {
@@ -768,7 +783,7 @@ const TurnBlock = React.memo(({
                     hasReasoning: turn.hasReasoning,
                     isPlanModeSource: turnGroupingContextBase.isPlanModeSource,
                     lastTodoToolPartId: turnGroupingContextBase.lastTodoToolPartId,
-                    generatedImages: turnGroupingContextBase.generatedImages,
+                    assistantImageMessages: turnGroupingContextBase.assistantImageMessages,
                     activityParts: activityPartsByMessageId.get(message.info.id),
                     managedTaskProjection,
                     ...(shouldAttachFullTurnContext ? {

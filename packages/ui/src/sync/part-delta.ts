@@ -1,10 +1,39 @@
-export function appendNonOverlappingDelta(existingValue: string | undefined, delta: string) {
-  if (!existingValue || delta.length === 0) return (existingValue ?? "") + delta
-  if (existingValue.endsWith(delta)) return existingValue
+import { syncDebug } from "./debug"
 
-  const maxOverlap = Math.min(existingValue.length, delta.length)
-  for (let overlap = maxOverlap; overlap > 0; overlap--) {
+// Partial overlaps shorter than this are treated as coincidence — a clean
+// continuation whose first characters merely repeat the snapshot's tail (e.g.
+// "…and v" + "vital…", or "the" + "the docs"). Swallowing those characters
+// corrupts words mid-stream, while re-appending a tiny genuine repeat is only
+// cosmetic. Keep the floor at 5 so real streaming handoffs ("Hello" +
+// "Hello world", "Diagra" + "Diagram") still collapse. A delta the existing
+// value already ends with is still deduped at any length: that is the
+// provisional-handoff replay case, where the authoritative part arrives with
+// the buffered text already included.
+const MIN_PARTIAL_DEDUPE_OVERLAP = 5
+
+// Full-drop dedupes below this length are routine (streaming handoff replays of
+// short frames) — only longer drops are worth surfacing in debug logs.
+const MIN_LOGGED_FULL_DROP_LENGTH = 16
+
+export type PartDeltaDebugContext = { messageID?: string; partID?: string; field?: string }
+
+export function appendNonOverlappingDelta(
+  existingValue: string | undefined,
+  delta: string,
+  context?: PartDeltaDebugContext,
+) {
+  if (!existingValue || delta.length === 0) return (existingValue ?? "") + delta
+  if (existingValue.endsWith(delta)) {
+    if (delta.length >= MIN_LOGGED_FULL_DROP_LENGTH) {
+      syncDebug.partDelta.fullDeltaDropped(delta.length, context)
+    }
+    return existingValue
+  }
+
+  const maxOverlap = Math.min(existingValue.length, delta.length - 1)
+  for (let overlap = maxOverlap; overlap >= MIN_PARTIAL_DEDUPE_OVERLAP; overlap--) {
     if (existingValue.endsWith(delta.slice(0, overlap))) {
+      syncDebug.partDelta.partialOverlapSwallowed(overlap, delta.length, context)
       return existingValue + delta.slice(overlap)
     }
   }
@@ -105,7 +134,15 @@ export function collapseExactAdjacentTextRepeats(value: string): string {
     return value
   }
 
-  return collapseJammedRepeats(collapseLineRepeats(value))
+  const lineCollapsed = collapseLineRepeats(value)
+  if (lineCollapsed.length !== value.length) {
+    syncDebug.partDelta.repeatCollapsed("collapseLineRepeats", value.length - lineCollapsed.length)
+  }
+  const jammedCollapsed = collapseJammedRepeats(lineCollapsed)
+  if (jammedCollapsed.length !== lineCollapsed.length) {
+    syncDebug.partDelta.repeatCollapsed("collapseJammedRepeats", lineCollapsed.length - jammedCollapsed.length)
+  }
+  return jammedCollapsed
 }
 
 const MALFORMED_TOOL_CALL_MARKER = 'Skipped malformed tool call "'

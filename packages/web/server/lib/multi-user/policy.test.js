@@ -140,6 +140,7 @@ describe('multi-user policy', () => {
       ['/provider', 'GET', 'providers'],
       ['/provider/openai/oauth/authorize', 'POST', 'providers'],
       ['/provider/anthropic/claude-cli', 'GET', 'providers'],
+      ['/provider/anthropic/prompt-mode', 'PUT', 'providers'],
       ['/quota/credentials/openai', 'PUT', 'providers'],
       ['/openchamber/tunnel/status', 'GET', 'tunnel'],
       ['/diagnostics/export', 'POST', 'about'],

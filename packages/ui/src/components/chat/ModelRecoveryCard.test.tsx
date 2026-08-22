@@ -83,4 +83,29 @@ describe('ModelRecoveryCard', () => {
     expect(html).toContain('Trying Again…');
     expect(html).toContain('disabled=""');
   });
+
+  test('renders the explicit Claude compatibility recovery action', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ModelRecoveryCard
+          title="Retry this turn with Claude compatibility mode:"
+          originalModelLabel="anthropic / claude-opus-4-1"
+          providers={[]}
+          selection={{ providerId: 'anthropic', modelId: 'claude-opus-4-1', variant: null }}
+          pending={false}
+          actionError={null}
+          failureMessage="Anthropic classified this turn as third-party usage."
+          retryLabel="Enable Compatibility & Try Again"
+          retryingLabel="Enabling Compatibility…"
+          onSelectionChange={() => undefined}
+          onRetry={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('Enable Compatibility &amp; Try Again');
+    expect(html).toContain('Anthropic classified this turn as third-party usage.');
+    expect(html).toContain('max-w-full whitespace-normal');
+    expect(html).toContain('w-full min-w-0 flex-wrap');
+  });
 });

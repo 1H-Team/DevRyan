@@ -1,5 +1,4 @@
 import type { Event, Part } from "@opencode-ai/sdk/v2/client"
-import { Binary } from "./binary"
 import { appendNonOverlappingDelta, appendStreamingTextDelta, normalizeAssistantPartText } from "./part-delta"
 import type { State } from "./types"
 
@@ -12,9 +11,14 @@ export type PendingPartDelta = {
 }
 
 export type PendingPartDeltaStore = Map<string, PendingPartDelta>
+export type PartTypeHintStore = Map<string, { type: string; updatedAt: number }>
 
 const PENDING_PART_DELTA_TTL_MS = 30_000
 const MAX_PENDING_PART_DELTAS = 500
+// Hints outlive the delta buffer: a part's type is announced once at creation,
+// while its deltas can keep buffering for the rest of a long turn.
+const PART_TYPE_HINT_TTL_MS = 300_000
+const MAX_PART_TYPE_HINTS = 500
 const KEY_SEPARATOR = "\u0000"
 
 type PendingPartDeltaInput = Omit<PendingPartDelta, "updatedAt">
@@ -36,6 +40,80 @@ function appendPendingDelta(field: string, existing: string | undefined, incomin
   }
 
   return existing ? existing + incoming : incoming
+}
+
+function partTypeHintKey(directory: string, partID: string) {
+  return [directory, partID].join(KEY_SEPARATOR)
+}
+
+function prunePartTypeHints(store: PartTypeHintStore, now: number) {
+  for (const [key, hint] of store) {
+    if (now - hint.updatedAt > PART_TYPE_HINT_TTL_MS) {
+      store.delete(key)
+    }
+  }
+
+  if (store.size <= MAX_PART_TYPE_HINTS) {
+    return
+  }
+
+  const overflow = store.size - MAX_PART_TYPE_HINTS
+  const oldest = Array.from(store.entries())
+    .sort((left, right) => left[1].updatedAt - right[1].updatedAt)
+    .slice(0, overflow)
+
+  for (const [key] of oldest) {
+    store.delete(key)
+  }
+}
+
+/**
+ * Remembers the announced type of every part seen on the raw event stream so a
+ * later provisional part built from buffered deltas is not forced to guess.
+ * Recorded regardless of whether the reducer applied the event — a skipped
+ * part.updated is exactly the case where the hint is needed.
+ */
+export function recordPartTypeHintFromEvent(
+  store: PartTypeHintStore,
+  directory: string,
+  event: Event,
+  now = Date.now(),
+) {
+  if (!directory || directory === "global") return
+  if (event.type !== "message.part.updated") return
+
+  const part = (event.properties as { part?: { id?: unknown; type?: unknown } }).part
+  if (typeof part?.id !== "string" || part.id.length === 0 || typeof part.type !== "string" || part.type.length === 0) {
+    return
+  }
+
+  prunePartTypeHints(store, now)
+  store.set(partTypeHintKey(directory, part.id), { type: part.type, updatedAt: now })
+}
+
+export function getPartTypeHint(
+  store: PartTypeHintStore,
+  directory: string,
+  partID: string,
+  now = Date.now(),
+): string | undefined {
+  const hint = store.get(partTypeHintKey(directory, partID))
+  if (!hint) return undefined
+  if (now - hint.updatedAt > PART_TYPE_HINT_TTL_MS) {
+    store.delete(partTypeHintKey(directory, partID))
+    return undefined
+  }
+  return hint.type
+}
+
+export function clearPartTypeHintsForDirectory(store: PartTypeHintStore, directory: string) {
+  if (!directory || directory === "global") return
+  const prefix = `${directory}${KEY_SEPARATOR}`
+  for (const key of store.keys()) {
+    if (key.startsWith(prefix)) {
+      store.delete(key)
+    }
+  }
 }
 
 export function readPendingPartDeltaFromEvent(event: Event): PendingPartDeltaInput | null {
@@ -197,6 +275,51 @@ export function clearPendingPartDeltasForMessages(
   return cleared
 }
 
+/**
+ * Folds buffered deltas for one part into a provisional part so streamed
+ * output renders immediately instead of staying invisible until a session
+ * refetch drains the buffer. Only text-field deltas qualify — anything else
+ * returns null so the caller re-buffers and the normal drain path handles it.
+ * The part type comes from the recorded type hint when the raw stream has
+ * announced it (Grok interleaves reasoning deltas on the same "text" field, so
+ * guessing "text" would render thoughts as visible message text); without a
+ * hint it defaults to "text". A hint for any other type (e.g. tool) also
+ * returns null — a provisional would render it wrong. The authoritative
+ * message.part.updated replaces the provisional by id (shouldPreserveExistingPart
+ * never preserves non-tool parts) and __dedupeNextDeltaFields reconciles any
+ * text overlap.
+ */
+export function buildProvisionalPartFromPendingDeltas(
+  messageID: string,
+  partID: string,
+  sessionID: string,
+  pendingDeltas: PendingPartDelta[],
+  partTypeHint?: string,
+): Part | null {
+  if (pendingDeltas.length === 0) return null
+
+  const partType = partTypeHint ?? "text"
+  if (partType !== "text" && partType !== "reasoning") return null
+
+  let text: string | undefined
+  for (const pending of pendingDeltas) {
+    if (pending.field !== "text") return null
+    text = appendPendingDelta(pending.field, text, pending.delta)
+  }
+
+  const normalized = normalizeAssistantPartText(text ?? "", partType)
+  if (normalized.length === 0) return null
+
+  return {
+    id: partID,
+    messageID,
+    sessionID,
+    type: partType,
+    text: normalized,
+    __provisionalFromDelta: true,
+  } as unknown as Part
+}
+
 export function applyPendingPartDeltasToParts(
   parts: Part[],
   partID: string,
@@ -207,12 +330,12 @@ export function applyPendingPartDeltasToParts(
     return { parts, applied: false }
   }
 
-  const result = Binary.search(parts, partID, (part) => part.id)
-  if (!result.found) {
+  const partIndex = parts.findIndex((part) => part.id === partID)
+  if (partIndex < 0) {
     return { parts, applied: false }
   }
 
-  const previousPart = parts[result.index] as Record<string, unknown>
+  const previousPart = parts[partIndex] as Record<string, unknown>
   let nextPart: Record<string, unknown> | null = null
 
   for (const pending of pendingDeltas) {
@@ -221,6 +344,7 @@ export function applyPendingPartDeltasToParts(
     const appendedValue = appendNonOverlappingDelta(
       typeof existingValue === "string" ? existingValue : undefined,
       pending.delta,
+      { messageID: pending.messageID, partID, field: pending.field },
     )
     const nextValue = options.sanitizeAssistantText === true && pending.field === "text"
       ? normalizeAssistantPartText(appendedValue, typeof previousPart.type === "string" ? previousPart.type : undefined)
@@ -237,7 +361,7 @@ export function applyPendingPartDeltasToParts(
   }
 
   const nextParts = [...parts]
-  nextParts[result.index] = nextPart as unknown as Part
+  nextParts[partIndex] = nextPart as unknown as Part
   return { parts: nextParts, applied: true }
 }
 

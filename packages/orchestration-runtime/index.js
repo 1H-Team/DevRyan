@@ -9,3 +9,4 @@ export * from './result-envelope.js';
 export * from './scheduler.js';
 export * from './single-flight.js';
 export * from './transitions.js';
+export * from './xai-tool-catalog.js';

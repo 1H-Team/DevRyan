@@ -7,14 +7,20 @@ const indexHtml = () => readFileSync(resolve(import.meta.dirname, 'index.html'),
 const siteManifest = () => JSON.parse(readFileSync(resolve(import.meta.dirname, 'public/site.webmanifest'), 'utf8'));
 
 describe('initial loading splash', () => {
-  it('uses a theme-aware logo stroke instead of a fixed dark icon', () => {
+  it('uses the unified responsive theme-aware loading contract', () => {
     const html = indexHtml();
 
-    expect(html).toContain('--splash-logo-stroke');
-    expect(html).toContain('stroke="var(--splash-logo-stroke)"');
-    expect(html).toContain('--splash-logo-stroke: #000;');
+    expect(html).toContain('--splash-background-light: #FFFCF0');
+    expect(html).toContain('--splash-stroke-light: #100F0F');
+    expect(html).toContain('--splash-background-dark: #151313');
+    expect(html).toContain('--splash-stroke-dark: #CECDC3');
+    expect(html).toContain('class="splash-logo" width="169" height="169"');
+    expect(html).toContain('width: min(169px, 42vw)');
+    expect(html).toContain('stroke="currentColor"');
+    expect(html).toContain('margin-top: 24px');
+    expect(html).toContain('role="status" aria-live="polite" aria-atomic="true"');
     expect(html).not.toContain('stroke="#1e2a38"');
-    expect(html).not.toContain('--splash-logo-stroke: #1e2a38;');
+    expect(html).not.toContain('var(--splash-logo-stroke)');
   });
 
   it('prevents document scrollbars while the initial loading splash is visible', () => {

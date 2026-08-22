@@ -35,6 +35,7 @@ import {
 import { stopLongRunningTool } from '@/sync/long-running-tool-recovery';
 import { formatElapsedDuration } from '@/lib/duration';
 import { useDocumentAnimationState } from '@/hooks/useDocumentAnimationState';
+import { useHasActiveReasoningDisclosure } from './message/parts/reasoningDisclosureStatus';
 
 type ManagedDelegationStatusPhase = 'starting' | 'waiting' | null;
 
@@ -165,6 +166,29 @@ export const resolveManagedChildGenericStatusText = ({
         : waitingText;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveProviderWaitingStatusText = ({
+    providerID,
+    activePartType,
+    hasStreamedActivity,
+    waitingForGrokText,
+}: {
+    providerID?: string;
+    activePartType?: 'text' | 'tool' | 'reasoning' | 'editing';
+    hasStreamedActivity: boolean;
+    waitingForGrokText: string;
+}): string | null => {
+    // Only the silent window before the turn's first output. Once anything has
+    // streamed, every gap between parts belongs to the normal status pipeline —
+    // this copy is non-generic, so firing later would stomp a live label like
+    // "thinking" or "reading file" that is already on screen.
+    if (activePartType !== undefined || hasStreamedActivity) return null;
+    const normalizedProviderID = providerID?.trim().toLowerCase();
+    return normalizedProviderID === 'xai' || normalizedProviderID === 'grok' || normalizedProviderID === 'xai-oauth'
+        ? waitingForGrokText
+        : null;
+};
+
 /**
  * Status row wrapper.
  * Uses the dedicated assistant status hook so the row keeps accurate live activity
@@ -173,6 +197,7 @@ export const resolveManagedChildGenericStatusText = ({
 export const StatusRowContainer: React.FC = React.memo(() => {
     const { t } = useI18n();
     const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+    const activeReasoningDisclosure = useHasActiveReasoningDisclosure(currentSessionId);
     const childStores = useSyncChildStores();
     const resyncSession = useSyncResyncSession();
     const isRevertPending = useSessionRevertPending(currentSessionId ?? '');
@@ -251,6 +276,16 @@ export const StatusRowContainer: React.FC = React.memo(() => {
     });
     let assistantStatusText = working.statusText;
     let assistantIsGenericStatus = working.isGenericStatus;
+    const providerWaitingStatusText = resolveProviderWaitingStatusText({
+        providerID: working.providerID,
+        activePartType: working.activePartType,
+        hasStreamedActivity: working.hasStreamedActivity,
+        waitingForGrokText: t('chat.statusRow.waitingForGrok'),
+    });
+    if (providerWaitingStatusText) {
+        assistantStatusText = providerWaitingStatusText;
+        assistantIsGenericStatus = false;
+    }
     if (managedChildGenericStatusText) {
         assistantStatusText = managedChildGenericStatusText;
         assistantIsGenericStatus = false;
@@ -368,6 +403,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             longRunningToolError={longRunningTool?.actionError ?? null}
             onStopLongRunningTool={longRunningPresentation?.actionable ? stopCurrentLongRunningTool : undefined}
             showAssistantStatus
+            suppressAssistantStatusText={activeReasoningDisclosure}
             showTodos={false}
             agentName={currentAgentName}
         />

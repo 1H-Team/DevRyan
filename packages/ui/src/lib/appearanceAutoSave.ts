@@ -14,11 +14,13 @@ type AppearanceSlice = {
   notifyOnPlanReady: boolean;
   notifyOnError: boolean;
   notifyOnQuestion: boolean;
+  notifyOnPermission: boolean;
   notificationTemplates: {
     completion: { title: string; message: string };
     planReady: { title: string; message: string };
     error: { title: string; message: string };
     question: { title: string; message: string };
+    permission: { title: string; message: string };
     subtask: { title: string; message: string };
   };
   summarizeLastMessage: boolean;
@@ -61,6 +63,7 @@ export const startAppearanceAutoSave = (): void => {
     notifyOnPlanReady: useUIStore.getState().notifyOnPlanReady,
     notifyOnError: useUIStore.getState().notifyOnError,
     notifyOnQuestion: useUIStore.getState().notifyOnQuestion,
+    notifyOnPermission: useUIStore.getState().notifyOnPermission,
     notificationTemplates: useUIStore.getState().notificationTemplates,
     summarizeLastMessage: useUIStore.getState().summarizeLastMessage,
     summaryThreshold: useUIStore.getState().summaryThreshold,
@@ -114,6 +117,7 @@ export const startAppearanceAutoSave = (): void => {
       notifyOnPlanReady: state.notifyOnPlanReady,
       notifyOnError: state.notifyOnError,
       notifyOnQuestion: state.notifyOnQuestion,
+      notifyOnPermission: state.notifyOnPermission,
       notificationTemplates: state.notificationTemplates,
       summarizeLastMessage: state.summarizeLastMessage,
       summaryThreshold: state.summaryThreshold,
@@ -164,6 +168,9 @@ export const startAppearanceAutoSave = (): void => {
     }
     if (current.notifyOnQuestion !== previous.notifyOnQuestion) {
       diff.notifyOnQuestion = current.notifyOnQuestion;
+    }
+    if (current.notifyOnPermission !== previous.notifyOnPermission) {
+      diff.notifyOnPermission = current.notifyOnPermission;
     }
     if (JSON.stringify(current.notificationTemplates) !== JSON.stringify(previous.notificationTemplates)) {
       diff.notificationTemplates = current.notificationTemplates;

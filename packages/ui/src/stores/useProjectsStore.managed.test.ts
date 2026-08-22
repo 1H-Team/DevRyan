@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { AuthAssignment, AuthPrincipal } from '@/lib/authSession';
 import {
   isIntegrateTempProjectPath,
+  normalizeGeneratedProjectLabels,
   projectManagedAssignments,
   sortProjectsAlphabetically,
   useProjectsStore,
@@ -19,6 +20,40 @@ const assignment = (
 });
 
 describe('managed project projection', () => {
+  test('migrates only legacy generated labels to exact basenames', () => {
+    const projects = [
+      { id: 'ssh', path: '/work/.ssh', label: '.Ssh' },
+      { id: 'api', path: '/work/my_API-v2', label: 'My API V2' },
+      { id: 'ios', path: '/work/iOSClient', label: 'IOSClient' },
+      { id: 'manual', path: '/work/foo__bar', label: 'Hand picked' },
+    ];
+
+    const first = normalizeGeneratedProjectLabels(projects);
+    expect(first.changed).toBe(true);
+    expect(first.projects.map((project) => project.label)).toEqual([
+      '.ssh',
+      'my_API-v2',
+      'iOSClient',
+      'Hand picked',
+    ]);
+    const second = normalizeGeneratedProjectLabels(first.projects);
+    expect(second.changed).toBe(false);
+    expect(second.projects).toBe(first.projects);
+  });
+
+  test('sorts exact generated names with the shared numeric collator', () => {
+    const projects = ['foo__bar', 'iOSClient', 'my_API-v2', '.ssh'].map((name) => ({
+      id: name,
+      path: `/work/${name}`,
+    }));
+    expect(sortProjectsAlphabetically(projects).map((project) => project.id)).toEqual([
+      '.ssh',
+      'foo__bar',
+      'iOSClient',
+      'my_API-v2',
+    ]);
+  });
+
   test('sorts projects naturally by display name without mutating the source list', () => {
     const projects = [
       { id: 'beta', path: '/work/beta', label: 'beta' },

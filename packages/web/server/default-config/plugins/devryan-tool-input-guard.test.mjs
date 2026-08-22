@@ -1,8 +1,8 @@
-import {
-  DEFAULT_SHELL_TIMEOUT_MS,
-  MAX_SHELL_TIMEOUT_MS,
-  DevRyanToolInputGuardPlugin,
-} from './devryan-tool-input-guard.mjs';
+import { DevRyanToolInputGuardPlugin, __test } from './devryan-tool-input-guard.mjs';
+
+// Constants live on `__test` because OpenCode's plugin loader rejects any module
+// with a non-function named export.
+const { DEFAULT_SHELL_TIMEOUT_MS, MAX_SHELL_TIMEOUT_MS } = __test;
 
 const { afterEach, describe, expect, test } = process.env.VITEST
   ? await import('vitest')

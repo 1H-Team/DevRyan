@@ -23,6 +23,27 @@ const createTestHelpers = (overrides = {}) => createSettingsHelpers({
 });
 
 describe('settings helpers', () => {
+  it('persists only supported session retention actions on write and read-back', () => {
+    const helpers = createTestHelpers();
+
+    for (const sessionRetentionAction of ['archive', 'delete']) {
+      const sanitized = helpers.sanitizeSettingsUpdate({
+        sessionRetentionAction,
+        autoDeleteEnabled: true,
+      });
+      expect(sanitized).toEqual({ sessionRetentionAction, autoDeleteEnabled: true });
+      expect(helpers.formatSettingsResponse(sanitized)).toMatchObject({
+        sessionRetentionAction,
+        autoDeleteEnabled: true,
+      });
+    }
+
+    expect(helpers.sanitizeSettingsUpdate({
+      sessionRetentionAction: 'keep',
+      autoDeleteEnabled: false,
+    })).toEqual({ autoDeleteEnabled: false });
+  });
+
   it('accepts a non-negative theme catalog version', () => {
     const helpers = createTestHelpers();
 
@@ -113,6 +134,23 @@ describe('settings helpers', () => {
       },
     });
     expect(helpers.sanitizeSettingsUpdate({ notifyOnPlanReady: 'false' })).toEqual({});
+  });
+
+  it('sanitizes Permissions Needed preferences and templates', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({
+      notifyOnPermission: false,
+      notificationTemplates: {
+        permission: { title: 'Permissions needed', message: 'Folder: {last_message}' },
+      },
+    })).toEqual({
+      notifyOnPermission: false,
+      notificationTemplates: {
+        permission: { title: 'Permissions needed', message: 'Folder: {last_message}' },
+      },
+    });
+    expect(helpers.sanitizeSettingsUpdate({ notifyOnPermission: 'false' })).toEqual({});
   });
 
   it('accepts hiddenSkills as a persisted shared setting', () => {

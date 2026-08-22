@@ -2,8 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ZenApiError,
+  __resetZenModelCooldowns,
   generateZenText,
+  isTransientZenError,
   isUnavailableZenModelError,
+  isUnusableZenModelError,
   sanitizeForTitle,
   summarizeText,
 } from './summarization.js';
@@ -17,6 +20,9 @@ function stubFetch(fetchMock) {
 describe('text summarization zen requests', () => {
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    // Rate-limit cooldowns are module-level by design (they must outlive a
+    // single call), so tests have to clear them between cases.
+    __resetZenModelCooldowns();
   });
 
   it('uses responses endpoint for gpt models', async () => {
@@ -209,5 +215,288 @@ describe('text summarization zen requests', () => {
 
     expect(result.summary).toBe('Full response');
     expect(result.summaryLength).toBe(13);
+  });
+
+  it('retries the same model once after a transient failure', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'Recovered title' } }] }),
+      });
+    stubFetch(fetchMock);
+
+    const result = await summarizeText({
+      text: 'Long text '.repeat(30),
+      threshold: 0,
+      maxLength: 80,
+      zenModel: 'deepseek-v4-flash-free',
+      retryDelayMs: 0,
+      mode: 'title',
+    });
+    consoleError.mockRestore();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ summary: 'Recovered title', summarized: true, attempts: 2 });
+  });
+
+  it('switches to the fallback model when the primary one is unavailable', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: { message: 'The model `retired-free` is not found' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'Fallback title' } }] }),
+      });
+    stubFetch(fetchMock);
+
+    const result = await summarizeText({
+      text: 'Long text '.repeat(30),
+      threshold: 0,
+      maxLength: 80,
+      zenModel: 'retired-free',
+      fallbackZenModel: 'deepseek-v4-flash-free',
+      retryDelayMs: 0,
+      mode: 'title',
+    });
+    consoleError.mockRestore();
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe('retired-free');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).model).toBe('deepseek-v4-flash-free');
+    expect(result).toMatchObject({ summarized: true, usedFallbackModel: true });
+  });
+
+  // Behaviour change (2026-08-21): a rate-limited model used to be retried once
+  // before advancing. Live logs showed that retry is near-worthless — the Zen
+  // fallback answered 429 on attempts 2 AND 3 of every one of 23 consecutive
+  // title generations. When another model is available we now advance to it
+  // immediately and put the rate-limited one in cooldown.
+  it('advances to the next model immediately on a rate limit', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'Second model title' } }] }),
+      });
+    stubFetch(fetchMock);
+
+    const result = await summarizeText({
+      text: 'Long text '.repeat(30),
+      threshold: 0,
+      maxLength: 80,
+      zenModel: 'primary-free',
+      fallbackZenModel: 'secondary-free',
+      retryDelayMs: 0,
+      mode: 'title',
+    });
+    consoleError.mockRestore();
+
+    expect(fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body).model))
+      .toEqual(['primary-free', 'secondary-free']);
+    expect(result.summary).toBe('Second model title');
+  });
+
+  it('still retries the same model on a rate limit when it is the only one', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'Only model title' } }] }),
+      });
+    stubFetch(fetchMock);
+
+    const result = await summarizeText({
+      text: 'Long text '.repeat(30),
+      threshold: 0,
+      maxLength: 80,
+      zenModel: 'only-free',
+      retryDelayMs: 0,
+      mode: 'title',
+    });
+    consoleError.mockRestore();
+
+    expect(fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body).model))
+      .toEqual(['only-free', 'only-free']);
+    expect(result.summary).toBe('Only model title');
+  });
+
+  it('rotates through every model in zenModelRotation', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn()
+      // deepseek-v4-flash-free: the exact 401 seen live all day on 2026-08-21.
+      .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({ error: 'Free promotion has ended' }) })
+      .mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'Third model title' } }] }),
+      });
+    stubFetch(fetchMock);
+
+    const result = await summarizeText({
+      text: 'Long text '.repeat(30),
+      threshold: 0,
+      maxLength: 80,
+      zenModel: 'deepseek-v4-flash-free',
+      zenModelRotation: ['big-pickle', 'third-free'],
+      retryDelayMs: 0,
+      mode: 'title',
+    });
+    consoleError.mockRestore();
+
+    expect(fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body).model))
+      .toEqual(['deepseek-v4-flash-free', 'big-pickle', 'third-free']);
+    expect(result).toMatchObject({ summarized: true, model: 'third-free' });
+  });
+
+  it('skips a model that is still cooling down from an earlier rate limit', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    stubFetch(vi.fn().mockResolvedValue({ ok: false, status: 429, json: async () => ({}) }));
+    await summarizeText({
+      text: 'Long text '.repeat(30),
+      threshold: 0,
+      maxLength: 80,
+      zenModel: 'hot-model',
+      retryDelayMs: 0,
+      mode: 'title',
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'Cool model title' } }] }),
+    });
+    stubFetch(fetchMock);
+
+    const result = await summarizeText({
+      text: 'Long text '.repeat(30),
+      threshold: 0,
+      maxLength: 80,
+      zenModel: 'hot-model',
+      zenModelRotation: ['cool-model'],
+      retryDelayMs: 0,
+      mode: 'title',
+    });
+    consoleError.mockRestore();
+
+    // hot-model is skipped entirely rather than burning another attempt.
+    expect(fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body).model))
+      .toEqual(['cool-model']);
+    expect(result.summary).toBe('Cool model title');
+  });
+
+  it('does not retry a non-transient failure against the same model', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: { message: 'Unauthorized' } }),
+    }));
+    stubFetch(fetchMock);
+
+    const result = await summarizeText({
+      text: 'Long text '.repeat(30),
+      threshold: 0,
+      maxLength: 80,
+      zenModel: 'deepseek-v4-flash-free',
+      retryDelayMs: 0,
+      mode: 'title',
+    });
+    consoleError.mockRestore();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.summarized).toBe(false);
+  });
+
+  it('ignores a fallback model identical to the primary one', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) }));
+    stubFetch(fetchMock);
+
+    await summarizeText({
+      text: 'Long text '.repeat(30),
+      threshold: 0,
+      maxLength: 80,
+      zenModel: 'deepseek-v4-flash-free',
+      fallbackZenModel: '  deepseek-v4-flash-free  ',
+      retryDelayMs: 0,
+      mode: 'title',
+    });
+    consoleError.mockRestore();
+
+    // One attempt plus one same-model retry; no third attempt against itself.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('switches models when the primary one is served but not entitled', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: { message: 'Missing API key.' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'Entitled model title' } }] }),
+      });
+    stubFetch(fetchMock);
+
+    const result = await summarizeText({
+      text: 'Long text '.repeat(30),
+      threshold: 0,
+      maxLength: 80,
+      zenModel: 'gpt-5-nano',
+      fallbackZenModel: 'deepseek-v4-flash-free',
+      retryDelayMs: 0,
+      mode: 'title',
+    });
+    consoleError.mockRestore();
+
+    // A 401 is permanent for that model id, so it must not be retried as-is.
+    expect(fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body).model))
+      .toEqual(['gpt-5-nano', 'deepseek-v4-flash-free']);
+    expect(result).toMatchObject({ summary: 'Entitled model title', summarized: true, usedFallbackModel: true });
+  });
+
+  it('classifies models we cannot use separately from retryable failures', () => {
+    expect(isUnusableZenModelError(new ZenApiError(401, 'Missing API key.'))).toBe(true);
+    expect(isUnusableZenModelError(new ZenApiError(403, 'Forbidden'))).toBe(true);
+    expect(isUnusableZenModelError(new ZenApiError(404, 'model not found'))).toBe(true);
+    expect(isUnusableZenModelError(new ZenApiError(429, 'slow down'))).toBe(false);
+    expect(isUnusableZenModelError(new Error('Zen generation timed out'))).toBe(false);
+  });
+
+  it('classifies retryable transport and upstream failures', () => {
+    expect(isTransientZenError(new ZenApiError(429, 'slow down'))).toBe(true);
+    expect(isTransientZenError(new ZenApiError(503, 'upstream'))).toBe(true);
+    expect(isTransientZenError(new ZenApiError(401, 'nope'))).toBe(false);
+    expect(isTransientZenError(new Error('Zen generation timed out'))).toBe(true);
+    expect(isTransientZenError(new TypeError('fetch failed'))).toBe(true);
+    expect(isTransientZenError(new Error('bad prompt'))).toBe(false);
+  });
+
+  it('still falls back to source text for non-title modes', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 401, json: async () => ({}) }));
+    stubFetch(fetchMock);
+
+    const result = await summarizeText({
+      text: 'Deploy finished successfully',
+      threshold: 0,
+      maxLength: 80,
+      zenModel: 'gpt-5-nano',
+      retryDelayMs: 0,
+      mode: 'notification',
+    });
+    consoleError.mockRestore();
+
+    expect(result.summarized).toBe(false);
+    expect(result.summary).toBe('Deploy finished successfully');
   });
 });

@@ -1212,6 +1212,29 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
     }
   }
 
+  if (pathname === '/api/provider/anthropic/prompt-mode') {
+    const method = (init?.method || 'GET').toUpperCase();
+    if (method === 'GET') {
+      try {
+        const result = await sendBridgeMessage<{ status: number; body: unknown }>('api:provider/anthropic/prompt-mode:get');
+        return new Response(JSON.stringify(result.body), { status: result.status, headers: { 'Content-Type': 'application/json' } });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      }
+    }
+    if (method === 'PUT') {
+      try {
+        const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+        const result = await sendBridgeMessage<{ status: number; body: unknown }>('api:provider/anthropic/prompt-mode:set', body);
+        return new Response(JSON.stringify(result.body), { status: result.status, headers: { 'Content-Type': 'application/json' } });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      }
+    }
+  }
+
   if (pathname === '/api/provider/anthropic/check-oauth' && (init?.method || 'GET').toUpperCase() === 'POST') {
     const queryDirectory = url.searchParams.get('directory') || undefined;
     try {

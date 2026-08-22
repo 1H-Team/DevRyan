@@ -98,6 +98,10 @@ import {
 import { useInputStore, type SyntheticContextPart } from "./input-store"
 import { useSelectionStore } from "./selection-store"
 import { useViewportStore } from "./viewport-store"
+import {
+  findMessageIndex,
+  insertMessageChronologically,
+} from "./message-order"
 import { useSessionWorktreeStore } from "./session-worktree-store"
 import { getAttachedSessionDirectory } from "./session-worktree-contract"
 import { resolveSubtaskAgentFromMessages } from "./subtask-agent"
@@ -1196,7 +1200,7 @@ const injectStarterAssistantMessage = (params: {
     const hasMessage = existingMessages.some((message) => message.id === params.messageId)
     const nextMessages = hasMessage
       ? existingMessages
-      : [...existingMessages, starterMessage].sort((left, right) => left.id.localeCompare(right.id))
+      : insertMessageChronologically(existingMessages, starterMessage)
     const existingParts = state.part[params.messageId]
 
     if (nextMessages === existingMessages && existingParts?.length === 1 && existingParts[0]?.id === params.partId) {
@@ -3006,7 +3010,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const revertToId = currentSession?.revert?.messageID
     let targetMessage: typeof messages[number] | undefined
     if (revertToId) {
-      targetMessage = [...userMessages].reverse().find((m) => m.id < revertToId)
+      const markerIndex = findMessageIndex(messages, revertToId)
+      const previousMessages = markerIndex < 0 ? messages : messages.slice(0, markerIndex)
+      targetMessage = [...previousMessages].reverse().find((message) => message.role === "user")
     } else {
       targetMessage = userMessages[userMessages.length - 1]
     }
@@ -3042,8 +3048,10 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     await refetchSessionMessages(sessionId)
 
     const messages = getSyncMessages(sessionId)
-    const userMessages = messages.filter((m) => m.role === "user")
-    const targetMessage = userMessages.find((m) => m.id > revertToId)
+    const markerIndex = findMessageIndex(messages, revertToId)
+    const targetMessage = markerIndex < 0
+      ? undefined
+      : messages.slice(markerIndex + 1).find((message) => message.role === "user")
 
     if (targetMessage) {
       const targetParts = getSyncParts(targetMessage.id)

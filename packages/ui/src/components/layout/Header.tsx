@@ -23,7 +23,7 @@ import {
 } from '@/components/icons/ToolbarIcons';
 import { useUIStore, type MainTab } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useAllLiveSessions, useSession } from '@/sync/sync-context';
+import { useAllLiveSessions, useSession, useSessionFirstUserText } from '@/sync/sync-context';
 import { getAllSyncSessions } from '@/sync/sync-refs';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { quotaRefreshCoordinator, useQuotaStore } from '@/stores/useQuotaStore';
@@ -32,7 +32,7 @@ import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 
 import { useDeviceInfo, useTabletStandalonePwaRuntime } from '@/lib/device';
 import { cn, hasModifier } from '@/lib/utils';
-import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
+import { isPlaceholderSessionTitle, resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { McpDropdownContent } from '@/components/mcp/McpDropdown';
 import { QUOTA_PROVIDERS } from '@/lib/quota';
 import { formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
@@ -58,6 +58,7 @@ import type { Session } from '@opencode-ai/sdk/v2/client';
 import { DESKTOP_LEFT_CHROME_CLUSTER_WIDTH } from '@/components/layout/desktopChromeInsets';
 import { DESKTOP_HEADER_ICON_BUTTON_CLASS, HeaderIconActionButton } from '@/components/layout/headerIconButton';
 import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
+import { resolveProjectDisplayName } from '@/lib/projectDisplayName';
 
 const MOBILE_HEADER_ICON_BUTTON_CLASS = 'app-region-no-drag inline-flex h-9 w-9 items-center justify-center gap-2 p-2 rounded-md typography-ui-label font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50 hover:text-foreground hover:bg-interactive-hover transition-colors';
 
@@ -132,13 +133,7 @@ export const Header: React.FC<HeaderProps> = ({
       return null;
     }
 
-    const trimmedLabel = activeProject.label?.trim();
-    if (trimmedLabel) {
-      return trimmedLabel;
-    }
-
-    const pathSegments = activeProject.path.split(/[\\/]/).filter(Boolean);
-    return pathSegments[pathSegments.length - 1] ?? null;
+    return resolveProjectDisplayName(activeProject);
   }, [activeProject]);
   const quotaResults = useQuotaStore((state) => state.results);
   const quotaProviderRefreshState = useQuotaStore((state) => state.providerRefreshState);
@@ -475,15 +470,21 @@ export const Header: React.FC<HeaderProps> = ({
     return worktreeDirectory || sessionDirectory || draftDirectory;
   }, [draftDirectory, sessionDirectory, worktreeDirectory]);
 
+  const needsDerivedSessionTitle = Boolean(currentSessionId) && isPlaceholderSessionTitle(currentSession?.title);
+  const currentSessionFirstUserText = useSessionFirstUserText(
+    needsDerivedSessionTitle ? currentSessionId : null,
+    sessionDirectory || undefined,
+  );
   const currentSessionTitle = React.useMemo(() => {
     if (!currentSessionId) {
       return activeProjectLabel ?? 'DevRyan';
     }
     return resolveDisplaySessionTitle({
       title: currentSession?.title,
+      latestUserText: currentSessionFirstUserText || undefined,
       fallback: 'Untitled Session',
     });
-  }, [activeProjectLabel, currentSession?.title, currentSessionId]);
+  }, [activeProjectLabel, currentSession?.title, currentSessionFirstUserText, currentSessionId]);
 
   const actionDirectory = React.useMemo(() => {
     return normalize(openDirectory || activeProject?.path || '');

@@ -1,5 +1,37 @@
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
+export interface ProviderToolCatalogEntry {
+  id: string;
+  description?: string;
+  parameters?: JsonValue;
+  [key: string]: unknown;
+}
+
+export function deriveXaiDuplicateToolOverrides(
+  catalog: ProviderToolCatalogEntry[] | unknown,
+): Record<string, false> | null;
+export function isXaiProviderID(providerID: unknown): boolean;
+export function listXaiModelIds(providerPayload: unknown): string[];
+export function createXaiToolCatalogCache(options?: {
+  now?: () => number;
+  maxAgeMs?: number;
+  maxEntries?: number;
+  maxBytes?: number;
+}): {
+  remember(input: {
+    directory?: string | null;
+    providerID: string;
+    modelID: string;
+    catalog: ProviderToolCatalogEntry[];
+  }): Record<string, false> | null;
+  get(input: {
+    directory?: string | null;
+    providerID: string;
+    modelID: string;
+  }): Record<string, false> | null;
+  clear(): void;
+};
+
 export type ManagedTaskStatus =
   | 'queued'
   | 'starting'
@@ -22,7 +54,8 @@ export type ProviderTransportFailureKind =
   | 'request_timeout'
   | 'response_header_timeout'
   | 'stream_idle_timeout'
-  | 'connection_failure';
+  | 'connection_failure'
+  | 'provider_queue_timeout';
 
 export interface ManagedTaskCanonicalRef {
   type: string;

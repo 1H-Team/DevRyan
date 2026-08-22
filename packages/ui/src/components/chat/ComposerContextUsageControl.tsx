@@ -117,7 +117,7 @@ export const ComposerContextUsageControl = React.memo<ComposerContextUsageContro
                     usage={usage}
                     availability={availability}
                     onClose={() => setOpen(false)}
-                    onCompact={availability === 'available' && sessionId ? handleCompact : undefined}
+                    onCompact={sessionId ? handleCompact : undefined}
                     onExpandSession={handleExpandSubagentSession}
                     triggerRef={triggerRef}
                 />

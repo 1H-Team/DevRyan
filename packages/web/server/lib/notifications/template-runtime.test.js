@@ -163,6 +163,10 @@ describe('notification template runtime session variables', () => {
     vi.restoreAllMocks();
   });
 
+  it.each(['.ssh', 'my_API-v2', 'iOSClient', 'foo__bar'])('preserves exact project_name punctuation for %s', (name) => {
+    expect(createRuntime().formatProjectLabel(name)).toBe(name);
+  });
+
   it('resolves session_name from fetched session info with auth headers', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,

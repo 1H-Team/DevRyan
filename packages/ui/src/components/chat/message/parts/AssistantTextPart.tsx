@@ -7,12 +7,7 @@ import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import { resolveAssistantDisplayText, shouldRenderAssistantText } from './assistantTextVisibility';
 import { postRendererTurnTimingMark, streamPerfCount, streamPerfObserve } from '@/stores/utils/streamDebug';
-import type { ToolPopupContent } from '../types';
-import GeneratedImageResult from './GeneratedImageResult';
-import {
-    splitGeneratedImageMarkdown,
-    type GeneratedImageResult as GeneratedImageResultRecord,
-} from './generatedImageResults';
+import { stripAssistantImageMarkdown } from '../../../../../../shared-runtime/lib/assistant-image-sources.js';
 
 type PartWithText = Part & { text?: string; content?: string; value?: string; time?: { start?: number; end?: number } };
 
@@ -33,9 +28,6 @@ interface AssistantTextPartProps {
     isMessageCompleted?: boolean;
     isMobile?: boolean;
     onContentChange?: (reason?: ContentChangeReason, messageId?: string) => void;
-    generatedImages?: GeneratedImageResultRecord[];
-    directory?: string;
-    onShowPopup?: (content: ToolPopupContent) => void;
 }
 
 const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
@@ -46,10 +38,6 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
     chatRenderMode = 'live',
     isMessageCompleted = false,
     isMobile = false,
-    onContentChange,
-    generatedImages = [],
-    directory,
-    onShowPopup,
 }) => {
     // Use part directly from props — parent provides the latest version from the store.
     // No store subscription here to avoid re-render cascade from unrelated delta events.
@@ -126,34 +114,23 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
         return null;
     }
 
-    const segments = splitGeneratedImageMarkdown(displayTextContent, messageId, generatedImages);
+    const displayTextWithoutImages = stripAssistantImageMarkdown(displayTextContent);
 
     return (
         <div
             className={cn('group/assistant-text relative break-words', isMobile ? 'py-1' : 'py-1.5')}
             key={part.id || `${messageId}-text`}
         >
-            {segments.map((segment, index) => segment.type === 'image' ? (
-                <GeneratedImageResult
-                    key={`generated-image-${segment.result.toolPartId}`}
-                    result={segment.result}
-                    directory={directory}
-                    onShowPopup={onShowPopup}
-                    onContentChange={(reason) => onContentChange?.(reason, messageId)}
-                />
-            ) : (
-                <MarkdownRenderer
-                    key={`markdown-${index}`}
-                    content={segment.content}
-                    part={part}
-                    messageId={`${messageId}-markdown-${index}`}
-                    isAnimated={false}
-                    isStreaming={isStreaming}
-                    disableStreamAnimation={chatRenderMode === 'sorted'}
-                    variant={part.type === 'reasoning' ? 'reasoning' : 'assistant'}
-                    enableFileReferences={isFinalized}
-                />
-            ))}
+            <MarkdownRenderer
+                content={displayTextWithoutImages}
+                part={part}
+                messageId={messageId}
+                isAnimated={false}
+                isStreaming={isStreaming}
+                disableStreamAnimation={chatRenderMode === 'sorted'}
+                variant={part.type === 'reasoning' ? 'reasoning' : 'assistant'}
+                enableFileReferences={isFinalized}
+            />
         </div>
     );
 };

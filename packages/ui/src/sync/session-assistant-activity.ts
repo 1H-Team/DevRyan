@@ -1,5 +1,6 @@
 import type { Message, Session } from "@opencode-ai/sdk/v2/client"
-import { isMessageVisibleForSession, toFiniteTimestamp } from "./session-user-activity"
+import { toFiniteTimestamp } from "./session-user-activity"
+import { filterMessagesForRevert, getSessionRevertMessageID } from "./revert-transactions"
 
 export type SessionAssistantActivity = Record<string, number>
 
@@ -20,9 +21,11 @@ export const getLastVisibleAssistantResponseAt = (
 ): number | undefined => {
   if (!messages) return undefined
 
+  const revertMessageID = getSessionRevertMessageID(session)
+  const visibleMessages = revertMessageID ? filterMessagesForRevert(messages, revertMessageID) : messages
   let latest: number | undefined
-  for (const message of messages) {
-    if (message.role !== "assistant" || !isMessageVisibleForSession(message, session)) continue
+  for (const message of visibleMessages) {
+    if (message.role !== "assistant") continue
     const responseAt = getAssistantResponseAt(message)
     if (responseAt === undefined) continue
     latest = latest === undefined ? responseAt : Math.max(latest, responseAt)

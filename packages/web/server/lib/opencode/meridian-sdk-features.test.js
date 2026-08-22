@@ -3,7 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { applyManagedMeridianSdkFeaturePolicy } from './meridian-sdk-features.js';
+import {
+  applyManagedMeridianSdkFeaturePolicy,
+  readMeridianPromptMode,
+  setMeridianPromptCompatibilityMode,
+} from './meridian-sdk-features.js';
 
 const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'));
 const writeJson = (filePath, value) => {
@@ -33,7 +37,13 @@ describe('managed Meridian SDK feature policy', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('seeds client-only prompting into a blank configuration and is idempotent', () => {
+  const readPromptMode = () => readMeridianPromptMode({ fs, path, settingsPath, markerPath });
+  const setCompatibilityMode = (enabled, overrides = {}) => setMeridianPromptCompatibilityMode(
+    enabled,
+    { fs, path, settingsPath, markerPath, ...overrides },
+  );
+
+  it('seeds combined prompting into a blank configuration and is idempotent', () => {
     const first = applyPolicy();
     const second = applyPolicy();
 
@@ -42,7 +52,7 @@ describe('managed Meridian SDK feature policy', () => {
       changed: true,
       settingsChanged: true,
       migrated: false,
-      promptMode: 'client-only',
+      promptMode: 'combined',
       managedFields: ['codeSystemPrompt', 'clientSystemPrompt'],
     });
     expect(second).toMatchObject({
@@ -50,11 +60,11 @@ describe('managed Meridian SDK feature policy', () => {
       changed: false,
       settingsChanged: false,
       markerChanged: false,
-      promptMode: 'client-only',
+      promptMode: 'combined',
     });
     expect(readJson(settingsPath)).toEqual({
       opencode: {
-        codeSystemPrompt: false,
+        codeSystemPrompt: true,
         clientSystemPrompt: true,
       },
     });
@@ -82,10 +92,10 @@ describe('managed Meridian SDK feature policy', () => {
     expect(result).toMatchObject({
       ok: true,
       migrated: true,
-      promptMode: 'client-only',
+      promptMode: 'combined',
     });
     expect(settings.opencode).toEqual({
-      codeSystemPrompt: false,
+      codeSystemPrompt: true,
       clientSystemPrompt: true,
       claudeMd: 'off',
       memory: false,
@@ -118,14 +128,14 @@ describe('managed Meridian SDK feature policy', () => {
       managedFields: [],
       preservedFields: ['codeSystemPrompt', 'clientSystemPrompt'],
     });
-    expect(result.warning).toContain('both');
+    expect(result.warning).toBeNull();
     expect(readJson(settingsPath).opencode.codeSystemPrompt).toBe(true);
   });
 
   it('releases ownership when the user changes a managed field', () => {
     applyPolicy();
     const settings = readJson(settingsPath);
-    settings.opencode.codeSystemPrompt = true;
+    settings.opencode.clientSystemPrompt = false;
     writeJson(settingsPath, settings);
 
     const userOverride = applyPolicy();
@@ -134,16 +144,97 @@ describe('managed Meridian SDK feature policy', () => {
 
     expect(userOverride).toMatchObject({
       ok: true,
-      promptMode: 'combined',
-      managedFields: ['clientSystemPrompt'],
-      preservedFields: ['codeSystemPrompt'],
+      promptMode: 'claude-only',
+      managedFields: ['codeSystemPrompt'],
+      preservedFields: ['clientSystemPrompt'],
     });
-    expect(afterOverride.opencode.codeSystemPrompt).toBe(true);
+    expect(afterOverride.opencode.clientSystemPrompt).toBe(false);
     expect(nextRun).toMatchObject({
       ok: true,
       changed: false,
-      promptMode: 'combined',
+      promptMode: 'claude-only',
     });
+  });
+
+  it('migrates a previously owned client-only baseline to combined prompting', () => {
+    writeJson(settingsPath, {
+      opencode: { codeSystemPrompt: false, clientSystemPrompt: true },
+    });
+    writeJson(markerPath, {
+      version: 1,
+      migrationVersion: 1,
+      fields: { codeSystemPrompt: false, clientSystemPrompt: true },
+    });
+
+    const result = applyPolicy();
+
+    expect(result).toMatchObject({ ok: true, promptMode: 'combined' });
+    expect(readJson(settingsPath).opencode).toEqual({
+      codeSystemPrompt: true,
+      clientSystemPrompt: true,
+    });
+  });
+
+  it('persists explicit compatibility choices and preserves unrelated settings', () => {
+    applyPolicy();
+    const settings = readJson(settingsPath);
+    settings.opencode.claudeMd = 'project';
+    settings.codex = { clientSystemPrompt: false, custom: 'keep' };
+    writeJson(settingsPath, settings);
+
+    const enabled = setCompatibilityMode(true);
+    const afterEnabled = readJson(settingsPath);
+    const provisionedAgain = applyPolicy();
+    const disabled = setCompatibilityMode(false);
+
+    expect(enabled).toMatchObject({
+      ok: true,
+      compatibilityMode: true,
+      mode: 'claude-only',
+    });
+    expect(afterEnabled.opencode).toEqual({
+      codeSystemPrompt: true,
+      clientSystemPrompt: false,
+      claudeMd: 'project',
+    });
+    expect(afterEnabled.codex).toEqual({ clientSystemPrompt: false, custom: 'keep' });
+    expect(readJson(markerPath).fields).toEqual({});
+    expect(provisionedAgain).toMatchObject({
+      ok: true,
+      changed: false,
+      promptMode: 'claude-only',
+    });
+    expect(disabled).toMatchObject({
+      ok: true,
+      compatibilityMode: false,
+      mode: 'combined',
+    });
+    expect(readPromptMode()).toEqual({
+      ok: true,
+      compatibilityMode: false,
+      mode: 'combined',
+    });
+  });
+
+  it('fails compatibility writes without changing settings when the marker write fails', () => {
+    applyPolicy();
+    const originalSettings = fs.readFileSync(settingsPath, 'utf8');
+    const failingFs = {
+      ...fs,
+      writeFileSync(filePath, ...args) {
+        if (filePath === markerPath) throw new Error('marker is read-only');
+        return fs.writeFileSync(filePath, ...args);
+      },
+    };
+
+    const result = setCompatibilityMode(true, { fs: failingFs });
+
+    expect(result).toMatchObject({
+      ok: false,
+      changed: false,
+      code: 'meridian_prompt_mode_write_failed',
+    });
+    expect(fs.readFileSync(settingsPath, 'utf8')).toBe(originalSettings);
   });
 
   it('does not touch unrelated credential and profile files', () => {

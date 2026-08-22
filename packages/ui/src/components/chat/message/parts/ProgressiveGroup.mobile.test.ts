@@ -8,10 +8,20 @@ const source = readFileSync(
 );
 
 describe('ProgressiveGroup mobile reasoning', () => {
-  test('forwards mobile state to inline grouped reasoning', () => {
-    expect(source).toContain('responseStyleLevel, isMobile')
+  test('forwards mobile and terminal state to every reasoning disclosure', () => {
     expect(source).toContain('isMobile: boolean;')
-    expect(source).toContain('            isMobile={isMobile}')
-    expect(source).toContain('                            isMobile={isMobile}')
+    expect(source.match(/isMessageCompleted=\{isMessageCompleted\}\s+isMobile=\{isMobile\}/g)).toHaveLength(2)
+  })
+
+  test('removes clipped xAI reasoning before activity rows and preview counts are derived', () => {
+    const filterIndex = source.indexOf('const displayableParts = React.useMemo(')
+    const aggregationIndex = source.indexOf('return aggregateRows(displayableParts)')
+    const previewCountIndex = source.indexOf('const previewHiddenCount = React.useMemo(')
+
+    expect(filterIndex).toBeGreaterThan(-1)
+    expect(aggregationIndex).toBeGreaterThan(filterIndex)
+    expect(previewCountIndex).toBeGreaterThan(aggregationIndex)
+    expect(source).toContain('filterKnownClippedXaiReasoningActivities(sortedParts, providerID)')
+    expect(source).toContain('if (shouldRenderRows && rows.length === 0)')
   })
 })

@@ -327,6 +327,29 @@ export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({
                     )}
                     <span>{unavailableMessage}</span>
                 </div>
+                {onCompact ? (
+                    // Rendered disabled rather than omitted: when the compact
+                    // affordance simply vanished, an unmeasured session looked
+                    // like a session that could not be compacted at all, with
+                    // no explanation anywhere in the UI.
+                    <div className="mt-3 flex justify-end border-t border-[var(--interactive-border)] pt-3">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="xs"
+                            disabled
+                            title={t(effectiveAvailability === 'loading'
+                                ? 'contextUsage.window.compactLoading'
+                                : 'contextUsage.window.compactUnavailable')}
+                            aria-label={t(effectiveAvailability === 'loading'
+                                ? 'contextUsage.window.compactLoading'
+                                : 'contextUsage.window.compactUnavailable')}
+                        >
+                            <RiScissorsLine className="h-3.5 w-3.5" />
+                            {t('contextUsage.window.compactAction')}
+                        </Button>
+                    </div>
+                ) : null}
             </div>
         );
     }
@@ -438,21 +461,34 @@ export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({
                             </div>
                         </div>
                     ) : null}
-                    {onCompact ? (
-                        <div className="mt-3 flex justify-end border-t border-[var(--interactive-border)] pt-3">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="xs"
-                                onClick={onCompact}
-                                title={t('contextUsage.window.compactAction')}
-                                aria-label={t('contextUsage.window.compactAction')}
-                            >
-                                <RiScissorsLine className="h-3.5 w-3.5" />
-                                {t('contextUsage.window.compactAction')}
-                            </Button>
-                        </div>
-                    ) : null}
+                    {onCompact ? (() => {
+                        // Previously this whole block was omitted whenever usage
+                        // had not resolved, so compaction simply looked absent
+                        // and its callback returned silently. Render it disabled
+                        // with a reason instead of vanishing.
+                        const compactDisabled = availability !== 'available';
+                        const compactTitle = compactDisabled
+                            ? t(availability === 'loading'
+                                ? 'contextUsage.window.compactLoading'
+                                : 'contextUsage.window.compactUnavailable')
+                            : t('contextUsage.window.compactAction');
+                        return (
+                            <div className="mt-3 flex justify-end border-t border-[var(--interactive-border)] pt-3">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="xs"
+                                    disabled={compactDisabled}
+                                    onClick={onCompact}
+                                    title={compactTitle}
+                                    aria-label={compactTitle}
+                                >
+                                    <RiScissorsLine className="h-3.5 w-3.5" />
+                                    {t('contextUsage.window.compactAction')}
+                                </Button>
+                            </div>
+                        );
+                    })() : null}
                 </>
             )}
         </div>

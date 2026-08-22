@@ -1,7 +1,9 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { Binary } from "./binary"
-
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+import {
+  findMessageIndex,
+  insertMessageChronologically,
+  sortMessagesChronologically,
+} from "./message-order"
 
 function filterRenderableParts(parts: Part[]) {
   return parts.filter((part) => !!part?.id)
@@ -58,14 +60,13 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
   const confirmed: string[] = []
 
   for (const item of items) {
-    const result = Binary.search(session, item.message.id, (message) => message.id)
-    const found = result.found
-    if (found) {
+    if (findMessageIndex(session, item.message.id) >= 0) {
       confirmed.push(item.message.id)
       continue
     }
 
-    session.splice(result.index, 0, item.message)
+    const inserted = insertMessageChronologically(session, item.message)
+    session.splice(0, session.length, ...inserted)
     const current = part.get(item.message.id)
     part.set(item.message.id, mergeParts(current, item.parts))
   }
@@ -74,9 +75,10 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
     cursor: page.cursor,
     complete: page.complete,
     session,
-    part: [...part.entries()]
-      .sort((a, b) => cmp(a[0], b[0]))
-      .map(([id, part]) => ({ id, part })),
+    part: session.flatMap((message) => {
+      const messageParts = part.get(message.id)
+      return messageParts ? [{ id: message.id, part: messageParts }] : []
+    }),
     confirmed,
   }
 }
@@ -85,9 +87,9 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
 export function applyOptimisticAdd(draft: OptimisticStore, input: OptimisticAddInput) {
   const messages = draft.message[input.sessionID]
   if (messages) {
-    const result = Binary.search(messages, input.message.id, (m) => m.id)
-    if (!result.found) {
-      messages.splice(result.index, 0, input.message)
+    if (findMessageIndex(messages, input.message.id) < 0) {
+      const inserted = insertMessageChronologically(messages, input.message)
+      messages.splice(0, messages.length, ...inserted)
     }
   } else {
     draft.message[input.sessionID] = [input.message]
@@ -99,8 +101,8 @@ export function applyOptimisticAdd(draft: OptimisticStore, input: OptimisticAddI
 export function applyOptimisticRemove(draft: OptimisticStore, input: OptimisticRemoveInput) {
   const messages = draft.message[input.sessionID]
   if (messages) {
-    const result = Binary.search(messages, input.messageID, (m) => m.id)
-    if (result.found) messages.splice(result.index, 1)
+    const index = findMessageIndex(messages, input.messageID)
+    if (index >= 0) messages.splice(index, 1)
   }
   delete draft.part[input.messageID]
 }
@@ -108,7 +110,7 @@ export function applyOptimisticRemove(draft: OptimisticStore, input: OptimisticR
 /** Merge two sorted message arrays by id, deduplicating.
  *  Preserves references from `a` for items that already exist — avoids
  *  unnecessary React re-renders when prepending older history. */
-export function mergeMessages<T extends { id: string }>(a: readonly T[], b: readonly T[]) {
+export function mergeMessages<T extends { id: string; time?: { created?: unknown } }>(a: readonly T[], b: readonly T[]) {
   const existing = new Map(a.map((item) => [item.id, item] as const))
   let changed = false
   for (const item of b) {
@@ -118,5 +120,5 @@ export function mergeMessages<T extends { id: string }>(a: readonly T[], b: read
     }
   }
   if (!changed) return a as T[]
-  return [...existing.values()].sort((x, y) => cmp(x.id, y.id))
+  return sortMessagesChronologically([...existing.values()])
 }

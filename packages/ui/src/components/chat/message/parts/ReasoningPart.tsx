@@ -7,6 +7,7 @@ import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import type { ResponseStyleLevel } from '@/lib/responseStyle';
 import { formatReasoningText } from './reasoningSummaryDisplay';
 import { isReasoningPartActive } from '../reasoningGrouping';
+import { isKnownClippedXaiReasoningPreview } from '../reasoningRenderPolicy';
 
 type PartWithText = Part & {
     text?: string;
@@ -21,8 +22,6 @@ type ReasoningTimelineBlockProps = {
     variant: ReasoningVariant;
     onContentChange?: (reason?: ContentChangeReason) => void;
     blockId: string;
-    time?: { start?: number; end?: number };
-    showDuration?: boolean;
     isStreaming?: boolean;
     isMobile?: boolean;
     actions?: React.ReactNode;
@@ -33,15 +32,10 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     variant,
     onContentChange,
     blockId,
-    time: _time,
-    showDuration: _showDuration = true,
     isStreaming = false,
     isMobile = false,
     actions,
 }) => {
-    void _time;
-    void _showDuration;
-
     React.useEffect(() => {
         if (text.trim().length === 0) {
             return;
@@ -101,9 +95,12 @@ const ReasoningPart = React.memo(({
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const partWithText = part as PartWithText;
     const rawText = partWithText.text || partWithText.content || '';
+    const shouldHideClippedPreview = isKnownClippedXaiReasoningPreview(part, providerID);
     const textContent = React.useMemo(
-        () => formatReasoningText(rawText, providerID, responseStyleLevel),
-        [providerID, rawText, responseStyleLevel],
+        () => shouldHideClippedPreview
+            ? ''
+            : formatReasoningText(rawText, providerID, responseStyleLevel),
+        [providerID, rawText, responseStyleLevel, shouldHideClippedPreview],
     );
     const isActive = isReasoningPartActive(part);
     const isStreaming = chatRenderMode === 'live' && isActive;
@@ -113,8 +110,8 @@ const ReasoningPart = React.memo(({
         identityKey: `${messageId}:${part.id ?? 'reasoning'}`,
     });
 
-    // Empty reasoning renders nothing; the bottom status row owns the
-    // "Thinking" indicator so activity text never jumps between positions.
+    // The disclosure owns the compact lifecycle label. Its expanded body
+    // renders nothing until the provider supplies displayable reasoning text.
     if (!throttledText || throttledText.trim().length === 0) {
         return null;
     }

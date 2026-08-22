@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  appendNonOverlappingDelta,
   appendStreamingTextDelta,
   collapseExactAdjacentTextRepeats,
   normalizeAssistantReasoningText,
@@ -188,5 +189,35 @@ describe("appendStreamingTextDelta", () => {
     const frame = "Continuing implementation: creating the hook and history section, then wiring them into the shell."
 
     expect(appendStreamingTextDelta("", `${frame}\n${frame}\n`)).toBe(`${frame}\n`)
+  })
+})
+
+describe("appendNonOverlappingDelta", () => {
+  test("dedupes a delta the existing value already fully contains, at any length", () => {
+    expect(appendNonOverlappingDelta("streamed hello", "hello")).toBe("streamed hello")
+    expect(appendNonOverlappingDelta("ok", "ok")).toBe("ok")
+  })
+
+  test("strips a long genuine overlap between snapshot tail and delta head", () => {
+    expect(appendNonOverlappingDelta(
+      "The booking flow already exists in this repo",
+      "already exists in this repo, so the work is integration",
+    )).toBe("The booking flow already exists in this repo, so the work is integration")
+  })
+
+  test("keeps a short coincidental overlap instead of swallowing word characters", () => {
+    // "…and v" + "vital…": the shared "v" is coincidence, not a replay. The old
+    // 1-char dedupe produced "…and vital…", eating the delta's leading letter.
+    expect(appendNonOverlappingDelta("difficulty read, and v", "vital context follows"))
+      .toBe("difficulty read, and vvital context follows")
+    expect(appendNonOverlappingDelta("checking the", "the docs")).toBe("checking thethe docs")
+  })
+
+  test("collapses a 5-character streaming handoff without requiring a longer overlap", () => {
+    expect(appendNonOverlappingDelta("Hello", "Hello world")).toBe("Hello world")
+    expect(appendNonOverlappingDelta(
+      "toolFailedToReadDiagram vs toolFailedReadDiagra",
+      "Diagram • Let me fix it.",
+    )).toBe("toolFailedToReadDiagram vs toolFailedReadDiagram • Let me fix it.")
   })
 })

@@ -2021,7 +2021,7 @@ const removeWorktreeNow = async (
   input: RemoveGitWorktreePayload,
   targetDirectory: string,
   bootstrapRuntime: WorktreeBootstrapRuntime,
-): Promise<boolean> => {
+): Promise<{ removedPath: string }> => {
   const context = await resolveWorktreeProjectContext(directory);
   const deleteLocalBranch = input?.deleteLocalBranch === true;
 
@@ -2065,7 +2065,7 @@ const removeWorktreeNow = async (
 
     await bootstrapRuntime.markRemoved(targetDirectory);
 
-    return true;
+    return { removedPath: targetCanonical };
   }
 
   await runGitCommandOrThrow(
@@ -2093,10 +2093,13 @@ const removeWorktreeNow = async (
 
   await bootstrapRuntime.markRemoved(matchedEntry.worktree);
 
-  return true;
+  return { removedPath: await canonicalPath(matchedEntry.worktree) };
 };
 
-export async function removeWorktree(directory: string, input: RemoveGitWorktreePayload): Promise<boolean> {
+export async function removeWorktree(
+  directory: string,
+  input: RemoveGitWorktreePayload,
+): Promise<{ removedPath: string }> {
   const targetDirectory = normalizeDirectoryPath(input?.directory);
   if (!targetDirectory) {
     throw new Error('Worktree directory is required');

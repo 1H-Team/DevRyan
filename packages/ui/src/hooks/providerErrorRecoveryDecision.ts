@@ -5,6 +5,7 @@ import { isLikelyProviderAuthFailure } from '@/lib/messages/providerAuthError';
 import { isLikelyProviderModelNotFound } from '@/lib/messages/providerModelNotFound';
 import { isLikelyTransientStreamFailure, stripWrappedJsonQuotes } from '@/lib/messages/transientStreamError';
 import { isAssistantTurnComplete } from '@/sync/session-working';
+import { isClaudeThirdPartyUsageClassificationError } from '@/lib/messages/claudeThirdPartyUsage';
 
 type Input = {
   messages: Message[];
@@ -28,7 +29,10 @@ export function decideProviderRetryLoopRecovery(
   if (status?.type !== 'retry') return null;
   const reason = stripWrappedJsonQuotes(status.message).trim();
   if (!reason) return null;
-  if (isDefiniteProviderUsageLimit(reason)) return { reason };
+  if (
+    isClaudeThirdPartyUsageClassificationError(reason)
+    || isDefiniteProviderUsageLimit(reason)
+  ) return { reason };
   if (status.attempt < MAX_TRANSIENT_PROVIDER_RETRY_ATTEMPTS) return null;
   if (!isLikelyTransientStreamFailure(undefined, reason)) return null;
   return { reason };
@@ -59,6 +63,8 @@ export function decideProviderErrorRecovery(input: Input): { reason: string } | 
   const reason = stripWrappedJsonQuotes(raw).trim();
   if (!reason || isLikelyProviderAuthFailure(reason)) return null;
   if (
+    isClaudeThirdPartyUsageClassificationError(reason)
+    ||
     isLikelyProviderModelNotFound(reason)
     || error.name === 'ProviderModelNotFoundError'
     || isLikelyTransientStreamFailure(error.name, reason)

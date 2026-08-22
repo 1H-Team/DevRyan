@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import yaml from 'yaml';
-import { parse as parseJsonc } from 'jsonc-parser';
+import { isInvalidJsoncError, parseConfigJsonc } from './jsonc-config.js';
 
 // ============== PATH CONSTANTS ==============
 
@@ -158,13 +158,10 @@ function readConfigFile(filePath) {
   }
   try {
     const content = fs.readFileSync(filePath, 'utf8');
-    const normalized = content.trim();
-    if (!normalized) {
-      return {};
-    }
-    return parseJsonc(normalized, [], { allowTrailingComma: true });
+    return parseConfigJsonc(content, filePath);
   } catch (error) {
-    console.error(`Failed to read config file: ${filePath}`, error);
+    if (isInvalidJsoncError(error)) throw error;
+    console.error('Failed to read OpenCode configuration', error);
     throw new Error('Failed to read OpenCode configuration');
   }
 }
@@ -196,9 +193,21 @@ function mergeConfigs(base, override) {
 function readConfigLayers(workingDirectory) {
   const { userPaths, projectPath, customPath } = getConfigPaths(workingDirectory);
   const userPath = getPrimaryUserConfigPath(userPaths);
-  const userConfig = readConfigFile(userPath);
-  const projectConfig = readConfigFile(projectPath);
-  const customConfig = readConfigFile(customPath);
+  const readLayer = (layerPath) => {
+    try {
+      return readConfigFile(layerPath);
+    } catch (error) {
+      console.warn('[OpenCode config] Ignoring invalid configuration layer', {
+        code: isInvalidJsoncError(error) ? error.code : 'CONFIG_READ_FAILED',
+        file: path.basename(layerPath || 'configuration'),
+        diagnostics: isInvalidJsoncError(error) ? error.diagnostics : undefined,
+      });
+      return {};
+    }
+  };
+  const userConfig = readLayer(userPath);
+  const projectConfig = readLayer(projectPath);
+  const customConfig = readLayer(customPath);
   const mergedConfig = mergeConfigs(mergeConfigs(userConfig, projectConfig), customConfig);
 
   return {
@@ -230,6 +239,7 @@ function getConfigForPath(layers, targetPath) {
 function writeConfig(config, filePath = CONFIG_FILE) {
   try {
     if (fs.existsSync(filePath)) {
+      readConfigFile(filePath);
       const backupFile = `${filePath}.openchamber.backup`;
       fs.copyFileSync(filePath, backupFile);
       console.log(`Created config backup: ${backupFile}`);
@@ -239,7 +249,8 @@ function writeConfig(config, filePath = CONFIG_FILE) {
     fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf8');
     console.log(`Successfully wrote config file: ${filePath}`);
   } catch (error) {
-    console.error(`Failed to write config file: ${filePath}`, error);
+    if (isInvalidJsoncError(error)) throw error;
+    console.error('Failed to write OpenCode configuration', error);
     throw new Error('Failed to write OpenCode configuration');
   }
 }

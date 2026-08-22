@@ -922,6 +922,7 @@ const spawnLocalServer = async () => {
     attachSignals: false,
     exitOnShutdown: false,
     onDesktopNotification: (payload) => maybeShowNativeNotification(payload),
+    onOpenCodeStartupStatus: (text) => updateStartupSplashStatus(text),
     getIsWindowFocused: isAnyWindowFocused,
     getBrowserCdpBridgeStatus: () => resolveBridgeStatusForDiscovery(),
     getBrowserCdpDiscoveryToken: () => state.browserCdpDiscoveryToken || '',
@@ -2233,6 +2234,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   if (url) {
     void navigateWindow(browserWindow, url);
   } else {
+    state.startupSplashActive = true;
     void navigateWindow(
       browserWindow,
       `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupSplashHtml())}`,
@@ -2243,7 +2245,22 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   return browserWindow;
 };
 
+// Startup progress reported by the embedded server (OpenCode bootstrap can
+// take a while, e.g. plugin installs); surfaced on the splash so the user
+// isn't staring at a bare logo.
+const updateStartupSplashStatus = (text) => {
+  if (!state.startupSplashActive) return;
+  const mainWindow = state.mainWindow;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const script = `(() => {
+    const el = document.getElementById('startup-status');
+    if (el) el.textContent = ${JSON.stringify(String(text ?? ''))};
+  })()`;
+  void mainWindow.webContents.executeJavaScript(script).catch(() => {});
+};
+
 const activateMainWindow = async (url, localOrigin, bootOutcome) => {
+  state.startupSplashActive = false;
   state.localOrigin = localOrigin;
   state.bootOutcome = bootOutcome ?? null;
   state.initScript = buildInitScript(localOrigin, state.bootOutcome, state.sidecarUrl || localOrigin);
@@ -3759,7 +3776,7 @@ const buildMacMenu = () => {
         { label: 'Dark Theme', click: () => dispatchAction('theme-dark') },
         { label: 'System Theme', click: () => dispatchAction('theme-system') },
         { type: 'separator' },
-        { label: 'Toggle Session Sidebar', accelerator: 'Cmd+L', click: () => dispatchAction('toggle-sidebar') },
+        { label: 'Toggle Session Sidebar', accelerator: 'Cmd+Alt+L', click: () => dispatchAction('toggle-sidebar') },
         { label: 'Toggle Memory Debug', accelerator: 'Cmd+Shift+D', click: () => dispatchAction('toggle-memory-debug') },
         { type: 'separator' },
         { role: 'togglefullscreen' },

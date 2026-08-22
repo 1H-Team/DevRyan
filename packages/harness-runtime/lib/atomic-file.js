@@ -4,6 +4,9 @@ import path from 'node:path';
 
 const DEFAULT_MAX_READ_BYTES = 16 * 1024 * 1024;
 const DEFAULT_STALE_TMP_AGE_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_LOCK_TIMEOUT_MS = 5_000;
+const DEFAULT_LOCK_RETRY_MS = 25;
+const DEFAULT_MALFORMED_LOCK_STALE_MS = 30_000;
 
 const isNotFound = (error) => error && typeof error === 'object' && error.code === 'ENOENT';
 
@@ -82,6 +85,113 @@ export const writeFileAtomic = async (filePath, data, options = {}) => {
   }
 };
 
+const isProcessAlive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+};
+
+const parseLockOwner = (raw) => {
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      !parsed || typeof parsed !== 'object'
+      || typeof parsed.ownerToken !== 'string' || !parsed.ownerToken
+      || !Number.isInteger(parsed.pid) || parsed.pid <= 0
+      || typeof parsed.createdAt !== 'number' || !Number.isFinite(parsed.createdAt) || parsed.createdAt < 0
+    ) {
+      return null;
+    }
+    return { ownerToken: parsed.ownerToken, pid: parsed.pid, createdAt: parsed.createdAt };
+  } catch {
+    return null;
+  }
+};
+
+const removeObservedLock = async (fsApi, lockPath, observedRaw, observedOwnerToken) => {
+  try {
+    const latestRaw = await fsApi.readFile(lockPath, 'utf8');
+    const latestOwner = parseLockOwner(latestRaw);
+    const matches = observedOwnerToken
+      ? latestOwner?.ownerToken === observedOwnerToken
+      : latestRaw === observedRaw;
+    if (!matches) return false;
+    await fsApi.unlink(lockPath);
+    return true;
+  } catch (error) {
+    if (isNotFound(error)) return true;
+    throw error;
+  }
+};
+
+export const withCrossProcessFileLock = async (lockPath, callback, options = {}) => {
+  if (typeof callback !== 'function') throw new TypeError('Lock callback is required');
+  const fsApi = options.fs ?? fs;
+  const now = options.now ?? Date.now;
+  const timeoutMs = Math.max(0, options.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS);
+  const retryMs = Math.max(1, options.retryMs ?? DEFAULT_LOCK_RETRY_MS);
+  const malformedStaleMs = Math.max(0, options.malformedStaleMs ?? DEFAULT_MALFORMED_LOCK_STALE_MS);
+  const wait = options.wait ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const checkProcessAlive = options.isProcessAlive ?? isProcessAlive;
+  const ownerToken = (options.randomToken ?? (() => crypto.randomUUID().replaceAll('-', '')))();
+  const startedAt = now();
+  const directory = path.dirname(lockPath);
+  const owner = { ownerToken, pid: process.pid, createdAt: startedAt };
+
+  await fsApi.mkdir(directory, { recursive: true, mode: 0o700 });
+  while (true) {
+    let handle;
+    try {
+      handle = await fsApi.open(lockPath, 'wx', 0o600);
+      await handle.writeFile(`${JSON.stringify(owner)}\n`, 'utf8');
+      await handle.sync();
+      await handle.close();
+      handle = undefined;
+      break;
+    } catch (error) {
+      await handle?.close().catch(() => undefined);
+      if (error?.code !== 'EEXIST') throw error;
+
+      let observedRaw = '';
+      try {
+        observedRaw = await fsApi.readFile(lockPath, 'utf8');
+        const observedOwner = parseLockOwner(observedRaw);
+        if (observedOwner) {
+          if (!checkProcessAlive(observedOwner.pid)) {
+            await removeObservedLock(fsApi, lockPath, observedRaw, observedOwner.ownerToken);
+            continue;
+          }
+        } else {
+          const stat = await fsApi.stat(lockPath);
+          if (now() - stat.mtimeMs >= malformedStaleMs) {
+            await removeObservedLock(fsApi, lockPath, observedRaw, null);
+            continue;
+          }
+        }
+      } catch (inspectError) {
+        if (isNotFound(inspectError)) continue;
+        throw inspectError;
+      }
+
+      if (now() - startedAt >= timeoutMs) {
+        const timeoutError = new Error('Timed out acquiring cross-process file lock');
+        timeoutError.code = 'LOCK_TIMEOUT';
+        throw timeoutError;
+      }
+      await wait(Math.min(retryMs, Math.max(1, timeoutMs - (now() - startedAt))));
+    }
+  }
+
+  try {
+    return await callback();
+  } finally {
+    await removeObservedLock(fsApi, lockPath, `${JSON.stringify(owner)}\n`, ownerToken);
+  }
+};
+
 const quarantineInvalidFile = async (filePath, error, options) => {
   const fsApi = options.fs ?? fs;
   const now = options.now ?? Date.now;
@@ -125,4 +235,7 @@ export const readJsonGuarded = async (filePath, options = {}) => {
 export {
   DEFAULT_MAX_READ_BYTES,
   DEFAULT_STALE_TMP_AGE_MS,
+  DEFAULT_LOCK_TIMEOUT_MS,
+  DEFAULT_LOCK_RETRY_MS,
+  DEFAULT_MALFORMED_LOCK_STALE_MS,
 };

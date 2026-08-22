@@ -1,11 +1,13 @@
-export const THEME_CATALOG_VERSION = 2 as const;
+export const THEME_CATALOG_VERSION = 3 as const;
 
 export const DEFAULT_LIGHT_THEME_ID = 'devryan-default-light' as const;
 export const DEFAULT_DARK_THEME_ID = 'devryan-default-dark' as const;
 
-const LEGACY_DEFAULT_THEME_IDS: Readonly<Record<string, string>> = {
+const REMOVED_THEME_IDS: Readonly<Record<string, string>> = {
+  'carbonfox-light': DEFAULT_LIGHT_THEME_ID,
   'onedarkpro-light': DEFAULT_LIGHT_THEME_ID,
   'carbonfox-dark': DEFAULT_DARK_THEME_ID,
+  'onedarkpro-dark': DEFAULT_DARK_THEME_ID,
 };
 
 export type ThemeCatalogSettings = {
@@ -27,7 +29,7 @@ export const migrateThemeCatalogSettings = <T extends ThemeCatalogSettings>(sett
   }
 
   const migrateId = (themeId: string | undefined): string | undefined =>
-    themeId ? (LEGACY_DEFAULT_THEME_IDS[themeId] ?? themeId) : undefined;
+    themeId ? (REMOVED_THEME_IDS[themeId] ?? themeId) : undefined;
 
   return {
     settings: {

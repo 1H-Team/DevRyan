@@ -3,6 +3,8 @@ import type { State } from "./types"
 import {
   getEffectiveSessionRevertMessageID,
   getSessionRevertMessageID,
+  isMessageHiddenByRevert,
+  filterMessagesForRevert,
 } from "./revert-transactions"
 
 export type SessionUserActivity = Record<string, number>
@@ -20,18 +22,21 @@ export const isRootSession = (session: Session | undefined): boolean => {
   return !((session as (Session & { parentID?: string | null }) | undefined)?.parentID)
 }
 
-export const isMessageVisibleForSession = (message: Message, session: Session | undefined): boolean => {
+export const isMessageVisibleForSession = (
+  message: Message,
+  session: Session | undefined,
+  messages: readonly Message[] = [message],
+): boolean => {
   const revertMessageID = getSessionRevertMessageID(session)
-  return !revertMessageID || message.id < revertMessageID
+  if (!revertMessageID) return true
+  return filterMessagesForRevert(messages, revertMessageID).some((candidate) => candidate.id === message.id)
 }
 
 const isMessageVisibleForSessionState = (
   state: State,
   message: Message,
-  session: Session | undefined,
 ): boolean => {
-  const revertMessageID = getEffectiveSessionRevertMessageID(state, message.sessionID, session)
-  return !revertMessageID || message.id < revertMessageID
+  return !isMessageHiddenByRevert(state, message.sessionID, message.id)
 }
 
 export const getMessageCreatedAt = (message: Message): number | undefined => {
@@ -45,11 +50,15 @@ export const getLastVisibleUserMessageAt = (
 ): number | undefined => {
   if (!isRootSession(session) || !messages) return undefined
 
+  const revertMessageID = state
+    ? getEffectiveSessionRevertMessageID(state, session?.id ?? "", session)
+    : getSessionRevertMessageID(session)
+  const visibleMessages = revertMessageID ? filterMessagesForRevert(messages, revertMessageID) : messages
   let latest: number | undefined
-  for (const message of messages) {
+  for (const message of visibleMessages) {
     const visible = state
-      ? isMessageVisibleForSessionState(state, message, session)
-      : isMessageVisibleForSession(message, session)
+      ? isMessageVisibleForSessionState(state, message)
+      : true
     if (message.role !== "user" || !visible) continue
     const createdAt = getMessageCreatedAt(message)
     if (createdAt === undefined) continue
@@ -83,7 +92,7 @@ export const updateSessionUserActivityFromMessage = (draft: State, message: Mess
   if (message.role !== "user") return false
 
   const session = draft.session.find((item) => item.id === message.sessionID)
-  if (!isRootSession(session) || !isMessageVisibleForSessionState(draft, message, session)) return false
+  if (!isRootSession(session) || !isMessageVisibleForSessionState(draft, message)) return false
 
   const createdAt = getMessageCreatedAt(message)
   if (createdAt === undefined) return false

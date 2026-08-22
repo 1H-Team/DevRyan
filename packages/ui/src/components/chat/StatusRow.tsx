@@ -164,6 +164,9 @@ interface StatusRowProps {
   // Abort status display
   showAbortStatus?: boolean;
   showAssistantStatus?: boolean;
+  // Keeps the status surface mounted while another visible component owns the
+  // ordinary assistant activity label. Warnings and safety controls remain.
+  suppressAssistantStatusText?: boolean;
   showTodos?: boolean;
   agentName?: string;
   leftAccessory?: React.ReactNode;
@@ -195,6 +198,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   onAbort,
   showAbortStatus,
   showAssistantStatus = true,
+  suppressAssistantStatusText = false,
   showTodos = true,
   agentName,
   leftAccessory,
@@ -312,6 +316,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
 
   const hasTodoContent = showTodos && progress.total > 0;
   const hasAssistantContent = showAssistantStatus && (
+    suppressAssistantStatusText ||
     isWorking ||
     Boolean(wasAborted) ||
     Boolean(showAbortStatus) ||
@@ -599,7 +604,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
               <RiErrorWarningLine size={16} className="shrink-0" aria-hidden="true" />
               <span className="truncate">{longRunningToolError ?? longRunningToolStatusText}</span>
             </div>
-          ) : showAssistantStatus && shouldRenderPlaceholder ? (
+          ) : showAssistantStatus && !suppressAssistantStatusText && shouldRenderPlaceholder ? (
             <WorkingPlaceholder
               key={currentSessionId ?? "no-session"}
               isWorking={isWorking}

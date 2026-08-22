@@ -1,0 +1,15 @@
+export const JSONC_CONFIG_FIXTURES = [
+  { name: 'comments', source: '{ // note\n "enabled": true\n}', valid: true, value: { enabled: true } },
+  { name: 'trailing comma', source: '{"enabled": true,}', valid: true, value: { enabled: true } },
+  { name: 'empty', source: '', valid: true, value: {} },
+  { name: 'whitespace', source: ' \n\t ', valid: true, value: {} },
+  { name: 'comment only', source: '/* note */\n// another\n', valid: true, value: {} },
+  { name: 'unquoted JSON5 key', source: '{ enabled: true }', valid: false },
+  { name: 'YAML', source: 'enabled: true\nmodel: gpt', valid: false },
+  { name: 'plain text', source: 'enabled', valid: false },
+  { name: 'truncated object', source: '{"enabled": true', valid: false },
+  { name: 'parser-recovered partial object', source: '{"enabled": true, "model": }', valid: false },
+  { name: 'array root', source: '[]', valid: false },
+  { name: 'scalar root', source: '42', valid: false },
+  { name: 'null root', source: 'null', valid: false },
+];

@@ -104,6 +104,17 @@ const createApp = (overrides = {}) => {
     },
     standardSessionTitleRuntime: { schedule: vi.fn() },
     authLibrary: authModule,
+    readClaudePromptMode: vi.fn(() => ({
+      ok: true,
+      mode: 'combined',
+      compatibilityMode: false,
+    })),
+    setClaudePromptCompatibilityMode: vi.fn((compatibilityMode) => ({
+      ok: true,
+      changed: true,
+      mode: compatibilityMode ? 'claude-only' : 'combined',
+      compatibilityMode,
+    })),
     ...overrides,
   };
   delete dependencies.useJsonParser;
@@ -171,6 +182,28 @@ describe('OpenCode provider routes', () => {
     expect(removeProviderConfig).not.toHaveBeenCalledWith('anthropic', '/tmp/project', 'project');
   });
 
+  it('removes the active project provider config when disconnect-all supplies a directory', async () => {
+    const removeProviderConfig = vi.fn(() => true);
+    const { app, dependencies } = createApp({ removeProviderConfig });
+
+    const response = await request(app)
+      .delete('/api/provider/google/auth?scope=all&directory=%2Ftmp%2Fproject')
+      .expect(200);
+
+    expect(dependencies.resolveProjectDirectory).toHaveBeenCalled();
+    expect(removeProviderConfig).toHaveBeenCalledWith('google', '/tmp/project', 'project');
+    expect(response.body.removedSources).toEqual({
+      auth: false,
+      user: true,
+      project: true,
+      custom: true,
+    });
+    expect(response.body.sources).toMatchObject({
+      auth: { exists: false },
+      project: { exists: false },
+    });
+  });
+
   it('removes both supported Google auth aliases when disconnecting Google', async () => {
     authModule.removeProviderAuth.mockImplementation((providerId) => (
       providerId === 'google.oauth'
@@ -182,6 +215,27 @@ describe('OpenCode provider routes', () => {
     expect(authModule.removeProviderAuth).toHaveBeenCalledWith('google');
     expect(authModule.removeProviderAuth).toHaveBeenCalledWith('google.oauth');
     expect(response.body.removed).toBe(true);
+  });
+
+  it('invalidates provider runtime state for an idempotent disconnect', async () => {
+    const { app, dependencies } = createApp();
+
+    const response = await request(app)
+      .delete('/api/provider/antigravity/auth?scope=all')
+      .expect(200);
+
+    expect(response.body.removed).toBe(false);
+    expect(response.body.removedSources).toEqual({
+      auth: false,
+      user: false,
+      project: false,
+      custom: false,
+    });
+    expect(dependencies.markConfigChange).toHaveBeenCalledWith(
+      'provider antigravity disconnected (all)',
+      { providerId: 'antigravity', scope: 'all' },
+      true,
+    );
   });
 
   it('requires an explicit directory for project-scoped provider disconnects', async () => {
@@ -242,6 +296,58 @@ describe('OpenCode provider routes', () => {
       error: 'Claude Code is not signed in. Run `claude auth login` and try again.',
       reason: 'claude_not_authenticated',
     });
+  });
+
+  it('reads and updates the managed Claude prompt mode without exposing configuration data', async () => {
+    const { app, dependencies } = createApp();
+
+    const current = await request(app)
+      .get('/api/provider/anthropic/prompt-mode')
+      .expect(200);
+    const updated = await request(app)
+      .put('/api/provider/anthropic/prompt-mode')
+      .send({ compatibilityMode: true })
+      .expect(200);
+
+    expect(current.body).toEqual({
+      mode: 'combined',
+      compatibilityMode: false,
+      editable: true,
+    });
+    expect(updated.body).toEqual({
+      success: true,
+      changed: true,
+      mode: 'claude-only',
+      compatibilityMode: true,
+      editable: true,
+    });
+    expect(dependencies.setClaudePromptCompatibilityMode).toHaveBeenCalledWith(true);
+    expect(JSON.stringify(updated.body)).not.toMatch(/credential|profile|token/i);
+  });
+
+  it('validates Claude prompt-mode writes and keeps external runtimes read-only', async () => {
+    const invalid = createApp();
+    await request(invalid.app)
+      .put('/api/provider/anthropic/prompt-mode')
+      .send({ compatibilityMode: 'yes' })
+      .expect(400);
+    expect(invalid.dependencies.setClaudePromptCompatibilityMode).not.toHaveBeenCalled();
+
+    const external = createApp({ isExternalOpenCode: vi.fn(() => true) });
+    const current = await request(external.app)
+      .get('/api/provider/anthropic/prompt-mode')
+      .expect(200);
+    await request(external.app)
+      .put('/api/provider/anthropic/prompt-mode')
+      .send({ compatibilityMode: true })
+      .expect(409);
+
+    expect(current.body).toEqual({
+      mode: 'external',
+      compatibilityMode: false,
+      editable: false,
+    });
+    expect(external.dependencies.setClaudePromptCompatibilityMode).not.toHaveBeenCalled();
   });
 
   it('verifies the Cursor SDK connection without writing the old OpenCode bridge config', async () => {
@@ -1069,70 +1175,6 @@ describe('OpenCode provider routes', () => {
     });
   });
 
-  it('saves OpenCode Go usage auth without deleting the API key', async () => {
-    readAuthFile.mockReturnValue({ 'opencode-go': { key: 'go-api-key' } });
-    const { app } = createApp();
-
-    await request(app)
-      .put('/api/provider/opencode-go/usage-auth')
-      .send({ workspaceId: 'wrk_abc123', authCookie: 'Fe26.2**secret-cookie' })
-      .expect(200);
-
-    expect(writeAuthFile).toHaveBeenCalledWith({
-      'opencode-go': {
-        key: 'go-api-key',
-        usageWorkspaceId: 'wrk_abc123',
-        usageAuthCookie: 'Fe26.2**secret-cookie',
-      },
-    });
-  });
-
-  it('reports OpenCode Go usage auth status', async () => {
-    readAuthFile.mockReturnValue({
-      'opencode-go': {
-        usageWorkspaceId: 'wrk_abc123',
-        usageAuthCookie: 'Fe26.2**secret-cookie',
-      },
-    });
-    const { app } = createApp();
-
-    const response = await request(app)
-      .get('/api/provider/opencode-go/usage-auth/status')
-      .expect(200);
-
-    expect(response.body).toEqual({ configured: true, workspaceId: 'wrk_abc123' });
-  });
-
-  it('clears OpenCode Go usage auth without deleting the API key', async () => {
-    readAuthFile.mockReturnValue({
-      'opencode-go': {
-        key: 'go-api-key',
-        usageWorkspaceId: 'wrk_abc123',
-        usageAuthCookie: 'Fe26.2**secret-cookie',
-      },
-    });
-    const { app } = createApp();
-
-    await request(app)
-      .delete('/api/provider/opencode-go/usage-auth')
-      .expect(200);
-
-    expect(writeAuthFile).toHaveBeenCalledWith({
-      'opencode-go': { key: 'go-api-key' },
-    });
-  });
-
-  it('rejects invalid OpenCode Go usage auth values', async () => {
-    const { app } = createApp();
-
-    await request(app)
-      .put('/api/provider/opencode-go/usage-auth')
-      .send({ workspaceId: 'not-a-workspace', authCookie: 'cookie' })
-      .expect(400);
-
-    expect(writeAuthFile).not.toHaveBeenCalled();
-  });
-
   it('sends Cursor prompts through the SDK runtime before the OpenCode proxy', async () => {
     const handlePromptAsync = vi.fn(async () => ({ handled: true, status: 204 }));
     const { app } = createApp({
@@ -1364,53 +1406,130 @@ describe('OpenCode provider routes', () => {
     });
   });
 
-  it('schedules standard-provider title generation after the proxied prompt succeeds', async () => {
+  it.each([
+    ['normal', 'openai', 'gpt-5.6-sol'],
+    ['plan', 'openai', 'gpt-5.6-sol'],
+    ['normal', 'anthropic', 'claude-sonnet-4-5'],
+    ['plan', 'anthropic', 'claude-sonnet-4-5'],
+    ['normal', 'xai', 'grok-4.6'],
+    ['plan', 'xai', 'grok-4.6'],
+  ])('schedules standard-provider title generation for %s %s prompts', async (mode, providerID, modelID) => {
     const schedule = vi.fn();
     const { app } = createApp({
       standardSessionTitleRuntime: { schedule },
     });
     app.use('/api', (_req, res) => res.status(204).end());
 
+    const sessionID = `ses_${providerID}_${mode}`;
+    const visibleText = `repair ${providerID} ${mode} session titles`;
+    const parts = mode === 'plan'
+      ? [
+          { type: 'text', text: 'User has requested to enter plan mode.', synthetic: true },
+          { type: 'text', text: visibleText },
+        ]
+      : [{ type: 'text', text: visibleText }];
+
     await request(app)
-      .post('/api/session/ses_1/prompt_async?directory=%2Ftmp%2Fproject')
+      .post(`/api/session/${sessionID}/prompt_async?directory=%2Ftmp%2Fproject`)
       .send({
-        model: { providerID: 'openai', modelID: 'gpt-5.6-sol' },
+        model: { providerID, modelID },
         messageID: 'msg_1',
-        parts: [{ type: 'text', text: 'hello' }],
+        parts,
       })
       .expect(204);
 
     expect(schedule).toHaveBeenCalledWith({
-      sessionID: 'ses_1',
+      sessionID,
       directory: '/tmp/project',
-      text: 'hello',
+      text: visibleText,
+      providerID,
     });
   });
 
-  it('schedules standard-provider title generation for Anthropic prompts', async () => {
-    const schedule = vi.fn();
+  it('applies cached Grok duplicate-tool overrides without awaiting catalog refresh', async () => {
+    const refreshModel = vi.fn(() => new Promise(() => {}));
+    const getPromptToolOverrides = vi.fn(() => ({ mcp__context_mode__ctx_search: false }));
     const { app } = createApp({
-      standardSessionTitleRuntime: { schedule },
+      xaiToolCatalogRuntime: { supportsProvider: () => true, getPromptToolOverrides, refreshModel },
     });
-    app.use('/api', (_req, res) => res.status(204).end());
+    app.post('/api/session/:sessionID/prompt_async', (req, res) => res.json({ tools: req.body.tools }));
 
-    await request(app)
-      .post('/api/session/ses_anthropic/prompt_async?directory=%2Ftmp%2Fproject')
+    const response = await request(app)
+      .post('/api/session/ses_grok/prompt_async?directory=%2Ftmp%2Fproject')
       .send({
-        model: { providerID: 'anthropic', modelID: 'claude-sonnet-4-5' },
+        model: { providerID: 'xai', modelID: 'grok-4.6' },
         messageID: 'msg_1',
-        parts: [
-          { type: 'text', text: 'User has requested to enter plan mode.', synthetic: true },
-          { type: 'text', text: 'repair Anthropic session titles' },
-        ],
+        tools: { unique_tool: true },
+        parts: [{ type: 'text', text: 'reduce Grok startup latency' }],
       })
-      .expect(204);
+      .expect(200);
 
-    expect(schedule).toHaveBeenCalledWith({
-      sessionID: 'ses_anthropic',
-      directory: '/tmp/project',
-      text: 'repair Anthropic session titles',
+    expect(response.body.tools).toEqual({
+      unique_tool: true,
+      mcp__context_mode__ctx_search: false,
     });
+    expect(getPromptToolOverrides).toHaveBeenCalledWith({
+      directory: '/tmp/project',
+      providerID: 'xai',
+      modelID: 'grok-4.6',
+    });
+    expect(refreshModel).not.toHaveBeenCalled();
+  });
+
+  it('warms the Grok tool catalog on a cold cache before forwarding the first prompt', async () => {
+    const overrides = { mcp__context_mode__ctx_search: false };
+    let warmed = false;
+    const refreshModel = vi.fn(async () => {
+      warmed = true;
+    });
+    const getPromptToolOverrides = vi.fn(() => (warmed ? overrides : null));
+    const { app } = createApp({
+      xaiToolCatalogRuntime: { supportsProvider: () => true, getPromptToolOverrides, refreshModel },
+    });
+    app.post('/api/session/:sessionID/prompt_async', (req, res) => res.json({ tools: req.body.tools }));
+
+    const response = await request(app)
+      .post('/api/session/ses_grok/prompt_async?directory=%2Ftmp%2Fproject')
+      .send({
+        model: { providerID: 'xai', modelID: 'grok-4.6' },
+        messageID: 'msg_1',
+        tools: { unique_tool: true },
+        parts: [{ type: 'text', text: 'first Grok prompt in this directory' }],
+      })
+      .expect(200);
+
+    expect(refreshModel).toHaveBeenCalledWith({
+      directory: '/tmp/project',
+      providerID: 'xai',
+      modelID: 'grok-4.6',
+    });
+    expect(response.body.tools).toEqual({
+      unique_tool: true,
+      mcp__context_mode__ctx_search: false,
+    });
+  });
+
+  it('forwards the prompt after the bounded wait when the cold-cache catalog refresh hangs', async () => {
+    const refreshModel = vi.fn(() => new Promise(() => {}));
+    const getPromptToolOverrides = vi.fn(() => null);
+    const { app } = createApp({
+      xaiToolCatalogRuntime: { supportsProvider: () => true, getPromptToolOverrides, refreshModel },
+    });
+    app.post('/api/session/:sessionID/prompt_async', (req, res) => res.json({ tools: req.body.tools }));
+
+    const startedAt = Date.now();
+    const response = await request(app)
+      .post('/api/session/ses_grok/prompt_async?directory=%2Ftmp%2Fproject')
+      .send({
+        model: { providerID: 'xai', modelID: 'grok-4.6' },
+        messageID: 'msg_1',
+        tools: { unique_tool: true },
+        parts: [{ type: 'text', text: 'first Grok prompt with a slow catalog' }],
+      })
+      .expect(200);
+
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+    expect(response.body.tools).toEqual({ unique_tool: true });
   });
 
   it('schedules historical marker title backfill after a session list succeeds', async () => {

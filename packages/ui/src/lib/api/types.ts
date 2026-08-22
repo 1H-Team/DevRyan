@@ -497,6 +497,8 @@ export interface GitCommitMessageFileContext {
   workingDir: string;
   diff?: string;
   diffNote?: string;
+  insertions?: number;
+  deletions?: number;
 }
 
 export interface GitCommitMessageContext {
@@ -506,6 +508,9 @@ export interface GitCommitMessageContext {
   stagedOnly: boolean;
   selectedFiles: GitCommitMessageFileContext[];
   recentCommitSubjects: string[];
+  patch?: string;
+  patchNote?: string;
+  contextWarning?: string;
 }
 
 export interface GenerateGitCommitMessageRequest {
@@ -543,7 +548,7 @@ export interface GitWorktreeAPI {
   operation?(operationId: string): Promise<GitWorktreeBootstrapStatus>;
   activeOperations?(): Promise<GitWorktreeBootstrapStatus[]>;
   retry?(operationId: string): Promise<GitWorktreeBootstrapStatus>;
-  remove?(directory: string, payload: RemoveGitWorktreePayload): Promise<{ success: boolean }>;
+  remove?(directory: string, payload: RemoveGitWorktreePayload): Promise<{ success: boolean; removedPath?: string }>;
 }
 
 export interface GitAPI {
@@ -580,7 +585,7 @@ export interface GitAPI {
   getGitWorktreeBootstrapOperation?(operationId: string): Promise<GitWorktreeBootstrapStatus>;
   listActiveGitWorktreeBootstrapOperations?(): Promise<GitWorktreeBootstrapStatus[]>;
   retryGitWorktreeBootstrapOperation?(operationId: string): Promise<GitWorktreeBootstrapStatus>;
-  deleteGitWorktree?(directory: string, payload: RemoveGitWorktreePayload): Promise<{ success: boolean }>;
+  deleteGitWorktree?(directory: string, payload: RemoveGitWorktreePayload): Promise<{ success: boolean; removedPath?: string }>;
   createGitCommit(directory: string, message: string, options?: CreateGitCommitOptions): Promise<GitCommitResult>;
   gitPush(directory: string, options?: { remote?: string; branch?: string; options?: string[] | Record<string, unknown> }): Promise<GitPushResult>;
   gitPull(directory: string, options?: GitPullOptions): Promise<GitPullResult>;

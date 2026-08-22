@@ -445,6 +445,83 @@ describe("createEventPipeline", () => {
     })).toEqual(["updated:a", "delta:b", "updated:ab"])
   })
 
+  test("does not coalesce a later delta behind an interleaved part snapshot", async () => {
+    let resolveStreamFinished!: () => void
+    const streamFinished = new Promise<void>((resolve) => {
+      resolveStreamFinished = resolve
+    })
+    let resolveDelivered!: () => void
+    const deliveredAll = new Promise<void>((resolve) => {
+      resolveDelivered = resolve
+    })
+    const delivered: OpencodeEvent[] = []
+    const pipeline = createEventPipeline({
+      sdk: createSdk([
+        deltaEvent("Hel"),
+        partUpdatedEvent("Hel"),
+        deltaEvent("lo"),
+      ], resolveStreamFinished),
+      onEvent: (_directory, payload) => {
+        delivered.push(payload)
+        if (delivered.length === 3) {
+          resolveDelivered()
+        }
+      },
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+
+    try {
+      await streamFinished
+      await Promise.race([deliveredAll, failAfter(500)])
+    } finally {
+      pipeline.cleanup()
+    }
+
+    // The second delta must not coalesce into the first delta's slot ahead of
+    // the snapshot — the stale snapshot would then overwrite it and drop "lo".
+    expect(delivered.map((event) => {
+      if (event.type === "message.part.delta") {
+        return `delta:${(event.properties as { delta: string }).delta}`
+      }
+      return `updated:${((event.properties as { part: { text: string } }).part).text}`
+    })).toEqual(["delta:Hel", "updated:Hel", "delta:lo"])
+  })
+
+  test("still coalesces consecutive deltas when no snapshot intervenes", async () => {
+    let resolveStreamFinished!: () => void
+    const streamFinished = new Promise<void>((resolve) => {
+      resolveStreamFinished = resolve
+    })
+    let resolveDelivered!: () => void
+    const deliveredAll = new Promise<void>((resolve) => {
+      resolveDelivered = resolve
+    })
+    const delivered: OpencodeEvent[] = []
+    const pipeline = createEventPipeline({
+      sdk: createSdk([
+        deltaEvent("Hel"),
+        deltaEvent("lo"),
+      ], resolveStreamFinished),
+      onEvent: (_directory, payload) => {
+        delivered.push(payload)
+        resolveDelivered()
+      },
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+
+    try {
+      await streamFinished
+      await Promise.race([deliveredAll, failAfter(500)])
+    } finally {
+      pipeline.cleanup()
+    }
+
+    expect(delivered).toHaveLength(1)
+    expect((delivered[0].properties as { delta: string }).delta).toBe("Hello")
+  })
+
   test("falls back from an initial auto WebSocket close to SSE without disconnecting", async () => {
     installBrowserStubs()
 

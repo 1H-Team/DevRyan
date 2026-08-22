@@ -4,7 +4,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import yaml from 'yaml';
-import { parse as parseJsonc } from 'jsonc-parser';
+import { isInvalidJsoncError, parseConfigJsonc } from './jsoncConfig';
 import { readAuthFile } from './opencodeAuth';
 import {
   isAnthropicOAuthPluginSpec,
@@ -60,6 +60,15 @@ const ANTHROPIC_OAUTH_PROVIDER_IDS = new Set([
   'opencode-with-claude',
 ]);
 const ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID = 'anthropic';
+const getProviderConfigLookupIds = (providerId: string): string[] => {
+  const normalizedProviderId = providerId.trim().toLowerCase();
+  if (!normalizedProviderId) return [];
+  if (normalizedProviderId === 'google') return ['google', 'google.oauth'];
+  if (ANTHROPIC_OAUTH_PROVIDER_IDS.has(normalizedProviderId)) {
+    return Array.from(new Set([normalizedProviderId, ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID]));
+  }
+  return [normalizedProviderId];
+};
 const ANTHROPIC_OAUTH_DEFAULT_BASE_URL = 'http://127.0.0.1:3456';
 const AGENT_WRITE_DISABLED_MESSAGE = 'Agent configuration is read-only. Edit project .opencode/agents/*.md files directly.';
 const OPENCHAMBER_CONFIG_KEY = 'openchamber';
@@ -362,18 +371,12 @@ const getConfigPaths = (workingDirectory?: string) => ({
 
 const readConfigFile = (filePath?: string | null): Record<string, unknown> => {
   if (!filePath || !fs.existsSync(filePath)) return {};
-  const content = fs.readFileSync(filePath, 'utf8');
-  const normalized = content.trim();
-  if (!normalized) return {};
-  return parseJsonc(normalized, [], { allowTrailingComma: true }) as Record<string, unknown>;
+  return parseConfigJsonc(fs.readFileSync(filePath, 'utf8'), filePath);
 };
 
 const readOpenchamberSidecar = (): Record<string, unknown> | null => {
   try {
-    const content = fs.readFileSync(OPENCHAMBER_SIDECAR_PATH, 'utf8').trim();
-    if (!content) return null;
-    const parsed = JSON.parse(content) as unknown;
-    return isPlainObject(parsed) ? parsed : null;
+    return parseConfigJsonc(fs.readFileSync(OPENCHAMBER_SIDECAR_PATH, 'utf8'), OPENCHAMBER_SIDECAR_PATH);
   } catch {
     return null;
   }
@@ -410,6 +413,7 @@ const readUserConfig = (): Record<string, unknown> =>
   applyOpenchamberSidecarToConfig(readConfigFile(CONFIG_FILE));
 
 const writeUserConfig = (config: Record<string, unknown>) => {
+  if (fs.existsSync(CONFIG_FILE)) readConfigFile(CONFIG_FILE);
   writeConfig(persistOpenchamberFromConfig(config), CONFIG_FILE);
 };
 
@@ -418,10 +422,7 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 
 const readJsonFileIfPresent = (filePath: string): Record<string, unknown> => {
   if (!fs.existsSync(filePath)) return {};
-  const content = fs.readFileSync(filePath, 'utf8').trim();
-  if (!content) return {};
-  const parsed = JSON.parse(content) as unknown;
-  return isPlainObject(parsed) ? parsed : {};
+  return parseConfigJsonc(fs.readFileSync(filePath, 'utf8'), filePath);
 };
 
 const writeJsonFileAtomic = (filePath: string, data: Record<string, unknown>): void => {
@@ -475,14 +476,26 @@ const readConfigLayers = (workingDirectory?: string) => {
   const userPath = fs.existsSync(OFFICIAL_USER_CONFIG_FILE)
     ? OFFICIAL_USER_CONFIG_FILE
     : (fs.existsSync(CONFIG_FILE) ? CONFIG_FILE : OFFICIAL_USER_CONFIG_FILE);
+  const readLayer = (filePath?: string | null): Record<string, unknown> => {
+    try {
+      return readConfigFile(filePath);
+    } catch (error) {
+      console.warn('[OpenCode config] Ignoring invalid configuration layer', {
+        code: isInvalidJsoncError(error) ? error.code : 'CONFIG_READ_FAILED',
+        file: path.basename(filePath || 'configuration'),
+        diagnostics: isInvalidJsoncError(error) ? error.diagnostics : undefined,
+      });
+      return {};
+    }
+  };
   const userConfig = applyOpenchamberSidecarToConfig(
-    userPaths.reduce((merged, filePath) => mergeConfigs(merged, readConfigFile(filePath)), {} as Record<string, unknown>)
+    userPaths.reduce((merged, filePath) => mergeConfigs(merged, readLayer(filePath)), {} as Record<string, unknown>)
   );
   const projectConfig = getProjectConfigCandidates(workingDirectory)
     .slice()
     .reverse()
-    .reduce((merged, filePath) => mergeConfigs(merged, readConfigFile(filePath)), {} as Record<string, unknown>);
-  const customConfig = readConfigFile(customPath);
+    .reduce((merged, filePath) => mergeConfigs(merged, readLayer(filePath)), {} as Record<string, unknown>);
+  const customConfig = readLayer(customPath);
   const mergedConfig = mergeConfigs(mergeConfigs(userConfig, projectConfig), customConfig);
 
   return {
@@ -964,6 +977,7 @@ const getConfigForPath = (layers: ReturnType<typeof readConfigLayers>, targetPat
 
 const writeConfig = (config: Record<string, unknown>, filePath: string = CONFIG_FILE) => {
   if (fs.existsSync(filePath)) {
+    readConfigFile(filePath);
     const backupFile = `${filePath}.openchamber.backup`;
     try {
       fs.copyFileSync(filePath, backupFile);
@@ -2910,9 +2924,7 @@ export const updateCommand = (commandName: string, updates: Record<string, unkno
 export const getProviderSources = (providerId: string, workingDirectory?: string) => {
   const layers = readConfigLayers(workingDirectory);
   const normalizedProviderId = typeof providerId === 'string' ? providerId.trim().toLowerCase() : '';
-  const providerLookupIds = ANTHROPIC_OAUTH_PROVIDER_IDS.has(normalizedProviderId)
-    ? [normalizedProviderId, ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID]
-    : [normalizedProviderId];
+  const providerLookupIds = getProviderConfigLookupIds(normalizedProviderId);
   const customProviders = isPlainObject((layers.customConfig as Record<string, unknown>)?.provider)
     ? (layers.customConfig as Record<string, unknown>).provider as Record<string, unknown>
     : {};
@@ -2938,6 +2950,31 @@ export const getProviderSources = (providerId: string, workingDirectory?: string
       Object.prototype.hasOwnProperty.call(providersAlias, id)
     ))
   );
+  const hasAntigravityProviderConfig = (config: unknown): boolean => {
+    const record = isPlainObject(config) ? config as Record<string, unknown> : {};
+    for (const containerKey of ['provider', 'providers']) {
+      const container = isPlainObject(record[containerKey])
+        ? record[containerKey] as Record<string, unknown>
+        : null;
+      const google = isPlainObject(container?.google)
+        ? container.google as Record<string, unknown>
+        : null;
+      const models = isPlainObject(google?.models)
+        ? google.models as Record<string, unknown>
+        : null;
+      if (models && Object.keys(models).some((modelId) => isAntigravityModel(modelId, models[modelId]))) {
+        return true;
+      }
+    }
+    return false;
+  };
+  const hasProviderSourceConfig = (
+    config: unknown,
+    providers: Record<string, unknown>,
+    providersAlias: Record<string, unknown>,
+  ) => normalizedProviderId === 'antigravity'
+    ? hasAntigravityProviderConfig(config)
+    : hasAnyProviderConfig(providers, providersAlias);
   const hasAnthropicOAuthPlugin = (config: unknown) => {
     const plugins = Array.isArray((config as Record<string, unknown> | null)?.plugin)
       ? (config as Record<string, unknown>).plugin as unknown[]
@@ -2966,9 +3003,9 @@ export const getProviderSources = (providerId: string, workingDirectory?: string
     hasAnthropicOAuthOptions(config)
   );
 
-  const customExists = hasAnyProviderConfig(customProviders, customProvidersAlias);
-  const projectExists = hasAnyProviderConfig(projectProviders, projectProvidersAlias);
-  const userExists = hasAnyProviderConfig(userProviders, userProvidersAlias);
+  const customExists = hasProviderSourceConfig(layers.customConfig, customProviders, customProvidersAlias);
+  const projectExists = hasProviderSourceConfig(layers.projectConfig, projectProviders, projectProvidersAlias);
+  const userExists = hasProviderSourceConfig(layers.userConfig, userProviders, userProvidersAlias);
   const customAnthropicOAuthExists = hasAnthropicOAuthConfig(layers.customConfig);
   const projectAnthropicOAuthExists = hasAnthropicOAuthConfig(layers.projectConfig);
   const userAnthropicOAuthExists = hasAnthropicOAuthConfig(layers.userConfig);
@@ -3101,15 +3138,16 @@ export const removeProviderConfig = (providerId: string, workingDirectory?: stri
     ? (targetConfig as Record<string, unknown>).providers as Record<string, unknown>
     : {};
 
-  const removedProvider = Object.prototype.hasOwnProperty.call(providerConfig, providerId);
-  const removedProviders = Object.prototype.hasOwnProperty.call(providersConfig, providerId);
+  const providerLookupIds = getProviderConfigLookupIds(providerId);
+  const removedProvider = providerLookupIds.some((lookupId) => Object.prototype.hasOwnProperty.call(providerConfig, lookupId));
+  const removedProviders = providerLookupIds.some((lookupId) => Object.prototype.hasOwnProperty.call(providersConfig, lookupId));
 
   if (!removedProvider && !removedProviders) {
     return false;
   }
 
   if (removedProvider) {
-    delete providerConfig[providerId];
+    for (const lookupId of providerLookupIds) delete providerConfig[lookupId];
     if (Object.keys(providerConfig).length === 0) {
       delete (targetConfig as Record<string, unknown>).provider;
     } else {
@@ -3118,7 +3156,7 @@ export const removeProviderConfig = (providerId: string, workingDirectory?: stri
   }
 
   if (removedProviders) {
-    delete providersConfig[providerId];
+    for (const lookupId of providerLookupIds) delete providersConfig[lookupId];
     if (Object.keys(providersConfig).length === 0) {
       delete (targetConfig as Record<string, unknown>).providers;
     } else {
@@ -3130,10 +3168,10 @@ export const removeProviderConfig = (providerId: string, workingDirectory?: stri
   return true;
 };
 
-const isAntigravityModel = (modelId: string, model: unknown): boolean => {
+function isAntigravityModel(modelId: string, model: unknown): boolean {
   const name = isPlainObject(model) && typeof model.name === 'string' ? model.name : '';
   return modelId.startsWith('antigravity-') || /\s+\(Antigravity\)$/i.test(name);
-};
+}
 
 export const removeAntigravityProviderConfig = (
   workingDirectory?: string,
@@ -3702,4 +3740,10 @@ export const deleteSkill = (skillName: string, workingDirectory?: string, discov
   }
 
   fs.rmSync(path.dirname(existing.path), { recursive: true, force: true });
+};
+
+export const __testing = {
+  readConfigFile,
+  readConfigLayers,
+  writeConfig,
 };

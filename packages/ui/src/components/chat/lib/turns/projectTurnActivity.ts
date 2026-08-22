@@ -1,3 +1,4 @@
+import { findPlanCardReasoningPartIndex, hasStructuredPlanBody, joinAssistantTextParts, splitPlanCardSentinel } from '@/lib/messages/actionablePlan';
 import { isStandaloneTool } from '../../message/parts/toolRenderUtils';
 import type {
     ChatMessageEntry,
@@ -57,6 +58,9 @@ interface ProjectActivityInput {
     assistantMessages: ChatMessageEntry[];
     summarySourceMessageId?: string;
     summarySourcePartId?: string;
+    /** True when the turn's user message was sent in plan mode; enables the
+     * structured-plan justification exemption for sentinel-less plans. */
+    isPlanModeTurn?: boolean;
 }
 
 interface ProjectActivityResult {
@@ -84,6 +88,22 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
         });
     });
 
+    // Grok can split a single plan across two assistant messages when it emits a
+    // tool call at the message boundary — neither message's own joined text is
+    // plan-bearing, so the per-message exemption below misses it and the plan
+    // fragments fall into the justification bucket (thought-style render).
+    // Joining across the whole turn catches that case; the per-message check is
+    // kept as the narrower, cheaper path.
+    let turnPlanBearing = false;
+    if (input.isPlanModeTurn === true) {
+        const turnText = input.assistantMessages
+            .map((message) => joinAssistantTextParts(message.parts))
+            .filter((chunk) => chunk.length > 0)
+            .join('\n');
+        turnPlanBearing = turnText.length > 0
+            && (splitPlanCardSentinel(turnText) !== null || hasStructuredPlanBody(turnText));
+    }
+
     const taskMessageById = new Map<string, string>();
     const taskOrder: string[] = [];
     const partsByAfterTool = new Map<string | null, TurnActivityRecord[]>();
@@ -92,6 +112,32 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
     input.assistantMessages.forEach((message) => {
         const finish = getMessageFinish(message);
         const messageHasTool = message.parts.some((part) => part.type === 'tool');
+
+        // When the plan card is mounted from a reasoning part, that part must not
+        // ALSO render as a thought — otherwise the same plan appears twice.
+        const planCardReasoningIndex = findPlanCardReasoningPartIndex(message.parts, {
+            isPlanModeSource: input.isPlanModeTurn === true,
+        });
+
+        // Providers like Grok interleave tool calls mid-plan, splitting the plan
+        // across text parts none of which is plan-bearing on its own. When the
+        // message-level joined text is plan-bearing (same '\n' join
+        // resolveMessagePlanCard consumes, so this agrees with plan-card
+        // detection by construction), exempt ALL of the message's text parts
+        // from the justification bucket — otherwise plan fragments render in
+        // the thought-style block. A reasoning-hosted plan card counts too:
+        // its text tail may be plan continuation the straddle resolution needs,
+        // and justification-classifying it would desync MessageBody's filtered
+        // plan-resolution parts from this projection. Deliberate consequence:
+        // narration fragments in such messages render as body/preamble text
+        // instead of thought-style; post-plan fragments are consumed by
+        // shouldSuppressPostPlanText.
+        let messagePlanBearing = turnPlanBearing || planCardReasoningIndex >= 0;
+        if (!messagePlanBearing && input.isPlanModeTurn === true) {
+            const joinedText = joinAssistantTextParts(message.parts);
+            messagePlanBearing = joinedText.length > 0
+                && (splitPlanCardSentinel(joinedText) !== null || hasStructuredPlanBody(joinedText));
+        }
 
         message.parts.forEach((part, partIndex) => {
             const isTool = part.type === 'tool';
@@ -120,17 +166,34 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
                 && input.summarySourceMessageId === message.info.id
                 && input.summarySourcePartId === partId;
 
+            // A plan-bearing text part must render as normal text so it reaches
+            // the plan-card branch — the justification bucket is skipped before
+            // plan detection, which silently killed Grok plans whose message
+            // reported finish !== 'stop' or carried a trailing sign-off part.
+            const isPlanBearingText = part.type === 'text'
+                && typeof text === 'string'
+                && (
+                    splitPlanCardSentinel(text) !== null
+                    || (input.isPlanModeTurn === true && hasStructuredPlanBody(text))
+                );
+
             let kind: TurnActivityRecord['kind'] | null = null;
             if (isTool) {
                 kind = 'tool';
             } else if (part.type === 'reasoning') {
-                if (text || isActiveReasoningPart(part)) {
+                if (partIndex === planCardReasoningIndex) {
+                    // Rendered by the plan card instead; see
+                    // findPlanCardReasoningPartIndex.
+                    kind = null;
+                } else if (text || isActiveReasoningPart(part)) {
                     kind = 'reasoning';
                 }
             } else if (
                 part.type === 'text'
                 && text
                 && !isConfirmedSummaryText
+                && !isPlanBearingText
+                && !messagePlanBearing
                 && (messageHasTool || (typeof finish === 'string' && finish !== 'stop'))
             ) {
                 kind = 'justification';

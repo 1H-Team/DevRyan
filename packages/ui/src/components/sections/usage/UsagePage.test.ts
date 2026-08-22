@@ -43,6 +43,23 @@ describe('UsagePage model rows', () => {
     expect(pageSource).toContain('selectedProviderWarnings.map');
   });
 
+  test('renders the shared reset bank independently of overall usage windows', () => {
+    const pageSource = source('UsagePage.tsx');
+
+    expect(pageSource).toContain("import { UsageResetCreditsList } from '@/components/layout/usage/UsageResetCreditsList'");
+    expect(pageSource).toContain('usage?.resetCredits ? (');
+    expect(pageSource).toContain('<UsageResetCreditsList resetCredits={usage.resetCredits} />');
+  });
+
+  test('forces only the OpenCode Credits progress row to use the success tone', () => {
+    const pageSource = source('UsagePage.tsx');
+    const cardSource = source('UsageCard.tsx');
+
+    expect(pageSource).toContain("selectedProviderId === 'opencode' && label === 'credits' ? 'success' : 'adaptive'");
+    expect(cardSource).toContain("progressTone?: 'adaptive' | 'success'");
+    expect(cardSource).toContain('tone={progressTone}');
+  });
+
   test('hides provider-level summary windows for Antigravity usage', () => {
     const pageSource = source('UsagePage.tsx');
 
@@ -121,8 +138,10 @@ describe('UsagePage model rows', () => {
 
     expect(providersPageSource).toContain('ManagedQuotaCredentials');
     expect(managedCredentialsSource).toContain('/api/quota/credentials/');
-    expect(managedCredentialsSource).toContain("'opencode-go' | 'ollama-cloud' | 'cursor-acp'");
-    expect(messages).toContain('settings.providers.page.auth.openCodeGoUsageTitle');
+    expect(managedCredentialsSource).toContain("'ollama-cloud' | 'cursor-acp' | 'opencode'");
+    expect(managedCredentialsSource).toContain('opencode-zen-workspace-id');
+    expect(managedCredentialsSource).toContain('opencode-zen-auth-cookie');
+    expect(managedCredentialsSource).not.toContain('opencode-go-usage-auth-cookie');
     expect(messages).toContain('settings.providers.page.auth.ollamaCloudUsageTitle');
   });
 });

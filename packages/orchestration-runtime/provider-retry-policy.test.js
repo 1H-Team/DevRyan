@@ -104,6 +104,43 @@ describe('classifyProviderTransportFailure', () => {
       'response_header_timeout',
       'stream_idle_timeout',
       'connection_failure',
+      'provider_queue_timeout',
     ]);
+  });
+});
+
+describe('provider queue failures', () => {
+  // Verbatim strings captured from opencode.log / activity_logs on 2026-08-21.
+  // All three surfaced to the user as an unretryable dead-end turn because the
+  // trailing "abort." matched NON_TRANSPORT_FAILURE_PATTERN first.
+  const XAI_QUEUE_TIMEOUT = 'Request 8f1d57cc-e1b2-9ec5-9dbc-f3ff661ceab0-n0-part0-a0-2 timed out in queue, abort.';
+  const XAI_UNAVAILABLE = 'Service temporarily unavailable. The model did not respond to this request.';
+
+  it('classifies the xAI queue timeout as transient despite the trailing abort', () => {
+    expect(classifyProviderTransportFailure('UnknownError', XAI_QUEUE_TIMEOUT))
+      .toBe('provider_queue_timeout');
+  });
+
+  it('classifies it from the detail alone', () => {
+    expect(classifyProviderTransportFailure('', XAI_QUEUE_TIMEOUT))
+      .toBe('provider_queue_timeout');
+  });
+
+  it('classifies the temporarily-unavailable variant', () => {
+    expect(classifyProviderTransportFailure('UnknownError', XAI_UNAVAILABLE))
+      .toBe('provider_queue_timeout');
+  });
+
+  it('still treats a genuine user abort as non-transient', () => {
+    expect(classifyProviderTransportFailure('MessageAbortedError', 'Aborted')).toBe(null);
+    expect(classifyProviderTransportFailure('AbortError', 'The operation was aborted')).toBe(null);
+  });
+
+  it('still treats auth failures as non-transient', () => {
+    expect(classifyProviderTransportFailure('Error', 'invalid api key')).toBe(null);
+  });
+
+  it('the new kind is registered as a transport failure kind', () => {
+    expect(PROVIDER_TRANSPORT_FAILURE_KINDS).toContain('provider_queue_timeout');
   });
 });

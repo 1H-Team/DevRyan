@@ -18,6 +18,7 @@ import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
 import { createManagedOrchestrationPrivateHost } from './private-host.js';
 
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1_000;
+const DESIGNER_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
 const FIXER_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
 const ORACLE_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
 const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
@@ -25,6 +26,7 @@ const MAX_WAIT_TIMEOUT_MS = 25_000;
 
 const resolveMinimumTaskTimeoutMs = (agent) => {
   const normalizedAgent = typeof agent === 'string' ? agent.trim().toLowerCase() : '';
+  if (normalizedAgent === 'designer') return DESIGNER_TASK_TIMEOUT_MS;
   if (normalizedAgent === 'fixer') return FIXER_TASK_TIMEOUT_MS;
   if (normalizedAgent === 'oracle') return ORACLE_TASK_TIMEOUT_MS;
   return DEFAULT_TASK_TIMEOUT_MS;
@@ -411,6 +413,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           variant: admittedExecution.variant ?? null,
           label: params.label,
           prompt: params.prompt,
+          allowDuplicate: params.allowDuplicate === true,
           timeoutAt,
         });
         return projectTaskResult(task, resultMode);

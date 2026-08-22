@@ -96,14 +96,39 @@ const mergePackageJson = (
   };
 };
 
+// App startup blocks on these commands; a hung install (e.g. an unreachable
+// registry stuck on "Resolving dependencies") must not stall the boot forever.
+const RUN_COMMAND_TIMEOUT_MS = 120_000;
+
 const runCommandDefault = (command, args, options) => new Promise((resolve) => {
   const child = spawnChild(command, args, { cwd: options.cwd, env: options.env || process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
+  let settled = false;
+  const finish = (payload) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(killTimer);
+    resolve(payload);
+  };
+  const killTimer = setTimeout(() => {
+    try { child.kill('SIGTERM'); } catch { /* already exited */ }
+    const forceKillTimer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { /* already exited */ }
+    }, 5_000);
+    forceKillTimer.unref?.();
+    finish({
+      ok: false,
+      exitCode: null,
+      stdout,
+      stderr: stderr || `${command} timed out after ${Math.round(RUN_COMMAND_TIMEOUT_MS / 1000)}s`,
+    });
+  }, RUN_COMMAND_TIMEOUT_MS);
+  killTimer.unref?.();
   child.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
   child.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
-  child.on('error', (error) => resolve({ ok: false, exitCode: null, stdout, stderr: error.message }));
-  child.on('close', (exitCode) => resolve({ ok: exitCode === 0, exitCode, stdout, stderr }));
+  child.on('error', (error) => finish({ ok: false, exitCode: null, stdout, stderr: error.message }));
+  child.on('close', (exitCode) => finish({ ok: exitCode === 0, exitCode, stdout, stderr }));
 });
 
 export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
@@ -138,6 +163,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       updated: [],
       removed: [],
       install: null,
+      installDegraded: false,
       contextModeHotfix: null,
       contextModeHotfixReinstall: null,
       warnings: [],
@@ -399,8 +425,22 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     ) {
       result.install = await runCommand('bun', ['install', '--ignore-scripts'], { cwd: configDirectory, env: process.env });
       if (!result.install.ok) {
-        result.ok = false;
-        result.error = `Failed to install OpenCode user plugins: ${result.install.stderr || `exit ${result.install.exitCode}`}`;
+        const installFailure = `Failed to install OpenCode user plugins: ${result.install.stderr || `exit ${result.install.exitCode}`}`;
+        const dependencyStillMissing = [
+          ...dependencyNames,
+          ...Object.keys(CLAUDE_RUNTIME_MANAGED_OVERRIDES),
+        ].some((name) => (
+          !fsApi.existsSync(pathApi.join(configDirectory, 'node_modules', ...name.split('/')))
+        ));
+        if (dependencyStillMissing) {
+          result.ok = false;
+          result.error = installFailure;
+        } else {
+          // Every managed dependency is already on disk from a prior install; a
+          // failed refresh (offline, registry stall) must not block startup.
+          result.installDegraded = true;
+          result.warnings.push(`${installFailure}. Continuing with the previously installed plugins.`);
+        }
       }
     }
     if (result.ok) {
@@ -408,7 +448,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
         configDirectory,
         fs: fsApi,
       });
-      if (!result.contextModeHotfix.ok) {
+      if (!result.contextModeHotfix.ok && !result.installDegraded) {
         result.contextModeHotfixReinstall = await runCommand(
           'bun',
           ['install', '--force', '--ignore-scripts'],
@@ -421,7 +461,12 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
           });
         }
       }
-      if (!result.contextModeHotfix.ok) {
+      if (!result.contextModeHotfix.ok && result.installDegraded) {
+        result.warnings.push(
+          `${CONTEXT_MODE_HOTFIX_INCOMPATIBLE}: ${result.contextModeHotfix.error}. `
+          + 'Continuing startup; provisioning will retry on the next launch.',
+        );
+      } else if (!result.contextModeHotfix.ok) {
         result.ok = false;
         result.error = `${CONTEXT_MODE_HOTFIX_INCOMPATIBLE}: ${result.contextModeHotfix.error}`;
       } else if (result.contextModeHotfix.changed) {
@@ -453,6 +498,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     });
     if (
       result.ok
+      && !result.installDegraded
       && result.claudeRuntime.source === 'managed'
       && result.claudeRuntime.runtimeStatus !== 'ready'
     ) {
@@ -487,7 +533,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       );
     } else if (result.claudeRuntime.compatibilityStatus === 'upstream_blocked') {
       result.warnings.push(
-        'Claude Code 2.1.98 is selected for its lower cached-input prefix; the broader cross-provider context target remains upstream-blocked.',
+        'Claude Code 2.1.215 is selected for Meridian compatibility; the broader cross-provider context target remains upstream-blocked.',
       );
     }
 

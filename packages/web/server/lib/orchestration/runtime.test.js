@@ -1029,7 +1029,7 @@ describe('web managed orchestration runtime', () => {
     await runtime.shutdown();
   });
 
-  it.each(['fixer', 'oracle'])('enforces a 60-minute %s deadline for starts and follow-ups', async (agent) => {
+  it.each(['designer', 'fixer', 'oracle'])('enforces a 60-minute %s deadline for starts and follow-ups', async (agent) => {
     const runtime = createWebManagedOrchestrationRuntime({
       persistence: createPersistence(),
       executor: {
@@ -1072,7 +1072,7 @@ describe('web managed orchestration runtime', () => {
     await runtime.shutdown();
   });
 
-  it('gives retry, resume, and retry-in-place follow-ups a fresh default deadline', async () => {
+  it('gives Designer retry, resume, and retry-in-place follow-ups a fresh 60-minute deadline', async () => {
     const runtime = createWebManagedOrchestrationRuntime({
       persistence: createPersistence(),
       executor: {
@@ -1104,7 +1104,7 @@ describe('web managed orchestration runtime', () => {
     for (let index = 1; index <= 3; index += 1) {
       originals.push(await runtime.handleRpc({
         method: 'submit',
-        params: submitParams(index, { childSessionId: `ses_child_${index}` }),
+        params: submitParams(index, { agent: 'designer', childSessionId: `ses_child_${index}` }),
       }));
     }
     await runtime.flush();
@@ -1126,7 +1126,7 @@ describe('web managed orchestration runtime', () => {
           } : {}),
         },
       });
-      expect(result.followUpTask.task.timeoutAt).toBe(1_810_000);
+      expect(result.followUpTask.task.timeoutAt).toBe(3_610_000);
     }
 
     await runtime.shutdown();

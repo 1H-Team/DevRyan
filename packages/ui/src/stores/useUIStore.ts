@@ -111,6 +111,7 @@ const EMPTY_NOTIFICATION_TEMPLATES = {
   planReady: { title: '', message: '' },
   error: { title: '', message: '' },
   question: { title: '', message: '' },
+  permission: { title: '', message: '' },
   subtask: { title: '', message: '' },
 } as const;
 
@@ -723,6 +724,7 @@ interface UIStore {
   notifyOnPlanReady: boolean;
   notifyOnError: boolean;
   notifyOnQuestion: boolean;
+  notifyOnPermission: boolean;
 
   // Per-event notification templates
   notificationTemplates: {
@@ -730,6 +732,7 @@ interface UIStore {
     planReady: { title: string; message: string };
     error: { title: string; message: string };
     question: { title: string; message: string };
+    permission: { title: string; message: string };
     subtask: { title: string; message: string };
   };
 
@@ -889,6 +892,7 @@ interface UIStore {
   setNotifyOnPlanReady: (value: boolean) => void;
   setNotifyOnError: (value: boolean) => void;
   setNotifyOnQuestion: (value: boolean) => void;
+  setNotifyOnPermission: (value: boolean) => void;
   setNotificationTemplates: (templates: UIStore['notificationTemplates']) => void;
   updateNotificationTemplate: (
     event: keyof UIStore['notificationTemplates'],
@@ -1018,11 +1022,13 @@ export const useUIStore = create<UIStore>()(
         notifyOnPlanReady: true,
         notifyOnError: true,
         notifyOnQuestion: true,
+        notifyOnPermission: true,
         notificationTemplates: {
           completion: { ...EMPTY_NOTIFICATION_TEMPLATES.completion },
           planReady: { ...EMPTY_NOTIFICATION_TEMPLATES.planReady },
           error: { ...EMPTY_NOTIFICATION_TEMPLATES.error },
           question: { ...EMPTY_NOTIFICATION_TEMPLATES.question },
+          permission: { ...EMPTY_NOTIFICATION_TEMPLATES.permission },
           subtask: { ...EMPTY_NOTIFICATION_TEMPLATES.subtask },
         },
 
@@ -2527,6 +2533,7 @@ export const useUIStore = create<UIStore>()(
         setNotifyOnPlanReady: (value) => { set({ notifyOnPlanReady: value }); },
         setNotifyOnError: (value) => { set({ notifyOnError: value }); },
         setNotifyOnQuestion: (value) => { set({ notifyOnQuestion: value }); },
+        setNotifyOnPermission: (value) => { set({ notifyOnPermission: value }); },
         setNotificationTemplates: (templates) => { set({ notificationTemplates: templates }); },
         updateNotificationTemplate: (event, field, value) => {
           set((state) => {
@@ -2640,7 +2647,7 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createJSONStorage(() => getSafeStorage()),
-        version: 18,
+        version: 19,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
             return persistedState;
@@ -2656,6 +2663,7 @@ export const useUIStore = create<UIStore>()(
                 planReady: { ...EMPTY_NOTIFICATION_TEMPLATES.planReady },
                 error: { ...EMPTY_NOTIFICATION_TEMPLATES.error },
                 question: { ...EMPTY_NOTIFICATION_TEMPLATES.question },
+                permission: { ...EMPTY_NOTIFICATION_TEMPLATES.permission },
                 subtask: { ...EMPTY_NOTIFICATION_TEMPLATES.subtask },
               };
             }
@@ -2679,6 +2687,30 @@ export const useUIStore = create<UIStore>()(
               state.notificationTemplates = {
                 ...templateRecord,
                 planReady: { ...EMPTY_NOTIFICATION_TEMPLATES.planReady },
+              };
+            }
+          }
+
+          // v18 -> v19: split permission requests from Agent Questions while
+          // preserving the old combined toggle for existing installations.
+          if (version < 19) {
+            if (typeof state.notifyOnPermission !== 'boolean') {
+              state.notifyOnPermission = typeof state.notifyOnQuestion === 'boolean'
+                ? state.notifyOnQuestion
+                : true;
+            }
+            const templates = state.notificationTemplates;
+            const templateRecord = templates && typeof templates === 'object'
+              ? templates as Record<string, unknown>
+              : {};
+            const permission = templateRecord.permission;
+            const validPermission = permission && typeof permission === 'object'
+              && typeof (permission as Record<string, unknown>).title === 'string'
+              && typeof (permission as Record<string, unknown>).message === 'string';
+            if (!validPermission) {
+              state.notificationTemplates = {
+                ...templateRecord,
+                permission: { ...EMPTY_NOTIFICATION_TEMPLATES.permission },
               };
             }
           }
@@ -2891,6 +2923,7 @@ export const useUIStore = create<UIStore>()(
           notifyOnPlanReady: state.notifyOnPlanReady,
           notifyOnError: state.notifyOnError,
           notifyOnQuestion: state.notifyOnQuestion,
+          notifyOnPermission: state.notifyOnPermission,
           notificationTemplates: state.notificationTemplates,
           summarizeLastMessage: state.summarizeLastMessage,
           summaryThreshold: state.summaryThreshold,

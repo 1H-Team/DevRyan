@@ -170,6 +170,22 @@ describe('SettingsView navigation', () => {
     expect(workflowPages.indexOf('magic-prompts')).toBe(workflowPages.indexOf('plugins') + 1);
   });
 
+  test('places commands after shortcuts in General and folds Chat into Appearance', () => {
+    const generalPages = SETTINGS_NAV_SECTIONS
+      .find((section) => section.labelKey === 'settings.view.nav.group.general')
+      ?.pages ?? [];
+    const workflowPages = SETTINGS_NAV_SECTIONS
+      .find((section) => section.labelKey === 'settings.view.nav.group.workflow')
+      ?.pages ?? [];
+    const developmentPages = SETTINGS_NAV_SECTIONS
+      .find((section) => section.labelKey === 'settings.view.nav.group.development')
+      ?.pages ?? [];
+
+    expect(generalPages.indexOf('commands')).toBe(generalPages.indexOf('shortcuts') + 1);
+    expect(workflowPages).not.toContain('chat');
+    expect(developmentPages).not.toContain('commands');
+  });
+
   test('exposes the About page so diagnostics are reachable in desktop settings', () => {
     const generalPages = SETTINGS_NAV_SECTIONS
       .find((section) => section.labelKey === 'settings.view.nav.group.general')

@@ -281,6 +281,9 @@ export const useChatAutoFollow = ({
     // (skeleton rendered, no scroll container yet), we record the session here
     // so a follow-up effect can replay the restore once the container mounts.
     const pendingInitialRestoreRef = React.useRef<{ sessionId: string; mode: RestoreSnapshotMode } | null>(null);
+    const resizeObserverAvailableRef = React.useRef(
+        typeof ResizeObserver !== 'undefined',
+    );
 
     const updateViewportAnchor = useViewportStore((s) => s.updateViewportAnchor);
 
@@ -842,50 +845,31 @@ export const useChatAutoFollow = ({
         };
     }, [containerEl, handleScrollEvent, preserveScrollAnchor, releaseFromUserIntent]);
 
-    React.useEffect(() => {
+    React.useLayoutEffect(() => {
         const container = containerEl;
-        if (!container || typeof ResizeObserver === 'undefined') return;
+        if (!container || typeof ResizeObserver === 'undefined') {
+            resizeObserverAvailableRef.current = false;
+            return;
+        }
+
+        const inner = container.firstElementChild;
+        if (!(inner instanceof Element)) {
+            resizeObserverAvailableRef.current = false;
+            return;
+        }
+
+        resizeObserverAvailableRef.current = true;
 
         const observer = new ResizeObserver(() => {
             updateOverflowAndButton();
             followPinnedLatestContent();
         });
-        observer.observe(container);
-        const inner = container.firstElementChild;
-        if (inner instanceof Element) {
-            observer.observe(inner);
-        }
+
+        // Content growth is the authoritative automatic-follow signal. Do not
+        // observe the scroll viewport itself: composer/window resizing must not
+        // masquerade as transcript growth and compete with content anchoring.
+        observer.observe(inner);
         return () => observer.disconnect();
-    }, [containerEl, followPinnedLatestContent, updateOverflowAndButton]);
-
-    React.useEffect(() => {
-        const container = containerEl;
-        if (!container || typeof MutationObserver === 'undefined' || typeof window === 'undefined') return;
-
-        let rafId: number | null = null;
-        const schedule = () => {
-            if (rafId !== null) return;
-            rafId = window.requestAnimationFrame(() => {
-                rafId = null;
-                updateOverflowAndButton();
-                followPinnedLatestContent();
-            });
-        };
-
-        const observer = new MutationObserver(schedule);
-        observer.observe(container, {
-            attributes: true,
-            characterData: true,
-            childList: true,
-            subtree: true,
-        });
-
-        return () => {
-            if (rafId !== null) {
-                window.cancelAnimationFrame(rafId);
-            }
-            observer.disconnect();
-        };
     }, [containerEl, followPinnedLatestContent, updateOverflowAndButton]);
 
     React.useEffect(() => {
@@ -895,7 +879,12 @@ export const useChatAutoFollow = ({
     const notifyContentChange = React.useCallback((_reason?: ContentChangeReason) => {
         void _reason;
         updateOverflowAndButton();
-        followPinnedLatestContent();
+        // ResizeObserver owns normal transcript growth. The fallback keeps
+        // older/non-DOM test runtimes functional without creating a second
+        // scroll writer in Chromium.
+        if (!resizeObserverAvailableRef.current) {
+            followPinnedLatestContent();
+        }
     }, [followPinnedLatestContent, updateOverflowAndButton]);
 
     const animationHandlersRef = React.useRef<Map<string, AnimationHandlers>>(new Map());
@@ -905,14 +894,16 @@ export const useChatAutoFollow = ({
         if (cached) return cached;
 
         const kick = () => {
-            followPinnedLatestContent();
+            if (!resizeObserverAvailableRef.current) {
+                followPinnedLatestContent();
+            }
         };
 
         const handlers: AnimationHandlers = {
             onChunk: kick,
             onComplete: () => {
                 updateOverflowAndButton();
-                followPinnedLatestContent();
+                kick();
             },
             onStreamingCandidate: () => {},
             onAnimationStart: () => {},

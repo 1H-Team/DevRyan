@@ -50,9 +50,10 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Used by both `ProgressiveGroup.tsx` and `ToolPart.tsx`.
 
 - `generatedImageResults.ts` + `GeneratedImageResult.tsx`
-  - Derive completed `gpt_imagegen` PNGs from authoritative tool metadata, replace only matching standalone assistant links, and render an authenticated inline preview.
-  - Image bytes are read through `/api/fs/raw` so web/Electron workspace authorization and the VS Code local-filesystem proxy keep the same contract.
-  - The existing tool-output image dialog owns fullscreen preview behavior.
+  - Project at most twelve PNG/JPEG/GIF/WebP candidates from a completed assistant response, preserving Markdown order and appending finalized unlinked image-tool output.
+  - `AssistantTextPart` strips image-loading Markdown so only the final assistant sibling owns one responsive gallery; tool rows never render a second preview.
+  - The gallery is recovery-aware lazy code, observes a 640 px viewport margin, then prepares local web/Electron files through the message-scoped authorization route. VS Code marks gallery raw requests as workspace-only, while remote/data images load directly in the renderer.
+  - Every image is fetched into an abortable object URL and revoked on cleanup. Ready buttons reuse the existing single-image popup without carousel state; failed local files can open in the editor and failed remote images retain a no-referrer external link.
 
 - `toolRenderUtils.ts`
   - Core classification helpers:
@@ -63,15 +64,21 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - If a tool should switch between static vs expandable, change it here.
 
 - `ReasoningPart.tsx`
-  - Renders reasoning Markdown directly in the message timeline while streaming and after completion.
-  - Empty reasoning renders nothing; the bottom status row owns the accessible `Thinking` state until text arrives.
+  - Renders one provider reasoning part's Markdown inside an expanded `ReasoningGroup`; collapsed disclosures do not mount or parse hidden Markdown.
+  - Empty terminal reasoning renders nothing. An empty active part may still give its group enough lifecycle state to render the compact `Thinking…` disclosure.
   - Reasoning text stays static and readable while streaming; shimmer is reserved for transient bottom-status copy rather than semantic model output.
-  - At the OpenAI-only render boundary, projects the provider summary to the rationale level captured in the turn's first user message and adds terminal punctuation to standalone plain or fully bold summary sentences. Headings, lists, code, links, multiline blocks, persisted parts, and non-OpenAI reasoning remain untouched.
-  - The global reasoning visibility setting remains the sole display gate.
-- `ReasoningGroup.tsx` + `reasoningGrouping.ts`
-  - Consecutive reasoning parts collapse to their latest non-empty line in Live and Sorted modes while earlier lines stay mounted for expansion and DOM-based copy/export.
-  - New part IDs fade/slide into place; text growth within one part does not restart the transition.
-  - Groups remain collapsed after completion unless the user explicitly expands them.
+  - At the OpenAI-only render boundary, projects the provider summary to the rationale level captured in the turn's first user message and adds terminal punctuation to standalone plain or fully bold summary sentences. Headings, lists, code, links, multiline blocks, persisted parts, and non-OpenAI reasoning remain untouched by that formatting projection.
+  - The global reasoning visibility setting remains the user-controlled display gate. A narrow compatibility policy also suppresses finalized xAI summaries whose trimmed text has the confirmed clipped fingerprint of exactly 203 characters ending in ASCII `...`; unfinished or differently shaped summaries fail open.
+- `ReasoningGroup.tsx` + `reasoningGrouping.ts` + `reasoningDuration.ts`
+  - Every single or adjacent multi-part reasoning run uses the same collapsed-by-default disclosure in Live and Sorted modes. Tools and normal text end the run, so reasoning/tool/reasoning produces two disclosures in natural source order.
+  - Active runs say `Thinking…`. Terminal runs say `Thought for {duration}` when every part has a finite, non-negative start/end pair; the duration is the run's earliest-start-to-latest-end wall-clock span rounded to whole seconds. Missing, incomplete, reversed, negative, or non-finite timing renders plain `Thought`.
+  - Only explicit user input changes expansion. Pointer activation plus Enter/Space keyboard activation share the same controlled state path; appending parts, ending the run, completing/aborting the message, and reduced-motion preferences do not change `aria-expanded` or trigger a completion collapse.
+  - Expanded content renders every displayable reasoning part in source order. Collapsed content is not mounted, avoiding hidden streaming Markdown work.
+  - Known clipped xAI previews are removed before group membership, disclosure counts, and Sorted activity preview counts are derived, so they cannot leave empty rows or Activity headers.
+  - Suppression is render-only: canonical parts remain available to synchronization, plan extraction, lifecycle state, persistence, and diagnostics.
+- `reasoningDisclosureStatus.ts`
+  - Registers only mounted active disclosures by session. The bottom status row consumes this narrow external-store leaf to suppress duplicate thinking text while preserving its fixed space, warnings, stall recovery, and safety controls.
+  - Ownership is reference-counted and cleaned up on completion, hiding, session changes, and unmount, so stale historical state cannot suppress a later status row.
 - `reasoningSummaryDisplay.ts`
   - Owns the pure OpenAI summary projection and punctuation rules used by `ReasoningPart.tsx`.
 
@@ -101,12 +108,14 @@ line group owns one opacity animation instead of every line owning pulse and
 sweep animations. `useDocumentAnimationState()` is a module-level external
 store with one shared document-visibility listener and one shared
 reduced-motion listener. It is not Zustand state. The bottom status keeps its
-accessible label in flow while an aligned, aria-hidden duplicate supplies a
-transform-only focus sweep; status changes update that stable node without a
+accessible label in flow while the proven foreground-gradient text layer
+supplies the shimmer sweep; status changes update that stable node without a
 keyed vertical transition. The plan skeleton, bottom status shimmer, retry
 countdown, and active duration labels pause while hidden; labels recompute on
 foreground. Reduced-motion presentation remains readable without a long-lived
-animation. `SessionActiveSpinner.tsx` is not mounted in the current chat tree
+animation; the reasoning disclosure also disables both its panel animation and
+chevron transition while preserving the same user-controlled open state.
+`SessionActiveSpinner.tsx` is not mounted in the current chat tree
 and is outside this performance contract.
 
 - `read` and most search/fetch tools are treated as **static tools** and passive lookup activity rolls up across reasoning text into one dropdown per kind until a hard tool boundary such as shell/question/task.
@@ -115,7 +124,7 @@ and is outside this performance contract.
 - Output-only `write/create/file_write` aliases remain expandable even when no structured diff is available.
 - Terminal tool failures remain visible alongside retained partial output. A genuinely empty terminal payload renders an explicit provider-no-details message instead of an empty expansion.
 - `perplexity` is currently treated as static and grouped into search/web-search style rows (through static grouping + short description extraction).
-- Reasoning remains inline across streaming/completion and respects the global reasoning visibility setting. Consecutive reasoning lines share one collapsed timeline row in both render modes. Rationale Display affects only the presentation depth of OpenAI's provider-generated summary; it never exposes hidden chain-of-thought or mutates persisted message data.
+- Reasoning remains inline and respects the global reasoning visibility setting. Each contiguous run has one stable, user-controlled disclosure: collapsed `Thinking…` while live, then collapsed `Thought for …` (or `Thought` without trustworthy timing) after termination. Finalized xAI summaries matching the exact 203-character clipped-preview fingerprint are omitted at render time without mutating persisted message data. Rationale Display affects only the presentation depth of OpenAI's provider-generated summary; it never exposes hidden chain-of-thought or mutates persisted message data.
 - Provider-authored intermediate narration remains visible independently of the reasoning setting and uses normal assistant presentation in the compact activity hierarchy in both Live and Sorted modes. Tool adjacency and message finish reason never make visible assistant `text` look like reasoning.
 
 ## "I want to change description for Perplexity" (example recipe)
@@ -150,6 +159,6 @@ Why: in current pipeline Perplexity is static/grouped, so `StaticToolRow` is the
 
 - Text: `AssistantTextPart.tsx`, `UserTextPart.tsx`
 - Tools: `ToolPart.tsx`, `ProgressiveGroup.tsx`, `toolPresentation.tsx`, `toolRenderUtils.ts`, `ToolRevealOnMount.tsx`
-- Reasoning/justification: `ReasoningPart.tsx`, `ReasoningGroup.tsx`, `reasoningGrouping.ts`, `JustificationBlock.tsx`
+- Reasoning/justification: `ReasoningPart.tsx`, `ReasoningGroup.tsx`, `reasoningGrouping.ts`, `reasoningDuration.ts`, `reasoningDisclosureKeyboard.ts`, `reasoningDisclosureStatus.ts`, `JustificationBlock.tsx`
 - Status/placeholders: `WorkingPlaceholder.tsx`, `SessionActiveSpinner.tsx`, `MigratingPart.tsx`
-- Utility renderers: `VirtualizedCodeBlock.tsx`, `MinDurationShineText.tsx`
+- Utility renderers: `VirtualizedCodeBlock.tsx`, `MinDurationShineText.tsx`, `useNearViewport.ts`

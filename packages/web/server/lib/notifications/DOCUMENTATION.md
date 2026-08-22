@@ -128,7 +128,9 @@ Notification delivery additionally consumes:
 - `notifyOnCompletion` (boolean, default `true`): Enables Session Completion for user-visible root sessions. The compatibility key is unchanged.
 - `notifyOnSubtasks` (boolean, default `false` for new/missing settings): Independently enables completion alerts for visible child sessions. Existing saved booleans are preserved.
 - `notifyOnPlanReady` (boolean, default `true`): Enables the independently configurable Plan Ready event.
+- `notifyOnPermission` (boolean, default `true`): Enables Permissions Needed alerts for external-folder access requests. Other tool approvals retain the Agent Questions setting. Legacy settings inherit the former `notifyOnQuestion` value.
 - `notificationTemplates.planReady`: `{ title, message }`, defaulting to `Plan ready` / `A plan is ready for review`.
+- `notificationTemplates.permission`: `{ title, message }`, defaulting to `Permissions needed` / `Folder access is required: {last_message}`. For folder requests, `{last_message}` resolves to the first requested path pattern.
 - `{last_message}` in the Plan Ready template resolves from the canonical plan markdown selected by the classifier, then follows the same summarization and truncation path as other templates.
 
 Plan Ready native/UI payloads use `kind: "plan-ready"`; web push uses `data.type: "plan-ready"`. The tag contains both session ID and plan source message ID so distinct revisions remain independently deliverable.

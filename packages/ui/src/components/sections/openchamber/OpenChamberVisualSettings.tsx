@@ -506,13 +506,13 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     }, [setMobileKeyboardMode, showMobileKeyboardModeSetting, showPwaInstallNameSetting, showPwaOrientationSetting]);
 
     return (
-        <div className="space-y-8">
+        <div className="flex flex-col gap-8">
 
                 {/* --- Appearance & Themes --- */}
                 {hasAppearanceSettings && (
-                    <div className="mb-8 space-y-6">
+                    <div className="contents">
                         {hasThemeSettings && (
-                            <section className="px-2 pb-2 pt-0 space-y-2">
+                            <section className="order-1 px-2 pb-2 pt-0 space-y-2">
                                 <div className="flex min-w-0 flex-col gap-1.5">
                                     <span className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.colorMode')}</span>
                                     <div className="flex flex-wrap items-center gap-1">
@@ -575,7 +575,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                         )}
 
                         {hasLocalizationSettings && !isVSCode && (
-                            <section className="px-2 pb-2 pt-0 space-y-2">
+                            <section className="order-3 px-2 pb-2 pt-0 space-y-2">
                                 <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.localization')}</h4>
 
                                 {(shouldShow('timeFormat') || shouldShow('weekStart')) && (
@@ -617,7 +617,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                         )}
 
                         {(showPwaInstallNameSetting || showPwaOrientationSetting || showMobileKeyboardModeSetting) && (
-                            <section className="px-2 pb-2 pt-0 space-y-2">
+                            <section className="order-4 px-2 pb-2 pt-0 space-y-2">
 
                             {showPwaInstallNameSetting && (
                                 <div className="py-1.5 space-y-1.5">
@@ -759,7 +759,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
 
                 {/* --- UI Scaling & Layout --- */}
                 {hasLayoutSettings && (
-                    <div className="mb-8 space-y-3">
+                    <div className="order-5 space-y-3">
                         <section className="p-2 space-y-0.5">
                             <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.spacingAndLayout')}</h4>
                             <div className="pl-2">
@@ -996,7 +996,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
 
                 {/* --- Navigation --- */}
                 {hasNavigationSettings && (
-                    <div className="space-y-3">
+                    <div className="order-6 space-y-3">
                         <section className="px-2 pb-2 pt-0">
                             <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.navigation')}</h4>
                             {shouldShow('terminalQuickKeys') && !isMobile && (
@@ -1036,7 +1036,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                 )}
 
                 {hasBehaviorSettings && (
-                    <div className="space-y-3">
+                    <div className="order-2 space-y-3">
 
 
 

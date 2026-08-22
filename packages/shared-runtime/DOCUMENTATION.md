@@ -2,6 +2,10 @@
 
 `@openchamber/shared-runtime` contains dependency-light host logic that must behave identically in the web/Electron and VS Code runtimes.
 
+## Commit message drafts
+
+`lib/commit-message-draft.js` owns the shared 4.5-second generation deadline, compact subject-and-details prompt, Conventional Commit normalization, word-boundary repair for subjects over 72 characters, bounded detail sanitization, provider cooldown selection, and deterministic local fallback. Web/Electron and VS Code provide authoritative Git context and direct provider transport; both hosts return the same valid subject plus two to four factual details without creating an OpenCode session. Provider timeouts and invalid output become an explicit local-fallback warning rather than a failed Generate action.
+
 ## Safe skill archives
 
 `lib/safe-archive.js` owns remote ZIP download and installation safety. Downloads are HTTPS-only, redirect and reported final-response origins are allowlisted, bodies are read incrementally, and compressed bytes are capped. ZIP metadata is fully preflighted before extraction, including entry count, declared sizes, strict UTF-8 path decoding, path shape, encryption, duplicate/case-colliding paths, file/directory conflicts, and Unix special-file modes.
@@ -18,6 +22,10 @@ Managed runtimes can apply immediately when authoritative active-session count i
 
 ## Quota adapters
 
-`lib/quota-adapters.js` owns provider request and normalization rules shared by the web server and VS Code extension for z.ai, Kimi, Codex, xAI, and DeepSeek. Adapters accept injected credentials, `fetch`, and clocks; they return a common usage-window shape, value-only rows when a percentage does not exist, partial-parse warnings, and deterministic configured/error state.
+`lib/quota-adapters.js` owns provider request and normalization rules shared by the web server and VS Code extension for OpenCode Zen, OpenCode Go, z.ai, Kimi, Codex, xAI, and DeepSeek. Adapters accept injected credentials, `fetch`, and clocks; they return a common usage-window shape, value-only rows when a percentage does not exist, partial-parse warnings, and deterministic configured/error state. The Zen adapter performs a bounded, non-evaluating SolidJS billing hydration parse and enforces the exact authenticated workspace billing origin. It emits one Credits progress window comparing current-month spend with the available balance; monthly-limit and auto-reload fields are parsed for payload compatibility but are not exposed in usage output.
 
-Codex merges usage and reset-credit responses without suppressing either balance. xAI uses the pinned CLI billing contract, validates the reported final HTTPS origin, and supports one refresh-and-retry through a host-provided credential persistence callback. DeepSeek reports the provider's available balances as value-only rows. Credentials, persistence, OAuth ownership, and transport policy remain host responsibilities.
+Codex merges usage and reset-credit responses without suppressing either balance. xAI uses the pinned CLI billing contract, validates the reported final HTTPS origin, and supports one refresh-and-retry through a host-provided credential persistence callback. After billing succeeds, xAI also makes a bounded, best-effort read of the private `ConsumerUiSvc.GetRemainingResets` gRPC-Web method with the effective OAuth token. Valid, unexpired reset tokens are reduced to a count and expiry-only reset-bank summary; redemption-capable token IDs never leave the adapter. Reset-service failures add a sanitized warning without discarding billing usage. DeepSeek reports the provider's available balances as value-only rows. Credentials, persistence, OAuth ownership, and transport policy remain host responsibilities.
+
+## Assistant image syntax
+
+`lib/assistant-image-sources.js` is the dependency-free parser shared by the UI candidate projection and authoritative web authorization. It recognizes supported Markdown image/link forms while masking escaped syntax and code, canonicalizes local/file/raw/HTTP/data sources, rejects SVG and unsupported schemes, and can strip load-bearing image syntax without removing surrounding prose. `testing/assistant-image-fixtures.js` is the golden parity set consumed by both hosts.

@@ -10,7 +10,8 @@ describe('provider display branding', () => {
     }
   });
 
-  test('preserves unrelated provider display names', () => {
+  test('preserves unrelated names and applies the OpenCode Zen label', () => {
     expect(getProviderDisplayName({ id: 'openai', name: 'OpenAI' })).toBe('OpenAI');
+    expect(getProviderDisplayName({ id: 'opencode', name: 'OpenCode' })).toBe('OpenCode Zen');
   });
 });

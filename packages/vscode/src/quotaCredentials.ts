@@ -5,20 +5,19 @@ import os from 'node:os';
 import path from 'node:path';
 
 export const MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES = 16 * 1024;
-export type ManagedQuotaProviderId = 'opencode-go' | 'ollama-cloud' | 'cursor-acp';
-export type OpenCodeGoCredential = { workspaceId: string; authCookie: string };
+export type ManagedQuotaProviderId = 'opencode' | 'ollama-cloud' | 'cursor-acp';
+export type OpenCodeZenCredential = { workspaceId: string; authCookie: string };
 export type OllamaCloudCredential = { cookie: string };
 export type CursorDashboardCredential = { sessionToken: string };
 export type CursorOAuthCredential = { accessToken?: string; refreshToken?: string };
 export type ManagedQuotaCredential =
-  | OpenCodeGoCredential
+  | OpenCodeZenCredential
   | OllamaCloudCredential
   | CursorDashboardCredential
   | CursorOAuthCredential;
 
-const providers = new Set<ManagedQuotaProviderId>(['opencode-go', 'ollama-cloud', 'cursor-acp']);
+const providers = new Set<ManagedQuotaProviderId>(['opencode', 'ollama-cloud', 'cursor-acp']);
 const secretMask = '••••••••';
-const workspaceIdPattern = /^wrk_[a-zA-Z0-9]+$/;
 
 export class QuotaCredentialError extends Error {
   readonly code: 'UNSUPPORTED_PROVIDER' | 'INVALID_CREDENTIAL' | 'IMPORT_UNAVAILABLE';
@@ -60,12 +59,12 @@ export const normalizeManagedQuotaCredential = (
 ): ManagedQuotaCredential | null => {
   const provider = canonicalizeManagedQuotaProviderId(providerId);
   if (!isRecord(value)) return null;
-  if (provider === 'opencode-go') {
+  if (provider === 'opencode') {
     if (!hasOnlyKeys(value, ['workspaceId', 'authCookie'])) return null;
     const workspaceId = clean(value.workspaceId);
-    let authCookie = clean(value.authCookie);
-    if (authCookie.startsWith('auth=')) authCookie = authCookie.slice(5).trim();
-    return workspaceIdPattern.test(workspaceId) && authCookie ? { workspaceId, authCookie } : null;
+    const authCookie = clean(value.authCookie);
+    if (!/^wrk_[0-9A-HJKMNP-TV-Z]{26}$/.test(workspaceId) || /[\s;]/.test(authCookie)) return null;
+    return { workspaceId, authCookie };
   }
   if (provider === 'ollama-cloud') {
     if (!hasOnlyKeys(value, ['cookie'])) return null;
@@ -123,14 +122,6 @@ export const getManagedQuotaCredentialStatus = (providerId: unknown) => {
   const provider = canonicalizeManagedQuotaProviderId(providerId);
   const credential = readManagedQuotaCredential(provider);
   if (!credential) return { configured: false };
-  if (provider === 'opencode-go') {
-    return {
-      configured: true,
-      workspaceId: (credential as OpenCodeGoCredential).workspaceId,
-      credentialKind: 'dashboard',
-      secretMasked: secretMask,
-    };
-  }
   if (provider === 'cursor-acp') {
     const cursor = credential as CursorDashboardCredential & CursorOAuthCredential;
     const credentialKind = cursor.sessionToken ? 'dashboard' : 'oauth';
@@ -140,6 +131,9 @@ export const getManagedQuotaCredentialStatus = (providerId: unknown) => {
       ...(credentialKind === 'oauth' ? { hasRefreshToken: Boolean(cursor.refreshToken) } : {}),
       secretMasked: secretMask,
     };
+  }
+  if (provider === 'opencode') {
+    return { configured: true, credentialKind: 'dashboard', secretMasked: secretMask };
   }
   return { configured: true, credentialKind: 'cookie', secretMasked: secretMask };
 };
@@ -175,6 +169,15 @@ export const writeManagedQuotaCredential = (providerId: unknown, value: unknown)
 export const deleteManagedQuotaCredential = (providerId: unknown) => {
   try {
     fs.unlinkSync(getManagedQuotaCredentialPath(providerId));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+};
+
+export const deleteLegacyOpenCodeGoQuotaCredential = (): void => {
+  const target = path.join(credentialsDirectory(), 'opencode-go.json');
+  try {
+    fs.unlinkSync(target);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }

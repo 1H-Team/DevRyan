@@ -43,6 +43,8 @@ const {
 } = await import("./JustificationBlock")
 const { formatReasoningText } = await import("./reasoningSummaryDisplay")
 
+const clippedXaiPreview = `${"x".repeat(200)}...`
+
 const createReasoningPart = ({
   id,
   text,
@@ -217,7 +219,7 @@ describe("ReasoningPart", () => {
     expect(completedHtml).not.toContain('py-1.5')
   })
 
-  test("renders nothing while active reasoning is still empty (status row owns Thinking)", () => {
+  test("renders nothing while active reasoning is still empty (the disclosure owns Thinking)", () => {
     expect(renderReasoning(createReasoningPart({
       id: "reasoning-empty-active",
       text: "",
@@ -230,6 +232,34 @@ describe("ReasoningPart", () => {
       id: "reasoning-empty-completed",
       text: "",
     }))).toBe("")
+  })
+
+  test("hides only finalized clipped xAI previews without mutating canonical text", () => {
+    const clippedPart = createReasoningPart({
+      id: "reasoning-clipped-xai",
+      text: clippedXaiPreview,
+    })
+    const canonicalSnapshot = JSON.stringify(clippedPart)
+
+    expect(renderReasoning(clippedPart, { providerID: "xai" })).toBe("")
+    expect(JSON.stringify(clippedPart)).toBe(canonicalSnapshot)
+
+    expect(renderReasoning(createReasoningPart({
+      id: "reasoning-active-xai",
+      text: clippedXaiPreview,
+      active: true,
+    }), { providerID: "xai" })).toContain(clippedXaiPreview)
+
+    expect(renderReasoning(createReasoningPart({
+      id: "reasoning-other-provider",
+      text: clippedXaiPreview,
+    }), { providerID: "anthropic" })).toContain(clippedXaiPreview)
+
+    const longerPreview = `${"x".repeat(201)}...`
+    expect(renderReasoning(createReasoningPart({
+      id: "reasoning-longer-xai",
+      text: longerPreview,
+    }), { providerID: "xai" })).toContain(longerPreview)
   })
 
   test("formats reasoning while preserving repeated skill/action status lines", () => {

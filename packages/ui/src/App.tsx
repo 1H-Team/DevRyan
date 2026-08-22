@@ -1,12 +1,10 @@
 import React from 'react';
-import devRyanBlackLogoUrl from '@/assets/DevRyanBlack.svg';
-import devRyanWhiteLogoUrl from '@/assets/DevRyanWhite.svg';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ChatView } from '@/components/views/ChatView';
 import { FireworksProvider } from '@/contexts/FireworksContext';
 import { Toaster } from '@/components/ui/sonner';
-import { Button } from '@/components/ui/button';
 import { MemoryDebugPanel } from '@/components/ui/MemoryDebugPanel';
+import { RuntimeLoadingScreen } from '@/components/ui/RuntimeLoadingScreen';
 import { setStreamPerfEnabled, streamDebugEnabled } from '@/stores/utils/streamDebug';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 // useEventStream removed — replaced by SyncProvider + SyncBridge
@@ -35,7 +33,6 @@ import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
 import { AboutDialog } from '@/components/ui/AboutDialog';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
-import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { VoiceProvider } from '@/components/voice';
 import { useUIStore } from '@/stores/useUIStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
@@ -174,27 +171,6 @@ const setInitialLoadingStatus = (text: string) => {
   statusElement.textContent = text;
 };
 
-const readStartupLogoPrefersDark = (): boolean => {
-  if (typeof document === 'undefined') {
-    return false;
-  }
-
-  const root = document.documentElement;
-  if (root.classList.contains('dark') || root.getAttribute('data-splash-variant') === 'dark') {
-    return true;
-  }
-
-  if (
-    root.getAttribute('data-splash-variant') === 'system'
-    && typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-  ) {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  }
-
-  return false;
-};
-
 const STARTUP_PHASE_LABELS = {
   health: 'Waiting for OpenCode',
   providers: 'Loading providers',
@@ -241,48 +217,16 @@ const StartupReadinessScreen: React.FC<{
   onRetry: () => void;
   isRetrying: boolean;
 }> = ({ summary, onRetry, isRetrying }) => {
-  const { currentTheme } = useThemeSystem();
   const statusText = getStartupStatusText(summary);
   const isError = Boolean(summary.error);
-  const [logoPrefersDark, setLogoPrefersDark] = React.useState(readStartupLogoPrefersDark);
-  const logoUrl = logoPrefersDark ? devRyanWhiteLogoUrl : devRyanBlackLogoUrl;
-
-  React.useEffect(() => {
-    const variant = currentTheme?.metadata?.variant;
-    if (variant !== 'dark' && variant !== 'light') return;
-    setLogoPrefersDark(variant === 'dark');
-  }, [currentTheme?.metadata?.variant]);
 
   return (
-    <div className="flex h-full items-center justify-center bg-background px-6 text-foreground">
-      <div className="flex max-w-md flex-col items-center gap-4 text-center">
-        <div className="flex size-[4.5rem] items-center justify-center rounded-full border border-border">
-          {isError ? (
-            <div className="size-2 rounded-full bg-destructive" />
-          ) : (
-            <img
-              src={logoUrl}
-              alt=""
-              width={48}
-              height={48}
-              className="size-12 animate-pulse pointer-events-none"
-              draggable={false}
-            />
-          )}
-        </div>
-        <div className="flex flex-col gap-2">
-          <h1 className="typography-title text-foreground">
-            {isError ? 'Startup needs attention' : 'Starting DevRyan'}
-          </h1>
-          <p className="typography-body text-muted-foreground">{statusText}</p>
-        </div>
-        {isError && (
-          <Button type="button" onClick={onRetry} disabled={isRetrying}>
-            {isRetrying ? 'Retrying...' : 'Retry'}
-          </Button>
-        )}
-      </div>
-    </div>
+    <RuntimeLoadingScreen
+      message={statusText}
+      state={isError ? 'error' : 'loading'}
+      onRetry={isError ? onRetry : undefined}
+      isRetrying={isRetrying}
+    />
   );
 };
 
@@ -639,6 +583,28 @@ function App({ apis }: AppProps) {
 
   const bootOutcomeKnown = bootInjectionStatus === 'valid';
   const bootViewIsMain = bootView?.screen === 'main';
+
+  React.useEffect(() => {
+    if (!isConnected || !isInitialized || !currentDirectory) return;
+    if (authPrincipal.scope === 'managed' || isVSCodeRuntime) return;
+    if (isDesktopRuntime && (!bootOutcomeKnown || !bootViewIsMain)) return;
+
+    void import('@/lib/directoryRecovery')
+      .then(({ recoverMissingActiveDirectory }) => recoverMissingActiveDirectory(currentDirectory))
+      .catch((recoveryError) => {
+        console.warn('[startup] active directory validation failed; preserving the current directory:', recoveryError);
+      });
+  }, [
+    authPrincipal.id,
+    authPrincipal.scope,
+    bootOutcomeKnown,
+    bootViewIsMain,
+    currentDirectory,
+    isConnected,
+    isDesktopRuntime,
+    isInitialized,
+    isVSCodeRuntime,
+  ]);
 
   // Non-main desktop boot routes do not show chat, so they can leave the
   // OpenCode readiness gate and dismiss the static splash immediately.

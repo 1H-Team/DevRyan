@@ -109,7 +109,7 @@ describe('user profile provisioning', () => {
     });
     expect(packageJson.overrides).toEqual({
       '@anthropic-ai/claude-agent-sdk': '0.2.141',
-      '@anthropic-ai/claude-code': '2.1.98',
+      '@anthropic-ai/claude-code': '2.1.215',
     });
     expect(JSON.stringify(slim)).not.toContain('"mcps"');
     expect(fs.existsSync(path.join(configDir, 'agents', 'orchestrator.md'))).toBe(true);
@@ -126,12 +126,12 @@ describe('user profile provisioning', () => {
     expect(fs.existsSync(path.join(configDir, '.openchamber', 'user-profile-manifest.json'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, '.openchamber', 'meridian-sdk-features-policy.json'))).toBe(true);
     expect(meridianFeatures.opencode).toEqual({
-      codeSystemPrompt: false,
+      codeSystemPrompt: true,
       clientSystemPrompt: true,
     });
     expect(result.meridianPolicy).toMatchObject({
       ok: true,
-      promptMode: 'client-only',
+      promptMode: 'combined',
       managedFields: ['codeSystemPrompt', 'clientSystemPrompt'],
     });
     expect(result.claudeRuntime).toMatchObject({
@@ -143,7 +143,7 @@ describe('user profile provisioning', () => {
         opencodeWithClaude: '1.8.0',
         meridian: '1.62.6',
         agentSdk: '0.2.141',
-        claudeCode: '2.1.98',
+        claudeCode: '2.1.215',
       },
       managementSources: {
         opencodeWithClaude: 'managed',
@@ -156,7 +156,7 @@ describe('user profile provisioning', () => {
       'Superpowers skills are not installed; the optional adapter will remain disabled.',
     );
     expect(result.warnings).toContain(
-      'Claude Code 2.1.98 is selected for its lower cached-input prefix; the broader cross-provider context target remains upstream-blocked.',
+      'Claude Code 2.1.215 is selected for Meridian compatibility; the broader cross-provider context target remains upstream-blocked.',
     );
     expect(commands).toEqual([{
       command: 'bun',
@@ -313,9 +313,9 @@ describe('user profile provisioning', () => {
     expect(migrated.meridianPolicy).toMatchObject({
       ok: true,
       migrated: true,
-      promptMode: 'client-only',
+      promptMode: 'combined',
     });
-    expect(migratedFeatures.opencode.codeSystemPrompt).toBe(false);
+    expect(migratedFeatures.opencode.codeSystemPrompt).toBe(true);
     expect(migratedFeatures.codex).toEqual({ clientSystemPrompt: false });
 
     const explicitHome = path.join(root, 'explicit-home');
@@ -339,10 +339,10 @@ describe('user profile provisioning', () => {
       promptMode: 'combined',
       preservedFields: ['codeSystemPrompt', 'clientSystemPrompt'],
     });
-    expect(preserved.warnings).toEqual(expect.arrayContaining([
-      expect.stringContaining('both the Claude Code and client system prompts'),
+    expect(preserved.warnings).toContain(
       'Superpowers skills are not installed; the optional adapter will remain disabled.',
-    ]));
+    );
+    expect(preserved.warnings.join('\n')).not.toContain('both the Claude Code and client system prompts');
     expect(readJson(explicitFeaturesPath).opencode.codeSystemPrompt).toBe(true);
   });
 
@@ -463,7 +463,7 @@ describe('user profile provisioning', () => {
 
     const result = await runtime.provision();
 
-    expect(readJson(packagePath).overrides['@anthropic-ai/claude-code']).toBe('2.1.98');
+    expect(readJson(packagePath).overrides['@anthropic-ai/claude-code']).toBe('2.1.215');
     expect(result.claudeRuntime).toMatchObject({
       source: 'managed',
       runtimeStatus: 'ready',
@@ -580,7 +580,7 @@ describe('user profile provisioning', () => {
     });
     expect(upgraded.overrides).toMatchObject({
       '@anthropic-ai/claude-agent-sdk': '0.2.141',
-      '@anthropic-ai/claude-code': '2.1.98',
+      '@anthropic-ai/claude-code': '2.1.215',
     });
     expect(result.claudeRuntime).toMatchObject({
       source: 'managed',
@@ -752,6 +752,37 @@ describe('user profile provisioning', () => {
     expect(result.ok).toBe(false);
     expect(result.install).toMatchObject({ ok: false, exitCode: 1 });
     expect(result.error).toContain('network unavailable');
+  });
+
+  it('continues with the previously installed plugins when a refresh install fails', async () => {
+    await createRuntime().provision();
+    commands = [];
+
+    const configDirectory = path.join(home, '.config', 'opencode');
+    writeJson(path.join(configDirectory, 'node_modules', '@rynfar', 'meridian', 'package.json'), {
+      name: '@rynfar/meridian',
+      version: '1.62.5',
+    });
+
+    const result = await createRuntime({
+      runCommand: async (command, args, options) => {
+        commands.push({ command, args, cwd: options.cwd });
+        return { ok: false, exitCode: 1, stdout: '', stderr: 'Resolving dependencies' };
+      },
+    }).provision();
+
+    expect(result.ok).toBe(true);
+    expect(result.installDegraded).toBe(true);
+    expect(result.install).toMatchObject({ ok: false, exitCode: 1 });
+    expect(result.warnings.some((warning) => (
+      warning.includes('Failed to install OpenCode user plugins')
+      && warning.includes('Continuing with the previously installed plugins')
+    ))).toBe(true);
+    expect(commands).toEqual([{
+      command: 'bun',
+      args: ['install', '--ignore-scripts'],
+      cwd: configDirectory,
+    }]);
   });
 
   it('forces one pinned reinstall when the context-mode hotfix hash is incompatible', async () => {

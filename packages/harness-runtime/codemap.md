@@ -9,7 +9,7 @@ API contracts.
 
 ## Where to change things
 
-- Atomic private persistence: `lib/atomic-file.js`, `lib/record-store.js`
+- Atomic private persistence and cross-process file locking: `lib/atomic-file.js`, `lib/record-store.js`
 - Host storage layout: `lib/paths.js`
 - Turn correlation: `lib/lifecycle.js`
 - Worktree receipts: `lib/worktree-bootstrap.js`

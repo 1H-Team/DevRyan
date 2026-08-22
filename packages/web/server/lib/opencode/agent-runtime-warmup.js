@@ -7,6 +7,10 @@ import {
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 70_000;
 const DEFAULT_MCP_TIMEOUT_MS = 70_000;
+// The xAI warm fans out one /experimental/tool fetch per Grok model after a
+// /config/providers round trip, so it cannot share the 5s core budget without
+// routinely reporting a timeout it would have survived.
+const DEFAULT_XAI_TIMEOUT_MS = 20_000;
 const MAX_SKILL_READS = 12;
 const MAX_SKILL_BYTES = 64 * 1024;
 
@@ -122,6 +126,9 @@ function createAgentRuntimeWarmup(dependencies = {}) {
   const discoverSkills = typeof dependencies.discoverSkills === 'function' ? dependencies.discoverSkills : () => [];
   const readSkillFile = typeof dependencies.readSkillFile === 'function' ? dependencies.readSkillFile : () => '';
   const cursorPrewarm = typeof dependencies.cursorPrewarm === 'function' ? dependencies.cursorPrewarm : null;
+  const warmXaiToolCatalog = typeof dependencies.warmXaiToolCatalog === 'function'
+    ? dependencies.warmXaiToolCatalog
+    : null;
   const now = typeof dependencies.now === 'function' ? dependencies.now : () => Date.now();
   const inflightByDirectory = new Map();
   let latestResult = null;
@@ -220,6 +227,9 @@ function createAgentRuntimeWarmup(dependencies = {}) {
       const mcpTimeoutMs = Number.isFinite(options.mcpTimeoutMs) && options.mcpTimeoutMs > 0
         ? Math.trunc(options.mcpTimeoutMs)
         : DEFAULT_MCP_TIMEOUT_MS;
+      const xaiTimeoutMs = Number.isFinite(options.xaiTimeoutMs) && options.xaiTimeoutMs > 0
+        ? Math.trunc(options.xaiTimeoutMs)
+        : DEFAULT_XAI_TIMEOUT_MS;
       const coreTasks = [
         {
           name: 'health',
@@ -329,13 +339,21 @@ function createAgentRuntimeWarmup(dependencies = {}) {
           fetchImpl,
         }),
       };
+      const xaiTask = warmXaiToolCatalog ? {
+        name: 'xaiTools',
+        timeoutMs: xaiTimeoutMs,
+        task: async ({ signal }) => {
+          await warmXaiToolCatalog({ directory, signal });
+          return { name: 'xaiTools' };
+        },
+      } : null;
 
       const coreResultsPromise = Promise.all(coreTasks.map((taskConfig) => runTask({
         name: taskConfig.name,
         task: taskConfig.task,
         timeoutMs,
       })));
-      const [coreResults, mcpResult, commandResult] = await Promise.all([
+      const [coreResults, mcpResult, commandResult, xaiResult] = await Promise.all([
         coreResultsPromise,
         runTask({
           name: mcpTask.name,
@@ -347,12 +365,23 @@ function createAgentRuntimeWarmup(dependencies = {}) {
           task: commandTask.task,
           timeoutMs: commandTask.timeoutMs,
         }),
+        xaiTask
+          ? runTask({
+            name: xaiTask.name,
+            task: xaiTask.task,
+            timeoutMs: xaiTask.timeoutMs,
+          })
+          : Promise.resolve(null),
       ]);
+      // The skills task is always the final core task; keep it last in the
+      // combined report so the task order stays stable for consumers.
+      const skillsResult = coreResults[coreResults.length - 1];
       const results = [
-        ...coreResults.slice(0, cursorPrewarm ? 7 : 6),
+        ...coreResults.slice(0, coreResults.length - 1),
+        ...(xaiResult ? [xaiResult] : []),
         mcpResult,
         commandResult,
-        ...coreResults.slice(cursorPrewarm ? 7 : 6),
+        skillsResult,
       ];
       return rememberLatest({
         status: 'ready',

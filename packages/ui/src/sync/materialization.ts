@@ -6,8 +6,13 @@ import {
 import { getToolLifecycleState } from "@/lib/toolStatus"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID, type RevertTransaction } from "./revert-transactions"
 import { isAssistantTurnComplete } from "./session-working"
+import {
+  compareMessagesChronologically,
+  messagesBefore,
+  messagesFrom,
+  sortMessagesChronologically,
+} from "./message-order"
 
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const STREAMING_PART_FIELDS = ["text", "output"] as const
 
 export type MaterializedMessageRecord = {
@@ -105,7 +110,7 @@ function mergeMaterializedMessages(existing: readonly Message[], nextMessages: r
   }
 
   if (!changed) return existing as Message[]
-  return [...merged.values()].sort((left, right) => cmp(left.id, right.id))
+  return sortMessagesChronologically([...merged.values()])
 }
 
 function getPartEndTime(part: Part): number | undefined {
@@ -198,10 +203,15 @@ export function materializeSessionSnapshots(
 ): MaterializeSessionSnapshotsResult {
   const skipPartTypes = options.skipPartTypes ?? new Set<string>()
   const revertMessageID = options.revertMessageID ?? getEffectiveSessionRevertMessageID(state, sessionID)
-  const snapshots = records
+  const orderedSnapshots = records
     .filter((record) => !!record?.info?.id)
-    .filter((record) => !revertMessageID || record.info.id < revertMessageID)
-    .sort((left, right) => cmp(left.info.id, right.info.id))
+    .sort((left, right) => compareMessagesChronologically(left.info, right.info))
+  const orderedMessages = orderedSnapshots.map((record) => record.info)
+  const visibleMessages = revertMessageID ? messagesBefore(orderedMessages, revertMessageID) : orderedMessages
+  const visibleMessageIDs = new Set(visibleMessages.map((message) => message.id))
+  const snapshots = visibleMessages === orderedMessages
+    ? orderedSnapshots
+    : orderedSnapshots.filter((record) => visibleMessageIDs.has(record.info.id))
   const nextMessages = snapshots.map((record) => record.info)
   const rawCurrentMessages = state.message[sessionID] ?? []
   const currentMessages = filterMessagesForRevert(rawCurrentMessages, revertMessageID)
@@ -231,8 +241,7 @@ export function materializeSessionSnapshots(
   const isPrepend = options.mode === "prepend"
 
   if (revertMessageID) {
-    for (const message of rawCurrentMessages) {
-      if (message.id < revertMessageID) continue
+    for (const message of messagesFrom(rawCurrentMessages, revertMessageID)) {
       if (!Object.prototype.hasOwnProperty.call(nextPartState, message.id)) continue
       delete nextPartState[message.id]
       partsChanged = true

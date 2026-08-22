@@ -109,6 +109,21 @@ export function writeFileAtomic(
   },
 ): Promise<void>;
 
+export function withCrossProcessFileLock<T>(
+  lockPath: string,
+  callback: () => Promise<T> | T,
+  options?: {
+    timeoutMs?: number;
+    retryMs?: number;
+    malformedStaleMs?: number;
+    now?: () => number;
+    wait?: (milliseconds: number) => Promise<void>;
+    randomToken?: () => string;
+    isProcessAlive?: (pid: number) => boolean;
+    fs?: unknown;
+  },
+): Promise<T>;
+
 export function readJsonGuarded<T = unknown>(
   filePath: string,
   options?: {

@@ -30,7 +30,9 @@ export function refreshSyncDebugFlag(): void {
   _enabled = undefined
 }
 
-type SyncDebugCategory = "pipeline" | "reducer" | "dispatch"
+type SyncDebugCategory = "pipeline" | "reducer" | "dispatch" | "partDelta"
+
+type PartDeltaContext = { messageID?: string; partID?: string; field?: string }
 
 function log(cat: SyncDebugCategory, ...args: unknown[]): void {
   if (!isSyncDebugEnabled()) return
@@ -70,6 +72,24 @@ export const syncDebug = {
     /** SKIP_PARTS filtered out a part. */
     partSkipped: (messageID: string, partID: string, partType: string) =>
       log("reducer", "message.part.updated SKIPPED (type filtered)", { messageID, partID, partType }),
+
+    /** A stale (shorter, not-ended) part snapshot arrived; the longer streamed local value was kept. */
+    partSnapshotKeptLongerLocal: (messageID: string, partID: string, field: string, localLength: number, snapshotLength: number) =>
+      log("reducer", "message.part.updated KEPT LONGER LOCAL", { messageID, partID, field, localLength, snapshotLength }),
+  },
+
+  partDelta: {
+    /** appendNonOverlappingDelta swallowed a delta prefix as a partial overlap. */
+    partialOverlapSwallowed: (overlap: number, deltaLength: number, context?: PartDeltaContext) =>
+      log("partDelta", "partial overlap SWALLOWED", { overlap, deltaLength, ...context }),
+
+    /** appendNonOverlappingDelta dropped a whole (long) delta the existing value already ends with. */
+    fullDeltaDropped: (deltaLength: number, context?: PartDeltaContext) =>
+      log("partDelta", "full delta DROPPED (endsWith)", { deltaLength, ...context }),
+
+    /** A repeat-collapse pass removed characters from part text. */
+    repeatCollapsed: (fn: string, removedChars: number) =>
+      log("partDelta", "repeat COLLAPSED", { fn, removedChars }),
   },
 
   dispatch: {

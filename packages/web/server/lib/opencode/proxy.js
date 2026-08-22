@@ -1,4 +1,6 @@
 import express from 'express';
+import http from 'node:http';
+import https from 'node:https';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 
 import {
@@ -14,6 +16,60 @@ import { stripMessageDiffContent } from './diff-summary.js';
 const PROMPT_ASYNC_MESSAGE_ID_HEADER = 'x-openchamber-message-id';
 // Transcripts carry diff snapshots and are not a fast control-plane read.
 const SESSION_MESSAGE_FETCH_TIMEOUT_MS = 120_000;
+
+export const OPEN_CODE_PROXY_AGENT_OPTIONS = Object.freeze({
+  keepAlive: true,
+  keepAliveMsecs: 30_000,
+  maxSockets: Infinity,
+  maxFreeSockets: 256,
+  timeout: 60_000,
+});
+
+export const createOpenCodeProxyAgentResolver = (resolveTarget) => {
+  let httpAgent = null;
+  let httpsAgent = null;
+
+  const resolve = () => {
+    const target = resolveTarget();
+    if (typeof target === 'string' && target.toLowerCase().startsWith('https://')) {
+      httpsAgent ??= new https.Agent(OPEN_CODE_PROXY_AGENT_OPTIONS);
+      return httpsAgent;
+    }
+    httpAgent ??= new http.Agent(OPEN_CODE_PROXY_AGENT_OPTIONS);
+    return httpAgent;
+  };
+
+  resolve.destroy = () => {
+    httpAgent?.destroy();
+    httpsAgent?.destroy();
+  };
+  return resolve;
+};
+
+export const defineDynamicProxyAgent = (options, resolveAgent) => {
+  Object.defineProperty(options, 'agent', {
+    configurable: false,
+    enumerable: true,
+    get: resolveAgent,
+  });
+  return options;
+};
+
+const normalizeProxyTarget = (candidate) => {
+  if (typeof candidate !== 'string') return null;
+  const trimmed = candidate.trim();
+  return trimmed ? trimmed.replace(/\/+$/, '') : null;
+};
+
+export const resolveOpenCodeProxyTarget = ({ getRuntime, buildOpenCodeUrl, fallbackTarget }) => {
+  const runtimeState = getRuntime();
+  if (runtimeState.openCodePort) {
+    const resolved = normalizeProxyTarget(buildOpenCodeUrl('/', ''));
+    if (resolved) return resolved;
+  }
+
+  return normalizeProxyTarget(runtimeState.openCodeBaseUrl) || fallbackTarget;
+};
 
 export const waitForSseDrain = (res, signal) => new Promise((resolve) => {
   if (signal?.aborted || res.writableEnded || res.destroyed) {
@@ -135,43 +191,15 @@ export const registerOpenCodeProxy = (app, deps) => {
   const isAbortError = (error) => error?.name === 'AbortError';
   const FALLBACK_PROXY_TARGET = 'http://127.0.0.1:3902';
 
-  const normalizeProxyTarget = (candidate) => {
-    if (typeof candidate !== 'string') {
-      return null;
-    }
-
-    const trimmed = candidate.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    return trimmed.replace(/\/+$/, '');
-  };
-
   // Keep generic proxy requests on the same upstream base URL that health checks
   // and direct fetch helpers use. This avoids split-brain state where /health
   // succeeds against an external host but /api/* still proxies to 127.0.0.1.
-  const resolveProxyTarget = () => {
-    try {
-      const resolved = normalizeProxyTarget(buildOpenCodeUrl('/', ''));
-      if (resolved) {
-        return resolved;
-      }
-    } catch {
-    }
-
-    const runtimeState = getRuntime();
-    const externalBase = normalizeProxyTarget(runtimeState.openCodeBaseUrl);
-    if (externalBase) {
-      return externalBase;
-    }
-
-    if (runtimeState.openCodePort) {
-      return `http://localhost:${runtimeState.openCodePort}`;
-    }
-
-    return FALLBACK_PROXY_TARGET;
-  };
+  const resolveProxyTarget = () => resolveOpenCodeProxyTarget({
+    getRuntime,
+    buildOpenCodeUrl,
+    fallbackTarget: FALLBACK_PROXY_TARGET,
+  });
+  const resolveProxyAgent = createOpenCodeProxyAgentResolver(resolveProxyTarget);
 
   const forwardSseRequest = async (req, res) => {
     const abortController = new AbortController();
@@ -721,7 +749,7 @@ export const registerOpenCodeProxy = (app, deps) => {
   });
 
   // Generic proxy for non-SSE OpenCode API routes.
-  const apiProxy = createProxyMiddleware({
+  const apiProxyOptions = defineDynamicProxyAgent({
     target: resolveProxyTarget(),
     changeOrigin: true,
     pathRewrite: { '^/api': '' },
@@ -759,7 +787,8 @@ export const registerOpenCodeProxy = (app, deps) => {
         }
       },
     },
-  });
+  }, resolveProxyAgent);
+  const apiProxy = createProxyMiddleware(apiProxyOptions);
 
   app.use('/api', apiProxy);
 };

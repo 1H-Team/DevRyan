@@ -163,6 +163,71 @@ export function createConfigChangeMarker(options: {
   changed?: boolean,
 ) => Promise<ConfigApplyMutationResponse & { runtimeApplied: false; runtimeMessage: string }>;
 
+export const COMMIT_DRAFT_DEADLINE_MS: 4500;
+export const COMMIT_DRAFT_SUBJECT_MAX_LENGTH: 72;
+export const COMMIT_DRAFT_DETAIL_MIN_COUNT: 2;
+export const COMMIT_DRAFT_DETAIL_MAX_COUNT: 4;
+export const COMMIT_DRAFT_DETAIL_MAX_LENGTH: 120;
+export const COMMIT_DRAFT_MODEL_COOLDOWN_MS: number;
+export const COMMIT_DRAFT_ALLOWED_TYPES: readonly string[];
+
+export interface SharedCommitDraftFileContext {
+  path: string;
+  index?: string;
+  workingDir?: string;
+  insertions?: number;
+  deletions?: number;
+  diff?: string;
+  diffNote?: string;
+}
+
+export interface SharedCommitDraftContext {
+  branch?: string;
+  tracking?: string | null;
+  scope?: string;
+  stagedOnly?: boolean;
+  selectedFiles: SharedCommitDraftFileContext[];
+  recentCommitSubjects?: string[];
+  patch?: string;
+  patchNote?: string;
+  contextWarning?: string;
+}
+
+export interface SharedCommitDraftMessage {
+  subject: string;
+  highlights: string[];
+}
+
+export type SharedCommitDraftSource = 'ai' | 'repaired_ai' | 'local_fallback';
+
+export function createDeterministicCommitDraft(context: SharedCommitDraftContext): SharedCommitDraftMessage;
+export function normalizeGeneratedCommitDraft(value: unknown, context: SharedCommitDraftContext): {
+  message: SharedCommitDraftMessage;
+  source: SharedCommitDraftSource;
+};
+export function buildCommitDraftPrompt(context: SharedCommitDraftContext, guidance?: string): string;
+export function generateCommitDraftWithDeadline(options: {
+  context: SharedCommitDraftContext;
+  guidance?: string;
+  requestText?: (input: { prompt: string; timeoutMs: number }) => Promise<unknown> | unknown;
+  deadlineAt?: number;
+  now?: () => number;
+  reserveMs?: number;
+  setTimer?: typeof setTimeout;
+  clearTimer?: typeof clearTimeout;
+}): Promise<{
+  message: SharedCommitDraftMessage;
+  source: SharedCommitDraftSource;
+  warning: string | null;
+  providerOutcome: 'complete' | 'deadline' | 'invalid' | 'error';
+  error?: unknown;
+}>;
+export function createCommitModelCooldowns(options?: { now?: () => number; cooldownMs?: number }): {
+  select(primary?: string | null, fallback?: string | null): string;
+  markUnhealthy(model?: string | null): void;
+  isCoolingDown(model?: string | null): boolean;
+};
+
 export interface SharedUsageWindow {
   usedPercent: number | null;
   remainingPercent: number | null;
@@ -218,6 +283,10 @@ export type SharedQuotaFetch = (
   ok: boolean;
   status: number;
   json: () => Promise<unknown>;
+  text?: () => Promise<string>;
+  arrayBuffer?: () => Promise<ArrayBuffer>;
+  body?: ReadableStream<Uint8Array> | null;
+  url?: string;
   headers?: { get(name: string): string | null };
 }>;
 
@@ -234,9 +303,14 @@ export const CODEX_RESET_CREDITS_URL: string;
 export const XAI_BILLING_URL: string;
 export const XAI_BILLING_HOST: string;
 export const XAI_CLIENT_VERSION: string;
+export const XAI_RESET_BANK_URL: string;
+export const XAI_RESET_BANK_MAX_RESPONSE_BYTES: number;
 export const XAI_OAUTH_TOKEN_URL: string;
 export const XAI_OAUTH_CLIENT_ID: string;
 export const DEEPSEEK_BALANCE_URL: string;
+export const OPENCODE_GO_USAGE_URL: string;
+export const OPENCODE_ZEN_BILLING_ORIGIN: string;
+export const OPENCODE_ZEN_MAX_RESPONSE_BYTES: number;
 
 export function toQuotaNumber(value: unknown): number | null;
 export function toQuotaTimestamp(value: unknown): number | null;
@@ -301,3 +375,46 @@ export function refreshXaiOAuthToken(options: {
 export function fetchDeepSeekQuotaAdapter(options?: SharedQuotaAdapterOptions<{
   apiKey: string;
 }>): Promise<SharedQuotaProviderResult>;
+
+export function fetchOpenCodeGoQuotaAdapter(options?: SharedQuotaAdapterOptions<{
+  apiKey: string;
+}>): Promise<SharedQuotaProviderResult>;
+
+export interface OpenCodeZenCredential {
+  workspaceId: string;
+  authCookie: string;
+}
+
+export interface OpenCodeZenBillingSnapshot {
+  balanceMicrocents: number;
+  monthlyLimitDollars: number | null;
+  monthlyUsageMicrocents: number;
+  usageUpdatedAt: number | null;
+  reloadEnabled: boolean;
+  reloadAmountDollars: number;
+  reloadTriggerDollars: number;
+}
+
+export function normalizeOpenCodeZenCredential(value: unknown): OpenCodeZenCredential | null;
+export function parseOpenCodeZenBillingHtml(
+  html: string,
+  workspaceId: string,
+  now?: number,
+): OpenCodeZenBillingSnapshot | null;
+export function fetchOpenCodeZenQuotaAdapter(options?: SharedQuotaAdapterOptions<OpenCodeZenCredential>): Promise<SharedQuotaProviderResult>;
+
+export type AssistantImageReferenceKind = 'markdown-image' | 'markdown-link' | 'reference-image';
+
+export interface AssistantImageReference {
+  source: string;
+  caption: string;
+  kind: AssistantImageReferenceKind;
+  start: number;
+  end: number;
+}
+
+export function canonicalizeAssistantImageSource(value: unknown): string | null;
+export function isSupportedAssistantImageSource(value: unknown): boolean;
+export function extractAssistantImageReferences(markdown: string): AssistantImageReference[];
+export function stripAssistantImageMarkdown(markdown: string): string;
+export const SUPPORTED_IMAGE_EXTENSIONS: Set<string>;

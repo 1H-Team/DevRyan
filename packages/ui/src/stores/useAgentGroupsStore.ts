@@ -322,11 +322,9 @@ export const useAgentGroupsStore = create<Store>()(
           }
 
           try {
-            await removeProjectWorktree(projectRef, source, { deleteLocalBranch: true });
-            const directoryStore = useDirectoryStore.getState();
-            if (normalize(directoryStore.currentDirectory) === path) {
-              directoryStore.setDirectory(projectRef.path, { showOverlay: false });
-            }
+            const removedPath = await removeProjectWorktree(projectRef, source, { deleteLocalBranch: true });
+            const { recoverMissingActiveDirectory } = await import('@/lib/directoryRecovery');
+            await recoverMissingActiveDirectory(removedPath, undefined, projectRef.path);
           } catch {
             failedWorktreePaths.push(path);
           }

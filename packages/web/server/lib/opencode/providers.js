@@ -109,6 +109,19 @@ function hasAnyProviderConfig(config, providerIds) {
   ));
 }
 
+function hasAntigravityProviderConfig(config) {
+  for (const containerKey of ['provider', 'providers']) {
+    const container = isPlainObject(config?.[containerKey]) ? config[containerKey] : null;
+    const google = isPlainObject(container?.google) ? container.google : null;
+    const models = isPlainObject(google?.models) ? google.models : null;
+    if (!models) continue;
+    if (Object.keys(models).some((modelId) => isAntigravityModel(modelId, models[modelId]))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function hasAnthropicOAuthPlugin(config) {
   const plugins = Array.isArray(config?.plugin) ? config.plugin : [];
   return plugins.some(isAnthropicOAuthPluginSpec);
@@ -147,6 +160,7 @@ function getProviderSources(providerId, workingDirectory, options = {}) {
     layers.userConfig = readConfigFile(options.userConfigPath);
   }
   const { userConfig, projectConfig, customConfig, paths } = layers;
+  const normalizedProviderId = normalizeProviderId(providerId);
   const providerLookupIds = getProviderLookupIds(providerId);
   const userConfigPaths = Array.isArray(options.userConfigPaths)
     ? options.userConfigPaths.filter((userPath) => typeof userPath === 'string' && userPath.trim())
@@ -163,9 +177,14 @@ function getProviderSources(providerId, workingDirectory, options = {}) {
       config: userPath === paths.userPath ? userConfig : readConfigFile(userPath),
     }));
 
-  const customExists = hasAnyProviderConfig(customConfig, providerLookupIds);
-  const projectExists = hasAnyProviderConfig(projectConfig, providerLookupIds);
-  const userProviderSource = userCandidates.find((candidate) => hasAnyProviderConfig(candidate.config, providerLookupIds));
+  const hasProviderSourceConfig = (config) => (
+    normalizedProviderId === 'antigravity'
+      ? hasAntigravityProviderConfig(config)
+      : hasAnyProviderConfig(config, providerLookupIds)
+  );
+  const customExists = hasProviderSourceConfig(customConfig);
+  const projectExists = hasProviderSourceConfig(projectConfig);
+  const userProviderSource = userCandidates.find((candidate) => hasProviderSourceConfig(candidate.config));
   const userExists = Boolean(userProviderSource);
   const customAnthropicOAuthExists = hasAnthropicOAuthConfig(customConfig, providerId);
   const projectAnthropicOAuthExists = hasAnthropicOAuthConfig(projectConfig, providerId);

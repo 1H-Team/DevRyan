@@ -1070,7 +1070,7 @@ describe('VS Code managed orchestration owner', () => {
     await runtime.shutdown();
   });
 
-  it.each(['fixer', 'oracle'])('enforces a 60-minute %s deadline for starts and follow-ups', async (agent) => {
+  it.each(['designer', 'fixer', 'oracle'])('enforces a 60-minute %s deadline for starts and follow-ups', async (agent) => {
     const runtime = createVsCodeManagedOrchestrationRuntime({
       storageDirectory: '/unused',
       persistence: createPersistence(),
@@ -1171,7 +1171,7 @@ describe('VS Code managed orchestration owner', () => {
     await runtime.shutdown();
   });
 
-  it('floors follow-up deadlines, inherits longer source windows, and accepts explicit extensions', async () => {
+  it('floors Designer follow-up deadlines, inherits longer source windows, and accepts explicit extensions', async () => {
     const runtime = createVsCodeManagedOrchestrationRuntime({
       storageDirectory: '/unused',
       persistence: createPersistence(),
@@ -1204,7 +1204,7 @@ describe('VS Code managed orchestration owner', () => {
     for (let index = 1; index <= 3; index += 1) {
       originals.push(await runtime.handleRpc({
         method: 'submit',
-        params: submitParams(index, { childSessionId: `ses_child_${index}` }),
+        params: submitParams(index, { agent: 'designer', childSessionId: `ses_child_${index}` }),
       }));
     }
     await runtime.flush();
@@ -1226,7 +1226,7 @@ describe('VS Code managed orchestration owner', () => {
           } : {}),
         },
       }) as { followUpTask: unknown };
-      expect(getTask(result.followUpTask).timeoutAt).toBe(1_810_000);
+      expect(getTask(result.followUpTask).timeoutAt).toBe(3_610_000);
     }
 
     const longSource = await runtime.handleRpc({

@@ -178,7 +178,14 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     sanitizeHiddenSkills = (value) => (Array.isArray(value) ? value : []),
     discoverSkills = () => [],
     onOpenCodeRestarted = () => {},
+    onStartupStatus = () => {},
   } = deps;
+
+  const emitStartupStatus = (text) => {
+    try {
+      onStartupStatus(text);
+    } catch { /* status display is best-effort */ }
+  };
 
   let managedOrphanReapDone = false;
   let managedOrphanReapInFlight = null;
@@ -791,7 +798,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     // following skill discovery/overlay sync sees it on this same launch.
     // External and non-Electron runtimes return an empty object without IO.
     const browserEnvironmentInput = await getManagedBrowserEnvironment();
+    emitStartupStatus('Preparing plugins and agents…');
     const agentRuntimeConfig = await syncManagedAgentRuntimeConfig();
+    emitStartupStatus('Starting OpenCode…');
 
     const desiredPort = env.ENV_CONFIGURED_OPENCODE_PORT ?? 0;
     const spawnPort = await resolveManagedOpenCodePort(desiredPort, env.ENV_CONFIGURED_OPENCODE_HOSTNAME);
@@ -984,6 +993,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
         const message = error instanceof Error ? error.message : String(error);
         console.warn(`[OpenCode] Managed server startup failed on attempt ${attempt}/${START_OPEN_CODE_MAX_ATTEMPTS}; retrying: ${message}`);
+        emitStartupStatus(`Retrying OpenCode startup (attempt ${attempt + 1} of ${START_OPEN_CODE_MAX_ATTEMPTS})…`);
         state.openCodePort = null;
         state.isOpenCodeReady = false;
         state.openCodeNotReadySince = Date.now();

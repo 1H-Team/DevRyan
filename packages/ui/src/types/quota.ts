@@ -2,6 +2,7 @@ export type QuotaProviderId =
   | 'openai'
   | 'codex'
   | 'xai'
+  | 'opencode'
   | 'opencode-go'
   | 'cursor-acp'
   | 'deepseek'

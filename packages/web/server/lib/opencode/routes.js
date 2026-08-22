@@ -18,19 +18,24 @@ import { annotateOpenAIModelAvailability } from './openai-model-availability.js'
 import { stripMessageDiffContent } from './diff-summary.js';
 import { discoverGitHubCopilotModels } from './github-copilot-models.js';
 import { createCursorSessionTitleRuntime } from './cursor-session-title-runtime.js';
-import { createStandardSessionTitleRuntime } from './standard-session-title-runtime.js';
+import { DEFAULT_TITLE_FALLBACK_ZEN_MODEL, createStandardSessionTitleRuntime } from './standard-session-title-runtime.js';
 import { registerQuestionRoutes } from './question-routes.js';
 import { createGlobalAgentsMdRuntime } from './global-agents-md-runtime.js';
 import { registerGlobalAgentsMdRoutes } from './global-agents-md-routes.js';
 import { runClaudeCodeAuthStatus } from './claude-auth-status.js';
+import {
+  readMeridianPromptMode,
+  setMeridianPromptCompatibilityMode,
+} from './meridian-sdk-features.js';
 
 const ANTHROPIC_PROVIDER_IDS = new Set(['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude']);
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
 const CURSOR_ACP_PROVIDER_ID = 'cursor-acp';
 const CURSOR_USAGE_TOKEN_MAX_LENGTH = 16_384;
-const OPENCODE_GO_PROVIDER_ID = 'opencode-go';
-const OPENCODE_GO_WORKSPACE_ID_PATTERN = /^wrk_[a-zA-Z0-9]+$/;
-const OPENCODE_GO_USAGE_COOKIE_MAX_LENGTH = 16_384;
+// Upper bound on the one-time wait for the xai tool-catalog dedupe overrides on
+// a cold cache; on timeout the prompt proceeds and the post-response refresh
+// warms the cache for the next turn.
+const XAI_TOOL_CATALOG_COLD_START_WAIT_MS = 1_200;
 
 const getAntigravityAccountsSource = async () => {
   const { ANTIGRAVITY_ACCOUNTS_PATHS, readJsonFile } = await import('../quota/utils/index.js');
@@ -152,9 +157,13 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     cursorSdkRuntime = null,
     cursorSessionTitleRuntime: injectedCursorSessionTitleRuntime = null,
     standardSessionTitleRuntime: injectedStandardSessionTitleRuntime = null,
+    xaiToolCatalogRuntime = null,
     globalAgentsMdRuntime: injectedGlobalAgentsMdRuntime = null,
     resolveZenModel = async () => undefined,
+    resolveZenModelNonBlocking = () => ({}),
     authLibrary: injectedAuthLibrary = null,
+    readClaudePromptMode = readMeridianPromptMode,
+    setClaudePromptCompatibilityMode = setMeridianPromptCompatibilityMode,
   } = dependencies;
 
   const cursorSessionTitleRuntime = injectedCursorSessionTitleRuntime || createCursorSessionTitleRuntime({
@@ -169,6 +178,11 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     resolveZenModel,
+    // A second free model to retry against when the primary one is unhealthy or
+    // has left the catalog. Same selection the commit-message route uses.
+    resolveZenFallbackModel: (model) => (
+      resolveZenModelNonBlocking(model)?.fallbackModel || DEFAULT_TITLE_FALLBACK_ZEN_MODEL
+    ),
     logger: console,
   });
   const globalAgentsMdRuntime = injectedGlobalAgentsMdRuntime || createGlobalAgentsMdRuntime({
@@ -236,6 +250,37 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     return removed;
   };
 
+  const readProviderSourceSnapshot = async (providerId, directory) => {
+    const result = getProviderSources(providerId, directory);
+    const { getProviderAuth } = await getAuthLibrary();
+    const authLookupIds = ANTHROPIC_PROVIDER_IDS.has(providerId)
+      ? [providerId, 'anthropic', 'claude']
+      : getProviderIntegrationLookupIds(providerId);
+    const auth = authLookupIds.map((id) => getProviderAuth(id)).find(Boolean);
+
+    if (providerId === CURSOR_ACP_PROVIDER_ID) {
+      result.sources.auth.exists = Boolean(
+        (typeof process.env.CURSOR_API_KEY === 'string' && process.env.CURSOR_API_KEY.trim()) ||
+        (auth && typeof auth === 'object' && (
+          (typeof auth.key === 'string' && auth.key.trim()) ||
+          (typeof auth.token === 'string' && auth.token.trim())
+        ))
+      );
+    } else {
+      result.sources.auth.exists = Boolean(auth);
+    }
+    if (providerId === ANTIGRAVITY_PROVIDER_ID) {
+      result.sources.auth = await getAntigravityAccountsSource();
+    }
+    return result.sources;
+  };
+
+  const removeProviderConfigForScope = (providerId, directory, scope) => (
+    providerId === ANTIGRAVITY_PROVIDER_ID
+      ? removeAntigravityProviderConfig(directory, scope)
+      : removeProviderConfig(providerId, directory, scope)
+  );
+
   const normalizeCursorUsageSessionToken = (value) => {
     if (typeof value !== 'string') {
       return null;
@@ -245,40 +290,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       return null;
     }
     return token;
-  };
-
-  const readOpenCodeGoUsageAuthStatus = async () => {
-    const { readAuthFile } = await getAuthLibrary();
-    const auth = readAuthFile();
-    const entry = auth?.[OPENCODE_GO_PROVIDER_ID];
-    const workspaceId = typeof entry?.usageWorkspaceId === 'string' ? entry.usageWorkspaceId.trim() : '';
-    const authCookie = typeof entry?.usageAuthCookie === 'string' ? entry.usageAuthCookie.trim() : '';
-    return {
-      configured: Boolean(workspaceId && authCookie),
-      workspaceId: workspaceId || null,
-    };
-  };
-
-  const normalizeOpenCodeGoWorkspaceId = (value) => {
-    if (typeof value !== 'string') {
-      return null;
-    }
-    const workspaceId = value.trim();
-    if (!OPENCODE_GO_WORKSPACE_ID_PATTERN.test(workspaceId)) {
-      return null;
-    }
-    return workspaceId;
-  };
-
-  const normalizeOpenCodeGoAuthCookie = (value) => {
-    if (typeof value !== 'string') {
-      return null;
-    }
-    const authCookie = value.trim();
-    if (!authCookie || authCookie.length > OPENCODE_GO_USAGE_COOKIE_MAX_LENGTH) {
-      return null;
-    }
-    return authCookie;
   };
 
   const normalizeWorkspaceDirectory = (value) => {
@@ -492,6 +503,51 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       console.error('Failed to check Claude Code availability:', error);
       return res.status(500).json({ error: error.message || 'Failed to check Claude Code availability' });
     }
+  });
+
+  app.get('/api/provider/anthropic/prompt-mode', (_req, res) => {
+    if (isExternalOpenCode()) {
+      return res.json({
+        mode: 'external',
+        compatibilityMode: false,
+        editable: false,
+      });
+    }
+    const result = readClaudePromptMode();
+    if (!result.ok) {
+      return res.status(500).json({ code: result.code, error: result.error });
+    }
+    return res.json({
+      mode: result.mode,
+      compatibilityMode: result.compatibilityMode,
+      editable: true,
+    });
+  });
+
+  app.put('/api/provider/anthropic/prompt-mode', (req, res) => {
+    if (isExternalOpenCode()) {
+      return res.status(409).json({
+        code: 'external_opencode_read_only',
+        error: 'Claude prompt mode is managed by the configured external OpenCode runtime.',
+      });
+    }
+    if (typeof req.body?.compatibilityMode !== 'boolean') {
+      return res.status(400).json({
+        code: 'invalid_compatibility_mode',
+        error: 'compatibilityMode must be a boolean',
+      });
+    }
+    const result = setClaudePromptCompatibilityMode(req.body.compatibilityMode);
+    if (!result.ok) {
+      return res.status(500).json({ code: result.code, error: result.error });
+    }
+    return res.json({
+      success: true,
+      changed: result.changed,
+      mode: result.mode,
+      compatibilityMode: result.compatibilityMode,
+      editable: true,
+    });
   });
 
   app.post('/api/provider/anthropic/check-oauth', async (req, res) => {
@@ -783,6 +839,10 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
           const parsed = await response.json().catch(() => null);
           if (parsed && typeof parsed === 'object') {
             upstreamPayload = parsed;
+            void xaiToolCatalogRuntime?.refreshProviderPayload?.({
+              directory: typeof req.query?.directory === 'string' ? req.query.directory : undefined,
+              payload: parsed,
+            });
           }
         }
       } catch {
@@ -874,12 +934,46 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     const providerID = typeof req.body?.model?.providerID === 'string'
       ? req.body.model.providerID.trim()
       : '';
+    const modelID = typeof req.body?.model?.modelID === 'string'
+      ? req.body.model.modelID.trim()
+      : '';
     if (!providerID || providerID === CURSOR_ACP_PROVIDER_ID) {
       return next();
     }
 
     try {
       const directory = await resolveRequestDirectory(req);
+      const isXaiProvider = xaiToolCatalogRuntime?.supportsProvider?.(providerID) === true;
+      let cachedXaiTools = isXaiProvider
+        ? xaiToolCatalogRuntime?.getPromptToolOverrides?.({ directory, providerID, modelID })
+        : null;
+      if (isXaiProvider && cachedXaiTools === null) {
+        // Cold start: without this bounded warm, the first xai prompt ships the
+        // full duplicated MCP tool catalog (the dedupe overrides only existed
+        // after the first response finished). Cap the wait so prompt acceptance
+        // is never delayed more than XAI_TOOL_CATALOG_COLD_START_WAIT_MS.
+        // The startup + periodic catalog warms should keep this path cold-free;
+        // the log below is the regression signal when they stop doing so.
+        const coldWaitStartedAt = Date.now();
+        await Promise.race([
+          Promise.resolve(
+            xaiToolCatalogRuntime?.refreshModel?.({ directory, providerID, modelID }),
+          ).catch(() => null),
+          new Promise((resolve) => setTimeout(resolve, XAI_TOOL_CATALOG_COLD_START_WAIT_MS)),
+        ]);
+        cachedXaiTools = xaiToolCatalogRuntime?.getPromptToolOverrides?.({ directory, providerID, modelID }) ?? null;
+        console.warn('[XaiTools] cold-start wait engaged', {
+          directory,
+          modelID,
+          waitedMs: Date.now() - coldWaitStartedAt,
+        });
+      }
+      if (cachedXaiTools && Object.keys(cachedXaiTools).length > 0) {
+        const existingTools = req.body?.tools && typeof req.body.tools === 'object' && !Array.isArray(req.body.tools)
+          ? req.body.tools
+          : {};
+        req.body.tools = { ...existingTools, ...cachedXaiTools };
+      }
       const text = (Array.isArray(req.body?.parts) ? req.body.parts : [])
         .filter((part) => part?.type === 'text' && part?.synthetic !== true)
         .map((part) => typeof part.text === 'string' ? part.text.trim() : '')
@@ -891,7 +985,11 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
             sessionID,
             directory,
             text,
+            providerID,
           });
+          if (isXaiProvider && cachedXaiTools === null) {
+            void xaiToolCatalogRuntime?.refreshModel?.({ directory, providerID, modelID });
+          }
         }
       });
       return next();
@@ -1081,68 +1179,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/provider/opencode-go/usage-auth/status', async (_req, res) => {
-    try {
-      return res.json(await readOpenCodeGoUsageAuthStatus());
-    } catch (error) {
-      console.error('Failed to read OpenCode Go usage auth status:', error);
-      return res.status(500).json({ error: error.message || 'Failed to read OpenCode Go usage auth status' });
-    }
-  });
-
-  app.put('/api/provider/opencode-go/usage-auth', async (req, res) => {
-    try {
-      const workspaceId = normalizeOpenCodeGoWorkspaceId(req.body?.workspaceId);
-      const authCookie = normalizeOpenCodeGoAuthCookie(req.body?.authCookie);
-      if (!workspaceId) {
-        return res.status(400).json({ error: 'A valid OpenCode Go workspace ID is required.' });
-      }
-      if (!authCookie) {
-        return res.status(400).json({ error: 'OpenCode Go auth cookie is required.' });
-      }
-
-      const { readAuthFile, writeAuthFile } = await getAuthLibrary();
-      const auth = readAuthFile();
-      const existing = auth?.[OPENCODE_GO_PROVIDER_ID] && typeof auth[OPENCODE_GO_PROVIDER_ID] === 'object'
-        ? auth[OPENCODE_GO_PROVIDER_ID]
-        : {};
-      writeAuthFile({
-        ...auth,
-        [OPENCODE_GO_PROVIDER_ID]: {
-          ...existing,
-          usageWorkspaceId: workspaceId,
-          usageAuthCookie: authCookie,
-        },
-      });
-
-      return res.json({ success: true, configured: true, workspaceId });
-    } catch (error) {
-      console.error('Failed to save OpenCode Go usage auth:', error);
-      return res.status(500).json({ error: error.message || 'Failed to save OpenCode Go usage auth' });
-    }
-  });
-
-  app.delete('/api/provider/opencode-go/usage-auth', async (_req, res) => {
-    try {
-      const { readAuthFile, writeAuthFile } = await getAuthLibrary();
-      const auth = readAuthFile();
-      const existing = auth?.[OPENCODE_GO_PROVIDER_ID] && typeof auth[OPENCODE_GO_PROVIDER_ID] === 'object'
-        ? { ...auth[OPENCODE_GO_PROVIDER_ID] }
-        : {};
-      delete existing.usageWorkspaceId;
-      delete existing.usageAuthCookie;
-      writeAuthFile({
-        ...auth,
-        [OPENCODE_GO_PROVIDER_ID]: existing,
-      });
-
-      return res.json({ success: true, configured: false, workspaceId: null });
-    } catch (error) {
-      console.error('Failed to clear OpenCode Go usage auth:', error);
-      return res.status(500).json({ error: error.message || 'Failed to clear OpenCode Go usage auth' });
-    }
-  });
-
   app.get('/api/provider/:providerId/source', async (req, res) => {
     try {
       const { providerId } = req.params;
@@ -1165,30 +1201,9 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         directory = resolved.directory;
       }
 
-      const sources = getProviderSources(providerId, directory);
-      const { getProviderAuth } = await getAuthLibrary();
-      const authLookupIds = ['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude'].includes(providerId)
-        ? [providerId, 'anthropic', 'claude']
-        : getProviderIntegrationLookupIds(providerId);
-      const auth = authLookupIds.map((id) => getProviderAuth(id)).find(Boolean);
-      if (providerId === CURSOR_ACP_PROVIDER_ID) {
-        sources.sources.auth.exists = Boolean(
-          (typeof process.env.CURSOR_API_KEY === 'string' && process.env.CURSOR_API_KEY.trim()) ||
-          (auth && typeof auth === 'object' && (
-            (typeof auth.key === 'string' && auth.key.trim()) ||
-            (typeof auth.token === 'string' && auth.token.trim())
-          ))
-        );
-      } else {
-        sources.sources.auth.exists = Boolean(auth);
-      }
-      if (providerId === ANTIGRAVITY_PROVIDER_ID) {
-        sources.sources.auth = await getAntigravityAccountsSource();
-      }
-
       return res.json({
         providerId,
-        sources: sources.sources,
+        sources: await readProviderSourceSnapshot(providerId, directory),
       });
     } catch (error) {
       console.error('Failed to get provider sources:', error);
@@ -1211,7 +1226,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       const requestedDirectory = headerDirectory || queryDirectory || null;
       let directory = null;
 
-      if (scope === 'project') {
+      if (scope === 'project' || (scope === 'all' && requestedDirectory)) {
         if (!requestedDirectory) {
           return res.status(400).json({ error: 'Working directory is required for project scope' });
         }
@@ -1222,47 +1237,57 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         directory = resolved.directory;
       }
 
-      let removed = false;
+      const removedSources = {
+        auth: false,
+        user: false,
+        project: false,
+        custom: false,
+      };
       if (scope === 'auth') {
         if (providerId === CURSOR_ACP_PROVIDER_ID) {
           const auth = await getAuthLibrary();
-          removed = clearCursorSdkAuth({ readAuth: auth.readAuthFile, writeAuth: auth.writeAuthFile });
+          removedSources.auth = clearCursorSdkAuth({ readAuth: auth.readAuthFile, writeAuth: auth.writeAuthFile });
         } else {
-          removed = providerId === ANTIGRAVITY_PROVIDER_ID
-          ? await removeAntigravityAccounts()
-          : await removeProviderAuthForLookupIds(getProviderIntegrationLookupIds(providerId));
+          removedSources.auth = providerId === ANTIGRAVITY_PROVIDER_ID
+            ? await removeAntigravityAccounts()
+            : await removeProviderAuthForLookupIds(getProviderIntegrationLookupIds(providerId));
         }
       } else if (scope === 'user' || scope === 'project' || scope === 'custom') {
-        removed = removeProviderConfig(providerId, directory, scope);
+        removedSources[scope] = removeProviderConfigForScope(providerId, directory, scope);
       } else if (scope === 'all') {
         const auth = await getAuthLibrary();
-        const authRemoved = providerId === CURSOR_ACP_PROVIDER_ID
+        removedSources.auth = providerId === CURSOR_ACP_PROVIDER_ID
           ? clearCursorSdkAuth({ readAuth: auth.readAuthFile, writeAuth: auth.writeAuthFile })
           : providerId === ANTIGRAVITY_PROVIDER_ID
-          ? await removeAntigravityAccounts()
-          : await removeProviderAuthForLookupIds(getProviderIntegrationLookupIds(providerId));
-        const userRemoved = providerId === ANTIGRAVITY_PROVIDER_ID
-          ? removeAntigravityProviderConfig(null, 'user')
-          : removeProviderConfig(providerId, null, 'user');
-        const customRemoved = providerId === ANTIGRAVITY_PROVIDER_ID
-          ? removeAntigravityProviderConfig(null, 'custom')
-          : removeProviderConfig(providerId, null, 'custom');
-        removed = authRemoved || userRemoved || customRemoved;
+            ? await removeAntigravityAccounts()
+            : await removeProviderAuthForLookupIds(getProviderIntegrationLookupIds(providerId));
+        removedSources.user = removeProviderConfigForScope(providerId, null, 'user');
+        removedSources.custom = removeProviderConfigForScope(providerId, null, 'custom');
+        removedSources.project = directory
+          ? removeProviderConfigForScope(providerId, directory, 'project')
+          : false;
       } else {
         return res.status(400).json({ error: 'Invalid scope' });
       }
 
+      const removed = Object.values(removedSources).some(Boolean);
+
       const applyResult = await markConfigChange(
         `provider ${providerId} disconnected (${scope})`,
-        {},
-        removed,
+        { providerId, scope },
+        true,
       );
+      const sources = await readProviderSourceSnapshot(providerId, directory);
 
       return res.json({
         success: true,
         removed,
+        removedSources,
+        sources,
         ...applyResult,
-        message: removed ? 'Provider disconnected successfully' : 'Provider was not connected',
+        message: removed
+          ? 'Provider configuration removed; runtime refresh requested'
+          : 'No stored provider configuration was found; runtime refresh requested',
       });
     } catch (error) {
       console.error('Failed to disconnect provider:', error);

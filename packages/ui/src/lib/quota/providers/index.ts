@@ -9,6 +9,7 @@ export const QUOTA_PROVIDERS: QuotaProviderMeta[] = [
   { id: 'claude', name: 'Claude' },
   { id: 'codex', name: 'ChatGPT' },
   { id: 'xai', name: 'xAI' },
+  { id: 'opencode', name: 'OpenCode Zen' },
   { id: 'opencode-go', name: 'OpenCode Go' },
   { id: 'cursor-acp', name: 'Cursor' },
   { id: 'deepseek', name: 'DeepSeek' },

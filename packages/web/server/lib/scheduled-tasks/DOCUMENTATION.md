@@ -16,11 +16,13 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
 - `packages/web/server/lib/scheduled-tasks/runtime.js`
   - Next-run computation (daily/weekly/cron compatibility)
   - Timer scheduling and queueing
+  - Atomic per-occurrence claims across server processes before any session or prompt side effect
   - Concurrency controls
   - Session create + prompt_async execution
   - Live owner/grant reload, branch-target preparation, and pre-prompt session ownership registration
   - Active managed-project discovery for restart-safe timer restoration
   - Emits OpenChamber task-run events
+  - Persists terminal state with a bounded retry and exposes `persistError` when the durable final write still fails
 
 - `packages/web/server/lib/scheduled-tasks/routes.js`
   - Scheduled task CRUD endpoints
@@ -41,6 +43,14 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
   - `getStatus()` returns total enabled records separately from pending schedules
     that have a future execution; desktop quit protection uses the pending and
     running counts, so expired one-time records do not block quitting.
+
+Scheduled occurrences carry their exact `scheduledFor` timestamp. Under the
+project-config cross-process lock, a claim writes `lastScheduledFor` and either
+advances a recurring schedule or consumes a one-time schedule before execution.
+Losing processes create no session, emit no run event, and schedule no past-due
+timer. Restart after a successful claim therefore preserves at-most-once
+semantics for daily, weekly, cron, and once schedules. Manual runs do not claim
+or advance scheduled occurrences.
 
 ## Public exports (routes.js)
 

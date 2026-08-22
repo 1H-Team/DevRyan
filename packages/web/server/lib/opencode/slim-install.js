@@ -2,7 +2,7 @@ import { spawn as spawnChild } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parse as parseJsonc } from 'jsonc-parser';
+import { parseConfigJsonc } from './jsonc-config.js';
 
 import {
   DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE,
@@ -139,10 +139,7 @@ const pluginSpecFromEntry = (entry) => {
 
 const readJsoncFile = (fsApi, filePath) => {
   if (!filePath || !fsApi.existsSync(filePath)) return {};
-  const content = fsApi.readFileSync(filePath, 'utf8').trim();
-  if (!content) return {};
-  const parsed = parseJsonc(content, [], { allowTrailingComma: true });
-  return isRecord(parsed) ? parsed : {};
+  return parseConfigJsonc(fsApi.readFileSync(filePath, 'utf8'), filePath);
 };
 
 const writeJsonFile = (fsApi, filePath, value) => {

@@ -3,6 +3,7 @@ import type { Message, Part } from "@opencode-ai/sdk/v2";
 
 import {
     getAssistantActivePartStatus,
+    hasAssistantStreamedActivity,
     selectAssistantStatusMessageId,
     selectAssistantStatusRecord,
 } from "./useAssistantStatus";
@@ -112,6 +113,15 @@ describe("getAssistantActivePartStatus", () => {
         });
     });
 
+    test("reports no live part in the gap after a closed reasoning block", () => {
+        expect(getAssistantActivePartStatus([
+            reasoningPart("reasoning_1", "thought", true),
+        ])).toEqual({
+            activePartType: undefined,
+            activeToolName: undefined,
+        });
+    });
+
     test("suppresses stale live part labels when the assistant message is terminal", () => {
         expect(getAssistantActivePartStatus([
             reasoningPart("reasoning_1", "thinking"),
@@ -120,6 +130,27 @@ describe("getAssistantActivePartStatus", () => {
             activePartType: undefined,
             activeToolName: undefined,
         });
+    });
+});
+
+describe("hasAssistantStreamedActivity", () => {
+    test("counts finished output so post-part gaps are not mistaken for a silent turn", () => {
+        expect(hasAssistantStreamedActivity([reasoningPart("reasoning_1", "thought", true)])).toBe(true);
+        expect(hasAssistantStreamedActivity([textPart("text_1", "done", true)])).toBe(true);
+        expect(hasAssistantStreamedActivity([toolPart("read_1", "read", "completed")])).toBe(true);
+        expect(hasAssistantStreamedActivity([toolPart("read_1", "read", "running")])).toBe(true);
+    });
+
+    test("counts any reasoning part, even closed and text-less (xai/Grok emits those)", () => {
+        expect(hasAssistantStreamedActivity([reasoningPart("reasoning_1", "", true)])).toBe(true);
+        expect(hasAssistantStreamedActivity([reasoningPart("reasoning_1", "   ", true)])).toBe(true);
+        expect(hasAssistantStreamedActivity([reasoningPart("reasoning_1", "", false)])).toBe(true);
+    });
+
+    test("ignores empty text parts and empty part lists", () => {
+        expect(hasAssistantStreamedActivity([textPart("text_1", "")])).toBe(false);
+        expect(hasAssistantStreamedActivity([])).toBe(false);
+        expect(hasAssistantStreamedActivity(undefined)).toBe(false);
     });
 });
 

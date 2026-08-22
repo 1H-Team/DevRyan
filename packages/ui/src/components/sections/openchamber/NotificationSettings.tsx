@@ -37,6 +37,10 @@ const DEFAULT_NOTIFICATION_TEMPLATES = {
     titleKey: 'settings.notifications.page.template.defaults.question.title',
     messageKey: 'settings.notifications.page.template.defaults.question.message',
   },
+  permission: {
+    titleKey: 'settings.notifications.page.template.defaults.permission.title',
+    messageKey: 'settings.notifications.page.template.defaults.permission.message',
+  },
   subtask: {
     titleKey: 'settings.notifications.page.template.defaults.subtask.title',
     messageKey: 'settings.notifications.page.template.defaults.subtask.message',
@@ -49,6 +53,7 @@ const TEMPLATE_EVENT_LABEL_KEYS = {
   subtask: 'settings.notifications.page.template.event.subtask',
   error: 'settings.notifications.page.template.event.error',
   question: 'settings.notifications.page.template.event.question',
+  permission: 'settings.notifications.page.template.event.permission',
 } as const satisfies Record<NotificationTemplateEvent, string>;
 
 const UTILITY_PREFERRED_MODEL_ID = 'big-pickle';
@@ -137,6 +142,8 @@ export const NotificationSettings: React.FC = () => {
   const setNotifyOnError = useUIStore(state => state.setNotifyOnError);
   const notifyOnQuestion = useUIStore(state => state.notifyOnQuestion);
   const setNotifyOnQuestion = useUIStore(state => state.setNotifyOnQuestion);
+  const notifyOnPermission = useUIStore(state => state.notifyOnPermission);
+  const setNotifyOnPermission = useUIStore(state => state.setNotifyOnPermission);
   const summarizeLastMessage = useUIStore(state => state.summarizeLastMessage);
   const setSummarizeLastMessage = useUIStore(state => state.setSummarizeLastMessage);
   const summaryThreshold = useUIStore(state => state.summaryThreshold);
@@ -783,6 +790,23 @@ export const NotificationSettings: React.FC = () => {
                   <Checkbox checked={notifyOnQuestion} onChange={setNotifyOnQuestion} ariaLabel={t('settings.notifications.page.events.questionAria')} />
                   <span className="typography-ui-label text-foreground">{t('settings.notifications.page.events.questionLabel')}</span>
                 </div>
+
+                <div
+                  className="group flex cursor-pointer items-center gap-2 py-1.5"
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={notifyOnPermission}
+                  onClick={() => setNotifyOnPermission(!notifyOnPermission)}
+                  onKeyDown={(event) => {
+                    if (event.key === ' ' || event.key === 'Enter') {
+                      event.preventDefault();
+                      setNotifyOnPermission(!notifyOnPermission);
+                    }
+                  }}
+                >
+                  <Checkbox checked={notifyOnPermission} onChange={setNotifyOnPermission} ariaLabel={t('settings.notifications.page.events.permissionAria')} />
+                  <span className="typography-ui-label text-foreground">{t('settings.notifications.page.events.permissionLabel')}</span>
+                </div>
               </section>
             </div>
 
@@ -805,7 +829,7 @@ export const NotificationSettings: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-3">
-                {(['completion', 'planReady', 'subtask', 'error', 'question'] as const).map((event: NotificationTemplateEvent) => (
+                {(['completion', 'planReady', 'subtask', 'error', 'question', 'permission'] as const).map((event: NotificationTemplateEvent) => (
                   <NotificationTemplateEditor key={event} event={event} />
                 ))}
               </div>

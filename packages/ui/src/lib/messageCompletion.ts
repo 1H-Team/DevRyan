@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Part } from "@opencode-ai/sdk/v2";
 import { isFullySyntheticMessage } from "@/lib/messages/synthetic";
+import { compareMessagesChronologically } from "@/sync/message-order";
 
 export interface MessageInfo {
     id: string;
@@ -56,7 +57,7 @@ export function isMessageComplete(messageInfo: MessageInfo, parts: Part[] = []):
 export function getLatestAssistantMessageId(messages: MessageRecord[]): string | null {
     const assistantMessages = messages
         .filter(msg => msg.info.role === 'assistant' && !isFullySyntheticMessage(msg.parts))
-        .sort((a, b) => (a.info.id || "").localeCompare(b.info.id || ""));
+        .sort((a, b) => compareMessagesChronologically(a.info, b.info));
 
     return assistantMessages.length > 0
         ? assistantMessages[assistantMessages.length - 1].info.id

@@ -1144,7 +1144,7 @@ export async function createGitWorktree(
 export async function deleteGitWorktree(
   directory: string,
   payload: import('./api/types').RemoveGitWorktreePayload
-): Promise<{ success: boolean }> {
+): Promise<{ success: boolean; removedPath?: string }> {
   const runtime = getRuntimeGit();
   if (runtime?.worktree?.remove) {
     return runtime.worktree.remove(directory, payload);

@@ -109,26 +109,26 @@ describe('settings runtime', () => {
       themeId: 'devryan-default-light',
       lightThemeId: 'devryan-default-light',
       darkThemeId: 'devryan-default-dark',
-      themeCatalogVersion: 2,
+      themeCatalogVersion: 3,
     });
   });
 
-  it('preserves intentional upstream IDs after the theme catalog migration', async () => {
+  it('migrates removed theme IDs from the previous catalog version', async () => {
     const { runtime } = createRuntime({
       themeId: 'onedarkpro-light',
       themeVariant: 'light',
       lightThemeId: 'onedarkpro-light',
-      darkThemeId: 'carbonfox-dark',
+      darkThemeId: 'onedarkpro-dark',
       themeCatalogVersion: 2,
     });
 
     const updated = await runtime.readSettingsFromDiskMigrated();
 
     expect(updated).toMatchObject({
-      themeId: 'onedarkpro-light',
-      lightThemeId: 'onedarkpro-light',
-      darkThemeId: 'carbonfox-dark',
-      themeCatalogVersion: 2,
+      themeId: 'devryan-default-light',
+      lightThemeId: 'devryan-default-light',
+      darkThemeId: 'devryan-default-dark',
+      themeCatalogVersion: 3,
     });
   });
 

@@ -5,6 +5,7 @@ import { clampPercent, resolveUsageTone } from '@/lib/quota';
 interface UsageProgressBarProps {
   percent: number | null;
   tonePercent?: number | null;
+  tone?: 'adaptive' | 'success';
   className?: string;
   /** Kept for call-site compatibility; the bar no longer renders an expected-usage marker. */
   expectedMarkerPercent?: number | null;
@@ -13,14 +14,15 @@ interface UsageProgressBarProps {
 export const UsageProgressBar: React.FC<UsageProgressBarProps> = ({
   percent,
   tonePercent,
+  tone = 'adaptive',
   className,
 }) => {
   const clamped = clampPercent(percent) ?? 0;
-  const tone = resolveUsageTone(tonePercent ?? percent);
+  const resolvedTone = tone === 'success' ? 'safe' : resolveUsageTone(tonePercent ?? percent);
 
-  const fillStyle = tone === 'critical'
+  const fillStyle = resolvedTone === 'critical'
     ? { backgroundColor: 'var(--status-error)' }
-    : tone === 'warn'
+    : resolvedTone === 'warn'
       ? { backgroundColor: 'var(--status-warning)' }
       : { backgroundColor: 'var(--status-success)' };
 

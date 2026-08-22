@@ -190,43 +190,18 @@ const areManagedTaskProjectionsEqual = (
   });
 };
 
-const areRelevantGeneratedImagesEqual = (
+const areRelevantAssistantImageMessagesEqual = (
   left: TurnGroupingContext,
   right: TurnGroupingContext,
-  messageId: string,
 ): boolean => {
-  const collectRelevantToolIds = (context: TurnGroupingContext): Set<string> => {
-    const ids = new Set<string>();
-    for (const activity of context.activityParts ?? []) {
-      if (activity.messageId === messageId && activity.kind === 'tool') ids.add(activity.id);
-    }
-    for (const segment of context.activityGroupSegments ?? []) {
-      if (segment.anchorMessageId !== messageId) continue;
-      for (const activity of segment.parts) {
-        if (activity.kind === 'tool') ids.add(activity.id);
-      }
-    }
-    return ids;
-  };
-
-  const select = (context: TurnGroupingContext) => {
-    const relevantToolIds = collectRelevantToolIds(context);
-    return (context.generatedImages ?? []).filter((result) => (
-      result.linkedMessageId === messageId || relevantToolIds.has(result.toolPartId)
-    ));
-  };
-
-  const leftImages = select(left);
-  const rightImages = select(right);
-  if (leftImages.length !== rightImages.length) return false;
-  return leftImages.every((result, index) => {
-    const candidate = rightImages[index];
-    return result.toolPartId === candidate?.toolPartId
-      && result.path === candidate.path
-      && result.filename === candidate.filename
-      && result.directory === candidate.directory
-      && result.linkedMessageId === candidate.linkedMessageId
-      && result.linkLabel === candidate.linkLabel;
+  if (!left.isLastAssistantInTurn && !right.isLastAssistantInTurn) return true;
+  const leftMessages = left.assistantImageMessages ?? [];
+  const rightMessages = right.assistantImageMessages ?? [];
+  if (leftMessages.length !== rightMessages.length) return false;
+  return leftMessages.every((message, index) => {
+    const candidate = rightMessages[index];
+    return message.messageId === candidate?.messageId
+      && areRenderRelevantPartsEqual([...message.parts], [...candidate.parts]);
   });
 };
 
@@ -357,7 +332,7 @@ export const areRelevantTurnGroupingContextsEqual = (
   if (left.userMessageVariant !== right.userMessageVariant) return false;
   if (left.summarySourceMessageId !== right.summarySourceMessageId) return false;
   if (left.summarySourcePartId !== right.summarySourcePartId) return false;
-  if (!areRelevantGeneratedImagesEqual(left, right, messageId)) return false;
+  if (!areRelevantAssistantImageMessagesEqual(left, right)) return false;
 
   const managedTaskRelevant = left.managedTaskProjection?.ownerMessageId === messageId
     || right.managedTaskProjection?.ownerMessageId === messageId;

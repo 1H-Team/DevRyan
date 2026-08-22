@@ -2,11 +2,8 @@ export const COMMIT_DRAFT_MAX_SELECTED_FILES = 200;
 export const COMMIT_DRAFT_MAX_PATH_LENGTH = 1024;
 export const COMMIT_DRAFT_CONTEXT_LIMITS = Object.freeze({
   recentCommitCount: 6,
-  diffConcurrency: 6,
-  maxDiffCharsPerFile: 1_500,
   maxTotalDiffChars: 16_000,
   diffContextLines: 1,
-  largeFileLineThreshold: 200,
 });
 
 const requestError = (message, code) => Object.assign(new Error(message), {
@@ -19,7 +16,7 @@ const normalizeGitPath = (value) => String(value || '')
   .replace(/^\.\/+/, '')
   .trim();
 
-const validateSelectedFiles = (selectedFiles) => {
+export const validateCommitMessageSelectedFiles = (selectedFiles) => {
   if (!Array.isArray(selectedFiles) || selectedFiles.length === 0) {
     throw requestError('At least one selected file is required', 'COMMIT_DRAFT_FILES_REQUIRED');
   }
@@ -62,7 +59,6 @@ const hasMergeOrRebaseConflict = (files) => files.some((file) => (
   isUnmergedStatus(file.index) || isUnmergedStatus(file.working_dir)
 ));
 
-const isBinaryDiffText = (diff) => /binary files differ/i.test(diff);
 const DIFF_TRUNCATION_MARKER = '\n... [diff truncated]';
 
 const truncateDiff = (diff, maxChars) => {
@@ -81,7 +77,7 @@ const normalizeDiffResult = (value) => {
   return typeof value?.diff === 'string' ? value.diff : '';
 };
 
-const collectFileContexts = async ({
+const collectBatchContext = async ({
   directory,
   files,
   stagedOnly,
@@ -89,82 +85,41 @@ const collectFileContexts = async ({
   getDiff,
   limits,
 }) => {
-  const results = new Array(files.length);
-  let nextIndex = 0;
-  let totalDiffChars = 0;
-
-  const takeNext = () => {
-    const current = nextIndex;
-    nextIndex += 1;
-    return current < files.length ? current : null;
-  };
-
-  const worker = async () => {
-    for (;;) {
-      const index = takeNext();
-      if (index === null) return;
-
-      const file = files[index];
-      const base = {
-        path: file.path,
-        index: file.index,
-        workingDir: file.workingDir,
-      };
+  const selectedPaths = files.map((file) => file.path);
+  const requests = [getDiff(directory, {
+    paths: selectedPaths,
+    staged: true,
+    contextLines: limits.diffContextLines,
+  })];
+  if (!stagedOnly) {
+    requests.push(getDiff(directory, {
+      paths: selectedPaths,
+      staged: false,
+      contextLines: limits.diffContextLines,
+    }));
+  }
+  const settled = await Promise.allSettled(requests);
+  const combined = settled
+    .filter((result) => result.status === 'fulfilled')
+    .map((result) => normalizeDiffResult(result.value).trim())
+    .filter(Boolean)
+    .join('\n');
+  const { text: patch, truncated } = truncateDiff(combined, limits.maxTotalDiffChars);
+  return {
+    files: files.map((file) => {
       const stats = diffStats?.[file.path];
-      const changedLines = stats ? Number(stats.insertions || 0) + Number(stats.deletions || 0) : 0;
-      if (changedLines > limits.largeFileLineThreshold) {
-        results[index] = {
-          ...base,
-          diffNote: `large change (${changedLines} lines; diff omitted)`,
-        };
-        continue;
-      }
-      if (totalDiffChars >= limits.maxTotalDiffChars) {
-        results[index] = { ...base, diffNote: 'diff omitted (context budget reached)' };
-        continue;
-      }
-
-      try {
-        const raw = await getDiff(directory, {
-          path: file.path,
-          staged: stagedOnly,
-          contextLines: limits.diffContextLines,
-        });
-        const diff = normalizeDiffResult(raw).trim();
-        if (!diff) {
-          results[index] = { ...base, diffNote: 'no diff available for current scope' };
-          continue;
-        }
-        if (isBinaryDiffText(diff)) {
-          results[index] = { ...base, diffNote: 'binary file (diff omitted)' };
-          continue;
-        }
-
-        const remaining = Math.max(0, limits.maxTotalDiffChars - totalDiffChars);
-        if (remaining === 0) {
-          results[index] = { ...base, diffNote: 'diff omitted (context budget reached)' };
-          continue;
-        }
-        const maxChars = Math.min(limits.maxDiffCharsPerFile, remaining);
-        const { text: selectedDiff, truncated } = truncateDiff(diff, maxChars);
-        totalDiffChars += selectedDiff.length;
-        results[index] = {
-          ...base,
-          diff: selectedDiff,
-          ...(truncated ? { diffNote: 'diff truncated' } : {}),
-        };
-      } catch (error) {
-        results[index] = {
-          ...base,
-          diffNote: error instanceof Error ? error.message : 'failed to load diff',
-        };
-      }
-    }
+      return {
+        ...file,
+        ...(stats ? {
+          insertions: Number(stats.insertions || 0),
+          deletions: Number(stats.deletions || 0),
+        } : {}),
+      };
+    }),
+    patch,
+    patchTruncated: truncated,
+    partial: settled.some((result) => result.status === 'rejected'),
   };
-
-  const workerCount = Math.min(limits.diffConcurrency, files.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  return results;
 };
 
 export const collectCommitMessageContext = async ({
@@ -176,7 +131,7 @@ export const collectCommitMessageContext = async ({
   getDiff,
   limits = COMMIT_DRAFT_CONTEXT_LIMITS,
 }) => {
-  const selectedPaths = validateSelectedFiles(selectedFiles);
+  const selectedPaths = validateCommitMessageSelectedFiles(selectedFiles);
   const allowlist = new Set(selectedPaths);
   const [status, log] = await Promise.all([
     getStatus(directory),
@@ -205,7 +160,7 @@ export const collectCommitMessageContext = async ({
   }
   files.sort((left, right) => left.path.localeCompare(right.path));
 
-  const fileContexts = await collectFileContexts({
+  const batchContext = await collectBatchContext({
     directory,
     files,
     stagedOnly,
@@ -225,14 +180,17 @@ export const collectCommitMessageContext = async ({
       tracking: typeof status?.tracking === 'string' ? status.tracking : null,
       scope: stagedOnly ? 'staged-only' : 'staged-and-unstaged',
       stagedOnly,
-      selectedFiles: fileContexts,
+      selectedFiles: batchContext.files,
       recentCommitSubjects,
+      ...(batchContext.patch ? { patch: batchContext.patch } : {}),
+      ...(batchContext.patchTruncated ? { patchNote: 'combined patch truncated' } : {}),
+      ...(batchContext.partial ? { contextWarning: 'some diff context was unavailable' } : {}),
     },
   };
 };
 
 export const __test = {
   normalizeGitPath,
-  validateSelectedFiles,
-  collectFileContexts,
+  validateSelectedFiles: validateCommitMessageSelectedFiles,
+  collectBatchContext,
 };

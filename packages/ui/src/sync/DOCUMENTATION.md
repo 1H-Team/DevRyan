@@ -37,13 +37,16 @@ So:
 - Use the **global sessions store** for cold/global session coverage (especially archived pages and unopened directories)
 - Use **aggregated child-store snapshots** for live session/status truth across already initialized directories
 
-Anthropic context measurement is deliberately low frequency. Completed
-assistant messages request a normalized provider snapshot when the runtime
-offers the optional context API. `session.compacted` synchronously invalidates
-the previous provider value and triggers a mapping refresh; no UI fallback may
-reuse a token-bearing message before the latest compaction part. Web/Electron
-prefer Meridian, while VS Code and external OpenCode settle on the bounded
-post-compaction message fallback without failing bootstrap.
+Anthropic context measurement is deliberately low frequency. The actively
+viewed session requests one normalized provider snapshot at authoritative
+`session.idle`; intermediate assistant tool-call completions stay on the local
+message measurement instead of repeatedly sampling a still-changing SDK
+session. The first mounted consumer may bootstrap one snapshot when none is
+cached. `session.compacted` synchronously invalidates the previous provider
+value and triggers a mapping refresh; no UI fallback may reuse a token-bearing
+message before the latest compaction part. Web/Electron prefer Meridian, while
+VS Code and external OpenCode settle on the bounded post-compaction message
+fallback without failing bootstrap.
 
 The composer subscribes to the selected session's message metadata and only
 context-bearing parts (`step-finish`, native compaction, and the legacy exact

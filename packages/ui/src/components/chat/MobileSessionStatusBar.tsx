@@ -12,6 +12,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { cn, formatDirectoryName } from '@/lib/utils';
+import { resolveProjectDisplayName } from '@/lib/projectDisplayName';
 import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { filterUserVisibleSessions } from '@/lib/sessionVisibility';
 import { getAgentColor } from '@/lib/agentColors';
@@ -681,7 +682,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     : resolveDisplaySessionTitle({ title: undefined, fallback: 'New session' });
 
   const projectName = activeProject
-    ? activeProject.label?.trim() || formatDirectoryName(activeProject.path, homeDirectory) || activeProject.path
+    ? resolveProjectDisplayName(activeProject)
     : formatDirectoryName(currentSessionDirectory ?? '', homeDirectory) || 'Project';
   const projectIcon = activeProject?.icon;
   const projectIconImageUrl = activeProject

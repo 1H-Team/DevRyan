@@ -144,7 +144,7 @@ describe('POST /api/git/commit-message', () => {
     expect(generateCommitMessage).toHaveBeenCalledWith(expect.objectContaining({
       guidance: 'Prefer a source scope',
       zenModel: COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
-      fallbackZenModel: 'another-free-model',
+      fallbackZenModel: null,
       context: expect.objectContaining({
         selectedFiles: [expect.objectContaining({ path: 'new-file.ts' })],
       }),
@@ -182,5 +182,42 @@ describe('POST /api/git/commit-message', () => {
     expect(response.body).toMatchObject({ status: 'blocked', commits: [] });
     expect(generateCommitMessage).not.toHaveBeenCalled();
     expect(recordCommitTiming).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ outcome: 'blocked' }));
+  });
+
+  it('bounds slow Git context collection and returns a disclosed metadata draft', async () => {
+    const generateCommitMessage = vi.fn(async ({ context }) => ({
+      subject: 'chore: update selected files',
+      highlights: ['Use selected file metadata', 'Keep generation responsive'],
+      _generation: {
+        source: 'ai',
+        warning: null,
+        providerOutcome: 'complete',
+      },
+      context,
+    }));
+    const { app } = makeApp({
+      generateCommitMessage,
+      loadGitLibraries: async () => ({
+        getStatus: vi.fn(() => new Promise(() => {})),
+        getLog: vi.fn(async () => ({ all: [] })),
+        getDiff: vi.fn(async () => ''),
+      }),
+    });
+
+    const startedAt = Date.now();
+    const response = await request(app)
+      .post('/api/git/commit-message/draft?directory=/repo')
+      .send({ selectedFiles: ['src/slow.ts'] })
+      .expect(200);
+
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(response.body.warnings).toContain(
+      'Git context exceeded the speed budget; generated from selected file metadata',
+    );
+    expect(generateCommitMessage).toHaveBeenCalledWith(expect.objectContaining({
+      context: expect.objectContaining({
+        selectedFiles: [{ path: 'src/slow.ts', index: '?', workingDir: '?' }],
+      }),
+    }));
   });
 });

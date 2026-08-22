@@ -1,11 +1,18 @@
 import React from 'react';
 import type { Part } from '@opencode-ai/sdk/v2';
-import { RiArrowDownSLine } from '@remixicon/react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { RiArrowRightSLine } from '@remixicon/react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
+import { useI18n } from '@/lib/i18n';
 import type { ResponseStyleLevel } from '@/lib/responseStyle';
-import { hasDisplayableReasoningText } from '../reasoningGrouping';
+import {
+    hasDisplayableReasoningText,
+    isReasoningPartActive,
+} from '../reasoningGrouping';
 import ReasoningPart from './ReasoningPart';
+import { isReasoningDisclosureToggleKey } from './reasoningDisclosureKeyboard';
+import { registerActiveReasoningDisclosure } from './reasoningDisclosureStatus';
+import { formatReasoningDuration, getReasoningDurationMilliseconds } from './reasoningDuration';
 
 export interface ReasoningGroupEntry {
     part: Part;
@@ -17,6 +24,7 @@ interface ReasoningGroupProps {
     providerID?: string | null;
     responseStyleLevel?: ResponseStyleLevel;
     onContentChange?: (reason?: ContentChangeReason) => void;
+    isMessageCompleted?: boolean;
     isMobile?: boolean;
 }
 
@@ -27,112 +35,133 @@ const getEntryKey = (entry: ReasoningGroupEntry, index: number): string => {
         : `${entry.messageId}:reasoning:${index}`;
 };
 
+interface ReasoningDisclosureProps extends ReasoningGroupProps {
+    entries: ReasoningGroupEntry[];
+    isExpanded: boolean;
+    onExpandedChange: (expanded: boolean) => void;
+}
+
+export const ReasoningDisclosure: React.FC<ReasoningDisclosureProps> = ({
+    entries,
+    providerID,
+    responseStyleLevel,
+    onContentChange,
+    isMessageCompleted = false,
+    isMobile = false,
+    isExpanded,
+    onExpandedChange,
+}) => {
+    const { t } = useI18n();
+    const isActive = !isMessageCompleted && entries.some((entry) => isReasoningPartActive(entry.part));
+    const sessionID = (entries[0]?.part as { sessionID?: unknown } | undefined)?.sessionID;
+
+    React.useLayoutEffect(() => {
+        if (!isActive || typeof sessionID !== 'string' || sessionID.length === 0) return;
+        return registerActiveReasoningDisclosure(sessionID);
+    }, [isActive, sessionID]);
+
+    const durationMilliseconds = isActive ? null : getReasoningDurationMilliseconds(entries);
+    const duration = durationMilliseconds === null
+        ? null
+        : formatReasoningDuration(durationMilliseconds);
+    const headerText = isActive
+        ? t('chat.reasoning.thinking')
+        : duration
+            ? t('chat.reasoning.thoughtFor', { duration })
+            : t('chat.reasoning.thought');
+    const actionLabel = t(isExpanded ? 'chat.reasoning.collapse' : 'chat.reasoning.expand');
+    const handleExpandedChange = React.useCallback((open: boolean) => {
+        onExpandedChange(open);
+        onContentChange?.('structural');
+    }, [onContentChange, onExpandedChange]);
+    const handleTriggerKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
+        if (!isReasoningDisclosureToggleKey(event.key)) return;
+        event.preventDefault();
+        handleExpandedChange(!isExpanded);
+    }, [handleExpandedChange, isExpanded]);
+
+    return (
+        <Collapsible
+            open={isExpanded}
+            onOpenChange={handleExpandedChange}
+            className="group/reasoning max-md:w-full"
+            data-reasoning-group="true"
+            data-reasoning-disclosure-active={isActive ? 'true' : 'false'}
+        >
+            <CollapsibleTrigger
+                className={`max-w-full justify-start gap-1.5 px-0 typography-meta text-muted-foreground hover:bg-transparent hover:text-foreground ${
+                    isMobile
+                        ? 'min-h-11 w-full py-2'
+                        : 'min-h-6 w-fit py-1 max-md:min-h-11 max-md:w-full max-md:py-2'
+                }`}
+                aria-label={`${actionLabel}: ${headerText}`}
+                title={headerText}
+                onKeyDown={handleTriggerKeyDown}
+            >
+                <RiArrowRightSLine
+                    className={`h-3.5 w-3.5 shrink-0 transition-transform motion-reduce:transition-none ${isExpanded ? 'rotate-90' : ''}`}
+                    aria-hidden="true"
+                />
+                <span className={`min-w-0 truncate ${isActive ? 'animate-pulse motion-reduce:animate-none' : ''}`}>
+                    {headerText}
+                </span>
+            </CollapsibleTrigger>
+            <CollapsibleContent
+                className="pl-4 motion-reduce:animate-none"
+                data-reasoning-disclosure-content="true"
+            >
+                {isExpanded ? (
+                    <div className={isMobile ? 'space-y-2' : 'space-y-3'}>
+                        {entries.map((entry, index) => (
+                            <ReasoningPart
+                                key={getEntryKey(entry, index)}
+                                part={entry.part}
+                                messageId={entry.messageId}
+                                providerID={providerID}
+                                responseStyleLevel={responseStyleLevel}
+                                onContentChange={onContentChange}
+                                isMobile={isMobile}
+                            />
+                        ))}
+                    </div>
+                ) : null}
+            </CollapsibleContent>
+        </Collapsible>
+    );
+};
+
 const ReasoningGroupInner: React.FC<ReasoningGroupProps> = ({
     entries,
     providerID,
     responseStyleLevel,
     onContentChange,
+    isMessageCompleted = false,
     isMobile = false,
 }) => {
     const [isExpanded, setIsExpanded] = React.useState(false);
-    const shouldReduceMotion = useReducedMotion() === true;
-    const disclosureId = React.useId();
     const displayableEntries = React.useMemo(
-        () => entries.filter((entry) => hasDisplayableReasoningText(entry.part)),
-        [entries],
+        () => entries.filter((entry) => (
+            hasDisplayableReasoningText(entry.part, providerID)
+            || (!isMessageCompleted && isReasoningPartActive(entry.part))
+        )),
+        [entries, isMessageCompleted, providerID],
     );
 
     if (displayableEntries.length === 0) {
         return null;
     }
 
-    if (displayableEntries.length === 1) {
-        const entry = displayableEntries[0];
-        return (
-            <ReasoningPart
-                part={entry.part}
-                messageId={entry.messageId}
-                providerID={providerID}
-                responseStyleLevel={responseStyleLevel}
-                onContentChange={onContentChange}
-                isMobile={isMobile}
-            />
-        );
-    }
-
-    const latestIndex = displayableEntries.length - 1;
-    const previousEntries = displayableEntries.slice(0, latestIndex);
-    const latestEntry = displayableEntries[latestIndex];
-    const latestKey = getEntryKey(latestEntry, latestIndex);
-    const hiddenCount = previousEntries.length;
-
     return (
-        <div data-reasoning-group="true" className="group/reasoning">
-            <div
-                id={disclosureId}
-                className={`grid overflow-hidden transition-[grid-template-rows] ease-out ${
-                    isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
-                } ${shouldReduceMotion ? 'duration-0' : 'duration-200'}`}
-                aria-hidden={!isExpanded}
-                inert={!isExpanded}
-            >
-                <div className="min-h-0 overflow-hidden">
-                    {previousEntries.map((entry, index) => (
-                        <ReasoningPart
-                            key={getEntryKey(entry, index)}
-                            part={entry.part}
-                            messageId={entry.messageId}
-                            providerID={providerID}
-                            responseStyleLevel={responseStyleLevel}
-                            onContentChange={onContentChange}
-                            isMobile={isMobile}
-                        />
-                    ))}
-                </div>
-            </div>
-
-            <div className="flex min-w-0 items-start">
-                <div className="relative min-w-0 flex-1 overflow-hidden">
-                    <AnimatePresence mode="popLayout" initial={false}>
-                        <motion.div
-                            key={latestKey}
-                            initial={shouldReduceMotion ? false : { y: 8, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            exit={shouldReduceMotion ? { opacity: 0 } : { y: -8, opacity: 0 }}
-                            transition={{ duration: shouldReduceMotion ? 0 : 0.2, ease: 'easeOut' }}
-                        >
-                            <ReasoningPart
-                                part={latestEntry.part}
-                                messageId={latestEntry.messageId}
-                                providerID={providerID}
-                                responseStyleLevel={responseStyleLevel}
-                                onContentChange={onContentChange}
-                                isMobile={isMobile}
-                            />
-                        </motion.div>
-                    </AnimatePresence>
-                </div>
-                <button
-                    type="button"
-                    className={`mt-1.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-[background-color,color,opacity] hover:bg-foreground/5 hover:text-muted-foreground focus-visible:opacity-100 ${
-                        isMobile || isExpanded
-                            ? 'opacity-100'
-                            : 'opacity-0 group-hover/reasoning:text-muted-foreground group-hover/reasoning:opacity-100'
-                    }`}
-                    aria-controls={disclosureId}
-                    aria-expanded={isExpanded}
-                    aria-label={isExpanded
-                        ? `Hide ${hiddenCount} earlier reasoning ${hiddenCount === 1 ? 'line' : 'lines'}`
-                        : `Show ${hiddenCount} earlier reasoning ${hiddenCount === 1 ? 'line' : 'lines'}`}
-                    onClick={() => setIsExpanded((expanded) => !expanded)}
-                >
-                    <RiArrowDownSLine
-                        aria-hidden="true"
-                        className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                    />
-                </button>
-            </div>
-        </div>
+        <ReasoningDisclosure
+            entries={displayableEntries}
+            providerID={providerID}
+            responseStyleLevel={responseStyleLevel}
+            onContentChange={onContentChange}
+            isMessageCompleted={isMessageCompleted}
+            isMobile={isMobile}
+            isExpanded={isExpanded}
+            onExpandedChange={setIsExpanded}
+        />
     );
 };
 
@@ -148,6 +177,7 @@ const ReasoningGroup = React.memo(ReasoningGroupInner, (previous, next) => (
     && previous.providerID === next.providerID
     && previous.responseStyleLevel === next.responseStyleLevel
     && previous.onContentChange === next.onContentChange
+    && previous.isMessageCompleted === next.isMessageCompleted
     && previous.isMobile === next.isMobile
 ));
 

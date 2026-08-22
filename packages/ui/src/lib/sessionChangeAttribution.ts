@@ -2,6 +2,7 @@ import type { Message, Part } from '@opencode-ai/sdk/v2/client'
 
 import { normalizeToolStatus } from '@/lib/toolStatus'
 import type { State } from '@/sync/types'
+import { messagesBefore } from '@/sync/message-order'
 
 export type SessionChangeAttribution = {
   paths: readonly string[]
@@ -201,7 +202,7 @@ const getVisibleMessages = (state: State, sessionID: string): readonly Message[]
   const session = state.session.find((entry) => entry.id === sessionID)
   const revertMessageID = (session as { revert?: { messageID?: unknown } } | undefined)?.revert?.messageID
   if (typeof revertMessageID !== 'string' || !revertMessageID) return messages
-  return messages.filter((message) => message.id < revertMessageID)
+  return messagesBefore(messages, revertMessageID)
 }
 
 export const projectSessionChangeAttribution = (

@@ -13,7 +13,7 @@ describe('WorkingPlaceholder status presentation', () => {
         expect(source.match(/<StatusShimmerText/g)?.length ?? 0).toBe(2);
     });
 
-    test('keeps one accessible label in flow beneath an aligned visual duplicate', () => {
+    test('keeps one accessible label in flow beneath the visual shimmer layer', () => {
         const html = renderToStaticMarkup(React.createElement(StatusShimmerText, {
             text: 'Waiting for subagent output',
             shouldAnimate: true,
@@ -21,36 +21,34 @@ describe('WorkingPlaceholder status presentation', () => {
 
         expect(html).toContain('data-animation-state="running"');
         expect(html).toContain('data-live-status-shimmer="true"');
-        expect(html).toContain('<span class="oc-live-status-shimmer__label">Waiting for subagent output</span>');
-        expect(html).toContain('<span aria-hidden="true" class="oc-live-status-shimmer__focus">');
+        expect(html).toContain('data-shimmer-text="Waiting for subagent output"');
+        expect(html).toContain('>Waiting for subagent output</span>');
         expect(html.match(/Waiting for subagent output/g)).toHaveLength(2);
     });
 
-    test('uses visible foreground contrast with compositor-only counter-transforms', () => {
+    test('restores the visible gradient text sweep from the prior implementation', () => {
         const styles = readFileSync(new URL('../../../../index.css', import.meta.url), 'utf8');
         const shimmerRule = styles.slice(
-            styles.indexOf('@keyframes oc-live-status-focus'),
+            styles.indexOf('@keyframes oc-text-shimmer'),
             styles.indexOf('@keyframes oc-file-mention-marquee'),
         );
 
-        expect(shimmerRule).toContain('animation: oc-live-status-focus 2.2s linear infinite;');
-        expect(shimmerRule).toContain('animation: oc-live-status-focus-counter 2.2s linear infinite;');
-        expect(shimmerRule).toContain('--oc-live-status-highlight: var(--foreground);');
-        expect(shimmerRule).toContain('color: var(--oc-live-status-highlight);');
-        expect(shimmerRule).toContain('translate3d(100%, 0, 0)');
-        expect(shimmerRule).toContain('translate3d(-100%, 0, 0)');
-        expect(shimmerRule).toContain('will-change: transform;');
-        expect(shimmerRule).not.toContain('background-position');
-        expect(shimmerRule).not.toContain('background-clip');
+        expect(shimmerRule).toContain('animation: oc-text-shimmer 2.2s linear infinite;');
+        expect(shimmerRule).toContain('--oc-shimmer-highlight: color-mix(in oklch, var(--foreground) 92%, transparent);');
+        expect(shimmerRule).toContain('content: attr(data-shimmer-text);');
+        expect(shimmerRule).toContain('background-position: 200% 0;');
+        expect(shimmerRule).toContain('background-position: -200% 0;');
+        expect(shimmerRule).toContain('background-clip: text;');
     });
 
     test('retains readable status text when reduced motion disables shimmer', () => {
         const styles = readFileSync(new URL('../../../../index.css', import.meta.url), 'utf8');
         const reducedMotionRule = styles.slice(styles.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
 
-        expect(reducedMotionRule).toContain('.oc-live-status-shimmer__focus');
+        expect(reducedMotionRule).toContain('.oc-text-shimmer::after');
+        expect(reducedMotionRule).toContain('content: none;');
         expect(reducedMotionRule).toContain('animation: none;');
-        expect(reducedMotionRule).toContain('opacity: 0;');
+        expect(reducedMotionRule).toContain('background-image: none;');
     });
 
     test('keeps the live region and visual label mounted without keyed layout transitions', () => {

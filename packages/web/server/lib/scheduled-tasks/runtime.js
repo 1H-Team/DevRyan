@@ -297,7 +297,7 @@ export const createScheduledTasksRuntime = (deps) => {
       if (!task || !task.enabled) {
         return;
       }
-      queueTaskRun(projectID, taskID, 'scheduled');
+      queueTaskRun(projectID, taskID, 'scheduled', nextRunAt);
       pumpQueue();
     }, boundedDelay);
 
@@ -319,10 +319,21 @@ export const createScheduledTasksRuntime = (deps) => {
     if (!task) {
       return;
     }
-    const nextRunAt = computeNextRunAt(task, Date.now());
+    const nowMs = Date.now();
+    const persistedNextRunAt = task.state?.nextRunAt;
+    if (
+      task.enabled
+      && Number.isFinite(persistedNextRunAt)
+      && persistedNextRunAt > 0
+      && task.state?.lastScheduledFor !== persistedNextRunAt
+    ) {
+      scheduleTask(projectID, task.id, persistedNextRunAt);
+      return;
+    }
+    const nextRunAt = computeNextRunAt(task, nowMs);
     const statePatch = {
       nextRunAt: Number.isFinite(nextRunAt) ? nextRunAt : undefined,
-      updatedAt: Date.now(),
+      updatedAt: nowMs,
     };
     const result = await projectConfigRuntime.updateScheduledTaskState(projectID, task.id, statePatch);
     if (result.task) {
@@ -397,13 +408,13 @@ export const createScheduledTasksRuntime = (deps) => {
     }
   };
 
-  const queueTaskRun = (projectID, taskID, reason) => {
+  const queueTaskRun = (projectID, taskID, reason, scheduledFor) => {
     const taskKey = buildTaskKey(projectID, taskID);
     if (queuedTaskKeys.has(taskKey) || runningTaskKeys.has(taskKey)) {
       return;
     }
     queuedTaskKeys.add(taskKey);
-    queue.push({ projectID, taskID, reason });
+    queue.push({ projectID, taskID, reason, scheduledFor });
   };
 
   const canRunTask = (projectID) => {
@@ -574,10 +585,108 @@ export const createScheduledTasksRuntime = (deps) => {
     };
   };
 
-  const runTask = async (projectID, taskID, reason) => {
+  const releaseRunningSlot = (projectID, taskKey) => {
+    runningTaskKeys.delete(taskKey);
+    runningGlobalCount = Math.max(0, runningGlobalCount - 1);
+    const nextProjectCount = Math.max(0, (runningCountByProject.get(projectID) || 1) - 1);
+    if (nextProjectCount === 0) {
+      runningCountByProject.delete(projectID);
+    } else {
+      runningCountByProject.set(projectID, nextProjectCount);
+    }
+  };
+
+  const rearmFutureOccurrence = (projectID, task) => {
+    const nextRunAt = task?.state?.nextRunAt;
+    if (
+      task?.enabled
+      && Number.isFinite(nextRunAt)
+      && nextRunAt > Date.now()
+      && task.state?.lastScheduledFor !== nextRunAt
+    ) {
+      scheduleTask(projectID, task.id, nextRunAt);
+    }
+  };
+
+  const persistTerminalState = async (projectID, taskID, statePatch) => {
+    let lastError;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await projectConfigRuntime.updateScheduledTaskState(projectID, taskID, statePatch);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError;
+  };
+
+  const claimScheduledOccurrence = async (projectID, taskID, scheduledFor) => {
+    if (!Number.isFinite(scheduledFor) || scheduledFor < 0) {
+      return { updated: false, task: null, tasks: [] };
+    }
+
+    const claimAt = Date.now();
+    return projectConfigRuntime.updateScheduledTaskStateConditionally(
+      projectID,
+      taskID,
+      (latestTask) => (
+        latestTask.enabled
+        && latestTask.state?.nextRunAt === scheduledFor
+        && latestTask.state?.lastScheduledFor !== scheduledFor
+        && scheduledFor <= claimAt + TASK_DUE_SLACK_MS
+      ),
+      (latestTask) => {
+        const oneTime = latestTask.schedule?.kind === 'once';
+        const nextRunAt = oneTime ? null : computeNextRunAt(latestTask, claimAt);
+        return {
+          ...(oneTime ? { enabled: false } : {}),
+          statePatch: {
+            lastScheduledFor: scheduledFor,
+            lastRunAt: claimAt,
+            lastStatus: 'running',
+            lastError: undefined,
+            nextRunAt: Number.isFinite(nextRunAt) && nextRunAt > claimAt
+              ? nextRunAt
+              : undefined,
+            updatedAt: claimAt,
+          },
+        };
+      },
+    );
+  };
+
+  const recordClaimFailure = async (projectID, taskID, scheduledFor, error) => {
+    const failedAt = Date.now();
+    try {
+      const result = await projectConfigRuntime.updateScheduledTaskStateConditionally(
+        projectID,
+        taskID,
+        (latestTask) => (
+          latestTask.enabled
+          && latestTask.state?.nextRunAt === scheduledFor
+          && latestTask.state?.lastScheduledFor !== scheduledFor
+        ),
+        {
+          statePatch: {
+            lastRunAt: failedAt,
+            lastStatus: 'error',
+            lastError: safeErrorMessage(error),
+            updatedAt: failedAt,
+          },
+        },
+      );
+      if (result.task) {
+        updateInMemoryTask(projectID, result.task);
+      }
+    } catch {
+      // The original lock/acquisition error remains the actionable failure.
+    }
+  };
+
+  const runTask = async (projectID, taskID, reason, scheduledFor) => {
     const taskMap = tasksByProject.get(projectID);
-    const task = taskMap?.get(taskID);
-    if (!task || !task.enabled) {
+    const initialTask = taskMap?.get(taskID);
+    if (!initialTask || !initialTask.enabled) {
       return { ok: false, skipped: true };
     }
 
@@ -590,126 +699,138 @@ export const createScheduledTasksRuntime = (deps) => {
     runningGlobalCount += 1;
     runningCountByProject.set(projectID, (runningCountByProject.get(projectID) || 0) + 1);
 
-    const runStartedAt = Date.now();
-    await projectConfigRuntime.updateScheduledTaskState(projectID, taskID, {
-      lastRunAt: runStartedAt,
-      lastStatus: 'running',
-      lastError: undefined,
-      updatedAt: runStartedAt,
-    }).then((result) => {
-      if (result.task) {
-        updateInMemoryTask(projectID, result.task);
-      }
-    });
-
-    let status = 'success';
-    let sessionID;
-    let durationMs = 0;
-    let errorMessage;
-
     try {
-      const runPromise = runTaskWithWatchdog(projectID, task, reason);
-      let timeoutID;
-      const timeoutPromise = new Promise((_, reject) => {
-        timeoutID = setTimeout(() => {
-          reject(new Error('scheduled task run timed out'));
-        }, maxRunDurationMs);
-      });
+      let task = initialTask;
+      const runStartedAt = Date.now();
 
-      const result = await Promise.race([runPromise, timeoutPromise]).finally(() => {
-        if (timeoutID) {
-          clearTimeout(timeoutID);
+      if (reason === 'scheduled') {
+        let claim;
+        try {
+          claim = await claimScheduledOccurrence(projectID, taskID, scheduledFor);
+        } catch (error) {
+          await recordClaimFailure(projectID, taskID, scheduledFor, error);
+          return {
+            ok: false,
+            status: 'error',
+            error: safeErrorMessage(error),
+          };
         }
-      });
-      sessionID = result.sessionID;
-      durationMs = result.durationMs;
-      status = 'success';
-      logger.info?.(
-        '[ScheduledTasks] run completed',
-        { projectID, taskID, status, reason, sessionID, durationMs }
-      );
-    } catch (error) {
-      status = 'error';
-      errorMessage = safeErrorMessage(error);
-      logger.warn?.('[ScheduledTasks] run failed', {
-        projectID,
-        taskID,
-        reason,
-        status,
-        error: errorMessage,
-      });
-    }
 
-    const finishedAt = Date.now();
-    if (!durationMs) {
-      durationMs = Math.max(0, finishedAt - runStartedAt);
-    }
-    let latestTask = (tasksByProject.get(projectID)?.get(taskID)) || task;
-    const shouldConsumeOneTimeTask = latestTask?.schedule?.kind === 'once' && reason === 'scheduled';
-    if (shouldConsumeOneTimeTask && latestTask?.enabled) {
-      try {
-        const consumed = await projectConfigRuntime.upsertScheduledTask(projectID, {
-          ...latestTask,
-          enabled: false,
+        if (!claim.updated || !claim.task) {
+          if (claim.task) {
+            updateInMemoryTask(projectID, claim.task);
+            rearmFutureOccurrence(projectID, claim.task);
+          }
+          return { ok: false, skipped: true, task: claim.task || null };
+        }
+        task = claim.task;
+        updateInMemoryTask(projectID, task);
+      } else {
+        const runningResult = await projectConfigRuntime.updateScheduledTaskState(projectID, taskID, {
+          lastRunAt: runStartedAt,
+          lastStatus: 'running',
+          lastError: undefined,
+          updatedAt: runStartedAt,
         });
-        latestTask = consumed.task || latestTask;
-        updateInMemoryTask(projectID, latestTask);
-      } catch (consumeError) {
-        logger.warn?.('[ScheduledTasks] failed to consume one-time task', {
+        if (!runningResult.task) {
+          return { ok: false, skipped: true };
+        }
+        task = runningResult.task;
+        updateInMemoryTask(projectID, task);
+      }
+
+      let status = 'success';
+      let sessionID;
+      let durationMs = 0;
+      let errorMessage;
+
+      try {
+        const runPromise = runTaskWithWatchdog(projectID, task, reason);
+        let timeoutID;
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutID = setTimeout(() => {
+            reject(new Error('scheduled task run timed out'));
+          }, maxRunDurationMs);
+        });
+
+        const result = await Promise.race([runPromise, timeoutPromise]).finally(() => {
+          if (timeoutID) {
+            clearTimeout(timeoutID);
+          }
+        });
+        sessionID = result.sessionID;
+        durationMs = result.durationMs;
+        logger.info?.(
+          '[ScheduledTasks] run completed',
+          { projectID, taskID, status, reason, sessionID, durationMs },
+        );
+      } catch (error) {
+        status = 'error';
+        errorMessage = safeErrorMessage(error);
+        logger.warn?.('[ScheduledTasks] run failed', {
           projectID,
           taskID,
-          error: safeErrorMessage(consumeError),
+          reason,
+          status,
+          error: errorMessage,
         });
       }
-    }
 
-    const nextRunAt = computeNextRunAt(latestTask, finishedAt);
-
-    const statePatch = {
-      lastStatus: status,
-      lastDurationMs: durationMs,
-      lastError: status === 'error' ? errorMessage : undefined,
-      lastSessionId: status === 'success' ? sessionID : undefined,
-      nextRunAt: Number.isFinite(nextRunAt) ? nextRunAt : undefined,
-      updatedAt: finishedAt,
-    };
-
-    const stateResult = await projectConfigRuntime.updateScheduledTaskState(projectID, taskID, statePatch);
-    if (stateResult.task) {
-      updateInMemoryTask(projectID, stateResult.task);
-      if (stateResult.task.enabled && Number.isFinite(stateResult.task.state?.nextRunAt)) {
-        scheduleTask(projectID, taskID, stateResult.task.state.nextRunAt);
+      const finishedAt = Date.now();
+      if (!durationMs) {
+        durationMs = Math.max(0, finishedAt - runStartedAt);
       }
-    }
+      const statePatch = {
+        lastStatus: status,
+        lastDurationMs: durationMs,
+        lastError: status === 'error' ? errorMessage : undefined,
+        lastSessionId: status === 'success' ? sessionID : undefined,
+        updatedAt: finishedAt,
+      };
 
-    try {
-      emitTaskRunEvent?.({
-        projectID,
-        taskID,
-        ranAt: finishedAt,
+      let stateTask = task;
+      let persistError;
+      try {
+        const stateResult = await persistTerminalState(projectID, taskID, statePatch);
+        if (stateResult.task) {
+          stateTask = stateResult.task;
+          updateInMemoryTask(projectID, stateTask);
+        }
+      } catch (error) {
+        persistError = safeErrorMessage(error);
+        logger.warn?.('[ScheduledTasks] terminal state persistence failed', {
+          projectID,
+          taskID,
+          reason,
+          persistError,
+        });
+      }
+
+      rearmFutureOccurrence(projectID, stateTask);
+
+      try {
+        emitTaskRunEvent?.({
+          projectID,
+          taskID,
+          ranAt: finishedAt,
+          status,
+          ...(sessionID ? { sessionID } : {}),
+          ownerUserId: task.ownerUserId || null,
+        });
+      } catch {
+      }
+
+      return {
+        ok: status === 'success',
         status,
-        ...(sessionID ? { sessionID } : {}),
-        ownerUserId: task.ownerUserId || null,
-      });
-    } catch {
+        sessionID,
+        task: stateTask || null,
+        error: errorMessage,
+        ...(persistError ? { persistError } : {}),
+      };
+    } finally {
+      releaseRunningSlot(projectID, taskKey);
     }
-
-    runningTaskKeys.delete(taskKey);
-    runningGlobalCount = Math.max(0, runningGlobalCount - 1);
-    const nextProjectCount = Math.max(0, (runningCountByProject.get(projectID) || 1) - 1);
-    if (nextProjectCount === 0) {
-      runningCountByProject.delete(projectID);
-    } else {
-      runningCountByProject.set(projectID, nextProjectCount);
-    }
-
-    return {
-      ok: status === 'success',
-      status,
-      sessionID,
-      task: stateResult.task || null,
-      error: errorMessage,
-    };
   };
 
   const pumpQueue = () => {
@@ -731,7 +852,7 @@ export const createScheduledTasksRuntime = (deps) => {
       queuedTaskKeys.delete(taskKey);
       consumed = true;
 
-      void runTask(item.projectID, item.taskID, item.reason).finally(() => {
+      void runTask(item.projectID, item.taskID, item.reason, item.scheduledFor).finally(() => {
         pumpQueue();
       });
     }

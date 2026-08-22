@@ -17,6 +17,7 @@ interface UsageCardProps {
   onToggle?: (enabled: boolean) => void;
   trendHistory?: UsageTrendHistory;
   trendKey?: string;
+  progressTone?: 'adaptive' | 'success';
 }
 
 export const UsageCard: React.FC<UsageCardProps> = ({
@@ -30,6 +31,7 @@ export const UsageCard: React.FC<UsageCardProps> = ({
   onToggle,
   trendHistory,
   trendKey,
+  progressTone = 'adaptive',
 }) => {
   const displayMode = useQuotaStore((state) => state.displayMode);
   const showPredictionValues = useQuotaStore((state) => state.showPredictionValues);
@@ -76,6 +78,7 @@ export const UsageCard: React.FC<UsageCardProps> = ({
           <UsageProgressBar
             percent={displayState.displayPercent}
             tonePercent={window.usedPercent}
+            tone={progressTone}
             expectedMarkerPercent={displayState.expectedMarkerPercent}
             className="h-1.5"
           />

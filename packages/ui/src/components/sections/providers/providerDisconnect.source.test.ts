@@ -8,10 +8,15 @@ const readSource = (fileName: string): string => readFileSync(
 );
 
 describe('provider disconnect requests', () => {
+  test('includes the shared-host CSRF proof in the shared disconnect request', () => {
+    const source = readSource('./providerConnectionState.ts');
+    expect(source).toContain("'X-DevRyan-CSRF': '1'");
+  });
+
   for (const fileName of ['./ProvidersPage.tsx', './ProvidersSidebar.tsx']) {
-    test(`includes the shared-host CSRF proof in ${fileName}`, () => {
+    test(`uses the shared disconnect request in ${fileName}`, () => {
       const source = readSource(fileName);
-      expect(source).toContain("'X-DevRyan-CSRF': '1'");
+      expect(source).toContain('disconnectProvider(providerId, currentDirectory)');
     });
   }
 });

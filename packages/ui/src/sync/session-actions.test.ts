@@ -2293,8 +2293,8 @@ describe("revertToMessage scoped revert", () => {
       } as never))
       return draft
     })
-    expect(concurrentEventChanged).toBe(false)
-    expect(store.getState().message["session-a"]).toEqual([])
+    expect(concurrentEventChanged).toBe(true)
+    expect(store.getState().message["session-a"]).toEqual([concurrent])
 
     deferred.reject(new Error("safe revert conflict"))
     let thrown: unknown = null

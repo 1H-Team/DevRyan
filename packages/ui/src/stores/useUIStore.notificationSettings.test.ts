@@ -7,8 +7,10 @@ describe('useUIStore Plan Ready notification preferences', () => {
     const state = useUIStore.getState();
 
     expect(state.notifyOnPlanReady).toBe(true);
+    expect(state.notifyOnPermission).toBe(true);
     expect(state.notifyOnSubtasks).toBe(false);
     expect(state.notificationTemplates.planReady).toEqual({ title: '', message: '' });
+    expect(state.notificationTemplates.permission).toEqual({ title: '', message: '' });
   });
 
   test('migrates legacy preferences without replacing customized templates', () => {
@@ -26,10 +28,12 @@ describe('useUIStore Plan Ready notification preferences', () => {
     }, 11) as Record<string, unknown>;
 
     expect(migrated.notifyOnPlanReady).toBe(true);
+    expect(migrated.notifyOnPermission).toBe(true);
     expect(migrated.notifyOnSubtasks).toBe(true);
     const migratedTemplates = migrated.notificationTemplates as Record<string, unknown>;
     expect(migratedTemplates.completion).toEqual(completion);
     expect(migratedTemplates.planReady).toEqual({ title: '', message: '' });
+    expect(migratedTemplates.permission).toEqual({ title: '', message: '' });
   });
 
   test('includes Plan Ready state in persisted UI preferences', () => {
@@ -38,8 +42,23 @@ describe('useUIStore Plan Ready notification preferences', () => {
 
     const persisted = partialize?.(useUIStore.getState()) as Record<string, unknown>;
     expect(persisted.notifyOnPlanReady).toBe(true);
+    expect(persisted.notifyOnPermission).toBe(true);
     const persistedTemplates = persisted.notificationTemplates as Record<string, unknown>;
     expect(persistedTemplates.planReady).toEqual({ title: '', message: '' });
+    expect(persistedTemplates.permission).toEqual({ title: '', message: '' });
+  });
+
+  test('preserves the legacy combined toggle when adding Permissions Needed', () => {
+    const migrate = useUIStore.persist.getOptions().migrate;
+    const migrated = migrate?.({
+      notifyOnQuestion: false,
+      notificationTemplates: {
+        question: { title: 'Question', message: '{last_message}' },
+      },
+    }, 18) as Record<string, unknown>;
+
+    expect(migrated.notifyOnPermission).toBe(false);
+    expect((migrated.notificationTemplates as Record<string, unknown>).permission).toEqual({ title: '', message: '' });
   });
 
   test('updates one template field without replacing untouched template entries', () => {

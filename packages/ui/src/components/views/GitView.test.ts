@@ -94,7 +94,8 @@ describe('GitView staged changes workflow', () => {
     expect(code).toContain('const handleGenerateCommitMessage = React.useCallback(async () => {');
     expect(code).toContain('await generateCommitMessageDraft(currentDirectory, commitScope.files, {');
     expect(code).toContain('commitMessageGuidance');
-    expect(code).toContain('setCommitMessage(generatedSubject);');
+    expect(code).toContain("generatedDetails.map((detail) => `- ${detail}`)");
+    expect(code).toContain("toast.warning(t('gitView.toast.generateCommitMessageFallback')");
     expect(code).not.toContain("toast.success(t('gitView.toast.commitMessageGenerated'))");
     expect(code).toContain('commitGenerationRequestRef');
     expect(code).toContain('if (!isCurrentRequest())');

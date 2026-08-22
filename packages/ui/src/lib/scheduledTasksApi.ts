@@ -28,6 +28,7 @@ export type ScheduledTask = {
     createdAt: number;
     updatedAt: number;
     lastRunAt?: number;
+    lastScheduledFor?: number;
     lastStatus?: ScheduledTaskStatus;
     lastError?: string;
     lastDurationMs?: number;

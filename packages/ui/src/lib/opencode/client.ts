@@ -423,6 +423,7 @@ class OpencodeService {
   private directoryContextQueue: Promise<void> = Promise.resolve();
   private listDirectoryInFlight: Map<string, Promise<FilesystemEntry[]>> = new Map();
   private listDirectoryCache: Map<string, { entries: FilesystemEntry[]; expiresAt: number }> = new Map();
+  private listDirectoryGeneration: Map<string, number> = new Map();
 
   constructor(baseUrl: string = DEFAULT_BASE_URL) {
     const desktopBase = resolveDesktopBaseUrl();
@@ -659,13 +660,24 @@ class OpencodeService {
     if (!normalized) {
       return false;
     }
-    try {
-      const response = await this.client.path.get({ directory: normalized });
-      const info = response.data as { directory?: unknown } | undefined;
-      const returned = typeof info?.directory === 'string' ? info.directory : null;
-      return Boolean(returned && returned.trim().length > 0);
-    } catch {
-      return false;
+    const response = await this.client.path.get({ directory: normalized });
+    if (response.error) {
+      throw createFormattedSdkError('path.get', getSdkErrorMessage(response.error), response.response?.status);
+    }
+    const info = response.data as { directory?: unknown } | undefined;
+    const returned = typeof info?.directory === 'string' ? info.directory : null;
+    return Boolean(returned && returned.trim().length > 0);
+  }
+
+  invalidateLocalDirectory(directory: string): void {
+    const normalized = normalizeFsPath(directory.trim());
+    if (!normalized) return;
+    const prefix = `${normalized}|`;
+    this.listDirectoryGeneration.set(normalized, (this.listDirectoryGeneration.get(normalized) ?? 0) + 1);
+    for (const key of new Set([...this.listDirectoryCache.keys(), ...this.listDirectoryInFlight.keys()])) {
+      if (!key.startsWith(prefix)) continue;
+      this.listDirectoryCache.delete(key);
+      this.listDirectoryInFlight.delete(key);
     }
   }
 
@@ -2087,6 +2099,7 @@ class OpencodeService {
 
   async listLocalDirectory(directoryPath: string | null | undefined, options?: { respectGitignore?: boolean }): Promise<FilesystemEntry[]> {
     const normalizedDirectoryPath = typeof directoryPath === 'string' ? normalizeFsPath(directoryPath.trim()) : '';
+    const directoryGeneration = this.listDirectoryGeneration.get(normalizedDirectoryPath) ?? 0;
     const cacheKey = `${normalizedDirectoryPath}|${options?.respectGitignore ? '1' : '0'}`;
     const now = Date.now();
     const cached = this.listDirectoryCache.get(cacheKey);
@@ -2114,10 +2127,12 @@ class OpencodeService {
           isFile: !entry.isDirectory,
           isSymbolicLink: false,
         }));
-        this.listDirectoryCache.set(cacheKey, {
-          entries,
-          expiresAt: Date.now() + FS_LIST_CACHE_TTL_MS,
-        });
+        if ((this.listDirectoryGeneration.get(normalizedDirectoryPath) ?? 0) === directoryGeneration) {
+          this.listDirectoryCache.set(cacheKey, {
+            entries,
+            expiresAt: Date.now() + FS_LIST_CACHE_TTL_MS,
+          });
+        }
         return entries;
       } catch (error) {
         console.error('Failed to list directory contents:', error);
@@ -2138,7 +2153,7 @@ class OpencodeService {
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
         const message = typeof error.error === 'string' ? error.error : 'Failed to list directory';
-        throw new Error(message);
+        throw Object.assign(new Error(message), { status: response.status });
       }
 
       const result = await response.json();
@@ -2147,10 +2162,12 @@ class OpencodeService {
       }
 
       const entries = result.entries as FilesystemEntry[];
-      this.listDirectoryCache.set(cacheKey, {
-        entries,
-        expiresAt: Date.now() + FS_LIST_CACHE_TTL_MS,
-      });
+      if ((this.listDirectoryGeneration.get(normalizedDirectoryPath) ?? 0) === directoryGeneration) {
+        this.listDirectoryCache.set(cacheKey, {
+          entries,
+          expiresAt: Date.now() + FS_LIST_CACHE_TTL_MS,
+        });
+      }
       return entries;
     } catch (error) {
       console.error('Failed to list directory contents:', error);

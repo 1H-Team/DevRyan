@@ -7,6 +7,14 @@ receipts, sanitized diagnostic journaling/export preparation, and optional Git
 turn-evidence primitives. It also owns the host-neutral persisted command-
 deadline controller used by web/Electron and VS Code.
 
+`lib/atomic-file.js` also exports a dependency-free cross-process lock. Locks
+are acquired with exclusive `wx` creation and private mode, carry a random
+token plus PID/timestamp, reclaim only proven-dead or safely stale malformed
+owners, time out deterministically around live owners, and delete only when the
+release token still matches. Project configuration uses this primitive to
+serialize scheduler claims and ordinary mutations across web/Electron server
+processes.
+
 Host packages inject storage roots and platform effects. The shared UI never
 imports this package; it consumes HTTP or VS Code bridge contracts.
 

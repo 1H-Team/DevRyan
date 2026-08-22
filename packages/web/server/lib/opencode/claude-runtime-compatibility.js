@@ -18,15 +18,13 @@ const CLAUDE_RUNTIME_CANDIDATE = Object.freeze({
   opencodeWithClaude: '1.8.0',
   meridian: '1.62.6',
   agentSdk: '0.2.141',
-  claudeCode: '2.1.98',
+  claudeCode: '2.1.215',
 });
 
-// The 2.1.98 candidate was evaluated against the 2.1.215 control on 2026-08-20.
-// It reduced the measured Claude prefix from 64,815 to 49,152 tokens, but still
-// exceeded the comparable 30,337-token GPT prefix by 1.62x (gate: at most 1.35x).
-// The product owner explicitly selected the lower-prefix candidate despite the
-// remaining cross-provider ratio failure. Keep that limitation visible as
-// upstream_blocked instead of presenting this tuple as fully validated.
+// Claude Code 2.1.98 reduced the measured prefix, but Meridian 1.62.6 requires
+// Claude Code ^2.1.198. Keep the compatible 2.1.215 control selected so stateful
+// resume usage and session lineage use the runtime contract Meridian was built
+// against. The broader cross-provider context ratio remains upstream-blocked.
 const CLAUDE_RUNTIME_SELECTION = Object.freeze({
   channel: 'candidate',
   compatibilityStatus: 'upstream_blocked',

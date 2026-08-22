@@ -168,7 +168,6 @@ const SettingsHome: React.FC<{ onOpen: (slug: SettingsPageSlug) => void }> = ({ 
   const cards = ([
     { slug: 'users', title: 'User Management', description: 'Manage roles, projects, GitHub accounts, branch grants, and activity.' },
     { slug: 'appearance', title: 'Appearance', description: 'Theme, typography, spacing, and interface preferences.' },
-    { slug: 'chat', title: 'Chat', description: 'Message, tool, reasoning, and rendering preferences.' },
     { slug: 'sessions', title: 'Sessions', description: 'Defaults, retention, and session behavior.' },
     { slug: 'notifications', title: 'Notifications', description: 'Choose when and how DevRyan notifies you.' },
     { slug: 'providers', title: t('settings.view.home.cards.providers.title'), description: t('settings.view.home.cards.providers.description') },

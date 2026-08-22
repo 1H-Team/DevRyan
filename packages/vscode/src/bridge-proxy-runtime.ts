@@ -37,6 +37,25 @@ type ProxyRuntimeDeps = {
   base64EncodeUtf8: (text: string) => string;
   getCachedCursorProvider: () => Record<string, unknown> | null;
   refreshCursorProvider: () => Promise<void>;
+  getXaiPromptToolOverrides: (input: {
+    directory?: string;
+    providerID: string;
+    modelID: string;
+  }) => Record<string, false> | null;
+  supportsXaiProvider: (providerID: unknown) => boolean;
+  refreshXaiProviderPayload: (input: {
+    apiUrl: string;
+    directory?: string;
+    payload: unknown;
+    headers?: Record<string, string>;
+  }) => Promise<void>;
+  refreshXaiToolModel: (input: {
+    apiUrl: string;
+    directory?: string;
+    providerID?: string;
+    modelID: string;
+    headers?: Record<string, string>;
+  }) => Promise<void>;
 };
 
 const sortFingerprintValue = (value: unknown): unknown => {
@@ -135,6 +154,28 @@ const getPromptMessageID = (body: unknown): string | undefined => {
   const record = body as Record<string, unknown>;
   const value = record.messageID ?? record.messageId ?? record.id;
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+};
+
+const getPromptModel = (body: unknown): { providerID: string; modelID: string } | null => {
+  if (!body || typeof body !== 'object') return null;
+  const model = (body as { model?: unknown }).model;
+  if (!model || typeof model !== 'object') return null;
+  const providerID = typeof (model as { providerID?: unknown }).providerID === 'string'
+    ? (model as { providerID: string }).providerID.trim()
+    : '';
+  const modelID = typeof (model as { modelID?: unknown }).modelID === 'string'
+    ? (model as { modelID: string }).modelID.trim()
+    : '';
+  return providerID && modelID ? { providerID, modelID } : null;
+};
+
+const mergePromptTools = (body: unknown, overrides: Record<string, false> | null): unknown => {
+  if (!overrides || Object.keys(overrides).length === 0 || !body || typeof body !== 'object' || Array.isArray(body)) return body;
+  const record = body as Record<string, unknown>;
+  const tools = record.tools && typeof record.tools === 'object' && !Array.isArray(record.tools)
+    ? record.tools as Record<string, unknown>
+    : {};
+  return { ...record, tools: { ...tools, ...overrides } };
 };
 
 const unavailableHarnessResponse = (
@@ -239,6 +280,20 @@ export async function handleProxyBridgeMessage(
         ...deps.sanitizeForwardHeaders(headers),
         ...ctx?.manager?.getOpenCodeAuthHeaders(),
       };
+      const promptDetails = normalizedMethod === 'POST' ? promptPathDetails(normalizedPath) : null;
+      const promptModel = promptDetails ? getPromptModel(decodedBody) : null;
+      const isXaiProvider = promptModel ? deps.supportsXaiProvider(promptModel.providerID) : false;
+      const xaiOverrides = promptDetails && promptModel && isXaiProvider
+        ? deps.getXaiPromptToolOverrides({
+            directory: promptDetails.directory,
+            providerID: promptModel.providerID,
+            modelID: promptModel.modelID,
+          })
+        : null;
+      const forwardedBody = mergePromptTools(decodedBody, xaiOverrides);
+      const forwardedBodyBytes = forwardedBody !== decodedBody
+        ? Buffer.from(JSON.stringify(forwardedBody))
+        : (typeof bodyBase64 === 'string' && bodyBase64.length > 0 ? Buffer.from(bodyBase64, 'base64') : undefined);
 
       if (normalizedPath === '/event' || normalizedPath === '/global/event') {
         if (!requestHeaders.Accept) {
@@ -253,8 +308,8 @@ export async function handleProxyBridgeMessage(
           method: normalizedMethod,
           headers: requestHeaders,
           body:
-            typeof bodyBase64 === 'string' && bodyBase64.length > 0 && normalizedMethod !== 'GET' && normalizedMethod !== 'HEAD'
-              ? Buffer.from(bodyBase64, 'base64')
+            forwardedBodyBytes && normalizedMethod !== 'GET' && normalizedMethod !== 'HEAD'
+              ? forwardedBodyBytes
               : undefined,
         });
 
@@ -267,6 +322,13 @@ export async function handleProxyBridgeMessage(
         ) {
           try {
             const payload = JSON.parse(Buffer.from(arrayBuffer).toString('utf8')) as Record<string, unknown>;
+            const providerDirectory = new URL(normalizedPath, 'https://openchamber.invalid').searchParams.get('directory') || undefined;
+            void deps.refreshXaiProviderPayload({
+              apiUrl,
+              directory: providerDirectory,
+              payload,
+              headers: requestHeaders,
+            });
             let nextPayload = payload;
             try {
               const auth = readAuthFile();
@@ -297,6 +359,15 @@ export async function handleProxyBridgeMessage(
               ...details,
               messageID: getPromptMessageID(decodedBody),
             });
+            if (promptModel && isXaiProvider && xaiOverrides === null) {
+              void deps.refreshXaiToolModel({
+                apiUrl,
+                directory: details.directory,
+                providerID: promptModel.providerID,
+                modelID: promptModel.modelID,
+                headers: requestHeaders,
+              });
+            }
           }
         }
 

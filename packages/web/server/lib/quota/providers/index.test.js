@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { fetchQuotaMock, fetchOpenCodeGoQuotaMock, fetchCursorQuotaMock, fetchXaiQuotaMock, fetchDeepSeekQuotaMock } = vi.hoisted(() => ({
+const { fetchQuotaMock, fetchOpenCodeZenQuotaMock, fetchOpenCodeGoQuotaMock, fetchCursorQuotaMock, fetchXaiQuotaMock, fetchDeepSeekQuotaMock } = vi.hoisted(() => ({
   fetchQuotaMock: vi.fn(async () => ({
     providerId: 'zhipuai-coding-plan',
     providerName: 'Zhipu AI Coding Plan',
@@ -12,6 +12,14 @@ const { fetchQuotaMock, fetchOpenCodeGoQuotaMock, fetchCursorQuotaMock, fetchXai
   fetchOpenCodeGoQuotaMock: vi.fn(async () => ({
     providerId: 'opencode-go',
     providerName: 'OpenCode Go',
+    ok: true,
+    configured: true,
+    usage: { windows: {} },
+    fetchedAt: 1
+  })),
+  fetchOpenCodeZenQuotaMock: vi.fn(async () => ({
+    providerId: 'opencode',
+    providerName: 'OpenCode Zen',
     ok: true,
     configured: true,
     usage: { windows: {} },
@@ -57,6 +65,13 @@ vi.mock('./opencode-go.js', () => ({
   fetchQuota: fetchOpenCodeGoQuotaMock
 }));
 
+vi.mock('./opencode.js', () => ({
+  providerId: 'opencode',
+  providerName: 'OpenCode Zen',
+  isConfigured: () => true,
+  fetchQuota: fetchOpenCodeZenQuotaMock
+}));
+
 vi.mock('./cursor-acp.js', () => ({
   providerId: 'cursor-acp',
   providerName: 'Cursor',
@@ -97,6 +112,15 @@ describe('quota provider registry', () => {
 
     expect(result.providerId).toBe('opencode-go');
     expect(fetchOpenCodeGoQuotaMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes OpenCode Zen and its aliases separately from OpenCode Go', async () => {
+    for (const providerId of ['opencode', 'zen', 'opencode-zen']) {
+      const result = await fetchQuotaForProvider(providerId);
+      expect(result.providerId).toBe('opencode');
+    }
+    expect(fetchOpenCodeZenQuotaMock).toHaveBeenCalledTimes(3);
+    expect(fetchOpenCodeGoQuotaMock).not.toHaveBeenCalled();
   });
 
   it('routes the Cursor API alias to the canonical provider without adding another registry row', async () => {

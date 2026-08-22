@@ -30,7 +30,7 @@ const usage: SessionContextUsage = {
 }
 
 describe("ContextUsageWindow", () => {
-  test("explains that drafts do not have context usage yet", () => {
+  test("explains that drafts do not have context usage yet and disables compaction", () => {
     const markup = renderToStaticMarkup(
       <I18nProvider>
         <ContextUsageWindow
@@ -44,7 +44,9 @@ describe("ContextUsageWindow", () => {
     )
 
     expect(markup).toContain("Start a chat to measure context usage.")
-    expect(markup).not.toContain("Compact")
+    expect(markup).toContain("Compact")
+    expect(markup).toContain("disabled=\"\"")
+    expect(markup).toContain("Compact is unavailable until this session reports its context usage.")
   })
 
   test("renders a busy loading state without fabricating token values", () => {

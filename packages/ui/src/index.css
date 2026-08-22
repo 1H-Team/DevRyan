@@ -402,99 +402,53 @@ textarea[data-chat-input="true"]:focus-visible {
   }
 }
 
-@keyframes oc-live-status-focus {
+@keyframes oc-text-shimmer {
   0% {
-    transform: translate3d(0, 0, 0);
+    background-position: 200% 0;
   }
   100% {
-    transform: translate3d(100%, 0, 0);
+    background-position: -200% 0;
   }
 }
 
-@keyframes oc-live-status-focus-counter {
-  0% {
-    transform: translate3d(0, 0, 0);
-  }
-  100% {
-    transform: translate3d(-100%, 0, 0);
-  }
-}
-
-.oc-live-status-shimmer {
-  --oc-live-status-focus-width: 4.5rem;
-  --oc-live-status-highlight: var(--foreground);
+.oc-text-shimmer {
+  --oc-shimmer-base: var(--muted-foreground);
+  --oc-shimmer-highlight: color-mix(in oklch, var(--foreground) 92%, transparent);
   position: relative;
   display: inline-block;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
+  color: var(--oc-shimmer-base);
+  -webkit-text-fill-color: currentColor;
+  text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
 }
 
-.oc-live-status-shimmer__label,
-.oc-live-status-shimmer__aligned {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.oc-live-status-shimmer__focus {
+.oc-text-shimmer::after {
+  content: attr(data-shimmer-text);
   position: absolute;
-  inset-block: 0;
-  right: auto;
-  left: calc(-1 * var(--oc-live-status-focus-width));
-  width: calc(100% + var(--oc-live-status-focus-width) + var(--oc-live-status-focus-width));
-  color: var(--oc-live-status-highlight);
-  text-shadow: 0 0 0.3rem color-mix(in srgb, var(--foreground) 18%, transparent);
+  inset: 0;
   opacity: 0;
   pointer-events: none;
-  mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    rgb(0 0 0 / 12%) 0.675rem,
-    rgb(0 0 0 / 55%) 1.575rem,
-    black 2.25rem,
-    rgb(0 0 0 / 55%) 2.925rem,
-    rgb(0 0 0 / 12%) 3.825rem,
-    transparent var(--oc-live-status-focus-width),
-    transparent 100%
+  background-image: linear-gradient(
+    100deg,
+    transparent 40%,
+    var(--oc-shimmer-highlight) 50%,
+    transparent 60%
   );
-  mask-repeat: no-repeat;
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    rgb(0 0 0 / 12%) 0.675rem,
-    rgb(0 0 0 / 55%) 1.575rem,
-    black 2.25rem,
-    rgb(0 0 0 / 55%) 2.925rem,
-    rgb(0 0 0 / 12%) 3.825rem,
-    transparent var(--oc-live-status-focus-width),
-    transparent 100%
-  );
-  -webkit-mask-repeat: no-repeat;
+  background-repeat: no-repeat;
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 
-.oc-live-status-shimmer[data-animation-state="running"] .oc-live-status-shimmer__focus {
+.oc-text-shimmer[data-animation-state="running"]::after {
   opacity: 1;
-  animation: oc-live-status-focus 2.2s linear infinite;
-  will-change: transform;
-}
-
-.oc-live-status-shimmer__counter {
-  width: 100%;
-}
-
-.oc-live-status-shimmer[data-animation-state="running"] .oc-live-status-shimmer__counter {
-  animation: oc-live-status-focus-counter 2.2s linear infinite;
-  will-change: transform;
-}
-
-.oc-live-status-shimmer__aligned {
-  width: calc(100% - var(--oc-live-status-focus-width) - var(--oc-live-status-focus-width));
-  margin-left: var(--oc-live-status-focus-width);
+  animation: oc-text-shimmer 2.2s linear infinite;
 }
 
 /* Provider output can span multiple assistant messages in one logical turn.
@@ -1237,6 +1191,13 @@ html:not(.dark) .chat-scroll {
   --markdown-strikethrough: inherit;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  [data-reasoning-disclosure-content="true"] {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 .markdown-content.markdown-reasoning p,
 .markdown-content.markdown-reasoning li,
 .markdown-content.markdown-reasoning td,
@@ -1819,14 +1780,10 @@ input[aria-label="Terminal input"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .oc-live-status-shimmer__focus,
-  .oc-live-status-shimmer__counter {
+  .oc-text-shimmer::after {
+    content: none;
     animation: none;
-    will-change: auto;
-  }
-
-  .oc-live-status-shimmer__focus {
-    opacity: 0;
+    background-image: none;
   }
 
   .marquee-text--auto,
@@ -1843,6 +1800,8 @@ input[aria-label="Terminal input"] {
 }
 
 /* Settings dialog: hide the overlay scrollbar; wheel/keyboard scroll still works. */
-[data-settings-view="true"] .overlay-scrollbar {
+:root:not(.desktop-runtime)
+  [data-settings-view="true"]
+  .overlay-scrollbar {
   display: none;
 }

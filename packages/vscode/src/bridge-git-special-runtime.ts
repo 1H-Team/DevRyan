@@ -3,6 +3,13 @@ import * as path from 'node:path';
 import * as gitService from './gitService';
 import type { BridgeContext, BridgeResponse } from './bridge';
 import { getVsCodeHarnessRuntime } from './harness-runtime-access';
+import {
+  COMMIT_DRAFT_DEADLINE_MS,
+  createCommitModelCooldowns,
+  generateCommitDraftWithDeadline,
+  normalizeGeneratedCommitDraft,
+  type SharedCommitDraftContext,
+} from '@openchamber/shared-runtime';
 
 type BridgeMessageInput = {
   id: string;
@@ -18,40 +25,22 @@ type SpecialGitDeps = {
 };
 
 const BRIDGE_ZEN_DEFAULT_MODEL = 'gpt-5-nano';
-const BRIDGE_COMMIT_DEFAULT_ZEN_MODEL = 'deepseek-v4-flash-free';
-const BRIDGE_COMMIT_ZEN_TIMEOUT_MS = 60_000;
-const BRIDGE_COMMIT_SUBJECT_MAX_LENGTH = 72;
+const BRIDGE_COMMIT_DEFAULT_ZEN_MODEL = 'nemotron-3.5-lightning-free';
+const BRIDGE_COMMIT_ZEN_TIMEOUT_MS = COMMIT_DRAFT_DEADLINE_MS;
 const BRIDGE_COMMIT_MAX_SELECTED_FILES = 200;
 const BRIDGE_COMMIT_MAX_PATH_LENGTH = 1024;
 const BRIDGE_COMMIT_RECENT_COUNT = 6;
-const BRIDGE_COMMIT_DIFF_CONCURRENCY = 6;
-const BRIDGE_COMMIT_MAX_DIFF_CHARS_PER_FILE = 1_500;
 const BRIDGE_COMMIT_MAX_TOTAL_DIFF_CHARS = 16_000;
 const BRIDGE_COMMIT_DIFF_CONTEXT_LINES = 1;
-const BRIDGE_COMMIT_LARGE_FILE_LINE_THRESHOLD = 200;
 const BRIDGE_COMMIT_DIFF_TRUNCATION_MARKER = '\n... [diff truncated]';
-const BRIDGE_COMMIT_TYPES = [
-  'feat',
-  'fix',
-  'refactor',
-  'perf',
-  'docs',
-  'test',
-  'build',
-  'ci',
-  'chore',
-  'style',
-  'revert',
-] as const;
-const BRIDGE_COMMIT_SUBJECT_PATTERN = new RegExp(
-  `^(?:${BRIDGE_COMMIT_TYPES.join('|')})(?:\\([a-z0-9][a-z0-9_-]*\\))?(!)?:\\s+\\S.*$`,
-);
+const BRIDGE_COMMIT_CONTEXT_DEADLINE_MS = 1_500;
 const BRIDGE_GIT_GENERATION_TIMEOUT_MS = 2 * 60 * 1000;
 const BRIDGE_GIT_GENERATION_POLL_INTERVAL_MS = 500;
 const BRIDGE_GIT_MODEL_CATALOG_CACHE_TTL_MS = 30 * 1000;
 
 let bridgeGitModelCatalogCache: Set<string> | null = null;
 let bridgeGitModelCatalogCacheAt = 0;
+const bridgeCommitModelCooldowns = createCommitModelCooldowns();
 
 type BridgeCommitFileContext = {
   path: string;
@@ -59,11 +48,50 @@ type BridgeCommitFileContext = {
   workingDir: string;
   diff?: string;
   diffNote?: string;
+  insertions?: number;
+  deletions?: number;
 };
 
 type BridgeCommitContextResult =
-  | { status: 'ready'; context: Record<string, unknown> }
+  | { status: 'ready'; context: SharedCommitDraftContext }
   | { status: 'blocked'; message: string };
+
+const collectBridgeContextWithinDeadline = async ({
+  promise,
+  selectedFiles,
+  stagedOnly,
+}: {
+  promise: Promise<BridgeCommitContextResult>;
+  selectedFiles: string[];
+  stagedOnly: boolean;
+}): Promise<BridgeCommitContextResult> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<BridgeCommitContextResult>((resolve) => {
+        timer = setTimeout(() => resolve({
+          status: 'ready',
+          context: {
+            branch: '',
+            tracking: null,
+            scope: stagedOnly ? 'staged-only' : 'staged-and-unstaged',
+            stagedOnly,
+            selectedFiles: selectedFiles.map((filePath) => ({
+              path: filePath,
+              index: '?',
+              workingDir: '?',
+            })),
+            recentCommitSubjects: [],
+            contextWarning: 'Git context exceeded the speed budget; generated from selected file metadata',
+          },
+        }), BRIDGE_COMMIT_CONTEXT_DEADLINE_MS);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+};
 
 const normalizeBridgeGitPath = (value: string): string => value
   .replace(/\\/g, '/')
@@ -204,69 +232,25 @@ const collectBridgeCommitContext = async ({
   }
   files.sort((left, right) => left.path.localeCompare(right.path));
 
-  const contexts = new Array<BridgeCommitFileContext>(files.length);
-  let nextIndex = 0;
-  let totalDiffChars = 0;
-  const takeNext = (): number | null => {
-    const current = nextIndex;
-    nextIndex += 1;
-    return current < files.length ? current : null;
-  };
-  const worker = async (): Promise<void> => {
-    for (;;) {
-      const index = takeNext();
-      if (index === null) return;
-      const file = files[index];
-      const base: BridgeCommitFileContext = { ...file };
-      const stats = diffStats[file.path];
-      const changedLines = stats ? stats.insertions + stats.deletions : 0;
-      if (changedLines > BRIDGE_COMMIT_LARGE_FILE_LINE_THRESHOLD) {
-        contexts[index] = { ...base, diffNote: `large change (${changedLines} lines; diff omitted)` };
-        continue;
-      }
-      if (totalDiffChars >= BRIDGE_COMMIT_MAX_TOTAL_DIFF_CHARS) {
-        contexts[index] = { ...base, diffNote: 'diff omitted (context budget reached)' };
-        continue;
-      }
-      try {
-        const response = await gitService.getGitDiff(
-          directory,
-          file.path,
-          stagedOnly,
-          BRIDGE_COMMIT_DIFF_CONTEXT_LINES,
-        );
-        const diff = typeof response?.diff === 'string' ? response.diff.trim() : '';
-        if (!diff) {
-          contexts[index] = { ...base, diffNote: 'no diff available for current scope' };
-          continue;
-        }
-        if (/binary files differ/i.test(diff)) {
-          contexts[index] = { ...base, diffNote: 'binary file (diff omitted)' };
-          continue;
-        }
-        const remaining = Math.max(0, BRIDGE_COMMIT_MAX_TOTAL_DIFF_CHARS - totalDiffChars);
-        if (remaining === 0) {
-          contexts[index] = { ...base, diffNote: 'diff omitted (context budget reached)' };
-          continue;
-        }
-        const maxChars = Math.min(BRIDGE_COMMIT_MAX_DIFF_CHARS_PER_FILE, remaining);
-        const { text: selectedDiff, truncated } = truncateBridgeCommitDiff(diff, maxChars);
-        totalDiffChars += selectedDiff.length;
-        contexts[index] = {
-          ...base,
-          diff: selectedDiff,
-          ...(truncated ? { diffNote: 'diff truncated' } : {}),
-        };
-      } catch (error) {
-        contexts[index] = {
-          ...base,
-          diffNote: error instanceof Error ? error.message : 'failed to load diff',
-        };
-      }
-    }
-  };
-  const workerCount = Math.min(BRIDGE_COMMIT_DIFF_CONCURRENCY, files.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  const contexts = files.map((file) => {
+    const stats = diffStats[file.path];
+    return {
+      ...file,
+      ...(stats ? { insertions: stats.insertions, deletions: stats.deletions } : {}),
+    };
+  });
+  const diffArgs = ['diff', '--no-color', `-U${BRIDGE_COMMIT_DIFF_CONTEXT_LINES}`];
+  const stagedPatch = execGit([...diffArgs, '--cached', '--', ...selectedPaths], directory);
+  const patchRequests = stagedOnly
+    ? [stagedPatch]
+    : [stagedPatch, execGit([...diffArgs, '--', ...selectedPaths], directory)];
+  const patchResults = await Promise.allSettled(patchRequests);
+  const combinedPatch = patchResults
+    .filter((result): result is PromiseFulfilledResult<ExecGitResult> => result.status === 'fulfilled')
+    .map((result) => result.value.stdout.trim())
+    .filter(Boolean)
+    .join('\n');
+  const boundedPatch = truncateBridgeCommitDiff(combinedPatch, BRIDGE_COMMIT_MAX_TOTAL_DIFF_CHARS);
 
   const recentCommitSubjects = (Array.isArray(log.all) ? log.all : [])
     .map((entry) => (typeof entry?.message === 'string' ? entry.message.trim() : ''))
@@ -281,6 +265,11 @@ const collectBridgeCommitContext = async ({
       stagedOnly,
       selectedFiles: contexts,
       recentCommitSubjects,
+      ...(boundedPatch.text ? { patch: boundedPatch.text } : {}),
+      ...(boundedPatch.truncated ? { patchNote: 'combined patch truncated' } : {}),
+      ...(patchResults.some((result) => result.status === 'rejected')
+        ? { contextWarning: 'some diff context was unavailable' }
+        : {}),
     },
   };
 };
@@ -304,6 +293,8 @@ const recordBridgeCommitTiming = (payload: Record<string, unknown>): void => {
         model: payload.model,
         state: payload.catalogState,
         retry: payload.retried === true,
+        source: payload.source,
+        providerOutcome: payload.providerOutcome,
       },
     });
   } catch {
@@ -464,9 +455,11 @@ const extractZenResponseText = (data: unknown): string => {
 export const generateBridgeTextWithZen = async ({
   prompt,
   zenModel,
+  timeoutMs = BRIDGE_COMMIT_ZEN_TIMEOUT_MS,
 }: {
   prompt: string;
   zenModel?: string;
+  timeoutMs?: number;
 }): Promise<string> => {
   const model = typeof zenModel === 'string' && zenModel.trim() ? zenModel.trim() : BRIDGE_COMMIT_DEFAULT_ZEN_MODEL;
   const endpoint = /^(?:gpt-|claude-|gemini-)/.test(model) ? 'responses' : 'chat/completions';
@@ -479,17 +472,16 @@ export const generateBridgeTextWithZen = async ({
           input: [{ role: 'user', content: prompt }],
           stream: false,
           reasoning: { effort: 'low' },
-          max_output_tokens: 128,
+          max_output_tokens: 256,
         }
       : {
           model,
           messages: [{ role: 'user', content: prompt }],
           stream: false,
-          max_tokens: 64,
-          ...(model === BRIDGE_COMMIT_DEFAULT_ZEN_MODEL ? { reasoning_effort: 'none' } : {}),
-          stop: ['\n'],
+          max_tokens: 220,
+          reasoning_effort: 'none',
         }),
-    signal: AbortSignal.timeout(BRIDGE_COMMIT_ZEN_TIMEOUT_MS),
+    signal: AbortSignal.timeout(Math.max(1, Math.trunc(timeoutMs))),
   });
   if (!response.ok) {
     const errorPayload = await response.json().catch(() => null) as Record<string, unknown> | null;
@@ -506,57 +498,14 @@ export const generateBridgeTextWithZen = async ({
   return text;
 };
 
-const buildBridgeCommitMessagePrompt = (context: Record<string, unknown>, guidance?: string): string => {
-  const optionalGuidance = typeof guidance === 'string' && guidance.trim()
-    ? `\nOptional wording guidance:\n${guidance.trim()}\nThe Git context and output rules remain authoritative.`
-    : '';
-  return `Generate one Git commit subject for the supplied worktree changes.
-
-Rules:
-1. Output only the subject line, with no markdown, quotes, JSON, or explanation.
-2. Use Conventional Commits: type(scope): summary, or type: summary when no clear scope fits.
-3. Allowed types: ${BRIDGE_COMMIT_TYPES.join(', ')}.
-4. Keep the complete subject at or below ${BRIDGE_COMMIT_SUBJECT_MAX_LENGTH} characters.
-5. Use imperative mood and do not end with punctuation.
-6. Describe only the supplied changes. Respect the staged-only scope when present.
-${optionalGuidance}
-
-Git context:
-${JSON.stringify(context, null, 2)}`;
-};
-
 export const normalizeBridgeCommitSubject = (value: string): string => {
-  const withoutFence = String(value || '')
-    .trim()
-    .replace(/^```(?:json|text)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
-  let jsonSubject = '';
-  try {
-    const parsed = JSON.parse(withoutFence) as unknown;
-    const candidate = Array.isArray(parsed) ? parsed[0] : parsed;
-    if (candidate && typeof candidate === 'object' && typeof (candidate as Record<string, unknown>).subject === 'string') {
-      jsonSubject = (candidate as Record<string, unknown>).subject as string;
-    }
-  } catch {
-    jsonSubject = '';
-  }
-  const subject = (jsonSubject || withoutFence)
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean)
-    ?.replace(/^commit message\s*:\s*/i, '')
-    .replace(/^[`"'“”‘’]+|[`"'“”‘’]+$/g, '')
-    .trim() || '';
-  if (!subject) throw new Error('Commit generator returned an empty subject');
-  if (subject.length > BRIDGE_COMMIT_SUBJECT_MAX_LENGTH) {
-    throw new Error(`Generated commit subject exceeds ${BRIDGE_COMMIT_SUBJECT_MAX_LENGTH} characters`);
-  }
-  if (!BRIDGE_COMMIT_SUBJECT_PATTERN.test(subject)) {
+  const normalized = normalizeGeneratedCommitDraft(value, {
+    selectedFiles: [{ path: 'changes', index: 'M', workingDir: ' ' }],
+  });
+  if (normalized.source === 'local_fallback') {
     throw new Error('Generated commit subject is not a valid conventional commit');
   }
-  if (/\.$/.test(subject)) throw new Error('Generated commit subject must not end with a period');
-  return subject;
+  return normalized.message.subject;
 };
 
 const generateBridgeTextWithSessionFlow = async ({
@@ -733,15 +682,20 @@ export async function handleSpecialGitBridgeMessage(
 
       let contextMs = 0;
       let providerMs = 0;
-      let parseMs = 0;
+      const parseMs = 0;
       const selectedFileCount = Array.isArray(selectedFiles) ? selectedFiles.length : 0;
       try {
         const contextStartedAt = Date.now();
-        const contextResult = await collectBridgeCommitContext({
-          directory,
-          selectedFiles,
+        const validatedSelectedFiles = validateBridgeCommitFiles(selectedFiles);
+        const contextResult = await collectBridgeContextWithinDeadline({
+          promise: collectBridgeCommitContext({
+            directory,
+            selectedFiles: validatedSelectedFiles,
+            stagedOnly: stagedOnly === true,
+            execGit: deps.execGit,
+          }),
+          selectedFiles: validatedSelectedFiles,
           stagedOnly: stagedOnly === true,
-          execGit: deps.execGit,
         });
         contextMs = Date.now() - contextStartedAt;
         if (contextResult.status === 'blocked') {
@@ -766,16 +720,23 @@ export async function handleSpecialGitBridgeMessage(
           };
         }
 
-        const zenModel = typeof requestedZenModel === 'string' && requestedZenModel.trim()
+        const primaryModel = typeof requestedZenModel === 'string' && requestedZenModel.trim()
           ? requestedZenModel.trim()
           : BRIDGE_COMMIT_DEFAULT_ZEN_MODEL;
-        const prompt = buildBridgeCommitMessagePrompt(contextResult.context, guidance);
+        const zenModel = bridgeCommitModelCooldowns.select(primaryModel, BRIDGE_COMMIT_DEFAULT_ZEN_MODEL);
         const providerStartedAt = Date.now();
-        const raw = await generateBridgeTextWithZen({ prompt, zenModel });
+        const generated = await generateCommitDraftWithDeadline({
+          context: contextResult.context,
+          guidance,
+          deadlineAt: startedAt + COMMIT_DRAFT_DEADLINE_MS,
+          requestText: zenModel
+            ? ({ prompt, timeoutMs }) => generateBridgeTextWithZen({ prompt, zenModel, timeoutMs })
+            : undefined,
+        });
         providerMs = Date.now() - providerStartedAt;
-        const parseStartedAt = Date.now();
-        const subject = normalizeBridgeCommitSubject(raw);
-        parseMs = Date.now() - parseStartedAt;
+        if (generated.providerOutcome === 'deadline' || generated.providerOutcome === 'error') {
+          bridgeCommitModelCooldowns.markUnhealthy(zenModel);
+        }
         recordBridgeCommitTiming({
           contextMs,
           modelMs: 0,
@@ -788,6 +749,8 @@ export async function handleSpecialGitBridgeMessage(
           model: zenModel,
           catalogState: 'not_applicable',
           retried: false,
+          source: generated.source,
+          providerOutcome: generated.providerOutcome,
         });
         return {
           id,
@@ -795,7 +758,10 @@ export async function handleSpecialGitBridgeMessage(
           success: true,
           data: {
             status: 'complete',
-            commits: [{ subject, highlights: [] }],
+            commits: [generated.message],
+            ...((generated.warning || contextResult.context.contextWarning) ? {
+              warnings: [generated.warning, contextResult.context.contextWarning].filter((value): value is string => Boolean(value)),
+            } : {}),
           },
         };
       } catch (error) {
@@ -827,7 +793,7 @@ export async function handleSpecialGitBridgeMessage(
       const startedAt = Date.now();
       const { directory, context, guidance, zenModel: requestedZenModel } = (payload || {}) as {
         directory?: string;
-        context?: Record<string, unknown>;
+        context?: SharedCommitDraftContext;
         guidance?: string;
         zenModel?: string;
       };
@@ -840,16 +806,24 @@ export async function handleSpecialGitBridgeMessage(
       }
 
       try {
-        const zenModel = typeof requestedZenModel === 'string' && requestedZenModel.trim()
+        const primaryModel = typeof requestedZenModel === 'string' && requestedZenModel.trim()
           ? requestedZenModel.trim()
           : BRIDGE_COMMIT_DEFAULT_ZEN_MODEL;
-        const prompt = buildBridgeCommitMessagePrompt(context, guidance);
+        const zenModel = bridgeCommitModelCooldowns.select(primaryModel, BRIDGE_COMMIT_DEFAULT_ZEN_MODEL);
         const providerStartedAt = Date.now();
-        const raw = await generateBridgeTextWithZen({ prompt, zenModel });
+        const generated = await generateCommitDraftWithDeadline({
+          context,
+          guidance,
+          deadlineAt: startedAt + COMMIT_DRAFT_DEADLINE_MS,
+          requestText: zenModel
+            ? ({ prompt, timeoutMs }) => generateBridgeTextWithZen({ prompt, zenModel, timeoutMs })
+            : undefined,
+        });
         const providerMs = Date.now() - providerStartedAt;
-        const parseStartedAt = Date.now();
-        const subject = normalizeBridgeCommitSubject(raw);
-        const parseMs = Date.now() - parseStartedAt;
+        if (generated.providerOutcome === 'deadline' || generated.providerOutcome === 'error') {
+          bridgeCommitModelCooldowns.markUnhealthy(zenModel);
+        }
+        const parseMs = 0;
         recordBridgeCommitTiming({
           contextMs: 0,
           modelMs: 0,
@@ -862,12 +836,17 @@ export async function handleSpecialGitBridgeMessage(
           model: zenModel,
           catalogState: 'not_applicable',
           retried: false,
+          source: generated.source,
+          providerOutcome: generated.providerOutcome,
         });
         return {
           id,
           type,
           success: true,
-          data: { subject, highlights: [] },
+          data: {
+            ...generated.message,
+            ...(generated.warning ? { warnings: [generated.warning] } : {}),
+          },
         };
       } catch (error) {
         recordBridgeCommitTiming({

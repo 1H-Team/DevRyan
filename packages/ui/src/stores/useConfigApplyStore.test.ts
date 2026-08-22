@@ -59,12 +59,21 @@ describe('configuration apply UI projection', () => {
     expect(getConfigUpdateSnapshot().isUpdating).toBe(false);
   });
 
-  test('shows the overlay only for applying and clears it at the next stable status', () => {
-    recordConfigMutationResponse({ applyStatus: status({ state: 'applying' }) });
-    expect(getConfigUpdateSnapshot().isUpdating).toBe(true);
+  test('shows the overlay only for applying and clears it for every non-applying state', () => {
+    const nonApplyingStates: ConfigApplyStatus[] = [
+      status({ state: 'clean', pending: false, scopes: [], reasonCodes: [] }),
+      status({ state: 'failed', lastError: { code: 'RESTART_FAILED', message: 'Restart failed' } }),
+      status({ state: 'waiting_for_idle', activeSessionCount: 2 }),
+      status({ state: 'external_restart_required', runtimeMode: 'external' }),
+    ];
 
-    recordConfigMutationResponse({ applyStatus: status({ state: 'waiting_for_idle', activeSessionCount: 2 }) });
-    expect(getConfigUpdateSnapshot().isUpdating).toBe(false);
+    for (const nextStatus of nonApplyingStates) {
+      recordConfigMutationResponse({ applyStatus: status({ state: 'applying' }) });
+      expect(getConfigUpdateSnapshot().isUpdating).toBe(true);
+
+      recordConfigMutationResponse({ applyStatus: nextStatus });
+      expect(getConfigUpdateSnapshot().isUpdating).toBe(false);
+    }
   });
 
   test('waits for authoritative applying status before showing the restart overlay', async () => {

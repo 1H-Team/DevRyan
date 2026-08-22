@@ -90,6 +90,11 @@ import { createOpenCodeWatcherRuntime } from './lib/opencode/watcher.js';
 import { createTurnTimingRuntime, registerTurnTimingRoutes } from './lib/opencode/turn-timing.js';
 import { createAgentRuntimeWarmup, registerAgentRuntimeWarmupRoute } from './lib/opencode/agent-runtime-warmup.js';
 import { createProjectPrewarmRuntime } from './lib/opencode/project-prewarm-runtime.js';
+import { createXaiToolCatalogRuntime } from './lib/opencode/xai-tool-catalog-runtime.js';
+import {
+  DEFAULT_TITLE_FALLBACK_ZEN_MODEL,
+  createStandardSessionTitleRuntime,
+} from './lib/opencode/standard-session-title-runtime.js';
 import { createHarnessPreflight, registerHarnessPreflightRoute } from './lib/opencode/harness-preflight.js';
 import { inspectClaudeRuntimeCompatibility } from './lib/opencode/claude-runtime-compatibility.js';
 import { resolveApprovedSkills } from './lib/opencode/skill-policy.js';
@@ -740,6 +745,9 @@ let isOpenCodeReady = false;
 let openCodeNotReadySince = 0;
 let isExternalOpenCode = false;
 let observeContextModeToolFailure = () => false;
+// Desktop shells set this via startWebUiServer options to surface OpenCode
+// boot progress on the native startup splash.
+let onOpenCodeStartupStatus = null;
 let observeCommandDeadline = () => false;
 let exitOnShutdown = true;
 let uiAuthController = null;
@@ -881,6 +889,15 @@ const waitForReady = (...args) => openCodeNetworkRuntime.waitForReady(...args);
 const normalizeApiPrefix = (...args) => openCodeNetworkRuntime.normalizeApiPrefix(...args);
 const setDetectedOpenCodeApiPrefix = (...args) => openCodeNetworkRuntime.setDetectedOpenCodeApiPrefix(...args);
 const buildOpenCodeUrl = (...args) => openCodeNetworkRuntime.buildOpenCodeUrl(...args);
+const xaiToolCatalogRuntime = createXaiToolCatalogRuntime({
+  fetchImpl: fetch,
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+  logger: console,
+});
+// Keep recently-used directories' Grok tool catalogs fresh so xAI prompts
+// never hit the in-request cold-start wait after the 15-min cache TTL.
+xaiToolCatalogRuntime.startPeriodicRefresh();
 const ensureOpenCodeApiPrefix = (...args) => openCodeNetworkRuntime.ensureOpenCodeApiPrefix(...args);
 const scheduleOpenCodeApiDetection = (...args) => openCodeNetworkRuntime.scheduleOpenCodeApiDetection(...args);
 
@@ -1039,6 +1056,17 @@ notificationTemplateRuntime = createNotificationTemplateRuntime({
   resolveGitBinaryForSpawn,
 });
 
+const standardSessionTitleRuntime = createStandardSessionTitleRuntime({
+  fetchImpl: fetch,
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+  resolveZenModel,
+  resolveZenFallbackModel: (model) => (
+    resolveZenModelNonBlocking(model)?.fallbackModel || DEFAULT_TITLE_FALLBACK_ZEN_MODEL
+  ),
+  logger: console,
+});
+
 const notificationTriggerRuntime = createNotificationTriggerRuntime({
   readSettingsFromDisk,
   prepareNotificationLastMessage,
@@ -1077,6 +1105,7 @@ const processCanonicalOpenCodeEvent = createCanonicalOpenCodeEventProcessor({
   recordMultiUserActivity: (payload) => multiUserRuntime?.recordOpenCodeActivity?.(payload),
   processEvidence: (payload) => evidenceRuntime?.processOpenCodeEvent(payload),
   processBrowserLease: (payload) => browserLeaseRuntime?.processOpenCodeEvent(payload),
+  processSessionTitle: (payload) => standardSessionTitleRuntime.processOpenCodeEvent(payload),
   processContextModeRecovery: (payload) => observeContextModeToolFailure(payload),
   processCommandDeadline: (payload) => observeCommandDeadline(payload),
   onSessionDeleted: (deletedSessionId) => {
@@ -1321,6 +1350,7 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
     sessionRuntime.resetAllSessionActivityToIdle();
     void projectPrewarmRuntime?.run('opencode-restart');
   },
+  onStartupStatus: (text) => onOpenCodeStartupStatus?.(text),
 });
 
 observeContextModeToolFailure = (payload) => (
@@ -1560,6 +1590,9 @@ async function main(options = {}) {
   }
   if (typeof options.onDesktopNotification === 'function') {
     notificationEmitterRuntime.setOnDesktopNotification(options.onDesktopNotification);
+  }
+  if (typeof options.onOpenCodeStartupStatus === 'function') {
+    onOpenCodeStartupStatus = options.onOpenCodeStartupStatus;
   }
   notificationTriggerRuntime.setGetIsWindowFocused(
     typeof options.getIsWindowFocused === 'function' ? options.getIsWindowFocused : null
@@ -1843,6 +1876,7 @@ async function main(options = {}) {
       return sanitizeHiddenSkills(settings?.hiddenSkills);
     },
     resolveApprovedSkills,
+    warmXaiToolCatalog: ({ directory, signal }) => xaiToolCatalogRuntime.refreshDirectory({ directory, signal }),
   });
   projectPrewarmRuntime = createProjectPrewarmRuntime({
     warm: (warmupOptions) => agentRuntimeWarmup.warm(warmupOptions),
@@ -1941,6 +1975,7 @@ async function main(options = {}) {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     cursorSdkRuntime,
+    standardSessionTitleRuntime,
     getOpenCodePort: () => openCodePort,
     getOpenCodeWorkingDirectory: () => openCodeWorkingDirectory,
     setOpenCodeWorkingDirectory: (directory) => {
@@ -1957,6 +1992,7 @@ async function main(options = {}) {
     writeSseEvent,
     emitSyntheticOpenCodeEvent,
     resolveZenModel,
+    xaiToolCatalogRuntime,
     resolveZenModelNonBlocking,
     recordCommitTiming: (req, payload) => harnessRuntime.record({
       type: 'timing',
@@ -1982,6 +2018,8 @@ async function main(options = {}) {
         model: payload.model,
         state: payload.catalogState,
         retry: payload.retried === true,
+        source: payload.source,
+        providerOutcome: payload.providerOutcome,
       },
     }),
     resolveManagedProject: multiUserRuntime.resolveManagedProject?.bind(multiUserRuntime),
@@ -2040,6 +2078,7 @@ async function main(options = {}) {
   server.once('close', () => {
     projectPreviewInstancesRuntime.shutdown();
     previewProxyRuntime.shutdown();
+    xaiToolCatalogRuntime.stopPeriodicRefresh();
   });
 
   const startupPipelineResult = await startupPipelineRuntime.run({

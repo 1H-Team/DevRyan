@@ -36,10 +36,11 @@ describe('tts routes', () => {
       });
 
     expect(response.status).toBe(502);
-    expect(fetch).toHaveBeenCalledTimes(2);
+    // Two modes attempted, each retrying the transient 503 once.
+    expect(fetch).toHaveBeenCalledTimes(4);
     expect(response.body).toEqual({
       error: 'Note summarization failed',
-      reason: 'zen API returned 503',
+      reason: 'Zen API returned 503: unavailable',
     });
   });
 
@@ -96,7 +97,7 @@ describe('tts routes', () => {
     expect(response.body).toMatchObject({
       summary: 'Notification text that should fall back cleanly.',
       summarized: false,
-      reason: 'zen API returned 503',
+      reason: 'Zen API returned 503: unavailable',
     });
   });
 

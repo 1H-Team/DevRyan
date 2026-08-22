@@ -8,6 +8,7 @@ import { isDesktopShell } from '@/lib/desktop';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { formatDirectoryName, cn } from '@/lib/utils';
+import { resolveProjectDisplayName } from '@/lib/projectDisplayName';
 import { useSessionUIStore, type ChatDraft } from '@/sync/session-ui-store';
 import { useAllLiveSessions, useAllSessionUserActivity, useEnsureSessionChildren } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -77,7 +78,6 @@ import {
   buildSessionProjectOwnership,
   dedupeSessionsById,
   discardPendingArchiveRevealSessionIds,
-  formatProjectLabel,
   normalizePath,
   reconcileArchivedGroupCollapse,
   removeExpandedSessionIds,
@@ -1120,11 +1120,10 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     const projectPathLengthBySessionId = new Map<string, number>();
 
     projectSections.forEach((section) => {
-      const projectLabel = formatProjectLabel(
-        section.project.label?.trim()
-        || formatDirectoryName(section.project.normalizedPath, homeDirectory)
-        || section.project.normalizedPath,
-      );
+      const projectLabel = resolveProjectDisplayName({
+        label: section.project.label,
+        path: section.project.normalizedPath,
+      });
       section.groups.forEach((group) => {
         const secondaryMeta = group.branch && group.branch !== projectLabel
           ? { projectLabel, branchLabel: group.branch }
@@ -1156,7 +1155,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     });
 
     return meta;
-  }, [projectSections, homeDirectory]);
+  }, [projectSections]);
 
   const buildSessionSearchDialogItem = React.useCallback((session: Session): SessionSearchDialogItem => {
     const meta = sessionSidebarMetaById.get(session.id);
@@ -1867,7 +1866,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                 }
               }}
               projectId={editingProject.id}
-              projectName={editingProject.label || formatDirectoryName(editingProject.path, homeDirectory)}
+              projectName={resolveProjectDisplayName(editingProject)}
               projectPath={editingProject.path}
               initialIcon={editingProject.icon}
               initialColor={editingProject.color}

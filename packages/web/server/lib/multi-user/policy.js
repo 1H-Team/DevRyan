@@ -168,7 +168,7 @@ const SETTINGS_FIELDS_BY_PAGE = Object.freeze({
   shortcuts: ['keyboardShortcuts', 'appShortcuts'],
   notifications: [
     'nativeNotificationsEnabled', 'notificationMode', 'notifyOnSubtasks', 'notifyOnCompletion',
-    'notifyOnPlanReady', 'notifyOnError', 'notifyOnQuestion', 'notificationTemplates',
+    'notifyOnPlanReady', 'notifyOnError', 'notifyOnQuestion', 'notifyOnPermission', 'notificationTemplates',
     'summarizeLastMessage', 'summaryThreshold', 'summaryLength', 'maxLastMessageLength',
   ],
   agents: [
@@ -393,7 +393,7 @@ export function settingsPageForRequest(requestPath, method = 'GET') {
     || path === '/provider'
     || path === '/provider/auth'
     || /^\/provider\/[^/]+\/(?:auth|source|oauth|usage-auth|runtime-status)(?:\/|$)/.test(path)
-    || /^\/provider\/(?:anthropic\/(?:check-oauth|claude-cli)|cursor-acp\/configure|xai\/oauth)(?:\/|$)/.test(path)) return 'providers';
+    || /^\/provider\/(?:anthropic\/(?:check-oauth|claude-cli|prompt-mode)|cursor-acp\/configure|xai\/oauth)(?:\/|$)/.test(path)) return 'providers';
   if (/^\/quota\/credentials(?:\/|$)/.test(path)) return 'providers';
   if (/^\/openchamber\/tunnel(?:\/|$)/.test(path)) return 'tunnel';
   if (/^\/diagnostics(?:\/(?:status|export|sanitize))?$/.test(path)

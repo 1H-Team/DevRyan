@@ -261,7 +261,7 @@ const ChatViewport = React.memo(({
                             onContentChange={handleMessageContentChange}
                         />
 
-                        <div className={cn('mb-3', isMobile ? 'mt-2' : 'mt-3')}>
+                        <div className={cn('mb-3 min-h-[1.45rem]', isMobile ? 'mt-3' : 'mt-4')}>
                             <StatusRowContainer />
                         </div>
 

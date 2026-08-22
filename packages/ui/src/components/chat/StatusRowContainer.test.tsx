@@ -4,6 +4,7 @@ import {
   resolveManagedChildGenericStatusText,
   resolveManagedDelegationStatusPhase,
   resolveLongRunningToolPresentation,
+  resolveProviderWaitingStatusText,
   resolveStatusRowAssistantDisplay,
   shouldRenderStatusRowAssistantStatus,
 } from './StatusRowContainer';
@@ -94,6 +95,51 @@ describe('shouldRenderStatusRowAssistantStatus', () => {
 
   test('does not render the status row assistant placeholder while idle', () => {
     expect(shouldRenderStatusRowAssistantStatus(false)).toBe(false);
+  });
+});
+
+describe('resolveProviderWaitingStatusText', () => {
+  test('shows deterministic Grok copy only before the first assistant part', () => {
+    expect(resolveProviderWaitingStatusText({
+      providerID: 'xai',
+      activePartType: undefined,
+      hasStreamedActivity: false,
+      waitingForGrokText: 'Waiting for Grok',
+    })).toBe('Waiting for Grok');
+    expect(resolveProviderWaitingStatusText({
+      providerID: 'xai',
+      activePartType: 'reasoning',
+      hasStreamedActivity: true,
+      waitingForGrokText: 'Waiting for Grok',
+    })).toBeNull();
+    expect(resolveProviderWaitingStatusText({
+      providerID: 'openai',
+      activePartType: undefined,
+      hasStreamedActivity: false,
+      waitingForGrokText: 'Waiting for Grok',
+    })).toBeNull();
+  });
+
+  test('stays silent in the gaps between parts once the turn has produced output', () => {
+    // A closed reasoning block or a finished tool leaves no part live, but the
+    // last real label still owns the row — this copy must not stomp it.
+    expect(resolveProviderWaitingStatusText({
+      providerID: 'xai',
+      activePartType: undefined,
+      hasStreamedActivity: true,
+      waitingForGrokText: 'Waiting for Grok',
+    })).toBeNull();
+  });
+
+  test('accepts every xAI provider alias regardless of casing', () => {
+    for (const providerID of ['grok', 'xai-oauth', '  XAI  ']) {
+      expect(resolveProviderWaitingStatusText({
+        providerID,
+        activePartType: undefined,
+        hasStreamedActivity: false,
+        waitingForGrokText: 'Waiting for Grok',
+      })).toBe('Waiting for Grok');
+    }
   });
 });
 

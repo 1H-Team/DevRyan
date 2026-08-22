@@ -25,7 +25,7 @@ vi.mock('@opencode-ai/plugin', () => {
 });
 
 const browserPluginModule = await import('./devryan-browser.mjs');
-const { DevRyanBrowserPlugin, __test } = browserPluginModule;
+const { DevRyanBrowserPlugin, __test, wrapBrowserEvalSnippet } = browserPluginModule;
 
 const ORIGINAL_ENVIRONMENT = {
   discoveryUrl: process.env.DEVRYAN_BROWSER_CDP_DISCOVERY_URL,
@@ -503,5 +503,40 @@ describe('DevRyan agent browser plugin', () => {
 
     await expect(plugin.tool.devryan_browser.execute({ command: 'snapshot' }, context()))
       .rejects.toThrow('<redacted> at <redacted>');
+  });
+});
+
+describe('eval snippet wrapping', () => {
+  it('wraps a snippet using top-level await', () => {
+    // "SyntaxError: await is only valid in async functions and the top level
+    // bodies of modules" — observed 2026-08-21 00:19:03.
+    const wrapped = wrapBrowserEvalSnippet('await fetch("/api/health").then(r => r.status)');
+    expect(wrapped).toBe('(async () => { await fetch("/api/health").then(r => r.status) })()');
+  });
+
+  it('wraps a snippet using a top-level return', () => {
+    // "SyntaxError: Illegal return statement" — observed 2026-08-21 00:19:22.
+    const wrapped = wrapBrowserEvalSnippet('const el = document.querySelector("#x"); return el.textContent;');
+    expect(wrapped).toBe('(async () => { const el = document.querySelector("#x"); return el.textContent; })()');
+  });
+
+  it('leaves a plain expression untouched', () => {
+    expect(wrapBrowserEvalSnippet('document.title')).toBe('document.title');
+    expect(wrapBrowserEvalSnippet('document.querySelectorAll("a").length')).toBe('document.querySelectorAll("a").length');
+  });
+
+  it('does not treat a property named await or return as a keyword', () => {
+    expect(wrapBrowserEvalSnippet('x.return v')).toBe('x.return v');
+    expect(wrapBrowserEvalSnippet('obj.await thing')).toBe('obj.await thing');
+  });
+
+  it('does not double-wrap an already-wrapped snippet', () => {
+    const snippet = '(async () => { await go(); })()';
+    expect(wrapBrowserEvalSnippet(snippet)).toBe(snippet);
+  });
+
+  it('leaves non-strings and blanks alone', () => {
+    expect(wrapBrowserEvalSnippet('')).toBe('');
+    expect(wrapBrowserEvalSnippet(undefined)).toBe(undefined);
   });
 });

@@ -82,6 +82,7 @@ const UsageMetricRow = React.memo(function UsageMetricRow({
         <UsageProgressBar
           percent={displayState.displayPercent}
           tonePercent={window.usedPercent}
+          tone={providerId === 'opencode' && label === 'credits' ? 'success' : 'adaptive'}
           className="h-1.5"
           expectedMarkerPercent={displayState.expectedMarkerPercent}
         />

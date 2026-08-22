@@ -21,6 +21,7 @@ import { getAllModelFamilies, getUsageModelDisplayInfo, sortModelFamilies, group
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useI18n } from '@/lib/i18n';
 import { sortUsageEntries } from '@/components/layout/usage/usage-groups';
+import { UsageResetCreditsList } from '@/components/layout/usage/UsageResetCreditsList';
 
 const formatTime = (timestamp: number | null) => {
   if (!timestamp) return '-';
@@ -355,12 +356,19 @@ export const UsagePage: React.FC = () => {
                     window={window}
                     trendHistory={trendHistory}
                     trendKey={buildQuotaTrendKey(selectedProviderId, 'window', null, label)}
+                    progressTone={selectedProviderId === 'opencode' && label === 'credits' ? 'success' : 'adaptive'}
                   />
                 ))}
               </div>
             </section>
           </div>
         )}
+
+        {usage?.resetCredits ? (
+          <div className="mb-8 px-2">
+            <UsageResetCreditsList resetCredits={usage.resetCredits} />
+          </div>
+        ) : null}
 
         {/* Models Section */}
         {providerModels.length > 0 && (

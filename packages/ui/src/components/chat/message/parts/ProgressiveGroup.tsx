@@ -30,7 +30,6 @@ import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useI18n } from '@/lib/i18n';
-import ReasoningPart from './ReasoningPart';
 import ReasoningGroup from './ReasoningGroup';
 import JustificationBlock from './JustificationBlock';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
@@ -61,9 +60,9 @@ import {
 } from './activityTools';
 import {
     coalesceConsecutiveReasoningRows,
+    filterKnownClippedXaiReasoningActivities,
     type ReasoningGroupRow,
 } from '../reasoningGrouping';
-import type { GeneratedImageResult } from './generatedImageResults';
 
 interface ProgressiveGroupProps {
     parts: TurnActivityPart[];
@@ -83,7 +82,6 @@ interface ProgressiveGroupProps {
     renderJustificationActions?: (activity: TurnActivityPart) => React.ReactNode;
     providerID?: string | null;
     responseStyleLevel?: ResponseStyleLevel;
-    generatedImages?: GeneratedImageResult[];
 }
 
 /**
@@ -237,9 +235,6 @@ interface StaticGroupedToolRowProps {
     activities: TurnActivityPart[];
     animateTailText: boolean;
     animateRows: boolean;
-    generatedImages?: GeneratedImageResult[];
-    onShowPopup?: (content: ToolPopupContent) => void;
-    onContentChange?: (reason?: ContentChangeReason) => void;
 }
 
 const StaticGroupedToolRow: React.FC<StaticGroupedToolRowProps> = ({
@@ -247,18 +242,12 @@ const StaticGroupedToolRow: React.FC<StaticGroupedToolRowProps> = ({
     activities,
     animateTailText,
     animateRows,
-    generatedImages,
-    onShowPopup,
-    onContentChange,
 }) => {
     const content = (
         <StaticToolRow
             toolName={toolName}
             activities={activities}
             animateTailText={animateTailText}
-            generatedImages={generatedImages}
-            onShowPopup={onShowPopup}
-            onContentChange={onContentChange}
         />
     );
 
@@ -279,9 +268,6 @@ const MemoStaticGroupedToolRow = React.memo(StaticGroupedToolRow, (prev, next) =
     return prev.toolName === next.toolName
         && prev.animateTailText === next.animateTailText
         && prev.animateRows === next.animateRows
-        && prev.generatedImages === next.generatedImages
-        && prev.onShowPopup === next.onShowPopup
-        && prev.onContentChange === next.onContentChange
         && areActivityListsEqual(prev.activities, next.activities);
 });
 
@@ -296,7 +282,6 @@ interface GroupedToolActivityRowProps {
     onContentChange?: (reason?: ContentChangeReason) => void;
     animateTailText: boolean;
     animateRows: boolean;
-    generatedImages?: GeneratedImageResult[];
 }
 
 const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
@@ -310,7 +295,6 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
     onContentChange,
     animateTailText,
     animateRows,
-    generatedImages,
 }) => {
     const { t } = useI18n();
     const [isExpanded, setIsExpanded] = React.useState(false);
@@ -459,13 +443,10 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
                     toolName={toolName}
                     activities={[activity]}
                     animateTailText={animateTailText}
-                    generatedImages={generatedImages}
-                    onShowPopup={onShowPopup}
-                    onContentChange={onContentChange}
                 />
             );
         });
-    }, [activities, animateTailText, expandedTools, generatedImages, groupInfo.representativeToolName, isMobile, onContentChange, onShowPopup, onToggleTool, syntaxTheme]);
+    }, [activities, animateTailText, expandedTools, groupInfo.representativeToolName, isMobile, onContentChange, onShowPopup, onToggleTool, syntaxTheme]);
 
     const expandedDetails = React.useMemo(() => {
         if (groupInfo.kind === 'patch' && patchFiles.length > 0) {
@@ -488,9 +469,6 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
             toolName="devryan_browser"
             activities={activities}
             animateTailText={animateTailText}
-            generatedImages={generatedImages}
-            onShowPopup={onShowPopup}
-            onContentChange={onContentChange}
         />
     ) : (
         <div className="w-full min-w-0">
@@ -563,7 +541,6 @@ export const GroupedToolActivityRow = React.memo(GroupedToolActivityRowInner, (p
         && prev.onContentChange === next.onContentChange
         && prev.animateTailText === next.animateTailText
         && prev.animateRows === next.animateRows
-        && prev.generatedImages === next.generatedImages
         && areActivityListsEqual(prev.activities, next.activities);
 });
 
@@ -617,28 +594,6 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
 };
 
 /**
- * Inline reasoning text block — rendered as dimmed italic markdown.
- */
-const InlineReasoningBlock = React.memo(({ activity, onContentChange, providerID, responseStyleLevel, isMobile }: {
-    activity: TurnActivityPart;
-    onContentChange?: (reason?: ContentChangeReason) => void;
-    providerID?: string | null;
-    responseStyleLevel?: ResponseStyleLevel;
-    isMobile: boolean;
-}) => {
-    return (
-        <ReasoningPart
-            part={activity.part}
-            messageId={activity.messageId}
-            providerID={activity.providerID ?? providerID}
-            responseStyleLevel={responseStyleLevel}
-            onContentChange={onContentChange}
-            isMobile={isMobile}
-        />
-    );
-});
-
-/**
  * Inline justification text block — rendered as compact assistant activity between tools.
  */
 const InlineJustificationBlock = React.memo(({ activity, onContentChange, actions, isMobile }: {
@@ -669,16 +624,15 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     onToggleTool,
     onShowPopup,
     onContentChange,
-    streamPhase: _streamPhase,
+    streamPhase,
     showHeader,
     animateRows = true,
     animatedToolIds,
     renderJustificationActions,
     providerID,
     responseStyleLevel,
-    generatedImages,
 }) => {
-    void _streamPhase;
+    const isMessageCompleted = streamPhase === 'completed';
     const previewCount = showHeader && !isExpanded
         ? Math.max(0, Math.floor(collapsedPreviewCount))
         : 0;
@@ -691,12 +645,17 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         return sortPartsByTime(parts);
     }, [parts, shouldRenderRows]);
 
+    const displayableParts = React.useMemo(
+        () => filterKnownClippedXaiReasoningActivities(sortedParts, providerID),
+        [providerID, sortedParts],
+    );
+
     const rows = React.useMemo(() => {
         if (!shouldRenderRows) {
             return [] as AggregatedRow[];
         }
-        return aggregateRows(sortedParts);
-    }, [shouldRenderRows, sortedParts]);
+        return aggregateRows(displayableParts);
+    }, [displayableParts, shouldRenderRows]);
 
     const previewHiddenCount = React.useMemo(() => {
         if (isExpanded || previewCount === 0) {
@@ -729,15 +688,14 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
             case 'reasoning':
                 return wrapRow(
                     row.activity.id,
-                    <>
-                        <InlineReasoningBlock
-                            activity={row.activity}
-                            onContentChange={onContentChange}
-                            providerID={providerID}
-                            responseStyleLevel={responseStyleLevel}
-                            isMobile={isMobile}
-                        />
-                    </>
+                    <ReasoningGroup
+                        entries={[{ part: row.activity.part, messageId: row.activity.messageId }]}
+                        providerID={row.activity.providerID ?? providerID}
+                        responseStyleLevel={responseStyleLevel}
+                        onContentChange={onContentChange}
+                        isMessageCompleted={isMessageCompleted}
+                        isMobile={isMobile}
+                    />
                 );
 
             case 'reasoning-group':
@@ -751,6 +709,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         providerID={row.activities[row.activities.length - 1]?.providerID ?? providerID}
                         responseStyleLevel={responseStyleLevel}
                         onContentChange={onContentChange}
+                        isMessageCompleted={isMessageCompleted}
                         isMobile={isMobile}
                     />
                 );
@@ -792,9 +751,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         activities={row.activities}
                         animateTailText={row.activities.some((activity) => animatedToolIds?.has(activity.id))}
                         animateRows={animateRows}
-                        generatedImages={generatedImages}
-                        onShowPopup={onShowPopup}
-                        onContentChange={onContentChange}
                     />
                 );
 
@@ -812,7 +768,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         onContentChange={onContentChange}
                         animateTailText={row.activities.some((activity) => animatedToolIds?.has(activity.id))}
                         animateRows={animateRows}
-                        generatedImages={generatedImages}
                     />
                 );
 

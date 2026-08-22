@@ -11,12 +11,11 @@ export type SettingsNavSection = {
 export const SETTINGS_NAV_SECTIONS = [
   {
     labelKey: 'settings.view.nav.group.general',
-    pages: ['appearance', 'notifications', 'shortcuts', 'voice', 'about'],
+    pages: ['appearance', 'notifications', 'shortcuts', 'commands', 'voice', 'about'],
   },
   {
     labelKey: 'settings.view.nav.group.workflow',
     pages: [
-      'chat',
       'sessions',
       'agents',
       'skills.installed',
@@ -30,6 +29,6 @@ export const SETTINGS_NAV_SECTIONS = [
   },
   {
     labelKey: 'settings.view.nav.group.development',
-    pages: ['users', 'bug-reports', 'git', 'projects', 'commands'],
+    pages: ['users', 'bug-reports', 'git', 'projects'],
   },
 ] satisfies readonly SettingsNavSection[];

@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test"
+import type { Part } from "@opencode-ai/sdk/v2/client"
 import {
   buildPlanCardRenderSegments,
   shouldStopAfterPlanCard,
   shouldSuppressPostPlanText,
 } from "./planCardRender"
+import { resolveMessagePlanCard } from "./actionablePlan"
 
 const structuredPlanBody = [
   "# Cursor Plan Card Fix",
@@ -241,5 +243,77 @@ describe("buildPlanCardRenderSegments", () => {
     expect(shouldStopAfterPlanCard(sentinelPlan, false, true)).toBe(true)
     expect(shouldStopAfterPlanCard(structuredPlan, true, false)).toBe(false)
     expect(shouldStopAfterPlanCard(structuredPlan, false, true)).toBe(false)
+  })
+})
+
+describe("reasoning-sourced plans in the text branch", () => {
+  // MessageBody's reasoning branch mounts the card for reasoning-sourced
+  // plans; the text branch must classify every text group as preserved
+  // preamble (the reasoning-heavy preambleText always overshoots the
+  // text-only offsets). This documents the invariant that change relies on.
+  test("classifies every text group as preserved preamble and never mounts the card", () => {
+    const messagePlan = resolveMessagePlanCard([
+      { id: "p1", sessionID: "s1", messageID: "m1", type: "text", text: "narration." } as Part,
+      { id: "p2", sessionID: "s1", messageID: "m1", type: "reasoning", text: `Thought.\n<!--plan-->\n${structuredPlanBody}` } as Part,
+    ], { isPlanModeSource: true })
+
+    expect(messagePlan?.source).toBe("reasoning")
+
+    const { segments, planCardRendered } = buildPlanCardRenderSegments({
+      groupText: "narration.",
+      groupStart: 0,
+      groupEnd: "narration.".length,
+      messagePlan: messagePlan!,
+      planCardRendered: false,
+      suppressPostPlanText: true,
+      mountPlanCard: true,
+    })
+
+    expect(planCardRendered).toBe(false)
+    expect(segments).toEqual([{ kind: "preserved-text", text: "narration." }])
+  })
+})
+
+describe("plan detection / render offset alignment", () => {
+  // Regression: MessageBody used to resolve the plan over ALL text parts while
+  // the render loop skipped justification-classified parts, so planStart could
+  // land beyond the last rendered group (groupEnd <= planStart) and the card
+  // silently never mounted. Detection now runs over the same filtered sequence
+  // the render loop consumes.
+  test("plan resolved over the render-aligned parts emits the card; misaligned offsets drop it", () => {
+    const justificationText = "I inspected the code paths first and here is a long rationale for the approach."
+    const planText = `# Plan\n\n## Context\n\nwhy\n\n## Implementation\n\n1. do`
+
+    const alignedPlan = resolveMessagePlanCard(
+      [{ id: "p2", messageID: "m1", sessionID: "s1", type: "text", text: `intro\n<!--plan-->\n${planText}` } as unknown as Part],
+    )
+    expect(alignedPlan).not.toBeNull()
+
+    const groupText = `intro\n${planText}`
+    const aligned = buildPlanCardRenderSegments({
+      groupText,
+      groupStart: 0,
+      groupEnd: groupText.length,
+      messagePlan: alignedPlan!,
+      planCardRendered: false,
+    })
+    expect(aligned.planCardRendered).toBe(true)
+
+    const misalignedPlan = resolveMessagePlanCard([
+      { id: "p1", messageID: "m1", sessionID: "s1", type: "text", text: justificationText } as unknown as Part,
+      { id: "p2", messageID: "m1", sessionID: "s1", type: "text", text: `intro\n<!--plan-->\n${planText}` } as unknown as Part,
+    ])
+    expect(misalignedPlan).not.toBeNull()
+
+    // Render loop that skipped the justification part but detection that
+    // counted it: the group offsets undershoot planStart by its length.
+    const misaligned = buildPlanCardRenderSegments({
+      groupText,
+      groupStart: 0,
+      groupEnd: groupText.length,
+      messagePlan: misalignedPlan!,
+      planCardRendered: false,
+    })
+    expect(misaligned.planCardRendered).toBe(false)
   })
 })

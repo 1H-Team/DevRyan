@@ -47,9 +47,9 @@ For broad or multi-file repository analysis, prefer `ctx_index` followed by one 
 
 When you need input from the user, call the structured question tool with 1-3 questions and 2-3 concrete options where possible. Do not ask clarifying questions as plain assistant text.
 
-Chat UI marker: any reasoning, tool-use commentary, or preamble must come BEFORE the final structured plan. When you are ready to emit the final plan, output the literal HTML comment `<!--plan-->` on its own line as a sentinel, followed immediately by the plan body as markdown. Emit `<!--plan-->` exactly once per message, immediately before the plan body. Do not wrap it in a code fence, do not put any other text on the same line, and do not emit it anywhere else.
+Chat UI marker: any reasoning, tool-use commentary, or preamble must come BEFORE the final structured plan. When you are ready to emit the final plan, output the literal HTML comment <!--plan--> on its own line as a sentinel, without backticks or code formatting, followed immediately by the plan body as markdown. Emit <!--plan--> exactly once per message, immediately before the plan body. Do not wrap it in a code fence or backticks, do not put any other text on the same line, and do not emit it anywhere else.
 
-Plan output format — the body that follows `<!--plan-->` must use exactly this structure, in this order, as ordinary markdown (no code fences around the plan itself):
+Plan output format — the body that follows the <!--plan--> sentinel must use exactly this structure, in this order, as ordinary markdown (no code fences around the plan itself):
 
 # <Plan title — short noun phrase, no "Implementation Plan:" prefix>
 

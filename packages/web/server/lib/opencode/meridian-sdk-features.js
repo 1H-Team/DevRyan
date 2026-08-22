@@ -1,9 +1,18 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 const POLICY_VERSION = 1;
-const MIGRATION_VERSION = 1;
+const MIGRATION_VERSION = 2;
 
 const MANAGED_OPEN_CODE_FEATURES = Object.freeze({
-  codeSystemPrompt: false,
+  codeSystemPrompt: true,
   clientSystemPrompt: true,
+});
+
+const CLAUDE_COMPATIBILITY_FEATURES = Object.freeze({
+  codeSystemPrompt: true,
+  clientSystemPrompt: false,
 });
 
 const LEGACY_OPEN_CODE_DEFAULTS = Object.freeze({
@@ -42,6 +51,27 @@ const readObjectFile = (fsApi, filePath, label) => {
 const writeObjectFile = (fsApi, pathApi, filePath, value) => {
   fsApi.mkdirSync(pathApi.dirname(filePath), { recursive: true });
   fsApi.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+};
+
+const resolvePromptFeaturePaths = (options = {}) => {
+  const pathApi = options.path || path;
+  const homedir = options.homedir || (() => os.homedir());
+  const configDirectory = options.configDirectory
+    || pathApi.join(homedir(), '.config', 'opencode');
+  const meridianConfigDirectory = options.meridianConfigDirectory
+    || pathApi.join(homedir(), '.config', 'meridian');
+  return {
+    fs: options.fs || fs,
+    path: pathApi,
+    settingsPath: options.settingsPath
+      || pathApi.join(meridianConfigDirectory, 'sdk-features.json'),
+    markerPath: options.markerPath
+      || pathApi.join(
+        configDirectory,
+        '.openchamber',
+        'meridian-sdk-features-policy.json',
+      ),
+  };
 };
 
 const isExactLegacyOpenCodeDefaults = (value) => (
@@ -203,13 +233,181 @@ const applyManagedMeridianSdkFeaturePolicy = ({
     promptMode,
     managedFields,
     preservedFields,
-    warning: promptMode === 'combined'
-      ? 'Meridian OpenCode has both the Claude Code and client system prompts enabled; this can substantially increase Anthropic context usage.'
-      : null,
+    warning: null,
+  };
+};
+
+const readMeridianPromptMode = (options = {}) => {
+  const resolved = resolvePromptFeaturePaths(options);
+  const settingsResult = readObjectFile(
+    resolved.fs,
+    resolved.settingsPath,
+    'Meridian SDK features',
+  );
+  if (!settingsResult.ok) {
+    return {
+      ok: false,
+      code: `meridian_sdk_features_${settingsResult.code}`,
+      error: settingsResult.error,
+    };
+  }
+  const settings = settingsResult.value;
+  if (
+    Object.prototype.hasOwnProperty.call(settings, 'opencode')
+    && !isRecord(settings.opencode)
+  ) {
+    return {
+      ok: false,
+      code: 'meridian_sdk_features_invalid_opencode',
+      error: 'Meridian SDK features "opencode" setting must contain a JSON object',
+    };
+  }
+  const openCode = isRecord(settings.opencode) ? settings.opencode : {};
+  const validation = validatePromptFields(openCode);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      code: `meridian_sdk_features_${validation.code}`,
+      error: validation.error,
+    };
+  }
+  const mode = getPromptMode(openCode);
+  return {
+    ok: true,
+    mode,
+    compatibilityMode: mode === 'claude-only',
+  };
+};
+
+const setMeridianPromptCompatibilityMode = (compatibilityMode, options = {}) => {
+  if (typeof compatibilityMode !== 'boolean') {
+    return {
+      ok: false,
+      changed: false,
+      code: 'invalid_compatibility_mode',
+      error: 'compatibilityMode must be a boolean',
+    };
+  }
+
+  const resolved = resolvePromptFeaturePaths(options);
+  const settingsResult = readObjectFile(
+    resolved.fs,
+    resolved.settingsPath,
+    'Meridian SDK features',
+  );
+  if (!settingsResult.ok) {
+    return {
+      ok: false,
+      changed: false,
+      code: `meridian_sdk_features_${settingsResult.code}`,
+      error: settingsResult.error,
+    };
+  }
+  const markerResult = readObjectFile(
+    resolved.fs,
+    resolved.markerPath,
+    'DevRyan Meridian policy marker',
+  );
+  if (!markerResult.ok) {
+    return {
+      ok: false,
+      changed: false,
+      code: `meridian_policy_marker_${markerResult.code}`,
+      error: markerResult.error,
+    };
+  }
+  if (markerResult.exists && markerResult.value.version !== POLICY_VERSION) {
+    return {
+      ok: false,
+      changed: false,
+      code: 'meridian_policy_marker_unsupported_version',
+      error: 'DevRyan Meridian policy marker has an unsupported version',
+    };
+  }
+
+  const settings = settingsResult.value;
+  if (
+    Object.prototype.hasOwnProperty.call(settings, 'opencode')
+    && !isRecord(settings.opencode)
+  ) {
+    return {
+      ok: false,
+      changed: false,
+      code: 'meridian_sdk_features_invalid_opencode',
+      error: 'Meridian SDK features "opencode" setting must contain a JSON object',
+    };
+  }
+  const currentOpenCode = isRecord(settings.opencode) ? settings.opencode : {};
+  const validation = validatePromptFields(currentOpenCode);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      changed: false,
+      code: `meridian_sdk_features_${validation.code}`,
+      error: validation.error,
+    };
+  }
+
+  const desired = compatibilityMode
+    ? CLAUDE_COMPATIBILITY_FEATURES
+    : MANAGED_OPEN_CODE_FEATURES;
+  const nextSettings = {
+    ...settings,
+    opencode: {
+      ...currentOpenCode,
+      ...desired,
+    },
+  };
+  // An explicit UI choice is user-owned. Empty managed fields prevent startup
+  // provisioning from undoing compatibility mode or a later explicit disable.
+  const nextMarker = {
+    version: POLICY_VERSION,
+    migrationVersion: MIGRATION_VERSION,
+    fields: {},
+  };
+  const settingsChanged = !settingsResult.exists
+    || JSON.stringify(settings) !== JSON.stringify(nextSettings);
+  const markerChanged = !markerResult.exists
+    || JSON.stringify(markerResult.value) !== JSON.stringify(nextMarker);
+
+  try {
+    if (settingsChanged) {
+      writeObjectFile(resolved.fs, resolved.path, resolved.settingsPath, nextSettings);
+    }
+    if (markerChanged) {
+      writeObjectFile(resolved.fs, resolved.path, resolved.markerPath, nextMarker);
+    }
+  } catch (error) {
+    if (settingsChanged) {
+      try {
+        if (settingsResult.exists) {
+          writeObjectFile(resolved.fs, resolved.path, resolved.settingsPath, settings);
+        } else {
+          resolved.fs.rmSync(resolved.settingsPath, { force: true });
+        }
+      } catch {
+        // Preserve the original write failure; the next policy read remains fail-visible.
+      }
+    }
+    return {
+      ok: false,
+      changed: false,
+      code: 'meridian_prompt_mode_write_failed',
+      error: error instanceof Error ? error.message : 'Failed to write Meridian prompt mode',
+    };
+  }
+
+  const mode = getPromptMode(nextSettings.opencode);
+  return {
+    ok: true,
+    changed: settingsChanged || markerChanged,
+    mode,
+    compatibilityMode: mode === 'claude-only',
   };
 };
 
 export {
+  CLAUDE_COMPATIBILITY_FEATURES,
   LEGACY_OPEN_CODE_DEFAULTS,
   MANAGED_OPEN_CODE_FEATURES,
   MIGRATION_VERSION,
@@ -217,4 +415,6 @@ export {
   applyManagedMeridianSdkFeaturePolicy,
   getPromptMode,
   isExactLegacyOpenCodeDefaults,
+  readMeridianPromptMode,
+  setMeridianPromptCompatibilityMode,
 };

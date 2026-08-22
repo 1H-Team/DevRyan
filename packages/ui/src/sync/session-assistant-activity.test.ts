@@ -39,6 +39,7 @@ describe('getLastVisibleAssistantResponseAt', () => {
 
     const latest = getLastVisibleAssistantResponseAt(session, [
       message('m2', 'assistant', { created: 1_000, completed: 2_000 }),
+      message('m3', 'user', { created: 2_500 }),
       message('m4', 'assistant', { created: 3_000, completed: 4_000 }),
     ]);
 

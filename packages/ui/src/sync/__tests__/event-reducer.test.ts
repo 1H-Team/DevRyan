@@ -137,6 +137,33 @@ function todoUpdatedEvent(sessionID: string, todos: Todo[]): Event {
 }
 
 describe("applyDirectoryEvent", () => {
+  test("reinserts a message when an update changes its creation time", () => {
+    const first = testMessage("msg_fff", "ses_1", "user", 10)
+    const second = testMessage("msg_000", "ses_1", "assistant", 20)
+    const draft = state({ message: { ses_1: [first, second] } })
+
+    expect(applyDirectoryEvent(draft, messageUpdatedEvent({ ...first, time: { created: 30 } } as Message))).toBe(true)
+    expect(draft.message.ses_1.map((message) => message.id)).toEqual(["msg_000", "msg_fff"])
+  })
+
+  test("appends new parts in event order across rollover-prone IDs", () => {
+    const draft = state({
+      message: { ses_1: [testMessage("msg_1", "ses_1", "assistant", 1)] },
+      part: {
+        msg_1: [{ id: "prt_fff", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "first" } as Part],
+      },
+    })
+    const event = {
+      type: "message.part.updated",
+      properties: {
+        part: { id: "prt_000", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "second" },
+      },
+    } as Event
+
+    expect(applyDirectoryEvent(draft, event)).toBe(true)
+    expect(draft.part.msg_1.map((part) => part.id)).toEqual(["prt_fff", "prt_000"])
+  })
+
   test("returns typed materialization when delta arrives before parts", () => {
     const result = applyDirectoryEvent(state(), deltaEvent())
 
@@ -322,6 +349,82 @@ describe("applyDirectoryEvent", () => {
     expect(applyDirectoryEvent(draft, partUpdatedEvent("ab"))).toBe(true)
 
     expect((draft.part.msg_1[0] as { text?: string }).text).toBe("ab")
+  })
+
+  test("keeps longer streamed text when a shorter not-ended snapshot arrives", () => {
+    const draft = state({
+      message: { ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as never] },
+    })
+
+    expect(applyDirectoryEvent(draft, partUpdatedEvent("Hello"))).toBe(true)
+    expect(applyDirectoryEvent(draft, deltaEvent(" world"))).toBe(true)
+    // Stale snapshot generated before the delta was applied.
+    expect(applyDirectoryEvent(draft, partUpdatedEvent("Hello"))).toBe(true)
+
+    expect((draft.part.msg_1[0] as { text?: string }).text).toBe("Hello world")
+
+    // The armed dedupe replay must still append the next delta correctly.
+    expect(applyDirectoryEvent(draft, deltaEvent("!"))).toBe(true)
+    expect((draft.part.msg_1[0] as { text?: string }).text).toBe("Hello world!")
+  })
+
+  test("keeps longer streamed reasoning text when a shorter not-ended snapshot arrives", () => {
+    const draft = state({
+      message: { ses_1: [{ id: "msg_reasoning_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as never] },
+    })
+    const reasoningDelta = (delta: string): Event => ({
+      type: "message.part.delta",
+      properties: {
+        messageID: "msg_reasoning_1",
+        partID: "prt_reasoning_1",
+        field: "text",
+        delta,
+      },
+    } as Event)
+
+    expect(applyDirectoryEvent(draft, reasoningPartUpdatedEvent("Let me follow the planning"))).toBe(true)
+    expect(applyDirectoryEvent(draft, reasoningDelta(" instructions carefully."))).toBe(true)
+    expect(applyDirectoryEvent(draft, reasoningPartUpdatedEvent("Let me follow the planning"))).toBe(true)
+
+    expect((draft.part.msg_reasoning_1[0] as { text?: string }).text)
+      .toBe("Let me follow the planning instructions carefully.")
+  })
+
+  test("an ended snapshot replaces longer local text", () => {
+    const draft = state({
+      message: { ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as never] },
+    })
+    const endedSnapshot = {
+      type: "message.part.updated",
+      properties: {
+        part: {
+          id: "prt_1",
+          messageID: "msg_1",
+          sessionID: "ses_1",
+          type: "text",
+          text: "Hello",
+          time: { start: 1, end: 2 },
+        },
+      },
+    } as Event
+
+    expect(applyDirectoryEvent(draft, partUpdatedEvent("Hello"))).toBe(true)
+    expect(applyDirectoryEvent(draft, deltaEvent(" world"))).toBe(true)
+    expect(applyDirectoryEvent(draft, endedSnapshot)).toBe(true)
+
+    expect((draft.part.msg_1[0] as { text?: string }).text).toBe("Hello")
+  })
+
+  test("a non-prefix snapshot rewrite still replaces local text", () => {
+    const draft = state({
+      message: { ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as never] },
+    })
+
+    expect(applyDirectoryEvent(draft, partUpdatedEvent("Hello"))).toBe(true)
+    expect(applyDirectoryEvent(draft, deltaEvent(" world"))).toBe(true)
+    expect(applyDirectoryEvent(draft, partUpdatedEvent("Goodbye"))).toBe(true)
+
+    expect((draft.part.msg_1[0] as { text?: string }).text).toBe("Goodbye")
   })
 
   test("skips duplicate session status events", () => {
@@ -1207,5 +1310,66 @@ describe("applyDirectoryEvent", () => {
     } as Message))
 
     expect((draft.part.msg_1[0] as { text?: string }).text).toBe("before")
+  })
+})
+
+describe("provisional delta-materialized parts", () => {
+  test("authoritative part update replaces the provisional part and later deltas append without duplication", () => {
+    const draft = state({
+      message: { ses_1: [testMessage("msg_1", "ses_1", "assistant", 1)] },
+      part: {
+        msg_1: [{
+          id: "prt_1",
+          messageID: "msg_1",
+          sessionID: "ses_1",
+          type: "text",
+          text: "Hello",
+          __provisionalFromDelta: true,
+        } as unknown as Part],
+      },
+    })
+
+    expect(applyDirectoryEvent(draft, partUpdatedEvent("Hello"))).not.toBe(false)
+    const replaced = draft.part.msg_1[0] as unknown as Record<string, unknown>
+    expect(replaced.__provisionalFromDelta).toBe(undefined)
+    expect(replaced.text).toBe("Hello")
+
+    expect(applyDirectoryEvent(draft, deltaEvent("Hello world"))).toBe(true)
+    expect((draft.part.msg_1[0] as { text?: string }).text).toBe("Hello world")
+  })
+
+  test("an authoritative update of a different type replaces a wrongly guessed provisional text part", () => {
+    const draft = state({
+      message: { ses_1: [testMessage("msg_1", "ses_1", "assistant", 1)] },
+      part: {
+        msg_1: [{
+          id: "prt_reasoning_1",
+          messageID: "msg_1",
+          sessionID: "ses_1",
+          type: "text",
+          text: "thinking aloud",
+          __provisionalFromDelta: true,
+        } as unknown as Part],
+      },
+    })
+
+    const authoritative: Event = {
+      type: "message.part.updated",
+      properties: {
+        part: {
+          id: "prt_reasoning_1",
+          messageID: "msg_1",
+          sessionID: "ses_1",
+          type: "reasoning",
+          text: "thinking aloud",
+          time: { start: 1 },
+        },
+      },
+    } as Event
+
+    expect(applyDirectoryEvent(draft, authoritative)).not.toBe(false)
+    const replaced = draft.part.msg_1[0] as unknown as Record<string, unknown>
+    expect(replaced.type).toBe("reasoning")
+    expect(replaced.__provisionalFromDelta).toBe(undefined)
   })
 })

@@ -21,6 +21,7 @@ export const PROVIDER_TRANSPORT_FAILURE_KINDS = Object.freeze([
   'response_header_timeout',
   'stream_idle_timeout',
   'connection_failure',
+  'provider_queue_timeout',
 ]);
 
 const normalizeTransportFailureText = (value) => {
@@ -50,11 +51,26 @@ const STREAM_IDLE_TIMEOUT_PATTERN = /(?:\bund_err_body_timeout\b|\bchunk timeout
 const REQUEST_TIMEOUT_PATTERN = /^(?:(?:unknown\s*error|unknownerror)\s*:\s*)?(?:(?:the )?(?:operation|request) (?:has )?timed out|request timeout(?:error)?|timeout(?:error)?)\.?$/i;
 const CONNECTION_FAILURE_PATTERN = /(?:^terminated$|\beconn(?:aborted|refused|reset)\b|\behostunreach\b|\benet(?:down|unreach)\b|\benotfound\b|\bepipe\b|\betimedout\b|\bund_err_(?:connect_timeout|socket)\b|\bstreaming response failed\b|\bupstream request failed\b|\bpremature(?:ly)? close(?:d)?\b|\bsocket hang up\b|\bconnection (?:closed|dropped|failed|lost|refused|reset|terminated)\b|\bnetwork (?:connection )?(?:error|failure)\b|\bfetch failed\b)/i;
 
+/**
+ * Provider-side queue/capacity failures. These are transient — the same prompt
+ * succeeds on retry — but they must be matched BEFORE
+ * NON_TRANSPORT_FAILURE_PATTERN, because xAI phrases its queue timeout as
+ * `Request <id> timed out in queue, abort.` and that trailing "abort" otherwise
+ * short-circuits the classifier into treating the whole thing as fatal.
+ * Observed live on 2026-08-21 (three occurrences, at 97k/59k/266k context, so
+ * this is provider infrastructure and not a payload-size problem).
+ */
+const PROVIDER_QUEUE_FAILURE_PATTERN = /(?:\btimed out in queue\b|\bservice (?:is )?temporarily unavailable\b|\bthe model did not respond\b|\bmodel is overloaded\b|\bserver is overloaded\b|\bcapacity exceeded\b|\bno capacity available\b)/i;
+
 export const classifyProviderTransportFailure = (name, detail) => {
   const normalizedName = normalizeTransportFailureText(name);
   const normalizedDetail = normalizeTransportFailureText(detail);
   const combined = [normalizedName, normalizedDetail].filter(Boolean).join(': ');
   const compactName = normalizedName.replace(/[^a-z0-9]+/gi, '');
+  // Checked first: these strings can legitimately contain "abort"/"cancelled".
+  if (combined && PROVIDER_QUEUE_FAILURE_PATTERN.test(combined)) {
+    return 'provider_queue_timeout';
+  }
   if (
     !combined
     || NON_TRANSPORT_FAILURE_NAME_PATTERN.test(compactName)

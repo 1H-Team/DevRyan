@@ -3,11 +3,16 @@ import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import {
   PLAN_IMPLEMENTATION_REQUEST_PREFIX,
   buildPlanImplementationRequestMarker,
+  findPlanCardReasoningPartIndex,
+  findPlanCardSentinel,
+  hasStructuredPlanBody,
   isPlanModeUserMessage,
   parsePlanImplementationRequestPart,
   resolveMessagePlanCard,
   resolvePlanCardSplit,
   splitPlanCardSentinel,
+  splitReasoningPartPlan,
+  stripPlanCardSentinel,
 } from "./actionablePlan"
 
 const userMessage = (id: string): Message => ({
@@ -185,6 +190,49 @@ describe("splitPlanCardSentinel", () => {
       source: "sentinel",
     })
   })
+
+  test("tolerates an inline-code backticked sentinel (Grok echoes the prompt's formatting)", () => {
+    expect(splitPlanCardSentinel("intro\n`<!--plan-->`\n# Plan")).toEqual({
+      preambleText: "intro\n",
+      planText: "# Plan",
+      source: "sentinel",
+    })
+  })
+
+  test("tolerates internal spaces inside the comment", () => {
+    expect(splitPlanCardSentinel("intro\n<!-- plan -->\n# Plan")).toEqual({
+      preambleText: "intro\n",
+      planText: "# Plan",
+      source: "sentinel",
+    })
+  })
+
+  test("still rejects a sentinel with other text on the same line", () => {
+    expect(splitPlanCardSentinel("intro\n<!--plan--> # Plan title")).toBeNull()
+    expect(splitPlanCardSentinel("See `<!--plan-->` for details\nmore")).toBeNull()
+  })
+})
+
+describe("sentinel find/strip tolerant forms", () => {
+  test("findPlanCardSentinel locates bare and decorated sentinels", () => {
+    expect(findPlanCardSentinel("abc\n<!--plan-->\nplan")).toBe(4)
+    expect(findPlanCardSentinel("abc\n`<!--plan-->`\nplan")).toBe(4)
+    expect(findPlanCardSentinel("abc\n<!-- plan -->\nplan")).toBe(4)
+    expect(findPlanCardSentinel("no marker")).toBe(-1)
+  })
+
+  test("stripPlanCardSentinel removes decorated sentinels", () => {
+    expect(stripPlanCardSentinel("intro\n`<!--plan-->`\n# Plan")).toBe("intro\n# Plan")
+    expect(stripPlanCardSentinel("intro\n<!-- plan -->\n# Plan")).toBe("intro\n# Plan")
+  })
+})
+
+describe("hasStructuredPlanBody", () => {
+  test("matches a structured plan body and rejects ordinary prose", () => {
+    const body = ["# Title", "", "## Context", "", "why", "", "## Implementation", "", "1. do"].join("\n")
+    expect(hasStructuredPlanBody(body)).toBe(true)
+    expect(hasStructuredPlanBody("just an ordinary answer\nwith lines")).toBe(false)
+  })
 })
 
 const structuredPlanBody = [
@@ -277,5 +325,102 @@ describe("resolveMessagePlanCard", () => {
       planText: structuredPlanBody,
       source: "reasoning",
     })
+  })
+
+  test("uses a sentinel emitted inside a reasoning part (Grok emits it on the reasoning channel)", () => {
+    expect(resolveMessagePlanCard([
+      textPart("msg_1", "narration."),
+      reasoningPart("msg_1", `Preamble thought.\n<!--plan-->\n${structuredPlanBody}`),
+    ], { isPlanModeSource: true })).toEqual({
+      preambleText: "narration.\n",
+      planText: structuredPlanBody,
+      source: "reasoning",
+    })
+  })
+
+  test("joins a plan started in reasoning with its text continuation (straddle)", () => {
+    const planHead = ["# Zen Fix", "", "## Context", "", "why it broke"].join("\n")
+    const planTail = ["## Implementation", "", "1. do", "", "## Verification", "", "1. run tests."].join("\n")
+    expect(resolveMessagePlanCard([
+      reasoningPart("msg_1", `Thinking about the approach.\n<!--plan-->\n${planHead}`),
+      textPart("msg_1", planTail),
+    ], { isPlanModeSource: true })).toEqual({
+      preambleText: "",
+      planText: `${planHead}\n${planTail}`,
+      source: "reasoning",
+    })
+  })
+
+  test("does not glue a narration tail after a mid-turn reasoning plan fragment into the card", () => {
+    const planFragment = ["# Diagnosis", "", "## Context", "", "words"].join("\n")
+    expect(resolveMessagePlanCard([
+      reasoningPart("msg_1", `Perfect!\n<!--plan-->\n${planFragment}`),
+      textPart("msg_1", "The catalog id is x. I'll reproduce the failure next."),
+    ], { isPlanModeSource: true })).toEqual({
+      preambleText: "The catalog id is x. I'll reproduce the failure next.\n",
+      planText: planFragment,
+      source: "reasoning",
+    })
+  })
+
+  test("does not displace a self-contained text plan with a reasoning draft", () => {
+    expect(resolveMessagePlanCard([
+      reasoningPart("msg_1", ["# Old Draft", "", "## Context", "", "old thinking."].join("\n")),
+      textPart("msg_1", structuredPlanBody),
+    ], { isPlanModeSource: true })).toEqual({
+      preambleText: "",
+      planText: structuredPlanBody,
+      source: "structured",
+    })
+  })
+})
+
+describe("splitReasoningPartPlan", () => {
+  test("splits at the sentinel and reports reasoning source", () => {
+    expect(splitReasoningPartPlan(`Thought.\n<!--plan-->\n${structuredPlanBody}`)).toEqual({
+      preambleText: "Thought.\n",
+      planText: structuredPlanBody,
+      source: "reasoning",
+    })
+  })
+
+  test("falls back to structured headings", () => {
+    expect(splitReasoningPartPlan(`Thought.\n${structuredPlanBody}`)).toEqual({
+      preambleText: "Thought.\n",
+      planText: structuredPlanBody,
+      source: "reasoning",
+    })
+  })
+
+  test("returns null for plain thought text", () => {
+    expect(splitReasoningPartPlan("Just thinking about the failing test.")).toBeNull()
+  })
+})
+
+describe("findPlanCardReasoningPartIndex", () => {
+  test("returns -1 outside plan mode and when the plan is text-sourced", () => {
+    expect(findPlanCardReasoningPartIndex([
+      reasoningPart("msg_1", structuredPlanBody),
+    ], { isPlanModeSource: false })).toBe(-1)
+    expect(findPlanCardReasoningPartIndex([
+      textPart("msg_1", `intro\n<!--plan-->\n${structuredPlanBody}`),
+      reasoningPart("msg_1", "trailing thought."),
+    ], { isPlanModeSource: true })).toBe(-1)
+  })
+
+  test("returns the sentinel-bearing reasoning part index", () => {
+    expect(findPlanCardReasoningPartIndex([
+      textPart("msg_1", "narration."),
+      reasoningPart("msg_1", `Preamble thought.\n<!--plan-->\n${structuredPlanBody}`),
+    ], { isPlanModeSource: true })).toBe(1)
+  })
+
+  test("returns the straddle head index and agrees with resolveMessagePlanCard", () => {
+    const parts = [
+      reasoningPart("msg_1", `Thinking.\n<!--plan-->\n# Zen Fix\n\n## Context\n\nwhy`),
+      textPart("msg_1", "## Implementation\n\n1. do\n\n## Verification\n\n1. run tests."),
+    ]
+    expect(findPlanCardReasoningPartIndex(parts, { isPlanModeSource: true })).toBe(0)
+    expect(resolveMessagePlanCard(parts, { isPlanModeSource: true })?.source).toBe("reasoning")
   })
 })

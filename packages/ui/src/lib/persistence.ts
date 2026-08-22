@@ -450,6 +450,9 @@ const applyDesktopUiPreferences = (
   if (typeof settings.notifyOnQuestion === 'boolean' && settings.notifyOnQuestion !== store.notifyOnQuestion) {
     store.setNotifyOnQuestion(settings.notifyOnQuestion);
   }
+  if (typeof settings.notifyOnPermission === 'boolean' && settings.notifyOnPermission !== store.notifyOnPermission) {
+    store.setNotifyOnPermission(settings.notifyOnPermission);
+  }
   if (settings.notificationTemplates && typeof settings.notificationTemplates === 'object') {
     const templates = resolveNotificationTemplatesFromSettingsSnapshot({
       baseline: options?.notificationTemplatesBaseline,
@@ -846,6 +849,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.notifyOnQuestion === 'boolean') {
     result.notifyOnQuestion = candidate.notifyOnQuestion;
   }
+  if (typeof candidate.notifyOnPermission === 'boolean') {
+    result.notifyOnPermission = candidate.notifyOnPermission;
+  }
   if (candidate.notificationTemplates && typeof candidate.notificationTemplates === 'object') {
     const templates = candidate.notificationTemplates as Record<string, unknown>;
     const validateTemplate = (key: string): { title: string; message: string } | undefined => {
@@ -860,13 +866,15 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
     const planReady = validateTemplate('planReady');
     const error = validateTemplate('error');
     const question = validateTemplate('question');
+    const permission = validateTemplate('permission');
     const subtask = validateTemplate('subtask');
-    if (completion || planReady || error || question || subtask) {
+    if (completion || planReady || error || question || permission || subtask) {
       result.notificationTemplates = {
         completion: completion ?? { title: 'Task Complete', message: 'Your task has finished.' },
         planReady: planReady ?? { title: 'Plan ready', message: 'A plan is ready for review' },
         error: error ?? { title: 'Error Occurred', message: 'An error occurred while processing your task.' },
         question: question ?? { title: 'Input Needed', message: 'Please provide input to continue.' },
+        permission: permission ?? { title: 'Permissions needed', message: '{last_message}' },
         subtask: subtask ?? { title: 'Subtask Complete', message: 'A subtask has finished.' },
       };
     }

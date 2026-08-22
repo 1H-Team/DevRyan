@@ -39,6 +39,15 @@ describe("validateCommitMessage", () => {
     expect(result.valid).toBe(true)
   })
 
+  test("accepts generated bullet details after the subject", () => {
+    const result = validateCommitMessage(`perf(git): speed commit drafts
+
+- Batch selected Git diffs
+- Fall back within the latency budget`)
+    expect(result.valid).toBe(true)
+    expect(result.cleaned).toContain("- Batch selected Git diffs")
+  })
+
   test("rejects empty message", () => {
     const result = validateCommitMessage("")
     expect(result.valid).toBe(false)

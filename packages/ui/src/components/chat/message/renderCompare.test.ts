@@ -116,19 +116,23 @@ describe('areRelevantTurnGroupingContextsEqual', () => {
     expect(areRelevantTurnGroupingContextsEqual(first, second, 'assistant-1', false)).toBe(true);
   });
 
-  test('limits generated-image projection changes to the linked message', () => {
-    const first = createTurnContext({ generatedImages: [] });
+  test('limits assistant-image projection changes to the final assistant message', () => {
+    const first = createTurnContext({ assistantImageMessages: [] });
     const second = createTurnContext({
-      generatedImages: [{
-        toolPartId: 'image-tool',
-        path: '/repo/apple.png',
-        filename: 'apple.png',
-        linkedMessageId: 'assistant-2',
+      assistantImageMessages: [{
+        messageId: 'assistant-2',
+        parts: [{ id: 'image-text', type: 'text', text: '![Apple](/repo/apple.png)' } as Part],
       }],
+      isLastAssistantInTurn: true,
     });
 
     expect(areRelevantTurnGroupingContextsEqual(first, second, 'assistant-2', false)).toBe(false);
-    expect(areRelevantTurnGroupingContextsEqual(first, second, 'assistant-1', false)).toBe(true);
+    const nonFinalFirst = createTurnContext({ assistantImageMessages: [], isLastAssistantInTurn: false });
+    const nonFinalSecond = createTurnContext({
+      assistantImageMessages: second.assistantImageMessages,
+      isLastAssistantInTurn: false,
+    });
+    expect(areRelevantTurnGroupingContextsEqual(nonFinalFirst, nonFinalSecond, 'assistant-1', false)).toBe(true);
   });
 });
 

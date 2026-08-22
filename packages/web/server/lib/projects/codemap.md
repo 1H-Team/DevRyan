@@ -10,7 +10,8 @@ ID derivation.
 - **Defensive constraints**: max lengths, timezone validation (IANA), cron parsing, schedule kind guards.
 - **Versioned config model** (`PROJECT_CONFIG_VERSION`) for forward-compatible persistence.
 - **Lossless atomic writes** preserve unrelated/future keys while using the
-  harness fsync/rename primitive.
+  harness fsync/rename primitive. Every mutation also holds the per-project
+  cross-process lock, including scheduler claim/state compare-and-update flows.
 - **Shared path identity** (`project-id.js`) derives both stable project IDs and the matching active-project plan directory under `~/.config/openchamber/projects`.
 
 ## Flow

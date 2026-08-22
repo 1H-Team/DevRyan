@@ -312,6 +312,50 @@ describe('VS Code Cursor SDK config handling', () => {
     fs.rmSync(projectDir, { recursive: true, force: true });
   });
 
+  it('classifies Antigravity models nested under Google as a project source', async () => {
+    const { getProviderSources } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-antigravity-source-'));
+    const configPath = path.join(projectDir, '.opencode', 'opencode.json');
+    writeJson(configPath, {
+      provider: {
+        google: {
+          models: {
+            'antigravity-gemini-3-pro': { name: 'Gemini 3 Pro (Antigravity)' },
+          },
+        },
+      },
+    });
+
+    try {
+      expect(getProviderSources('antigravity', projectDir).project).toEqual({
+        exists: true,
+        path: configPath,
+      });
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('classifies and removes Google config aliases together', async () => {
+    const { getProviderSources, removeProviderConfig } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-google-alias-'));
+    const configPath = path.join(projectDir, '.opencode', 'opencode.json');
+    writeJson(configPath, {
+      provider: {
+        google: { models: { gemini: { name: 'Gemini' } } },
+        'google.oauth': { options: { legacy: true } },
+      },
+    });
+
+    try {
+      expect(getProviderSources('google', projectDir).project.exists).toBe(true);
+      expect(removeProviderConfig('google', projectDir, 'project')).toBe(true);
+      expect(readJson(configPath).provider).toBeUndefined();
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it('does not synthesize direct OpenAI GPT-5.6 model availability', async () => {
     const { syncRuntimeAgentOverlays } = await loadRuntime();
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-native-ultra-'));

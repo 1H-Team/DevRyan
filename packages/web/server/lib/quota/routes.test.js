@@ -73,6 +73,35 @@ describe('managed quota credential routes', () => {
     expect(JSON.stringify(response.body)).not.toContain('secret-cookie');
   });
 
+  it('accepts the OpenCode Zen dashboard shape and never returns workspace or cookie values', async () => {
+    const { app, runtime } = createApp({
+      getStatus: vi.fn(() => ({
+        configured: true,
+        credentialKind: 'dashboard',
+        secretMasked: '••••••••',
+      })),
+      getEffectiveSource: vi.fn(() => 'managed'),
+    });
+    const credential = {
+      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
+      authCookie: 'signed-cookie',
+    };
+    const response = await request(app)
+      .put('/api/quota/credentials/opencode')
+      .send(credential)
+      .expect(200);
+    expect(runtime.validate).toHaveBeenCalledWith('opencode', credential);
+    expect(runtime.writeCredential).toHaveBeenCalledWith('opencode', credential);
+    expect(response.body).toEqual({
+      configured: true,
+      credentialKind: 'dashboard',
+      secretMasked: '••••••••',
+      effectiveSource: 'managed',
+    });
+    expect(JSON.stringify(response.body)).not.toContain('wrk_');
+    expect(JSON.stringify(response.body)).not.toContain('signed-cookie');
+  });
+
   it('does not write invalid credentials and emits stable error codes', async () => {
     const { app, runtime } = createApp({
       validate: vi.fn(async () => { throw new Error('remote included a secret'); }),

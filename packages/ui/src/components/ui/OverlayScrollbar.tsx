@@ -1,5 +1,12 @@
 import React from "react";
 import { cn } from "@/lib/utils";
+import {
+  calculateOverlayScrollbarThumb,
+  isPersistentDesktopOverlayScrollbar,
+  resolvePersistentOverlayScrollbarVisibility,
+  scheduleOverlayScrollbarAutoHide,
+  type OverlayScrollbarThumbMetrics,
+} from "./overlayScrollbarBehavior";
 
 type OverlayScrollbarProps = {
   containerRef: React.RefObject<HTMLElement | null>;
@@ -12,16 +19,11 @@ type OverlayScrollbarProps = {
   userIntentOnly?: boolean;
 };
 
-type ThumbMetrics = {
-  length: number;
-  offset: number;
-};
-
 const USER_SCROLL_INTENT_WINDOW_MS = 1000;
 const METRIC_EPSILON = 0.5;
-const EMPTY_THUMB: ThumbMetrics = { length: 0, offset: 0 };
+const EMPTY_THUMB: OverlayScrollbarThumbMetrics = { length: 0, offset: 0 };
 
-const isSameThumbMetrics = (a: ThumbMetrics, b: ThumbMetrics): boolean => {
+const isSameThumbMetrics = (a: OverlayScrollbarThumbMetrics, b: OverlayScrollbarThumbMetrics): boolean => {
   return Math.abs(a.length - b.length) < METRIC_EPSILON && Math.abs(a.offset - b.offset) < METRIC_EPSILON;
 };
 
@@ -36,8 +38,8 @@ const OverlayScrollbarComponent: React.FC<OverlayScrollbarProps> = ({
   userIntentOnly = false,
 }) => {
   const [visible, setVisible] = React.useState(false);
-  const [vertical, setVertical] = React.useState<ThumbMetrics>({ length: 0, offset: 0 });
-  const [horizontal, setHorizontal] = React.useState<ThumbMetrics>({ length: 0, offset: 0 });
+  const [vertical, setVertical] = React.useState<OverlayScrollbarThumbMetrics>({ length: 0, offset: 0 });
+  const [horizontal, setHorizontal] = React.useState<OverlayScrollbarThumbMetrics>({ length: 0, offset: 0 });
   const hideTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const frameRef = React.useRef<number | null>(null);
   const metricsFrameRef = React.useRef<number | null>(null);
@@ -52,6 +54,7 @@ const OverlayScrollbarComponent: React.FC<OverlayScrollbarProps> = ({
   }>({ pointerX: 0, pointerY: 0, scrollTop: 0, scrollLeft: 0 });
   const dragAxisRef = React.useRef<"vertical" | "horizontal" | null>(null);
   const observedElementsRef = React.useRef<Set<Element>>(new Set());
+  const persistentVisibility = isPersistentDesktopOverlayScrollbar(userIntentOnly);
 
   const updateMetrics = React.useCallback(() => {
     const container = containerRef.current;
@@ -60,30 +63,34 @@ const OverlayScrollbarComponent: React.FC<OverlayScrollbarProps> = ({
     const { scrollHeight, clientHeight, scrollTop, scrollWidth, clientWidth, scrollLeft } = container;
     const trackInset = 8;
 
-    let nextVertical: ThumbMetrics = EMPTY_THUMB;
-    if (scrollHeight > clientHeight) {
-      const trackLength = Math.max(clientHeight - trackInset * 2, 0);
-      const rawThumb = (clientHeight / scrollHeight) * trackLength;
-      const length = Math.max(minThumbSize, Math.min(trackLength, rawThumb));
-      const maxOffset = Math.max(trackLength - length, 0);
-      const maxScroll = Math.max(scrollHeight - clientHeight, 1);
-      const offset = (scrollTop / maxScroll) * maxOffset;
-      nextVertical = { length, offset };
-    }
+    const nextVertical = calculateOverlayScrollbarThumb({
+      scrollLength: scrollHeight,
+      clientLength: clientHeight,
+      scrollOffset: scrollTop,
+      minThumbSize,
+      trackInset,
+    });
     setVertical((prev) => (isSameThumbMetrics(prev, nextVertical) ? prev : nextVertical));
 
-    let nextHorizontal: ThumbMetrics = EMPTY_THUMB;
-    if (!disableHorizontal && scrollWidth > clientWidth) {
-      const trackLength = Math.max(clientWidth - trackInset * 2, 0);
-      const rawThumb = (clientWidth / scrollWidth) * trackLength;
-      const length = Math.max(minThumbSize, Math.min(trackLength, rawThumb));
-      const maxOffset = Math.max(trackLength - length, 0);
-      const maxScroll = Math.max(scrollWidth - clientWidth, 1);
-      const offset = (scrollLeft / maxScroll) * maxOffset;
-      nextHorizontal = { length, offset };
-    }
+    const nextHorizontal = disableHorizontal
+      ? EMPTY_THUMB
+      : calculateOverlayScrollbarThumb({
+          scrollLength: scrollWidth,
+          clientLength: clientWidth,
+          scrollOffset: scrollLeft,
+          minThumbSize,
+          trackInset,
+        });
     setHorizontal((prev) => (isSameThumbMetrics(prev, nextHorizontal) ? prev : nextHorizontal));
-  }, [containerRef, minThumbSize, disableHorizontal]);
+
+    if (persistentVisibility && !isDraggingRef.current) {
+      setVisible(resolvePersistentOverlayScrollbarVisibility(
+        persistentVisibility,
+        suppressVisibility,
+        nextVertical.length > 0 || nextHorizontal.length > 0,
+      ));
+    }
+  }, [containerRef, minThumbSize, disableHorizontal, persistentVisibility, suppressVisibility]);
 
   const scheduleMetricsUpdate = React.useCallback(() => {
     if (metricsFrameRef.current !== null) return;
@@ -123,13 +130,19 @@ const OverlayScrollbarComponent: React.FC<OverlayScrollbarProps> = ({
   const scheduleHide = React.useCallback(() => {
     if (hideTimeoutRef.current) {
       clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
     }
+    if (persistentVisibility) return;
     // Don't schedule hide if hovering over the thumb
     if (isHoveringRef.current) {
       return;
     }
-    hideTimeoutRef.current = setTimeout(() => setVisible(false), hideDelayMs);
-  }, [hideDelayMs]);
+    hideTimeoutRef.current = scheduleOverlayScrollbarAutoHide(
+      persistentVisibility,
+      hideDelayMs,
+      () => setVisible(false),
+    );
+  }, [hideDelayMs, persistentVisibility]);
 
   const markUserIntent = React.useCallback(() => {
     lastUserIntentAtRef.current = Date.now();
@@ -162,7 +175,7 @@ const OverlayScrollbarComponent: React.FC<OverlayScrollbarProps> = ({
     if (!container) return;
 
     updateMetrics();
-    setVisible(false);
+    if (!persistentVisibility) setVisible(false);
 
     const onScroll = () => handleScroll();
     const onKeyDown = (event: KeyboardEvent) => {
@@ -226,7 +239,7 @@ const OverlayScrollbarComponent: React.FC<OverlayScrollbarProps> = ({
       if (frameRef.current) cancelAnimationFrame(frameRef.current);
       if (metricsFrameRef.current) cancelAnimationFrame(metricsFrameRef.current);
     };
-  }, [containerRef, handleScroll, markUserIntent, observeMutations, scheduleMetricsUpdate, syncObservedElements, updateMetrics, userIntentOnly]);
+  }, [containerRef, handleScroll, markUserIntent, observeMutations, persistentVisibility, scheduleMetricsUpdate, syncObservedElements, updateMetrics, userIntentOnly]);
 
   React.useEffect(() => {
     if (!suppressVisibility) {

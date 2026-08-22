@@ -1,9 +1,16 @@
 import { createHash } from 'node:crypto';
 
-export const SKILL_CONTEXT_POLICY_MARKER = '[DevRyan skill-context reuse policy]';
-export const SKILL_CONTEXT_REUSE_MARKER = '<devryan_skill_reuse>';
-export const EXTERNAL_SKILL_REFERENCE_POLICY_MARKER = '[DevRyan external skill reference policy]';
-export const ANTHROPIC_SKILL_CATALOG_DESCRIPTION_LIMIT = 240;
+// NOTE: OpenCode's plugin loader iterates *every* named export of a plugin
+// module and rejects the whole file if any of them is not a function (or an
+// object exposing a `.server` function). Constants therefore must not be
+// exported directly — they are re-exposed on the callable `__test` export at
+// the bottom of this file instead. See default-plugins.test.js, which asserts
+// the export shape of every shipped plugin.
+const SKILL_CONTEXT_POLICY_MARKER = '[DevRyan skill-context reuse policy]';
+const SKILL_CONTEXT_REUSE_MARKER = '<devryan_skill_reuse>';
+const EXTERNAL_SKILL_REFERENCE_POLICY_MARKER = '[DevRyan external skill reference policy]';
+const ANTHROPIC_SKILL_CATALOG_DESCRIPTION_LIMIT = 240;
+const COMPACT_SKILL_CATALOG_PROVIDER_IDS = new Set(['anthropic', 'xai', 'grok', 'xai-oauth']);
 
 const AVAILABLE_SKILLS_BLOCK_REGEX = /<available_skills>\s*([\s\S]*?)\s*<\/available_skills>/g;
 const AVAILABLE_SKILLS_PREAMBLE_REGEX = /Skills provide specialized instructions and workflows for specific tasks\.\s*Use the skill tool to load a skill when a task matches its description\.\s*(?=<available_skills>)/g;
@@ -88,6 +95,97 @@ const getCompletedSkill = (part) => {
 
 const hashSkillOutput = (output) => createHash('sha256').update(output).digest('hex');
 
+/**
+ * OpenCode registers skills under their frontmatter `name:` (often a Title Case
+ * display name such as "1Health Vitest" or "Accessibility (a11y)"), but models
+ * overwhelmingly call the directory slug they see in the repo — `1health-vitest`,
+ * `accessibility`. The tool then fails with "Skill \"x\" not found" and lists only
+ * display names, so the model cannot self-correct and simply retries the same
+ * wrong name. Normalizing both sides to an alphanumeric key makes slug and display
+ * name collide, which is all the resolution this needs.
+ */
+const normalizeSkillKey = (value) => (
+  typeof value === 'string' ? value.toLowerCase().replace(/[^a-z0-9]+/g, '') : ''
+);
+
+const skillSlugFromLocation = (location) => {
+  if (typeof location !== 'string' || !location.trim()) return '';
+  const segments = location.split(/[\\/]+/).filter(Boolean);
+  if (segments.length === 0) return '';
+  const last = segments[segments.length - 1] ?? '';
+  // `.../skills/<slug>/SKILL.md` -> `<slug>`; `.../skills/<slug>.md` -> `<slug>`.
+  if (/\.mdx?$/i.test(last)) {
+    if (/^skill\.mdx?$/i.test(last)) return segments[segments.length - 2] ?? '';
+    return last.replace(/\.mdx?$/i, '');
+  }
+  return last;
+};
+
+/**
+ * Maps every alias form of a skill onto its canonical registered name. Exact
+ * canonical names win over normalized aliases, and normalized aliases win over
+ * prefix matches, so an unambiguous exact hit is never shadowed.
+ */
+const buildSkillAliasIndex = (skills) => {
+  const canonical = new Set();
+  const byNormalized = new Map();
+  const slugs = new Map();
+
+  for (const skill of Array.isArray(skills) ? skills : []) {
+    const name = typeof skill?.name === 'string' ? skill.name.trim() : '';
+    if (!name) continue;
+    canonical.add(name);
+
+    const slug = skillSlugFromLocation(skill?.location);
+    if (slug) slugs.set(name, slug);
+
+    for (const alias of [name, slug]) {
+      const key = normalizeSkillKey(alias);
+      // First writer wins so a slug collision cannot steal another skill's key.
+      if (key && !byNormalized.has(key)) byNormalized.set(key, name);
+    }
+  }
+
+  return { canonical, byNormalized, slugs };
+};
+
+const resolveSkillAlias = (requested, index) => {
+  const raw = typeof requested === 'string' ? requested.trim() : '';
+  if (!raw || !index) return null;
+  if (index.canonical.has(raw)) return null; // already correct, leave it alone
+
+  const key = normalizeSkillKey(raw);
+  if (!key) return null;
+
+  const exact = index.byNormalized.get(key);
+  if (exact) return exact;
+
+  // "accessibility" -> "Accessibility (a11y)": the request is a prefix of the
+  // registered key. Only accept an unambiguous single match.
+  const prefixed = [];
+  for (const [candidateKey, name] of index.byNormalized) {
+    if (candidateKey.startsWith(key) || key.startsWith(candidateKey)) prefixed.push(name);
+  }
+  const unique = Array.from(new Set(prefixed));
+  return unique.length === 1 ? unique[0] : null;
+};
+
+const describeSkillCatalog = (index) => {
+  if (!index || index.canonical.size === 0) return '';
+  const entries = Array.from(index.canonical).sort().map((name) => {
+    const slug = index.slugs.get(name);
+    // Show the slug whenever it is a different literal string from the display
+    // name — normalizing first would hide exactly the cases the model gets
+    // wrong ("1health-vitest" vs "1Health Vitest" normalize identically).
+    return slug && slug.toLowerCase() !== name.toLowerCase()
+      ? `${slug} (${name})`
+      : name;
+  });
+  return entries.join(', ');
+};
+
+const SKILL_NOT_FOUND_PATTERN = /Skill "([^"]*)" not found\./;
+
 const compactRepeatedSkillOutputs = (messages) => {
   const activeVersionBySkill = new Map();
   let transformedMessages = null;
@@ -127,7 +225,44 @@ const compactRepeatedSkillOutputs = (messages) => {
   return transformedMessages || messages;
 };
 
-export const DevRyanSkillContextPlugin = async () => ({
+const SKILL_INDEX_TTL_MS = 60_000;
+
+export const DevRyanSkillContextPlugin = async (pluginContext = {}) => {
+  const client = pluginContext?.client;
+  const baseDirectory = typeof pluginContext?.directory === 'string' ? pluginContext.directory : undefined;
+  let cachedIndex = null;
+  let cachedAt = 0;
+  let inFlight = null;
+
+  const loadSkillIndex = async () => {
+    if (!client?.app?.skills) return null;
+    const now = Date.now();
+    if (cachedIndex && now - cachedAt < SKILL_INDEX_TTL_MS) return cachedIndex;
+    if (inFlight) return inFlight;
+
+    inFlight = (async () => {
+      try {
+        const response = await client.app.skills(
+          baseDirectory ? { directory: baseDirectory } : undefined,
+        );
+        const skills = Array.isArray(response?.data) ? response.data : response;
+        if (!Array.isArray(skills)) return cachedIndex;
+        cachedIndex = buildSkillAliasIndex(skills);
+        cachedAt = Date.now();
+        return cachedIndex;
+      } catch {
+        // A catalog read failure must never break the skill tool — fall back to
+        // whatever was cached, or to no rewriting at all.
+        return cachedIndex;
+      } finally {
+        inFlight = null;
+      }
+    })();
+
+    return inFlight;
+  };
+
+  return {
   'tool.definition': async (input, output) => {
     if (typeof output?.description !== 'string') return;
 
@@ -158,17 +293,59 @@ export const DevRyanSkillContextPlugin = async () => ({
     output.messages = compactRepeatedSkillOutputs(output.messages);
   },
   'experimental.chat.system.transform': async (input, output) => {
-    if (input?.model?.providerID !== 'anthropic' || !Array.isArray(output?.system)) return;
+    const providerID = typeof input?.model?.providerID === 'string'
+      ? input.model.providerID.trim().toLowerCase()
+      : '';
+    if (!COMPACT_SKILL_CATALOG_PROVIDER_IDS.has(providerID) || !Array.isArray(output?.system)) return;
     output.system = compactAnthropicSkillCatalog(output.system);
   },
-});
+  'tool.execute.before': async (input, output) => {
+    if (input?.tool !== 'skill') return;
+    const requested = output?.args?.name;
+    if (typeof requested !== 'string' || !requested.trim()) return;
 
-export const __test = Object.freeze({
+    const index = await loadSkillIndex();
+    const resolved = resolveSkillAlias(requested, index);
+    if (resolved) output.args.name = resolved;
+  },
+  'tool.execute.after': async (input, output) => {
+    if (input?.tool !== 'skill') return;
+    const text = typeof output?.output === 'string' ? output.output : '';
+    const match = text.match(SKILL_NOT_FOUND_PATTERN);
+    if (!match) return;
+
+    // The native error lists display names only, which is unusable to a model
+    // that called the directory slug. Re-render it with slugs and, when we can
+    // find one, a concrete suggestion.
+    const index = await loadSkillIndex();
+    const catalog = describeSkillCatalog(index);
+    if (!catalog) return;
+
+    const suggestion = resolveSkillAlias(match[1], index);
+    output.output = [
+      `Skill "${match[1]}" not found.`,
+      suggestion ? `Did you mean "${suggestion}"? Call the skill tool again with that exact name.` : '',
+      `Available skills (call them by the name shown before the parentheses, or the exact name when no slug is listed): ${catalog}`,
+    ].filter(Boolean).join('\n');
+  },
+  };
+};
+
+// Callable so the plugin loader (which requires every export to be a function)
+// accepts it. Constants ride along as properties.
+export const __test = Object.assign(() => ({}), {
   compactRepeatedSkillOutputs,
   compactAnthropicSkillCatalog,
   getCompletedSkill,
   hashSkillOutput,
   reuseOutput: SKILL_CONTEXT_REUSE_OUTPUT,
+  resolveSkillAlias,
+  buildSkillAliasIndex,
+  normalizeSkillKey,
+  SKILL_CONTEXT_POLICY_MARKER,
+  SKILL_CONTEXT_REUSE_MARKER,
+  EXTERNAL_SKILL_REFERENCE_POLICY_MARKER,
+  ANTHROPIC_SKILL_CATALOG_DESCRIPTION_LIMIT,
 });
 
 export default DevRyanSkillContextPlugin;

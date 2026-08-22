@@ -36,6 +36,11 @@ import {
 import { clearAbortGuard, filterSessionStatusThroughAbortGuard } from "./abort-retry-guard"
 import { isFinalToolStatus } from "../lib/toolStatus"
 import { areSessionRecordsEqual, isStrictlyOlderSession } from "./session-recency"
+import {
+  compareMessagesChronologically,
+  findMessageIndex,
+  insertMessageChronologically,
+} from "./message-order"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const DELTA_OVERLAP_FIELDS = ["text", "output"] as const
@@ -52,13 +57,7 @@ function advancesCachedUserTurn(messages: readonly Message[], candidate: Message
     const previous = messages[index]
     if (previous.role !== "user") continue
 
-    const previousCreatedAt = previous.time?.created
-    const candidateCreatedAt = candidate.time?.created
-    if (typeof previousCreatedAt === "number" && typeof candidateCreatedAt === "number") {
-      return candidateCreatedAt > previousCreatedAt
-        || (candidateCreatedAt === previousCreatedAt && candidate.id > previous.id)
-    }
-    return candidate.id > previous.id
+    return compareMessagesChronologically(candidate, previous) > 0
   }
 
   return false
@@ -284,12 +283,12 @@ function hasMessage(draft: State, sessionID: string | undefined, messageID: stri
   if (!sessionID) return false
   const messages = draft.message[sessionID]
   if (!messages) return false
-  return Binary.search(messages, messageID, (message) => message.id).found
+  return findMessageIndex(messages, messageID) >= 0
 }
 
 function findSessionIdForMessage(draft: State, messageID: string): string | undefined {
   for (const [sessionID, messages] of Object.entries(draft.message)) {
-    if (Binary.search(messages, messageID, (message) => message.id).found) {
+    if (findMessageIndex(messages, messageID) >= 0) {
       return sessionID
     }
   }
@@ -300,18 +299,14 @@ function findMessage(draft: State, sessionID: string | undefined, messageID: str
   if (sessionID) {
     const messages = draft.message[sessionID]
     if (messages) {
-      const result = Binary.search(messages, messageID, (message) => message.id)
-      if (result.found) {
-        return messages[result.index]
-      }
+      const index = findMessageIndex(messages, messageID)
+      if (index >= 0) return messages[index]
     }
   }
 
   for (const messages of Object.values(draft.message)) {
-    const result = Binary.search(messages, messageID, (message) => message.id)
-    if (result.found) {
-      return messages[result.index]
-    }
+    const index = findMessageIndex(messages, messageID)
+    if (index >= 0) return messages[index]
   }
 
   return undefined
@@ -392,12 +387,10 @@ function insertProvisionalAssistantMessageForLivePart(draft: State, part: Part):
   }
 
   const next = [...messages]
-  const result = Binary.search(next, messageID, (message) => message.id)
-  if (result.found) {
+  if (findMessageIndex(next, messageID) >= 0) {
     return false
   }
-  next.splice(result.index, 0, provisionalMessage)
-  draft.message[sessionID] = next
+  draft.message[sessionID] = insertMessageChronologically(next, provisionalMessage)
   return true
 }
 
@@ -634,20 +627,21 @@ export function applyDirectoryEvent(
         applyMessageSummaryToSession(draft, info.sessionID)
         return true
       }
-      const result = Binary.search(messages, info.id, (m) => m.id)
-      if (!result.found && advancesCachedUserTurn(messages, info)) {
+      const messageIndex = findMessageIndex(messages, info.id)
+      if (messageIndex < 0 && advancesCachedUserTurn(messages, info)) {
         // A user message that advances the cached user-turn boundary is the
         // authoritative cross-surface edge for new work. Replayed historical
         // messages cannot clear a prior local Stop.
         clearAbortGuard(info.sessionID)
       }
-      if (result.found) {
+      if (messageIndex >= 0) {
         // Skip message replacement if unchanged — preserves reference, avoids re-render
-        const existing = messages[result.index]
+        const existing = messages[messageIndex]
         const unchanged = existing.role === info.role
           && (existing as { finish?: unknown }).finish === (info as { finish?: unknown }).finish
           && (existing.time as { completed?: number })?.completed === (info.time as { completed?: number })?.completed
           && getMessageParentID(existing) === getMessageParentID(info)
+          && existing.time?.created === info.time?.created
           && areMessageDiffSummariesEquivalent(existing, info)
           && areMessageTokensEquivalent(existing, info)
         if (unchanged) {
@@ -657,13 +651,11 @@ export function applyDirectoryEvent(
             : false
           return applyMessageSummaryToSession(draft, info.sessionID) || activityChanged || partsChanged
         }
-        const next = [...messages]
-        next[result.index] = info
-        draft.message[info.sessionID] = next
+        const withoutPrevious = [...messages]
+        withoutPrevious.splice(messageIndex, 1)
+        draft.message[info.sessionID] = insertMessageChronologically(withoutPrevious, info)
       } else {
-        const next = [...messages]
-        next.splice(result.index, 0, info)
-        draft.message[info.sessionID] = next
+        draft.message[info.sessionID] = insertMessageChronologically(messages, info)
       }
       if (info.role === "assistant") {
         normalizeAssistantMessagePartsInDraft(draft, info.id)
@@ -678,10 +670,10 @@ export function applyDirectoryEvent(
       let removedUserMessage = false
       if (messages) {
         const next = [...messages]
-        const result = Binary.search(next, props.messageID, (m) => m.id)
-        if (result.found) {
-          removedUserMessage = next[result.index]?.role === "user"
-          next.splice(result.index, 1)
+        const messageIndex = findMessageIndex(next, props.messageID)
+        if (messageIndex >= 0) {
+          removedUserMessage = next[messageIndex]?.role === "user"
+          next.splice(messageIndex, 1)
           draft.message[props.sessionID] = next
         }
       }
@@ -727,16 +719,41 @@ export function applyDirectoryEvent(
           : true
       }
       const next = [...parts]
-      const result = Binary.search(next, part.id, (p) => p.id)
-      if (result.found) {
-        const previous = next[result.index]
+      const partIndex = next.findIndex((candidate) => candidate.id === part.id)
+      if (partIndex >= 0) {
+        const previous = next[partIndex]
         if (shouldPreserveExistingPart(previous, incomingPart)) {
           return false
         }
         const dedupeFields = getUpdatedDeltaFields(previous, incomingPart)
-        next[result.index] = dedupeFields.length > 0
-          ? { ...incomingPart, __dedupeNextDeltaFields: dedupeFields } as unknown as Part
-          : incomingPart
+        // A still-streaming snapshot can arrive stale — generated before deltas
+        // the client already applied — and replacing wholesale would truncate
+        // the accumulated text mid-stream. Keep the longer local value when the
+        // snapshot is a strict prefix of it, mirroring mergeMaterializedPart's
+        // guard on the refetch path. Ended snapshots stay server-authoritative.
+        let merged = incomingPart
+        if (getPartEndTime(incomingPart) === undefined) {
+          for (const field of DELTA_OVERLAP_FIELDS) {
+            const previousValue = (previous as Record<string, unknown>)[field]
+            const incomingValue = (incomingPart as Record<string, unknown>)[field]
+            if (typeof previousValue !== "string" || typeof incomingValue !== "string") continue
+            if (previousValue.length === 0 || incomingValue.length === 0) continue
+            if (previousValue.length > incomingValue.length && previousValue.startsWith(incomingValue)) {
+              if (merged === incomingPart) merged = { ...incomingPart }
+              ;(merged as Record<string, unknown>)[field] = previousValue
+              syncDebug.reducer.partSnapshotKeptLongerLocal(
+                messageID,
+                part.id,
+                field,
+                previousValue.length,
+                incomingValue.length,
+              )
+            }
+          }
+        }
+        next[partIndex] = dedupeFields.length > 0
+          ? { ...merged, __dedupeNextDeltaFields: dedupeFields } as unknown as Part
+          : merged
       } else {
         // Replace optimistic part (no sessionID) with server part of same type.
         // Gate: only scan if the first part lacks sessionID (optimistic parts are
@@ -749,8 +766,7 @@ export function applyDirectoryEvent(
         if (optimisticIdx >= 0) {
           next.splice(optimisticIdx, 1)
         }
-        const insertResult = Binary.search(next, incomingPart.id, (p) => p.id)
-        next.splice(insertResult.index, 0, incomingPart)
+        next.push(incomingPart)
       }
       draft.part[messageID] = next
       return missingOwningMessage
@@ -765,10 +781,10 @@ export function applyDirectoryEvent(
       const props = event.properties as { messageID: string; partID: string }
       const parts = draft.part[props.messageID]
       if (!parts) return false
-      const result = Binary.search(parts, props.partID, (p) => p.id)
-      if (result.found) {
+      const partIndex = parts.findIndex((part) => part.id === props.partID)
+      if (partIndex >= 0) {
         const next = [...parts]
-        next.splice(result.index, 1)
+        next.splice(partIndex, 1)
         if (next.length === 0) {
           delete draft.part[props.messageID]
         } else {
@@ -802,15 +818,15 @@ export function applyDirectoryEvent(
           materialization: { type: "incomplete-session-snapshot", sessionID, messageID: props.messageID, partID: props.partID },
         }
       }
-      const result = Binary.search(parts, props.partID, (p) => p.id)
-      if (!result.found) {
+      const partIndex = parts.findIndex((part) => part.id === props.partID)
+      if (partIndex < 0) {
         syncDebug.reducer.partDeltaNotFound(props.messageID, props.partID)
         return {
           changed: false,
           materialization: { type: "incomplete-session-snapshot", sessionID, messageID: props.messageID, partID: props.partID },
         }
       }
-      const existing = parts[result.index] as Record<string, unknown>
+      const existing = parts[partIndex] as Record<string, unknown>
       const existingValue = existing[props.field] as string | undefined
       const dedupeFields = (existing as DedupeMetadata).__dedupeNextDeltaFields ?? []
       const shouldDedupe = dedupeFields.includes(props.field)
@@ -820,7 +836,11 @@ export function applyDirectoryEvent(
       // Create new Part object + new array so React detects the change
       const next = [...parts]
       const appendedValue = shouldDedupe
-        ? appendNonOverlappingDelta(existingValue, props.delta)
+        ? appendNonOverlappingDelta(existingValue, props.delta, {
+          messageID: props.messageID,
+          partID: props.partID,
+          field: props.field,
+        })
         : DELTA_OVERLAP_FIELDS.includes(props.field as typeof DELTA_OVERLAP_FIELDS[number])
           ? appendStreamingTextDelta(existingValue, props.delta)
           : (existingValue ?? "") + props.delta
@@ -832,7 +852,7 @@ export function applyDirectoryEvent(
         return false
       }
 
-      next[result.index] = {
+      next[partIndex] = {
         ...existing,
         [props.field]: nextValue,
         __dedupeNextDeltaFields: dedupeFields.filter((field) => field !== props.field),
@@ -954,11 +974,11 @@ function removeHiddenMessageFromDraft(draft: State, sessionID: string | undefine
   if (!sessionID || !messageID) return false
   const messages = draft.message[sessionID]
   if (!messages) return false
-  const result = Binary.search(messages, messageID, (message) => message.id)
-  if (!result.found) return false
+  const messageIndex = findMessageIndex(messages, messageID)
+  if (messageIndex < 0) return false
 
   const next = [...messages]
-  next.splice(result.index, 1)
+  next.splice(messageIndex, 1)
   draft.message[sessionID] = next
   updateSessionUserActivityFromMessages(draft, sessionID)
   return true

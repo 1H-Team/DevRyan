@@ -44,6 +44,12 @@ import {
 } from './bridge-localfs-proxy-runtime';
 import { createOpenCodeUpdateRuntime } from '../../web/server/lib/opencode/opencode-update-runtime.js';
 import { handleConfigApplyBridgeMessage, markVsCodeConfigChange } from './configApplyRuntime';
+import {
+  getXaiPromptToolOverrides,
+  refreshXaiProviderPayload,
+  refreshXaiToolModel,
+  supportsXaiProvider,
+} from './xaiToolCatalogRuntime';
 
 export interface BridgeRequest {
   id: string;
@@ -192,6 +198,10 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
         refreshCursorProvider: async () => {
           await getVsCodeCursorSdkRuntime().refreshVirtualProvider({ reason: 'providers_route' });
         },
+        getXaiPromptToolOverrides,
+        supportsXaiProvider,
+        refreshXaiProviderPayload,
+        refreshXaiToolModel,
       },
     );
     if (proxyResponse) {

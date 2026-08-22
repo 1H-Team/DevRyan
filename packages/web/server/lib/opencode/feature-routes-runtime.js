@@ -14,6 +14,7 @@ import { registerOpenCodeRoutes } from './routes.js';
 import { createPluginReadModel, registerReadonlyPluginRoutes } from './plugins-readonly.js';
 import { createSlimSetupRuntime, registerSlimSetupRoutes } from './slim-install.js';
 import { registerConfigApplyRoutes } from './config-apply-runtime.js';
+import { createImageAssetsRuntime } from '../image-assets/runtime.js';
 
 export const createFeatureRoutesRuntime = (dependencies) => {
   const {
@@ -64,6 +65,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
       cursorSdkRuntime,
+      standardSessionTitleRuntime,
       getOpenCodePort,
       getOpenCodeWorkingDirectory,
       setOpenCodeWorkingDirectory,
@@ -78,6 +80,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       emitSyntheticOpenCodeEvent,
       resolveZenModel,
       resolveZenModelNonBlocking,
+      xaiToolCatalogRuntime,
       recordCommitTiming,
       resolveManagedProject,
       ownsSession,
@@ -129,8 +132,11 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       waitForOpenCodeReady,
       isExternalOpenCode,
       cursorSdkRuntime,
+      standardSessionTitleRuntime,
       emitSyntheticOpenCodeEvent,
       resolveZenModel,
+      resolveZenModelNonBlocking,
+      xaiToolCatalogRuntime,
     });
 
     registerProjectIconRoutes(app, {
@@ -317,6 +323,16 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       ownsSession,
       resolveOwnedSessionPlanContext,
     });
+    const imageAssetsRuntime = createImageAssetsRuntime({
+      fsPromises,
+      path,
+      os,
+      crypto,
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
+      ownsSession,
+    });
+    imageAssetsRuntime.registerRoutes(app);
     registerFsRoutes(app, {
       os,
       path,
@@ -328,6 +344,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       buildAugmentedPath,
       resolveGitBinaryForSpawn,
       openchamberUserConfigRoot,
+      authorizeImageAssetGrant: imageAssetsRuntime.authorizeAssetGrant,
     });
   };
 

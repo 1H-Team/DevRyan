@@ -90,4 +90,54 @@ describe('UsageProviderPanel quota warnings and value rows', () => {
     expect(markup).toContain('role="progressbar"');
     expect(markup).toContain('aria-valuenow="0"');
   });
+
+  test('renders an xAI reset bank even when no usage window is available', () => {
+    const markup = renderPanel({
+      providerId: 'xai',
+      providerName: 'xAI',
+      entries: [],
+      resetCredits: {
+        availableCount: 1,
+        totalEarnedCount: null,
+        source: 'dedicated',
+        credits: [{
+          id: 'xai-reset-1',
+          status: 'available',
+          resetType: null,
+          grantedAt: null,
+          grantedAtFormatted: null,
+          expiresAt: Date.parse('2026-09-12T00:00:00Z'),
+          expiresAtFormatted: 'Sep 12, 2026',
+        }],
+      },
+    });
+
+    expect(markup).toContain('Reset Bank');
+    expect(markup).toContain('1 available');
+    expect(markup).toContain('Sep 12, 2026');
+  });
+
+  test('keeps OpenCode Credits green while other high-usage rows stay adaptive', () => {
+    const highUsageWindow = {
+      ...valueOnlyWindow,
+      usedPercent: 95,
+      remainingPercent: 5,
+      valueLabel: '$95.00 used / $5.00 available',
+      description: undefined,
+    };
+    const openCodeMarkup = renderPanel({
+      providerId: 'opencode',
+      providerName: 'OpenCode Zen',
+      entries: [['credits', highUsageWindow]],
+    });
+    const adaptiveMarkup = renderPanel({
+      providerId: 'xai',
+      providerName: 'xAI',
+      entries: [['credits', highUsageWindow]],
+    });
+
+    expect(openCodeMarkup).toContain('background-color:var(--status-success)');
+    expect(openCodeMarkup).not.toContain('background-color:var(--status-error)');
+    expect(adaptiveMarkup).toContain('background-color:var(--status-error)');
+  });
 });

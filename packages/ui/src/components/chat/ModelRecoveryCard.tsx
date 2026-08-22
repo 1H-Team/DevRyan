@@ -22,6 +22,8 @@ export function ModelRecoveryCard({
   failureMessage,
   onSelectionChange,
   onRetry,
+  retryLabel,
+  retryingLabel,
   embedded = false,
 }: {
   title: string;
@@ -34,6 +36,8 @@ export function ModelRecoveryCard({
   failureMessage?: string | null;
   onSelectionChange(selection: ProviderRecoverySelection): void;
   onRetry(): void | Promise<void>;
+  retryLabel?: string;
+  retryingLabel?: string;
   embedded?: boolean;
 }) {
   const { t } = useI18n();
@@ -69,7 +73,7 @@ export function ModelRecoveryCard({
           <div className="space-y-2">
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
               <h4 className="typography-ui-label font-medium text-foreground">{title}</h4>
-              <div className="flex min-w-0 items-center gap-2">
+              <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                 <ControlledModelPicker
                   providers={providers}
                   value={selection}
@@ -97,12 +101,14 @@ export function ModelRecoveryCard({
               type="button"
               size="sm"
               variant="default"
-              className="normal-case"
+              className="h-auto max-w-full whitespace-normal py-2 text-center leading-snug normal-case"
               disabled={pending}
               onClick={() => void onRetry()}
             >
               <RiRefreshLine className={pending ? 'size-3.5 animate-spin' : 'size-3.5'} />
-              {pending ? t('chat.modelRecovery.retrying') : t('chat.modelRecovery.retry')}
+              {pending
+                ? retryingLabel ?? t('chat.modelRecovery.retrying')
+                : retryLabel ?? t('chat.modelRecovery.retry')}
             </Button>
           </div>
           {actionError ? (

@@ -1,5 +1,11 @@
 import * as fs from 'fs';
-import { getFsMimeType, normalizeFsPath, resolveFileReadPath, type FsReadPathResolution } from './bridge-fs-helpers-runtime';
+import {
+  getFsMimeType,
+  normalizeFsPath,
+  resolveFileReadPath,
+  resolveWorkspaceFileReadPath,
+  type FsReadPathResolution,
+} from './bridge-fs-helpers-runtime';
 
 type ApiProxyResponsePayload = {
   status: number;
@@ -57,7 +63,11 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
   }
 
   const targetPath = parsed.searchParams.get('path') || '';
-  const resolution: FsReadPathResolution = await resolveFileReadPath(targetPath);
+  const isAssistantImage = parsed.pathname === '/api/fs/raw'
+    && parsed.searchParams.get('assistantImage') === '1';
+  const resolution: FsReadPathResolution = isAssistantImage
+    ? await resolveWorkspaceFileReadPath(targetPath, parsed.searchParams.get('directory') || '')
+    : await resolveFileReadPath(targetPath);
   if (!resolution.ok) {
     return buildProxyJsonError(resolution.status, resolution.error);
   }

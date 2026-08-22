@@ -18,9 +18,13 @@ const BINARY_READ_EXTENSIONS = new Set([
 const BINARY_SAMPLE_LENGTH = 4_096;
 const BINARY_READ_BLOCKED_CODE = 'DEVRYAN_BINARY_READ_BLOCKED';
 
-export const DEFAULT_SHELL_TIMEOUT_MS = 240_000;
-export const MIN_SHELL_TIMEOUT_MS = 1_000;
-export const MAX_SHELL_TIMEOUT_MS = 3_600_000;
+// NOTE: OpenCode's plugin loader iterates *every* named export and rejects the
+// whole module if any of them is not a function (or an object exposing a
+// `.server` function). Constants are therefore re-exposed on the callable
+// `__test` export instead of being exported directly.
+const DEFAULT_SHELL_TIMEOUT_MS = 240_000;
+const MIN_SHELL_TIMEOUT_MS = 1_000;
+const MAX_SHELL_TIMEOUT_MS = 3_600_000;
 
 const JAVASCRIPT_LANGUAGES = new Set(['javascript', 'js']);
 const ABSOLUTE_PATH_START_PATTERN = /(?:^|\s)["']?(?:\/(?!\/)|[a-z]:[\\/]|\\\\)/gi;
@@ -204,11 +208,15 @@ export const DevRyanToolInputGuardPlugin = async () => ({
   },
 });
 
-export const __test = {
+// Callable so the plugin loader accepts it; constants ride along as properties.
+export const __test = Object.assign(() => ({}), {
   getPathExtension,
   isKnownBinaryReadPath,
   looksLikeBinaryReadOutput,
   renderBlockedBinaryRead,
-};
+  DEFAULT_SHELL_TIMEOUT_MS,
+  MIN_SHELL_TIMEOUT_MS,
+  MAX_SHELL_TIMEOUT_MS,
+});
 
 export default DevRyanToolInputGuardPlugin;

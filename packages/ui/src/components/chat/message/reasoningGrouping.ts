@@ -1,4 +1,5 @@
 import type { Part } from '@opencode-ai/sdk/v2';
+import { isKnownClippedXaiReasoningPreview } from './reasoningRenderPolicy';
 
 export interface ReasoningGroupRow<Activity> {
     type: 'reasoning-group';
@@ -62,10 +63,47 @@ export const coalesceConsecutiveReasoningRows = <
     return coalesced;
 };
 
-export const hasDisplayableReasoningText = (part: Part): boolean => {
+export const hasDisplayableReasoningText = (
+    part: Part,
+    providerID?: string | null,
+): boolean => {
+    if (isKnownClippedXaiReasoningPreview(part, providerID)) {
+        return false;
+    }
+
     const partWithText = part as Part & { text?: string; content?: string };
     const text = partWithText.text || partWithText.content || '';
     return text.trim().length > 0;
+};
+
+type ReasoningActivity = {
+    kind: string;
+    part: Part;
+    providerID?: string | null;
+};
+
+export const filterKnownClippedXaiReasoningActivities = <Activity extends ReasoningActivity>(
+    activities: Activity[],
+    fallbackProviderID?: string | null,
+): Activity[] => {
+    let filtered: Activity[] | null = null;
+
+    activities.forEach((activity, index) => {
+        const shouldHide = activity.kind === 'reasoning'
+            && isKnownClippedXaiReasoningPreview(
+                activity.part,
+                activity.providerID ?? fallbackProviderID,
+            );
+
+        if (shouldHide) {
+            filtered ??= activities.slice(0, index);
+            return;
+        }
+
+        filtered?.push(activity);
+    });
+
+    return filtered ?? activities;
 };
 
 export const isReasoningPartActive = (part: Part): boolean => {

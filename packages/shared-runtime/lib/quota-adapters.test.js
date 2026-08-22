@@ -4,15 +4,21 @@ import {
   CODEX_RESET_CREDITS_URL,
   CODEX_USAGE_URL,
   DEEPSEEK_BALANCE_URL,
+  OPENCODE_GO_USAGE_URL,
+  OPENCODE_ZEN_BILLING_ORIGIN,
+  OPENCODE_ZEN_MAX_RESPONSE_BYTES,
   KIMI_QUOTA_URL,
   XAI_BILLING_URL,
   XAI_CLIENT_VERSION,
+  XAI_RESET_BANK_URL,
   XAI_OAUTH_CLIENT_ID,
   XAI_OAUTH_TOKEN_URL,
   ZAI_QUOTA_URL,
   fetchCodexQuotaAdapter,
   fetchDeepSeekQuotaAdapter,
   fetchKimiQuotaAdapter,
+  fetchOpenCodeGoQuotaAdapter,
+  fetchOpenCodeZenQuotaAdapter,
   fetchXaiQuotaAdapter,
   fetchZaiQuotaAdapter,
   refreshXaiOAuthToken,
@@ -33,6 +39,255 @@ const response = (payload, status = 200, headers = {}, url = '') => ({
     },
   },
   json: async () => payload,
+  text: async () => typeof payload === 'string' ? payload : JSON.stringify(payload),
+  arrayBuffer: async () => {
+    const bytes = payload instanceof Uint8Array
+      ? payload
+      : new TextEncoder().encode(typeof payload === 'string' ? payload : JSON.stringify(payload));
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  },
+});
+
+const protoVarint = (value) => {
+  const bytes = [];
+  let remaining = value;
+  do {
+    const next = remaining % 128;
+    remaining = Math.floor(remaining / 128);
+    bytes.push(remaining > 0 ? next | 0x80 : next);
+  } while (remaining > 0);
+  return bytes;
+};
+
+const protoLengthField = (fieldNumber, value) => [
+  ...protoVarint(fieldNumber * 8 + 2),
+  ...protoVarint(value.length),
+  ...value,
+];
+
+const resetToken = (tokenId, expiresAt) => {
+  const timestamp = [
+    ...protoVarint(8),
+    ...protoVarint(Math.floor(expiresAt / 1000)),
+  ];
+  return [
+    ...protoLengthField(10, [...new TextEncoder().encode(tokenId)]),
+    ...protoLengthField(30, timestamp),
+  ];
+};
+
+const resetBankResponse = (tokens) => {
+  const payload = tokens.flatMap((token) => protoLengthField(10, token));
+  return new Uint8Array([0, ...[0, 0, 0, payload.length], ...payload]);
+};
+
+const ZEN_WORKSPACE_ID = 'wrk_01K46JDFR0E75SG2Q8K172KF3Y';
+const zenBillingHtml = ({
+  balance = 1_999_960_750,
+  monthlyLimit = 50,
+  monthlyUsage = 625_000_000,
+  updatedAt = '2026-08-10T09:00:00.000Z',
+  reload = true,
+  reloadAmount = 20,
+  reloadTrigger = 5,
+} = {}) => `<!doctype html><script>
+_$HY.r["billing.get[\\"${ZEN_WORKSPACE_ID}\\"]"]=$R[1];
+$R[20]={customerID:"cus_safe",paymentMethodID:"pm_safe",balance:${balance},monthlyLimit:${monthlyLimit === null ? 'null' : monthlyLimit},monthlyUsage:${monthlyUsage},timeMonthlyUsageUpdated:${updatedAt === null ? 'null' : `$R[21]=new Date(${JSON.stringify(updatedAt)})`},reload:${reload ? '!0' : '!1'},reloadAmount:${reloadAmount},reloadAmountMin:10,reloadTrigger:${reloadTrigger},reloadTriggerMin:5,subscriptionID:null,lite:$R[22]={useBalance:!0}};
+</script>`;
+
+describe('OpenCode Zen shared quota adapter', () => {
+  test('reads only the workspace billing page and maps spend versus available credits', async () => {
+    const result = await fetchOpenCodeZenQuotaAdapter({
+      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'signed-cookie' },
+      now,
+      fetchImpl: async (url, init) => {
+        expect(url).toBe(`${OPENCODE_ZEN_BILLING_ORIGIN}/workspace/${ZEN_WORKSPACE_ID}/billing`);
+        expect(init).toMatchObject({
+          method: 'GET',
+          redirect: 'manual',
+          headers: { Accept: 'text/html', Cookie: 'auth=signed-cookie' },
+        });
+        expect(init.signal).toBeDefined();
+        return response(zenBillingHtml(), 200, {}, url);
+      },
+    });
+    expect(result).toMatchObject({ ok: true, configured: true, providerId: 'opencode' });
+    expect(result.usage.windows.credits).toMatchObject({
+      valueLabel: '$6.25 used / $20.00 available',
+      resetAt: null,
+    });
+    expect(result.usage.windows.credits.usedPercent).toBeCloseTo(23.8099, 4);
+    expect(result.usage.windows.credits.description).toBeUndefined();
+    expect(result.usage.windows.monthly).toBeUndefined();
+    expect(result.usageUpdatedAt).toBe(Date.parse('2026-08-10T09:00:00.000Z'));
+  });
+
+  test('ignores monthly-limit and auto-reload presentation and resets stale UTC-month usage', async () => {
+    const current = await fetchOpenCodeZenQuotaAdapter({
+      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
+      now,
+      fetchImpl: async () => response(zenBillingHtml({ monthlyLimit: null, reload: false })),
+    });
+    expect(current.usage.windows.credits).toMatchObject({
+      valueLabel: '$6.25 used / $20.00 available',
+    });
+    expect(current.usage.windows.credits.description).toBeUndefined();
+    expect(current.usage.windows.monthly).toBeUndefined();
+
+    const stale = await fetchOpenCodeZenQuotaAdapter({
+      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
+      now,
+      fetchImpl: async () => response(zenBillingHtml({ updatedAt: '2026-07-31T23:59:59.000Z' })),
+    });
+    expect(stale.usage.windows.credits).toMatchObject({
+      usedPercent: 0,
+      valueLabel: '$0.00 used / $20.00 available',
+    });
+  });
+
+  test('handles empty and exhausted credit pools deterministically', async () => {
+    const empty = await fetchOpenCodeZenQuotaAdapter({
+      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
+      now,
+      fetchImpl: async () => response(zenBillingHtml({ balance: 0, monthlyUsage: 0 })),
+    });
+    expect(empty.usage.windows.credits).toMatchObject({
+      usedPercent: 0,
+      valueLabel: '$0.00 used / $0.00 available',
+    });
+
+    const exhausted = await fetchOpenCodeZenQuotaAdapter({
+      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
+      now,
+      fetchImpl: async () => response(zenBillingHtml({ balance: 0 })),
+    });
+    expect(exhausted.usage.windows.credits).toMatchObject({
+      usedPercent: 100,
+      valueLabel: '$6.25 used / $0.00 available',
+    });
+  });
+
+  test('rejects invalid credentials, authentication failures, redirects, and untrusted final locations', async () => {
+    for (const credential of [
+      { workspaceId: 'bad', authCookie: 'cookie' },
+      { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'extra; cookie=bad' },
+      { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'line\nbreak' },
+    ]) {
+      expect(await fetchOpenCodeZenQuotaAdapter({ credential, now }))
+        .toMatchObject({ configured: false, errorCode: 'NOT_CONFIGURED' });
+    }
+
+    for (const status of [302, 401, 403, 404]) {
+      const result = await fetchOpenCodeZenQuotaAdapter({
+        credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'never-echo' },
+        now,
+        fetchImpl: async () => response('', status),
+      });
+      expect(result).toMatchObject({ configured: true, errorCode: 'AUTHENTICATION_FAILED' });
+      expect(JSON.stringify(result)).not.toContain('never-echo');
+    }
+
+    const untrusted = await fetchOpenCodeZenQuotaAdapter({
+      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
+      now,
+      fetchImpl: async () => response(zenBillingHtml(), 200, {}, 'https://example.com/billing'),
+    });
+    expect(untrusted).toMatchObject({ ok: false, errorCode: 'AUTHENTICATION_FAILED' });
+  });
+
+  test('fails closed for malformed, ambiguous, and oversized billing payloads', async () => {
+    for (const html of [
+      '<script>billing.get["workspace"]={balance:10}</script>',
+      `_$HY.r["billing.get[\\"${ZEN_WORKSPACE_ID}\\"]"]=$R[1];<script>{customerID:"decoy",paymentMethodID:null,balance:10,monthlyLimit:null,monthlyUsage:0,timeMonthlyUsageUpdated:null,reload:!1,reloadAmount:10,reloadAmountMin:10,reloadTrigger:5,reloadTriggerMin:5,subscriptionID:null}</script>`,
+      `${zenBillingHtml()}${zenBillingHtml({ balance: 100 })}`,
+    ]) {
+      const result = await fetchOpenCodeZenQuotaAdapter({
+        credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
+        now,
+        fetchImpl: async () => response(html),
+      });
+      expect(result).toMatchObject({ ok: false, errorCode: 'PARSE_ERROR' });
+    }
+
+    const oversized = await fetchOpenCodeZenQuotaAdapter({
+      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
+      now,
+      fetchImpl: async () => response('', 200, {
+        'content-length': String(OPENCODE_ZEN_MAX_RESPONSE_BYTES + 1),
+      }),
+    });
+    expect(oversized).toMatchObject({ ok: false, errorCode: 'PARSE_ERROR' });
+  });
+});
+
+describe('OpenCode Go shared quota adapter', () => {
+  test('uses the JSON API and maps valid windows with clamped percentages', async () => {
+    const result = await fetchOpenCodeGoQuotaAdapter({
+      credential: { apiKey: 'go-secret' },
+      now,
+      fetchImpl: async (url, init) => {
+        expect(url).toBe(OPENCODE_GO_USAGE_URL);
+        expect(init).toMatchObject({
+          method: 'GET',
+          redirect: 'manual',
+          headers: { Accept: 'application/json', Authorization: 'Bearer go-secret' },
+        });
+        expect(init.headers.Cookie).toBeUndefined();
+        expect(init.signal).toBeDefined();
+        return response({
+          usage: {
+            rolling: { percent: 120, resetsAt: '2026-08-11T17:00:00Z' },
+            weekly: { percent: -4, resetsAt: '2026-08-18T12:00:00Z' },
+            monthly: { percent: 42.5, resetsAt: '2026-09-11T12:00:00+00:00' },
+          },
+        });
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.usage.windows['5h']).toMatchObject({ usedPercent: 100, windowSeconds: 18_000 });
+    expect(result.usage.windows.weekly).toMatchObject({ usedPercent: 0, windowSeconds: 604_800 });
+    expect(result.usage.windows.monthly).toMatchObject({ usedPercent: 42.5, windowSeconds: 2_592_000 });
+  });
+
+  test('skips malformed windows and fails parsing when none are usable', async () => {
+    const partial = await fetchOpenCodeGoQuotaAdapter({
+      credential: { apiKey: 'safe' },
+      now,
+      fetchImpl: async () => response({ usage: {
+        rolling: { percent: 25, resetsAt: '2026-08-11T17:00:00Z' },
+        weekly: { percent: '50', resetsAt: '2026-08-18T12:00:00Z' },
+        monthly: { percent: 50, resetsAt: 'not-iso' },
+      } }),
+    });
+    expect(partial.ok).toBe(true);
+    expect(Object.keys(partial.usage.windows)).toEqual(['5h']);
+    expect(partial.warnings).toHaveLength(2);
+
+    const invalid = await fetchOpenCodeGoQuotaAdapter({
+      credential: { apiKey: 'safe' },
+      now,
+      fetchImpl: async () => ({
+        ...response(null),
+        json: async () => { throw new Error('raw body'); },
+      }),
+    });
+    expect(invalid).toMatchObject({ ok: false, errorCode: 'PARSE_ERROR' });
+    expect(JSON.stringify(invalid)).not.toContain('raw body');
+  });
+
+  test('returns sanitized configuration, authentication, redirect, and API errors', async () => {
+    expect(await fetchOpenCodeGoQuotaAdapter({ credential: { apiKey: 'line\nbreak' }, now }))
+      .toMatchObject({ configured: false, errorCode: 'NOT_CONFIGURED' });
+    for (const [status, errorCode] of [[401, 'AUTHENTICATION_FAILED'], [403, 'AUTHENTICATION_FAILED'], [302, 'API_ERROR'], [503, 'API_ERROR']]) {
+      const result = await fetchOpenCodeGoQuotaAdapter({
+        credential: { apiKey: 'never-echo-me' },
+        now,
+        fetchImpl: async () => response({}, status),
+      });
+      expect(result).toMatchObject({ ok: false, errorCode });
+      expect(JSON.stringify(result)).not.toContain('never-echo-me');
+    }
+  });
 });
 
 describe('z.ai shared quota adapter', () => {
@@ -181,6 +436,7 @@ describe('xAI shared quota adapter', () => {
       credential: { accessToken: 'access' },
       now,
       fetchImpl: async (url, init) => {
+        if (url === XAI_RESET_BANK_URL) return response(new Uint8Array(), 200, {}, url);
         expect(url).toBe(XAI_BILLING_URL);
         expect(init).toMatchObject({
           method: 'GET',
@@ -209,13 +465,77 @@ describe('xAI shared quota adapter', () => {
     expect(result.usage.windows.credits).toMatchObject({ usedPercent: null, valueLabel: '42 credits' });
   });
 
+  test('normalizes valid reset tokens without exposing provider token IDs', async () => {
+    const soon = Date.parse('2026-08-20T00:00:00Z');
+    const later = Date.parse('2026-09-12T00:00:00Z');
+    const expired = Date.parse('2026-08-01T00:00:00Z');
+    const result = await fetchXaiQuotaAdapter({
+      credential: { accessToken: 'access' },
+      now,
+      fetchImpl: async (url) => url === XAI_RESET_BANK_URL
+        ? response(resetBankResponse([
+          resetToken('later-secret-token', later),
+          resetToken('soon-secret-token', soon),
+          resetToken('soon-secret-token', soon),
+          resetToken('expired-secret-token', expired),
+          [0x08, 0x01],
+        ]), 200, {}, url)
+        : response({ creditUsagePercent: 10, billingPeriodEnd: '2026-08-18T00:00:00Z' }),
+    });
+
+    expect(result.usage.resetCredits).toMatchObject({
+      availableCount: 2,
+      totalEarnedCount: null,
+      source: 'dedicated',
+      credits: [
+        { status: 'available', resetType: null, expiresAt: soon },
+        { status: 'available', resetType: null, expiresAt: later },
+      ],
+    });
+    expect(JSON.stringify(result)).not.toContain('secret-token');
+  });
+
+  test('hides an empty reset bank without adding a warning', async () => {
+    const result = await fetchXaiQuotaAdapter({
+      credential: { accessToken: 'access' },
+      now,
+      fetchImpl: async (url) => url === XAI_RESET_BANK_URL
+        ? response(new Uint8Array(), 200, {}, url)
+        : response({ creditUsagePercent: 10, billingPeriodEnd: '2026-08-18T00:00:00Z' }),
+    });
+    expect(result.usage.resetCredits).toBeUndefined();
+    expect(result.warnings).toBeUndefined();
+  });
+
+  test.each([
+    ['HTTP rejection', response({}, 403)],
+    ['redirect', response({}, 302, { location: 'https://example.com/steal' })],
+    ['malformed payload', response(new Uint8Array([0, 0, 0, 0, 10, 1]))],
+    ['oversized payload', response(new Uint8Array(), 200, { 'content-length': '65537' })],
+  ])('keeps billing usage when the reset bank has an %s', async (_label, resetResponse) => {
+    const result = await fetchXaiQuotaAdapter({
+      credential: { accessToken: 'access' },
+      now,
+      fetchImpl: async (url) => url === XAI_RESET_BANK_URL
+        ? resetResponse
+        : response({ creditUsagePercent: 10, billingPeriodEnd: '2026-08-18T00:00:00Z' }),
+    });
+    expect(result).toMatchObject({ ok: true, usage: { windows: { usage: { usedPercent: 10 } } } });
+    expect(result.usage.resetCredits).toBeUndefined();
+    expect(result.warnings).toContain('The xAI reset bank could not be refreshed.');
+  });
+
   test('refreshes once on 401 and retries with the new access token', async () => {
     const calls = [];
     const refreshes = [];
     const result = await fetchXaiQuotaAdapter({
       credential: { accessToken: 'old', refreshToken: 'refresh' },
       now,
-      fetchImpl: async (_url, init) => {
+      fetchImpl: async (url, init) => {
+        if (url === XAI_RESET_BANK_URL) {
+          expect(init.headers.Authorization).toBe('Bearer new');
+          return response(new Uint8Array(), 200, {}, url);
+        }
         calls.push(init.headers.Authorization);
         return calls.length === 1
           ? response({}, 401)

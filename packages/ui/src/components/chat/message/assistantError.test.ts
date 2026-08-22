@@ -102,6 +102,18 @@ describe("classifyAssistantError", () => {
     })
   })
 
+  test("classifies Claude third-party usage separately from actual quota exhaustion", () => {
+    const detail = "Claude Code returned an error result: API Error: 400 Third-party apps now draw from your extra usage, not your plan limits. Add more at claude.ai/settings/usage and keep going. Subprocess stderr: Warning: ignored"
+    expect(classifyAssistantError({
+      name: "UnknownError",
+      data: { message: detail },
+    })).toEqual({
+      text: "Anthropic classified this DevRyan turn as third-party usage. Your Claude subscription quota may still be available. Use Model Recovery to enable Claude compatibility mode and retry explicitly.",
+      variant: "error",
+      retryable: true,
+    })
+  })
+
   test("classifies provider model-not-found failures with actionable copy", () => {
     expect(classifyAssistantError({
       name: "ProviderModelNotFoundError",
@@ -124,6 +136,11 @@ describe("classifyAssistantError", () => {
     })
   })
 
+  // The generic fallback is now retryable. Unrecognized provider errors are far
+  // more often transient than terminal — the xAI "timed out in queue, abort."
+  // failures on 2026-08-21 all landed here and left the user with no retry
+  // affordance at all. Offering a retry costs nothing when the error really is
+  // permanent, whereas withholding it strands a recoverable turn.
   test("removes wrapped JSON quotes from generic fallback details", () => {
     expect(classifyAssistantError({
       name: "UnknownError",
@@ -131,6 +148,7 @@ describe("classifyAssistantError", () => {
     })).toEqual({
       text: "The model provider could not complete this turn:\n`A permanent model refusal`",
       variant: "error",
+      retryable: true,
     })
   })
 

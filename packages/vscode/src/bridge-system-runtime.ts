@@ -25,11 +25,11 @@ import {
   listConfiguredQuotaProviders,
   resolveClaudeProxyBaseUrlFromProviders,
   resolveCursorQuotaCredential,
+  resolveOpenCodeZenCredential,
   resolveOllamaCloudCredential,
-  resolveOpenCodeGoCredentials,
   validateCursorQuotaCredential,
+  validateOpenCodeZenQuotaCredential,
   validateOllamaCloudQuotaCredential,
-  validateOpenCodeGoQuotaCredential,
 } from './quotaProviders';
 import {
   MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES,
@@ -43,8 +43,8 @@ import {
   type CursorDashboardCredential,
   type CursorOAuthCredential,
   type ManagedQuotaCredential,
+  type OpenCodeZenCredential,
   type OllamaCloudCredential,
-  type OpenCodeGoCredential,
 } from './quotaCredentials';
 import { getSessionActivitySnapshot } from './sessionActivityWatcher';
 import type { BridgeContext, BridgeResponse } from './bridge';
@@ -56,6 +56,10 @@ import {
 } from '@openchamber/cursor-sdk-runtime';
 import { runClaudeCodeAuthStatus } from './claudeAuthStatus';
 import type { ConfigApplyMutationResponse } from '@openchamber/shared-runtime';
+import {
+  readMeridianPromptMode,
+  setMeridianPromptCompatibilityMode,
+} from '../../web/server/lib/opencode/meridian-sdk-features.js';
 
 type BridgeMessageInput = {
   id: string;
@@ -92,9 +96,37 @@ const ZEN_MODELS_URL = 'https://opencode.ai/zen/v1/models';
 const ZEN_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
 const CURSOR_ACP_PROVIDER_ID = 'cursor-acp';
 const CURSOR_USAGE_TOKEN_MAX_LENGTH = 16_384;
-const OPENCODE_GO_PROVIDER_ID = 'opencode-go';
-const OPENCODE_GO_WORKSPACE_ID_PATTERN = /^wrk_[a-zA-Z0-9]+$/;
-const OPENCODE_GO_USAGE_COOKIE_MAX_LENGTH = 16_384;
+
+const readProviderSourceSnapshot = (providerId: string, workingDirectory?: string) => {
+  const sources = getProviderSources(providerId, workingDirectory);
+  const authLookupIds = ['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude'].includes(providerId)
+    ? [providerId, 'anthropic', 'claude']
+    : getProviderAuthLookupIds(providerId);
+  const auth = authLookupIds.map((id) => getProviderAuth(id)).find(Boolean);
+  if (providerId === CURSOR_ACP_PROVIDER_ID) {
+    sources.auth.exists = Boolean(
+      (typeof process.env.CURSOR_API_KEY === 'string' && process.env.CURSOR_API_KEY.trim()) ||
+      (auth && typeof auth === 'object' && (
+        (typeof (auth as { key?: unknown }).key === 'string' && ((auth as { key?: string }).key ?? '').trim()) ||
+        (typeof (auth as { token?: unknown }).token === 'string' && ((auth as { token?: string }).token ?? '').trim())
+      ))
+    );
+  } else {
+    sources.auth.exists = Boolean(auth);
+  }
+  if (providerId === 'antigravity') {
+    sources.auth = getAntigravityAccountsSource();
+  }
+  return sources;
+};
+
+const removeProviderConfigForScope = (
+  providerId: string,
+  workingDirectory: string | undefined,
+  scope: 'user' | 'project' | 'custom',
+): boolean => providerId === 'antigravity'
+  ? removeAntigravityProviderConfig(workingDirectory, scope)
+  : removeProviderConfig(providerId, workingDirectory, scope);
 let cachedZenModels: { models: Array<{ id: string; owned_by?: string }>; at: number } | null = null;
 
 const resolveClaudeQuotaRuntime = async (ctx?: BridgeContext) => {
@@ -323,36 +355,6 @@ const readCursorUsageAuthConfigured = (): boolean => {
   return Boolean(normalizeCursorUsageSessionToken(entry?.usageSessionToken));
 };
 
-const normalizeOpenCodeGoWorkspaceId = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-  const workspaceId = value.trim();
-  return OPENCODE_GO_WORKSPACE_ID_PATTERN.test(workspaceId) ? workspaceId : null;
-};
-
-const normalizeOpenCodeGoAuthCookie = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-  const authCookie = value.trim();
-  if (!authCookie || authCookie.length > OPENCODE_GO_USAGE_COOKIE_MAX_LENGTH) {
-    return null;
-  }
-  return authCookie;
-};
-
-const readOpenCodeGoUsageAuthStatus = () => {
-  const auth = readAuthFile();
-  const entry = asObject(auth[OPENCODE_GO_PROVIDER_ID]) ?? {};
-  const workspaceId = normalizeOpenCodeGoWorkspaceId(entry.usageWorkspaceId);
-  const authCookie = normalizeOpenCodeGoAuthCookie(entry.usageAuthCookie);
-  return {
-    configured: Boolean(workspaceId && authCookie),
-    workspaceId,
-  };
-};
-
 type QuotaCredentialResponse = {
   status: number;
   body: Record<string, unknown>;
@@ -376,7 +378,7 @@ const quotaCredentialError = (
 });
 
 const getManagedQuotaEffectiveSource = (providerId: string) => {
-  if (providerId === 'opencode-go') return resolveOpenCodeGoCredentials().source;
+  if (providerId === 'opencode') return resolveOpenCodeZenCredential().source;
   if (providerId === 'ollama-cloud') return resolveOllamaCloudCredential().source;
   return resolveCursorQuotaCredential().source;
 };
@@ -391,13 +393,12 @@ const validateManagedQuotaCredential = async (
   credential: ManagedQuotaCredential,
 ): Promise<ManagedQuotaCredential> => {
   const record = asObject(credential) ?? {};
-  if (providerId === 'opencode-go') {
-    const normalized: OpenCodeGoCredential = {
+  if (providerId === 'opencode') {
+    const normalized: OpenCodeZenCredential = {
       workspaceId: String(record.workspaceId ?? ''),
       authCookie: String(record.authCookie ?? ''),
     };
-    await validateOpenCodeGoQuotaCredential(normalized);
-    return normalized;
+    return validateOpenCodeZenQuotaCredential(normalized);
   }
   if (providerId === 'ollama-cloud') {
     const normalized: OllamaCloudCredential = { cookie: String(record.cookie ?? '') };
@@ -778,13 +779,16 @@ export async function handleSystemBridgeMessage(
     case 'editor:openFile': {
       const { path: filePath, line, column } = payload as { path: string; line?: number; column?: number };
       try {
-        const doc = await vscode.workspace.openTextDocument(filePath);
         const options: vscode.TextDocumentShowOptions = {};
         if (typeof line === 'number') {
           const pos = new vscode.Position(Math.max(0, line - 1), column || 0);
           options.selection = new vscode.Range(pos, pos);
         }
-        await vscode.window.showTextDocument(doc, options);
+        await vscode.commands.executeCommand(
+          'vscode.open',
+          vscode.Uri.file(filePath),
+          options,
+        );
         return { id, type, success: true };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -848,42 +852,43 @@ export async function handleSystemBridgeMessage(
         ? directory.trim()
         : ctx?.manager?.getWorkingDirectory();
       try {
-        let removed = false;
+        const removedSources = {
+          auth: false,
+          user: false,
+          project: false,
+          custom: false,
+        };
         if (normalizedScope === 'auth') {
-          removed = providerId === CURSOR_ACP_PROVIDER_ID
+          removedSources.auth = providerId === CURSOR_ACP_PROVIDER_ID
             ? clearCursorSdkAuth({ readAuth: readAuthFile, writeAuth: writeAuthFile })
             : providerId === 'antigravity'
               ? removeAntigravityAccounts()
               : removeProviderAuthForLookupIds(providerId);
         } else if (normalizedScope === 'user' || normalizedScope === 'project' || normalizedScope === 'custom') {
-          removed = removeProviderConfig(providerId, workingDirectory, normalizedScope);
+          removedSources[normalizedScope] = removeProviderConfigForScope(providerId, workingDirectory, normalizedScope);
         } else if (normalizedScope === 'all') {
-          const authRemoved = providerId === CURSOR_ACP_PROVIDER_ID
+          removedSources.auth = providerId === CURSOR_ACP_PROVIDER_ID
             ? clearCursorSdkAuth({ readAuth: readAuthFile, writeAuth: writeAuthFile })
             : providerId === 'antigravity'
               ? removeAntigravityAccounts()
               : removeProviderAuthForLookupIds(providerId);
-          const userRemoved = providerId === 'antigravity'
-            ? removeAntigravityProviderConfig(workingDirectory, 'user')
-            : removeProviderConfig(providerId, workingDirectory, 'user');
-          const projectRemoved = workingDirectory
-            ? providerId === 'antigravity'
-              ? removeAntigravityProviderConfig(workingDirectory, 'project')
-              : removeProviderConfig(providerId, workingDirectory, 'project')
+          removedSources.user = removeProviderConfigForScope(providerId, workingDirectory, 'user');
+          removedSources.project = workingDirectory
+            ? removeProviderConfigForScope(providerId, workingDirectory, 'project')
             : false;
-          const customRemoved = providerId === 'antigravity'
-            ? removeAntigravityProviderConfig(workingDirectory, 'custom')
-            : removeProviderConfig(providerId, workingDirectory, 'custom');
-          removed = authRemoved || userRemoved || projectRemoved || customRemoved;
+          removedSources.custom = removeProviderConfigForScope(providerId, workingDirectory, 'custom');
         } else {
           return { id, type, success: false, error: 'Invalid scope' };
         }
 
+        const removed = Object.values(removedSources).some(Boolean);
+
         const applyResult = await deps.markConfigChange(
           'provider disconnect',
           { providerId, scope: normalizedScope },
-          removed,
+          true,
         );
+        const sources = readProviderSourceSnapshot(providerId, workingDirectory);
         return {
           id,
           type,
@@ -891,10 +896,12 @@ export async function handleSystemBridgeMessage(
           data: {
             success: true,
             removed,
+            removedSources,
+            sources,
             ...applyResult,
             message: removed
-              ? `Provider ${providerId} disconnected successfully. Changes are pending.`
-              : `Provider ${providerId} was not configured.`,
+              ? `Provider ${providerId} configuration removed; runtime refresh requested.`
+              : `No stored ${providerId} configuration was found; runtime refresh requested.`,
           },
         };
       } catch (error) {
@@ -937,25 +944,7 @@ export async function handleSystemBridgeMessage(
         const workingDirectory = typeof directory === 'string' && directory.trim().length > 0
           ? directory.trim()
           : ctx?.manager?.getWorkingDirectory();
-        const sources = getProviderSources(providerId, workingDirectory);
-        const authLookupIds = ['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude'].includes(providerId)
-          ? [providerId, 'anthropic', 'claude']
-          : getProviderAuthLookupIds(providerId);
-        const auth = authLookupIds.map((id) => getProviderAuth(id)).find(Boolean);
-        if (providerId === CURSOR_ACP_PROVIDER_ID) {
-          sources.auth.exists = Boolean(
-            (typeof process.env.CURSOR_API_KEY === 'string' && process.env.CURSOR_API_KEY.trim()) ||
-            (auth && typeof auth === 'object' && (
-              (typeof (auth as { key?: unknown }).key === 'string' && ((auth as { key?: string }).key ?? '').trim()) ||
-              (typeof (auth as { token?: unknown }).token === 'string' && ((auth as { token?: string }).token ?? '').trim())
-            ))
-          );
-        } else {
-          sources.auth.exists = Boolean(auth);
-        }
-        if (providerId === 'antigravity') {
-          sources.auth = getAntigravityAccountsSource();
-        }
+        const sources = readProviderSourceSnapshot(providerId, workingDirectory);
         return { id, type, success: true, data: { providerId, sources } };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -988,6 +977,98 @@ export async function handleSystemBridgeMessage(
           ...(!authCheck.ok && authCheck.code !== 'claude_not_authenticated' && !unavailable
             ? { error: authCheck.error, errorCode: authCheck.code }
             : {}),
+        },
+      };
+    }
+
+    case 'api:provider/anthropic/prompt-mode:get': {
+      if (ctx?.manager?.getDebugInfo?.().mode === 'external') {
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            status: 200,
+            body: { mode: 'external', compatibilityMode: false, editable: false },
+          },
+        };
+      }
+      const result = readMeridianPromptMode();
+      if (!result.ok) {
+        return {
+          id,
+          type,
+          success: true,
+          data: { status: 500, body: { code: result.code, error: result.error } },
+        };
+      }
+      return {
+        id,
+        type,
+        success: true,
+        data: {
+          status: 200,
+          body: {
+            mode: result.mode,
+            compatibilityMode: result.compatibilityMode,
+            editable: true,
+          },
+        },
+      };
+    }
+
+    case 'api:provider/anthropic/prompt-mode:set': {
+      if (ctx?.manager?.getDebugInfo?.().mode === 'external') {
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            status: 409,
+            body: {
+              code: 'external_opencode_read_only',
+              error: 'Claude prompt mode is managed by the configured external OpenCode runtime.',
+            },
+          },
+        };
+      }
+      const { compatibilityMode } = (payload || {}) as { compatibilityMode?: unknown };
+      if (typeof compatibilityMode !== 'boolean') {
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            status: 400,
+            body: {
+              code: 'invalid_compatibility_mode',
+              error: 'compatibilityMode must be a boolean',
+            },
+          },
+        };
+      }
+      const result = setMeridianPromptCompatibilityMode(compatibilityMode);
+      if (!result.ok) {
+        return {
+          id,
+          type,
+          success: true,
+          data: { status: 500, body: { code: result.code, error: result.error } },
+        };
+      }
+      return {
+        id,
+        type,
+        success: true,
+        data: {
+          status: 200,
+          body: {
+            success: true,
+            changed: result.changed,
+            mode: result.mode,
+            compatibilityMode: result.compatibilityMode,
+            editable: true,
+          },
         },
       };
     }
@@ -1158,72 +1239,6 @@ export async function handleSystemBridgeMessage(
           type,
           success: true,
           data: { success: true, configured: false, changed },
-        };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        return { id, type, success: false, error: errorMessage };
-      }
-    }
-
-    case 'api:provider/opencode-go/usage-auth/status': {
-      try {
-        return {
-          id,
-          type,
-          success: true,
-          data: readOpenCodeGoUsageAuthStatus(),
-        };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        return { id, type, success: false, error: errorMessage };
-      }
-    }
-
-    case 'api:provider/opencode-go/usage-auth:save': {
-      const body = asObject(payload);
-      const workspaceId = normalizeOpenCodeGoWorkspaceId(body?.workspaceId);
-      const authCookie = normalizeOpenCodeGoAuthCookie(body?.authCookie);
-      if (!workspaceId) {
-        return { id, type, success: false, error: 'A valid OpenCode Go workspace ID is required.' };
-      }
-      if (!authCookie) {
-        return { id, type, success: false, error: 'OpenCode Go auth cookie is required.' };
-      }
-      try {
-        const auth = readAuthFile();
-        const existing = asObject(auth[OPENCODE_GO_PROVIDER_ID]) ?? {};
-        auth[OPENCODE_GO_PROVIDER_ID] = {
-          ...existing,
-          usageWorkspaceId: workspaceId,
-          usageAuthCookie: authCookie,
-        };
-        writeAuthFile(auth);
-        return {
-          id,
-          type,
-          success: true,
-          data: { success: true, configured: true, workspaceId },
-        };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        return { id, type, success: false, error: errorMessage };
-      }
-    }
-
-    case 'api:provider/opencode-go/usage-auth:clear': {
-      try {
-        const auth = readAuthFile();
-        const existing = asObject(auth[OPENCODE_GO_PROVIDER_ID]) ?? {};
-        const nextEntry = { ...existing };
-        delete nextEntry.usageWorkspaceId;
-        delete nextEntry.usageAuthCookie;
-        auth[OPENCODE_GO_PROVIDER_ID] = nextEntry;
-        writeAuthFile(auth);
-        return {
-          id,
-          type,
-          success: true,
-          data: { success: true, configured: false, workspaceId: null },
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

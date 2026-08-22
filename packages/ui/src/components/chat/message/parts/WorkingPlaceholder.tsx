@@ -30,16 +30,12 @@ export function StatusShimmerText({
 }) {
   return (
     <span
-      className={cn('oc-live-status-shimmer', className)}
+      className={cn('oc-text-shimmer', className)}
       data-animation-state={shouldAnimate ? 'running' : 'paused'}
       data-live-status-shimmer="true"
+      data-shimmer-text={text}
     >
-      <span className="oc-live-status-shimmer__label">{text}</span>
-      <span aria-hidden="true" className="oc-live-status-shimmer__focus">
-        <span className="oc-live-status-shimmer__counter">
-          <span className="oc-live-status-shimmer__aligned">{text}</span>
-        </span>
-      </span>
+      {text}
     </span>
   );
 }

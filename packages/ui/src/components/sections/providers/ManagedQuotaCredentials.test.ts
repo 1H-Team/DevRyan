@@ -16,7 +16,13 @@ describe('ManagedQuotaCredentials', () => {
   });
 
   test('never assigns safe status metadata into secret input state', () => {
-    expect(source).toContain("setWorkspaceId(typeof payload.workspaceId === 'string' ? payload.workspaceId : '')");
+    expect(source).not.toContain("'opencode-go'");
+    expect(source).toContain("providerId === 'opencode'");
+    expect(source).toContain('opencode-zen-workspace-id');
+    expect(source).toContain('opencode-zen-auth-cookie');
+    expect(source).toContain('workspaceId: workspaceId.trim()');
+    expect(source).toContain('authCookie: authCookie.trim()');
+    expect(source).not.toContain('setWorkspaceId(payload');
     expect(source).not.toContain('setAuthCookie(payload');
     expect(source).not.toContain('setCookie(payload');
     expect(source).not.toContain('setSessionToken(payload');

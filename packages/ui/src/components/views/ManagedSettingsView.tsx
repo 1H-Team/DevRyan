@@ -112,6 +112,7 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
 
   const activePage = pages.find((page) => page.slug === settingsPage) ?? null;
   const activeSlug: ManagedSettingsPage = settingsPage === 'home' || activePage ? settingsPage : 'home';
+  const navigationPages = pages.filter((page) => page.slug !== 'chat');
 
   React.useEffect(() => {
     if (activeSlug !== settingsPage) {
@@ -158,7 +159,7 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
               <p className="typography-ui text-muted-foreground">{t('settings.view.home.description')}</p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {pages.map((page) => (
+              {navigationPages.map((page) => (
                 <button
                   key={page.slug}
                   type="button"
@@ -236,7 +237,7 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
             {t('settings.view.home.title')}
           </button>
           {(['Preferences', 'Workspace', 'Development'] as const).map((group) => {
-            const groupPages = pages.filter((page) => page.group === group);
+            const groupPages = navigationPages.filter((page) => page.group === group);
             if (groupPages.length === 0) return null;
             return (
               <div key={group} className="mb-4 space-y-0.5">

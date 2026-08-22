@@ -25,7 +25,7 @@ Git service layer for repository operations, direct commit-message generation, a
 
 ## Flow
 1. Route handlers resolve working directory and requested git operation.
-2. The commit-message draft route collects status/history concurrently and selected diffs with bounded workers inside the host; other operations delegate directly to the service module.
+2. The commit-message draft route collects status/history concurrently and selected changes with at most two bounded batch diffs inside the host; other operations delegate directly to the service module.
 3. Service modules execute command flow (often via simple-git/native git), while credential/identity helpers enrich command context and persist updates.
 4. Structured results/errors are returned to API consumers; commit generation also records sanitized phase timings and emits `Server-Timing`.
 

@@ -3,7 +3,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { cleanupStaleAtomicFiles, readJsonGuarded, writeFileAtomic } from './atomic-file.js';
+import {
+  cleanupStaleAtomicFiles,
+  readJsonGuarded,
+  withCrossProcessFileLock,
+  writeFileAtomic,
+} from './atomic-file.js';
 
 const temporaryDirectories = [];
 
@@ -57,5 +62,68 @@ describe('atomic file primitives', () => {
     const quarantine = await fs.readdir(path.join(directory, 'quarantine'));
     expect(quarantine).toHaveLength(1);
     expect(quarantine[0]).toContain('record.123.');
+  });
+
+  test('creates and releases a private exclusive lock', async () => {
+    const directory = await temporaryDirectory();
+    const lockPath = path.join(directory, 'project.lock');
+    await withCrossProcessFileLock(lockPath, async () => {
+      const owner = JSON.parse(await fs.readFile(lockPath, 'utf8'));
+      expect(owner).toMatchObject({ ownerToken: 'owner-a', pid: process.pid });
+      expect((await fs.stat(lockPath)).mode & 0o777).toBe(0o600);
+    }, { randomToken: () => 'owner-a' });
+    await expect(fs.stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  test('recovers a dead owner immediately but never steals from a live owner', async () => {
+    const directory = await temporaryDirectory();
+    const lockPath = path.join(directory, 'project.lock');
+    await fs.writeFile(lockPath, JSON.stringify({ ownerToken: 'dead', pid: 999_999, createdAt: 0 }));
+    await expect(withCrossProcessFileLock(lockPath, () => 'acquired', {
+      isProcessAlive: () => false,
+      randomToken: () => 'new-owner',
+    })).resolves.toBe('acquired');
+
+    await fs.writeFile(lockPath, JSON.stringify({ ownerToken: 'live', pid: process.pid, createdAt: 0 }));
+    let currentTime = 0;
+    await expect(withCrossProcessFileLock(lockPath, () => 'never', {
+      timeoutMs: 10,
+      retryMs: 5,
+      now: () => currentTime,
+      wait: async (milliseconds) => { currentTime += milliseconds; },
+      isProcessAlive: () => true,
+    })).rejects.toMatchObject({ code: 'LOCK_TIMEOUT' });
+    expect(JSON.parse(await fs.readFile(lockPath, 'utf8')).ownerToken).toBe('live');
+  });
+
+  test('waits on fresh malformed locks and recovers stale malformed locks', async () => {
+    const directory = await temporaryDirectory();
+    const lockPath = path.join(directory, 'project.lock');
+    await fs.writeFile(lockPath, 'partial');
+    let currentTime = (await fs.stat(lockPath)).mtimeMs;
+    await expect(withCrossProcessFileLock(lockPath, () => 'never', {
+      timeoutMs: 5,
+      retryMs: 5,
+      malformedStaleMs: 100,
+      now: () => currentTime,
+      wait: async (milliseconds) => { currentTime += milliseconds; },
+    })).rejects.toMatchObject({ code: 'LOCK_TIMEOUT' });
+    expect(await fs.readFile(lockPath, 'utf8')).toBe('partial');
+
+    currentTime += 1_000;
+    await expect(withCrossProcessFileLock(lockPath, () => 'recovered', {
+      malformedStaleMs: 100,
+      now: () => currentTime,
+      randomToken: () => 'replacement',
+    })).resolves.toBe('recovered');
+  });
+
+  test('does not unlink a replacement owned by a different token during release', async () => {
+    const directory = await temporaryDirectory();
+    const lockPath = path.join(directory, 'project.lock');
+    await withCrossProcessFileLock(lockPath, async () => {
+      await fs.writeFile(lockPath, JSON.stringify({ ownerToken: 'replacement', pid: process.pid, createdAt: 1 }));
+    }, { randomToken: () => 'original' });
+    expect(JSON.parse(await fs.readFile(lockPath, 'utf8')).ownerToken).toBe('replacement');
   });
 });

@@ -8,8 +8,8 @@ Provider-agnostic quota reporting module for model/provider usage limits, exposi
 - **Directory-scoped resolution**: routes accept header/query project directory hints and normalize via shared resolver.
 - **Active-runtime proxy resolution**: managed Claude proxy quota uses the effective Anthropic `baseURL` from the active OpenCode provider catalog; external runtimes never fall back to the host's local Claude account.
 - **Error contract discipline**: route layer wraps provider exceptions into HTTP status/error payloads.
-- **Managed secrets**: `credentials/store.js` owns allowlisted private atomic files; `credentials/providers.js` owns exact shapes and safe status; `credentials/cursor-import.js` owns explicit read-only Cursor import.
-- **Cross-host parity**: z.ai, Kimi, Codex, xAI, and DeepSeek delegate requests and normalization to `@openchamber/shared-runtime`; host modules own credential discovery and persistence only.
+- **Managed secrets**: `credentials/store.js` owns allowlisted private atomic files for OpenCode Zen, Ollama Cloud, and Cursor plus narrow retirement of the legacy OpenCode Go file; `credentials/providers.js` owns exact active shapes and safe status; `credentials/cursor-import.js` owns explicit read-only Cursor import.
+- **Cross-host parity**: OpenCode Zen, z.ai, Kimi, Codex, xAI, DeepSeek, and OpenCode Go delegate requests and normalization to `@openchamber/shared-runtime`; host modules own credential discovery and persistence only.
 
 ## Flow
 1. Request hits `/api/quota/providers`, `/api/quota/credentials/:providerId`, or `/api/quota/:providerId`.

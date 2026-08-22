@@ -143,7 +143,12 @@ export async function handleStandardGitBridgeMessage(message: BridgeMessageInput
           directory: worktreeDirectory,
           deleteLocalBranch: removePayload?.body?.deleteLocalBranch === true || removePayload?.deleteLocalBranch === true,
         });
-        return { id, type, success: true, data: { success: Boolean(removed) } };
+        return {
+          id,
+          type,
+          success: true,
+          data: { success: Boolean(removed), removedPath: removed.removedPath },
+        };
       }
 
       return { id, type, success: false, error: `Unsupported method: ${normalizedMethod}` };

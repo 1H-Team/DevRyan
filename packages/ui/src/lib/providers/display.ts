@@ -32,5 +32,8 @@ export const getProviderDisplayName = (
   if (provider.id === 'cursor-acp') {
     return provider.name === 'Cursor ACP' ? 'Cursor' : provider.name || 'Cursor';
   }
+  if (provider.id === 'opencode') {
+    return 'OpenCode Zen';
+  }
   return provider.name || provider.id || (sources?.anthropicOAuth?.exists ? 'Claude' : '');
 };

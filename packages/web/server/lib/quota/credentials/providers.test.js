@@ -39,11 +39,22 @@ describe('managed quota credentials', () => {
     );
   });
 
-  it('normalizes exact provider shapes and strips one OpenCode Go auth prefix', () => {
-    expect(assertManagedQuotaCredential('opencode-go', {
+  it('normalizes exact active provider shapes and rejects the retired OpenCode Go manual form', () => {
+    expect(() => assertManagedQuotaCredential('opencode-go', {
       workspaceId: 'wrk_example1',
       authCookie: 'auth=secret',
-    }).credential).toEqual({ workspaceId: 'wrk_example1', authCookie: 'secret' });
+    })).toThrowError(expect.objectContaining({ code: 'UNSUPPORTED_PROVIDER' }));
+    expect(assertManagedQuotaCredential('opencode', {
+      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
+      authCookie: 'signed-cookie',
+    }).credential).toEqual({
+      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
+      authCookie: 'signed-cookie',
+    });
+    expect(() => assertManagedQuotaCredential('opencode', {
+      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
+      authCookie: 'first; second=smuggled',
+    })).toThrowError(expect.objectContaining({ code: 'INVALID_CREDENTIAL' }));
     expect(assertManagedQuotaCredential('cursor', { accessToken: 'access', refreshToken: 'refresh' }).credential)
       .toEqual({ accessToken: 'access', refreshToken: 'refresh' });
     expect(() => assertManagedQuotaCredential('cursor-acp', {
@@ -74,6 +85,21 @@ describe('managed quota credentials', () => {
 
     deleteManagedQuotaCredential('cursor', options);
     expect(getManagedQuotaCredentialStatus('cursor-acp', options)).toEqual({ configured: false });
+  });
+
+  it('stores OpenCode Zen dashboard credentials without returning either field', () => {
+    const options = makeOptions();
+    const status = writeManagedQuotaCredential('opencode', {
+      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
+      authCookie: 'do-not-return-me',
+    }, options);
+    expect(status).toEqual({
+      configured: true,
+      credentialKind: 'dashboard',
+      secretMasked: '••••••••',
+    });
+    expect(JSON.stringify(status)).not.toContain('wrk_');
+    expect(JSON.stringify(status)).not.toContain('do-not-return-me');
   });
 
   it('cleans the exact temporary file after an atomic rename failure', () => {

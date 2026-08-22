@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -119,5 +123,42 @@ describe('DevRyan default plugin catalog', () => {
     expect(inventory.defaults.find((plugin) => plugin.pluginId === 'openai-tool-schema-sanitizer')).toMatchObject({
       configuredSourcePath: '/tmp/plugins/openai-tool-schema-sanitizer.mjs',
     });
+  });
+});
+
+/**
+ * Regression guard for the OpenCode plugin loader contract.
+ *
+ * The loader iterates `Object.values(mod)` and requires every export to be a
+ * function (or an object exposing a `.server` function); a single
+ * `export const FOO = 'bar'` makes it throw "Plugin export is not a function"
+ * and the ENTIRE plugin is silently skipped at runtime. Two shipped plugins
+ * (devryan-skill-context, devryan-tool-input-guard) violated this for weeks
+ * while their own unit tests stayed green, because those tests import symbols
+ * directly and never exercise the loader.
+ */
+describe('shipped plugin export shape', () => {
+  const pluginRoots = [
+    path.resolve(import.meta.dirname, '../../default-config/plugins'),
+    path.resolve(import.meta.dirname, '../../../../desktop/src-tauri/resources/default-config/plugins'),
+  ].filter((root) => fs.existsSync(root));
+
+  const pluginFiles = pluginRoots.flatMap((root) => (
+    fs.readdirSync(root)
+      .filter((file) => /\.(mjs|js)$/.test(file) && !file.includes('.test.'))
+      .map((file) => [path.relative(process.cwd(), path.join(root, file)), path.join(root, file)])
+  ));
+
+  it('finds plugin files to check', () => {
+    expect(pluginFiles.length).toBeGreaterThan(0);
+  });
+
+  it.each(pluginFiles)('%s exports only loader-compatible values', async (_label, absolutePath) => {
+    const mod = await import(pathToFileURL(absolutePath).href);
+    const offenders = Object.entries(mod)
+      .filter(([, value]) => typeof value !== 'function' && typeof value?.server !== 'function')
+      .map(([name]) => name);
+
+    expect(offenders).toEqual([]);
   });
 });

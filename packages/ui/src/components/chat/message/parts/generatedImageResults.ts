@@ -1,175 +1,173 @@
 import type { Part, ToolPart } from '@opencode-ai/sdk/v2';
+import {
+    canonicalizeAssistantImageSource,
+    extractAssistantImageReferences,
+    isSupportedAssistantImageSource,
+    type AssistantImageReferenceKind,
+} from '../../../../../../shared-runtime/lib/assistant-image-sources.js';
 
-import type { TurnActivityRecord } from '../../lib/turns/types';
 import { isToolPartFinalizedForDisplay } from './toolDisplayState';
 import { normalizeToolName } from './toolRenderUtils';
 
-export interface GeneratedImageResult {
-    toolPartId: string;
-    path: string;
+export type AssistantImageSourceKind = AssistantImageReferenceKind | 'tool-output';
+
+export interface AssistantImageCandidate {
+    id: string;
+    source: string;
     filename: string;
-    directory?: string;
-    linkedMessageId?: string;
-    linkLabel?: string;
+    caption: string;
+    sourceKind: AssistantImageSourceKind;
+    messageId: string;
+    toolPartId?: string;
+    preparedUrl?: string;
+    mimeType?: string;
+    size?: number;
 }
 
-export type GeneratedImageMarkdownSegment =
-    | { type: 'markdown'; content: string }
-    | { type: 'image'; result: GeneratedImageResult };
-
-export const buildGeneratedImageRawUrl = (path: string, directory?: string): string => {
-    const params = new URLSearchParams({ path });
-    if (directory?.trim()) params.set('directory', directory.trim());
-    return `/api/fs/raw?${params.toString()}`;
-};
-
-interface AssistantMessageParts {
+export interface AssistantImageMessage {
     messageId: string;
-    parts: Part[];
+    parts: readonly Part[];
 }
 
 const readTextPart = (part: Part): string => {
     const candidate = part as Part & { text?: unknown; content?: unknown; value?: unknown };
-    const values = [candidate.text, candidate.content, candidate.value]
-        .filter((value): value is string => typeof value === 'string');
-    return values.reduce((longest, value) => value.length > longest.length ? value : longest, '');
+    return [candidate.text, candidate.content, candidate.value]
+        .filter((value): value is string => typeof value === 'string')
+        .reduce((longest, value) => value.length > longest.length ? value : longest, '');
 };
 
-const decodePath = (value: string): string => {
+const filenameForSource = (source: string): string => {
+    if (source.startsWith('data:image/png')) return 'embedded-image.png';
+    if (source.startsWith('data:image/jpeg')) return 'embedded-image.jpg';
+    if (source.startsWith('data:image/gif')) return 'embedded-image.gif';
+    if (source.startsWith('data:image/webp')) return 'embedded-image.webp';
     try {
-        return decodeURIComponent(value);
+        const url = new URL(source, 'https://devryan.invalid');
+        const filename = decodeURIComponent(url.pathname).replace(/\\/g, '/').split('/').pop();
+        if (filename) return filename;
     } catch {
-        return value;
+        // Plain local paths are handled below.
     }
+    return source.replace(/\\/g, '/').split(/[?#]/, 1)[0]?.split('/').pop() || 'image';
 };
 
-const normalizeComparablePath = (value: string): string => {
-    const normalized = value.replace(/\\/g, '/');
-    return /^\/[A-Za-z]:\//.test(normalized) ? normalized.slice(1) : normalized;
-};
-
-export const normalizeGeneratedImageLinkTarget = (value: string): string | null => {
-    let target = value.trim();
-    if (target.startsWith('<') && target.endsWith('>')) {
-        target = target.slice(1, -1).trim();
+const stableCandidateId = (messageId: string, source: string): string => {
+    let hash = 2_166_136_261;
+    const value = `${messageId}\n${source}`;
+    for (let index = 0; index < value.length; index += 1) {
+        hash ^= value.charCodeAt(index);
+        hash = Math.imul(hash, 16_777_619);
     }
-    if (!target) return null;
+    return `assistant-image-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+};
 
-    try {
-        const url = new URL(target, 'https://devryan.invalid');
-        if (url.protocol === 'file:') {
-            return decodePath(url.pathname);
-        }
-        if (url.origin === 'https://devryan.invalid' && url.pathname === '/api/fs/raw') {
-            const path = url.searchParams.get('path');
-            return path ? decodePath(path) : null;
-        }
-    } catch {
-        // Plain filesystem paths are handled below.
+const readDeclaredMimeType = (metadata: Record<string, unknown>): string => {
+    for (const key of ['mimeType', 'mime', 'contentType']) {
+        const value = metadata[key];
+        if (typeof value === 'string' && value.trim()) return value.trim().toLowerCase();
     }
-
-    return decodePath(target);
+    return '';
 };
 
-const STANDALONE_MARKDOWN_LINK = /^\s*\[([^\]]+)\]\((<[^>]+>|[^\s)]+)(?:\s+["'][^"']*["'])?\)\s*$/;
+const isImageGenerationTool = (toolName: string): boolean => (
+    toolName === 'gpt_imagegen'
+    || toolName === 'imagegen'
+    || toolName === 'image_gen'
+    || toolName === 'image_generation'
+);
 
-export const matchGeneratedImageStandaloneLink = (
-    line: string,
-    results: readonly GeneratedImageResult[],
-): { result: GeneratedImageResult; label: string } | null => {
-    const match = line.match(STANDALONE_MARKDOWN_LINK);
-    if (!match) return null;
-
-    const target = normalizeGeneratedImageLinkTarget(match[2] ?? '');
-    if (!target) return null;
-    const comparableTarget = normalizeComparablePath(target);
-    const result = results.find((candidate) => normalizeComparablePath(candidate.path) === comparableTarget);
-    return result ? { result, label: match[1]?.trim() || result.filename } : null;
+const extractToolOutput = (part: ToolPart): { source: string; mimeType?: string } | null => {
+    if (!isToolPartFinalizedForDisplay(part)) return null;
+    const state = part.state as { metadata?: unknown } | undefined;
+    const metadata = state?.metadata && typeof state.metadata === 'object' && !Array.isArray(state.metadata)
+        ? state.metadata as Record<string, unknown>
+        : {};
+    const output = typeof metadata.out === 'string' ? metadata.out.trim() : '';
+    const source = canonicalizeAssistantImageSource(output);
+    if (!source || !isSupportedAssistantImageSource(source)) return null;
+    const mimeType = readDeclaredMimeType(metadata);
+    if (!mimeType.startsWith('image/') && !isImageGenerationTool(normalizeToolName(part.tool))) return null;
+    return { source, ...(mimeType ? { mimeType } : {}) };
 };
 
-export const extractGeneratedImageResults = (
-    activities: readonly TurnActivityRecord[],
-): GeneratedImageResult[] => {
-    const results: GeneratedImageResult[] = [];
-    const seen = new Set<string>();
-
-    for (const activity of activities) {
-        if (activity.kind !== 'tool') continue;
-        const part = activity.part as ToolPart;
-        if (normalizeToolName(part.tool) !== 'gpt_imagegen' || !isToolPartFinalizedForDisplay(part)) continue;
-
-        const state = part.state as { metadata?: Record<string, unknown> } | undefined;
-        const outputPath = typeof state?.metadata?.out === 'string' ? state.metadata.out.trim() : '';
-        if (!outputPath || seen.has(part.id)) continue;
-        seen.add(part.id);
-
-        const normalized = outputPath.replace(/\\/g, '/');
-        results.push({
-            toolPartId: part.id,
-            path: outputPath,
-            filename: normalized.split('/').pop() || 'generated-image.png',
-        });
-    }
-
-    return results;
+export const buildAssistantImageRawUrl = (
+    path: string,
+    directory?: string,
+    assetGrant?: string,
+    workspaceOnly = false,
+): string => {
+    const params = new URLSearchParams({ path });
+    if (directory?.trim()) params.set('directory', directory.trim());
+    if (assetGrant?.trim()) params.set('assetGrant', assetGrant.trim());
+    if (workspaceOnly) params.set('assistantImage', '1');
+    return `/api/fs/raw?${params.toString()}`;
 };
 
-export const annotateGeneratedImageLinks = (
-    results: readonly GeneratedImageResult[],
-    messages: readonly AssistantMessageParts[],
-): GeneratedImageResult[] => {
-    const annotated = results.map((result) => ({ ...result }));
-    const linkedToolIds = new Set<string>();
+export const extractAssistantImageCandidates = ({
+    messages,
+    responseComplete,
+    limit = 12,
+}: {
+    messages: readonly AssistantImageMessage[];
+    responseComplete: boolean;
+    limit?: number;
+}): AssistantImageCandidate[] => {
+    if (!responseComplete || limit <= 0) return [];
+    const candidates: AssistantImageCandidate[] = [];
+    const indexBySource = new Map<string, number>();
 
     for (const message of messages) {
         for (const part of message.parts) {
             if (part.type !== 'text') continue;
-            for (const line of readTextPart(part).split(/\r?\n/)) {
-                const matched = matchGeneratedImageStandaloneLink(line, annotated);
-                if (!matched || linkedToolIds.has(matched.result.toolPartId)) continue;
-                const target = annotated.find((candidate) => candidate.toolPartId === matched.result.toolPartId);
-                if (!target) continue;
-                target.linkedMessageId = message.messageId;
-                target.linkLabel = matched.label;
-                linkedToolIds.add(target.toolPartId);
+            for (const reference of extractAssistantImageReferences(readTextPart(part))) {
+                if (indexBySource.has(reference.source)) continue;
+                indexBySource.set(reference.source, candidates.length);
+                const filename = filenameForSource(reference.source);
+                candidates.push({
+                    id: stableCandidateId(message.messageId, reference.source),
+                    source: reference.source,
+                    filename,
+                    caption: reference.caption || filename,
+                    sourceKind: reference.kind,
+                    messageId: message.messageId,
+                });
             }
         }
     }
 
-    return annotated;
-};
-
-export const splitGeneratedImageMarkdown = (
-    content: string,
-    messageId: string,
-    results: readonly GeneratedImageResult[],
-): GeneratedImageMarkdownSegment[] => {
-    const linkedResults = results.filter((result) => result.linkedMessageId === messageId);
-    if (linkedResults.length === 0) return [{ type: 'markdown', content }];
-
-    const segments: GeneratedImageMarkdownSegment[] = [];
-    const markdownLines: string[] = [];
-    const rendered = new Set<string>();
-    const flushMarkdown = () => {
-        const markdown = markdownLines.join('\n');
-        markdownLines.length = 0;
-        if (markdown.length > 0) segments.push({ type: 'markdown', content: markdown });
-    };
-
-    for (const line of content.split(/\r?\n/)) {
-        const matched = matchGeneratedImageStandaloneLink(line, linkedResults);
-        if (!matched || rendered.has(matched.result.toolPartId)) {
-            markdownLines.push(line);
-            continue;
+    const unlinkedToolCandidates: AssistantImageCandidate[] = [];
+    for (const message of messages) {
+        for (const part of message.parts) {
+            if (part.type !== 'tool') continue;
+            const output = extractToolOutput(part as ToolPart);
+            if (!output) continue;
+            const existingIndex = indexBySource.get(output.source);
+            if (typeof existingIndex === 'number') {
+                if (existingIndex < candidates.length) {
+                    const existing = candidates[existingIndex];
+                    candidates[existingIndex] = {
+                        ...existing,
+                        messageId: message.messageId,
+                        toolPartId: part.id,
+                        ...(output.mimeType ? { mimeType: output.mimeType } : {}),
+                    };
+                }
+                continue;
+            }
+            indexBySource.set(output.source, candidates.length + unlinkedToolCandidates.length);
+            const filename = filenameForSource(output.source);
+            unlinkedToolCandidates.push({
+                id: stableCandidateId(message.messageId, output.source),
+                source: output.source,
+                filename,
+                caption: filename,
+                sourceKind: 'tool-output',
+                messageId: message.messageId,
+                toolPartId: part.id,
+                ...(output.mimeType ? { mimeType: output.mimeType } : {}),
+            });
         }
-        flushMarkdown();
-        rendered.add(matched.result.toolPartId);
-        segments.push({
-            type: 'image',
-            result: { ...matched.result, linkLabel: matched.label },
-        });
     }
-    flushMarkdown();
 
-    return segments.length > 0 ? segments : [{ type: 'markdown', content }];
+    return [...candidates, ...unlinkedToolCandidates].slice(0, Math.min(12, Math.floor(limit)));
 };

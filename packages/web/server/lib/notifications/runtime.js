@@ -1300,8 +1300,12 @@ export const createNotificationTriggerRuntime = (deps) => {
         }
 
         const settings = await readSettingsFromDisk();
+        const isFolderPermission = permission === 'external_directory';
 
-        if (settings.notifyOnQuestion === false) {
+        const permissionNotificationsEnabled = isFolderPermission
+          ? (settings.notifyOnPermission ?? settings.notifyOnQuestion) !== false
+          : settings.notifyOnQuestion !== false;
+        if (!permissionNotificationsEnabled) {
           return;
         }
 
@@ -1311,11 +1315,14 @@ export const createNotificationTriggerRuntime = (deps) => {
 
         const sessionTitle = payload.properties?.sessionTitle;
         const permissionText = typeof permission === 'string' && permission.length > 0 ? permission : '';
-        const fallbackMessage = typeof sessionTitle === 'string' && sessionTitle.trim().length > 0
-          ? sessionTitle.trim()
-          : permissionText || 'Agent is waiting for your approval';
+        const patterns = Array.isArray(payload.properties?.patterns) ? payload.properties.patterns : [];
+        const requestedPath = patterns.find((pattern) => typeof pattern === 'string' && pattern.trim().length > 0)?.trim() || '';
+        const fallbackMessage = requestedPath
+          || (typeof sessionTitle === 'string' && sessionTitle.trim().length > 0 ? sessionTitle.trim() : '')
+          || permissionText
+          || 'Agent is waiting for folder access';
 
-        let title = 'Permission required';
+        let title = isFolderPermission ? 'Permissions needed' : 'Permission required';
         let body = fallbackMessage;
 
         try {
@@ -1323,12 +1330,17 @@ export const createNotificationTriggerRuntime = (deps) => {
           variables.last_message = fallbackMessage;
 
           const templates = settings.notificationTemplates || {};
-          const questionTemplate = templates.question || { title: 'Permission required', message: '{last_message}' };
+          const permissionTemplate = isFolderPermission
+            ? (templates.permission || {
+                title: 'Permissions needed',
+                message: 'Folder access is required: {last_message}',
+              })
+            : (templates.question || { title: 'Permission required', message: '{last_message}' });
 
-          const resolvedTitle = resolveNotificationTemplate(questionTemplate.title, variables);
-          const resolvedBody = resolveNotificationTemplate(questionTemplate.message, variables);
+          const resolvedTitle = resolveNotificationTemplate(permissionTemplate.title, variables);
+          const resolvedBody = resolveNotificationTemplate(permissionTemplate.message, variables);
           if (resolvedTitle) title = resolvedTitle;
-          if (shouldApplyResolvedTemplateMessage(questionTemplate.message, resolvedBody, variables)) body = resolvedBody;
+          if (shouldApplyResolvedTemplateMessage(permissionTemplate.message, resolvedBody, variables)) body = resolvedBody;
         } catch (error) {
           console.warn('[Notification] Permission template resolution failed, using defaults:', error?.message || error);
         }

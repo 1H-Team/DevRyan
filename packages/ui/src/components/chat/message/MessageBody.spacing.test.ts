@@ -32,7 +32,9 @@ describe('session output spacing', () => {
     test('uses the same full rhythm step at the live status boundary after dispatch cards', () => {
         const source = read('../ChatContainer.tsx');
 
-        expect(source).toContain("isMobile ? 'mt-2' : 'mt-3'");
+        expect(source).toContain("isMobile ? 'mt-3' : 'mt-4'");
+        expect(source).toContain("'mb-3 min-h-[1.45rem]'");
+        expect(source).not.toContain("isMobile ? 'mt-2' : 'mt-3'");
         expect(source).not.toContain("isMobile ? 'mt-1.5' : 'mt-2'");
     });
 
@@ -72,8 +74,8 @@ describe('session output spacing', () => {
         expect(reasoning).not.toContain('className="my-1" data-reasoning-block-id');
         expect(reasoning).not.toContain('className="my-1 typography-meta text-muted-foreground"');
         // The timeline block owns the responsive row padding without exterior
-        // margins; the empty-active "Thinking…" placeholder is gone (the bottom
-        // status row owns that indicator).
+        // margins; the disclosure owns the active "Thinking…" label while this
+        // expanded-body renderer remains text-only.
         expect(reasoning.match(/isMobile \? 'relative pr-2 py-1' : 'relative pr-2 py-1\.5'/g)).toHaveLength(1);
 
         expect(progressiveGroup).not.toContain('className="mt-1 mb-2 space-y-1.5"');
