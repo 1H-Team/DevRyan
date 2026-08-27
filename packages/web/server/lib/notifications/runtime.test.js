@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createNotificationTriggerRuntime } from './runtime.js';
+import { createNotificationTemplateRuntime } from './template-runtime.js';
 
 const createCompletionPayload = (overrides = {}) => ({
   type: 'message.updated',
@@ -373,7 +374,11 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.push).toHaveLength(2);
   });
 
-  it.each(['smartfetch-secondary', 'Commit generation workflow'])(
+  it.each([
+    'smartfetch-secondary',
+    'Commit generation workflow',
+    'DevRyan title generation (internal)',
+  ])(
     'suppresses completion delivery for the hidden helper session %s',
     async (title) => {
       const { runtime, calls, mocks } = createRuntime({}, {
@@ -808,6 +813,49 @@ describe('notification trigger runtime completion gating', () => {
 
     expect(mocks.prepareNotificationLastMessage).toHaveBeenCalledWith(expect.objectContaining({ message: planText }));
     expect(calls.desktop[0]).toMatchObject({ title: 'Review Session title', body: planText });
+  });
+
+  it('uses the projected session name in every Plan Ready delivery channel', async () => {
+    const placeholder = 'New session - 2026-08-27T00:26:56.854Z';
+    const templateRuntime = createNotificationTemplateRuntime({
+      readSettingsFromDisk: async () => ({ projects: [] }),
+      persistSettings: vi.fn(async () => {}),
+      buildOpenCodeUrl: (path) => path,
+      getOpenCodeAuthHeaders: () => ({}),
+      resolveGitBinaryForSpawn: () => 'git',
+    });
+    templateRuntime.maybeCacheSessionInfoFromEvent({
+      type: 'session.created',
+      properties: { info: { id: 'ses_1', title: placeholder, parentID: null } },
+    });
+    templateRuntime.maybeCacheSessionInfoFromEvent({
+      type: 'session.updated',
+      properties: { info: { id: 'ses_1', title: 'Reorder clinic professionals section', parentID: null } },
+    });
+    templateRuntime.maybeCacheSessionInfoFromEvent({
+      type: 'session.updated',
+      properties: { info: { id: 'ses_1', title: placeholder, parentID: null } },
+    });
+
+    const { runtime, calls, mocks } = createRuntime(
+      {
+        notificationTemplates: {
+          planReady: { title: 'Plan ready', message: '{session_name} has a plan ready for review' },
+        },
+      },
+      { messages: createPlanMessages() },
+    );
+    mocks.buildTemplateVariables.mockImplementation((payload, sessionId) => (
+      templateRuntime.buildTemplateVariables(payload, sessionId)
+    ));
+
+    await completePlanSession(runtime);
+
+    const expectedBody = 'Reorder clinic professionals section has a plan ready for review';
+    expect(calls.desktop[0]).toMatchObject({ kind: 'plan-ready', body: expectedBody });
+    expect(calls.ui[0]).toMatchObject({ kind: 'plan-ready', body: expectedBody });
+    expect(calls.push[0]).toMatchObject({ body: expectedBody });
+    expect(calls.desktop[0].body).not.toContain(placeholder);
   });
 
   it('applies hidden-only and subtask gates to Plan Ready notifications', async () => {

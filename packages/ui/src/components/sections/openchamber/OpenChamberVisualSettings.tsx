@@ -38,6 +38,8 @@ import {
     setDirectoryShowHidden,
     useDirectoryShowHidden,
 } from '@/lib/directoryShowHidden';
+import { useAuthPrincipal } from '@/lib/authSession';
+import { isVisualSettingAllowedByPolicy } from './visualSettingsPolicy';
 
 interface Option<T extends string> {
     id: T;
@@ -204,7 +206,7 @@ const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' 
     return mode === 'markdown' ? 'markdown' : 'plain';
 };
 
-export type VisibleSetting = 'theme' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'fontSize' | 'chatWidth' | 'terminalFontSize' | 'spacing' | 'inputBarOffset' | 'mermaidRendering' | 'userMessageRendering' | 'collapsibleUserMessages' | 'stickyUserHeader' | 'splitAssistantMessageActions' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'reasoning' | 'showToolFileIcons' | 'expandedTools' | 'queueMode' | 'terminalQuickKeys';
+export type VisibleSetting = 'theme' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'fontSize' | 'chatWidth' | 'codeFont' | 'terminalFontSize' | 'spacing' | 'inputBarOffset' | 'mermaidRendering' | 'userMessageRendering' | 'collapsibleUserMessages' | 'stickyUserHeader' | 'splitAssistantMessageActions' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'reasoning' | 'showToolFileIcons' | 'expandedTools' | 'queueMode' | 'terminalQuickKeys';
 
 interface OpenChamberVisualSettingsProps {
     /** Which settings to show. If undefined, shows all. */
@@ -216,6 +218,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const tUnsafe = React.useCallback((key: string) => t(key as Parameters<typeof t>[0]), [t]);
     const { isMobile } = useDeviceInfo();
     const { browserTab } = usePwaDetection();
+    const principal = useAuthPrincipal();
     const directoryShowHidden = useDirectoryShowHidden();
     const showReasoningTraces = useUIStore(state => state.showReasoningTraces);
     const setShowReasoningTraces = useUIStore(state => state.setShowReasoningTraces);
@@ -356,6 +359,9 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     }, []);
 
     const shouldShow = (setting: VisibleSetting): boolean => {
+        if (!isVisualSettingAllowedByPolicy(setting, principal)) {
+            return false;
+        }
         if (!visibleSettings) return true;
         return visibleSettings.includes(setting);
     };
@@ -366,7 +372,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const hasAppearanceSettings = isVSCode
         ? hasLocalizationSettings
         : (shouldShow('theme') || shouldShow('pwaInstallName') || shouldShow('pwaOrientation') || shouldShow('timeFormat') || shouldShow('weekStart'));
-    const hasLayoutSettings = shouldShow('fontSize') || shouldShow('chatWidth') || shouldShow('terminalFontSize') || shouldShow('spacing') || shouldShow('inputBarOffset');
+    const hasLayoutSettings = shouldShow('fontSize') || shouldShow('chatWidth') || shouldShow('codeFont') || shouldShow('terminalFontSize') || shouldShow('spacing') || shouldShow('inputBarOffset');
     const hasNavigationSettings = shouldShow('terminalQuickKeys') && !isMobile;
     const hasBehaviorSettings = shouldShow('mermaidRendering')
         || shouldShow('userMessageRendering')
@@ -828,7 +834,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 </div>
                             )}
 
-                            {shouldShow('terminalFontSize') && (
+                            {shouldShow('codeFont') && (
                                 <div className={cn("py-1", isMobile ? "flex flex-col gap-3" : "flex items-center gap-8")}>
                                     <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "w-56 shrink-0")}>
                                         <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.codeFont')}</span>

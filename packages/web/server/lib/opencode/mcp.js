@@ -82,6 +82,24 @@ function removeMcpAuthCacheEntry(name) {
   }
 }
 
+function getMcpOAuthCredential(name, serverUrl, now = Date.now()) {
+  if (typeof name !== 'string' || !name || typeof serverUrl !== 'string' || !serverUrl) return null;
+  if (!Number.isFinite(now) || !fs.existsSync(MCP_AUTH_FILE)) return null;
+
+  const auth = readJsonFileIfPresent(MCP_AUTH_FILE);
+  const entry = auth?.[name];
+  const tokens = entry?.tokens;
+  if (!isPlainObject(entry) || entry.serverUrl !== serverUrl || !isPlainObject(tokens)
+    || typeof tokens.accessToken !== 'string' || !tokens.accessToken) {
+    return null;
+  }
+  const expiresAt = Number.isFinite(tokens.expiresAt) ? Number(tokens.expiresAt) : null;
+  return Object.freeze({
+    authorization: `Bearer ${tokens.accessToken}`,
+    expired: expiresAt !== null && (expiresAt * 1_000) <= now,
+  });
+}
+
 function identityRelevantMcpFields(entry) {
   const normalized = buildMcpEntry(entry);
   return {
@@ -732,6 +750,7 @@ function recoverMcpConfigs(workingDirectory) {
 export {
   listMcpConfigs,
   getMcpConfig,
+  getMcpOAuthCredential,
   createMcpConfig,
   updateMcpConfig,
   deleteMcpConfig,

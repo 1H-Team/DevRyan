@@ -17,6 +17,12 @@ owns recovery-aware declarations for sidebar search, project/worktree/task manag
 and confirmation dialogs. `SessionSidebar` defers their first mount until the authoritative
 open/value state activates, then retains the controlled roots across close so primitive exit,
 focus, and New Worktree teardown behavior remain intact.
+`SidebarHeader.tsx` renders the shared keyboard-accessible Coding Agents/Bots
+tablist. `SessionSidebar.tsx` mounts exactly one labelled audience panel:
+Coding Agents owns drafts/projects/sessions/search/multi-run/scheduled actions,
+while Bots owns only `components/bots/sidebar/`. Bot selection coalesces owner
+channel creation without clearing the ordinary session/draft/main-tab state;
+switching back restores it. `SessionNodeItem.tsx` remains Bot-unaware.
 
 ## Flow
 Session entities from stores become sidebar rows; user actions dispatch store/API updates.

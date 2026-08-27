@@ -3,6 +3,7 @@ import type { Session } from '@opencode-ai/sdk/v2';
 import { isStrictlyOlderSession } from '@/sync/session-recency';
 import { opencodeClient } from '@/lib/opencode/client';
 import { listGlobalSessionPages } from '@/stores/globalSessions';
+import { mergeSessionPreservingMeaningfulTitle } from '@/lib/sessionTitles';
 
 type GlobalSessionsStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -183,13 +184,20 @@ const upsertSessionIntoList = (sessions: Session[], session: Session): Session[]
     return [session, ...sessions];
   }
   if (isStrictlyOlderSession(session, sessions[index])) {
-    return sessions;
+    const titlePreservingCurrent = mergeSessionPreservingMeaningfulTitle(session, sessions[index]);
+    if (getSessionSignature(sessions[index]) === getSessionSignature(titlePreservingCurrent)) {
+      return sessions;
+    }
+    const next = [...sessions];
+    next[index] = titlePreservingCurrent;
+    return next;
   }
-  if (getSessionSignature(sessions[index]) === getSessionSignature(session)) {
+  const mergedSession = mergeSessionPreservingMeaningfulTitle(sessions[index], session);
+  if (getSessionSignature(sessions[index]) === getSessionSignature(mergedSession)) {
     return sessions;
   }
   const next = [...sessions];
-  next[index] = session;
+  next[index] = mergedSession;
   return next;
 };
 
@@ -497,7 +505,7 @@ const mergeSessionLists = (existing: Session[], incoming?: Session[]): Session[]
 
   const byId = new Map(existing.map((session) => [session.id, session]));
   incoming.forEach((session) => {
-    byId.set(session.id, session);
+    byId.set(session.id, mergeSessionPreservingMeaningfulTitle(byId.get(session.id), session));
   });
 
   const ordered: Session[] = [];
@@ -532,12 +540,22 @@ const applySnapshot = (
   archivedSessions: Session[],
   status: GlobalSessionsStatus,
 ): Partial<GlobalSessionsState> | GlobalSessionsState => {
-  const nextActiveSessions = sameSessionList(state.activeSessions, activeSessions)
+  const currentById = new Map([
+    ...state.activeSessions,
+    ...state.archivedSessions,
+  ].map((session) => [session.id, session]));
+  const titlePreservingActiveSessions = activeSessions.map((session) => (
+    mergeSessionPreservingMeaningfulTitle(currentById.get(session.id), session)
+  ));
+  const titlePreservingArchivedSessions = archivedSessions.map((session) => (
+    mergeSessionPreservingMeaningfulTitle(currentById.get(session.id), session)
+  ));
+  const nextActiveSessions = sameSessionList(state.activeSessions, titlePreservingActiveSessions)
     ? state.activeSessions
-    : activeSessions;
-  const nextArchivedSessions = sameSessionList(state.archivedSessions, archivedSessions)
+    : titlePreservingActiveSessions;
+  const nextArchivedSessions = sameSessionList(state.archivedSessions, titlePreservingArchivedSessions)
     ? state.archivedSessions
-    : archivedSessions;
+    : titlePreservingArchivedSessions;
   const nextSessionsByDirectory = nextActiveSessions === state.activeSessions
     ? state.sessionsByDirectory
     : buildSessionsByDirectory(nextActiveSessions);
@@ -676,19 +694,25 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     set((state) => {
       const currentSession = state.activeSessions.find((candidate) => candidate.id === session.id)
         ?? state.archivedSessions.find((candidate) => candidate.id === session.id);
-      if (currentSession && isStrictlyOlderSession(session, currentSession)) {
+      const effectiveSession = currentSession && isStrictlyOlderSession(session, currentSession)
+        ? mergeSessionPreservingMeaningfulTitle(session, currentSession)
+        : session;
+      if (
+        currentSession
+        && getSessionSignature(currentSession) === getSessionSignature(effectiveSession)
+      ) {
         return state;
       }
-      const isArchived = Boolean(session.time?.archived);
+      const isArchived = Boolean(effectiveSession.time?.archived);
       const removedActiveSession = isArchived
-        ? state.activeSessions.find((candidate) => candidate.id === session.id)
+        ? state.activeSessions.find((candidate) => candidate.id === effectiveSession.id)
         : undefined;
       const nextActiveSessions = isArchived
-        ? removeSessionsFromList(state.activeSessions, new Set([session.id]))
-        : upsertSessionIntoList(state.activeSessions, session);
+        ? removeSessionsFromList(state.activeSessions, new Set([effectiveSession.id]))
+        : upsertSessionIntoList(state.activeSessions, effectiveSession);
       const nextArchivedSessions = isArchived
-        ? upsertSessionIntoList(state.archivedSessions, session)
-        : removeSessionsFromList(state.archivedSessions, new Set([session.id]));
+        ? upsertSessionIntoList(state.archivedSessions, effectiveSession)
+        : removeSessionsFromList(state.archivedSessions, new Set([effectiveSession.id]));
 
       if (
         nextActiveSessions === state.activeSessions

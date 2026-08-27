@@ -1,5 +1,7 @@
 import {
+  createManagedTerminalErrorRegistry,
   createManagedTaskScheduler,
+  isManagedModelAvailableInCatalog,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
   MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
@@ -20,7 +22,7 @@ import { createManagedOrchestrationPrivateHost } from './private-host.js';
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1_000;
 const DESIGNER_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
 const FIXER_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
-const ORACLE_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
+const ORACLE_TASK_TIMEOUT_MS = 15 * 60 * 1_000;
 const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 25_000;
 
@@ -71,6 +73,7 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   handoff_conflict: 409,
   handoff_in_progress: 409,
   invalid_handoff_scope: 400,
+  invalid_recovery_continuation_claim: 400,
   invalid_result_action: 400,
   ledger_capacity_exceeded: 507,
   manual_model_recovery_required: 409,
@@ -186,11 +189,35 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     dataDirectory: options.dataDirectory,
     logger,
   });
+  const terminalErrors = options.terminalErrors ?? createManagedTerminalErrorRegistry({ now });
+  const validateAgentExecution = typeof options.validateAgentExecution === 'function'
+    ? options.validateAgentExecution
+    : typeof options.buildOpenCodeUrl === 'function'
+      ? async ({ directory, providerId, modelId }) => {
+          if (providerId === 'cursor-acp') return null;
+          try {
+            const url = new URL(String(options.buildOpenCodeUrl('/config/providers', '')));
+            if (directory) url.searchParams.set('directory', directory);
+            const response = await (options.fetchImpl ?? fetch)(url, {
+              headers: {
+                accept: 'application/json',
+                ...options.getOpenCodeAuthHeaders?.(),
+              },
+              signal: AbortSignal.timeout(5_000),
+            });
+            if (!response.ok) return null;
+            return isManagedModelAvailableInCatalog(await response.json(), providerId, modelId);
+          } catch {
+            return null;
+          }
+        }
+      : null;
   const executor = options.executor ?? createWebManagedOpenCodeExecutor({
     buildOpenCodeUrl: options.buildOpenCodeUrl,
     getOpenCodeAuthHeaders: options.getOpenCodeAuthHeaders,
     cursorSdkRuntime: options.cursorSdkRuntime,
     fetchImpl: options.fetchImpl,
+    readTerminalError: (input) => terminalErrors.read(input),
   });
   const scheduler = options.scheduler ?? createManagedTaskScheduler({
     executor,
@@ -353,13 +380,15 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       modelId: typeof params.modelId === 'string' ? params.modelId.trim() : '',
       variant: typeof params.variant === 'string' && params.variant.trim() ? params.variant.trim() : null,
     };
-    if (!resolveAgentExecution || params.deadlineClass === 'council') return requested;
-    const resolved = await resolveAgentExecution({
-      rootSessionId: params.rootSessionId,
-      directory: params.directory,
-      agent: params.agent,
-      fallbackExecution: requested,
-    });
+    const resolved = !resolveAgentExecution || params.deadlineClass === 'council'
+      ? requested
+      : await resolveAgentExecution({
+          rootSessionId: params.rootSessionId,
+          directory: params.directory,
+          agent: params.agent,
+          fallbackExecution: requested,
+        });
+    let admitted = resolved;
     if (
       readOnly
       && !supportsManagedReadOnlyProvider(resolved.providerId)
@@ -367,9 +396,23 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       && requested.modelId
       && supportsManagedReadOnlyProvider(requested.providerId)
     ) {
-      return requested;
+      admitted = requested;
     }
-    return resolved;
+    if (validateAgentExecution) {
+      const available = await validateAgentExecution({
+        directory: params.directory,
+        providerId: admitted.providerId,
+        modelId: admitted.modelId,
+      });
+      if (available === false) {
+        throw createRuntimeError(
+          'managed_agent_model_unavailable',
+          `Managed model is unavailable: ${admitted.providerId}/${admitted.modelId}`,
+          409,
+        );
+      }
+    }
+    return admitted;
   };
 
   const handleRpcInternal = async ({ method, params = {} }, context = {}) => {
@@ -467,6 +510,24 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             ...(sessionId ? { sessionId } : {}),
           }),
         };
+      }
+      case 'claim_provider_recovery_continuation': {
+        const task = getScopedTask(params);
+        return await scheduler.claimProviderRecoveryContinuation({
+          taskId: task.taskId,
+          rootSessionId: task.rootSessionId,
+          directory: task.directory,
+          claimantId: typeof params.claimantId === 'string' ? params.claimantId.trim() : '',
+        });
+      }
+      case 'release_provider_recovery_continuation': {
+        const task = getScopedTask(params);
+        return await scheduler.releaseProviderRecoveryContinuation({
+          taskId: task.taskId,
+          rootSessionId: task.rootSessionId,
+          directory: task.directory,
+          claimantId: typeof params.claimantId === 'string' ? params.claimantId.trim() : '',
+        });
       }
       case 'handoff': {
         const scope = normalizeHandoffParams(params);
@@ -648,6 +709,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         )
         : { status: 'fulfilled' };
       ownershipAcquired = false;
+      terminalErrors.clear();
       const errors = [hostResult, schedulerResult, ownershipResult]
         .filter((result) => result.status === 'rejected')
         .map((result) => result.reason);
@@ -664,6 +726,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     initialize,
     handleRpc,
     getSnapshot,
+    processOpenCodeEvent: (payload) => terminalErrors.observe(payload),
     shutdown,
     flush: () => scheduler.flush(),
     getDiagnostics() {

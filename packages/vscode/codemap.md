@@ -16,6 +16,7 @@ VS Code extension runtime: hosts DevRyan inside VS Code (sidebar + editor panels
 - **Measured webview build graph**: `vite.config.ts` emits `dist/webview/.vite/manifest.json` so the shared root checker can enforce the normal chat startup graph without making tests depend on build output.
 - **Build-metadata discipline**: `vite.config.ts` intentionally omits volatile build-time constants from the measured webview entry; the bootstrap retains useful startup and runtime-config diagnostics without logging a build timestamp.
 - **Cursor host compatibility**: the extension manifest requires VS Code 1.101 or newer so the extension host satisfies the shared Cursor SDK runtime's Node.js 22.13 minimum.
+- **Standard-provider title parity**: `src/sessionTitleRuntime.ts` adapts the shared web/Electron title coordinator to the extension host. Accepted non-Cursor bridge prompts capture their provider/model/variant, use the shared live free-Zen catalog first, and fall back after authoritative idle through the hidden no-tools `devryan-title` helper; `src/sessionActivityWatcher.ts` supplies lifecycle events and stale-helper cleanup.
 
 ## Flow
 1. VS Code activates the extension, creates the managed-orchestration owner, and initializes the OpenCode manager. Managed launches receive only the validated private bridge URL/token pair.

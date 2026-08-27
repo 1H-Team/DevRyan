@@ -47,6 +47,27 @@ const createTaskConfigRuntime = (initialTasks) => {
       else tasks.push(structuredClone(task));
       return { task: structuredClone(task), tasks: tasks.map((entry) => structuredClone(entry)) };
     }),
+    deleteScheduledTask: vi.fn(async (_projectID, taskID) => {
+      const before = tasks.length;
+      tasks = tasks.filter((task) => task.id !== taskID);
+      return {
+        deleted: tasks.length !== before,
+        tasks: tasks.map((task) => structuredClone(task)),
+      };
+    }),
+    deleteScheduledTasksForOwner: vi.fn(async (_projectID, ownerUserId, options = {}) => {
+      const branchNames = Array.isArray(options.branchNames) ? new Set(options.branchNames) : null;
+      const deleted = tasks.filter((task) => (
+        task.ownerUserId === ownerUserId
+        && (!branchNames || branchNames.has(task.target?.branchName))
+      ));
+      tasks = tasks.filter((task) => !deleted.some((entry) => entry.id === task.id));
+      return {
+        deletedCount: deleted.length,
+        deletedTaskIds: deleted.map((task) => task.id),
+        tasks: tasks.map((task) => structuredClone(task)),
+      };
+    }),
   };
   runtime.updateScheduledTaskStateConditionally = vi.fn(async (
     _projectID,
@@ -97,6 +118,7 @@ const createRuntime = ({
   projects = [],
   managedProjectIDs = [],
   resolveTaskExecutionContext,
+  resolveScheduledTaskAccess,
 } = {}) => {
   const projectConfigRuntime = createTaskConfigRuntime(tasks || []);
   const client = createClient();
@@ -109,6 +131,7 @@ const createRuntime = ({
     getOpenCodeAuthHeaders: () => ({}),
     waitForOpenCodeReady: vi.fn(async () => {}),
     resolveTaskExecutionContext,
+    resolveScheduledTaskAccess,
     recordTaskSessionOwnership,
     createClient: () => client,
     logger: { info: vi.fn(), warn: vi.fn() },
@@ -270,6 +293,98 @@ describe('scheduled-tasks managed project execution', () => {
     expect(runtime.getStatus().pendingScheduledTasksCount).toBe(1);
     projects.splice(0, projects.length);
     await runtime.syncAllProjects();
+    expect(runtime.getStatus().pendingScheduledTasksCount).toBe(0);
+    runtime.stop();
+  });
+
+  it('deletes definitively revoked tasks during startup reconciliation', async () => {
+    const revokedTask = createTask({
+      ownerUserId: 'owner-1',
+      target: { branchName: 'main' },
+    });
+    const resolveScheduledTaskAccess = vi.fn(async () => ({ state: 'revoked' }));
+    const { runtime, projectConfigRuntime } = createRuntime({
+      tasks: [revokedTask],
+      managedProjectIDs: ['project-1'],
+      resolveScheduledTaskAccess,
+    });
+
+    await runtime.start();
+
+    expect(projectConfigRuntime.deleteScheduledTask).toHaveBeenCalledWith('project-1', revokedTask.id);
+    expect(runtime.getStatus()).toMatchObject({
+      enabledScheduledTasksCount: 0,
+      pendingScheduledTasksCount: 0,
+      verified: true,
+    });
+    runtime.stop();
+  });
+
+  it('retains suspended-owner tasks without scheduling or quit risk', async () => {
+    const dormantTask = createTask({
+      ownerUserId: 'owner-1',
+      target: { branchName: 'main' },
+    });
+    const { runtime, projectConfigRuntime } = createRuntime({
+      tasks: [dormantTask],
+      managedProjectIDs: ['project-1'],
+      resolveScheduledTaskAccess: vi.fn(async () => ({ state: 'dormant' })),
+    });
+
+    await runtime.start();
+
+    expect(projectConfigRuntime.deleteScheduledTask).not.toHaveBeenCalled();
+    expect(runtime.getStatus()).toMatchObject({
+      enabledScheduledTasksCount: 1,
+      pendingScheduledTasksCount: 0,
+      verified: true,
+    });
+    runtime.stop();
+  });
+
+  it('retains tasks and marks status unverified when access lookup fails', async () => {
+    const task = createTask({
+      ownerUserId: 'owner-1',
+      target: { branchName: 'main' },
+    });
+    const { runtime, projectConfigRuntime } = createRuntime({
+      tasks: [task],
+      managedProjectIDs: ['project-1'],
+      resolveScheduledTaskAccess: vi.fn(async () => {
+        throw Object.assign(new Error('control plane unavailable'), { code: 'control_plane_unavailable' });
+      }),
+    });
+
+    await runtime.start();
+
+    expect(projectConfigRuntime.deleteScheduledTask).not.toHaveBeenCalled();
+    expect(runtime.getStatus()).toMatchObject({
+      enabledScheduledTasksCount: 1,
+      pendingScheduledTasksCount: 0,
+      verified: false,
+    });
+    runtime.stop();
+  });
+
+  it('rechecks access before a run and deletes a newly revoked task without creating a session', async () => {
+    let state = 'runnable';
+    const task = createTask({
+      ownerUserId: 'owner-1',
+      target: { branchName: 'main' },
+    });
+    const { runtime, projectConfigRuntime, client } = createRuntime({
+      tasks: [task],
+      managedProjectIDs: ['project-1'],
+      resolveScheduledTaskAccess: vi.fn(async () => ({ state })),
+    });
+    await runtime.start();
+    state = 'revoked';
+
+    const result = await runtime.runNow('project-1', task.id);
+
+    expect(result).toMatchObject({ ok: false, skipped: true, revoked: true });
+    expect(projectConfigRuntime.deleteScheduledTask).toHaveBeenCalledWith('project-1', task.id);
+    expect(client.session.create).not.toHaveBeenCalled();
     expect(runtime.getStatus().pendingScheduledTasksCount).toBe(0);
     runtime.stop();
   });
@@ -494,6 +609,12 @@ describe('scheduled-tasks cross-process occurrence claims', () => {
       expect(restartClient.session.create).not.toHaveBeenCalled();
       restartScheduler.stop();
     } finally {
+      for (let attempt = 0; attempt < 200
+        && [firstScheduler, secondScheduler].some(
+          (scheduler) => scheduler.getStatus().runningScheduledTasksCount > 0,
+        ); attempt += 1) {
+        await vi.advanceTimersByTimeAsync(0);
+      }
       firstScheduler.stop();
       secondScheduler.stop();
       await fsPromises.rm(tempRoot, { recursive: true, force: true });
@@ -579,6 +700,11 @@ describe('scheduled-tasks cross-process occurrence claims', () => {
       expect(persistedTask.state.lastScheduledFor).toBe(dueAt);
       expect(persistedTask.state.nextRunAt).toBeGreaterThan(Date.now());
     } finally {
+      for (let attempt = 0; attempt < 200
+        && schedulers.some((scheduler) => scheduler.getStatus().runningScheduledTasksCount > 0);
+        attempt += 1) {
+        await vi.advanceTimersByTimeAsync(0);
+      }
       schedulers.forEach((scheduler) => scheduler.stop());
       await fsPromises.rm(tempRoot, { recursive: true, force: true });
     }

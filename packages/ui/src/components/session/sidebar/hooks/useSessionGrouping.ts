@@ -1,7 +1,6 @@
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import type { SessionAssistantActivity } from '@/sync/session-assistant-activity';
-import type { SessionUserActivity } from '@/sync/session-user-activity';
 import type { WorktreeMetadata } from '@/types/worktree';
 import type { SessionGroup, SessionNode } from '../types';
 import {
@@ -21,7 +20,6 @@ type Args = {
   homeDirectory: string | null;
   worktreeMetadata: Map<string, WorktreeMetadata>;
   pinnedSessionIds: Set<string>;
-  sessionUserActivity: SessionUserActivity;
   archivedAssistantActivity: SessionAssistantActivity;
   gitBranches: Map<string, string | null>;
   isVSCode: boolean;
@@ -146,7 +144,7 @@ export const useSessionGrouping = (args: Args) => {
         if (isArchivedSession(a) && isArchivedSession(b)) {
           return compareArchivedSessionsByParentAssistantActivity(a, b, args.archivedAssistantActivity);
         }
-        return compareSessionsByPinnedAndTime(a, b, args.pinnedSessionIds, args.sessionUserActivity);
+        return compareSessionsByPinnedAndTime(a, b, args.pinnedSessionIds);
       };
       const compareArchivedBucketSessions = (a: Session, b: Session) => {
         const aArchived = isArchivedSession(a);
@@ -157,7 +155,7 @@ export const useSessionGrouping = (args: Args) => {
         if (aArchived !== bArchived) {
           return aArchived ? -1 : 1;
         }
-        return compareSessionsByPinnedAndTime(a, b, args.pinnedSessionIds, args.sessionUserActivity);
+        return compareSessionsByPinnedAndTime(a, b, args.pinnedSessionIds);
       };
       const sortedProjectSessions = dedupeSessionsById(projectSessions)
         .sort(compareProjectSessions);
@@ -346,7 +344,7 @@ export const useSessionGrouping = (args: Args) => {
 
       return groups;
     },
-    [args.homeDirectory, args.worktreeMetadata, args.pinnedSessionIds, args.sessionUserActivity, args.archivedAssistantActivity, args.gitBranches, args.isVSCode, t],
+    [args.homeDirectory, args.worktreeMetadata, args.pinnedSessionIds, args.archivedAssistantActivity, args.gitBranches, args.isVSCode, t],
   );
 
   return {

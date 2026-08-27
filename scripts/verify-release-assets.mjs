@@ -14,6 +14,7 @@ export function requiredReleaseAssetNames(version) {
     ...appAssets,
     'latest-mac.yml',
     `DevRyan-web-${version}.tgz`,
+    `DevRyan-bot-runtime-images-${version}.json`,
   ];
 }
 
@@ -81,7 +82,7 @@ async function main() {
     throw new Error(`Release ${tag} contains legacy-branded public assets:\n${legacyBranded.map((name) => `- ${name}`).join('\n')}`);
   }
 
-  console.log(`Release ${tag} has all required app package assets.`);
+  console.log(`Release ${tag} has all required branded app and Bot runtime assets.`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

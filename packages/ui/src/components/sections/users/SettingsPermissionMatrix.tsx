@@ -4,6 +4,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   SETTINGS_PERMISSION_SECTIONS,
   cycleSettingsPermissionOverride,
+  normalizeSettingsPermissions,
   type SettingsPagePermission,
   type SettingsPermissionOverrides,
   type SettingsPermissions,
@@ -61,12 +62,17 @@ export const SettingsPermissionMatrix: React.FC<SettingsPermissionMatrixProps> =
   disabled = false,
   onChange,
 }) => {
+  const safePermissions = React.useMemo(
+    () => normalizeSettingsPermissions(permissions),
+    [permissions],
+  );
+
   const updatePermission = (slug: SettingsPermissionSlug, key: keyof SettingsPagePermission, value: boolean) => {
-    const current = permissions[slug];
+    const current = safePermissions[slug];
     const next = key === 'read'
       ? { read: value, edit: value ? current.edit : false }
       : { read: value ? true : current.read, edit: value };
-    onChange({ ...permissions, [slug]: next });
+    onChange({ ...safePermissions, [slug]: next });
   };
 
   return (
@@ -78,7 +84,7 @@ export const SettingsPermissionMatrix: React.FC<SettingsPermissionMatrixProps> =
             {section.label}
           </div>
           {section.pages.map(([slug, label], pageIndex) => {
-            const permission = permissions[slug];
+            const permission = safePermissions[slug];
             return (
               <div
                 key={slug}
@@ -124,14 +130,26 @@ export const SettingsPermissionOverrideMatrix: React.FC<SettingsPermissionOverri
   disabled = false,
   onChange,
 }) => {
+  const safeEffective = React.useMemo(
+    () => normalizeSettingsPermissions(effective),
+    [effective],
+  );
+  const safeInherited = React.useMemo(
+    () => normalizeSettingsPermissions(inherited),
+    [inherited],
+  );
+
   const updateOverride = (slug: SettingsPermissionSlug, key: keyof SettingsPagePermission) => {
-    const current = overrides[slug] || {};
+    const rawCurrent = overrides?.[slug];
+    const current = rawCurrent && typeof rawCurrent === 'object' && !Array.isArray(rawCurrent)
+      ? rawCurrent
+      : {};
     const nextValue = cycleSettingsPermissionOverride(current[key]);
     const next = { ...current, [key]: nextValue };
     if (nextValue === undefined) delete next[key];
 
     if (key === 'read' && nextValue === false) next.edit = false;
-    if (key === 'edit' && nextValue === true && effective[slug].read === false) next.read = true;
+    if (key === 'edit' && nextValue === true && safeEffective[slug].read === false) next.read = true;
 
     const nextOverrides = { ...overrides };
     if (Object.keys(next).length === 0) delete nextOverrides[slug];
@@ -148,7 +166,10 @@ export const SettingsPermissionOverrideMatrix: React.FC<SettingsPermissionOverri
             {section.label}
           </div>
           {section.pages.map(([slug, label], pageIndex) => {
-            const permission = overrides[slug] || {};
+            const rawPermission = overrides?.[slug];
+            const permission = rawPermission && typeof rawPermission === 'object' && !Array.isArray(rawPermission)
+              ? rawPermission
+              : {};
             const readInherited = permission.read === undefined;
             const editInherited = permission.edit === undefined;
             return (
@@ -164,16 +185,16 @@ export const SettingsPermissionOverrideMatrix: React.FC<SettingsPermissionOverri
                   checked={permission.read === true}
                   indeterminate={readInherited}
                   disabled={disabled}
-                  label={`${label} read override: ${readInherited ? `Inherit (${inherited[slug].read ? 'On' : 'Off'})` : permission.read ? 'On' : 'Off'}`}
-                  status={readInherited ? `Inherit (${inherited[slug].read ? 'On' : 'Off'})` : permission.read ? 'On' : 'Off'}
+                  label={`${label} read override: ${readInherited ? `Inherit (${safeInherited[slug].read ? 'On' : 'Off'})` : permission.read ? 'On' : 'Off'}`}
+                  status={readInherited ? `Inherit (${safeInherited[slug].read ? 'On' : 'Off'})` : permission.read ? 'On' : 'Off'}
                   onChange={() => updateOverride(slug, 'read')}
                 />
                 <PermissionCell
                   checked={permission.edit === true}
                   indeterminate={editInherited}
                   disabled={disabled}
-                  label={`${label} edit override: ${editInherited ? `Inherit (${inherited[slug].edit ? 'On' : 'Off'})` : permission.edit ? 'On' : 'Off'}`}
-                  status={editInherited ? `Inherit (${inherited[slug].edit ? 'On' : 'Off'})` : permission.edit ? 'On' : 'Off'}
+                  label={`${label} edit override: ${editInherited ? `Inherit (${safeInherited[slug].edit ? 'On' : 'Off'})` : permission.edit ? 'On' : 'Off'}`}
+                  status={editInherited ? `Inherit (${safeInherited[slug].edit ? 'On' : 'Off'})` : permission.edit ? 'On' : 'Off'}
                   onChange={() => updateOverride(slug, 'edit')}
                 />
               </div>

@@ -114,7 +114,37 @@ describe('ReasoningGroup', () => {
         expect(isReasoningDisclosureToggleKey('Escape')).toBe(false);
     });
 
-    test('collapses a completed single part into an exact duration disclosure', () => {
+    test('renders a completed short singleton inline without a disclosure label', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-short', text: 'Only line.', start: 1_000, end: 13_000 }),
+        ], { isMessageCompleted: true });
+
+        expect(html).toContain('Only line.');
+        expect(html).not.toContain('data-reasoning-group="true"');
+        expect(html).not.toContain('aria-expanded');
+        expect(html).not.toContain('Thought for');
+    });
+
+    test('keeps a singleton inline immediately below the duration threshold', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-below-threshold', text: 'Still inline.', start: 1_000, end: 15_999 }),
+        ], { isMessageCompleted: true });
+
+        expect(html).toContain('Still inline.');
+        expect(html).not.toContain('data-reasoning-group="true"');
+    });
+
+    test('collapses a completed singleton at the exact duration threshold', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-threshold', text: 'Threshold line.', start: 1_000, end: 16_000 }),
+        ], { isMessageCompleted: true });
+
+        expect(html).toContain('data-reasoning-group="true"');
+        expect(html).toContain('aria-label="Expand reasoning: Thought for 15s"');
+        expect(html).not.toContain('Threshold line.');
+    });
+
+    test('collapses a completed long singleton into an exact duration disclosure', () => {
         const html = renderGroup([
             reasoningPart({ id: 'reasoning-1', text: 'Only line.', start: 1_000, end: 57_000 }),
         ], { isMessageCompleted: true });
@@ -141,6 +171,18 @@ describe('ReasoningGroup', () => {
         expect(html).not.toContain('Latest line.');
     });
 
+    test('collapses two adjacent short thoughts regardless of total duration', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-short-1', text: 'First short line.', start: 1_000, end: 5_000 }),
+            reasoningPart({ id: 'reasoning-short-2', text: 'Second short line.', start: 5_000, end: 9_000 }),
+        ], { isMessageCompleted: true });
+
+        expect(html).toContain('data-reasoning-group="true"');
+        expect(html).toContain('aria-label="Expand reasoning: Thought for 8s"');
+        expect(html).not.toContain('First short line.');
+        expect(html).not.toContain('Second short line.');
+    });
+
     test('renders every entry in source order only when explicitly expanded', () => {
         const groupEntries = entries([
             reasoningPart({ id: 'reasoning-1', text: 'First line.', start: 0, end: 50_000 }),
@@ -162,9 +204,20 @@ describe('ReasoningGroup', () => {
         expect(html.match(/data-message-text-export-root="true"/g)).toHaveLength(2);
     });
 
-    test('falls back to Thought after terminal completion with incomplete timing', () => {
+    test('renders a completed singleton with incomplete timing inline', () => {
         const html = renderGroup([
             reasoningPart({ id: 'reasoning-aborted', text: 'Interrupted.', start: 1_000, end: null }),
+        ], { isMessageCompleted: true });
+
+        expect(html).toContain('Interrupted.');
+        expect(html).not.toContain('data-reasoning-group="true"');
+        expect(html).not.toContain('Thought');
+    });
+
+    test('falls back to Thought for a multi-part disclosure with incomplete timing', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-complete', text: 'Complete.', start: 1_000, end: 2_000 }),
+            reasoningPart({ id: 'reasoning-incomplete', text: 'Interrupted.', start: 2_000, end: null }),
         ], { isMessageCompleted: true });
 
         expect(html).toContain('aria-label="Expand reasoning: Thought"');
@@ -201,6 +254,17 @@ describe('ReasoningGroup', () => {
         expect(html).not.toContain('CLIPPED');
     });
 
+    test('does not let a clipped xAI preview turn a short singleton into a disclosure', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-visible-short', text: 'Visible short line.', start: 1_000, end: 13_000 }),
+            reasoningPart({ id: 'reasoning-clipped', text: clippedXaiPreview, start: 13_000, end: 200_000 }),
+        ], { providerID: 'xai', isMessageCompleted: true });
+
+        expect(html).toContain('Visible short line.');
+        expect(html).not.toContain('data-reasoning-group="true"');
+        expect(html).not.toContain('CLIPPED');
+    });
+
     test('uses a full-width 44px target on mobile', () => {
         const html = renderToStaticMarkup(
             <ReasoningDisclosure
@@ -218,9 +282,14 @@ describe('ReasoningGroup', () => {
     });
 
     test('keeps the 44px target at narrow responsive widths without touch detection', () => {
-        const html = renderGroup([
-            reasoningPart({ id: 'reasoning-responsive', text: 'Responsive thought.' }),
-        ], { isMessageCompleted: true });
+        const html = renderToStaticMarkup(
+            <ReasoningDisclosure
+                entries={entries([reasoningPart({ id: 'reasoning-responsive', text: 'Responsive thought.' })])}
+                isMessageCompleted
+                isExpanded={false}
+                onExpandedChange={() => undefined}
+            />,
+        );
 
         expect(html).toContain('max-md:min-h-11 max-md:w-full max-md:py-2');
         expect(html).toContain('group/reasoning max-md:w-full');

@@ -152,7 +152,7 @@ type MobileVariantTarget = { providerId: string; modelId: string };
 
 const buildModelRefKey = (providerID: string, modelID: string) => `${providerID}:${modelID}`;
 const MAX_INLINE_MOBILE_VARIANT_OPTIONS = 6;
-const PLAN_MODE_AGENT_STYLE: React.CSSProperties = { color: 'var(--status-warning)' };
+const PLAN_MODE_AGENT_STYLE: React.CSSProperties = { color: 'var(--plan-mode-icon-color)' };
 
 const getCursorAcpFastBaseModelId = (modelId?: string) => (
     typeof modelId === 'string'
@@ -709,6 +709,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const agentTriggerIconSize = sizeVariant === 'mobile' ? 'h-[18px] w-[18px]' : 'h-[14.4px] w-[14.4px]';
     const agentTriggerTextSize = isCompact ? 'text-[calc(var(--text-micro)*0.9)]' : 'text-[calc(var(--text-meta)*0.9)]';
     const inlineGapClass = sizeVariant === 'mobile' ? 'gap-x-1' : sizeVariant === 'vscode' ? 'gap-x-2' : 'gap-x-3';
+    const variantLabelAlignmentClass = isDesktop || isVSCodeRuntime ? 'translate-y-[3px]' : undefined;
     const renderEditModeIcon = React.useCallback((mode: EditPermissionMode, iconClass = editToggleIconClass) => {
         const combinedClassName = cn(iconClass, 'flex-shrink-0');
         const modeColors = getEditModeColors(mode);
@@ -2603,7 +2604,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         onClick={handlePlanToggle}
                     >
                         <div className="flex min-w-0 items-center gap-2">
-                            <RiDraftLine className={cn('h-4 w-4 flex-shrink-0', isPlanModeSelected ? 'text-primary' : 'text-muted-foreground')} />
+                            <RiDraftLine
+                                className={cn('h-4 w-4 flex-shrink-0', isPlanModeSelected ? undefined : 'text-muted-foreground')}
+                                style={isPlanModeSelected ? PLAN_MODE_AGENT_STYLE : undefined}
+                            />
                             <span className="typography-ui-label font-semibold text-foreground">
                                 {t('layout.mainTab.plan')}
                             </span>
@@ -3713,7 +3717,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                     <span
                                         className={cn(
                                             'model-controls__variant-label',
-                                            'inline-flex items-center gap-1 text-[10px] leading-[14px] -my-[2px] py-[2px] font-medium min-w-0 truncate text-muted-foreground translate-y-[3px]',
+                                            'inline-flex items-center gap-1 text-[10px] leading-[14px] -my-[2px] py-[2px] font-medium min-w-0 truncate text-muted-foreground',
+                                            variantLabelAlignmentClass,
                                             isDesktop ? 'max-w-[90px]' : undefined,
                                         )}
                                     >
@@ -3792,7 +3797,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 <span
                                     className={cn(
                                         'model-controls__variant-label',
-                                        'inline-flex items-center gap-1 text-[10px] leading-[14px] -my-[2px] py-[2px] font-medium min-w-0 truncate text-muted-foreground translate-y-[3px]',
+                                        'inline-flex items-center gap-1 text-[10px] leading-[14px] -my-[2px] py-[2px] font-medium min-w-0 truncate text-muted-foreground',
+                                        variantLabelAlignmentClass,
                                         isDesktop ? 'max-w-[90px]' : undefined,
                                     )}
                                 >

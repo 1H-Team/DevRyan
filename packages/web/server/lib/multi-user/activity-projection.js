@@ -183,6 +183,15 @@ const errorMetadata = ({ error, sessionId, ownership, context, sanitizeFailureTe
   };
 };
 
+const canonicalSessionFailureText = (value) => {
+  const firstLine = typeof value === 'string' ? value.split('\n', 1)[0].trim() : '';
+  return firstLine
+    .replace(/^(?:(?:%s|UnknownError|ProviderModelNotFoundError|ModelNotFoundError|Error)\s*:\s*)+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+};
+
 export const isProjectableOpenCodeActivity = (payload) => {
   if (!payload || typeof payload !== 'object') return false;
   if (payload.type === 'message.part.updated') {
@@ -296,7 +305,19 @@ export const projectOpenCodeActivity = ({
     const sourceId =
       safeString(payload.id) ||
       `${sessionId}:${metadata.messageId || ''}:${metadata.errorName}:${metadata.failureText || ''}`;
-    const eventId = stableAuditEventId('session.error', sourceId);
+    const candidateEventId = stableAuditEventId('session.error', sourceId);
+    const correlationSignature = [
+      sessionId,
+      metadata.messageId || '',
+      canonicalSessionFailureText(metadata.failureText),
+    ].join('\u0000');
+    const eventId = typeof context?.correlateSessionError === 'function'
+      ? context.correlateSessionError({
+          signature: correlationSignature,
+          candidateEventId,
+          observedAt: Number.isFinite(context.observedAt) ? context.observedAt : Date.now(),
+        })
+      : candidateEventId;
     const classification = classifyDiagnosticFailure({ action: 'session.error', metadata });
     metadata.failureClass = classification.failureClass;
     metadata.diagnosticDisposition = classification.disposition;

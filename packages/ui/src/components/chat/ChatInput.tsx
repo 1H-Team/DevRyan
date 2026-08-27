@@ -137,7 +137,6 @@ import {
 import {
     clearCommittedComposerText,
     clearSubmittedComposerAfterSend,
-    mergeSubmittedAttachmentsForRecovery,
 } from './chatInputSubmitCleanup';
 import { isAbortableSessionPhase, shouldInterruptBeforeSubmit } from './submitInterrupt';
 import {
@@ -725,6 +724,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
     const currentDraftId = useSessionUIStore((s) => s.currentDraftId);
     const updateNewSessionDraftText = useSessionUIStore((s) => s.updateNewSessionDraftText);
+    const updateNewSessionDraftAttachmentCount = useSessionUIStore((s) => s.updateNewSessionDraftAttachmentCount);
     draftTextUpdateRef.current = updateNewSessionDraftText;
     const activeDraftTarget = React.useMemo(
         () => resolveComposerDraftTarget(currentSessionId, currentDraftId),
@@ -756,8 +756,13 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const abortPromptSessionId = useSessionUIStore((s) => s.abortPromptSessionId);
     const clearAbortPrompt = useSessionUIStore((s) => s.clearAbortPrompt);
     const attachedFiles = useInputStore((s) => s.attachedFiles);
+    const activeAttachmentTargetKey = useInputStore((s) => s.activeAttachmentTargetKey);
+    const activeAttachmentsHydrated = useInputStore((s) => s.activeAttachmentsHydrated);
+    const attachmentPersistenceError = useInputStore((s) => s.attachmentPersistenceError);
     const addAttachedFile = useInputStore((s) => s.addAttachedFile);
     const clearAttachedFiles = useInputStore((s) => s.clearAttachedFiles);
+    const activateAttachedFilesTarget = useInputStore((s) => s.activateAttachedFilesTarget);
+    const clearAttachmentPersistenceError = useInputStore((s) => s.clearAttachmentPersistenceError);
     const pendingRestoredInput = useInputStore((s) => (
         currentSessionId ? s.pendingRestoredInputs.get(currentSessionId) ?? null : null
     ));
@@ -1121,6 +1126,29 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         return () => setActiveComposerSession(null);
     }, [currentSessionId]);
 
+    React.useLayoutEffect(() => {
+        void activateAttachedFilesTarget(activeDraftTargetKey === 'none' ? null : activeDraftTargetKey);
+    }, [activateAttachedFilesTarget, activeDraftTargetKey]);
+
+    React.useEffect(() => {
+        if (!attachmentPersistenceError) return;
+        toast.error(t('chat.chatInput.toast.attachmentPersistenceFailed'));
+        clearAttachmentPersistenceError();
+    }, [attachmentPersistenceError, clearAttachmentPersistenceError, t]);
+
+    React.useLayoutEffect(() => {
+        if (activeDraftTarget.kind !== 'draft') return;
+        if (!activeAttachmentsHydrated || activeAttachmentTargetKey !== activeDraftTargetKey) return;
+        updateNewSessionDraftAttachmentCount(activeDraftTarget.id, attachedFiles.length);
+    }, [
+        activeAttachmentTargetKey,
+        activeAttachmentsHydrated,
+        activeDraftTarget,
+        activeDraftTargetKey,
+        attachedFiles.length,
+        updateNewSessionDraftAttachmentCount,
+    ]);
+
     React.useEffect(() => {
         currentDraftTargetRef.current = activeDraftTarget;
     }, [activeDraftTarget]);
@@ -1356,10 +1384,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (!restored) return;
 
         const input = useInputStore.getState();
-        input.clearAttachedFiles();
-        for (const attachment of restored.attachments) {
-            input.addRestoredAttachment(attachment);
-        }
+        input.replaceRestoredAttachmentsForTarget(
+            getComposerDraftTargetKey({ kind: 'session', id: currentSessionId }),
+            restored.attachments,
+        );
         setMessage(restored.text);
         requestAnimationFrame(() => textareaRef.current?.focus());
     }, [consumeRestoredInput, currentSessionId, pendingRestoredInput]);
@@ -2051,10 +2079,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 if (allAttachments.length === 0) {
                     return;
                 }
-                const currentAttachments = useInputStore.getState().attachedFiles;
-                useInputStore.getState().setAttachedFiles(
-                    mergeSubmittedAttachmentsForRecovery(allAttachments, currentAttachments),
-                );
+                const sessionState = useSessionUIStore.getState();
+                const liveTarget = resolveComposerDraftTarget(sessionState.currentSessionId, sessionState.currentDraftId);
+                const recoveryTarget = submittedDraftTarget.kind === 'draft'
+                    && (sessionState.currentDraftId === submittedDraftTarget.id || !sessionState.currentSessionId)
+                    ? submittedDraftTarget
+                    : liveTarget;
+                const recoveryTargetKey = getComposerDraftTargetKey(recoveryTarget);
+                if (recoveryTargetKey === 'none') return;
+                useInputStore.getState().mergeAttachedFilesForTarget(recoveryTargetKey, allAttachments);
             };
 
             if (normalized.includes('payload too large') || normalized.includes('413') || normalized.includes('entity too large')) {

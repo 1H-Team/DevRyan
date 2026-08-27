@@ -634,6 +634,10 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       req.path.startsWith('/api/admin') ||
       req.path.startsWith('/api/analytics') ||
       req.path.startsWith('/api/bug-reports') ||
+      req.path.startsWith('/api/bots') ||
+      req.path.startsWith('/api/bot-actions') ||
+      req.path.startsWith('/api/bot-channels') ||
+      req.path.startsWith('/api/bot-runs') ||
       req.path.startsWith('/api/error-logs') ||
       req.path.startsWith('/api/client-errors') ||
       req.path.startsWith('/api/auth') ||

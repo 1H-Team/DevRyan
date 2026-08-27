@@ -160,5 +160,9 @@ describe('shipped plugin export shape', () => {
       .map(([name]) => name);
 
     expect(offenders).toEqual([]);
+    if (path.basename(absolutePath) === 'devryan-managed-orchestration.mjs') {
+      expect(Object.keys(mod)).toEqual(['DevRyanManagedOrchestrationPlugin']);
+      expect(Object.values(mod)).toHaveLength(1);
+    }
   });
 });

@@ -196,6 +196,11 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
       // bulk of the payload and would otherwise be retained for the whole poll.
       return Array.isArray(messages) ? messages.map(stripMessageDiffSummary) : [];
     },
+    ...(typeof options.readTerminalError === 'function' ? {
+      async readTerminalError(input) {
+        return await options.readTerminalError(input);
+      },
+    } : {}),
     async abortSession(input) {
       if (input.providerId === CURSOR_PROVIDER_ID) {
         if (!cursorSdkRuntime || typeof cursorSdkRuntime.abortSession !== 'function') return false;

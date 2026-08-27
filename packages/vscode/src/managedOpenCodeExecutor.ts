@@ -59,6 +59,7 @@ export const createVsCodeManagedOpenCodeExecutor = (options: {
   pollIntervalMs?: number;
   idleStablePolls?: number;
   sleep?: (delayMs: number, options: { signal: AbortSignal }) => Promise<void>;
+  readTerminalError?: ManagedOpenCodeTransport['readTerminalError'];
 }): ManagedTaskExecutor => {
   const fetchImpl = options.fetchImpl ?? fetch;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
@@ -210,6 +211,11 @@ export const createVsCodeManagedOpenCodeExecutor = (options: {
       );
       return Array.isArray(result) ? result : [];
     },
+    ...(typeof options.readTerminalError === 'function' ? {
+      async readTerminalError(input) {
+        return await options.readTerminalError!(input);
+      },
+    } : {}),
     async abortSession(input) {
       if (input.providerId === CURSOR_PROVIDER_ID) {
         return cursorSdkRuntime ? await cursorSdkRuntime.abortSession(input.sessionId) : false;

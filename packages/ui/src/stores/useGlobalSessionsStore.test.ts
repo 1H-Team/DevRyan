@@ -116,6 +116,31 @@ describe('useGlobalSessionsStore snapshot helpers', () => {
     expect(after.activeSessions[0]).toBe(current);
   });
 
+  test('keeps a projected title across placeholder upserts and complete snapshots', () => {
+    const projected = {
+      ...session('projected', '/repo'),
+      title: 'New session - 2026-08-23T21:14:18.802Z',
+      time: { created: 1, updated: 3 },
+    } as Session;
+    useGlobalSessionsStore.getState().applySnapshot([projected], []);
+
+    useGlobalSessionsStore.getState().upsertSession({
+      ...projected,
+      title: 'Repair Parent Session Titles',
+      time: { created: 1, updated: 2 },
+    } as Session);
+    expect(useGlobalSessionsStore.getState().activeSessions[0]?.title).toBe('Repair Parent Session Titles');
+    expect(useGlobalSessionsStore.getState().activeSessions[0]?.time.updated).toBe(3);
+
+    useGlobalSessionsStore.getState().applySnapshot([{
+      ...projected,
+      title: 'New session - 2026-08-23T21:14:18.802Z',
+      time: { created: 1, updated: 4 },
+    } as Session], []);
+    expect(useGlobalSessionsStore.getState().activeSessions[0]?.title).toBe('Repair Parent Session Titles');
+    expect(useGlobalSessionsStore.getState().activeSessions[0]?.time.updated).toBe(4);
+  });
+
   test('allows an equal-timestamp archive update to change membership', () => {
     const current = {
       ...session('equal-archive', '/repo'),

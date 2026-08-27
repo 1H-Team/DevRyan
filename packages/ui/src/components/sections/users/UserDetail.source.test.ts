@@ -46,4 +46,21 @@ describe('user profile editing source contract', () => {
     expect(source).toContain('capabilityLabels.map(([key, label]) =>');
     expect(source).toContain('value={policyDraft.capabilities[key]}');
   });
+
+  test('renders Bots access as a standalone inherited toggle before core capabilities', () => {
+    expect(typesSource).toContain("export type CapabilityKey = 'bots'");
+    expect(source).toContain('ariaLabel="Allow Bots Access"');
+    expect(source).toContain('checked={botsAccessAllowed}');
+    expect(source).toContain("bots: checked === current.inheritedCapabilities.bots");
+    expect(source.indexOf('ariaLabel="Allow Bots Access"')).toBeLessThan(
+      source.indexOf('Core Capability Overrides'),
+    );
+  });
+
+  test('supports an inherited global Agent Behavior visibility override', () => {
+    expect(typesSource).toContain('hideGlobalBehaviorUi?: boolean');
+    expect(source).toContain('ariaLabel="Hide Global Agent Behavior"');
+    expect(source).toContain('inheritedAgentsHideGlobalBehaviorUi');
+    expect(source).toContain("{ hideGlobalBehaviorUi: policyDraft.agentsHideGlobalBehaviorUi }");
+  });
 });

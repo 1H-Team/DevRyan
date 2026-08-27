@@ -24,8 +24,13 @@ const LazyErrorLogsPanel = /* @__PURE__ */ lazyWithChunkRecovery(() =>
     default: module.ErrorLogsPanel,
   })),
 );
+const LazyBotAuditPanel = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('./BotAuditPanel').then((module) => ({
+    default: module.BotAuditPanel,
+  })),
+);
 
-type BugReportsTab = 'submit' | 'reports' | 'errors';
+type BugReportsTab = 'submit' | 'reports' | 'agent-audit' | 'bot-audit';
 
 const tabClassName =
   'relative shrink-0 rounded-lg px-3 py-2 typography-ui-label font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] data-[active]:bg-[var(--surface-elevated)] data-[active]:text-foreground data-[active]:shadow-sm';
@@ -85,8 +90,13 @@ export const BugReportsPage: React.FC = () => {
                   </Tabs.Tab>
                 ) : null}
                 {isAdmin ? (
-                  <Tabs.Tab className={tabClassName} value="errors">
-                    {t('settings.bugReports.tabs.errors')}
+                  <Tabs.Tab className={tabClassName} value="agent-audit">
+                    {t('settings.bugReports.tabs.agentAudit')}
+                  </Tabs.Tab>
+                ) : null}
+                {isAdmin ? (
+                  <Tabs.Tab className={tabClassName} value="bot-audit">
+                    {t('settings.bugReports.tabs.botAudit')}
                   </Tabs.Tab>
                 ) : null}
               </Tabs.List>
@@ -112,10 +122,19 @@ export const BugReportsPage: React.FC = () => {
             </Tabs.Panel>
           ) : null}
           {isAdmin ? (
-            <Tabs.Panel value="errors" keepMounted className="[[hidden]]:hidden">
-              {visitedTabs.has('errors') ? (
+            <Tabs.Panel value="agent-audit" keepMounted className="[[hidden]]:hidden">
+              {visitedTabs.has('agent-audit') ? (
                 <PanelBoundary>
                   <LazyErrorLogsPanel />
+                </PanelBoundary>
+              ) : null}
+            </Tabs.Panel>
+          ) : null}
+          {isAdmin ? (
+            <Tabs.Panel value="bot-audit" keepMounted className="[[hidden]]:hidden">
+              {visitedTabs.has('bot-audit') ? (
+                <PanelBoundary>
+                  <LazyBotAuditPanel />
                 </PanelBoundary>
               ) : null}
             </Tabs.Panel>

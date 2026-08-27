@@ -16,3 +16,15 @@ diagnostics health and export controls through `AboutSettings`. They also own
 the managed, non-VS-Code-only `bug-reports` page and its Development placement
 directly after User Management; the permission catalog defaults its Read/Edit
 cell on for every managed role while preserving normal sparse overrides.
+The same maps keep the stable `mcp` slug/deep links while displaying **MCP
+Servers** and place it immediately after Plugins in Workflow navigation.
+`navigation.ts` also models grouped sidebar destinations without merging their
+permission identities: Providers contains the `providers` and `usage` tabs,
+while Remote Connections contains `tunnel` and `remote-instances`, making the
+tunnel the default child. Runtime and
+permission filtering selects the first available child, and the existing child
+slugs remain the persistence/deep-link contract. About is the final Development
+destination after Projects.
+Global Coding Agent Skills/MCP visibility remains governed here and in
+`components/views/SettingsView.access.ts`. Bot-specific Skills live only in the
+Bot Resources tab; Bots have no MCP assignment destination.

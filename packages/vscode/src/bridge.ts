@@ -50,6 +50,7 @@ import {
   refreshXaiToolModel,
   supportsXaiProvider,
 } from './xaiToolCatalogRuntime';
+import { scheduleSessionTitle, scheduleSessionTitleRecovery } from './sessionTitleRuntime';
 
 export interface BridgeRequest {
   id: string;
@@ -202,6 +203,8 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
         supportsXaiProvider,
         refreshXaiProviderPayload,
         refreshXaiToolModel,
+        scheduleSessionTitle,
+        scheduleSessionTitleRecovery,
       },
     );
     if (proxyResponse) {

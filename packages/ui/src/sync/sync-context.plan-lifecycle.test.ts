@@ -453,6 +453,36 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(store.getState().part).toBe(before.part)
   })
 
+  test("applies an older meaningful title projection without rolling newer session fields back", () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const current = {
+      id: SESSION_ID,
+      title: "New session - 2026-08-23T22:27:37.456Z",
+      model: { providerID: "openai", id: "gpt-5.6-sol", variant: "high" },
+      time: { created: 1, updated: 10 },
+    } as Session
+    store.setState({ session: [current], sessionTotal: 1 })
+
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.updated",
+      properties: {
+        sessionID: SESSION_ID,
+        info: {
+          ...current,
+          title: "Plan division by zero test coverage",
+          model: { providerID: "openai", id: "gpt-5.6-sol", variant: "medium" },
+          time: { created: 1, updated: 9 },
+        },
+      },
+    } as Event, childStores, routingIndexFor(), DIRECTORY)
+
+    expect(store.getState().session[0]).toEqual({
+      ...current,
+      title: "Plan division by zero test coverage",
+    })
+  })
+
   test("keeps an unguarded provider retry authoritative at the sync event boundary", () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
@@ -3592,6 +3622,33 @@ describe("sync plan lifecycle on message.part.delta", () => {
       [concurrentSession],
       deleteRevision,
     )).toEqual([])
+  })
+
+  test("preserves a projected title when a concurrent canonical snapshot still has a placeholder", () => {
+    const childStores = new ChildStoreManager()
+    const routingIndex = routingIndexFor()
+    const requestRevision = captureDirectorySessionListRevision(DIRECTORY)
+    const projected = {
+      id: SESSION_ID,
+      title: "Repair Parent Session Titles",
+      directory: DIRECTORY,
+      time: { created: 1, updated: 2 },
+    } as Session
+
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.updated",
+      properties: { info: projected },
+    } as Event, childStores, routingIndex, DIRECTORY)
+
+    expect(reconcileDirectorySessionListSnapshot(DIRECTORY, [{
+      ...projected,
+      title: "New session - 2026-08-23T21:14:18.802Z",
+      time: { created: 1, updated: 3 },
+    } as Session], requestRevision)).toEqual([{
+      ...projected,
+      title: "Repair Parent Session Titles",
+      time: { created: 1, updated: 3 },
+    }])
   })
 
   test("deletes a session from every initialized child store despite a wrong event directory", () => {

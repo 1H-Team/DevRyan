@@ -13,12 +13,14 @@ import yaml from 'yaml';
 import { createUiAuth } from './lib/ui-auth/ui-auth.js';
 import { createMultiUserRuntime, getRequestPrincipal } from './lib/multi-user/index.js';
 import { canUseBrowser } from './lib/multi-user/policy.js';
+import { createBotModelCatalogLoader } from './lib/bots/model-catalog.js';
 import { createTunnelAuth } from './lib/opencode/tunnel-auth.js';
 import { createManagedTunnelConfigRuntime } from './lib/tunnels/managed-config.js';
 import { normalizeManagedRemoteTunnelToken } from './lib/tunnels/managed-token.js';
 import { createTunnelProviderRegistry } from './lib/tunnels/registry.js';
 import { createCloudflareTunnelProvider } from './lib/tunnels/providers/cloudflare.js';
 import { createRequestSecurityRuntime } from './lib/security/request-security.js';
+import { registerRuntimeServiceRoutes } from './lib/runtime-service/routes.js';
 import {
   getUnauthenticatedLanErrorMessage,
   isNetworkExposedBindHost,
@@ -765,6 +767,13 @@ let messageStreamRuntime = null;
 let managedOrchestrationRuntime = null;
 let browserLeaseRuntime = null;
 let managedBrowserEnvironmentProvider = null;
+let botEncryptionKeyProvider = null;
+let botEncryptionKeyInstaller = null;
+let botRuntimeStatusProvider = null;
+let botRuntimeControlProvider = null;
+let botRuntimeIndexerProvider = null;
+let botAgentRequestProvider = null;
+let botBrowserProfilesProvider = null;
 let projectPrewarmRuntime = null;
 const userProvidedOpenCodePassword = hmrStateRuntime.getUserProvidedOpenCodePassword(hmrState);
 const initialOpenCodeAuthState = hmrStateRuntime.resolveOpenCodeAuthFromState({
@@ -1060,10 +1069,25 @@ const standardSessionTitleRuntime = createStandardSessionTitleRuntime({
   fetchImpl: fetch,
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
+  fetchFreeZenModels,
+  getCachedZenModels,
   resolveZenModel,
   resolveZenFallbackModel: (model) => (
     resolveZenModelNonBlocking(model)?.fallbackModel || DEFAULT_TITLE_FALLBACK_ZEN_MODEL
   ),
+  onTitleGenerated: ({ session, title, directory }) => {
+    emitSyntheticOpenCodeEvent({
+      type: 'session.updated',
+      properties: {
+        sessionID: session.id,
+        info: {
+          ...session,
+          title,
+        },
+      },
+    }, { directory });
+  },
+  recordDiagnostic: (entry) => harnessRuntime.record(entry),
   logger: console,
 });
 
@@ -1105,6 +1129,7 @@ const processCanonicalOpenCodeEvent = createCanonicalOpenCodeEventProcessor({
   recordMultiUserActivity: (payload) => multiUserRuntime?.recordOpenCodeActivity?.(payload),
   processEvidence: (payload) => evidenceRuntime?.processOpenCodeEvent(payload),
   processBrowserLease: (payload) => browserLeaseRuntime?.processOpenCodeEvent(payload),
+  processManagedOrchestration: (payload) => managedOrchestrationRuntime?.processOpenCodeEvent?.(payload),
   processSessionTitle: (payload) => standardSessionTitleRuntime.processOpenCodeEvent(payload),
   processContextModeRecovery: (payload) => observeContextModeToolFailure(payload),
   processCommandDeadline: (payload) => observeCommandDeadline(payload),
@@ -1417,6 +1442,10 @@ const scheduledTasksRuntime = createScheduledTasksRuntime({
     return sanitizeProjects(settings?.projects || []);
   },
   listManagedProjectIDs: () => multiUserRuntime?.listScheduledTaskProjectIDs?.() || [],
+  resolveScheduledTaskAccess: (input) => (
+    multiUserRuntime?.resolveScheduledTaskAccess?.(input) || Promise.resolve({ state: 'runnable' })
+  ),
+  emitProjectMetadataChanged: broadcastManagedProjectMetadataChanged,
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   waitForOpenCodeReady,
@@ -1480,6 +1509,9 @@ const bootstrapOpenCodeAtStartup = async (...args) => {
   void ensureGlobalWatcherStarted().catch((error) => {
     console.warn(`Global event watcher startup failed: ${error?.message || error}`);
   });
+  void standardSessionTitleRuntime.cleanupStaleHelpers().catch((error) => {
+    console.warn(`[SessionTitle] Startup helper cleanup failed: ${error?.message || error}`);
+  });
   void projectPrewarmRuntime?.run('startup');
 };
 const killProcessOnPort = (...args) => openCodeLifecycleRuntime.killProcessOnPort(...args);
@@ -1488,6 +1520,11 @@ const waitForPortRelease = (...args) => openCodeLifecycleRuntime.waitForPortRele
 const fetchAgentsSnapshot = (...args) => serverUtilsRuntime.fetchAgentsSnapshot(...args);
 const fetchProvidersSnapshot = (...args) => serverUtilsRuntime.fetchProvidersSnapshot(...args);
 const fetchModelsSnapshot = (...args) => serverUtilsRuntime.fetchModelsSnapshot(...args);
+const fetchBotModelCatalog = createBotModelCatalogLoader({
+  fetchImpl: fetch,
+  buildUrl: () => buildOpenCodeUrl('/config/providers', ''),
+  getAuthHeaders: getOpenCodeAuthHeaders,
+});
 const setupProxy = (...args) => serverUtilsRuntime.setupProxy(...args);
 const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   process,
@@ -1510,6 +1547,7 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   setMessageStreamRuntime: (value) => {
     messageStreamRuntime = value;
   },
+  getBotsRuntime: () => multiUserRuntime?.botsRuntime,
   getManagedOrchestrationRuntime: () => managedOrchestrationRuntime,
   getBrowserLeaseRuntime: () => browserLeaseRuntime,
   getCursorSdkRuntime: () => cursorSdkRuntime,
@@ -1538,8 +1576,85 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
 const gracefulShutdown = (...args) => gracefulShutdownRuntime.gracefulShutdown(...args);
 
 async function main(options = {}) {
+  const deferOpenCodeStartup = options.deferOpenCodeStartup === true;
+  let deferredOpenCodeStartupComplete = !deferOpenCodeStartup;
+  let deferredOpenCodeStartupPromise = null;
+  const resumeDeferredOpenCodeStartup = () => {
+    if (deferredOpenCodeStartupComplete) return Promise.resolve({ state: 'ready' });
+    if (deferredOpenCodeStartupPromise) return deferredOpenCodeStartupPromise;
+    deferredOpenCodeStartupPromise = bootstrapOpenCodeAtStartup()
+      .then(() => {
+        deferredOpenCodeStartupComplete = true;
+        return { state: 'ready' };
+      })
+      .finally(() => {
+        deferredOpenCodeStartupPromise = null;
+      });
+    return deferredOpenCodeStartupPromise;
+  };
   managedBrowserEnvironmentProvider = typeof options.getManagedBrowserEnvironment === 'function'
     ? options.getManagedBrowserEnvironment
+    : null;
+  botEncryptionKeyProvider = typeof options.getBotEncryptionKey === 'function'
+    ? options.getBotEncryptionKey
+    : null;
+  botEncryptionKeyInstaller = typeof options.replaceBotEncryptionKey === 'function'
+    ? options.replaceBotEncryptionKey
+    : null;
+  botRuntimeStatusProvider = typeof options.getBotRuntimeStatus === 'function'
+    ? options.getBotRuntimeStatus
+    : null;
+  botRuntimeControlProvider = [
+    options.ensureBotReasoningRuntime,
+    options.ensureBotComputerRuntime,
+    options.inspectBotRuntimeResource,
+    options.stopBotRuntimeResource,
+    options.resetBotRuntimeResource,
+  ].every((callback) => typeof callback === 'function')
+    ? Object.freeze({
+        ensureReasoning: options.ensureBotReasoningRuntime,
+      ensureComputer: options.ensureBotComputerRuntime,
+      probeComputerIsolation: typeof options.probeBotComputerIsolation === 'function'
+        ? options.probeBotComputerIsolation
+        : null,
+        inspect: options.inspectBotRuntimeResource,
+        stop: options.stopBotRuntimeResource,
+      reset: options.resetBotRuntimeResource,
+      writeWorkspace: typeof options.writeBotWorkspaceFile === 'function'
+        ? options.writeBotWorkspaceFile
+        : null,
+      importSharedFile: typeof options.importBotSharedFile === 'function'
+        ? options.importBotSharedFile
+        : null,
+      listWorkspace: typeof options.listBotWorkspaceFiles === 'function'
+        ? options.listBotWorkspaceFiles
+        : null,
+      listFilesystem: typeof options.listBotContainerFiles === 'function'
+        ? options.listBotContainerFiles
+        : null,
+      exportWorkspaceImage: typeof options.exportBotWorkspaceImage === 'function'
+        ? options.exportBotWorkspaceImage
+        : null,
+      })
+    : null;
+  botRuntimeIndexerProvider = typeof options.requestBotIndexer === 'function'
+    ? options.requestBotIndexer
+    : null;
+  botAgentRequestProvider = typeof options.requestBotAgentEndpoint === 'function'
+    ? options.requestBotAgentEndpoint
+    : null;
+  botBrowserProfilesProvider = [
+    options.exportBotBrowserProfiles,
+    options.inspectBotBrowserProfiles,
+    options.restoreBotBrowserProfiles,
+    options.deleteBotBrowserProfiles,
+  ].every((callback) => typeof callback === 'function')
+    ? Object.freeze({
+        exportForBot: options.exportBotBrowserProfiles,
+        inspectRestoreForBot: options.inspectBotBrowserProfiles,
+        restoreForBot: options.restoreBotBrowserProfiles,
+        deleteForBot: options.deleteBotBrowserProfiles,
+      })
     : null;
   const harnessInitialization = harnessRuntime.initialize();
   const port = Number.isFinite(options.port) && options.port >= 0 ? Math.trunc(options.port) : DEFAULT_PORT;
@@ -1628,6 +1743,42 @@ async function main(options = {}) {
     readManagedTunnelConfig: readManagedRemoteTunnelConfigFromDisk,
     onManagedProjectMetadataChanged: broadcastManagedProjectMetadataChanged,
     onManagedSessionOwnershipCommitted: broadcastManagedSessionOwnershipCommitted,
+    onScheduledTaskAccessChanged: async (input) => {
+      if (input?.revoked === true) {
+        await scheduledTasksRuntime.removeTasksForRevokedAccess(input);
+        return;
+      }
+      if (typeof input?.projectID === 'string' && input.projectID.trim()) {
+        await scheduledTasksRuntime.syncProject(input.projectID.trim());
+        return;
+      }
+      await scheduledTasksRuntime.refreshStatus();
+    },
+    botHost: {
+      owner: botRuntimeStatusProvider ? 'electron' : 'unsupported',
+      getStatus: botRuntimeStatusProvider,
+      ensureReasoning: botRuntimeControlProvider?.ensureReasoning,
+      ensureComputer: botRuntimeControlProvider?.ensureComputer,
+      probeComputerIsolation: botRuntimeControlProvider?.probeComputerIsolation,
+      inspect: botRuntimeControlProvider?.inspect,
+      stop: botRuntimeControlProvider?.stop,
+      reset: botRuntimeControlProvider?.reset,
+      writeWorkspace: botRuntimeControlProvider?.writeWorkspace,
+      importSharedFile: botRuntimeControlProvider?.importSharedFile,
+      listWorkspace: botRuntimeControlProvider?.listWorkspace,
+      listFilesystem: botRuntimeControlProvider?.listFilesystem,
+      exportWorkspaceImage: botRuntimeControlProvider?.exportWorkspaceImage,
+      browserProfiles: botBrowserProfilesProvider,
+      indexerRequest: botRuntimeIndexerProvider,
+      agentRequest: botAgentRequestProvider,
+      getModelCatalog: fetchBotModelCatalog,
+    },
+    encryption: {
+      getKey: botEncryptionKeyProvider,
+      installKey: botEncryptionKeyInstaller,
+    },
+    recordDiagnostic: (entry) => harnessRuntime.record(entry),
+    botsExecutionEnabled: options.productionBotsExecutionDisabled !== true,
   });
   if (multiUserRuntime.enabled) {
     console.log('Supabase multi-user identity and policy enforcement enabled');
@@ -1753,6 +1904,17 @@ async function main(options = {}) {
     registerPrivateCapabilityRoutes: (privateApp) => {
       browserCdpDiscoveryRuntime.attach(privateApp);
       browserLeaseRuntime.attach(privateApp);
+      if (options.runtimeServiceController) {
+        registerRuntimeServiceRoutes(privateApp, {
+          controller: options.runtimeServiceController,
+          server,
+          onDesktopHostLease: options.onDesktopHostLease,
+          onDesktopHostRelease: options.onDesktopHostRelease,
+          botRuntimeControl: options.runtimeServiceBotRuntimeControl,
+          onDisableRuntimeService: options.onDisableRuntimeService,
+          onPrepareRuntimeServiceUpdate: options.onPrepareRuntimeServiceUpdate,
+        });
+      }
     },
   });
   uiAuthController = bootstrapResult.uiAuthController;
@@ -2103,7 +2265,9 @@ async function main(options = {}) {
     terminalMaxRebindsPerWindow: TERMINAL_INPUT_WS_MAX_REBINDS_PER_WINDOW,
     setupProxy,
     scheduleOpenCodeApiDetection,
-    bootstrapOpenCodeAtStartup,
+    bootstrapOpenCodeAtStartup: deferOpenCodeStartup
+      ? async () => undefined
+      : bootstrapOpenCodeAtStartup,
     getRuntimeReady: () => Boolean(openCodePort && isOpenCodeReady && !isRestartingOpenCode),
     triggerHealthCheck,
     staticRoutesRuntime,
@@ -2157,13 +2321,28 @@ async function main(options = {}) {
     getBrowserLeaseDiagnostics: () => ({
       activeLeases: browserLeaseRuntime?.getSnapshot().length ?? 0,
     }),
+    prepareBotRuntime: () => multiUserRuntime?.botsRuntime?.prepareStartup?.({
+      ensureRuntime: typeof options.ensureBotRuntimeReady === 'function'
+        ? options.ensureBotRuntimeReady
+        : null,
+      onStatus: (text) => onOpenCodeStartupStatus?.(text),
+    }) ?? Promise.resolve({ state: 'skipped', reason: 'bots_unavailable' }),
     getTunnelUrl: () => tunnelService.getPublicUrl(),
-    getQuitRiskStatus: () => ({
-      tunnel: {
-        active: Boolean(tunnelService.getPublicUrl()),
-      },
-      scheduledTasks: scheduledTasksRuntime.getStatus(),
-    }),
+    getQuitRiskStatus: async () => {
+      const scheduledTasks = await scheduledTasksRuntime.refreshStatus();
+      return {
+        tunnel: {
+          active: Boolean(tunnelService.getPublicUrl()),
+        },
+        scheduledTasks,
+        scheduledTasksVerified: scheduledTasks.verified !== false,
+        bots: await multiUserRuntime?.botsRuntime?.getQuitRiskStatus?.(),
+      };
+    },
+    checkpointBotRuns: () => multiUserRuntime?.botsRuntime?.checkpointBotRuns?.(),
+    stopBotDispatcher: () => multiUserRuntime?.botsRuntime?.stopDispatcher?.(),
+    resumeDeferredOpenCodeStartup,
+    isOpenCodeStartupDeferred: () => !deferredOpenCodeStartupComplete,
     isReady: () => isOpenCodeReady,
     restartOpenCode: () => restartOpenCode(),
     stop: (shutdownOptions = {}) =>

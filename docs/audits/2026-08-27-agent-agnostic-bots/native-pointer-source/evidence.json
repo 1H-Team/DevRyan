@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "result": "pass",
+  "createdAt": "2026-08-27T08:46:29.423Z",
+  "assertion": "CoreGraphics mouse click at the enabled Catalog plus opened the Create Bot dialog",
+  "testAccount": "admin@1health.ae",
+  "electronBinary": "<WORKSPACE>/node_modules/.bun/electron@41.2.1/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
+  "electronMode": "raw",
+  "buttonRect": {
+    "left": 423,
+    "top": 12,
+    "width": 36,
+    "height": 36
+  },
+  "screenPoint": {
+    "x": 1081,
+    "y": 106
+  },
+  "dialogTitle": "Create Bot",
+  "screenshot": "catalog-native-pointer.png"
+}

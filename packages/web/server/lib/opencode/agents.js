@@ -213,6 +213,17 @@ function normalizeCouncillors(value) {
   return councillors;
 }
 
+function readAgentModelsCompanion(filePath) {
+  const companionPath = filePath.replace(/\.md$/, '.models.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(companionPath, 'utf8'));
+    if (parsed?.version !== 1) return [];
+    return normalizeCouncillors(parsed.councillors);
+  } catch {
+    return [];
+  }
+}
+
 function normalizeAgentModelOverride(rawOverride) {
   if (!rawOverride || typeof rawOverride !== 'object' || Array.isArray(rawOverride)) {
     throw new Error('Agent override must be an object');
@@ -315,15 +326,16 @@ function applyAgentModelOverride(agent, override) {
 }
 
 function applyAgentModelOverrideToRuntimeFrontmatter(frontmatter, override) {
-  if (!override) {
-    return { ...frontmatter };
-  }
-
   const next = { ...frontmatter };
+  delete next.modelRefs;
+  delete next.councillors;
+
+  if (!override) {
+    return next;
+  }
 
   if (Object.prototype.hasOwnProperty.call(override, 'model')) {
     next.model = override.model;
-    next.modelRefs = [override.model];
   }
 
   if (Object.prototype.hasOwnProperty.call(override, 'variant')) {
@@ -332,11 +344,6 @@ function applyAgentModelOverrideToRuntimeFrontmatter(frontmatter, override) {
     } else {
       delete next.variant;
     }
-  }
-
-  if (Array.isArray(override.councillors)) {
-    next.councillors = override.councillors.map((entry) => ({ ...entry }));
-    next.modelRefs = override.councillors.map((entry) => entry.model);
   }
 
   return next;
@@ -595,6 +602,7 @@ function deleteAgentModelOverride(agentName, options = {}) {
 
 function parseAgentMdFile(filePath, scope, rootDir) {
   const { frontmatter, body } = parseMdFile(filePath);
+  const companionCouncillors = readAgentModelsCompanion(filePath);
   const agent = {
     name: path.basename(filePath, '.md'),
     ...frontmatter,
@@ -610,6 +618,10 @@ function parseAgentMdFile(filePath, scope, rootDir) {
 
   Object.defineProperty(agent, '__path', { value: filePath, enumerable: false });
   applyParsedModelFields(agent, frontmatter.model);
+  if (companionCouncillors.length > 0) {
+    agent.councillors = companionCouncillors;
+    agent.modelRefs = companionCouncillors.map((entry) => entry.model);
+  }
   return agent;
 }
 

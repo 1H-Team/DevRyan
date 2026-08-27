@@ -96,6 +96,7 @@ import {
   consumeLastCreateSessionError,
 } from "./session-actions"
 import { useInputStore, type SyntheticContextPart } from "./input-store"
+import { getDraftComposerTargetKey } from "./composer-target"
 import { useSelectionStore } from "./selection-store"
 import { useViewportStore } from "./viewport-store"
 import {
@@ -554,6 +555,8 @@ export type NewSessionDraftState = {
 export type ChatDraft = Omit<NewSessionDraftState, "open"> & {
   id: string
   text: string
+  /** Lightweight metadata; attachment payloads live in IndexedDB. */
+  attachmentCount?: number
   createdAt: number
   updatedAt: number
 }
@@ -796,6 +799,7 @@ export type SessionUIState = {
   openNewSessionDraft: (options?: Partial<NewSessionDraftState>) => void
   selectNewSessionDraft: (draftId: string) => void
   updateNewSessionDraftText: (draftId: string, text: string) => void
+  updateNewSessionDraftAttachmentCount: (draftId: string, attachmentCount: number) => void
   deleteNewSessionDraft: (draftId: string) => void
   closeNewSessionDraft: () => void
   promoteDraftToSession: (options: {
@@ -1906,6 +1910,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const draft: ChatDraft = {
       id: createDraftId(),
       text: options?.initialPrompt ?? "",
+      attachmentCount: 0,
       createdAt: now,
       updatedAt: now,
       selectedProjectId: selectedProject?.id ?? null,
@@ -1926,13 +1931,16 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     set((s) => {
       const isPersistableDraft = (existing: ChatDraft): boolean =>
-        existing.text.trim().length > 0 || Boolean(normalizeDraftSendConfig(existing.sendConfig))
+        existing.text.trim().length > 0
+        || (existing.attachmentCount ?? 0) > 0
+        || Boolean(normalizeDraftSendConfig(existing.sendConfig))
 
       // Empty, unconfigured inactive drafts are editor placeholders, not saved draft rows.
       // Drop them when a new draft is created so they cannot accumulate in storage.
       Object.entries(s.draftsById).forEach(([id, existing]) => {
         if (id !== s.currentDraftId && !isPersistableDraft(existing)) {
           removePersistedDraftInput(safeStorage, id)
+          useInputStore.getState().removeAttachedFilesTarget(getDraftComposerTargetKey(id))
         }
       })
       const retainedDrafts = Object.fromEntries(
@@ -1951,7 +1959,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       }
     })
 
-    useInputStore.getState().clearAttachedFiles()
     setActiveSession("", "")
 
     if (options?.initialPrompt) {
@@ -2055,8 +2062,21 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     })
   },
 
+  updateNewSessionDraftAttachmentCount: (draftId, attachmentCount) => {
+    const normalizedCount = Number.isFinite(attachmentCount) ? Math.max(0, Math.floor(attachmentCount)) : 0
+    set((state) => {
+      const existing = state.draftsById[draftId]
+      if (!existing || (existing.attachmentCount ?? 0) === normalizedCount) return state
+      const nextDraft = { ...existing, attachmentCount: normalizedCount, updatedAt: Date.now() }
+      const draftsById = { ...state.draftsById, [draftId]: nextDraft }
+      persistDrafts(safeStorage, draftsById, state.draftOrder)
+      return { draftsById }
+    })
+  },
+
   deleteNewSessionDraft: (draftId) => {
     useSelectionStore.getState().clearDraftSelection(draftId)
+    useInputStore.getState().removeAttachedFilesTarget(getDraftComposerTargetKey(draftId))
     set((s) => {
       if (!s.draftsById[draftId]) return s
       const draftsById = { ...s.draftsById }
@@ -2134,6 +2154,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         for (const removedDraftId of removedDraftIds) {
           delete draftsById[removedDraftId]
           removePersistedDraftInput(safeStorage, removedDraftId)
+          useInputStore.getState().removeAttachedFilesTarget(getDraftComposerTargetKey(removedDraftId))
         }
         draftOrder = s.draftOrder.filter((id) => !removedDraftIds.has(id))
       }

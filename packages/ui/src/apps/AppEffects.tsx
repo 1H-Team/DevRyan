@@ -1,4 +1,5 @@
 import React from 'react';
+import { BotsEventOwner } from '@/apps/BotsEventOwner';
 import { ProjectPreviewGrantOwner } from '@/components/layout/localPreviewInstances';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { usePwaManifestSync } from '@/hooks/usePwaManifestSync';
@@ -133,7 +134,45 @@ const BrowserLeaseClaimOwner: React.FC = () => {
   React.useEffect(() => {
     if (!canClaimBrowserAgentWindowContexts()) return;
 
-    let lastClaimSignature = '';
+    const retryDelays = [250, 500, 1_000, 2_000] as const;
+    let committedClaimSignature = '';
+    let generation = 0;
+    let running = false;
+    let disposed = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let pending: {
+      contexts: ReturnType<typeof collectBrowserAgentWindowContexts>;
+      signature: string;
+      generation: number;
+      retry: number;
+    } | null = null;
+
+    const runPendingClaim = async () => {
+      if (running || disposed) return;
+      running = true;
+      while (pending && !disposed) {
+        const claim = pending;
+        pending = null;
+        const succeeded = claim.contexts.length === 0
+          || await claimBrowserAgentWindowContexts(claim.contexts);
+        if (disposed) break;
+        if (claim.generation !== generation) continue;
+        if (succeeded) {
+          committedClaimSignature = claim.signature;
+          continue;
+        }
+        const delay = retryDelays[claim.retry];
+        if (delay === undefined) continue;
+        pending = { ...claim, retry: claim.retry + 1 };
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          void runPendingClaim();
+        }, delay);
+        break;
+      }
+      running = false;
+    };
+
     const claimKnownContexts = (force = false) => {
       const sessions = Array.from(childStores.children.values()).flatMap(
         (store) => store.getState().session,
@@ -146,9 +185,14 @@ const BrowserLeaseClaimOwner: React.FC = () => {
         .map((context) => `${context.directory}\u0000${context.rootSessionId}`)
         .sort()
         .join('\u0001');
-      if (!force && signature === lastClaimSignature) return;
-      lastClaimSignature = signature;
-      if (contexts.length > 0) void claimBrowserAgentWindowContexts(contexts);
+      if (!force && signature === committedClaimSignature) return;
+      generation += 1;
+      pending = { contexts, signature, generation, retry: 0 };
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      void runPendingClaim();
     };
 
     claimKnownContexts(true);
@@ -157,12 +201,21 @@ const BrowserLeaseClaimOwner: React.FC = () => {
       if (state.tasksById !== previous.tasksById) claimKnownContexts();
     });
     const handleFocus = () => claimKnownContexts(true);
+    const handleConnectionStatus = (event: Event) => {
+      const detail = (event as CustomEvent<{ status?: unknown }>).detail;
+      if (detail?.status === 'connected') claimKnownContexts(true);
+    };
     window.addEventListener('focus', handleFocus);
+    window.addEventListener('openchamber:connection-status', handleConnectionStatus);
 
     return () => {
+      disposed = true;
+      pending = null;
+      if (retryTimer) clearTimeout(retryTimer);
       unsubscribeSessions();
       unsubscribeManagedTasks();
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('openchamber:connection-status', handleConnectionStatus);
     };
   }, [childStores]);
 
@@ -192,6 +245,7 @@ export function SyncAppEffects({ embeddedBackgroundWorkEnabled }: {
       <MiniChatPresenceBridge />
       <QuotaRefreshOwner enabled={embeddedBackgroundWorkEnabled} />
       <ManagedOrchestrationOwner />
+      <BotsEventOwner />
       <BrowserLeaseClaimOwner />
       <ProjectPreviewGrantOwner />
     </>

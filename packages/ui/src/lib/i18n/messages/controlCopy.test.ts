@@ -31,7 +31,7 @@ const MINOR_TITLE_WORDS = new Set([
   'with',
 ]);
 
-const LOWERCASE_TECHNICAL_WORDS = new Set(['cloudflared', 'macOS', 'npm']);
+const LOWERCASE_TECHNICAL_WORDS = new Set(['cloudflared', 'macOS', 'npm', 'runsc']);
 const LOWERCASE_TECHNICAL_CONTROL_LITERALS = new Set(['bun', 'localhost']);
 const APPROVED_SENTENCE_CASE_CONTROL_LITERALS = new Set(['Sign out']);
 const CONTROL_ELEMENT_NAMES = new Set([

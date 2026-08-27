@@ -15,6 +15,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     setTerminalRuntime,
     getMessageStreamRuntime,
     setMessageStreamRuntime,
+    getBotsRuntime,
     getManagedOrchestrationRuntime,
     getBrowserLeaseRuntime,
     getCursorSdkRuntime,
@@ -88,6 +89,15 @@ export const createGracefulShutdownRuntime = (dependencies) => {
         console.warn('Error draining harness runtime:', error);
       } finally {
         if (harnessDrainTimeout) clearTimeout(harnessDrainTimeout);
+      }
+    }
+
+    const botsRuntime = typeof getBotsRuntime === 'function' ? getBotsRuntime() : null;
+    if (botsRuntime && typeof botsRuntime.shutdown === 'function') {
+      try {
+        await botsRuntime.shutdown();
+      } catch (error) {
+        console.warn('Error stopping Production Bots runtime:', error);
       }
     }
 

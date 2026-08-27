@@ -2,10 +2,6 @@
 mode: all
 description: Multi-LLM agent that synthesizes responses from multiple models
 model: opencode-go/kimi-k2.6
-modelRefs:
-  - opencode-go/kimi-k2.6
-  - opencode-go/deepseek-v4-pro
-  - opencode-go/glm-5.1
 temperature: 0.1
 permission:
   "*": allow

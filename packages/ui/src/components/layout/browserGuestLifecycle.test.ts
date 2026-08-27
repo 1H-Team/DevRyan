@@ -87,7 +87,13 @@ describe('session-scoped browser lease lifecycle', () => {
     expect(appEffects).toContain('childStores.subscribeSessionLists');
     expect(appEffects).toContain('Object.values(useManagedOrchestrationStore.getState().tasksById)');
     expect(appEffects).toContain('collectBrowserAgentWindowContexts');
-    expect(appEffects).toContain('claimBrowserAgentWindowContexts(contexts)');
+    expect(appEffects).toContain('await claimBrowserAgentWindowContexts(claim.contexts)');
+    expect(appEffects).toContain('const retryDelays = [250, 500, 1_000, 2_000]');
+    expect(appEffects).toContain('if (claim.generation !== generation) continue');
+    expect(appEffects).toContain('pending = { ...claim, retry: claim.retry + 1 }');
+    expect(appEffects).toContain('committedClaimSignature = claim.signature');
+    expect(appEffects).toContain("window.addEventListener('openchamber:connection-status', handleConnectionStatus)");
+    expect(appEffects).toContain('if (retryTimer) clearTimeout(retryTimer)');
     expect(browserAgentStore).toContain("invokeDesktop<unknown>('desktop_browser_lease_claim_contexts'");
   });
 

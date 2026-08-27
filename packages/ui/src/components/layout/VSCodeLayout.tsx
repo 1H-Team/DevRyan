@@ -31,7 +31,9 @@ import { useStableSessionContextUsage } from '@/hooks/useStableSessionContextUsa
 import { useProviderBackedContextUsage } from '@/hooks/useProviderBackedContextUsage';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { RiAddLine, RiArrowLeftLine, RiRobot2Line, RiSettings3Line, RiTimerLine } from '@remixicon/react';
-import { LazySettingsView, LazyViewBoundary } from '@/components/views/lazyViews';
+import { LazyBotView, LazySettingsView, LazyViewBoundary } from '@/components/views/lazyViews';
+import { useBotsStore } from '@/stores/useBotsStore';
+import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
 import { useConfigApplyStatusLifecycle } from '@/components/views/config-apply/useConfigApplyStatusLifecycle';
 import {
   rememberViewBeforeSettings,
@@ -146,6 +148,10 @@ export const VSCodeLayout: React.FC = () => {
   const expandedSidebarResizeStartWidthRef = React.useRef(SESSIONS_SIDEBAR_WIDTH);
   const expandedSidebarResizePointerIdRef = React.useRef<number | null>(null);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const selectedBotName = useBotsStore((state) => (
+    state.selectedBotId ? state.botsById[state.selectedBotId]?.name ?? null : null
+  ));
+  const botMode = useMainSidebarAudienceStore((state) => state.audience === 'bots');
   const sessions = useSessions();
 
   const activeSessionTitle = React.useMemo(() => {
@@ -210,7 +216,7 @@ export const VSCodeLayout: React.FC = () => {
       return;
     }
 
-    if (currentSessionId || newSessionDraftOpen || isSyncingMessages || hasActiveSessionWork) {
+    if (botMode || currentSessionId || newSessionDraftOpen || isSyncingMessages || hasActiveSessionWork) {
       return;
     }
 
@@ -229,7 +235,7 @@ export const VSCodeLayout: React.FC = () => {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [currentSessionId, newSessionDraftOpen, currentView, viewMode, isSyncingMessages, hasActiveSessionWork, navigateToView]);
+  }, [botMode, currentSessionId, newSessionDraftOpen, currentView, viewMode, isSyncingMessages, hasActiveSessionWork, navigateToView]);
 
   const handleBackToSessions = React.useCallback(() => {
     navigateToView('sessions');
@@ -443,14 +449,14 @@ export const VSCodeLayout: React.FC = () => {
         // Editor mode: just chat, no sidebar
         <div className="flex flex-col h-full">
           <VSCodeHeader
-            title={sessions.find((session) => session.id === currentSessionId)?.title || t('vscodeLayout.title.chat')}
-            showMcp
-            showContextUsage
-            showRateLimits
+            title={botMode ? selectedBotName ?? t('bots.sidebar.title') : sessions.find((session) => session.id === currentSessionId)?.title || t('vscodeLayout.title.chat')}
+            showMcp={!botMode}
+            showContextUsage={!botMode}
+            showRateLimits={!botMode}
           />
           <div data-chat-surface="true" className="flex-1 overflow-hidden">
             <ErrorBoundary>
-              <ChatView />
+              {botMode ? <LazyViewBoundary><LazyBotView /></LazyViewBoundary> : <ChatView />}
             </ErrorBoundary>
           </div>
         </div>
@@ -498,16 +504,18 @@ export const VSCodeLayout: React.FC = () => {
           {/* Chat content */}
           <div className="flex-1 flex flex-col min-w-0">
             <VSCodeHeader
-              title={newSessionDraftOpen && !currentSessionId
+              title={botMode
+                ? selectedBotName ?? t('bots.sidebar.title')
+                : newSessionDraftOpen && !currentSessionId
                 ? t('vscodeLayout.title.newSession')
                 : sessions.find((session) => session.id === currentSessionId)?.title || t('vscodeLayout.title.chat')}
-              showMcp
-              showContextUsage
-              showRateLimits
+              showMcp={!botMode}
+              showContextUsage={!botMode}
+              showRateLimits={!botMode}
             />
             <div data-chat-surface="true" className="flex-1 overflow-hidden">
               <ErrorBoundary>
-                <ChatView />
+                {botMode ? <LazyViewBoundary><LazyBotView /></LazyViewBoundary> : <ChatView />}
               </ErrorBoundary>
             </div>
           </div>
@@ -533,18 +541,20 @@ export const VSCodeLayout: React.FC = () => {
           {/* Chat view */}
           <div className={cn('flex flex-col h-full', currentView !== 'chat' && 'hidden')}>
             <VSCodeHeader
-              title={newSessionDraftOpen && !currentSessionId
+              title={botMode
+                ? selectedBotName ?? t('bots.sidebar.title')
+                : newSessionDraftOpen && !currentSessionId
                 ? t('vscodeLayout.title.newSession')
                 : sessions.find((session) => session.id === currentSessionId)?.title || t('vscodeLayout.title.chat')}
               showBack
               onBack={handleBackToSessions}
-              showMcp
-              showContextUsage
-              showRateLimits
+              showMcp={!botMode}
+              showContextUsage={!botMode}
+              showRateLimits={!botMode}
             />
             <div data-chat-surface="true" className="flex-1 overflow-hidden">
               <ErrorBoundary>
-                <ChatView />
+                {botMode ? <LazyViewBoundary><LazyBotView /></LazyViewBoundary> : <ChatView />}
               </ErrorBoundary>
             </div>
           </div>

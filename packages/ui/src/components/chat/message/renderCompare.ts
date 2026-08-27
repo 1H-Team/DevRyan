@@ -334,9 +334,7 @@ export const areRelevantTurnGroupingContextsEqual = (
   if (left.summarySourcePartId !== right.summarySourcePartId) return false;
   if (!areRelevantAssistantImageMessagesEqual(left, right)) return false;
 
-  const managedTaskRelevant = left.managedTaskProjection?.ownerMessageId === messageId
-    || right.managedTaskProjection?.ownerMessageId === messageId;
-  if (managedTaskRelevant && !areManagedTaskProjectionsEqual(
+  if (!areManagedTaskProjectionsEqual(
     left.managedTaskProjection,
     right.managedTaskProjection,
   )) return false;

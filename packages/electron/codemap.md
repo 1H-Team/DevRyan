@@ -1,17 +1,128 @@
 # packages/electron/
 
 ## Responsibility
-Primary desktop shell (Electron). Boots the DevRyan web server in-process, owns native OS integration (menus, dialogs, notifications, deep links, updates), and exposes a constrained IPC bridge to the shared renderer UI.
+Primary desktop shell and signed background-runtime executable. App-bound mode
+boots the DevRyan web server in-process; service-client mode connects to the
+fenced launchd owner; `--runtime-service` creates no window and owns the server,
+Production Bots, routines, memory, computer supervision, and Docker management.
+The foreground app owns native OS integration and exposes constrained renderer
+and desktop-host broker bridges.
 
 ## Design
-- **Single-process host model**: `main.mjs` imports and starts `@openchamber/web/server/index.js` instead of launching a separate backend process.
+- **Fenced owner model**: `main.mjs` imports `@openchamber/web/server/index.js` in
+  app-bound or `--runtime-service` mode. A private owner-generation lock permits
+  one server per data directory. A migrated foreground app bootstraps an
+  HttpOnly/SameSite runtime cookie and becomes a client instead of starting a
+  second server.
 - **Bridge/shim pattern**: `preload.mjs` exposes `__OPENCHAMBER_ELECTRON__` and a `__TAURI__` compatibility surface so shared UI code can run on both Electron and legacy Tauri.
 - **Origin policy**: `origin-policy.mjs` centralizes privileged-local vs allowed-content origin rules used by `main.mjs`, `preload.mjs`, init-script injection, navigation handlers, and IPC gates.
 - **Capability gating**: sensitive commands are enforced in main-process handlers (`openchamber:invoke`), with remote/local origin checks.
+  The preload keeps an early Bot-runtime rejection when its immutable local-origin
+  boot argument is available; startup-splash windows created before port selection
+  defer to the authoritative main-process live-URL gate instead of denying the
+  eventual local renderer.
 - **Manager modules**: `ssh-manager.mjs` and `speech-manager.mjs` encapsulate long-running native integrations and emit structured status events.
 - **Native state controllers**: `keep-awake-controller.mjs` wraps `powerSaveBlocker` with idempotent apply/stop semantics for the desktop Keep Awake setting.
-- **Quit-risk projection**: `quit-risk.mjs` converts server scheduler/tunnel status into an atomic desktop warning snapshot, distinguishes future pending schedules from merely enabled historical records, and reports verification failures without retaining stale counts.
-- **Operational hardening**: single-instance lock, persistent logging via `electron-log`, stale log pruning, and unthrottled renderer paints for chat windows so packaged streaming/status updates stay responsive. A failed local-server startup keeps the main window open on a retryable, theme-aware error surface and logs the nested dependency cause instead of immediately exiting. `quit-cleanup.mjs` keeps the main process alive until owned web/OpenCode/SSH cleanup settles, with a bounded force-exit fallback.
+- **Bot key ownership**: `bot-secret-store.mjs` creates one 32-byte deployment
+  key, seals it with Electron `safeStorage`, and exposes only a defensive-copy
+  callback to the in-process server. A validated recovery restore may atomically
+  replace the sealed key through a separate in-process callback and then repairs
+  the derived Bot runtime; key bytes never cross renderer IPC, HTTP, ambient
+  environment variables, or logs.
+- **Background runtime ownership**: `runtime-service.mjs` owns the versioned
+  instance/port/protocol/health/owner-generation descriptor, OS-sealed rotating
+  one-time bootstrap, 12-hour renderer session, and short desktop-host lease.
+  `runtime-service-registration.mjs` uses the signed SMAppService helper on
+  macOS 13+ and an explicit-consent, mode-0600 per-user LaunchAgent on older
+  supported hosts. Transactional enable/disable/update handoffs checkpoint and
+  drain before ownership changes; stale/current+1 protocols fail closed while
+  current and previous protocols remain rollout-compatible.
+  Source-development launches explicitly report the signed service as
+  unavailable so a reused packaged shell cannot register stale bundled code.
+  `scripts/build-runtime-service-control.mjs` cross-compiles the helper for the
+  Electron matrix target, while `scripts/verify-runtime-service-package.mjs`
+  rejects packaged apps missing the helper, target architecture, valid agent
+  plist, executable signature, or matching Developer Team identity.
+- **Desktop-host broker**: `desktop-host-broker.mjs` projects only short-lived
+  focus, notification, and browser/CDP capabilities from the foreground app to
+  the service. App absence returns `desktop_host_unavailable`; it does not stop
+  server, routine, memory, or computer ownership.
+- **Bot recovery ownership**: `bot-recovery-dialog.mjs` owns native `.drbr`
+  save/open dialogs. Export streams authenticated loopback ciphertext to a
+  private sibling temporary file, fsyncs, and atomically renames it. Restore
+  rejects links/oversize files, keeps bounded encrypted bytes in main memory,
+  and returns metadata only. `desktop_export_bot_recovery` and
+  `desktop_restore_bot_recovery` are local-origin-only preload commands.
+- **Bot Docker ownership**: `bot-runtime-manifest.mjs` validates fixed local
+  development tags or selects architecture-matched immutable digests from the
+  complete signed-image release manifest. Release builds download, verify, and
+  bundle that manifest as `bot-runtime/images.release.json`; local development
+  reads only `resources/bot-runtime/images.dev.json`, verifies that every fixed
+  local image already exists, and never pulls mutable development tags;
+  `bot-runtime-manager.mjs` resolves a validated Docker executable and owns
+  fixed-project setup, health, repair, staged update, and rollback through
+  argv-only process calls. `ensureReady` is the authoritative, single-flight
+  background operation: it checks, sets up, updates, or repairs within three
+  state transitions and one 15-minute deadline while retaining the two-minute
+  cap on each Docker command. It emits only sanitized phase/count/code snapshots
+  through runtime capability state. Docker Desktop's virtualized socket group
+  and native Linux's resolved socket group are supplied only to the engine-proxy
+  container; the supervisor has no socket mount. Server callbacks accept only fixed
+  scoped ensure/inspect/stop contracts, discover only Compose-published
+  loopback service ports, and verify host-derived config/auth paths before the
+  supervisor is called; no callback accepts raw Docker input. Reasoning
+  containers publish no host port: the manager converts the supervisor's
+  in-memory scoped runtime capability into a loopback host/port/path endpoint
+  for the in-process server without exposing that capability to the renderer. It
+  purpose-derives supervisor/engine-proxy/egress-signing/egress-control/indexer credentials and
+  a public deployment ID from the OS-sealed key, wiping the defensive key copy
+  immediately; only those scoped values enter Compose. Named runtime/index
+  volumes survive repair and quit. Its indexer callback accepts only the fixed
+  status/upsert/delete/search/rebuild verbs, resolves the Compose-published
+  loopback port, and supplies the derived bearer only inside Electron. For reasoning starts it signs the exact
+  validated model-host allowlist, starts the scoped container, and then attests
+  the current Bot/revision through the separately authenticated egress control
+  route; failed attestation stops the container. Electron injects status and
+  fixed control callbacks beside the key callback into the in-process server so
+  `/api/bots/capabilities` can distinguish Docker/setup/update health without
+  exposing Docker mutations outside the main process. The manager also exposes
+  typed server-only workspace-write and Shared-import callbacks. They validate
+  Bot/channel/message/file/content/hash bounds and forward only fixed supervisor
+  operations; renderer IPC cannot invoke them and no callback accepts a host
+  path. Shared import targets the deterministic Bot-wide volume and verifies
+  exact bytes before readiness. Before reasoning starts,
+  the same manager recursively validates the fixed private per-run artifact
+  staging tree and its manifest without following links, then allows only the
+  supervisor-derived read-only `/workspace/.devryan` mount. It separately walks
+  the compiled revision's bounded Skill tree, rejects links/special files/hard
+  links/private-mode drift, and verifies every file digest before the supervisor
+  derives the read-only `/workspace/.opencode/skills` mount. Fixed reset verbs
+  remove only the selected scoped reasoning/profile/scratch/Shared volume.
+  Ordinary replacement and repair retain Shared. Recovery
+  profile export/restore inventories exact deployment/Bot/scope labels, uses a
+  no-network capability-dropped helper container, verifies archive hashes, and
+  never accepts a renderer-selected Docker name or argument.
+  Agent-endpoint requests and Chromium networking also receive
+  purpose-separated egress capabilities. Browser tokens bind `public_only` or
+  exact-host allowlist policy and rotate through the computer's loopback relay.
+  `runsc` activation requires both a declared Docker runtime and a disposable
+  owned smoke container; failure blocks publication/startup with no downgrade.
+- **Quit-risk projection**: `quit-risk.mjs` converts server scheduler, tunnel,
+  active Bot run/approval, due app-bound Bot routine, routine-scheduler, and
+  checkpoint status into an atomic desktop warning snapshot, distinguishes
+  future pending schedules from merely enabled historical records, and reports
+  verification failures without retaining stale counts. Scheduler status is
+  refreshed against authoritative owner/branch access immediately before the
+  projection.
+- **Operational hardening**: single-instance lock, persistent logging via
+  `electron-log`, stale log pruning, and unthrottled renderer paints for chat
+  windows so packaged streaming/status updates stay responsive. Development
+  launches isolate Electron `userData`. Ordinary startup waits only for bounded
+  local HTTP/control readiness and activates the renderer before the 15-minute
+  Docker `ensureReady` work begins in the background. A Bot-only failure remains
+  an explicit fail-closed capability without blocking the coding UI. In service
+  mode, SIGTERM/SIGINT checkpoint and stop the owned runtime; closing foreground
+  windows releases the desktop broker but leaves the launchd owner running.
 - **Cache maintenance**: `cache-maintenance.mjs` measures and clears Electron HTTP/code caches for the app session, the agent-browser partition, and every registered isolated manual-browser partition during startup maintenance and Settings/Help cleanup actions, without touching current app storage such as localStorage, cookies, or IndexedDB.
 - **Browser surface ownership**: `browser-surface-manager.mjs` owns manual and lease `WebContentsView` instances. Agent leases retain the dedicated legacy partition; manual surfaces use a main-derived persistent partition hashed from canonical DevRyan origin plus authenticated principal ID. The main process resolves `/auth/session`, enforces the Browser capability for local and configured remote renderers, periodically revalidates active contexts, and destroys manual surfaces on logout, account change, or revocation. A one-time migration clears the former shared profile because its cookies cannot safely be assigned to one user; an Electron-owned registry retains only hashed partition names for cache maintenance. Renderer IPC names allowlisted surface/workspace IDs, and the manager validates the requesting window, authenticated context, and clamped bounds before navigation, layout, capture, inspection, DevTools, viewport emulation, pop-out, dock, focus, activation, or release. Element inspection removes its overlay, waits for the clean frame, then returns bounded rendered markup and an immediate PNG page capture in one correlated result; shared UI crops that frame to the padded visible element bounds. Token-free snapshots carry the sanitized Responsive/Desktop/Mobile mode plus length-capped page favicon metadata; navigation clears stale favicons before the next `page-favicon-updated` event. Fixed modes use Electron device emulation with centered, no-upscale bounds and are reapplied whenever a surface is attached or laid out. Manual surfaces are grouped by opaque workspace ID so one pop-out hosts the active page while sibling views remain parked; switching pages preserves DOM/history/cookies within that user's profile.
 - **Navigation outcomes**: `browser-navigation-error.mjs` classifies Electron's benign `ERR_ABORTED` result so superseded or redirected app-window and browser-surface navigations do not surface as failures; all other navigation errors remain rejected.
@@ -25,13 +136,26 @@ Primary desktop shell (Electron). Boots the DevRyan web server in-process, owns 
   publishing both target the canonical `1H-Team/DevRyan` GitHub repository.
 
 ## Flow
-1. Electron app starts (`main.mjs`) and establishes process-level guards (single instance, protocol registration, logging).
-2. Main process starts web runtime and creates BrowserWindow pointed at local origin.
-3. `preload.mjs` injects shell flags/global values and wires IPC invoke/listen channels.
-4. Renderer calls `window.__TAURI__.core.invoke(...)` for desktop actions; main process handles command routing and side effects.
-5. Main process emits lifecycle/update/SSH/speech events back to renderer via `openchamber:emit`.
-6. A managed browser tool call acquires a server lease; Electron creates a main-owned surface, binds its `webContents` to the lease, emits a token-free `browser-agent-leases` snapshot, and only then returns the private capability URL to the managed server.
-7. On normal quit, main process persists window state, awaits managed web/OpenCode and SSH cleanup, closes browser leases, then exits. Update installation retains its updater-owned shutdown path.
+1. Electron establishes process guards, protocol registration, logging, and the
+   data-directory runtime owner mode.
+2. `--runtime-service` acquires the service generation, starts the loopback web
+   runtime without a window, marks the versioned handshake healthy, and begins
+   Bot/Docker preparation asynchronously.
+3. A migrated foreground app reads the descriptor, consumes its rotating
+   bootstrap into a renderer cookie, connects the desktop-host broker, and
+   activates its window. App-bound compatibility mode instead acquires the
+   in-process owner and starts that same server locally.
+4. The renderer activates after bounded HTTP/control readiness. Bot preparation
+   reconciles gateway/indexer/memory/routine/recovery services and warms the
+   model catalog in the background; per-run adapters/credentials and scoped
+   containers remain lazy.
+5. `preload.mjs` injects shell flags/global values and wires IPC invoke/listen
+   channels. Service-mode Bot runtime verbs use the authenticated loopback
+   contract; foreground-only capabilities use the short desktop broker.
+6. Closing the foreground app persists window state, closes native browser
+   leases/broker state, and exits without stopping the service. Service disable
+   or update explicitly checkpoints, drains, proves owner release, and then
+   unregisters/re-registers as required.
 
 ## Integration
 - **Depends on**: `@openchamber/web` server entrypoint, Electron runtime APIs, `electron-updater`, OS facilities.
@@ -39,6 +163,20 @@ Primary desktop shell (Electron). Boots the DevRyan web server in-process, owns 
 - **Contract with shared UI**: `__TAURI__` invoke commands and emitted `openchamber:*` events. Browser surfaces use local-only `desktop_browser_surface_*` operations plus surface-ID capture and DevTools commands; manual groups add local-only `desktop_browser_workspace_*` activate/pop-out/dock/focus operations. Window-scoped token-free `browser-surface-updated` snapshots include manual workspace/tab identity. Agent leases use snapshot, exact context claims, observed-lease selection, `desktop_agent_browser_*`, window-scoped `browser-agent-leases`, and global-count-only `browser-agent-lease-total`; the old bind command remains a compatibility status read instead of accepting renderer `webContentsId` ownership.
 - **Packaging/release hooks**: `packages/electron/scripts/*` for bundling main process, native helper build/signing, release metadata finalization.
 - **Window-state persistence**: `window-state-persistence.mjs` snapshots native `BrowserWindow` values before queued settings writes, so shutdown never retains a destroyed native window.
-- **Quit cleanup**: `quit-cleanup.mjs` orders normal app quit after owned-resource cleanup, deduplicates the main-process stop promise, and bounds a genuinely hung cleanup at ten seconds.
-- **Native packaging verification**: `scripts/native-module-paths.mjs` resolves workspace/transitive native modules without assuming Bun hoisting, while `scripts/packaged-native-modules.mjs` rejects artifacts missing required Electron ABI bindings or Cursor SDK platform artifacts (`rg`, `cursorsandbox`, and both tree-sitter bindings). Cursor SDK 1.0.28 uses Node's built-in SQLite, so no transitive Cursor `sqlite3` ABI rebuild is performed.
+- **Quit cleanup**: `quit-cleanup.mjs` checkpoints Bot runs, stops Bot
+  dispatcher/index requests, then orders normal app quit after general
+  owned-resource cleanup; it deduplicates the main-process stop promise and
+  bounds a genuinely hung cleanup at ten seconds without deleting named Bot
+  volumes.
+- **Native packaging verification**: `scripts/native-module-paths.mjs` resolves workspace/transitive native modules without assuming Bun hoisting, while `scripts/packaged-native-modules.mjs` rejects artifacts missing required Electron ABI bindings or Cursor SDK platform artifacts (`rg`, `cursorsandbox`, and both tree-sitter bindings). `scripts/verify-runtime-service-package.mjs` separately enforces the signed background-service helper and LaunchAgent contract on the finished app for both release architectures. Cursor SDK 1.0.28 uses Node's built-in SQLite, so no transitive Cursor `sqlite3` ABI rebuild is performed.
 - **Regression suite**: `bun run test` recursively discovers Electron `*.test.*` files outside generated/package output and runs them under Bun; the suite contract rejects missed files, and the root full and affected validation gates invoke this package suite.
+- **Native pointer acceptance**: `scripts/bot-catalog-native-pointer-smoke.mjs`
+  launches the current source Electron runtime with isolated DevRyan and Chromium
+  data, signs in through the loopback-only Test Administrator endpoint, locates
+  the enabled Bots Catalog create control through CDP, then delegates the actual
+  click to `macos-pointer-click.swift` as a CoreGraphics HID event. CDP is used
+  only to locate the control and assert/capture the resulting dialog, so the
+  smoke exercises AppKit draggable-region hit testing instead of bypassing it.
+  Run it explicitly with `bun run electron:test:native-pointer` on an
+  interactive, Accessibility-authorized macOS verification host; it is not a
+  skipped substitute in the platform-neutral unit suite.

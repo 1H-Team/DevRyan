@@ -13,6 +13,8 @@ import {
 import { SortableTabsStrip, type SortableTabsStripItem } from '@/components/ui/sortable-tabs-strip';
 
 import { RiArrowLeftSLine, RiBarChartLine, RiChat4Line, RiChatNewLine, RiCloseLine, RiCommandLine, RiDraftLine, RiPlayListAddLine, RiServerLine, type RemixiconComponentType } from '@remixicon/react';
+import { BotIdentityHeader } from '@/components/bots/chat/BotIdentityHeader';
+import type { BotSummary } from '@/lib/botsApi';
 import { DiffIcon } from '@/components/icons/DiffIcon';
 import {
   SidebarLeftCollapseIcon,
@@ -32,7 +34,7 @@ import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 
 import { useDeviceInfo, useTabletStandalonePwaRuntime } from '@/lib/device';
 import { cn, hasModifier } from '@/lib/utils';
-import { isPlaceholderSessionTitle, resolveDisplaySessionTitle } from '@/lib/sessionTitles';
+import { isCursorAcpErrorTitle, resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { McpDropdownContent } from '@/components/mcp/McpDropdown';
 import { QUOTA_PROVIDERS } from '@/lib/quota';
 import { formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
@@ -94,6 +96,8 @@ interface HeaderProps {
   leftDrawerOpen?: boolean;
   rightDrawerOpen?: boolean;
   browserActionPortalTarget?: HTMLElement | null;
+  botMode?: boolean;
+  bot?: BotSummary | null;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -102,6 +106,8 @@ export const Header: React.FC<HeaderProps> = ({
   leftDrawerOpen,
   rightDrawerOpen,
   browserActionPortalTarget,
+  botMode = false,
+  bot,
 }) => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
@@ -470,7 +476,7 @@ export const Header: React.FC<HeaderProps> = ({
     return worktreeDirectory || sessionDirectory || draftDirectory;
   }, [draftDirectory, sessionDirectory, worktreeDirectory]);
 
-  const needsDerivedSessionTitle = Boolean(currentSessionId) && isPlaceholderSessionTitle(currentSession?.title);
+  const needsDerivedSessionTitle = Boolean(currentSessionId) && isCursorAcpErrorTitle(currentSession?.title);
   const currentSessionFirstUserText = useSessionFirstUserText(
     needsDerivedSessionTitle ? currentSessionId : null,
     sessionDirectory || undefined,
@@ -640,6 +646,25 @@ export const Header: React.FC<HeaderProps> = ({
     };
   }, [isDesktopApp, isSidebarOpen, isTabletStandalonePwa, isVSCode, reservesDesktopRightChromeSpace]);
 
+  const botIdentityDesktopStyle = React.useMemo<React.CSSProperties>(() => {
+    if (isDesktopApp) {
+      return {
+        paddingLeft: isSidebarOpen ? '1rem' : DESKTOP_LEFT_CHROME_CLUSTER_WIDTH,
+        paddingRight: isRightSidebarOpen ? '1rem' : '3.5rem',
+      };
+    }
+
+    return {
+      paddingLeft: isSidebarOpen
+        ? '1rem'
+        : 'calc(3.5rem + var(--oc-wco-left-inset, 0px))',
+      paddingRight: isRightSidebarOpen
+        ? '1rem'
+        : 'calc(3.5rem + var(--oc-wco-right-inset, 0px))',
+      minHeight: 'max(5.5rem, var(--oc-wco-titlebar-height, 0px))',
+    };
+  }, [isDesktopApp, isRightSidebarOpen, isSidebarOpen]);
+
   const updateHeaderHeight = React.useCallback(() => {
     if (typeof document === 'undefined') {
       return;
@@ -743,7 +768,7 @@ export const Header: React.FC<HeaderProps> = ({
   const mobileServicesTabItems = React.useMemo<SortableTabsStripItem[]>(() => {
     return [
       { id: 'usage', label: t('layout.services.usage'), icon: <RiBarChartLine className="h-3.5 w-3.5" /> },
-      { id: 'mcp', label: 'MCP', icon: <RiCommandLine className="h-3.5 w-3.5" /> },
+      { id: 'mcp', label: 'MCP Servers', icon: <RiCommandLine className="h-3.5 w-3.5" /> },
     ];
   }, [t]);
 
@@ -809,6 +834,19 @@ export const Header: React.FC<HeaderProps> = ({
 
     return <React.Fragment key={tab.id}>{tabButton}</React.Fragment>;
   };
+
+  const renderBotDesktop = () => (
+    <BotIdentityHeader
+      bot={bot ?? null}
+      mobile={false}
+      style={botIdentityDesktopStyle}
+      onMouseDown={handleDragStart}
+    />
+  );
+
+  const renderBotMobile = () => (
+    <BotIdentityHeader bot={bot ?? null} mobile />
+  );
 
   const renderDesktop = () => (
     <div
@@ -1154,7 +1192,9 @@ export const Header: React.FC<HeaderProps> = ({
       className={headerClassName}
       style={{ ['--padding-scale' as string]: '1' } as React.CSSProperties}
     >
-      {isMobile ? renderMobile() : renderDesktop()}
+      {isMobile
+        ? botMode ? renderBotMobile() : renderMobile()
+        : botMode ? renderBotDesktop() : renderDesktop()}
     </header>
   );
 };

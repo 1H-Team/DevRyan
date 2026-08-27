@@ -19,6 +19,7 @@ export function createCanonicalOpenCodeEventProcessor({
   recordMultiUserActivity,
   processEvidence,
   processBrowserLease,
+  processManagedOrchestration,
   processSessionTitle,
   processContextModeRecovery,
   processCommandDeadline,
@@ -36,6 +37,7 @@ export function createCanonicalOpenCodeEventProcessor({
     callAsync('[MultiUser] Failed to project OpenCode activity', recordMultiUserActivity, payload, logger);
     callAsync('[Evidence] Failed to process OpenCode event', processEvidence, payload, logger);
     callAsync('[AgentBrowser] Failed to process session cleanup event', processBrowserLease, payload, logger);
+    callAsync('[ManagedOrchestration] Failed to process OpenCode event', processManagedOrchestration, payload, logger);
     callAsync('[SessionTitle] Failed to process OpenCode event', processSessionTitle, payload, logger);
     callAsync('[OpenCode] Failed to observe context-mode recovery', processContextModeRecovery, payload, logger);
     callAsync('[OpenCode] Failed to observe command deadline', processCommandDeadline, payload, logger);

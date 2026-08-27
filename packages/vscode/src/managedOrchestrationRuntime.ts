@@ -1,5 +1,7 @@
 import {
+  createManagedTerminalErrorRegistry,
   createManagedTaskScheduler,
+  isManagedModelAvailableInCatalog,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
   MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
@@ -41,7 +43,7 @@ export { createVsCodeManagedOrchestrationLedger } from './managedOrchestrationPe
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1_000;
 const DESIGNER_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
 const FIXER_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
-const ORACLE_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
+const ORACLE_TASK_TIMEOUT_MS = 15 * 60 * 1_000;
 const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 25_000;
 
@@ -103,12 +105,14 @@ const ERROR_STATUS_BY_CODE: Record<string, number> = {
   handoff_conflict: 409,
   handoff_in_progress: 409,
   invalid_handoff_scope: 400,
+  invalid_recovery_continuation_claim: 400,
   invalid_result_action: 400,
   ledger_capacity_exceeded: 507,
   manual_model_recovery_required: 409,
   managed_retry_limit_reached: 409,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED: 409,
   MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED: 409,
+  managed_agent_model_unavailable: 409,
   CONTEXT_MODE_RECOVERY_PENDING: 503,
   provider_prompt_rejection_requires_fresh_retry: 409,
   provider_prompt_rejection_requires_reframed_prompt: 409,
@@ -234,6 +238,7 @@ export type VsCodeManagedOrchestrationRuntime = {
   flush(): Promise<void>;
   shutdown(): Promise<void>;
   getDiagnostics(): unknown;
+  processOpenCodeEvent(payload: unknown): boolean;
 };
 
 export const createVsCodeManagedOrchestrationRuntime = (options: {
@@ -252,6 +257,11 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
   createTaskId?: () => string;
   createLeaseToken?: () => string;
   getWorkAdmissionBlock?: () => { code: string; error: string } | null;
+  validateAgentExecution?: (input: {
+    directory: string;
+    providerId: string;
+    modelId: string;
+  }) => Promise<boolean | null>;
 }): VsCodeManagedOrchestrationRuntime => {
   const logger = options.logger ?? console;
   const now = options.now ?? Date.now;
@@ -264,12 +274,36 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
     storageDirectory: options.storageDirectory,
     logger,
   });
+  const terminalErrors = createManagedTerminalErrorRegistry({ now });
+  const validateAgentExecution = options.validateAgentExecution ?? (options.manager
+    ? async ({ directory, providerId, modelId }) => {
+        if (providerId === 'cursor-acp') return null;
+        const baseUrl = options.manager?.getApiUrl();
+        if (!baseUrl) return null;
+        try {
+          const url = new URL('/config/providers', baseUrl);
+          if (directory) url.searchParams.set('directory', directory);
+          const response = await (options.fetchImpl ?? fetch)(url, {
+            headers: {
+              accept: 'application/json',
+              ...options.manager?.getOpenCodeAuthHeaders(),
+            },
+            signal: AbortSignal.timeout(5_000),
+          });
+          if (!response.ok) return null;
+          return isManagedModelAvailableInCatalog(await response.json(), providerId, modelId);
+        } catch {
+          return null;
+        }
+      }
+    : null);
   const executor = options.executor ?? (() => {
     if (!options.manager) throw new TypeError('manager is required when executor is not provided');
     return createVsCodeManagedOpenCodeExecutor({
       manager: options.manager,
       cursorSdkRuntime: options.cursorSdkRuntime,
       fetchImpl: options.fetchImpl,
+      readTerminalError: async (input) => terminalErrors.read(input),
     });
   })();
   const scheduler = options.scheduler ?? createManagedTaskScheduler({
@@ -432,6 +466,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
         const timeoutAt = resolveSubmitTimeoutAt(params, now);
         const readOnly = resolveReadOnly(params);
         const providerId = requireString(params, 'providerId');
+        const modelId = requireString(params, 'modelId');
         const agent = requireString(params, 'agent');
         if (readOnly && !supportsManagedReadOnlyAgent(agent)) {
           throw createRuntimeError(
@@ -447,6 +482,20 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
             409,
           );
         }
+        if (validateAgentExecution) {
+          const available = await validateAgentExecution({
+            directory: requireString(params, 'directory'),
+            providerId,
+            modelId,
+          });
+          if (available === false) {
+            throw createRuntimeError(
+              'managed_agent_model_unavailable',
+              `Managed model is unavailable: ${providerId}/${modelId}`,
+              409,
+            );
+          }
+        }
         const task = await scheduler.submit({
           idempotencyKey: requireString(params, 'idempotencyKey'),
           rootSessionId: requireString(params, 'rootSessionId'),
@@ -458,7 +507,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
           mode: requireMode(params.mode),
           readOnly,
           providerId,
-          modelId: requireString(params, 'modelId'),
+          modelId,
           agent,
           variant: optionalString(params, 'variant'),
           label: requireString(params, 'label'),
@@ -502,6 +551,24 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
             ...(sessionId ? { sessionId } : {}),
           }),
         };
+      }
+      case 'claim_provider_recovery_continuation': {
+        const task = getScopedTask(params);
+        return await scheduler.claimProviderRecoveryContinuation({
+          taskId: task.taskId,
+          rootSessionId: task.rootSessionId,
+          directory: task.directory,
+          claimantId: requireString(params, 'claimantId'),
+        });
+      }
+      case 'release_provider_recovery_continuation': {
+        const task = getScopedTask(params);
+        return await scheduler.releaseProviderRecoveryContinuation({
+          taskId: task.taskId,
+          rootSessionId: task.rootSessionId,
+          directory: task.directory,
+          claimantId: requireString(params, 'claimantId'),
+        });
       }
       case 'handoff': {
         const scope = normalizeHandoffParams(params);
@@ -637,6 +704,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
         scheduler.shutdown(),
       ]);
       bridgeEnvironment = null;
+      terminalErrors.clear();
       const errors = [hostResult, schedulerResult]
         .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
         .map((result) => result.reason);
@@ -651,6 +719,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
     initialize,
     handleRpc,
     getSnapshot,
+    processOpenCodeEvent: (payload: unknown) => terminalErrors.observe(payload),
     flush: () => scheduler.flush(),
     shutdown,
     getDiagnostics: () => ({

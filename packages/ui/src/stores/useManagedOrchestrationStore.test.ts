@@ -1098,6 +1098,71 @@ describe('managed orchestration store', () => {
     });
   });
 
+  test('keeps Model Recovery pending until the same-child retry row is available', async () => {
+    const failed = {
+      ...taskRecord(1, 'failed', {
+        childSessionId: 'ses_child',
+        failureReason: 'Monthly usage limit reached',
+      }),
+      dispatchGroupId: 'msg_parent',
+    };
+    const envelope = createManagedTaskResultEnvelope(failed, {
+      sequence: 1,
+      createdAt: 4_000,
+      resumable: true,
+    });
+    const followUp = projectedTask(2, 'running', {
+      childSessionId: 'ses_child',
+      attempt: 2,
+      priorTaskId: failed.taskId,
+      executionKind: 'retry_in_place',
+      providerId: 'openai',
+      modelId: 'gpt-5.6-luna',
+      variant: 'medium',
+    });
+    const acknowledgement = deferred<ManagedTaskAcknowledgementResponse>();
+    const store = createManagedOrchestrationStore({
+      api: fakeApi({
+        acknowledgeTask: async () => acknowledgement.promise,
+      }),
+      createIdempotencyKey: () => 'model-recovery-key',
+    });
+    store.getState().ingestEvent(taskEvent(toManagedTaskEvent(failed, envelope).properties.task, envelope));
+
+    const retry = store.getState().acknowledgeTask(failed.taskId, 'retry_in_place', {
+      providerId: 'openai',
+      modelId: 'gpt-5.6-luna',
+      variant: 'medium',
+    });
+    await Promise.resolve();
+    expect(store.getState().pendingActionByTaskId[failed.taskId]).toBe('retry_in_place');
+    expect(store.getState().resultEnvelopesByTaskId[failed.taskId].action).toBeNull();
+
+    acknowledgement.resolve({
+      resultEnvelope: {
+        ...envelope,
+        acknowledgedAt: 5_000,
+        action: 'retry_in_place',
+        followUpTaskId: followUp.taskId,
+      },
+      followUpTask: { task: followUp },
+    });
+    await retry;
+
+    expect(store.getState().pendingActionByTaskId[failed.taskId]).toBe(undefined);
+    expect(store.getState().resultEnvelopesByTaskId[failed.taskId].action).toBe('retry_in_place');
+    const recoveredTask = store.getState().tasksById[followUp.taskId];
+    expect({
+      status: recoveredTask.status,
+      childSessionId: recoveredTask.childSessionId,
+      executionKind: recoveredTask.executionKind,
+    }).toEqual({
+      status: 'running',
+      childSessionId: 'ses_child',
+      executionKind: 'retry_in_place',
+    });
+  });
+
   test('removes per-task action state when an authoritative snapshot evicts the task', async () => {
     const failed = taskRecord(1, 'failed', {
       failureReason: 'Provider failed',

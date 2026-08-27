@@ -2,10 +2,6 @@
 mode: all
 description: Multi-LLM agent that synthesizes responses from multiple models
 model: openai/gpt-5.5
-modelRefs:
-  - openai/gpt-5.5
-  - opencode/claude-opus-4-5
-  - opencode/deepseek-v4-flash
 variant: medium
 temperature: 0.1
 permission:

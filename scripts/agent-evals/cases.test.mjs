@@ -161,7 +161,7 @@ describe('evaluation case fixtures', () => {
       assert.match(definition.prompt, new RegExp(`Review depth: ${caseId.endsWith('deep') ? 'deep' : 'focused'}`));
       assert.match(definition.prompt, /Critical invariants:/);
       assert.match(definition.prompt, /do not run tests, builds, lint, or type-checking/);
-      assert.match(definition.prompt, /at most five/);
+      assert.match(definition.prompt, new RegExp(`at most ${caseId.endsWith('deep') ? 'five' : 'three'}`));
       assert.match(definition.prompt, new RegExp(runFiles.sourceRelativePath.replaceAll('.', '\\.')));
       assert.match(prepared.baselineSource, /expectedRevision/);
       if (caseId.endsWith('deep')) {

@@ -9,6 +9,8 @@ import {
 import { cn } from '@/lib/utils';
 import { SidebarLeftCollapseIcon } from '@/components/icons/ToolbarIcons';
 import { useI18n } from '@/lib/i18n';
+import { ProductAudienceTabs } from '@/components/shared/ProductAudienceTabs';
+import type { ProductAudience } from '@/stores/useMainSidebarAudienceStore';
 
 type Props = {
   hideDirectoryControls: boolean;
@@ -26,6 +28,8 @@ type Props = {
   hideSearchAction?: boolean;
   avoidWindowControlsOverlay?: boolean;
   reserveExternalDesktopChromeRow?: boolean;
+  audience: ProductAudience;
+  onAudienceChange: (audience: ProductAudience) => void;
 };
 
 export function SidebarHeader(props: Props): React.ReactNode {
@@ -46,22 +50,23 @@ export function SidebarHeader(props: Props): React.ReactNode {
     avoidWindowControlsOverlay = false,
     reserveExternalDesktopChromeRow = false,
     showMultiRun = true,
+    audience,
+    onAudienceChange,
   } = props;
 
-  if (hideDirectoryControls) {
-    return null;
-  }
-
-  const showTopRow = showSidebarToggle || !hideSearchAction;
+  const showCodingActions = audience === 'coding-agents' && !hideDirectoryControls;
+  const showTopRow = showSidebarToggle || (showCodingActions && !hideSearchAction);
   const reserveExternalChromeOnly = reserveExternalDesktopChromeRow && !showTopRow;
   let rootSpacingClass = 'px-2.5 py-1';
   if (showSidebarToggle) {
     rootSpacingClass = avoidWindowControlsOverlay ? 'pl-[5.5rem] pr-3 pb-[11px]' : 'pl-3 pr-3 pb-[11px]';
   } else if (reserveExternalChromeOnly) {
-    rootSpacingClass = 'px-2.5 pb-[7px] pt-[var(--oc-header-height,56px)]';
+    rootSpacingClass = audience === 'bots'
+      ? 'px-2.5 pb-[7px] pt-[var(--oc-bot-chrome-height,48px)]'
+      : 'px-2.5 pb-[7px] pt-[var(--oc-header-height,56px)]';
   }
 
-  const actionsRow = (
+  const actionsRow = showCodingActions ? (
     <div className="flex h-8 items-center gap-1.5">
       <Tooltip>
         <TooltipTrigger asChild>
@@ -106,7 +111,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
         <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.scheduledTasks')}</p></TooltipContent>
       </Tooltip>
     </div>
-  );
+  ) : null;
 
   return (
     <div
@@ -145,7 +150,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
                   <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.closeSessions')}</p></TooltipContent>
                 </Tooltip>
               ) : null}
-              {hideSearchAction ? null : (
+              {!showCodingActions || hideSearchAction ? null : (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
@@ -163,9 +168,24 @@ export function SidebarHeader(props: Props): React.ReactNode {
               )}
             </div>
           ) : null}
+          <ProductAudienceTabs
+            audience={audience}
+            onAudienceChange={onAudienceChange}
+            idPrefix="main-sidebar-audience"
+            panelId="main-sidebar-audience-panel"
+            variant="sidebar"
+          />
           {actionsRow}
         </div>
-      ) : null}
+      ) : (
+        <ProductAudienceTabs
+          audience={audience}
+          onAudienceChange={onAudienceChange}
+          idPrefix="main-sidebar-audience"
+          panelId="main-sidebar-audience-panel"
+          variant="sidebar"
+        />
+      )}
     </div>
   );
 }

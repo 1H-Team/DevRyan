@@ -115,6 +115,52 @@ describe('project-config runtime', () => {
     }
   });
 
+  it('atomically deletes only the requested owner and branches', async () => {
+    const { runtime, cleanup } = await createRuntime();
+    try {
+      const projectID = 'project-owner-cleanup';
+      const filePath = runtime.resolveProjectConfigPath(projectID);
+      await writeFile(filePath, JSON.stringify({
+        futureKey: { preserve: true },
+        scheduledTasks: [
+          {
+            id: 'owner-main', name: 'Main', enabled: true,
+            schedule: { kind: 'daily', time: '09:00', timezone: 'UTC' },
+            execution: { prompt: 'run', providerID: 'openai', modelID: 'gpt-4.1' },
+            ownerUserId: 'owner-1', target: { branchName: 'main' }, state: {},
+          },
+          {
+            id: 'owner-release', name: 'Release', enabled: true,
+            schedule: { kind: 'daily', time: '10:00', timezone: 'UTC' },
+            execution: { prompt: 'run', providerID: 'openai', modelID: 'gpt-4.1' },
+            ownerUserId: 'owner-1', target: { branchName: 'release' }, state: {},
+          },
+          {
+            id: 'other-main', name: 'Other', enabled: true,
+            schedule: { kind: 'daily', time: '11:00', timezone: 'UTC' },
+            execution: { prompt: 'run', providerID: 'openai', modelID: 'gpt-4.1' },
+            ownerUserId: 'owner-2', target: { branchName: 'main' }, state: {},
+          },
+        ],
+      }), 'utf8');
+
+      const result = await runtime.deleteScheduledTasksForOwner(
+        projectID,
+        'owner-1',
+        { branchNames: ['main'] },
+      );
+
+      expect(result.deletedCount).toBe(1);
+      expect(result.deletedTaskIds).toEqual(['owner-main']);
+      expect(result.tasks.map((task) => task.id)).toEqual(['owner-release', 'other-main']);
+      const raw = JSON.parse(await readFile(filePath, 'utf8'));
+      expect(raw.futureKey).toEqual({ preserve: true });
+      expect(raw.scheduledTasks.map((task) => task.id)).toEqual(['owner-release', 'other-main']);
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('persists server-controlled task ownership and branch targets compatibly', async () => {
     const { runtime, cleanup } = await createRuntime();
     try {

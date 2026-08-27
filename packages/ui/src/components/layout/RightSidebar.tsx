@@ -13,9 +13,10 @@ interface RightSidebarProps {
   isOpen: boolean;
   children: React.ReactNode;
   className?: string;
+  botMode?: boolean;
 }
 
-export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, className }) => {
+export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, className, botMode = false }) => {
   const { t } = useI18n();
   const rightSidebarWidth = useUIStore((state) => state.rightSidebarWidth);
   const setRightSidebarWidth = useUIStore((state) => state.setRightSidebarWidth);
@@ -70,6 +71,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
     RIGHT_SIDEBAR_MAX_WIDTH,
     Math.max(RIGHT_SIDEBAR_MIN_WIDTH, rightSidebarWidth || RIGHT_SIDEBAR_CONTENT_WIDTH)
   );
+  const topInset = botMode
+    ? 'var(--oc-bot-chrome-height, 48px)'
+    : 'var(--oc-header-height, 56px)';
 
   const handlePointerDown = (event: React.PointerEvent) => {
     if (!isOpen) {
@@ -186,11 +190,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
       {isOpen ? (
         <div
           onMouseDown={handleDragStart}
-          className={cn(
-            'app-region-drag absolute inset-x-0 top-0 z-20',
-            'h-[var(--oc-header-height,56px)]',
-          )}
-          style={webWindowControlsOverlayStyle}
+          className="app-region-drag absolute inset-x-0 top-0 z-20"
+          style={{
+            ...webWindowControlsOverlayStyle,
+            height: topInset,
+          }}
           aria-hidden
         />
       ) : null}
@@ -228,7 +232,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
           width: 'var(--oc-right-sidebar-content-width)',
           minWidth: 'var(--oc-right-sidebar-content-width)',
           transform: !isOpen && !prefersReducedMotion ? 'translateX(12px)' : 'translateX(0)',
-          paddingTop: 'var(--oc-header-height, 56px)',
+          paddingTop: topInset,
         }}
         aria-hidden={!isOpen}
       >

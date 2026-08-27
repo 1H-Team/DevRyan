@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Session } from '@opencode-ai/sdk/v2';
@@ -75,15 +75,22 @@ describe('SessionNodeItem row hover metadata', () => {
     expect(source).not.toContain('{sessionUpdatedLabel}</div>');
   });
 
-  test('wires compact metadata to a row-local responsive container', () => {
+  test('does not reserve or render compact elapsed-time metadata', () => {
     const testDir = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(join(testDir, 'SessionNodeItem.tsx'), 'utf8');
+    const sidebarSource = readFileSync(join(testDir, '..', 'SessionSidebar.tsx'), 'utf8');
     const styles = readFileSync(join(testDir, '..', '..', '..', 'index.css'), 'utf8');
 
-    expect(source).toContain('@container/session-sidebar-row');
-    expect(source).toContain('session-sidebar-row__compact-time');
-    expect(styles).toContain('@container session-sidebar-row');
-    expect(styles).toContain('.session-sidebar-row__compact-time');
+    expect(source).not.toContain('SessionCompactAge');
+    expect(source).not.toContain('@container/session-sidebar-row');
+    expect(source).not.toContain('session-sidebar-row__compact-time');
+    expect(sidebarSource).not.toContain('useSidebarAgeClockLifecycle');
+    expect(sidebarSource).not.toContain('useSidebarUserActivityHydration');
+    expect(existsSync(join(testDir, 'SessionCompactAge.tsx'))).toBe(false);
+    expect(existsSync(join(testDir, 'sidebarAgeClock.ts'))).toBe(false);
+    expect(existsSync(join(testDir, 'hooks', 'useSidebarUserActivityHydration.ts'))).toBe(false);
+    expect(styles).not.toContain('@container session-sidebar-row');
+    expect(styles).not.toContain('.session-sidebar-row__compact-time');
   });
 });
 

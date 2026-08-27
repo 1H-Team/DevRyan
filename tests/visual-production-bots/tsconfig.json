@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "baseUrl": "../..",
+    "paths": {
+      "@/*": ["packages/ui/src/*"],
+      "@openchamber/ui/*": ["packages/ui/src/*"]
+    },
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "vite.config.ts",
+    "../../packages/ui/src/**/*.d.ts"
+  ]
+}

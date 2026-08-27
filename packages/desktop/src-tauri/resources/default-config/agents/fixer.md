@@ -30,8 +30,6 @@ permission:
     debugging-and-error-recovery: allow
     frontend-ui-engineering: allow
     planning-and-task-breakdown: allow
-modelRefs:
-  - openai/gpt-5.5
 top_p: 0.9
 ---
 

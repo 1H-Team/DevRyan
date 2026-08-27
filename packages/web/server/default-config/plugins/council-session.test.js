@@ -72,15 +72,23 @@ const createClient = (sessionStates) => {
   return { client, createdSessions };
 };
 
-const writeCouncilConfig = async (configDir, councillors) => {
+const writeCouncilConfig = async (configDir, councillors, { legacy = false } = {}) => {
   await fs.mkdir(path.join(configDir, 'agents'), { recursive: true });
+  if (!legacy) {
+    await fs.writeFile(
+      path.join(configDir, 'agents', 'council.models.json'),
+      `${JSON.stringify({ version: 1, councillors }, null, 2)}\n`,
+    );
+  }
   await fs.writeFile(path.join(configDir, 'agents', 'council.md'), [
     '---',
-    'councillors:',
-    ...councillors.flatMap((entry) => [
-      `  - model: ${entry.model}`,
-      ...(entry.variant ? [`    variant: ${entry.variant}`] : []),
-    ]),
+    ...(legacy ? [
+      'councillors:',
+      ...councillors.flatMap((entry) => [
+        `  - model: ${entry.model}`,
+        ...(entry.variant ? [`    variant: ${entry.variant}`] : []),
+      ]),
+    ] : ['model: openai/gpt-5.5']),
     '---',
     '',
     'Council prompt',
@@ -144,6 +152,33 @@ describe('CouncilSessionPlugin', () => {
     for (const dir of tempDirs.splice(0)) {
       await fs.rm(dir, { recursive: true, force: true });
     }
+  });
+
+  it('falls back to legacy Council frontmatter when the companion is absent', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-council-plugin-legacy-'));
+    tempDirs.push(configDir);
+    await writeCouncilConfig(configDir, [{ model: 'openai/gpt-5.5', variant: 'high' }], { legacy: true });
+    process.env.OPENCODE_CONFIG_DIR = configDir;
+    const { client, createdSessions } = createClient([{
+      status: { type: 'idle' },
+      messages: (sessionID) => [assistantMessage(sessionID, 'legacy answer', {
+        finish: 'stop',
+        completed: 2_000,
+      })],
+    }]);
+    const plugin = await CouncilSessionPlugin({ client });
+
+    const promise = plugin.tool.council_session.execute({ prompt: 'review' }, {
+      directory: PROJECT_DIR,
+      sessionID: PARENT_SESSION_ID,
+    });
+    await waitForMockCalls(client.session.promptAsync);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await promise;
+
+    const promptBody = client.session.promptAsync.mock.calls[0][0].body;
+    expect(promptBody.model).toEqual({ providerID: 'openai', modelID: 'gpt-5.5' });
+    expect(promptBody.variant).toBe('high');
   });
 
   it('uses only Cursor Composer 2 when the cursor-composer-2 preset is requested', async () => {

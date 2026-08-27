@@ -96,12 +96,12 @@ export interface AuditStatus {
   deliveryFailures: number;
 }
 
-export type CapabilityKey = 'files' | 'terminal' | 'browser' | 'createWorktrees' | 'createBranches' | 'manageProjects' | 'manageUsers' | 'manageGlobalSettings' | 'manageGit' | 'push' | 'github';
+export type CapabilityKey = 'bots' | 'files' | 'terminal' | 'browser' | 'createWorktrees' | 'createBranches' | 'manageProjects' | 'manageUsers' | 'manageGlobalSettings' | 'manageGit' | 'push' | 'github';
 export type CapabilityOverride = 'inherit' | 'on' | 'off';
 export type McpPolicyOverride = 'inherit' | 'on' | 'off';
 
 export interface UserFeatureOverrides {
-  agents?: { hidePermissionsUi?: boolean };
+  agents?: { hidePermissionsUi?: boolean; hideGlobalBehaviorUi?: boolean };
   mcp?: Record<string, 'on' | 'off'>;
 }
 
@@ -121,6 +121,7 @@ export interface UserPolicyPayload {
   };
   inheritedPolicy: {
     settingsPermissions: SettingsPermissions;
+    featureOverrides?: UserFeatureOverrides;
   } & Record<CapabilityKey, boolean>;
 }
 
@@ -218,6 +219,8 @@ export const capabilityLabels: Array<[CapabilityKey, string]> = [
   ['github', 'GitHub'], ['manageProjects', 'Manage projects'], ['manageUsers', 'Manage users'],
   ['manageGlobalSettings', 'Host settings'],
 ];
+
+export const capabilityKeys: CapabilityKey[] = ['bots', ...capabilityLabels.map(([key]) => key)];
 
 export const roleLabel = (role: Role): string => role.replace('_', ' ');
 

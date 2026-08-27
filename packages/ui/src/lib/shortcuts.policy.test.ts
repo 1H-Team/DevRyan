@@ -28,6 +28,7 @@ const managedPrincipal = (
     push: false,
     github: false,
     ...capabilities,
+    bots: capabilities.bots ?? true,
   },
   assignments: [],
 });

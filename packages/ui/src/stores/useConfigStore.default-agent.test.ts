@@ -79,6 +79,7 @@ const setManagedDeveloper = () => setAuthPrincipal({
   scope: "managed",
   policy: {
     settingsPages: ["sessions"],
+    bots: true,
     files: false,
     terminal: false,
     browser: true,

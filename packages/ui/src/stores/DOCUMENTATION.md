@@ -68,6 +68,13 @@ host-managed and ignores stale personal entries.
 
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
 
+The Bot runtime uses separate low-frequency projections for catalog, channels,
+operations, and persistent Shared files. `useBotSharedFilesStore.ts` is scoped to
+the authenticated principal, indexes file IDs per authorized channel, and
+reconciles `shared_file.updated` events without making the operations rail poll
+or subscribe to transcript streaming. Snapshot ACL changes synchronously prune
+files for channels the principal can no longer access.
+
 `useConfigApplyStore.ts` is the renderer projection of the host-owned revisioned
 configuration-apply coordinator. Every successful config mutation merges its
 validated apply envelope. The always-mounted web/Electron and VS Code shells poll only
@@ -276,6 +283,40 @@ The task ledger remains the durable result source, but a row whose terminal
 result is stale while its canonical child reports live `busy`/`retry` activity
 is presented as running. This is a display-only reconciliation and does not
 rewrite or discard the retained failure envelope.
+
+### Production Bots projection stores
+
+Production Bots deliberately use focused non-persisted stores instead of the
+ordinary OpenCode session/message branches:
+
+- `useBotsStore.ts` owns low-frequency capability, Bot, safe revision metadata,
+  current-principal membership, and Bot selection state.
+- `useBotChannelStore.ts` owns authorized channels, normalized paged canonical
+  messages, stable per-channel attachment IDs, per-channel cursors, drafts,
+  coalesced owner-channel opening, and one client-stable optimistic send row.
+  Attachment references are recalculated only when attachment membership
+  changes, so message updates preserve the artifact leaf. One atomic send update
+  inserts and orders the optimistic row, clears the exact draft, and marks the
+  short acceptance request pending. Definitive rejection rolls back that row and
+  restores the captured draft; ambiguous transport failure retains a
+  `Not confirmed` row, refreshes history, and retries the same ID exactly once.
+  Explicit failed-run retry requeues the same server run and creates no message.
+- `useBotLiveMessageStore.ts` owns only requester-streaming message records and
+  one live message ID per channel. Revisions are monotonic, payloads are capped
+  at 192 KiB, and canonical/final/terminal/channel/principal/reconnect boundaries
+  clear transient text without touching canonical history.
+- `useBotOperationsStore.ts` owns runs, pending approvals, action metadata,
+  low-frequency computer/control status, and Bot-SSE connection state.
+  Screencast frames never enter Zustand.
+
+`apps/BotsEventOwner.tsx` is the only stream owner. It applies each authorized
+snapshot as the current principal's ACL boundary, preserves the last accepted
+sequence across same-epoch reconnect snapshots, drops replayed events, and
+resets every Bot store, including transient live text, on account change or real
+owner unmount. Bot events do
+not enter `sync-context.tsx`. Entity and channel/run index references are
+preserved when presentation-relevant values did not change; rendering code
+should use the exported per-Bot, per-channel, and per-run leaf selectors.
 
 ### Provider recovery store
 

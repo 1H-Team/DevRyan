@@ -2,6 +2,10 @@
 
 `@openchamber/shared-runtime` contains dependency-light host logic that must behave identically in the web/Electron and VS Code runtimes.
 
+## Free OpenCode Zen model catalog
+
+`lib/free-zen-model-catalog.js` intersects the models currently served by the Zen API with the OpenCode rows whose models.dev input and output costs are both zero. It owns a five-minute success cache, single-flight refreshes, bounded fetches, and a stale snapshot for temporary catalog outages. Web/Electron and VS Code share this policy while retaining their own feature-specific ordering and request transports.
+
 ## Commit message drafts
 
 `lib/commit-message-draft.js` owns the shared 4.5-second generation deadline, compact subject-and-details prompt, Conventional Commit normalization, word-boundary repair for subjects over 72 characters, bounded detail sanitization, provider cooldown selection, and deterministic local fallback. Web/Electron and VS Code provide authoritative Git context and direct provider transport; both hosts return the same valid subject plus two to four factual details without creating an OpenCode session. Provider timeouts and invalid output become an explicit local-fallback warning rather than a failed Generate action.

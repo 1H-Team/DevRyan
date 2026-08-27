@@ -77,6 +77,17 @@ const getProviderFailurePresentation = ({
     };
   }
 
+  if (task.failureKind === 'model_unavailable') {
+    return {
+      message: task.failureReason || t('chat.modelRecovery.modelUnavailable', {
+        provider: task.providerId,
+        model: task.modelId,
+      }),
+      className: 'text-[var(--status-warning)]',
+      role: 'alert' as const,
+    };
+  }
+
   if (task.failureKind === 'provider_prompt_rejected') {
     return {
       message: task.agentRetryAvailable
@@ -89,7 +100,9 @@ const getProviderFailurePresentation = ({
 
   if (task.failureKind === 'deadline_exceeded') {
     return {
-      message: t('chat.modelRecovery.timeoutDetail'),
+      message: t(task.agentRetryAvailable
+        ? 'chat.modelRecovery.timeoutAgentRetry'
+        : 'chat.modelRecovery.timeoutTerminal'),
       className: 'text-[var(--status-warning)]',
       role: 'alert' as const,
     };
@@ -141,6 +154,7 @@ export const ManagedTaskRowView = React.memo(({
     && task.failureKind !== 'provider_prompt_rejected'
     && (
       task.failureKind === 'provider_usage_limit'
+      || task.failureKind === 'model_unavailable'
       || (task.mode === 'orchestrator' && task.dispatchGrouped && task.attempt >= 2)
     )
     && (task.status === 'failed' || task.status === 'interrupted'),

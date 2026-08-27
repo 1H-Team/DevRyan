@@ -30,6 +30,26 @@ describe('mobile right sidebar layout', () => {
 
         expect(mobileRightDrawer).toContain('<ErrorBoundary><RightSidebarTabs /></ErrorBoundary>');
         expect(mobileRightDrawer).not.toContain('<GitView />');
+        expect(mobileRightDrawer).not.toContain('botMode={botMode}');
+    });
+
+    test('renders Bot drawer controls in shell chrome outside the identity header', () => {
+        const layoutSource = readSource('MainLayout.tsx');
+        const headerSource = readSource('Header.tsx');
+        const botIdentitySource = readSource('../bots/chat/BotIdentityHeader.tsx');
+        const botHeader = headerSource.slice(
+            headerSource.indexOf('const renderBotMobile'),
+            headerSource.indexOf('const renderDesktop'),
+        );
+
+        expect(layoutSource).toContain('data-bot-mobile-edge-controls');
+        expect(layoutSource).toContain('<BotSidebarControlButton');
+        expect(layoutSource).toContain('onToggle={toggleMobileLeftDrawer}');
+        expect(layoutSource).toContain('onToggle={toggleMobileRightDrawer}');
+        expect(botHeader).toContain('<BotIdentityHeader');
+        expect(botIdentitySource).toContain('data-bot-identity-header="mobile"');
+        expect(botHeader).not.toContain('<button');
+        expect(botIdentitySource).not.toContain('<button');
     });
 });
 

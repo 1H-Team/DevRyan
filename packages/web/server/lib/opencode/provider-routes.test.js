@@ -1406,23 +1406,29 @@ describe('OpenCode provider routes', () => {
     });
   });
 
-  it.each([
-    ['normal', 'openai', 'gpt-5.6-sol'],
-    ['plan', 'openai', 'gpt-5.6-sol'],
-    ['normal', 'anthropic', 'claude-sonnet-4-5'],
-    ['plan', 'anthropic', 'claude-sonnet-4-5'],
-    ['normal', 'xai', 'grok-4.6'],
-    ['plan', 'xai', 'grok-4.6'],
-  ])('schedules standard-provider title generation for %s %s prompts', async (mode, providerID, modelID) => {
+  it.each(
+    ['builder', 'orchestrator'].flatMap((agent) =>
+      [false, true].flatMap((planMode) => [
+        ['openai', 'gpt-5.6-sol'],
+        ['xai', 'grok-4.6'],
+        ['opencode', 'nemotron-3.5-lightning-free'],
+      ].map(([providerID, modelID]) => ({ agent, planMode, providerID, modelID }))),
+    ),
+  )('schedules standard-provider title generation for $agent $providerID prompts (plan=$planMode)', async ({
+    agent,
+    planMode,
+    providerID,
+    modelID,
+  }) => {
     const schedule = vi.fn();
     const { app } = createApp({
       standardSessionTitleRuntime: { schedule },
     });
     app.use('/api', (_req, res) => res.status(204).end());
 
-    const sessionID = `ses_${providerID}_${mode}`;
-    const visibleText = `repair ${providerID} ${mode} session titles`;
-    const parts = mode === 'plan'
+    const sessionID = `ses_${providerID}_${agent}_${planMode ? 'plan' : 'normal'}`;
+    const visibleText = `repair ${providerID} ${agent} ${planMode ? 'plan' : 'normal'} session titles`;
+    const parts = planMode
       ? [
           { type: 'text', text: 'User has requested to enter plan mode.', synthetic: true },
           { type: 'text', text: visibleText },
@@ -1433,6 +1439,8 @@ describe('OpenCode provider routes', () => {
       .post(`/api/session/${sessionID}/prompt_async?directory=%2Ftmp%2Fproject`)
       .send({
         model: { providerID, modelID },
+        agent,
+        variant: providerID === 'openai' ? 'medium' : undefined,
         messageID: 'msg_1',
         parts,
       })
@@ -1443,6 +1451,8 @@ describe('OpenCode provider routes', () => {
       directory: '/tmp/project',
       text: visibleText,
       providerID,
+      modelID,
+      variant: providerID === 'openai' ? 'medium' : undefined,
     });
   });
 
@@ -1532,12 +1542,12 @@ describe('OpenCode provider routes', () => {
     expect(response.body.tools).toEqual({ unique_tool: true });
   });
 
-  it('schedules historical marker title backfill after a session list succeeds', async () => {
-    const scheduleMarkerBackfill = vi.fn();
+  it('schedules placeholder title recovery after a session list succeeds', async () => {
+    const schedulePlaceholderRecovery = vi.fn();
     const { app } = createApp({
       standardSessionTitleRuntime: {
         schedule: vi.fn(),
-        scheduleMarkerBackfill,
+        schedulePlaceholderRecovery,
       },
     });
     app.get('/api/session', (_req, res) => res.json([
@@ -1548,7 +1558,7 @@ describe('OpenCode provider routes', () => {
       .get('/api/session?directory=%2Ftmp%2Fproject')
       .expect(200);
 
-    expect(scheduleMarkerBackfill).toHaveBeenCalledWith({
+    expect(schedulePlaceholderRecovery).toHaveBeenCalledWith({
       directory: '/tmp/project',
     });
   });

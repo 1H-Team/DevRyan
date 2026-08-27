@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "councillors": [
+    {
+      "model": "opencode-go/kimi-k2.6"
+    },
+    {
+      "model": "opencode-go/deepseek-v4-pro"
+    },
+    {
+      "model": "opencode-go/glm-5.1"
+    }
+  ]
+}

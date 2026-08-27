@@ -161,6 +161,20 @@ export const isPlaceholderSessionTitle = (title?: string | null): boolean => {
     || isPlanControlSessionTitle(normalized)
 }
 
+export const mergeSessionPreservingMeaningfulTitle = <T extends { title?: string | null }>(
+  current: T | undefined,
+  incoming: T,
+): T => {
+  if (
+    !current
+    || isPlaceholderSessionTitle(current.title)
+    || !isPlaceholderSessionTitle(incoming.title)
+  ) {
+    return incoming
+  }
+  return { ...incoming, title: current.title }
+}
+
 export const resolveDisplaySessionTitle = ({
   title,
   latestUserText,
@@ -173,8 +187,11 @@ export const resolveDisplaySessionTitle = ({
   const normalizedTitle = typeof title === "string"
     ? collapseAdjacentDuplicateTitleWords(normalizeTitleWhitespace(title))
     : ""
-  if (isPlaceholderSessionTitle(normalizedTitle)) {
+  if (isCursorAcpErrorTitle(normalizedTitle)) {
     return deriveSessionTitleFromUserText(latestUserText, fallback)
+  }
+  if (isPlaceholderSessionTitle(normalizedTitle)) {
+    return fallback
   }
   const smartTitle = deriveSmartTitleFromUserText(normalizedTitle)
   if (smartTitle && smartTitle !== normalizedTitle) {

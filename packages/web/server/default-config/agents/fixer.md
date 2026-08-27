@@ -20,8 +20,6 @@ permission:
   council_session: deny
   devryan_task: deny
   skill: allow
-modelRefs:
-  - openai/gpt-5.5
 top_p: 0.9
 ---
 

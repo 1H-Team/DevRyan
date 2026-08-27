@@ -1,0 +1,14 @@
+{
+  "actionId": "c8f24075-f17c-450f-9811-999aee265d0f",
+  "runId": "0e76fa14-6c1a-4742-b3eb-51da69a758f6",
+  "state": "succeeded",
+  "operationKind": "write",
+  "nativeExactlyOnce": false,
+  "writeGuarantee": "idempotent_content_replace",
+  "failure": null,
+  "verifiedFile": {
+    "path": "approval-check.txt",
+    "content": "BOT_APPROVAL_OK",
+    "verification": "read-only isolated Docker workspace mount"
+  }
+}

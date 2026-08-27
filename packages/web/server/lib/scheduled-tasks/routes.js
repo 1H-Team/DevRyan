@@ -41,10 +41,32 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
   const resolveProjectForRequest = async (req, projectID) => {
     if (req.principal?.scope === 'managed' && typeof resolveManagedProject === 'function') {
       const managed = await resolveManagedProject(req, projectID);
-      if (managed?.project) return managed.project;
+      if (managed?.project) {
+        return { project: managed.project, configProjectID: managed.project.id || projectID, managed: true };
+      }
       if (!isAdministrator(req.principal)) return null;
+
+      const localProject = await findProjectByID(projectID);
+      const matchingAssignment = (req.principal.assignments || []).find((assignment) => (
+        assignment.repositoryPath === localProject?.path
+        || assignment.publicDirectory === localProject?.path
+      ));
+      if (matchingAssignment?.projectId) {
+        const canonical = await resolveManagedProject(req, matchingAssignment.projectId);
+        if (canonical?.project) {
+          return {
+            project: canonical.project,
+            configProjectID: canonical.project.id || matchingAssignment.projectId,
+            managed: true,
+          };
+        }
+      }
+      return localProject
+        ? { project: localProject, configProjectID: projectID, managed: false }
+        : null;
     }
-    return findProjectByID(projectID);
+    const project = await findProjectByID(projectID);
+    return project ? { project, configProjectID: projectID, managed: false } : null;
   };
 
   const assignedBranches = (principal, projectID) => (principal?.assignments || [])
@@ -83,12 +105,15 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     }
 
     try {
-      const project = await resolveProjectForRequest(req, projectID);
-      if (!project) {
+      const resolved = await resolveProjectForRequest(req, projectID);
+      if (!resolved) {
         return res.status(404).json({ error: 'Project not found' });
       }
 
-      const tasks = filterTasksForPrincipal(await projectConfigRuntime.listScheduledTasks(projectID), req.principal);
+      const tasks = filterTasksForPrincipal(
+        await projectConfigRuntime.listScheduledTasks(resolved.configProjectID),
+        req.principal,
+      );
       return res.json({ tasks });
     } catch (error) {
       console.error('[ScheduledTasks] failed to load tasks:', error);
@@ -108,12 +133,13 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     }
 
     try {
-      const project = await resolveProjectForRequest(req, projectID);
-      if (!project) {
+      const resolved = await resolveProjectForRequest(req, projectID);
+      if (!resolved) {
         return res.status(404).json({ error: 'Project not found' });
       }
+      const { project, configProjectID } = resolved;
 
-      const currentTasks = await projectConfigRuntime.listScheduledTasks(projectID);
+      const currentTasks = await projectConfigRuntime.listScheduledTasks(configProjectID);
       const incomingTaskID = asNonEmptyString(taskInput.id);
       const existingTask = incomingTaskID ? currentTasks.find((task) => task.id === incomingTaskID) || null : null;
       if (incomingTaskID && !existingTask) return res.status(404).json({ error: 'Task not found' });
@@ -121,14 +147,14 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
         return res.status(404).json({ error: 'Task not found' });
       }
       const ownerUserId = existingTask?.ownerUserId
-        || (req.principal?.scope === 'managed' ? req.principal.id : null);
-      const targetBranchName = resolveTaskBranch({ req, projectID, project, taskInput, existingTask });
-      const upserted = await projectConfigRuntime.upsertScheduledTask(projectID, taskInput, {
+        || (resolved.managed && req.principal?.scope === 'managed' ? req.principal.id : null);
+      const targetBranchName = resolveTaskBranch({ req, projectID: configProjectID, project, taskInput, existingTask });
+      const upserted = await projectConfigRuntime.upsertScheduledTask(configProjectID, taskInput, {
         ownerUserId,
         targetBranchName,
       });
-      await scheduledTasksRuntime.syncProject(projectID);
-      const freshTasks = filterTasksForPrincipal(await projectConfigRuntime.listScheduledTasks(projectID), req.principal);
+      await scheduledTasksRuntime.syncProject(configProjectID);
+      const freshTasks = filterTasksForPrincipal(await projectConfigRuntime.listScheduledTasks(configProjectID), req.principal);
       const freshTask = freshTasks.find((task) => task.id === upserted.task.id) || upserted.task;
 
       return res.json({
@@ -157,22 +183,22 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     }
 
     try {
-      const project = await resolveProjectForRequest(req, projectID);
-      if (!project) {
+      const resolved = await resolveProjectForRequest(req, projectID);
+      if (!resolved) {
         return res.status(404).json({ error: 'Project not found' });
       }
 
-      const currentTasks = await projectConfigRuntime.listScheduledTasks(projectID);
+      const currentTasks = await projectConfigRuntime.listScheduledTasks(resolved.configProjectID);
       const task = currentTasks.find((entry) => entry.id === taskID);
       if (!task || (!isAdministrator(req.principal) && task.ownerUserId !== req.principal?.id)) {
         return res.status(404).json({ error: 'Task not found' });
       }
-      const result = await projectConfigRuntime.deleteScheduledTask(projectID, taskID);
+      const result = await projectConfigRuntime.deleteScheduledTask(resolved.configProjectID, taskID);
       if (!result.deleted) {
         return res.status(404).json({ error: 'Task not found' });
       }
-      await scheduledTasksRuntime.syncProject(projectID);
-      const freshTasks = filterTasksForPrincipal(await projectConfigRuntime.listScheduledTasks(projectID), req.principal);
+      await scheduledTasksRuntime.syncProject(resolved.configProjectID);
+      const freshTasks = filterTasksForPrincipal(await projectConfigRuntime.listScheduledTasks(resolved.configProjectID), req.principal);
       return res.json({ tasks: freshTasks });
     } catch (error) {
       console.error('[ScheduledTasks] failed to delete task:', error);
@@ -191,16 +217,17 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     }
 
     try {
-      const project = await resolveProjectForRequest(req, projectID);
-      if (!project) {
+      const resolved = await resolveProjectForRequest(req, projectID);
+      if (!resolved) {
         return res.status(404).json({ error: 'Project not found' });
       }
 
-      const task = (await projectConfigRuntime.listScheduledTasks(projectID)).find((entry) => entry.id === taskID);
+      const task = (await projectConfigRuntime.listScheduledTasks(resolved.configProjectID))
+        .find((entry) => entry.id === taskID);
       if (!task || (!isAdministrator(req.principal) && task.ownerUserId !== req.principal?.id)) {
         return res.status(404).json({ error: 'Task not found' });
       }
-      const result = await scheduledTasksRuntime.runNow(projectID, taskID);
+      const result = await scheduledTasksRuntime.runNow(resolved.configProjectID, taskID);
       if (result.running || result.queued) {
         return res.status(409).json({ error: result.error || 'Task already running' });
       }
@@ -228,7 +255,10 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
   app.get('/api/openchamber/scheduled-tasks/status', async (req, res) => {
     try {
       if (isAdministrator(req.principal) && typeof scheduledTasksRuntime.getStatus === 'function') {
-        return res.json(scheduledTasksRuntime.getStatus());
+        const status = typeof scheduledTasksRuntime.refreshStatus === 'function'
+          ? await scheduledTasksRuntime.refreshStatus()
+          : scheduledTasksRuntime.getStatus();
+        return res.json(status);
       }
 
       const settings = await readSettingsFromDiskMigrated();

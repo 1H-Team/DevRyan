@@ -255,6 +255,7 @@ describe('managed orchestration contract', () => {
     expect(toManagedTaskEvent(terminal('quota exceeded')).properties.task.agentRetryAvailable).toBe(false);
     expect(toManagedTaskEvent(terminal('insufficient quota')).properties.task.agentRetryAvailable).toBe(false);
     expect(toManagedTaskEvent(terminal('rate limited')).properties.task.agentRetryAvailable).toBe(false);
+    expect(toManagedTaskEvent(terminal('Model not found: opencode/retired-model')).properties.task.agentRetryAvailable).toBe(false);
     expect(toManagedTaskEvent(terminal('concurrent session limit temporarily reached')).properties.task.agentRetryAvailable).toBe(false);
   });
 

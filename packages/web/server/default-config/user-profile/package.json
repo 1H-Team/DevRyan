@@ -2,7 +2,7 @@
   "private": true,
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.47",
-    "@opencode-ai/plugin": "1.17.11",
+    "@opencode-ai/plugin": "1.18.23",
     "@rama_nigg/open-cursor": "2.5.4",
     "@rynfar/meridian": "1.62.6",
     "context-mode": "1.0.169",

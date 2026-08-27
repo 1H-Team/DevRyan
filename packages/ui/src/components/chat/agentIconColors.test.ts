@@ -25,16 +25,17 @@ describe('agent glyph color wiring', () => {
     expect(modelControls).toContain('const agentColor = getAgentColor(agent.name);');
   });
 
-  test('keeps plan mode on its explicit warning-color override', () => {
+  test('keeps every active plan-mode glyph on its fixed yellow override', () => {
     const modelControls = readSource('./ModelControls.tsx');
     const mobileAgentButton = readSource('./MobileAgentButton.tsx');
 
     expect(modelControls).toContain(
-      "const PLAN_MODE_AGENT_STYLE: React.CSSProperties = { color: 'var(--status-warning)' };",
+      "const PLAN_MODE_AGENT_STYLE: React.CSSProperties = { color: 'var(--plan-mode-icon-color)' };",
     );
     expect(modelControls.match(/isPlanModeSelected \? PLAN_MODE_AGENT_STYLE : uiAgentName \? \{ color: `var\(\$\{getAgentIconColor\(uiAgentName\)\.var\}\)` \} : undefined/g)).toHaveLength(2);
+    expect(modelControls.match(/style=\{isPlanModeSelected \? PLAN_MODE_AGENT_STYLE : undefined\}/g)).toHaveLength(2);
     expect(mobileAgentButton).toContain(
-      "const PLAN_MODE_AGENT_STYLE: React.CSSProperties = { color: 'var(--status-warning)' };",
+      "const PLAN_MODE_AGENT_STYLE: React.CSSProperties = { color: 'var(--plan-mode-icon-color)' };",
     );
     expect(mobileAgentButton).toContain('getAgentIconColor');
     expect(mobileAgentButton).toContain('style={isPlanModeSelected ? PLAN_MODE_AGENT_STYLE');

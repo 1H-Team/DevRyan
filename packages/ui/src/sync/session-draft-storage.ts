@@ -116,6 +116,9 @@ export const createDraftId = (): string =>
 const serializeDraft = (draft: ChatDraft): ChatDraft => ({
   ...draft,
   text: draft.text ?? "",
+  attachmentCount: typeof draft.attachmentCount === "number" && Number.isFinite(draft.attachmentCount)
+    ? Math.max(0, Math.floor(draft.attachmentCount))
+    : 0,
   directoryOverride: normalizePath(draft.directoryOverride ?? null),
   bootstrapPendingDirectory: normalizePath(draft.bootstrapPendingDirectory ?? null),
   sendConfig: normalizeDraftSendConfig(draft.sendConfig),
@@ -136,6 +139,9 @@ const parseCanonicalDrafts = (raw: string): { draftsById: Record<string, ChatDra
     draftsById[record.id] = serializeDraft({
       id: record.id,
       text: typeof record.text === "string" ? record.text : "",
+      attachmentCount: typeof record.attachmentCount === "number" && Number.isFinite(record.attachmentCount)
+        ? Math.max(0, Math.floor(record.attachmentCount))
+        : 0,
       createdAt,
       updatedAt,
       selectedProjectId: typeof record.selectedProjectId === "string" ? record.selectedProjectId : null,
@@ -173,7 +179,11 @@ export const persistDrafts = (
   try {
     const drafts = draftOrder
       .map((id) => draftsById[id])
-      .filter((draft): draft is ChatDraft => Boolean(draft) && (draft.text.trim().length > 0 || !!normalizeDraftSendConfig(draft.sendConfig)))
+      .filter((draft): draft is ChatDraft => Boolean(draft) && (
+        draft.text.trim().length > 0
+        || (draft.attachmentCount ?? 0) > 0
+        || !!normalizeDraftSendConfig(draft.sendConfig)
+      ))
       .map(serializeDraft)
     if (drafts.length === 0) {
       storage.removeItem(CHAT_DRAFTS_STORAGE_KEY)
@@ -203,6 +213,7 @@ export const readPersistedDrafts = (
     const legacyDraft: ChatDraft = {
       id: createDraftId(),
       text: legacyText,
+      attachmentCount: 0,
       createdAt: now,
       updatedAt: now,
       selectedProjectId: null,

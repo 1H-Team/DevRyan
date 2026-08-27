@@ -5,7 +5,6 @@ import {
   __testArchivedAssistantHydration,
   isSessionNotFoundHydrationError,
 } from './useSidebarArchivedAssistantActivityHydration';
-import { __testUserActivityHydration } from './useSidebarUserActivityHydration';
 import {
   getSidebarSessionDirectory,
   isActiveSidebarHydrationDirectory,
@@ -37,21 +36,6 @@ describe('sidebar hydration helpers', () => {
     expect(getSidebarSessionDirectory(session('ses_project', {
       project: { worktree: '/project/' },
     } as Partial<Session>))).toBe('/project');
-  });
-
-  test('collects historical user activity only for the active directory', () => {
-    const candidates = __testUserActivityHydration.collectCandidates({
-      sessions: [
-        session('ses_active', { directory: '/repo/active/' } as Partial<Session>),
-        session('ses_inactive', { directory: '/repo/inactive' } as Partial<Session>),
-      ],
-      activityBySessionId: {},
-      activeDirectory: '/REPO/ACTIVE',
-      resolvedKeys: new Set(),
-      inFlightKeys: new Set(),
-    });
-
-    expect(candidates.map((candidate) => candidate.session.id)).toEqual(['ses_active']);
   });
 
   test('dedupes archived assistant fetch candidates by directory and parent session', () => {

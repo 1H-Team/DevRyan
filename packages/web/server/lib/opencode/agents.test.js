@@ -148,6 +148,32 @@ describe('agent model overrides', () => {
     ]);
   });
 
+  it('projects a Council companion into the existing agent read-model contract', async () => {
+    await writeProjectAgent(projectDirectory, 'council', [
+      'mode: all',
+      'model: openai/gpt-5.5',
+    ]);
+    await writeJson(path.join(projectDirectory, '.opencode', 'agents', 'council.models.json'), {
+      version: 1,
+      councillors: [
+        { model: 'openai/gpt-5.5', variant: 'medium' },
+        { model: 'opencode/deepseek-v4-flash' },
+      ],
+    });
+
+    const config = getAgentConfig('council', projectDirectory, { userConfigPath }).config;
+
+    expect(config.model).toEqual({ providerID: 'openai', modelID: 'gpt-5.5' });
+    expect(config.councillors).toEqual([
+      { model: 'openai/gpt-5.5', variant: 'medium' },
+      { model: 'opencode/deepseek-v4-flash' },
+    ]);
+    expect(config.modelRefs).toEqual([
+      'openai/gpt-5.5',
+      'opencode/deepseek-v4-flash',
+    ]);
+  });
+
   it('lists Slim-managed agents instead of stale packaged defaults when the Slim plugin is active', async () => {
     const slimConfigDirectory = path.dirname(userConfigPath);
     await writeJson(userConfigPath, {

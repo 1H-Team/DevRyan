@@ -1345,6 +1345,7 @@ const persistSettingsChanges = async (changes: Partial<DesktopSettings>): Promis
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        'X-DevRyan-CSRF': '1',
       },
       body: JSON.stringify(changes),
     });

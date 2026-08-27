@@ -52,6 +52,15 @@ describe('agent icon colors', () => {
     }
   });
 
+  test('keeps the Plan-mode icon color fixed outside generated theme variables', () => {
+    const designSystem = designSystemSource();
+    const cssGenerator = cssGeneratorSource();
+
+    expect(designSystem).toContain('--plan-mode-icon-color: #F1C21B;');
+    expect(designSystem.match(/--plan-mode-icon-color/g)).toHaveLength(1);
+    expect(cssGenerator).not.toContain('--plan-mode-icon-color');
+  });
+
   test('keeps the Orchestrator glyph pure white in every dark theme', () => {
     const designSystem = designSystemSource();
 

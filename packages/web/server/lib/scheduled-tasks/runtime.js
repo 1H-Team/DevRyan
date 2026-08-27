@@ -225,6 +225,8 @@ export const createScheduledTasksRuntime = (deps) => {
     getOpenCodeAuthHeaders,
     waitForOpenCodeReady,
     emitTaskRunEvent,
+    emitProjectMetadataChanged,
+    resolveScheduledTaskAccess,
     resolveTaskExecutionContext,
     recordTaskSessionOwnership,
     logger = console,
@@ -242,7 +244,9 @@ export const createScheduledTasksRuntime = (deps) => {
   const runningTaskKeys = new Set();
   const runningCountByProject = new Map();
   let runningGlobalCount = 0;
+  let accessVerificationFailed = false;
   const queue = [];
+  const taskAccessByKey = new Map();
 
   const clearTimerForKey = (taskKey) => {
     const timer = timersByTaskKey.get(taskKey);
@@ -260,6 +264,7 @@ export const createScheduledTasksRuntime = (deps) => {
     for (const task of tasks.values()) {
       clearTimerForKey(buildTaskKey(projectID, task.id));
       queuedTaskKeys.delete(buildTaskKey(projectID, task.id));
+      taskAccessByKey.delete(buildTaskKey(projectID, task.id));
     }
   };
 
@@ -315,6 +320,52 @@ export const createScheduledTasksRuntime = (deps) => {
     taskMap.set(nextTask.id, nextTask);
   };
 
+  const resolveAccessState = async (projectID, task) => {
+    if (!task?.ownerUserId || typeof resolveScheduledTaskAccess !== 'function') {
+      return 'runnable';
+    }
+    try {
+      const result = await resolveScheduledTaskAccess({
+        ownerUserId: task.ownerUserId,
+        projectId: projectID,
+        branchName: task.target?.branchName,
+      });
+      if (result?.state === 'runnable' || result?.state === 'dormant' || result?.state === 'revoked') {
+        return result.state;
+      }
+      accessVerificationFailed = true;
+      return 'unverified';
+    } catch (error) {
+      accessVerificationFailed = true;
+      logger.warn?.('[ScheduledTasks] task access verification failed', {
+        projectID,
+        taskID: task.id,
+        code: error?.code || 'scheduled_task_access_unverified',
+      });
+      return 'unverified';
+    }
+  };
+
+  const deleteRevokedTask = async (projectID, task) => {
+    const result = await projectConfigRuntime.deleteScheduledTask(projectID, task.id);
+    const taskKey = buildTaskKey(projectID, task.id);
+    clearTimerForKey(taskKey);
+    queuedTaskKeys.delete(taskKey);
+    taskAccessByKey.delete(taskKey);
+    tasksByProject.get(projectID)?.delete(task.id);
+    if (result.deleted) {
+      try {
+        emitProjectMetadataChanged?.(projectID);
+      } catch {
+      }
+      logger.info?.('[ScheduledTasks] deleted task after access revocation', {
+        projectID,
+        taskID: task.id,
+      });
+    }
+    return result;
+  };
+
   const syncTaskSchedule = async (projectID, task) => {
     if (!task) {
       return;
@@ -365,11 +416,27 @@ export const createScheduledTasksRuntime = (deps) => {
   const syncProject = async (projectID) => {
     await ensureProjectPath(projectID);
 
-    const tasks = await projectConfigRuntime.listScheduledTasks(projectID);
+    const persistedTasks = await projectConfigRuntime.listScheduledTasks(projectID);
+    const tasks = [];
+    const accessStates = new Map();
+    for (const task of persistedTasks) {
+      const accessState = await resolveAccessState(projectID, task);
+      if (accessState === 'revoked') {
+        await deleteRevokedTask(projectID, task);
+        continue;
+      }
+      tasks.push(task);
+      accessStates.set(task.id, accessState);
+    }
     setProjectTasks(projectID, tasks);
+    for (const task of tasks) {
+      taskAccessByKey.set(buildTaskKey(projectID, task.id), accessStates.get(task.id));
+    }
 
     for (const task of tasks) {
-      await syncTaskSchedule(projectID, task);
+      if (taskAccessByKey.get(buildTaskKey(projectID, task.id)) === 'runnable') {
+        await syncTaskSchedule(projectID, task);
+      }
     }
 
     return tasks;
@@ -690,6 +757,16 @@ export const createScheduledTasksRuntime = (deps) => {
       return { ok: false, skipped: true };
     }
 
+    const accessState = await resolveAccessState(projectID, initialTask);
+    taskAccessByKey.set(buildTaskKey(projectID, taskID), accessState);
+    if (accessState === 'revoked') {
+      await deleteRevokedTask(projectID, initialTask);
+      return { ok: false, skipped: true, revoked: true };
+    }
+    if (accessState !== 'runnable') {
+      return { ok: false, skipped: true, accessState };
+    }
+
     const taskKey = buildTaskKey(projectID, taskID);
     if (runningTaskKeys.has(taskKey)) {
       return { ok: false, running: true };
@@ -890,6 +967,29 @@ export const createScheduledTasksRuntime = (deps) => {
     await syncAllProjects();
   };
 
+  const removeTasksForRevokedAccess = async ({ projectID, ownerUserId, branchNames } = {}) => {
+    const projectIDs = typeof projectID === 'string' && projectID.trim()
+      ? [projectID.trim()]
+      : Array.from(tasksByProject.keys());
+    const deletedTaskIds = [];
+    for (const currentProjectID of projectIDs) {
+      const result = await projectConfigRuntime.deleteScheduledTasksForOwner(
+        currentProjectID,
+        ownerUserId,
+        Array.isArray(branchNames) ? { branchNames } : {},
+      );
+      deletedTaskIds.push(...result.deletedTaskIds);
+      await syncProject(currentProjectID);
+      if (result.deletedCount > 0) {
+        try {
+          emitProjectMetadataChanged?.(currentProjectID);
+        } catch {
+        }
+      }
+    }
+    return { deletedCount: deletedTaskIds.length, deletedTaskIds };
+  };
+
   const stop = () => {
     if (!started) {
       return;
@@ -907,11 +1007,14 @@ export const createScheduledTasksRuntime = (deps) => {
     let enabledCount = 0;
     let pendingCount = 0;
     const nowMs = Date.now();
-    for (const taskMap of tasksByProject.values()) {
+    for (const [projectID, taskMap] of tasksByProject.entries()) {
       for (const task of taskMap.values()) {
         if (task?.enabled) {
           enabledCount += 1;
-          if (Number.isFinite(computeNextRunAt(task, nowMs))) {
+          if (
+            taskAccessByKey.get(buildTaskKey(projectID, task.id)) === 'runnable'
+            && Number.isFinite(computeNextRunAt(task, nowMs))
+          ) {
             pendingCount += 1;
           }
         }
@@ -926,7 +1029,21 @@ export const createScheduledTasksRuntime = (deps) => {
       enabledScheduledTasksCount: enabledCount,
       pendingScheduledTasksCount: pendingCount,
       runningScheduledTasksCount: runningCount,
+      verified: !accessVerificationFailed,
     };
+  };
+
+  const refreshStatus = async () => {
+    accessVerificationFailed = false;
+    try {
+      await syncAllProjects();
+    } catch (error) {
+      accessVerificationFailed = true;
+      logger.warn?.('[ScheduledTasks] status refresh failed', {
+        code: error?.code || 'scheduled_task_status_unverified',
+      });
+    }
+    return getStatus();
   };
 
   return {
@@ -934,7 +1051,9 @@ export const createScheduledTasksRuntime = (deps) => {
     stop,
     syncAllProjects,
     syncProject,
+    removeTasksForRevokedAccess,
     runNow,
     getStatus,
+    refreshStatus,
   };
 };

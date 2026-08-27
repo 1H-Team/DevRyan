@@ -29,8 +29,21 @@ describe('initial loading splash', () => {
     expect(html).toContain('html,\n      body {');
     expect(html).toContain('margin: 0;');
     expect(html).toContain('overflow: hidden;');
+    expect(html).toContain('background-color: var(--splash-background);');
     expect(html).toContain('position: fixed;');
     expect(html).toContain('inset: 0;');
+  });
+
+  it('consumes and removes the validated Electron palette before first paint', () => {
+    const html = indexHtml();
+
+    expect(html).toContain("startupParams.get('__ocSplashBackground')");
+    expect(html).toContain("startupParams.get('__ocSplashForeground')");
+    expect(html).toContain("startupParams.get('__ocSplashVariant')");
+    expect(html).toContain("/^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(value)");
+    expect(html).toContain("window.history.replaceState(window.history.state, '', cleanUrl)");
+    expect(html).toContain("style.setProperty('--splash-background', handoffBackground)");
+    expect(html).toContain("style.setProperty('--splash-foreground', handoffForeground)");
   });
 });
 

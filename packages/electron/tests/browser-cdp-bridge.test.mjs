@@ -18,6 +18,45 @@ const flushPromises = async () => {
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+const createFakeClock = () => {
+  let current = 0;
+  let sequence = 0;
+  const timers = new Map();
+
+  const setTimer = (callback, delay) => {
+    const handle = { id: ++sequence, unref() {} };
+    timers.set(handle, {
+      callback,
+      dueAt: current + Math.max(0, Number(delay) || 0),
+      sequence,
+    });
+    return handle;
+  };
+
+  const clearTimer = (handle) => {
+    timers.delete(handle);
+  };
+
+  const advance = (milliseconds) => {
+    const target = current + milliseconds;
+    for (;;) {
+      const next = Array.from(timers.entries())
+        .filter(([, timer]) => timer.dueAt <= target)
+        .sort((left, right) => (
+          left[1].dueAt - right[1].dueAt || left[1].sequence - right[1].sequence
+        ))[0];
+      if (!next) break;
+      const [handle, timer] = next;
+      timers.delete(handle);
+      current = timer.dueAt;
+      timer.callback();
+    }
+    current = target;
+  };
+
+  return { advance, clearTimer, now: () => current, setTimer };
+};
+
 const createEmitter = () => {
   const handlers = new Map();
   const on = (event, handler) => {
@@ -151,6 +190,9 @@ const createHarness = ({
   commandTimeoutMs = 1_000,
   orphanTimeoutMs = 5_000,
   maxInFlightCommands = 64,
+  now,
+  setTimer,
+  clearTimer,
 } = {}) => {
   const inputs = [];
   const statuses = [];
@@ -168,6 +210,9 @@ const createHarness = ({
     commandTimeoutMs,
     orphanTimeoutMs,
     maxInFlightCommands,
+    now,
+    setTimer,
+    clearTimer,
   });
 
   const createLease = async (leaseId, metadata = {}, guest = null) => {
@@ -636,14 +681,20 @@ describe('multi-lease bridge lifecycle and routing', () => {
   });
 
   test('presentation metadata cannot extend an orphan lease', async () => {
-    const harness = createHarness({ orphanTimeoutMs: 40 });
+    const clock = createFakeClock();
+    const harness = createHarness({
+      orphanTimeoutMs: 40,
+      now: clock.now,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
     await harness.createLease('metadata-churn', {}, createFakeGuest({ name: 'metadata-churn' }));
 
-    await wait(15);
+    clock.advance(15);
     expect(harness.bridge.updateLeaseMetadata('metadata-churn', { title: 'frame 1' }).ok).toBe(true);
-    await wait(15);
+    clock.advance(15);
     expect(harness.bridge.updateLeaseMetadata('metadata-churn', { title: 'frame 2' }).ok).toBe(true);
-    await wait(20);
+    clock.advance(10);
 
     expect(harness.bridge.getLeaseStatus('metadata-churn').state).toBe('not_found');
     expect(harness.closed.at(-1)).toEqual({ leaseId: 'metadata-churn', reason: 'orphan_timeout' });

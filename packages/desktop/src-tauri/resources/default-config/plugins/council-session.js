@@ -5,6 +5,8 @@ import { tool } from '@opencode-ai/plugin';
 
 const DEFAULT_PRESET = 'default';
 const DEFAULT_COUNCIL_AGENT = 'builder';
+const COUNCIL_MODELS_FILE_NAME = 'council.models.json';
+const COUNCIL_MODELS_VERSION = 1;
 const DEFAULT_TIMEOUT_MS = 180_000;
 const POLL_INTERVAL_MS = 1_000;
 const IDLE_STABLE_RESPONSE_MS = POLL_INTERVAL_MS * 2;
@@ -190,9 +192,33 @@ const parseCouncilFrontmatter = (frontmatter) => {
   return scalarModel ? [{ model: scalarModel, ...(variant ? { variant } : {}) }] : [];
 };
 
+const readCouncilModelsCompanion = async (configDir) => {
+  try {
+    const content = await fs.readFile(path.join(configDir, 'agents', COUNCIL_MODELS_FILE_NAME), 'utf8');
+    const parsed = JSON.parse(content);
+    if (parsed?.version !== COUNCIL_MODELS_VERSION || !Array.isArray(parsed.councillors)) {
+      return [];
+    }
+    return parsed.councillors
+      .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+      .map((entry) => {
+        const model = typeof entry.model === 'string' ? entry.model.trim() : '';
+        const variant = normalizeVariant(entry.variant);
+        return parseModelRef(model)
+          ? { model, ...(variant ? { variant } : {}) }
+          : null;
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+};
+
 const readCouncilModelsFromConfig = async () => {
   const configDir = process.env.OPENCODE_CONFIG_DIR;
   if (!configDir) return [];
+  const companionModels = await readCouncilModelsCompanion(configDir);
+  if (companionModels.length > 0) return companionModels;
   try {
     const content = await fs.readFile(path.join(configDir, 'agents', 'council.md'), 'utf8');
     return parseCouncilFrontmatter(extractFrontmatter(content));

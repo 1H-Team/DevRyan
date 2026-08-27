@@ -12,6 +12,7 @@ const principalWithTerminal = (terminal: boolean): AuthPrincipal => ({
   scope: 'managed',
   policy: {
     settingsPages: ['home', 'shortcuts'],
+    bots: true,
     files: false,
     terminal,
     browser: true,

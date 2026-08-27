@@ -2,7 +2,6 @@ import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 export { resolveSessionDiffStats } from '@/lib/sessionDiffStats';
 import type { SessionAssistantActivity } from '@/sync/session-assistant-activity';
-import type { SessionUserActivity } from '@/sync/session-user-activity';
 import type { WorktreeMetadata } from '@/types/worktree';
 import type { SessionNode } from './types';
 
@@ -78,34 +77,6 @@ export const formatSessionDateLabel = (updatedMs: number): string => {
   }
 
   return formatDateLabel(updatedMs);
-};
-
-export const formatSessionCompactDateLabel = (updatedMs: number): string => {
-  const diff = Math.max(0, Date.now() - updatedMs);
-
-  const minute = 60_000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  const week = 7 * day;
-  const month = 30 * day;
-  const year = 365 * day;
-
-  if (diff < hour) {
-    return `${Math.max(1, Math.floor(diff / minute))}m`;
-  }
-  if (diff < day) {
-    return `${Math.floor(diff / hour)}h`;
-  }
-  if (diff < week) {
-    return `${Math.floor(diff / day)}d`;
-  }
-  if (diff < 5 * week) {
-    return `${Math.floor(diff / week)}w`;
-  }
-  if (diff < year) {
-    return `${Math.floor(diff / month)}mo`;
-  }
-  return `${Math.floor(diff / year)}y`;
 };
 
 export const normalizePath = (value?: string | null) => {
@@ -193,50 +164,14 @@ const getSessionArchivedAt = (session: Session): number => {
   return toFiniteNumber(session.time?.archived) ?? 0;
 };
 
-const hasParentSession = (session: Session): boolean => {
-  return Boolean((session as Session & { parentID?: string | null }).parentID);
-};
-
 export const getArchivedParentSessionId = (session: Session): string => {
   return (session as Session & { parentID?: string | null }).parentID || session.id;
-};
-
-const getSessionUserActivityAt = (
-  session: Session,
-  sessionUserActivity?: SessionUserActivity,
-): number | undefined => {
-  if (hasParentSession(session)) return undefined;
-  return toFiniteNumber(sessionUserActivity?.[session.id]);
-};
-
-const compareSessionsByUserActivity = (
-  a: Session,
-  b: Session,
-  sessionUserActivity?: SessionUserActivity,
-): number => {
-  const aUserActivityAt = getSessionUserActivityAt(a, sessionUserActivity);
-  const bUserActivityAt = getSessionUserActivityAt(b, sessionUserActivity);
-  const aHasUserActivity = aUserActivityAt !== undefined;
-  const bHasUserActivity = bUserActivityAt !== undefined;
-
-  if (aHasUserActivity !== bHasUserActivity) {
-    return aHasUserActivity ? -1 : 1;
-  }
-
-  const aSortAt = aUserActivityAt ?? getSessionCreatedAt(a);
-  const bSortAt = bUserActivityAt ?? getSessionCreatedAt(b);
-  if (aSortAt !== bSortAt) {
-    return bSortAt - aSortAt;
-  }
-
-  return getSessionCreatedAt(b) - getSessionCreatedAt(a);
 };
 
 export const compareSessionsByPinnedAndTime = (
   a: Session,
   b: Session,
   pinnedSessionIds: Set<string>,
-  sessionUserActivity?: SessionUserActivity,
 ): number => {
   const counsellorDelta = compareCounsellorTitles(a, b);
   if (counsellorDelta !== undefined) return counsellorDelta;
@@ -247,15 +182,7 @@ export const compareSessionsByPinnedAndTime = (
     return aPinned ? -1 : 1;
   }
 
-  if (aPinned && bPinned) {
-    return sessionUserActivity
-      ? compareSessionsByUserActivity(a, b, sessionUserActivity)
-      : getSessionCreatedAt(b) - getSessionCreatedAt(a);
-  }
-
-  return sessionUserActivity
-    ? compareSessionsByUserActivity(a, b, sessionUserActivity)
-    : getSessionUpdatedAt(b) - getSessionUpdatedAt(a);
+  return getSessionUpdatedAt(b) - getSessionUpdatedAt(a);
 };
 
 export const compareSessionsByPinnedAndCreated = (

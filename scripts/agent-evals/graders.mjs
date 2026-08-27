@@ -42,12 +42,12 @@ const TOOL_FAMILIES = Object.freeze({
 const ORACLE_REVIEW_CASES = Object.freeze({
   'oracle-review-focused': {
     maximumDurationMs: 15 * 60 * 1_000,
-    maximumToolCalls: 30,
+    maximumToolCalls: 20,
     signals: ['authorization_boundary', 'stale_write'],
   },
   'oracle-review-deep': {
     maximumDurationMs: 30 * 60 * 1_000,
-    maximumToolCalls: 80,
+    maximumToolCalls: 50,
     signals: [
       'authorization_boundary',
       'idempotency_order',

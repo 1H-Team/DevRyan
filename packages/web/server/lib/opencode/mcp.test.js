@@ -67,6 +67,41 @@ describe('MCP config helpers', () => {
     ].sort());
   });
 
+  it('resolves only an exact, URL-bound MCP OAuth access token for server-side Bot import', async () => {
+    writeJson(getMcpAuthPath(), {
+      buffer: {
+        serverUrl: 'https://mcp.buffer.com/mcp',
+        tokens: { accessToken: 'oauth-secret', expiresAt: 2_000_000_000 },
+      },
+    });
+    const { getMcpOAuthCredential } = await loadMcpModule();
+
+    expect(getMcpOAuthCredential('buffer', 'https://mcp.buffer.com/mcp', 1_000)).toEqual({
+      authorization: 'Bearer oauth-secret',
+      expired: false,
+    });
+    expect(getMcpOAuthCredential('buffer', 'https://other.example/mcp', 1_000)).toBeNull();
+    expect(getMcpOAuthCredential('missing', 'https://mcp.buffer.com/mcp', 1_000)).toBeNull();
+  });
+
+  it('marks an exact MCP OAuth credential expired without returning refresh material', async () => {
+    writeJson(getMcpAuthPath(), {
+      buffer: {
+        serverUrl: 'https://mcp.buffer.com/mcp',
+        tokens: {
+          accessToken: 'expired-secret',
+          refreshToken: 'must-not-be-returned',
+          expiresAt: 1,
+        },
+      },
+    });
+    const { getMcpOAuthCredential } = await loadMcpModule();
+
+    const credential = getMcpOAuthCredential('buffer', 'https://mcp.buffer.com/mcp', 2_000);
+    expect(credential).toEqual({ authorization: 'Bearer expired-secret', expired: true });
+    expect(JSON.stringify(credential)).not.toContain('must-not-be-returned');
+  });
+
   it('uses root project opencode.json before legacy .opencode config and user config', async () => {
     const configDir = path.join(tempHome, '.config', 'opencode');
     const projectDir = path.join(tempHome, 'project');

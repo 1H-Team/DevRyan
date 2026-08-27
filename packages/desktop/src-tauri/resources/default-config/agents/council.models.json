@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "councillors": [
+    {
+      "model": "openai/gpt-5.5",
+      "variant": "medium"
+    },
+    {
+      "model": "opencode/claude-opus-4-5"
+    },
+    {
+      "model": "opencode/deepseek-v4-flash"
+    }
+  ]
+}

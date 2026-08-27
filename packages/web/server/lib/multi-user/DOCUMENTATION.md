@@ -17,6 +17,45 @@ behavior without weakening managed-host checks. That compatibility principal is
 never eligible for Managed Remote, which requires separately attributable managed
 accounts before connector startup or public-host API access.
 
+## Production Bots persistence
+
+Migrations `20260822120000_production_bots.sql`,
+`20260823100000_bot_recovery_purge.sql`, and
+`20260823150227_bot_capability_bindings.sql`, followed by
+`20260823202400_bot_profiles_and_publish.sql` through
+`20260826130000_bot_two_phase_responses.sql` and
+`20260826140000_bot_environment_secrets.sql`, own the server-only Production
+Bots control plane. Their tables cover durable Bot profiles, encrypted profile
+avatars, immutable revisions,
+memberships and continuous-channel ACLs, messages and objects, queued runs and
+action approvals, credential and environment-secret metadata, routines, memory and Library versions,
+immutable Skill packages and MCP bindings, append-only audit history, and Test
+Lab cases/runs. All Bot relations force RLS,
+have no browser policies, and grant data access only to `service_role`; bulk
+object bytes remain in the private `devryan-bot-objects` Storage bucket and
+credential and environment-secret values remain in separate host-local vaults.
+
+State-changing concurrency contracts live in service-role-only, security-invoker
+RPCs: joined send context and channel audience reads, message sequence allocation,
+FIFO run claiming by computer scope, atomic safe same-run retry, idempotent routine
+occurrence claiming, revision activation, bounded audit pruning, and Draft/Retired
+granular purge and server-retired one-shot full deletion.
+Activated revisions and all history/version/audit records are immutable. The Bot
+server layer must pass Supabase errors through
+`productionBotsMigrationFailurePayload()` before continuing: a missing Bot
+relation, column, or RPC fails closed as HTTP `503` with
+`code: "bot_schema_migration_required"` and
+`requiredMigration: "20260826140000"`. Runtime startup additionally verifies
+the service-role-only `devryan_bot_schema_version()` marker, and one route
+boundary blocks every Bot read or mutation while that marker is stale.
+
+`runtime.js` is only the composition owner for this feature: after creating the
+server-only Supabase transport and actor audit, it injects them into
+`../bots/runtime.js`, delegates `/api/bots/*` route registration, and drains the
+Bots runtime during authentication-runtime disposal. Bot repositories,
+authorization, encryption, object handling, capabilities, and retention remain
+in the focused `lib/bots/` module.
+
 ## Assigned branch targets
 
 - Local refs (`dev`, `refs/heads/dev`) and same-name remote refs are one logical grant.
@@ -30,6 +69,10 @@ accounts before connector startup or public-host API access.
 - Scheduled task routes bypass only the generic Projects-settings gate and enforce project assignment plus task ownership themselves. Managed non-admin users see and mutate only their own tasks; administrators can manage all tasks, including legacy ownerless records.
 - Scheduler startup enumerates active managed project IDs so persisted owner-scoped timers are restored independently of the host's local-settings project list.
 - Scheduled execution reloads the owner and branch grant, prepares the branch target, and persists session ownership before submitting a prompt. The live assignment directory is authoritative; a cached local project path is neither required nor accepted as managed-task authorization.
+- Scheduled-task access checks distinguish active grants, reversible owner
+  suspension, definitive owner/project/branch revocation, and control-plane
+  verification failure. Successful revocation mutations notify the scheduler
+  immediately; startup and quit-status reconciliation repair missed cleanup.
 
 ## Configuration
 
@@ -44,7 +87,7 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 ## Security boundaries
 
 - Browser clients receive opaque DevRyan session cookies, never Supabase tokens.
-- Managed account passwords require at least four characters and have no
+- Managed account passwords require at least six characters and have no
   letter, number, case, or symbol composition requirement.
 - Refresh/access tokens are AES-256-GCM encrypted in the host vault.
 - Every managed browser-origin `/api` request resolves one principal and runs
@@ -90,6 +133,11 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   canonical Read/Edit matrix. Administrator access remains fixed at full; an
   administrator may explicitly delegate a host-global settings page to another
   role or user without granting unrelated terminal, file, Git, or GitHub access.
+- Bots access is a default-on canonical capability with sparse per-user
+  overrides. When disabled, core middleware rejects `/api/bots`,
+  `/api/bot-actions`, `/api/bot-channels`, and `/api/bot-runs` with the stable
+  `bots_access_disabled` code before the Production Bots control plane runs.
+  Memberships and Bot data remain intact so restoring access is non-destructive.
 - Managed Git mutations operate on the real checked-out branch. General branch
   grants remain a visibility filter, while operations that directly write a
   different branch (commit reintegration, worktree creation, and PR merge
@@ -161,8 +209,9 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - `managed-agent-defaults.js`: bounded single-model agent-default validation and
   personal-over-host execution resolution. Composite agents such as Council are
   deliberately host-managed.
-- `auth-compat.js`: mixed-schema policy reads, structured auth dependency errors,
-  and strict agent-test identity discovery/selection.
+- `auth-compat.js`: mixed-schema policy reads, structured auth and Production
+  Bots migration dependency errors, and strict agent-test identity
+  discovery/selection.
 - `supabase-client.js`: Auth Admin, password/refresh, and PostgREST transport.
 - `vault.js`: encrypted atomic token vault.
 - `audit-outbox.js`: sanitized atomic audit queue with idempotent Supabase
@@ -201,8 +250,8 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   fields personally owned by the current principal in
   `multiUser.settingsOverrideKeys`; browser principals never receive direct
   Supabase table access.
-- Managed non-admins explicitly save or reset one validated single-model agent
-  default through `PUT`/`DELETE
+- Managed developers with Host Settings and Agents Read/Edit explicitly save or
+  reset one validated single-model agent default through `PUT`/`DELETE
   /api/config/settings/agent-defaults/:agentName`; `DELETE
   /api/config/settings/overrides/:field` resets `defaultAgent` or
   `defaultPlanMode`. Per-user mutations are serialized and re-read the latest
@@ -210,6 +259,10 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   lose each other. These routes never mutate host agent files or request an
   OpenCode configuration apply. Audit metadata contains only the agent/field
   identity and operation, never provider, model, or thinking values.
+- Managed developers are rejected from host-level agent override mutations even
+  when their personal-default gate is enabled. Model and thinking selections
+  affect only that principal's fresh drafts, new sessions, and owned child
+  dispatches; Council remains host-managed.
 - Executable defaults resolve from a personal per-agent override, then the live
   host agent configuration. Existing UI availability fallback remains the final
   display/send boundary. Durable root-session ownership selects the principal
@@ -230,10 +283,27 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   developers inherit enabled, and administrators remain fixed enabled. It
   gates direct branch creation, new-branch worktrees, and retries of durable
   operations whose receipt was created in new-branch mode.
+- `bots` is a policy-template capability that defaults enabled for every role
+  and is stored only when overridden in `user_policies.capabilities`.
+  Administrators remain fixed enabled. A disabled managed principal is denied
+  before any Bot route family executes, without changing memberships or data.
 - Settings Home is always readable. `behavior` resolves to the `agents` policy;
   Skills Catalog is independently controlled. Bug Reports defaults to Read/Edit
-  for all managed roles and retains normal role/user override behavior. Edit
-  always requires Read.
+  for all managed roles and retains normal role/user override behavior. Bots is
+  part of the canonical permission catalog: administrators are fixed at
+  Read/Edit while senior developers and developers default to denied. Stored
+  role matrices are projected onto the complete catalog, missing cells inherit
+  the role default, malformed cells fail closed, and Edit always requires Read.
+- `featureOverrides.agents.hideGlobalBehaviorUi` defaults enabled for
+  developers and disabled for senior developers and administrators. Sparse
+  policy storage preserves an explicit developer `false`, allowing Behavior to
+  be exposed for one user without changing the role template. The UI does not
+  mount or fetch the global behavior editor while the effective flag is true.
+- `PUT /api/config/settings` is a field-owned personal-settings endpoint. Every
+  changed key is validated against its canonical Settings owner; it does not
+  inherit a coarse Sessions gate. In particular,
+  `nativeNotificationsEnabled` requires Notifications Edit, returns a
+  deterministic `403` when denied, and can be saved when Sessions Edit is off.
 - The read-only `/api/config/providers` model catalog is a chat bootstrap
   dependency and remains available when the Providers settings page is hidden.
   Provider credentials, authentication routes, and catalog mutations remain
@@ -358,6 +428,19 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   that successfully invokes a nested command which exits nonzero is retained as
   low-impact `command_exit`, because the command failed without the tool runtime
   itself failing.
+  Structured error codes take precedence over compatibility message matching.
+  Missing skills, invalid fields, explicit tool-policy denials, managed-task
+  barriers, already-acknowledged results, patch-context misses, routine browser
+  target/reference/evaluation errors, and benign client ResizeObserver notices
+  are expected low-impact input noise. Browser host/lineage failures, managed
+  terminal failures, render crashes, and unresolved provider/runtime failures
+  remain actionable. Paired OpenCode `session.error` wrapper/stack variants are
+  canonicalized by session, message, and semantic first-line failure; variants
+  observed within one second reuse one deterministic event ID, while later
+  attempts remain separate. Historical correction migrations preserve every
+  row and event ID, temporarily suspend the immutable-classification trigger,
+  update only confirmed signatures, and restore the trigger in the same
+  transaction.
 - New failures carry immutable `diagnostic_impact` (`low`, `medium`, `high`, or
   trusted-core-only `critical`), `diagnostic_source=observed`, and
   `diagnostic_disposition` (`actionable` or `expected`). Legacy error rows are

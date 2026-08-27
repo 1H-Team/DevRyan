@@ -184,6 +184,8 @@ const webSocketCloseReason = (reason) => {
  * @param {number} [deps.orphanTimeoutMs]
  * @param {number} [deps.maxInFlightCommands]
  * @param {() => number} [deps.now]
+ * @param {(callback: () => void, delay: number) => ReturnType<typeof setTimeout>} [deps.setTimer]
+ * @param {(timer: ReturnType<typeof setTimeout>) => void} [deps.clearTimer]
  */
 export const createBrowserCdpBridge = ({
   createWebSocketServer,
@@ -198,6 +200,8 @@ export const createBrowserCdpBridge = ({
   orphanTimeoutMs = ORPHAN_TIMEOUT_MS,
   maxInFlightCommands = MAX_IN_FLIGHT_COMMANDS,
   now = () => Date.now(),
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
 }) => {
   const leases = new Map(); // leaseId -> lease (the authoritative generation)
   const leaseIdsByToken = new Map();
@@ -272,14 +276,14 @@ export const createBrowserCdpBridge = ({
   const clearCommand = (lease, id, commandFence) => {
     const entry = lease.inFlight.get(id);
     if (!entry || (commandFence && entry.fence !== commandFence)) return false;
-    clearTimeout(entry.timer);
+    clearTimer(entry.timer);
     lease.inFlight.delete(id);
     return true;
   };
 
   const clearOrphanTimer = (lease) => {
     if (!lease.orphanTimer) return;
-    clearTimeout(lease.orphanTimer);
+    clearTimer(lease.orphanTimer);
     lease.orphanTimer = null;
   };
 
@@ -293,7 +297,7 @@ export const createBrowserCdpBridge = ({
     const elapsed = Math.max(0, now() - lease.lastActivityAt);
     const delay = Math.max(1, orphanTimeoutMs - elapsed);
     const token = lease.token;
-    lease.orphanTimer = setTimeout(() => {
+    lease.orphanTimer = setTimer(() => {
       if (!isCurrentLease(lease, token)) return;
       lease.orphanTimer = null;
       if (lease.inFlight.size > 0) {
@@ -359,7 +363,7 @@ export const createBrowserCdpBridge = ({
     leaseIdsByToken.delete(token);
     clearOrphanTimer(lease);
     for (const [id, entry] of lease.inFlight) {
-      clearTimeout(entry.timer);
+      clearTimer(entry.timer);
       lease.inFlight.delete(id);
     }
     removeGuestDestroyedListener(lease);
@@ -442,7 +446,7 @@ export const createBrowserCdpBridge = ({
 
     const commandFence = Symbol(`command:${message.id}`);
     const token = lease.token;
-    const timer = setTimeout(() => {
+    const timer = setTimer(() => {
       if (!isCurrentLease(lease, token) || !clearCommand(lease, message.id, commandFence)) return;
       touchRecord(lease);
       sendError(

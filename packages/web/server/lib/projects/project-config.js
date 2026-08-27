@@ -554,6 +554,40 @@ export const createProjectConfigRuntime = (deps) => {
     });
   };
 
+  const deleteScheduledTasksForOwner = async (projectID, ownerUserId, options = {}) => {
+    return withProjectWriteLock(projectID, async () => {
+      const normalizedOwnerUserID = asNonEmptyString(ownerUserId);
+      if (!normalizedOwnerUserID) {
+        throw new Error('ownerUserId is required');
+      }
+
+      const branchNames = Array.isArray(options.branchNames)
+        ? new Set(options.branchNames.map(asNonEmptyString).filter(Boolean))
+        : null;
+      const current = await readProjectConfigFromDisk(projectID);
+      const deletedTasks = [];
+      const nextTasks = current.scheduledTasks.filter((task) => {
+        if (task.ownerUserId !== normalizedOwnerUserID) return true;
+        if (branchNames && !branchNames.has(task.target?.branchName)) return true;
+        deletedTasks.push(task);
+        return false;
+      });
+
+      if (deletedTasks.length > 0) {
+        await writeProjectConfigToDisk(projectID, {
+          ...current,
+          scheduledTasks: nextTasks,
+        });
+      }
+
+      return {
+        deletedCount: deletedTasks.length,
+        deletedTaskIds: deletedTasks.map((task) => task.id),
+        tasks: nextTasks,
+      };
+    });
+  };
+
   const updateScheduledTaskStateConditionally = async (
     projectID,
     taskID,
@@ -626,6 +660,7 @@ export const createProjectConfigRuntime = (deps) => {
     listScheduledTasks,
     upsertScheduledTask,
     deleteScheduledTask,
+    deleteScheduledTasksForOwner,
     updateScheduledTaskState,
     updateScheduledTaskStateConditionally,
     getEvidenceCheckpoints,

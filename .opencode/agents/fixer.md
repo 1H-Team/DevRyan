@@ -48,8 +48,6 @@ permission:
     planning-and-task-breakdown: allow
   websearch_*: deny
   grep_app_*: deny
-modelRefs:
-  - openai/gpt-5.3-codex
 top_p: 0.9
 variant: medium
 ---

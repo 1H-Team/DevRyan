@@ -44,6 +44,7 @@ const createRuntime = ({
   probeUrl = async () => reachable,
   now,
   grantTtlMs,
+  sweepIntervalMs,
   resolveManagedProjectForDirectory,
 } = {}) => {
   const sessions = new Map();
@@ -57,6 +58,7 @@ const createRuntime = ({
     probeUrl,
     ...(now ? { now } : {}),
     ...(grantTtlMs ? { grantTtlMs } : {}),
+    ...(sweepIntervalMs ? { sweepIntervalMs } : {}),
     ...(resolveManagedProjectForDirectory ? { resolveManagedProjectForDirectory } : {}),
     getTerminalRuntime: () => ({
       getSessionDescriptor: (sessionId) => sessions.get(sessionId) ?? null,
@@ -297,6 +299,7 @@ describe('project preview grants', () => {
     let markProbeStarted = () => {};
     const probeStarted = new Promise((resolve) => { markProbeStarted = resolve; });
     const { runtime, sessions } = createRuntime({
+      sweepIntervalMs: 60 * 60 * 1_000,
       probeUrl: async () => {
         probeCalls += 1;
         if (probeCalls > 1) {

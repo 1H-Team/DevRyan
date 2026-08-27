@@ -29,6 +29,11 @@ Role-aware shared-host user and access administration inside Settings.
 - `RolePoliciesSection.tsx` exposes Browser alongside the other core role
   capabilities. `UserDetail.tsx` derives the matching tri-state Browser
   override from the shared capability list, so absent values inherit the role.
+- Agent Overrides includes `Hide Global Agent Behavior` beside the permission
+  controls. Developers inherit hidden Behavior; senior developers and
+  administrators inherit visible Behavior. The stored override is sparse, so
+  an explicit `false` is retained when it is the developer's deviation from
+  the role default.
 - Core Capability Overrides also exposes `Create branches`. Developers inherit
   Off, senior developers inherit On, and a sparse per-user override can change
   the effective value without changing the role template.
@@ -36,6 +41,10 @@ Role-aware shared-host user and access administration inside Settings.
   Developers inherit Off, senior developers inherit On, and automatic
   assigned-branch target preparation remains available regardless of this UI
   capability.
+- A standalone `Allow Bots Access` inherited toggle appears immediately before
+  Core Capability Overrides. It stores the sparse `bots` capability without
+  contributing to the core grid/count; disabling it makes every shared product
+  audience surface Agents-only and removes Bot settings destinations.
 - `UserAnalytics.tsx` lazily loads administrator-only ranged analytics for one
   user/time zone. Its full-range graph selects at most one day, while separate
   day-scoped event requests drive the totals, work blocks, prompts, and safe
@@ -55,7 +64,9 @@ Role-aware shared-host user and access administration inside Settings.
   connect, switch, disconnect, and `gh` CLI fallback controls share the User
   Management destination used by managed account assignment.
 - `SettingsPermissionMatrix.tsx` renders the shared category-grouped Read/Edit
-  ledger: binary role cells and tri-state inherited/On/Off user cells.
+  ledger: binary role cells and tri-state inherited/On/Off user cells. Both
+  matrices normalize untrusted or version-skewed responses to the complete UI
+  catalog and render missing or malformed cells as denied instead of throwing.
 - `ProjectsSection.tsx` (register/unregister-project dialog), `RolePoliciesSection.tsx`,
   `AccessLinksSection.tsx` (`AccessLinksList` reused by detail),
   `ActivitySection.tsx` (`ActivityList` reused by detail), and

@@ -6,10 +6,23 @@ Feature sections for the Settings experience (providers, projects, behavior, des
 ## Design
 Section-per-domain pattern with shared primitives for consistency. The About surface keeps the DevRyan updater independent from the read-only OpenCode version comparison, which shows active, latest stable, and DevRyan-supported runtime versions without mutating or restarting OpenCode.
 
-`AgentModelDefaultsSettings.tsx` is the managed non-admin Sessions editor for
-single-model agent defaults. Rows show inherited/personal provenance, save only
-through the service API, and reset to live host inheritance. Council remains a
-visible host-managed exception because its ordered roster is composite.
+`AgentModelDefaultsSettings.tsx` is the managed-developer Sessions editor for
+single-model agent defaults. It is available only with Host Settings and Agents
+Read/Edit, matching the Agents-page editor. Rows show inherited/personal
+provenance, save only through the service API, and reset to live host
+inheritance. Council remains a visible host-managed exception because its
+ordered roster is composite.
+
+`OpenChamberVisualSettings.tsx` treats Code Font independently from Terminal
+Font Size and Terminal Quick Keys. `visualSettingsPolicy.ts` hides terminal-only
+rows, tooltips, and empty sections when the effective Terminal capability is
+disabled, while stored terminal preferences remain untouched.
+
+`NotificationSettings.tsx` has one foreground web-notification activation path.
+`notificationToggle.ts` requests browser permission at most once from the user
+gesture, persists the personal preference before showing it enabled, and keeps
+the previous state with an actionable error when permission or persistence
+fails. Background push-subscription controls remain separate.
 
 ## Flow
 Settings navigation selects a section; section reads/writes config through hooks/APIs. `AboutSettings.tsx` is also routed as the cross-runtime Settings → About page. Its Data Retention section owns session cleanup and one unified Error Logs control: session-count/size status, export, and clearing the past 24 hours, 7 days, 14 days, or all logs. In Electron, the confirmed all-logs clear also removes the Chromium application cache and shows its size on a second line; bounded time ranges leave the cache untouched, and chat history is never part of either operation. Desktop-only components such as `DesktopKeepAwakeSettings.tsx` and `DesktopNetworkSettings.tsx` appear only for the local desktop origin.

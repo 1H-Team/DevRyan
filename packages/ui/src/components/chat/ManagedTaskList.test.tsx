@@ -79,7 +79,7 @@ describe('managed task presentation', () => {
     expect(managedTaskListIndex).toBeGreaterThan(footerIndex);
   });
 
-  test('keeps the final dispatch projection independent of reasoning visibility', () => {
+  test('keeps each message dispatch projection independent of reasoning visibility', () => {
     const messageBodySource = readFileSync(fileURLToPath(new URL('./message/MessageBody.tsx', import.meta.url)), 'utf8');
     const tailSource = messageBodySource.slice(messageBodySource.lastIndexOf('{shouldShowTurnFooter'));
 
@@ -224,8 +224,12 @@ describe('managed task presentation', () => {
     expect(html).not.toContain('Error');
   });
 
-  test('does not render manual recovery while the grouped agent retry remains', () => {
-    const task = { ...terminalTask('failed'), dispatchGroupId: 'msg_parent' };
+  test('explains automatic recovery without promising Try Again while the grouped retry remains', () => {
+    const task = {
+      ...terminalTask('failed'),
+      dispatchGroupId: 'msg_parent',
+      failureReason: 'Managed task timed out at 2000',
+    };
     const envelope = createManagedTaskResultEnvelope(task, {
       sequence: 1,
       createdAt: 2_000,
@@ -246,7 +250,40 @@ describe('managed task presentation', () => {
     );
 
     expect(projected.agentRetryAvailable).toBe(true);
+    expect(projected.failureKind).toBe('deadline_exceeded');
+    expect(html).toContain('The Orchestrator can continue it once from saved progress');
+    expect(html).toContain('Model Recovery will ask you to choose a model');
     expect(html).not.toContain('Choose a model to continue this subtask');
+    expect(html).not.toContain('Try Again');
+  });
+
+  test('uses neutral timeout copy when no automatic or manual recovery is available', () => {
+    const task = {
+      ...terminalTask('failed'),
+      failureReason: 'Managed task timed out at 2000',
+    };
+    const envelope = createManagedTaskResultEnvelope(task, {
+      sequence: 1,
+      createdAt: 2_000,
+      resumable: false,
+    });
+    const projected = toManagedTaskEvent(task, envelope).properties.task;
+
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ManagedTaskRowView
+          task={projected}
+          resultEnvelope={envelope}
+          providers={[]}
+          onOpenChild={() => undefined}
+          onRetryInPlace={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
+    expect(projected.agentRetryAvailable).toBe(false);
+    expect(html).toContain('It hit its time limit before finishing.');
+    expect(html).not.toContain('saved progress');
     expect(html).not.toContain('Try Again');
   });
 
@@ -804,8 +841,8 @@ describe('managed task presentation', () => {
     expect(designerDispatch.taskIds).toEqual(['dvr_task_designer']);
   });
 
-  test('consolidates separate same-turn launches at the final dispatch message', () => {
-    const projection = resolveManagedTaskTurnProjection([
+  test('keeps separate same-turn launches at their chronological dispatch messages', () => {
+    const projections = resolveManagedTaskTurnProjection([
       {
         messageId: 'assistant-explorer',
         parts: [{
@@ -846,13 +883,59 @@ describe('managed task presentation', () => {
       },
     ]);
 
-    expect(projection.ownerMessageId).toBe('assistant-designer');
-    expect(projection.taskIds).toEqual(['dvr_task_explorer', 'dvr_task_designer']);
-    expect(projection.pendingDispatches).toEqual([]);
+    expect(projections).toEqual([
+      {
+        ownerMessageId: 'assistant-explorer',
+        taskIds: ['dvr_task_explorer'],
+        pendingDispatches: [],
+        fallbackTasks: [],
+      },
+      {
+        ownerMessageId: 'assistant-designer',
+        taskIds: ['dvr_task_designer'],
+        pendingDispatches: [],
+        fallbackTasks: [],
+      },
+    ]);
+  });
+
+  test('keeps parallel launches from one assistant message in one card projection', () => {
+    const projections = resolveManagedTaskTurnProjection([{
+      messageId: 'assistant-parallel',
+      parts: [
+        {
+          id: 'explorer-start',
+          type: 'tool',
+          tool: 'devryan_task',
+          state: {
+            status: 'completed',
+            input: { action: 'start', agent: 'explorer' },
+            output: JSON.stringify({ task: { taskId: 'dvr_task_explorer' } }),
+          },
+        },
+        {
+          id: 'designer-start',
+          type: 'tool',
+          tool: 'devryan_task',
+          state: {
+            status: 'completed',
+            input: { action: 'start', agent: 'designer' },
+            output: JSON.stringify({ task: { taskId: 'dvr_task_designer' } }),
+          },
+        },
+      ] as never,
+    }]);
+
+    expect(projections).toEqual([{
+      ownerMessageId: 'assistant-parallel',
+      taskIds: ['dvr_task_explorer', 'dvr_task_designer'],
+      pendingDispatches: [],
+      fallbackTasks: [],
+    }]);
   });
 
   test('keeps provisional and authoritative launches ordered while ignoring duplicate events', () => {
-    const projection = resolveManagedTaskTurnProjection([
+    const projections = resolveManagedTaskTurnProjection([
       {
         messageId: 'assistant-provisional',
         parts: [{
@@ -894,12 +977,16 @@ describe('managed task presentation', () => {
       },
     ]);
 
-    expect(projection.ownerMessageId).toBe('assistant-authoritative');
-    expect(projection.taskIds).toEqual(['dvr_task_designer']);
-    expect(projection.pendingDispatches.map((dispatch) => dispatch.partId)).toEqual(['fixer-start']);
+    expect(projections.map((projection) => projection.ownerMessageId)).toEqual([
+      'assistant-provisional',
+      'assistant-authoritative',
+    ]);
+    expect(projections[0]?.taskIds).toEqual([]);
+    expect(projections[0]?.pendingDispatches.map((dispatch) => dispatch.partId)).toEqual(['fixer-start']);
+    expect(projections[1]?.taskIds).toEqual(['dvr_task_designer']);
   });
 
-  test('reconciles a provisional row when the authoritative task appears in a later message', () => {
+  test('reconciles a provisional row at its original message when the authoritative task appears later', () => {
     const task = {
       taskId: 'dvr_task_fixer',
       dispatchCallId: 'call_fixer',
@@ -909,7 +996,7 @@ describe('managed task presentation', () => {
       childSessionId: 'ses_fixer',
       directory: '/workspace',
     };
-    const projection = resolveManagedTaskTurnProjection([
+    const projections = resolveManagedTaskTurnProjection([
       {
         messageId: 'assistant-provisional',
         parts: [{
@@ -938,21 +1025,24 @@ describe('managed task presentation', () => {
       },
     ]);
 
-    expect(projection.ownerMessageId).toBe('assistant-authoritative');
-    expect(projection.taskIds).toEqual(['dvr_task_fixer']);
-    expect(projection.pendingDispatches).toEqual([]);
-    expect(projection.fallbackTasks).toEqual([{ partId: 'fixer-complete', ...task }]);
+    expect(projections).toEqual([{
+      ownerMessageId: 'assistant-provisional',
+      taskIds: ['dvr_task_fixer'],
+      pendingDispatches: [],
+      fallbackTasks: [{ partId: 'fixer-complete', ...task }],
+    }]);
   });
 
-  test('renders the same-turn Agent Dispatch from one turn-level owner', () => {
+  test('attaches each Agent Dispatch to its chronological assistant message', () => {
     const messageListSource = readFileSync(fileURLToPath(new URL('./MessageList.tsx', import.meta.url)), 'utf8');
     const messageBodySource = readFileSync(fileURLToPath(new URL('./message/MessageBody.tsx', import.meta.url)), 'utf8');
     const managedTaskListSource = readFileSync(fileURLToPath(new URL('./ManagedTaskList.tsx', import.meta.url)), 'utf8');
 
     expect(messageListSource).toContain('resolveManagedTaskTurnProjection');
-    expect(messageListSource).toContain('managedTaskProjection,');
+    expect(messageListSource).toContain('managedTaskProjectionsByMessageId');
+    expect(messageListSource).toContain('managedTaskProjection: managedTaskProjectionsByMessageId.get(message.info.id)');
     expect(messageBodySource).toContain('turnGroupingContext?.managedTaskProjection');
-    expect(messageBodySource).toContain('turnManagedTaskProjection?.ownerMessageId === messageId');
+    expect(messageBodySource).not.toContain('ownsTurnManagedTaskProjection');
     expect(messageBodySource).toContain('rootSessionId={sessionId}');
     expect(messageBodySource).toContain('taskIds={managedTaskCardProjection?.taskIds ?? []}');
     expect(messageBodySource).toContain('pendingDispatches={managedTaskCardProjection?.pendingDispatches ?? []}');
@@ -1000,6 +1090,8 @@ describe('managed task presentation', () => {
     );
 
     expect(html.match(/data-managed-task-card="true"/g)).toHaveLength(1);
+    expect(html).toContain('relative isolate overflow-hidden rounded-xl border border-transparent');
+    expect(html).toContain('after:z-10');
     expect(html.match(/<h3[^>]*>Agent Dispatch<\/h3>/g)).toHaveLength(1);
     expect(html).toContain('Fixer');
     expect(html).toContain('Designer');
@@ -1008,7 +1100,7 @@ describe('managed task presentation', () => {
     expect(html.match(/Open Subtask/g)).toHaveLength(2);
   });
 
-  test('keeps dispatch consolidation scoped to each user turn', () => {
+  test('keeps message-scoped dispatch projections isolated across user turns', () => {
     const firstTurn = resolveManagedTaskTurnProjection([{
       messageId: 'assistant-turn-one',
       parts: [{
@@ -1036,10 +1128,18 @@ describe('managed task presentation', () => {
       }] as never,
     }]);
 
-    expect(firstTurn.ownerMessageId).toBe('assistant-turn-one');
-    expect(firstTurn.taskIds).toEqual(['dvr_task_turn_one']);
-    expect(secondTurn.ownerMessageId).toBe('assistant-turn-two');
-    expect(secondTurn.taskIds).toEqual(['dvr_task_turn_two']);
+    expect(firstTurn).toEqual([{
+      ownerMessageId: 'assistant-turn-one',
+      taskIds: ['dvr_task_turn_one'],
+      pendingDispatches: [],
+      fallbackTasks: [],
+    }]);
+    expect(secondTurn).toEqual([{
+      ownerMessageId: 'assistant-turn-two',
+      taskIds: ['dvr_task_turn_two'],
+      pendingDispatches: [],
+      fallbackTasks: [],
+    }]);
   });
 
   test('surfaces an active managed start before an authoritative task id exists', () => {
@@ -1356,6 +1456,10 @@ describe('managed task presentation', () => {
     expect(source).not.toContain('pb-1 pt-1');
     expect(source).not.toContain('pb-2 pt-3');
     expect(source).toContain('data-managed-task-card="true"');
+    expect(source).toContain('relative isolate overflow-hidden rounded-xl border border-transparent');
+    expect(source).toContain('after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:border');
+    expect(source).toContain('after:border-[color-mix(in_srgb,var(--primary-base)_16%,var(--border))]');
+    expect(source).toContain("after:content-['']");
     expect(mobileStyles).toContain('[data-managed-task-card="true"]');
     expect(mobileStyles).toContain('overflow: hidden !important;');
   });

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'bun:test';
 import {
   getSettingsBackButtonClassName,
@@ -9,8 +10,19 @@ import {
   getSettingsPageSidebarClassName,
 } from './SettingsView.styles';
 import { resolveMobileSettingsBackStage } from './SettingsView.mobileNavigation';
-import { getSettingsPageMeta, resolveSettingsSlug } from '@/lib/settings/metadata';
-import { SETTINGS_NAV_SECTIONS } from '@/lib/settings/navigation';
+import {
+  getSettingsPageMeta,
+  resolveSettingsSlug,
+  type SettingsRuntimeContext,
+} from '@/lib/settings/metadata';
+import {
+  SETTINGS_NAV_SECTIONS,
+  getSettingsDestinationFallbackSlug,
+} from '@/lib/settings/navigation';
+
+const getNavSlugs = (labelKey: string) => SETTINGS_NAV_SECTIONS
+  .find((section) => section.labelKey === labelKey)
+  ?.destinations.flatMap((destination) => destination.slugs) ?? [];
 
 describe('SettingsView navigation', () => {
   test('mobile split-page content backs to the split page list', () => {
@@ -52,6 +64,7 @@ describe('SettingsView navigation', () => {
     expect(classes).toContain('inset-0');
     expect(classes).toContain('z-20');
     expect(classes).toContain('bg-background');
+    expect(classes).toContain('app-region-no-drag');
     expect(classes).not.toContain('rounded-xl');
     expect(classes).not.toContain('shadow-none');
   });
@@ -147,7 +160,9 @@ describe('SettingsView navigation', () => {
   });
 
   test('behavior is routed through agents instead of top-level navigation', () => {
-    const topLevelSlugs = SETTINGS_NAV_SECTIONS.flatMap((section) => section.pages);
+    const topLevelSlugs = SETTINGS_NAV_SECTIONS.flatMap((section) => (
+      section.destinations.flatMap((destination) => destination.slugs)
+    ));
 
     expect(topLevelSlugs).not.toContain('behavior');
     expect(resolveSettingsSlug('behavior')).toBe('agents');
@@ -157,29 +172,38 @@ describe('SettingsView navigation', () => {
     expect(resolveSettingsSlug('github')).toBe('users');
   });
 
-  test('plugins sits between skills and magic prompts in workflow navigation', () => {
-    const workflowPages = SETTINGS_NAV_SECTIONS
-      .find((section) => section.labelKey === 'settings.view.nav.group.workflow')
-      ?.pages ?? [];
+  test('MCP Servers sits immediately below Providers in connections navigation', () => {
+    const connectionsPages = getNavSlugs('settings.view.nav.group.connections');
 
     expect(resolveSettingsSlug('plugins')).toBe('plugins');
-    expect(workflowPages).toContain('skills.installed');
-    expect(workflowPages).toContain('plugins');
-    expect(workflowPages).toContain('magic-prompts');
-    expect(workflowPages.indexOf('plugins')).toBe(workflowPages.indexOf('skills.installed') + 1);
-    expect(workflowPages.indexOf('magic-prompts')).toBe(workflowPages.indexOf('plugins') + 1);
+    expect(connectionsPages).toContain('providers');
+    expect(connectionsPages).toContain('mcp');
+    expect(connectionsPages.indexOf('mcp')).toBe(connectionsPages.indexOf('usage') + 1);
+    expect(getNavSlugs('settings.view.nav.group.workflow')).not.toContain('mcp');
+    expect(getSettingsPageMeta('mcp')?.title).toBe('MCP Servers');
+  });
+
+  test('places Bots immediately below Agents in workflow navigation', () => {
+    const workflowPages = getNavSlugs('settings.view.nav.group.workflow');
+
+    expect(workflowPages.indexOf('bots')).toBe(workflowPages.indexOf('agents') + 1);
+  });
+
+  test('keeps global Skills and MCP as Coding Agent settings without Bot assignment tabs', () => {
+    const source = readFileSync(new URL('./SettingsView.tsx', import.meta.url), 'utf8');
+    expect(source).toContain("settingsSlug === 'skills.installed' || settingsSlug === 'mcp'");
+    expect(source).not.toContain('ProductAudienceTabs');
+    expect(source).not.toContain('skillsAudience');
+    expect(source).not.toContain('mcpAudience');
+    expect(source).not.toContain('LazyBotCapabilitySidebar');
+    expect(source).not.toContain('LazyBotCapabilityPanel');
+    expect(source).toContain("const settingsAudience = 'coding-agents' as const");
   });
 
   test('places commands after shortcuts in General and folds Chat into Appearance', () => {
-    const generalPages = SETTINGS_NAV_SECTIONS
-      .find((section) => section.labelKey === 'settings.view.nav.group.general')
-      ?.pages ?? [];
-    const workflowPages = SETTINGS_NAV_SECTIONS
-      .find((section) => section.labelKey === 'settings.view.nav.group.workflow')
-      ?.pages ?? [];
-    const developmentPages = SETTINGS_NAV_SECTIONS
-      .find((section) => section.labelKey === 'settings.view.nav.group.development')
-      ?.pages ?? [];
+    const generalPages = getNavSlugs('settings.view.nav.group.general');
+    const workflowPages = getNavSlugs('settings.view.nav.group.workflow');
+    const developmentPages = getNavSlugs('settings.view.nav.group.development');
 
     expect(generalPages.indexOf('commands')).toBe(generalPages.indexOf('shortcuts') + 1);
     expect(workflowPages).not.toContain('chat');
@@ -187,21 +211,18 @@ describe('SettingsView navigation', () => {
   });
 
   test('exposes the About page so diagnostics are reachable in desktop settings', () => {
-    const generalPages = SETTINGS_NAV_SECTIONS
-      .find((section) => section.labelKey === 'settings.view.nav.group.general')
-      ?.pages ?? [];
+    const generalPages = getNavSlugs('settings.view.nav.group.general');
+    const developmentPages = getNavSlugs('settings.view.nav.group.development');
 
     expect(resolveSettingsSlug('about')).toBe('about');
-    expect(generalPages).toContain('about');
+    expect(generalPages).not.toContain('about');
+    expect(developmentPages.at(-2)).toBe('projects');
+    expect(developmentPages.at(-1)).toBe('about');
   });
 
   test('places Bug Reports directly below User Management in development navigation', () => {
-    const generalPages = SETTINGS_NAV_SECTIONS
-      .find((section) => section.labelKey === 'settings.view.nav.group.general')
-      ?.pages ?? [];
-    const developmentPages = SETTINGS_NAV_SECTIONS
-      .find((section) => section.labelKey === 'settings.view.nav.group.development')
-      ?.pages ?? [];
+    const generalPages = getNavSlugs('settings.view.nav.group.general');
+    const developmentPages = getNavSlugs('settings.view.nav.group.development');
 
     expect(generalPages).not.toContain('users');
     expect(developmentPages[0]).toBe('users');
@@ -234,5 +255,43 @@ describe('SettingsView navigation', () => {
         isManaged: true,
       }),
     ).toBe(false);
+  });
+
+  test('places MCP Servers after the Providers destination in Connections', () => {
+    const connections = SETTINGS_NAV_SECTIONS
+      .find((section) => section.labelKey === 'settings.view.nav.group.connections')
+      ?.destinations ?? [];
+
+    expect(connections.map((destination) => destination.id)).toEqual([
+      'providers',
+      'mcp',
+      'remote-connections',
+    ]);
+    expect(connections[0]?.slugs).toEqual(['providers', 'usage']);
+    expect(connections[1]?.slugs).toEqual(['mcp']);
+    expect(connections[2]?.slugs).toEqual(['tunnel', 'remote-instances']);
+    expect(connections[2]?.labelKey).toBe('settings.page.remoteConnections.title');
+  });
+
+  test('keeps grouped destinations on the first accessible child tab', () => {
+    expect(getSettingsDestinationFallbackSlug('providers', new Set(['usage']))).toBe('usage');
+    expect(getSettingsDestinationFallbackSlug('usage', new Set(['providers']))).toBe('providers');
+    expect(getSettingsDestinationFallbackSlug('remote-instances', new Set(['tunnel', 'remote-instances']))).toBe('tunnel');
+    expect(getSettingsDestinationFallbackSlug('remote-instances', new Set(['tunnel']))).toBe('tunnel');
+    expect(getSettingsDestinationFallbackSlug('tunnel', new Set())).toBeNull();
+  });
+
+  test('exposes both remote tabs on desktop, only Tunnel on web, and neither in VS Code', () => {
+    const remoteSlugs = ['remote-instances', 'tunnel'] as const;
+    const visibleIn = (ctx: SettingsRuntimeContext) => (
+      remoteSlugs.filter((slug) => getSettingsPageMeta(slug)?.isAvailable?.(ctx) ?? true)
+    );
+
+    expect(visibleIn({ isDesktop: true, isWeb: false, isVSCode: false, isManaged: false }))
+      .toEqual(['remote-instances', 'tunnel']);
+    expect(visibleIn({ isDesktop: false, isWeb: true, isVSCode: false, isManaged: false }))
+      .toEqual(['tunnel']);
+    expect(visibleIn({ isDesktop: false, isWeb: false, isVSCode: true, isManaged: false }))
+      .toEqual([]);
   });
 });

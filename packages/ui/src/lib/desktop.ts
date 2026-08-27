@@ -253,6 +253,17 @@ export const invokeDesktop = async <T = unknown>(command: string, args?: Record<
   return tauri.core.invoke(command, args ?? {}) as Promise<T>;
 };
 
+export const listenDesktopEvent = async <T = unknown>(
+  event: string,
+  listener: (payload: T) => void,
+): Promise<() => void> => {
+  if (typeof window === 'undefined') return () => {};
+  const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
+  const listen = tauri?.event?.listen;
+  if (typeof listen !== 'function') return () => {};
+  return listen(event, (message) => listener(message.payload as T));
+};
+
 export type DesktopKeepAwakeResult = {
   enabled: boolean;
   active: boolean;

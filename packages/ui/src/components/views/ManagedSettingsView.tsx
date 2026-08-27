@@ -9,8 +9,16 @@ import { useI18n } from '@/lib/i18n';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { SettingsPagePermissionBoundary } from '@/lib/settings/permission-context';
 import { cn } from '@/lib/utils';
+import { useProjectsStore } from '@/stores/useProjectsStore';
+import { usePluginsStore } from '@/stores/usePluginsStore';
+import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
+import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { setStoragePrincipal } from '@/stores/utils/safeStorage';
+import { LazyBotsPage } from './lazyViews';
+import { CapabilitySettingsWorkspace } from './CapabilitySettingsWorkspace';
+import { SettingsSectionTabs } from './SettingsSectionTabs';
+import { canAccessSettingsDestination } from './SettingsView.access';
 
 const LazyOpenChamberPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/sections/openchamber/OpenChamberPage').then((module) => ({ default: module.OpenChamberPage })),
@@ -39,6 +47,18 @@ const LazyMcpSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
 const LazyMcpPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/sections/mcp/McpPage').then((module) => ({ default: module.McpPage })),
 );
+const LazySkillsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/skills/SkillsSidebar').then((module) => ({ default: module.SkillsSidebar })),
+);
+const LazySkillsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/skills/SkillsPage').then((module) => ({ default: module.SkillsPage })),
+);
+const LazyPluginsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/plugins/PluginsSidebar').then((module) => ({ default: module.PluginsSidebar })),
+);
+const LazyPluginsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/plugins/PluginsPage').then((module) => ({ default: module.PluginsPage })),
+);
 const LazyBugReportsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/sections/bug-reports/BugReportsPage').then((module) => ({ default: module.BugReportsPage })),
 );
@@ -50,9 +70,12 @@ type ManagedSettingsPage =
   | 'shortcuts'
   | 'sessions'
   | 'notifications'
+  | 'bots'
   | 'agents'
   | 'providers'
   | 'usage'
+  | 'skills.installed'
+  | 'plugins'
   | 'mcp'
   | 'bug-reports';
 
@@ -67,6 +90,12 @@ interface ManagedPageDefinition {
   group: 'Preferences' | 'Workspace' | 'Development';
 }
 
+interface ManagedNavigationDestination extends Omit<ManagedPageDefinition, 'slug'> {
+  id: string;
+  slugs: readonly ManagedSettingsPage[];
+  targetSlug: ManagedSettingsPage;
+}
+
 const SectionBoundary: React.FC<React.PropsWithChildren> = ({ children }) => (
   <ErrorBoundary>
     <React.Suspense fallback={<div className="h-full min-h-0 bg-background" aria-busy="true" />}>
@@ -75,11 +104,23 @@ const SectionBoundary: React.FC<React.PropsWithChildren> = ({ children }) => (
   </ErrorBoundary>
 );
 
+const CodingAgentSettingsAccessRequired: React.FC = () => (
+  <div className="flex h-full items-center justify-center p-6 text-center">
+    <div className="max-w-sm">
+      <div className="typography-ui-label font-semibold text-foreground">Coding Agents settings access required</div>
+      <p className="mt-1 typography-ui text-muted-foreground">
+        Your settings policy does not include this Coding Agents section.
+      </p>
+    </div>
+  </div>
+);
+
 export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClose }) => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
   const settingsPage = useUIStore((state) => state.settingsPage) as ManagedSettingsPage;
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
+  const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const backButtonRef = React.useRef<HTMLButtonElement | null>(null);
 
   React.useEffect(() => {
@@ -96,10 +137,13 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
       { slug: 'shortcuts', title: t('settings.page.shortcuts.title'), description: 'Review and customize keyboard shortcuts.', group: 'Preferences' },
       { slug: 'sessions', title: t('settings.page.sessions.title'), description: 'Defaults, retention, and session behavior.', group: 'Preferences' },
       { slug: 'notifications', title: t('settings.page.notifications.title'), description: 'Choose when and how DevRyan notifies you.', group: 'Preferences' },
+      { slug: 'bots', title: t('settings.page.bots.title'), description: t('settings.page.bots.description'), group: 'Workspace' },
       { slug: 'agents', title: t('settings.page.agents.title'), description: 'Review the agents available to your account.', group: 'Workspace' },
+      { slug: 'skills.installed', title: t('settings.page.skills.title'), description: 'Manage reusable Coding Agent skills.', group: 'Workspace' },
+      { slug: 'plugins', title: t('settings.page.plugins.title'), description: 'Review installed OpenCode plugins.', group: 'Workspace' },
       { slug: 'providers', title: t('settings.page.providers.title'), description: 'Review provider access and models.', group: 'Workspace' },
       { slug: 'usage', title: t('settings.page.usage.title'), description: 'Inspect provider usage and limits.', group: 'Workspace' },
-      { slug: 'mcp', title: t('settings.page.mcp.title'), description: 'Review connected MCP services.', group: 'Workspace' },
+      { slug: 'mcp', title: t('settings.page.mcp.title'), description: 'Review Coding Agent servers.', group: 'Workspace' },
       {
         slug: 'bug-reports',
         title: t('settings.page.bugReports.title'),
@@ -107,18 +151,77 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
         group: 'Development',
       },
     ];
-    return definitions.filter((page) => canAccessSettingsPage(principal, page.slug) && (page.slug !== 'bug-reports' || !isVSCodeRuntime()));
+    return definitions.filter((page) => (
+      canAccessSettingsDestination(principal, page.slug)
+      && (page.slug !== 'bug-reports' || !isVSCodeRuntime())
+    ));
   }, [principal, t]);
 
+  const providerPages = React.useMemo(
+    () => pages.filter((page) => page.slug === 'providers' || page.slug === 'usage'),
+    [pages],
+  );
   const activePage = pages.find((page) => page.slug === settingsPage) ?? null;
-  const activeSlug: ManagedSettingsPage = settingsPage === 'home' || activePage ? settingsPage : 'home';
-  const navigationPages = pages.filter((page) => page.slug !== 'chat');
+  const providerFallback = (settingsPage === 'providers' || settingsPage === 'usage')
+    ? providerPages[0]?.slug
+    : null;
+  const activeSlug: ManagedSettingsPage = settingsPage === 'home'
+    ? 'home'
+    : activePage?.slug ?? providerFallback ?? 'home';
+  const navigationDestinations = React.useMemo<ManagedNavigationDestination[]>(() => {
+    const destinations: ManagedNavigationDestination[] = [];
+    let providersAdded = false;
+
+    for (const page of pages) {
+      if (page.slug === 'chat') continue;
+      if (page.slug === 'providers' || page.slug === 'usage') {
+        if (providersAdded) continue;
+        providersAdded = true;
+        if (providerPages.length === 0) continue;
+        destinations.push({
+          id: 'providers',
+          slugs: providerPages.map((providerPage) => providerPage.slug),
+          targetSlug: providerPages[0].slug,
+          title: t('settings.page.providers.title'),
+          description: t('settings.view.home.cards.providers.description'),
+          group: 'Workspace',
+        });
+        continue;
+      }
+      destinations.push({
+        id: page.slug,
+        slugs: [page.slug],
+        targetSlug: page.slug,
+        title: page.title,
+        description: page.description,
+        group: page.group,
+      });
+    }
+
+    return destinations;
+  }, [pages, providerPages, t]);
 
   React.useEffect(() => {
     if (activeSlug !== settingsPage) {
-      setSettingsPage('home');
+      setSettingsPage(activeSlug);
     }
   }, [activeSlug, setSettingsPage, settingsPage]);
+
+  React.useEffect(() => {
+    if (activeSlug === 'skills.installed' && canAccessSettingsPage(principal, activeSlug)) {
+      void useSkillsStore.getState().loadSkills();
+      void useSkillsCatalogStore.getState().loadCatalog();
+      return;
+    }
+    if (activeSlug === 'plugins' && canAccessSettingsPage(principal, activeSlug)) {
+      void usePluginsStore.getState().loadPlugins();
+      void usePluginsStore.getState().loadSlimStatus();
+    }
+  }, [activeProjectId, activeSlug, principal]);
+
+  const openPage = React.useCallback((slug: ManagedSettingsPage) => {
+    setSettingsPage(slug);
+  }, [setSettingsPage]);
 
   const handleLogout = React.useCallback(async () => {
     const response = await fetch('/auth/logout', {
@@ -149,6 +252,40 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
     </SettingsPagePermissionBoundary>
   );
 
+  const renderCapabilityPage = (slug: 'skills.installed' | 'mcp'): React.ReactNode => {
+    const canReadCodingAgents = canAccessSettingsPage(principal, slug);
+    const sidebar = canReadCodingAgents ? (
+      slug === 'mcp' ? <LazyMcpSidebar /> : <LazySkillsSidebar />
+    ) : (
+      <CodingAgentSettingsAccessRequired />
+    );
+    const content = canReadCodingAgents ? (
+      slug === 'mcp' ? <LazyMcpPage /> : <LazySkillsPage />
+    ) : (
+      <CodingAgentSettingsAccessRequired />
+    );
+
+    return (
+      <CapabilitySettingsWorkspace
+        slug={slug}
+        audience="coding-agents"
+        onAudienceChange={() => {}}
+        idPrefix={`managed-${slug.replace('.', '-')}-audience`}
+      >
+        <div className="flex h-full min-h-0 overflow-hidden">
+            <div className="hidden min-h-0 w-56 shrink-0 border-r border-border bg-sidebar md:block">
+              <SectionBoundary>{sidebar}</SectionBoundary>
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <SectionBoundary>{content}</SectionBoundary>
+              </div>
+            </div>
+        </div>
+      </CapabilitySettingsWorkspace>
+    );
+  };
+
   const renderPage = (): React.ReactNode => {
     if (activeSlug === 'home') {
       return (
@@ -159,11 +296,11 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
               <p className="typography-ui text-muted-foreground">{t('settings.view.home.description')}</p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {navigationPages.map((page) => (
+              {navigationDestinations.map((page) => (
                 <button
-                  key={page.slug}
+                  key={page.id}
                   type="button"
-                  onClick={() => setSettingsPage(page.slug)}
+                  onClick={() => openPage(page.targetSlug)}
                   className="rounded-lg border border-border bg-[var(--surface-elevated)] p-4 text-left transition-colors hover:bg-[var(--interactive-hover)]"
                 >
                   <div className="typography-ui-label text-foreground">{page.title}</div>
@@ -189,11 +326,34 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
     if (activeSlug === 'agents') {
       return renderSplitPage(activeSlug, <LazyAgentsSidebar />, <LazyAgentsPage />);
     }
-    if (activeSlug === 'providers') {
-      return renderSplitPage(activeSlug, <LazyProvidersSidebar />, <LazyProvidersPage />);
+    if (activeSlug === 'bots') {
+      return (
+        <SettingsPagePermissionBoundary slug={activeSlug}>
+          <SectionBoundary><LazyBotsPage /></SectionBoundary>
+        </SettingsPagePermissionBoundary>
+      );
     }
-    if (activeSlug === 'usage') {
-      return renderSplitPage(activeSlug, <LazyUsageSidebar />, <LazyUsagePage />);
+    if (activeSlug === 'providers' || activeSlug === 'usage') {
+      const content = activeSlug === 'providers'
+        ? renderSplitPage(activeSlug, <LazyProvidersSidebar />, <LazyProvidersPage />)
+        : renderSplitPage(activeSlug, <LazyUsageSidebar />, <LazyUsagePage />);
+      return (
+        <SettingsSectionTabs
+          activeSlug={activeSlug}
+          ariaLabel={t('settings.providers.tabs.aria')}
+          idPrefix="managed-providers-settings"
+          onTabChange={(slug) => openPage(slug as ManagedSettingsPage)}
+          tabs={providerPages.map((page) => ({ slug: page.slug, label: page.title }))}
+        >
+          {content}
+        </SettingsSectionTabs>
+      );
+    }
+    if (activeSlug === 'skills.installed' || activeSlug === 'mcp') {
+      return renderCapabilityPage(activeSlug);
+    }
+    if (activeSlug === 'plugins') {
+      return renderSplitPage(activeSlug, <LazyPluginsSidebar />, <LazyPluginsPage />);
     }
     if (activeSlug === 'bug-reports') {
       return (
@@ -202,7 +362,15 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
         </SettingsPagePermissionBoundary>
       );
     }
-    return renderSplitPage('mcp', <LazyMcpSidebar />, <LazyMcpPage />);
+    return null;
+  };
+
+  const handleMobileBack = () => {
+    if (activeSlug !== 'home') {
+      openPage('home');
+      return;
+    }
+    onClose?.();
   };
 
   return (
@@ -212,7 +380,7 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
       aria-modal="true"
       aria-label={t('settings.view.home.title')}
     >
-      <aside className="flex w-52 shrink-0 flex-col border-r border-border bg-sidebar sm:w-56">
+      <aside className="hidden w-52 shrink-0 flex-col border-r border-border bg-sidebar sm:flex sm:w-56">
         <div className="border-b border-border p-2">
           <button
             ref={backButtonRef}
@@ -227,7 +395,7 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
         <nav className="min-h-0 flex-1 overflow-auto px-2 py-3" aria-label={t('settings.view.home.title')}>
           <button
             type="button"
-            onClick={() => setSettingsPage('home')}
+            onClick={() => openPage('home')}
             aria-current={activeSlug === 'home' ? 'page' : undefined}
             className={cn(
               'mb-3 flex h-8 w-full items-center rounded-md px-2 text-left typography-ui-label',
@@ -237,20 +405,20 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
             {t('settings.view.home.title')}
           </button>
           {(['Preferences', 'Workspace', 'Development'] as const).map((group) => {
-            const groupPages = navigationPages.filter((page) => page.group === group);
+            const groupPages = navigationDestinations.filter((page) => page.group === group);
             if (groupPages.length === 0) return null;
             return (
               <div key={group} className="mb-4 space-y-0.5">
                 <div className="px-2 pb-1 typography-micro font-medium uppercase tracking-wide text-muted-foreground/70">{group}</div>
                 {groupPages.map((page) => (
                   <button
-                    key={page.slug}
+                    key={page.id}
                     type="button"
-                    onClick={() => setSettingsPage(page.slug)}
-                    aria-current={activeSlug === page.slug ? 'page' : undefined}
+                    onClick={() => openPage(page.targetSlug)}
+                    aria-current={page.slugs.includes(activeSlug) ? 'page' : undefined}
                     className={cn(
                       'flex h-8 w-full items-center rounded-md px-2 text-left typography-ui-label',
-                      activeSlug === page.slug ? 'bg-interactive-hover text-foreground' : 'text-muted-foreground hover:bg-interactive-hover/70 hover:text-foreground',
+                      page.slugs.includes(activeSlug) ? 'bg-interactive-hover text-foreground' : 'text-muted-foreground hover:bg-interactive-hover/70 hover:text-foreground',
                     )}
                   >
                     <span className="truncate">{page.title}</span>
@@ -272,8 +440,23 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
           </button>
         </div>
       </aside>
-      <main className="min-w-0 flex-1 overflow-hidden bg-background">
-        {renderPage()}
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3 sm:hidden">
+          <button
+            type="button"
+            onClick={handleMobileBack}
+            aria-label={activeSlug === 'home' ? 'Close Settings' : 'Back to Settings'}
+            className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <RiArrowLeftSLine className="h-5 w-5" />
+          </button>
+          <div className="min-w-0 flex-1 truncate typography-ui-label font-medium text-foreground">
+            {(activeSlug === 'providers' || activeSlug === 'usage')
+                ? t('settings.page.providers.title')
+                : activePage?.title || t('settings.view.home.title')}
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden">{renderPage()}</div>
       </main>
     </div>
   );

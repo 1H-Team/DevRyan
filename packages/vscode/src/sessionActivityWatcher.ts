@@ -1,6 +1,7 @@
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import type { OpenCodeManager } from './opencode';
 import { getVsCodeHarnessRuntime } from './harness-runtime-access';
+import { cleanupStaleSessionTitleHelpers, processSessionTitleEvent } from './sessionTitleRuntime';
 
 // Session activity tracking (mirrors web server and desktop Tauri behavior)
 type ActivityPhase = 'idle' | 'busy' | 'cooldown';
@@ -16,6 +17,7 @@ const SESSION_COOLDOWN_DURATION_MS = 2000;
 
 let globalEventWatcherAbortController: AbortController | null = null;
 let chatViewProvider: { postMessage: (message: unknown) => void } | null = null;
+let observeManagedOrchestrationEvent: ((payload: unknown) => void) | null = null;
 
 const reconcileSessionActivityFromStatus = async (manager: OpenCodeManager): Promise<void> => {
   const baseUrl = manager.getApiUrl();
@@ -166,18 +168,20 @@ const waitForOpenCodePort = async (manager: OpenCodeManager, timeoutMs = 30000):
 
 export const startGlobalEventWatcher = async (
   manager: OpenCodeManager,
-  provider: { postMessage: (message: unknown) => void }
+  provider: { postMessage: (message: unknown) => void },
+  onManagedOrchestrationEvent?: (payload: unknown) => void,
 ): Promise<void> => {
   if (globalEventWatcherAbortController) {
     return;
   }
 
   chatViewProvider = provider;
+  observeManagedOrchestrationEvent = onManagedOrchestrationEvent ?? null;
 
   const port = await waitForOpenCodePort(manager);
   if (!port) {
     console.warn('[VSCode:Activity] OpenCode port unavailable; will retry');
-    setTimeout(() => startGlobalEventWatcher(manager, provider), 2000);
+    setTimeout(() => startGlobalEventWatcher(manager, provider, onManagedOrchestrationEvent), 2000);
     return;
   }
 
@@ -208,6 +212,9 @@ export const startGlobalEventWatcher = async (
             error instanceof Error ? error.message : error,
           );
         }
+        void cleanupStaleSessionTitleHelpers(manager.getWorkingDirectory()).catch((error) => {
+          console.warn('[VSCode:SessionTitle] stale helper cleanup failed', error instanceof Error ? error.message : error);
+        });
         const result = await client.global.event({
           signal,
           sseMaxRetryAttempts: 0,
@@ -220,7 +227,9 @@ export const startGlobalEventWatcher = async (
             if (activity) {
               setSessionActivityPhase(activity.sessionId, activity.phase);
             }
+            void processSessionTitleEvent(payload);
             manager.observeContextModeToolFailure(payload);
+            observeManagedOrchestrationEvent?.(payload);
             void getVsCodeHarnessRuntime()?.observeCommandDeadlineEvent(
               payload,
               manager.getWorkingDirectory(),
@@ -262,6 +271,7 @@ export const stopGlobalEventWatcher = (): void => {
   }
   globalEventWatcherAbortController = null;
   chatViewProvider = null;
+  observeManagedOrchestrationEvent = null;
 
   // Clear all cooldown timers
   for (const timer of sessionActivityCooldowns.values()) {

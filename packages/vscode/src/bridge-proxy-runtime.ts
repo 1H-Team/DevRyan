@@ -56,7 +56,18 @@ type ProxyRuntimeDeps = {
     modelID: string;
     headers?: Record<string, string>;
   }) => Promise<void>;
+  scheduleSessionTitle: (input: {
+    sessionID: string;
+    directory?: string;
+    text?: string;
+    providerID: string;
+    modelID: string;
+    variant?: string;
+  }) => Promise<boolean>;
+  scheduleSessionTitleRecovery: (directory?: string) => Promise<boolean>;
 };
+
+const CURSOR_PROVIDER_ID = 'cursor-acp';
 
 const sortFingerprintValue = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(sortFingerprintValue);
@@ -167,6 +178,31 @@ const getPromptModel = (body: unknown): { providerID: string; modelID: string } 
     ? (model as { modelID: string }).modelID.trim()
     : '';
   return providerID && modelID ? { providerID, modelID } : null;
+};
+
+const getPromptText = (body: unknown): string => {
+  if (!body || typeof body !== 'object') return '';
+  const parts = Array.isArray((body as { parts?: unknown }).parts)
+    ? (body as { parts: unknown[] }).parts
+    : [];
+  return parts
+    .filter((part) => (
+      part
+      && typeof part === 'object'
+      && (part as { type?: unknown }).type === 'text'
+      && (part as { synthetic?: unknown }).synthetic !== true
+    ))
+    .map((part) => (typeof (part as { text?: unknown }).text === 'string'
+      ? (part as { text: string }).text.trim()
+      : ''))
+    .filter(Boolean)
+    .join(' ');
+};
+
+const getPromptVariant = (body: unknown): string | undefined => {
+  if (!body || typeof body !== 'object') return undefined;
+  const variant = (body as { variant?: unknown }).variant;
+  return typeof variant === 'string' && variant.trim() ? variant.trim() : undefined;
 };
 
 const mergePromptTools = (body: unknown, overrides: Record<string, false> | null): unknown => {
@@ -317,6 +353,15 @@ export async function handleProxyBridgeMessage(
         if (
           response.ok
           && normalizedMethod === 'GET'
+          && normalizedPath.split('?')[0] === '/session'
+        ) {
+          const directory = new URL(normalizedPath, 'https://openchamber.invalid')
+            .searchParams.get('directory') || undefined;
+          void deps.scheduleSessionTitleRecovery(directory);
+        }
+        if (
+          response.ok
+          && normalizedMethod === 'GET'
           && normalizedPath.split('?')[0] === '/config/providers'
           && ctx?.manager?.getDebugInfo?.().mode !== 'external'
         ) {
@@ -366,6 +411,16 @@ export async function handleProxyBridgeMessage(
                 providerID: promptModel.providerID,
                 modelID: promptModel.modelID,
                 headers: requestHeaders,
+              });
+            }
+            if (promptModel && promptModel.providerID !== CURSOR_PROVIDER_ID) {
+              void deps.scheduleSessionTitle({
+                sessionID: details.sessionID,
+                directory: details.directory,
+                text: getPromptText(decodedBody),
+                providerID: promptModel.providerID,
+                modelID: promptModel.modelID,
+                variant: getPromptVariant(decodedBody),
               });
             }
           }
@@ -441,11 +496,23 @@ export async function handleProxyBridgeMessage(
         };
         if (response.ok) {
           const details = promptPathDetails(normalizedPath);
+          const decodedMessageBody = decodeJsonBody(bodyText, 'text');
           if (details) {
             getVsCodeHarnessRuntime()?.lifecycle.recordPromptAccepted({
               ...details,
-              messageID: getPromptMessageID(decodeJsonBody(bodyText, 'text')),
+              messageID: getPromptMessageID(decodedMessageBody),
             });
+            const promptModel = getPromptModel(decodedMessageBody);
+            if (promptModel && promptModel.providerID !== CURSOR_PROVIDER_ID) {
+              void deps.scheduleSessionTitle({
+                sessionID: details.sessionID,
+                directory: details.directory,
+                text: getPromptText(decodedMessageBody),
+                providerID: promptModel.providerID,
+                modelID: promptModel.modelID,
+                variant: getPromptVariant(decodedMessageBody),
+              });
+            }
           }
         }
 

@@ -65,7 +65,6 @@ export type State = {
   lsp: LspStatus[]
   vcs: VcsInfo | undefined
   limit: number
-  session_user_activity: Record<string, number>
   revert_transaction: Record<string, RevertTransaction | undefined>
   message: Record<string, Message[]>
   part: Record<string, Part[]>
@@ -145,7 +144,6 @@ export const INITIAL_STATE: State = {
   lsp: [],
   vcs: undefined,
   limit: 5,
-  session_user_activity: {},
   revert_transaction: {},
   message: {},
   part: {},

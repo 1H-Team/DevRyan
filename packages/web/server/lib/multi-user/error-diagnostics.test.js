@@ -37,6 +37,59 @@ describe('managed diagnostic classification', () => {
   });
 
   it.each([
+    ['skill', 'Skill "accessibility" not found. Available skills: Accessibility (a11y)'],
+    ['skill', 'Permission denied by tool policy'],
+    ['devryan_task', 'Managed task barrier is active'],
+    ['devryan_task', 'This result has already been acknowledged'],
+    ['edit', 'filePath is required'],
+    ['devryan_browser', 'SecurityError: localStorage is unavailable in a cross-origin sandboxed frame'],
+    ['devryan_browser', 'Could not locate element for stale ref @e267'],
+  ])('classifies investigated routine failure from %s as expected', (tool, failureText) => {
+    expect(classifyDiagnosticFailure({
+      action: 'tool.failed',
+      metadata: { tool, failureText },
+    })).toMatchObject({ impact: 'low', disposition: 'expected' });
+  });
+
+  it('prefers structured routine and host codes over compatibility message matching', () => {
+    expect(classifyDiagnosticFailure({
+      action: 'tool.failed',
+      metadata: { tool: 'devryan_browser', errorCode: 'missing_selector', failureText: 'opaque' },
+    })).toMatchObject({ impact: 'low', disposition: 'expected' });
+    expect(classifyDiagnosticFailure({
+      action: 'tool.failed',
+      metadata: { tool: 'devryan_browser', errorCode: 'lineage_unavailable', failureText: 'opaque' },
+    })).toMatchObject({ impact: 'medium', disposition: 'actionable' });
+  });
+
+  it('keeps browser host and lineage failures actionable', () => {
+    for (const failureText of [
+      'DEVRYAN_BROWSER_LEASE_ACQUIRE_FAILED: Cannot resolve session lineage from OpenCode',
+      'The desktop browser host could not create a lease',
+    ]) {
+      expect(classifyDiagnosticFailure({
+        action: 'tool.failed',
+        metadata: { tool: 'devryan_browser', failureText },
+      })).toMatchObject({ impact: 'medium', disposition: 'actionable' });
+    }
+  });
+
+  it('classifies the benign ResizeObserver notification as expected client noise', () => {
+    expect(classifyDiagnosticFailure({
+      action: 'client.error',
+      metadata: {
+        source: 'window_error',
+        failureText: 'ResizeObserver loop completed with undelivered notifications.',
+      },
+    })).toEqual({
+      impact: 'low',
+      source: 'observed',
+      failureClass: 'client_runtime',
+      disposition: 'expected',
+    });
+  });
+
+  it.each([
     [
       'ctx_execute',
       '```javascript\nrunVitest()\n```\n\nExit code: 1\n\nstdout:\nTests 2 failed | 58 passed',

@@ -40,7 +40,7 @@ export const SIDEBAR_SECTIONS: SidebarSectionConfig[] = [
     },
     {
         id: 'mcp',
-        label: 'MCP',
+        label: 'MCP Servers',
         description: 'Manage Model Context Protocol servers and their configurations.',
         icon: RiPlugLine,
     },

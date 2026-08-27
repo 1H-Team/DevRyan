@@ -33,6 +33,7 @@ import { UserAnalytics } from './UserAnalytics';
 import { ResetPasswordDialog } from './ResetPasswordDialog';
 import {
   capabilityLabels,
+  capabilityKeys,
   formatBranchOption,
   requestJson,
   roleLabel,
@@ -185,14 +186,18 @@ export const UserDetail: React.FC<UserDetailProps> = ({
     capabilities: Record<CapabilityKey, CapabilityOverride>;
     settingsOverrides: string;
     agentsHidePermissionsUi: boolean;
+    inheritedAgentsHideGlobalBehaviorUi: boolean;
+    agentsHideGlobalBehaviorUi: boolean;
     mcpOverrides: Record<string, McpPolicyOverride>;
   }>({
     permissionOverrides: {},
     inheritedPermissions: fullSettingsPermissions(),
-    inheritedCapabilities: Object.fromEntries(capabilityLabels.map(([key]) => [key, false])) as Record<CapabilityKey, boolean>,
-    capabilities: Object.fromEntries(capabilityLabels.map(([key]) => [key, 'inherit'])) as Record<CapabilityKey, CapabilityOverride>,
+    inheritedCapabilities: Object.fromEntries(capabilityKeys.map((key) => [key, false])) as Record<CapabilityKey, boolean>,
+    capabilities: Object.fromEntries(capabilityKeys.map((key) => [key, 'inherit'])) as Record<CapabilityKey, CapabilityOverride>,
     settingsOverrides: '{}',
     agentsHidePermissionsUi: false,
+    inheritedAgentsHideGlobalBehaviorUi: false,
+    agentsHideGlobalBehaviorUi: false,
     mcpOverrides: {},
   });
   const effectivePermissions = React.useMemo(() => mergeSettingsPermissionOverrides(
@@ -204,18 +209,24 @@ export const UserDetail: React.FC<UserDetailProps> = ({
     setPolicyLoading(true);
     try {
       const payload = await requestJson<UserPolicyPayload>(`/api/admin/users/${encodeURIComponent(user.id)}/policy`);
-      const capabilities = Object.fromEntries(capabilityLabels.map(([key]) => {
+      const capabilities = Object.fromEntries(capabilityKeys.map((key) => {
         const value = payload.policy.capabilities?.[key];
         return [key, value === true ? 'on' : value === false ? 'off' : 'inherit'];
       })) as Record<CapabilityKey, CapabilityOverride>;
       const featureOverrides = payload.policy.feature_overrides || {};
+      const inheritedAgentsHideGlobalBehaviorUi = payload.inheritedPolicy.featureOverrides?.agents?.hideGlobalBehaviorUi === true;
+      const rawAgentsHideGlobalBehaviorUi = featureOverrides.agents?.hideGlobalBehaviorUi;
       setPolicyDraft({
         permissionOverrides: payload.policy.settings_permission_overrides || {},
         inheritedPermissions: payload.inheritedPolicy.settingsPermissions,
-        inheritedCapabilities: Object.fromEntries(capabilityLabels.map(([key]) => [key, payload.inheritedPolicy[key] === true])) as Record<CapabilityKey, boolean>,
+        inheritedCapabilities: Object.fromEntries(capabilityKeys.map((key) => [key, payload.inheritedPolicy[key] === true])) as Record<CapabilityKey, boolean>,
         capabilities,
         settingsOverrides: JSON.stringify(payload.policy.settings_overrides || {}, null, 2),
         agentsHidePermissionsUi: featureOverrides.agents?.hidePermissionsUi === true,
+        inheritedAgentsHideGlobalBehaviorUi,
+        agentsHideGlobalBehaviorUi: typeof rawAgentsHideGlobalBehaviorUi === 'boolean'
+          ? rawAgentsHideGlobalBehaviorUi
+          : inheritedAgentsHideGlobalBehaviorUi,
         mcpOverrides: Object.fromEntries(Object.entries(featureOverrides.mcp || {})
           .filter(([, state]) => state === 'on' || state === 'off')),
       });
@@ -252,6 +263,12 @@ export const UserDetail: React.FC<UserDetailProps> = ({
         .map(([key, value]) => [key, value === 'on']));
       const mcpFeatureOverrides = Object.fromEntries(Object.entries(policyDraft.mcpOverrides)
         .filter(([, state]) => state === 'on' || state === 'off'));
+      const agentFeatureOverrides = {
+        ...(policyDraft.agentsHidePermissionsUi ? { hidePermissionsUi: true } : {}),
+        ...(policyDraft.agentsHideGlobalBehaviorUi !== policyDraft.inheritedAgentsHideGlobalBehaviorUi
+          ? { hideGlobalBehaviorUi: policyDraft.agentsHideGlobalBehaviorUi }
+          : {}),
+      };
       await requestJson(`/api/admin/users/${encodeURIComponent(user.id)}/policy`, {
         method: 'PUT',
         body: JSON.stringify({
@@ -259,7 +276,7 @@ export const UserDetail: React.FC<UserDetailProps> = ({
           capabilities,
           settingsOverrides,
           featureOverrides: {
-            ...(policyDraft.agentsHidePermissionsUi ? { agents: { hidePermissionsUi: true } } : {}),
+            ...(Object.keys(agentFeatureOverrides).length > 0 ? { agents: agentFeatureOverrides } : {}),
             ...(Object.keys(mcpFeatureOverrides).length > 0 ? { mcp: mcpFeatureOverrides } : {}),
           },
         }),
@@ -376,8 +393,11 @@ export const UserDetail: React.FC<UserDetailProps> = ({
   const selectedProject = projects.find((project) => project.id === assignment.projectId) || null;
   const permissionOverrideCount = React.useMemo(() => Object.values(policyDraft.permissionOverrides)
     .reduce((total, permission) => total + Object.values(permission || {}).filter((value) => typeof value === 'boolean').length, 0), [policyDraft.permissionOverrides]);
-  const capabilityOverrideCount = React.useMemo(() => Object.values(policyDraft.capabilities)
-    .filter((value) => value !== 'inherit').length, [policyDraft.capabilities]);
+  const capabilityOverrideCount = React.useMemo(() => capabilityLabels
+    .filter(([key]) => policyDraft.capabilities[key] !== 'inherit').length, [policyDraft.capabilities]);
+  const botsAccessAllowed = policyDraft.capabilities.bots === 'inherit'
+    ? policyDraft.inheritedCapabilities.bots
+    : policyDraft.capabilities.bots === 'on';
   const mcpOverrideCount = React.useMemo(
     () => Object.values(policyDraft.mcpOverrides).filter((value) => value === 'on' || value === 'off').length,
     [policyDraft.mcpOverrides],
@@ -650,6 +670,32 @@ export const UserDetail: React.FC<UserDetailProps> = ({
               </div>
             </Collapsible>
 
+            <label className="flex items-start gap-2 rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25 px-3 py-3 typography-meta text-foreground">
+              <Checkbox
+                checked={botsAccessAllowed}
+                disabled={!isAdmin || policyLoading || busy || user.role === 'admin'}
+                onChange={(checked) => setPolicyDraft((current) => ({
+                  ...current,
+                  capabilities: {
+                    ...current.capabilities,
+                    bots: checked === current.inheritedCapabilities.bots
+                      ? 'inherit'
+                      : checked ? 'on' : 'off',
+                  },
+                }))}
+                ariaLabel="Allow Bots Access"
+                className="mt-0.5 size-4"
+                iconClassName="size-4"
+              />
+              <span>
+                <span className="block typography-ui-label font-semibold text-foreground">Allow Bots Access</span>
+                <span className="block typography-micro text-muted-foreground">
+                  When Off, This User Has an Agents-Only Interface and Cannot Access Bot Settings, Conversations, Streams, or APIs.
+                  {' '}Inherited: {policyDraft.inheritedCapabilities.bots ? 'On' : 'Off'}.
+                </span>
+              </span>
+            </label>
+
             <Collapsible open={capabilityPolicyOpen} onOpenChange={setCapabilityPolicyOpen}>
               <div className="rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25">
                 <CollapsibleTrigger className="rounded-xl px-3 py-3">
@@ -699,7 +745,10 @@ export const UserDetail: React.FC<UserDetailProps> = ({
                     <span className="block typography-micro text-muted-foreground">Control Which Agent Settings This User Can See.</span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
-                    <span className="rounded-full bg-[var(--surface-elevated)] px-2 py-0.5 typography-micro text-muted-foreground">{policyDraft.agentsHidePermissionsUi ? 1 : 0} Overrides</span>
+                    <span className="rounded-full bg-[var(--surface-elevated)] px-2 py-0.5 typography-micro text-muted-foreground">{
+                      Number(policyDraft.agentsHidePermissionsUi)
+                      + Number(policyDraft.agentsHideGlobalBehaviorUi !== policyDraft.inheritedAgentsHideGlobalBehaviorUi)
+                    } Overrides</span>
                     {agentsPolicyOpen ? <RiArrowDownSLine className="h-4 w-4" /> : <RiArrowRightSLine className="h-4 w-4" />}
                   </span>
                 </CollapsibleTrigger>
@@ -717,6 +766,23 @@ export const UserDetail: React.FC<UserDetailProps> = ({
                       <span className="block typography-ui-label text-foreground">Hide Agent Permission Controls</span>
                       <span className="block typography-micro text-muted-foreground">
                         The Tool Permission Summary and Advanced Allow/Ask/Deny Editor Disappear from This User's Agents Page. Agents Stay Usable.
+                      </span>
+                    </span>
+                  </label>
+                  <label className="mt-2 flex items-start gap-2 rounded-lg border border-border/60 bg-[var(--surface-elevated)] px-3 py-2 typography-meta text-foreground">
+                    <Checkbox
+                      checked={policyDraft.agentsHideGlobalBehaviorUi}
+                      disabled={!isAdmin || policyLoading || busy || user.role === 'admin'}
+                      onChange={(checked) => setPolicyDraft((current) => ({ ...current, agentsHideGlobalBehaviorUi: checked }))}
+                      ariaLabel="Hide Global Agent Behavior"
+                      className="mt-0.5 size-4"
+                      iconClassName="size-4"
+                    />
+                    <span>
+                      <span className="block typography-ui-label text-foreground">Hide Global Agent Behavior</span>
+                      <span className="block typography-micro text-muted-foreground">
+                        The Global Behavior Item and Its Agent Instructions and Response-Style Settings Disappear from This User's Agents Page.
+                        {' '}Inherited: {policyDraft.inheritedAgentsHideGlobalBehaviorUi ? 'On' : 'Off'}.
                       </span>
                     </span>
                   </label>

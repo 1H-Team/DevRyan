@@ -62,7 +62,7 @@ export const ResetPasswordDialog: React.FC<ResetPasswordDialogProps> = ({
     }
   };
 
-  const invalidLength = password.length < 4 || password.length > 256;
+  const invalidLength = password.length < 6 || password.length > 256;
   const passwordsDiffer = password !== confirmation;
 
   return (
@@ -81,7 +81,7 @@ export const ResetPasswordDialog: React.FC<ResetPasswordDialogProps> = ({
             <Input
               type="password"
               autoComplete="new-password"
-              minLength={4}
+              minLength={6}
               maxLength={256}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
@@ -93,7 +93,7 @@ export const ResetPasswordDialog: React.FC<ResetPasswordDialogProps> = ({
             <Input
               type="password"
               autoComplete="new-password"
-              minLength={4}
+              minLength={6}
               maxLength={256}
               value={confirmation}
               onChange={(event) => setConfirmation(event.target.value)}

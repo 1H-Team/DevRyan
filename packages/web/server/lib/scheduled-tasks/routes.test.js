@@ -25,6 +25,18 @@ const developer = {
   assignments: [{ projectId: 'project-1', branchName: 'dev', isDefault: true }],
 };
 
+const administrator = {
+  id: 'admin-1',
+  scope: 'managed',
+  role: 'admin',
+  assignments: [{
+    projectId: '11111111-1111-4111-8111-111111111111',
+    branchName: 'main',
+    repositoryPath: '/repo',
+    isDefault: true,
+  }],
+};
+
 const dependencies = (tasks) => ({
   readSettingsFromDiskMigrated: async () => ({ projects: [] }),
   sanitizeProjects: (projects) => projects,
@@ -98,6 +110,30 @@ describe('personal scheduled-task routes', () => {
     }, res);
     expect(res.statusCode).toBe(200);
     expect(res.payload.tasks.map((task) => task.id)).toEqual(['mine']);
+  });
+
+  it('canonicalizes a managed administrator local project alias before reading tasks', async () => {
+    const { app, route } = createRegistry();
+    const deps = dependencies([]);
+    deps.readSettingsFromDiskMigrated = async () => ({
+      projects: [{ id: 'path_local_alias', path: '/repo' }],
+    });
+    deps.resolveManagedProject = vi.fn(async (_req, projectID) => (
+      projectID === '11111111-1111-4111-8111-111111111111'
+        ? { project: { id: projectID, path: '/repo' } }
+        : null
+    ));
+    registerScheduledTaskRoutes(app, deps);
+    const res = response();
+
+    await route('GET', '/api/projects/:projectId/scheduled-tasks')({
+      params: { projectId: 'path_local_alias' },
+      principal: administrator,
+    }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.projectConfigRuntime.listScheduledTasks)
+      .toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111');
   });
 
   it('hides another user task mutations while administrators can list legacy tasks', async () => {

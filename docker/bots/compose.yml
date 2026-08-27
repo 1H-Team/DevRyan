@@ -1,0 +1,179 @@
+services:
+  supervisor:
+    image: ${DEVRYAN_BOT_SUPERVISOR_IMAGE:?missing supervisor image}
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.50
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+    ports:
+      - "127.0.0.1::43120"
+    environment:
+      DEVRYAN_BOT_SUPERVISOR_PORT: "43120"
+      DEVRYAN_BOT_SUPERVISOR_TOKEN: ${DEVRYAN_BOT_SUPERVISOR_TOKEN:?missing supervisor token}
+      DEVRYAN_BOT_ENGINE_PROXY_URL: http://engine-proxy:43124
+      DEVRYAN_BOT_ENGINE_PROXY_TOKEN: ${DEVRYAN_BOT_ENGINE_PROXY_TOKEN:?missing engine proxy token}
+    labels:
+      devryan.runtime: production-bots
+      devryan.owner: electron
+      devryan.deployment: ${DEVRYAN_BOT_DEPLOYMENT_ID:?missing deployment id}
+    networks:
+      - management
+      - host_control
+      - reasoning
+
+  engine-proxy:
+    image: ${DEVRYAN_BOT_ENGINE_PROXY_IMAGE:?missing engine proxy image}
+    restart: unless-stopped
+    user: "10001:10001"
+    group_add:
+      - ${DEVRYAN_DOCKER_SOCKET_GID:-0}
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.50
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+    environment:
+      DEVRYAN_BOT_ENGINE_PROXY_PORT: "43124"
+      DEVRYAN_BOT_ENGINE_PROXY_TOKEN: ${DEVRYAN_BOT_ENGINE_PROXY_TOKEN:?missing engine proxy token}
+      DEVRYAN_BOT_DEPLOYMENT_ID: ${DEVRYAN_BOT_DEPLOYMENT_ID:?missing deployment id}
+      DEVRYAN_BOT_HOST_RUNTIME_ROOT: ${DEVRYAN_BOT_HOST_RUNTIME_ROOT:?missing host runtime root}
+      DEVRYAN_BOT_OPENCODE_IMAGE: ${DEVRYAN_BOT_OPENCODE_IMAGE:?missing OpenCode image}
+      DEVRYAN_BOT_COMPUTER_IMAGE: ${DEVRYAN_BOT_COMPUTER_IMAGE:?missing computer image}
+      DEVRYAN_BOT_REASONING_NETWORK: devryan-bots-reasoning
+      DEVRYAN_BOT_COMPUTER_NETWORK: devryan-bots-computer
+      DEVRYAN_BOT_HOST_CONTROL_NETWORK: devryan-bots-host-control
+      DEVRYAN_MODEL_EGRESS_URL: http://egress:43121
+    labels:
+      devryan.runtime: production-bots
+      devryan.owner: electron
+      devryan.deployment: ${DEVRYAN_BOT_DEPLOYMENT_ID:?missing deployment id}
+    expose:
+      - "43124"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+    networks:
+      management:
+        aliases:
+          - engine-proxy
+
+  egress:
+    image: ${DEVRYAN_BOT_EGRESS_IMAGE:?missing egress image}
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.50
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+    environment:
+      DEVRYAN_BOT_EGRESS_PORT: "43121"
+      DEVRYAN_BOT_EGRESS_SIGNING_KEY: ${DEVRYAN_BOT_EGRESS_SIGNING_KEY:?missing egress signing key}
+      DEVRYAN_BOT_EGRESS_CONTROL_TOKEN: ${DEVRYAN_BOT_EGRESS_CONTROL_TOKEN:?missing egress control token}
+      DEVRYAN_BOT_DEPLOYMENT_ID: ${DEVRYAN_BOT_DEPLOYMENT_ID:?missing deployment id}
+      DEVRYAN_BOT_ACTIVE_REVISIONS: ${DEVRYAN_BOT_ACTIVE_REVISIONS:-}
+    labels:
+      devryan.runtime: production-bots
+      devryan.owner: electron
+      devryan.deployment: ${DEVRYAN_BOT_DEPLOYMENT_ID:?missing deployment id}
+    expose:
+      - "43121"
+    ports:
+      - "127.0.0.1::43121"
+    networks:
+      reasoning:
+        aliases:
+          - egress
+      computer:
+        aliases:
+          - egress
+      egress_public:
+
+  indexer:
+    image: ${DEVRYAN_BOT_INDEXER_IMAGE:?missing indexer image}
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 1.00
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,mode=1777
+    ports:
+      - "127.0.0.1::43123"
+    environment:
+      DEVRYAN_BOT_INDEXER_PORT: "43123"
+      DEVRYAN_BOT_INDEXER_TOKEN: ${DEVRYAN_BOT_INDEXER_TOKEN:?missing indexer token}
+      DEVRYAN_BOT_INDEX_PATH: /var/lib/devryan-bot-index/index.sqlite
+      DEVRYAN_BOT_MODEL_CACHE: /opt/devryan/model-cache
+      DEVRYAN_BOT_MODEL_MANIFEST: /opt/devryan/model-cache-manifest.json
+    labels:
+      devryan.runtime: production-bots
+      devryan.owner: electron
+      devryan.deployment: ${DEVRYAN_BOT_DEPLOYMENT_ID:?missing deployment id}
+    volumes:
+      - bot-index:/var/lib/devryan-bot-index
+    networks:
+      - management
+      - host_control
+
+volumes:
+  bot-runtime-state:
+    name: devryan-bot-runtime-state
+  bot-index:
+    name: devryan-bot-index
+
+networks:
+  host_control:
+    name: devryan-bots-host-control
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+    labels:
+      devryan.runtime: production-bots
+      devryan.network-policy: loopback-published-no-masquerade
+  management:
+    name: devryan-bots-management
+    internal: true
+    labels:
+      devryan.runtime: production-bots
+      devryan.network-policy: management-internal
+  reasoning:
+    name: devryan-bots-reasoning
+    internal: true
+    labels:
+      devryan.runtime: production-bots
+      devryan.network-policy: model-egress-only
+  computer:
+    name: devryan-bots-computer
+    internal: true
+    labels:
+      devryan.runtime: production-bots
+      devryan.network-policy: browser-egress-only
+  egress_public:
+    name: devryan-bots-egress-public
+    driver: bridge
+    labels:
+      devryan.runtime: production-bots
+      devryan.network-policy: public-egress-service-only

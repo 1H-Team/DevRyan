@@ -50,12 +50,22 @@ export default async function adhocSignMacosApp(context) {
 
   const appName = context.packager.appInfo.productFilename
   const appPath = join(context.appOutDir, `${appName}.app`)
+  const runtimeServiceHelperPath = join(
+    appPath,
+    "Contents",
+    "Resources",
+    "native",
+    "DevRyanRuntimeServiceControl",
+  )
 
   console.log(`[adhoc-sign] Verifying packaged native artifacts in ${appPath}`)
   verifyPackagedNativeArtifacts(appPath, context.arch)
 
   console.log(`[adhoc-sign] Cleaning ${appPath}`)
   removeDsStoreFiles(appPath)
+
+  console.log(`[adhoc-sign] Ad-hoc signing ${runtimeServiceHelperPath}`)
+  run("codesign", ["--force", "--sign", "-", runtimeServiceHelperPath])
 
   console.log(`[adhoc-sign] Ad-hoc signing ${appPath}`)
   run("codesign", ["--force", "--deep", "--sign", "-", appPath])

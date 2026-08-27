@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils';
 import type { SettingsPageSlug } from '@/lib/settings/metadata';
 
 export function getSettingsFullPageOverlayClassName(): string {
-  return 'absolute inset-0 z-20 bg-background';
+  return 'app-region-no-drag absolute inset-0 z-20 bg-background';
 }
 
 export function getSettingsBackButtonClassName({

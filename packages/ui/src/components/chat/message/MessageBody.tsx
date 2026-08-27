@@ -923,9 +923,8 @@ const AssistantMessageBody = React.memo(({
         [turnGroupingContext?.activityParts, visibleParts],
     );
     const turnManagedTaskProjection = turnGroupingContext?.managedTaskProjection;
-    const ownsTurnManagedTaskProjection = turnManagedTaskProjection?.ownerMessageId === messageId;
     const managedTaskCardProjection = turnGroupingContext
-        ? (ownsTurnManagedTaskProjection ? turnManagedTaskProjection : null)
+        ? (turnManagedTaskProjection ?? null)
         : {
             taskIds: localManagedTaskDispatch.taskIds,
             pendingDispatches: localManagedTaskDispatch.pendingDispatches,

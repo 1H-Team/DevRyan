@@ -33,7 +33,7 @@ import {
   RiWindowLine,
 } from '@remixicon/react';
 import { cn } from '@/lib/utils';
-import { isPlaceholderSessionTitle, resolveDisplaySessionTitle } from '@/lib/sessionTitles';
+import { isCursorAcpErrorTitle, resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { canUseElectronDesktopIPC, invokeDesktop, isVSCodeRuntime } from '@/lib/desktop';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
@@ -47,7 +47,7 @@ import { useSync } from '@/sync/use-sync';
 import { useViewportStore } from '@/sync/viewport-store';
 import { DraggableSessionRow } from './sessionFolderDnd';
 import type { SessionNode } from './types';
-import { formatSessionCompactDateLabel, normalizePath, renderHighlightedText, resolveSessionRoutingDirectory } from './utils';
+import { normalizePath, renderHighlightedText, resolveSessionRoutingDirectory } from './utils';
 import { useSessionMultiSelectStore } from '@/stores/useSessionMultiSelectStore';
 import {
   managedOrchestrationSelectors,
@@ -89,7 +89,6 @@ type Props = {
   groupDirectory?: string | null;
   projectId?: string | null;
   archivedBucket?: boolean;
-  userActivityTimestamp?: number;
   directoryStatus: Map<string, 'unknown' | 'exists' | 'missing'>;
   currentSessionId: string | null;
   pinnedSessionIds: Set<string>;
@@ -219,7 +218,6 @@ const areEqual = (prev: Props, next: Props): boolean => {
   if (prev.groupDirectory !== next.groupDirectory) return false;
   if (prev.projectId !== next.projectId) return false;
   if (prev.archivedBucket !== next.archivedBucket) return false;
-  if (prev.userActivityTimestamp !== next.userActivityTimestamp) return false;
   if (prev.currentSessionId !== next.currentSessionId) {
     const prevActiveInTree = treeContainsSessionId(prev.node, prev.currentSessionId);
     const nextActiveInTree = treeContainsSessionId(next.node, next.currentSessionId);
@@ -277,7 +275,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     groupDirectory,
     projectId,
     archivedBucket = false,
-    userActivityTimestamp,
     directoryStatus,
     currentSessionId,
     pinnedSessionIds,
@@ -328,7 +325,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const showQuickDeleteAction = archivedBucket && !isArchiveAncestorOnly && !mobileVariant;
   const {
     revealOnHoverClass,
-    hideOnHoverClass,
     revealPaddingClass,
   } = resolveSessionRowInteractionClasses();
   const alwaysActionPaddingClass = 'pr-10';
@@ -480,7 +476,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const directoryState = sessionDirectory ? directoryStatus.get(sessionDirectory) : null;
   const isMissingDirectory = directoryState === 'missing';
   const isActive = currentSessionId === session.id;
-  const needsDerivedTitle = isPlaceholderSessionTitle(resolvedSession.title);
+  const needsDerivedTitle = isCursorAcpErrorTitle(resolvedSession.title);
   const firstUserText = useSessionFirstUserText(
     needsDerivedTitle ? session.id : null,
     sessionDirectory ?? undefined,
@@ -515,8 +511,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const sessionHasUnreadError = useNotificationStore(
     React.useCallback((state) => state.index.session.unseenHasError[session.id] ?? false, [session.id]),
   );
-  const sessionTimestamp = userActivityTimestamp ?? resolvedSession.time?.updated ?? resolvedSession.time?.created ?? Date.now();
-  const sessionCompactUpdatedLabel = formatSessionCompactDateLabel(sessionTimestamp);
   const isMenuOpen = openSidebarMenuKey === menuInstanceKey;
   const workingStatusPaddingClass = sidebarIsWorking ? 'pr-6' : '';
 
@@ -1132,7 +1126,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
             data-mobile-drawer-drag-lock={mobileVariant ? 'true' : undefined}
             onContextMenu={handleRowContextMenu}
             className={cn(
-              'group @container/session-sidebar-row relative my-0.5 flex items-center rounded-sm px-1.5 py-1',
+              'group relative my-0.5 flex items-center rounded-sm px-1.5 py-1',
               isMissingDirectory ? 'opacity-75' : '',
               depth > 0 && 'pl-[20px]',
               isRowSelected && 'bg-primary/15',
@@ -1180,19 +1174,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                       {renderHighlightedText(sessionTitle, normalizedSessionSearchQuery)}
                     </span>
                   </div>
-                  {alwaysShowActions ? <span className="session-sidebar-row__compact-time ml-2 flex-shrink-0 text-[0.72rem] text-muted-foreground/75">{sessionCompactUpdatedLabel}</span> : null}
-                  {!alwaysShowActions ? (
-                    <div className="relative ml-1 flex h-4 min-w-4 flex-shrink-0 items-center justify-end">
-                      <span className={cn(
-                        'session-sidebar-row__compact-time whitespace-nowrap text-right text-[0.72rem] text-muted-foreground/75 transition-opacity duration-150',
-                        isMenuOpen
-                          ? 'opacity-0'
-                          : hideOnHoverClass,
-                      )}>
-                        {sessionCompactUpdatedLabel}
-                      </span>
-                    </div>
-                  ) : null}
                   {pendingPermissionCount > 0 ? (
                     <span className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1 py-0.5 text-[0.7rem] text-destructive flex-shrink-0" title={t('sessions.sidebar.session.status.permissionRequired')} aria-label={t('sessions.sidebar.session.status.permissionRequired')}>
                       <RiShieldLine className="h-3 w-3" />

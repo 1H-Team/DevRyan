@@ -8,7 +8,7 @@ const source = readFileSync(
 );
 
 describe('ProgressiveGroup mobile reasoning', () => {
-  test('forwards mobile and terminal state to every reasoning disclosure', () => {
+  test('forwards mobile and terminal state to every reasoning group renderer', () => {
     expect(source).toContain('isMobile: boolean;')
     expect(source.match(/isMessageCompleted=\{isMessageCompleted\}\s+isMobile=\{isMobile\}/g)).toHaveLength(2)
   })

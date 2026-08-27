@@ -83,3 +83,57 @@ test('reports cleanup failure and still requests normal quit', async () => {
   assert.match(errors[0].message, /cleanup failed/);
   assert.deepEqual(calls, [['cancel', 19], 'quit']);
 });
+
+test('checkpoints Bots and stops dispatcher/index work before general cleanup', async () => {
+  const calls = [];
+
+  await finishQuitAfterCleanup({
+    checkpointBotRuns: async () => calls.push('checkpoint-bots'),
+    stopBotDispatcher: async () => calls.push('stop-dispatcher'),
+    stopBotIndexerRequests: async () => calls.push('stop-indexer'),
+    cleanupOwnedResources: async () => calls.push('cleanup-owned'),
+    requestQuit: () => calls.push('quit'),
+    forceExit: () => calls.push('force-exit'),
+    scheduleTimeout: () => 20,
+    cancelTimeout: (timer) => calls.push(['cancel', timer]),
+  });
+
+  assert.deepEqual(calls, [
+    'checkpoint-bots',
+    'stop-dispatcher',
+    'stop-indexer',
+    'cleanup-owned',
+    ['cancel', 20],
+    'quit',
+  ]);
+});
+
+test('continues remaining Bot cleanup stages after one stage fails', async () => {
+  const calls = [];
+  const errors = [];
+
+  await finishQuitAfterCleanup({
+    checkpointBotRuns: async () => {
+      calls.push('checkpoint-bots');
+      throw new Error('checkpoint failed');
+    },
+    stopBotDispatcher: async () => calls.push('stop-dispatcher'),
+    stopBotIndexerRequests: async () => calls.push('stop-indexer'),
+    cleanupOwnedResources: async () => calls.push('cleanup-owned'),
+    requestQuit: () => calls.push('quit'),
+    forceExit: () => calls.push('force-exit'),
+    onCleanupError: (error) => errors.push(error),
+    scheduleTimeout: () => 21,
+    cancelTimeout: () => undefined,
+  });
+
+  assert.deepEqual(calls, [
+    'checkpoint-bots',
+    'stop-dispatcher',
+    'stop-indexer',
+    'cleanup-owned',
+    'quit',
+  ]);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].message, /checkpoint failed/);
+});

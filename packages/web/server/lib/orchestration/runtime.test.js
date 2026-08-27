@@ -116,6 +116,37 @@ const createWaitScheduler = () => {
 };
 
 describe('web managed orchestration runtime', () => {
+  it('rejects an exact catalog miss before scheduler admission and tolerates unknown catalogs', async () => {
+    const scheduler = {
+      submit: vi.fn(async () => createTerminalPair('catalog', '').task),
+      getResultEnvelope: vi.fn(() => null),
+      initialize: vi.fn(async () => undefined),
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    };
+    const validateAgentExecution = vi.fn(async () => false);
+    const runtime = createWebManagedOrchestrationRuntime({
+      scheduler,
+      persistence: createPersistence(),
+      executor: { async start() { throw new Error('must not start'); } },
+      validateAgentExecution,
+    });
+
+    await expect(runtime.handleRpc({ method: 'submit', params: submitParams(1) }))
+      .rejects.toMatchObject({ code: 'managed_agent_model_unavailable', statusCode: 409 });
+    expect(scheduler.submit).not.toHaveBeenCalled();
+    expect(validateAgentExecution).toHaveBeenCalledWith({
+      directory: '/workspace',
+      providerId: 'github-copilot',
+      modelId: 'gpt-4.1',
+    });
+
+    validateAgentExecution.mockResolvedValueOnce(null);
+    await expect(runtime.handleRpc({ method: 'submit', params: submitParams(2) })).resolves.toBeDefined();
+    expect(scheduler.submit).toHaveBeenCalledTimes(1);
+  });
+
   it('blocks only work-launching RPC actions during context-mode recovery', async () => {
     const { task } = createWaitScheduler();
     const submit = vi.fn();
@@ -324,6 +355,48 @@ describe('web managed orchestration runtime', () => {
     expect(scheduler.listReadyProviderRecoveryContinuations).toHaveBeenCalledWith({
       sessionId: 'ses_child',
     });
+
+    await runtime.shutdown();
+  });
+
+  it('exposes task-scoped provider-recovery continuation claims through the private bridge', async () => {
+    const { task } = createWaitScheduler();
+    const claimProviderRecoveryContinuation = vi.fn(async () => ({
+      claimed: true,
+      expiresAt: 61_000,
+    }));
+    const releaseProviderRecoveryContinuation = vi.fn(async () => ({ released: true }));
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      getTask: vi.fn(() => task),
+      claimProviderRecoveryContinuation,
+      releaseProviderRecoveryContinuation,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    };
+    const runtime = createWebManagedOrchestrationRuntime({
+      scheduler,
+      persistence: createPersistence(),
+      executor: { async start() { throw new Error('must not start'); } },
+    });
+    const params = {
+      taskId: task.taskId,
+      rootSessionId: task.rootSessionId,
+      directory: task.directory,
+      claimantId: 'plugin-instance',
+    };
+
+    await expect(runtime.handleRpc({
+      method: 'claim_provider_recovery_continuation',
+      params,
+    })).resolves.toEqual({ claimed: true, expiresAt: 61_000 });
+    await expect(runtime.handleRpc({
+      method: 'release_provider_recovery_continuation',
+      params,
+    })).resolves.toEqual({ released: true });
+    expect(claimProviderRecoveryContinuation).toHaveBeenCalledWith(params);
+    expect(releaseProviderRecoveryContinuation).toHaveBeenCalledWith(params);
 
     await runtime.shutdown();
   });
@@ -1029,7 +1102,7 @@ describe('web managed orchestration runtime', () => {
     await runtime.shutdown();
   });
 
-  it.each(['designer', 'fixer', 'oracle'])('enforces a 60-minute %s deadline for starts and follow-ups', async (agent) => {
+  it.each(['designer', 'fixer'])('enforces a 60-minute %s deadline for starts and follow-ups', async (agent) => {
     const runtime = createWebManagedOrchestrationRuntime({
       persistence: createPersistence(),
       executor: {
@@ -1069,6 +1142,55 @@ describe('web managed orchestration runtime', () => {
       },
     });
     expect(retried.followUpTask.task.timeoutAt).toBe(3_610_000);
+    await runtime.shutdown();
+  });
+
+  it('defaults Oracle to 15 minutes and preserves an explicit 30-minute deep-review window', async () => {
+    const runtime = createWebManagedOrchestrationRuntime({
+      persistence: createPersistence(),
+      executor: {
+        async start() {
+          return { status: 'failed', failureReason: 'temporary failure', resumable: true };
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return {}; },
+        async shutdown() {},
+      },
+      createTaskId: (() => {
+        let index = 0;
+        return () => `dvr_task_oracle_deadline_${++index}`;
+      })(),
+      createLeaseToken: (() => {
+        let index = 0;
+        return () => `dvr_lease_oracle_deadline_${++index}`;
+      })(),
+      now: () => 10_000,
+    });
+    const focused = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, { agent: 'oracle', timeoutAt: 610_000 }),
+    });
+    expect(focused.task.timeoutAt).toBe(910_000);
+
+    const deep = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(2, { agent: 'oracle', timeoutAt: 1_810_000 }),
+    });
+    expect(deep.task.timeoutAt).toBe(1_810_000);
+    await runtime.flush();
+
+    const retried = await runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: deep.task.taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'retry',
+        idempotencyKey: 'retry-oracle-deep-deadline',
+      },
+    });
+    expect(retried.followUpTask.task.timeoutAt).toBe(1_810_000);
     await runtime.shutdown();
   });
 

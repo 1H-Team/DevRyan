@@ -177,6 +177,61 @@ describe('browser lease runtime', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(4);
   });
 
+  it('retries transient lineage failures twice but never retries authoritative missing sessions', async () => {
+    let attempts = 0;
+    const transientFetch = vi.fn(async (url) => {
+      const id = decodeURIComponent(new URL(url).pathname.split('/').at(-1));
+      attempts += 1;
+      if (id === 'ses_child' && attempts <= 2) {
+        return { ok: false, status: 503, json: async () => ({ error: 'starting' }) };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => id === 'ses_child'
+          ? { id, parentID: 'ses_root' }
+          : { id: 'ses_root' },
+      };
+    });
+    const transient = createRuntime({
+      fetchImpl: transientFetch,
+      runtime: { lineageRetryDelaysMs: [0, 0] },
+    }).runtime;
+
+    await expect(transient.resolveRootSessionID(scope())).resolves.toBe('ses_root');
+    expect(transientFetch).toHaveBeenCalledTimes(4);
+
+    const missingFetch = vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: 'missing' }),
+    }));
+    const missing = createRuntime({
+      fetchImpl: missingFetch,
+      runtime: { lineageRetryDelaysMs: [0, 0] },
+    }).runtime;
+
+    await expect(missing.resolveRootSessionID(scope())).rejects.toMatchObject({
+      code: 'lineage_unavailable',
+    });
+    expect(missingFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains resolved lineage until deletion and invalidates the deleted session entry', async () => {
+    const { runtime, fetchImpl } = createRuntime();
+
+    await expect(runtime.resolveRootSessionID(scope())).resolves.toBe('ses_root');
+    await expect(runtime.resolveRootSessionID(scope())).resolves.toBe('ses_root');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+
+    await runtime.processOpenCodeEvent({
+      type: 'session.deleted',
+      properties: { info: { id: 'ses_child' } },
+    });
+    await expect(runtime.resolveRootSessionID(scope())).resolves.toBe('ses_root');
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
   it('single-flights concurrent lineage fetches across different message reuse keys', async () => {
     let releaseFetch;
     const gate = new Promise((resolve) => { releaseFetch = resolve; });
@@ -411,6 +466,22 @@ describe('browser lease runtime', () => {
       statusCode: 403,
     });
     expect(runtime.getSnapshot()).toEqual([]);
+  });
+
+  it('maps a missing Electron owner window to a distinct typed host error', async () => {
+    const unavailable = Object.assign(new Error('browser_lease_window_unavailable'), {
+      code: 'browser_lease_window_unavailable',
+    });
+    const runtime = createRuntime({
+      createBrowserLease: vi.fn(async () => { throw unavailable; }),
+    }).runtime;
+
+    await expect(runtime.acquire(scope())).rejects.toMatchObject({
+      name: 'BrowserLeaseError',
+      code: 'browser_owner_context_unavailable',
+      message: 'No desktop window currently owns this browser session context',
+      statusCode: 503,
+    });
   });
 
   it('releases current leases and holds admission until a managed runtime reset resumes', async () => {

@@ -14,7 +14,7 @@ Web/Electron owner adapter for the transport-neutral DevRyan-managed task schedu
   suppresses non-owner recovery, safely projects ownership conflicts, handles
   validated 25-second maximum wait slices, eager/reference result projection
   and scoped stateless `read_result` paging, barrier inspection and confirmed
-  agent handoff, external-runtime gating, event publication, and exact-owner
+  agent handoff, atomic parent-recovery continuation claims, external-runtime gating, event publication, and exact-owner
   shutdown. Optional `auxiliaryRpcHandlers` dispatch named bridge methods before
   scheduler initialization or availability gating, so lightweight private
   integrations can reuse the loopback bridge without touching managed-task state.

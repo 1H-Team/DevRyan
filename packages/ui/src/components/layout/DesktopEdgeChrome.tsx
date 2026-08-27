@@ -21,16 +21,19 @@ import {
 } from '@/components/layout/desktopChromeInsets';
 import { DESKTOP_HEADER_ICON_BUTTON_CLASS } from '@/components/layout/headerIconButton';
 import { DesktopRightChromeActions } from '@/components/layout/DesktopRightChromeActions';
+import { BotSidebarControlButton } from '@/components/layout/BotSidebarControlButton';
 
 interface DesktopEdgeChromeProps {
   hideActions: boolean;
   isMobile: boolean;
+  botMode?: boolean;
   browserActionPortalRef?: React.Ref<HTMLSpanElement>;
 }
 
 export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({
   hideActions,
   isMobile,
+  botMode = false,
   browserActionPortalRef,
 }) => {
   const { t } = useI18n();
@@ -38,6 +41,8 @@ export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
   const isSessionSearchOpen = useUIStore((state) => state.isSessionSearchOpen);
   const setSessionSearchOpen = useUIStore((state) => state.setSessionSearchOpen);
+  const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
+  const toggleRightSidebar = useUIStore((state) => state.toggleRightSidebar);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
 
   const isTabletStandalonePwa = useTabletStandalonePwaRuntime();
@@ -155,72 +160,99 @@ export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({
     right: 'calc(0.75rem + var(--oc-wco-right-inset, 0px))',
   }), []);
 
-  if (isMobile || isVSCode) {
+  const botChromeHeightStyle = React.useMemo<React.CSSProperties | undefined>(() => {
+    if (!botMode || isDesktopApp || isVSCode) {
+      return undefined;
+    }
+
+    return {
+      height: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
+    };
+  }, [botMode, isDesktopApp, isVSCode]);
+
+  if (isMobile || (isVSCode && !botMode)) {
     return null;
   }
 
   return (
     <div
       className={cn(
-        'pointer-events-none absolute inset-x-0 top-0 z-30 h-[var(--oc-header-height,56px)] select-none',
+        'pointer-events-none absolute inset-x-0 top-0 z-30 select-none',
+        botMode ? 'h-12' : 'h-[var(--oc-header-height,56px)]',
         macosHeaderSizeClass,
       )}
-      style={{ ['--oc-desktop-chrome-left' as string]: leftInsetValue }}
+      style={{
+        ['--oc-desktop-chrome-left' as string]: leftInsetValue,
+        ...botChromeHeightStyle,
+      }}
+      role={botMode ? 'toolbar' : undefined}
+      aria-label={botMode ? t('bots.header.toolbarAria') : undefined}
       aria-hidden={false}
+      data-bot-edge-controls={botMode || undefined}
     >
       <div
         aria-hidden
         className="app-region-drag pointer-events-auto absolute top-0 left-0 h-full"
         style={{ width: 'var(--oc-desktop-chrome-left, 0.75rem)' }}
       />
-      {isDesktopApp && !hideActions && (
+      {!hideActions && (isDesktopApp || botMode) && (
         <div
           className={cn(
             'app-region-no-drag pointer-events-auto absolute top-0 flex h-full items-center gap-1.5',
             leftInsetClassName,
           )}
         >
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={toggleSidebar}
-                className={DESKTOP_HEADER_ICON_BUTTON_CLASS}
-                aria-label={isSidebarOpen
-                  ? t('sessions.sidebar.header.actions.closeSessions')
-                  : t('header.actions.openSessionsAria')}
-              >
-                {isSidebarOpen ? (
-                  <SidebarLeftCollapseIcon className="h-[18px] w-[18px]" />
-                ) : (
-                  <SidebarLeftExpandIcon className="h-[18px] w-[18px]" />
-                )}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>
-                {isSidebarOpen
-                  ? t('sessions.sidebar.header.actions.closeSessions')
-                  : t('header.actions.openSessionsWithShortcut', { shortcut: shortcutLabel('toggle_sidebar') })}
-              </p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => setSessionSearchOpen(true)}
-                className={DESKTOP_HEADER_ICON_BUTTON_CLASS}
-                aria-label={t('sessions.sidebar.header.actions.searchSessions')}
-                aria-expanded={isSessionSearchOpen}
-              >
-                <RiSearchLine className="h-[18px] w-[18px]" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{t('sessions.sidebar.header.actions.searchSessions')}</p>
-            </TooltipContent>
-          </Tooltip>
+          {botMode ? (
+            <BotSidebarControlButton
+              side="left"
+              open={isSidebarOpen}
+              onToggle={toggleSidebar}
+            />
+          ) : (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={toggleSidebar}
+                    className={DESKTOP_HEADER_ICON_BUTTON_CLASS}
+                    aria-label={isSidebarOpen
+                      ? t('sessions.sidebar.header.actions.closeSessions')
+                      : t('header.actions.openSessionsAria')}
+                  >
+                    {isSidebarOpen ? (
+                      <SidebarLeftCollapseIcon className="h-[18px] w-[18px]" />
+                    ) : (
+                      <SidebarLeftExpandIcon className="h-[18px] w-[18px]" />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>
+                    {isSidebarOpen
+                      ? t('sessions.sidebar.header.actions.closeSessions')
+                      : t('header.actions.openSessionsWithShortcut', { shortcut: shortcutLabel('toggle_sidebar') })}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setSessionSearchOpen(true)}
+                    className={DESKTOP_HEADER_ICON_BUTTON_CLASS}
+                    aria-label={t('sessions.sidebar.header.actions.searchSessions')}
+                    aria-expanded={isSessionSearchOpen}
+                  >
+                    <RiSearchLine className="h-[18px] w-[18px]" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{t('sessions.sidebar.header.actions.searchSessions')}</p>
+                </TooltipContent>
+              </Tooltip>
+            </>
+          )}
         </div>
       )}
 
@@ -229,7 +261,15 @@ export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({
           className="app-region-no-drag pointer-events-auto absolute top-0 flex h-full items-center"
           style={rightClusterStyle}
         >
-          <DesktopRightChromeActions browserActionPortalRef={browserActionPortalRef} />
+          {botMode ? (
+            <BotSidebarControlButton
+              side="right"
+              open={isRightSidebarOpen}
+              onToggle={toggleRightSidebar}
+            />
+          ) : (
+            <DesktopRightChromeActions browserActionPortalRef={browserActionPortalRef} />
+          )}
         </div>
       )}
     </div>

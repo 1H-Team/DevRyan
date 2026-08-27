@@ -22,6 +22,7 @@ import {
 } from './harnessRuntime';
 import { getVsCodeHarnessRuntime } from './harness-runtime-access';
 import { createVsCodeCommandDeadlineRuntime } from './commandDeadlineRuntime';
+import { disposeSessionTitleRuntime, initializeSessionTitleRuntime } from './sessionTitleRuntime';
 
 let chatViewProvider: ChatViewProvider | undefined;
 let agentManagerProvider: AgentManagerPanelProvider | undefined;
@@ -29,6 +30,12 @@ let sessionEditorProvider: SessionEditorPanelProvider | undefined;
 let openCodeManager: OpenCodeManager | undefined;
 let managedOrchestrationRuntime: VsCodeManagedOrchestrationRuntime | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
+
+const publishSessionViewEvent = (event: unknown): void => {
+  chatViewProvider?.postMessage(event);
+  agentManagerProvider?.postMessage(event);
+  sessionEditorProvider?.postMessage(event);
+};
 
 let activeSessionId: string | null = null;
 let activeSessionTitle: string | null = null;
@@ -163,6 +170,7 @@ export async function activate(context: vscode.ExtensionContext) {
       return await managedOrchestrationRuntime.prepareBridge();
     },
   });
+  initializeSessionTitleRuntime(openCodeManager, { publishEvent: publishSessionViewEvent });
   getVsCodeHarnessRuntime()?.setContextModeRecoveryStatusProvider(
     openCodeManager.getContextModeRecoveryStatus,
   );
@@ -171,11 +179,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const commandDeadlineRuntime = createVsCodeCommandDeadlineRuntime({
       store: harnessRuntime.commandDeadlineStore,
       manager: openCodeManager,
-      publishEvent: (event) => {
-        chatViewProvider?.postMessage(event);
-        agentManagerProvider?.postMessage(event);
-        sessionEditorProvider?.postMessage(event);
-      },
+      publishEvent: publishSessionViewEvent,
       recordIncident: (incident) => harnessRuntime.record({
         type: 'lifecycle',
         event: incident.type,
@@ -193,11 +197,7 @@ export async function activate(context: vscode.ExtensionContext) {
     storageDirectory: context.globalStorageUri.fsPath,
     manager: openCodeManager,
     cursorSdkRuntime: getVsCodeCursorSdkRuntime(),
-    publishEvent: (event) => {
-      chatViewProvider?.postMessage(event);
-      agentManagerProvider?.postMessage(event);
-      sessionEditorProvider?.postMessage(event);
-    },
+    publishEvent: publishSessionViewEvent,
     getWorkAdmissionBlock: () => (
       getVsCodeHarnessRuntime()?.getPromptAdmissionBlock() ?? null
     ),
@@ -767,7 +767,11 @@ export async function activate(context: vscode.ExtensionContext) {
       if (status === 'connected' && chatViewProvider && openCodeManager) {
         setChatViewProvider(chatViewProvider);
         void getVsCodeHarnessRuntime()?.reconcileCommandDeadlines();
-        void startGlobalEventWatcher(openCodeManager, chatViewProvider);
+        void startGlobalEventWatcher(
+          openCodeManager,
+          chatViewProvider,
+          (payload) => managedOrchestrationRuntime?.processOpenCodeEvent(payload),
+        );
         if (openCodeManager.getDebugInfo().mode === 'managed') {
           void managedOrchestrationRuntime?.initialize().catch((runtimeError) => {
             outputChannel?.appendLine(
@@ -789,6 +793,7 @@ export async function activate(context: vscode.ExtensionContext) {
 export async function deactivate() {
   getVsCodeHarnessRuntime()?.beginDrain();
   stopGlobalEventWatcher();
+  disposeSessionTitleRuntime();
   try {
     await managedOrchestrationRuntime?.shutdown();
   } catch (error) {

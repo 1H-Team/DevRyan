@@ -43,6 +43,30 @@ const packages = {
     typeCheck: ['bun', ['run', 'vscode:type-check']],
     test: ['bun', ['run', '--cwd', 'packages/vscode', 'test']],
   },
+  bots: {
+    prefix: 'packages/bots-runtime/',
+    test: ['bun', ['run', '--cwd', 'packages/bots-runtime', 'test']],
+  },
+  botSupervisor: {
+    prefix: 'packages/bot-supervisor/',
+    test: ['bun', ['run', '--cwd', 'packages/bot-supervisor', 'test']],
+  },
+  botEngineProxy: {
+    prefix: 'packages/bot-engine-proxy/',
+    test: ['bun', ['run', '--cwd', 'packages/bot-engine-proxy', 'test']],
+  },
+  botEgress: {
+    prefix: 'packages/bot-egress/',
+    test: ['bun', ['run', '--cwd', 'packages/bot-egress', 'test']],
+  },
+  botComputer: {
+    prefix: 'packages/bot-computer/',
+    test: ['bun', ['run', '--cwd', 'packages/bot-computer', 'test']],
+  },
+  botIndexer: {
+    prefix: 'packages/bot-indexer/',
+    test: ['bun', ['run', '--cwd', 'packages/bot-indexer', 'test']],
+  },
   cursor: {
     prefix: 'packages/cursor-sdk-runtime/',
     test: ['bun', ['test', 'packages/cursor-sdk-runtime']],
@@ -180,6 +204,18 @@ function isCursorTestRelevant(file) {
   return ['.js', '.mjs'].includes(path.extname(file));
 }
 
+function isBotsTestRelevant(file) {
+  if (!file.startsWith('packages/bots-runtime/')) return false;
+  if (testFilePattern.test(file)) return true;
+  return ['.js', '.mjs', '.sh'].includes(path.extname(file)) || file.endsWith('/Dockerfile');
+}
+
+function isBotServiceTestRelevant(file, prefix) {
+  if (!file.startsWith(prefix)) return false;
+  if (testFilePattern.test(file)) return true;
+  return ['.js', '.mjs'].includes(path.extname(file)) || file.endsWith('/Dockerfile');
+}
+
 function isOrchestrationTestRelevant(file) {
   if (!file.startsWith('packages/orchestration-runtime/')) return false;
   if (testFilePattern.test(file)) return true;
@@ -217,6 +253,11 @@ function affectedTypeCheckPackages(changedPackages, includeDependents) {
   if (includeDependents && changedPackages.has('cursor')) {
     result.add('web');
     result.add('vscode');
+  }
+  if (includeDependents && changedPackages.has('bots')) {
+    result.add('electron');
+    result.add('ui');
+    result.add('web');
   }
   if (includeDependents && changedPackages.has('orchestration')) {
     result.add('ui');
@@ -278,11 +319,26 @@ export function buildPlan(requestedMode, providedFiles) {
       if (isElectronTestRelevant(file, false)) tests.add('electron');
       if (isDesktopTestRelevant(file)) tests.add('desktop');
       if (isVscodeTestRelevant(file, false)) tests.add('vscode');
+      if (isBotsTestRelevant(file)) tests.add('bots');
+      if (isBotServiceTestRelevant(file, 'packages/bot-supervisor/')) tests.add('botSupervisor');
+      if (isBotServiceTestRelevant(file, 'packages/bot-engine-proxy/')) tests.add('botEngineProxy');
+      if (isBotServiceTestRelevant(file, 'packages/bot-egress/')) tests.add('botEgress');
+      if (isBotServiceTestRelevant(file, 'packages/bot-computer/')) tests.add('botComputer');
+      if (isBotServiceTestRelevant(file, 'packages/bot-indexer/')) tests.add('botIndexer');
       if (isCursorTestRelevant(file)) tests.add('cursor');
       if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
       if (isHarnessTestRelevant(file)) tests.add('harness');
     }
     if (tests.has('cursor')) tests.add('web');
+    if (tests.has('bots')) {
+      tests.add('electron');
+      tests.add('ui');
+      tests.add('web');
+    }
+    if (tests.has('botSupervisor') || tests.has('botEngineProxy') || tests.has('botEgress')
+      || tests.has('botComputer') || tests.has('botIndexer')) {
+      tests.add('electron');
+    }
     if (tests.has('orchestration')) {
       tests.add('ui');
       tests.add('web');
@@ -326,11 +382,26 @@ export function buildPlan(requestedMode, providedFiles) {
     if (isElectronTestRelevant(file, quick)) tests.add('electron');
     if (isDesktopTestRelevant(file)) tests.add('desktop');
     if (isVscodeTestRelevant(file, quick)) tests.add('vscode');
+    if (isBotsTestRelevant(file)) tests.add('bots');
+    if (isBotServiceTestRelevant(file, 'packages/bot-supervisor/')) tests.add('botSupervisor');
+    if (isBotServiceTestRelevant(file, 'packages/bot-engine-proxy/')) tests.add('botEngineProxy');
+    if (isBotServiceTestRelevant(file, 'packages/bot-egress/')) tests.add('botEgress');
+    if (isBotServiceTestRelevant(file, 'packages/bot-computer/')) tests.add('botComputer');
+    if (isBotServiceTestRelevant(file, 'packages/bot-indexer/')) tests.add('botIndexer');
     if (isCursorTestRelevant(file)) tests.add('cursor');
     if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
     if (isHarnessTestRelevant(file)) tests.add('harness');
   }
   if (!quick && tests.has('cursor')) tests.add('web');
+  if (!quick && tests.has('bots')) {
+    tests.add('electron');
+    tests.add('ui');
+    tests.add('web');
+  }
+  if (!quick && (tests.has('botSupervisor') || tests.has('botEngineProxy') || tests.has('botEgress')
+    || tests.has('botComputer') || tests.has('botIndexer'))) {
+    tests.add('electron');
+  }
   if (!quick && tests.has('orchestration')) {
     tests.add('ui');
     tests.add('web');

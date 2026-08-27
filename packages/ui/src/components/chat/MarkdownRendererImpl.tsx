@@ -1349,7 +1349,11 @@ const useMermaidInlineInteractions = ({
   }, [allowWheelZoom, containerRef, mermaidBlocks, onShowPopup]);
 };
 
-const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
+type MarkdownRendererContentProps = MarkdownRendererProps & {
+  effectiveDirectory: string;
+};
+
+const MarkdownRendererContent: React.FC<MarkdownRendererContentProps> = ({
   content,
   part,
   messageId,
@@ -1361,11 +1365,11 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   variant = 'assistant',
   onShowPopup,
   enableFileReferences = true,
+  effectiveDirectory,
 }) => {
   const currentTheme = useCurrentMermaidTheme();
   const { editor, files, runtime } = useRuntimeAPIs();
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const effectiveDirectory = useEffectiveDirectory() ?? '';
   const mermaidBlocks = React.useMemo(() => extractMermaidBlocks(content), [content]);
   useMermaidInlineInteractions({ containerRef, mermaidBlocks, onShowPopup });
   useFileReferenceInteractions({
@@ -1425,6 +1429,18 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   return markdownContent;
 };
 
+const MarkdownRendererWithDirectory: React.FC<MarkdownRendererProps> = (props) => {
+  const effectiveDirectory = useEffectiveDirectory() ?? '';
+  return <MarkdownRendererContent {...props} effectiveDirectory={effectiveDirectory} />;
+};
+
+const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = (props) => {
+  if (props.enableFileReferences === false) {
+    return <MarkdownRendererContent {...props} effectiveDirectory="" />;
+  }
+  return <MarkdownRendererWithDirectory {...props} />;
+};
+
 export const MarkdownRenderer = React.memo(MarkdownRendererImpl, (prev, next) => {
   return prev.content === next.content
     && prev.isStreaming === next.isStreaming
@@ -1435,10 +1451,11 @@ export const MarkdownRenderer = React.memo(MarkdownRendererImpl, (prev, next) =>
     && prev.className === next.className
     && prev.messageId === next.messageId
     && prev.onShowPopup === next.onShowPopup
+    && prev.enableFileReferences === next.enableFileReferences
     && prev.part?.id === next.part?.id;
 });
 
-const SimpleMarkdownRendererImpl: React.FC<{
+type SimpleMarkdownRendererProps = {
   content: string;
   className?: string;
   variant?: MarkdownVariant;
@@ -1448,7 +1465,13 @@ const SimpleMarkdownRendererImpl: React.FC<{
   mermaidControls?: MermaidControlOptions;
   allowMermaidWheelZoom?: boolean;
   enableFileReferences?: boolean;
-}> = ({
+};
+
+type SimpleMarkdownRendererContentProps = SimpleMarkdownRendererProps & {
+  effectiveDirectory: string;
+};
+
+const SimpleMarkdownRendererContent: React.FC<SimpleMarkdownRendererContentProps> = ({
   content,
   className,
   variant = 'assistant',
@@ -1457,6 +1480,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
   onShowPopup,
   allowMermaidWheelZoom = false,
   enableFileReferences = true,
+  effectiveDirectory,
 }) => {
   const { editor, files, runtime } = useRuntimeAPIs();
   const renderedContent = React.useMemo(
@@ -1465,7 +1489,6 @@ const SimpleMarkdownRendererImpl: React.FC<{
   );
   const currentTheme = useCurrentMermaidTheme();
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const effectiveDirectory = useEffectiveDirectory() ?? '';
   const mermaidBlocks = React.useMemo(() => extractMermaidBlocks(renderedContent), [renderedContent]);
   useMermaidInlineInteractions({
     containerRef,
@@ -1501,6 +1524,18 @@ const SimpleMarkdownRendererImpl: React.FC<{
       </div>
     </div>
   );
+};
+
+const SimpleMarkdownRendererWithDirectory: React.FC<SimpleMarkdownRendererProps> = (props) => {
+  const effectiveDirectory = useEffectiveDirectory() ?? '';
+  return <SimpleMarkdownRendererContent {...props} effectiveDirectory={effectiveDirectory} />;
+};
+
+const SimpleMarkdownRendererImpl: React.FC<SimpleMarkdownRendererProps> = (props) => {
+  if (props.enableFileReferences === false) {
+    return <SimpleMarkdownRendererContent {...props} effectiveDirectory="" />;
+  }
+  return <SimpleMarkdownRendererWithDirectory {...props} />;
 };
 
 export const SimpleMarkdownRenderer = React.memo(SimpleMarkdownRendererImpl, (prev, next) => {

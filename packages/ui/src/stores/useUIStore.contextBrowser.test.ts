@@ -122,7 +122,7 @@ describe('useUIStore dedicated browser panel', () => {
       role: 'developer',
       scope: 'managed',
       policy: {
-        settingsPages: ['home'], files: false, terminal: false, browser: false,
+        settingsPages: ['home'], bots: true, files: false, terminal: false, browser: false,
         createWorktrees: false, createBranches: false, manageProjects: false,
         manageUsers: false, manageGlobalSettings: false, manageGit: true, push: true, github: true,
       },

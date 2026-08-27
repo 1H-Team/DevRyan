@@ -13,7 +13,6 @@ import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./
 import { mergeOptimisticPage, type OptimisticItem } from "./optimistic"
 import { insertMessageChronologically, sortMessagesChronologically } from "./message-order"
 import { hasMessageRecordInfo, normalizeMessageFetchLimit, unwrapMessageRecordsResult } from "./message-fetch"
-import { updateSessionUserActivityFromMessages } from "./session-user-activity"
 import { clearSessionPrefetch, getSessionPrefetch, setSessionPrefetch } from "./session-prefetch-cache"
 import { clearSessionMessagePagination, setSessionMessagePagination } from "./message-pagination-store"
 import { startSessionLoadPerformanceEvent } from "./session-load-performance"
@@ -284,9 +283,7 @@ export class SessionMessageLoader {
     }
     const message = { ...current.message, [target.sessionID]: messages }
     const part = { ...current.part, [input.message.id]: input.parts.filter((candidate) => Boolean(candidate?.id)) }
-    const draft = { ...current, message, part, session_user_activity: current.session_user_activity }
-    const activityChanged = updateSessionUserActivityFromMessages(draft, target.sessionID)
-    store.setState({ message, part, ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}) })
+    store.setState({ message, part })
   }
 
   optimisticRemove(input: SessionMessageTarget & { messageID: string }): void {
@@ -299,9 +296,7 @@ export class SessionMessageLoader {
     const part = { ...current.part }
     delete part[input.messageID]
     const message = { ...current.message, [target.sessionID]: messages }
-    const draft = { ...current, message, part, session_user_activity: current.session_user_activity }
-    const activityChanged = updateSessionUserActivityFromMessages(draft, target.sessionID)
-    store.setState({ message, part, ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}) })
+    store.setState({ message, part })
   }
 
   invalidateSession(target: SessionMessageTarget): void {
@@ -557,19 +552,11 @@ export class SessionMessageLoader {
       { skipPartTypes: SKIP_PARTS, mode },
     )
     if (!isCurrent()) return null
-    const draft = {
-      ...current,
-      message: materialized.message,
-      part: materialized.part,
-      session_user_activity: current.session_user_activity,
-    }
-    const activityChanged = updateSessionUserActivityFromMessages(draft, target.sessionID)
-    if (materialized.messagesChanged || materialized.partsChanged || materialized.sessionsChanged || activityChanged) {
+    if (materialized.messagesChanged || materialized.partsChanged || materialized.sessionsChanged) {
       store.setState({
         ...(materialized.sessionsChanged && materialized.session ? { session: materialized.session } : {}),
         ...(materialized.messagesChanged ? { message: materialized.message } : {}),
         ...(materialized.partsChanged ? { part: materialized.part } : {}),
-        ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}),
       })
     }
     reconcileSessionChangeAttribution(target.directory, target.sessionID, store.getState())

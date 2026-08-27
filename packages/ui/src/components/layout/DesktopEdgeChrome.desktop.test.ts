@@ -12,11 +12,21 @@ describe('DesktopEdgeChrome desktop drag regions', () => {
     const source = readSource('DesktopEdgeChrome.tsx');
 
     expect(source).toContain(
-      "'pointer-events-none absolute inset-x-0 top-0 z-30 h-[var(--oc-header-height,56px)] select-none'",
+      "'pointer-events-none absolute inset-x-0 top-0 z-30 select-none'",
     );
     expect(source).not.toContain(
-      "'app-region-drag pointer-events-none absolute inset-x-0 top-0 z-30 h-[var(--oc-header-height,56px)] select-none'",
+      "'app-region-drag pointer-events-none absolute inset-x-0 top-0 z-30 select-none'",
     );
+  });
+
+  test('keeps Bot controls in the titlebar row instead of centering them in the identity header', () => {
+    const source = readSource('DesktopEdgeChrome.tsx');
+
+    expect(source).toContain("botMode ? 'h-12' : 'h-[var(--oc-header-height,56px)]'");
+    expect(source).toContain('macosHeaderSizeClass,');
+    expect(source).toContain("height: 'max(3rem, var(--oc-wco-titlebar-height, 0px))'");
+    expect(source).toContain('...botChromeHeightStyle,');
+    expect(source).not.toContain('!botMode && macosHeaderSizeClass');
   });
 
   test('uses a dedicated traffic-light drag filler and no-drag interactive clusters', () => {
@@ -55,8 +65,8 @@ describe('DesktopEdgeChrome desktop drag regions', () => {
     const layoutSource = readSource('MainLayout.tsx');
     const vscodeSource = readFileSync(resolve(testDir, 'VSCodeLayout.tsx'), 'utf8');
 
-    expect(edgeChromeSource).toContain('if (isMobile || isVSCode)');
-    expect(edgeChromeSource).toContain('{isDesktopApp && !hideActions && (');
+    expect(edgeChromeSource).toContain('if (isMobile || (isVSCode && !botMode))');
+    expect(edgeChromeSource).toContain('{!hideActions && (isDesktopApp || botMode) && (');
     expect(headerSource).toContain('const showsDesktopRightChrome = !isMobile && !isVSCode');
     expect(headerSource).toContain("? 'calc(11rem + var(--oc-wco-right-inset, 0px))'");
     expect(headerSource).toContain('browserActionPortalTarget={browserActionPortalTarget}');
@@ -94,16 +104,25 @@ describe('DesktopEdgeChrome desktop drag regions', () => {
     expect(instanceIndex).toBeGreaterThan(mcpIndex);
   });
 
-  test('hides both action clusters for settings while preserving the drag filler', () => {
+  test('keeps settings hidden and replaces default actions with Bot edge controls', () => {
     const chromeSource = readSource('DesktopEdgeChrome.tsx');
     const layoutSource = readSource('MainLayout.tsx');
 
     expect(layoutSource).toContain('<DesktopEdgeChrome');
     expect(layoutSource).toContain('hideActions={isSettingsDialogOpen}');
+    expect(layoutSource).toContain('botMode={botMode}');
     expect(chromeSource).toContain('interface DesktopEdgeChromeProps {');
     expect(chromeSource).toContain('hideActions: boolean;');
+    expect(chromeSource).toContain('botMode?: boolean;');
     expect(chromeSource).toContain('export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({');
-    expect(chromeSource.match(/!hideActions && \(/g)).toHaveLength(2);
+    expect(chromeSource).toContain('!hideActions && (isDesktopApp || botMode)');
+    expect(chromeSource).toContain("botMode ? 'h-12' : 'h-[var(--oc-header-height,56px)]'");
+    expect(chromeSource).toContain('macosHeaderSizeClass,');
+    expect(chromeSource).toContain('<BotSidebarControlButton');
+    expect(chromeSource).toContain('side="left"');
+    expect(chromeSource).toContain('side="right"');
+    expect(chromeSource).toContain('data-bot-edge-controls={botMode || undefined}');
+    expect(chromeSource).toContain('if (isMobile || (isVSCode && !botMode))');
 
     const dragFillerIndex = chromeSource.indexOf('app-region-drag pointer-events-auto absolute top-0 left-0 h-full');
     const firstActionGuardIndex = chromeSource.indexOf('!hideActions && (');

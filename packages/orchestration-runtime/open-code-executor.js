@@ -13,6 +13,7 @@ import {
   classifyProviderRetryStatus,
   classifyProviderTransportFailure,
   isDefiniteProviderUsageLimit,
+  isManagedTaskModelUnavailable,
 } from './provider-retry-policy.js';
 
 const LIVE_STATUS_TYPES = new Set(['busy', 'retry']);
@@ -690,6 +691,40 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     };
   };
 
+  const readAuthoritativeTerminalError = async (task, after, previousObservation = null) => {
+    if (typeof transport.readTerminalError !== 'function') return null;
+    const error = await transport.readTerminalError({
+      sessionId: task.childSessionId,
+      directory: task.directory,
+      providerId: task.providerId,
+      after,
+    });
+    if (!error) return null;
+
+    let observation = previousObservation;
+    try {
+      observation = await readObservation(task);
+    } catch {
+      // The terminal event is authoritative even if the final transcript/status
+      // snapshot is no longer readable. Preserve the last successful snapshot.
+    }
+    const message = trimString(error.message) || 'Managed child session failed';
+    const classifiedFailure = [error.errorName, error.code, message]
+      .map(trimString)
+      .filter(Boolean)
+      .join(': ');
+    return {
+      status: 'failed',
+      failureReason: isManagedTaskModelUnavailable(classifiedFailure)
+        ? (isManagedTaskModelUnavailable(message) ? message : `Model unavailable: ${message}`)
+        : message,
+      partial: observation?.hasUsefulWork === true,
+      recoverablePreview: observation?.recoverablePreview ?? '',
+      canonicalRefs: observation?.canonicalRefs ?? [],
+      resumable: true,
+    };
+  };
+
   const retryStopInput = (task) => ({
     sessionId: task.childSessionId,
     directory: task.directory,
@@ -864,9 +899,18 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     const staleTailPrompt = trimString(waitOptions.staleTailAnchor?.prompt) || '';
     let staleTailReprompts = 0;
     let staleTailGraceExhausted = false;
+    const terminalErrorAfter = Number.isFinite(waitOptions.terminalErrorAfter)
+      ? waitOptions.terminalErrorAfter
+      : Number.isFinite(task.startedAt) ? task.startedAt : 0;
     while (true) {
       let observation;
       try {
+        const authoritativeError = await readAuthoritativeTerminalError(
+          task,
+          terminalErrorAfter,
+          lastSuccessfulObservation,
+        );
+        if (authoritativeError) return authoritativeError;
         // Cheap gate first. A live child (busy, or retrying for a reason other
         // than a definite usage limit) can never produce a terminal result, so
         // it does not need a transcript read on every poll. The status itself is
@@ -1128,6 +1172,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       deleteSession: true,
     });
     const runningTask = { ...task, childSessionId };
+    const terminalErrorAfter = now();
     await transport.promptSession({
       sessionId: childSessionId,
       directory: task.directory,
@@ -1145,7 +1190,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       stage: 'after provider prompt',
       deleteSession: true,
     });
-    return await waitForTerminal(runningTask);
+    return await waitForTerminal(runningTask, { terminalErrorAfter });
   };
 
   const observe = async (task) => await waitForTerminal(task);
@@ -1221,6 +1266,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       // Anchored to this attempt's tail rather than to a transcript-lifetime count: a
       // child that was already resumed once still needs its own continuation now.
       const staleTailAssistantMessageId = observation.latestAssistantMessageId;
+      const terminalErrorAfter = now();
       await transport.promptSession({
         sessionId: task.childSessionId,
         directory: task.directory,
@@ -1239,7 +1285,11 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       await retainInPlaceAcceptance(task, control, 'after resume continuation prompt');
       await sleep(pollIntervalMs, { signal: shutdownController.signal });
       assertRunning();
-      return await waitForTerminal(task, { deferEmptyTerminal: true, staleTailAnchor });
+      return await waitForTerminal(task, {
+        deferEmptyTerminal: true,
+        staleTailAnchor,
+        terminalErrorAfter,
+      });
     }
 
     await retainInPlaceAcceptance(task, control, 'before resumed observation');
@@ -1258,6 +1308,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     // previous attempt's result before OpenCode has started the new turn.
     const priorObservation = await readObservation(task);
     const staleTailAssistantMessageId = priorObservation.latestAssistantMessageId;
+    const terminalErrorAfter = now();
     await transport.promptSession({
       sessionId: task.childSessionId,
       directory: task.directory,
@@ -1283,6 +1334,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     return await waitForTerminal(task, {
       deferEmptyTerminal: true,
       staleTailAnchor,
+      terminalErrorAfter,
     });
   };
 

@@ -22,6 +22,7 @@ const principal = (overrides: Partial<AuthPrincipal> = {}): AuthPrincipal => ({
   scope: 'managed',
   policy: {
     settingsPages: ['*'],
+    bots: true,
     files: true,
     terminal: true,
     browser: true,

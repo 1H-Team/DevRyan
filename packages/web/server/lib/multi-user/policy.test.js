@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { SETTINGS_PERMISSION_SLUGS as UI_SETTINGS_PERMISSION_SLUGS } from '../../../../ui/src/lib/settings/permissions.ts';
+
 import {
   ROLE_POLICY_DEFAULTS,
   SETTINGS_PERMISSION_SLUGS,
@@ -41,17 +43,29 @@ const developerPrincipal = {
 };
 
 describe('multi-user policy', () => {
+  it('keeps the server permission catalog in exact parity with the shared UI catalog', () => {
+    expect(SETTINGS_PERMISSION_SLUGS).toEqual(UI_SETTINGS_PERMISSION_SLUGS);
+  });
+
   it('keeps the developer template to the managed personal pages with Bug Reports enabled', () => {
     expect(ROLE_POLICY_DEFAULTS.developer.settingsPages).toEqual([
       'home', 'appearance', 'chat', 'sessions', 'shortcuts', 'notifications', 'bug-reports',
     ]);
     expect(ROLE_POLICY_DEFAULTS.developer.settingsPermissions['bug-reports']).toEqual({ read: true, edit: true });
     expect(ROLE_POLICY_DEFAULTS.senior_developer.settingsPermissions['bug-reports']).toEqual({ read: true, edit: true });
+    expect(ROLE_POLICY_DEFAULTS.developer.settingsPermissions.bots).toEqual({ read: false, edit: false });
+    expect(ROLE_POLICY_DEFAULTS.senior_developer.settingsPermissions.bots).toEqual({ read: false, edit: false });
+    expect(ROLE_POLICY_DEFAULTS.admin.settingsPermissions.bots).toEqual({ read: true, edit: true });
+    expect(ROLE_POLICY_DEFAULTS.developer.bots).toBe(true);
+    expect(ROLE_POLICY_DEFAULTS.senior_developer.bots).toBe(true);
+    expect(ROLE_POLICY_DEFAULTS.admin.bots).toBe(true);
     expect(ROLE_POLICY_DEFAULTS.developer.files).toBe(false);
     expect(ROLE_POLICY_DEFAULTS.developer.terminal).toBe(false);
     expect(ROLE_POLICY_DEFAULTS.developer.browser).toBe(true);
     expect(ROLE_POLICY_DEFAULTS.developer.createWorktrees).toBe(false);
     expect(ROLE_POLICY_DEFAULTS.developer.createBranches).toBe(false);
+    expect(ROLE_POLICY_DEFAULTS.developer.featureOverrides.agents.hideGlobalBehaviorUi).toBe(true);
+    expect(ROLE_POLICY_DEFAULTS.senior_developer.featureOverrides).toEqual({});
     expect(ROLE_POLICY_DEFAULTS.senior_developer.browser).toBe(true);
     expect(ROLE_POLICY_DEFAULTS.senior_developer.createWorktrees).toBe(true);
     expect(ROLE_POLICY_DEFAULTS.senior_developer.createBranches).toBe(true);
@@ -62,15 +76,17 @@ describe('multi-user policy', () => {
   it('allows user capability overrides without changing the role template', () => {
     const policy = normalizeRolePolicy('developer', null, {
       settings_pages: ['home', 'appearance'],
-      capabilities: { terminal: true, browser: false, createWorktrees: true, createBranches: true },
+      capabilities: { bots: false, terminal: true, browser: false, createWorktrees: true, createBranches: true },
     });
 
     expect(policy.settingsPages).toEqual(['home', 'appearance']);
+    expect(policy.bots).toBe(false);
     expect(policy.terminal).toBe(true);
     expect(policy.browser).toBe(false);
     expect(policy.createWorktrees).toBe(true);
     expect(policy.createBranches).toBe(true);
     expect(ROLE_POLICY_DEFAULTS.developer.terminal).toBe(false);
+    expect(ROLE_POLICY_DEFAULTS.developer.bots).toBe(true);
     expect(ROLE_POLICY_DEFAULTS.developer.browser).toBe(true);
     expect(ROLE_POLICY_DEFAULTS.developer.createWorktrees).toBe(false);
     expect(ROLE_POLICY_DEFAULTS.developer.createBranches).toBe(false);
@@ -149,14 +165,14 @@ describe('multi-user policy', () => {
       ['/git/identities', 'GET', 'git'],
       ['/github/auth/start', 'POST', 'users'],
       ['/config/themes', 'GET', 'appearance'],
-      ['/config/settings', 'PUT', 'sessions'],
-      ['/config/settings/agent-defaults/Orchestrator', 'DELETE', 'sessions'],
+      ['/config/settings/agent-defaults/Orchestrator', 'DELETE', 'agents'],
     ];
     for (const [path, method, page] of ownedRoutes) {
       expect(settingsPageForRequest(path, method)).toBe(page);
     }
 
     expect(settingsPageForRequest('/projects/project-1/icon', 'GET')).toBeNull();
+    expect(settingsPageForRequest('/config/settings', 'PUT')).toBeNull();
     expect(settingsPageForRequest('/projects/project-1/branch-target', 'POST')).toBeNull();
     expect(settingsPageForRequest('/projects/project-1/scheduled-tasks', 'POST')).toBeNull();
     expect(settingsPageForRequest('/projects/project-1/scheduled-tasks/task-1/run', 'POST')).toBeNull();
@@ -204,6 +220,25 @@ describe('multi-user policy', () => {
 
     expect(policy.settingsPermissions.appearance).toEqual({ read: true, edit: true });
     expect(policy.settingsPermissions['bug-reports']).toEqual({ read: true, edit: true });
+    expect(policy.settingsPermissions.bots).toEqual({ read: false, edit: false });
+    expect(Object.keys(policy.settingsPermissions)).toEqual(SETTINGS_PERMISSION_SLUGS);
+  });
+
+  it('normalizes malformed stored cells into a total edit-implies-read matrix', () => {
+    const policy = normalizeRolePolicy('senior_developer', {
+      settings_permissions: {
+        appearance: { read: false, edit: true },
+        bots: { read: true, edit: true },
+        'bug-reports': 'invalid',
+        unknown: { read: true, edit: true },
+      },
+    });
+
+    expect(Object.keys(policy.settingsPermissions)).toEqual(SETTINGS_PERMISSION_SLUGS);
+    expect(policy.settingsPermissions.appearance).toEqual({ read: false, edit: false });
+    expect(policy.settingsPermissions.bots).toEqual({ read: true, edit: true });
+    expect(policy.settingsPermissions['bug-reports']).toEqual({ read: false, edit: false });
+    expect(policy.settingsPermissions).not.toHaveProperty('unknown');
   });
 
   it('returns values for a read-only page while rejecting mutations from it', () => {
@@ -251,7 +286,7 @@ describe('multi-user policy', () => {
     });
 
     expect(policy.featureOverrides).toEqual({
-      agents: { hidePermissionsUi: true },
+      agents: { hidePermissionsUi: true, hideGlobalBehaviorUi: true },
       mcp: { context7: 'on', playwright: 'off' },
     });
     expect(normalizeRolePolicy('admin', null, {
@@ -262,14 +297,15 @@ describe('multi-user policy', () => {
   it('validates feature override payloads', () => {
     expect(validateFeatureOverridesPayload(undefined)).toEqual({ valid: true, featureOverrides: {} });
     expect(validateFeatureOverridesPayload({
-      agents: { hidePermissionsUi: true },
+      agents: { hidePermissionsUi: true, hideGlobalBehaviorUi: false },
       mcp: { context7: 'inherit', playwright: 'off' },
     })).toEqual({
       valid: true,
-      featureOverrides: { agents: { hidePermissionsUi: true }, mcp: { playwright: 'off' } },
+      featureOverrides: { agents: { hidePermissionsUi: true, hideGlobalBehaviorUi: false }, mcp: { playwright: 'off' } },
     });
     expect(validateFeatureOverridesPayload({ unknown: {} }).valid).toBe(false);
     expect(validateFeatureOverridesPayload({ agents: { other: true } }).valid).toBe(false);
+    expect(validateFeatureOverridesPayload({ agents: { hideGlobalBehaviorUi: 'yes' } }).valid).toBe(false);
     expect(validateFeatureOverridesPayload({ mcp: { context7: 'maybe' } }).valid).toBe(false);
   });
 
@@ -283,9 +319,37 @@ describe('multi-user policy', () => {
     const settings = buildEffectiveSettings({ principal, hostSettings: {}, userOverrides: {} });
 
     expect(settings.multiUser.features).toEqual({
-      agents: { hidePermissionsUi: true },
+      agents: { hidePermissionsUi: true, hideGlobalBehaviorUi: true },
       mcp: { context7: 'off' },
     });
+  });
+
+  it('preserves explicit global behavior visibility overrides over role defaults', () => {
+    expect(normalizeRolePolicy('developer', null, {
+      feature_overrides: { agents: { hideGlobalBehaviorUi: false } },
+    }).featureOverrides.agents.hideGlobalBehaviorUi).toBe(false);
+    expect(normalizeRolePolicy('senior_developer', null, {
+      feature_overrides: { agents: { hideGlobalBehaviorUi: true } },
+    }).featureOverrides.agents.hideGlobalBehaviorUi).toBe(true);
+  });
+
+  it('authorizes notification fields independently from Sessions edit access', () => {
+    const principal = {
+      ...developerPrincipal,
+      policy: normalizeRolePolicy('developer', null, {
+        settings_permission_overrides: {
+          notifications: { read: true, edit: true },
+          sessions: { read: true, edit: false },
+        },
+      }),
+    };
+    const mutation = validateSettingsChanges({
+      principal,
+      changes: { nativeNotificationsEnabled: true },
+      currentEffective: { nativeNotificationsEnabled: false },
+    });
+
+    expect(mutation).toEqual({ accepted: { nativeNotificationsEnabled: true }, rejected: [] });
   });
 
   it('accepts the per-user MCP enabled overlay as a sessions-independent mcp field', () => {
@@ -320,6 +384,7 @@ describe('multi-user policy', () => {
     expect(settings.themeId).toBe('developer-theme');
     expect(settings.notificationMode).toBe('all');
     expect(settings.multiUser.capabilities.browser).toBe(true);
+    expect(settings.multiUser.capabilities.bots).toBe(true);
     expect(settings.multiUser.capabilities.createWorktrees).toBe(false);
     expect(settings.openaiApiKey).toBeUndefined();
     expect(settings.tunnelToken).toBeUndefined();

@@ -334,7 +334,7 @@ export const DesktopRightChromeActions: React.FC<DesktopRightChromeActionsProps>
   const servicesTabs = React.useMemo(() => {
     const base: Array<{ value: 'instance' | 'usage' | 'mcp'; label: string; icon: RemixiconComponentType }> = [];
     base.push({ value: 'usage', label: t('layout.services.usage'), icon: RiBarChartLine });
-    base.push({ value: 'mcp', label: 'MCP', icon: McpIcon as unknown as RemixiconComponentType });
+    base.push({ value: 'mcp', label: 'MCP Servers', icon: McpIcon as unknown as RemixiconComponentType });
     if (isDesktopApp) {
       base.push({ value: 'instance', label: t('layout.services.instance'), icon: RiServerLine });
     }

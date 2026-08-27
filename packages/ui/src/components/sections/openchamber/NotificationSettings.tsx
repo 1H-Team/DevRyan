@@ -4,7 +4,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { isDesktopShell, isVSCodeRuntime } from '@/lib/desktop';
 import { useDeviceInfo } from '@/lib/device';
-import { updateDesktopSettings } from '@/lib/persistence';
+import { saveDesktopSettingsNow, updateDesktopSettings } from '@/lib/persistence';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/components/ui';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
@@ -19,6 +19,7 @@ import {
   createNotificationTemplateDraftController,
   type NotificationTemplateField,
 } from './notificationTemplateDraft';
+import { updateWebNotificationPreference } from './notificationToggle';
 
 const DEFAULT_NOTIFICATION_TEMPLATES = {
   completion: {
@@ -156,6 +157,7 @@ export const NotificationSettings: React.FC = () => {
   const setSettingsZenModel = useConfigStore((state) => state.setSettingsZenModel);
 
   const [notificationPermission, setNotificationPermission] = React.useState<NotificationPermission>('default');
+  const [notificationToggleBusy, setNotificationToggleBusy] = React.useState(false);
   const [pushSupported, setPushSupported] = React.useState(false);
   const [pushSubscribed, setPushSubscribed] = React.useState(false);
   const [pushBusy, setPushBusy] = React.useState(false);
@@ -271,6 +273,7 @@ export const NotificationSettings: React.FC = () => {
   }, [isBrowser]);
 
   const handleToggleChange = async (checked: boolean) => {
+    if (notificationToggleBusy) return;
     if (isDesktop) {
       setNativeNotificationsEnabled(checked);
       return;
@@ -280,25 +283,42 @@ export const NotificationSettings: React.FC = () => {
       setNativeNotificationsEnabled(checked);
       return;
     }
-    if (checked && typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      try {
-        const permission = await Notification.requestPermission();
-        setNotificationPermission(permission);
-        if (permission === 'granted') {
-          setNativeNotificationsEnabled(true);
-        } else {
-          toast.error(t('settings.notifications.page.toast.permissionDenied.title'), {
-            description: t('settings.notifications.page.toast.permissionDenied.description'),
-          });
-        }
-      } catch (error) {
-        console.error('Failed to request notification permission:', error);
+
+    setNotificationToggleBusy(true);
+    try {
+      const result = await updateWebNotificationPreference({
+        checked,
+        currentEnabled: nativeNotificationsEnabled,
+        secureContext: typeof window !== 'undefined' && window.isSecureContext,
+        notifications: typeof Notification === 'undefined' ? null : {
+          get permission() {
+            return Notification.permission;
+          },
+          requestPermission: () => Notification.requestPermission(),
+        },
+        persist: async (enabled) => {
+          const updated = await saveDesktopSettingsNow({ nativeNotificationsEnabled: enabled });
+          return updated?.nativeNotificationsEnabled === enabled;
+        },
+      });
+      setNotificationPermission(result.permission);
+      setNativeNotificationsEnabled(result.enabled);
+
+      if (result.status === 'unsupported') {
+        toast.error(t('settings.notifications.page.toast.requestPermissionFailed'), {
+          description: 'Browser notifications require a supported secure context.',
+        });
+      } else if (result.status === 'denied') {
+        toast.error(t('settings.notifications.page.toast.permissionDenied.title'), {
+          description: t('settings.notifications.page.toast.permissionDenied.enableInBrowser'),
+        });
+      } else if (result.status === 'permission-error') {
         toast.error(t('settings.notifications.page.toast.requestPermissionFailed'));
+      } else if (result.status === 'save-error') {
+        toast.error('Failed to save notification preference');
       }
-    } else if (checked && notificationPermission === 'granted') {
-      setNativeNotificationsEnabled(true);
-    } else {
-      setNativeNotificationsEnabled(false);
+    } finally {
+      setNotificationToggleBusy(false);
     }
   };
 
@@ -607,15 +627,20 @@ export const NotificationSettings: React.FC = () => {
 
           <section className="px-2 pb-2 pt-0 space-y-0.5">
             <div
-              className="group flex cursor-pointer items-center gap-2 py-1.5"
+              className={cn(
+                'group flex items-center gap-2 py-1.5',
+                notificationToggleBusy ? 'cursor-wait opacity-60' : 'cursor-pointer',
+              )}
               role="button"
-              tabIndex={0}
+              tabIndex={notificationToggleBusy ? -1 : 0}
               aria-pressed={nativeNotificationsEnabled && canShowNotifications}
+              aria-busy={notificationToggleBusy || undefined}
               onClick={() => {
+                if (notificationToggleBusy) return;
                 void handleToggleChange(!(nativeNotificationsEnabled && canShowNotifications));
               }}
               onKeyDown={(event) => {
-                if (event.key === ' ' || event.key === 'Enter') {
+                if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) {
                   event.preventDefault();
                   void handleToggleChange(!(nativeNotificationsEnabled && canShowNotifications));
                 }
@@ -623,9 +648,8 @@ export const NotificationSettings: React.FC = () => {
             >
               <Checkbox
                 checked={nativeNotificationsEnabled && canShowNotifications}
-                onChange={(checked) => {
-                  void handleToggleChange(checked);
-                }}
+                onChange={() => undefined}
+                disabled={notificationToggleBusy}
                 ariaLabel={t('settings.notifications.page.delivery.enableAria')}
               />
               <span className="typography-ui-label text-foreground">{t('settings.notifications.page.delivery.enableLabel')}</span>

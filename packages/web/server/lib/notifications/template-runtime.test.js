@@ -207,4 +207,83 @@ describe('notification template runtime session variables', () => {
     await expect(runtime.fetchSessionInfo('ses_helper')).resolves.toEqual(sessionInfo);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('preserves a projected title across later placeholder session snapshots', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+    const runtime = createRuntime();
+    const placeholder = 'New session - 2026-08-27T00:26:56.854Z';
+
+    runtime.maybeCacheSessionInfoFromEvent({
+      type: 'session.created',
+      properties: { info: { id: 'ses_1', title: placeholder, parentID: null, cost: 0 } },
+    });
+    runtime.maybeCacheSessionInfoFromEvent({
+      type: 'session.updated',
+      properties: { info: { id: 'ses_1', title: 'Reorder clinic professionals section', parentID: null, cost: 1 } },
+    });
+    runtime.maybeCacheSessionInfoFromEvent({
+      type: 'session.updated',
+      properties: { info: { id: 'ses_1', title: placeholder, parentID: null, cost: 2 } },
+    });
+
+    await expect(runtime.fetchSessionInfo('ses_1')).resolves.toMatchObject({
+      title: 'Reorder clinic professionals section',
+      cost: 2,
+    });
+    const variables = await runtime.buildTemplateVariables({
+      type: 'message.updated',
+      properties: { sessionTitle: placeholder, info: {} },
+    }, 'ses_1');
+
+    expect(variables.session_name).toBe('Reorder clinic professionals section');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('allows a later manual title to replace a projected title', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+    const runtime = createRuntime();
+
+    runtime.maybeCacheSessionInfoFromEvent({
+      type: 'session.updated',
+      properties: { info: { id: 'ses_1', title: 'Generated session title', parentID: null } },
+    });
+    runtime.maybeCacheSessionInfoFromEvent({
+      type: 'session.updated',
+      properties: { info: { id: 'ses_1', title: 'My manual session name', parentID: null } },
+    });
+
+    const variables = await runtime.buildTemplateVariables({
+      type: 'message.updated',
+      properties: { info: { title: 'Untitled Session' } },
+    }, 'ses_1');
+
+    expect(variables.session_name).toBe('My manual session name');
+    await expect(runtime.fetchSessionInfo('ses_1')).resolves.toMatchObject({
+      title: 'My manual session name',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does not regress a projected title when an expired cache refresh still returns a placeholder', async () => {
+    let now = 1_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const placeholder = 'New session - 2026-08-27T00:26:56.854Z';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'ses_1', title: placeholder, parentID: null, cost: 3 }),
+    });
+    const runtime = createRuntime();
+
+    runtime.maybeCacheSessionInfoFromEvent({
+      type: 'session.updated',
+      properties: { info: { id: 'ses_1', title: 'Reorder clinic professionals section', parentID: null, cost: 1 } },
+    });
+    now += 61_000;
+
+    await expect(runtime.fetchSessionInfo('ses_1')).resolves.toMatchObject({
+      title: 'Reorder clinic professionals section',
+      cost: 3,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

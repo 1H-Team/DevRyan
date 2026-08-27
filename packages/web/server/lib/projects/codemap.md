@@ -12,6 +12,8 @@ ID derivation.
 - **Lossless atomic writes** preserve unrelated/future keys while using the
   harness fsync/rename primitive. Every mutation also holds the per-project
   cross-process lock, including scheduler claim/state compare-and-update flows.
+- **Owner-scoped cleanup** deletes tasks for one owner, optionally limited to
+  exact branch targets, under the same lock after access revocation.
 - **Shared path identity** (`project-id.js`) derives both stable project IDs and the matching active-project plan directory under `~/.config/openchamber/projects`.
 
 ## Flow

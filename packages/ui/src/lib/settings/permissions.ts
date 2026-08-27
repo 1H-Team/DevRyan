@@ -18,6 +18,7 @@ export const SETTINGS_PERMISSION_SECTIONS = [
     pages: [
       ['chat', 'Chat'],
       ['sessions', 'Sessions'],
+      ['bots', 'Bots'],
       ['agents', 'Agents'],
       ['skills.installed', 'Skills'],
       ['skills.catalog', 'Skills Catalog'],
@@ -31,7 +32,7 @@ export const SETTINGS_PERMISSION_SECTIONS = [
     pages: [
       ['providers', 'Providers'],
       ['usage', 'Usage'],
-      ['mcp', 'MCP'],
+      ['mcp', 'MCP Servers'],
       ['remote-instances', 'Remote Instances'],
       ['tunnel', 'Remote Tunnel'],
     ],
@@ -84,6 +85,37 @@ export const fullSettingsPermissions = (): SettingsPermissions => createSettings
   edit: true,
 }));
 
+const isPermissionRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const normalizePermissionCell = (value: unknown): SettingsPagePermission => {
+  if (!isPermissionRecord(value)) return { read: false, edit: false };
+  const read = value.read === true;
+  return {
+    read,
+    edit: read && value.edit === true,
+  };
+};
+
+/**
+ * Converts an untrusted or version-skewed API matrix into the complete UI
+ * catalog. Missing cells may inherit an explicitly supplied compatibility
+ * matrix; malformed cells always fail closed.
+ */
+export const normalizeSettingsPermissions = (
+  value: unknown,
+  fallback?: SettingsPermissions,
+): SettingsPermissions => {
+  const source = isPermissionRecord(value) ? value : null;
+  return createSettingsPermissions((slug) => {
+    if (source && Object.prototype.hasOwnProperty.call(source, slug)) {
+      return normalizePermissionCell(source[slug]);
+    }
+    return normalizePermissionCell(fallback?.[slug]);
+  });
+};
+
 const PERSONAL_EDIT_PAGES = new Set<SettingsPermissionSlug>([
   'appearance', 'notifications', 'shortcuts', 'voice', 'chat', 'sessions', 'usage', 'bug-reports',
 ]);
@@ -99,14 +131,20 @@ export const permissionsFromLegacyPages = (pages: readonly string[]): SettingsPe
 export const mergeSettingsPermissionOverrides = (
   inherited: SettingsPermissions,
   overrides: SettingsPermissionOverrides,
-): SettingsPermissions => createSettingsPermissions((slug) => {
-  const override = overrides[slug];
-  const read = override?.read ?? inherited[slug].read;
-  return {
-    read,
-    edit: read && (override?.edit ?? inherited[slug].edit),
-  };
-});
+): SettingsPermissions => {
+  const safeInherited = normalizeSettingsPermissions(inherited);
+  const safeOverrides = isPermissionRecord(overrides) ? overrides : {};
+  return createSettingsPermissions((slug) => {
+    const rawOverride = safeOverrides[slug];
+    const override = isPermissionRecord(rawOverride) ? rawOverride : {};
+    const read = typeof override.read === 'boolean' ? override.read : safeInherited[slug].read;
+    const requestedEdit = typeof override.edit === 'boolean' ? override.edit : safeInherited[slug].edit;
+    return {
+      read,
+      edit: read && requestedEdit,
+    };
+  });
+};
 
 export const cycleSettingsPermissionOverride = (value: boolean | undefined): boolean | undefined => {
   if (value === undefined) return true;

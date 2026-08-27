@@ -116,6 +116,7 @@ import {
   resolveManagedAgentExecution,
   validatePersonalAgentDefault,
 } from './managed-agent-defaults.js';
+import { createBotsRuntime } from '../bots/index.js';
 
 const APP_SESSION_COOKIE = 'oc_app_session';
 const ACCESS_INVITE_COOKIE = 'oc_access_invite';
@@ -148,7 +149,7 @@ const CLIPBOARD_DETAIL_SELECT = [
 ].join(',');
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const USER_CAPABILITY_KEYS = new Set([
-  'files', 'terminal', 'browser', 'createWorktrees', 'createBranches', 'manageProjects', 'manageUsers', 'manageGlobalSettings',
+  'bots', 'files', 'terminal', 'browser', 'createWorktrees', 'createBranches', 'manageProjects', 'manageUsers', 'manageGlobalSettings',
   'manageGit', 'push', 'github',
 ]);
 
@@ -236,7 +237,7 @@ const normalizeOptionalMetadata = (value, maxLength = 120) => {
 const validEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254;
 const validUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const validRole = (value) => ROLE_NAMES.includes(value);
-const validPassword = (value) => typeof value === 'string' && value.length >= 4 && value.length <= 256;
+const validPassword = (value) => typeof value === 'string' && value.length >= 6 && value.length <= 256;
 const generatePassword = () => `${crypto.randomBytes(18).toString('base64url')}!aA7`;
 const escapeFilterValue = (value) => String(value).replace(/[(),]/g, '');
 const normalizeGitHubRemoteUrl = (value) => {
@@ -509,7 +510,12 @@ export async function createMultiUserRuntime({
   readManagedTunnelConfig = null,
   onManagedProjectMetadataChanged = null,
   onManagedSessionOwnershipCommitted = null,
+  onScheduledTaskAccessChanged = null,
   sessionOwnershipRetryOptions = {},
+  botHost = Object.freeze({ owner: 'unsupported' }),
+  encryption = Object.freeze({ getKey: null }),
+  recordDiagnostic = () => {},
+  botsExecutionEnabled = true,
 } = {}) {
   const config = resolveMultiUserConfig({ dataDirectory });
 
@@ -559,17 +565,31 @@ export async function createMultiUserRuntime({
   });
 
   if (!config.enabled) {
+    const botsRuntime = createBotsRuntime({
+      supabase: null,
+      audit: async () => {},
+      principalPolicy: {
+        isGlobalAdmin: (principal) => principal?.role === 'admin',
+      },
+      dataDirectory: config.dataDirectory,
+      botHost,
+      encryption,
+      recordDiagnostic,
+      executionEnabled: botsExecutionEnabled,
+    });
     return {
       enabled: false,
       config,
       getControlPlaneStatus: () => ({ state: 'disabled', lastErrorCode: null, lastSuccessAt: null }),
       localAdminPrincipal,
       wrapLegacyAuthController,
-      registerRoutes() {},
+      botsRuntime,
+      registerRoutes(app) { botsRuntime.registerRoutes(app); },
       filterEventForPrincipal: () => true,
       recordOpenCodeActivity: async () => false,
       canSessionTokenHashAccess: async () => true,
       getPublicPrincipal: publicPrincipal,
+      resolveScheduledTaskAccess: async () => ({ state: 'runnable' }),
     };
   }
 
@@ -592,6 +612,14 @@ export async function createMultiUserRuntime({
       });
     } catch (error) {
       logger.warn?.('[MultiUser] Failed to publish committed session ownership:', error);
+    }
+  };
+  const notifyScheduledTaskAccessChanged = async (input) => {
+    if (typeof onScheduledTaskAccessChanged !== 'function') return;
+    try {
+      await onScheduledTaskAccessChanged(input);
+    } catch (error) {
+      logger.warn?.('[MultiUser] Failed to reconcile scheduled tasks after access change:', error);
     }
   };
   const sessionOwnershipWriteAttempts = Math.max(
@@ -681,11 +709,29 @@ export async function createMultiUserRuntime({
   const connectionsBySession = new Map();
   const mutationTails = new Map();
   const projectedActivityKeys = new Map();
+  const sessionErrorCorrelations = new Map();
   const recentAssistantContextByMessage = new Map();
   const recentAssistantContextBySession = new Map();
   const sessionParentIds = new Map();
   const sessionDirectories = new Map();
   const diagnosticRecoveryTracker = createDiagnosticRecoveryTracker();
+  const correlateSessionError = ({ signature, candidateEventId, observedAt }) => {
+    const previous = sessionErrorCorrelations.get(signature);
+    const elapsed = previous ? observedAt - previous.observedAt : Number.POSITIVE_INFINITY;
+    if (previous && elapsed >= 0 && elapsed <= 1_000) {
+      previous.observedAt = observedAt;
+      sessionErrorCorrelations.delete(signature);
+      sessionErrorCorrelations.set(signature, previous);
+      return previous.eventId;
+    }
+    const next = { eventId: candidateEventId, observedAt };
+    sessionErrorCorrelations.delete(signature);
+    sessionErrorCorrelations.set(signature, next);
+    while (sessionErrorCorrelations.size > 5_000) {
+      sessionErrorCorrelations.delete(sessionErrorCorrelations.keys().next().value);
+    }
+    return candidateEventId;
+  };
   const provisionalSessionIds = new Set();
   const provisionalCleanupTimers = new Set();
   let claimInProgress = false;
@@ -898,6 +944,21 @@ export async function createMultiUserRuntime({
     return eventId;
   };
 
+  const botsRuntime = createBotsRuntime({
+    supabase,
+    audit,
+    principalPolicy: {
+      isGlobalAdmin: (principal) => principal?.scope === 'managed' && principal?.role === 'admin',
+    },
+    dataDirectory: config.dataDirectory,
+    botHost,
+    encryption,
+    recordDiagnostic,
+    executionEnabled: botsExecutionEnabled,
+    withAuditDeliveryBarrier: auditOutbox.withFlushedDeliveryBarrier,
+  });
+  await botsRuntime.start();
+
   const setBoundedProjectionContext = (cache, key, value, maximum = 5_000) => {
     if (!key) return;
     cache.delete(key);
@@ -985,6 +1046,7 @@ export async function createMultiUserRuntime({
   };
 
   const recordOpenCodeActivity = async (payload) => {
+    const observedAt = Date.now();
     captureProjectionContext(payload);
     const resolutions = diagnosticRecoveryTracker.observe(payload);
     const projectable = isProjectableOpenCodeActivity(payload);
@@ -1039,7 +1101,13 @@ export async function createMultiUserRuntime({
       payload,
       ownership,
       assignment,
-      context: { message, rootSessionId: rootSessionIdFor(sessionId), activeDirectory },
+      context: {
+        message,
+        rootSessionId: rootSessionIdFor(sessionId),
+        activeDirectory,
+        observedAt,
+        correlateSessionError,
+      },
       sanitizeFailureText: (value) => activityErrorSanitizer.sanitizeText(value),
     }) : null;
     if (!projected || projectedActivityKeys.has(projected.dedupeKey)) return wroteActivity;
@@ -1767,7 +1835,7 @@ export async function createMultiUserRuntime({
       : () => {};
     const temporaryPassword = password || generatePassword();
     try {
-      if (!validPassword(temporaryPassword)) throw Object.assign(new Error('Password must be at least 4 characters'), { statusCode: 400 });
+      if (!validPassword(temporaryPassword)) throw Object.assign(new Error('Password must be at least 6 characters'), { statusCode: 400 });
       await assertGitHubAccountAvailable(profileGitHubAccountId);
       const authUser = await supabase.createAuthUser({
         email: normalizedEmail,
@@ -1843,6 +1911,12 @@ export async function createMultiUserRuntime({
         retryable: true,
       });
     }
+    if (/^\/(?:bots|bot-actions|bot-channels|bot-runs)(?:\/|$)/.test(requestPath) && !principal.policy.bots) {
+      throw Object.assign(new Error('Bots access is disabled by policy'), {
+        statusCode: 403,
+        code: 'bots_access_disabled',
+      });
+    }
     if (requestPath.startsWith('/terminal') && !principal.policy.terminal) {
       throw Object.assign(new Error('Terminal access is disabled by policy'), { statusCode: 403 });
     }
@@ -1864,6 +1938,15 @@ export async function createMultiUserRuntime({
     }
     if (settingsPage && STATE_CHANGING_METHODS.has(req.method) && !canEditSettingsPage(principal, settingsPage)) {
       throw Object.assign(new Error(`Edit access to ${settingsPage} settings is disabled by policy`), { statusCode: 403 });
+    }
+    if (principal.scope === 'managed'
+      && principal.role === 'developer'
+      && STATE_CHANGING_METHODS.has(req.method)
+      && /^\/config\/agents\/[^/]+\/override$/.test(requestPath)) {
+      throw Object.assign(new Error('Developers must use personal agent model defaults'), {
+        statusCode: 403,
+        code: 'PERSONAL_AGENT_DEFAULT_REQUIRED',
+      });
     }
     const projectIconMatch = requestPath.match(/^\/projects\/([^/]+)\/icon(?:\/|$)/);
     if (projectIconMatch && !(principal.assignments || []).some((entry) => entry.projectId === projectIconMatch[1])) {
@@ -2444,7 +2527,7 @@ export async function createMultiUserRuntime({
       recentAssistantContextByMessage.clear();
       recentAssistantContextBySession.clear();
       sessionParentIds.clear();
-      await Promise.all([ownershipIndex.drain(), auditOutbox.drain()]);
+      await Promise.all([ownershipIndex.drain(), auditOutbox.drain(), botsRuntime.shutdown()]);
     },
   };
 
@@ -2741,6 +2824,42 @@ export async function createMultiUserRuntime({
     return { principal, assignment, directory: target.directory, branchName: logicalBranch };
   };
 
+  const resolveScheduledTaskAccess = async ({ ownerUserId, projectId, branchName }) => {
+    if (!ownerUserId) return { state: 'runnable' };
+    if (!validUuid(projectId)) return { state: 'revoked' };
+    const logicalBranch = normalizeLogicalBranchName(branchName);
+    if (!logicalBranch) return { state: 'revoked' };
+
+    const [profile, project, assignment] = await Promise.all([
+      supabase.rest('user_profiles', {
+        query: { id: `eq.${escapeFilterValue(ownerUserId)}`, select: 'id,status', limit: 1 },
+        maybeSingle: true,
+      }),
+      supabase.rest('managed_projects', {
+        query: { id: `eq.${escapeFilterValue(projectId)}`, status: 'eq.active', select: 'id', limit: 1 },
+        maybeSingle: true,
+      }),
+      supabase.rest('user_project_branches', {
+        query: {
+          user_id: `eq.${escapeFilterValue(ownerUserId)}`,
+          project_id: `eq.${escapeFilterValue(projectId)}`,
+          branch_name: `eq.${escapeFilterValue(logicalBranch)}`,
+          select: 'user_id',
+          limit: 1,
+        },
+        maybeSingle: true,
+      }),
+    ]);
+
+    if (!profile || profile.status === 'archived' || !project || !assignment) {
+      return { state: 'revoked' };
+    }
+    if (profile.status !== 'active') {
+      return { state: 'dormant' };
+    }
+    return { state: 'runnable' };
+  };
+
   const listScheduledTaskProjectIDs = async () => {
     const projects = await supabase.rest('managed_projects', {
       query: { status: 'eq.active', select: 'id' },
@@ -2874,6 +2993,7 @@ export async function createMultiUserRuntime({
     if (typeof app.use === 'function') {
       app.use(createDotenvVisibilityMiddleware());
     }
+    botsRuntime.registerRoutes(app);
     bugReportsApi.registerRoutes(app);
     const canReviewUsers = (principal) => canReadSettingsPage(principal, 'users');
     const canManageUsers = (principal) => canEditSettingsPage(principal, 'users');
@@ -3524,6 +3644,12 @@ export async function createMultiUserRuntime({
         const githubChanged = Object.hasOwn(changes, 'github_account_id');
         if (securityChanged) await revokeUserAppSessions(req.params.userId);
         principalCache.clear();
+        if (Object.hasOwn(changes, 'status')) {
+          await notifyScheduledTaskAccessChanged({
+            ownerUserId: req.params.userId,
+            revoked: changes.status === 'archived',
+          });
+        }
         const beforeProfile = {
           displayName: currentUser.display_name,
           role: currentUser.role,
@@ -3562,7 +3688,7 @@ export async function createMultiUserRuntime({
     app.post('/api/admin/users/:userId/reset-password', async (req, res) => {
       if (!canManageUsers(req.principal)) return jsonError(res, 403, 'User management edit access required');
       const password = req.body?.password || generatePassword();
-      if (!validPassword(password)) return jsonError(res, 400, 'Password must be at least 4 characters');
+      if (!validPassword(password)) return jsonError(res, 400, 'Password must be at least 6 characters');
       try {
         await supabase.updateAuthUser(req.params.userId, { password });
         await revokeUserAppSessions(req.params.userId);
@@ -3858,6 +3984,11 @@ export async function createMultiUserRuntime({
         const affectedUserIds = [...new Set((accessRows || []).map((row) => row.user_id).filter(Boolean))];
         for (const userId of affectedUserIds) {
           await archiveAndDeleteProjectAccess({ userId, project });
+          await notifyScheduledTaskAccessChanged({
+            projectID: project.id,
+            ownerUserId: userId,
+            revoked: true,
+          });
           await Promise.all([abortOwnedSessions(userId), terminateOwnedTerminals(userId)]);
         }
         const archived = await supabase.rest('managed_projects', {
@@ -4023,6 +4154,11 @@ export async function createMultiUserRuntime({
           method: 'PATCH', query: { id: `eq.${req.params.userId}`, status: 'neq.archived' },
           body: { status: 'active' }, prefer: 'return=minimal',
         });
+        await notifyScheduledTaskAccessChanged({
+          projectID: req.params.projectId,
+          ownerUserId: req.params.userId,
+          revoked: false,
+        });
         await Promise.all([abortOwnedSessions(req.params.userId), terminateOwnedTerminals(req.params.userId)]);
         await audit(req.principal, 'project.assigned', {
           targetType: 'user', targetId: req.params.userId, projectId: req.params.projectId,
@@ -4078,6 +4214,20 @@ export async function createMultiUserRuntime({
           project,
           rows: removedRows,
         });
+        if (removedRows.length > 0) {
+          await notifyScheduledTaskAccessChanged({
+            projectID: project.id,
+            ownerUserId: req.params.userId,
+            branchNames: removedRows.map((row) => row.branch_name),
+            revoked: true,
+          });
+        } else {
+          await notifyScheduledTaskAccessChanged({
+            projectID: project.id,
+            ownerUserId: req.params.userId,
+            revoked: false,
+          });
+        }
         principalCache.clear();
         await Promise.all([abortOwnedSessions(req.params.userId), terminateOwnedTerminals(req.params.userId)]);
         await audit(req.principal, 'project.branches_assigned', {
@@ -4125,6 +4275,11 @@ export async function createMultiUserRuntime({
         if (!project || !access) return jsonError(res, 404, 'Project assignment not found');
         releaseMutation = await acquireMutationKey(`repository:${project.id}`);
         const removed = await archiveAndDeleteProjectAccess({ userId: req.params.userId, project });
+        await notifyScheduledTaskAccessChanged({
+          projectID: project.id,
+          ownerUserId: req.params.userId,
+          revoked: true,
+        });
         principalCache.clear();
         await Promise.all([abortOwnedSessions(req.params.userId), terminateOwnedTerminals(req.params.userId)]);
         await audit(req.principal, 'project.unassigned', {
@@ -4533,8 +4688,11 @@ export async function createMultiUserRuntime({
       });
 
       const requirePersonalSettingsAccount = (req, res) => {
-        if (req.principal?.scope !== 'managed' || req.principal.role === 'admin') {
-          jsonError(res, 403, 'Personal defaults are available only to managed non-administrator accounts');
+        if (req.principal?.scope !== 'managed'
+          || req.principal.role !== 'developer'
+          || req.principal.policy?.manageGlobalSettings !== true
+          || !canEditSettingsPage(req.principal, 'agents')) {
+          jsonError(res, 403, 'Host Settings and Agents edit access are required for personal agent defaults');
           return false;
         }
         return true;
@@ -5023,6 +5181,7 @@ export async function createMultiUserRuntime({
   return {
     enabled: true,
     config,
+    botsRuntime,
     getControlPlaneStatus: () => ({ ...controlPlaneStatus }),
     retryControlPlaneSync: refreshOwnershipIndex,
     authController,
@@ -5043,6 +5202,7 @@ export async function createMultiUserRuntime({
     resolveManagedProject,
     resolveManagedProjectForDirectory,
     listScheduledTaskProjectIDs,
+    resolveScheduledTaskAccess,
     resolveScheduledTaskExecution,
     recordScheduledTaskSessionOwnership,
     setTerminalOwnerTerminator(callback) {

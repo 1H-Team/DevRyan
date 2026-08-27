@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "channel": "development",
+  "images": {
+    "supervisor": { "reference": "devryan/bot-supervisor:dev" },
+    "engine-proxy": { "reference": "devryan/bot-engine-proxy:dev" },
+    "egress": { "reference": "devryan/bot-egress:dev" },
+    "indexer": { "reference": "devryan/bot-indexer:dev" },
+    "opencode": { "reference": "devryan/bot-opencode:dev" },
+    "computer": { "reference": "devryan/bot-computer:dev" }
+  }
+}

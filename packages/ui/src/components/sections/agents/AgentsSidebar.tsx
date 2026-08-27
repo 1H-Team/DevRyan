@@ -8,6 +8,7 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
 import { formatAgentDisplayName } from '@/lib/agentDisplay';
 import { getAgentIconColor } from '@/lib/agentColors';
+import { isGlobalAgentBehaviorUiHidden, useAuthPrincipal } from '@/lib/authSession';
 
 interface AgentsSidebarProps {
   onItemSelect?: () => void;
@@ -26,6 +27,8 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
     setSelectedAgent: s.setSelectedAgent,
     loadAgents: s.loadAgents,
   })));
+  const principal = useAuthPrincipal();
+  const behaviorHidden = isGlobalAgentBehaviorUiHidden(principal);
 
   React.useEffect(() => {
     loadAgents();
@@ -51,6 +54,16 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
   const subagents = visibleAgents
     .filter((agent) => agent.mode === 'subagent')
     .sort((a, b) => formatAgentDisplayName(a.name).localeCompare(formatAgentDisplayName(b.name)));
+  const orderedAgents = React.useMemo(
+    () => [...primaryAgents, ...subagents],
+    [primaryAgents, subagents],
+  );
+
+  React.useEffect(() => {
+    if (!behaviorHidden || selectedAgentName !== null) return;
+    const fallback = orderedAgents[0];
+    if (fallback) setSelectedAgent(fallback.name);
+  }, [behaviorHidden, orderedAgents, selectedAgentName, setSelectedAgent]);
 
   const renderAgent = (agent: Agent, options: { spacious?: boolean } = {}) => (
     <AgentListItem
@@ -99,7 +112,7 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
       </div>
 
       <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
-        {renderBehavior()}
+        {!behaviorHidden && renderBehavior()}
 
         {visibleAgents.length === 0 ? (
           <div className="py-12 px-4 text-center text-muted-foreground">

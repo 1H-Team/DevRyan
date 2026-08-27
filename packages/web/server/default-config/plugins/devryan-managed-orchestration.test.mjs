@@ -268,7 +268,8 @@ describe('DevRyan managed orchestration plugin', () => {
     });
     expect(client.session.messages).not.toHaveBeenCalled();
     expect(requests[0].params).toMatchObject({ agent, readOnly: true });
-    expect(requests[0].params.timeoutAt).toBeGreaterThan(Date.now() + 59 * 60 * 1_000);
+    const minimumRemainingMs = agent === 'oracle' ? 14 * 60 * 1_000 : 59 * 60 * 1_000;
+    expect(requests[0].params.timeoutAt).toBeGreaterThan(Date.now() + minimumRemainingMs);
   });
 
   it('uses the bounded adjacent-assistant fallback only when the exact assistant is not persisted', async () => {
@@ -715,13 +716,16 @@ describe('DevRyan managed orchestration plugin', () => {
       'does not impose a managed concurrency cap',
     );
     expect(plugin.tool.devryan_task.args.timeout_seconds.description).toContain(
-      'Defaults to 3600 for Designer, Fixer, and Oracle',
+      'Defaults to 900 for Oracle',
+    );
+    expect(plugin.tool.devryan_task.args.timeout_seconds.description).toContain(
+      '3600 for Designer and Fixer',
     );
     expect(plugin.tool.devryan_task.args.timeout_seconds.description).toContain(
       '1800 for other ordinary specialists',
     );
     expect(plugin.tool.devryan_task.args.timeout_seconds.description).toContain(
-      '7200 when a closed task also owns builds or browser verification',
+      'Use 1800 for an explicitly deep Oracle review',
     );
     expect(plugin.tool.devryan_task.args.action.description).toContain(
       'A resumable failure with no agent retry remaining returns manualRecoveryRequired',
@@ -778,7 +782,7 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests[1].body.params.idempotencyKey).toBe(requests[0].body.params.idempotencyKey);
   });
 
-  it('defaults ordinary deadlines to 30 minutes, enforces 60 minutes for Designer, Fixer, and Oracle, and caps at 24 hours', async () => {
+  it('defaults Oracle to 15 minutes, accepts 30-minute deep review, preserves other floors, and caps at 24 hours', async () => {
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       requests.push(JSON.parse(init.body));
@@ -824,11 +828,18 @@ describe('DevRyan managed orchestration plugin', () => {
     await plugin.tool.devryan_task.execute({
       action: 'start',
       agent: 'oracle',
-      prompt: 'Review within the Oracle deadline floor.',
+      prompt: 'Run a focused review within the Oracle deadline floor.',
+      provider_id: 'openai',
+      model_id: 'gpt-5.6-sol',
+    }, context({ messageID: 'msg_fifth' }));
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'oracle',
+      prompt: 'Run an explicitly deep Oracle review.',
       provider_id: 'openai',
       model_id: 'gpt-5.6-sol',
       timeout_seconds: 1_800,
-    }, context({ messageID: 'msg_fifth' }));
+    }, context({ messageID: 'msg_sixth' }));
 
     expect(requests[0].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 1_800_000);
     expect(requests[0].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 1_800_000);
@@ -838,8 +849,10 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests[2].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
     expect(requests[3].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 3_600_000);
     expect(requests[3].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
-    expect(requests[4].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 3_600_000);
-    expect(requests[4].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
+    expect(requests[4].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 900_000);
+    expect(requests[4].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 900_000);
+    expect(requests[5].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 1_800_000);
+    expect(requests[5].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 1_800_000);
   });
 
   it.each(['designer', 'fixer'])('clamps an explicit %s recovery window to 60 minutes', async (agent) => {
@@ -2587,6 +2600,9 @@ describe('DevRyan managed orchestration plugin', () => {
       if (request.method === 'status') {
         return rpcResponse(collectableTaskResult('dvr_task_completed'));
       }
+      if (request.method === 'claim_provider_recovery_continuation') {
+        return rpcResponse({ claimed: true, expiresAt: Date.now() + 60_000 });
+      }
       expect(request.method).toBe('list_provider_recovery_continuations');
       return rpcResponse({
           continuations: [{
@@ -2641,8 +2657,140 @@ describe('DevRyan managed orchestration plugin', () => {
     });
     expect(scheduled).toHaveLength(1);
     scheduled.shift()();
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
     expect(client.session.promptAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the host claim to deduplicate recovery wakes across plugin instances', async () => {
+    const scheduled = [];
+    const claimants = [];
+    let activeClaimant = null;
+    const client = {
+      session: {
+        messages: vi.fn(async () => ({
+          data: [{
+            info: {
+              id: 'msg_parent_user',
+              role: 'user',
+              agent: 'orchestrator',
+              model: { providerID: 'openai', modelID: 'gpt-5.6' },
+            },
+            parts: [{ type: 'text', text: 'Review the project.' }],
+          }],
+        })),
+        status: vi.fn(async () => ({ data: {} })),
+        promptAsync: vi.fn(async () => ({ data: true })),
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      if (request.method === 'status') {
+        return rpcResponse(collectableTaskResult('dvr_task_recovered'));
+      }
+      if (request.method === 'claim_provider_recovery_continuation') {
+        claimants.push(request.params.claimantId);
+        const claimed = activeClaimant === null;
+        if (claimed) activeClaimant = request.params.claimantId;
+        return rpcResponse({ claimed, expiresAt: Date.now() + 60_000 });
+      }
+      return rpcResponse({
+        continuations: [{
+          sourceTaskId: 'dvr_task_limited',
+          taskId: 'dvr_task_recovered',
+          rootSessionId: 'ses_root',
+          childSessionId: 'ses_oracle',
+          directory: '/workspace',
+          kind: 'collect',
+        }],
+      });
+    }));
+
+    for (let index = 0; index < 2; index += 1) {
+      await DevRyanManagedOrchestrationPlugin({
+        client,
+        scheduleTimeout(callback) {
+          scheduled.push(callback);
+          return { unref() {} };
+        },
+      });
+    }
+    expect(scheduled).toHaveLength(2);
+    scheduled.splice(0).forEach((callback) => callback());
+
+    await vi.waitFor(() => expect(claimants).toHaveLength(2));
+    expect(new Set(claimants).size).toBe(2);
+    expect(client.session.promptAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases a recovery claim when prompt delivery fails so a later scan can retry', async () => {
+    const scheduled = [];
+    const methods = [];
+    let activeClaimant = null;
+    let promptAttempt = 0;
+    const client = {
+      session: {
+        messages: vi.fn(async () => ({
+          data: [{
+            info: {
+              id: 'msg_parent_user',
+              role: 'user',
+              agent: 'orchestrator',
+              model: { providerID: 'openai', modelID: 'gpt-5.6' },
+            },
+            parts: [{ type: 'text', text: 'Review the project.' }],
+          }],
+        })),
+        status: vi.fn(async () => ({ data: {} })),
+        promptAsync: vi.fn(async () => {
+          promptAttempt += 1;
+          return promptAttempt === 1
+            ? { error: { message: 'temporary delivery failure' } }
+            : { data: true };
+        }),
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      methods.push(request.method);
+      if (request.method === 'status') {
+        return rpcResponse(collectableTaskResult('dvr_task_recovered'));
+      }
+      if (request.method === 'claim_provider_recovery_continuation') {
+        const claimed = activeClaimant === null;
+        if (claimed) activeClaimant = request.params.claimantId;
+        return rpcResponse({ claimed, expiresAt: Date.now() + 60_000 });
+      }
+      if (request.method === 'release_provider_recovery_continuation') {
+        const released = activeClaimant === request.params.claimantId;
+        if (released) activeClaimant = null;
+        return rpcResponse({ released });
+      }
+      return rpcResponse({
+        continuations: [{
+          sourceTaskId: 'dvr_task_limited',
+          taskId: 'dvr_task_recovered',
+          rootSessionId: 'ses_root',
+          childSessionId: 'ses_oracle',
+          directory: '/workspace',
+          kind: 'collect',
+        }],
+      });
+    }));
+    await DevRyanManagedOrchestrationPlugin({
+      client,
+      scheduleTimeout(callback) {
+        scheduled.push(callback);
+        return { unref() {} };
+      },
+    });
+
+    scheduled.shift()();
+    await vi.waitFor(() => expect(methods).toContain('release_provider_recovery_continuation'));
+    await vi.waitFor(() => expect(scheduled).toHaveLength(1));
+    scheduled.shift()();
+    await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledTimes(2));
+    expect(methods.filter((method) => method === 'claim_provider_recovery_continuation')).toHaveLength(2);
+    expect(methods.filter((method) => method === 'release_provider_recovery_continuation')).toHaveLength(1);
   });
 
   it('does not claim manual Model Recovery for an ungrouped orchestrator retry', async () => {
@@ -2787,6 +2935,9 @@ describe('DevRyan managed orchestration plugin', () => {
       if (request.method === 'status') {
         return rpcResponse(collectableTaskResult('dvr_task_recovered'));
       }
+      if (request.method === 'claim_provider_recovery_continuation') {
+        return rpcResponse({ claimed: true, expiresAt: Date.now() + 60_000 });
+      }
       return rpcResponse({
         continuations: [{
           sourceTaskId: 'dvr_task_limited',
@@ -2815,7 +2966,7 @@ describe('DevRyan managed orchestration plugin', () => {
     });
     expect(scheduled).toHaveLength(1);
     scheduled.shift()();
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
     // fetch resolves well before a wake would be sent, so let the second scan
     // drain fully before asserting; otherwise a re-send is simply not observed
     // yet and the assertion passes for the wrong reason.
@@ -2861,6 +3012,9 @@ describe('DevRyan managed orchestration plugin', () => {
       const request = JSON.parse(init.body);
       if (request.method === 'status') {
         return rpcResponse(collectableTaskResult('dvr_task_recovered'));
+      }
+      if (request.method === 'claim_provider_recovery_continuation') {
+        return rpcResponse({ claimed: true, expiresAt: Date.now() + 60_000 });
       }
       scanCount += 1;
       const continuations = scanCount < 3
@@ -2946,6 +3100,9 @@ describe('DevRyan managed orchestration plugin', () => {
       const request = JSON.parse(init.body);
       if (request.method === 'status') {
         return rpcResponse(collectableTaskResult('dvr_task_recovered'));
+      }
+      if (request.method === 'claim_provider_recovery_continuation') {
+        return rpcResponse({ claimed: true, expiresAt: Date.now() + 60_000 });
       }
       scanCount += 1;
       if (scanCount === 1) return await firstScan;

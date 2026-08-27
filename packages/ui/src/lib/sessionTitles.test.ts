@@ -5,6 +5,7 @@ import {
   isCursorAcpErrorTitle,
   isGeneratedNewSessionTitle,
   isPlanControlSessionTitle,
+  mergeSessionPreservingMeaningfulTitle,
   resolveDisplaySessionTitle,
 } from "./sessionTitles"
 
@@ -70,12 +71,12 @@ describe("session title helpers", () => {
     })).toBe("regular title")
   })
 
-  test("hides generated new-session titles behind a user-prompt fallback", () => {
+  test("keeps generated new-session titles neutral while the backend generates a title", () => {
     expect(resolveDisplaySessionTitle({
       title: "New session - 2026-05-20T13:18:22.865Z",
       latestUserText: "remove the export pdf button",
       fallback: "Untitled Session",
-    })).toBe("Remove export PDF button")
+    })).toBe("Untitled Session")
   })
 
   test("hides plan control titles behind the requested fallback", () => {
@@ -103,17 +104,17 @@ describe("session title helpers", () => {
     })).toBe("Review Privacy")
   })
 
-  test("derives a title from the user text when the stored title is the untitled placeholder", () => {
+  test("does not expose user text when the stored title is the untitled placeholder", () => {
     expect(resolveDisplaySessionTitle({
       title: "Untitled Session",
       latestUserText: "fix the login bug",
       fallback: "Untitled Session",
-    })).toBe("Fix login bug")
+    })).toBe("Untitled Session")
     expect(resolveDisplaySessionTitle({
       title: "untitled session",
       latestUserText: "fix the login bug",
       fallback: "Untitled Session",
-    })).toBe("Fix login bug")
+    })).toBe("Untitled Session")
   })
 
   test("keeps the fallback for the untitled placeholder when no user text is loaded", () => {
@@ -121,5 +122,24 @@ describe("session title helpers", () => {
       title: "Untitled Session",
       fallback: "Untitled Session",
     })).toBe("Untitled Session")
+  })
+
+  test("preserves a meaningful projected title across later placeholder snapshots", () => {
+    const projected = { id: "ses_1", title: "Repair Parent Session Titles", updated: 1 }
+    expect(mergeSessionPreservingMeaningfulTitle(projected, {
+      id: "ses_1",
+      title: "New session - 2026-08-23T21:14:18.802Z",
+      updated: 2,
+    })).toEqual({
+      id: "ses_1",
+      title: "Repair Parent Session Titles",
+      updated: 2,
+    })
+
+    expect(mergeSessionPreservingMeaningfulTitle(projected, {
+      id: "ses_1",
+      title: "My Manual Session Name",
+      updated: 3,
+    }).title).toBe("My Manual Session Name")
   })
 })

@@ -29,6 +29,12 @@ export const LazyMultiRunWindow = /* @__PURE__ */ lazyWithChunkRecovery(() =>
 export const LazyAgentManagerView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/views/agent-manager/AgentManagerView').then((module) => ({ default: module.AgentManagerView })),
 );
+export const LazyBotView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/views/BotView').then((module) => ({ default: module.BotView })),
+);
+export const LazyBotsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/bots/BotsPage').then((module) => ({ default: module.BotsPage })),
+);
 
 export const LazyViewBoundary: React.FC<React.PropsWithChildren> = ({ children }) => (
   <ErrorBoundary>

@@ -1,0 +1,1797 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-27T08:38:46.852Z",
+  "result": "pass",
+  "browser": "Packaged Electron CDP isolated visual shell",
+  "electronMode": "packaged",
+  "crossMachinePixelBaseline": false,
+  "reviewStatus": "reviewed",
+  "cases": [
+    {
+      "id": "agent-opencode-light-r220",
+      "scene": "agent",
+      "state": "opencode",
+      "theme": "light",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "agent-opencode-light-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Managed OpenCodeLocal Default. Model Credentials Stay in DevRyan.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "agent-agui-healthy-dark-r280",
+      "scene": "agent",
+      "state": "healthy",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "agent-agui-healthy-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Managed OpenCodeLocal Default. Model Credentials Stay in DevRyan.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "agent-testing-light-r500",
+      "scene": "agent",
+      "state": "testing",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "agent-testing-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Managed OpenCodeLocal Default. Model Credentials Stay in DevRyan.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "agent-failed-dark-r280",
+      "scene": "agent",
+      "state": "failed",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "agent-failed-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Managed OpenCodeLocal Default. Model Credentials Stay in DevRyan.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "agent-revoked-light-r220",
+      "scene": "agent",
+      "state": "revoked",
+      "theme": "light",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "agent-revoked-light-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Managed OpenCodeLocal Default. Model Credentials Stay in DevRyan.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "agent-privacy-warning-dark-narrow",
+      "scene": "agent",
+      "state": "privacy_warning",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "agent-privacy-warning-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Managed OpenCodeLocal Default. Model Credentials Stay in DevRyan.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "spec-trusted-light-r500",
+      "scene": "spec",
+      "state": "trusted",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "spec-trusted-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Export Signed JSON",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "spec-untrusted-dark-r280",
+      "scene": "spec",
+      "state": "untrusted",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "spec-untrusted-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Export Signed JSON",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "spec-tampered-light-r220",
+      "scene": "spec",
+      "state": "tampered",
+      "theme": "light",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "spec-tampered-light-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Export Signed JSON",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "spec-binding-failed-dark-narrow",
+      "scene": "spec",
+      "state": "binding_failed",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "spec-binding-failed-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Export Signed JSON",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "spec-portable-diff-light-r500",
+      "scene": "spec",
+      "state": "diff",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "spec-portable-diff-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Export Signed JSON",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "policy-structured-light-r500",
+      "scene": "policy",
+      "state": "healthy",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "policy-structured-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "LowSensitiveCritical",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "policy-validation-error-dark-r280",
+      "scene": "policy",
+      "state": "validation_error",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "policy-validation-error-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "LowSensitiveCritical",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "policy-quota-exhausted-light-narrow",
+      "scene": "policy",
+      "state": "quota_exhausted",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "policy-quota-exhausted-light-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "LowSensitiveCritical",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "network-public-only-light-r220",
+      "scene": "network",
+      "state": "public_only",
+      "theme": "light",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "network-public-only-light-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "network-allowlist-dark-r500",
+      "scene": "network",
+      "state": "allowlist",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "network-allowlist-dark-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "network-private-denial-light-r280",
+      "scene": "network",
+      "state": "private_denial",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "network-private-denial-light-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "network-proxy-failure-dark-narrow",
+      "scene": "network",
+      "state": "proxy_failure",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "network-proxy-failure-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "network-standard-light-r280",
+      "scene": "network",
+      "state": "standard",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "network-standard-light-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "network-runsc-dark-r500",
+      "scene": "network",
+      "state": "runsc",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "network-runsc-dark-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "network-runsc-unavailable-light-r220",
+      "scene": "network",
+      "state": "runsc_unavailable",
+      "theme": "light",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "network-runsc-unavailable-light-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "runtime-consent-light-r280",
+      "scene": "runtime",
+      "state": "consent",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-consent-light-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Open Settings",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "runtime-legacy-consent-dialog-light-r500",
+      "scene": "runtime",
+      "state": "legacy_consent",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-legacy-consent-dialog-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Enable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "runtime-starting-dark-r220",
+      "scene": "runtime",
+      "state": "starting",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-starting-dark-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Disable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "runtime-connected-light-r500",
+      "scene": "runtime",
+      "state": "connected",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-connected-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Disable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "runtime-degraded-dark-r280",
+      "scene": "runtime",
+      "state": "degraded",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-degraded-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Disable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "runtime-updating-light-narrow",
+      "scene": "runtime",
+      "state": "updating",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "runtime-updating-light-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Disable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "runtime-disabled-dark-r280",
+      "scene": "runtime",
+      "state": "disabled",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-disabled-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Enable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "runtime-desktop-unavailable-light-r500",
+      "scene": "runtime",
+      "state": "desktop_unavailable",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-desktop-unavailable-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Disable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "transcript-empty-light-r220",
+      "scene": "transcript",
+      "state": "empty",
+      "theme": "light",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-empty-light-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "div",
+        "name": "No run activity yetAccepted messages and queued work will appear here.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "transcript-loading-dark-r280",
+      "scene": "transcript",
+      "state": "loading",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-loading-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "div",
+        "name": "No run activity yetAccepted messages and queued work will appear here.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "transcript-pending-light-r280",
+      "scene": "transcript",
+      "state": "pending",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-pending-light-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Review",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "transcript-pending-developer-dark-r220",
+      "scene": "transcript",
+      "state": "pending",
+      "theme": "dark",
+      "role": "developer",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-pending-developer-dark-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Review",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "transcript-settled-light-r500",
+      "scene": "transcript",
+      "state": "settled",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-settled-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "Release Steward, 11:00 AM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "transcript-reconciliation-dark-r500",
+      "scene": "transcript",
+      "state": "reconciliation",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-reconciliation-dark-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "Release Steward, 11:00 AM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "transcript-partial-failure-light-narrow",
+      "scene": "transcript",
+      "state": "partial_failure",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "transcript-partial-failure-light-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Review",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "transcript-paused-dark-r280",
+      "scene": "transcript",
+      "state": "paused",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-paused-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Review",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    },
+    {
+      "id": "transcript-retired-light-r500",
+      "scene": "transcript",
+      "state": "retired",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-retired-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Review",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "rendererErrorCount": 0
+    }
+  ]
+}

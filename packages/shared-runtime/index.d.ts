@@ -171,6 +171,32 @@ export const COMMIT_DRAFT_DETAIL_MAX_LENGTH: 120;
 export const COMMIT_DRAFT_MODEL_COOLDOWN_MS: number;
 export const COMMIT_DRAFT_ALLOWED_TYPES: readonly string[];
 
+export interface FreeZenModel {
+  id: string;
+  owned_by?: string;
+}
+
+export interface FreeZenModelCatalogSnapshot {
+  models: FreeZenModel[];
+  at: number;
+  fresh: boolean;
+}
+
+export const FREE_ZEN_MODEL_CATALOG_TTL_MS: number;
+export const FREE_ZEN_MODEL_CATALOG_TIMEOUT_MS: number;
+export function normalizeFreeZenModels(zenPayload: unknown, metadataPayload: unknown): FreeZenModel[];
+export function createFreeZenModelCatalog(options?: {
+  fetchImpl?: typeof fetch;
+  now?: () => number;
+  ttlMs?: number;
+  timeoutMs?: number;
+}): {
+  fetchModels(options?: { force?: boolean }): Promise<FreeZenModel[]>;
+  getCachedModels(options?: { allowStale?: boolean }): FreeZenModel[];
+  getSnapshot(): FreeZenModelCatalogSnapshot | null;
+  prewarm(): void;
+};
+
 export interface SharedCommitDraftFileContext {
   path: string;
   index?: string;

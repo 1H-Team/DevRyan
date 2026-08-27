@@ -131,6 +131,7 @@ const VisualSectionContent: React.FC = () => {
         'weekStart',
         'fontSize',
         'chatWidth',
+        'codeFont',
         'terminalFontSize',
         'spacing',
         'inputBarOffset',

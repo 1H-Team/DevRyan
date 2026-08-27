@@ -2,25 +2,20 @@ import {
   getSessionConfirmedMentionsStorageKey,
   getSessionInputStorageKey,
 } from "@/sync/session-draft-storage"
+import {
+  getComposerTargetKey,
+  resolveComposerTarget,
+  type ComposerTarget,
+} from "@/sync/composer-target"
 
-export type ComposerDraftTarget =
-  | { kind: "session"; id: string }
-  | { kind: "draft"; id: string }
-  | { kind: "none" }
+export type ComposerDraftTarget = ComposerTarget
 
 export const resolveComposerDraftTarget = (
   sessionId: string | null | undefined,
   draftId: string | null | undefined,
-): ComposerDraftTarget => {
-  if (sessionId) return { kind: "session", id: sessionId }
-  if (draftId) return { kind: "draft", id: draftId }
-  return { kind: "none" }
-}
+): ComposerDraftTarget => resolveComposerTarget(sessionId, draftId)
 
-export const getComposerDraftTargetKey = (target: ComposerDraftTarget): string => {
-  if (target.kind === "none") return "none"
-  return `${target.kind}:${target.id}`
-}
+export const getComposerDraftTargetKey = (target: ComposerDraftTarget): string => getComposerTargetKey(target)
 
 export const getComposerDraftStorageKey = (target: ComposerDraftTarget): string | null => {
   if (target.kind === "session") return getSessionInputStorageKey(target.id)

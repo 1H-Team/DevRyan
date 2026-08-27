@@ -4,17 +4,23 @@ import { readFileSync } from 'node:fs';
 const readSource = (file: string): string => readFileSync(new URL(file, import.meta.url), 'utf8');
 
 describe('managed Bug Reports settings page', () => {
-  test('keeps the three page-local surfaces lazy and admin review exact-role-only', () => {
+  test('keeps the four page-local surfaces lazy and admin review exact-role-only', () => {
     const source = readSource('./BugReportsPage.tsx');
+    const botAudit = readSource('./BotAuditPanel.tsx');
 
-    expect(source).toContain("type BugReportsTab = 'submit' | 'reports' | 'errors'");
+    expect(source).toContain("type BugReportsTab = 'submit' | 'reports' | 'agent-audit' | 'bot-audit'");
     expect(source).toContain('const LazySubmitBugReportPanel = /* @__PURE__ */ lazyWithChunkRecovery');
     expect(source).toContain('const LazyBugReportReviewPanel = /* @__PURE__ */ lazyWithChunkRecovery');
     expect(source).toContain('const LazyErrorLogsPanel = /* @__PURE__ */ lazyWithChunkRecovery');
+    expect(source).toContain('const LazyBotAuditPanel = /* @__PURE__ */ lazyWithChunkRecovery');
     expect(source).toContain("principal.scope === 'managed' && principal.role === 'admin'");
     expect(source).toContain("principal.scope !== 'managed' || isVSCodeRuntime()");
     expect(source).toContain("visitedTabs.has('reports')");
-    expect(source).toContain("visitedTabs.has('errors')");
+    expect(source).toContain("visitedTabs.has('agent-audit')");
+    expect(source).toContain("visitedTabs.has('bot-audit')");
+    expect(botAudit).toContain("settings.bugReports.botAudit.empty");
+    expect(botAudit).not.toContain('fetch(');
+    expect(botAudit).not.toContain('useRuntimeAPIs');
   });
 
   test('submits only title and description and clears the draft after confirmation', () => {

@@ -8,6 +8,7 @@ import { discoverTestFiles, isIsolatedUiTestSource } from './test-runner-utils.m
 import { discoverElectronTestFiles } from './test-electron.mjs';
 import { discoverScriptTestFiles } from './test-scripts.mjs';
 import { discoverVscodeBunTestFiles } from './test-vscode.mjs';
+import { buildPlan } from './validate.mjs';
 
 const repoRoot = new URL('..', import.meta.url);
 
@@ -104,6 +105,31 @@ describe('test file discovery', () => {
 });
 
 describe('release workflow', () => {
+  test('includes the Bots runtime package in the full test gate and version script', () => {
+    const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
+    const bumpVersionSource = readFileSync(new URL('scripts/bump-version.mjs', repoRoot), 'utf8');
+
+    assert.match(
+      packageJson.scripts['test:full'],
+      /bun run --cwd packages\/bots-runtime test/,
+    );
+    assert.match(bumpVersionSource, /packages\/bots-runtime\/package\.json/);
+  });
+
+  test('versions and runs the confined Bot service packages', () => {
+    const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
+    const bumpVersionSource = readFileSync(new URL('scripts/bump-version.mjs', repoRoot), 'utf8');
+    for (const packageName of [
+      'bot-supervisor', 'bot-engine-proxy', 'bot-egress', 'bot-computer', 'bot-indexer',
+    ]) {
+      assert.match(
+        packageJson.scripts['test:full'],
+        new RegExp(`bun run --cwd packages/${packageName} test`),
+      );
+      assert.match(bumpVersionSource, new RegExp(`packages/${packageName}/package\\.json`));
+    }
+  });
+
   test('includes the Cursor runtime package in the full test gate', () => {
     const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
 
@@ -140,6 +166,50 @@ describe('release workflow', () => {
     );
   });
 
+  test('deploys and verifies Supabase Auth configuration and pending migrations at the final publish boundary', () => {
+    const workflow = readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8');
+    const finalizeReleaseJobMatch = workflow.match(/  finalize-release:\n(?<job>[\s\S]*?)(?:\n  [a-zA-Z0-9_-]+:\n|\n$)/);
+    assert.ok(finalizeReleaseJobMatch?.groups?.job, 'finalize-release job not found');
+
+    const job = finalizeReleaseJobMatch.groups.job;
+    const assetStep = job.indexOf('- name: Verify required release assets before publish');
+    const migrationStep = job.indexOf('- name: Deploy and verify Supabase configuration and migrations');
+    const releaseStep = job.indexOf('- name: Publish release');
+
+    assert.notEqual(migrationStep, -1, 'database migration release step not found');
+    assert.ok(assetStep < migrationStep, 'database migrations must run after release asset verification');
+    assert.ok(migrationStep < releaseStep, 'database migrations must run immediately before release publication');
+    assert.match(job, /uses: supabase\/setup-cli@v1/);
+    assert.match(job, /version: 2\.115\.0/);
+    assert.match(job, /if: \$\{\{ github\.event\.inputs\.dry_run != 'true' \}\}/);
+    assert.match(job, /SUPABASE_ACCESS_TOKEN: \$\{\{ secrets\.SUPABASE_ACCESS_TOKEN \}\}/);
+    assert.match(job, /SUPABASE_DB_PASSWORD: \$\{\{ secrets\.SUPABASE_DB_PASSWORD \}\}/);
+    assert.match(job, /SUPABASE_PROJECT_ID: \$\{\{ secrets\.SUPABASE_PROJECT_ID \}\}/);
+    assert.match(job, /supabase link --project-ref "\$SUPABASE_PROJECT_ID" --yes/);
+    assert.match(job, /node scripts\/sync-supabase-auth-password-policy\.mjs/);
+    assert.match(job, /supabase db push --linked --dry-run/);
+    assert.match(job, /supabase db push --linked --yes/);
+    assert.match(job, /supabase migration list --linked --output-format json/);
+    assert.match(job, /supabase db query --linked --agent=no --output json/);
+    assert.match(job, /const schemaRows = Array\.isArray\(schema\) \? schema : schema\.rows/);
+    assert.match(job, /entry\.local !== entry\.remote/);
+    assert.match(job, /actual !== expected/);
+    assert.ok(
+      job.indexOf('node scripts/sync-supabase-auth-password-policy.mjs')
+        > job.indexOf('supabase link --project-ref "$SUPABASE_PROJECT_ID" --yes'),
+      'Auth configuration must sync after the hosted project is linked',
+    );
+    assert.ok(
+      job.indexOf('node scripts/sync-supabase-auth-password-policy.mjs')
+        < job.indexOf('supabase db push --linked --dry-run'),
+      'Auth configuration must sync before database migrations',
+    );
+    assert.doesNotMatch(
+      workflow.match(/  create-release:\n(?<job>[\s\S]*?)(?:\n  [a-zA-Z0-9_-]+:\n|\n$)/)?.groups?.job || '',
+      /supabase db push/,
+    );
+  });
+
   test('installs Electron macOS optional dependencies for runner and package target architectures', () => {
     const workflow = readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8');
     const electronJobMatch = workflow.match(/  build-desktop-electron-macos:\n(?<job>[\s\S]*?)(?:\n  [a-zA-Z0-9_-]+:\n|\n$)/);
@@ -149,5 +219,68 @@ describe('release workflow', () => {
     assert.ok(installStepMatch?.groups?.step, 'Electron install dependencies step not found');
 
     assert.match(installStepMatch.groups.step, /bun install --frozen-lockfile --cpu '\*' --os darwin/);
+  });
+});
+
+describe('Bots affected validation planning', () => {
+  test('runs Bots plus web, Electron, and UI dependents for core changes', () => {
+    const plan = buildPlan('affected', [
+      'packages/bots-runtime/run-state.js',
+    ]);
+
+    assert.deepEqual(plan.commands.map((entry) => entry.label), [
+      'typeCheck:electron',
+      'typeCheck:ui',
+      'typeCheck:web',
+      'test:bots',
+      'test:electron',
+      'test:ui',
+      'test:web',
+    ]);
+  });
+
+  test('still runs the Bots package suite in quick mode', () => {
+    const plan = buildPlan('quick', [
+      'packages/bots-runtime/policy.js',
+    ]);
+
+    assert.deepEqual(plan.commands.map((entry) => entry.label), ['test:bots']);
+  });
+
+  test('runs confined service suites and the Electron host for affected changes', () => {
+    const plan = buildPlan('affected', [
+      'packages/bot-supervisor/src/docker.js',
+      'packages/bot-engine-proxy/src/server.js',
+      'packages/bot-egress/src/connect-policy.js',
+      'packages/bot-computer/src/browser.js',
+      'packages/bot-indexer/src/index-store.js',
+    ]);
+
+    assert.deepEqual(plan.commands.map((entry) => entry.label), [
+      'test:botComputer',
+      'test:botEgress',
+      'test:botEngineProxy',
+      'test:botIndexer',
+      'test:botSupervisor',
+      'test:electron',
+    ]);
+  });
+
+  test('keeps each confined service suite in quick mode', () => {
+    const plan = buildPlan('quick', [
+      'packages/bot-supervisor/src/server.js',
+      'packages/bot-engine-proxy/src/server.js',
+      'packages/bot-egress/src/server.js',
+      'packages/bot-computer/src/server.js',
+      'packages/bot-indexer/src/server.js',
+    ]);
+
+    assert.deepEqual(plan.commands.map((entry) => entry.label), [
+      'test:botComputer',
+      'test:botEgress',
+      'test:botEngineProxy',
+      'test:botIndexer',
+      'test:botSupervisor',
+    ]);
   });
 });

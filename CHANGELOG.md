@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-08-26
+
+- OpenCode: update the managed runtime, bundled SDK, packaged plugin, VS Code recommendation, and Production Bots image to 1.18.23.
+- Production Bots: give global administrators a restricted read-only computer-root browser while keeping other Managers scoped to the Bot workspace.
+- Production Bots: add write-only Bot environment secrets backed by a host-encrypted vault and materialized only for newly admitted reasoning runs.
+- Production Bots: add OAuth-only ChatGPT image generation with verified automatic encrypted-object publication and inline chat attachments independent of the Shared-folder copy.
+- Production Bots: add a private, policy-gated Bot workspace with durable channels, queued runs, approvals, scoped browser actions, management views, and a focused Test Lab.
+- Bot runtime: ship confined Docker services for scoped OpenCode execution, model-only egress, persistent reviewed-command Chromium, and disposable local retrieval with host-managed encryption and credentials.
+- Bot knowledge and automation: add layered automatic memory, curated Library sources, private artifacts, structured local routines, continuous-channel access controls, and durable scheduling and recovery contracts.
+- Recovery: add encrypted recovery exports, granular resumable cleanup, and full retired-Bot purge flows that preserve required audit history and shared-memory provenance.
+- Database: add the service-role-only Supabase Production Bots control plane, forced RLS, immutable revision and audit protections, atomic queue and routine RPCs, and migration-gated runtime startup.
+- Authentication: align managed-account password validation and hosted Auth policy synchronization with Supabase's supported six-character minimum.
+- Release: publish signed multi-architecture Bot runtime images with SBOM/provenance attestations and a DevRyan-branded immutable manifest consumed by Electron release builds.
+- Reliability: consolidate startup and session-state transitions, remove transient loading flashes, stabilize session titles and sidebar age updates, and strengthen Bot API failure reporting.
+- Bot profiles and publishing: separate durable names, titles, summaries, and encrypted avatars from immutable revisions; add race-safe Save Draft and Publish Draft flows with structured readiness gates.
+- Bot management: add live provider/model/thinking choices, ordered fallbacks, profile-first Details editing, clearer lifecycle boundaries, and shared Skills/MCP capability navigation across desktop and mobile.
+- Database: migrate Bot profiles, private profile-image objects, schema readiness, and exact-version publish RPCs with optimistic concurrency and compatibility-safe activation behavior.
+- Sessions: project generated titles immediately across web, Electron, and VS Code, persist them at provider-safe lifecycle points, and prevent delayed placeholder snapshots from erasing meaningful titles.
+- Release: bump the DevRyan application and signed Production Bot runtime image set, workspace, Electron, VS Code, web, runtime packages, and legacy desktop metadata to 1.1.7.
+
 ## [1.1.6] - 2026-08-20
 
 - Chat: render completed assistant PNG, JPEG, GIF, and WebP references in one lazy responsive gallery, with secure message-scoped local-file authorization, bounded generated-file grants, and matching web/Electron/VS Code parsing rules.

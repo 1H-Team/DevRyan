@@ -9,12 +9,13 @@
 - Worktree group headers are branch-only. They never fetch, render, link, or decorate GitHub pull requests; pull-request presentation belongs exclusively to the right-sidebar PR tab.
 - The worktree-group cleanup action archives every active session and descendant in that branch while preserving the worktree and both local and remote branches. If the active session is archived, navigation returns to the registered project root, and partial archive failures remain visible for retry.
 - Runtime controls (collapse/expand, New Chat, New Multi-Run, Scheduled Tasks, and worktree creation) are independent of project-registry administration. Managed developers receive runtime controls while Add Project and project rename/remove remain administrator-only.
+- In desktop Bot mode, the Agents/Bots switcher clears the native controls with the compact `--oc-bot-chrome-height` inset instead of inheriting the taller, content-driven conversation header. Mobile drawers keep their existing header and safe-area offsets.
 - Managed worktree discovery keeps assigned base branches plus non-root worktrees referenced by the current user's sessions or drafts, so generated Multi-Run branches stay visible without re-exposing an ungranted primary checkout. The root group is hidden unless its real checked-out branch is granted; hidden root sessions therefore cannot become the cold-load selection.
 - The footer keeps the assigned GitHub profile as its leftmost control, retries transient startup status failures, retains the last valid avatar on refresh failure, and falls back to the GitHub glyph while an assigned profile is loading or has no usable image.
 - Active/hover row styling is text-first; selected sessions use primary text instead of background fills.
 - Archived groups are collapsed by default on cold load/refresh, preserve their collapsed state when sessions are archived into them, and support bulk deletion at group/folder level.
 - Archived project ownership is resolved once from registered project roots and known worktrees. An explicit session directory maps to the deepest matching registered directory; project/worktree metadata is a fallback, and no-directory child sessions inherit their parent's owner. Archived lists, auto-folders, and folder cleanup consume the same ownership map so nested projects cannot duplicate or delete each other's folder entries.
-- Session rows support compact inline dates in minimal mode and simplified metadata in default mode.
+- Session rows do not render elapsed-time metadata or run row-local clocks. Pinned precedence remains stable, and sessions within each pinned/unpinned partition use canonical `session.time.updated` recency with `session.time.created` as the fallback.
 - New extractions in latest pass reduced local effect/callback bulk further:
   - project session list builders
   - folder cleanup sync
@@ -43,7 +44,6 @@
 - `hooks/useSessionActions.ts`: Centralizes session row actions (select/open, rename, share/unshare, archive/delete, confirmations).
 - `hooks/useSessionSearchEffects.ts`: Handles search open/close UX and input focus behavior.
 - `hooks/useSessionPrefetch.ts`: Runs the active-directory-only intent queue: 180 ms hover, immediate keyboard focus, and previous/next neighbors after a stable 600 ms selection. It cancels abandoned timers, permits one request at a time, and caps pending work at six.
-- `hooks/useSidebarUserActivityHydration.ts`: Restores historical user-message recency for root sessions in the current directory; inactive projects use deterministic session metadata until selected or updated live.
 - `hooks/useSidebarArchivedAssistantActivityHydration.ts`: Restores archived assistant-response recency from any safe cached messages, but performs network hydration only for the current directory.
 - `hooks/useDirectoryStatusProbe.ts`: Probes and caches directory existence status for session/path indicators.
 - `hooks/useSessionGrouping.ts`: Builds grouped session structures and search text/filter helpers.

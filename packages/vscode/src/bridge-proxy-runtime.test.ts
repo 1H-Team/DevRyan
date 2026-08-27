@@ -24,6 +24,8 @@ const deps = {
   supportsXaiProvider: vi.fn((providerID: unknown) => providerID === 'xai'),
   refreshXaiProviderPayload: vi.fn(async () => undefined),
   refreshXaiToolModel: vi.fn(async () => undefined),
+  scheduleSessionTitle: vi.fn(async () => true),
+  scheduleSessionTitleRecovery: vi.fn(async () => true),
 };
 
 const context = {
@@ -46,10 +48,29 @@ afterEach(() => {
   deps.supportsXaiProvider.mockClear();
   deps.refreshXaiProviderPayload.mockReset();
   deps.refreshXaiToolModel.mockReset();
+  deps.scheduleSessionTitle.mockReset();
+  deps.scheduleSessionTitle.mockResolvedValue(true);
+  deps.scheduleSessionTitleRecovery.mockReset();
+  deps.scheduleSessionTitleRecovery.mockResolvedValue(true);
   context.postMessage.mockReset();
 });
 
 describe('VS Code prompt admission proxy', () => {
+  it('schedules bounded placeholder recovery after a successful session list', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json([
+      { id: 'ses_1', title: 'Untitled Session' },
+    ]));
+
+    const result = await handleProxyBridgeMessage({
+      id: 'session-list-recovery',
+      type: 'api:proxy',
+      payload: { method: 'GET', path: '/session?directory=%2Frepo' },
+    }, context as never, deps);
+
+    expect((result?.data as { status: number }).status).toBe(200);
+    expect(deps.scheduleSessionTitleRecovery).toHaveBeenCalledWith('/repo');
+  });
+
   it('returns the exact context-mode recovery block without forwarding or recording a duplicate prompt', async () => {
     const recordPrompt = vi.fn();
     setVsCodeHarnessRuntime({
@@ -120,6 +141,60 @@ describe('VS Code prompt admission proxy', () => {
     });
     expect(deps.refreshXaiToolModel).not.toHaveBeenCalled();
     expect(recordPromptAccepted).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(
+    ['builder', 'orchestrator'].flatMap((agent) =>
+      [false, true].flatMap((planMode) => [
+        ['openai', 'gpt-5.6-sol'],
+        ['xai', 'grok-4.6'],
+        ['opencode', 'nemotron-3.5-lightning-free'],
+      ].map(([providerID, modelID]) => ({ agent, planMode, providerID, modelID }))),
+    ),
+  )('schedules title parity for $agent $providerID prompts (plan=$planMode)', async ({
+    agent,
+    planMode,
+    providerID,
+    modelID,
+  }) => {
+    setVsCodeHarnessRuntime({
+      getPromptAdmissionBlock: () => null,
+      recordPrompt: vi.fn(),
+      lifecycle: { recordPromptAccepted: vi.fn() },
+    } as never);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+    const visibleText = `repair ${providerID} ${agent} title behavior`;
+    const parts = planMode
+      ? [
+          { type: 'text', text: 'User has requested to enter plan mode.', synthetic: true },
+          { type: 'text', text: visibleText },
+        ]
+      : [{ type: 'text', text: visibleText }];
+
+    await handleProxyBridgeMessage({
+      id: `prompt-${providerID}-${agent}-${planMode}`,
+      type: 'api:proxy',
+      payload: {
+        method: 'POST',
+        path: '/session/ses_title/prompt_async?directory=%2Frepo',
+        bodyBase64: Buffer.from(JSON.stringify({
+          model: { providerID, modelID },
+          agent,
+          variant: providerID === 'openai' ? 'medium' : undefined,
+          messageID: 'msg_client_1',
+          parts,
+        })).toString('base64'),
+      },
+    }, context as never, deps);
+
+    expect(deps.scheduleSessionTitle).toHaveBeenCalledWith({
+      sessionID: 'ses_title',
+      directory: '/repo',
+      text: visibleText,
+      providerID,
+      modelID,
+      variant: providerID === 'openai' ? 'medium' : undefined,
+    });
   });
 });
 

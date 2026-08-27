@@ -43,6 +43,14 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
   - `getStatus()` returns total enabled records separately from pending schedules
     that have a future execution; desktop quit protection uses the pending and
     running counts, so expired one-time records do not block quitting.
+  - `refreshStatus()` re-reads projects and authoritatively reconciles each
+    owner-scoped task before returning counts. Active owners with a matching
+    branch are runnable, suspended owners are retained but dormant, and tasks
+    with definitively revoked owner/project/branch access are deleted. Control
+    plane failures retain data, suppress dispatch, and return `verified: false`.
+  - `removeTasksForRevokedAccess()` applies successful access mutations
+    immediately through the project-config lock; startup and status refresh
+    recover missed notifications and older orphan records.
 
 Scheduled occurrences carry their exact `scheduledFor` timestamp. Under the
 project-config cross-process lock, a claim writes `lastScheduledFor` and either
@@ -66,9 +74,13 @@ or advance scheduled occurrences.
 The status response preserves `hasEnabledScheduledTasks` and
 `enabledScheduledTasksCount` for management compatibility. Quit-risk consumers
 must use `hasPendingScheduledTasks` / `pendingScheduledTasksCount` together with
-the running-task fields.
+the running-task fields and honor `verified` rather than trusting stale counts.
 
 Managed non-admin users can list, create, edit, delete, and run only their own tasks. Administrators can manage all personal and legacy ownerless tasks. All mutations require the standard CSRF header.
+Managed administrators may reach a project through a local-settings alias; the
+route resolves that alias by repository path and persists owner-scoped tasks
+under the authoritative managed project UUID. Unmatched local projects remain
+ownerless local schedules.
 
 The shared OpenChamber event stream also carries `openchamber:project-metadata-changed`
 with only a project ID. Administrators receive all such invalidations; managed

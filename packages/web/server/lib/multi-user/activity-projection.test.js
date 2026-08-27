@@ -197,6 +197,35 @@ describe('OpenCode activity projection', () => {
     });
   });
 
+  it('canonicalizes paired session-error wrapper and stack variants for correlation', () => {
+    const signatures = [];
+    const correlateSessionError = ({ signature }) => {
+      signatures.push(signature);
+      return '11111111-1111-5111-8111-111111111111';
+    };
+    const project = (message, errorName = 'UnknownError') => projectOpenCodeActivity({
+      ownership,
+      context: { rootSessionId: 'session-1', correlateSessionError, observedAt: 1_000 },
+      payload: {
+        type: 'session.error',
+        properties: {
+          sessionID: 'session-1',
+          error: { name: errorName, data: { message } },
+        },
+      },
+    });
+
+    const simple = project('Model not found: opencode/retired-model');
+    const stacked = project(
+      '%s: UnknownError: ProviderModelNotFoundError: Model not found: opencode/retired-model\n    at SessionPrompt.getModel',
+      'ProviderModelNotFoundError',
+    );
+
+    expect(signatures).toHaveLength(2);
+    expect(signatures[0]).toBe(signatures[1]);
+    expect(simple.details.eventId).toBe(stacked.details.eventId);
+  });
+
   it('projects a retry-capable child 504 idle timeout as expected stream interruption', () => {
     const projected = projectOpenCodeActivity({
       ownership,

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, session, shell, systemPreferences, WebContentsView } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, safeStorage, session, shell, systemPreferences, WebContentsView } from 'electron';
 import contextMenu from 'electron-context-menu';
 import log from 'electron-log/main.js';
 import dgram from 'node:dgram';
@@ -17,7 +17,30 @@ import { ElectronSshManager } from './ssh-manager.mjs';
 import { MacosSpeechManager } from './speech-manager.mjs';
 import { clearElectronRuntimeCaches, getElectronRuntimeCacheInfo } from './cache-maintenance.mjs';
 import { createKeepAwakeController } from './keep-awake-controller.mjs';
+import {
+  createBotSecretStore,
+  replaceBotEncryptionKeyAndRepair,
+} from './bot-secret-store.mjs';
+import { createBotRecoveryDialog } from './bot-recovery-dialog.mjs';
+import {
+  createBotRuntimeManager,
+  deriveBotRuntimeServiceEnvironment,
+  resolveDockerSocketSupplementalGid,
+} from './bot-runtime-manager.mjs';
+import { loadBotRuntimeManifest } from './bot-runtime-manifest.mjs';
 import { finishQuitAfterCleanup } from './quit-cleanup.mjs';
+import {
+  createRuntimeServiceCoordinator,
+  isRuntimeServiceProtocolSupported,
+  readRuntimeServiceDescriptor,
+  runtimeServiceOwnerPath,
+  unsealRuntimeServiceBootstrapToken,
+} from './runtime-service.mjs';
+import {
+  createDesktopHostBroker,
+  createDesktopHostBrokerClient,
+} from './desktop-host-broker.mjs';
+import { createRuntimeServiceRegistration } from './runtime-service-registration.mjs';
 import {
   buildQuitRiskSnapshot,
   emptyQuitRisk,
@@ -26,8 +49,11 @@ import {
 } from './quit-risk.mjs';
 import { persistWindowState } from './window-state-persistence.mjs';
 import {
+  buildBotStartupAttentionHtml as buildBotStartupAttentionHtmlFromSettings,
   buildStartupErrorHtml as buildStartupErrorHtmlFromSettings,
   buildStartupSplashHtml as buildStartupSplashHtmlFromSettings,
+  resolveStartupSplashPalette,
+  withStartupSplashPalette,
 } from './startup-splash.mjs';
 import {
   isAllowedElectronContentUrl,
@@ -50,14 +76,33 @@ import {
 } from './native-browser-context.mjs';
 
 const execFileAsync = promisify(execFile);
+const botRecoveryDialog = createBotRecoveryDialog({ dialog });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isDev = process.env.OPENCHAMBER_ELECTRON_DEV === '1' || !app.isPackaged;
+const isRuntimeServiceMode = process.argv.includes('--runtime-service');
 
 const DEEP_LINK_PROTOCOL = 'openchamber';
 const STARTUP_RETRY_HOST = 'retry-startup';
+const BOT_RUNTIME_RETRY_HOST = 'retry-bot-runtime';
+const BOT_RUNTIME_CONTINUE_HOST = 'continue-without-bots';
 const APP_USER_MODEL_ID = 'dev.openchamber.desktop';
+
+if (isDev && typeof process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR === 'string') {
+  const devUserDataDirectory = path.resolve(process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR);
+  fs.mkdirSync(devUserDataDirectory, { recursive: true });
+  // A packaged development binary otherwise contends with the installed app's
+  // single-instance lock and Chromium profile. Isolate both before acquiring
+  // the lock so visual verification never disrupts the user's running app.
+  app.setPath('userData', devUserDataDirectory);
+}
+
+if (isRuntimeServiceMode) {
+  const serviceUserDataDirectory = `${app.getPath('userData')}-runtime-service`;
+  fs.mkdirSync(serviceUserDataDirectory, { recursive: true });
+  app.setPath('userData', serviceUserDataDirectory);
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.exit(0);
@@ -208,7 +253,25 @@ const state = {
   agentBrowserSetupPromise: null,
   agentBrowserManagedRuntime: false,
   agentBrowserRuntimeMode: 'pending',
+  botSecretStore: null,
+  botSecretStoreErrorCode: null,
+  botRuntimeManager: null,
+  botRuntimeOperationSnapshot: null,
+  pendingBotStartupContext: null,
+  botRuntimeRetryPromise: null,
+  runtimeServiceCoordinator: null,
+  runtimeServiceOwnsServer: false,
+  runtimeServiceClient: false,
+  desktopHostBroker: null,
+  desktopHostBrokerLease: null,
+  desktopHostLeaseRefreshTimer: null,
 };
+
+const desktopHostBrokerClient = createDesktopHostBrokerClient({
+  getLease: () => state.desktopHostBrokerLease,
+});
+
+let runtimeServiceRegistration = null;
 
 let browserSurfaceManager = null;
 const nativeBrowserContextsByWindow = new Map();
@@ -247,6 +310,9 @@ const performConfirmedQuit = () => {
   if (state.quitConfirmed || state.quitCleanupPromise) return;
   prepareForQuit();
   state.quitCleanupPromise = finishQuitAfterCleanup({
+    checkpointBotRuns: () => state.serverHandle?.checkpointBotRuns?.({ reason: 'app_quit' }),
+    stopBotDispatcher: () => state.serverHandle?.stopBotDispatcher?.(),
+    stopBotIndexerRequests: () => state.serverHandle?.stopBotIndexerRequests?.(),
     cleanupOwnedResources: async () => {
       speechManager.shutdown();
       await Promise.all([
@@ -299,13 +365,21 @@ const requestQuitWithConfirmation = async () => {
       title: 'Quit DevRyan?',
       message: 'Quit DevRyan?',
       detail: quitConfirmationMessage(quitRisk),
-      buttons: ['Quit', 'Cancel'],
+      buttons: ['Wait', 'Cancel', 'Quit Now'],
       defaultId: 1,
       cancelId: 1,
     });
     state.quitConfirmationPending = false;
-    if (result.response === 0) {
+    if (result.response === 2) {
       performConfirmedQuit();
+    } else if (result.response === 0) {
+      try {
+        await state.serverHandle?.checkpointBotRuns?.({ reason: 'quit_wait' });
+      } catch (error) {
+        log.warn('[electron] Bot checkpoint request failed while waiting to quit', {
+          code: error?.code || 'bot_checkpoint_failed',
+        });
+      }
     }
   } catch (error) {
     state.quitConfirmationPending = false;
@@ -322,6 +396,9 @@ const refreshQuitRiskFlags = async () => {
         Object.assign(quitRisk, buildQuitRiskSnapshot({
           scheduledTasks: status.scheduledTasks,
           tunnel: status.tunnel,
+          bots: status?.bots && typeof status.bots === 'object' ? status.bots : undefined,
+          scheduledTasksVerified: status.scheduledTasksVerified !== false
+            && status.scheduledTasks.verified !== false,
         }));
         return;
       }
@@ -369,6 +446,56 @@ const settingsFilePath = () => {
 };
 
 const dataRootDirectory = () => path.dirname(settingsFilePath());
+
+const firstExistingPath = (candidates) => (
+  candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0]
+);
+
+const botRuntimeManifestPath = () => (app.isPackaged
+  ? path.join(process.resourcesPath, 'bot-runtime', 'images.release.json')
+  : firstExistingPath([
+      path.join(__dirname, 'resources', 'bot-runtime', 'images.dev.json'),
+      path.join(__dirname, '..', 'resources', 'bot-runtime', 'images.dev.json'),
+    ]));
+
+const botRuntimeComposePath = () => (app.isPackaged
+  ? path.join(process.resourcesPath, 'bot-runtime', 'compose.yml')
+  : firstExistingPath([
+      path.resolve(__dirname, '..', '..', 'docker', 'bots', 'compose.yml'),
+      path.resolve(__dirname, '..', '..', '..', 'docker', 'bots', 'compose.yml'),
+    ]));
+
+const getBotRuntimeManager = () => {
+  if (state.botRuntimeManager) return state.botRuntimeManager;
+  state.botRuntimeManager = createBotRuntimeManager({
+    composePath: botRuntimeComposePath(),
+    dataDirectory: dataRootDirectory(),
+    baseEnvironment: process.env,
+    loadRuntimeEnvironment: async () => {
+      if (!state.botSecretStore) {
+        const error = new Error('Bot runtime encryption is unavailable');
+        error.code = state.botSecretStoreErrorCode || 'bot_os_encryption_unavailable';
+        throw error;
+      }
+      const deploymentKey = state.botSecretStore.getBotEncryptionKey();
+      try {
+        const dockerSocketGid = await resolveDockerSocketSupplementalGid();
+        return deriveBotRuntimeServiceEnvironment(deploymentKey, {
+          dockerSocketGid,
+          hostRuntimeRoot: path.join(dataRootDirectory(), 'bots', 'runtime'),
+        });
+      } finally {
+        deploymentKey.fill(0);
+      }
+    },
+    loadManifest: () => loadBotRuntimeManifest({
+      manifestPath: botRuntimeManifestPath(),
+      isPackaged: app.isPackaged,
+      architecture: process.arch,
+    }),
+  });
+  return state.botRuntimeManager;
+};
 
 const sshManager = new ElectronSshManager({
   settingsFilePath: settingsFilePath(),
@@ -819,7 +946,16 @@ const inheritUserShellEnv = () => {
 const spawnLocalServer = async () => {
   inheritUserShellEnv();
 
+  if (!state.runtimeServiceCoordinator) {
+    state.runtimeServiceCoordinator = await createRuntimeServiceCoordinator({
+      dataDirectory: dataRootDirectory(),
+      safeStorage,
+    });
+    await state.runtimeServiceCoordinator.acquire({ mode: 'app_bound' });
+  }
+
   const settings = readSettingsRoot();
+  const productionBotsExecutionDisabled = settings.productionBotsRuntimeMode === 'disabled';
   // NOTE: We intentionally do NOT call preflightMacosProtectedDirectoryAccess
   // here. Stat'ing a path under ~/Documents/Desktop/Downloads triggers the
   // macOS TCC prompt before the user has any UI context for why. Defer to
@@ -831,7 +967,7 @@ const spawnLocalServer = async () => {
   // When the user enables "Desktop Network Access" we bind on all interfaces
   // so phones/tablets on the same Wi-Fi can reach the app. UI shows a clear
   // warning and persists the flag via /api/config/settings.
-  const lanAccessEnabled = settings.desktopLanAccessEnabled === true;
+  const lanAccessEnabled = !isRuntimeServiceMode && settings.desktopLanAccessEnabled === true;
   const bindHost = lanAccessEnabled ? '0.0.0.0' : '127.0.0.1';
   // The in-process web server refuses to bind a network-exposed host without UI
   // auth (see server/lib/security/bind-host.js). Desktop Network Access is a
@@ -884,6 +1020,44 @@ const spawnLocalServer = async () => {
   delete process.env.DEVRYAN_BROWSER_CDP_TOKEN;
   delete process.env.DEVRYAN_AGENT_BROWSER_BIN;
 
+  if (!state.botSecretStore) {
+    try {
+      state.botSecretStore = await createBotSecretStore({
+        dataDirectory: dataRootDirectory(),
+        safeStorage,
+      });
+      state.botSecretStoreErrorCode = null;
+    } catch (error) {
+      state.botSecretStoreErrorCode = typeof error?.code === 'string'
+        ? error.code
+        : 'bot_os_encryption_unavailable';
+      log.warn('[bots] OS-sealed credential storage is unavailable', {
+        code: state.botSecretStoreErrorCode,
+      });
+    }
+  }
+
+  // The deployment key crosses only this in-process callback boundary. It is
+  // never placed in process.env, renderer IPC, an HTTP response, or a log.
+  const getBotEncryptionKey = () => {
+    if (state.botSecretStore) return state.botSecretStore.getBotEncryptionKey();
+    const error = new Error('Bot encryption is unavailable');
+    error.code = state.botSecretStoreErrorCode || 'bot_os_encryption_unavailable';
+    throw error;
+  };
+  const replaceBotEncryptionKey = async (key) => {
+    if (!state.botSecretStore) {
+      const error = new Error('Bot encryption is unavailable');
+      error.code = state.botSecretStoreErrorCode || 'bot_os_encryption_unavailable';
+      throw error;
+    }
+    return replaceBotEncryptionKeyAndRepair({
+      secretStore: state.botSecretStore,
+      replacement: key,
+      repair: () => getBotRuntimeManager().repair(),
+    });
+  };
+
   try {
     const {
       createAgentBrowserInstaller,
@@ -916,20 +1090,121 @@ const spawnLocalServer = async () => {
 
   const { startWebUiServer } = await import('@openchamber/web/server/index.js');
 
+  const desktopHostLeaseIsActive = () => (
+    state.desktopHostBrokerLease
+    && Date.parse(state.desktopHostBrokerLease.expiresAt) > Date.now()
+  );
+  const desktopHostUnavailableStatus = () => ({
+    state: 'desktop_host_unavailable',
+    code: 'desktop_host_unavailable',
+  });
+
   const handle = await startWebUiServer({
     port: chosenPort,
     host: bindHost,
     attachSignals: false,
     exitOnShutdown: false,
-    onDesktopNotification: (payload) => maybeShowNativeNotification(payload),
+    onDesktopNotification: (payload) => {
+      if (!isRuntimeServiceMode) return maybeShowNativeNotification(payload);
+      return desktopHostBrokerClient.notify(payload).catch(() => undefined);
+    },
     onOpenCodeStartupStatus: (text) => updateStartupSplashStatus(text),
-    getIsWindowFocused: isAnyWindowFocused,
-    getBrowserCdpBridgeStatus: () => resolveBridgeStatusForDiscovery(),
+    getIsWindowFocused: isRuntimeServiceMode ? () => false : isAnyWindowFocused,
+    getBrowserCdpBridgeStatus: isRuntimeServiceMode
+      ? async () => {
+          if (!desktopHostLeaseIsActive()) return desktopHostUnavailableStatus();
+          const status = await desktopHostBrokerClient.status();
+          return status?.browser || desktopHostUnavailableStatus();
+        }
+      : () => resolveBridgeStatusForDiscovery(),
     getBrowserCdpDiscoveryToken: () => state.browserCdpDiscoveryToken || '',
-    createBrowserLease: (request) => createDesktopBrowserLease(request),
-    touchBrowserLease: (request) => touchDesktopBrowserLease(request),
-    releaseBrowserLease: (request) => releaseDesktopBrowserLease(request),
+    createBrowserLease: isRuntimeServiceMode
+      ? (request) => desktopHostBrokerClient.createBrowserLease(request)
+      : (request) => createDesktopBrowserLease(request),
+    touchBrowserLease: isRuntimeServiceMode
+      ? (request) => desktopHostBrokerClient.touchBrowserLease(request)
+      : (request) => touchDesktopBrowserLease(request),
+    releaseBrowserLease: isRuntimeServiceMode
+      ? (request) => desktopHostBrokerClient.releaseBrowserLease(request)
+      : (request) => releaseDesktopBrowserLease(request),
+    runtimeServiceController: isRuntimeServiceMode ? state.runtimeServiceCoordinator : null,
+    deferOpenCodeStartup: isRuntimeServiceMode,
+    productionBotsExecutionDisabled,
+    onDesktopHostLease: isRuntimeServiceMode
+      ? async (lease) => {
+          state.desktopHostBrokerLease = Object.freeze({ ...lease });
+          await state.serverHandle?.resumeDeferredOpenCodeStartup?.();
+        }
+      : null,
+    onDesktopHostRelease: isRuntimeServiceMode
+      ? async (leaseId) => {
+          if (state.desktopHostBrokerLease?.leaseId === leaseId) {
+            state.desktopHostBrokerLease = null;
+          }
+      }
+      : null,
+    runtimeServiceBotRuntimeControl: isRuntimeServiceMode
+      ? {
+          status: () => getBotRuntimeManager().status(),
+          operationStatus: () => state.botRuntimeOperationSnapshot
+            || getBotRuntimeManager().operationStatus(),
+          setup: () => getBotRuntimeManager().setup({ onProgress: publishBotRuntimeProgress }),
+          repair: () => getBotRuntimeManager().repair({ onProgress: publishBotRuntimeProgress }),
+          update: () => getBotRuntimeManager().update({ onProgress: publishBotRuntimeProgress }),
+          rollback: () => getBotRuntimeManager().rollback({ onProgress: publishBotRuntimeProgress }),
+        }
+      : null,
+    onDisableRuntimeService: isRuntimeServiceMode
+      ? async () => {
+          await state.serverHandle?.checkpointBotRuns?.({ reason: 'background_bots_disabled' });
+          await state.serverHandle?.stopBotDispatcher?.();
+          await state.runtimeServiceCoordinator?.update({ health: 'disabled' });
+          setImmediate(() => app.quit());
+      }
+      : null,
+    onPrepareRuntimeServiceUpdate: isRuntimeServiceMode
+      ? async () => {
+          await state.serverHandle?.checkpointBotRuns?.({ reason: 'runtime_service_update' });
+          await state.serverHandle?.stopBotDispatcher?.();
+          await state.runtimeServiceCoordinator?.update({ health: 'updating' });
+          setImmediate(() => app.quit());
+        }
+      : null,
+    getBotEncryptionKey,
+    replaceBotEncryptionKey,
+    getBotRuntimeStatus: () => getBotRuntimeManager().status(),
+    ensureBotRuntimeReady: () => getBotRuntimeManager().ensureReady({
+      onProgress: (progress) => publishBotRuntimeProgress(progress),
+    }),
+    ensureBotReasoningRuntime: (request) => getBotRuntimeManager().ensureReasoning(request),
+    ensureBotComputerRuntime: (request) => getBotRuntimeManager().ensureComputer(request),
+    probeBotComputerIsolation: (request) => getBotRuntimeManager().probeComputerIsolation(request),
+    inspectBotRuntimeResource: (request) => getBotRuntimeManager().inspect(request),
+    stopBotRuntimeResource: (request) => getBotRuntimeManager().stop(request),
+    resetBotRuntimeResource: (request) => getBotRuntimeManager().reset(request),
+    writeBotWorkspaceFile: (request) => getBotRuntimeManager().writeWorkspace(request),
+    importBotSharedFile: (request) => getBotRuntimeManager().importSharedFile(request),
+    listBotWorkspaceFiles: (request) => getBotRuntimeManager().listWorkspace(request),
+    listBotContainerFiles: (request) => getBotRuntimeManager().listFilesystem(request),
+    exportBotWorkspaceImage: (request) => getBotRuntimeManager().exportWorkspaceImage(request),
+    exportBotBrowserProfiles: (botId, scopes) => (
+      getBotRuntimeManager().exportBrowserProfiles(botId, scopes)
+    ),
+    inspectBotBrowserProfiles: (botId, bytes) => (
+      getBotRuntimeManager().inspectBrowserProfiles(botId, bytes)
+    ),
+    restoreBotBrowserProfiles: (botId, bytes) => (
+      getBotRuntimeManager().restoreBrowserProfiles(botId, bytes)
+    ),
+    deleteBotBrowserProfiles: (botId) => getBotRuntimeManager().deleteBrowserProfiles(botId),
+    requestBotIndexer: (request) => getBotRuntimeManager().requestIndexer(request),
+    requestBotAgentEndpoint: (request) => getBotRuntimeManager().requestAgentEndpoint(request),
     getManagedBrowserEnvironment: async () => {
+      if (isRuntimeServiceMode && !desktopHostLeaseIsActive()) {
+        const error = new Error('The desktop host is not connected');
+        error.code = 'desktop_host_unavailable';
+        throw error;
+      }
       // This callback is invoked only on the managed-child launch path. Keep
       // installation and ~/.agents skill provisioning lazy so configured
       // external/remote OpenCode runtimes remain completely untouched.
@@ -985,6 +1260,11 @@ const spawnLocalServer = async () => {
 
   state.serverHandle = handle;
   state.sidecarUrl = url;
+  state.runtimeServiceOwnsServer = isRuntimeServiceMode;
+
+  if (isRuntimeServiceMode) {
+    await state.runtimeServiceCoordinator.start({ port, health: 'healthy' });
+  }
 
   // Managed startup invokes getManagedBrowserEnvironment before it can become
   // ready. If readiness arrives without that callback, the lifecycle selected
@@ -1009,9 +1289,17 @@ const spawnLocalServer = async () => {
 };
 
 let sidecarStopPromise = null;
+let runtimeServiceShutdownPromise = null;
 
 const killSidecar = () => {
-  if (!state.serverHandle) return sidecarStopPromise ?? Promise.resolve();
+  if (!state.serverHandle) {
+    if (state.runtimeServiceCoordinator?.getOwner?.()?.mode === 'app_bound') {
+      const coordinator = state.runtimeServiceCoordinator;
+      state.runtimeServiceCoordinator = null;
+      return coordinator.release();
+    }
+    return sidecarStopPromise ?? Promise.resolve();
+  }
   const serverHandle = state.serverHandle;
   state.serverHandle = null;
   state.sidecarUrl = null;
@@ -1023,7 +1311,171 @@ const killSidecar = () => {
     .finally(() => {
       sidecarStopPromise = null;
     });
+  if (state.runtimeServiceCoordinator?.getOwner?.()?.mode === 'app_bound') {
+    const coordinator = state.runtimeServiceCoordinator;
+    state.runtimeServiceCoordinator = null;
+    sidecarStopPromise = sidecarStopPromise.finally(() => coordinator.release());
+  }
   return sidecarStopPromise;
+};
+
+const shutdownOwnedRuntimeService = () => {
+  if (runtimeServiceShutdownPromise) return runtimeServiceShutdownPromise;
+  runtimeServiceShutdownPromise = (async () => {
+    await state.runtimeServiceCoordinator?.update({ health: 'disabled' }).catch(() => undefined);
+    await state.serverHandle?.checkpointBotRuns?.({ reason: 'runtime_service_shutdown' }).catch(() => undefined);
+    await state.serverHandle?.stopBotDispatcher?.().catch(() => undefined);
+    await killSidecar();
+    await state.runtimeServiceCoordinator?.release().catch(() => undefined);
+    state.runtimeServiceCoordinator = null;
+    state.runtimeServiceOwnsServer = false;
+  })();
+  return runtimeServiceShutdownPromise;
+};
+
+const runtimeServiceModeEnabled = () => readSettingsRoot().productionBotsRuntimeMode === 'service';
+
+const setRuntimeServiceCookie = async (url, setCookieHeader) => {
+  const match = /^devryan_runtime_service=([^;]+)/.exec(setCookieHeader || '');
+  if (!match) {
+    const error = new Error('Runtime service did not issue a renderer session');
+    error.code = 'runtime_service_cookie_missing';
+    throw error;
+  }
+  await session.defaultSession.cookies.set({
+    url,
+    name: 'devryan_runtime_service',
+    value: match[1],
+    path: '/',
+    httpOnly: true,
+    secure: false,
+    sameSite: 'strict',
+    expirationDate: Math.floor(Date.now() / 1_000) + (12 * 60 * 60),
+  });
+};
+
+const registerDesktopHostLease = async (url, broker) => {
+  const response = await session.defaultSession.fetch(`${url}/api/runtime-service/desktop-host`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-DevRyan-CSRF': '1',
+    },
+    body: JSON.stringify({
+      leaseId: broker.leaseId,
+      brokerPort: broker.port,
+      brokerToken: broker.token,
+      capabilities: broker.capabilities,
+    }),
+  });
+  if (!response.ok) {
+    const error = new Error('Runtime service rejected the desktop host lease');
+    error.code = response.status === 401
+      ? 'runtime_service_session_required'
+      : 'desktop_host_registration_failed';
+    throw error;
+  }
+  return response.json();
+};
+
+const startDesktopHostBroker = async () => {
+  if (state.desktopHostBroker) return state.desktopHostBroker;
+  state.desktopHostBroker = await createDesktopHostBroker({
+    handlers: {
+      status: async () => ({
+        focused: isAnyWindowFocused(),
+        browser: await resolveBridgeStatusForDiscovery(),
+      }),
+      notify: (payload) => maybeShowNativeNotification(payload),
+      createBrowserLease: (request) => createDesktopBrowserLease(request),
+      touchBrowserLease: (request) => touchDesktopBrowserLease(request),
+      releaseBrowserLease: (request) => releaseDesktopBrowserLease(request),
+    },
+  });
+  return state.desktopHostBroker;
+};
+
+const stopDesktopHostBroker = async ({ notifyService = true } = {}) => {
+  if (state.desktopHostLeaseRefreshTimer) {
+    clearInterval(state.desktopHostLeaseRefreshTimer);
+    state.desktopHostLeaseRefreshTimer = null;
+  }
+  const broker = state.desktopHostBroker;
+  state.desktopHostBroker = null;
+  if (notifyService && broker && state.sidecarUrl && state.runtimeServiceClient) {
+    await session.defaultSession.fetch(
+      `${state.sidecarUrl}/api/runtime-service/desktop-host/${encodeURIComponent(broker.leaseId)}`,
+      {
+        method: 'DELETE',
+        headers: { 'X-DevRyan-CSRF': '1' },
+      },
+    ).catch(() => undefined);
+  }
+  await broker?.close().catch(() => undefined);
+};
+
+const connectToRuntimeService = async () => {
+  const descriptor = await readRuntimeServiceDescriptor({ dataDirectory: dataRootDirectory() });
+  if (!isRuntimeServiceProtocolSupported(descriptor.protocolVersion)) {
+    const error = new Error('The background runtime protocol is not supported by this app version');
+    error.code = 'runtime_service_protocol_mismatch';
+    throw error;
+  }
+  try {
+    process.kill(descriptor.pid, 0);
+  } catch (error) {
+    if (error?.code !== 'EPERM') {
+      const stale = new Error('The background runtime owner is not running');
+      stale.code = 'runtime_service_owner_stale';
+      throw stale;
+    }
+  }
+  const url = buildLocalUrl(descriptor.port).replace(/\/$/, '');
+  if (!await waitForHealth(url, 5_000, 100)) {
+    const error = new Error('The background runtime is not ready');
+    error.code = 'runtime_service_unavailable';
+    throw error;
+  }
+  const bootstrapToken = unsealRuntimeServiceBootstrapToken({ descriptor, safeStorage });
+  const bootstrap = await session.defaultSession.fetch(`${url}/auth/runtime-service-bootstrap`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-DevRyan-CSRF': '1',
+    },
+    body: JSON.stringify({ token: bootstrapToken }),
+  });
+  if (!bootstrap.ok) {
+    const error = new Error('The background runtime session could not be established');
+    error.code = 'runtime_service_bootstrap_rejected';
+    throw error;
+  }
+  await setRuntimeServiceCookie(url, bootstrap.headers.get('set-cookie'));
+  const broker = await startDesktopHostBroker();
+  try {
+    const status = await registerDesktopHostLease(url, broker);
+    if (status?.instanceId !== descriptor.instanceId
+      || status?.ownerGeneration !== descriptor.ownerGeneration
+      || status?.protocolVersion !== descriptor.protocolVersion) {
+      const error = new Error('The background runtime changed during connection');
+      error.code = 'runtime_service_generation_changed';
+      throw error;
+    }
+    state.runtimeServiceClient = true;
+    state.sidecarUrl = url;
+    state.desktopHostLeaseRefreshTimer = setInterval(() => {
+      void registerDesktopHostLease(url, broker).catch((error) => {
+        log.warn('[runtime-service] desktop host lease refresh failed', {
+          code: error?.code || 'desktop_host_registration_failed',
+        });
+      });
+    }, 10_000);
+    state.desktopHostLeaseRefreshTimer.unref?.();
+    return url;
+  } catch (error) {
+    await stopDesktopHostBroker({ notifyService: false });
+    throw error;
+  }
 };
 
 const macosMajorVersion = () => {
@@ -1034,6 +1486,209 @@ const macosMajorVersion = () => {
   const major = Number.parseInt(majorRaw || '0', 10);
   const minor = Number.parseInt(minorRaw || '0', 10);
   return major === 10 ? minor : major;
+};
+
+const getRuntimeServiceRegistration = () => {
+  runtimeServiceRegistration ||= createRuntimeServiceRegistration({
+    macosMajor: macosMajorVersion(),
+    isPackaged: app.isPackaged,
+    executablePath: process.execPath,
+    resourcesPath: process.resourcesPath,
+    dataDirectory: dataRootDirectory(),
+    developmentMode: process.env.OPENCHAMBER_ELECTRON_DEV === '1',
+  });
+  return runtimeServiceRegistration;
+};
+
+const requestRuntimeService = async (route, { method = 'GET' } = {}) => {
+  if (!state.runtimeServiceClient || !state.sidecarUrl) {
+    const error = new Error('The background runtime is not connected');
+    error.code = 'runtime_service_unavailable';
+    throw error;
+  }
+  const response = await session.defaultSession.fetch(
+    `${state.sidecarUrl.replace(/\/$/, '')}${route}`,
+    {
+      method,
+      headers: method === 'GET' ? {} : { 'X-DevRyan-CSRF': '1' },
+    },
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const error = new Error(payload?.error || 'Background runtime request failed');
+    error.code = payload?.code || 'runtime_service_request_failed';
+    throw error;
+  }
+  return payload;
+};
+
+const runtimeServiceBotRuntimeOperation = (operation, method = 'GET') => (
+  requestRuntimeService(`/api/runtime-service/bot-runtime/${operation}`, { method })
+);
+
+const runtimeServiceStatus = async () => {
+  const registration = await getRuntimeServiceRegistration().status();
+  const handshake = state.runtimeServiceClient
+    ? await requestRuntimeService('/api/runtime-service/handshake').catch(() => null)
+    : null;
+  return Object.freeze({
+    configuredMode: readSettingsRoot().productionBotsRuntimeMode || 'app_bound',
+    registrationMode: getRuntimeServiceRegistration().mode || 'unsupported',
+    registration,
+    connected: Boolean(handshake),
+    handshake,
+    settingsUrl: getRuntimeServiceRegistration().settingsUrl,
+    canEnable: registration.state === 'not_registered' || registration.state === 'enabled',
+  });
+};
+
+const runtimeServiceCommandResult = async (operation) => {
+  try {
+    return Object.freeze({ ok: true, status: await operation() });
+  } catch (error) {
+    const code = typeof error?.code === 'string' && /^runtime_service_|^smappservice_/.test(error.code)
+      ? error.code
+      : 'runtime_service_request_failed';
+    const message = typeof error?.message === 'string' && error.message.trim()
+      ? error.message.trim().slice(0, 240)
+      : 'Background runtime request failed';
+    log.warn('[runtime-service] desktop command failed', { code });
+    return Object.freeze({
+      ok: false,
+      error: Object.freeze({ code, message }),
+    });
+  }
+};
+
+const waitForRuntimeServiceOwnerStopped = async (timeoutMs = 15_000) => {
+  const deadline = Date.now() + timeoutMs;
+  const ownerPath = runtimeServiceOwnerPath(dataRootDirectory());
+  while (Date.now() < deadline) {
+    const owner = await fsp.readFile(ownerPath, 'utf8').then((raw) => JSON.parse(raw), () => null);
+    if (!owner) return true;
+    let alive = true;
+    try {
+      process.kill(owner.pid, 0);
+    } catch (error) {
+      alive = error?.code === 'EPERM';
+    }
+    if (!alive) return true;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return false;
+};
+
+const waitForRuntimeServiceConnection = async (timeoutMs = 20_000) => {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      return await connectToRuntimeService();
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  throw lastError || Object.assign(new Error('Background runtime did not start'), {
+    code: 'runtime_service_start_timeout',
+  });
+};
+
+const enableBackgroundBots = async ({ allowLegacy = false } = {}) => {
+  if (state.runtimeServiceClient) return runtimeServiceStatus();
+  const registration = getRuntimeServiceRegistration();
+  const registered = await registration.register({ allowLegacy: allowLegacy === true });
+  if (registered.state !== 'enabled') {
+    return runtimeServiceStatus();
+  }
+
+  const previousOwner = state.runtimeServiceCoordinator?.getOwner?.();
+  try {
+    await state.serverHandle?.checkpointBotRuns?.({ reason: 'runtime_service_handoff' });
+    await state.serverHandle?.stopBotDispatcher?.();
+    await killSidecar();
+    await mutateSettingsRoot((root) => {
+      root.productionBotsRuntimeMode = 'service';
+    });
+    const url = await waitForRuntimeServiceConnection();
+    await activateMainWindow(url, new URL(url).origin, { target: 'local', status: 'ok' });
+    return runtimeServiceStatus();
+  } catch (error) {
+    await registration.unregister().catch(() => undefined);
+    const stopped = await waitForRuntimeServiceOwnerStopped();
+    if (!stopped) {
+      const rollbackError = new Error('Background runtime ownership could not be released safely');
+      rollbackError.code = 'runtime_service_rollback_owner_active';
+      throw rollbackError;
+    }
+    await mutateSettingsRoot((root) => {
+      root.productionBotsRuntimeMode = previousOwner?.mode === 'service' ? 'service' : 'app_bound';
+    });
+    state.runtimeServiceClient = false;
+    state.sidecarUrl = null;
+    const localUrl = await spawnLocalServer();
+    await activateMainWindow(localUrl, new URL(localUrl).origin, { target: 'local', status: 'ok' });
+    throw error;
+  }
+};
+
+const disableBackgroundBots = async () => {
+  if (!state.runtimeServiceClient) {
+    await mutateSettingsRoot((root) => {
+      root.productionBotsRuntimeMode = 'disabled';
+    });
+    return runtimeServiceStatus();
+  }
+  await requestRuntimeService('/api/runtime-service/disable', { method: 'POST' });
+  await getRuntimeServiceRegistration().unregister();
+  await stopDesktopHostBroker({ notifyService: false });
+  const stopped = await waitForRuntimeServiceOwnerStopped();
+  if (!stopped) {
+    const error = new Error('Background runtime is still the active owner');
+    error.code = 'runtime_service_owner_active';
+    throw error;
+  }
+  state.runtimeServiceClient = false;
+  state.sidecarUrl = null;
+  await mutateSettingsRoot((root) => {
+    root.productionBotsRuntimeMode = 'disabled';
+  });
+  const localUrl = await spawnLocalServer();
+  await activateMainWindow(localUrl, new URL(localUrl).origin, { target: 'local', status: 'ok' });
+  return runtimeServiceStatus();
+};
+
+const prepareBackgroundRuntimeForAppUpdate = async () => {
+  if (!state.runtimeServiceClient) return;
+  await requestRuntimeService('/api/runtime-service/prepare-update', { method: 'POST' });
+  await getRuntimeServiceRegistration().unregister();
+  await stopDesktopHostBroker({ notifyService: false });
+  const stopped = await waitForRuntimeServiceOwnerStopped();
+  if (!stopped) {
+    const error = new Error('Background runtime did not drain before update');
+    error.code = 'runtime_service_update_owner_active';
+    throw error;
+  }
+  state.runtimeServiceClient = false;
+  await mutateSettingsRoot((root) => {
+    root.productionBotsRuntimeMode = 'service';
+    root.productionBotsRuntimeReregisterAfterUpdate = true;
+  });
+};
+
+const resumeBackgroundRuntimeAfterAppUpdate = async () => {
+  const settings = readSettingsRoot();
+  if (settings.productionBotsRuntimeMode !== 'service'
+    || settings.productionBotsRuntimeReregisterAfterUpdate !== true) return;
+  const result = await getRuntimeServiceRegistration().register({ allowLegacy: true });
+  if (result.state !== 'enabled') {
+    const error = new Error('Background Bots require Login Items approval after the update');
+    error.code = 'runtime_service_approval_required';
+    throw error;
+  }
+  await mutateSettingsRoot((root) => {
+    delete root.productionBotsRuntimeReregisterAfterUpdate;
+  });
 };
 
 const buildContentOriginPolicy = () => {
@@ -1202,6 +1857,10 @@ const buildStartupSplashHtml = () => {
   return buildStartupSplashHtmlFromSettings(readSettingsRoot());
 };
 
+const currentStartupSplashPalette = () => (
+  resolveStartupSplashPalette(readSettingsRoot(), nativeTheme.shouldUseDarkColors)
+);
+
 const startupErrorDetails = (error) => {
   const cause = error?.cause;
   const message = error instanceof Error ? error.message : String(error || 'Unknown startup error');
@@ -1224,14 +1883,27 @@ const buildStartupErrorHtml = (error) => {
   });
 };
 
-const isStartupRetryUrl = (rawUrl) => {
+const buildBotStartupAttentionHtml = (error) => {
+  const details = startupErrorDetails(error);
+  return buildBotStartupAttentionHtmlFromSettings(readSettingsRoot(), {
+    message: details.displayMessage,
+  });
+};
+
+const startupActionForUrl = (rawUrl) => {
   try {
     const parsed = new URL(rawUrl);
-    return parsed.protocol === `${DEEP_LINK_PROTOCOL}:` && parsed.hostname === STARTUP_RETRY_HOST;
+    if (parsed.protocol !== `${DEEP_LINK_PROTOCOL}:`) return null;
+    if (parsed.hostname === STARTUP_RETRY_HOST) return 'retry-startup';
+    if (parsed.hostname === BOT_RUNTIME_RETRY_HOST) return 'retry-bot-runtime';
+    if (parsed.hostname === BOT_RUNTIME_CONTINUE_HOST) return 'continue-without-bots';
+    return null;
   } catch {
-    return false;
+    return null;
   }
 };
+
+const isStartupRetryUrl = (rawUrl) => startupActionForUrl(rawUrl) === 'retry-startup';
 
 const navigateWindow = async (browserWindow, url, { allowAbort = false } = {}) => {
   try {
@@ -2038,6 +2710,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   const desktopServerOrigin = state.sidecarUrl || state.localOrigin || '';
   const desktopHome = os.homedir() || '';
   const desktopMacosMajor = String(macosMajorVersion());
+  const startupSplashPalette = currentStartupSplashPalette();
   const options = {
     title: 'DevRyan',
     width: useSaved ? Math.max(saved.width, MIN_RESTORE_WINDOW_WIDTH) : 1280,
@@ -2045,7 +2718,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
     show: false,
-    backgroundColor: '#151313',
+    backgroundColor: startupSplashPalette.background,
     // Tauri used an overlay title bar with explicit traffic-light placement.
     // Electron's hiddenInset adds its own extra inset, which leaves the controls
     // visibly lower than the app header. Use a plain hidden title bar instead.
@@ -2177,9 +2850,20 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   });
 
   browserWindow.webContents.on('will-navigate', (event, url) => {
-    if (isStartupRetryUrl(url)) {
+    const startupAction = startupActionForUrl(url);
+    if (startupAction === 'retry-startup') {
       event.preventDefault();
       void startDesktopRuntime();
+      return;
+    }
+    if (startupAction === 'retry-bot-runtime') {
+      event.preventDefault();
+      void retryBotRuntimeStartup();
+      return;
+    }
+    if (startupAction === 'continue-without-bots') {
+      event.preventDefault();
+      void continueWithoutBots();
       return;
     }
     if (isAllowedNavigationUrl(url)) return;
@@ -2259,15 +2943,45 @@ const updateStartupSplashStatus = (text) => {
   void mainWindow.webContents.executeJavaScript(script).catch(() => {});
 };
 
+const botRuntimeProgressText = (progress) => {
+  if (!progress || typeof progress !== 'object') return 'Preparing the private Bot runtime…';
+  if (progress.phase === 'checking') return 'Checking the private Bot runtime…';
+  if (progress.phase === 'downloading_image') {
+    const total = Number.isInteger(progress.total) ? progress.total : 5;
+    const current = Number.isInteger(progress.completed) ? Math.min(total, progress.completed + 1) : 1;
+    return `Downloading Bot runtime image ${current} of ${total}…`;
+  }
+  if (progress.phase === 'verifying_images') return 'Verifying Bot runtime images…';
+  if (progress.phase === 'starting_services') return 'Starting Bot services…';
+  if (progress.phase === 'verifying_health') return 'Verifying Bot service health…';
+  if (progress.phase === 'ready') return 'Private Bot runtime is ready.';
+  return 'Preparing the private Bot runtime…';
+};
+
+const publishBotRuntimeProgress = (progress, browserWindow = null) => {
+  state.botRuntimeOperationSnapshot = progress && typeof progress === 'object'
+    ? Object.freeze({ ...progress })
+    : null;
+  updateStartupSplashStatus(botRuntimeProgressText(progress));
+  if (browserWindow) {
+    emitToWindow(browserWindow, 'openchamber:bot-runtime-progress', progress);
+  } else {
+    emitToAllWindows('openchamber:bot-runtime-progress', progress);
+  }
+};
+
 const activateMainWindow = async (url, localOrigin, bootOutcome) => {
   state.startupSplashActive = false;
   state.localOrigin = localOrigin;
   state.bootOutcome = bootOutcome ?? null;
   state.initScript = buildInitScript(localOrigin, state.bootOutcome, state.sidecarUrl || localOrigin);
+  const startupSplashPalette = currentStartupSplashPalette();
+  const startupUrl = withStartupSplashPalette(url, localOrigin, startupSplashPalette);
 
   const mainWindow = state.mainWindow;
   if (mainWindow && !mainWindow.isDestroyed()) {
-    await navigateWindow(mainWindow, url, { allowAbort: true });
+    mainWindow.setBackgroundColor(startupSplashPalette.background);
+    await navigateWindow(mainWindow, startupUrl, { allowAbort: true });
     mainWindow.show();
     mainWindow.focus();
     return mainWindow;
@@ -2276,7 +2990,7 @@ const activateMainWindow = async (url, localOrigin, bootOutcome) => {
   state.mainWindow = createBrowserWindow({
     label: 'main',
     restoreGeometry: true,
-    url,
+    url: startupUrl,
   });
   return state.mainWindow;
 };
@@ -2543,9 +3257,11 @@ const setMiniChatPinned = (browserWindow, pinned) => {
 };
 
 const resolveInitialUrl = async () => {
-  const localUrl = isDev && await waitForHealth('http://127.0.0.1:3901', 5_000, 100)
-    ? 'http://127.0.0.1:3901'
-    : await spawnLocalServer();
+  const localUrl = state.runtimeServiceClient && state.sidecarUrl
+    ? state.sidecarUrl
+    : (isDev && await waitForHealth('http://127.0.0.1:3901', 5_000, 100)
+      ? 'http://127.0.0.1:3901'
+      : await spawnLocalServer());
 
   const localUiUrl = isDev && await waitForHealth('http://127.0.0.1:5173', 8_000, 100)
     ? 'http://127.0.0.1:5173'
@@ -2594,6 +3310,14 @@ let desktopStartupPromise = null;
 let powerResumeHookInstalled = false;
 let desktopStartupFailed = false;
 
+const installPowerResumeHook = () => {
+  if (powerResumeHookInstalled) return;
+  powerResumeHookInstalled = true;
+  powerMonitor.on('resume', () => {
+    emitToAllWindows('openchamber:system-resume', { timestamp: Date.now() });
+  });
+};
+
 const showStartupFailure = async (error) => {
   const mainWindow = state.mainWindow;
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -2606,6 +3330,113 @@ const showStartupFailure = async (error) => {
   mainWindow.focus();
 };
 
+const showBotStartupAttention = async (error) => {
+  const mainWindow = state.mainWindow;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  await navigateWindow(
+    mainWindow,
+    `data:text/html;charset=utf-8,${encodeURIComponent(buildBotStartupAttentionHtml(error))}`,
+    { allowAbort: true },
+  );
+  mainWindow.show();
+  mainWindow.focus();
+};
+
+const isLocalStartupTarget = ({ initialUrl, localUiUrl }) => {
+  try {
+    return new URL(initialUrl).origin === new URL(localUiUrl).origin;
+  } catch {
+    return false;
+  }
+};
+
+const activatePendingBotStartupContext = async () => {
+  const context = state.pendingBotStartupContext;
+  if (!context) return false;
+  state.pendingBotStartupContext = null;
+  await activateMainWindow(context.initialUrl, context.localOrigin, context.bootOutcome);
+  desktopStartupFailed = false;
+  installPowerResumeHook();
+  return true;
+};
+
+const continueWithoutBots = async () => {
+  if (!state.pendingBotStartupContext) return;
+  log.warn('[bots] continuing current launch without a ready private Bot runtime');
+  await activatePendingBotStartupContext();
+};
+
+const requirePreparedBotRuntime = async () => {
+  const result = await state.serverHandle.prepareBotRuntime();
+  if (result?.state !== 'failed') return result;
+  publishBotRuntimeProgress({
+    id: state.botRuntimeOperationSnapshot?.id || crypto.randomUUID(),
+    action: 'ensure_ready',
+    phase: 'failed',
+    completed: null,
+    total: null,
+    code: result.code || 'bot_runtime_warmup_failed',
+    message: result.message || 'The private Bot runtime could not be prepared.',
+    startedAt: state.botRuntimeOperationSnapshot?.startedAt || new Date().toISOString(),
+  });
+  throw Object.assign(new Error(result.message || 'The private Bot runtime could not be prepared.'), {
+    code: result.code || 'bot_runtime_warmup_failed',
+  });
+};
+
+const retryBotRuntimeStartup = () => {
+  if (state.botRuntimeRetryPromise) return state.botRuntimeRetryPromise;
+  const current = (async () => {
+    const context = state.pendingBotStartupContext;
+    if (!context || typeof state.serverHandle?.prepareBotRuntime !== 'function') return;
+    const mainWindow = state.mainWindow;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      state.startupSplashActive = true;
+      await navigateWindow(
+        mainWindow,
+        `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupSplashHtml())}`,
+        { allowAbort: true },
+      );
+      updateStartupSplashStatus('Retrying the private Bot runtime…');
+    }
+    try {
+      await requirePreparedBotRuntime();
+      await activatePendingBotStartupContext();
+    } catch (error) {
+      const details = startupErrorDetails(error);
+      log.warn('[bots] startup retry failed', {
+        code: details.code,
+        message: details.message,
+        causeMessage: details.causeMessage,
+      });
+      await showBotStartupAttention(error);
+    }
+  })();
+  state.botRuntimeRetryPromise = current;
+  void current.finally(() => {
+    if (state.botRuntimeRetryPromise === current) state.botRuntimeRetryPromise = null;
+  });
+  return current;
+};
+
+const prepareBotRuntimeInBackground = () => {
+  if (state.botRuntimeRetryPromise || typeof state.serverHandle?.prepareBotRuntime !== 'function') {
+    return;
+  }
+  const current = requirePreparedBotRuntime().catch((error) => {
+    const details = startupErrorDetails(error);
+    log.warn('[bots] background runtime preparation failed', {
+      code: details.code,
+      message: details.message,
+      causeMessage: details.causeMessage,
+    });
+  });
+  state.botRuntimeRetryPromise = current;
+  void current.finally(() => {
+    if (state.botRuntimeRetryPromise === current) state.botRuntimeRetryPromise = null;
+  });
+};
+
 const startDesktopRuntime = () => {
   if (desktopStartupPromise) return desktopStartupPromise;
   const current = (async () => {
@@ -2613,15 +3444,16 @@ const startDesktopRuntime = () => {
       if (desktopStartupFailed) {
         applyDesktopKeepAwake(readDesktopKeepAwakeEnabled());
       }
-      const { initialUrl, localOrigin, bootOutcome } = await resolveInitialUrl();
+      const startupContext = await resolveInitialUrl();
+      const { initialUrl, localOrigin, bootOutcome } = startupContext;
+      state.pendingBotStartupContext = null;
       await activateMainWindow(initialUrl, localOrigin, bootOutcome);
       desktopStartupFailed = false;
 
-      if (!powerResumeHookInstalled) {
-        powerResumeHookInstalled = true;
-        powerMonitor.on('resume', () => {
-          emitToAllWindows('openchamber:system-resume', { timestamp: Date.now() });
-        });
+      installPowerResumeHook();
+      if (isLocalStartupTarget(startupContext)
+        && readSettingsRoot().productionBotsRuntimeMode !== 'disabled') {
+        prepareBotRuntimeInBackground();
       }
     } catch (error) {
       desktopStartupFailed = true;
@@ -2994,6 +3826,66 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     case 'desktop_agent_browser_repair':
       return mutateAgentBrowserInstallation('repair');
 
+    case 'desktop_bot_runtime_status':
+      return state.runtimeServiceClient
+        ? runtimeServiceBotRuntimeOperation('status')
+        : getBotRuntimeManager().status();
+
+    case 'desktop_bot_runtime_operation_status':
+      return state.runtimeServiceClient
+        ? runtimeServiceBotRuntimeOperation('operation')
+        : state.botRuntimeOperationSnapshot || getBotRuntimeManager().operationStatus();
+
+    case 'desktop_bot_runtime_setup':
+      return state.runtimeServiceClient
+        ? runtimeServiceBotRuntimeOperation('setup', 'POST')
+        : getBotRuntimeManager().setup({
+            onProgress: (progress) => publishBotRuntimeProgress(progress, browserWindow),
+          });
+
+    case 'desktop_bot_runtime_repair':
+      return state.runtimeServiceClient
+        ? runtimeServiceBotRuntimeOperation('repair', 'POST')
+        : getBotRuntimeManager().repair({
+            onProgress: (progress) => publishBotRuntimeProgress(progress, browserWindow),
+          });
+
+    case 'desktop_bot_runtime_update':
+      return state.runtimeServiceClient
+        ? runtimeServiceBotRuntimeOperation('update', 'POST')
+        : getBotRuntimeManager().update({
+            onProgress: (progress) => publishBotRuntimeProgress(progress, browserWindow),
+          });
+
+    case 'desktop_bot_runtime_rollback':
+      return state.runtimeServiceClient
+        ? runtimeServiceBotRuntimeOperation('rollback', 'POST')
+        : getBotRuntimeManager().rollback({
+            onProgress: (progress) => publishBotRuntimeProgress(progress, browserWindow),
+          });
+
+    case 'desktop_runtime_service_status':
+      return runtimeServiceCommandResult(() => runtimeServiceStatus());
+
+    case 'desktop_runtime_service_enable':
+      return runtimeServiceCommandResult(() => (
+        enableBackgroundBots({ allowLegacy: args?.allowLegacy === true })
+      ));
+
+    case 'desktop_runtime_service_disable':
+      return runtimeServiceCommandResult(() => disableBackgroundBots());
+
+    case 'desktop_runtime_service_open_settings': {
+      const settingsUrl = getRuntimeServiceRegistration().settingsUrl;
+      if (!settingsUrl) {
+        const error = new Error('Login Items settings are unavailable on this macOS version');
+        error.code = 'runtime_service_settings_unavailable';
+        throw error;
+      }
+      await shell.openExternal(settingsUrl);
+      return { opened: true };
+    }
+
     case 'desktop_browser_capture_page': {
       return getBrowserSurfaceManager().capture(browserWindow, args);
     }
@@ -3140,6 +4032,30 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         cancelled: false,
         fileName: path.basename(result.filePath),
       };
+    }
+
+    case 'desktop_export_bot_recovery': {
+      const localOrigin = state.localOrigin || state.sidecarUrl;
+      const rendererSession = browserWindow?.webContents?.session;
+      return botRecoveryDialog.exportBundle({
+        window: browserWindow,
+        origin: localOrigin,
+        session: rendererSession,
+        botId: args?.botId,
+        request: args?.request,
+      });
+    }
+
+    case 'desktop_restore_bot_recovery': {
+      const localOrigin = state.localOrigin || state.sidecarUrl;
+      const rendererSession = browserWindow?.webContents?.session;
+      return botRecoveryDialog.restoreBundle({
+        window: browserWindow,
+        origin: localOrigin,
+        session: rendererSession,
+        passphrase: args?.passphrase,
+        mode: args?.mode,
+      });
     }
 
     case 'desktop_read_file': {
@@ -3567,6 +4483,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         }
       }
       if (applyUpdate) {
+        await prepareBackgroundRuntimeForAppUpdate();
         // Match the working updater pattern closely: only bypass the macOS
         // hide-on-close / quit-confirmation guards, leave the rest of the
         // updater-driven quit/install sequence alone.
@@ -3956,6 +4873,20 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', (event) => {
+  if (isRuntimeServiceMode && !state.quitConfirmed) {
+    event.preventDefault();
+    state.quitRequested = true;
+    state.quitConfirmed = true;
+    void shutdownOwnedRuntimeService().finally(() => app.quit());
+    return;
+  }
+  if (state.runtimeServiceClient && !state.quitConfirmed) {
+    event.preventDefault();
+    state.quitRequested = true;
+    state.quitConfirmed = true;
+    void stopDesktopHostBroker().finally(() => app.quit());
+    return;
+  }
   if (state.quitCleanupPromise) {
     event.preventDefault();
     return;
@@ -3972,6 +4903,9 @@ app.on('before-quit', (event) => {
 app.on('will-quit', () => {
   browserCdpBridge?.closeAll('app_quit');
   browserSurfaceManager?.closeAll('app_quit');
+  state.botSecretStore?.dispose();
+  state.botSecretStore = null;
+  if (state.desktopHostLeaseRefreshTimer) clearInterval(state.desktopHostLeaseRefreshTimer);
   releaseDesktopKeepAwake();
 });
 
@@ -4017,6 +4951,25 @@ app.whenReady().then(async () => {
     platform: process.platform,
     arch: process.arch,
   });
+  if (isRuntimeServiceMode) {
+    state.runtimeServiceCoordinator = await createRuntimeServiceCoordinator({
+      dataDirectory: dataRootDirectory(),
+      safeStorage,
+    });
+    await state.runtimeServiceCoordinator.acquire({ mode: 'service' });
+    await spawnLocalServer();
+    prepareBotRuntimeInBackground();
+    process.once('SIGTERM', () => {
+      void shutdownOwnedRuntimeService().finally(() => app.exit(0));
+    });
+    process.once('SIGINT', () => {
+      void shutdownOwnedRuntimeService().finally(() => app.exit(0));
+    });
+    log.info('[runtime-service] background runtime is healthy', {
+      port: state.serverHandle?.getPort?.(),
+    });
+    return;
+  }
   nativeTheme.themeSource = readThemeSource();
   try {
     configureBrowserWebviewSession();
@@ -4046,6 +4999,11 @@ app.whenReady().then(async () => {
     restoreGeometry: true,
     url: null,
   });
+
+  if (runtimeServiceModeEnabled()) {
+    await resumeBackgroundRuntimeAfterAppUpdate();
+    await connectToRuntimeService();
+  }
 
   if (app.isPackaged) {
     await clearElectronRuntimeCaches({

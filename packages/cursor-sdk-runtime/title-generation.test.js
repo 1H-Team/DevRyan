@@ -29,6 +29,9 @@ describe('Cursor SDK session title generation', () => {
     expect(title).toBe('Fix Cursor Session Titles');
     expect(promptCalls).toHaveLength(1);
     expect(promptCalls[0]?.message).toContain('3 to 7 words');
+    expect(promptCalls[0]?.message).toContain('durable subject, problem, or desired outcome');
+    expect(promptCalls[0]?.message).toContain('Make a plan to fix unified tablist persistence');
+    expect(promptCalls[0]?.message).toContain('<untrusted-session-request-json>');
     expect(promptCalls[0]?.message).toContain('When I use models from the Cursor provider');
     expect(promptCalls[0]?.options).toMatchObject({
       apiKey: 'cursor-sdk-key',
@@ -40,6 +43,41 @@ describe('Cursor SDK session title generation', () => {
       platform: { workspaceRef: '/tmp/project' },
     });
     expect(promptCalls[0]?.options?.agents).toBeUndefined();
+  });
+
+  test('removes incidental planning framing without a second Cursor request', async () => {
+    let promptCount = 0;
+    const runtime = createCursorSdkRuntime({
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      loadSdk: async () => ({
+        Agent: {
+          prompt: async () => {
+            promptCount += 1;
+            return { status: 'finished', result: 'Plan unified tablist persistence' };
+          },
+        },
+      }),
+    });
+
+    expect(await runtime.generateTitle({
+      text: 'Make a plan to fix unified tablist persistence',
+    })).toBe('Unified tablist persistence');
+    expect(promptCount).toBe(1);
+  });
+
+  test('preserves Plan when it is part of the literal session subject', async () => {
+    const runtime = createCursorSdkRuntime({
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      loadSdk: async () => ({
+        Agent: {
+          prompt: async () => ({ status: 'finished', result: 'Plan mode title bias' }),
+        },
+      }),
+    });
+
+    expect(await runtime.generateTitle({ text: 'Fix Plan mode title bias' })).toBe('Plan mode title bias');
   });
 
   test('returns null for missing input or an empty model response', async () => {

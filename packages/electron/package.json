@@ -1,12 +1,13 @@
 {
   "name": "@openchamber/electron",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
   "author": "DevRyan",
   "type": "module",
   "main": "./dist-bundle/main.mjs",
   "dependencies": {
+    "@openchamber/bot-egress": "workspace:*",
     "@openchamber/web": "workspace:*",
     "electron-context-menu": "^4.1.2",
     "electron-log": "^5.4.3",
@@ -31,10 +32,15 @@
     "bundle:main": "bun ./scripts/bundle-main.mjs",
     "rebuild:native": "node ./scripts/rebuild-native.mjs",
     "build:speech-helper": "node ./scripts/build-speech-helper.mjs",
-    "package": "bun run build:web-assets && bun run build:speech-helper && bun run bundle:main && bun run rebuild:native && electron-builder",
+    "build:runtime-service-control": "node ./scripts/build-runtime-service-control.mjs",
+    "build:native-helpers": "bun run build:speech-helper && bun run build:runtime-service-control",
+    "verify:runtime-service-package": "node ./scripts/verify-runtime-service-package.mjs",
+    "package": "DEVRYAN_BOT_RUNTIME_REQUIRE_RELEASE_MANIFEST=1 bun run build:web-assets && node ../../scripts/verify-bot-runtime-images.mjs --manifest ./resources/bot-runtime/images.release.json && bun run build:native-helpers && DEVRYAN_BOT_RUNTIME_REQUIRE_RELEASE_MANIFEST=1 bun run bundle:main && bun run rebuild:native && electron-builder && bun run verify:runtime-service-package",
     "test": "node ../../scripts/test-electron.mjs",
+    "smoke:native-bot-create": "bun run build:web-assets && node ./scripts/bot-catalog-native-pointer-smoke.mjs",
+    "smoke:native-bot-create:packaged": "node ./scripts/bot-catalog-native-pointer-smoke.mjs --electron-mode packaged",
     "finalize:latest-yml": "node ./scripts/finalize-latest-yml.mjs",
-    "type-check": "node --check ./origin-policy.mjs && node --check ./browser-webview-policy.mjs && node --check ./browser-devtools-controller.mjs && node --check ./browser-surface-manager.mjs && node --check ./browser-cdp-bridge.mjs && node --check ./main.mjs && node --check ./preload.mjs",
+    "type-check": "node --check ./origin-policy.mjs && node --check ./browser-webview-policy.mjs && node --check ./browser-devtools-controller.mjs && node --check ./browser-surface-manager.mjs && node --check ./browser-cdp-bridge.mjs && node --check ./bot-secret-store.mjs && node --check ./bot-recovery-dialog.mjs && node --check ./bot-runtime-manifest.mjs && node --check ./bot-runtime-manager.mjs && node --check ./runtime-service.mjs && node --check ./runtime-service-registration.mjs && node --check ./desktop-host-broker.mjs && node --check ./scripts/build-web-assets.mjs && node --check ./scripts/build-speech-helper.mjs && node --check ./scripts/build-runtime-service-control.mjs && node --check ./scripts/verify-runtime-service-package.mjs && node --check ./scripts/bundle-main.mjs && node --check ./scripts/electron-cdp-smoke.mjs && node --check ./scripts/bot-catalog-native-pointer-smoke.mjs && node --check ../../scripts/capture-production-bots-visuals.mjs && node --check ../../scripts/package-production-bots-visual-shell.mjs && node --check ../../tests/visual-production-bots/electron-shell.cjs && node --check ../../scripts/build-bot-runtime-images.mjs && node --check ../../scripts/verify-bot-runtime-images.mjs && node --check ./main.mjs && node --check ./preload.mjs",
     "lint": "node -e \"process.exit(0)\""
   },
   "build": {
@@ -60,6 +66,20 @@
       {
         "from": "resources/native",
         "to": "native"
+      },
+      {
+        "from": "../../docker/bots/compose.yml",
+        "to": "bot-runtime/compose.yml"
+      },
+      {
+        "from": "resources/bot-runtime/images.release.json",
+        "to": "bot-runtime/images.release.json"
+      }
+    ],
+    "extraFiles": [
+      {
+        "from": "resources/runtime-service/dev.openchamber.desktop.runtime-service.plist",
+        "to": "Library/LaunchAgents/dev.openchamber.desktop.runtime-service.plist"
       }
     ],
     "directories": {

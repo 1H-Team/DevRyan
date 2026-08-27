@@ -229,6 +229,25 @@ describe("session draft storage", () => {
     })
   })
 
+  test("persists attachment-only drafts with lightweight attachment metadata", () => {
+    const storage = createMemoryStorage()
+    const now = Date.now()
+    const draft = {
+      id: "draft-attachment-only",
+      text: "",
+      attachmentCount: 2,
+      createdAt: now,
+      updatedAt: now,
+      selectedProjectId: null,
+      directoryOverride: null,
+      parentID: null,
+    }
+
+    persistDrafts(storage, { [draft.id]: draft }, [draft.id])
+
+    expect(readPersistedDrafts(storage).draftsById[draft.id]?.attachmentCount).toBe(2)
+  })
+
   test("removes per-draft composer and mention storage during promotion cleanup", () => {
     storage.setItem(getDraftInputStorageKey("draft-send"), "sent text")
     storage.setItem(getDraftConfirmedMentionsStorageKey("draft-send"), JSON.stringify(["README.md"]))

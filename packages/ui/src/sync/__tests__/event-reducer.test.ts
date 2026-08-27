@@ -673,6 +673,31 @@ describe("applyDirectoryEvent", () => {
     expect(draft.session[0]?.title).toBe("Fix OpenAI session titles")
   })
 
+  test("keeps a projected title when a newer canonical event still carries a placeholder", () => {
+    const draft = state({
+      session: [{
+        ...testSession("ses_1"),
+        title: "New session - 2026-08-23T21:14:18.802Z",
+        time: { created: 1, updated: 3 },
+      }],
+    })
+
+    const result = applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: {
+        info: {
+          ...testSession("ses_1"),
+          title: "Fix OpenAI session titles",
+          time: { created: 1, updated: 2 },
+        },
+      },
+    } as Event)
+
+    expect(result).toBe(true)
+    expect(draft.session[0]?.title).toBe("Fix OpenAI session titles")
+    expect(draft.session[0]?.time.updated).toBe(3)
+  })
+
   test("ignores an older title echo without replacing the current session", () => {
     const current = {
       ...testSession("ses_1"),
@@ -795,7 +820,7 @@ describe("applyDirectoryEvent", () => {
       },
     } as unknown as Event)
 
-    expect(result).toBe(true)
+    expect(result).toBe(false)
     expect((draft.session[0] as Session & { summary?: unknown }).summary).toBe(undefined)
   })
 
@@ -1060,51 +1085,6 @@ describe("applyDirectoryEvent", () => {
     }
   })
 
-  test("indexes root user message timestamps for sidebar ordering", () => {
-    const draft = state({ session: [testSession("ses_1")], session_user_activity: {} })
-
-    expect(applyDirectoryEvent(draft, messageUpdatedEvent(testMessage("msg_1", "ses_1", "user", 123)))).toBe(true)
-
-    expect(draft.session_user_activity).toEqual({ ses_1: 123 })
-  })
-
-  test("does not index assistant messages as user activity", () => {
-    const draft = state({ session: [testSession("ses_1")], session_user_activity: {} })
-
-    applyDirectoryEvent(draft, messageUpdatedEvent(testMessage("msg_1", "ses_1", "assistant", 456)))
-
-    expect(draft.session_user_activity).toEqual({})
-  })
-
-  test("does not index child session user messages", () => {
-    const draft = state({ session: [testSession("ses_child", "ses_parent")], session_user_activity: {} })
-
-    applyDirectoryEvent(draft, messageUpdatedEvent(testMessage("msg_1", "ses_child", "user", 789)))
-
-    expect(draft.session_user_activity).toEqual({})
-  })
-
-  test("recomputes user activity when revert hides the latest user message", () => {
-    const draft = state({
-      session: [testSession("ses_1")],
-      message: {
-        ses_1: [
-          testMessage("msg_1", "ses_1", "user", 100),
-          testMessage("msg_2", "ses_1", "assistant", 200),
-          testMessage("msg_3", "ses_1", "user", 300),
-        ],
-      },
-      session_user_activity: { ses_1: 300 },
-    })
-
-    applyDirectoryEvent(draft, {
-      type: "session.updated",
-      properties: { info: testSession("ses_1", undefined, "msg_3") },
-    } as Event)
-
-    expect(draft.session_user_activity).toEqual({ ses_1: 100 })
-  })
-
   test("does not reinsert messages hidden by a pending revert transaction", () => {
     const draft = state({
       session: [testSession("ses_1", undefined, "msg_3")],
@@ -1121,12 +1101,10 @@ describe("applyDirectoryEvent", () => {
           startedAt: 1,
         },
       },
-      session_user_activity: { ses_1: 100 },
     })
 
     expect(applyDirectoryEvent(draft, messageUpdatedEvent(testMessage("msg_3", "ses_1", "user", 300)))).toBe(false)
     expect(draft.message.ses_1.map((message) => message.id)).toEqual(["msg_1"])
-    expect(draft.session_user_activity).toEqual({ ses_1: 100 })
   })
 
   test("performs one revert lookup for session-less streaming parts", () => {
@@ -1168,7 +1146,6 @@ describe("applyDirectoryEvent", () => {
       message: { ses_1: [testMessage("msg_1", "ses_1", "user", 100)] },
       part: { msg_1: [{ id: "prt_1", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "hello" } as Part] },
       session_status: { ses_1: { type: "idle" } as SessionStatus },
-      session_user_activity: { ses_1: 100 },
       sessionTotal: 1,
     })
 
@@ -1181,7 +1158,6 @@ describe("applyDirectoryEvent", () => {
     expect(draft.message.ses_1.map((message) => message.id)).toEqual(["msg_1"])
     expect(draft.part.msg_1.map((part) => part.id)).toEqual(["prt_1"])
     expect(draft.session_status.ses_1).toEqual({ type: "idle" })
-    expect(draft.session_user_activity.ses_1).toBe(undefined)
     expect(draft.sessionTotal).toBe(0)
   })
 

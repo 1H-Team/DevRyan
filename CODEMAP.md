@@ -2,7 +2,7 @@
 
 ## Project Responsibility
 
-DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtimes for interacting with an OpenCode server. The shared React UI lives in `packages/ui`; `packages/web` owns the Express server, browser bootstrap, CLI, and the optional Supabase-backed shared-host control plane; `packages/shared-runtime` owns dependency-light configuration-apply, quota-normalization, assistant-image syntax, and safe-archive rules shared by web/Electron and VS Code; `packages/cursor-sdk-runtime` owns shared Cursor SDK execution/auth helpers; `packages/harness-runtime` owns durable harness operations, diagnostics, lifecycle, evidence, and cross-process persistence primitives; `packages/electron` is the primary desktop shell; `packages/desktop` is the legacy Tauri shell; `packages/vscode` hosts the same experience inside VS Code.
+DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtimes for interacting with an OpenCode server. The shared React UI lives in `packages/ui`; `packages/web` owns the Express server, browser bootstrap, CLI, and the optional Supabase-backed shared-host control plane; `packages/shared-runtime` owns dependency-light configuration-apply, quota-normalization, assistant-image syntax, and safe-archive rules shared by web/Electron and VS Code; `packages/bots-runtime` owns dependency-free Production Bots JSON contracts plus the scoped OpenCode image/plugin; `packages/bot-supervisor` owns the fixed-verb Docker lifecycle boundary without socket access; `packages/bot-engine-proxy` is the sole Docker-socket process; `packages/bot-egress` owns purpose-separated model, AG-UI endpoint, and browser network policy; `packages/bot-computer` owns the persistent reviewed-command Chromium service; `packages/bot-indexer` owns the disposable Docker-local FTS/vector retrieval projection; `packages/cursor-sdk-runtime` owns shared Cursor SDK execution/auth helpers; `packages/harness-runtime` owns durable harness operations, diagnostics, lifecycle, evidence, and cross-process persistence primitives; `packages/electron` is the primary desktop shell and optional launchd runtime-service executable; `packages/desktop` is the legacy Tauri shell; `packages/vscode` hosts the same experience inside VS Code.
 
 ## System Entry Points
 
@@ -11,11 +11,14 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 - `packages/web/bin/cli.js`: `openchamber` CLI entrypoint for serving, auth, tunnels, and operator workflows.
 - `packages/web/src/main.tsx`: standalone web bootstrap that injects runtime APIs before loading shared UI.
 - `packages/shared-runtime/index.js`: cross-host safe-archive, configuration-apply coordinator, quota-adapter, and assistant-image parser exports.
+- `packages/bots-runtime/index.js`: Production Bots enums, strict JSON boundaries, lifecycle/policy transitions, scope derivation, action hashing, lease admission, and routine recovery.
 - `packages/cursor-sdk-runtime/index.js`: shared Cursor SDK model execution, virtual provider discovery, split SDK/usage credential helpers, and the public pending-question contract.
 - `packages/cursor-sdk-runtime/cursor-question-runtime.js`: authenticated loopback MCP question bridge for primary Cursor Builder/Orchestrator runs.
 - `packages/ui/src/main.tsx`: shared React UI mount and provider initialization.
-- `packages/electron/main.mjs`: primary desktop main process; boots web server in-process and hosts native integrations.
+- `packages/electron/main.mjs`: primary desktop main process; boots or connects to the local web runtime and supports a windowless `--runtime-service` owner mode.
 - `packages/electron/preload.mjs`: Electron renderer bridge and `__TAURI__` compatibility shim.
+- `docker/bots/compose.yml`: fixed Electron-owned Production Bots service topology with persistent named volumes.
+- `docs/BOTS_RUNTIME.md`: Production Bots availability, trust boundaries, Docker operations, data/recovery, policy, retention, and diagnostics runbook.
 - `packages/desktop/src-tauri/src/main.rs`: legacy Tauri command host and sidecar launcher.
 - `packages/vscode/src/extension.ts`: VS Code extension activation and provider registration.
 - `packages/vscode/webview/main.tsx`: VS Code webview bootstrap for shared UI.
@@ -32,14 +35,22 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 | `packages/ui/` | Shared React UI runtime, feature components, Zustand stores, and event-sync pipeline used by all shells. | [packages/ui/codemap.md](packages/ui/codemap.md) |
 | `packages/web/` | Browser app, Express/OpenCode server runtime, and `openchamber` CLI. | [packages/web/codemap.md](packages/web/codemap.md) |
 | `packages/shared-runtime/` | Dependency-light safe-archive, configuration-apply, and provider-quota contracts shared by web/Electron and VS Code. | [packages/shared-runtime/codemap.md](packages/shared-runtime/codemap.md) |
+| `packages/bots-runtime/` | Dependency-free Production Bots JSON contracts, lifecycle/policy state machines, scope keys, action hashing, lease admission, and missed-run recovery. | [packages/bots-runtime/codemap.md](packages/bots-runtime/codemap.md) |
+| `packages/bot-supervisor/` | Fixed-verb, authenticated Docker lifecycle and confinement boundary for Production Bots containers. | [packages/bot-supervisor/codemap.md](packages/bot-supervisor/codemap.md) |
+| `packages/bot-engine-proxy/` | Sole-socket, eleven-operation Docker Engine proxy with independent ownership/image/network/volume validation. | [packages/bot-engine-proxy/codemap.md](packages/bot-engine-proxy/codemap.md) |
+| `packages/bot-egress/` | Purpose-separated model, registered-agent, and browser HTTP/CONNECT egress with exact-host/public-address policy. | [packages/bot-egress/codemap.md](packages/bot-egress/codemap.md) |
+| `packages/bot-computer/` | Persistent scoped Chromium profile, reviewed accessibility commands, human-control lease, ephemeral screencast, and private file staging. | [packages/bot-computer/codemap.md](packages/bot-computer/codemap.md) |
+| `packages/bot-indexer/` | Disposable local SQLite FTS/vector projection with exact shared/private/channel namespaces and offline pinned embeddings. | [packages/bot-indexer/codemap.md](packages/bot-indexer/codemap.md) |
 | `packages/cursor-sdk-runtime/` | Shared Cursor SDK execution runtime used by web/Electron and VS Code; quota credentials remain deliberately separate in each surface's quota module. | [packages/cursor-sdk-runtime/codemap.md](packages/cursor-sdk-runtime/codemap.md) |
 | `packages/orchestration-runtime/` | Dependency-free DevRyan-managed task contract, dispatch-barrier, and scheduler policy shared by web/Electron and VS Code owners. | [packages/orchestration-runtime/codemap.md](packages/orchestration-runtime/codemap.md) |
 | `packages/harness-runtime/` | Durable harness operations, diagnostic journal, lifecycle correlation, and optional turn evidence shared by host runtimes. | [packages/harness-runtime/codemap.md](packages/harness-runtime/codemap.md) |
-| `packages/electron/` | Primary desktop shell with in-process web server, native OS integrations, and IPC bridge. | [packages/electron/codemap.md](packages/electron/codemap.md) |
+| `packages/electron/` | Primary desktop shell plus fenced launchd runtime-service mode, native OS integrations, and renderer/broker bridges. | [packages/electron/codemap.md](packages/electron/codemap.md) |
 | `packages/desktop/` | Legacy Tauri desktop shell retained for existing-install migration compatibility. | [packages/desktop/codemap.md](packages/desktop/codemap.md) |
 | `packages/vscode/` | VS Code extension host, bridge router, OpenCode manager, and webview runtime. | [packages/vscode/codemap.md](packages/vscode/codemap.md) |
 | `packages/vscode/webview/` | VS Code-specific webview adapter that exposes bridge-backed runtime APIs to shared UI. | [packages/vscode/webview/codemap.md](packages/vscode/webview/codemap.md) |
+| `docker/` | Production Bots image/compose deployment definitions owned by the Electron runtime manager. | [docker/codemap.md](docker/codemap.md) |
 | `scripts/` | Repository automation for validation, dev orchestration, release/build smoke checks, and utility tasks. | [scripts/codemap.md](scripts/codemap.md) |
+| `tests/visual-production-bots/` | Test-only real-component visual fixture and separately packaged Electron CDP shell for Production Bots state coverage. | [tests/visual-production-bots/codemap.md](tests/visual-production-bots/codemap.md) |
 
 ## Where To Change Things
 
@@ -58,13 +69,20 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 - **Legacy Tauri compatibility only** → `packages/desktop/codemap.md`; do not add new desktop features there unless explicitly required for released Tauri users.
 - **VS Code extension host or webview bridge behavior** → `packages/vscode/codemap.md`, `packages/vscode/src/codemap.md`, and `packages/vscode/webview/codemap.md`.
 - **DevRyan-managed task identity, admission, dispatch barriers, cancellation, recovery, or persistence policy** → `packages/orchestration-runtime/codemap.md` and `packages/orchestration-runtime/DOCUMENTATION.md`.
+- **Production Bots enums, strict boundary shapes, lifecycle/policy state, scope keys, exact action hashing, lease admission, or missed-run recovery** → `packages/bots-runtime/codemap.md` and `packages/bots-runtime/DOCUMENTATION.md`.
+- **Production Bots Docker manifests, setup/update/rollback, or fixed service topology** → `packages/electron/codemap.md` and `docker/codemap.md`.
+- **Production Bots dynamic Docker lifecycle, engine-proxy ownership, Bot-wide Shared volume/import, or governed model/agent/browser egress policy** → `packages/bot-supervisor/codemap.md`, `packages/bot-supervisor/DOCUMENTATION.md`, `packages/bot-engine-proxy/codemap.md`, `packages/bot-egress/codemap.md`, and `packages/bot-egress/DOCUMENTATION.md`.
+- **Production Bots scoped OpenCode tool surface or persistent computer/browser runtime** → `packages/bots-runtime/codemap.md`, `packages/bots-runtime/DOCUMENTATION.md`, `packages/bot-computer/codemap.md`, and `packages/bot-computer/DOCUMENTATION.md`.
+- **Production Bots local retrieval, index namespaces, offline embeddings, or rebuild/corruption behavior** → `packages/bot-indexer/codemap.md` and `packages/bot-indexer/DOCUMENTATION.md`.
+- **Production Bots multi-architecture images, SBOM/provenance digests, keyless signing, or branded release manifests** → `scripts/build-bot-runtime-images.mjs`, `scripts/verify-bot-runtime-images.mjs`, `scripts/codemap.md`, `.github/workflows/release.yml`, and `packages/electron/bot-runtime-manifest.mjs`.
+- **Production Bots settings/resources, persistent computer files, optional Skills, memory, confirmations, channels/dispatch, background scheduling, lifecycle, compatibility persistence, or resumable purge** → start with `docs/BOTS_SIMPLIFICATION_2026-08-27.md` and the operator/security runbook at `docs/BOTS_RUNTIME.md`, then `packages/web/server/lib/bots/codemap.md`, `packages/web/server/lib/bots/DOCUMENTATION.md`, `packages/ui/src/components/bots/codemap.md`, `packages/ui/src/components/bots/DOCUMENTATION.md`, `packages/ui/src/components/sections/codemap.md`, and `packages/electron/codemap.md`.
 - **Atomic private persistence/cross-process locks, durable worktree receipts, diagnostics, lifecycle correlation, or turn evidence primitives** → `packages/harness-runtime/codemap.md` and `packages/harness-runtime/DOCUMENTATION.md`.
 - **Secure assistant-response images and path-bound grants** → `packages/web/server/lib/image-assets/codemap.md`, `packages/web/server/lib/image-assets/DOCUMENTATION.md`, and `packages/ui/src/components/chat/message/parts/codemap.md`.
 - **Web/Electron managed scheduler ownership, private tool/barrier bridge, ledger, OpenCode transport, or UI routes** → `packages/web/server/lib/orchestration/codemap.md` and `packages/web/server/lib/orchestration/DOCUMENTATION.md`.
 - **VS Code managed scheduler ownership, private tool bridge, ledger, OpenCode/Cursor transport, or webview routes** → `packages/vscode/src/codemap.md`, `packages/vscode/src/DOCUMENTATION.md`, and `packages/vscode/webview/api/codemap.md`.
 - **Shared managed-task cards, snapshot/event projection, recovery controls, or primary-agent handoff UI** → `packages/ui/src/stores/codemap.md`, `packages/ui/src/stores/DOCUMENTATION.md`, `packages/ui/src/sync/DOCUMENTATION.md`, and `packages/ui/src/components/chat/codemap.md`.
 - **Validation/build/dev scripts** → `scripts/codemap.md` and the specific script file.
-- **Test ownership, discovery, and feature coverage** → `docs/TESTING.md`, `scripts/feature-test-matrix.mjs`, and `scripts/test-suite-contract.test.mjs`.
+- **Test ownership, discovery, feature coverage, or Production Bots visual acceptance** → `docs/TESTING.md`, `scripts/feature-test-matrix.mjs`, `scripts/test-suite-contract.test.mjs`, and `tests/visual-production-bots/codemap.md`.
 - **Generated/bundled asset folders** → treat their codemaps as ownership pointers; change source packages instead of editing generated output.
 
 ## Cross-Runtime Flow
@@ -89,3 +107,5 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 ## Operational Evidence
 
 - [ECC performance and agent-evaluation pass](docs/audits/2026-07-15-ecc-performance-and-agent-eval-pass.md): sanitized startup-graph measurements, live provider/evaluation coverage, Electron UI evidence, explicit unavailable checks, and final verification for the context-efficiency and agent-evaluation workstream.
+- [Production Bots Docker MVP verification](docs/audits/2026-08-22-production-bots-mvp.md): trust-boundary audit, Apple Silicon Docker evidence, multi-user/visual matrix, cross-platform limitations, and final release-gate results.
+- [Agent-agnostic Production Bots visual audit](docs/audits/2026-08-27-agent-agnostic-bots/README.md): 38 reviewed Electron-CDP states covering adapters, Bot-as-code, structured policy, egress/isolation, background runtime, exact Activity focus, narrow layouts, and restricted-role presentation.

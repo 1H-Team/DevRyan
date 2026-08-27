@@ -8,8 +8,10 @@ import {
   classifyProviderRetryStatus,
   classifyProviderTransportFailure,
   isManagedTaskDeadlineExceeded,
+  isManagedTaskModelUnavailable,
   isProviderPromptRejected,
   PROVIDER_PROMPT_REJECTED_FAILURE_KIND,
+  MODEL_UNAVAILABLE_FAILURE_KIND,
   PROVIDER_TRANSPORT_FAILURE_KINDS,
 } from './provider-retry-policy.js';
 
@@ -21,6 +23,17 @@ describe('managed task deadline classification', () => {
     expect(classifyManagedTaskFailure(timeout)).toBe(DEADLINE_EXCEEDED_FAILURE_KIND);
     expect(isManagedTaskDeadlineExceeded('Managed task timed out')).toBe(false);
     expect(classifyManagedTaskFailure('Managed task timed out')).toBeNull();
+  });
+});
+
+describe('managed task model availability classification', () => {
+  it('recognizes authoritative model catalog failures without broadening transport failures', () => {
+    const failure = 'ProviderModelNotFoundError: Model not found: opencode/retired-model';
+    expect(isManagedTaskModelUnavailable(failure)).toBe(true);
+    expect(classifyManagedTaskFailure(failure)).toBe(MODEL_UNAVAILABLE_FAILURE_KIND);
+    expect(classifyManagedTaskFailure('ProviderModelNotFoundError: Requested model does not exist'))
+      .toBe(MODEL_UNAVAILABLE_FAILURE_KIND);
+    expect(classifyManagedTaskFailure('The model did not respond')).toBeNull();
   });
 });
 

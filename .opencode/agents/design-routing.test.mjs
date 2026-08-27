@@ -36,6 +36,8 @@ describe('project agent design routing', () => {
     assert.ok(orchestrator.includes('This overrides normal Designer, Fixer, Explorer, Librarian, Council, parallel-routing, and tiny-direct-edit rules.'));
     assert.ok(orchestrator.includes('A retry or resume of the same failed Oracle task is recovery of that same logical checkpoint, not another review'));
     assert.ok(orchestrator.includes('choose focused or deep before the sole dispatch.'));
+    assert.ok(orchestrator.includes('omit `timeout_seconds` for its 15-minute window'));
+    assert.ok(orchestrator.includes('passes exactly `timeout_seconds: 1800`'));
     assert.ok(orchestrator.includes('Never call a second Oracle to deepen, follow up, or re-review a usable result.'));
     assert.ok(orchestrator.includes('Review target: final plan draft'));
     assert.ok(orchestrator.includes('Draft plan: <complete decision-ready draft or a compact complete rendering of it>'));

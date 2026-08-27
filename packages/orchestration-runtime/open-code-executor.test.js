@@ -116,6 +116,86 @@ const assistant = (overrides = {}) => ({
 const deleteSession = async () => true;
 
 describe('managed OpenCode executor', () => {
+  test('settles an authoritative model error without waiting for an assistant message', async () => {
+    const terminalReads = [];
+    const transport = {
+      async createSession() { return { id: 'ses_child' }; },
+      async promptSession() {},
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() { return []; },
+      async readTerminalError(input) {
+        terminalReads.push(input);
+        return {
+          sessionId: 'ses_child',
+          observedAt: 2_100,
+          eventId: 'evt_model',
+          errorName: 'UnknownError',
+          message: 'Model not found: opencode/retired-model',
+          code: null,
+          statusCode: null,
+          retryable: null,
+        };
+      },
+      async abortSession() { return true; },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      now: () => 2_000,
+      sleep: async () => undefined,
+      idleStablePolls: 1,
+    });
+
+    const result = await executor.start(task(), {
+      async setChildSessionId() { return true; },
+      async markAccepted() { return true; },
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      failureReason: 'Model not found: opencode/retired-model',
+      resumable: true,
+    });
+    expect(terminalReads).toHaveLength(1);
+    expect(terminalReads[0].after).toBe(2_000);
+  });
+
+  test('ignores a terminal error recorded before the current prompt attempt', async () => {
+    const transport = {
+      async createSession() { return { id: 'ses_child' }; },
+      async promptSession() {},
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() { return [assistant()]; },
+      async readTerminalError(input) {
+        return input.after <= 1_500 ? {
+          sessionId: 'ses_child',
+          observedAt: 1_500,
+          eventId: 'evt_stale',
+          errorName: 'UnknownError',
+          message: 'Model not found: opencode/old-model',
+          code: null,
+          statusCode: null,
+          retryable: null,
+        } : null;
+      },
+      async abortSession() { return true; },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      now: () => 2_000,
+      sleep: async () => undefined,
+      idleStablePolls: 1,
+    });
+
+    await expect(executor.start(task(), {
+      async setChildSessionId() { return true; },
+      async markAccepted() { return true; },
+    })).resolves.toMatchObject({ status: 'completed' });
+  });
+
   test('keeps a writable managed Oracle child on root-owned delegation', async () => {
     const prompts = [];
     const transport = {

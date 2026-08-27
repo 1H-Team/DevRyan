@@ -22,6 +22,7 @@ import {
 } from "@/lib/sessionDiffStats"
 import { getBackgroundTrimLimit } from "@/stores/types/sessionTypes"
 import { markSessionNavigationLoaderStarted, startSessionLoadPerformanceEvent } from "./session-load-performance"
+import { mergeSessionPreservingMeaningfulTitle } from "@/lib/sessionTitles"
 
 // Debounce for the background-session message trim so rapid session flips
 // don't thrash trim/reload cycles.
@@ -268,7 +269,12 @@ export function useSync() {
             : stripUntrustedSessionDiffSummary(
               result as Session & { summary?: SessionSummaryDiffStats | null },
             ) as Session
-          if (idx.found) sessions[idx.index] = normalized
+          if (idx.found) {
+            sessions[idx.index] = mergeSessionPreservingMeaningfulTitle(
+              sessions[idx.index],
+              normalized,
+            )
+          }
           else sessions.splice(idx.index, 0, normalized)
           targetStore.setState({ session: sessions })
           finishMetadata("complete")

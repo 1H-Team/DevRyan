@@ -21,7 +21,17 @@ import { Switch } from '@/components/ui/switch';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
 import { formatAgentDisplayName } from '@/lib/agentDisplay';
-import { isAgentPermissionsUiHidden, useAuthPrincipal } from '@/lib/authSession';
+import {
+  canEditPersonalAgentModels,
+  isAgentPermissionsUiHidden,
+  isGlobalAgentBehaviorUiHidden,
+  useAuthPrincipal,
+} from '@/lib/authSession';
+import {
+  findAgentDefaultOverride,
+  isSingleModelAgentDefault,
+  resolveAgentDefaultSelection,
+} from '@/lib/agentDefaultResolution';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
 import { getModelVariantControlState, getModelVariantDisplayState, getOrderedThinkingVariants } from '@/lib/providers/variantControls';
 import { resolveAgentVariantForModel, resolveAgentVariantForSave, resolveAgentVariantSelection } from './agentVariantSelection';
@@ -273,6 +283,10 @@ export const AgentsPage: React.FC = () => {
 
   const selectedAgent = selectedAgentName ? getAgentByName(selectedAgentName) : null;
   const providers = useConfigStore((state) => state.providers);
+  const personalAgentSelections = useConfigStore((state) => state.agentModelSelections);
+  const persistAgentModelSelection = useConfigStore((state) => state.persistAgentModelSelection);
+  const resetAgentModelSelection = useConfigStore((state) => state.resetAgentModelSelection);
+  const applyDefaultsToCurrent = useConfigStore((state) => state.applyDefaultsToCurrent);
   const isReadOnly = true;
 
   const [description, setDescription] = React.useState('');
@@ -291,6 +305,25 @@ export const AgentsPage: React.FC = () => {
   const [isToolPermissionsOpen, setIsToolPermissionsOpen] = React.useState(false);
   const authPrincipal = useAuthPrincipal();
   const permissionsUiHidden = isAgentPermissionsUiHidden(authPrincipal);
+  const behaviorUiHidden = isGlobalAgentBehaviorUiHidden(authPrincipal);
+  const isPersonalModelEditor = canEditPersonalAgentModels(authPrincipal);
+  const isHostModelEditor = authPrincipal.scope === 'local-admin' || authPrincipal.role === 'admin';
+  const canEditSelectedModel = isHostModelEditor || (
+    Boolean(selectedAgent)
+    && !isCouncilAgentName(selectedAgentName)
+    && isSingleModelAgentDefault(selectedAgent ?? undefined)
+    && isPersonalModelEditor
+  );
+  const personalSelection = selectedAgentName
+    ? findAgentDefaultOverride(personalAgentSelections, selectedAgentName)
+    : null;
+  const inheritedSelection = selectedAgentName && selectedAgent
+    ? resolveAgentDefaultSelection({
+      agentName: selectedAgentName,
+      agents: [selectedAgent],
+      providers,
+    })
+    : null;
   const [showPermissionEditor, setShowPermissionEditor] = React.useState(false);
   const [isSavingModelOverride, setIsSavingModelOverride] = React.useState(false);
 
@@ -598,7 +631,10 @@ export const AgentsPage: React.FC = () => {
       const modeValue = selectedAgent.mode || 'subagent';
       const selectedModelRefs = getAgentModelRefs(selectedAgent);
       const selectedCouncillors = getAgentCouncillors(selectedAgent);
-      const modelValue = selectedModelRefs[0] ?? '';
+      const personalModelValue = isPersonalModelEditor && personalSelection && !isCouncilAgentName(selectedAgentName)
+        ? `${personalSelection.providerId}/${personalSelection.modelId}`
+        : '';
+      const modelValue = personalModelValue || selectedModelRefs[0] || '';
       const councilModelValues = selectedCouncillors.length > 0
         ? selectedCouncillors.map((entry) => entry.model)
         : normalizeModelRows(selectedModelRefs);
@@ -608,9 +644,11 @@ export const AgentsPage: React.FC = () => {
           typeof entry.variant === 'string' ? entry.variant : undefined,
         ))
         : councilModelValues.map((entry) => resolveVariantForModel(entry, undefined));
-      const savedVariantValue = typeof (selectedAgent as { variant?: unknown }).variant === 'string'
-        ? (selectedAgent as { variant: string }).variant
-        : undefined;
+      const savedVariantValue = personalModelValue
+        ? personalSelection?.variant
+        : (typeof (selectedAgent as { variant?: unknown }).variant === 'string'
+          ? (selectedAgent as { variant: string }).variant
+          : undefined);
       const variantValue = resolveVariantForModel(modelValue, savedVariantValue);
       const temperatureValue = selectedAgent.temperature;
       const promptValue = selectedAgent.prompt || '';
@@ -629,7 +667,7 @@ export const AgentsPage: React.FC = () => {
         permissionConfigToRuleset(selectedAgent.permission),
       );
     }
-  }, [resolveVariantForModel, selectedAgent, selectedAgentName]);
+  }, [isPersonalModelEditor, personalSelection, resolveVariantForModel, selectedAgent, selectedAgentName]);
 
   const handleSaveModelOverride = React.useCallback(async () => {
     if (!selectedAgentName) {
@@ -662,6 +700,22 @@ export const AgentsPage: React.FC = () => {
         })
         .filter((entry) => entry.model.length > 0);
 
+      if (isPersonalModelEditor) {
+        const parsed = parseModelIdentifier(trimmedModel);
+        if (!parsed) {
+          throw new Error(t('settings.agents.page.toast.modelRequired'));
+        }
+        await persistAgentModelSelection(
+          selectedAgentName,
+          parsed.providerId,
+          parsed.modelId,
+          resolvedVariant,
+        );
+        applyDefaultsToCurrent();
+        toast.success(t('settings.agents.page.toast.modelOverrideSaved'));
+        return;
+      }
+
       const result = await saveAgentModelOverride(selectedAgentName, {
         name: selectedAgentName,
         model: trimmedModel,
@@ -681,10 +735,24 @@ export const AgentsPage: React.FC = () => {
     } finally {
       setIsSavingModelOverride(false);
     }
-  }, [councilModels, councilVariants, getProviderForModelRef, isCouncilAgent, model, saveAgentModelOverride, selectedAgentName, t, variant]);
+  }, [applyDefaultsToCurrent, councilModels, councilVariants, getProviderForModelRef, isCouncilAgent, isPersonalModelEditor, model, persistAgentModelSelection, saveAgentModelOverride, selectedAgentName, t, variant]);
+
+  const handleResetPersonalModelOverride = React.useCallback(async () => {
+    if (!selectedAgentName || !isPersonalModelEditor) return;
+    setIsSavingModelOverride(true);
+    try {
+      await resetAgentModelSelection(selectedAgentName);
+      applyDefaultsToCurrent();
+      toast.success(`${formatAgentDisplayName(selectedAgentName)} now inherits the host default`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('settings.agents.page.toast.modelOverrideSaveFailed'));
+    } finally {
+      setIsSavingModelOverride(false);
+    }
+  }, [applyDefaultsToCurrent, isPersonalModelEditor, resetAgentModelSelection, selectedAgentName, t]);
 
   if (!selectedAgentName) {
-    return <BehaviorPage />;
+    return behaviorUiHidden ? null : <BehaviorPage />;
   }
 
   const renderThinkingLevelRow = (
@@ -745,7 +813,7 @@ export const AgentsPage: React.FC = () => {
               }
               applyVariantUpdate({ variant: nextValue });
             }}
-            disabled={isSavingModelOverride || (!rowSupportsVariants && !rowCanToggleFast)}
+            disabled={!canEditSelectedModel || isSavingModelOverride || (!rowSupportsVariants && !rowCanToggleFast)}
           >
             <SelectTrigger className="w-fit min-w-[120px]">
               <SelectValue placeholder={t('settings.agents.page.field.thinkingPlaceholder')}>
@@ -767,7 +835,7 @@ export const AgentsPage: React.FC = () => {
                     <Switch
                       checked={rowFastEnabled}
                       onCheckedChange={(checked) => applyVariantUpdate({ fastEnabled: checked })}
-                      disabled={isSavingModelOverride}
+                      disabled={!canEditSelectedModel || isSavingModelOverride}
                       aria-label="Fast"
                     />
                   </div>
@@ -805,7 +873,7 @@ export const AgentsPage: React.FC = () => {
               providerId={parsedCouncilModel?.providerId ?? ''}
               modelId={parsedCouncilModel?.modelId ?? ''}
               className="w-full sm:max-w-[360px]"
-              disabled={isSavingModelOverride}
+              disabled={!canEditSelectedModel || isSavingModelOverride}
               onChange={(providerId: string, modelId: string) => {
                 setCouncilModelAt(index, providerId && modelId ? `${providerId}/${modelId}` : '');
               }}
@@ -817,7 +885,7 @@ export const AgentsPage: React.FC = () => {
                 variant="ghost"
                 className="ml-1 shrink-0"
                 onClick={() => removeCouncilModelAt(index)}
-                disabled={isSavingModelOverride}
+                disabled={!canEditSelectedModel || isSavingModelOverride}
                 aria-label={t('settings.agents.page.field.removeCouncilModelAria', { number: modelNumber })}
               >
                 <RiCloseLine className="h-4 w-4" />
@@ -924,6 +992,22 @@ export const AgentsPage: React.FC = () => {
 
               <section className="pb-2 pt-0 space-y-0">
 
+                {isPersonalModelEditor && !isCouncilAgent ? (
+                  <div className="flex flex-wrap items-center gap-2 py-1.5 typography-meta text-muted-foreground">
+                    <span className={personalSelection
+                      ? 'rounded-full bg-primary/10 px-2 py-0.5 text-primary'
+                      : 'rounded-full bg-muted px-2 py-0.5'}>
+                      {personalSelection ? 'Personal' : 'Inherited'}
+                    </span>
+                    {inheritedSelection ? (
+                      <span>
+                        Host default: {inheritedSelection.providerId}/{inheritedSelection.modelId}
+                        {inheritedSelection.variant ? ` · ${inheritedSelection.variant}` : ''}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {isCouncilAgent ? (
                   <div className="space-y-1 py-1.5">
                     {renderCouncilModelRow(councilModels[0] ?? '', 0)}
@@ -937,7 +1021,7 @@ export const AgentsPage: React.FC = () => {
                           size="xs"
                           className="!font-normal"
                           onClick={addCouncilModel}
-                          disabled={isSavingModelOverride}
+                          disabled={!canEditSelectedModel || isSavingModelOverride}
                         >
                           <RiAddLine className="h-3.5 w-3.5" />
                           {t('settings.agents.page.field.addCouncilModel')}
@@ -955,7 +1039,7 @@ export const AgentsPage: React.FC = () => {
                         providerId={parseModelIdentifier(model)?.providerId ?? ''}
                         modelId={parseModelIdentifier(model)?.modelId ?? ''}
                         className="w-full sm:max-w-[360px]"
-                        disabled={isSavingModelOverride}
+                        disabled={!canEditSelectedModel || isSavingModelOverride}
                         onChange={(providerId: string, modelId: string) => {
                           const nextModel = providerId && modelId ? `${providerId}/${modelId}` : '';
                           setModel(nextModel);
@@ -1002,18 +1086,30 @@ export const AgentsPage: React.FC = () => {
 
                 <div className="flex flex-col gap-1 py-1 sm:flex-row sm:items-center sm:gap-3">
                   <div className="hidden sm:block sm:w-40 shrink-0" />
-                  <div className="flex min-w-0 flex-1 justify-end sm:justify-start">
+                  <div className="flex min-w-0 flex-1 justify-end gap-2 sm:justify-start">
                     <Button
                       type="button"
                       variant="default"
                       size="xs"
                       className="!font-normal normal-case"
                       onClick={() => void handleSaveModelOverride()}
-                      disabled={isSavingModelOverride}
+                      disabled={!canEditSelectedModel || isSavingModelOverride}
                     >
                       <RiSaveLine className="h-3.5 w-3.5" />
                       {t('settings.agents.page.actions.saveModelOverride')}
                     </Button>
+                    {isPersonalModelEditor && !isCouncilAgent ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="xs"
+                        className="!font-normal normal-case"
+                        onClick={() => void handleResetPersonalModelOverride()}
+                        disabled={!personalSelection || isSavingModelOverride}
+                      >
+                        Reset to Host
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
 

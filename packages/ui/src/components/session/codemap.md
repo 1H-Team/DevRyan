@@ -17,6 +17,10 @@ authoritative branch-visibility projection before entering shared UI state.
 When branch creation is disabled by effective policy, the worktree dialog
 offers only existing assigned branches and indirect issue/todo creation actions
 do not expose new-branch worktree choices.
+`SessionSidebar.tsx` also owns the mutually exclusive audience panels. The
+session-only audience store defaults cold starts to Coding Agents and preserves
+each audience's authoritative selection when switching; only Coding Agents
+mounts project/session/draft/search/multi-run/scheduled-task controls.
 
 ## Flow
 Session state enters via selectors/hooks; actions trigger archive/delete/switch workflows.

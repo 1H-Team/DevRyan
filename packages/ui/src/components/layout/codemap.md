@@ -5,6 +5,17 @@ Application shell/layout components (panes, headers, split views, containers).
 
 ## Design
 Structural components define composition boundaries between navigation, chat, and side panels. `MainLayout`, `RightSidebarTabs`, `ContextPanel`, `BrowserPanel`, and `VSCodeLayout` consume heavyweight views through `components/views/lazyViews.tsx`; they must not statically import those implementations. `ContextPanel` treats an open plan as session-family-bound presentation: it stays visible while navigating between the owning parent session and its descendants, then collapses synchronously for drafts, unrelated sessions, or unresolved lineage so a directory-shared plan tab cannot leak stale content across chats.
+`MainLayout` treats the explicit Bots sidebar audience as a mutually exclusive
+workspace mode; a retained selected Bot alone never changes the main surface.
+It mounts `LazyBotView`, closes Terminal and Multi Run, hides
+Context and ordinary Browser panels, and routes the existing right desktop rail
+or mobile drawer to `BotOperationsRail`. `Header` mounts the content-driven
+`BotIdentityHeader`; `DesktopEdgeChrome` and the mobile shell layer render Bot-only
+sidebar and operations toggles without repository or project actions.
+`VSCodeLayout` keeps
+the same navigation affordance but renders the explicit macOS-app requirement
+and suppresses MCP/context/quota controls. Switching back to Coding Agents
+restores the retained coding session/draft and active Coding Agent main tab.
 `MainLayout` and `VSCodeLayout` own the narrow configuration-apply lifecycle hook so a pending or in-progress apply continues polling after Settings unmounts; clean closed Settings performs no polling.
 `MainLayout` threads a browser-action portal from `DesktopEdgeChrome` into `Header`/`ProjectActionsButton`; the globe is directory-gated, not project-gated. Local Electron and every standalone web origin (local, managed, or tunneled) open a real manual Browser tab even when no project record resolves. Project-action URLs use that Browser surface where supported. Local Electron also shows the root-session-scoped agent-lease menu. VS Code and legacy Tauri retain the Preview fallback.
 

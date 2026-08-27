@@ -16,13 +16,17 @@ describe('SidebarHeader desktop chrome spacing', () => {
 
     expect(headerSource).toContain('reserveExternalDesktopChromeRow?: boolean');
     expect(headerSource).toContain('reserveExternalChromeOnly');
+    expect(headerSource).toContain("audience === 'bots'");
+    expect(headerSource).toContain('pt-[var(--oc-bot-chrome-height,48px)]');
     expect(headerSource).toContain('pt-[var(--oc-header-height,56px)]');
     expect(headerSource).toContain('pb-[7px]');
     expect(headerSource).toContain('pb-[11px]');
     expect(headerSource).toContain('reserveExternalDesktopChromeRow && !showTopRow');
 
-    expect(sessionSidebarSource).toContain('reserveExternalDesktopChromeRow={isDesktopShellRuntime && !mobileVariant && !isVSCode}');
-    expect(sessionSidebarSource).toContain('showSidebarToggle={isWebRuntime}');
+    expect(sessionSidebarSource).toContain(
+      "reserveExternalDesktopChromeRow={!mobileVariant && !isVSCode && (isDesktopShellRuntime || audience === 'bots')}",
+    );
+    expect(sessionSidebarSource).toContain("showSidebarToggle={isWebRuntime && audience !== 'bots'}");
     expect(sessionSidebarSource).toContain('hideSearchAction={hideSearchInSidebarHeader}');
   });
 });

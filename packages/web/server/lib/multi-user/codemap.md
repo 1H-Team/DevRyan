@@ -12,21 +12,31 @@ ownership, directory opacity, and audit control plane.
   atomic owner reassignment, and managed-project register/unregister), exclusive
   profile/account assignments, ownership, and live revocation.
 - `auth-compat.js`: canonical-to-legacy user-policy read compatibility,
-  structured identity/schema errors, and loopback agent-test fixture selection.
+  structured identity/schema errors, fail-closed Production Bots migration
+  detection, and loopback agent-test fixture selection.
 - `user-profile-visibility.js`: authoritative account-kind constants and the
   human-only profile query used by User Management.
 - `config.js`, `supabase-client.js`, `vault.js`: private configuration,
-  server-only Supabase transport, and encrypted token persistence.
+  server-only Supabase/PostgREST plus bounded private Storage transport, and
+  encrypted token persistence. `runtime.js` injects that transport into the
+  focused sibling `../bots/` control-plane module.
 - `policy.js`: exact role templates, canonical settings Read/Edit permissions,
-  sparse per-user overrides, route/field ownership, and capability evaluation.
+  sparse per-user overrides (including default-on Bots access and the
+  developer-default hidden Global Agent Behavior UI), route/field ownership,
+  and capability evaluation. Generic personal settings saves are authorized by
+  each changed field's owner rather than a coarse Sessions-page gate.
 - `managed-agent-defaults.js`: validates sparse single-model per-account
   provider/model/thinking defaults and resolves personal, inherited, or
   host-managed execution without exposing Supabase or mutating agent files.
+  Managed developers require Host Settings plus Agents Read/Edit; Council and
+  host-level agent mutation remain outside this personal path.
 - `session-ownership-index.js`, `session-visibility.js`, `session-folders.js`:
   private hot-path ownership enforcement, managed global-list pagination and
   strict reconciliation matching, and server-backed per-principal folder state.
 - `branch-target.js`: logical branch normalization/provenance and idempotent
   assigned-branch worktree resolution shared by chat and scheduled execution.
+- `runtime.js` also exposes authoritative scheduled-task access classification
+  and notifies the scheduler after owner/project/branch access mutations.
 - `dotenv-visibility.js`: non-admin managed-role dotenv concealment for file
   discovery, reads, Git changes/diffs, and OpenCode file/search responses.
 - `branch-authorization.js`: request-scoped project resolution and exact logical
@@ -38,7 +48,7 @@ ownership, directory opacity, and audit control plane.
   snapshot clearing through the service-role diagnostic RPC.
 - `audit-outbox.js`, `activity-projection.js`: durable idempotent actor audit,
   deferred telemetry delivery, an exclusive flush barrier for diagnostic
-  clearing, content-free OpenCode tool/file projection, and active-worktree-aware
+  clearing and Bot audit pruning, content-free OpenCode tool/file projection, and active-worktree-aware
   failure projection for sessions, tools, and managed tasks. Context-mode disk
   I/O failures are rewritten to a stable wedged-handle message.
 - `error-diagnostics.js`, `diagnostic-recovery.js`: shared immutable
@@ -56,6 +66,8 @@ ownership, directory opacity, and audit control plane.
 2. Login exchanges credentials with Supabase Auth, or explicitly selects one
    loopback-only agent-test role, and issues an opaque app cookie.
 3. Each API/WS request resolves a live profile, effective policy, and assignments.
+   Managed principals with Bots disabled are rejected before any Bot capability,
+   catalog, event, channel, action, or run route executes.
 4. Non-admin request paths are confined to a granted repository root or that
    repository's shared OpenCode worktree container before feature routes run.
 5. Responses/events are ownership-filtered and host paths are publicized.
@@ -81,6 +93,16 @@ ownership, directory opacity, and audit control plane.
    owned child dispatches overlay sparse personal agent defaults on the live
    host catalog; resets restore live inheritance. Council always uses its
    host-managed multi-model roster.
+12. Production Bots persistence stays behind service-role-only forced-RLS
+    relations and security-invoker RPCs. Missing relation, column, or RPC
+    contracts map to the pinned Bot migration `503` envelope before Bot work is
+    admitted. The compatibility gate includes durable profile/avatar columns,
+    write-only Bot environment-secret metadata, generated-image source keys,
+    and the exact-version publish RPC. Immutable Skill/MCP binding rows,
+    encrypted profile avatars, and separately confirmed host-vault secret
+    records are included in recovery and
+    ordered purge. Retired-Bot purge preserves audit rows and crosses the outbox
+    delivery barrier before applying one-year retention.
 
 ## Integration
 

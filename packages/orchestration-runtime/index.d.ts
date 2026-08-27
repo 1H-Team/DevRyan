@@ -10,6 +10,11 @@ export interface ProviderToolCatalogEntry {
 export function deriveXaiDuplicateToolOverrides(
   catalog: ProviderToolCatalogEntry[] | unknown,
 ): Record<string, false> | null;
+export function isManagedModelAvailableInCatalog(
+  payload: unknown,
+  providerId: unknown,
+  modelId: unknown,
+): boolean | null;
 export function isXaiProviderID(providerID: unknown): boolean;
 export function listXaiModelIds(providerPayload: unknown): string[];
 export function createXaiToolCatalogCache(options?: {
@@ -48,6 +53,7 @@ export type ManagedTaskResultAction = 'continue' | 'resume' | 'retry' | 'recover
 export type ManagedTaskFailureKind =
   | 'provider_usage_limit'
   | 'provider_prompt_rejected'
+  | 'model_unavailable'
   | 'deadline_exceeded'
   | null;
 export type ProviderTransportFailureKind =
@@ -265,6 +271,16 @@ export interface ManagedOpenCodeTransport {
     info?: Record<string, unknown>;
     parts?: Record<string, unknown>[];
   }>>;
+  readTerminalError?(input: ManagedOpenCodeTransportInput & { after?: number }): Promise<{
+    sessionId: string;
+    observedAt: number;
+    eventId: string | null;
+    errorName: string;
+    message: string;
+    code: string | null;
+    statusCode: number | null;
+    retryable: boolean | null;
+  } | null>;
   abortSession(input: ManagedOpenCodeTransportInput & { signal?: AbortSignal }): Promise<boolean>;
   deleteSession(input: ManagedOpenCodeTransportInput): Promise<boolean>;
 }
@@ -312,6 +328,7 @@ export interface ManagedTaskSchedulerOptions {
   abortTimeoutMs?: number;
   startingLeaseTimeoutMs?: number;
   reconciliationRetryMs?: number;
+  providerRecoveryContinuationLeaseMs?: number;
   maxTerminalRecords?: number;
   maxHistoryAgeMs?: number;
   maxPersistedBytes?: number;
@@ -327,6 +344,7 @@ export interface ManagedTaskSchedulerDiagnostics {
   pendingTimeoutCount: number;
   pendingLeaseCount: number;
   pendingReconciliationRetryCount: number;
+  activeProviderRecoveryContinuationClaimCount: number;
   compactedTaskCount: number;
   serializedBytes: number;
   shutDown: boolean;
@@ -385,6 +403,18 @@ export interface ManagedTaskScheduler {
   listReadyProviderRecoveryContinuations(options?: {
     sessionId?: string;
   }): ManagedProviderRecoveryContinuation[];
+  claimProviderRecoveryContinuation(input: {
+    taskId: string;
+    rootSessionId: string;
+    directory: string;
+    claimantId: string;
+  }): Promise<{ claimed: boolean; expiresAt: number | null }>;
+  releaseProviderRecoveryContinuation(input: {
+    taskId: string;
+    rootSessionId: string;
+    directory: string;
+    claimantId: string;
+  }): Promise<{ released: boolean }>;
   inspectAgentHandoff(input: ManagedAgentHandoffScope): Promise<ManagedAgentHandoffResult>;
   confirmAgentHandoff(input: ManagedAgentHandoffScope & {
     idempotencyKey: string;
@@ -424,6 +454,7 @@ export const MAX_MANAGED_TASK_PREVIEW_BYTES: number;
 export const MAX_MANAGED_TASK_FAILURE_BYTES: number;
 export const PROVIDER_USAGE_LIMIT_FAILURE_KIND: 'provider_usage_limit';
 export const PROVIDER_PROMPT_REJECTED_FAILURE_KIND: 'provider_prompt_rejected';
+export const MODEL_UNAVAILABLE_FAILURE_KIND: 'model_unavailable';
 export const PROVIDER_TRANSPORT_FAILURE_KINDS: readonly ProviderTransportFailureKind[];
 export const MANAGED_RETRY_IN_PLACE_PROMPT: string;
 export const MANAGED_RESUME_CONTINUATION_PROMPT: string;
@@ -484,7 +515,28 @@ export function isProviderPromptRejected(value: unknown): boolean;
 export const DEADLINE_EXCEEDED_FAILURE_KIND: 'deadline_exceeded';
 export const MANAGED_TASK_TIMEOUT_REASON_PREFIX: string;
 export function isManagedTaskDeadlineExceeded(value: unknown): boolean;
+export function isManagedTaskModelUnavailable(value: unknown): boolean;
 export function classifyManagedTaskFailure(value: unknown): ManagedTaskFailureKind;
+export function createManagedTerminalErrorRegistry(options?: {
+  now?: () => number;
+  maximumSessions?: number;
+}): {
+  record(payload: unknown, options?: { observedAt?: number }): boolean;
+  observe(payload: unknown, options?: { observedAt?: number }): boolean;
+  read(input?: { sessionId?: string; after?: number }): {
+    sessionId: string;
+    observedAt: number;
+    eventId: string | null;
+    errorName: string;
+    message: string;
+    code: string | null;
+    statusCode: number | null;
+    retryable: boolean | null;
+  } | null;
+  remove(sessionId: unknown): boolean;
+  clear(): void;
+  readonly size: number;
+};
 export function truncateManagedText(value: unknown, maxBytes: number): string;
 export function isTerminalManagedTaskStatus(status: unknown): status is ManagedTaskTerminalStatus;
 export function validateManagedTaskRecord(task: unknown): ManagedTaskRecord;

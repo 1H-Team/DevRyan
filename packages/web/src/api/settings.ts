@@ -34,6 +34,7 @@ export const createWebSettingsAPI = (): SettingsAPI => ({
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        'X-DevRyan-CSRF': '1',
       },
       body: JSON.stringify(changes),
     });

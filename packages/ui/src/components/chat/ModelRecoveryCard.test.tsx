@@ -84,6 +84,28 @@ describe('ModelRecoveryCard', () => {
     expect(html).toContain('disabled=""');
   });
 
+  test('keeps a failed retry visible and actionable', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ModelRecoveryCard
+          title="Choose a model to continue:"
+          originalModelLabel="openai / gpt-5.6"
+          providers={[]}
+          selection={{ providerId: 'openai', modelId: 'gpt-5.6', variant: 'high' }}
+          pending={false}
+          actionError="Recovery request failed. Try again."
+          onSelectionChange={() => undefined}
+          onRetry={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('Recovery request failed. Try again.');
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('Try Again');
+    expect(html).not.toContain('disabled=""');
+  });
+
   test('renders the explicit Claude compatibility recovery action', () => {
     const html = renderToStaticMarkup(
       <I18nProvider>

@@ -8,6 +8,7 @@ import { isAllowedDefaultConfigRelativePath } from '../packages/web/server/lib/o
 import { formatArtifactDiagnostics, verifyDefaultConfigArtifact } from './verify-default-config-artifact.mjs';
 
 const sourceRoot = path.resolve('packages/web/server/default-config');
+const tauriRoot = path.resolve('packages/desktop/src-tauri/resources/default-config');
 
 const withArtifact = async (run) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-default-config-artifact-'));
@@ -37,6 +38,41 @@ test('verifies a complete canonical default-config artifact', async () => {
       prohibited: [],
     });
   });
+});
+
+test('keeps Tauri agent and Council assets aligned with the canonical defaults', async () => {
+  const agentPaths = [
+    'agents/council.md',
+    'agents/explorer.md',
+    'agents/fixer.md',
+    'agents/orchestrator.md',
+  ];
+
+  for (const relativePath of agentPaths) {
+    const [canonical, tauri] = await Promise.all([
+      fs.readFile(path.join(sourceRoot, relativePath), 'utf8'),
+      fs.readFile(path.join(tauriRoot, relativePath), 'utf8'),
+    ]);
+    assert.doesNotMatch(canonical, /^modelRefs:|^councillors:/m);
+    assert.doesNotMatch(tauri, /^modelRefs:|^councillors:/m);
+    assert.equal(tauri.match(/^model:\s*(.+)$/m)?.[1], canonical.match(/^model:\s*(.+)$/m)?.[1]);
+    assert.equal(tauri.match(/^variant:\s*(.+)$/m)?.[1], canonical.match(/^variant:\s*(.+)$/m)?.[1]);
+  }
+
+  for (const relativePath of ['agents/council.models.json', 'plugins/council-session.js']) {
+    const [canonical, tauri] = await Promise.all([
+      fs.readFile(path.join(sourceRoot, relativePath), 'utf8'),
+      fs.readFile(path.join(tauriRoot, relativePath), 'utf8'),
+    ]);
+    assert.equal(tauri, canonical, `${relativePath} must match the canonical web asset`);
+  }
+
+  const councilCompanion = JSON.parse(
+    await fs.readFile(path.join(sourceRoot, 'agents', 'council.models.json'), 'utf8'),
+  );
+  assert.equal(councilCompanion.version, 1);
+  assert.ok(Array.isArray(councilCompanion.councillors));
+
 });
 
 test('aggregates missing, altered, and prohibited managed runtime diagnostics', async () => {

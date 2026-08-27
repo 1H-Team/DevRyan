@@ -37,8 +37,6 @@ permission:
   devryan_task: deny
   devryan_document: allow
   skill: allow
-modelRefs:
-  - opencode-go/deepseek-v4-flash
 top_p: 0.9
 ---
 

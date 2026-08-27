@@ -37,6 +37,7 @@ import { fullSettingsPermissions } from '@/lib/settings/permissions';
 import { getDeviceStorage, setStoragePrincipal } from '@/stores/utils/safeStorage';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
+import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
 import {
   buildPrincipalTransitionPath,
   classifySessionResponse,
@@ -277,7 +278,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
       scope: 'local-admin' as const,
       policy: {
         settingsPages: ['*'], settingsPermissions: fullSettingsPermissions(),
-        files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
+        bots: true, files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
         manageUsers: true, manageGlobalSettings: true, manageGit: true, push: true, github: true,
       },
       assignments: [],
@@ -287,6 +288,9 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
     setAuthOfflineGrace(isOfflineGrace);
     const changed = setStoragePrincipal(nextPrincipal.id);
     setAuthPrincipal(nextPrincipal);
+    if (!hasAuthCapability(nextPrincipal, 'bots')) {
+      useMainSidebarAudienceStore.getState().setAudience('coding-agents');
+    }
     if (!hasAuthCapability(nextPrincipal, 'browser')) {
       useUIStore.getState().pruneAllBrowserTabs();
     }
@@ -1012,7 +1016,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={!password || (isClaiming && password.length < 4) || (authMode === 'multi-user' && (!email.trim() || (isClaiming && !displayName.trim()))) || isSubmitting}
+                  disabled={!password || (isClaiming && password.length < 6) || (authMode === 'multi-user' && (!email.trim() || (isClaiming && !displayName.trim()))) || isSubmitting}
                 >
                   {isSubmitting && <RiLoader4Line className="h-4 w-4 animate-spin" />}
                   <span>{isSubmitting ? t('sessionAuth.actions.connecting') : t('sessionAuth.actions.connect')}</span>

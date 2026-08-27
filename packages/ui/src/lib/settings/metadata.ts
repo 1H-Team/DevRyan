@@ -8,6 +8,7 @@ export type SettingsPageSlug =
   | 'remote-instances'
   | 'providers'
   | 'usage'
+  | 'bots'
   | 'agents'
   | 'behavior'
   | 'commands'
@@ -120,6 +121,14 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     keywords: ['quota', 'billing', 'tokens', 'usage', 'limits'],
   },
   {
+    slug: 'bots',
+    title: 'Bots',
+    group: 'general',
+    kind: 'single',
+    description: 'Manage published Bots, membership, permissions, and lifecycle.',
+    keywords: ['bot', 'bots', 'assistant', 'membership', 'permissions', 'docker', 'lifecycle'],
+  },
+  {
     slug: 'agents',
     title: 'Agents',
     group: 'opencode',
@@ -142,7 +151,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
   },
   {
     slug: 'mcp',
-    title: 'MCP',
+    title: 'MCP Servers',
     group: 'opencode',
     kind: 'split',
     keywords: ['mcp', 'model context protocol', 'servers', 'tools', 'remote', 'stdio'],

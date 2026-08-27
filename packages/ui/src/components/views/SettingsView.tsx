@@ -30,7 +30,11 @@ import {
   type SettingsRuntimeContext,
   type SettingsPageMeta,
 } from '@/lib/settings/metadata';
-import { SETTINGS_NAV_SECTIONS } from '@/lib/settings/navigation';
+import {
+  SETTINGS_NAV_SECTIONS,
+  getSettingsDestinationFallbackSlug,
+  getSettingsNavDestination,
+} from '@/lib/settings/navigation';
 import { getSettingsNavIcon } from '@/lib/settings/navigation-icons';
 import {
   getSettingsBackButtonHeaderClassName,
@@ -46,6 +50,16 @@ import {
 import { canAccessSettingsPage, useAuthPrincipal } from '@/lib/authSession';
 import { SettingsPagePermissionBoundary } from '@/lib/settings/permission-context';
 import { setStoragePrincipal } from '@/stores/utils/safeStorage';
+import { LazyBotsPage } from './lazyViews';
+import {
+  CapabilityMutationBoundary,
+  CapabilitySettingsWorkspace,
+} from './CapabilitySettingsWorkspace';
+import { SettingsSectionTabs } from './SettingsSectionTabs';
+import {
+  canAccessSettingsDestination,
+  isBotCapabilitySettingsSlug,
+} from './SettingsView.access';
 
 const LazyAgentsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/sections/agents/AgentsSidebar').then((module) => ({ default: module.AgentsSidebar })),
@@ -125,13 +139,23 @@ const LazyUserManagementPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
 const LazyBugReportsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/sections/bug-reports/BugReportsPage').then((module) => ({ default: module.BugReportsPage })),
 );
-
 const SettingsSectionBoundary: React.FC<React.PropsWithChildren> = ({ children }) => (
   <ErrorBoundary>
     <React.Suspense fallback={<div className="h-full min-h-0 bg-background" aria-busy="true" />}>
       {children}
     </React.Suspense>
   </ErrorBoundary>
+);
+
+const CodingAgentSettingsAccessRequired: React.FC = () => (
+  <div className="flex h-full items-center justify-center p-6 text-center">
+    <div className="max-w-sm">
+      <div className="typography-ui-label font-semibold text-foreground">Coding Agents settings access required</div>
+      <p className="mt-1 typography-ui text-muted-foreground">
+        Your settings policy does not include this Coding Agents section.
+      </p>
+    </div>
+  </div>
 );
 
 // Same constraints as main sidebar
@@ -165,18 +189,24 @@ function isPageAvailable(page: SettingsPageMeta, ctx: SettingsRuntimeContext): b
 const SettingsHome: React.FC<{ onOpen: (slug: SettingsPageSlug) => void }> = ({ onOpen }) => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
+  const providersDestinationSlug: SettingsPageSlug = canAccessSettingsDestination(principal, 'providers')
+    ? 'providers'
+    : 'usage';
+  const skillsCard = canAccessSettingsPage(principal, 'skills.catalog')
+    ? { slug: 'skills.catalog' as const, title: t('settings.view.home.cards.skillsCatalog.title'), description: t('settings.view.home.cards.skillsCatalog.description') }
+    : { slug: 'skills.installed' as const, title: 'Skills', description: 'Review the skills assigned to your Bots.' };
   const cards = ([
     { slug: 'users', title: 'User Management', description: 'Manage roles, projects, GitHub accounts, branch grants, and activity.' },
     { slug: 'appearance', title: 'Appearance', description: 'Theme, typography, spacing, and interface preferences.' },
     { slug: 'sessions', title: 'Sessions', description: 'Defaults, retention, and session behavior.' },
+    { slug: 'bots', title: t('settings.page.bots.title'), description: t('settings.page.bots.description') },
     { slug: 'notifications', title: 'Notifications', description: 'Choose when and how DevRyan notifies you.' },
-    { slug: 'providers', title: t('settings.view.home.cards.providers.title'), description: t('settings.view.home.cards.providers.description') },
+    { slug: providersDestinationSlug, title: t('settings.view.home.cards.providers.title'), description: t('settings.view.home.cards.providers.description') },
     { slug: 'agents', title: t('settings.view.home.cards.agents.title'), description: t('settings.view.home.cards.agents.description') },
-    { slug: 'skills.catalog', title: t('settings.view.home.cards.skillsCatalog.title'), description: t('settings.view.home.cards.skillsCatalog.description') },
+    skillsCard,
     { slug: 'mcp', title: t('settings.view.home.cards.mcp.title'), description: t('settings.view.home.cards.mcp.description') },
-    { slug: 'usage', title: t('settings.view.home.cards.usage.title'), description: t('settings.view.home.cards.usage.description') },
   ] satisfies Array<{ slug: SettingsPageSlug; title: string; description: string }>).filter(
-    (card) => canAccessSettingsPage(principal, card.slug),
+    (card) => canAccessSettingsDestination(principal, card.slug),
   );
   return (
     <div className="h-full overflow-auto">
@@ -218,7 +248,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
   const isBehaviorAliasPage = isBehaviorSettingsAlias(settingsPageRaw);
   const settingsSlug = resolveSettingsSlug(settingsPageRaw);
-
   const [mobileStage, setMobileStage] = React.useState<MobileStage>('nav');
   const autoNavSlugRef = React.useRef<string | null>(null);
 
@@ -257,17 +286,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const visiblePages = React.useMemo(() => {
     return SETTINGS_PAGE_METADATA
       .filter((page) => page.slug !== 'home')
-      .filter((page) => canAccessSettingsPage(principal, page.slug))
+      .filter((page) => canAccessSettingsDestination(principal, page.slug))
       .filter((page) => isPageAvailable(page, runtimeCtx))
       .filter((page) => !(runtimeCtx.isVSCode && page.slug === 'projects'));
   }, [runtimeCtx, principal]);
 
   React.useEffect(() => {
-    if (settingsSlug !== 'home' && !canAccessSettingsPage(principal, settingsSlug)) {
-      setSettingsPage('home');
-      setMobileStage('nav');
+    if (settingsSlug === 'home' || visiblePages.some((page) => page.slug === settingsSlug)) {
+      return;
     }
-  }, [principal, setSettingsPage, settingsSlug]);
+
+    const fallbackSlug = getSettingsDestinationFallbackSlug(
+      settingsSlug,
+      new Set(visiblePages.map((page) => page.slug)),
+    );
+    setSettingsPage(fallbackSlug ?? 'home');
+    if (!fallbackSlug) setMobileStage('nav');
+  }, [setSettingsPage, settingsSlug, visiblePages]);
 
   const groupedVisiblePages = React.useMemo(() => {
     const visiblePageBySlug = new Map(visiblePages.map((page) => [page.slug, page]));
@@ -275,11 +310,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     return SETTINGS_NAV_SECTIONS
       .map((section) => ({
         ...section,
-        pages: section.pages
-          .map((slug) => visiblePageBySlug.get(slug))
-          .filter((page): page is SettingsPageMeta => Boolean(page)),
+        destinations: section.destinations
+          .map((destination) => ({
+            ...destination,
+            pages: destination.slugs
+              .map((slug) => visiblePageBySlug.get(slug))
+              .filter((page): page is SettingsPageMeta => Boolean(page)),
+          }))
+          .filter((destination) => destination.pages.length > 0),
       }))
-      .filter((section) => section.pages.length > 0);
+      .filter((section) => section.destinations.length > 0);
   }, [visiblePages]);
 
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
@@ -361,10 +401,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       return;
     }
     if (settingsSlug === 'mcp') {
+      if (!canAccessSettingsPage(principal, settingsSlug)) return;
       void useMcpConfigStore.getState().loadMcpConfigs();
       return;
     }
     if (settingsSlug === 'skills.installed' || settingsSlug === 'skills.catalog') {
+      if (settingsSlug === 'skills.installed'
+        && !canAccessSettingsPage(principal, settingsSlug)) return;
       void useSkillsStore.getState().loadSkills();
       void useSkillsCatalogStore.getState().loadCatalog();
       return;
@@ -373,7 +416,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       void usePluginsStore.getState().loadPlugins();
       void usePluginsStore.getState().loadSlimStatus();
     }
-  }, [activeProjectId, isSettingsDialogOpen, runtimeCtx.isVSCode, settingsSlug]);
+  }, [activeProjectId, isSettingsDialogOpen, principal, runtimeCtx.isVSCode, settingsSlug]);
 
   React.useEffect(() => {
     if (!isBehaviorAliasPage) {
@@ -397,9 +440,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     setMobileStage(def.kind === 'split' ? 'page-sidebar' : 'page-content');
   }, [isMobile, setSettingsPage]);
 
+  const selectSettingsSectionTab = React.useCallback((slug: SettingsPageSlug) => {
+    setSettingsPage(slug);
+    autoNavSlugRef.current = slug;
+    if (!isMobile) return;
+
+    if (slug === 'remote-instances') {
+      setMobileStage('page-sidebar');
+      return;
+    }
+
+    const page = getSettingsPageMeta(slug);
+    if (page?.kind === 'single') {
+      setMobileStage('page-content');
+      return;
+    }
+
+    setMobileStage((stage) => stage === 'page-content' ? 'page-content' : 'page-sidebar');
+  }, [isMobile, setSettingsPage]);
+
   const activePageMeta = React.useMemo(() => {
     return getSettingsPageMeta(settingsSlug);
   }, [settingsSlug]);
+
+  const settingsAudience = 'coding-agents' as const;
 
   // Nav is always open (collapsed state removed)
 
@@ -427,6 +491,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return t('settings.page.providers.title');
       case 'usage':
         return t('settings.page.usage.title');
+      case 'bots':
+        return t('settings.page.bots.title');
       case 'agents':
         return t('settings.page.agents.title');
       case 'behavior':
@@ -467,6 +533,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     }
   }, [t]);
 
+  const getDestinationTitle = React.useCallback((slug: SettingsPageSlug): string => {
+    const destination = getSettingsNavDestination(slug);
+    return destination?.labelKey ? t(destination.labelKey) : getPageTitle(slug);
+  }, [getPageTitle, t]);
+
+  const renderSettingsSectionTabs = React.useCallback((
+    content: React.ReactNode,
+    idPrefix: string,
+  ): React.ReactNode => {
+    const destination = getSettingsNavDestination(settingsSlug);
+    if (!destination || destination.slugs.length <= 1) return content;
+
+    const tabs = destination.slugs
+      .filter((slug) => visiblePages.some((page) => page.slug === slug))
+      .map((slug) => ({ slug, label: getPageTitle(slug) }));
+
+    return (
+      <SettingsSectionTabs
+        activeSlug={settingsSlug}
+        ariaLabel={t(destination.id === 'remote-connections'
+          ? 'settings.remoteConnections.tabs.aria'
+          : 'settings.providers.tabs.aria')}
+        idPrefix={idPrefix}
+        onTabChange={selectSettingsSectionTab}
+        tabs={tabs}
+      >
+        {content}
+      </SettingsSectionTabs>
+    );
+  }, [getPageTitle, selectSettingsSectionTab, settingsSlug, t, visiblePages]);
+
   const renderUnavailable = React.useCallback(() => {
     return (
       <div className="flex h-full items-center justify-center px-6">
@@ -479,6 +576,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   }, [t]);
 
   const renderPageSidebar = React.useCallback((slug: SettingsPageSlug, opts: { onItemSelect?: () => void }) => {
+    if (isBotCapabilitySettingsSlug(slug) && !canAccessSettingsPage(principal, slug)) {
+      return <CodingAgentSettingsAccessRequired />;
+    }
     switch (slug) {
       case 'projects':
         return <LazyProjectsSidebar onItemSelect={opts.onItemSelect} />;
@@ -503,12 +603,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       default:
         return null;
     }
-  }, []);
+  }, [principal]);
 
   const renderRawPageContent = React.useCallback((slug: SettingsPageSlug) => {
     const meta = getSettingsPageMeta(slug);
     if (meta && !isPageAvailable(meta, runtimeCtx)) {
       return renderUnavailable();
+    }
+    if (isBotCapabilitySettingsSlug(slug) && !canAccessSettingsPage(principal, slug)) {
+      return <CodingAgentSettingsAccessRequired />;
     }
 
     switch (slug) {
@@ -540,6 +643,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <LazyProvidersPage />;
       case 'usage':
         return <LazyUsagePage />;
+      case 'bots':
+        return <LazyBotsPage />;
       case 'magic-prompts':
         return <LazyMagicPromptsPage />;
       case 'git':
@@ -565,13 +670,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       default:
         return <SettingsHome onOpen={openPage} />;
     }
-  }, [openChamberSectionBySlug, openPage, renderUnavailable, runtimeCtx]);
+  }, [openChamberSectionBySlug, openPage, principal, renderUnavailable, runtimeCtx]);
 
-  const renderPageContent = React.useCallback((slug: SettingsPageSlug) => (
-    <SettingsPagePermissionBoundary slug={slug}>
-      {renderRawPageContent(slug)}
-    </SettingsPagePermissionBoundary>
-  ), [renderRawPageContent]);
+  const renderPageContent = React.useCallback((slug: SettingsPageSlug) => {
+    const content = renderRawPageContent(slug);
+    if (slug === 'skills.installed' || slug === 'mcp') {
+      return (
+        <CapabilityMutationBoundary slug={slug} audience={settingsAudience}>
+          {content}
+        </CapabilityMutationBoundary>
+      );
+    }
+    return <SettingsPagePermissionBoundary slug={slug}>{content}</SettingsPagePermissionBoundary>;
+  }, [renderRawPageContent, settingsAudience]);
 
   // Mobile: if opened via deep-link / palette to a non-home page, jump into it once.
   React.useEffect(() => {
@@ -645,23 +756,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
                 <div className="px-2 pb-1 typography-micro text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground/70">
                   {t(section.labelKey)}
                 </div>
-                {section.pages.map((page) => {
-                  const selected = settingsSlug === page.slug;
-                  const Icon = getSettingsNavIcon(page.slug);
+                {section.destinations.map((destination) => {
+                  const selected = destination.slugs.includes(settingsSlug);
+                  const selectedPage = destination.pages.find((page) => page.slug === settingsSlug);
+                  const targetPage = selectedPage ?? destination.pages[0];
+                  const Icon = getSettingsNavIcon(destination.iconSlug);
                   if (!Icon) return null;
 
                   return (
-                    <Tooltip key={page.slug}>
+                    <Tooltip key={destination.id}>
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          onClick={() => openPage(page.slug)}
+                          onClick={() => openPage(targetPage.slug)}
                           aria-current={selected ? 'page' : undefined}
                           className={getSettingsNavButtonClassName(selected)}
                         >
                           <Icon className="h-4 w-4 shrink-0" />
                           <span className="flex items-center gap-1.5 whitespace-nowrap overflow-hidden transition-opacity duration-150 opacity-100">
-                            <span className="typography-ui-label font-normal truncate">{getPageTitle(page.slug)}</span>
+                            <span className="typography-ui-label font-normal truncate">
+                              {destination.labelKey ? t(destination.labelKey) : getPageTitle(targetPage.slug)}
+                            </span>
                           </span>
                         </button>
                       </TooltipTrigger>
@@ -732,11 +847,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       }
       return (
         <div className={cn('flex-1 min-h-0 overflow-hidden', runtimeCtx.isVSCode ? 'bg-background' : 'bg-sidebar')}>
-          <SettingsPagePermissionBoundary slug={settingsSlug}>
-            <SettingsSectionBoundary>
-              {renderPageSidebar(settingsSlug, { onItemSelect: () => setMobileStage('page-content') })}
-            </SettingsSectionBoundary>
-          </SettingsPagePermissionBoundary>
+          {settingsSlug === 'skills.installed' || settingsSlug === 'mcp' ? (
+            <CapabilityMutationBoundary slug={settingsSlug} audience={settingsAudience}>
+              <SettingsSectionBoundary>
+                {renderPageSidebar(settingsSlug, { onItemSelect: () => setMobileStage('page-content') })}
+              </SettingsSectionBoundary>
+            </CapabilityMutationBoundary>
+          ) : (
+            <SettingsPagePermissionBoundary slug={settingsSlug}>
+              <SettingsSectionBoundary>
+                {renderPageSidebar(settingsSlug, { onItemSelect: () => setMobileStage('page-content') })}
+              </SettingsSectionBoundary>
+            </SettingsPagePermissionBoundary>
+          )}
         </div>
       );
     }
@@ -757,25 +880,56 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     }
 
     if (activePageMeta.kind === 'split') {
-      return (
-        <SettingsPagePermissionBoundary slug={settingsSlug}>
-          <div className="flex h-full min-h-0 overflow-hidden">
-            <div className={cn(getSettingsPageSidebarClassName(settingsSlug), 'border-r', runtimeCtx.isVSCode ? 'bg-background' : 'bg-sidebar')} style={{ borderColor: 'var(--interactive-border)' }}>
-              <SettingsSectionBoundary>{renderPageSidebar(settingsSlug, {})}</SettingsSectionBoundary>
-            </div>
-            <div className="flex-1 min-h-0 overflow-hidden bg-background">
-              <SettingsSectionBoundary>{renderRawPageContent(settingsSlug)}</SettingsSectionBoundary>
-            </div>
+      const splitContent = (
+        <div className="flex h-full min-h-0 overflow-hidden">
+          <div className={cn(getSettingsPageSidebarClassName(settingsSlug), 'border-r', runtimeCtx.isVSCode ? 'bg-background' : 'bg-sidebar')} style={{ borderColor: 'var(--interactive-border)' }}>
+            <SettingsSectionBoundary>{renderPageSidebar(settingsSlug, {})}</SettingsSectionBoundary>
           </div>
-        </SettingsPagePermissionBoundary>
+          <div className="min-h-0 flex-1 overflow-hidden bg-background">
+            <SettingsSectionBoundary>{renderRawPageContent(settingsSlug)}</SettingsSectionBoundary>
+          </div>
+        </div>
+      );
+      if (settingsSlug === 'skills.installed' || settingsSlug === 'mcp') {
+        return renderSettingsSectionTabs((
+          <CapabilitySettingsWorkspace
+            slug={settingsSlug}
+            audience={settingsAudience}
+            onAudienceChange={() => {}}
+            idPrefix={`${settingsSlug.replace('.', '-')}-audience`}
+          >
+            {splitContent}
+          </CapabilitySettingsWorkspace>
+        ), 'desktop-settings-section');
+      }
+      return renderSettingsSectionTabs(
+        <SettingsPagePermissionBoundary slug={settingsSlug}>{splitContent}</SettingsPagePermissionBoundary>,
+        'desktop-settings-section',
       );
     }
 
-    return (
+    return renderSettingsSectionTabs((
       <div className="h-full min-h-0 overflow-hidden bg-background">
         <SettingsSectionBoundary>{renderPageContent(settingsSlug)}</SettingsSectionBoundary>
       </div>
+    ), 'desktop-settings-section');
+  };
+
+  const renderMobileWorkspace = () => {
+    const content = (
+      <>
+        <ConfigApplyControls variant="mobile" />
+        <div
+          className="flex flex-1 min-h-0 overflow-hidden"
+        >
+          {renderMobileStage()}
+        </div>
+      </>
     );
+
+    return mobileStage === 'nav'
+      ? content
+      : renderSettingsSectionTabs(content, 'mobile-settings-section');
   };
 
   return (
@@ -800,7 +954,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
           <div className="min-w-0 flex-1 typography-ui-label font-medium text-foreground truncate">
             {mobileStage === 'nav'
               ? t('settings.view.home.title')
-              : (isBehaviorAliasPage ? t('settings.page.behavior.title') : (activePageMeta ? getPageTitle(activePageMeta.slug) : t('settings.view.home.title')))}
+              : (isBehaviorAliasPage ? t('settings.page.behavior.title') : (activePageMeta ? getDestinationTitle(activePageMeta.slug) : t('settings.view.home.title')))}
           </div>
 
           {mobileStage === 'page-content' && activePageMeta?.kind === 'split' && (
@@ -819,12 +973,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         null
       )}
 
-      {isMobile ? <ConfigApplyControls variant="mobile" /> : null}
-
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        {isMobile ? (
-          renderMobileStage()
-        ) : (
+      {isMobile ? renderMobileWorkspace() : (
+        <div className="flex flex-1 min-h-0 overflow-hidden">
           <>
             <div
               className={cn(
@@ -867,8 +1017,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
               {renderDesktopContent()}
             </div>
           </>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

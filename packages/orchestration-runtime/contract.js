@@ -1,4 +1,5 @@
 import {
+  MODEL_UNAVAILABLE_FAILURE_KIND,
   PROVIDER_USAGE_LIMIT_FAILURE_KIND,
   classifyManagedTaskFailure,
   classifyProviderRetryFailure,
@@ -230,6 +231,7 @@ const resolveManagedTaskAgentRetryAvailable = (task, failureKind) => (
   && task.dispatchGroupId !== null
   && task.attempt < 2
   && failureKind !== PROVIDER_USAGE_LIMIT_FAILURE_KIND
+  && failureKind !== MODEL_UNAVAILABLE_FAILURE_KIND
 );
 
 export const isManagedTaskAgentRetryAvailable = (task) => {

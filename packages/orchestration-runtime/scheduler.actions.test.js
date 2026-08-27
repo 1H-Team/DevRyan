@@ -23,6 +23,7 @@ const createTerminalHarness = async ({
   inPlaceRetryResult = { status: 'completed', recoverablePreview: 'continued with replacement model' },
   resumable = true,
   resumeResult = { status: 'completed', recoverablePreview: 'resumed result' },
+  schedulerOptions = {},
   startResult = null,
   submitOverrides = {},
 } = {}) => {
@@ -63,6 +64,7 @@ const createTerminalHarness = async ({
     createTaskId: () => `dvr_task_${++taskCounter}`,
     createLeaseToken: () => `dvr_lease_${++leaseCounter}`,
     now: () => 1_000 + taskCounter,
+    ...schedulerOptions,
   });
   const original = await scheduler.submit(input(submitOverrides));
   await scheduler.waitForTask(original.taskId);
@@ -519,6 +521,76 @@ describe('managed scheduler parent actions', () => {
       idempotencyKey: 'collect-ordinary-result',
     });
     expect(scheduler.listReadyProviderRecoveryContinuations()).toEqual([]);
+  });
+
+  test('claims a collectable parent continuation exactly once until release or acknowledgement', async () => {
+    const { original, scheduler } = await createTerminalHarness({
+      startResult: { status: 'completed', recoverablePreview: 'ordinary child result' },
+      submitOverrides: { dispatchGroupId: 'msg_parent' },
+    });
+    const scope = {
+      taskId: original.taskId,
+      rootSessionId: original.rootSessionId,
+      directory: original.directory,
+    };
+
+    await expect(scheduler.claimProviderRecoveryContinuation({
+      ...scope,
+      claimantId: 'plugin-one',
+    })).resolves.toMatchObject({ claimed: true });
+    await expect(scheduler.claimProviderRecoveryContinuation({
+      ...scope,
+      claimantId: 'plugin-two',
+    })).resolves.toMatchObject({ claimed: false });
+    await expect(scheduler.releaseProviderRecoveryContinuation({
+      ...scope,
+      claimantId: 'plugin-two',
+    })).resolves.toEqual({ released: false });
+    await expect(scheduler.releaseProviderRecoveryContinuation({
+      ...scope,
+      claimantId: 'plugin-one',
+    })).resolves.toEqual({ released: true });
+    await expect(scheduler.claimProviderRecoveryContinuation({
+      ...scope,
+      claimantId: 'plugin-two',
+    })).resolves.toMatchObject({ claimed: true });
+
+    await scheduler.acknowledgeResult(original.taskId, {
+      action: 'continue',
+      idempotencyKey: 'claim-acknowledged',
+    });
+    await expect(scheduler.claimProviderRecoveryContinuation({
+      ...scope,
+      claimantId: 'plugin-three',
+    })).resolves.toEqual({ claimed: false, expiresAt: null });
+    expect(scheduler.getDiagnostics().activeProviderRecoveryContinuationClaimCount).toBe(0);
+  });
+
+  test('allows another recovery continuation claimant after the lease expires', async () => {
+    let clock = 1_000;
+    const { original, scheduler } = await createTerminalHarness({
+      startResult: { status: 'completed', recoverablePreview: 'ordinary child result' },
+      submitOverrides: { dispatchGroupId: 'msg_parent' },
+      schedulerOptions: {
+        now: () => clock,
+        providerRecoveryContinuationLeaseMs: 60_000,
+      },
+    });
+    const scope = {
+      taskId: original.taskId,
+      rootSessionId: original.rootSessionId,
+      directory: original.directory,
+    };
+
+    await expect(scheduler.claimProviderRecoveryContinuation({
+      ...scope,
+      claimantId: 'plugin-one',
+    })).resolves.toEqual({ claimed: true, expiresAt: 61_000 });
+    clock = 61_000;
+    await expect(scheduler.claimProviderRecoveryContinuation({
+      ...scope,
+      claimantId: 'plugin-two',
+    })).resolves.toEqual({ claimed: true, expiresAt: 121_000 });
   });
 
   test('never offers ungrouped or parked recovery work for collection', async () => {

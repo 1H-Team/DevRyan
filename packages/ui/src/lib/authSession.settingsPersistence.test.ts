@@ -15,6 +15,7 @@ const managedDeveloper = (appearanceEdit: boolean): AuthPrincipal => ({
   scope: 'managed',
   policy: {
     settingsPages: ['appearance'],
+    bots: true,
     settingsPermissions: createSettingsPermissions((slug) => ({
       read: slug === 'appearance',
       edit: slug === 'appearance' && appearanceEdit,

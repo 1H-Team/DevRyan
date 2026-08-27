@@ -10,7 +10,7 @@ import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { formatDirectoryName, cn } from '@/lib/utils';
 import { resolveProjectDisplayName } from '@/lib/projectDisplayName';
 import { useSessionUIStore, type ChatDraft } from '@/sync/session-ui-store';
-import { useAllLiveSessions, useAllSessionUserActivity, useEnsureSessionChildren } from '@/sync/sync-context';
+import { useAllLiveSessions, useEnsureSessionChildren } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useSync } from '@/sync/use-sync';
 import { useSessionPrefetch } from './sidebar/hooks/useSessionPrefetch';
@@ -33,7 +33,6 @@ import { useProjectSessionLists } from './sidebar/hooks/useProjectSessionLists';
 import { useSessionFolderCleanup } from './sidebar/hooks/useSessionFolderCleanup';
 import { useStickyProjectHeaders } from './sidebar/hooks/useStickyProjectHeaders';
 import { useSidebarArchivedAssistantActivityHydration } from './sidebar/hooks/useSidebarArchivedAssistantActivityHydration';
-import { useSidebarUserActivityHydration } from './sidebar/hooks/useSidebarUserActivityHydration';
 import {
   collectSidebarChildHydrationTargets,
   type SidebarChildHydrationTarget,
@@ -100,6 +99,8 @@ import {
   isManagedBranchGranted,
 } from '@/lib/worktrees/managedBranches';
 import { archiveBranchSessions } from './sidebar/branchSessionCleanup';
+import { BotSidebarSection } from '@/components/bots/sidebar/BotSidebarSection';
+import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
 
 const PROJECT_COLLAPSE_STORAGE_KEY = 'oc.sessions.projectCollapse';
 const GROUP_ORDER_STORAGE_KEY = 'oc.sessions.groupOrder';
@@ -255,7 +256,10 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   showOnlyMainWorkspace = false,
 }) => {
   const { t } = useI18n();
+  const audience = useMainSidebarAudienceStore((state) => state.audience);
+  const setAudience = useMainSidebarAudienceStore((state) => state.setAudience);
   const principal = useAuthPrincipal();
+  const canUseBots = hasAuthCapability(principal, 'bots');
   const canManageProjects = hasAuthCapability(principal, 'manageProjects');
   const canCreateWorktrees = hasAuthCapability(principal, 'createWorktrees');
   const canCreateBranches = hasAuthCapability(principal, 'createBranches');
@@ -411,7 +415,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     });
   }, [sync]);
   const liveSessions = useAllLiveSessions();
-  const sessionUserActivity = useAllSessionUserActivity();
   const hasLoadedGlobalSessions = useGlobalSessionsStore((state) => state.hasLoaded);
   const globalActiveSessions = useGlobalSessionsStore((state) => state.activeSessions);
   const globalArchivedSessions = useGlobalSessionsStore((state) => state.archivedSessions);
@@ -478,7 +481,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     return directories;
   }, [chatDrafts, globalActiveSessions, liveSessions]);
 
-  useSidebarUserActivityHydration(sessions, sessionUserActivity, currentDirectory);
   const archivedAssistantActivity = useSidebarArchivedAssistantActivityHydration(
     sessions,
     archivedSessions,
@@ -587,7 +589,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     homeDirectory,
     worktreeMetadata,
     pinnedSessionIds,
-    sessionUserActivity,
     archivedAssistantActivity,
     gitBranches,
     isVSCode,
@@ -632,8 +633,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }, []);
 
   const sortedSessions = React.useMemo(() => {
-    return [...sessions].sort((a, b) => compareSessionsByPinnedAndTime(a, b, pinnedSessionIds, sessionUserActivity));
-  }, [sessions, pinnedSessionIds, sessionUserActivity]);
+    return [...sessions].sort((a, b) => compareSessionsByPinnedAndTime(a, b, pinnedSessionIds));
+  }, [sessions, pinnedSessionIds]);
 
   const sessionOrderIndex = React.useMemo(
     () => new Map(sortedSessions.map((session, index) => [session.id, index])),
@@ -651,9 +652,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       collection.push(session);
       map.set(parentID, collection);
     });
-    map.forEach((list) => list.sort((a, b) => compareSessionsByPinnedAndTime(a, b, pinnedSessionIds, sessionUserActivity)));
+    map.forEach((list) => list.sort((a, b) => compareSessionsByPinnedAndTime(a, b, pinnedSessionIds)));
     return map;
-  }, [sortedSessions, pinnedSessionIds, sessionUserActivity]);
+  }, [sortedSessions, pinnedSessionIds]);
 
   const emptyState = (
     <div className="py-6 text-center text-muted-foreground">
@@ -724,7 +725,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   const {
     copiedSessionId,
-    handleSessionSelect,
+    handleSessionSelect: handleOrdinarySessionSelect,
     handleSessionDoubleClick,
     handleSaveEdit,
     handleCancelEdit,
@@ -772,6 +773,16 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     editingId,
     editTitle,
   });
+
+  const handleSessionSelect = React.useCallback((
+    sessionId: string,
+    sessionDirectory?: string | null,
+    disabled?: boolean,
+    projectId?: string | null,
+  ) => {
+    if (!disabled) setAudience('coding-agents');
+    handleOrdinarySessionSelect(sessionId, sessionDirectory, disabled, projectId);
+  }, [handleOrdinarySessionSelect, setAudience]);
 
   const confirmDeleteFolder = React.useCallback(() => {
     if (!deleteFolderConfirm) return;
@@ -1199,13 +1210,14 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }, [handleSessionSelect]);
 
   const handleDraftSelect = React.useCallback((draftId: string) => {
+    setAudience('coding-agents');
     setActiveMainTab('chat');
     selectNewSessionDraft(draftId);
     if (mobileVariant) {
       setSessionSwitcherOpen(false);
     }
     onSessionSelected?.(draftId);
-  }, [mobileVariant, onSessionSelected, selectNewSessionDraft, setActiveMainTab, setSessionSwitcherOpen]);
+  }, [mobileVariant, onSessionSelected, selectNewSessionDraft, setActiveMainTab, setAudience, setSessionSwitcherOpen]);
 
   const handleDraftDelete = React.useCallback((draftId: string) => {
     deleteNewSessionDraft(draftId);
@@ -1230,13 +1242,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     projectHeaderSentinelRefs,
   });
 
-  const getParentSessionUserActivityTimestamp = React.useCallback((session: Session): number | undefined => {
-    const parentID = (session as Session & { parentID?: string | null }).parentID;
-
-    // Sidebar recency should reflect user messages from parent chats only; child/sub-agent rows keep session-time fallback behavior.
-    return parentID ? undefined : sessionUserActivity[session.id];
-  }, [sessionUserActivity]);
-
   const renderSessionNode = React.useCallback(
     (
       node: SessionNode,
@@ -1254,7 +1259,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         groupDirectory={groupDirectory}
         projectId={projectId}
         archivedBucket={archivedBucket}
-        userActivityTimestamp={getParentSessionUserActivityTimestamp(node.session)}
         directoryStatus={directoryStatus}
         currentSessionId={currentSessionId}
         pinnedSessionIds={pinnedSessionIds}
@@ -1299,7 +1303,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     ),
     [
       directoryStatus,
-      getParentSessionUserActivityTimestamp,
       currentSessionId,
       pinnedSessionIds,
       expandedParents,
@@ -1741,12 +1744,13 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     return () => window.removeEventListener('keydown', listener);
   }, [handleBulkDelete, isInlineEditing, multiSelectStoreApi, selectionModeEnabled]);
   const handleSidebarNewSession = React.useCallback(() => {
+    setAudience('coding-agents');
     setActiveMainTab('chat');
     if (mobileVariant) {
       setSessionSwitcherOpen(false);
     }
     openNewSessionDraft();
-  }, [mobileVariant, openNewSessionDraft, setActiveMainTab, setSessionSwitcherOpen]);
+  }, [mobileVariant, openNewSessionDraft, setActiveMainTab, setAudience, setSessionSwitcherOpen]);
 
   return (
     <div
@@ -1766,82 +1770,109 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         headerActionButtonClass={headerActionButtonClass}
         isSessionSearchOpen={isSessionSearchOpen}
         setIsSessionSearchOpen={setIsSessionSearchOpen}
-        showSidebarToggle={isWebRuntime}
+        showSidebarToggle={isWebRuntime && audience !== 'bots'}
         onToggleSidebar={toggleSidebar}
         hideSearchAction={hideSearchInSidebarHeader}
         avoidWindowControlsOverlay={isTabletStandalonePwa}
-        reserveExternalDesktopChromeRow={isDesktopShellRuntime && !mobileVariant && !isVSCode}
+        reserveExternalDesktopChromeRow={!mobileVariant && !isVSCode && (isDesktopShellRuntime || audience === 'bots')}
+        audience={audience}
+        onAudienceChange={setAudience}
       />
 
-      <DeferredSessionDialog active={isSessionSearchOpen}>
-        <LazyViewBoundary>
-          <LazySessionSearchDialog
-            open={isSessionSearchOpen}
-            onOpenChange={setIsSessionSearchOpen}
-            query={sessionSearchQuery}
-            onQueryChange={setSessionSearchQuery}
-            items={sessionSearchDialogItems}
-            recentItems={sessionSearchDialogItems}
-            currentSessionId={currentSessionId}
-            inputRef={sessionSearchInputRef}
-            onSelect={handleSessionSearchSelect}
+      {canUseBots && audience === 'bots' ? (
+        <div
+          id="main-sidebar-audience-panel"
+          role="tabpanel"
+          aria-labelledby="main-sidebar-audience-bots-tab"
+          className="min-h-0 flex-1 overflow-y-auto px-2 pb-3"
+        >
+          <BotSidebarSection
+            standalone
+            onBotSelected={(botId) => {
+              if (mobileVariant) setSessionSwitcherOpen(false);
+              onSessionSelected?.(`bot:${botId}`);
+            }}
           />
-        </LazyViewBoundary>
-      </DeferredSessionDialog>
-
-      <SidebarSessionChildrenHydrator targets={sidebarChildHydrationTargets} />
-
-      <SidebarProjectsList
-        topContent={topContent}
-        sectionsForRender={sectionsForRender}
-        projectSections={projectSections}
-        activeProjectId={activeProjectId}
-        showOnlyMainWorkspace={showOnlyMainWorkspace}
-        hasSessionSearchQuery={hasSessionSearchQuery}
-        emptyState={emptyState}
-        searchEmptyState={searchEmptyState}
-        renderGroupSessions={renderGroupSessions}
-        homeDirectory={homeDirectory}
-        collapsedProjects={collapsedProjects}
-        hideProjectAdminControls={shouldHideProjectAdminControls}
-        hideWorktreeControls={hideDirectoryControls || !canCreateWorktrees}
-        projectRepoStatus={projectRepoStatus}
-        isDesktopShellRuntime={isDesktopShellRuntime}
-        stuckProjectHeaders={stuckProjectHeaders}
-        mobileVariant={mobileVariant}
-        alwaysShowActions={alwaysShowSidebarActions}
-        toggleProject={toggleProject}
-        setActiveProjectIdOnly={setActiveProjectIdOnly}
-        setActiveMainTab={setActiveMainTab}
-        setSessionSwitcherOpen={setSessionSwitcherOpen}
-        openNewSessionDraft={openNewSessionDraft}
-        openNewWorktreeDialog={openNewWorktreeDialog}
-        openProjectEditDialog={setEditingProjectDialogId}
-        removeProject={removeProject}
-        projectHeaderSentinelRefs={projectHeaderSentinelRefs}
-        reorderProjects={reorderProjects}
-        getOrderedGroups={getOrderedGroups}
-        setGroupOrderByProject={setGroupOrderByProject}
-        openSidebarMenuKey={openSidebarMenuKey}
-        setOpenSidebarMenuKey={setOpenSidebarMenuKey}
-        isInlineEditing={isInlineEditing}
-      />
-
-      {selectionModeEnabled && selectedIds.size > 0 ? (
-        <BulkActionBar
-          selectedCount={selectedIds.size}
-          scopeKey={derivedSelectionScope}
-          scopeFolders={bulkScopeFolders}
-          archivedBucket={bulkScopeIsArchived}
-          onMoveToFolder={handleBulkMoveToFolder}
-          onCreateFolderAndMove={handleBulkCreateFolderAndMove}
-          onRemoveFromFolder={handleBulkRemoveFromFolder}
-          canRemoveFromFolder={bulkCanRemoveFromFolder}
-          onDelete={handleBulkDelete}
-          deletePending={bulkDeletePending}
-          onDone={handleExitSelectionMode}
-        />
+        </div>
       ) : null}
+
+      {audience === 'coding-agents' ? <div
+        id="main-sidebar-audience-panel"
+        role={canUseBots ? 'tabpanel' : undefined}
+        aria-labelledby={canUseBots ? 'main-sidebar-audience-coding-agents-tab' : undefined}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <DeferredSessionDialog active={isSessionSearchOpen}>
+          <LazyViewBoundary>
+            <LazySessionSearchDialog
+              open={isSessionSearchOpen}
+              onOpenChange={setIsSessionSearchOpen}
+              query={sessionSearchQuery}
+              onQueryChange={setSessionSearchQuery}
+              items={sessionSearchDialogItems}
+              recentItems={sessionSearchDialogItems}
+              currentSessionId={currentSessionId}
+              inputRef={sessionSearchInputRef}
+              onSelect={handleSessionSearchSelect}
+            />
+          </LazyViewBoundary>
+        </DeferredSessionDialog>
+
+        <SidebarSessionChildrenHydrator targets={sidebarChildHydrationTargets} />
+
+        <SidebarProjectsList
+          topContent={topContent}
+          sectionsForRender={sectionsForRender}
+          projectSections={projectSections}
+          activeProjectId={activeProjectId}
+          showOnlyMainWorkspace={showOnlyMainWorkspace}
+          hasSessionSearchQuery={hasSessionSearchQuery}
+          emptyState={emptyState}
+          searchEmptyState={searchEmptyState}
+          renderGroupSessions={renderGroupSessions}
+          homeDirectory={homeDirectory}
+          collapsedProjects={collapsedProjects}
+          hideProjectAdminControls={shouldHideProjectAdminControls}
+          hideWorktreeControls={hideDirectoryControls || !canCreateWorktrees}
+          projectRepoStatus={projectRepoStatus}
+          isDesktopShellRuntime={isDesktopShellRuntime}
+          stuckProjectHeaders={stuckProjectHeaders}
+          mobileVariant={mobileVariant}
+          alwaysShowActions={alwaysShowSidebarActions}
+          toggleProject={toggleProject}
+          setActiveProjectIdOnly={setActiveProjectIdOnly}
+          setActiveMainTab={setActiveMainTab}
+          setSessionSwitcherOpen={setSessionSwitcherOpen}
+          openNewSessionDraft={openNewSessionDraft}
+          openNewWorktreeDialog={openNewWorktreeDialog}
+          openProjectEditDialog={setEditingProjectDialogId}
+          removeProject={removeProject}
+          projectHeaderSentinelRefs={projectHeaderSentinelRefs}
+          reorderProjects={reorderProjects}
+          getOrderedGroups={getOrderedGroups}
+          setGroupOrderByProject={setGroupOrderByProject}
+          openSidebarMenuKey={openSidebarMenuKey}
+          setOpenSidebarMenuKey={setOpenSidebarMenuKey}
+          isInlineEditing={isInlineEditing}
+        />
+
+        {selectionModeEnabled && selectedIds.size > 0 ? (
+          <BulkActionBar
+            selectedCount={selectedIds.size}
+            scopeKey={derivedSelectionScope}
+            scopeFolders={bulkScopeFolders}
+            archivedBucket={bulkScopeIsArchived}
+            onMoveToFolder={handleBulkMoveToFolder}
+            onCreateFolderAndMove={handleBulkCreateFolderAndMove}
+            onRemoveFromFolder={handleBulkRemoveFromFolder}
+            canRemoveFromFolder={bulkCanRemoveFromFolder}
+            onDelete={handleBulkDelete}
+            deletePending={bulkDeletePending}
+            onDone={handleExitSelectionMode}
+          />
+        ) : null}
+
+      </div> : null}
 
       <SidebarFooter
         onOpenSettings={handleOpenSettings}
@@ -1851,7 +1882,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         showGitHubProfilePlaceholder={principal.scope === 'managed'
           && principal.assignments.some((assignment) => Boolean(assignment.githubAccountId))}
         showRuntimeButtons={!isVSCode}
-        hideDirectoryControls={shouldHideProjectAdminControls}
+        hideDirectoryControls={audience === 'bots' || shouldHideProjectAdminControls}
         handleOpenDirectoryDialog={handleOpenDirectoryDialog}
       />
 

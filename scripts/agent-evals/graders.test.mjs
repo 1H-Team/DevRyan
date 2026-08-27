@@ -132,10 +132,10 @@ describe('deterministic evaluation graders', () => {
     assert.equal(gradeToolRequirements('oracle-review-focused', [
       { tool: 'read', status: 'completed', final: true, sessionScope: 'child' },
     ]).passed, false);
-    assert.equal(gradeToolRequirements('oracle-review-focused', Array.from({ length: 31 }, () => ({
+    assert.equal(gradeToolRequirements('oracle-review-focused', Array.from({ length: 21 }, () => ({
       tool: 'read', status: 'completed', final: true, sessionScope: 'root',
     }))).passed, false);
-    assert.equal(gradeToolRequirements('oracle-review-deep', Array.from({ length: 80 }, () => ({
+    assert.equal(gradeToolRequirements('oracle-review-deep', Array.from({ length: 50 }, () => ({
       tool: 'oc_read', status: 'completed', final: true, sessionScope: 'root',
     }))).passed, true);
   });

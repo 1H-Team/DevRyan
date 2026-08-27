@@ -1,8 +1,16 @@
 import type { Message, Session } from "@opencode-ai/sdk/v2/client"
-import { toFiniteTimestamp } from "./session-user-activity"
 import { filterMessagesForRevert, getSessionRevertMessageID } from "./revert-transactions"
 
 export type SessionAssistantActivity = Record<string, number>
+
+const toFiniteTimestamp = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
 
 export const getAssistantResponseAt = (message: Message): number | undefined => {
   const time = message.time as { completed?: unknown; updated?: unknown; created?: unknown } | undefined

@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   filterUserVisibleSessions,
   isUserVisibleSessionRecord,
+  SESSION_TITLE_HELPER_SESSION_TITLE,
   SMARTFETCH_SECONDARY_SESSION_TITLE,
 } from './sessionVisibility';
 import {
@@ -19,6 +20,13 @@ describe('session visibility policy', () => {
     expect(isUserVisibleSessionRecord({
       id: 'ses_smartfetch_spaced',
       title: `  ${SMARTFETCH_SECONDARY_SESSION_TITLE}  `,
+    })).toBe(false);
+  });
+
+  test('hides internal session-title helper sessions', () => {
+    expect(isUserVisibleSessionRecord({
+      id: 'ses_title_helper',
+      title: SESSION_TITLE_HELPER_SESSION_TITLE,
     })).toBe(false);
   });
 

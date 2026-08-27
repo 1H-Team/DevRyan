@@ -8,6 +8,12 @@ const ROOT = path.resolve(__dirname, '..');
 
 const PACKAGES = [
   'package.json',
+  'packages/bot-computer/package.json',
+  'packages/bot-engine-proxy/package.json',
+  'packages/bot-egress/package.json',
+  'packages/bot-indexer/package.json',
+  'packages/bot-supervisor/package.json',
+  'packages/bots-runtime/package.json',
   'packages/cursor-sdk-runtime/package.json',
   'packages/harness-runtime/package.json',
   'packages/orchestration-runtime/package.json',
@@ -24,7 +30,7 @@ const CARGO_TOML = 'packages/desktop/src-tauri/Cargo.toml';
 const CARGO_LOCK = 'packages/desktop/src-tauri/Cargo.lock';
 
 const newVersion = process.argv[2];
-if (!newVersion || !/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(newVersion)) {
+if (!newVersion || !/^\d+\.\d+\.\d+(?:-[0-9a-z]+(?:[.-][0-9a-z]+)*)?$/.test(newVersion)) {
   console.error('Usage: node scripts/bump-version.mjs <version>');
   console.error('Example: node scripts/bump-version.mjs 0.2.0');
   console.error('Example: node scripts/bump-version.mjs 0.2.0-beta.1');

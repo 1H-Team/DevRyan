@@ -72,8 +72,8 @@ describe('areRelevantTurnGroupingContextsEqual', () => {
     expect(areRelevantTurnGroupingContextsEqual(firstOwner, nextOwner, 'assistant-1', false)).toBe(false);
   });
 
-  test('treats Agent Dispatch ownership changes as relevant to the previous and next owners', () => {
-    const firstOwner = createTurnContext({
+  test('treats a message-scoped Agent Dispatch appearing or disappearing as relevant', () => {
+    const withDispatch = createTurnContext({
       managedTaskProjection: {
         ownerMessageId: 'assistant-1',
         taskIds: ['dvr_task_one'],
@@ -81,20 +81,12 @@ describe('areRelevantTurnGroupingContextsEqual', () => {
         fallbackTasks: [],
       },
     });
-    const nextOwner = createTurnContext({
-      managedTaskProjection: {
-        ownerMessageId: 'assistant-2',
-        taskIds: ['dvr_task_one', 'dvr_task_two'],
-        pendingDispatches: [],
-        fallbackTasks: [],
-      },
-    });
+    const withoutDispatch = createTurnContext();
 
-    expect(areRelevantTurnGroupingContextsEqual(firstOwner, nextOwner, 'assistant-1', false)).toBe(false);
-    expect(areRelevantTurnGroupingContextsEqual(firstOwner, nextOwner, 'assistant-2', false)).toBe(false);
+    expect(areRelevantTurnGroupingContextsEqual(withDispatch, withoutDispatch, 'assistant-1', false)).toBe(false);
   });
 
-  test('treats task-row changes as relevant to the current Agent Dispatch owner', () => {
+  test('limits task-row changes to the message context that owns the card', () => {
     const first = createTurnContext({
       managedTaskProjection: {
         ownerMessageId: 'assistant-2',
@@ -113,7 +105,12 @@ describe('areRelevantTurnGroupingContextsEqual', () => {
     });
 
     expect(areRelevantTurnGroupingContextsEqual(first, second, 'assistant-2', false)).toBe(false);
-    expect(areRelevantTurnGroupingContextsEqual(first, second, 'assistant-1', false)).toBe(true);
+    expect(areRelevantTurnGroupingContextsEqual(
+      createTurnContext(),
+      createTurnContext(),
+      'assistant-1',
+      false,
+    )).toBe(true);
   });
 
   test('limits assistant-image projection changes to the final assistant message', () => {

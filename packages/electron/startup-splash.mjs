@@ -2,13 +2,17 @@ const DEFAULT_SPLASH_BG_LIGHT = '#FFFCF0';
 const DEFAULT_SPLASH_FG_LIGHT = '#100F0F';
 const DEFAULT_SPLASH_BG_DARK = '#151313';
 const DEFAULT_SPLASH_FG_DARK = '#CECDC3';
+const SPLASH_BACKGROUND_QUERY = '__ocSplashBackground';
+const SPLASH_FOREGROUND_QUERY = '__ocSplashForeground';
+const SPLASH_VARIANT_QUERY = '__ocSplashVariant';
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i;
 
 const DEVRYAN_ICON_CLIP_PATH = 'M48.18,50.68v425.54h497.18V50.68H48.18ZM346.33,85.39c-34.03,14.36-61.01,41.46-74.79,55.3-2.21,2.22-4.31,4.34-6.32,6.38-17.58,17.79-25.6,25.91-44.71,34.43-12.61,5.62-18.28,20.4-12.66,33.01,4.15,9.31,13.28,14.83,22.85,14.83,3.4,0,6.86-.7,10.16-2.17,27.72-12.35,41.23-26.03,59.94-44.97,1.96-1.99,4.01-4.06,6.18-6.24,8.23-8.26,22.56-22.65,39.36-33.88v18.52c-12.32,9.47-22.84,20.03-28.73,25.94-1.95,1.96-3.8,3.83-5.59,5.64l-.55.56c-19.11,19.34-34.2,34.62-64.5,48.12-5.17,2.3-10.64,3.47-16.27,3.47-15.78,0-30.13-9.31-36.55-23.73-8.98-20.15.11-43.84,20.26-52.82,16.54-7.37,22.96-13.88,40.14-31.27,2.03-2.05,4.13-4.19,6.36-6.42,15.32-15.39,45.92-46.11,85.42-60.88v16.16Z';
 const DEVRYAN_ICON_PATH = 'M295.81,323.54v-113.1s0-26.82,0-26.82c0-16.33-4-30.24-12.69-43.26-4.31-6.45-9.94-12.34-16.48-17.49-17.21-13.54-40.75-21.94-63.27-21.94-55.78,0-100.99,45.21-100.99,100.99,0,93.03,90.44,176.35,188.66,222.77,3.63,1.72,7.83,1.72,11.46,0,98.22-46.42,188.66-129.73,188.66-222.77,0-55.78-45.21-100.99-100.99-100.99-42.15,0-80.16,36.55-100.92,57.39-22.14,22.24-32.59,34.43-58.57,46';
 
-const readStringSetting = (settings, key, fallback) => {
+const readColorSetting = (settings, key, fallback) => {
   const value = settings && typeof settings[key] === 'string' ? settings[key].trim() : '';
-  return value || fallback;
+  return HEX_COLOR_PATTERN.test(value) ? value : fallback;
 };
 
 const escapeHtml = (value) => String(value || '')
@@ -27,6 +31,47 @@ export const resolveStartupSplashVariant = (settings = {}) => {
   return 'system';
 };
 
+export const resolveStartupSplashPalette = (settings = {}, systemUsesDark = false) => {
+  const configuredVariant = resolveStartupSplashVariant(settings);
+  const variant = configuredVariant === 'system'
+    ? (systemUsesDark ? 'dark' : 'light')
+    : configuredVariant;
+  const isDark = variant === 'dark';
+
+  return {
+    variant,
+    background: readColorSetting(
+      settings,
+      isDark ? 'splashBgDark' : 'splashBgLight',
+      isDark ? DEFAULT_SPLASH_BG_DARK : DEFAULT_SPLASH_BG_LIGHT,
+    ),
+    foreground: readColorSetting(
+      settings,
+      isDark ? 'splashFgDark' : 'splashFgLight',
+      isDark ? DEFAULT_SPLASH_FG_DARK : DEFAULT_SPLASH_FG_LIGHT,
+    ),
+  };
+};
+
+export const withStartupSplashPalette = (rawUrl, localOrigin, palette) => {
+  try {
+    const target = new URL(rawUrl);
+    const local = new URL(localOrigin);
+    if (target.origin !== local.origin) return rawUrl;
+    if (!palette || !HEX_COLOR_PATTERN.test(palette.background) || !HEX_COLOR_PATTERN.test(palette.foreground)) {
+      return rawUrl;
+    }
+    if (palette.variant !== 'light' && palette.variant !== 'dark') return rawUrl;
+
+    target.searchParams.set(SPLASH_BACKGROUND_QUERY, palette.background);
+    target.searchParams.set(SPLASH_FOREGROUND_QUERY, palette.foreground);
+    target.searchParams.set(SPLASH_VARIANT_QUERY, palette.variant);
+    return target.toString();
+  } catch {
+    return rawUrl;
+  }
+};
+
 const renderLogoSvg = (className = 'splash-logo') => `
       <svg class="${className}" width="169" height="169" viewBox="0 0 593.11 516.12" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="DevRyan loading icon">
         <defs>
@@ -40,10 +85,10 @@ const renderLogoSvg = (className = 'splash-logo') => `
       </svg>`;
 
 export const buildStartupSplashHtml = (settings = {}) => {
-  const splashBgLight = readStringSetting(settings, 'splashBgLight', DEFAULT_SPLASH_BG_LIGHT);
-  const splashFgLight = readStringSetting(settings, 'splashFgLight', DEFAULT_SPLASH_FG_LIGHT);
-  const splashBgDark = readStringSetting(settings, 'splashBgDark', DEFAULT_SPLASH_BG_DARK);
-  const splashFgDark = readStringSetting(settings, 'splashFgDark', DEFAULT_SPLASH_FG_DARK);
+  const splashBgLight = readColorSetting(settings, 'splashBgLight', DEFAULT_SPLASH_BG_LIGHT);
+  const splashFgLight = readColorSetting(settings, 'splashFgLight', DEFAULT_SPLASH_FG_LIGHT);
+  const splashBgDark = readColorSetting(settings, 'splashBgDark', DEFAULT_SPLASH_BG_DARK);
+  const splashFgDark = readColorSetting(settings, 'splashFgDark', DEFAULT_SPLASH_FG_DARK);
   const splashVariant = resolveStartupSplashVariant(settings);
 
   return `<!doctype html>
@@ -111,10 +156,10 @@ ${renderLogoSvg()}
 };
 
 export const buildStartupErrorHtml = (settings = {}, { message = '' } = {}) => {
-  const splashBgLight = readStringSetting(settings, 'splashBgLight', DEFAULT_SPLASH_BG_LIGHT);
-  const splashFgLight = readStringSetting(settings, 'splashFgLight', DEFAULT_SPLASH_FG_LIGHT);
-  const splashBgDark = readStringSetting(settings, 'splashBgDark', DEFAULT_SPLASH_BG_DARK);
-  const splashFgDark = readStringSetting(settings, 'splashFgDark', DEFAULT_SPLASH_FG_DARK);
+  const splashBgLight = readColorSetting(settings, 'splashBgLight', DEFAULT_SPLASH_BG_LIGHT);
+  const splashFgLight = readColorSetting(settings, 'splashFgLight', DEFAULT_SPLASH_FG_LIGHT);
+  const splashBgDark = readColorSetting(settings, 'splashBgDark', DEFAULT_SPLASH_BG_DARK);
+  const splashFgDark = readColorSetting(settings, 'splashFgDark', DEFAULT_SPLASH_FG_DARK);
   const splashVariant = resolveStartupSplashVariant(settings);
   const detail = escapeHtml(message || 'The local service could not be started.');
 
@@ -168,6 +213,70 @@ ${renderLogoSvg()}
         <h1>Startup needs attention</h1>
         <p>${detail}</p>
         <a href="openchamber://retry-startup">Retry</a>
+      </div>
+    </main>
+  </body>
+  </html>`;
+};
+
+export const buildBotStartupAttentionHtml = (settings = {}, { message = '' } = {}) => {
+  const splashBgLight = readColorSetting(settings, 'splashBgLight', DEFAULT_SPLASH_BG_LIGHT);
+  const splashFgLight = readColorSetting(settings, 'splashFgLight', DEFAULT_SPLASH_FG_LIGHT);
+  const splashBgDark = readColorSetting(settings, 'splashBgDark', DEFAULT_SPLASH_BG_DARK);
+  const splashFgDark = readColorSetting(settings, 'splashFgDark', DEFAULT_SPLASH_FG_DARK);
+  const splashVariant = resolveStartupSplashVariant(settings);
+  const detail = escapeHtml(message || 'The private Bot runtime could not be prepared.');
+
+  return `<!doctype html>
+  <html data-splash-variant="${splashVariant}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root { color-scheme: light dark; --background: ${splashBgLight}; --foreground: ${splashFgLight}; }
+      html[data-splash-variant="dark"] { --background: ${splashBgDark}; --foreground: ${splashFgDark}; }
+      @media (prefers-color-scheme: dark) {
+        html[data-splash-variant="system"] { --background: ${splashBgDark}; --foreground: ${splashFgDark}; }
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+      main { box-sizing: border-box; width: min(560px, 100%); padding: 0 24px; text-align: center; }
+      .splash-logo { width: min(169px, 42vw); height: min(169px, 42vw); }
+      .error-content { margin-top: 24px; }
+      h1 { margin: 0 0 8px; font-size: 16px; line-height: 22px; font-weight: 600; }
+      p { margin: 0 auto 18px; max-width: 480px; opacity: .72; font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
+      .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+      a {
+        display: inline-block;
+        padding: 10px 18px;
+        border: 1px solid color-mix(in srgb, var(--foreground) 24%, transparent);
+        border-radius: 8px;
+        color: inherit;
+        text-decoration: none;
+        font-weight: 600;
+      }
+      a.primary { background: var(--foreground); color: var(--background); }
+      a:hover { filter: brightness(.94); }
+      a:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+    </style>
+  </head>
+  <body>
+    <main>
+${renderLogoSvg()}
+      <div class="error-content" role="alert">
+        <h1>Private Bot runtime needs attention</h1>
+        <p>${detail}</p>
+        <div class="actions">
+          <a class="primary" href="openchamber://retry-bot-runtime">Retry</a>
+          <a href="openchamber://continue-without-bots">Continue without Bots</a>
+        </div>
       </div>
     </main>
   </body>

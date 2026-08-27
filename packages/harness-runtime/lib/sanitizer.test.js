@@ -63,4 +63,33 @@ describe('diagnostic sanitizer', () => {
 
     expect(record.payload.properties).toEqual({ sessionID: 'ses_1' });
   });
+
+  test('preserves content-free Bot timing marks and correlation identifiers', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    const record = sanitizer.sanitizeRecord({
+      type: 'timing',
+      at: 1,
+      mark: 'bot.turn.durable_acceptance',
+      payload: {
+        botId: '10000000-0000-4000-8000-000000000001',
+        channelId: '20000000-0000-4000-8000-000000000001',
+        runId: '30000000-0000-4000-8000-000000000001',
+        messageId: '40000000-0000-4000-8000-000000000001',
+        created: true,
+      },
+    });
+
+    expect(record).toEqual({
+      type: 'timing',
+      at: 1,
+      mark: 'bot.turn.durable_acceptance',
+      payload: {
+        botId: '10000000-0000-4000-8000-000000000001',
+        channelId: '20000000-0000-4000-8000-000000000001',
+        runId: '30000000-0000-4000-8000-000000000001',
+        messageId: '40000000-0000-4000-8000-000000000001',
+        created: true,
+      },
+    });
+  });
 });

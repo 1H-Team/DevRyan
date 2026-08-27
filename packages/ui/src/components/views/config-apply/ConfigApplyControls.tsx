@@ -20,7 +20,7 @@ import { useConfigApplyStore } from '@/stores/useConfigApplyStore';
 import { getConfigApplyStatusText } from './configApplyPresentation';
 
 const scopeLabel = (scope: string): string => {
-  if (scope === 'mcp') return 'MCP';
+  if (scope === 'mcp') return 'MCP Servers';
   return scope.charAt(0).toUpperCase() + scope.slice(1);
 };
 

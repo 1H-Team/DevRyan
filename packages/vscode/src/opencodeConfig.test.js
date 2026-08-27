@@ -282,6 +282,15 @@ describe('VS Code Cursor SDK config handling', () => {
     expect(overlayConfig.plugin).toContain('./plugins/openai-tool-schema-sanitizer.mjs');
     expect(overlayConfig.provider?.['cursor-acp']).toBeUndefined();
     expect(overlayConfig.provider?.openai).toBeUndefined();
+    expect(overlayConfig.agent).toMatchObject({
+      title: { disable: true },
+      'devryan-title': {
+        mode: 'subagent',
+        hidden: true,
+        permission: { '*': 'deny' },
+        prompt: expect.stringContaining('untrusted data'),
+      },
+    });
     expect(JSON.stringify(readJson(configPath))).toContain('@rama_nigg/open-cursor@latest');
     fs.rmSync(projectDir, { recursive: true, force: true });
   });
@@ -569,6 +578,60 @@ describe('VS Code Cursor SDK config handling', () => {
     }
   });
 
+  it('keeps Zen model selection while moving Council metadata out of executable agent frontmatter', async () => {
+    const { syncRuntimeAgentOverlays, writeAgentModelOverride } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-agent-metadata-'));
+    const agentDirectory = path.join(projectDir, '.opencode', 'agents');
+    writeAgentMarkdown(agentDirectory, 'explorer', [
+      'mode: subagent',
+      'model: opencode-go/deepseek-v4-flash',
+      'modelRefs:',
+      '  - opencode-go/deepseek-v4-flash',
+      'councillors:',
+      '  - model: opencode-go/deepseek-v4-flash',
+    ]);
+    writeAgentMarkdown(agentDirectory, 'council', [
+      'mode: all',
+      'model: openai/gpt-5.5',
+    ]);
+    writeJson(path.join(agentDirectory, 'council.models.json'), {
+      version: 1,
+      councillors: [
+        { model: 'openai/gpt-5.5', variant: 'medium' },
+        { model: 'opencode/deepseek-v4-flash' },
+      ],
+    });
+
+    try {
+      writeAgentModelOverride('explorer', {
+        model: 'opencode/deepseek-v4-flash',
+        variant: 'medium',
+      }, projectDir);
+      const result = syncRuntimeAgentOverlays(projectDir);
+      const explorerFrontmatter = readAgentFrontmatter(
+        path.join(result.targetConfigDirectory, 'agents', 'explorer.md'),
+      );
+      const councilFrontmatter = readAgentFrontmatter(
+        path.join(result.targetConfigDirectory, 'agents', 'council.md'),
+      );
+
+      expect(explorerFrontmatter).toContain('model: opencode/deepseek-v4-flash');
+      expect(explorerFrontmatter).not.toContain('modelRefs:');
+      expect(explorerFrontmatter).not.toContain('councillors:');
+      expect(councilFrontmatter).not.toContain('modelRefs:');
+      expect(councilFrontmatter).not.toContain('councillors:');
+      expect(readJson(path.join(result.targetConfigDirectory, 'agents', 'council.models.json'))).toEqual({
+        version: 1,
+        councillors: [
+          { model: 'openai/gpt-5.5', variant: 'medium' },
+          { model: 'opencode/deepseek-v4-flash' },
+        ],
+      });
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it('sanitizes Designer to its visible named skill subset and allowed source directories', async () => {
     const { syncRuntimeAgentOverlays } = await loadRuntime();
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-designer-skills-'));
@@ -657,6 +720,10 @@ describe('VS Code Cursor SDK config handling', () => {
     expect(frontmatter).toContain(`${repoDir}/*: allow`);
     expect(frontmatter).toContain(`${projectDir}/*: allow`);
     expect(frontmatter).toContain(`${plansDirectory}/*: allow`);
+    if (process.platform !== 'win32') {
+      expect(frontmatter).toContain('/tmp/*: allow');
+      expect(frontmatter).toContain(`${fs.realpathSync('/tmp')}/*: allow`);
+    }
     expect(frontmatter).toContain('"*": ask');
     expect(frontmatter).toContain('"*.env": ask');
     expect(fs.existsSync(plansDirectory)).toBe(false);
@@ -859,7 +926,7 @@ describe('VS Code Cursor SDK config handling', () => {
       expect(fs.existsSync(overlayAgentPath)).toBe(true);
       const overlayAgent = readAgentFrontmatter(overlayAgentPath);
       expect(overlayAgent).toContain('model: openai/gpt-5.4-mini');
-      expect(overlayAgent).toContain('  - openai/gpt-5.4-mini');
+      expect(overlayAgent).not.toContain('modelRefs:');
       expect(overlayAgent).toContain('variant: ""');
     } finally {
       fs.rmSync(projectDir, { recursive: true, force: true });

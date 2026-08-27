@@ -41,8 +41,6 @@ permission:
     codemap: allow
   websearch_*: deny
   grep_app_*: deny
-modelRefs:
-  - github-copilot/gemini-3-flash-preview
 top_p: 0.9
 ---
 

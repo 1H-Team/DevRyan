@@ -226,7 +226,7 @@ export const buildCaseDefinition = (caseId, runFiles) => {
           : 'Critical invariants: profile authorization and optimistic concurrency.',
         'Validation evidence: the fixture was prepared deterministically; do not run tests, builds, lint, or type-checking.',
         'Exclusions: no edits, shell commands, delegation, external research, or broad repository audit.',
-        `Return: actionable findings only, at most five, with severity and exact ${runFiles.sourceRelativePath}:line evidence; include residual risk and end with <status>complete</status>.`,
+        `Return: actionable findings only, at most ${deep ? 'five' : 'three'}, with severity and exact ${runFiles.sourceRelativePath}:line evidence; include residual risk and end with <status>complete</status>.`,
       ].join(' '),
     };
   }

@@ -8,9 +8,9 @@ import {
 
 export const BROWSER_LEASES_PATH = '/api/desktop/browser-leases';
 
-const DEFAULT_LINEAGE_CACHE_TTL_MS = 5_000;
 const DEFAULT_LINEAGE_CACHE_MAX_ENTRIES = 100;
 const DEFAULT_LINEAGE_REQUEST_TIMEOUT_MS = 2_000;
+const DEFAULT_LINEAGE_RETRY_DELAYS_MS = Object.freeze([100, 300]);
 const MAX_LINEAGE_DEPTH = 100;
 
 const requireString = (value, field) => {
@@ -140,9 +140,9 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     ?? (() => `dvr_lease_${crypto.randomBytes(18).toString('base64url')}`);
   const createFence = options.createFence
     ?? (() => `dvr_lease_fence_${crypto.randomBytes(18).toString('base64url')}`);
-  const lineageCacheTtlMs = options.lineageCacheTtlMs ?? DEFAULT_LINEAGE_CACHE_TTL_MS;
   const lineageCacheMaxEntries = options.lineageCacheMaxEntries ?? DEFAULT_LINEAGE_CACHE_MAX_ENTRIES;
   const lineageRequestTimeoutMs = options.lineageRequestTimeoutMs ?? DEFAULT_LINEAGE_REQUEST_TIMEOUT_MS;
+  const lineageRetryDelaysMs = options.lineageRetryDelaysMs ?? DEFAULT_LINEAGE_RETRY_DELAYS_MS;
 
   const leasesByID = new Map();
   const leaseIDByReuseKey = new Map();
@@ -204,6 +204,13 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     if (code === 'browser_runtime_stopping') {
       return new BrowserLeaseError('browser_runtime_stopping', 'Browser lease runtime is stopping', 503);
     }
+    if (code === 'browser_lease_window_unavailable') {
+      return new BrowserLeaseError(
+        'browser_owner_context_unavailable',
+        'No desktop window currently owns this browser session context',
+        503,
+      );
+    }
     return null;
   };
 
@@ -214,7 +221,6 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     lineageCache.delete(cacheKey);
     lineageCache.set(cacheKey, {
       parentID,
-      expiresAt: now() + lineageCacheTtlMs,
     });
     while (lineageCache.size > lineageCacheMaxEntries) {
       lineageCache.delete(lineageCache.keys().next().value);
@@ -225,10 +231,6 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     const cacheKey = lineageKeyFor(directory, sessionID);
     const cached = lineageCache.get(cacheKey);
     if (!cached) return undefined;
-    if (cached.expiresAt <= now()) {
-      lineageCache.delete(cacheKey);
-      return undefined;
-    }
     lineageCache.delete(cacheKey);
     lineageCache.set(cacheKey, cached);
     return cached.parentID;
@@ -258,11 +260,13 @@ export const createBrowserLeaseRuntime = (options = {}) => {
         signal: controller.signal,
       });
       if (!response.ok) {
-        throw new BrowserLeaseError(
+        const error = new BrowserLeaseError(
           'lineage_unavailable',
           `Cannot resolve session lineage (${response.status})`,
           503,
         );
+        error.transient = response.status >= 500;
+        throw error;
       }
       const session = readSessionInfo(await response.json().catch(() => null));
       if (normalizeOptionalString(session?.id) !== sessionID) {
@@ -285,14 +289,28 @@ export const createBrowserLeaseRuntime = (options = {}) => {
       return parentID;
     } catch (error) {
       if (error instanceof BrowserLeaseError) throw error;
-      throw new BrowserLeaseError(
+      const unavailable = new BrowserLeaseError(
         'lineage_unavailable',
         'Cannot resolve session lineage from OpenCode',
         503,
       );
+      unavailable.transient = true;
+      throw unavailable;
     } finally {
       clearTimeout(timeout);
       lineageControllers.delete(controller);
+    }
+  };
+
+  const fetchParentIDWithRetry = async (sessionID, directory) => {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await fetchParentIDUncached(sessionID, directory);
+      } catch (error) {
+        const delay = error?.transient === true ? lineageRetryDelaysMs[attempt] : undefined;
+        if (!Number.isFinite(delay)) throw error;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
   };
 
@@ -302,7 +320,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     const lineageKey = lineageKeyFor(directory, sessionID);
     const existing = lineageFetches.get(lineageKey);
     if (existing) return existing;
-    const request = fetchParentIDUncached(sessionID, directory);
+    const request = fetchParentIDWithRetry(sessionID, directory);
     const shared = request.then(
       (value) => {
         if (lineageFetches.get(lineageKey) === shared) lineageFetches.delete(lineageKey);
@@ -559,6 +577,11 @@ export const createBrowserLeaseRuntime = (options = {}) => {
   const processOpenCodeEvent = async (payload) => {
     const sessionID = extractLifecycleSessionID(payload);
     if (!sessionID) return 0;
+    if (payload.type === 'session.deleted') {
+      for (const key of lineageCache.keys()) {
+        if (key.endsWith(`\u0000${sessionID}`)) lineageCache.delete(key);
+      }
+    }
     return await releaseByOpenCodeSession(sessionID, payload.type);
   };
 

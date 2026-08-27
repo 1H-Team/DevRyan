@@ -292,6 +292,16 @@ mock.module("./input-store", () => ({
       clearAttachedFiles: () => {
         inputStoreState = { ...inputStoreState, attachedFiles: [] }
       },
+      removeAttachedFilesTarget: () => {
+        inputStoreState = { ...inputStoreState, attachedFiles: [] }
+      },
+      replaceRestoredAttachmentsForTarget: (
+        _targetKey: string,
+        attachments: Array<{ url: string; mimeType: string; filename: string }>,
+      ) => {
+        restoredAttachmentCalls.push(...attachments)
+        inputStoreState = { ...inputStoreState, attachedFiles: attachments }
+      },
       addRestoredAttachment: (attachment: { url: string; mimeType: string; filename: string }) => {
         restoredAttachmentCalls.push(attachment)
         inputStoreState = {
@@ -2285,7 +2295,6 @@ describe("revertToMessage scoped revert", () => {
         session: [...state.session],
         message: { ...state.message },
         part: { ...state.part },
-        session_user_activity: { ...state.session_user_activity },
       }
       concurrentEventChanged = Boolean(applyDirectoryEvent(draft, {
         type: "message.updated",
@@ -2679,7 +2688,7 @@ describe("revertToMessage scoped revert", () => {
   test("adds and rolls back a deterministic Cursor assistant placeholder with the optimistic user message", async () => {
     const beforeMessageId = "msg_00000000100100000000000000"
     const before = { id: beforeMessageId, sessionID: "session-a", role: "user", time: { created: 1 } } as unknown as Message
-    const store = createStore({}, [makeSession("session-a")])
+    const store = createStore({}, [makeSession("session-a", "session-parent")])
     store.setState({
       message: { "session-a": [before] },
       part: { [beforeMessageId]: [] },
@@ -2857,7 +2866,6 @@ describe("revertToMessage scoped revert", () => {
             session: [...state.session],
             message: { ...state.message },
             part: { ...state.part },
-            session_user_activity: { ...state.session_user_activity },
           }
           applyDirectoryEvent(draft, {
             type: "session.updated",

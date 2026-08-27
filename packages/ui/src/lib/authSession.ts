@@ -26,7 +26,7 @@ export interface AuthAssignment {
 }
 
 export interface AuthFeatureOverrides {
-  agents?: { hidePermissionsUi?: boolean };
+  agents?: { hidePermissionsUi?: boolean; hideGlobalBehaviorUi?: boolean };
   mcp?: Record<string, 'on' | 'off'>;
 }
 
@@ -40,6 +40,7 @@ export interface AuthPrincipal {
     settingsPages: string[];
     settingsPermissions?: SettingsPermissions;
     featureOverrides?: AuthFeatureOverrides;
+    bots: boolean;
     files: boolean;
     terminal: boolean;
     browser: boolean;
@@ -65,7 +66,7 @@ const LOCAL_ADMIN: AuthPrincipal = {
   scope: 'local-admin',
   policy: {
     settingsPages: ['*'], settingsPermissions: fullSettingsPermissions(),
-    files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
+    bots: true, files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
     manageUsers: true, manageGlobalSettings: true, manageGit: true, push: true, github: true,
   },
   assignments: [],
@@ -148,6 +149,19 @@ export const isAgentPermissionsUiHidden = (principal: AuthPrincipal): boolean =>
   principal.scope === 'managed'
   && principal.role !== 'admin'
   && principal.policy.featureOverrides?.agents?.hidePermissionsUi === true
+);
+
+export const isGlobalAgentBehaviorUiHidden = (principal: AuthPrincipal): boolean => (
+  principal.scope === 'managed'
+  && principal.role !== 'admin'
+  && principal.policy.featureOverrides?.agents?.hideGlobalBehaviorUi === true
+);
+
+export const canEditPersonalAgentModels = (principal: AuthPrincipal): boolean => (
+  principal.scope === 'managed'
+  && principal.role === 'developer'
+  && principal.policy.manageGlobalSettings === true
+  && canEditSettingsPage(principal, 'agents')
 );
 
 export const hasAuthCapability = (

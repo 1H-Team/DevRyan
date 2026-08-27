@@ -31,4 +31,12 @@ describe('RightSidebar resize presentation', () => {
       "['--oc-right-sidebar-content-width' as string]: `${contentWidth}px`,\n        }}",
     );
   });
+
+  test('uses the compact Bot chrome inset for both content and the drag region', () => {
+    expect(rightSidebarSource).toContain('botMode?: boolean');
+    expect(rightSidebarSource).toContain("? 'var(--oc-bot-chrome-height, 48px)'");
+    expect(rightSidebarSource).toContain(": 'var(--oc-header-height, 56px)'");
+    expect(rightSidebarSource).toContain('height: topInset');
+    expect(rightSidebarSource).toContain('paddingTop: topInset');
+  });
 });

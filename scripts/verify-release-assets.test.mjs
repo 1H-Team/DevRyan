@@ -20,6 +20,7 @@ describe('release asset verification', () => {
       'DevRyan-1.1.1-x64.zip.blockmap',
       'latest-mac.yml',
       'DevRyan-web-1.1.1.tgz',
+      'DevRyan-bot-runtime-images-1.1.1.json',
     ]);
   });
 
@@ -41,6 +42,7 @@ describe('release asset verification', () => {
       'DevRyan-1.1.1-x64.zip',
       'DevRyan-1.1.1-x64.zip.blockmap',
       'DevRyan-web-1.1.1.tgz',
+      'DevRyan-bot-runtime-images-1.1.1.json',
     ]);
   });
 
@@ -51,12 +53,14 @@ describe('release asset verification', () => {
         'openchamber-web-1.1.1.tgz',
         'OpenChamber_1.1.1_arm64.dmg',
         'OPENCHAMBER-legacy.zip',
+        'OpenChamber-bot-runtime-images-1.1.1.json',
         'latest-mac.yml',
       ]),
       [
         'openchamber-web-1.1.1.tgz',
         'OpenChamber_1.1.1_arm64.dmg',
         'OPENCHAMBER-legacy.zip',
+        'OpenChamber-bot-runtime-images-1.1.1.json',
       ],
     );
   });

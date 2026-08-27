@@ -416,7 +416,8 @@ describe('syncPackagedAgents', () => {
     const frontmatter = await readAgentFrontmatter(targetAgentDirectory, 'explorer');
     expect(frontmatter.mode).toBe('subagent');
     expect(frontmatter.model).toBe('openai/gpt-5.5');
-    expect(frontmatter.modelRefs).toEqual(['openai/gpt-5.5']);
+    expect(frontmatter).not.toHaveProperty('modelRefs');
+    expect(frontmatter).not.toHaveProperty('councillors');
     expect(frontmatter.variant).toBe('high');
     expect(frontmatter.permission).toMatchObject({
       '*': 'allow',
@@ -452,7 +453,8 @@ describe('syncPackagedAgents', () => {
 
     const frontmatter = await readAgentFrontmatter(targetAgentDirectory, 'explorer');
     expect(frontmatter.model).toBe('openai/gpt-5.5');
-    expect(frontmatter.modelRefs).toEqual(['openai/gpt-5.5']);
+    expect(frontmatter).not.toHaveProperty('modelRefs');
+    expect(frontmatter).not.toHaveProperty('councillors');
     expect(frontmatter).not.toHaveProperty('variant');
   });
 

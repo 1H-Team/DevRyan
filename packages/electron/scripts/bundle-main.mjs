@@ -16,11 +16,28 @@
  * imports it directly. Today it is consumed through the external in-process
  * web server; the package is dependency-free ESM with no native loader edge.
  */
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { readAndVerifyBotRuntimeImagesManifest } from '../../../scripts/verify-bot-runtime-images.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
+
+if (process.env.DEVRYAN_BOT_RUNTIME_REQUIRE_RELEASE_MANIFEST === '1') {
+  const packageJson = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+  const expectedRevision = process.env.DEVRYAN_BOT_RUNTIME_SOURCE_REVISION?.trim()
+    || process.env.GITHUB_SHA?.trim();
+  const expectedRepositoryPrefix = process.env.DEVRYAN_BOT_RUNTIME_REPOSITORY_PREFIX?.trim();
+  await readAndVerifyBotRuntimeImagesManifest({
+    manifestPath: path.join(root, 'resources', 'bot-runtime', 'images.release.json'),
+    expectedReleaseId: packageJson.version,
+    ...(expectedRevision ? { expectedRevision } : {}),
+    ...(expectedRepositoryPrefix ? { expectedRepositoryPrefix } : {}),
+  });
+  console.log('[electron] verified Bot runtime release manifest before main-process bundling');
+}
 
 const result = await Bun.build({
   entrypoints: [path.join(root, 'main.mjs')],

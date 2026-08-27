@@ -84,7 +84,7 @@ export const CreateUserDialog: React.FC<CreateUserDialogProps> = ({
   };
 
   const missingAssignment = draft.role !== 'admin' && (!draft.projectId || !draft.branchName);
-  const invalidPassword = draft.password.length > 0 && draft.password.length < 4;
+  const invalidPassword = draft.password.length > 0 && draft.password.length < 6;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -115,7 +115,7 @@ export const CreateUserDialog: React.FC<CreateUserDialogProps> = ({
           </label>
           <label className="space-y-1 typography-meta text-foreground">
             <span>Password (Optional)</span>
-            <Input placeholder="At least 4 characters; auto-generated if empty" type="password" minLength={4} value={draft.password} onChange={(event) => setDraft((current) => ({ ...current, password: event.target.value }))} />
+            <Input placeholder="At least 6 characters; auto-generated if empty" type="password" minLength={6} value={draft.password} onChange={(event) => setDraft((current) => ({ ...current, password: event.target.value }))} />
           </label>
           <label className="space-y-1 typography-meta text-foreground">
             <span>Initial Project{draft.role === 'admin' ? ' (Optional)' : ''}</span>

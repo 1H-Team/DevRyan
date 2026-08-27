@@ -636,6 +636,7 @@ const setManagedDeveloper = () => setAuthPrincipal({
   scope: "managed",
   policy: {
     settingsPages: [],
+    bots: true,
     files: true,
     terminal: true,
     browser: true,
@@ -1260,6 +1261,34 @@ describe("session-ui-store send routing", () => {
     })
     expect(state.draftOrder).toContain("draft-reloaded")
     expect(getSafeStorage().getItem(CHAT_DRAFTS_STORAGE_KEY)).toContain("draft-reloaded")
+  })
+
+  test("opening another draft preserves an attachment-only draft", () => {
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: null,
+      draftsById: {
+        "draft-attachment-only": {
+          id: "draft-attachment-only",
+          text: "",
+          attachmentCount: 2,
+          createdAt: 1,
+          updatedAt: 2,
+          selectedProjectId: null,
+          directoryOverride: "/repo",
+          parentID: null,
+        },
+      },
+      draftOrder: ["draft-attachment-only"],
+      newSessionDraft: { open: false, directoryOverride: null, parentID: null },
+    })
+
+    useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: "/repo" })
+
+    const state = useSessionUIStore.getState()
+    expect(state.draftsById["draft-attachment-only"]?.attachmentCount).toBe(2)
+    expect(state.draftOrder).toContain("draft-attachment-only")
+    expect(getSafeStorage().getItem(CHAT_DRAFTS_STORAGE_KEY)).toContain("draft-attachment-only")
   })
 
   test("selecting an existing draft clears the active session tracker", () => {

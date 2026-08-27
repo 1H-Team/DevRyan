@@ -29,7 +29,7 @@
         "@fontsource/ibm-plex-sans": "^5.3.0",
         "@lezer/highlight": "^1.2.3",
         "@octokit/rest": "^22.0.1",
-        "@opencode-ai/sdk": "^1.18.21",
+        "@opencode-ai/sdk": "^1.18.23",
         "@remixicon/react": "^4.9.0",
         "@types/react-syntax-highlighter": "^15.5.13",
         "@xenova/transformers": "^2.17.2",
@@ -77,9 +77,37 @@
         "vite": "^7.3.6",
       },
     },
+    "packages/bot-computer": {
+      "name": "@openchamber/bot-computer",
+      "version": "1.1.7",
+    },
+    "packages/bot-egress": {
+      "name": "@openchamber/bot-egress",
+      "version": "1.1.7",
+    },
+    "packages/bot-engine-proxy": {
+      "name": "@openchamber/bot-engine-proxy",
+      "version": "1.1.7",
+    },
+    "packages/bot-indexer": {
+      "name": "@openchamber/bot-indexer",
+      "version": "1.1.7",
+      "dependencies": {
+        "@xenova/transformers": "2.17.2",
+        "better-sqlite3": "12.11.1",
+      },
+    },
+    "packages/bot-supervisor": {
+      "name": "@openchamber/bot-supervisor",
+      "version": "1.1.7",
+    },
+    "packages/bots-runtime": {
+      "name": "@openchamber/bots-runtime",
+      "version": "1.1.7",
+    },
     "packages/cursor-sdk-runtime": {
       "name": "@openchamber/cursor-sdk-runtime",
-      "version": "1.1.6",
+      "version": "1.1.7",
       "dependencies": {
         "@cursor/sdk": "1.0.28",
         "@modelcontextprotocol/sdk": "1.29.0",
@@ -88,7 +116,7 @@
     },
     "packages/desktop": {
       "name": "@openchamber/desktop",
-      "version": "1.1.6",
+      "version": "1.1.7",
       "devDependencies": {
         "@tauri-apps/cli": "^2",
         "@types/node": "^24.3.1",
@@ -97,8 +125,9 @@
     },
     "packages/electron": {
       "name": "@openchamber/electron",
-      "version": "1.1.6",
+      "version": "1.1.7",
       "dependencies": {
+        "@openchamber/bot-egress": "workspace:*",
         "@openchamber/web": "workspace:*",
         "electron-context-menu": "^4.1.2",
         "electron-log": "^5.4.3",
@@ -113,22 +142,22 @@
     },
     "packages/harness-runtime": {
       "name": "@openchamber/harness-runtime",
-      "version": "1.1.6",
+      "version": "1.1.7",
     },
     "packages/orchestration-runtime": {
       "name": "@openchamber/orchestration-runtime",
-      "version": "1.1.6",
+      "version": "1.1.7",
     },
     "packages/shared-runtime": {
       "name": "@openchamber/shared-runtime",
-      "version": "1.1.6",
+      "version": "1.1.7",
       "dependencies": {
         "adm-zip": "^0.6.0",
       },
     },
     "packages/ui": {
       "name": "@openchamber/ui",
-      "version": "1.1.6",
+      "version": "1.1.7",
       "dependencies": {
         "@base-ui/react": "^1.4.0",
         "@codemirror/autocomplete": "^6.20.0",
@@ -159,7 +188,7 @@
         "@fontsource/ibm-plex-sans": "^5.1.1",
         "@lezer/highlight": "^1.2.3",
         "@openchamber/orchestration-runtime": "workspace:*",
-        "@opencode-ai/sdk": "^1.18.21",
+        "@opencode-ai/sdk": "^1.18.23",
         "@pierre/diffs": "1.1.0-beta.13",
         "@remixicon/react": "^4.7.0",
         "@simplewebauthn/browser": "13.3.0",
@@ -217,14 +246,14 @@
     },
     "packages/vscode": {
       "name": "openchamber",
-      "version": "1.1.6",
+      "version": "1.1.7",
       "dependencies": {
         "@openchamber/cursor-sdk-runtime": "workspace:*",
         "@openchamber/harness-runtime": "workspace:*",
         "@openchamber/orchestration-runtime": "workspace:*",
         "@openchamber/shared-runtime": "workspace:*",
         "@openchamber/ui": "workspace:*",
-        "@opencode-ai/sdk": "^1.18.21",
+        "@opencode-ai/sdk": "^1.18.23",
         "adm-zip": "^0.6.0",
         "jsonc-parser": "^3.3.1",
         "react": "^19.1.1",
@@ -247,18 +276,21 @@
     },
     "packages/web": {
       "name": "@openchamber/web",
-      "version": "1.1.6",
+      "version": "1.1.7",
       "bin": {
         "openchamber": "./bin/cli.js",
       },
       "dependencies": {
+        "@ag-ui/core": "0.0.58",
         "@clack/prompts": "^1.1.0",
+        "@modelcontextprotocol/sdk": "1.29.0",
         "@octokit/rest": "^22.0.1",
+        "@openchamber/bots-runtime": "workspace:*",
         "@openchamber/cursor-sdk-runtime": "workspace:*",
         "@openchamber/harness-runtime": "workspace:*",
         "@openchamber/orchestration-runtime": "workspace:*",
         "@openchamber/shared-runtime": "workspace:*",
-        "@opencode-ai/sdk": "^1.18.21",
+        "@opencode-ai/sdk": "^1.18.23",
         "@simplewebauthn/server": "13.3.0",
         "adm-zip": "^0.6.0",
         "better-sqlite3": "^12.10.0",
@@ -287,7 +319,7 @@
         "@eslint/js": "^9.33.0",
         "@fontsource/ibm-plex-mono": "^5.2.7",
         "@fontsource/ibm-plex-sans": "^5.1.1",
-        "@opencode-ai/plugin": "1.17.11",
+        "@opencode-ai/plugin": "1.18.23",
         "@remixicon/react": "^4.7.0",
         "@simplewebauthn/browser": "13.3.0",
         "@tailwindcss/postcss": "^4.0.0",
@@ -338,6 +370,8 @@
   },
   "packages": {
     "7zip-bin": ["7zip-bin@5.2.0", "", {}, "sha512-ukTPVhqG4jNzMro2qA9HSCSSVJN3aN7tlb+hfqYCt3ER0yWroeA2VR38MNrOHLQ/cVj+DaIMad0kFCtWWowh/A=="],
+
+    "@ag-ui/core": ["@ag-ui/core@0.0.58", "", { "dependencies": { "zod": "^3.22.4" } }, "sha512-XgGb7YmhV+yMBaEmlrpsd5S+nUxq0JgSegss2t4gIFR1j7w3w0ibtKfRgcQHWeMvwZxcT5S28VEEarqtgxYYHw=="],
 
     "@ai-sdk/provider": ["@ai-sdk/provider@3.0.8", "", { "dependencies": { "json-schema": "^0.4.0" } }, "sha512-oGMAgGoQdBXbZqNG0Ze56CHjDZ1IDYOwGYxYjO5KLSlz5HiNQ9udIXsPZ61VWaHGZ5XW/jyjmr6t2xz2jGVwbQ=="],
 
@@ -885,6 +919,18 @@
 
     "@octokit/types": ["@octokit/types@16.0.0", "", { "dependencies": { "@octokit/openapi-types": "^27.0.0" } }, "sha512-sKq+9r1Mm4efXW1FCk7hFSeJo4QKreL/tTbR0rz/qx/r1Oa2VV83LTA/H/MuCOX7uCIJmQVRKBcbmWoySjAnSg=="],
 
+    "@openchamber/bot-computer": ["@openchamber/bot-computer@workspace:packages/bot-computer"],
+
+    "@openchamber/bot-egress": ["@openchamber/bot-egress@workspace:packages/bot-egress"],
+
+    "@openchamber/bot-engine-proxy": ["@openchamber/bot-engine-proxy@workspace:packages/bot-engine-proxy"],
+
+    "@openchamber/bot-indexer": ["@openchamber/bot-indexer@workspace:packages/bot-indexer"],
+
+    "@openchamber/bot-supervisor": ["@openchamber/bot-supervisor@workspace:packages/bot-supervisor"],
+
+    "@openchamber/bots-runtime": ["@openchamber/bots-runtime@workspace:packages/bots-runtime"],
+
     "@openchamber/cursor-sdk-runtime": ["@openchamber/cursor-sdk-runtime@workspace:packages/cursor-sdk-runtime"],
 
     "@openchamber/desktop": ["@openchamber/desktop@workspace:packages/desktop"],
@@ -901,9 +947,9 @@
 
     "@openchamber/web": ["@openchamber/web@workspace:packages/web"],
 
-    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.17.11", "", { "dependencies": { "@ai-sdk/provider": "3.0.8", "@opencode-ai/sdk": "1.17.11", "effect": "4.0.0-beta.83", "zod": "4.1.8" }, "peerDependencies": { "@opentui/core": ">=0.3.4", "@opentui/keymap": ">=0.3.4", "@opentui/solid": ">=0.3.4" }, "optionalPeers": ["@opentui/core", "@opentui/keymap", "@opentui/solid"] }, "sha512-mE6SR1tVxL98zbZrlneqF/+dpIKLeZHKzWZy35Hq54uEnuCM1gKq3LK8F2PG2zMBDKQtz2fahEIksJ7svoPLLw=="],
+    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.18.23", "", { "dependencies": { "@ai-sdk/provider": "3.0.8", "@opencode-ai/sdk": "1.18.23", "effect": "4.0.0-beta.83", "zod": "4.1.8" }, "peerDependencies": { "@opentui/core": ">=0.4.5", "@opentui/keymap": ">=0.4.5", "@opentui/solid": ">=0.4.5" }, "optionalPeers": ["@opentui/core", "@opentui/keymap", "@opentui/solid"] }, "sha512-a+LbJe+wyyiwOQ7DeYOY4MkI/6VL45wkgYunVNZGC93UQgaj6sMGemS45CsLXrjyF4bvJMtqGd66GJvgjzbXAg=="],
 
-    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.18.21", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-k6iHQ5C8wOPglk+LgFyYnst168cGMQYumgpbVoeXJ+iC1AtvwD5zmjuF8CxMze/y9G1K2bOeO6p9yRvA7eHZLA=="],
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.18.23", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-VouYbL8O2ynLq0atr5fjzCv8YLtFi/zKLQ/uYkCvTJ4CmUdA01XwPn8om+u3TvxnGEfQsBfmThGU141vt3sg5w=="],
 
     "@paralleldrive/cuid2": ["@paralleldrive/cuid2@2.3.1", "", { "dependencies": { "@noble/hashes": "^1.1.5" } }, "sha512-XO7cAxhnTZl0Yggq6jOgjiOHhbgcO4NqFqwSmQpjK3b6TEE6Uj/jfSk6wzYyemh3+I0sHirKSetjQwn5cZktFw=="],
 
@@ -3295,6 +3341,8 @@
 
     "zwitch": ["zwitch@2.0.4", "", {}, "sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A=="],
 
+    "@ag-ui/core/zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
+
     "@apideck/better-ajv-errors/ajv": ["ajv@8.18.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-PlXPeEWMXMZ7sPYOHqmDyCJzcfNrUr3fGNKtezX14ykXOEIvyK81d+qydx89KY5O71FKMPaQ2vBfBFI5NHR63A=="],
 
     "@azure/identity/open": ["open@10.2.0", "", { "dependencies": { "default-browser": "^5.2.1", "define-lazy-prop": "^3.0.0", "is-inside-container": "^1.0.0", "wsl-utils": "^0.1.0" } }, "sha512-YgBpdJHPyQ2UE5x+hlSXcnejzAvD0b22U2OuAP+8OnlJT+PjWPxtgmGqKKc+RgTM63U9gN0YzrYc71R2WT/hTA=="],
@@ -3384,8 +3432,6 @@
     "@npmcli/agent/socks-proxy-agent": ["socks-proxy-agent@8.0.5", "", { "dependencies": { "agent-base": "^7.1.2", "debug": "^4.3.4", "socks": "^2.8.3" } }, "sha512-HehCEsotFqbPW9sJ8WVYB6UbmIMv7kUUORIF2Nncq4VQvBfNBLibW9YZR5dlYCSUhwcD628pRllm7n+E+YTzJw=="],
 
     "@openchamber/ui/ghostty-web": ["ghostty-web@0.4.0", "", {}, "sha512-0puDBik2qapbD/QQBW9o5ZHfXnZBqZWx/ctBiVtKZ6ZLds4NYb+wZuw1cRLXZk9zYovIQ908z3rvFhexAvc5Hg=="],
-
-    "@opencode-ai/plugin/@opencode-ai/sdk": ["@opencode-ai/sdk@1.17.11", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-UdSwnNM4/cD5rHnI8O7VaHuiwYnsEOglpRPVeeYE2S5Nm1K34ijCyZGDvBecb0ShdBQgn49XvyQWJH6cREsIPw=="],
 
     "@opencode-ai/plugin/zod": ["zod@4.1.8", "", {}, "sha512-5R1P+WwQqmmMIEACyzSvo4JXHY5WiAFHRMg+zBZKgKS+Q1viRa0C1hmUKtHltoIFKtIdki3pRxkmpP74jnNYHQ=="],
 

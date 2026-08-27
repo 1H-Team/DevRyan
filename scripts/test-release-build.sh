@@ -149,8 +149,29 @@ run_native_build() {
     }
 
     check_command bun
+    check_command node
+    check_command git
     check_command rustc
     check_command cargo
+
+    local RELEASE_VERSION
+    local SOURCE_REVISION
+    RELEASE_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")
+    SOURCE_REVISION=$(git rev-parse --verify HEAD)
+
+    log_step "Verifying Bot runtime image release plan"
+    if [[ "$DRY_RUN" == true ]]; then
+        echo "  node scripts/build-bot-runtime-images.mjs --dry-run --version $RELEASE_VERSION --revision $SOURCE_REVISION --repository-prefix ghcr.io/1h-team"
+        echo "  node --test scripts/verify-bot-runtime-images.test.mjs"
+    else
+        node scripts/build-bot-runtime-images.mjs \
+            --dry-run \
+            --version "$RELEASE_VERSION" \
+            --revision "$SOURCE_REVISION" \
+            --repository-prefix ghcr.io/1h-team
+        node --test scripts/verify-bot-runtime-images.test.mjs
+        log_success "Bot runtime image dry-run and manifest verification passed"
+    fi
 
     # Check Rust targets
     log_info "Checking Rust targets..."
@@ -174,6 +195,8 @@ run_native_build() {
             echo "  3. bun run --cwd packages/desktop build"
             if [[ "$NO_BUNDLE" == true ]]; then
                 echo "  4. bun run --cwd packages/desktop tauri build --target $target --no-bundle"
+            elif [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+                echo "  4. bun run --cwd packages/desktop tauri build --target $target --no-sign --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'"
             else
                 echo "  4. bun run --cwd packages/desktop tauri build --target $target"
             fi
@@ -200,16 +223,19 @@ run_native_build() {
         # Build Tauri for the target
         log_info "Building Tauri for $target (this may take a while)..."
         
-        local TAURI_ARGS="--target $target"
+        local -a TAURI_ARGS=(--target "$target")
         if [[ "$NO_BUNDLE" == true ]]; then
-            TAURI_ARGS+=" --no-bundle"
+            TAURI_ARGS+=(--no-bundle)
+        elif [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+            log_warn "Tauri updater signing key is unavailable; building an unsigned app/DMG without updater artifacts"
+            TAURI_ARGS+=(--no-sign --config '{"bundle":{"createUpdaterArtifacts":false}}')
         fi
 
         if [[ "$VERBOSE" == true ]]; then
-            TAURI_ARGS+=" --verbose"
+            TAURI_ARGS+=(--verbose)
         fi
 
-        bun run --cwd packages/desktop tauri build $TAURI_ARGS
+        bun run --cwd packages/desktop tauri build "${TAURI_ARGS[@]}"
 
         if [[ "$NO_BUNDLE" == false ]]; then
             local APP_PATH

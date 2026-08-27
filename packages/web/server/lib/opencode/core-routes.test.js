@@ -196,6 +196,10 @@ describe('common request middleware', () => {
     '/api/config/apply',
     '/api/config/apply/acknowledge-external',
     '/api/admin/users',
+    '/api/bots',
+    '/api/bot-actions/00000000-0000-4000-8000-000000000001/decision',
+    '/api/bot-channels/00000000-0000-4000-8000-000000000001/messages',
+    '/api/bot-runs/00000000-0000-4000-8000-000000000001/cancel',
     '/api/bug-reports',
     '/api/error-logs',
   ])(

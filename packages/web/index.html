@@ -397,13 +397,38 @@
       // Blocking script to detect and apply theme before first paint
       (function() {
         try {
+          var startupParams = new URLSearchParams(window.location.search);
+          var handoffBackground = startupParams.get('__ocSplashBackground');
+          var handoffForeground = startupParams.get('__ocSplashForeground');
+          var handoffVariant = startupParams.get('__ocSplashVariant');
+          var validHandoffColor = function(value) {
+            return typeof value === 'string' && /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(value);
+          };
+          var hasStartupHandoff = validHandoffColor(handoffBackground)
+            && validHandoffColor(handoffForeground)
+            && (handoffVariant === 'light' || handoffVariant === 'dark');
+
+          if (handoffBackground !== null || handoffForeground !== null || handoffVariant !== null) {
+            startupParams.delete('__ocSplashBackground');
+            startupParams.delete('__ocSplashForeground');
+            startupParams.delete('__ocSplashVariant');
+            var cleanSearch = startupParams.toString();
+            var cleanUrl = window.location.pathname
+              + (cleanSearch ? '?' + cleanSearch : '')
+              + window.location.hash;
+            window.history.replaceState(window.history.state, '', cleanUrl);
+          }
+
           var themeMode = localStorage.getItem('themeMode');
           var variant = localStorage.getItem('selectedThemeVariant');
           var useSystem = localStorage.getItem('useSystemTheme');
           var isDark;
 
-          // Check themeMode first (new storage key)
-          if (themeMode === 'dark') {
+          // Electron supplies the exact splash palette for the navigation
+          // handoff. Standalone web keeps using persisted/system preference.
+          if (hasStartupHandoff) {
+            isDark = handoffVariant === 'dark';
+          } else if (themeMode === 'dark') {
             isDark = true;
           } else if (themeMode === 'light') {
             isDark = false;
@@ -423,16 +448,21 @@
           document.documentElement.setAttribute('data-splash-variant', isDark ? 'dark' : 'light');
           document.documentElement.style.setProperty('color-scheme', isDark ? 'dark' : 'light');
 
-          // Splash colors persisted by the app theme system
-          var splashBgLight = localStorage.getItem('splashBgLight');
-          var splashFgLight = localStorage.getItem('splashFgLight');
-          var splashBgDark = localStorage.getItem('splashBgDark');
-          var splashFgDark = localStorage.getItem('splashFgDark');
+          if (hasStartupHandoff) {
+            document.documentElement.style.setProperty('--splash-background', handoffBackground);
+            document.documentElement.style.setProperty('--splash-foreground', handoffForeground);
+          } else {
+            // Splash colors persisted by the app theme system
+            var splashBgLight = localStorage.getItem('splashBgLight');
+            var splashFgLight = localStorage.getItem('splashFgLight');
+            var splashBgDark = localStorage.getItem('splashBgDark');
+            var splashFgDark = localStorage.getItem('splashFgDark');
 
-          if (splashBgLight) document.documentElement.style.setProperty('--splash-background-light', splashBgLight);
-          if (splashFgLight) document.documentElement.style.setProperty('--splash-stroke-light', splashFgLight);
-          if (splashBgDark) document.documentElement.style.setProperty('--splash-background-dark', splashBgDark);
-          if (splashFgDark) document.documentElement.style.setProperty('--splash-stroke-dark', splashFgDark);
+            if (splashBgLight) document.documentElement.style.setProperty('--splash-background-light', splashBgLight);
+            if (splashFgLight) document.documentElement.style.setProperty('--splash-stroke-light', splashFgLight);
+            if (splashBgDark) document.documentElement.style.setProperty('--splash-background-dark', splashBgDark);
+            if (splashFgDark) document.documentElement.style.setProperty('--splash-stroke-dark', splashFgDark);
+          }
         } catch (error) {
           console.warn('Failed to apply theme:', error);
         }
@@ -505,6 +535,7 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
+        background-color: var(--splash-background);
       }
       #initial-loading {
         background-color: var(--splash-background);

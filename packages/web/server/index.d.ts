@@ -47,6 +47,23 @@ export interface BrowserLeaseAvailability {
   available?: boolean;
 }
 
+export interface BotRuntimeStatus {
+  ok: boolean;
+  state: string;
+  code: string | null;
+  issues: Array<{ code: string; message: string }>;
+  canSetup?: boolean;
+  canRepair?: boolean;
+  canUpdate?: boolean;
+  canRollback?: boolean;
+  indexState?: string | null;
+}
+
+export interface BotIndexerRequest {
+  operation: "status" | "upsert" | "delete" | "search" | "rebuild";
+  body?: Record<string, unknown>;
+}
+
 export interface StartWebUiServerOptions {
   port?: number;
   host?: string;
@@ -70,6 +87,13 @@ export interface StartWebUiServerOptions {
     leaseId: string;
     reason: string;
   }) => Promise<unknown>;
+  getBotEncryptionKey?: () => Uint8Array | Promise<Uint8Array>;
+  getBotRuntimeStatus?: () => BotRuntimeStatus | Promise<BotRuntimeStatus>;
+  ensureBotReasoningRuntime?: (input: Record<string, unknown>) => Promise<unknown>;
+  ensureBotComputerRuntime?: (input: Record<string, unknown>) => Promise<unknown>;
+  inspectBotRuntimeResource?: (input: Record<string, unknown>) => Promise<unknown>;
+  stopBotRuntimeResource?: (input: Record<string, unknown>) => Promise<unknown>;
+  requestBotIndexer?: (input: BotIndexerRequest) => Promise<Record<string, unknown>>;
   getManagedBrowserEnvironment?: () => ManagedBrowserEnvironment | Promise<ManagedBrowserEnvironment>;
 }
 

@@ -31,8 +31,8 @@ describe('user detail tabs and analytics source contract', () => {
   });
 
   test('renders every inherited permission and capability with its effective On or Off value', () => {
-    expect(permissionsSource).toContain("`Inherit (${inherited[slug].read ? 'On' : 'Off'})`");
-    expect(permissionsSource).toContain("`Inherit (${inherited[slug].edit ? 'On' : 'Off'})`");
+    expect(permissionsSource).toContain("`Inherit (${safeInherited[slug].read ? 'On' : 'Off'})`");
+    expect(permissionsSource).toContain("`Inherit (${safeInherited[slug].edit ? 'On' : 'Off'})`");
     expect(detailSource).toContain("`Inherit (${policyDraft.inheritedCapabilities[key] ? 'On' : 'Off'})`");
     expect(permissionsSource).not.toContain('Inherit ·');
   });

@@ -1,5 +1,6 @@
-import { summarizeText as summarizeSharedText } from '../text/summarization.js';
+import { isPlanControlTitle, summarizeText as summarizeSharedText } from '../text/summarization.js';
 import { stripMessageDiffContent, stripSessionDiffContent } from '../opencode/diff-summary.js';
+import { createFreeZenModelCatalog } from '@openchamber/shared-runtime';
 
 export const createNotificationTemplateRuntime = (deps) => {
   const {
@@ -12,13 +13,12 @@ export const createNotificationTemplateRuntime = (deps) => {
 
   const NOTIFICATION_BODY_MAX_CHARS = 1000;
   const ZEN_DEFAULT_MODEL = 'gpt-5-nano';
-  const ZEN_MODELS_CACHE_TTL = 5 * 60 * 1000;
   const SESSION_INFO_CACHE_TTL_MS = 60 * 1000;
+  const GENERATED_NEW_SESSION_TITLE_PATTERN = /^new session\s*-\s*\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z$/i;
+  const CURSOR_ACP_ERROR_TITLE_PATTERN = /^cursor-acp\s+error\s*:/i;
 
   let validatedZenFallback = null;
-  let cachedZenModels = null;
-  let cachedZenModelsTimestamp = 0;
-  let zenModelsRefreshPromise = null;
+  const zenModelCatalog = createFreeZenModelCatalog();
 
   // Both caches are bounded LRUs (Map insertion order): sessions accumulate for
   // the whole server lifetime otherwise. forgetSessionCaches drops a session's
@@ -34,6 +34,29 @@ export const createNotificationTemplateRuntime = (deps) => {
       const oldestKey = cache.keys().next().value;
       cache.delete(oldestKey);
     }
+  };
+
+  const normalizeSessionTitle = (value) => (
+    typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
+  );
+
+  const isPlaceholderSessionTitle = (value) => {
+    const normalized = normalizeSessionTitle(value);
+    return !normalized
+      || normalized.toLowerCase() === 'untitled session'
+      || GENERATED_NEW_SESSION_TITLE_PATTERN.test(normalized)
+      || CURSOR_ACP_ERROR_TITLE_PATTERN.test(normalized)
+      || isPlanControlTitle(normalized);
+  };
+
+  const preferMeaningfulSessionTitle = (currentValue, incomingValue) => {
+    const current = normalizeSessionTitle(currentValue);
+    const incoming = normalizeSessionTitle(incomingValue);
+    if (!incoming) return current;
+    if (current && !isPlaceholderSessionTitle(current) && isPlaceholderSessionTitle(incoming)) {
+      return current;
+    }
+    return incoming;
   };
 
   const forgetSessionCaches = (sessionId) => {
@@ -81,73 +104,18 @@ export const createNotificationTemplateRuntime = (deps) => {
     return true;
   };
 
-  const fetchFreeZenModels = async () => {
-    const now = Date.now();
-    if (cachedZenModels && now - cachedZenModelsTimestamp < ZEN_MODELS_CACHE_TTL) {
-      return cachedZenModels.models;
-    }
-
-    if (zenModelsRefreshPromise) {
-      return zenModelsRefreshPromise;
-    }
-
-    zenModelsRefreshPromise = (async () => {
-      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null;
-      try {
-        const [zenResponse, metadataResponse] = await Promise.all([
-          fetch('https://opencode.ai/zen/v1/models', {
-            signal: controller?.signal,
-            headers: { Accept: 'application/json' },
-          }),
-          fetch('https://models.dev/api.json', {
-            signal: controller?.signal,
-            headers: { Accept: 'application/json' },
-          }),
-        ]);
-        if (!zenResponse.ok) {
-          throw new Error(`zen/v1/models responded with status ${zenResponse.status}`);
-        }
-        if (!metadataResponse.ok) {
-          throw new Error(`models.dev responded with status ${metadataResponse.status}`);
-        }
-
-        const data = await zenResponse.json();
-        const metadata = await metadataResponse.json();
-        const metadataModels = metadata?.opencode?.models && typeof metadata.opencode.models === 'object'
-          ? metadata.opencode.models
-          : {};
-        const allModels = Array.isArray(data?.data) ? data.data : [];
-        const freeModels = allModels
-          .filter((model) => {
-            const id = typeof model?.id === 'string' ? model.id.trim() : '';
-            const cost = id ? metadataModels[id]?.cost : null;
-            return id && cost?.input === 0 && cost?.output === 0;
-          })
-          .map((model) => ({ id: model.id.trim(), owned_by: model.owned_by }));
-
-        cachedZenModels = { models: freeModels };
-        cachedZenModelsTimestamp = Date.now();
-        return freeModels;
-      } finally {
-        if (timeout) clearTimeout(timeout);
-      }
-    })().finally(() => {
-      zenModelsRefreshPromise = null;
-    });
-    return zenModelsRefreshPromise;
-  };
+  const fetchFreeZenModels = (...args) => zenModelCatalog.fetchModels(...args);
 
   const resolveZenModelNonBlocking = (override) => {
     const candidate = typeof override === 'string' && override.trim()
       ? override.trim()
       : ZEN_DEFAULT_MODEL;
-    const cachedModels = Array.isArray(cachedZenModels?.models) ? cachedZenModels.models : [];
+    const snapshot = zenModelCatalog.getSnapshot();
+    const cachedModels = Array.isArray(snapshot?.models) ? snapshot.models : [];
     const modelIds = cachedModels.map((model) => model.id);
-    const cacheAge = Date.now() - cachedZenModelsTimestamp;
     const catalogState = modelIds.length === 0
       ? 'empty'
-      : cacheAge < ZEN_MODELS_CACHE_TTL
+      : snapshot?.fresh
         ? 'fresh'
         : 'stale';
     const model = modelIds.length === 0 || modelIds.includes(candidate)
@@ -341,9 +309,10 @@ export const createNotificationTemplateRuntime = (deps) => {
   };
 
   const cacheSessionTitle = (sessionId, title) => {
-    if (typeof sessionId === 'string' && sessionId.length > 0 && typeof title === 'string' && title.length > 0) {
-      setBoundedCacheEntry(sessionTitleCache, sessionId, title);
-    }
+    if (typeof sessionId !== 'string' || sessionId.length === 0) return;
+    const preferred = preferMeaningfulSessionTitle(sessionTitleCache.get(sessionId), title);
+    if (!preferred) return;
+    setBoundedCacheEntry(sessionTitleCache, sessionId, preferred);
   };
 
   const getCachedSessionTitle = (sessionId) => {
@@ -352,7 +321,15 @@ export const createNotificationTemplateRuntime = (deps) => {
 
   const cacheSessionInfo = (sessionId, rawInfo) => {
     if (!sessionId || !rawInfo || typeof rawInfo !== 'object') return;
-    const data = stripSessionDiffContent(rawInfo);
+    const stripped = stripSessionDiffContent(rawInfo);
+    const incomingTitle = typeof stripped.title === 'string'
+      ? stripped.title
+      : (typeof stripped.name === 'string' ? stripped.name : '');
+    cacheSessionTitle(sessionId, incomingTitle);
+    const preferredTitle = getCachedSessionTitle(sessionId);
+    const data = preferredTitle && preferredTitle !== incomingTitle
+      ? { ...stripped, title: preferredTitle }
+      : stripped;
     setBoundedCacheEntry(sessionInfoCache, sessionId, { data, at: Date.now() });
   };
 
@@ -362,7 +339,6 @@ export const createNotificationTemplateRuntime = (deps) => {
     if (type !== 'session.updated' && type !== 'session.created') return;
     const info = payload.properties?.info;
     if (!info || typeof info !== 'object') return;
-    cacheSessionTitle(info.id, info.title);
     cacheSessionInfo(info.id, info);
   };
 
@@ -394,7 +370,7 @@ export const createNotificationTemplateRuntime = (deps) => {
         // before caching so the cache holds metadata, not workspace diffs.
         const data = stripSessionDiffContent(rawData);
         cacheSessionInfo(sessionId, data);
-        return data;
+        return sessionInfoCache.get(sessionId)?.data ?? data;
       }
       return null;
     } catch (error) {
@@ -406,29 +382,26 @@ export const createNotificationTemplateRuntime = (deps) => {
   const buildTemplateVariables = async (payload, sessionId) => {
     const info = payload?.properties?.info || {};
 
-    let sessionTitle = payload?.properties?.sessionTitle
+    const inlineSessionTitle = payload?.properties?.sessionTitle
       || payload?.properties?.session?.title
       || payload?.properties?.session?.name
       || (typeof info.sessionTitle === 'string' ? info.sessionTitle : '')
       || (typeof info.title === 'string' ? info.title : '')
       || (typeof info.name === 'string' ? info.name : '')
       || '';
-
-    if (!sessionTitle && sessionId) {
-      const cached = getCachedSessionTitle(sessionId);
-      if (cached) {
-        sessionTitle = cached;
-      }
-    }
+    let sessionTitle = preferMeaningfulSessionTitle(
+      sessionId ? getCachedSessionTitle(sessionId) : '',
+      inlineSessionTitle,
+    );
 
     let sessionInfo = null;
-    if (!sessionTitle && sessionId) {
+    if ((!sessionTitle || isPlaceholderSessionTitle(sessionTitle)) && sessionId) {
       sessionInfo = await fetchSessionInfo(sessionId);
       const fetchedTitle = typeof sessionInfo?.title === 'string'
         ? sessionInfo.title
         : (typeof sessionInfo?.name === 'string' ? sessionInfo.name : '');
       if (fetchedTitle) {
-        sessionTitle = fetchedTitle;
+        sessionTitle = preferMeaningfulSessionTitle(sessionTitle, fetchedTitle);
         cacheSessionTitle(sessionId, sessionTitle);
       }
     }
@@ -522,7 +495,7 @@ export const createNotificationTemplateRuntime = (deps) => {
     };
   };
 
-  const getCachedZenModels = () => cachedZenModels;
+  const getCachedZenModels = () => zenModelCatalog.getSnapshot();
 
   return {
     createTimeoutSignal,

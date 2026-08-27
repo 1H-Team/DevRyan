@@ -16,9 +16,17 @@ describe('full test-suite contract', () => {
   test('discovers every repository script test, including release verification', () => {
     const files = discoverScriptTestFiles(repositoryRoot);
     assert.ok(files.includes('scripts/verify-release-assets.test.mjs'));
+    assert.ok(files.includes('scripts/verify-bot-runtime-images.test.mjs'));
     assert.ok(files.includes('scripts/test-suite-contract.test.mjs'));
     assert.ok(files.includes('.opencode/agents/design-routing.test.mjs'));
     assert.deepEqual(files, [...files].sort());
+  });
+
+  test('keeps local Tauri release smokes runnable without release signing secrets', () => {
+    const releaseScript = readFileSync(path.join(repositoryRoot, 'scripts/test-release-build.sh'), 'utf8');
+    assert.match(releaseScript, /\[\[ -z "\$\{TAURI_SIGNING_PRIVATE_KEY:-\}" \]\]/);
+    assert.match(releaseScript, /TAURI_ARGS\+=\(--no-sign --config '\{"bundle":\{"createUpdaterArtifacts":false\}\}'\)/);
+    assert.match(releaseScript, /tauri build "\$\{TAURI_ARGS\[@\]\}"/);
   });
 
   test('discovers Electron tests recursively', () => {
@@ -54,6 +62,10 @@ describe('full test-suite contract', () => {
   });
 
   test('accounts for every deterministic JavaScript and TypeScript test file', () => {
+    const rootPackage = JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8'));
+    assert.match(rootPackage.scripts['test:full'], /bun run test:visual-fixture/);
+    assert.equal(rootPackage.scripts['test:visual-fixture'], 'bun test tests/visual-production-bots/matrix.test.mjs');
+
     const ignoredDirectories = new Set([
       '.git',
       '.cache',
@@ -69,6 +81,12 @@ describe('full test-suite contract', () => {
       '.opencode/agents/',
       '.opencode/plugins/',
       'scripts/',
+      'packages/bot-computer/',
+      'packages/bot-engine-proxy/',
+      'packages/bot-egress/',
+      'packages/bot-indexer/',
+      'packages/bot-supervisor/',
+      'packages/bots-runtime/',
       'packages/cursor-sdk-runtime/',
       'packages/electron/',
       'packages/harness-runtime/',
@@ -77,6 +95,7 @@ describe('full test-suite contract', () => {
       'packages/ui/',
       'packages/vscode/',
       'packages/web/',
+      'tests/visual-production-bots/',
     ];
     const uncovered = allTests.filter((file) => !fullGateRoots.some((root) => file.startsWith(root)));
     assert.deepEqual(uncovered, []);

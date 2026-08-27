@@ -57,6 +57,7 @@ This module owns server-side notification classification, template preparation, 
   - session parent cache for subtask suppression
   - template resolution and fallback behavior
   - lazy Zen-model resolution only when last-message summarization is enabled and the message exceeds its configured threshold
+  - generated session-title projections shared with the UI, with meaningful titles preserved across later placeholder snapshots
   - native notification fanout and web push payload fanout
 
 ### Completion settlement behavior
@@ -131,7 +132,14 @@ Notification delivery additionally consumes:
 - `notifyOnPermission` (boolean, default `true`): Enables Permissions Needed alerts for external-folder access requests. Other tool approvals retain the Agent Questions setting. Legacy settings inherit the former `notifyOnQuestion` value.
 - `notificationTemplates.planReady`: `{ title, message }`, defaulting to `Plan ready` / `A plan is ready for review`.
 - `notificationTemplates.permission`: `{ title, message }`, defaulting to `Permissions needed` / `Folder access is required: {last_message}`. For folder requests, `{last_message}` resolves to the first requested path pattern.
+
+The foreground browser preference `nativeNotificationsEnabled` is personal
+managed settings state. The UI obtains browser permission from the direct user
+gesture, then persists it through `PUT /api/config/settings`; the multi-user
+policy layer authorizes that field through Notifications Edit independently of
+Sessions. Background web-push subscription routes and behavior are unchanged.
 - `{last_message}` in the Plan Ready template resolves from the canonical plan markdown selected by the classifier, then follows the same summarization and truncation path as other templates.
+- `{session_name}` prefers the latest meaningful generated or manual title. Generated `New session - <ISO>`, `Untitled Session`, Cursor error, and plan-control placeholders cannot overwrite a meaningful cached title while OpenCode is still persisting the rename.
 
 Plan Ready native/UI payloads use `kind: "plan-ready"`; web push uses `data.type: "plan-ready"`. The tag contains both session ID and plan source message ID so distinct revisions remain independently deliverable.
 

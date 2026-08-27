@@ -1,6 +1,7 @@
 import { isGitGenerationSessionRecord } from '@/lib/git/gitGenerationSessions';
 
 export const SMARTFETCH_SECONDARY_SESSION_TITLE = 'smartfetch-secondary';
+export const SESSION_TITLE_HELPER_SESSION_TITLE = 'DevRyan title generation (internal)';
 
 export type SessionVisibilityRecord = {
   id?: string | null;
@@ -12,6 +13,13 @@ const isSmartFetchSecondarySession = (
 ): boolean => (
   typeof session.title === 'string'
   && session.title.trim() === SMARTFETCH_SECONDARY_SESSION_TITLE
+);
+
+const isTitleGenerationHelperSession = (
+  session: SessionVisibilityRecord,
+): boolean => (
+  typeof session.title === 'string'
+  && session.title.trim() === SESSION_TITLE_HELPER_SESSION_TITLE
 );
 
 /**
@@ -26,7 +34,8 @@ export const isUserVisibleSessionRecord = (
 ): boolean => {
   if (!session) return false;
   return !isGitGenerationSessionRecord(session)
-    && !isSmartFetchSecondarySession(session);
+    && !isSmartFetchSecondarySession(session)
+    && !isTitleGenerationHelperSession(session);
 };
 
 /** Preserve the source array when every session is visible. */

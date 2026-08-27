@@ -12,7 +12,7 @@ interface MobileAgentButtonProps {
     className?: string;
 }
 
-const PLAN_MODE_AGENT_STYLE: React.CSSProperties = { color: 'var(--status-warning)' };
+const PLAN_MODE_AGENT_STYLE: React.CSSProperties = { color: 'var(--plan-mode-icon-color)' };
 
 // NOTE: Use pointer events instead of onClick to keep soft keyboard open on mobile
 export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onOpenAgentPanel, className }) => {

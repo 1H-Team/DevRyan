@@ -19,10 +19,10 @@ const AGENT_OWNERSHIP_CACHE_MAX_ENTRIES = 128;
 const AGENT_OWNERSHIP_CACHE_TTL_MS = 30_000;
 const AGENT_OWNERSHIP_MESSAGE_LIMIT = 20;
 const DEFAULT_TIMEOUT_SECONDS = 30 * 60;
-const MIN_TIMEOUT_SECONDS = DEFAULT_TIMEOUT_SECONDS;
+const MIN_TIMEOUT_SECONDS = 15 * 60;
 const DESIGNER_MIN_TIMEOUT_SECONDS = 60 * 60;
 const FIXER_MIN_TIMEOUT_SECONDS = 60 * 60;
-const ORACLE_MIN_TIMEOUT_SECONDS = 60 * 60;
+const ORACLE_MIN_TIMEOUT_SECONDS = 15 * 60;
 const MAX_TIMEOUT_SECONDS = 24 * 60 * 60;
 const WAIT_TIMEOUT_MS = 25_000;
 const RESULT_PAGE_MAX_BYTES = 8 * 1024;
@@ -57,7 +57,7 @@ const resolveMinimumTimeoutSeconds = (agent) => {
   if (normalizedAgent === 'designer') return DESIGNER_MIN_TIMEOUT_SECONDS;
   if (normalizedAgent === 'fixer') return FIXER_MIN_TIMEOUT_SECONDS;
   if (normalizedAgent === 'oracle') return ORACLE_MIN_TIMEOUT_SECONDS;
-  return MIN_TIMEOUT_SECONDS;
+  return DEFAULT_TIMEOUT_SECONDS;
 };
 
 const requireText = (value, field) => {
@@ -693,6 +693,7 @@ const requiresManualModelRecovery = (result) => {
     && (task.status === 'failed' || task.status === 'interrupted')
     && (
       task.failureKind === 'provider_usage_limit'
+      || task.failureKind === 'model_unavailable'
       || (
         task.mode === 'orchestrator'
         && task.dispatchGrouped === true
@@ -891,6 +892,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
   const agentOwnershipCache = new Map();
   const recoveryContinuationsInFlight = new Set();
   const recoveryContinuationsSent = new Set();
+  const recoveryContinuationClaimantId = `plugin:${crypto.randomUUID()}`;
   let recoveryScanPromise = null;
   let recoveryScanTimer = null;
   let recoveryScanRequested = false;
@@ -1229,6 +1231,24 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         return false;
       }
 
+      const claimScope = {
+        taskId,
+        rootSessionId,
+        directory,
+        claimantId: recoveryContinuationClaimantId,
+      };
+      const claim = await callRpc('claim_provider_recovery_continuation', claimScope);
+      if (!isRecord(claim) || typeof claim.claimed !== 'boolean') {
+        throw new Error('Managed task recovery continuation claim returned a malformed result');
+      }
+      if (!claim.claimed) {
+        // The owning plugin may disappear before delivery. Keep a lease-aware
+        // scan chain alive until its scheduler lease expires or its transcript
+        // marker becomes visible.
+        recoveryScanRequested = true;
+        return false;
+      }
+
       // Deliberately no explicit messageID. OpenCode message IDs are ordered,
       // and it processes the turn only when the incoming user message sorts
       // after the session's latest message. A content-derived id (this used to
@@ -1247,28 +1267,44 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         'Disposition that terminal result according to the managed-task rules, then continue from the first incomplete todo.',
         'Do not start a replacement delegation or repeat work already completed by the recovered child.',
       ].join(' ');
-      const response = await client.session.promptAsync({
-        path: { id: rootSessionId },
-        query: { directory },
-        body: {
-          agent: execution.agent,
-          model: {
-            providerID: execution.providerId,
-            modelID: execution.modelId,
+      let promptDelivered = false;
+      try {
+        const response = await client.session.promptAsync({
+          path: { id: rootSessionId },
+          query: { directory },
+          body: {
+            agent: execution.agent,
+            model: {
+              providerID: execution.providerId,
+              modelID: execution.modelId,
+            },
+            ...(execution.variant ? { variant: execution.variant } : {}),
+            parts: [{ type: 'text', text: prompt, synthetic: true }],
           },
-          ...(execution.variant ? { variant: execution.variant } : {}),
-          parts: [{ type: 'text', text: prompt, synthetic: true }],
-        },
-      }, { throwOnError: false });
-      if (response?.error) {
-        const message = typeof response.error?.message === 'string' && response.error.message.trim()
-          ? response.error.message.trim()
-          : 'promptAsync returned an error';
-        throw new Error(message);
+        }, { throwOnError: false });
+        if (response?.error) {
+          const message = typeof response.error?.message === 'string' && response.error.message.trim()
+            ? response.error.message.trim()
+            : 'promptAsync returned an error';
+          throw new Error(message);
+        }
+        promptDelivered = true;
+        rememberRecoveryContinuationSent(taskId);
+        logRecovery('recovered-parent-continued', { rootSessionId, taskId });
+        return true;
+      } finally {
+        if (!promptDelivered) {
+          try {
+            await callRpc('release_provider_recovery_continuation', claimScope);
+          } catch (error) {
+            logRecovery('recovered-parent-continuation-release-failed', {
+              rootSessionId,
+              taskId,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
       }
-      rememberRecoveryContinuationSent(taskId);
-      logRecovery('recovered-parent-continued', { rootSessionId, taskId });
-      return true;
     } finally {
       recoveryContinuationsInFlight.delete(taskId);
     }
@@ -1570,7 +1606,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         model_id: tool.schema.string().optional().describe('Compatibility fallback model ID when no runtime agent catalog is available. Supply together with provider_id; configured agent settings are authoritative.'),
         agent: tool.schema.string().optional().describe('Agent name for start or an optional retry/resume override.'),
         variant: tool.schema.string().optional().describe('Optional compatibility fallback variant. The configured agent variant is authoritative when the runtime catalog is available.'),
-        timeout_seconds: tool.schema.number().int().min(MIN_TIMEOUT_SECONDS).max(MAX_TIMEOUT_SECONDS).optional().describe('Timeout in seconds. Defaults to 3600 for Designer, Fixer, and Oracle and 1800 for other ordinary specialists. Use 7200 when a closed task also owns builds or browser verification. On retry, resume, and retry_in_place it extends the window, which otherwise inherits the original task\'s.'),
+        timeout_seconds: tool.schema.number().int().min(MIN_TIMEOUT_SECONDS).max(MAX_TIMEOUT_SECONDS).optional().describe('Timeout in seconds. Defaults to 900 for Oracle, 3600 for Designer and Fixer, and 1800 for other ordinary specialists. Use 1800 for an explicitly deep Oracle review. On retry, resume, and retry_in_place it extends the window, which otherwise inherits the original task\'s.'),
         allow_duplicate: tool.schema.boolean().optional().describe('For start only: permit a second task with the same agent and effectively the same prompt while the first is still running. DevRyan otherwise collapses such a start onto the running task, because a repeated dispatch is far more often the model re-issuing work it already started than a deliberate parallel fan-out. Set this only when you genuinely want the same agent working the same prompt twice at once.'),
         cascade: tool.schema.boolean().optional().describe('For cancel only: also cancel explicit managed descendants.'),
         reason: tool.schema.string().optional().describe('Optional cancellation reason.'),
@@ -1781,5 +1817,3 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     },
   };
 };
-
-export default DevRyanManagedOrchestrationPlugin;

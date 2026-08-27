@@ -66,6 +66,14 @@ const INPUT_PATTERNS = [
   /is not available through DevRyan browser leases/i,
   /is managed by DevRyan and cannot be/i,
   /\b(?:tool|command|operation) (?:was )?denied by (?:tool )?policy\b/i,
+  /\bpermission (?:was )?denied\b/i,
+  /\b(?:tool|skill) permission\b.{0,80}\b(?:denied|blocked)\b/i,
+  /\bskill\s+["'][^"']+["']\s+not found\b/i,
+  /\bmissing required (?:field|argument)\b/i,
+  /\b(?:filePath|oldString)\b.{0,80}\b(?:is required|must be|did not match|not found)\b/i,
+  /\balready (?:been )?acknowledged\b/i,
+  /\bmanaged task barrier\b/i,
+  /\btask barrier (?:is )?active\b/i,
   /\bpolicy denial\b/i,
   /\bJSON record.{0,80}(?:65,?536|65536).{0,80}(?:bytes?|limit)\b/i,
 ];
@@ -85,17 +93,26 @@ const CONTEXT_RUNTIME_PATTERNS = [
 const COMMAND_EXIT_PATTERNS = [
   /(?:^|\n)Exit code:\s*[1-9]\d*\b/i,
   /(?:^|\n)(?:Command|Process) exited with (?:code|status)\s*[1-9]\d*\b/i,
+  /\b(?:command|process|execution) timed out after \d[\d,]*\s*(?:ms|milliseconds?|seconds?)\b/i,
 ];
 
 const MANAGED_TASK_INPUT_PATTERNS = [
   /\bDEVRYAN_TOOL_INPUT_INVALID\b/i,
   /successful(?:ly)? completed task.{0,160}(?:action\s*[:=]?\s*["']?continue|use (?:the )?continue action)/i,
   /\bretry\b.{0,160}(?:is unavailable|cannot be used).{0,160}\b(?:completed|successful)\b/i,
+  /^managed task (?:was )?aborted\.?$/i,
 ];
 
 const BROWSER_RUNTIME_PATTERNS = [
   /\bDEVRYAN_BROWSER_(?:LEASE|COMMAND|CONNECTION|CLEANUP)_/i,
   /agent browser (?:lease request|command|connection)/i,
+];
+
+const BROWSER_HOST_RUNTIME_PATTERNS = [
+  /\bDEVRYAN_BROWSER_LEASE_(?:ACQUIRE_FAILED|HOST_UNAVAILABLE|LINEAGE_UNAVAILABLE)\b/i,
+  /\b(?:browser|desktop browser) host\b.{0,120}\b(?:unavailable|could not create|failed)\b/i,
+  /\bcannot resolve session lineage\b/i,
+  /\bbrowser_owner_context_unavailable\b/i,
 ];
 
 const BROWSER_TARGET_PATTERNS = [
@@ -104,6 +121,19 @@ const BROWSER_TARGET_PATTERNS = [
   /\bcould not locate element\b/i,
   /\b(?:browser )?(?:element|target|frame|tab).{0,120}(?:not found|missing|not visible|covered)\b/i,
   /\bcoverage miss\b/i,
+  /\bstale (?:element|reference|ref)\b/i,
+  /\bmissing selector\b/i,
+  /\binvalid selector\b/i,
+  /\b(?:unsafe|unsupported) (?:eval|evaluation|command)\b/i,
+  /\bSecurityError\b.{0,160}\b(?:localStorage|cross-origin|sandboxed)\b/i,
+  /\b(?:localStorage|cross-origin|sandboxed)\b.{0,160}\bSecurityError\b/i,
+  /\bDEVRYAN_BROWSER_(?:STALE_REF|INVALID_COMMAND|UNSAFE_EVAL)\b/i,
+  /\bDEVRYAN_BROWSER_(?:COMMAND_)?TIMEOUT\b/i,
+  /\bbrowser (?:command|operation) timed out\b/i,
+];
+
+const BENIGN_CLIENT_PATTERNS = [
+  /^ResizeObserver loop completed with undelivered notifications\.?$/i,
 ];
 
 const WEB_TARGET_PATTERNS = [
@@ -136,6 +166,33 @@ const SEARCH_REGEX_INPUT_PATTERNS = [
 ];
 
 const TARGETED_RIPGREP_FAILURE_PATTERN = /^ripgrep execution failed\.?$/i;
+const EXPECTED_TOOL_ERROR_CODES = new Set([
+  'devryan_tool_input_invalid',
+  'devryan_browser_stale_ref',
+  'devryan_browser_invalid_command',
+  'devryan_browser_unsafe_eval',
+  'devryan_browser_timeout',
+  'invalid_browser_command',
+  'invalid_input',
+  'invalid_tool_fields',
+  'invalid_tool_input',
+  'managed_task_barrier',
+  'managed_task_cancelled',
+  'missing_selector',
+  'missing_skill',
+  'permission_denied',
+  'result_already_acknowledged',
+  'skill_not_found',
+  'stale_browser_reference',
+  'task_barrier_active',
+  'tool_permission_denied',
+  'unsafe_browser_evaluation',
+]);
+const ACTIONABLE_BROWSER_ERROR_CODES = new Set([
+  'browser_host_unavailable',
+  'browser_owner_context_unavailable',
+  'lineage_unavailable',
+]);
 
 const expected = (classification) => ({ ...classification, disposition: 'expected' });
 const actionable = (classification) => ({ ...classification, disposition: 'actionable' });
@@ -153,6 +210,10 @@ const normalizedToolName = (metadata) => (
   typeof metadata.tool === 'string' ? metadata.tool.trim().toLowerCase() : ''
 );
 
+const normalizedErrorCode = (metadata) => (
+  typeof metadata.errorCode === 'string' ? metadata.errorCode.trim().toLowerCase() : ''
+);
+
 const isManagedTaskInputMisuse = (metadata) => (
   metadata.errorCode === 'DEVRYAN_TOOL_INPUT_INVALID'
   || textMatches(metadata.failureText, MANAGED_TASK_INPUT_PATTERNS)
@@ -161,9 +222,13 @@ const isManagedTaskInputMisuse = (metadata) => (
 const toolFailureClassification = (metadata, { legacy = false } = {}) => {
   const failureText = typeof metadata.failureText === 'string' ? metadata.failureText : '';
   const tool = normalizedToolName(metadata);
+  const errorCode = normalizedErrorCode(metadata);
 
-  if (!legacy && metadata.errorCode === 'DEVRYAN_TOOL_INPUT_INVALID') {
+  if (!legacy && EXPECTED_TOOL_ERROR_CODES.has(errorCode)) {
     return expected({ impact: 'low', failureClass: 'input' });
+  }
+  if (!legacy && tool === 'devryan_browser' && ACTIONABLE_BROWSER_ERROR_CODES.has(errorCode)) {
+    return actionable({ impact: 'medium', failureClass: 'integration_runtime' });
   }
   if (!legacy && SEARCH_TOOL_NAMES.has(tool) && textMatches(failureText, SEARCH_REGEX_INPUT_PATTERNS)) {
     return expected({ impact: 'low', failureClass: 'input' });
@@ -194,6 +259,9 @@ const toolFailureClassification = (metadata, { legacy = false } = {}) => {
   }
   if (!legacy && textMatches(failureText, CONTEXT_RUNTIME_PATTERNS)) {
     return actionable({ impact: 'medium', failureClass: 'tool_runtime' });
+  }
+  if (!legacy && tool === 'devryan_browser' && textMatches(failureText, BROWSER_HOST_RUNTIME_PATTERNS)) {
+    return actionable({ impact: 'medium', failureClass: 'integration_runtime' });
   }
   if (!legacy && tool === 'devryan_browser' && textMatches(failureText, BROWSER_TARGET_PATTERNS)) {
     return expected({ impact: 'low', failureClass: 'input' });
@@ -281,6 +349,9 @@ export const classifyDiagnosticFailure = ({ action, metadata } = {}) => {
     return { ...toolFailureClassification(safeMetadata), source: 'observed' };
   }
   if (action === 'client.error') {
+    if (textMatches(safeMetadata.failureText, BENIGN_CLIENT_PATTERNS)) {
+      return expected({ impact: 'low', source: 'observed', failureClass: 'client_runtime' });
+    }
     // A caught render crash blanks a surface; a stray listener error usually does not.
     return actionable({
       impact: safeMetadata.source === 'error_boundary' ? 'high' : 'medium',
@@ -306,6 +377,9 @@ export const inferLegacyDiagnostic = ({ action, metadata } = {}) => {
     return { ...toolFailureClassification(safeMetadata, { legacy: true }), source: 'inferred' };
   }
   if (action === 'client.error') {
+    if (textMatches(safeMetadata.failureText, BENIGN_CLIENT_PATTERNS)) {
+      return expected({ impact: 'low', source: 'inferred', failureClass: 'client_runtime' });
+    }
     return actionable({
       impact: safeMetadata.source === 'error_boundary' ? 'high' : 'medium',
       source: 'inferred',

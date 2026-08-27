@@ -1,0 +1,197 @@
+import http from 'node:http';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { closeComputerHttpServer, createComputerHttpServer } from './server.js';
+import { createControlLeaseManager } from './control.js';
+import { createScreencastBroker } from './screencast.js';
+
+const TOKEN = 'computer-runtime-token-0123456789abcdef';
+const servers = [];
+afterEach(async () => {
+  await Promise.all(servers.splice(0).map(closeComputerHttpServer));
+});
+
+const fixture = async ({ browserOverrides = {}, rotateEgressToken } = {}) => {
+  const calls = [];
+  const screencast = createScreencastBroker({ now: () => 1234 });
+  const browser = {
+    execute: async (command, args) => { calls.push(['agent', command, args]); return { command }; },
+    executeHuman: async (command, args) => { calls.push(['human', command, args]); return { command }; },
+    subscribeScreencast: async (subscriber) => screencast.subscribe(subscriber),
+    resetProfile: async () => ({ reset: true }),
+    status: () => ({ running: true, launching: false }),
+    ...browserOverrides,
+  };
+  const control = createControlLeaseManager({ randomBytes: () => Buffer.alloc(18, 6) });
+  const server = createComputerHttpServer({
+    token: TOKEN,
+    browser,
+    control,
+    screencast,
+    rotateEgressToken: rotateEgressToken || (() => undefined),
+  });
+  servers.push(server);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { port: server.address().port, browser, control, screencast, calls };
+};
+
+const request = ({ port, pathname, body, token = TOKEN, headers = {} }) => new Promise((resolve, reject) => {
+  const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
+  const client = http.request({
+    host: '127.0.0.1',
+    port,
+    method: body === undefined ? 'GET' : 'POST',
+    path: pathname,
+    headers: {
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(payload ? { 'content-type': 'application/json', 'content-length': String(payload.byteLength) } : {}),
+      ...headers,
+    },
+  }, (response) => {
+    const chunks = [];
+    response.on('data', (chunk) => chunks.push(chunk));
+    response.on('end', () => resolve({
+      statusCode: response.statusCode,
+      headers: response.headers,
+      body: Buffer.concat(chunks).toString('utf8'),
+    }));
+  });
+  client.once('error', reject);
+  client.end(payload);
+});
+
+describe('authenticated computer HTTP API', () => {
+  test('keeps health public and protects every operational route', async () => {
+    const { port } = await fixture();
+    expect((await request({ port, pathname: '/healthz', token: null })).statusCode).toBe(200);
+    const denied = await request({ port, pathname: '/v1/status', token: null });
+    expect(denied.statusCode).toBe(401);
+    expect(denied.headers['www-authenticate']).toContain('Bearer');
+  });
+
+  test('routes reviewed agent commands and refuses arbitrary server paths', async () => {
+    const { port, calls } = await fixture();
+    const command = await request({
+      port,
+      pathname: '/v1/command',
+      body: { command: 'snapshot', args: {} },
+    });
+    expect(command.statusCode).toBe(200);
+    expect(calls).toEqual([['agent', 'snapshot', {}]]);
+    const arbitrary = await request({ port, pathname: '/v1/evaluate', body: { script: '1+1' } });
+    expect(arbitrary.statusCode).toBe(404);
+  });
+
+  test('rotates only a signed browser egress capability over the authenticated route', async () => {
+    const rotated = [];
+    const { port } = await fixture({ rotateEgressToken: (value) => rotated.push(value) });
+    const nextToken = `drb1.${'a'.repeat(43)}.${'b'.repeat(43)}`;
+    const accepted = await request({
+      port,
+      pathname: '/v1/egress/rotate',
+      body: { token: nextToken },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(rotated).toEqual([nextToken]);
+    expect((await request({
+      port,
+      pathname: '/v1/egress/rotate',
+      body: { token: 'unsigned' },
+    })).statusCode).toBe(400);
+    expect((await request({
+      port,
+      pathname: '/v1/egress/rotate',
+      body: { token: nextToken },
+      token: null,
+    })).statusCode).toBe(401);
+  });
+
+  test('requires the attributed lease for human commands', async () => {
+    const { port, control, calls } = await fixture();
+    const lease = control.take({ actorId: 'user-01', actorType: 'user' });
+    const human = await request({
+      port,
+      pathname: '/v1/control/command',
+      body: {
+        actorId: 'user-01',
+        actorType: 'user',
+        leaseId: lease.leaseId,
+        command: 'snapshot',
+        args: {},
+      },
+    });
+    expect(human.statusCode).toBe(200);
+    expect(calls).toEqual([['human', 'snapshot', {}]]);
+    const wrongActor = await request({
+      port,
+      pathname: '/v1/control/command',
+      body: {
+        actorId: 'user-02',
+        actorType: 'user',
+        leaseId: lease.leaseId,
+        command: 'snapshot',
+        args: {},
+      },
+    });
+    expect(wrongActor.statusCode).toBe(409);
+  });
+
+  test('streams authenticated JPEG frames without adding persistence', async () => {
+    const { port, screencast } = await fixture();
+    const received = await new Promise((resolve, reject) => {
+      const client = http.request({
+        host: '127.0.0.1',
+        port,
+        path: '/v1/screencast',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+        },
+      }, (response) => {
+        response.once('data', (chunk) => {
+          response.destroy();
+          resolve({ statusCode: response.statusCode, contentType: response.headers['content-type'], chunk });
+        });
+        queueMicrotask(() => screencast.publishJpeg(
+          Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0xff, 0xd9]),
+          { width: 800, height: 600 },
+        ));
+      });
+      client.once('error', reject);
+      client.end();
+    });
+    expect(received.statusCode).toBe(200);
+    expect(received.contentType).toContain('multipart/x-mixed-replace');
+    expect(received.chunk.includes(Buffer.from('Content-Type: image/jpeg'))).toBe(true);
+    expect(screencast.snapshot().retainedFrames).toBe(0);
+  });
+
+  test('returns a stable conflict before headers when the Bot browser is not open', async () => {
+    const unavailable = Object.assign(new Error('The Bot has not opened its browser'), {
+      code: 'DEVRYAN_BOT_BROWSER_NOT_OPEN',
+      statusCode: 409,
+    });
+    const { port } = await fixture({
+      browserOverrides: {
+        subscribeScreencast: async () => { throw unavailable; },
+        status: () => ({ running: false, launching: false }),
+      },
+    });
+
+    const response = await request({ port, pathname: '/v1/screencast' });
+    expect(response.statusCode).toBe(409);
+    expect(JSON.parse(response.body).error.code).toBe('DEVRYAN_BOT_BROWSER_NOT_OPEN');
+  });
+
+  test('requires explicit confirmation for destructive profile reset', async () => {
+    const { port } = await fixture();
+    expect((await request({
+      port,
+      pathname: '/v1/profile/reset',
+      body: { confirm: false },
+    })).statusCode).toBe(400);
+    expect((await request({
+      port,
+      pathname: '/v1/profile/reset',
+      body: { confirm: true },
+    })).statusCode).toBe(200);
+  });
+});

@@ -710,6 +710,22 @@ describe('Packaged OpenChamber agents', () => {
     expect(responseIndex).toBeLessThan(summaryIndex);
     expect(prompt).toContain('Do not start `Council Response` until every councillor result returned by `council_session` has been included or marked failed/timed out.');
   });
+
+  it('projects packaged Council models from the companion into management metadata only', () => {
+    const council = listPackagedAgents().find((agent) => agent.name === 'council');
+
+    expect(council?.frontmatter.councillors).toEqual([
+      { model: 'openai/gpt-5.5', variant: 'medium' },
+      { model: 'opencode/claude-opus-4-5' },
+      { model: 'opencode/deepseek-v4-flash' },
+    ]);
+    expect(council?.frontmatter.modelRefs).toEqual([
+      'openai/gpt-5.5',
+      'opencode/claude-opus-4-5',
+      'opencode/deepseek-v4-flash',
+    ]);
+    expect(council?.content).not.toMatch(/^modelRefs:|^councillors:/m);
+  });
 });
 
 describe('OpenCode config agent routes', () => {
@@ -885,7 +901,7 @@ describe('OpenCode config agent routes', () => {
         reason: 'agent explorer model override reset',
         options: {
           agentName: 'explorer',
-          expectedAgentModelRef: 'opencode-go/deepseek-v4-flash',
+          expectedAgentModelRef: 'opencode/deepseek-v4-flash',
           expectedAgentVariant: 'medium',
         },
       },

@@ -13,6 +13,7 @@ const createManagedPrincipal = (
   scope: 'managed',
   policy: {
     settingsPages: ['*'],
+    bots: true,
     files: true,
     terminal: true,
     browser: true,

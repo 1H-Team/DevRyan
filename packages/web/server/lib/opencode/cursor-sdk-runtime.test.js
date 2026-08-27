@@ -803,6 +803,13 @@ describe('Cursor SDK runtime', () => {
         : null;
     });
 
+    await waitFor(() => emitted.some((event) => (
+      event?.type === 'message.part.updated'
+      && event.properties?.part?.messageID === 'msg_delta_stream_user_assistant'
+      && event.properties?.part?.type === 'text'
+      && event.properties?.part?.text === 'First streamed chunk. Final answer.'
+    )) || null);
+
     const assistantTextEvents = emitted.filter((event) => (
       event?.type === 'message.part.updated'
       && event.properties?.part?.messageID === 'msg_delta_stream_user_assistant'

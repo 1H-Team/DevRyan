@@ -117,57 +117,35 @@ describe('compareSessionsByPinnedAndTime', () => {
     ]);
   });
 
-  test('sorts root sessions by last user message timestamp when activity is supplied', () => {
-    const olderUpdated = session('older-updated', 1, 1000);
-    const newerUser = session('newer-user', 2, 10);
+  test('sorts sessions by canonical updated time', () => {
+    const older = session('older', 100, 200);
+    const newer = session('newer', 1, 300);
 
-    const sorted = [olderUpdated, newerUser].sort((a, b) =>
-      compareSessionsByPinnedAndTime(a, b, new Set(), {
-        [olderUpdated.id]: 20,
-        [newerUser.id]: 30,
-      }),
+    const sorted = [older, newer].sort((a, b) =>
+      compareSessionsByPinnedAndTime(a, b, new Set()),
     );
 
-    expect(sorted.map((item) => item.id)).toEqual(['newer-user', 'older-updated']);
+    expect(sorted.map((item) => item.id)).toEqual(['newer', 'older']);
   });
 
-  test('keeps sessions with user activity above sessions with only assistant activity', () => {
-    const assistantOnly = session('assistant-only', 100, 10_000);
-    const userActive = session('user-active', 1, 2);
+  test('falls back to creation time when canonical updated time is unavailable', () => {
+    const older = { ...session('older', 100), time: { created: 100 } } as Session;
+    const newer = { ...session('newer', 200), time: { created: 200 } } as Session;
 
-    const sorted = [assistantOnly, userActive].sort((a, b) =>
-      compareSessionsByPinnedAndTime(a, b, new Set(), {
-        [userActive.id]: 50,
-      }),
+    const sorted = [older, newer].sort((a, b) =>
+      compareSessionsByPinnedAndTime(a, b, new Set()),
     );
 
-    expect(sorted.map((item) => item.id)).toEqual(['user-active', 'assistant-only']);
+    expect(sorted.map((item) => item.id)).toEqual(['newer', 'older']);
   });
 
-  test('ignores child session user activity for sidebar ordering', () => {
-    const parent = session('parent', 10, 20);
-    const child = session('child', 100, 200, parent.id);
-
-    const sorted = [parent, child].sort((a, b) =>
-      compareSessionsByPinnedAndTime(a, b, new Set(), {
-        [child.id]: 10_000,
-      }),
-    );
-
-    expect(sorted.map((item) => item.id)).toEqual(['child', 'parent']);
-  });
-
-  test('keeps pinned sessions above unpinned sessions and sorts pinned by user activity', () => {
-    const pinnedOlder = session('pinned-older', 1, 1);
-    const pinnedNewer = session('pinned-newer', 2, 2);
-    const unpinned = session('unpinned', 3, 3);
+  test('keeps pinned sessions above unpinned sessions and sorts pinned by updated time', () => {
+    const pinnedOlder = session('pinned-older', 30, 100);
+    const pinnedNewer = session('pinned-newer', 10, 200);
+    const unpinned = session('unpinned', 40, 300);
 
     const sorted = [unpinned, pinnedOlder, pinnedNewer].sort((a, b) =>
-      compareSessionsByPinnedAndTime(a, b, new Set([pinnedOlder.id, pinnedNewer.id]), {
-        [unpinned.id]: 10_000,
-        [pinnedOlder.id]: 20,
-        [pinnedNewer.id]: 30,
-      }),
+      compareSessionsByPinnedAndTime(a, b, new Set([pinnedOlder.id, pinnedNewer.id])),
     );
 
     expect(sorted.map((item) => item.id)).toEqual(['pinned-newer', 'pinned-older', 'unpinned']);

@@ -164,7 +164,7 @@ describe('shared lazy view boundaries', () => {
     expect(source).toContain('export const LazyManagedSettingsView = /* @__PURE__ */ lazyWithChunkRecovery');
     expect(source).toContain("import('@/components/views/ManagedSettingsView')");
     expect(managedSettingsView).not.toContain("from '@/components/views/SettingsView'");
-    expect(managedSettingsView).toContain('canAccessSettingsPage(principal, page.slug)');
+    expect(managedSettingsView).toContain('canAccessSettingsDestination(principal, page.slug)');
     expect(managedSettingsView).toContain('<SettingsPagePermissionBoundary slug={activeSlug}>');
     expect(managedSettingsView).toContain('backButtonRef.current?.focus({ preventScroll: true })');
     expect(managedSettingsView).toContain('aria-modal="true"');

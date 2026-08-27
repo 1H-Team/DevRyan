@@ -2,7 +2,7 @@ export const ROLE_NAMES = Object.freeze(['admin', 'senior_developer', 'developer
 
 export const SETTINGS_PERMISSION_SLUGS = Object.freeze([
   'appearance', 'notifications', 'shortcuts', 'voice', 'about',
-  'chat', 'sessions', 'agents', 'skills.installed', 'skills.catalog', 'plugins', 'magic-prompts',
+  'chat', 'sessions', 'bots', 'agents', 'skills.installed', 'skills.catalog', 'plugins', 'magic-prompts',
   'providers', 'usage', 'mcp', 'remote-instances', 'tunnel',
   'users', 'bug-reports', 'git', 'projects', 'commands',
 ]);
@@ -62,8 +62,13 @@ export function normalizeFeatureOverrides(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const normalized = {};
   const agents = value.agents;
-  if (agents && typeof agents === 'object' && !Array.isArray(agents) && agents.hidePermissionsUi === true) {
-    normalized.agents = { hidePermissionsUi: true };
+  if (agents && typeof agents === 'object' && !Array.isArray(agents)) {
+    const normalizedAgents = {};
+    if (agents.hidePermissionsUi === true) normalizedAgents.hidePermissionsUi = true;
+    if (typeof agents.hideGlobalBehaviorUi === 'boolean') {
+      normalizedAgents.hideGlobalBehaviorUi = agents.hideGlobalBehaviorUi;
+    }
+    if (Object.keys(normalizedAgents).length > 0) normalized.agents = normalizedAgents;
   }
   const mcp = value.mcp;
   if (mcp && typeof mcp === 'object' && !Array.isArray(mcp)) {
@@ -94,7 +99,7 @@ export function validateFeatureOverridesPayload(value) {
       return { valid: false, error: 'Agent feature overrides must be an object' };
     }
     for (const key of Object.keys(agents)) {
-      if (key !== 'hidePermissionsUi' || typeof agents[key] !== 'boolean') {
+      if (!['hidePermissionsUi', 'hideGlobalBehaviorUi'].includes(key) || typeof agents[key] !== 'boolean') {
         return { valid: false, error: `Invalid agent feature override: ${key}` };
       }
     }
@@ -121,7 +126,8 @@ const DEVELOPER_SETTINGS_PAGES = ['appearance', 'chat', 'sessions', 'shortcuts',
 export const ROLE_POLICY_DEFAULTS = Object.freeze({
   admin: Object.freeze({
     settingsPages: ['*'], settingsPermissions: ADMIN_SETTINGS_PERMISSIONS,
-    files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
+    featureOverrides: Object.freeze({}),
+    bots: true, files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
     manageUsers: true, manageGlobalSettings: true, manageGit: true, push: true, github: true,
   }),
   senior_developer: Object.freeze({
@@ -130,7 +136,8 @@ export const ROLE_POLICY_DEFAULTS = Object.freeze({
       readPages: SENIOR_SETTINGS_PAGES,
       editPages: [...USER_EDITABLE_SETTINGS_PAGES],
     }),
-    files: false, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: false, manageUsers: false,
+    featureOverrides: Object.freeze({}),
+    bots: true, files: false, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: false, manageUsers: false,
     manageGlobalSettings: false, manageGit: true, push: true, github: true,
   }),
   developer: Object.freeze({
@@ -139,7 +146,10 @@ export const ROLE_POLICY_DEFAULTS = Object.freeze({
       readPages: DEVELOPER_SETTINGS_PAGES,
       editPages: DEVELOPER_SETTINGS_PAGES,
     }),
-    files: false, terminal: false, browser: true, createWorktrees: false, createBranches: false, manageProjects: false, manageUsers: false,
+    featureOverrides: Object.freeze({
+      agents: Object.freeze({ hideGlobalBehaviorUi: true }),
+    }),
+    bots: true, files: false, terminal: false, browser: true, createWorktrees: false, createBranches: false, manageProjects: false, manageUsers: false,
     manageGlobalSettings: false, manageGit: true, push: true, github: true,
   }),
 });
@@ -202,7 +212,7 @@ const SETTINGS_FIELDS_BY_PAGE = Object.freeze({
 });
 
 const CAPABILITY_KEYS = Object.freeze([
-  'files', 'terminal', 'browser', 'createWorktrees', 'createBranches', 'manageProjects', 'manageUsers', 'manageGlobalSettings',
+  'bots', 'files', 'terminal', 'browser', 'createWorktrees', 'createBranches', 'manageProjects', 'manageUsers', 'manageGlobalSettings',
   'manageGit', 'push', 'github',
 ]);
 
@@ -216,10 +226,14 @@ const normalizeStoredRolePermissions = (role, row) => {
     ? row.settings_permissions
     : {};
   return Object.fromEntries(SETTINGS_PERMISSION_SLUGS.map((slug) => {
-    const value = stored[slug];
     const fallback = base.settingsPermissions[slug];
-    const read = typeof value?.read === 'boolean' ? value.read : fallback.read;
-    const edit = typeof value?.edit === 'boolean' ? value.edit : fallback.edit;
+    if (!Object.prototype.hasOwnProperty.call(stored, slug)) return [slug, { ...fallback }];
+    const value = stored[slug];
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return [slug, { read: false, edit: false }];
+    }
+    const read = value.read === true;
+    const edit = value.edit === true;
     return [slug, { read, edit: read && edit }];
   }));
 };
@@ -294,6 +308,7 @@ export function normalizeRolePolicy(role, row = null, userPolicy = null) {
   }
   const fromRow = row ? {
     settingsPermissions: roleSettingsPermissions,
+    bots: base.bots,
     files: row.can_use_files,
     terminal: row.can_use_terminal,
     browser: typeof row.can_use_browser === 'boolean' ? row.can_use_browser : base.browser,
@@ -324,7 +339,16 @@ export function normalizeRolePolicy(role, row = null, userPolicy = null) {
   for (const key of CAPABILITY_KEYS) {
     if (typeof overrides[key] === 'boolean') next[key] = overrides[key];
   }
-  next.featureOverrides = normalizeFeatureOverrides(userPolicy?.feature_overrides);
+  const inheritedFeatureOverrides = normalizeFeatureOverrides(base.featureOverrides);
+  const userFeatureOverrides = normalizeFeatureOverrides(userPolicy?.feature_overrides);
+  const mergedAgents = {
+    ...(inheritedFeatureOverrides.agents || {}),
+    ...(userFeatureOverrides.agents || {}),
+  };
+  next.featureOverrides = {
+    ...(Object.keys(mergedAgents).length > 0 ? { agents: mergedAgents } : {}),
+    ...(userFeatureOverrides.mcp ? { mcp: userFeatureOverrides.mcp } : {}),
+  };
   return next;
 }
 
@@ -371,7 +395,12 @@ const settingsFieldsForPermission = (principal, permission) => {
 
 export function settingsPageForRequest(requestPath, method = 'GET') {
   const path = String(requestPath || '');
-  if (/^\/config\/settings(?:\/|$)/.test(path)) return 'sessions';
+  if (/^\/config\/settings\/agent-defaults(?:\/|$)/.test(path)) return 'agents';
+  if (/^\/config\/settings\/overrides(?:\/|$)/.test(path)) return 'sessions';
+  // Exact settings reads and writes span multiple independently authorized
+  // pages. The managed settings route validates every field against its real
+  // owner instead of applying one coarse page gate here.
+  if (path === '/config/settings') return null;
   if (/^\/(?:bug-reports|error-logs)(?:\/|$)/.test(path)) return 'bug-reports';
   if (/^\/admin(?:\/|$)/.test(path)) return 'users';
   // Chat composition needs effective agent-model metadata even when the
@@ -460,7 +489,10 @@ export function buildEffectiveSettings({ principal, hostSettings, userOverrides 
     settingsPermissions: principal?.policy?.settingsPermissions || {},
     capabilities: Object.fromEntries(CAPABILITY_KEYS.map((key) => [key, principal?.policy?.[key] === true])),
     features: {
-      agents: { hidePermissionsUi: principal?.policy?.featureOverrides?.agents?.hidePermissionsUi === true },
+      agents: {
+        hidePermissionsUi: principal?.policy?.featureOverrides?.agents?.hidePermissionsUi === true,
+        hideGlobalBehaviorUi: principal?.policy?.featureOverrides?.agents?.hideGlobalBehaviorUi === true,
+      },
       mcp: { ...(principal?.policy?.featureOverrides?.mcp || {}) },
     },
     settingsOverrideKeys: [...(allowed || Object.keys(userOverrides))]

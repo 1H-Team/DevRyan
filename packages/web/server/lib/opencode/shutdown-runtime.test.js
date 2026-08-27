@@ -18,6 +18,7 @@ const createRuntime = (server, overrides = {}) => createGracefulShutdownRuntime(
   setTerminalRuntime: vi.fn(),
   getMessageStreamRuntime: () => null,
   setMessageStreamRuntime: vi.fn(),
+  getBotsRuntime: () => null,
   getCursorSdkRuntime: () => null,
   shouldSkipOpenCodeStop: () => true,
   getOpenCodePort: () => null,
@@ -88,6 +89,29 @@ describe('graceful shutdown runtime', () => {
     expect(order).toEqual(['managed', 'cursor']);
   });
 
+  it('stops Production Bots before browser, provider, OpenCode, and HTTP teardown', async () => {
+    const order = [];
+    const server = {
+      close: vi.fn((callback) => {
+        order.push('server');
+        callback();
+      }),
+    };
+    const runtime = createRuntime(server, {
+      getBotsRuntime: () => ({ shutdown: vi.fn(async () => { order.push('bots'); }) }),
+      getBrowserLeaseRuntime: () => ({ closeAll: vi.fn(async () => { order.push('browser'); }) }),
+      getManagedOrchestrationRuntime: () => ({ shutdown: vi.fn(async () => { order.push('managed'); }) }),
+      getCursorSdkRuntime: () => ({ dispose: vi.fn(async () => { order.push('cursor'); }) }),
+      shouldSkipOpenCodeStop: () => false,
+      getOpenCodePort: () => 64251,
+      getOpenCodeProcess: () => ({ close: vi.fn(async () => { order.push('opencode'); }) }),
+    });
+
+    await runtime.gracefulShutdown({ exitProcess: false });
+
+    expect(order).toEqual(['bots', 'browser', 'managed', 'cursor', 'opencode', 'server']);
+  });
+
   it('closes browser leases before managed runtime teardown', async () => {
     const order = [];
     const browserLeaseRuntime = {
@@ -126,7 +150,8 @@ describe('graceful shutdown runtime', () => {
     void runtime.gracefulShutdown({ exitProcess: true }).then(() => {
       settled = true;
     });
-    await vi.advanceTimersByTimeAsync(1000);
+    vi.advanceTimersByTime(1000);
+    for (let index = 0; index < 8 && !settled; index += 1) await Promise.resolve();
 
     expect(settled).toBe(true);
     expect(close).toHaveBeenCalledTimes(1);

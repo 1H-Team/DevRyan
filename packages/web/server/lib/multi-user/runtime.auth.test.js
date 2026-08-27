@@ -190,8 +190,11 @@ const createHarness = async ({
   localOwnershipRows = [],
   onManagedProjectMetadataChanged = vi.fn(),
   onManagedSessionOwnershipCommitted = vi.fn(),
+  onScheduledTaskAccessChanged = vi.fn(),
   ownershipWriteFailures = 0,
   ownershipWriteGate = null,
+  botHost = { owner: 'unsupported' },
+  encryption = { getKey: null },
 } = {}) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-runtime-auth-'));
   temporaryDirectories.push(directory);
@@ -221,6 +224,7 @@ const createHarness = async ({
   let ownershipWriteAttemptCount = 0;
   let openCodeSessionCreateCount = 0;
   let mintedEmail = '';
+  const authUserUpdates = [];
   const analyticsRetentionLocks = new Map();
   const openCodeDeleteRequests = [];
   const mutableProfiles = profiles.map((profile) => ({ ...profile }));
@@ -334,6 +338,11 @@ const createHarness = async ({
         user: { id: profile?.id, email: profile?.email },
       });
     }
+    const authUserMatch = url.pathname.match(/^\/auth\/v1\/admin\/users\/([^/]+)$/);
+    if (authUserMatch && method === 'PUT') {
+      authUserUpdates.push({ userId: decodeURIComponent(authUserMatch[1]), changes: body });
+      return jsonResponse({ id: decodeURIComponent(authUserMatch[1]) });
+    }
     if (url.pathname === '/rest/v1/rpc/devryan_reassign_github_account') {
       if (missingGithubReassignmentFunction) {
         return jsonResponse({
@@ -401,6 +410,9 @@ const createHarness = async ({
         }, 404);
       }
       return jsonResponse(activityPurgeResult);
+    }
+    if (url.pathname === '/rest/v1/rpc/devryan_bot_schema_version') {
+      return jsonResponse('20260827100000');
     }
     if (!url.pathname.startsWith('/rest/v1/')) return jsonResponse({ message: 'not found' }, 404);
 
@@ -664,6 +676,9 @@ const createHarness = async ({
     logger: { warn: vi.fn(), error: vi.fn() },
     onManagedProjectMetadataChanged,
     onManagedSessionOwnershipCommitted,
+    onScheduledTaskAccessChanged,
+    botHost,
+    encryption,
     sessionOwnershipRetryOptions: {
       attempts: 4,
       timeoutMs: 5,
@@ -688,6 +703,7 @@ const createHarness = async ({
     directory,
     fetchImpl,
     getMintedEmail: () => mintedEmail,
+    getAuthUserUpdates: () => authUserUpdates.map((entry) => structuredClone(entry)),
     getOpenCodeSessionCreateCount: () => openCodeSessionCreateCount,
     getOwnershipWriteAttemptCount: () => ownershipWriteAttemptCount,
     getProfile: (userId) => profileById(userId),
@@ -697,6 +713,7 @@ const createHarness = async ({
     runtime,
     onManagedProjectMetadataChanged,
     onManagedSessionOwnershipCommitted,
+    onScheduledTaskAccessChanged,
     openCodeDeleteRequests,
     projectsById,
     getAccessRows: () => mutableAccessRows.map((row) => ({ ...row })),
@@ -1446,6 +1463,49 @@ describe('multi-user authentication runtime', () => {
     expect(deniedResponse.payload.error).toBe('GitHub access is disabled by policy');
   });
 
+  it('denies every Bot route family when the per-user Bots capability is disabled', async () => {
+    const harness = await createHarness({
+      userPolicies: [{
+        user_id: USER_IDS.developer,
+        settings_pages: null,
+        settings_permission_overrides: {},
+        capabilities: { bots: false },
+        settings_overrides: {},
+      }],
+    });
+    const login = await passwordLogin(harness);
+
+    for (const path of [
+      '/bots/capabilities',
+      '/bots/events',
+      '/bot-actions/pending',
+      '/bot-channels/channel-1',
+      '/bot-runs/run-1',
+    ]) {
+      const response = makeResponse();
+      await harness.runtime.authController.requireAuth(
+        makeRequest({ cookie: login.cookie, path }),
+        response,
+        vi.fn(),
+      );
+      expect(response.statusCode, path).toBe(403);
+      expect(response.payload, path).toMatchObject({
+        error: 'Bots access is disabled by policy',
+        code: 'bots_access_disabled',
+      });
+    }
+
+    const agentsResponse = makeResponse();
+    const next = vi.fn(() => agentsResponse.json({ ok: true }));
+    await harness.runtime.authController.requireAuth(
+      makeRequest({ cookie: login.cookie, path: '/session/status' }),
+      agentsResponse,
+      next,
+    );
+    expect(next).toHaveBeenCalledOnce();
+    expect(agentsResponse.statusCode).toBe(200);
+  });
+
   it('allows capability-gated Browser runtime mutations without opening host configuration', async () => {
     const harness = await createHarness();
     const login = await passwordLogin(harness);
@@ -1968,6 +2028,50 @@ describe('multi-user authentication runtime', () => {
     }, suspendResponse);
     expect(suspendResponse.statusCode).toBe(200);
     expect(appSessionRevocations()).toHaveLength(1);
+    expect(harness.onScheduledTaskAccessChanged).toHaveBeenCalledWith({
+      ownerUserId: USER_IDS.developer,
+      revoked: false,
+    });
+  });
+
+  it('rejects five-character password resets and accepts exactly six characters', async () => {
+    const harness = await createHarness({ signedInRole: 'admin' });
+    const login = await passwordLogin(harness, { role: 'admin' });
+    const handlers = registerAdminRoutes(harness);
+    const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+    const resetPassword = handlers.get('POST /api/admin/users/:userId/reset-password');
+
+    const invalidResponse = makeResponse();
+    await resetPassword({
+      body: { password: 'abcde' },
+      params: { userId: USER_IDS.developer },
+      principal,
+    }, invalidResponse);
+
+    expect(invalidResponse.statusCode).toBe(400);
+    expect(invalidResponse.payload).toEqual({ error: 'Password must be at least 6 characters' });
+    expect(harness.getAuthUserUpdates()).toHaveLength(0);
+
+    const validResponse = makeResponse();
+    await resetPassword({
+      body: { password: 'abcdef' },
+      params: { userId: USER_IDS.developer },
+      principal,
+    }, validResponse);
+
+    expect(validResponse.statusCode).toBe(200);
+    expect(validResponse.payload).toEqual({ reset: true, temporaryPassword: 'abcdef' });
+    expect(harness.getAuthUserUpdates()).toEqual([{
+      userId: USER_IDS.developer,
+      changes: { password: 'abcdef' },
+    }]);
+    expect(harness.fetchImpl.mock.calls.some(([input, init = {}]) => {
+      const url = new URL(String(input));
+      return url.pathname === '/rest/v1/app_sessions'
+        && init.method === 'PATCH'
+        && url.searchParams.get('user_id') === `eq.${USER_IDS.developer}`;
+    })).toBe(true);
+    expect(await waitForAudit(harness, 'user.password_reset', USER_IDS.developer)).toBeTruthy();
   });
 
   it('rejects profile GitHub accounts owned by another user and normalizes database races', async () => {
@@ -2784,6 +2888,8 @@ describe('multi-user authentication runtime', () => {
       userPolicies: [{
         user_id: USER_IDS.developer,
         settings_overrides: { themeId: 'personal-theme' },
+        settings_permission_overrides: { agents: { read: true, edit: true } },
+        capabilities: { manageGlobalSettings: true },
       }, {
         user_id: USER_IDS.admin,
         settings_overrides: { agentModelSelections: { Orchestrator: { providerId: 'openai', modelId: 'admin-model' } } },
@@ -2888,6 +2994,17 @@ describe('multi-user authentication runtime', () => {
     expect(resetFieldResponse.payload.defaultAgent).toBe('Orchestrator');
     expect(resetFieldResponse.payload.multiUser.settingsOverrideKeys).not.toContain('defaultAgent');
 
+    const missingHostSettingsResponse = makeResponse();
+    await put({
+      body: { providerId: 'openai', modelId: 'gpt-5.6-sol', variant: 'medium' },
+      params: { agentName: 'Orchestrator' },
+      principal: {
+        ...refreshed,
+        policy: { ...refreshed.policy, manageGlobalSettings: false },
+      },
+    }, missingHostSettingsResponse);
+    expect(missingHostSettingsResponse.statusCode).toBe(403);
+
     const audit = harness.auditEvents.find((event) => event.action === 'settings.agent_default_updated');
     expect(audit?.metadata).toEqual({
       agentName: expect.any(String),
@@ -2896,6 +3013,76 @@ describe('multi-user authentication runtime', () => {
     });
     expect(JSON.stringify(audit?.metadata)).not.toContain('gpt-5.6-sol');
     expect(JSON.stringify(audit?.metadata)).not.toContain('claude-sonnet-4-6');
+  });
+
+  it('forces managed developers onto personal agent defaults instead of host overrides', async () => {
+    const harness = await createHarness({
+      userPolicies: [{
+        user_id: USER_IDS.developer,
+        settings_permission_overrides: { agents: { read: true, edit: true } },
+        capabilities: { manageGlobalSettings: true },
+      }],
+    });
+    const login = await passwordLogin(harness, { role: 'developer' });
+    const request = makeRequest({
+      cookie: login.cookie,
+      method: 'PUT',
+      path: '/config/agents/Builder/override',
+      csrf: true,
+      body: { model: 'openai/gpt-5.6-terra', variant: 'high' },
+    });
+    const response = makeResponse();
+    const next = vi.fn();
+
+    await harness.runtime.authController.requireAuth(request, response, next);
+
+    expect(response.statusCode).toBe(403);
+    expect(response.payload.code).toBe('PERSONAL_AGENT_DEFAULT_REQUIRED');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('persists Notifications fields without requiring Sessions edit access', async () => {
+    const harness = await createHarness({
+      userPolicies: [{
+        user_id: USER_IDS.developer,
+        settings_permission_overrides: {
+          notifications: { read: true, edit: true },
+          sessions: { read: true, edit: false },
+        },
+      }],
+    });
+    const login = await passwordLogin(harness, { role: 'developer' });
+    const handlers = registerAdminRoutes(harness, {
+      readSettingsFromDiskMigrated: async () => ({ nativeNotificationsEnabled: false }),
+    });
+    const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+    const response = makeResponse();
+
+    await handlers.get('PUT /api/config/settings')({
+      body: { nativeNotificationsEnabled: true },
+      principal,
+    }, response, vi.fn());
+
+    expect(response.statusCode).toBe(200);
+    expect(response.payload.nativeNotificationsEnabled).toBe(true);
+    expect(harness.getUserPolicy(USER_IDS.developer).settings_overrides.nativeNotificationsEnabled).toBe(true);
+
+    const deniedResponse = makeResponse();
+    await handlers.get('PUT /api/config/settings')({
+      body: { nativeNotificationsEnabled: false },
+      principal: {
+        ...principal,
+        policy: {
+          ...principal.policy,
+          settingsPermissions: {
+            ...principal.policy.settingsPermissions,
+            notifications: { read: true, edit: false },
+          },
+        },
+      },
+    }, deniedResponse, vi.fn());
+    expect(deniedResponse.statusCode).toBe(403);
+    expect(deniedResponse.payload.fields).toEqual(['nativeNotificationsEnabled']);
   });
 
   it('resolves managed child execution from root ownership without affecting administrators or Council', async () => {
@@ -3037,6 +3224,62 @@ describe('multi-user authentication runtime', () => {
     })).rejects.toMatchObject({ code: 'managed_agent_model_unavailable', statusCode: 409 });
   });
 
+  it('classifies scheduled-task access from authoritative owner and branch state', async () => {
+    const repositoryPath = await createGitRepo();
+    const project = {
+      id: '77777777-7777-4777-8777-777777777777',
+      label: 'Scheduled access',
+      repository_path: repositoryPath,
+      default_branch: 'main',
+      status: 'active',
+    };
+    const active = await createHarness({
+      projects: [project],
+      accessRows: [{ user_id: USER_IDS.developer, project_id: project.id, is_default: true }],
+      branchRows: [{
+        user_id: USER_IDS.developer,
+        project_id: project.id,
+        branch_name: 'main',
+        workspace_path: repositoryPath,
+        is_default: true,
+      }],
+    });
+    await expect(active.runtime.resolveScheduledTaskAccess({
+      ownerUserId: USER_IDS.developer,
+      projectId: project.id,
+      branchName: 'main',
+    })).resolves.toEqual({ state: 'runnable' });
+    await expect(active.runtime.resolveScheduledTaskAccess({
+      ownerUserId: USER_IDS.developer,
+      projectId: 'path_local_alias',
+      branchName: 'main',
+    })).resolves.toEqual({ state: 'revoked' });
+
+    const suspended = await createHarness({
+      profiles: [fixtureProfile('developer', { status: 'suspended' }), fixtureProfile('admin')],
+      projects: [project],
+      branchRows: [{
+        user_id: USER_IDS.developer,
+        project_id: project.id,
+        branch_name: 'main',
+        workspace_path: repositoryPath,
+        is_default: true,
+      }],
+    });
+    await expect(suspended.runtime.resolveScheduledTaskAccess({
+      ownerUserId: USER_IDS.developer,
+      projectId: project.id,
+      branchName: 'main',
+    })).resolves.toEqual({ state: 'dormant' });
+
+    const revoked = await createHarness({ projects: [project] });
+    await expect(revoked.runtime.resolveScheduledTaskAccess({
+      ownerUserId: USER_IDS.developer,
+      projectId: project.id,
+      branchName: 'main',
+    })).resolves.toEqual({ state: 'revoked' });
+  });
+
   it('unregisters a managed project, drops grants, and hides it from the admin list', async () => {
     const repositoryPath = await createGitRepo();
     const project = {
@@ -3103,6 +3346,16 @@ describe('multi-user authentication runtime', () => {
     expect(harness.getBranchRows()).toEqual([]);
     expect(harness.getOwnership('session-leftover')?.archived_at).toBeTruthy();
     expect(harness.onManagedProjectMetadataChanged).toHaveBeenCalledWith(project.id);
+    expect(harness.onScheduledTaskAccessChanged).toHaveBeenCalledWith({
+      projectID: project.id,
+      ownerUserId: USER_IDS.admin,
+      revoked: true,
+    });
+    expect(harness.onScheduledTaskAccessChanged).toHaveBeenCalledWith({
+      projectID: project.id,
+      ownerUserId: USER_IDS.developer,
+      revoked: true,
+    });
     await expect(waitForAudit(harness, 'project.unregistered', project.id)).resolves.toEqual(
       expect.objectContaining({ action: 'project.unregistered', project_id: project.id }),
     );
@@ -3825,5 +4078,31 @@ describe('multi-user authentication runtime', () => {
       metadata: expect.objectContaining({ sourceSurface: 'settings', characterCount: 19 }),
     });
     expect(JSON.stringify(harness.auditEvents)).not.toContain('must be rejected');
+  });
+
+  it('composes the focused Bots runtime with Electron-only host capabilities', async () => {
+    const getStatus = vi.fn(async () => ({
+      ok: true,
+      state: 'healthy',
+      code: null,
+      issues: [],
+    }));
+    const harness = await createHarness({
+      botHost: { owner: 'electron', getStatus },
+      encryption: { getKey: () => Buffer.alloc(32, 0x45) },
+    });
+    const handlers = registerAdminRoutes(harness);
+    const response = makeResponse();
+
+    await handlers.get('GET /api/bots/capabilities')({}, response);
+
+    expect(harness.runtime.botsRuntime.enabled).toBe(true);
+    expect(response.payload).toMatchObject({
+      available: true,
+      state: 'healthy',
+      owner: 'electron',
+      canManageRuntime: true,
+    });
+    expect(getStatus).toHaveBeenCalledTimes(1);
   });
 });

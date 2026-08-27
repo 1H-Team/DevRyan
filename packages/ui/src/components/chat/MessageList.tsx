@@ -649,11 +649,13 @@ const TurnBlock = React.memo(({
         return byMessageId;
     }, [visibleActivityParts]);
 
-    const managedTaskProjection = React.useMemo(() => resolveManagedTaskTurnProjection(
-        visibleAssistantMessages.map((message) => ({
-            messageId: message.info.id,
-            parts: message.parts,
-        })),
+    const managedTaskProjectionsByMessageId = React.useMemo(() => new Map(
+        resolveManagedTaskTurnProjection(
+            visibleAssistantMessages.map((message) => ({
+                messageId: message.info.id,
+                parts: message.parts,
+            })),
+        ).map((projection) => [projection.ownerMessageId, projection] as const),
     ), [visibleAssistantMessages]);
 
     const assistantImageMessages = React.useMemo(() => {
@@ -785,7 +787,7 @@ const TurnBlock = React.memo(({
                     lastTodoToolPartId: turnGroupingContextBase.lastTodoToolPartId,
                     assistantImageMessages: turnGroupingContextBase.assistantImageMessages,
                     activityParts: activityPartsByMessageId.get(message.info.id),
-                    managedTaskProjection,
+                    managedTaskProjection: managedTaskProjectionsByMessageId.get(message.info.id),
                     ...(shouldAttachFullTurnContext ? {
                         summaryBody: turnGroupingContextBase.summaryBody,
                         summarySourceMessageId: turnGroupingContextBase.summarySourceMessageId,
@@ -841,7 +843,7 @@ const TurnBlock = React.memo(({
             streamingAssistantMessageId,
             activeStreamingPhase,
             activityPartsByMessageId,
-            managedTaskProjection,
+            managedTaskProjectionsByMessageId,
             visibleAssistantMessages,
             visibleAssistantIds,
             activityOwnerMessageId,

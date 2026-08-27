@@ -721,7 +721,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       const directory = await resolveRequestDirectory(req);
       res.once('finish', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          void standardSessionTitleRuntime.scheduleMarkerBackfill?.({ directory });
+          void standardSessionTitleRuntime.schedulePlaceholderRecovery?.({ directory });
         }
       });
       return next();
@@ -986,6 +986,8 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
             directory,
             text,
             providerID,
+            modelID,
+            variant: typeof req.body?.variant === 'string' ? req.body.variant.trim() : undefined,
           });
           if (isXaiProvider && cachedXaiTools === null) {
             void xaiToolCatalogRuntime?.refreshModel?.({ directory, providerID, modelID });

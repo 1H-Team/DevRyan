@@ -11,7 +11,7 @@ import {
   resolveAgentDefaultSelection,
 } from '@/lib/agentDefaultResolution';
 import { formatAgentDisplayName } from '@/lib/agentDisplay';
-import { getAuthPrincipal } from '@/lib/authSession';
+import { canEditPersonalAgentModels, useAuthPrincipal } from '@/lib/authSession';
 import { getOrderedThinkingVariants, resolveProviderModelVariant } from '@/lib/providers/variantControls';
 import { isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -187,11 +187,11 @@ const AgentDefaultRow: React.FC<{
 };
 
 export const AgentModelDefaultsSettings: React.FC = () => {
-  const principal = getAuthPrincipal();
+  const principal = useAuthPrincipal();
   const allAgents = useConfigStore((state) => state.agents);
   const agents = React.useMemo(() => filterVisibleAgentSelectorOptions(allAgents), [allAgents]);
 
-  if (principal.scope !== 'managed' || principal.role === 'admin') return null;
+  if (!canEditPersonalAgentModels(principal)) return null;
 
   const editableAgents = agents.filter((agent) => isSingleModelAgentDefault(agent));
   const hostManagedAgents = agents.filter((agent) => !isSingleModelAgentDefault(agent));

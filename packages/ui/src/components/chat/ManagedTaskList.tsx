@@ -347,7 +347,10 @@ export const ManagedTaskList = React.memo(({
         isMobile ? 'w-full px-0' : 'chat-message-column px-4',
       )}
     >
-      <div data-managed-task-card="true" className="overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--primary-base)_16%,var(--border))] bg-[color-mix(in_srgb,var(--primary-base)_3%,var(--surface-background))]">
+      <div
+        data-managed-task-card="true"
+        className="relative isolate overflow-hidden rounded-xl border border-transparent bg-[color-mix(in_srgb,var(--primary-base)_3%,var(--surface-background))] after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:border after:border-[color-mix(in_srgb,var(--primary-base)_16%,var(--border))] after:content-['']"
+      >
         <header className="flex items-center gap-2 border-b border-border/70 px-3 py-2">
           <RiGitBranchLine className="size-3.5 text-[var(--primary-base)]" aria-hidden="true" />
           <h3 className="typography-ui-label font-semibold text-foreground">

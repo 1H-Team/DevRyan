@@ -18,6 +18,7 @@ const baseDevEnvironment = {
   ...process.env,
   OPENCHAMBER_ELECTRON_DEV: '1',
   OPENCHAMBER_DATA_DIR: devDataDirectory,
+  OPENCHAMBER_ELECTRON_USER_DATA_DIR: path.join(devDataDirectory, 'electron-user-data'),
 };
 
 // On macOS, prefer launching via the built & signed DevRyan.app binary so

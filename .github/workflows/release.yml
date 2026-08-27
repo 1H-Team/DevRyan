@@ -54,6 +54,12 @@ jobs:
           const expected = process.env.VERSION;
           const packageFiles = [
             'package.json',
+            'packages/bot-computer/package.json',
+            'packages/bot-engine-proxy/package.json',
+            'packages/bot-egress/package.json',
+            'packages/bot-indexer/package.json',
+            'packages/bot-supervisor/package.json',
+            'packages/bots-runtime/package.json',
             'packages/cursor-sdk-runtime/package.json',
             'packages/harness-runtime/package.json',
             'packages/orchestration-runtime/package.json',
@@ -214,8 +220,77 @@ jobs:
 
           npm publish --access public
 
-  build-desktop-electron-macos:
+  publish-bot-runtime-images:
     needs: create-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Build, attest, publish, and keylessly sign Bot runtime images
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+          SOURCE_REVISION: ${{ github.sha }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          REPOSITORY_PREFIX="ghcr.io/$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          MANIFEST="artifacts/DevRyan-bot-runtime-images-${VERSION}.json"
+          mkdir -p artifacts
+          node scripts/build-bot-runtime-images.mjs \
+            --version "$VERSION" \
+            --revision "$SOURCE_REVISION" \
+            --repository-prefix "$REPOSITORY_PREFIX" \
+            --output "$MANIFEST"
+          node scripts/verify-bot-runtime-images.mjs \
+            --manifest "$MANIFEST" \
+            --version "$VERSION" \
+            --revision "$SOURCE_REVISION" \
+            --repository-prefix "$REPOSITORY_PREFIX" \
+            --check-anonymous
+
+      - name: Upload Bot runtime manifest for Electron release builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-runtime-images
+          path: artifacts/DevRyan-bot-runtime-images-${{ needs.create-release.outputs.version }}.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload Bot runtime manifest to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.create-release.outputs.version }}
+          files: artifacts/DevRyan-bot-runtime-images-${{ needs.create-release.outputs.version }}.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-desktop-electron-macos:
+    needs: [create-release, publish-bot-runtime-images]
     runs-on: macos-26
     strategy:
       fail-fast: false
@@ -240,6 +315,12 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile --cpu '*' --os darwin
+
+      - name: Download signed Bot runtime image manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: bot-runtime-images
+          path: ${{ runner.temp }}/bot-runtime-images
 
       - name: Install Apple Certificate
         env:
@@ -286,10 +367,15 @@ jobs:
           # rebuild-native.mjs reads this to target the right arch when
           # cross-building (runner is arm64; x64 matrix needs the hint).
           ELECTRON_BUILDER_ARCH: ${{ matrix.arch }}
+          DEVRYAN_BOT_RUNTIME_REQUIRE_RELEASE_MANIFEST: '1'
+          DEVRYAN_BOT_RUNTIME_MANIFEST_PATH: ${{ runner.temp }}/bot-runtime-images/DevRyan-bot-runtime-images-${{ needs.create-release.outputs.version }}.json
+          DEVRYAN_BOT_RUNTIME_SOURCE_REVISION: ${{ github.sha }}
+          DEVRYAN_BOT_RUNTIME_REPOSITORY_PREFIX: ghcr.io/1h-team
         run: |
           set -euo pipefail
 
           bun run build:web-assets
+          bun run build:native-helpers
           bun run bundle:main
           # npmRebuild=false in package.json, so electron-builder won't
           # recompile native deps on its own — we must rebuild against the
@@ -301,6 +387,7 @@ jobs:
           else
             ./node_modules/.bin/electron-builder --mac --${{ matrix.arch }} --publish=never -c.mac.identity=null -c.mac.notarize=false -c.dmg.sign=false
           fi
+          bun run verify:runtime-service-package -- --arch "${{ matrix.arch }}"
 
       - name: Verify Electron Cursor SDK native artifacts
         run: |
@@ -381,6 +468,30 @@ jobs:
             --source packages/web/server/default-config \
             --artifact-root "$ARTIFACT_ROOT"
           node scripts/smoke-packaged-orchestration-config.mjs --config-root "$ARTIFACT_ROOT"
+
+      - name: Verify packaged Electron Bot runtime image manifest
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          case "${{ matrix.arch }}" in
+            arm64) APP_DIR="packages/electron/dist/mac-arm64" ;;
+            x64) APP_DIR="packages/electron/dist/mac" ;;
+            *) echo "Error: unsupported Electron architecture: ${{ matrix.arch }}"; exit 1 ;;
+          esac
+          APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
+          test -n "$APP_PATH"
+          PACKAGED_MANIFEST="$APP_PATH/Contents/Resources/bot-runtime/images.release.json"
+          SOURCE_MANIFEST="$RUNNER_TEMP/bot-runtime-images/DevRyan-bot-runtime-images-${VERSION}.json"
+          test -f "$PACKAGED_MANIFEST"
+          cmp "$SOURCE_MANIFEST" "$PACKAGED_MANIFEST"
+          node scripts/verify-bot-runtime-images.mjs \
+            --manifest "$PACKAGED_MANIFEST" \
+            --version "$VERSION" \
+            --revision "$SOURCE_REVISION" \
+            --repository-prefix ghcr.io/1h-team
 
       - name: Verify Electron macOS usage descriptions
         run: |
@@ -529,14 +640,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   finalize-release:
-    needs: [create-release, build-desktop-electron-macos, publish-npm, combine-electron-manifests]
-    if: ${{ needs.create-release.result == 'success' && needs.build-desktop-electron-macos.result == 'success' && needs.publish-npm.result == 'success' && needs.combine-electron-manifests.result == 'success' }}
+    needs: [create-release, publish-bot-runtime-images, build-desktop-electron-macos, publish-npm, combine-electron-manifests]
+    if: ${{ needs.create-release.result == 'success' && needs.publish-bot-runtime-images.result == 'success' && needs.build-desktop-electron-macos.result == 'success' && needs.publish-npm.result == 'success' && needs.combine-electron-manifests.result == 'success' }}
     runs-on: ubuntu-latest
+    environment: DevRyan Secrets
     env:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       DISCORD_UPDATE_ROLE_ID: ${{ secrets.DISCORD_UPDATE_ROLE_ID }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.115.0
 
       - name: Verify required release assets before publish
         env:
@@ -544,6 +662,56 @@ jobs:
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.create-release.outputs.version }}
         run: node scripts/verify-release-assets.mjs
+
+      - name: Deploy and verify Supabase configuration and migrations
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "Error: required release secret ${name} is not configured."
+              exit 1
+            fi
+          done
+
+          supabase link --project-ref "$SUPABASE_PROJECT_ID" --yes
+          node scripts/sync-supabase-auth-password-policy.mjs
+          supabase db push --linked --dry-run
+          supabase db push --linked --yes
+
+          MIGRATION_STATUS_PATH="${RUNNER_TEMP}/supabase-migrations.json"
+          SCHEMA_STATUS_PATH="${RUNNER_TEMP}/supabase-bot-schema.json"
+          supabase migration list --linked --output-format json > "$MIGRATION_STATUS_PATH"
+          supabase db query --linked --agent=no --output json \
+            "select public.devryan_bot_schema_version() as schema_version;" \
+            > "$SCHEMA_STATUS_PATH"
+          MIGRATION_STATUS_PATH="$MIGRATION_STATUS_PATH" \
+          SCHEMA_STATUS_PATH="$SCHEMA_STATUS_PATH" \
+          node - <<'NODE'
+          const fs = require('fs');
+
+          const migrations = JSON.parse(fs.readFileSync(process.env.MIGRATION_STATUS_PATH, 'utf8'));
+          const drift = (migrations.migrations || []).filter((entry) => (
+            !entry.local || !entry.remote || entry.local !== entry.remote
+          ));
+          if (drift.length > 0) {
+            throw new Error(`Supabase migration history diverged for ${drift.length} migration(s).`);
+          }
+
+          const source = fs.readFileSync('packages/web/server/lib/multi-user/auth-compat.js', 'utf8');
+          const expected = source.match(/PRODUCTION_BOTS_MIGRATION = '(\d{14})'/)?.[1];
+          const schema = JSON.parse(fs.readFileSync(process.env.SCHEMA_STATUS_PATH, 'utf8'));
+          const schemaRows = Array.isArray(schema) ? schema : schema.rows;
+          const actual = schemaRows?.[0]?.schema_version;
+          if (!expected || actual !== expected) {
+            throw new Error(`Production Bot schema marker mismatch: expected ${expected || 'missing'}, received ${actual || 'missing'}.`);
+          }
+          NODE
 
       - name: Publish release
         uses: softprops/action-gh-release@v2

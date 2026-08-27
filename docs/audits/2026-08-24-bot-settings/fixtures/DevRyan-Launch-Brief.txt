@@ -1,0 +1,7 @@
+DevRyan Release Launch Brief
+
+Launch code: RYAN-ORBIT-742
+Source document: DevRyan Release Launch Brief
+
+This fixture exists only to verify that a published Bot answers from its
+assigned Library source rather than from general knowledge.

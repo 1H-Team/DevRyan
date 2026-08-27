@@ -1,0 +1,15 @@
+{
+  "name": "devryan-production-bots-visual-fixture",
+  "version": "0.0.0",
+  "description": "Test-only packaged Electron shell for Production Bots visual verification",
+  "author": "DevRyan",
+  "private": true,
+  "type": "module",
+  "main": "electron-shell.cjs",
+  "scripts": {
+    "dev": "vite --config vite.config.ts",
+    "build": "vite build --config vite.config.ts",
+    "package:shell": "node ../../scripts/package-production-bots-visual-shell.mjs",
+    "type-check": "tsc --noEmit -p tsconfig.json"
+  }
+}

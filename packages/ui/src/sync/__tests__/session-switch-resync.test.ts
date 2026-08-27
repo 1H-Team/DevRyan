@@ -512,6 +512,42 @@ describe("resyncDirectoryAfterReconnect", () => {
     expect(store.getState().permission.ses_a).toEqual([existingPermission])
   })
 
+  test("preserves a projected title when reconnect materialization still returns a placeholder", async () => {
+    const projectedSession = {
+      id: "ses_a",
+      title: "Plan large-integer edge-case tests",
+      time: { created: 1, updated: 10 },
+      version: "1",
+    } as State["session"][number]
+    const canonicalPlaceholder = {
+      ...projectedSession,
+      title: "New session - 2026-08-23T22:40:35.991Z",
+      time: { created: 1, updated: 11 },
+    } as State["session"][number]
+    const store = createDirectoryStore({
+      session: [projectedSession],
+      session_status: { ses_a: { type: "busy" } },
+    })
+    sessionStatusResponse = { ses_a: { type: "busy" } }
+    sessionGetResponse = { ses_a: canonicalPlaceholder }
+    sessionMessagesResponse = { ses_a: [] }
+    const routingIndex = {
+      sessionDirectoryById: new Map([["ses_a", "/repo"]]),
+      messageSessionById: new Map<string, string>(),
+      sessionMessageIdsById: new Map<string, Set<string>>(),
+    }
+
+    const { resyncDirectoryAfterReconnect } = await import("../sync-context")
+    await resyncDirectoryAfterReconnect("/repo", store, routingIndex as never, {
+      candidateSessionIds: ["ses_a"],
+    })
+
+    expect(store.getState().session[0]).toEqual({
+      ...canonicalPlaceholder,
+      title: projectedSession.title,
+    })
+  })
+
   test("preserves a newer live status while the reconnect status snapshot is delayed", async () => {
     const delayedStatus = deferred()
     sessionStatusGate = delayedStatus.promise

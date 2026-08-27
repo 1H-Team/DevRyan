@@ -6,6 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { SettingsSection } from '@/components/sections/shared/SettingsSection';
 import {
   fullSettingsPermissions,
+  normalizeSettingsPermissions,
   permissionsFromLegacyPages,
   type SettingsPermissions,
 } from '@/lib/settings/permissions';
@@ -15,7 +16,11 @@ import { requestJson, roleLabel, type Role, type RolePolicyRow } from './types';
 
 const permissionsForRole = (row: RolePolicyRow): SettingsPermissions => {
   if (row.role === 'admin') return fullSettingsPermissions();
-  return row.settings_permissions || permissionsFromLegacyPages(row.settings_pages);
+  const legacyPages = Array.isArray(row.settings_pages) ? row.settings_pages : [];
+  return normalizeSettingsPermissions(
+    row.settings_permissions,
+    permissionsFromLegacyPages(legacyPages),
+  );
 };
 
 const RolePolicyEditor: React.FC<{

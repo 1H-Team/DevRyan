@@ -39,6 +39,46 @@ test('formats genuine scheduled-task and tunnel risks', () => {
   assert.match(quitConfirmationMessage(snapshot), /2 pending scheduled tasks/);
 });
 
+test('includes active Bot runs, approvals, and unfinished checkpoints in quit risk', () => {
+  const snapshot = buildQuitRiskSnapshot({
+    scheduledTasks: {},
+    tunnel: { active: false },
+    bots: {
+      activeRunCount: 2,
+      pendingApprovalCount: 1,
+      checkpointStatus: 'pending',
+    },
+  });
+
+  assert.equal(shouldRequireQuitConfirmation(snapshot), true);
+  assert.equal(snapshot.activeBotRunCount, 2);
+  assert.equal(snapshot.pendingBotApprovalCount, 1);
+  assert.equal(snapshot.botCheckpointStatus, 'pending');
+  assert.match(quitConfirmationMessage(snapshot), /2 active Bot runs/);
+  assert.match(quitConfirmationMessage(snapshot), /1 pending Bot approval/);
+  assert.match(quitConfirmationMessage(snapshot), /checkpoint is pending/);
+});
+
+test('includes due app-bound Bot routines and scheduler checkpoint risk', () => {
+  const snapshot = buildQuitRiskSnapshot({
+    scheduledTasks: {},
+    tunnel: { active: false },
+    bots: {
+      activeRoutineCount: 4,
+      pendingRoutineCount: 2,
+      schedulerStatus: 'checkpointing',
+      checkpointStatus: 'checkpointing',
+    },
+  });
+
+  assert.equal(shouldRequireQuitConfirmation(snapshot), true);
+  assert.equal(snapshot.activeBotRoutineCount, 4);
+  assert.equal(snapshot.pendingBotRoutineCount, 2);
+  assert.equal(snapshot.hasBotRoutineSchedulerRisk, true);
+  assert.match(quitConfirmationMessage(snapshot), /2 due Bot routine occurrences/);
+  assert.match(quitConfirmationMessage(snapshot), /routine scheduler is checkpointing/);
+});
+
 test('failed verification clears stale task counts and reports uncertainty', () => {
   const snapshot = emptyQuitRisk();
   Object.assign(snapshot, buildQuitRiskSnapshot({

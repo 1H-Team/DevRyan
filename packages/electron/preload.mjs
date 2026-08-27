@@ -36,6 +36,31 @@ const currentOrigin = (() => {
   }
 })();
 const isLocalPage = isPrivilegedRendererOrigin(currentOrigin, localOrigin);
+const LOCAL_ONLY_BOT_RUNTIME_COMMANDS = new Set([
+  'desktop_bot_runtime_status',
+  'desktop_bot_runtime_operation_status',
+  'desktop_bot_runtime_setup',
+  'desktop_bot_runtime_repair',
+  'desktop_bot_runtime_update',
+  'desktop_bot_runtime_rollback',
+  'desktop_export_bot_recovery',
+  'desktop_restore_bot_recovery',
+  'desktop_runtime_service_status',
+  'desktop_runtime_service_enable',
+  'desktop_runtime_service_disable',
+  'desktop_runtime_service_open_settings',
+]);
+
+const invokeMain = (command, args = {}) => {
+  // The startup splash BrowserWindow can be constructed before the in-process
+  // server chooses its port, leaving this immutable boot argument empty. In
+  // that case defer to main.mjs, which authorizes every privileged invocation
+  // against the sender's live URL and the now-authoritative local origin.
+  if (localOrigin && !isLocalPage && LOCAL_ONLY_BOT_RUNTIME_COMMANDS.has(command)) {
+    return Promise.reject(new Error('Bot runtime IPC is available only to the local DevRyan UI'));
+  }
+  return ipcRenderer.invoke('openchamber:invoke', command, args);
+};
 
 // Remote pages need __OPENCHAMBER_LOCAL_ORIGIN__ so the HostSwitcher knows
 // the URL of the Local entry (isDesktopLocalOriginActive() falls back to
@@ -138,13 +163,13 @@ ipcRenderer.on('openchamber:emit', (_evt, payload) => {
 // no). See COMMANDS_SAFE_FOR_REMOTE in main.mjs.
 contextBridge.exposeInMainWorld('__TAURI__', {
   core: {
-    invoke: (cmd, args) => ipcRenderer.invoke('openchamber:invoke', cmd, args || {}),
+    invoke: (cmd, args) => invokeMain(cmd, args || {}),
   },
   dialog: {
     open: (options) => ipcRenderer.invoke('openchamber:dialog:open', options || {}),
   },
   shell: {
-    open: (url) => ipcRenderer.invoke('openchamber:invoke', 'desktop_open_external_url', { url }),
+    open: (url) => invokeMain('desktop_open_external_url', { url }),
   },
   event: {
     listen: async (event, handler) => addListener(event, handler),

@@ -60,6 +60,7 @@ import {
   readMeridianPromptMode,
   setMeridianPromptCompatibilityMode,
 } from '../../web/server/lib/opencode/meridian-sdk-features.js';
+import { fetchFreeZenModels, getCachedFreeZenModels } from './zenModelCatalogRuntime';
 
 type BridgeMessageInput = {
   id: string;
@@ -92,8 +93,6 @@ type NotificationsNotifyRequestPayload = {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
-const ZEN_MODELS_URL = 'https://opencode.ai/zen/v1/models';
-const ZEN_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
 const CURSOR_ACP_PROVIDER_ID = 'cursor-acp';
 const CURSOR_USAGE_TOKEN_MAX_LENGTH = 16_384;
 
@@ -127,7 +126,6 @@ const removeProviderConfigForScope = (
 ): boolean => providerId === 'antigravity'
   ? removeAntigravityProviderConfig(workingDirectory, scope)
   : removeProviderConfig(providerId, workingDirectory, scope);
-let cachedZenModels: { models: Array<{ id: string; owned_by?: string }>; at: number } | null = null;
 
 const resolveClaudeQuotaRuntime = async (ctx?: BridgeContext) => {
   const manager = ctx?.manager;
@@ -593,57 +591,6 @@ const reconstructOriginalContentFromPatch = (modifiedContent: string, patch: str
   return lines.join('\n');
 };
 
-const fetchFreeZenModels = async (): Promise<Array<{ id: string; owned_by?: string }>> => {
-  const now = Date.now();
-  if (cachedZenModels && now - cachedZenModels.at < ZEN_MODELS_CACHE_TTL_MS) {
-    return cachedZenModels.models;
-  }
-
-  const signal = AbortSignal.timeout(8_000);
-  const [response, metadataResponse] = await Promise.all([
-    fetch(ZEN_MODELS_URL, {
-      headers: { Accept: 'application/json' },
-      signal,
-    }),
-    fetch('https://models.dev/api.json', {
-      headers: { Accept: 'application/json' },
-      signal,
-    }),
-  ]);
-
-  if (!response.ok) {
-    throw new Error(`zen models request failed (${response.status})`);
-  }
-  if (!metadataResponse.ok) {
-    throw new Error(`models.dev request failed (${metadataResponse.status})`);
-  }
-
-  const rawPayload = await response.json().catch(() => null);
-  const rawMetadata = await metadataResponse.json().catch(() => null);
-  const payload = asObject(rawPayload);
-  const metadata = asObject(rawMetadata);
-  const metadataProvider = asObject(metadata?.opencode);
-  const metadataModels = asObject(metadataProvider?.models);
-  const rows = Array.isArray(payload?.data) ? payload.data : [];
-  const models = rows
-    .map((entry) => {
-      const id = typeof (entry as { id?: unknown })?.id === 'string'
-        ? (entry as { id: string }).id.trim()
-        : '';
-      const ownedBy = typeof (entry as { owned_by?: unknown })?.owned_by === 'string'
-        ? (entry as { owned_by: string }).owned_by
-        : undefined;
-      const metadataModel = asObject(metadataModels?.[id]);
-      const cost = asObject(metadataModel?.cost);
-      if (!id || cost?.input !== 0 || cost?.output !== 0) return null;
-      return ownedBy ? { id, owned_by: ownedBy } : { id };
-    })
-    .filter((entry): entry is { id: string; owned_by?: string } => entry !== null);
-
-  cachedZenModels = { models, at: Date.now() };
-  return models;
-};
-
 export async function handleSystemBridgeMessage(
   message: BridgeMessageInput,
   ctx: BridgeContext | undefined,
@@ -686,8 +633,9 @@ export async function handleSystemBridgeMessage(
         const models = await fetchFreeZenModels();
         return { id, type, success: true, data: { models } };
       } catch (error) {
-        if (cachedZenModels) {
-          return { id, type, success: true, data: { models: cachedZenModels.models } };
+        const cachedModels = getCachedFreeZenModels();
+        if (cachedModels.length > 0) {
+          return { id, type, success: true, data: { models: cachedModels } };
         }
         const errorMessage = error instanceof Error ? error.message : String(error);
         return { id, type, success: false, error: errorMessage };

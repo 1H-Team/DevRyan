@@ -6,6 +6,8 @@ export const USER_POLICY_FEATURE_OVERRIDES_MIGRATION = '20260805120000';
 export const BROWSER_POLICY_CAPABILITY_MIGRATION = '20260806133832';
 export const USER_PROFILE_GITHUB_ACCOUNT_MIGRATION = '20260804100000';
 export const GITHUB_ACCOUNT_REASSIGNMENT_MIGRATION = '20260804120000';
+export const PRODUCTION_BOTS_MIGRATION = '20260827100000';
+export const PRODUCTION_BOTS_MIGRATION_ERROR_CODE = 'bot_schema_migration_required';
 export const AUTH_ERROR_CODES = Object.freeze({
   identityUnavailable: 'identity_unavailable',
   schemaMigrationRequired: 'schema_migration_required',
@@ -22,6 +24,55 @@ const AGENT_TEST_LABELS = Object.freeze({
   developer: 'Test Developer',
   admin: 'Test Administrator',
 });
+const PRODUCTION_BOTS_RELATIONS = Object.freeze([
+  'bots',
+  'bot_revisions',
+  'bot_memberships',
+  'bot_channels',
+  'bot_channel_acl',
+  'bot_messages',
+  'bot_objects',
+  'bot_runs',
+  'bot_action_attempts',
+  'bot_approvals',
+  'bot_credentials',
+  'bot_environment_secrets',
+  'bot_routines',
+  'bot_routine_occurrences',
+  'bot_memories',
+  'bot_memory_versions',
+  'bot_memory_sources',
+  'bot_library_sources',
+  'bot_library_versions',
+  'bot_skill_packages',
+  'bot_mcp_bindings',
+  'bot_audit_events',
+  'bot_eval_cases',
+  'bot_eval_runs',
+]);
+const PRODUCTION_BOTS_FUNCTIONS = Object.freeze([
+  'devryan_bot_schema_version',
+  'devryan_allocate_bot_message_sequence',
+  'devryan_enqueue_bot_message_run',
+  'devryan_claim_bot_run',
+  'devryan_claim_bot_routine_occurrence',
+  'devryan_create_bot',
+  'devryan_activate_bot_revision',
+  'devryan_publish_bot_revision',
+  'devryan_commit_bot_memory_version',
+  'devryan_delete_bot_channel',
+  'devryan_prune_bot_audit',
+  'devryan_purge_bot_resource',
+  'devryan_purge_bot',
+]);
+const PRODUCTION_BOTS_SCHEMA_ERROR_CODES = new Set([
+  '42P01',
+  '42703',
+  '42883',
+  'PGRST202',
+  'PGRST204',
+  'PGRST205',
+]);
 
 const normalizedErrorMessage = (error) => String(error?.message || '').trim().toLowerCase();
 
@@ -63,6 +114,35 @@ export const isMissingGithubAccountReassignmentFunctionError = (error) => {
   const message = normalizedErrorMessage(error);
   return code === 'PGRST202'
     && message.includes('devryan_reassign_github_account');
+};
+
+export const isMissingProductionBotsSchemaError = (error) => {
+  if (!(error instanceof SupabaseRequestError) || ![400, 404].includes(error.status)) return false;
+  const code = String(error.payload?.code || '').trim().toUpperCase();
+  const message = normalizedErrorMessage(error);
+  const referencesBotSchema = [...PRODUCTION_BOTS_RELATIONS, ...PRODUCTION_BOTS_FUNCTIONS]
+    .some((name) => message.includes(name));
+  if (!referencesBotSchema) return false;
+
+  const hasMissingSchemaWording = message.includes('does not exist')
+    || message.includes('schema cache')
+    || message.includes('could not find the table')
+    || message.includes('could not find the function')
+    || message.includes('could not find the column');
+  return PRODUCTION_BOTS_SCHEMA_ERROR_CODES.has(code) || hasMissingSchemaWording;
+};
+
+export const productionBotsMigrationFailurePayload = (error) => {
+  if (error?.code !== PRODUCTION_BOTS_MIGRATION_ERROR_CODE
+    && !isMissingProductionBotsSchemaError(error)) return null;
+  return {
+    status: 503,
+    error: 'Database migration required',
+    code: PRODUCTION_BOTS_MIGRATION_ERROR_CODE,
+    requiredMigration: typeof error?.requiredMigration === 'string'
+      ? error.requiredMigration
+      : PRODUCTION_BOTS_MIGRATION,
+  };
 };
 
 export const isSettingsPermissionSchemaError = (error) => {

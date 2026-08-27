@@ -24,6 +24,7 @@ import {
 import {
   MANAGED_TASK_TIMEOUT_REASON_PREFIX,
   isDefiniteProviderUsageLimit,
+  isManagedTaskModelUnavailable,
   isProviderPromptRejected,
 } from './provider-retry-policy.js';
 import {
@@ -44,6 +45,7 @@ const requiresManualModelRecovery = (task, resultEnvelope) => Boolean(
   && !isProviderPromptRejected(task.failureReason)
   && (
     isDefiniteProviderUsageLimit(task.failureReason)
+    || isManagedTaskModelUnavailable(task.failureReason)
     || (task.mode === 'orchestrator' && task.dispatchGroupId !== null && task.attempt >= 2)
   )
 );
@@ -172,6 +174,10 @@ export const createManagedTaskScheduler = (options = {}) => {
   if (!Number.isFinite(reconciliationRetryMs) || reconciliationRetryMs < 1) {
     throw new RangeError('reconciliationRetryMs must be a positive finite number');
   }
+  const providerRecoveryContinuationLeaseMs = options.providerRecoveryContinuationLeaseMs ?? 60_000;
+  if (!Number.isFinite(providerRecoveryContinuationLeaseMs) || providerRecoveryContinuationLeaseMs < 1) {
+    throw new RangeError('providerRecoveryContinuationLeaseMs must be a positive finite number');
+  }
 
   const tasks = new Map();
   const resultEnvelopes = new Map();
@@ -185,6 +191,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   const timeoutTimers = new Map();
   const startingLeaseTimers = new Map();
   const reconciliationRetryTimers = new Map();
+  const providerRecoveryContinuationClaims = new Map();
   let initialized = false;
   let initializePromise = null;
   let mutationTail = Promise.resolve();
@@ -268,6 +275,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       }
       tasks.delete(taskId);
       resultEnvelopes.delete(taskId);
+      providerRecoveryContinuationClaims.delete(taskId);
       clearTaskTimeout(taskId);
       clearReconciliationRetry(taskId);
       compactedTaskCount += 1;
@@ -1474,6 +1482,74 @@ export const createManagedTaskScheduler = (options = {}) => {
       }));
   };
 
+  const validateProviderRecoveryContinuationClaimInput = (input) => {
+    const taskId = typeof input?.taskId === 'string' ? input.taskId.trim() : '';
+    const rootSessionId = typeof input?.rootSessionId === 'string' ? input.rootSessionId.trim() : '';
+    const directory = typeof input?.directory === 'string' ? input.directory.trim() : '';
+    const claimantId = typeof input?.claimantId === 'string' ? input.claimantId.trim() : '';
+    if (!taskId || !rootSessionId || !directory || !claimantId) {
+      throw new ManagedOrchestrationError(
+        'invalid_recovery_continuation_claim',
+        'taskId, rootSessionId, directory, and claimantId are required',
+      );
+    }
+    return { taskId, rootSessionId, directory, claimantId };
+  };
+
+  const claimProviderRecoveryContinuation = async (input) => {
+    await ensureInitialized();
+    const scope = validateProviderRecoveryContinuationClaimInput(input);
+    return await runExclusive(async () => {
+      const task = tasks.get(scope.taskId);
+      if (!task) {
+        throw new ManagedOrchestrationError(
+          'task_not_found',
+          `managed task ${scope.taskId} was not found`,
+        );
+      }
+      if (task.rootSessionId !== scope.rootSessionId || task.directory !== scope.directory) {
+        throw new ManagedOrchestrationError(
+          'task_scope_mismatch',
+          'managed task recovery continuation scope does not match',
+        );
+      }
+
+      const envelope = resultEnvelopes.get(task.taskId);
+      const ready = task.mode === 'orchestrator'
+        && task.dispatchGroupId !== null
+        && isTerminalManagedTaskStatus(task.status)
+        && envelope?.action === null
+        && !requiresManualModelRecovery(task, envelope);
+      if (!ready) return { claimed: false, expiresAt: null };
+
+      const claimedAt = now();
+      const existing = providerRecoveryContinuationClaims.get(task.taskId);
+      if (existing && existing.expiresAt > claimedAt) {
+        return { claimed: false, expiresAt: existing.expiresAt };
+      }
+
+      const expiresAt = claimedAt + providerRecoveryContinuationLeaseMs;
+      providerRecoveryContinuationClaims.set(task.taskId, {
+        claimantId: scope.claimantId,
+        expiresAt,
+      });
+      return { claimed: true, expiresAt };
+    });
+  };
+
+  const releaseProviderRecoveryContinuation = async (input) => {
+    await ensureInitialized();
+    const scope = validateProviderRecoveryContinuationClaimInput(input);
+    return await runExclusive(async () => {
+      const existing = providerRecoveryContinuationClaims.get(scope.taskId);
+      if (!existing || existing.claimantId !== scope.claimantId) {
+        return { released: false };
+      }
+      providerRecoveryContinuationClaims.delete(scope.taskId);
+      return { released: true };
+    });
+  };
+
   const inspectAgentHandoff = async (input) => {
     await ensureInitialized();
     validateAgentHandoffScope(input);
@@ -1511,6 +1587,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       cancellationPromises.clear();
       acknowledgementPromises.clear();
       handoffLocks.clear();
+      providerRecoveryContinuationClaims.clear();
       let persistenceError = null;
       try {
         await runExclusive(async () => {
@@ -1576,6 +1653,7 @@ export const createManagedTaskScheduler = (options = {}) => {
             `result is already acknowledged with ${currentEnvelope.action}`,
           );
         }
+        providerRecoveryContinuationClaims.delete(taskId);
         return {
           envelope: structuredClone(currentEnvelope),
           followUpTask: currentEnvelope.followUpTaskId
@@ -1701,6 +1779,7 @@ export const createManagedTaskScheduler = (options = {}) => {
           followUpTaskId: followUpTask?.taskId ?? null,
         };
         await commitEnvelopeUpdateLocked(previous, next);
+        providerRecoveryContinuationClaims.delete(taskId);
       });
 
       return {
@@ -1815,6 +1894,8 @@ export const createManagedTaskScheduler = (options = {}) => {
     waitForDispatchBarrier,
     inspectDispatchBarrier,
     listReadyProviderRecoveryContinuations,
+    claimProviderRecoveryContinuation,
+    releaseProviderRecoveryContinuation,
     inspectAgentHandoff,
     confirmAgentHandoff,
     acknowledgeResult,
@@ -1845,6 +1926,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         pendingTimeoutCount: timeoutTimers.size,
         pendingLeaseCount: startingLeaseTimers.size,
         pendingReconciliationRetryCount: reconciliationRetryTimers.size,
+        activeProviderRecoveryContinuationClaimCount: providerRecoveryContinuationClaims.size,
         compactedTaskCount,
         serializedBytes: lastSerializedBytes,
         shutDown,

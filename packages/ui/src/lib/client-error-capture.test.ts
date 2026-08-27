@@ -5,6 +5,7 @@ import {
   initClientErrorCapture,
   reportBoundaryError,
   resetClientErrorCaptureForTests,
+  shouldIgnoreClientError,
 } from './client-error-capture';
 
 interface CapturedBatch {
@@ -38,6 +39,18 @@ afterEach(() => {
 });
 
 describe('client error capture', () => {
+  test('ignores only the benign global ResizeObserver notification', () => {
+    expect(shouldIgnoreClientError(
+      'ResizeObserver loop completed with undelivered notifications.',
+      'window_error',
+    )).toBe(true);
+    expect(shouldIgnoreClientError(
+      'ResizeObserver loop completed with undelivered notifications.',
+      'error_boundary',
+    )).toBe(false);
+    expect(shouldIgnoreClientError('ResizeObserver crashed', 'window_error')).toBe(false);
+  });
+
   test('stays silent until initialized so unmanaged scopes never report', async () => {
     const sink = collector();
     reportBoundaryError(new Error('before init'));

@@ -1,5 +1,6 @@
 export * from './contract.js';
 export * from './managed-result-projection.js';
+export * from './model-availability.js';
 export * from './open-code-executor.js';
 export * from './persistence.js';
 export * from './provider-capabilities.js';
@@ -8,5 +9,6 @@ export * from './provider-retry-policy.js';
 export * from './result-envelope.js';
 export * from './scheduler.js';
 export * from './single-flight.js';
+export * from './terminal-error-registry.js';
 export * from './transitions.js';
 export * from './xai-tool-catalog.js';

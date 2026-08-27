@@ -14,6 +14,7 @@ const PROVIDER_USAGE_LIMIT_ACTION_REASONS = new Set([
 
 export const PROVIDER_USAGE_LIMIT_FAILURE_KIND = 'provider_usage_limit';
 export const PROVIDER_PROMPT_REJECTED_FAILURE_KIND = 'provider_prompt_rejected';
+export const MODEL_UNAVAILABLE_FAILURE_KIND = 'model_unavailable';
 export const DEADLINE_EXCEEDED_FAILURE_KIND = 'deadline_exceeded';
 export const MANAGED_TASK_TIMEOUT_REASON_PREFIX = 'Managed task timed out at ';
 export const PROVIDER_TRANSPORT_FAILURE_KINDS = Object.freeze([
@@ -146,7 +147,13 @@ export const isManagedTaskDeadlineExceeded = (value) => (
   typeof value === 'string' && value.startsWith(MANAGED_TASK_TIMEOUT_REASON_PREFIX)
 );
 
+export const isManagedTaskModelUnavailable = (value) => (
+  typeof value === 'string'
+  && /\b(?:providermodelnotfound(?:error)?|modelnotfound(?:error)?|model (?:is )?not found|model (?:is )?unavailable|model does not exist|unknown model|invalid model|no such model)\b/i.test(value)
+);
+
 export const classifyManagedTaskFailure = (value) => (
   classifyProviderRetryFailure(value)
+  ?? (isManagedTaskModelUnavailable(value) ? MODEL_UNAVAILABLE_FAILURE_KIND : null)
   ?? (isManagedTaskDeadlineExceeded(value) ? DEADLINE_EXCEEDED_FAILURE_KIND : null)
 );

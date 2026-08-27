@@ -24,10 +24,6 @@ import { syncDebug } from "./debug"
 import { appendNonOverlappingDelta, appendStreamingTextDelta, normalizeAssistantPartText } from "./part-delta"
 import { isTerminalAssistantMessage } from "./session-working"
 import {
-  updateSessionUserActivityFromMessage,
-  updateSessionUserActivityFromMessages,
-} from "./session-user-activity"
-import {
   isCommittedRevertResendInFlight,
   isMessageHiddenByAnyActiveRevert,
   isMessageHiddenByRevert,
@@ -35,6 +31,7 @@ import {
 } from "./revert-transactions"
 import { clearAbortGuard, filterSessionStatusThroughAbortGuard } from "./abort-retry-guard"
 import { isFinalToolStatus } from "../lib/toolStatus"
+import { mergeSessionPreservingMeaningfulTitle } from "../lib/sessionTitles"
 import { areSessionRecordsEqual, isStrictlyOlderSession } from "./session-recency"
 import {
   compareMessagesChronologically,
@@ -490,11 +487,19 @@ export function applyDirectoryEvent(
       const sessions = draft.session
       const result = Binary.search(sessions, incoming.id, (s) => s.id)
       if (result.found && isStrictlyOlderSession(incoming, sessions[result.index])) {
-        return false
+        const current = sessions[result.index]
+        const titlePreservingCurrent = mergeSessionPreservingMeaningfulTitle(incoming, current)
+        if (areSessionRecordsEqual(current, titlePreservingCurrent)) return false
+        sessions[result.index] = titlePreservingCurrent
+        return true
       }
-      const info = normalizeIncomingSessionSummary(
+      const normalizedInfo = normalizeIncomingSessionSummary(
         draft,
         incoming,
+      )
+      const info = mergeSessionPreservingMeaningfulTitle(
+        result.found ? sessions[result.index] : undefined,
+        normalizedInfo,
       )
       if (result.found) {
         if (areSessionRecordsEqual(sessions[result.index], info)) return false
@@ -512,36 +517,41 @@ export function applyDirectoryEvent(
       const sessions = draft.session
       const result = Binary.search(sessions, incoming.id, (s) => s.id)
       if (result.found && isStrictlyOlderSession(incoming, sessions[result.index])) {
-        return false
+        const current = sessions[result.index]
+        const titlePreservingCurrent = mergeSessionPreservingMeaningfulTitle(incoming, current)
+        if (areSessionRecordsEqual(current, titlePreservingCurrent)) return false
+        sessions[result.index] = titlePreservingCurrent
+        return true
       }
-      const info = normalizeIncomingSessionSummary(
+      const normalizedInfo = normalizeIncomingSessionSummary(
         draft,
         incoming,
       )
+      const info = mergeSessionPreservingMeaningfulTitle(
+        result.found ? sessions[result.index] : undefined,
+        normalizedInfo,
+      )
 
       if (info.time.archived) {
-        const hadUserActivity = Object.hasOwn(draft.session_user_activity, info.id)
         const hadRevertTransaction = Object.hasOwn(draft.revert_transaction, info.id)
         if (result.found) sessions.splice(result.index, 1)
         // Decision: archive removes the session from active lists immediately,
         // but heavy chat caches are offloaded by the materializer after the
         // configured TTL so quick archive/unarchive round-trips stay smooth.
-        delete draft.session_user_activity[info.id]
         delete draft.revert_transaction[info.id]
         if (result.found && !info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
-        return result.found || hadUserActivity || hadRevertTransaction
+        return result.found || hadRevertTransaction
       }
 
       if (result.found) {
         if (areSessionRecordsEqual(sessions[result.index], info)) {
-          return updateSessionUserActivityFromMessages(draft, info.id)
+          return false
         }
         sessions[result.index] = info
       } else {
         sessions.splice(result.index, 0, info)
         trimSessions(draft)
       }
-      updateSessionUserActivityFromMessages(draft, info.id)
       return true
     }
 
@@ -551,7 +561,6 @@ export function applyDirectoryEvent(
       const result = Binary.search(sessions, info.id, (s) => s.id)
       if (result.found) sessions.splice(result.index, 1)
       cleanupSessionCaches(draft, info.id, callbacks?.onSetSessionTodo)
-      delete draft.session_user_activity[info.id]
       delete draft.revert_transaction[info.id]
       if (!info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
       return true
@@ -617,7 +626,6 @@ export function applyDirectoryEvent(
       if (isMessageHiddenByRevert(draft, info.sessionID, info.id)) {
         return removeHiddenMessageFromDraft(draft, info.sessionID, info.id)
       }
-      const activityChanged = updateSessionUserActivityFromMessage(draft, info)
       const messages = draft.message[info.sessionID]
       if (!messages) {
         draft.message[info.sessionID] = [info]
@@ -649,7 +657,7 @@ export function applyDirectoryEvent(
           const partsChanged = info.role === "assistant"
             ? normalizeAssistantMessagePartsInDraft(draft, info.id)
             : false
-          return applyMessageSummaryToSession(draft, info.sessionID) || activityChanged || partsChanged
+          return applyMessageSummaryToSession(draft, info.sessionID) || partsChanged
         }
         const withoutPrevious = [...messages]
         withoutPrevious.splice(messageIndex, 1)
@@ -667,20 +675,15 @@ export function applyDirectoryEvent(
     case "message.removed": {
       const props = event.properties as { sessionID: string; messageID: string }
       const messages = draft.message[props.sessionID]
-      let removedUserMessage = false
       if (messages) {
         const next = [...messages]
         const messageIndex = findMessageIndex(next, props.messageID)
         if (messageIndex >= 0) {
-          removedUserMessage = next[messageIndex]?.role === "user"
           next.splice(messageIndex, 1)
           draft.message[props.sessionID] = next
         }
       }
       delete draft.part[props.messageID]
-      if (removedUserMessage) {
-        updateSessionUserActivityFromMessages(draft, props.sessionID)
-      }
       applyMessageSummaryToSession(draft, props.sessionID)
       return true
     }
@@ -980,7 +983,6 @@ function removeHiddenMessageFromDraft(draft: State, sessionID: string | undefine
   const next = [...messages]
   next.splice(messageIndex, 1)
   draft.message[sessionID] = next
-  updateSessionUserActivityFromMessages(draft, sessionID)
   return true
 }
 

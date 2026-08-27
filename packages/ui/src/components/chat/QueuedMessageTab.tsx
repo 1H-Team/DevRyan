@@ -3,6 +3,7 @@ import { RiCloseLine, RiMessage2Line, RiPencilLine, RiSteering2Line } from '@rem
 import { useMessageQueueStore, type QueuedMessage } from '@/stores/messageQueueStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useInputStore } from '@/sync/input-store';
+import { getSessionComposerTargetKey } from '@/sync/composer-target';
 import { useI18n } from '@/lib/i18n';
 import { useCurrentSessionActivity } from '@/hooks/useSessionActivity';
 import { isAbortableSessionPhase } from './submitInterrupt';
@@ -186,8 +187,10 @@ export const QueuedMessageTab = memo(({
         const popped = popToInput(currentSessionId, message.id);
         if (popped) {
             if (popped.attachments && popped.attachments.length > 0) {
-                const currentAttachments = useInputStore.getState().attachedFiles;
-                useInputStore.getState().setAttachedFiles([...currentAttachments, ...popped.attachments]);
+                useInputStore.getState().mergeAttachedFilesForTarget(
+                    getSessionComposerTargetKey(currentSessionId),
+                    popped.attachments,
+                );
             }
             onEditMessage(popped.content, popped.attachments);
         }

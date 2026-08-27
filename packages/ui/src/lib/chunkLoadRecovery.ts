@@ -38,7 +38,10 @@ function isDynamicImportError(error: unknown): boolean {
 
 function reloadMarkerSignature(error: unknown): string {
   const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'unknown';
-  return `${appVersion || 'unknown'}:${readErrorText(error).slice(0, 500)}`;
+  const identity = error instanceof Error
+    ? `${error.name}\n${error.message}`
+    : readErrorText(error);
+  return `${appVersion || 'unknown'}:${identity.slice(0, 500)}`;
 }
 
 function scheduleReloadOnce(error: unknown): void {

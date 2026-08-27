@@ -28,6 +28,21 @@ interface ReasoningGroupProps {
     isMobile?: boolean;
 }
 
+const REASONING_DISCLOSURE_DURATION_THRESHOLD_MS = 15_000;
+
+const shouldRenderReasoningDisclosure = (
+    entries: readonly ReasoningGroupEntry[],
+    isActive: boolean,
+): boolean => {
+    if (isActive || entries.length >= 2) {
+        return true;
+    }
+
+    const durationMilliseconds = getReasoningDurationMilliseconds(entries);
+    return durationMilliseconds !== null
+        && durationMilliseconds >= REASONING_DISCLOSURE_DURATION_THRESHOLD_MS;
+};
+
 const getEntryKey = (entry: ReasoningGroupEntry, index: number): string => {
     const partId = (entry.part as { id?: unknown }).id;
     return typeof partId === 'string' && partId.length > 0
@@ -149,6 +164,24 @@ const ReasoningGroupInner: React.FC<ReasoningGroupProps> = ({
 
     if (displayableEntries.length === 0) {
         return null;
+    }
+
+    const isActive = !isMessageCompleted
+        && displayableEntries.some((entry) => isReasoningPartActive(entry.part));
+    if (!shouldRenderReasoningDisclosure(displayableEntries, isActive)) {
+        const entry = displayableEntries[0];
+        if (!entry) return null;
+
+        return (
+            <ReasoningPart
+                part={entry.part}
+                messageId={entry.messageId}
+                providerID={providerID}
+                responseStyleLevel={responseStyleLevel}
+                onContentChange={onContentChange}
+                isMobile={isMobile}
+            />
+        );
     }
 
     return (

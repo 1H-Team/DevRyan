@@ -29,6 +29,7 @@ const RECORD_FIELDS = Object.freeze({
 const NESTED_FIELDS = new Set([
   'type', 'properties', 'payload', 'actor', 'info', 'part', 'status', 'state', 'time',
   'id', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
+  'botID', 'botId', 'channelID', 'channelId', 'runID', 'runId',
   'role', 'scope', 'finish', 'completed', 'created', 'updated', 'started', 'ended',
   'version', 'phase', 'outcome', 'settledAt',
   'title', 'description', 'text', 'delta', 'reasoning', 'reasoningText',
@@ -55,6 +56,7 @@ const TOKEN_CACHE_FIELDS = new Set(['read', 'write']);
 
 const STABLE_IDENTIFIER_FIELDS = new Set([
   'id', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
+  'botID', 'botId', 'channelID', 'channelId', 'runID', 'runId',
   'callID', 'callId', 'providerID', 'providerId', 'modelID', 'modelId',
   'operationID', 'operationId', 'checkpointID', 'checkpointId', 'turnID', 'turnId',
   'userMessageID', 'assistantMessageID', 'idempotencyKey', 'fingerprint',

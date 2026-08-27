@@ -32,8 +32,6 @@ permission:
   skill:
     "*": deny
     codemap: allow
-modelRefs:
-  - opencode-go/deepseek-v4-flash
 top_p: 0.9
 ---
 

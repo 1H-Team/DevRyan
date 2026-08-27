@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/web",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
@@ -23,13 +23,16 @@
     "start": "node bin/cli.js serve"
   },
   "dependencies": {
+    "@ag-ui/core": "0.0.58",
     "@clack/prompts": "^1.1.0",
+    "@openchamber/bots-runtime": "workspace:*",
     "@openchamber/cursor-sdk-runtime": "workspace:*",
     "@openchamber/harness-runtime": "workspace:*",
     "@openchamber/orchestration-runtime": "workspace:*",
     "@openchamber/shared-runtime": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@octokit/rest": "^22.0.1",
-    "@opencode-ai/sdk": "^1.18.21",
+    "@opencode-ai/sdk": "^1.18.23",
     "@simplewebauthn/server": "13.3.0",
     "adm-zip": "^0.6.0",
     "better-sqlite3": "^12.10.0",
@@ -52,7 +55,7 @@
     "yazl": "^3.3.1"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "1.17.11",
+    "@opencode-ai/plugin": "1.18.23",
     "@base-ui/react": "^1.4.0",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-go": "^6.0.1",

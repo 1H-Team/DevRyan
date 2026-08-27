@@ -12,6 +12,7 @@
     --oc-wco-left-inset: 0px;
     --oc-wco-right-inset: 0px;
     --oc-wco-titlebar-height: 0px;
+    --oc-bot-chrome-height: max(3rem, var(--oc-wco-titlebar-height, 0px));
     --ui-regular-font-weight: 400;
     --oc-scrollbar-thumb: oklch(0.32 0.03 50 / 0.4);
     --oc-scrollbar-thumb-hover: oklch(0.32 0.03 50 / 0.6);
@@ -28,7 +29,8 @@
     /* Default Light Theme */
     /* Fixed to the Default Light theme primary color (devryan-default-light.json). */
     --subagent-icon-color: #0072C3;
-    /* Fixed built-in agent glyph colors; intentionally independent of theme tokens. */
+    /* Fixed Plan-mode and built-in agent glyph colors; intentionally independent of theme tokens. */
+    --plan-mode-icon-color: #F1C21B;
     --agent-icon-builder-color: #969DA9;
     --agent-icon-council-color: #92400E;
     --agent-icon-orchestrator-color: #000000;

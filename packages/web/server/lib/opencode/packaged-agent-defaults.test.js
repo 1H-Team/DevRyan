@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 30_902;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 31_048;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -125,6 +125,8 @@ describe('packaged agent defaults', () => {
     expect(body).toContain('This closeout rule overrides normal Designer, Fixer, Explorer, Librarian, Council, and parallel-routing rules.');
     expect(body).toContain('A retry or resume inside the same failed managed Oracle dispatch group is recovery of that same logical checkpoint, not another review');
     expect(body).toContain('choose focused or deep before the sole dispatch.');
+    expect(body).toContain('Focused is the default and omits `timeout_seconds`');
+    expect(body).toContain('passes exactly `timeout_seconds: 1800`');
     expect(body).toContain('Never dispatch a second Oracle to deepen, follow up, or re-review a usable result.');
     expect(body).toContain('Review target: final plan draft');
     expect(body).toContain('Draft plan: <complete decision-ready draft or a compact complete rendering of it>');
@@ -173,10 +175,11 @@ describe('packaged agent defaults', () => {
     });
     expect(content).toContain('Focused is the default.');
     expect(content).toContain('Review depth: deep');
-    expect(content).toContain('30 completed tool calls');
-    expect(content).toContain('80 completed tool calls');
+    expect(content).toContain('20 completed inspection calls');
+    expect(content).toContain('50 completed inspection calls');
     expect(content).toContain('Do not run tests, builds, linters, type-checks, or broad validation');
-    expect(content).toContain('at most five actionable findings');
+    expect(content).toContain('at most three actionable findings');
+    expect(content).toContain('time and tool budgets are ceilings, not targets');
     expect(content).toContain('path:line');
   });
 
@@ -266,7 +269,6 @@ describe('packaged agent defaults', () => {
         devryan_task: 'allow',
         skill: 'allow',
       },
-      modelRefs: ['openai/gpt-5.5'],
     });
 
     for (const contract of [

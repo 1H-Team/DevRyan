@@ -11,6 +11,7 @@ import {
   useInputStore,
   type RestoredAttachment,
 } from "./input-store"
+import { getSessionComposerTargetKey } from "./composer-target"
 import type { ChildStoreManager, DirectoryStore } from "./child-store"
 import { opencodeClient } from "@/lib/opencode/client"
 import {
@@ -25,10 +26,6 @@ import { registerGitGenerationSession } from "@/lib/git/gitGenerationSessions"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
 import { materializeSessionSnapshots } from "./materialization"
 import { stripMessageDiffSnapshots } from "./sanitize"
-import {
-  updateSessionUserActivityFromMessage,
-  updateSessionUserActivityFromMessages,
-} from "./session-user-activity"
 import { postTurnTimingMark, streamDebugMark } from "@/stores/utils/streamDebug"
 import { markArchived, markUnarchived } from "./session-materializer"
 import type { RevertTransaction } from "./revert-transactions"
@@ -49,6 +46,7 @@ import {
   setAbortGuardExecutor,
 } from "./abort-retry-guard"
 import { areSessionRecordsEqual, isStrictlyOlderSession } from "./session-recency"
+import { mergeSessionPreservingMeaningfulTitle } from "@/lib/sessionTitles"
 
 const MESSAGE_REFETCH_LIMIT = 200
 const MESSAGE_REFETCH_SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
@@ -212,12 +210,13 @@ const mirrorSessionIntoDirectoryStore = (session: Session, directory: string | u
     const result = Binary.search(state.session, session.id, (candidate) => candidate.id)
     if (result.found) {
       const current = state.session[result.index]
-      if (isStrictlyOlderSession(session, current)) return state
-      const merged = {
-        ...current,
-        ...session,
-        time: { ...current.time, ...session.time },
-      } as Session
+      const merged = isStrictlyOlderSession(session, current)
+        ? mergeSessionPreservingMeaningfulTitle(session, current)
+        : mergeSessionPreservingMeaningfulTitle(current, {
+            ...current,
+            ...session,
+            time: { ...current.time, ...session.time },
+          } as Session)
       if (areSessionRecordsEqual(current, merged)) return state
       const next = [...state.session]
       next[result.index] = merged
@@ -306,15 +305,12 @@ function getRestorableFileAttachments(parts: Part[]): RestoredAttachment[] {
   return attachments
 }
 
-function restoreUserMessageInput(parts: Part[], messageText: string): void {
+function restoreUserMessageInput(sessionId: string, parts: Part[], messageText: string): void {
   const attachments = getRestorableFileAttachments(parts)
   if (!messageText && attachments.length === 0) return
 
   const input = useInputStore.getState()
-  input.clearAttachedFiles()
-  for (const attachment of attachments) {
-    input.addRestoredAttachment(attachment)
-  }
+  input.replaceRestoredAttachmentsForTarget(getSessionComposerTargetKey(sessionId), attachments)
   if (messageText) {
     input.setPendingInputText(messageText, "replace")
   }
@@ -1694,14 +1690,6 @@ export async function optimisticSend(input: {
     },
   })
 
-  // Decision: sidebar recency is updated optimistically only for root user
-  // messages; helper filters subagent sessions so agent prompts do not reorder parents.
-  storeForMessage.setState((state) => {
-    const draft = { ...state, session_user_activity: state.session_user_activity }
-    if (!updateSessionUserActivityFromMessage(draft, optimisticMessage)) return state
-    return { session_user_activity: draft.session_user_activity }
-  })
-
   // A new user-initiated turn supersedes any pending stop-during-retry guard —
   // its busy/retry statuses are authoritative again and must not be re-aborted.
   clearAbortGuard(input.sessionId)
@@ -2074,12 +2062,6 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   }
 
   store.setState(patch)
-  store.setState((nextState) => {
-    const draft = { ...nextState, session_user_activity: nextState.session_user_activity }
-    if (!updateSessionUserActivityFromMessages(draft, sessionId)) return nextState
-    return { session_user_activity: draft.session_user_activity }
-  })
-
   // Abort if busy after the transaction marker is active.
   const status = state.session_status[sessionId]
   if (status && status.type !== "idle") {
@@ -2159,11 +2141,6 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
       message: { ...current.message, [sessionId]: prevMessages },
       part: { ...current.part, ...removedParts },
     })
-    store.setState((nextState) => {
-      const draft = { ...nextState, session_user_activity: nextState.session_user_activity }
-      if (!updateSessionUserActivityFromMessages(draft, sessionId)) return nextState
-      return { session_user_activity: draft.session_user_activity }
-    })
     // The pending transaction intentionally suppresses suffix events. A second
     // client can add a message while even an initially idle revert is in
     // flight, so every failed revert launches a bounded authoritative refresh.
@@ -2229,18 +2206,10 @@ export async function refetchSessionMessages(
       })),
       { skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS },
     )
-    const draft = {
-      ...state,
-      message: materialized.message,
-      part: materialized.part,
-      session_user_activity: state.session_user_activity,
-    }
-    const activityChanged = updateSessionUserActivityFromMessages(draft, sessionId)
     return {
       ...(materialized.sessionsChanged && materialized.session ? { session: materialized.session } : {}),
       message: materialized.message,
       part: materialized.part,
-      ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}),
     }
   })
 }
@@ -2354,6 +2323,6 @@ export async function forkFromMessage(sessionId: string, messageId: string): Pro
 
   // Restore forked message text and non-synthetic file attachments to input.
   if (shouldRestoreInput) {
-    restoreUserMessageInput(parts, messageText)
+    restoreUserMessageInput(forkedSession.id, parts, messageText)
   }
 }
