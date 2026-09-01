@@ -4,6 +4,20 @@ export type QuestionNavigationAnswer = {
   selectedOptions?: readonly string[]
 }
 
+export type QuestionAnswerEnterInput = {
+  key: string
+  shiftKey: boolean
+  ctrlKey: boolean
+  metaKey: boolean
+  isMobile: boolean
+}
+
+export function shouldHandleQuestionAnswerEnter(input: QuestionAnswerEnterInput): boolean {
+  return input.key === "Enter"
+    && !input.shiftKey
+    && (!input.isMobile || input.ctrlKey || input.metaKey)
+}
+
 export function getPreviousQuestionIndex(currentIndex: number): number {
   return Math.max(0, currentIndex - 1)
 }

@@ -2,6 +2,7 @@ import type { Session, Message, Part } from "@opencode-ai/sdk/v2";
 import type { PermissionRequest, PermissionResponse } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
 import type { ContextCapacityBasis, ResolvedModelContextCapacity } from "@/stores/utils/modelContextCapacity";
+import type { DeleteSessionsResult } from "@/sync/session-actions";
 
 export type SessionWorktreeAttachment = {
   worktreeRoot: string | null;
@@ -333,7 +334,7 @@ export interface SessionStore {
     createSessionFromAssistantMessage: (sourceMessageId: string) => Promise<void>;
 
     deleteSession: (id: string, options?: { archiveWorktree?: boolean; deleteRemoteBranch?: boolean; deleteLocalBranch?: boolean; remoteName?: string }) => Promise<boolean>;
-    deleteSessions: (ids: string[], options?: { archiveWorktree?: boolean; deleteRemoteBranch?: boolean; deleteLocalBranch?: boolean; remoteName?: string; silent?: boolean }) => Promise<{ deletedIds: string[]; failedIds: string[] }>;
+    deleteSessions: (ids: string[], options?: { archiveWorktree?: boolean; deleteRemoteBranch?: boolean; deleteLocalBranch?: boolean; remoteName?: string; silent?: boolean }) => Promise<DeleteSessionsResult>;
     archiveSession: (id: string) => Promise<boolean>;
     archiveSessions: (ids: string[], options?: { silent?: boolean }) => Promise<{ archivedIds: string[]; failedIds: string[] }>;
     unarchiveSession: (id: string) => Promise<boolean>;

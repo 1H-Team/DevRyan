@@ -18,11 +18,12 @@ import { annotateOpenAIModelAvailability } from './openai-model-availability.js'
 import { stripMessageDiffContent } from './diff-summary.js';
 import { discoverGitHubCopilotModels } from './github-copilot-models.js';
 import { createCursorSessionTitleRuntime } from './cursor-session-title-runtime.js';
-import { DEFAULT_TITLE_FALLBACK_ZEN_MODEL, createStandardSessionTitleRuntime } from './standard-session-title-runtime.js';
+import { createStandardSessionTitleRuntime } from './standard-session-title-runtime.js';
 import { registerQuestionRoutes } from './question-routes.js';
 import { createGlobalAgentsMdRuntime } from './global-agents-md-runtime.js';
 import { registerGlobalAgentsMdRoutes } from './global-agents-md-routes.js';
 import { runClaudeCodeAuthStatus } from './claude-auth-status.js';
+import { resolveClaudeCodeLaunch as resolveClaudeCodeLaunchDefault } from './claude-cli-runtime.js';
 import {
   readMeridianPromptMode,
   setMeridianPromptCompatibilityMode,
@@ -63,50 +64,6 @@ const removeAntigravityAccounts = async () => {
     }
   }
   return removed;
-};
-
-const isExecutableFile = (filePath) => {
-  try {
-    const stat = fs.statSync(filePath);
-    if (!stat.isFile()) return false;
-    if (process.platform === 'win32') {
-      const ext = path.extname(filePath).toLowerCase();
-      if (!ext) return true;
-      return ['.exe', '.cmd', '.bat', '.com'].includes(ext);
-    }
-    fs.accessSync(filePath, fs.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const searchPathForExecutable = (binaryName, pathValue) => {
-  const trimmed = typeof binaryName === 'string' ? binaryName.trim() : '';
-  if (!trimmed) return null;
-
-  const parts = String(pathValue || '').split(path.delimiter).filter(Boolean);
-  const candidateNames = [trimmed];
-
-  if (process.platform === 'win32' && !path.extname(trimmed)) {
-    const pathExt = process.env.PATHEXT || process.env.PathExt || '.COM;.EXE;.BAT;.CMD';
-    for (const ext of pathExt.split(';')) {
-      const normalizedExt = ext.trim();
-      if (!normalizedExt) continue;
-      const candidateName = `${trimmed}${normalizedExt.startsWith('.') ? normalizedExt : `.${normalizedExt}`}`;
-      if (!candidateNames.some((existing) => existing.toLowerCase() === candidateName.toLowerCase())) {
-        candidateNames.push(candidateName);
-      }
-    }
-  }
-
-  for (const dir of parts) {
-    for (const candidateName of candidateNames) {
-      const candidate = path.join(dir, candidateName);
-      if (isExecutableFile(candidate)) return candidate;
-    }
-  }
-  return null;
 };
 
 export const createOpenCodeUpdateCheckHandler = ({
@@ -164,6 +121,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     authLibrary: injectedAuthLibrary = null,
     readClaudePromptMode = readMeridianPromptMode,
     setClaudePromptCompatibilityMode = setMeridianPromptCompatibilityMode,
+    resolveClaudeCodeLaunch = resolveClaudeCodeLaunchDefault,
   } = dependencies;
 
   const cursorSessionTitleRuntime = injectedCursorSessionTitleRuntime || createCursorSessionTitleRuntime({
@@ -177,12 +135,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     fetchImpl: fetch,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
-    resolveZenModel,
-    // A second free model to retry against when the primary one is unhealthy or
-    // has left the catalog. Same selection the commit-message route uses.
-    resolveZenFallbackModel: (model) => (
-      resolveZenModelNonBlocking(model)?.fallbackModel || DEFAULT_TITLE_FALLBACK_ZEN_MODEL
-    ),
     logger: console,
   });
   const globalAgentsMdRuntime = injectedGlobalAgentsMdRuntime || createGlobalAgentsMdRuntime({
@@ -471,8 +423,8 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       const pathValue = typeof buildAugmentedPath === 'function'
         ? buildAugmentedPath()
         : process.env.PATH || '';
-      const executable = searchPathForExecutable('claude', pathValue);
-      if (!executable) {
+      const launch = resolveClaudeCodeLaunch({ pathValue });
+      if (!launch) {
         return res.json({
           installed: false,
           path: null,
@@ -481,11 +433,14 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         });
       }
 
-      const authCheck = await runClaudeCodeAuthStatus({ executable, pathValue });
+      const authCheck = await runClaudeCodeAuthStatus({
+        executable: launch.executable,
+        pathValue: launch.pathValue,
+      });
       const auth = authCheck.auth ?? null;
       return res.json({
         installed: true,
-        path: executable,
+        path: launch.executable,
         loggedIn: authCheck.ok,
         authStatus: authCheck.ok
           ? 'authenticated'
@@ -555,15 +510,18 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       const pathValue = typeof buildAugmentedPath === 'function'
         ? buildAugmentedPath()
         : process.env.PATH || '';
-      const executable = searchPathForExecutable('claude', pathValue);
-      if (!executable) {
+      const launch = resolveClaudeCodeLaunch({ pathValue });
+      if (!launch) {
         return res.status(400).json({
           code: 'claude_cli_unavailable',
           error: 'Claude Code is not installed or is not available on PATH.',
         });
       }
 
-      const authCheck = await runClaudeCodeAuthStatus({ executable, pathValue });
+      const authCheck = await runClaudeCodeAuthStatus({
+        executable: launch.executable,
+        pathValue: launch.pathValue,
+      });
       if (!authCheck.ok) {
         return res.status(400).json({
           code: authCheck.code === 'claude_not_authenticated'

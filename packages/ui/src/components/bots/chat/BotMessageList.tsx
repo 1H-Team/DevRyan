@@ -1,11 +1,11 @@
 import React from 'react';
+import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 import { useShallow } from 'zustand/react/shallow';
 
 import { Button } from '@/components/ui/button';
 import type { BotSummary } from '@/lib/botsApi';
 import { useI18n } from '@/lib/i18n';
 import { useBotChannelStore } from '@/stores/useBotChannelStore';
-import { useBotLiveMessageStore } from '@/stores/useBotLiveMessageStore';
 import { useBotSharedFilesStore } from '@/stores/useBotSharedFilesStore';
 import { BotMessageRow } from './BotMessageRow';
 import { BotRunFailureNotice } from './BotRunFailureNotice';
@@ -23,6 +23,7 @@ type BotMessageListProps = {
   channelId: string;
   typingRunId: string | null;
   acceptingMessage?: boolean;
+  computerSlot?: React.ReactNode;
 };
 
 type PendingPrepend = {
@@ -37,6 +38,7 @@ export const BotMessageList: React.FC<BotMessageListProps> = ({
   channelId,
   typingRunId,
   acceptingMessage = false,
+  computerSlot,
 }) => {
   const { t } = useI18n();
   const sharedMessageIds = useBotSharedFilesStore(useShallow((state) => (
@@ -48,21 +50,14 @@ export const BotMessageList: React.FC<BotMessageListProps> = ({
     (state.messageIdsByChannelId[channelId] ?? EMPTY_MESSAGE_IDS).filter((messageId) => {
       const message = state.messagesById[messageId];
       if (message?.role !== 'user' && message?.role !== 'assistant') return false;
-      if (message.role === 'assistant' && message.assistantPhase === 'acknowledgment') return false;
       return message.role === 'user'
-        || message.body.text.trim().length > 0
-        || message.attachmentCount > 0
-        || sharedMessageIdSet.has(messageId);
+        || (message.assistantPhase !== 'acknowledgment' && message.finalizedAt !== null
+          && (message.body.text.trim().length > 0
+            || message.attachmentCount > 0
+            || sharedMessageIdSet.has(messageId)));
     })
   )));
-  const liveMessageId = useBotLiveMessageStore(
-    (state) => state.messageIdByChannelId[channelId] ?? null,
-  );
-  const messageIds = React.useMemo(() => (
-    liveMessageId && !canonicalMessageIds.includes(liveMessageId)
-      ? [...canonicalMessageIds, liveMessageId]
-      : canonicalMessageIds
-  ), [canonicalMessageIds, liveMessageId]);
+  const messageIds = canonicalMessageIds;
   const nextCursor = useBotChannelStore((state) => state.nextCursorByChannelId[channelId]);
   const loading = useBotChannelStore((state) => state.loadingByChannelId[channelId] === true);
   const loadError = useBotChannelStore((state) => state.loadErrorCodeByChannelId[channelId]);
@@ -71,11 +66,8 @@ export const BotMessageList: React.FC<BotMessageListProps> = ({
     messageIds: canonicalMessageIds,
     messagesById: state.messagesById,
   }));
-  const showTypingIndicator = (acceptingMessage || canonicalTypingIndicator) && liveMessageId === null;
   const latestMessageId = messageIds.at(-1);
-  const latestContentText = useBotChannelStore((state) => (
-    latestMessageId ? state.messagesById[latestMessageId]?.body.text ?? '' : ''
-  ));
+  const showTypingIndicator = acceptingMessage || canonicalTypingIndicator;
   const latestAttachmentCount = useBotChannelStore((state) => (
     latestMessageId ? state.messagesById[latestMessageId]?.attachmentCount ?? 0 : 0
   ));
@@ -87,8 +79,22 @@ export const BotMessageList: React.FC<BotMessageListProps> = ({
   const pinnedRef = React.useRef(true);
   const resizeObserverAvailableRef = React.useRef(false);
   const pendingPrependRef = React.useRef<PendingPrepend | null>(null);
+  const virtualized = messageIds.length > 100;
+  const virtualizer = useVirtualizer({
+    count: messageIds.length,
+    enabled: virtualized,
+    getScrollElement: () => scrollRef.current,
+    getItemKey: (index) => messageIds[index],
+    estimateSize: () => 120,
+    overscan: 8,
+    initialRect: { width: 760, height: 800 },
+    // Keep the current conversation tail mounted during work and screen use.
+    rangeExtractor: (range) => [...new Set([
+      ...defaultRangeExtractor(range),
+      ...Array.from({ length: Math.min(20, range.count) }, (_, index) => range.count - 1 - index),
+    ])].sort((left, right) => left - right),
+  });
   const messageSnapshot = useBotChannelStore.getState().messagesById;
-  const liveSnapshot = useBotLiveMessageStore.getState().messagesById;
   const runHasAttachments = new Map<string, boolean>();
   for (const messageId of messageIds) {
     const message = messageSnapshot[messageId];
@@ -146,7 +152,6 @@ export const BotMessageList: React.FC<BotMessageListProps> = ({
   }, [
     channelId,
     latestAttachmentCount,
-    latestContentText,
     latestFinalizedAt,
     messageIds,
     scrollToBottom,
@@ -183,6 +188,29 @@ export const BotMessageList: React.FC<BotMessageListProps> = ({
     }
   }, [channelId, messageIds]);
 
+  const renderMessage = (messageId: string, index: number) => {
+    const message = messageSnapshot[messageId];
+    const next = index + 1 < messageIds.length ? messageSnapshot[messageIds[index + 1]] : undefined;
+    const runId = message?.runId ?? null;
+    const failureRunId = runId && runId !== next?.runId ? runId : null;
+    return <>
+      <BotMessageRow bot={bot} messageId={messageId} />
+      {failureRunId ? <BotRunFailureNotice runId={failureRunId} channelId={channelId}
+        sourceHasAttachments={runHasAttachments.get(failureRunId) === true} /> : null}
+    </>;
+  };
+
+  const emptyState = loading ? (
+    <p className="py-12 text-center typography-ui-label text-muted-foreground" role="status">
+      {t('bots.chat.loadingMessages')}
+    </p>
+  ) : (
+    <div className="py-16 text-center">
+      <p className="typography-ui-header font-medium text-foreground">{t('bots.chat.empty.title')}</p>
+      <p className="mt-1 typography-ui-label text-muted-foreground">{t('bots.chat.empty.description')}</p>
+    </div>
+  );
+
   return (
     <div
       ref={scrollRef}
@@ -214,57 +242,37 @@ export const BotMessageList: React.FC<BotMessageListProps> = ({
           </div>
         ) : null}
 
-        {messageIds.length > 0 || showTypingIndicator ? (
+        {messageIds.length > 0 || showTypingIndicator || computerSlot ? (
           <div className="space-y-3 py-2" role="log" aria-live="polite" aria-relevant="additions text">
-            {messageIds.map((messageId, index) => {
-              const message = messageSnapshot[messageId];
-              const liveMessage = liveSnapshot[messageId];
-              const previousId = index > 0 ? messageIds[index - 1] : null;
-              const previousRole = previousId
-                ? messageSnapshot[previousId]?.role ?? (liveSnapshot[previousId] ? 'assistant' : null)
-                : null;
-              const next = index + 1 < messageIds.length
-                ? messageSnapshot[messageIds[index + 1]]
-                : undefined;
-              const runId = message?.runId ?? liveMessage?.runId ?? null;
-              const failureRunId = runId && runId !== next?.runId
-                ? runId
-                : null;
-              return (
-                <React.Fragment key={messageId}>
-                  <BotMessageRow
-                    bot={bot}
-                    messageId={messageId}
-                    showAvatar={(message?.role === 'assistant' || Boolean(liveMessage))
-                      && previousRole !== 'assistant'}
-                  />
-                  {failureRunId ? (
-                    <BotRunFailureNotice
-                      runId={failureRunId}
-                      channelId={channelId}
-                      sourceHasAttachments={runHasAttachments.get(failureRunId) === true}
-                    />
-                  ) : null}
-                </React.Fragment>
-              );
-            })}
+            {messageIds.length === 0 && !showTypingIndicator ? emptyState : null}
+            {virtualized ? (
+              <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }} data-bot-virtualized>
+                {virtualizer.getVirtualItems().map((item) => (
+                  <div key={item.key} data-index={item.index} ref={virtualizer.measureElement}
+                    className="absolute left-0 top-0 w-full pb-3"
+                    style={{ transform: `translateY(${item.start}px)` }}>
+                    {renderMessage(messageIds[item.index], item.index)}
+                  </div>
+                ))}
+              </div>
+            ) : messageIds.map((messageId, index) => (
+              <React.Fragment key={messageId}>{renderMessage(messageId, index)}</React.Fragment>
+            ))}
+            {computerSlot}
             {showTypingIndicator ? <BotTypingIndicator bot={bot} /> : null}
           </div>
-        ) : loading ? (
-          <p className="py-12 text-center typography-ui-label text-muted-foreground" role="status">
-            {t('bots.chat.loadingMessages')}
-          </p>
-        ) : (
-          <div className="py-16 text-center">
-            <p className="typography-ui-header font-medium text-foreground">{t('bots.chat.empty.title')}</p>
-            <p className="mt-1 typography-ui-label text-muted-foreground">{t('bots.chat.empty.description')}</p>
-          </div>
-        )}
+        ) : emptyState}
 
         {loadError ? (
-          <p className="mt-3 text-center typography-meta text-[var(--status-error)]" role="alert">
-            {t('bots.chat.loadFailed')}
-          </p>
+          <div className="mt-3 text-center typography-meta text-[var(--status-error)]" role="alert">
+            <p>{t('bots.chat.loadFailed')}</p>
+            <Button type="button" variant="outline" size="xs" disabled={loading}
+              onClick={() => void (messageIds.length > 0
+                ? loadOlderMessages()
+                : useBotChannelStore.getState().loadInitialMessages(channelId)).catch(() => undefined)}>
+              Retry
+            </Button>
+          </div>
         ) : null}
       </div>
     </div>

@@ -15,6 +15,18 @@ optional on-demand Skills/SOPs, protected provider credentials, and write-only
 environment secrets. Internal working revisions remain persistence machinery
 and are never presented as a user concept.
 
+Lifecycle also lets the current channel owner clear the messages and private
+attachments shown in their canonical chat. The destructive confirmation uses
+the existing owner-only channel deletion contract, refuses while a run is
+unfinished, preserves shared Bot learning, and creates a fresh empty owner
+channel so chat remains immediately usable.
+
+Overview combines the public profile with the revision-backed Soul/personality,
+Standing Role, Objectives, and compact primary Provider/Model/Thinking controls. Profile-only edits save immediately. Core
+identity edits create a working revision only when Apply Changes is confirmed,
+then affect future runs after publication. Operating/Prohibited/Extra
+Instructions, Maximum Output Tokens, and Short Summary remain absent.
+
 Environment secrets remain available for an Active Bot. The renderer stores
 only names, status, and timestamps; it never prefills, copies, or receives a
 value.
@@ -55,6 +67,10 @@ reveals only the original imported local path through native IPC.
   publication-readiness image gate, so the first Bot has no setup dead end.
 - `BotView.tsx` is loaded through `components/views/lazyViews.tsx`; shell
   components must not statically import the view.
+- The roster implementation loads only after the authorized Bots audience is
+  selected. The Operations rail implementation loads only when its sidebar is
+  open for a selected Bot. These boundaries defer unused presentation code;
+  the shared event owner and account-revocation cleanup remain unchanged.
 
 ## Private chat
 
@@ -62,31 +78,40 @@ reveals only the original imported local path through native IPC.
 run state, and the retained composer draft. Messages use the existing
 `MarkdownRenderer` with file-reference interactions disabled. They are rendered
 by Bot-owned rows and never fabricated as OpenCode session/message/part records.
+While the Markdown chunk loads, a finalized Bot answer renders its exact text
+as escaped, whitespace-preserved content. The rich renderer replaces that text
+when ready; this fallback is never available to acknowledgment or unfinalized
+rows, and does not pull Markdown into the startup bundle.
 The conversation header has an 88px desktop minimum rather than a fixed height.
 It shows a 64px circular avatar plus a vertically centered Bot name/title block
 that can grow for bounded wrapping. Mobile uses a 56px avatar and the same
 content-driven rule. Left navigation and Bot Operations controls are rendered
 by shell-owned edge chrome outside the identity flow, so macOS titlebar sizing
 and control width cannot collapse the profile presentation. Assistant message
-groups use a 56px circular avatar so Bot identity remains prominent in the
-transcript.
-Assistant messages are left-aligned conversational groups with the avatar on
-the first message; user messages are higher-contrast bubbles aligned right.
+groups render without an avatar or reserved avatar spacing; Bot identity remains
+available in the conversation header. Assistant messages are left-aligned
+conversational groups; user messages are higher-contrast bubbles aligned right.
 Timeline spines, revision/checkpoint seams, repeated actor labels, system rows,
-and tool-call records are intentionally absent. Tool turns render the
-Bot-authored acknowledgment and completed result as distinct assistant bubbles;
-intermediate tool narration is not part of the transcript. Timestamps remain
-subtle and keyboard accessible. The chat has no separate run-status strip:
-while the latest run is starting or running, a 56px Bot avatar and animated
-typing dots appear before visible assistant content and reappear after a
-finalized acknowledgment until the separate result arrives.
+and tool-call records are intentionally absent. Every send starts with an empty
+pending assistant row. A simple no-tool turn promotes it directly to the one
+natural result. Tool turns also publish only the verified final answer.
+Historical acknowledgment rows and unfinalized prose remain stored but hidden;
+intermediate narration and ambiguous streaming text never enter the transcript. Timestamps
+remain subtle and keyboard accessible. The chat has no separate run-status
+strip: avatar-free animated typing dots may appear while the pending row is
+empty and never reappear after visible response content arrives.
 Run state, cancellation, and approval/reconciliation requirements remain in the
 Operations rail. A failed or interrupted run also renders a compact inline
 notice after that run's last visible message, including when its assistant
 checkpoint is empty or partial. Only safely classified retryable failures offer
 Retry. Retry is explicit, locks its notice while pending, and asks the server to
 requeue the same pre-execution run without creating another message. There is no
-automatic retry. An expired approval remains visible as the run's terminal
+automatic retry. A retry refusal refreshes the authoritative run and preserves
+its messages, drafts, attachments, and partial responses. Allowlisted refusal
+reasons hide permanently stale retry controls and explain configuration changes,
+lost access, already-started execution, or temporary scope contention. A
+permanent refusal wins over an older `retryable` projection. Timeouts and an
+unavailable runtime have distinct notices. An expired approval remains visible as the run's terminal
 reason, and later queued work states explicitly that FIFO execution can continue.
 Pre-execution configuration failures are rendered as terminal notices with a
 Retry action, so an accepted send never disappears without a visible outcome.
@@ -113,13 +138,22 @@ opens SSE and replaces the Bot catalog from its authoritative snapshot. Manual
 Retry invokes the capability probe even when no EventSource was created, and
 principal changes dispose both probe and EventSource timers.
 
-The composer sends one client-stable message ID. One atomic store update inserts
-the optimistic row, clears the exact draft, updates order, and marks acceptance
-pending before the request begins. Only that short acceptance window disables
-the composer; queued and running work does not. A definitive rejection removes
-the row and restores the exact text/attachments. An ambiguous transport result
-keeps a visible **Not confirmed** row, refreshes canonical history, and retries
-once with the same message/idempotency identity. `Reader` channels are disabled;
+Electron Bot runtime progress remains component-local rather than entering a
+broad store. App-bound mode receives immediate IPC events. Background-service
+mode additionally polls the authenticated operation snapshot only while its
+phase is nonterminal, cancels polling on unmount, and refreshes authoritative
+capabilities when `ready` or `failed` arrives so stale `checking` state cannot
+keep recovery controls disabled.
+
+The composer sends client-stable user-message and assistant-response IDs. One
+atomic store update inserts the optimistic user and empty pending assistant
+rows, clears the exact draft, updates order, and marks acceptance pending before
+the request begins. The `202` response reconciles both rows to their canonical records without a
+duplicate. Only that short acceptance window disables the composer; queued and
+running work does not. A definitive rejection removes both rows and restores
+the exact text/attachments. An ambiguous transport result keeps a visible **Not
+confirmed** row, refreshes canonical history, and retries once with the same
+identities. `Reader` channels are disabled;
 `Owner` and `Collaborator` channels depend on authoritative `canSend`.
 
 The private-file picker accepts multiple supported files in one selection, up
@@ -136,20 +170,29 @@ latest draft immediately. A later failure therefore keeps earlier successes,
 preserves concurrent text edits, and reports the failed filename and reason so
 only that file needs to be selected again.
 
-`message.streaming` renders requester-only Markdown before the next canonical
-checkpoint. The transcript subscribes only to the live message ID, while its
-memoized row subscribes to that message's text/revision in the narrow
-`useBotLiveMessageStore`. Canonical revisions cannot regress newer live text;
-final messages, terminal runs, removals, principal resets, and reconnect
-snapshots clear it. Historical acknowledgment-phase messages remain stored but
-are hidden from the transcript and channel previews. Typing starts with local
-send acceptance and remains visible for queued, starting, and running runs.
+The transcript renders canonical finalized result rows only. Legacy
+`message.streaming` events may be reconciled for compatibility but never render.
+Immediate animated working feedback remains until a final answer or terminal
+failure. `useBotDraftStore` isolates composer edits from transcript subscribers.
+History pages are guarded by account/channel generations and message mutation
+versions; finalized messages cannot regress to partial data. Initial transient
+502/503 failures retry with bounds and expose a direct Retry action.
+Histories over 100 rows virtualize older rows with the existing TanStack virtual
+library, retaining the trailing 20 rows and synchronous scroll anchoring.
+Inactive transcript caching is bounded by 20 channels and 20 MiB; active,
+executing and optimistic conversations are exempt until safe to evict.
+Required approval,
+reconciliation, cancellation, and failure notices
+remain available through their existing surfaces.
 
-Activating an idle send-capable channel requests a two-minute, principal-bound
-runtime lease. The client passes its opaque lease ID on an eligible attachment-
-free send, releases unused leases on channel changes/unmount, and requests a new
-lease after the selected channel settles. Warming is best effort; cold sends use
-the same correctness and authorization path.
+Interacting with an idle send-capable channel's composer requests a two-minute,
+principal-bound runtime lease. Merely switching to the Bots audience or rendering
+the selected conversation does not start a reasoning container, so ordinary
+Coding Agent work keeps its runtime resources. The client passes the opaque lease
+ID on an eligible attachment-free send and releases unused leases on channel
+changes or unmount. Later composer interaction requests the next lease after a
+send consumes the prior one. Warming is best effort; cold sends use the same
+correctness and authorization path.
 
 The selected channel's Shared inventory loads with message history. The narrow
 Shared store indexes files by message ID, and memoized result-image children
@@ -200,19 +243,71 @@ focus effects run only while that panel is active.
 
 ## Diagnostic screen safety
 
-`BotBrowserDiagnostic.tsx` automatically starts viewing when an Active Bot's
-Computer tab is visible. It stores only the server-issued ephemeral viewer
-descriptor and mounts its one-use authenticated multipart URL; Stop, tab,
+`BotInlineComputer.tsx` shows **Shared Bot Computer** only for authoritative
+`computer.activity` in the current channel, or an explicit sidebar reveal.
+It keeps one `BotBrowserDiagnostic` and canvas mounted across native-dialog
+expansion/collapse; the sidebar reveals this viewer rather than connecting its
+own. Automatic viewers are bound to the activity run; ownership handoff,
+terminal settlement, account/channel changes, revocation and hidden surfaces
+release them and any owned input lease. Manual viewing still exposes the same
+shared saved logins/files. It stores only the server-issued ephemeral viewer
+descriptor and mounts its one-use authenticated multipart URL through a
+same-origin abortable fetch; Stop, tab,
 Bot/channel change, unmount, stream failure, Bot deactivation, and principal
 reset release it. A manual Stop suppresses automatic restart until the tab is
-reopened or the user explicitly starts viewing again. Viewer identity is
-Bot-scoped, so run settlement does not interrupt the persistent computer.
+reopened or the user explicitly starts viewing again. A bounded streaming
+parser accepts only valid multipart JPEG frames with mandatory lengths and a 2
+MiB frame cap. `createImageBitmap` decodes only complete frames and a canvas
+draws the newest one; connection is established after that first draw, not a
+network chunk. A five-second deadline releases the descriptor and exposes a
+retryable screen-unavailable state instead of leaving a black panel. Failed
+connections retry at most twice before requiring explicit Retry. Manual viewer
+identity is Bot-scoped, so run settlement does not interrupt the persistent
+computer.
 
 Pixels, frames, and canvas data never enter Zustand, browser storage, logs, or
-artifact state. Any active Bot member may view and use take/return control. A valid human-control lease is
-independent from viewing: it pauses agent input, identifies its controller,
-heartbeats only for the owner, and expires at the server timestamp. The UI
-always states that frames are never recorded.
+artifact state. Any active Bot member may view; an Operator may take/return
+control. A valid human-control lease is independent from viewing: it pauses
+agent input, identifies its controller, heartbeats only for the owner, and
+expires at the server timestamp. The attached canvas then sends pointer hover,
+all mouse buttons/click counts, drag, bounded wheel input, ordered key events,
+text/IME/paste, navigation keys, and modifier shortcuts. Coordinates map through
+the actual contain rectangle and ignore letterboxing. Input is pinned to the
+current `viewId` and disabled synchronously on disconnect, return, expiry,
+conflict, role/channel change, or unmount. `Ctrl+Alt+Escape` leaves remote
+keyboard focus. The canvas keeps at most one input request in flight, coalesces
+ordinary hover/wheel updates, preserves real held-pointer movement, never drops
+pointer down/up under backlog pressure, and gives queued input at most 250 ms to
+drain before explicit Return Control. Hidden surfaces, stopped views, ownership
+changes, and unmount abort the active input HTTP request and discard the old
+queue immediately. Viewer teardown removes the local stream/ticket independently
+of the control-return response; late input and control replies cannot resume an
+old queue or clear a newer lease. The server control boundary must release held
+input when relinquishing a lease. No movement is synthesized. Mounted regression
+tests exercise stalled input and control responses through Stop, Hide, and
+Return Control, including delayed responses after a replacement lease. If an
+owned expired lease remains in authoritative status, its owner retains a Return
+Control recovery action and a visible release-pending warning. Remote input and
+heartbeats stay disabled; scoped, non-overlapping status polling stops once the
+server clears the lease. Late recovery polls cannot overwrite newer control.
+If stream teardown already returned control, a failed duplicate return refreshes
+the exact lease before showing a warning. That confirmation is bounded to two
+seconds, and a later authoritative release clears the lease-scoped warning.
+While an
+owned Take Control lease is visible, the component polls the
+narrow status route every two seconds and changes the Bot store only for a new
+diagnostic revision or browser prerequisite/health change. Sanitized warnings
+distinguish blocked JavaScript/cookies, failed or allowlist-denied dependency
+hosts, browser/display failure, and site rejection with healthy prerequisites.
+The no-recording guarantee is architectural, not copy: `framesRecorded: false`
+in status, and pixels never enter stores or persistence (above).
+
+A durable `waiting_control` run is visible in chat and Operations. The lease
+owner gets an immediate Return Control action; other viewers see only “another
+operator” and never an actor identifier. Generated-image previews remain backed
+by the encrypted object mapping while Shared copying is pending, copying,
+ready, or failed. They expose explicit loading, decoded, and retryable-error
+states and validate MIME, magic bytes, and image decode before display.
 
 ## Performance and accessibility
 
@@ -243,7 +338,9 @@ always states that frames are never recorded.
   existing mobile drawer, ACL presentation, exact Confirmation focus,
   queue/reconciliation state, Docker copy, and repository-control suppression.
 - The committed test-only `tests/visual-production-bots/` fixture renders real
-  components/stores and drives 38 Electron-CDP screenshots. It blocks on
+  components/stores and drives 48 Electron-CDP screenshots, including
+  acknowledgment-running/result and connecting/live/disconnected/owned/
+  view-only/conflicting-control scenes. It blocks on
   overflow, scroll/focus, keyboard/dialog accessibility, secret sentinels,
   console errors, and unhandled rejections, and never enters the production
   bundle.

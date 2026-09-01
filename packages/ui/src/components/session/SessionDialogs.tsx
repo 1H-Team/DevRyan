@@ -20,6 +20,7 @@ import { getWorktreeStatus } from '@/lib/worktrees/worktreeStatus';
 import { removeProjectWorktree } from '@/lib/worktrees/worktreeManager';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import * as sessionActions from '@/sync/session-actions';
+import type { SessionMutationFailure } from '@/sync/session-actions';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
@@ -28,6 +29,7 @@ import { sessionEvents } from '@/lib/sessionEvents';
 import { useI18n } from '@/lib/i18n';
 import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { useAuthPrincipal } from '@/lib/authSession';
+import { resolveSessionDeleteFailureDescription } from './sessionDeleteFeedback';
 
 const renderToastDescription = (text?: string) =>
     text ? <span className="text-foreground/80 dark:text-foreground/70">{text}</span> : undefined;
@@ -69,7 +71,6 @@ export const SessionDialogs: React.FC = () => {
     const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
     const setNewSessionDraftTarget = useSessionUIStore((s) => s.setNewSessionDraftTarget);
     const setDraftBootstrapPendingDirectory = useSessionUIStore((s) => s.setDraftBootstrapPendingDirectory);
-    const deleteSession = sessionActions.deleteSession;
     const archiveSession = sessionActions.archiveSession;
     const deleteSessions = useSessionUIStore((s) => s.deleteSessions);
     const archiveSessions = useSessionUIStore((s) => s.archiveSessions);
@@ -161,20 +162,26 @@ export const SessionDialogs: React.FC = () => {
 
         if (payload.sessions.length === 1) {
             const target = payload.sessions[0];
-            const success = await deleteSession(target.id);
+            const result = await deleteSessions([target.id]);
+            const success = result.deletedIds.includes(target.id);
             if (success && !payload.suppressSuccessToast) {
                 toast.success(t('sessions.sidebar.session.delete.success'));
             } else {
                 if (success) {
                     return;
                 }
-                toast.error(t('sessions.sidebar.session.delete.error'));
+                toast.error(t('sessions.sidebar.session.delete.error'), {
+                    description: renderToastDescription(resolveSessionDeleteFailureDescription(
+                        result.failures,
+                        t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+                    )),
+                });
             }
             return;
         }
 
         const ids = payload.sessions.map((session) => session.id);
-        const { deletedIds, failedIds } = await deleteSessions(ids);
+        const { deletedIds, failedIds, failures } = await deleteSessions(ids);
 
         if (deletedIds.length > 0 && !payload.suppressSuccessToast) {
             const successDescription = failedIds.length > 0
@@ -195,10 +202,13 @@ export const SessionDialogs: React.FC = () => {
             toast.error(failedIds.length === 1
                 ? t('sessions.sidebar.bulkActions.failedDeleteSingle', { count: failedIds.length })
                 : t('sessions.sidebar.bulkActions.failedDeletePlural', { count: failedIds.length }), {
-                description: renderToastDescription(t('sessions.sidebar.dialogs.deleteResult.tryAgain')),
+                description: renderToastDescription(resolveSessionDeleteFailureDescription(
+                    failures,
+                    t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+                )),
             });
         }
-    }, [deleteSession, deleteSessions, t]);
+    }, [deleteSessions, t]);
 
     React.useEffect(() => {
         return sessionEvents.onDeleteRequest((payload) => {
@@ -414,19 +424,26 @@ export const SessionDialogs: React.FC = () => {
 
             if (deleteDialog.sessions.length === 1) {
                 const target = deleteDialog.sessions[0];
-                const success = isWorktreeDelete
-                    ? await archiveSession(target.id)
-                    : await deleteSession(target.id, {
-                        // In "worktree" mode, remove the selected worktree explicitly below.
-                        // Don't try to derive worktree removal from per-session metadata (may be missing).
-                        archiveWorktree: false,
-                        deleteRemoteBranch: removeRemoteBranch,
-                        deleteLocalBranch,
-                    });
+                let failures: SessionMutationFailure[] = [];
+                let success: boolean;
+                if (isWorktreeDelete) {
+                    success = await archiveSession(target.id);
+                } else {
+                    const result = await deleteSessions([target.id]);
+                    success = result.deletedIds.includes(target.id);
+                    failures = result.failures;
+                }
                 if (!success) {
                     toast.error(isWorktreeDelete
                         ? t('sessions.sidebar.session.archive.error')
-                        : t('sessions.sidebar.session.delete.error'));
+                        : t('sessions.sidebar.session.delete.error'), {
+                        description: isWorktreeDelete
+                            ? undefined
+                            : renderToastDescription(resolveSessionDeleteFailureDescription(
+                                failures,
+                                t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+                            )),
+                    });
                     setIsProcessingDelete(false);
                     return;
                 }
@@ -448,6 +465,7 @@ export const SessionDialogs: React.FC = () => {
                 const ids = deleteDialog.sessions.map((session) => session.id);
                 let deletedIds: string[] = [];
                 let failedIds: string[] = [];
+                let failures: SessionMutationFailure[] = [];
                 if (isWorktreeDelete) {
                     const result = await archiveSessions(ids);
                     deletedIds = result.archivedIds;
@@ -460,6 +478,7 @@ export const SessionDialogs: React.FC = () => {
                     });
                     deletedIds = result.deletedIds;
                     failedIds = result.failedIds;
+                    failures = result.failures;
                 }
 
                 if (isWorktreeDelete && deleteDialog.worktree && failedIds.length === 0) {
@@ -507,7 +526,12 @@ export const SessionDialogs: React.FC = () => {
                         : (failedIds.length === 1
                             ? t('sessions.sidebar.bulkActions.failedDeleteSingle', { count: failedIds.length })
                             : t('sessions.sidebar.bulkActions.failedDeletePlural', { count: failedIds.length })), {
-                        description: renderToastDescription(t('sessions.sidebar.dialogs.deleteResult.tryAgain')),
+                        description: renderToastDescription(isWorktreeDelete
+                            ? t('sessions.sidebar.dialogs.deleteResult.tryAgain')
+                            : resolveSessionDeleteFailureDescription(
+                                failures,
+                                t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+                            )),
                     });
                     if (deletedIds.length === 0) {
                         setIsProcessingDelete(false);
@@ -529,7 +553,6 @@ export const SessionDialogs: React.FC = () => {
         deleteDialog,
         deleteDialogShouldRemoveRemote,
         deleteDialogShouldDeleteLocalBranch,
-        deleteSession,
         deleteSessions,
         archiveSession,
         archiveSessions,

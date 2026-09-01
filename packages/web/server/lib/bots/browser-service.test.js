@@ -5,7 +5,10 @@ import {
   botBrowserOperationKind,
   classifyBotBrowserRemoteFailure,
   createBotBrowserService,
+  publicBotComputerBrowserStatus,
+  safeBotBrowserAuditRemoteCode,
   validateBotBrowserAction,
+  validateBotHumanInput,
 } from './browser-service.js';
 
 const BOT_ID = 'b0000000-0000-4000-8000-000000000001';
@@ -32,9 +35,70 @@ const bot = (overrides = {}) => ({
 });
 const channel = () => ({ id: CHANNEL_ID, bot_id: BOT_ID, owner_user_id: USER_ID });
 
-const createHarness = ({ now, viewAttachTtlMs, computerRuntimeManager: managerOverride = null } = {}) => {
+it('projects only the typed privacy-safe Bot browser status contract', () => {
+  const projected = publicBotComputerBrowserStatus({
+    running: true,
+    healthy: true,
+    lifecycleState: 'running',
+    generation: 4,
+    mode: 'headed_virtual',
+    engineVersion: 'Chromium/151.0',
+    displayReady: true,
+    webCapabilities: {
+      managedPolicy: 'enforced',
+      javascript: 'enabled',
+      firstPartyCookies: 'enabled',
+      thirdPartyCookies: 'enabled',
+      cookieValue: 'secret',
+    },
+    lastNavigationDiagnostic: {
+      revision: 7,
+      observedAt: 1234,
+      origin: 'https://airtable.com/private/path?token=secret',
+      statusCode: 200,
+      redirectCount: 2,
+      repetitionCount: 3,
+      kind: 'site_rejection',
+      reason: 'navigation_loop',
+      blockedHost: null,
+      headers: { cookie: 'secret' },
+      pageText: 'private challenge',
+    },
+    rawNetworkEvents: [{ url: 'https://secret.example/private' }],
+  });
+
+  expect(projected).toMatchObject({
+    mode: 'headed_virtual',
+    engineVersion: 'Chromium/151.0',
+    displayReady: true,
+    webCapabilities: {
+      managedPolicy: 'enforced',
+      javascript: 'enabled',
+      firstPartyCookies: 'enabled',
+      thirdPartyCookies: 'enabled',
+    },
+    lastNavigationDiagnostic: {
+      revision: 7,
+      origin: 'https://airtable.com',
+      kind: 'site_rejection',
+    },
+  });
+  const serialized = JSON.stringify(projected);
+  expect(serialized).not.toContain('/private');
+  expect(serialized).not.toContain('secret');
+  expect(serialized).not.toContain('cookieValue');
+  expect(serialized).not.toContain('pageText');
+});
+
+const createHarness = ({
+  now,
+  viewAttachTtlMs,
+  recordDiagnostic = vi.fn(),
+  computerRuntimeManager: managerOverride = null,
+  transport: transportOverride = null,
+} = {}) => {
   const responses = [];
-  const transport = {
+  const transport = transportOverride || {
     request: vi.fn(async ({ path, body }) => {
       responses.push({ path, body });
       if (path === '/v1/status') {
@@ -101,6 +165,7 @@ const createHarness = ({ now, viewAttachTtlMs, computerRuntimeManager: managerOv
     computerRuntimeManager,
     eventStream,
     audit,
+    recordDiagnostic,
     transport,
     ...(now ? { now } : {}),
     ...(viewAttachTtlMs ? { viewAttachTtlMs } : {}),
@@ -119,6 +184,92 @@ const createHarness = ({ now, viewAttachTtlMs, computerRuntimeManager: managerOv
 };
 
 describe('Bot governed browser service', () => {
+  it('relinquishes the stream-owned control lease after account access is revoked', async () => {
+    const harness = createHarness();
+    const principal = { id: USER_ID, role: 'developer', scope: 'managed' };
+    const { view } = await harness.service.startComputerView({ principal, botId: BOT_ID, channelId: CHANNEL_ID });
+    await harness.service.openComputerView({ principal, botId: BOT_ID, viewId: view.id });
+    await harness.service.takeControl({ principal, botId: BOT_ID });
+    harness.authorization.requireOperator.mockRejectedValue(new Error('Access was revoked'));
+    harness.authorization.requireActiveMembership.mockRejectedValue(new Error('Access was revoked'));
+    await harness.service.stopComputerView({ principal, botId: BOT_ID, viewId: view.id });
+    expect(harness.transport.request).toHaveBeenLastCalledWith(expect.objectContaining({
+      path: '/v1/control/return',
+      body: { actorId: USER_ID, actorType: 'user', leaseId: 'control-1' },
+    }));
+    expect(harness.transport.stream.mock.calls[0][0].signal.aborted).toBe(true);
+    await harness.service.stopComputerView({ principal, botId: BOT_ID, viewId: view.id });
+    expect(harness.transport.request.mock.calls.filter(([request]) => request.path === '/v1/control/return')).toHaveLength(1);
+    await harness.service.shutdown();
+  });
+
+  it('releases a late takeover before a replacement viewer can acquire control', async () => {
+    const harness = createHarness();
+    const principal = { id: USER_ID, role: 'developer', scope: 'managed' };
+    const { view } = await harness.service.startComputerView({ principal, botId: BOT_ID, channelId: CHANNEL_ID });
+    let finishTake;
+    let enteredTake;
+    const entered = new Promise((resolve) => { enteredTake = resolve; });
+    const order = [];
+    harness.transport.request.mockImplementation(async ({ path, body }) => {
+      order.push(path);
+      if (path === '/v1/control/take' && !finishTake) {
+        enteredTake();
+        return new Promise((resolve) => { finishTake = () => resolve({ ...body, leaseId: 'old-control', expiresAt: 31_000 }); });
+      }
+      if (path === '/v1/control/take') return { ...body, leaseId: 'new-control', expiresAt: 31_000 };
+      return { returned: true };
+    });
+    const taking = harness.service.takeControl({ principal, botId: BOT_ID });
+    const rejected = expect(taking).rejects.toMatchObject({ code: 'bot_browser_view_not_found' });
+    await entered;
+    await harness.service.stopComputerView({ principal, botId: BOT_ID, viewId: view.id });
+    await harness.service.startComputerView({ principal, botId: BOT_ID, channelId: CHANNEL_ID });
+    const replacement = harness.service.takeControl({ principal, botId: BOT_ID });
+    finishTake();
+    await rejected;
+    expect((await replacement).control.leaseId).toBe('new-control');
+    expect(order).toEqual(['/v1/control/take', '/v1/control/return', '/v1/control/take']);
+    await harness.service.shutdown();
+  });
+
+  it('does not return another control lease when a passive viewer closes', async () => {
+    const harness = createHarness();
+    const principal = { id: USER_ID, role: 'developer', scope: 'managed' };
+    const { view } = await harness.service.startComputerView({ principal, botId: BOT_ID, channelId: CHANNEL_ID });
+    await harness.service.openComputerView({ principal, botId: BOT_ID, viewId: view.id });
+    await harness.service.stopComputerView({ principal, botId: BOT_ID, viewId: view.id });
+    expect(harness.transport.request.mock.calls.some(([request]) => request.path === '/v1/control/return')).toBe(false);
+    await harness.service.shutdown();
+  });
+
+  it('automatic viewing rejects stale run ownership and terminates its stream on handoff', async () => {
+    const { service, transport } = createHarness();
+    await service.activity.begin(run());
+    const { view } = await service.startComputerView({ principal: { id: USER_ID }, botId: BOT_ID, channelId: CHANNEL_ID, runId: RUN_ID });
+    await service.openComputerView({ principal: { id: USER_ID }, botId: BOT_ID, viewId: view.id });
+    const streamSignal = transport.stream.mock.calls[0][0].signal;
+    expect(streamSignal.aborted).toBe(false);
+    await service.activity.begin({ ...run(), id: 'd0000000-0000-4000-8000-000000000002' });
+    expect(streamSignal.aborted).toBe(true);
+    await expect(service.startComputerView({ principal: { id: USER_ID }, botId: BOT_ID, channelId: CHANNEL_ID, runId: RUN_ID })).rejects.toMatchObject({ code: 'bot_computer_activity_changed' });
+    await service.shutdown();
+  });
+
+  it('handoff while start audit waits cannot return a resurrected view ticket', async () => {
+    const { service, audit } = createHarness();
+    await service.activity.begin(run());
+    let releaseAudit;
+    const waiting = new Promise((resolve) => { releaseAudit = resolve; });
+    audit.mockImplementationOnce(() => waiting);
+    const start = service.startComputerView({ principal: { id: USER_ID }, botId: BOT_ID, channelId: CHANNEL_ID, runId: RUN_ID });
+    for (let index = 0; index < 20 && audit.mock.calls.length === 0; index++) await Promise.resolve();
+    expect(audit).toHaveBeenCalled();
+    await service.activity.endRun(run());
+    releaseAudit();
+    await expect(start).rejects.toMatchObject({ code: 'bot_computer_activity_changed' });
+    await service.shutdown();
+  });
   it('separates safe reads from potentially mutating interactions', () => {
     for (const command of ['navigate', 'snapshot', 'scroll', 'wait', 'download', 'screenshot']) {
       expect(botBrowserOperationKind(command)).toBe('read');
@@ -137,6 +288,7 @@ describe('Bot governed browser service', () => {
       code: 'bot_browser_command_failed',
       transportUncertain: true,
       recoverable: true,
+      preExecution: false,
     });
     expect(classifyBotBrowserRemoteFailure({
       statusCode: 504,
@@ -146,6 +298,77 @@ describe('Bot governed browser service', () => {
       statusCode: 502,
       remoteCode: 'DEVRYAN_BOT_NAVIGATION_FAILED',
     })).toMatchObject({ transportUncertain: false, recoverable: false });
+    expect(classifyBotBrowserRemoteFailure({
+      statusCode: 409,
+      remoteCode: 'DEVRYAN_BOT_CONTROL_HELD',
+    })).toEqual({
+      code: 'bot_browser_control_held',
+      transportUncertain: false,
+      recoverable: true,
+      preExecution: true,
+    });
+    expect(classifyBotBrowserRemoteFailure({
+      statusCode: 409,
+      remoteCode: 'DEVRYAN_BOT_REF_STALE',
+    })).toMatchObject({ code: 'bot_browser_reference_stale', preExecution: true });
+    expect(classifyBotBrowserRemoteFailure({
+      statusCode: 409,
+      remoteCode: 'DEVRYAN_BOT_TARGET_NOT_VISIBLE',
+    })).toMatchObject({ code: 'bot_browser_target_not_visible', preExecution: true });
+    expect(classifyBotBrowserRemoteFailure({
+      statusCode: 409,
+      remoteCode: 'DEVRYAN_BOT_CONTROL_CONFLICT',
+    })).toMatchObject({ code: 'bot_browser_control_conflict' });
+    expect(classifyBotBrowserRemoteFailure({
+      statusCode: 409,
+      remoteCode: 'DEVRYAN_BOT_SOMETHING_NEW',
+    })).toMatchObject({ code: 'bot_browser_conflict' });
+    expect(safeBotBrowserAuditRemoteCode('DEVRYAN_BOT_REF_STALE'))
+      .toBe('DEVRYAN_BOT_REF_STALE');
+    expect(safeBotBrowserAuditRemoteCode('DEVRYAN_BOT_SOMETHING_NEW')).toBeNull();
+  });
+
+  it('waits across renewed human-control leases until authoritative return or expiry', async () => {
+    const timestamp = Date.now();
+    const statusResponses = [
+      { control: { leaseId: 'lease-1', actorId: USER_ID, actorType: 'user', expiresAt: timestamp + 1 } },
+      { control: { leaseId: 'lease-1', actorId: USER_ID, actorType: 'user', expiresAt: timestamp + 30_000 } },
+      { control: null },
+    ];
+    const transport = {
+      request: vi.fn(async ({ path }) => (
+        path === '/v1/status' ? statusResponses.shift() : { clicked: true }
+      )),
+      stream: vi.fn(async () => new Response('frame')),
+    };
+    const harness = createHarness({ transport });
+    const waiting = harness.service.waitForControlRelease({
+      run: run(),
+      bot: bot(),
+      ownerUserId: USER_ID,
+    });
+    await expect(waiting).resolves.toEqual({ released: true });
+    expect(transport.request).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps cancellation available while browser control is held', async () => {
+    const controller = new AbortController();
+    const transport = {
+      request: vi.fn(async () => ({
+        control: { leaseId: 'lease-1', actorId: USER_ID, actorType: 'user', expiresAt: Date.now() + 30_000 },
+      })),
+      stream: vi.fn(async () => new Response('frame')),
+    };
+    const harness = createHarness({ transport });
+    const waiting = harness.service.waitForControlRelease({
+      run: run(),
+      bot: bot(),
+      ownerUserId: USER_ID,
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    controller.abort();
+    await expect(waiting).rejects.toMatchObject({ code: 'bot_run_cancelled', preExecution: true });
   });
 
   it('requires an exact bounded origin and goal for interactions', () => {
@@ -162,6 +385,85 @@ describe('Bot governed browser service', () => {
       target: { origin: 'https://example.com', goal: 'Open settings' },
       limits: {},
     })).toMatchObject({ operationKind: 'write', target: { origin: 'https://example.com' } });
+  });
+
+  it('binds human input to an attached view and audits only batch metadata', async () => {
+    const harness = createHarness();
+    const principal = { id: USER_ID, role: 'admin', scope: 'managed' };
+    const events = [
+      { type: 'pointer', phase: 'move', x: 100, y: 200, button: 'none', buttons: 0, clickCount: 0 },
+      { type: 'text', text: 'private input' },
+    ];
+    const { view } = await harness.service.startComputerView({
+      principal,
+      botId: BOT_ID,
+      channelId: CHANNEL_ID,
+    });
+
+    await expect(harness.service.humanCommand({
+      principal,
+      botId: BOT_ID,
+      viewId: view.id,
+      leaseId: 'control-1',
+      command: 'input',
+      args: { events },
+    })).rejects.toMatchObject({ code: 'bot_browser_view_not_found' });
+
+    await harness.service.openComputerView({ principal, botId: BOT_ID, viewId: view.id });
+    await harness.service.humanCommand({
+      principal,
+      botId: BOT_ID,
+      viewId: view.id,
+      leaseId: 'control-1',
+      command: 'input',
+      args: { events },
+    });
+
+    expect(harness.transport.request).toHaveBeenLastCalledWith(expect.objectContaining({
+      path: '/v1/control/command',
+      body: expect.objectContaining({ command: 'input', args: { events } }),
+    }));
+    const metadata = harness.audit.mock.calls.at(-1)?.[0]?.metadata;
+    expect(metadata).toMatchObject({
+      viewId: view.id,
+      eventTypes: ['pointer', 'text'],
+      eventCount: 2,
+    });
+    expect(JSON.stringify(metadata)).not.toContain('private input');
+    expect(JSON.stringify(metadata)).not.toContain('"x"');
+    expect(() => validateBotHumanInput({ events: Array.from({ length: 33 }, () => events[0]) }))
+      .toThrow(/batch/i);
+  });
+
+  it('returns human input after CDP dispatch without waiting for the audit write', async () => {
+    const harness = createHarness();
+    const principal = { id: USER_ID, role: 'admin', scope: 'managed' };
+    const { view } = await harness.service.startComputerView({
+      principal,
+      botId: BOT_ID,
+      channelId: CHANNEL_ID,
+    });
+    await harness.service.openComputerView({ principal, botId: BOT_ID, viewId: view.id });
+    let finishAudit;
+    harness.audit.mockImplementation(() => new Promise((resolve) => {
+      finishAudit = resolve;
+    }));
+
+    await expect(harness.service.humanCommand({
+      principal,
+      botId: BOT_ID,
+      viewId: view.id,
+      leaseId: 'control-1',
+      command: 'input',
+      args: {
+        events: [{
+          type: 'pointer', phase: 'down', x: 100, y: 200,
+          button: 'left', buttons: 1, clickCount: 1,
+        }],
+      },
+    })).resolves.toEqual({ clicked: true });
+    expect(harness.audit).toHaveBeenCalledTimes(2);
+    finishAudit?.();
   });
 
   it('executes only under an exact per-operation policy capability', async () => {
@@ -277,6 +579,28 @@ describe('Bot governed browser service', () => {
     expect(harness.computerRuntimeManager.restartBot).toHaveBeenCalledTimes(1);
     expect(harness.transport.request).toHaveBeenCalledTimes(2);
     expect(harness.transport.request.mock.calls[1][0].runtime.endpoint.port).toBe(45102);
+  });
+
+  it('journals recovery and supervisor failure stages with the action identity', async () => {
+    const recordDiagnostic = vi.fn();
+    const harness = createHarness({ recordDiagnostic });
+    harness.transport.request.mockRejectedValueOnce(new BotBrowserServiceError(
+      'browser closed', 'bot_browser_command_failed', 503,
+      { transportUncertain: true, remoteCode: 'DEVRYAN_BOT_BROWSER_CLOSED' },
+    ));
+    harness.computerRuntimeManager.restartBot.mockRejectedValueOnce(Object.assign(new Error('Supervisor unavailable'), {
+      code: 'bot_runtime_supervisor_unavailable', diagnostics: { stage: 'supervisor_request', reason: 'ECONNRESET' },
+    }));
+    await expect(harness.service.executeAction({
+      run: run(), bot: bot(), ownerUserId: USER_ID, actionAttemptId: 'action-1',
+      command: 'navigate', args: { url: 'https://example.com' }, target: { origin: 'https://example.com' },
+      limits: {}, decision: { actionHash: 'sha256:action', effect: 'allow', expiresAt: new Date(Date.now() + 60_000).toISOString() },
+    })).rejects.toMatchObject({ code: 'bot_runtime_supervisor_unavailable' });
+    expect(recordDiagnostic.mock.calls.map(([record]) => record.payload.stage))
+      .toEqual(['command_failed', 'runtime_restart_failed']);
+    expect(recordDiagnostic.mock.calls[1][0].payload).toMatchObject({
+      runId: RUN_ID, operationId: 'action-1', error: { stage: 'supervisor_request', reason: 'ECONNRESET' },
+    });
   });
 
   it('bounds failed safe-read recovery and suppresses outer transport retries', async () => {

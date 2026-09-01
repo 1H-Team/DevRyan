@@ -54,7 +54,14 @@ import {
   CURSOR_PROVIDER_ID,
   saveCursorSdkAuth,
 } from '@openchamber/cursor-sdk-runtime';
-import { runClaudeCodeAuthStatus } from './claudeAuthStatus';
+import {
+  runClaudeCodeAuthStatus,
+  type ClaudeCodeAuthStatusResult,
+} from './claudeAuthStatus';
+import {
+  resolveClaudeCodeLaunch,
+  type ClaudeCodeLaunch,
+} from '../../web/server/lib/opencode/claude-cli-runtime.js';
 import type { ConfigApplyMutationResponse } from '@openchamber/shared-runtime';
 import {
   readMeridianPromptMode,
@@ -96,6 +103,34 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const CURSOR_ACP_PROVIDER_ID = 'cursor-acp';
 const CURSOR_USAGE_TOKEN_MAX_LENGTH = 16_384;
 
+const resolveLocalClaudeCodeLaunch = (): ClaudeCodeLaunch | null => resolveClaudeCodeLaunch({
+  pathValue: process.env.PATH || '',
+});
+
+const runResolvedClaudeCodeAuthStatus = async (): Promise<{
+  launch: ClaudeCodeLaunch | null;
+  result: ClaudeCodeAuthStatusResult;
+}> => {
+  const launch = resolveLocalClaudeCodeLaunch();
+  if (!launch) {
+    return {
+      launch: null,
+      result: {
+        ok: false as const,
+        code: 'claude_cli_unavailable',
+        error: 'Claude Code was not found in the managed runtime or on PATH.',
+      },
+    };
+  }
+  return {
+    launch,
+    result: await runClaudeCodeAuthStatus({
+      executable: launch.executable,
+      pathValue: launch.pathValue,
+    }),
+  };
+};
+
 const readProviderSourceSnapshot = (providerId: string, workingDirectory?: string) => {
   const sources = getProviderSources(providerId, workingDirectory);
   const authLookupIds = ['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude'].includes(providerId)
@@ -135,11 +170,17 @@ const resolveClaudeQuotaRuntime = async (ctx?: BridgeContext) => {
       claudeProxyBaseUrl: null,
       claudeProxyConfigured: false,
       isExternalRuntime: Boolean(isExternalRuntime),
+      claudeCodeLaunch: null,
     };
   }
   const apiUrl = manager.getApiUrl();
   if (!apiUrl) {
-    return { claudeProxyBaseUrl: null, claudeProxyConfigured: false, isExternalRuntime: false };
+    return {
+      claudeProxyBaseUrl: null,
+      claudeProxyConfigured: false,
+      isExternalRuntime: false,
+      claudeCodeLaunch: resolveLocalClaudeCodeLaunch(),
+    };
   }
   try {
     const base = `${apiUrl.replace(/\/+$/, '')}/`;
@@ -154,16 +195,27 @@ const resolveClaudeQuotaRuntime = async (ctx?: BridgeContext) => {
       },
     });
     if (!response.ok) {
-      return { claudeProxyBaseUrl: null, claudeProxyConfigured: false, isExternalRuntime: false };
+      return {
+        claudeProxyBaseUrl: null,
+        claudeProxyConfigured: false,
+        isExternalRuntime: false,
+        claudeCodeLaunch: resolveLocalClaudeCodeLaunch(),
+      };
     }
     const claudeProxyBaseUrl = resolveClaudeProxyBaseUrlFromProviders(await response.json());
     return {
       claudeProxyBaseUrl,
       claudeProxyConfigured: Boolean(claudeProxyBaseUrl),
       isExternalRuntime: false,
+      claudeCodeLaunch: resolveLocalClaudeCodeLaunch(),
     };
   } catch {
-    return { claudeProxyBaseUrl: null, claudeProxyConfigured: false, isExternalRuntime: false };
+    return {
+      claudeProxyBaseUrl: null,
+      claudeProxyConfigured: false,
+      isExternalRuntime: false,
+      claudeCodeLaunch: resolveLocalClaudeCodeLaunch(),
+    };
   }
 };
 
@@ -901,7 +953,7 @@ export async function handleSystemBridgeMessage(
     }
 
     case 'api:provider/anthropic/claude-code-status': {
-      const authCheck = await runClaudeCodeAuthStatus();
+      const { launch, result: authCheck } = await runResolvedClaudeCodeAuthStatus();
       const auth = authCheck.auth ?? null;
       const unavailable = !authCheck.ok && authCheck.code === 'claude_cli_unavailable';
       return {
@@ -910,7 +962,7 @@ export async function handleSystemBridgeMessage(
         success: true,
         data: {
           installed: !unavailable,
-          path: typeof process.env.CLAUDE_CODE_CLI === 'string' ? process.env.CLAUDE_CODE_CLI : null,
+          path: launch?.executable ?? null,
           loggedIn: authCheck.ok,
           authStatus: authCheck.ok
             ? 'authenticated'
@@ -1027,7 +1079,7 @@ export async function handleSystemBridgeMessage(
         ? directory.trim()
         : ctx?.manager?.getWorkingDirectory();
       try {
-        const authCheck = await runClaudeCodeAuthStatus();
+        const { result: authCheck } = await runResolvedClaudeCodeAuthStatus();
         if (!authCheck.ok) {
           return {
             id,

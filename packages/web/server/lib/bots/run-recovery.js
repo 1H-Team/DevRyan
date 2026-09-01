@@ -1,4 +1,4 @@
-const RECOVERABLE_STATES = Object.freeze(['starting', 'running']);
+const RECOVERABLE_STATES = Object.freeze(['starting', 'running', 'waiting_control']);
 const DURABLE_WAIT_STATES = Object.freeze(['waiting_approval', 'needs_reconciliation']);
 const READ_ACTION_PATTERN = /^(?:read|get|list|search|inspect|status|download|navigate_read)(?:[_.:-]|$)/i;
 
@@ -25,6 +25,7 @@ export function createBotRunRecovery({
   logger = console,
 } = {}) {
   if (!store?.repositories?.bot_runs || !store.repositories?.bot_action_attempts
+    || typeof store.settleRunTerminal !== 'function'
     || !dispatcher || typeof dispatcher.resumeRun !== 'function'
     || typeof now !== 'function') {
     throw new TypeError('Bot run recovery is misconfigured');
@@ -109,15 +110,27 @@ export function createBotRunRecovery({
           else if (outcome?.resumed === false) result.interrupted += 1;
           else result.resumed += 1;
         } catch (error) {
-          await store.repositories.bot_runs.updateIfRevision(
-            { id: run.id },
-            {
+          const interruptionKind = error?.code || 'runtime_recovery_failed';
+          const settled = await store.settleRunTerminal({
+            runId: run.id,
+            state: 'interrupted',
+            interruptionKind,
+            contextSnapshot: {
+              ...(run.context_snapshot || {}),
               state: 'interrupted',
-              interruption_kind: error?.code || 'runtime_recovery_failed',
-              finished_at: now().toISOString(),
+              failurePhase: 'recovery',
+              failureStage: 'startup_recovery',
+              retryable: false,
             },
-            run.updated_at,
-          ).catch(() => undefined);
+            finishedAt: now().toISOString(),
+          });
+          if (!settled?.id) {
+            throw new BotRunRecoveryError(
+              'Bot run terminal recovery returned no run',
+              'bot_run_terminal_settlement_missing',
+              503,
+            );
+          }
           result.interrupted += 1;
           logger?.warn?.('[BotsRecovery] run resume failed', {
             runId: run.id,

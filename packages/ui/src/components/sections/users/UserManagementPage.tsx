@@ -125,11 +125,9 @@ const ManagedUserManagementPage: React.FC = () => {
           canViewDetailedAnalytics={principal.role === 'admin'}
           projects={data.projects}
           githubAccounts={data.githubAccounts}
-          invites={data.invites}
           activity={data.activity}
           onBack={() => setSelectedUserId(null)}
           onUsersChanged={async () => { await Promise.all([data.reloadUsers(), data.reloadGithubAccounts(), data.reloadActivity()]); }}
-          onInvitesChanged={async () => { await Promise.all([data.reloadInvites(), data.reloadActivity()]); }}
           onTemporaryPassword={setTemporaryPassword}
         />
       </SettingsPageLayout>

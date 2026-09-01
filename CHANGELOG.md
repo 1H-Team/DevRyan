@@ -4,9 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.8] - 2026-08-31
+
+- Sessions: keep draft creation in one cancellable, bounded attempt, preserve captured input through delayed acknowledgements, and show immediate progress without automatically replaying ambiguous failures.
+- Runtime performance: isolate compatible Context Mode execution in bounded, project-scoped workers so indexing does not block session creation.
+- OpenAI OAuth: coordinate managed host and Bot token refresh, bind Bot credentials to the intended host account, and surface explicit reconnection or runtime-update requirements without replaying accepted prompts.
+- Production Bots: add optional Telegram pairing and transport, speech settings, inline computer controls, and persistent composer drafts while keeping transport credentials private to the host.
+- Bot reliability: add safe startup retries, clearer failure diagnostics, bounded shared-file and transcript loading, and deterministic held-input cleanup when human control ends.
+- Provider recovery: coordinate stalled primary-provider recovery in the host runtime across web, Electron, and VS Code.
+- UI performance: isolate live Bot activity and defer unused sidebar panels, preserving message identity and reducing unnecessary chat renders.
+- Database: add retained-ledger Bot Audit clearing, transactional safe-run retry with required schema marker `20260830210000`, and optional service-role-only Telegram transport tables and RPCs.
+
+- Bot recovery: serialize channel-summary commits, rebase bounded revision-conflict retries, and keep asynchronous memory extraction failures separate from completed run outcomes.
+- Bot computer: persist human-control waits, resume the same action attempt after control returns, and improve browser diagnostics, display handling, and managed browser policy enforcement.
+- Bot images: expose the dedicated image tool to eligible OAuth primary agents and preserve encrypted assistant attachments independently of optional Shared-folder publication.
+- Session deletion: improve partial-failure feedback and idempotent recovery while enforcing current ownership grants and analytics retention.
+- Database: add durable `waiting_control` states and advance the required Bot schema marker to `20260830150000`, preserving active computer-scope exclusivity and service-role-only RPC access.
+- Production Bots chat: admit one pending assistant response atomically with each user message, let simple conversations answer directly, and promote only a request-specific, Soul-authored pre-tool sentence into a durable acknowledgment before the natural final answer.
+- Bot computer: replace the passive MJPEG image viewer with bounded canvas decoding and Operator-only pointer, keyboard, text, paste, and wheel control tied to the active human-control lease; coalesce continuous input and remove container inspection and audit delivery from the click-response hot path without retaining frames or input content.
+- Runtime safety: keep warm-run credentials provisional until admission, clean every staged secret and capability on lease teardown, and harden model credential selection, fallback, and response sanitization around failed or empty runs.
+- Chat questions: support multiline custom answers with stable keyboard navigation and responsive editor actions across desktop and mobile.
+- Database: atomically persist the Bot's pending assistant response through a service-role-only, security-invoker RPC and advance the required Bot schema marker to `20260829130000`.
+- Branch previews: let administrators configure an HTTPS preview per user, project, and branch, keep Cloudflare Access credentials in the host-encrypted vault, and inject them only into the matching Electron browser lease.
+- Browser security: resolve managed preview ownership authoritatively, isolate preview partitions by owner and origin, and preserve exact branch scope across browser discovery and lease creation.
+- Production Bots: expose Soul/personality, Standing Role, and Objectives in the Overview editor, preserve draft identity edits across tabs, and publish changes only to future runs through immutable revision activation.
+- Background runtime: replace the detached macOS service-control helper with an in-process N-API `SMAppService` bridge, automate safe first-launch registration, and strengthen ownership recovery and packaged-artifact verification.
+- Release packaging: strengthen macOS runtime-service and archive verification while permanently preserving the established unsigned artifact path with signing and notarization disabled in CI.
+- Database: add the forced-RLS, service-role-only branch preview metadata migration with cascading cleanup and opaque host-vault references.
+- Release: bump the DevRyan workspace, Electron, VS Code, web, runtime packages, and legacy desktop metadata to 1.1.8.
+
 ## [1.1.7] - 2026-08-26
 
-- OpenCode: update the managed runtime, bundled SDK, packaged plugin, VS Code recommendation, and Production Bots image to 1.18.23.
+- OpenCode: update the managed runtime, bundled SDK, packaged plugin, VS Code recommendation, and Production Bots image to 1.18.25.
 - Production Bots: give global administrators a restricted read-only computer-root browser while keeping other Managers scoped to the Bot workspace.
 - Production Bots: add write-only Bot environment secrets backed by a host-encrypted vault and materialized only for newly admitted reasoning runs.
 - Production Bots: add OAuth-only ChatGPT image generation with verified automatic encrypted-object publication and inline chat attachments independent of the Shared-folder copy.

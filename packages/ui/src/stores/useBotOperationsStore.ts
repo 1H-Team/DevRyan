@@ -8,6 +8,7 @@ import {
   type BotComputerControl,
   type BotComputerStatus,
   type BotComputerViewSession,
+  type BotHumanInputEvent,
   type BotReconciliationRequest,
   type BotRun,
   type BotsApi,
@@ -52,12 +53,20 @@ export type BotOperationsState = {
   cancelRun(runId: string): Promise<BotRun>;
   decideAction(actionId: string, request: BotApprovalDecisionRequest): Promise<BotActionAttempt>;
   reconcileAction(actionId: string, request: BotReconciliationRequest): Promise<BotActionAttempt>;
-  refreshComputer(botId: string): Promise<BotComputerStatus>;
-  startComputerView(botId: string, channelId: string): Promise<BotComputerViewSession>;
+  refreshComputer(botId: string, expectedLeaseId?: string): Promise<BotComputerStatus>;
+  refreshComputerDiagnostic(botId: string): Promise<BotComputerStatus>;
+  startComputerView(botId: string, channelId: string, runId?: string): Promise<BotComputerViewSession>;
   stopComputerView(botId: string): Promise<boolean>;
   takeComputerControl(botId: string): Promise<BotComputerControl | null>;
   heartbeatComputerControl(botId: string, leaseId: string): Promise<BotComputerControl | null>;
   returnComputerControl(botId: string, leaseId: string): Promise<BotComputerControl | null>;
+  sendHumanComputerInput(
+    botId: string,
+    viewId: string,
+    leaseId: string,
+    events: readonly BotHumanInputEvent[],
+    signal?: AbortSignal,
+  ): Promise<void>;
 };
 
 export type BotOperationsStore = UseBoundStore<StoreApi<BotOperationsState>>;
@@ -160,6 +169,23 @@ const errorCode = (error: unknown): string => (
   error instanceof BotsApiError ? error.code : 'bot_request_failed'
 );
 
+const browserDiagnosticFingerprint = (status: BotComputerStatus | undefined): string => {
+  const browser = status?.browser;
+  return JSON.stringify({
+    running: browser?.running,
+    healthy: browser?.healthy,
+    launching: browser?.launching,
+    lifecycleState: browser?.lifecycleState,
+    generation: browser?.generation,
+    lastFailureCode: browser?.lastFailureCode,
+    mode: browser?.mode,
+    engineVersion: browser?.engineVersion,
+    displayReady: browser?.displayReady,
+    webCapabilities: browser?.webCapabilities,
+    diagnosticRevision: browser?.lastNavigationDiagnostic?.revision,
+  });
+};
+
 const groupedActionIds = (
   actionsById: Readonly<Record<string, BotActionAttempt>>,
   previous: Readonly<Record<string, readonly string[]>>,
@@ -187,6 +213,7 @@ export const createBotOperationsStore = (
 ): BotOperationsStore => {
   let principalGeneration = 0;
   const computerViewStarts = new Map<string, Promise<BotComputerViewSession>>();
+  const computerViewGenerations = new Map<string, number>();
   return create<BotOperationsState>((set, get) => ({
   principalId: null,
   runsById: {},
@@ -205,6 +232,7 @@ export const createBotOperationsStore = (
 
   resetPrincipal(principalId) {
     principalGeneration += 1;
+    computerViewGenerations.clear();
     for (const view of Object.values(get().computerViewsByBotId)) {
       void api.stopComputerView(view.botId, view.id).catch(() => undefined);
     }
@@ -418,20 +446,43 @@ export const createBotOperationsStore = (
     return action;
   },
 
-  async refreshComputer(botId) {
+  async refreshComputer(botId, expectedLeaseId) {
     const generation = principalGeneration;
+    const expectedControl = get().computersByBotId[botId]?.control;
     const status = await api.getComputerStatus(botId);
-    if (generation === principalGeneration) get().upsertComputer(status);
+    if (generation === principalGeneration && (expectedLeaseId === undefined
+      || (expectedControl?.leaseId === expectedLeaseId && get().computersByBotId[botId]?.control === expectedControl))) {
+      get().upsertComputer(status);
+    }
     return status;
   },
 
-  async startComputerView(botId, channelId) {
+  async refreshComputerDiagnostic(botId) {
+    const generation = principalGeneration;
+    const status = await api.getComputerStatus(botId);
+    if (generation !== principalGeneration) return status;
+    set((state) => {
+      const current = state.computersByBotId[botId];
+      if (browserDiagnosticFingerprint(current) === browserDiagnosticFingerprint(status)) return state;
+      return {
+        computersByBotId: {
+          ...state.computersByBotId,
+          [botId]: status,
+        },
+      };
+    });
+    return status;
+  },
+
+  async startComputerView(botId, channelId, runId) {
     const existing = get().computerViewsByBotId[botId];
-    if (existing?.channelId === channelId) return existing;
+    if (existing?.channelId === channelId && existing.runId === runId) return existing;
     if (existing) await get().stopComputerView(botId);
-    const startKey = `${botId}:${channelId}`;
+    const startKey = `${botId}:${channelId}:${runId ?? 'manual'}`;
     const inFlight = computerViewStarts.get(startKey);
     if (inFlight) return inFlight;
+    const viewGeneration = (computerViewGenerations.get(botId) ?? 0) + 1;
+    computerViewGenerations.set(botId, viewGeneration);
     const operation = (async () => {
       const generation = principalGeneration;
       set((state) => ({
@@ -442,8 +493,8 @@ export const createBotOperationsStore = (
         computerViewErrorCodeByBotId: omitKey(state.computerViewErrorCodeByBotId, botId),
       }));
       try {
-        const { view } = await api.startComputerView(botId, channelId);
-        if (generation === principalGeneration) {
+        const { view } = await api.startComputerView(botId, channelId, runId);
+        if (generation === principalGeneration && computerViewGenerations.get(botId) === viewGeneration) {
           set((state) => ({
             computerViewsByBotId: { ...state.computerViewsByBotId, [botId]: view },
           }));
@@ -452,7 +503,7 @@ export const createBotOperationsStore = (
         }
         return view;
       } catch (error) {
-        if (generation === principalGeneration) {
+        if (generation === principalGeneration && computerViewGenerations.get(botId) === viewGeneration) {
           set((state) => ({
             computerViewErrorCodeByBotId: {
               ...state.computerViewErrorCodeByBotId,
@@ -462,7 +513,7 @@ export const createBotOperationsStore = (
         }
         throw error;
       } finally {
-        if (generation === principalGeneration) {
+        if (generation === principalGeneration && computerViewGenerations.get(botId) === viewGeneration) {
           set((state) => ({
             computerViewPendingByBotId: omitKey(state.computerViewPendingByBotId, botId),
           }));
@@ -478,19 +529,24 @@ export const createBotOperationsStore = (
   },
 
   async stopComputerView(botId) {
+    const viewGeneration = (computerViewGenerations.get(botId) ?? 0) + 1;
+    computerViewGenerations.set(botId, viewGeneration);
+    for (const key of computerViewStarts.keys()) {
+      if (key.startsWith(`${botId}:`)) computerViewStarts.delete(key);
+    }
     const view = get().computerViewsByBotId[botId];
-    if (!view) return false;
     const generation = principalGeneration;
     set((state) => ({
       computerViewsByBotId: omitKey(state.computerViewsByBotId, botId),
       computerViewPendingByBotId: omitKey(state.computerViewPendingByBotId, botId),
       computerViewErrorCodeByBotId: omitKey(state.computerViewErrorCodeByBotId, botId),
     }));
+    if (!view) return false;
     try {
       const { stopped } = await api.stopComputerView(botId, view.id);
       return stopped;
     } catch (error) {
-      if (generation === principalGeneration) {
+      if (generation === principalGeneration && computerViewGenerations.get(botId) === viewGeneration) {
         set((state) => ({
           computerViewErrorCodeByBotId: {
             ...state.computerViewErrorCodeByBotId,
@@ -519,8 +575,19 @@ export const createBotOperationsStore = (
   async returnComputerControl(botId, leaseId) {
     const generation = principalGeneration;
     const { control } = await api.returnComputerControl(botId, leaseId);
-    if (generation === principalGeneration) get().updateComputerControl(botId, control);
+    if (generation === principalGeneration && get().computersByBotId[botId]?.control?.leaseId === leaseId) {
+      get().updateComputerControl(botId, control);
+    }
     return control;
+  },
+
+  async sendHumanComputerInput(botId, viewId, leaseId, events, signal) {
+    await api.sendHumanComputerCommand(botId, {
+      viewId,
+      leaseId,
+      command: 'input',
+      args: { events },
+    }, signal);
   },
   }));
 };

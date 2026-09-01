@@ -36,6 +36,14 @@ const KEY_NAMES = new Set([
 ]);
 const MAX_SCREENSHOT_BYTES = 4 * 1024 * 1024;
 const MAX_CDP_MESSAGE_BYTES = 8 * 1024 * 1024;
+const HUMAN_VIEWPORT_WIDTH = 1280;
+const HUMAN_VIEWPORT_HEIGHT = 720;
+const HUMAN_DEVICE_SCALE_FACTOR = 1;
+const MAX_HUMAN_INPUT_EVENTS = 32;
+const HUMAN_POINTER_PHASES = new Set(['move', 'down', 'up']);
+const HUMAN_POINTER_BUTTONS = new Set(['none', 'left', 'middle', 'right']);
+const HUMAN_KEY_PHASES = new Set(['down', 'up']);
+const HUMAN_KEY_MODIFIERS = new Set(['Alt', 'Control', 'Meta', 'Shift']);
 const CDP_COMMAND_TIMEOUT_MS = 30_000;
 const CDP_CONNECT_TIMEOUT_MS = 10_000;
 const RECOVERABLE_BROWSER_CODES = new Set([
@@ -54,6 +62,26 @@ const CHROMIUM_STARTUP_ARTIFACTS = Object.freeze([
   'SingletonCookie',
   'SingletonLock',
   'SingletonSocket',
+]);
+
+export const chromiumLaunchArguments = ({ profileDirectory, proxyUrl } = {}) => Object.freeze([
+  '--no-sandbox',
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--disable-background-networking',
+  '--disable-component-update',
+  '--disable-default-apps',
+  '--disable-extensions',
+  '--disable-quic',
+  '--disable-sync',
+  `--window-size=${HUMAN_VIEWPORT_WIDTH},${HUMAN_VIEWPORT_HEIGHT}`,
+  `--force-device-scale-factor=${HUMAN_DEVICE_SCALE_FACTOR}`,
+  `--proxy-server=${proxyUrl}`,
+  '--proxy-bypass-list=<-loopback>',
+  '--remote-debugging-address=127.0.0.1',
+  '--remote-debugging-port=0',
+  `--user-data-dir=${profileDirectory}`,
+  'about:blank',
 ]);
 
 export class ComputerBrowserError extends Error {
@@ -98,6 +126,219 @@ const boundedText = (value, field, max) => {
     fail(`${field} is invalid`, 'DEVRYAN_BOT_BROWSER_INPUT_INVALID');
   }
   return value;
+};
+
+const boundedCoordinate = (value, field, maximum) => {
+  if (!Number.isFinite(value) || value < 0 || value > maximum) {
+    fail(`${field} is invalid`, 'DEVRYAN_BOT_BROWSER_INPUT_INVALID');
+  }
+  return value;
+};
+
+export const validateHumanInputArgs = (args) => {
+  exactKeys(args, ['events']);
+  if (!Array.isArray(args.events) || args.events.length < 1
+    || args.events.length > MAX_HUMAN_INPUT_EVENTS
+    || Buffer.byteLength(JSON.stringify(args), 'utf8') > 64 * 1024) {
+    fail('Human input batch is invalid', 'DEVRYAN_BOT_BROWSER_INPUT_INVALID');
+  }
+  return Object.freeze(args.events.map((event) => {
+    if (!event || typeof event !== 'object' || Array.isArray(event)) {
+      fail('Human input event is invalid', 'DEVRYAN_BOT_BROWSER_INPUT_INVALID');
+    }
+    if (event.type === 'pointer') {
+      exactKeys(event, ['type', 'phase', 'x', 'y', 'button', 'buttons', 'clickCount']);
+      if (!HUMAN_POINTER_PHASES.has(event.phase) || !HUMAN_POINTER_BUTTONS.has(event.button)
+        || !Number.isInteger(event.buttons) || event.buttons < 0 || event.buttons > 31
+        || !Number.isInteger(event.clickCount) || event.clickCount < 0 || event.clickCount > 3
+        || (event.phase !== 'move' && event.button === 'none')) {
+        fail('Human pointer event is invalid', 'DEVRYAN_BOT_BROWSER_INPUT_INVALID');
+      }
+      return Object.freeze({
+        ...event,
+        x: boundedCoordinate(event.x, 'Pointer x', HUMAN_VIEWPORT_WIDTH),
+        y: boundedCoordinate(event.y, 'Pointer y', HUMAN_VIEWPORT_HEIGHT),
+      });
+    }
+    if (event.type === 'wheel') {
+      exactKeys(event, ['type', 'x', 'y', 'deltaX', 'deltaY']);
+      if (![event.deltaX, event.deltaY].every((value) => (
+        Number.isFinite(value) && Math.abs(value) <= 100_000
+      ))) {
+        fail('Human wheel event is invalid', 'DEVRYAN_BOT_BROWSER_INPUT_INVALID');
+      }
+      return Object.freeze({
+        ...event,
+        x: boundedCoordinate(event.x, 'Wheel x', HUMAN_VIEWPORT_WIDTH),
+        y: boundedCoordinate(event.y, 'Wheel y', HUMAN_VIEWPORT_HEIGHT),
+      });
+    }
+    if (event.type === 'key') {
+      exactKeys(event, ['type', 'phase', 'key', 'code', 'modifiers', 'location', 'repeat']);
+      if (!HUMAN_KEY_PHASES.has(event.phase) || !Array.isArray(event.modifiers)
+        || event.modifiers.length > HUMAN_KEY_MODIFIERS.size
+        || new Set(event.modifiers).size !== event.modifiers.length
+        || event.modifiers.some((modifier) => !HUMAN_KEY_MODIFIERS.has(modifier))
+        || !Number.isInteger(event.location) || event.location < 0 || event.location > 3
+        || typeof event.repeat !== 'boolean') {
+        fail('Human key event is invalid', 'DEVRYAN_BOT_BROWSER_INPUT_INVALID');
+      }
+      return Object.freeze({
+        ...event,
+        key: boundedText(event.key, 'Key', 128),
+        code: boundedText(event.code, 'Key code', 128),
+        modifiers: Object.freeze([...event.modifiers]),
+      });
+    }
+    if (event.type === 'text') {
+      exactKeys(event, ['type', 'text']);
+      const text = boundedText(event.text, 'Input text', 32 * 1024);
+      if (!text) fail('Input text is invalid', 'DEVRYAN_BOT_BROWSER_INPUT_INVALID');
+      return Object.freeze({ type: 'text', text });
+    }
+    fail('Human input event type is invalid', 'DEVRYAN_BOT_BROWSER_INPUT_INVALID');
+  }));
+};
+
+const cdpModifiers = (modifiers) => modifiers.reduce((mask, modifier) => (
+  mask | ({ Alt: 1, Control: 2, Meta: 4, Shift: 8 }[modifier] || 0)
+), 0);
+
+// Blink maps non-printable keys to editing commands via the Windows virtual key
+// code; without it Enter/Backspace/arrows dispatch but edit nothing.
+const VIRTUAL_KEY_CODES = {
+  Backspace: 8, Tab: 9, Enter: 13, Shift: 16, Control: 17, Alt: 18, Pause: 19, CapsLock: 20,
+  Escape: 27, ' ': 32, PageUp: 33, PageDown: 34, End: 35, Home: 36,
+  ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Insert: 45, Delete: 46,
+  Meta: 91, ContextMenu: 93,
+  F1: 112, F2: 113, F3: 114, F4: 115, F5: 116, F6: 117,
+  F7: 118, F8: 119, F9: 120, F10: 121, F11: 122, F12: 123,
+};
+
+const virtualKeyCode = (key, code) => {
+  if (VIRTUAL_KEY_CODES[key] !== undefined) return VIRTUAL_KEY_CODES[key];
+  if (/^[0-9]$/u.test(key)) return key.charCodeAt(0);
+  if (/^[a-zA-Z]$/u.test(key)) return key.toUpperCase().charCodeAt(0);
+  if (/^Numpad[0-9]$/u.test(code)) return 96 + Number(code.slice(6));
+  return null;
+};
+
+export const dispatchHumanInputEvents = async ({ events, send } = {}) => {
+  if (!Array.isArray(events) || typeof send !== 'function') {
+    fail('Human input dispatcher is invalid', 'DEVRYAN_BOT_BROWSER_CONFIG_INVALID', 500);
+  }
+  for (const event of events) {
+    if (event.type === 'pointer') {
+      await send('Input.dispatchMouseEvent', {
+        type: event.phase === 'move'
+          ? 'mouseMoved'
+          : event.phase === 'down' ? 'mousePressed' : 'mouseReleased',
+        x: event.x,
+        y: event.y,
+        button: event.button,
+        buttons: event.buttons,
+        clickCount: event.clickCount,
+        pointerType: 'mouse',
+      });
+    } else if (event.type === 'wheel') {
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseWheel',
+        x: event.x,
+        y: event.y,
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+        pointerType: 'mouse',
+      });
+    } else if (event.type === 'key') {
+      const printableText = event.phase === 'down'
+        && !event.modifiers.some((modifier) => ['Alt', 'Control', 'Meta'].includes(modifier))
+        ? (event.key.length === 1 ? event.key : event.key === 'Enter' ? '\r' : '')
+        : '';
+      const keyCode = virtualKeyCode(event.key, event.code);
+      await send('Input.dispatchKeyEvent', {
+        type: event.phase === 'down' ? 'keyDown' : 'keyUp',
+        key: event.key,
+        code: event.code,
+        modifiers: cdpModifiers(event.modifiers),
+        location: event.location,
+        autoRepeat: event.repeat,
+        ...(printableText ? { text: printableText, unmodifiedText: printableText } : {}),
+        ...(keyCode === null ? {} : { windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode }),
+      });
+    } else {
+      await send('Input.insertText', { text: event.text });
+    }
+  }
+  return Object.freeze({ dispatched: events.length });
+};
+
+// Held input is ephemeral and belongs to this exact CDP driver. Never expose
+// these maps through status, logging, diagnostics, or persisted history.
+export const createHumanInputDispatcher = ({ send, releaseTimeoutMs = 2_000 } = {}) => {
+  if (typeof send !== 'function' || !Number.isInteger(releaseTimeoutMs) || releaseTimeoutMs < 1) {
+    fail('Human input dispatcher is invalid', 'DEVRYAN_BOT_BROWSER_CONFIG_INVALID', 500);
+  }
+  let generation = 0;
+  let queue = Promise.resolve();
+  let queuedBatches = 0;
+  const heldKeys = new Map();
+  const heldButtons = new Map();
+  const dispatch = (events, { assertAuthorized = () => undefined } = {}) => {
+    if (queuedBatches >= 8) fail('Human input backlog is full', 'DEVRYAN_BOT_BROWSER_INPUT_INVALID', 429);
+    queuedBatches += 1;
+    const expectedGeneration = generation;
+    const operation = queue.then(() => dispatchHumanInputEvents({ events, send: async (method, params) => {
+      if (generation !== expectedGeneration) {
+        fail('Human input was revoked', 'DEVRYAN_BOT_CONTROL_NOT_OWNER', 409);
+      }
+      assertAuthorized();
+      if (method === 'Input.dispatchKeyEvent' && params.type === 'keyDown') {
+        if (heldKeys.size >= 256 && !heldKeys.has(params.code)) {
+          fail('Too many held keys', 'DEVRYAN_BOT_BROWSER_INPUT_INVALID');
+        }
+        heldKeys.set(params.code, params);
+      }
+      if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed') heldButtons.set(params.button, params);
+      if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseMoved') {
+        for (const [button, held] of heldButtons) heldButtons.set(button, { ...held, x: params.x, y: params.y });
+      }
+      await send(method, params);
+      if (generation !== expectedGeneration) return;
+      if (method === 'Input.dispatchKeyEvent' && params.type === 'keyUp') heldKeys.delete(params.code);
+      if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased') heldButtons.delete(params.button);
+    } }));
+    queue = operation.catch(() => undefined).finally(() => {
+      if (generation === expectedGeneration) queuedBatches -= 1;
+    });
+    return operation;
+  };
+  const release = async () => {
+    // Do not await an old HTTP/CDP acknowledgment. The same ordered CDP socket
+    // receives releases after its already-issued downs, and the generation
+    // fence prevents any later event from that batch from being dispatched.
+    generation += 1;
+    queue = Promise.resolve();
+    queuedBatches = 0;
+    const releases = [
+      ...[...heldKeys].map(async ([key, held]) => {
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', key: held.key, code: held.code, location: held.location, modifiers: 0 });
+        if (heldKeys.get(key) === held) heldKeys.delete(key);
+      }),
+      ...[...heldButtons].map(async ([button, held]) => {
+        await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: held.x, y: held.y, button, buttons: 0, clickCount: 1, pointerType: 'mouse' });
+        if (heldButtons.get(button) === held) heldButtons.delete(button);
+      }),
+    ];
+    let timer;
+    try {
+      await Promise.race([Promise.all(releases), new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new ComputerBrowserError(
+          'Held computer input release timed out', 'DEVRYAN_BOT_CONTROL_RELEASE_FAILED', 503,
+        )), releaseTimeoutMs);
+      })]);
+    } finally { clearTimeout(timer); }
+  };
+  return Object.freeze({ dispatch, release });
 };
 
 const safeUrl = (value) => {
@@ -316,6 +557,8 @@ export async function launchChromiumDriver({
   profileDirectory,
   scratchDirectory,
   proxyUrl,
+  display = ':99',
+  diagnostics = null,
   spawnImpl = spawn,
   fsPromises = fs,
   WebSocketImpl = globalThis.WebSocket,
@@ -325,32 +568,21 @@ export async function launchChromiumDriver({
     || typeof profileDirectory !== 'string' || !path.isAbsolute(profileDirectory)
     || typeof scratchDirectory !== 'string' || !path.isAbsolute(scratchDirectory)
     || typeof proxyUrl !== 'string' || !/^http:\/\/127\.0\.0\.1:\d{1,5}$/u.test(proxyUrl)
+    || typeof display !== 'string' || !/^:[1-9]\d{0,3}$/u.test(display)
+    || (diagnostics !== null && typeof diagnostics?.recordRequest !== 'function')
     || typeof spawnImpl !== 'function') {
     fail('Chromium launch configuration is invalid', 'DEVRYAN_BOT_BROWSER_CONFIG_INVALID', 500);
   }
   await fsPromises.mkdir(profileDirectory, { recursive: true, mode: 0o700 });
   await fsPromises.mkdir(scratchDirectory, { recursive: true, mode: 0o700 });
   await clearStaleChromiumStartupArtifacts({ profileDirectory, fsPromises });
-  const child = spawnImpl(executablePath, [
-    '--headless=new',
-    '--no-sandbox',
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--disable-background-networking',
-    '--disable-component-update',
-    '--disable-default-apps',
-    '--disable-extensions',
-    '--disable-quic',
-    '--disable-sync',
-    `--proxy-server=${proxyUrl}`,
-    '--proxy-bypass-list=<-loopback>',
-    '--remote-debugging-address=127.0.0.1',
-    '--remote-debugging-port=0',
-    `--user-data-dir=${profileDirectory}`,
-    'about:blank',
-  ], {
+  const child = spawnImpl(executablePath, chromiumLaunchArguments({
+    profileDirectory,
+    proxyUrl,
+  }), {
     cwd: scratchDirectory,
     env: {
+      DISPLAY: display,
       HOME: profileDirectory,
       LANG: 'C.UTF-8',
       PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
@@ -368,6 +600,10 @@ export async function launchChromiumDriver({
     spawnError: () => childSpawnError,
   }), { WebSocketImpl });
   await connection.ready;
+  const version = await connection.send('Browser.getVersion');
+  const engineVersion = typeof version.product === 'string' && version.product.length <= 128
+    ? version.product
+    : null;
   const { targetId } = await connection.send('Target.createTarget', { url: 'about:blank' });
   const attached = await connection.send('Target.attachToTarget', { targetId, flatten: true });
   const sessionId = attached.sessionId;
@@ -375,12 +611,21 @@ export async function launchChromiumDriver({
     connection.send('Page.enable', {}, sessionId),
     connection.send('DOM.enable', {}, sessionId),
     connection.send('Accessibility.enable', {}, sessionId),
+    connection.send('Network.enable', {}, sessionId),
+    connection.send('Emulation.setDeviceMetricsOverride', {
+      width: HUMAN_VIEWPORT_WIDTH,
+      height: HUMAN_VIEWPORT_HEIGHT,
+      deviceScaleFactor: HUMAN_DEVICE_SCALE_FACTOR,
+      mobile: false,
+    }, sessionId),
     connection.send('Browser.setDownloadBehavior', {
       behavior: 'allow',
       downloadPath: scratchDirectory,
       eventsEnabled: true,
     }),
   ]);
+  const frameTree = await connection.send('Page.getFrameTree', {}, sessionId);
+  let mainFrameId = frameTree.frameTree?.frame?.id || null;
 
   let terminated = false;
   const terminationListeners = new Set();
@@ -395,7 +640,45 @@ export async function launchChromiumDriver({
 
   let pageChangeHandler = () => undefined;
   connection.on('Page.frameNavigated', (event, eventSessionId) => {
-    if (eventSessionId === sessionId && !event.frame?.parentId) pageChangeHandler();
+    if (eventSessionId !== sessionId || event.frame?.parentId) return;
+    mainFrameId = event.frame?.id || mainFrameId;
+    pageChangeHandler();
+  });
+  connection.on('Network.requestWillBeSent', (event, eventSessionId) => {
+    if (eventSessionId !== sessionId) return;
+    diagnostics?.recordRequest({
+      requestId: event.requestId,
+      url: event.request?.url,
+      type: event.type,
+      mainFrame: event.type === 'Document' && event.frameId === mainFrameId,
+      redirected: Boolean(event.redirectResponse),
+    });
+  });
+  connection.on('Network.responseReceived', (event, eventSessionId) => {
+    if (eventSessionId !== sessionId) return;
+    diagnostics?.recordResponse({
+      requestId: event.requestId,
+      url: event.response?.url,
+      statusCode: event.response?.status,
+    });
+  });
+  connection.on('Network.requestWillBeSentExtraInfo', (event, eventSessionId) => {
+    if (eventSessionId !== sessionId) return;
+    const reasons = (event.associatedCookies || []).flatMap((entry) => entry.blockedReasons || []);
+    diagnostics?.recordCookieBlock({ requestId: event.requestId, reasons });
+  });
+  connection.on('Network.responseReceivedExtraInfo', (event, eventSessionId) => {
+    if (eventSessionId !== sessionId) return;
+    const reasons = (event.blockedCookies || []).flatMap((entry) => entry.blockedReasons || []);
+    diagnostics?.recordCookieBlock({ requestId: event.requestId, reasons });
+  });
+  connection.on('Network.loadingFailed', (event, eventSessionId) => {
+    if (eventSessionId !== sessionId) return;
+    diagnostics?.recordFailure({
+      requestId: event.requestId,
+      errorText: event.errorText,
+      blockedReason: event.blockedReason,
+    });
   });
 
   const waitForPageLoad = () => {
@@ -460,7 +743,12 @@ export async function launchChromiumDriver({
   };
 
   let stopScreencast = null;
+  const humanInput = createHumanInputDispatcher({ send: (method, params) => connection.send(method, params, sessionId) });
   return Object.freeze({
+    status: () => Object.freeze({
+      mode: 'headed_virtual',
+      engineVersion,
+    }),
     isHealthy: () => !terminated && child.exitCode === null && !connection.isClosed(),
     onTerminated(callback) {
       if (typeof callback !== 'function') return () => undefined;
@@ -517,6 +805,8 @@ export async function launchChromiumDriver({
     scroll: ({ deltaX, deltaY }) => connection.send('Input.dispatchMouseEvent', {
       type: 'mouseWheel', x: 0, y: 0, deltaX, deltaY,
     }, sessionId),
+    input: humanInput.dispatch,
+    releaseInput: humanInput.release,
     upload: (node, filePath) => connection.send('DOM.setFileInputFiles', {
       backendNodeId: node.backendNodeId,
       files: [filePath],
@@ -536,8 +826,9 @@ export async function launchChromiumDriver({
         const frame = Buffer.from(event.data || '', 'base64');
         try {
           onFrame(frame, {
-            width: Math.round(event.metadata?.deviceWidth || 0),
-            height: Math.round(event.metadata?.deviceHeight || 0),
+            width: Math.round(event.metadata?.deviceWidth || HUMAN_VIEWPORT_WIDTH),
+            height: Math.round(event.metadata?.deviceHeight || HUMAN_VIEWPORT_HEIGHT),
+            deviceScaleFactor: HUMAN_DEVICE_SCALE_FACTOR,
           });
         } catch {
           // A malformed/oversized frame is dropped without crashing the browser service.
@@ -573,8 +864,22 @@ export function createBrowserController({
   workspace,
   profiles,
   screencast,
+  environmentStatus = () => ({
+    mode: 'headed_virtual',
+    engineVersion: null,
+    displayReady: true,
+    webCapabilities: {
+      managedPolicy: 'enforced',
+      javascript: 'enabled',
+      firstPartyCookies: 'enabled',
+      thirdPartyCookies: 'enabled',
+    },
+  }),
+  diagnostics = null,
 } = {}) {
-  if (typeof launchDriver !== 'function' || !refs || !control || !workspace || !profiles || !screencast) {
+  if (typeof launchDriver !== 'function' || !refs || !control || !workspace || !profiles || !screencast
+    || typeof environmentStatus !== 'function'
+    || (diagnostics !== null && typeof diagnostics?.snapshot !== 'function')) {
     fail('Browser controller configuration is invalid', 'DEVRYAN_BOT_BROWSER_CONFIG_INVALID', 500);
   }
   let driver = null;
@@ -584,6 +889,7 @@ export function createBrowserController({
   let screencastTransition = Promise.resolve();
   let generation = 0;
   let lastFailureCode = null;
+  control.setInputReleaseHandler(() => driver?.releaseInput?.());
 
   const publishScreencast = (frame, metadata) => {
     screencast.publishJpeg(frame, metadata);
@@ -607,6 +913,13 @@ export function createBrowserController({
   };
 
   const ensureDriver = async () => {
+    const environment = environmentStatus();
+    if (environment?.displayReady !== true) {
+      fail('Virtual display is unavailable', 'DEVRYAN_BOT_DISPLAY_CLOSED', 503);
+    }
+    if (environment?.webCapabilities?.managedPolicy !== 'enforced') {
+      fail('Managed Chromium policy is unavailable', 'DEVRYAN_BOT_BROWSER_POLICY_INVALID', 503);
+    }
     if (driver && driver.isHealthy()) return driver;
     if (driver) await retireDriver(driver, 'DEVRYAN_BOT_BROWSER_CLOSED');
     if (launching) return launching;
@@ -658,11 +971,12 @@ export function createBrowserController({
     return Object.freeze({ closed: true });
   };
 
-  const executeCommand = async (command, args, { signal, human = false, gatewayToken = null } = {}) => {
-    if (!COMMANDS.has(command)) {
+  const executeCommand = async (command, args, { signal, human = false, gatewayToken = null, assertAuthorized = () => undefined } = {}) => {
+    const isHumanInput = human && command === 'input';
+    if (!COMMANDS.has(command) && !isHumanInput) {
       fail('Browser command is not reviewed', 'DEVRYAN_BOT_BROWSER_COMMAND_DENIED');
     }
-    if (!human) await control.waitForAgent({ signal });
+    if (!human) control.assertAgentAvailable();
     if (command === 'wait') {
       exactKeys(args, ['milliseconds']);
       if (!Number.isInteger(args.milliseconds) || args.milliseconds < 0 || args.milliseconds > 30_000) {
@@ -697,6 +1011,12 @@ export function createBrowserController({
       return close();
     }
     const perform = async (active) => {
+      if (human) assertAuthorized();
+      else control.assertAgentAvailable();
+      if (isHumanInput) {
+        const events = validateHumanInputArgs(args);
+        return active.input(events, { assertAuthorized });
+      }
       if (command === 'navigate') {
         exactKeys(args, ['url']);
         refs.beginPage();
@@ -772,6 +1092,7 @@ export function createBrowserController({
         active = await ensureDriver();
         return await perform(active);
       } catch (error) {
+        if (error?.code?.startsWith('DEVRYAN_BOT_CONTROL_')) throw error;
         const recoverable = RECOVERABLE_BROWSER_CODES.has(error?.code);
         if (active) await retireDriver(active, error?.code);
         else if (recoverable) lastFailureCode = error.code;
@@ -796,10 +1117,26 @@ export function createBrowserController({
         if (screencastSubscriberCount === 0) {
           stopScreencast = await active.startScreencast?.(publishScreencast);
         }
+        // CDP only emits screencast frames when the page is damaged. A viewer
+        // joining an already-running screencast would otherwise remain blank
+        // until the page changes. Capture one current frame for every new
+        // subscriber and fan it out transiently through the existing broker.
+        // The broker deliberately retains no frame bytes.
+        const firstFrame = await active.screenshot({ format: 'jpeg', quality: 60 });
+        publishScreencast(firstFrame, {
+          width: HUMAN_VIEWPORT_WIDTH,
+          height: HUMAN_VIEWPORT_HEIGHT,
+          deviceScaleFactor: HUMAN_DEVICE_SCALE_FACTOR,
+        });
         screencastSubscriberCount += 1;
       } catch (error) {
         unsubscribe();
         unsubscribe = null;
+        if (screencastSubscriberCount === 0) {
+          const stop = stopScreencast;
+          stopScreencast = null;
+          await stop?.().catch(() => undefined);
+        }
         throw error;
       }
     });
@@ -832,11 +1169,15 @@ export function createBrowserController({
     subscribeScreencast,
     status: () => Object.freeze({
       running: Boolean(driver),
-      healthy: Boolean(driver?.isHealthy()),
+      healthy: Boolean(driver?.isHealthy()) && environmentStatus()?.displayReady === true,
       launching: Boolean(launching),
+      lifecycleState: driver ? 'running' : launching ? 'launching' : 'stopped',
       generation,
       lastFailureCode,
       screencastSubscribers: screencastSubscriberCount,
+      ...environmentStatus(),
+      ...driver?.status?.(),
+      lastNavigationDiagnostic: diagnostics?.snapshot?.() || null,
     }),
   });
 }

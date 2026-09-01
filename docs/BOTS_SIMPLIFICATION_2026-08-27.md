@@ -151,7 +151,9 @@ not an ambiguous confidence bucket.
 
 ### Bot settings
 
-1. **Overview** — name, title, avatar, status.
+1. **Overview** — name, title, avatar, Soul/personality, Standing Role,
+   Objectives, Provider, Model, Thinking, status. Core identity is revision-backed and applies to future
+   runs; advanced instruction and token controls remain hidden.
 2. **Resources** — built-in capability summary; computer files/folders; optional
    Skills/SOPs; protected provider API keys/accounts; environment secrets.
 3. **Memory** — Remembered and Forgotten facts with remember/forget controls.
@@ -171,6 +173,9 @@ not an ambiguous confidence bucket.
 
 - A new Bot requires only a name before it has server-enforced capability-first
   defaults.
+- Overview exposes Soul/personality, Standing Role, Objectives, Provider, Model,
+  and Thinking, preserves unsaved edits across settings-tab switches, and publishes them only for
+  future runs.
 - No reachable Bot UI exposes Summary, Advanced, Permissions, Activity,
   Reference Library, source management, MCP/AG-UI, policy matchers, access
   control matrices, revision history, bundles, recovery, or role selection.

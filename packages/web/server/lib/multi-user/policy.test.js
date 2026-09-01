@@ -152,6 +152,8 @@ describe('multi-user policy', () => {
       ['/config/plugins', 'GET', 'plugins'],
       ['/config/slim/install', 'POST', 'plugins'],
       ['/magic-prompts/default', 'PUT', 'magic-prompts'],
+      ['/magic-prompts/default', 'DELETE', 'magic-prompts'],
+      ['/magic-prompts', 'DELETE', 'magic-prompts'],
       ['/config/providers', 'PUT', 'providers'],
       ['/provider', 'GET', 'providers'],
       ['/provider/openai/oauth/authorize', 'POST', 'providers'],
@@ -179,6 +181,8 @@ describe('multi-user policy', () => {
     expect(settingsPageForRequest('/config/agents', 'GET')).toBeNull();
     expect(settingsPageForRequest('/config/agents', 'PUT')).toBe('agents');
     expect(settingsPageForRequest('/config/providers', 'GET')).toBeNull();
+    expect(settingsPageForRequest('/magic-prompts', 'GET')).toBeNull();
+    expect(settingsPageForRequest('/magic-prompts/default', 'GET')).toBeNull();
     expect(settingsPageForRequest('/provider/cursor-acp/session-prewarm', 'POST')).toBeNull();
     expect(settingsPageForRequest('/provider/cursor-acp/workspace', 'POST')).toBeNull();
     expect(settingsPageForRequest('/session/status')).toBeNull();
@@ -281,12 +285,14 @@ describe('multi-user policy', () => {
     const policy = normalizeRolePolicy('developer', null, {
       feature_overrides: {
         agents: { hidePermissionsUi: true, unknownFlag: true },
+        source: { hideUpdateTab: true, unknownFlag: true },
         mcp: { context7: 'on', playwright: 'off', broken: 'sometimes', '': 'on' },
       },
     });
 
     expect(policy.featureOverrides).toEqual({
       agents: { hidePermissionsUi: true, hideGlobalBehaviorUi: true },
+      source: { hideUpdateTab: true },
       mcp: { context7: 'on', playwright: 'off' },
     });
     expect(normalizeRolePolicy('admin', null, {
@@ -298,14 +304,21 @@ describe('multi-user policy', () => {
     expect(validateFeatureOverridesPayload(undefined)).toEqual({ valid: true, featureOverrides: {} });
     expect(validateFeatureOverridesPayload({
       agents: { hidePermissionsUi: true, hideGlobalBehaviorUi: false },
+      source: { hideUpdateTab: true },
       mcp: { context7: 'inherit', playwright: 'off' },
     })).toEqual({
       valid: true,
-      featureOverrides: { agents: { hidePermissionsUi: true, hideGlobalBehaviorUi: false }, mcp: { playwright: 'off' } },
+      featureOverrides: {
+        agents: { hidePermissionsUi: true, hideGlobalBehaviorUi: false },
+        source: { hideUpdateTab: true },
+        mcp: { playwright: 'off' },
+      },
     });
     expect(validateFeatureOverridesPayload({ unknown: {} }).valid).toBe(false);
     expect(validateFeatureOverridesPayload({ agents: { other: true } }).valid).toBe(false);
     expect(validateFeatureOverridesPayload({ agents: { hideGlobalBehaviorUi: 'yes' } }).valid).toBe(false);
+    expect(validateFeatureOverridesPayload({ source: { hideUpdateTab: 'yes' } }).valid).toBe(false);
+    expect(validateFeatureOverridesPayload({ source: { other: true } }).valid).toBe(false);
     expect(validateFeatureOverridesPayload({ mcp: { context7: 'maybe' } }).valid).toBe(false);
   });
 
@@ -313,13 +326,18 @@ describe('multi-user policy', () => {
     const principal = {
       ...developerPrincipal,
       policy: normalizeRolePolicy('developer', null, {
-        feature_overrides: { agents: { hidePermissionsUi: true }, mcp: { context7: 'off' } },
+        feature_overrides: {
+          agents: { hidePermissionsUi: true },
+          source: { hideUpdateTab: true },
+          mcp: { context7: 'off' },
+        },
       }),
     };
     const settings = buildEffectiveSettings({ principal, hostSettings: {}, userOverrides: {} });
 
     expect(settings.multiUser.features).toEqual({
       agents: { hidePermissionsUi: true, hideGlobalBehaviorUi: true },
+      source: { hideUpdateTab: true },
       mcp: { context7: 'off' },
     });
   });
@@ -408,6 +426,49 @@ describe('multi-user policy', () => {
     expect(published.assignments[0]).not.toHaveProperty('repositoryPath');
     expect(published.assignments[0]).not.toHaveProperty('worktreeContainerPath');
     expect(published.assignments[0]).not.toHaveProperty('remoteUrl');
+  });
+
+  it('projects sparse personal notification templates as a total effective record', () => {
+    const completion = { title: 'Personal completion', message: 'Done' };
+    const hostError = { title: 'Host error', message: 'Failed' };
+    const settings = buildEffectiveSettings({
+      principal: developerPrincipal,
+      hostSettings: {
+        notificationTemplates: {
+          completion: { title: 'Host completion', message: 'Host done' },
+          error: hostError,
+        },
+      },
+      userOverrides: { notificationTemplates: { completion } },
+    });
+
+    expect(settings.notificationTemplates.completion).toBe(completion);
+    expect(settings.notificationTemplates.error).toBe(hostError);
+    expect(settings.notificationTemplates.permission).toEqual({
+      title: 'Permissions needed',
+      message: 'Folder access is required: {last_message}',
+    });
+    expect(Object.keys(settings.notificationTemplates)).toHaveLength(6);
+  });
+
+  it('normalizes partial notification template updates against current effective values', () => {
+    const current = buildEffectiveSettings({
+      principal: developerPrincipal,
+      hostSettings: {},
+      userOverrides: {},
+    });
+    const completion = { title: 'Custom completion', message: 'Done' };
+    const mutation = validateSettingsChanges({
+      principal: developerPrincipal,
+      changes: { notificationTemplates: { completion } },
+      currentEffective: current,
+    });
+
+    expect(mutation.rejected).toEqual([]);
+    expect(mutation.accepted.notificationTemplates.completion).toBe(completion);
+    expect(mutation.accepted.notificationTemplates.permission)
+      .toEqual(current.notificationTemplates.permission);
+    expect(Object.keys(mutation.accepted.notificationTemplates)).toHaveLength(6);
   });
 
   it('rejects changes to fields outside granted settings pages', () => {

@@ -16,7 +16,15 @@ export type OpenChamberStreamReadyEvent = {
   type: 'stream-ready';
 };
 
-export type OpenChamberEvent = ScheduledTaskRanEvent | ProjectMetadataChangedEvent | OpenChamberStreamReadyEvent;
+export type BrowserAgentLeasesChangedEvent = {
+  type: 'browser-agent-leases-changed';
+  revision: number;
+};
+
+export type OpenChamberEvent = ScheduledTaskRanEvent
+  | ProjectMetadataChangedEvent
+  | OpenChamberStreamReadyEvent
+  | BrowserAgentLeasesChangedEvent;
 type Listener = (event: OpenChamberEvent) => void;
 
 let eventSource: EventSource | null = null;
@@ -103,6 +111,13 @@ export const parseOpenChamberEventEnvelope = (
   if (envelope.type === 'openchamber:project-metadata-changed') {
     const projectId = typeof parsed?.projectId === 'string' ? parsed.projectId.trim() : '';
     return projectId ? { type: 'project-metadata-changed', projectId } : null;
+  }
+
+  if (envelope.type === 'openchamber:browser-agent-leases-changed') {
+    const revision = typeof parsed?.revision === 'number' && Number.isSafeInteger(parsed.revision)
+      ? parsed.revision
+      : -1;
+    return revision >= 0 ? { type: 'browser-agent-leases-changed', revision } : null;
   }
 
   if (envelope.type !== 'openchamber:scheduled-task-ran') {

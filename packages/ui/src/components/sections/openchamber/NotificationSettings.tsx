@@ -20,6 +20,10 @@ import {
   type NotificationTemplateField,
 } from './notificationTemplateDraft';
 import { updateWebNotificationPreference } from './notificationToggle';
+import {
+  EMPTY_NOTIFICATION_TEMPLATES,
+  type NotificationTemplateEvent,
+} from '@/lib/settings/notificationTemplates';
 
 const DEFAULT_NOTIFICATION_TEMPLATES = {
   completion: {
@@ -47,7 +51,6 @@ const DEFAULT_NOTIFICATION_TEMPLATES = {
     messageKey: 'settings.notifications.page.template.defaults.subtask.message',
   },
 } as const;
-type NotificationTemplateEvent = keyof typeof DEFAULT_NOTIFICATION_TEMPLATES;
 const TEMPLATE_EVENT_LABEL_KEYS = {
   completion: 'settings.notifications.page.template.event.completion',
   planReady: 'settings.notifications.page.template.event.planReady',
@@ -70,7 +73,9 @@ const NotificationTemplateEditor = React.memo(function NotificationTemplateEdito
   event: NotificationTemplateEvent;
 }) {
   const { t } = useI18n();
-  const template = useUIStore((state) => state.notificationTemplates[event]);
+  const template = useUIStore((state) => (
+    state.notificationTemplates[event] ?? EMPTY_NOTIFICATION_TEMPLATES[event]
+  ));
   const [draft, setDraft] = React.useState(template);
   const controllerRef = React.useRef<ReturnType<typeof createNotificationTemplateDraftController> | null>(null);
 

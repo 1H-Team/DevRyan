@@ -7,6 +7,7 @@ import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { getDefaultModels } from '@/lib/quota/model-families';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { opencodeClient } from '@/lib/opencode/client';
+import { getAuthPrincipal } from '@/lib/authSession';
 import {
   BASELINE_QUOTA_REFRESH_MS,
   createQuotaRefreshCoordinator,
@@ -73,9 +74,26 @@ let inFlightDiscovery: Promise<QuotaProviderId[]> | null = null;
 let activeAllRefreshes = 0;
 let notifyQuotaSettingsChanged = () => {};
 
+const resolveQuotaRequestDirectory = (): string | null => {
+  const currentDirectory = opencodeClient.getDirectory();
+  const principal = getAuthPrincipal();
+
+  if (principal.scope !== 'managed' || principal.role === 'admin') {
+    return currentDirectory || null;
+  }
+
+  const assignment = principal.assignments.find(
+    (candidate) => candidate.publicDirectory === currentDirectory,
+  )
+    ?? principal.assignments.find((candidate) => candidate.isDefault)
+    ?? principal.assignments[0];
+
+  return assignment?.publicDirectory ?? null;
+};
+
 const quotaRequestHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = { Accept: 'application/json' };
-  const directory = opencodeClient.getDirectory();
+  const directory = resolveQuotaRequestDirectory();
   if (directory) {
     headers['x-opencode-directory'] = directory;
   }

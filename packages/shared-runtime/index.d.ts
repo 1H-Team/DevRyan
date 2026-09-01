@@ -163,7 +163,7 @@ export function createConfigChangeMarker(options: {
   changed?: boolean,
 ) => Promise<ConfigApplyMutationResponse & { runtimeApplied: false; runtimeMessage: string }>;
 
-export const COMMIT_DRAFT_DEADLINE_MS: 4500;
+export const COMMIT_DRAFT_DEADLINE_MS: 20000;
 export const COMMIT_DRAFT_SUBJECT_MAX_LENGTH: 72;
 export const COMMIT_DRAFT_DETAIL_MIN_COUNT: 2;
 export const COMMIT_DRAFT_DETAIL_MAX_COUNT: 4;
@@ -196,6 +196,53 @@ export function createFreeZenModelCatalog(options?: {
   getSnapshot(): FreeZenModelCatalogSnapshot | null;
   prewarm(): void;
 };
+
+export type FreeZenFailureReason =
+  | 'rate_limited'
+  | 'model_unavailable'
+  | 'unauthorized'
+  | 'upstream_error'
+  | 'timeout'
+  | 'empty_output'
+  | 'invalid_output'
+  | 'request_failed';
+
+export function classifyFreeZenFailure(error: unknown): FreeZenFailureReason;
+export function runFreeZenModelRotation<TInput = unknown, TOutput = TInput>(options: {
+  models: Array<FreeZenModel | string>;
+  timeoutMs: number;
+  request: (input: { model: string; timeoutMs: number }) => Promise<TInput> | TInput;
+  accept?: (value: TInput, input: { model: string; attempt: number }) => Promise<TOutput | null> | TOutput | null;
+  onAttempt?: (input: {
+    model: string;
+    attempt: number;
+    durationMs: number;
+    outcome: 'complete' | 'failed';
+    reason?: FreeZenFailureReason;
+    status?: number;
+  }) => void;
+  now?: () => number;
+  setTimer?: typeof setTimeout;
+  clearTimer?: typeof clearTimeout;
+}): Promise<{
+  ok: boolean;
+  value: TOutput | null;
+  model: string | null;
+  attempts: number;
+  failures: Array<{
+    model: string;
+    attempt: number;
+    durationMs: number;
+    reason: FreeZenFailureReason;
+    status?: number;
+  }>;
+}>;
+
+export interface GeneratedPullRequestDraft {
+  title: string;
+  body: string;
+}
+export function normalizePullRequestDraft(value: unknown): GeneratedPullRequestDraft | null;
 
 export interface SharedCommitDraftFileContext {
   path: string;

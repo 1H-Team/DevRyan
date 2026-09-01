@@ -4,7 +4,6 @@ import { RiArrowLeftSLine, RiLogoutBoxRLine } from '@remixicon/react';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ConfigApplyControls } from '@/components/views/config-apply/ConfigApplyControls';
 import { canAccessSettingsPage, useAuthPrincipal } from '@/lib/authSession';
-import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { useI18n } from '@/lib/i18n';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { SettingsPagePermissionBoundary } from '@/lib/settings/permission-context';
@@ -15,53 +14,29 @@ import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { setStoragePrincipal } from '@/stores/utils/safeStorage';
-import { LazyBotsPage } from './lazyViews';
 import { CapabilitySettingsWorkspace } from './CapabilitySettingsWorkspace';
 import { SettingsSectionTabs } from './SettingsSectionTabs';
 import { canAccessSettingsDestination } from './SettingsView.access';
-
-const LazyOpenChamberPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/openchamber/OpenChamberPage').then((module) => ({ default: module.OpenChamberPage })),
-);
-const LazyAgentsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/agents/AgentsSidebar').then((module) => ({ default: module.AgentsSidebar })),
-);
-const LazyAgentsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/agents/AgentsPage').then((module) => ({ default: module.AgentsPage })),
-);
-const LazyProvidersSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/providers/ProvidersSidebar').then((module) => ({ default: module.ProvidersSidebar })),
-);
-const LazyProvidersPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/providers/ProvidersPage').then((module) => ({ default: module.ProvidersPage })),
-);
-const LazyUsageSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/usage/UsageSidebar').then((module) => ({ default: module.UsageSidebar })),
-);
-const LazyUsagePage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/usage/UsagePage').then((module) => ({ default: module.UsagePage })),
-);
-const LazyMcpSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/mcp/McpSidebar').then((module) => ({ default: module.McpSidebar })),
-);
-const LazyMcpPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/mcp/McpPage').then((module) => ({ default: module.McpPage })),
-);
-const LazySkillsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/skills/SkillsSidebar').then((module) => ({ default: module.SkillsSidebar })),
-);
-const LazySkillsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/skills/SkillsPage').then((module) => ({ default: module.SkillsPage })),
-);
-const LazyPluginsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/plugins/PluginsSidebar').then((module) => ({ default: module.PluginsSidebar })),
-);
-const LazyPluginsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/plugins/PluginsPage').then((module) => ({ default: module.PluginsPage })),
-);
-const LazyBugReportsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/bug-reports/BugReportsPage').then((module) => ({ default: module.BugReportsPage })),
-);
+import { SettingsLoadFallback } from './SettingsLoadFallback';
+import { usePreparedSettingsNavigation } from './usePreparedSettingsNavigation';
+import {
+  PreparedAgentsPage,
+  PreparedAgentsSidebar,
+  PreparedBotsPage,
+  PreparedBugReportsPage,
+  PreparedMcpPage,
+  PreparedMcpSidebar,
+  PreparedOpenChamberPage,
+  PreparedPluginsPage,
+  PreparedPluginsSidebar,
+  PreparedProvidersPage,
+  PreparedProvidersSidebar,
+  PreparedSkillsPage,
+  PreparedSkillsSidebar,
+  PreparedUsagePage,
+  PreparedUsageSidebar,
+  preloadSettingsSection,
+} from './settingsSectionLoaders';
 
 type ManagedSettingsPage =
   | 'home'
@@ -98,7 +73,7 @@ interface ManagedNavigationDestination extends Omit<ManagedPageDefinition, 'slug
 
 const SectionBoundary: React.FC<React.PropsWithChildren> = ({ children }) => (
   <ErrorBoundary>
-    <React.Suspense fallback={<div className="h-full min-h-0 bg-background" aria-busy="true" />}>
+    <React.Suspense fallback={<SettingsLoadFallback />}>
       {children}
     </React.Suspense>
   </ErrorBoundary>
@@ -161,13 +136,22 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
     () => pages.filter((page) => page.slug === 'providers' || page.slug === 'usage'),
     [pages],
   );
-  const activePage = pages.find((page) => page.slug === settingsPage) ?? null;
+  const requestedPage = pages.find((page) => page.slug === settingsPage) ?? null;
   const providerFallback = (settingsPage === 'providers' || settingsPage === 'usage')
     ? providerPages[0]?.slug
     : null;
-  const activeSlug: ManagedSettingsPage = settingsPage === 'home'
+  const requestedActiveSlug: ManagedSettingsPage = settingsPage === 'home'
     ? 'home'
-    : activePage?.slug ?? providerFallback ?? 'home';
+    : requestedPage?.slug ?? providerFallback ?? 'home';
+  const preloadSlugs = React.useMemo(
+    () => pages.map((page) => page.slug),
+    [pages],
+  );
+  const { displayedSlug: activeSlug, pendingSlug, prepareAndCommit } = usePreparedSettingsNavigation({
+    requestedSlug: requestedActiveSlug,
+    preloadSlugs,
+  });
+  const activePage = pages.find((page) => page.slug === activeSlug) ?? null;
   const navigationDestinations = React.useMemo<ManagedNavigationDestination[]>(() => {
     const destinations: ManagedNavigationDestination[] = [];
     let providersAdded = false;
@@ -202,10 +186,10 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
   }, [pages, providerPages, t]);
 
   React.useEffect(() => {
-    if (activeSlug !== settingsPage) {
-      setSettingsPage(activeSlug);
+    if (requestedActiveSlug !== settingsPage) {
+      setSettingsPage(requestedActiveSlug);
     }
-  }, [activeSlug, setSettingsPage, settingsPage]);
+  }, [requestedActiveSlug, setSettingsPage, settingsPage]);
 
   React.useEffect(() => {
     if (activeSlug === 'skills.installed' && canAccessSettingsPage(principal, activeSlug)) {
@@ -220,8 +204,8 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
   }, [activeProjectId, activeSlug, principal]);
 
   const openPage = React.useCallback((slug: ManagedSettingsPage) => {
-    setSettingsPage(slug);
-  }, [setSettingsPage]);
+    prepareAndCommit(slug, () => setSettingsPage(slug));
+  }, [prepareAndCommit, setSettingsPage]);
 
   const handleLogout = React.useCallback(async () => {
     const response = await fetch('/auth/logout', {
@@ -255,12 +239,12 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
   const renderCapabilityPage = (slug: 'skills.installed' | 'mcp'): React.ReactNode => {
     const canReadCodingAgents = canAccessSettingsPage(principal, slug);
     const sidebar = canReadCodingAgents ? (
-      slug === 'mcp' ? <LazyMcpSidebar /> : <LazySkillsSidebar />
+      slug === 'mcp' ? <PreparedMcpSidebar /> : <PreparedSkillsSidebar />
     ) : (
       <CodingAgentSettingsAccessRequired />
     );
     const content = canReadCodingAgents ? (
-      slug === 'mcp' ? <LazyMcpPage /> : <LazySkillsPage />
+      slug === 'mcp' ? <PreparedMcpPage /> : <PreparedSkillsPage />
     ) : (
       <CodingAgentSettingsAccessRequired />
     );
@@ -301,9 +285,18 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
                   key={page.id}
                   type="button"
                   onClick={() => openPage(page.targetSlug)}
+                  onPointerEnter={() => void preloadSettingsSection(page.targetSlug).catch(() => undefined)}
+                  onPointerDown={() => void preloadSettingsSection(page.targetSlug).catch(() => undefined)}
+                  onFocus={() => void preloadSettingsSection(page.targetSlug).catch(() => undefined)}
+                  aria-busy={pendingSlug === page.targetSlug || undefined}
                   className="rounded-lg border border-border bg-[var(--surface-elevated)] p-4 text-left transition-colors hover:bg-[var(--interactive-hover)]"
                 >
-                  <div className="typography-ui-label text-foreground">{page.title}</div>
+                  <div className="flex items-center gap-2 typography-ui-label text-foreground">
+                    <span>{page.title}</span>
+                    {pendingSlug === page.targetSlug ? (
+                      <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current" aria-hidden="true" />
+                    ) : null}
+                  </div>
                   <div className="typography-micro text-muted-foreground/70">{page.description}</div>
                 </button>
               ))}
@@ -318,31 +311,32 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
       const section = activeSlug === 'appearance' ? 'visual' : activeSlug;
       return (
         <SettingsPagePermissionBoundary slug={activeSlug}>
-          <SectionBoundary><LazyOpenChamberPage section={section} /></SectionBoundary>
+          <SectionBoundary><PreparedOpenChamberPage section={section} /></SectionBoundary>
         </SettingsPagePermissionBoundary>
       );
     }
 
     if (activeSlug === 'agents') {
-      return renderSplitPage(activeSlug, <LazyAgentsSidebar />, <LazyAgentsPage />);
+      return renderSplitPage(activeSlug, <PreparedAgentsSidebar />, <PreparedAgentsPage />);
     }
     if (activeSlug === 'bots') {
       return (
         <SettingsPagePermissionBoundary slug={activeSlug}>
-          <SectionBoundary><LazyBotsPage /></SectionBoundary>
+          <SectionBoundary><PreparedBotsPage /></SectionBoundary>
         </SettingsPagePermissionBoundary>
       );
     }
     if (activeSlug === 'providers' || activeSlug === 'usage') {
       const content = activeSlug === 'providers'
-        ? renderSplitPage(activeSlug, <LazyProvidersSidebar />, <LazyProvidersPage />)
-        : renderSplitPage(activeSlug, <LazyUsageSidebar />, <LazyUsagePage />);
+        ? renderSplitPage(activeSlug, <PreparedProvidersSidebar />, <PreparedProvidersPage />)
+        : renderSplitPage(activeSlug, <PreparedUsageSidebar />, <PreparedUsagePage />);
       return (
         <SettingsSectionTabs
           activeSlug={activeSlug}
           ariaLabel={t('settings.providers.tabs.aria')}
           idPrefix="managed-providers-settings"
           onTabChange={(slug) => openPage(slug as ManagedSettingsPage)}
+          pendingSlug={pendingSlug}
           tabs={providerPages.map((page) => ({ slug: page.slug, label: page.title }))}
         >
           {content}
@@ -353,12 +347,12 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
       return renderCapabilityPage(activeSlug);
     }
     if (activeSlug === 'plugins') {
-      return renderSplitPage(activeSlug, <LazyPluginsSidebar />, <LazyPluginsPage />);
+      return renderSplitPage(activeSlug, <PreparedPluginsSidebar />, <PreparedPluginsPage />);
     }
     if (activeSlug === 'bug-reports') {
       return (
         <SettingsPagePermissionBoundary slug={activeSlug}>
-          <SectionBoundary><LazyBugReportsPage /></SectionBoundary>
+          <SectionBoundary><PreparedBugReportsPage /></SectionBoundary>
         </SettingsPagePermissionBoundary>
       );
     }
@@ -415,6 +409,10 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
                     key={page.id}
                     type="button"
                     onClick={() => openPage(page.targetSlug)}
+                    onPointerEnter={() => void preloadSettingsSection(page.targetSlug).catch(() => undefined)}
+                    onPointerDown={() => void preloadSettingsSection(page.targetSlug).catch(() => undefined)}
+                    onFocus={() => void preloadSettingsSection(page.targetSlug).catch(() => undefined)}
+                    aria-busy={pendingSlug === page.targetSlug || undefined}
                     aria-current={page.slugs.includes(activeSlug) ? 'page' : undefined}
                     className={cn(
                       'flex h-8 w-full items-center rounded-md px-2 text-left typography-ui-label',
@@ -422,6 +420,9 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
                     )}
                   >
                     <span className="truncate">{page.title}</span>
+                    {pendingSlug === page.targetSlug ? (
+                      <span className="ml-auto h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current" aria-hidden="true" />
+                    ) : null}
                   </button>
                 ))}
               </div>

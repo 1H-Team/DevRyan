@@ -4,7 +4,7 @@
 Settings-domain helpers for defaults, migration, and persistence shaping.
 
 ## Design
-Separates settings schema logic from view components. `navigation-icons.ts` owns the lightweight, exhaustive settings-page icon map shared by Settings and command navigation so consumers do not import the heavyweight Settings view. `permissions.ts` owns the canonical policy catalog and inheritance helpers; `permission-context.tsx` projects the active page's Edit state into a read-only boundary, with the hook/context isolated in `permission-state.ts` for stable Fast Refresh boundaries.
+Separates settings schema logic from view components. `navigation-icons.ts` owns the lightweight, exhaustive settings-page icon map shared by Settings and command navigation so consumers do not import the heavyweight Settings view. `permissions.ts` owns the canonical policy catalog and inheritance helpers; `permission-context.tsx` projects the active page's Edit state into a read-only boundary, with the hook/context isolated in `permission-state.ts` for stable Fast Refresh boundaries. `notificationTemplates.ts` owns the total six-event renderer shape and preserves valid entry identities while repairing sparse or malformed persisted snapshots.
 
 ## Flow
 Settings UI reads defaults/current values, applies edits, then persists normalized payloads.

@@ -10,9 +10,14 @@ import {
 
 import '@/index.css';
 import '@/styles/fonts';
+import { BotRunFailureNotice } from '@/components/bots/chat/BotRunFailureNotice';
+import { BotMessageList } from '@/components/bots/chat/BotMessageList';
 import { BotMessageRow } from '@/components/bots/chat/BotMessageRow';
+import { BotResultImage } from '@/components/bots/chat/BotResultAttachments';
+import { BotBrowserDiagnostic } from '@/components/bots/operations/BotBrowserDiagnostic';
 import { BotOperationsRail } from '@/components/bots/operations/BotOperationsRail';
 import { BotAgentConnections } from '@/components/sections/bots/BotAgentConnections';
+import { BotCoreIdentityEditor } from '@/components/sections/bots/BotCoreIdentityEditor';
 import { BotPolicyEditor } from '@/components/sections/bots/BotPolicyEditor';
 import { BotRuntimeServicePanel } from '@/components/sections/bots/BotRuntimeServicePanel';
 import { BotSpecManager } from '@/components/sections/bots/BotSpecManager';
@@ -24,10 +29,15 @@ import {
 } from '@/lib/authSession';
 import {
   withBotRevisionAgent,
+  createBotsApi,
   type BotActionAttempt,
   type BotAgentConnection,
   type BotChannel,
+  type BotComputerStatus,
+  type BotComputerViewSession,
+  type BotCredentialMetadata,
   type BotMessage,
+  type BotModelOptions,
   type BotRevisionContract,
   type BotRevisionDetail,
   type BotRun,
@@ -37,17 +47,20 @@ import {
 } from '@/lib/botsApi';
 import type { BotsDesktopApi, RuntimeServiceStatus } from '@/lib/botsDesktopApi';
 import { I18nProvider } from '@/lib/i18n';
-import { useBotChannelStore } from '@/stores/useBotChannelStore';
+import { createBotChannelStore, useBotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotOperationsNavigationStore } from '@/stores/useBotOperationsNavigationStore';
-import { useBotOperationsStore } from '@/stores/useBotOperationsStore';
+import { createBotOperationsStore, useBotOperationsStore } from '@/stores/useBotOperationsStore';
 import { useBotsStore } from '@/stores/useBotsStore';
 import './fixture.css';
+import { BotUpgradeScene } from './BotUpgradeScene';
+import { BotTelegramScene } from './BotTelegramScene';
 import { createWebAPIs } from '../../../packages/web/src/api';
 
 declare global {
   interface Window {
     __DEVRYAN_VISUAL_FIXTURE_READY__?: boolean;
     __DEVRYAN_VISUAL_FIXTURE_ERRORS__?: string[];
+    __DEVRYAN_VISUAL_HUMAN_INPUT_EVENT_COUNT__?: number;
     __DEVRYAN_VISUAL_FIXTURE_ROOT__?: ReturnType<typeof createRoot>;
   }
 }
@@ -59,8 +72,119 @@ const RUN_ID = 'f0000000-0000-4000-8000-000000000001';
 const ACTION_ID = 'a1000000-0000-4000-8000-000000000001';
 const USER_ID = 'a0000000-0000-4000-8000-000000000001';
 const MESSAGE_ID = 'd1000000-0000-4000-8000-000000000001';
+const USER_MESSAGE_ID = 'd1000000-0000-4000-8000-000000000002';
+const ACKNOWLEDGMENT_ID = 'd1000000-0000-4000-8000-000000000003';
+const IMAGE_OBJECT_ID = 'e1000000-0000-4000-8000-000000000001';
 const NOW = '2026-08-27T10:00:00.000Z';
 const runtimeApis = createWebAPIs();
+window.__DEVRYAN_VISUAL_HUMAN_INPUT_EVENT_COUNT__ = 0;
+window.__DEVRYAN_VISUAL_SCREEN_STREAMS__ = { starts: 0, active: 0, stops: 0, maxActive: 0 };
+
+const VISUAL_STREAM_PATH = '/__devryan_visual_bot_stream__';
+const originalFetch = window.fetch.bind(window);
+let visualJpegPromise: Promise<Uint8Array> | null = null;
+
+const visualJpeg = (): Promise<Uint8Array> => {
+  if (visualJpegPromise) return visualJpegPromise;
+  visualJpegPromise = new Promise((resolveJpeg, rejectJpeg) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1280;
+    canvas.height = 720;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      rejectJpeg(new Error('Visual browser canvas is unavailable'));
+      return;
+    }
+    context.fillStyle = '#f7f8fb';
+    context.fillRect(0, 0, 1280, 720);
+    context.fillStyle = '#172033';
+    context.fillRect(0, 0, 1280, 68);
+    context.fillStyle = '#ffffff';
+    context.font = '600 25px system-ui';
+    context.fillText('Release Console', 34, 43);
+    context.fillStyle = '#e9edf5';
+    context.fillRect(0, 68, 250, 652);
+    context.fillStyle = '#34405a';
+    context.font = '500 18px system-ui';
+    context.fillText('Overview', 32, 124);
+    context.fillText('Deployments', 32, 168);
+    context.fillText('Audit trail', 32, 212);
+    context.fillStyle = '#172033';
+    context.font = '700 32px system-ui';
+    context.fillText('Production deployment', 302, 138);
+    context.fillStyle = '#5b6477';
+    context.font = '400 18px system-ui';
+    context.fillText('Interactive deterministic browser target', 302, 174);
+    context.fillStyle = '#ffffff';
+    context.strokeStyle = '#cbd2df';
+    context.lineWidth = 2;
+    context.fillRect(302, 222, 700, 62);
+    context.strokeRect(302, 222, 700, 62);
+    context.fillStyle = '#667085';
+    context.font = '400 18px system-ui';
+    context.fillText('Type a release note', 326, 261);
+    context.fillStyle = '#2563eb';
+    context.fillRect(302, 322, 220, 58);
+    context.fillStyle = '#ffffff';
+    context.font = '600 18px system-ui';
+    context.fillText('Confirm deployment', 326, 358);
+    context.fillStyle = '#15803d';
+    context.beginPath();
+    context.arc(326, 446, 9, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = '#34405a';
+    context.font = '500 18px system-ui';
+    context.fillText('Browser connected · viewport 1280 × 720', 350, 452);
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        rejectJpeg(new Error('Visual browser frame encoding failed'));
+        return;
+      }
+      resolveJpeg(new Uint8Array(await blob.arrayBuffer()));
+    }, 'image/jpeg', 0.9);
+  });
+  return visualJpegPromise;
+};
+
+window.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  const pathname = new URL(url, window.location.href).pathname;
+  if (!pathname.startsWith(VISUAL_STREAM_PATH)) {
+    return originalFetch(input, init);
+  }
+  const jpeg = await visualJpeg();
+  const encoder = new TextEncoder();
+  const header = encoder.encode(
+    '--devryan-visual\r\nContent-Type: image/jpeg\r\n'
+    + `Content-Length: ${jpeg.byteLength}\r\n`
+    + 'X-DevRyan-Width: 1280\r\nX-DevRyan-Height: 720\r\n'
+    + 'X-DevRyan-Device-Scale-Factor: 1\r\nX-DevRyan-Captured-At: 1\r\n\r\n',
+  );
+  const frame = new Uint8Array(header.byteLength + jpeg.byteLength + 2);
+  frame.set(header, 0);
+  frame.set(jpeg, header.byteLength);
+  frame.set([13, 10], header.byteLength + jpeg.byteLength);
+  const counters = window.__DEVRYAN_VISUAL_SCREEN_STREAMS__;
+  if (counters) { counters.starts += 1; counters.active += 1; counters.maxActive = Math.max(counters.maxActive, counters.active); }
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    if (counters) { counters.active -= 1; counters.stops += 1; }
+  };
+  return new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(frame);
+      const abort = () => { if (!finished) { finish(); controller.close(); } };
+      if (init?.signal?.aborted) abort();
+      else init?.signal?.addEventListener('abort', abort, { once: true });
+    },
+    cancel() { finish(); },
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'multipart/x-mixed-replace; boundary=devryan-visual' },
+  });
+};
 
 const query = new URLSearchParams(window.location.search);
 const scene = query.get('scene') || 'agent';
@@ -129,6 +253,74 @@ const baseContract = createDefaultBotRevisionContract('Release Steward');
 const opencodeContract = withBotRevisionAgent(baseContract, {
   kind: 'opencode',
   models: baseContract.models,
+});
+
+const overviewModelOptions: BotModelOptions = {
+  available: true,
+  providers: [
+    {
+      id: 'openai',
+      name: 'OpenAI',
+      available: true,
+      authType: 'api',
+      connections: [],
+      models: [{
+        id: 'gpt-5.6-sol',
+        name: 'GPT-5.6 Sol',
+        providerId: 'openai',
+        available: true,
+        variants: [
+          { id: 'medium', name: 'Medium', available: true },
+          { id: 'high', name: 'High', available: true },
+        ],
+        contextLimit: 128_000,
+        reviewedEgressHosts: ['api.openai.com'],
+        egressReviewed: true,
+      }],
+    },
+    {
+      id: 'anthropic',
+      name: 'Anthropic',
+      available: true,
+      authType: 'api',
+      connections: [],
+      models: [{
+        id: 'claude-opus',
+        name: 'Claude Opus',
+        providerId: 'anthropic',
+        available: true,
+        variants: [{ id: 'high', name: 'High', available: true }],
+        contextLimit: 200_000,
+        reviewedEgressHosts: ['api.anthropic.com'],
+        egressReviewed: true,
+      }],
+    },
+  ],
+};
+
+const overviewCredential: BotCredentialMetadata = {
+  id: 'e0000000-0000-4000-8000-000000000002',
+  provider: 'openai',
+  label: 'Production OpenAI',
+  kind: 'api_key',
+  scope: 'team',
+  maskedIdentifier: null,
+  status: 'active',
+  version: 1,
+  createdAt: NOW,
+  updatedAt: NOW,
+  rotatedAt: null,
+};
+
+const overviewContract = withBotRevisionAgent(opencodeContract, {
+  kind: 'opencode',
+  models: {
+    ...baseContract.models,
+    primary: {
+      ...baseContract.models.primary,
+      credentialId: overviewCredential.id,
+    },
+  },
 });
 
 const connectionStatus = fixtureState === 'revoked' ? 'revoked' : fixtureState === 'failed' ? 'error' : 'active';
@@ -264,6 +456,103 @@ const mockBotsApi = {
   }),
 } as unknown as BotsApi;
 
+const visualView: BotComputerViewSession = {
+  id: 'visual-view-01',
+  botId: BOT_ID,
+  channelId: CHANNEL_ID,
+  streamUrl: `${VISUAL_STREAM_PATH}/visual-view-01`,
+  startedAt: NOW,
+};
+const screenLeaseOwner = ['screen_owned', 'screen_wait_owned'].includes(fixtureState)
+  ? USER_ID
+  : ['screen_conflict', 'screen_wait_other'].includes(fixtureState)
+    ? 'a0000000-0000-4000-8000-000000000099'
+    : null;
+const screenControl = screenLeaseOwner ? {
+  leaseId: 'visual-control-01',
+  actorId: screenLeaseOwner,
+  actorType: 'admin' as const,
+  takenAt: Date.now() - 2_000,
+  expiresAt: Date.now() + 60_000,
+} : null;
+const screenStatus: BotComputerStatus = {
+  botId: BOT_ID,
+  browser: {
+    running: true,
+    healthy: true,
+    lifecycleState: 'running',
+    mode: 'headed_virtual',
+    displayReady: true,
+  },
+  control: screenControl,
+  screencast: {
+    subscribers: fixtureState.startsWith('screen_live') || screenLeaseOwner ? 1 : 0,
+    lastFrameAt: Date.now(),
+    retainedFrames: 0,
+  },
+  framesRecorded: false,
+  arbitraryWebsiteExactlyOnce: false,
+};
+const disconnectedError = Object.assign(new Error('Visual screen disconnected'), {
+  code: 'network_error',
+});
+const screenApi = {
+  getComputerStatus: async () => screenStatus,
+  startComputerView: async () => {
+    if (fixtureState === 'screen_connecting') return new Promise(() => undefined);
+    if (fixtureState === 'screen_disconnected') throw disconnectedError;
+    return { view: visualView };
+  },
+  stopComputerView: async () => ({ stopped: true }),
+  takeComputerControl: async () => ({
+    botId: BOT_ID,
+    control: {
+      leaseId: 'visual-control-01',
+      actorId: USER_ID,
+      actorType: 'admin' as const,
+      takenAt: Date.now(),
+      expiresAt: Date.now() + 60_000,
+    },
+  }),
+  heartbeatComputerControl: async () => ({ botId: BOT_ID, control: screenControl }),
+  returnComputerControl: async () => ({ botId: BOT_ID, control: null }),
+  sendHumanComputerCommand: async (
+    _botId: string,
+    request: Parameters<BotsApi['sendHumanComputerCommand']>[1],
+  ) => {
+    const eventCount = Array.isArray(request.args.events) ? request.args.events.length : 0;
+    window.__DEVRYAN_VISUAL_HUMAN_INPUT_EVENT_COUNT__ =
+      (window.__DEVRYAN_VISUAL_HUMAN_INPUT_EVENT_COUNT__ ?? 0) + eventCount;
+    return { result: { dispatched: eventCount } };
+  },
+} as unknown as BotsApi;
+const visualScreenStore = createBotOperationsStore({ api: screenApi });
+visualScreenStore.getState().resetPrincipal(USER_ID);
+visualScreenStore.getState().replaceSnapshot({
+  runs: fixtureState.startsWith('screen_wait_') ? [{
+    id: RUN_ID,
+    botId: BOT_ID,
+    channelId: CHANNEL_ID,
+    revisionId: REVISION_ID,
+    modelSnapshot: { adapter: 'ag_ui' },
+    computerScopeKey: `bot:${BOT_ID}`,
+    queueSequence: 4,
+    state: 'waiting_control',
+    retryable: false,
+    interruptionKind: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    startedAt: NOW,
+    finishedAt: null,
+  }] : [],
+  recentActions: [],
+  pendingApprovals: [],
+  computers: [screenStatus],
+});
+if (scene === 'screen' && fixtureState !== 'screen_off') {
+  void visualScreenStore.getState().startComputerView(BOT_ID, CHANNEL_ID).catch(() => undefined);
+}
+
 const revision: BotRevisionDetail = {
   id: REVISION_ID,
   botId: BOT_ID,
@@ -348,7 +637,7 @@ const channel: BotChannel = {
   canSend: role === 'admin',
   lifecycle: 'active',
   currentCheckpointNumber: 3,
-  lastMessageSequence: 2,
+  lastMessageSequence: fixtureState === 'ack_result' ? 3 : 2,
   lastMessageAt: NOW,
   createdAt: NOW,
   updatedAt: NOW,
@@ -357,11 +646,19 @@ const channel: BotChannel = {
 
 const runState: BotRun['state'] = fixtureState === 'reconciliation'
   ? 'needs_reconciliation'
+  : fixtureState.startsWith('screen_wait_')
+    ? 'waiting_control'
   : fixtureState === 'paused'
     ? 'interrupted'
+    : fixtureState === 'ack_running'
+      ? 'running'
+      : fixtureState === 'ack_result'
+        ? 'completed'
+        : fixtureState.startsWith('image_')
+          ? 'completed'
     : fixtureState === 'settled'
       ? 'completed'
-      : fixtureState === 'failure'
+      : fixtureState === 'failure' || fixtureState.startsWith('retry_') || fixtureState === 'timeout'
         ? 'failed'
         : 'waiting_approval';
 
@@ -374,16 +671,19 @@ const run: BotRun = {
   computerScopeKey: `bot:${BOT_ID}`,
   queueSequence: 4,
   state: runState,
-  retryable: false,
-  interruptionKind: fixtureState === 'paused' ? 'desktop_host_unavailable' : null,
+  retryable: fixtureState.startsWith('retry_'),
+  interruptionKind: fixtureState === 'timeout' ? 'bot_run_timeout' : fixtureState === 'paused' ? 'desktop_host_unavailable' : null,
   createdAt: NOW,
   updatedAt: NOW,
   startedAt: NOW,
-  finishedAt: ['settled', 'failure', 'paused'].includes(fixtureState) ? NOW : null,
+  finishedAt: ['settled', 'failure', 'paused', 'ack_result'].includes(fixtureState)
+    || fixtureState.startsWith('image_') ? NOW : null,
 };
 
 const actionState: BotActionAttempt['state'] = fixtureState === 'reconciliation'
   ? 'needs_reconciliation'
+  : fixtureState.startsWith('screen_wait_')
+    ? 'waiting_control'
   : fixtureState === 'settled'
     ? 'succeeded'
     : fixtureState === 'failure'
@@ -426,9 +726,61 @@ const message: BotMessage = {
   actorUserId: null,
   role: 'assistant',
   assistantPhase: 'result',
+  sequence: 3,
+  body: {
+    text: fixtureState.startsWith('image_')
+      ? 'Here is the generated release illustration.'
+      : 'The release package is prepared. One governed browser submission is waiting for review.',
+    attachmentIds: [],
+  },
+  attachmentCount: 0,
+  createdAt: NOW,
+  finalizedAt: NOW,
+};
+
+const loadVisualImage = async (signal: AbortSignal): Promise<Blob> => {
+  if (fixtureState === 'image_loading') {
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener(
+        'abort',
+        () => reject(new DOMException('Aborted', 'AbortError')),
+        { once: true },
+      );
+    });
+  }
+  if (fixtureState === 'image_error') {
+    return new Blob([new Uint8Array([0, 1, 2, 3])], { type: 'image/jpeg' });
+  }
+  return new Blob([await visualJpeg()], { type: 'image/jpeg' });
+};
+
+const userMessage: BotMessage = {
+  id: USER_MESSAGE_ID,
+  channelId: CHANNEL_ID,
+  runId: RUN_ID,
+  actorUserId: USER_ID,
+  role: 'user',
+  assistantPhase: null,
+  sequence: 1,
+  body: {
+    text: 'Open the release dashboard and confirm whether production is ready.',
+    attachmentIds: [],
+  },
+  attachmentCount: 0,
+  createdAt: NOW,
+  finalizedAt: NOW,
+};
+
+const acknowledgmentMessage: BotMessage = {
+  id: ACKNOWLEDGMENT_ID,
+  channelId: CHANNEL_ID,
+  runId: RUN_ID,
+  actorUserId: null,
+  role: 'assistant',
+  assistantPhase: 'acknowledgment',
   sequence: 2,
   body: {
-    text: 'The release package is prepared. One governed browser submission is waiting for review.',
+    text: 'I’ll open the release dashboard and verify the production checks first.',
     attachmentIds: [],
   },
   attachmentCount: 0,
@@ -453,14 +805,36 @@ const initializeStores = () => {
     }],
   });
   useBotChannelStore.getState().replaceSnapshot({ channels: [channel] });
-  if (fixtureState !== 'empty' && fixtureState !== 'loading') {
+  if (fixtureState.startsWith('retry_')) {
+    useBotChannelStore.getState().upsertMessage(userMessage);
+    const retryStore = createBotChannelStore({ api: createBotsApi({ fetchImpl: async (_url, init) => (
+      init?.method === 'POST'
+        ? new Response(JSON.stringify({ error: 'Retry refused', code: 'bot_run_retry_unavailable',
+          details: { retryReason: 'revision_changed' } }), { status: 409 })
+        : new Response(JSON.stringify({ run }), { status: 200 })
+    ) }) });
+    retryStore.getState().resetPrincipal(USER_ID);
+    retryStore.getState().replaceSnapshot({ channels: [channel] });
+    retryStore.getState().upsertMessage(userMessage);
+    useBotChannelStore.setState({ retryRun: retryStore.getState().retryRun });
+  }
+
+  if (fixtureState === 'ack_running' || fixtureState === 'ack_result') {
+    useBotChannelStore.getState().upsertMessage(userMessage);
+    useBotChannelStore.getState().upsertMessage(acknowledgmentMessage);
+    if (fixtureState === 'ack_result') useBotChannelStore.getState().upsertMessage(message);
+  } else if (fixtureState !== 'empty' && fixtureState !== 'loading') {
     useBotChannelStore.getState().upsertMessage(message);
   }
   const hasOperations = fixtureState !== 'empty' && fixtureState !== 'loading';
+  const hasGovernedAction = hasOperations
+    && fixtureState !== 'ack_running'
+    && fixtureState !== 'ack_result'
+    && !fixtureState.startsWith('retry_') && fixtureState !== 'timeout';
   useBotOperationsStore.getState().replaceSnapshot({
     runs: hasOperations ? [run] : [],
-    recentActions: hasOperations ? [action] : [],
-    pendingApprovals: hasOperations && action.state === 'pending_approval' ? [action] : [],
+    recentActions: hasGovernedAction ? [action] : [],
+    pendingApprovals: hasGovernedAction && action.state === 'pending_approval' ? [action] : [],
     computers: [],
   });
   useBotOperationsStore.getState().setConnectionState(
@@ -478,14 +852,13 @@ const initializeStores = () => {
         : null,
   );
   if (hasOperations) {
-    const operationTab = action.state === 'pending_approval' ? 'approvals' : 'activity';
-    if (scene === 'transcript' && drawer === 'open') {
-      useBotOperationsNavigationStore.getState().focusAction(BOT_ID, operationTab, ACTION_ID);
+    if (hasGovernedAction && scene === 'transcript' && drawer === 'open') {
+      useBotOperationsNavigationStore.getState().focusAction(BOT_ID, 'approvals', ACTION_ID);
     } else {
-      useBotOperationsNavigationStore.getState().selectTab(BOT_ID, operationTab);
+      useBotOperationsNavigationStore.getState().selectTab(BOT_ID, 'approvals');
     }
   } else {
-    useBotOperationsNavigationStore.getState().selectTab(BOT_ID, 'activity');
+    useBotOperationsNavigationStore.getState().selectTab(BOT_ID, 'approvals');
   }
 };
 initializeStores();
@@ -535,6 +908,47 @@ const AgentScene: React.FC = () => {
       {fixtureState === 'testing' ? <p className="mb-3 typography-ui text-[var(--status-info)]" role="status">Testing endpoint health and AG-UI compatibility…</p> : null}
       <BotAgentConnections botId={BOT_ID} value={contract} readOnly={role === 'developer'} api={mockBotsApi} onChange={setContract} />
     </>
+  );
+};
+
+const OverviewScene: React.FC = () => {
+  const [contract, setContract] = React.useState<BotRevisionContract>(overviewContract);
+  const overviewWindowRef = React.useRef<HTMLDivElement>(null);
+  const credentials = fixtureState === 'missing_credential' ? [] : [overviewCredential];
+  React.useLayoutEffect(() => {
+    const container = overviewWindowRef.current;
+    if (!container) return;
+    const providerLabel = Array.from(container.querySelectorAll('label')).find(
+      (candidate) => candidate.querySelector('span')?.textContent?.trim() === 'Provider',
+    );
+    const target = providerLabel?.parentElement;
+    if (!target) return;
+    target.setAttribute('data-visual-focus-scope', 'true');
+    const targetRect = target.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    container.scrollTop += targetRect.top - containerRect.top - 12;
+  }, []);
+  return (
+    <div
+      ref={overviewWindowRef}
+      className="mx-auto max-h-[620px] max-w-4xl overflow-y-auto rounded-xl border border-border bg-background p-5"
+      data-overview-window
+    >
+      <SectionTitle
+        icon={RiGlobalLine}
+        title="Bot identity and reasoning"
+        detail="Provider, model, and Thinking stay aligned with the Bot's managed credentials."
+      />
+      <BotCoreIdentityEditor
+        botName="Release Steward"
+        value={contract}
+        modelOptions={overviewModelOptions}
+        credentials={credentials}
+        readOnly={role === 'developer'}
+        onChange={setContract}
+        onNavigateCredentials={() => undefined}
+      />
+    </div>
   );
 };
 
@@ -661,6 +1075,29 @@ const TranscriptScene: React.FC = () => (
         <div className="h-3 w-28 animate-pulse rounded bg-border" />
         <div className="mt-4 h-20 animate-pulse rounded-xl bg-[var(--surface-subtle)]" />
       </div>
+    ) : fixtureState === 'ack_running' || fixtureState === 'ack_result' ? (
+      <div className="h-[430px] overflow-hidden rounded-xl border border-border bg-[var(--surface-elevated)]">
+        <BotMessageList
+          bot={bot}
+          channelId={CHANNEL_ID}
+          typingRunId={fixtureState === 'ack_running' ? RUN_ID : null}
+        />
+      </div>
+    ) : fixtureState.startsWith('retry_') || fixtureState === 'timeout' ? (
+      <div className="rounded-xl border border-border bg-[var(--surface-elevated)] p-5">
+        <BotMessageRow bot={bot} messageId={MESSAGE_ID} />
+        <BotRunFailureNotice runId={RUN_ID} channelId={CHANNEL_ID} sourceHasAttachments={false} />
+      </div>
+    ) : fixtureState.startsWith('image_') ? (
+      <div className="rounded-xl border border-border bg-[var(--surface-elevated)] p-5">
+        <BotMessageRow bot={bot} messageId={MESSAGE_ID} />
+        <BotResultImage image={{
+          key: `visual:${IMAGE_OBJECT_ID}`,
+          alt: 'Generated release illustration',
+          expectedType: 'image/jpeg',
+          load: loadVisualImage,
+        }} />
+      </div>
     ) : (
       <div className="rounded-xl border border-border bg-[var(--surface-elevated)] p-5">
         <BotMessageRow bot={bot} messageId={MESSAGE_ID} />
@@ -673,12 +1110,45 @@ const TranscriptScene: React.FC = () => (
   </div>
 );
 
+const ScreenScene: React.FC = () => {
+  const canControl = role === 'admin' && fixtureState !== 'screen_view_only';
+  return (
+    <div className="space-y-5">
+      <SectionTitle
+        icon={RiComputerLine}
+        title="Live Bot browser"
+        detail="Decoded frames and human input stay ephemeral while authorization and control leases remain enforced."
+      />
+      <div className="h-[560px] overflow-hidden rounded-xl border border-border bg-[var(--surface-elevated)]">
+        <BotBrowserDiagnostic
+          botId={BOT_ID}
+          channelId={CHANNEL_ID}
+          botActive
+          principalId={USER_ID}
+          canControl={canControl}
+          active={fixtureState !== 'screen_off'}
+          operationsStore={visualScreenStore}
+        />
+      </div>
+    </div>
+  );
+};
+
+const installUpgradeComputer = () => {
+  useBotOperationsStore.setState(visualScreenStore.getState());
+  return visualScreenStore.subscribe((state) => useBotOperationsStore.setState(state));
+};
+
 const MainScene: React.FC = () => {
+  if (scene === 'telegram') return <BotTelegramScene />;
+  if (scene === 'upgrade') return <BotUpgradeScene bot={bot} channel={channel} run={run} installComputer={installUpgradeComputer} />;
+  if (scene === 'overview') return <OverviewScene />;
   if (scene === 'agent') return <AgentScene />;
   if (scene === 'spec') return <SpecScene />;
   if (scene === 'policy') return <PolicyScene />;
   if (scene === 'network') return <NetworkScene />;
   if (scene === 'runtime') return <RuntimeScene />;
+  if (scene === 'screen') return <ScreenScene />;
   return <TranscriptScene />;
 };
 
@@ -687,7 +1157,7 @@ const App: React.FC = () => {
     const ready = window.setTimeout(() => {
       window.__DEVRYAN_VISUAL_FIXTURE_READY__ = true;
       document.documentElement.dataset.fixtureReady = 'true';
-    }, scene === 'spec' ? 250 : 100);
+    }, scene === 'spec' || scene === 'screen' ? 350 : 100);
     return () => window.clearTimeout(ready);
   }, []);
 
@@ -707,6 +1177,8 @@ const App: React.FC = () => {
     </RuntimeAPIProvider>
   );
 };
+
+export { App };
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Visual fixture root is missing');

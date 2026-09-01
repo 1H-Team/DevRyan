@@ -10,7 +10,7 @@ import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { formatDirectoryName, cn } from '@/lib/utils';
 import { resolveProjectDisplayName } from '@/lib/projectDisplayName';
 import { useSessionUIStore, type ChatDraft } from '@/sync/session-ui-store';
-import { useAllLiveSessions, useEnsureSessionChildren } from '@/sync/sync-context';
+import { useAllLiveSessions, useAllSessionUserActivity, useEnsureSessionChildren } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useSync } from '@/sync/use-sync';
 import { useSessionPrefetch } from './sidebar/hooks/useSessionPrefetch';
@@ -33,6 +33,7 @@ import { useProjectSessionLists } from './sidebar/hooks/useProjectSessionLists';
 import { useSessionFolderCleanup } from './sidebar/hooks/useSessionFolderCleanup';
 import { useStickyProjectHeaders } from './sidebar/hooks/useStickyProjectHeaders';
 import { useSidebarArchivedAssistantActivityHydration } from './sidebar/hooks/useSidebarArchivedAssistantActivityHydration';
+import { useSidebarUserActivityHydration } from './sidebar/hooks/useSidebarUserActivityHydration';
 import {
   collectSidebarChildHydrationTargets,
   type SidebarChildHydrationTarget,
@@ -68,7 +69,7 @@ import {
   LazySessionDeleteConfirmDialog,
   LazySessionSearchDialog,
 } from './sidebar/lazySessionDialogs';
-import { LazyViewBoundary } from '@/components/views/lazyViews';
+import { LazyBotSidebarSection, LazyViewBoundary } from '@/components/views/lazyViews';
 import { BulkActionBar } from './sidebar/BulkActionBar';
 import { useSessionMultiSelectStore } from '@/stores/useSessionMultiSelectStore';
 import { type SessionGroup, type SessionNode } from './sidebar/types';
@@ -99,7 +100,6 @@ import {
   isManagedBranchGranted,
 } from '@/lib/worktrees/managedBranches';
 import { archiveBranchSessions } from './sidebar/branchSessionCleanup';
-import { BotSidebarSection } from '@/components/bots/sidebar/BotSidebarSection';
 import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
 
 const PROJECT_COLLAPSE_STORAGE_KEY = 'oc.sessions.projectCollapse';
@@ -415,6 +415,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     });
   }, [sync]);
   const liveSessions = useAllLiveSessions();
+  const sessionUserActivity = useAllSessionUserActivity();
   const hasLoadedGlobalSessions = useGlobalSessionsStore((state) => state.hasLoaded);
   const globalActiveSessions = useGlobalSessionsStore((state) => state.activeSessions);
   const globalArchivedSessions = useGlobalSessionsStore((state) => state.archivedSessions);
@@ -486,6 +487,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     archivedSessions,
     currentDirectory,
   );
+  useSidebarUserActivityHydration(sessions, sessionUserActivity, currentDirectory);
 
   const liveSessionStructureSignature = React.useMemo(
     () => liveSessions
@@ -589,6 +591,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     homeDirectory,
     worktreeMetadata,
     pinnedSessionIds,
+    sessionUserActivity,
     archivedAssistantActivity,
     gitBranches,
     isVSCode,
@@ -633,8 +636,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }, []);
 
   const sortedSessions = React.useMemo(() => {
-    return [...sessions].sort((a, b) => compareSessionsByPinnedAndTime(a, b, pinnedSessionIds));
-  }, [sessions, pinnedSessionIds]);
+    return [...sessions].sort((a, b) => compareSessionsByPinnedAndTime(a, b, pinnedSessionIds, sessionUserActivity));
+  }, [sessions, pinnedSessionIds, sessionUserActivity]);
 
   const sessionOrderIndex = React.useMemo(
     () => new Map(sortedSessions.map((session, index) => [session.id, index])),
@@ -652,9 +655,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       collection.push(session);
       map.set(parentID, collection);
     });
-    map.forEach((list) => list.sort((a, b) => compareSessionsByPinnedAndTime(a, b, pinnedSessionIds)));
+    map.forEach((list) => list.sort((a, b) => compareSessionsByPinnedAndTime(a, b, pinnedSessionIds, sessionUserActivity)));
     return map;
-  }, [sortedSessions, pinnedSessionIds]);
+  }, [sortedSessions, pinnedSessionIds, sessionUserActivity]);
 
   const emptyState = (
     <div className="py-6 text-center text-muted-foreground">
@@ -1786,13 +1789,15 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
           aria-labelledby="main-sidebar-audience-bots-tab"
           className="min-h-0 flex-1 overflow-y-auto px-2 pb-3"
         >
-          <BotSidebarSection
-            standalone
-            onBotSelected={(botId) => {
-              if (mobileVariant) setSessionSwitcherOpen(false);
-              onSessionSelected?.(`bot:${botId}`);
-            }}
-          />
+          <LazyViewBoundary>
+            <LazyBotSidebarSection
+              standalone
+              onBotSelected={(botId) => {
+                if (mobileVariant) setSessionSwitcherOpen(false);
+                onSessionSelected?.(`bot:${botId}`);
+              }}
+            />
+          </LazyViewBoundary>
         </div>
       ) : null}
 

@@ -21,12 +21,8 @@ const temporaryDirectory = async () => {
 };
 
 describe('background runtime registration', () => {
-  test('uses the signed SMAppService helper on macOS 13+ and reports approval state', async () => {
+  test('uses the in-process SMAppService bridge on macOS 13+ and reports approval state', async () => {
     const calls = [];
-    const fsPromises = {
-      stat: async () => ({ isFile: () => true }),
-      access: async () => undefined,
-    };
     const registration = createRuntimeServiceRegistration({
       platform: 'darwin',
       macosMajor: 15,
@@ -34,22 +30,25 @@ describe('background runtime registration', () => {
       executablePath: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
       resourcesPath: '/Applications/DevRyan.app/Contents/Resources',
       dataDirectory: '/Users/test/.config/openchamber',
-      fsPromises,
-      execFile: async (file, args) => {
-        calls.push([file, args]);
-        return { stdout: '{"ok":true,"state":"requires_approval","code":null}\n', stderr: '' };
+      nativeControl: {
+        status: async () => {
+          calls.push('status');
+          return { ok: true, state: 'not_registered', code: null };
+        },
+        register: async () => {
+          calls.push('register');
+          return { ok: true, state: 'requires_approval', code: null };
+        },
       },
     });
     const result = await registration.register();
     assert.equal(result.state, 'requires_approval');
-    assert.deepEqual(calls, [[
-      '/Applications/DevRyan.app/Contents/Resources/native/DevRyanRuntimeServiceControl',
-      ['register'],
-    ]]);
+    assert.deepEqual(calls, ['status', 'register']);
     assert.match(registration.settingsUrl, /LoginItems/);
   });
 
-  test('accepts real helper success payloads that omit the optional code field', async () => {
+  test('accepts native bridge success payloads that omit the optional code field', async () => {
+    const root = await temporaryDirectory();
     const calls = [];
     const states = {
       status: 'not_found',
@@ -60,17 +59,16 @@ describe('background runtime registration', () => {
       platform: 'darwin',
       macosMajor: 15,
       isPackaged: true,
-      executablePath: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      resourcesPath: '/Applications/DevRyan.app/Contents/Resources',
-      dataDirectory: '/Users/test/.config/openchamber',
-      fsPromises: {
-        stat: async () => ({ isFile: () => true }),
-        access: async () => undefined,
-      },
-      execFile: async (file, [command]) => {
-        calls.push([file, command]);
-        return { stdout: `${JSON.stringify({ ok: true, state: states[command] })}\n`, stderr: '' };
-      },
+      executablePath: path.join(root, 'DevRyan.app', 'Contents', 'MacOS', 'DevRyan'),
+      resourcesPath: path.join(root, 'DevRyan.app', 'Contents', 'Resources'),
+      dataDirectory: path.join(root, 'data'),
+      nativeControl: Object.fromEntries(['status', 'register', 'unregister'].map((command) => [
+        command,
+        async () => {
+          calls.push(command);
+          return { ok: true, state: states[command] };
+        },
+      ])),
     });
 
     assert.deepEqual(await registration.status(), { ok: true, state: 'not_found', code: null });
@@ -84,10 +82,152 @@ describe('background runtime registration', () => {
       state: 'not_registered',
       code: null,
     });
-    assert.deepEqual(calls.map(([, command]) => command), ['status', 'register', 'unregister']);
+    assert.deepEqual(calls, ['status', 'status', 'register', 'unregister']);
   });
 
-  test('continues to reject malformed helper output', async () => {
+  test('falls back to the private LaunchAgent when SMAppService cannot find a bundled definition', async () => {
+    const root = await temporaryDirectory();
+    const resourcesPath = path.join(root, 'DevRyan.app', 'Contents', 'Resources');
+    const bundledPlistPath = path.join(
+      root,
+      'DevRyan.app',
+      'Contents',
+      'Library',
+      'LaunchAgents',
+      'dev.openchamber.desktop.runtime-service.plist',
+    );
+    await fs.mkdir(path.dirname(bundledPlistPath), { recursive: true });
+    await fs.writeFile(bundledPlistPath, 'bundled');
+    const calls = [];
+    const registration = createRuntimeServiceRegistration({
+      platform: 'darwin',
+      macosMajor: 15,
+      isPackaged: true,
+      executablePath: path.join(root, 'DevRyan.app', 'Contents', 'MacOS', 'DevRyan'),
+      resourcesPath,
+      dataDirectory: path.join(root, 'data'),
+      homeDirectory: root,
+      uid: 501,
+      execFile: async (file, args) => {
+        calls.push([file, args]);
+        return { stdout: '', stderr: '' };
+      },
+      nativeControl: {
+        status: async () => ({ ok: true, state: 'not_found', code: null }),
+        register: async () => {
+          throw new Error('SMAppService registration must not be attempted');
+        },
+      },
+    });
+
+    assert.deepEqual(await registration.status(), {
+      ok: true,
+      state: 'not_registered',
+      code: null,
+    });
+    assert.equal(registration.mode, 'legacy');
+    assert.equal(registration.settingsUrl, null);
+    const result = await registration.register({ allowLegacy: true });
+    assert.equal(result.state, 'enabled');
+    assert.equal((await fs.stat(registration.legacyPath)).mode & 0o777, 0o600);
+    assert.deepEqual(calls[0].slice(0, 1), ['/bin/launchctl']);
+  });
+
+  test('falls back when SMAppService becomes not_found during registration', async () => {
+    const root = await temporaryDirectory();
+    const resourcesPath = path.join(root, 'DevRyan.app', 'Contents', 'Resources');
+    const bundledPlistPath = path.join(
+      root,
+      'DevRyan.app',
+      'Contents',
+      'Library',
+      'LaunchAgents',
+      'dev.openchamber.desktop.runtime-service.plist',
+    );
+    await fs.mkdir(path.dirname(bundledPlistPath), { recursive: true });
+    await fs.writeFile(bundledPlistPath, 'bundled');
+    const registration = createRuntimeServiceRegistration({
+      platform: 'darwin',
+      macosMajor: 15,
+      isPackaged: true,
+      executablePath: path.join(root, 'DevRyan.app', 'Contents', 'MacOS', 'DevRyan'),
+      resourcesPath,
+      dataDirectory: path.join(root, 'data'),
+      homeDirectory: root,
+      uid: 501,
+      execFile: async () => ({ stdout: '', stderr: '' }),
+      nativeControl: {
+        status: async () => ({ ok: true, state: 'not_registered', code: null }),
+        register: async () => ({
+          ok: false,
+          state: 'not_found',
+          code: 'smappservice_registration_failed',
+        }),
+      },
+    });
+
+    assert.equal((await registration.register({ allowLegacy: true })).state, 'enabled');
+    assert.equal(registration.mode, 'legacy');
+    assert.equal((await fs.stat(registration.legacyPath)).mode & 0o777, 0o600);
+  });
+
+  test('preserves not_found when the bundled LaunchAgent is genuinely missing', async () => {
+    const root = await temporaryDirectory();
+    const registration = createRuntimeServiceRegistration({
+      platform: 'darwin',
+      macosMajor: 15,
+      isPackaged: true,
+      executablePath: path.join(root, 'DevRyan.app', 'Contents', 'MacOS', 'DevRyan'),
+      resourcesPath: path.join(root, 'DevRyan.app', 'Contents', 'Resources'),
+      dataDirectory: path.join(root, 'data'),
+      homeDirectory: root,
+      nativeControl: {
+        status: async () => ({ ok: true, state: 'not_found', code: null }),
+      },
+    });
+
+    assert.deepEqual(await registration.status(), { ok: true, state: 'not_found', code: null });
+    assert.equal(registration.mode, 'smappservice');
+    assert.match(registration.settingsUrl, /LoginItems/);
+  });
+
+  test('prefers an existing managed LaunchAgent over SMAppService after an upgrade', async () => {
+    const root = await temporaryDirectory();
+    const legacyPath = path.join(
+      root,
+      'Library',
+      'LaunchAgents',
+      'dev.openchamber.desktop.runtime-service.legacy.plist',
+    );
+    await fs.mkdir(path.dirname(legacyPath), { recursive: true });
+    await fs.writeFile(legacyPath, 'legacy', { mode: 0o600 });
+    let nativeStatusCalls = 0;
+    const registration = createRuntimeServiceRegistration({
+      platform: 'darwin',
+      macosMajor: 15,
+      isPackaged: true,
+      executablePath: path.join(root, 'DevRyan.app', 'Contents', 'MacOS', 'DevRyan'),
+      resourcesPath: path.join(root, 'DevRyan.app', 'Contents', 'Resources'),
+      dataDirectory: path.join(root, 'data'),
+      homeDirectory: root,
+      uid: 501,
+      execFile: async () => ({ stdout: '', stderr: '' }),
+      nativeControl: {
+        status: async () => {
+          nativeStatusCalls += 1;
+          return { ok: true, state: 'enabled', code: null };
+        },
+      },
+    });
+
+    assert.deepEqual(await registration.status(), { ok: true, state: 'enabled', code: null });
+    assert.equal(registration.mode, 'legacy');
+    assert.equal(nativeStatusCalls, 0);
+    await registration.unregister();
+    await assert.rejects(fs.stat(legacyPath), (error) => error.code === 'ENOENT');
+  });
+
+  test('continues to reject malformed native bridge output', async () => {
     const registration = createRuntimeServiceRegistration({
       platform: 'darwin',
       macosMajor: 15,
@@ -95,52 +235,46 @@ describe('background runtime registration', () => {
       executablePath: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
       resourcesPath: '/Applications/DevRyan.app/Contents/Resources',
       dataDirectory: '/Users/test/.config/openchamber',
-      fsPromises: {
-        stat: async () => ({ isFile: () => true }),
-        access: async () => undefined,
+      nativeControl: {
+        status: async () => ({ ok: true, state: 'not_found', code: 7 }),
+        register: async () => ({ ok: true, state: 'not_found', code: 7 }),
       },
-      execFile: async () => ({ stdout: '{"ok":true,"state":"not_found","code":7}\n', stderr: '' }),
     });
 
     assert.deepEqual(await registration.status(), {
       ok: false,
       state: 'unavailable',
-      code: 'runtime_service_control_invalid',
+      code: 'runtime_service_native_bridge_invalid',
     });
     await assert.rejects(
       registration.register(),
-      (error) => error.code === 'runtime_service_control_invalid',
+      (error) => error.code === 'runtime_service_native_bridge_invalid',
     );
   });
 
-  test('reports a missing packaged helper without collapsing the status request', async () => {
+  test('reports a missing packaged native bridge without collapsing the status request', async () => {
     const root = await temporaryDirectory();
     const registration = createRuntimeServiceRegistration({
       platform: 'darwin',
       macosMajor: 15,
       isPackaged: true,
       executablePath: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      resourcesPath: root,
       dataDirectory: path.join(root, 'data'),
     });
 
     assert.deepEqual(await registration.status(), {
       ok: false,
       state: 'unavailable',
-      code: 'runtime_service_helper_missing',
+      code: 'runtime_service_native_bridge_missing',
     });
     await assert.rejects(
       registration.register(),
-      (error) => error.code === 'runtime_service_helper_missing'
+      (error) => error.code === 'runtime_service_native_bridge_missing'
         && !error.message.includes('RuntimeServiceRegistrationError'),
     );
   });
 
-  test('classifies helper timeout and wrong-architecture launch failures', async () => {
-    const helperFs = {
-      stat: async () => ({ isFile: () => true }),
-      access: async () => undefined,
-    };
+  test('classifies native bridge load and call failures', async () => {
     const baseOptions = {
       platform: 'darwin',
       macosMajor: 15,
@@ -148,26 +282,27 @@ describe('background runtime registration', () => {
       executablePath: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
       resourcesPath: '/Applications/DevRyan.app/Contents/Resources',
       dataDirectory: '/Users/test/.config/openchamber',
-      fsPromises: helperFs,
     };
-    const timeoutRegistration = createRuntimeServiceRegistration({
+    const loadFailureRegistration = createRuntimeServiceRegistration({
       ...baseOptions,
-      execFile: async () => { throw Object.assign(new Error('timed out'), { killed: true }); },
+      nativeControlErrorCode: 'runtime_service_native_bridge_load_failed',
     });
-    const wrongArchRegistration = createRuntimeServiceRegistration({
+    const callFailureRegistration = createRuntimeServiceRegistration({
       ...baseOptions,
-      execFile: async () => {
-        throw Object.assign(new Error('spawn failed'), { stderr: 'Bad CPU type in executable' });
+      nativeControl: {
+        register: async () => {
+          throw Object.assign(new Error('failed'), { code: 'runtime_service_native_bridge_failed' });
+        },
       },
     });
 
     await assert.rejects(
-      timeoutRegistration.register(),
-      (error) => error.code === 'runtime_service_control_timeout',
+      loadFailureRegistration.register(),
+      (error) => error.code === 'runtime_service_native_bridge_load_failed',
     );
     await assert.rejects(
-      wrongArchRegistration.register(),
-      (error) => error.code === 'runtime_service_helper_wrong_arch',
+      callFailureRegistration.register(),
+      (error) => error.code === 'runtime_service_native_bridge_failed',
     );
   });
 

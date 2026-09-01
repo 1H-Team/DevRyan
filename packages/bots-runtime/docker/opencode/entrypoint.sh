@@ -25,7 +25,7 @@ const config = {
     bot: {
       mode: 'primary',
       description: 'Scoped DevRyan Production Bot runtime',
-      prompt: 'Operate autonomously within this scoped Bot channel and managed workspace. Use devryan_bot for governed browser and external actions. When image.generate is available, use it for requested raster image generation; successful images are attached automatically, so never promise a later Shared-folder publication. Never seek host files, Docker, host credentials, raw browser/CDP, direct MCP, or DevRyan host-task orchestration.',
+      prompt: 'Operate autonomously within this scoped Bot channel and managed workspace. Use devryan_bot for governed browser and external actions. When devryan_image is available, use its exact prompt, out, and quality arguments for requested raster image generation; save out under /workspace/generated-images and successful images attach automatically. Never guess an image.generate gateway payload or promise a later Shared-folder publication. Never seek host files, Docker, host credentials, raw browser/CDP, direct MCP, or DevRyan host-task orchestration.',
       permission: {
         '*': 'deny',
         read: 'allow',
@@ -34,6 +34,7 @@ const config = {
         glob: 'allow',
         grep: 'allow',
         devryan_bot: 'allow',
+        devryan_image: 'allow',
         devryan_write: 'allow',
         bash: 'allow',
         terminal: 'allow',
@@ -48,11 +49,11 @@ const config = {
     },
     explore: {
       mode: 'subagent',
-      permission: { '*': 'deny', read: 'allow', write: 'allow', edit: 'allow', glob: 'allow', grep: 'allow', bash: 'allow', terminal: 'allow', git: 'allow', task: 'deny', devryan_task: 'deny', devryan_bot: 'deny', devryan_write: 'deny', browser: 'deny', devryan_browser: 'deny', mcp: 'deny', external_directory: 'deny' },
+      permission: { '*': 'deny', read: 'allow', write: 'allow', edit: 'allow', glob: 'allow', grep: 'allow', bash: 'allow', terminal: 'allow', git: 'allow', task: 'deny', devryan_task: 'deny', devryan_bot: 'deny', devryan_image: 'deny', devryan_write: 'deny', browser: 'deny', devryan_browser: 'deny', mcp: 'deny', external_directory: 'deny' },
     },
     general: {
       mode: 'subagent',
-      permission: { '*': 'deny', read: 'allow', write: 'allow', edit: 'allow', glob: 'allow', grep: 'allow', bash: 'allow', terminal: 'allow', git: 'allow', task: 'deny', devryan_task: 'deny', devryan_bot: 'deny', devryan_write: 'deny', browser: 'deny', devryan_browser: 'deny', mcp: 'deny', external_directory: 'deny' },
+      permission: { '*': 'deny', read: 'allow', write: 'allow', edit: 'allow', glob: 'allow', grep: 'allow', bash: 'allow', terminal: 'allow', git: 'allow', task: 'deny', devryan_task: 'deny', devryan_bot: 'deny', devryan_image: 'deny', devryan_write: 'deny', browser: 'deny', devryan_browser: 'deny', mcp: 'deny', external_directory: 'deny' },
     },
   },
 };

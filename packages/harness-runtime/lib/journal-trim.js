@@ -15,6 +15,23 @@ const eventTypeOf = (record) => (
 
 const sessionKeyOf = (record) => resolveRecordSessionID(record) || RUNTIME_KEY;
 
+const isEmptyObject = (value) => (
+  value !== null
+  && typeof value === 'object'
+  && !Array.isArray(value)
+  && Object.keys(value).length === 0
+);
+
+const isPropertyFreeRuntimeSync = (record, sessionKey) => {
+  if (sessionKey !== RUNTIME_KEY || eventTypeOf(record) !== 'sync') return false;
+  const payload = record?.payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+  return Object.entries(payload).every(([key, value]) => (
+    key === 'type'
+    || (key === 'properties' && (value === undefined || value === null || isEmptyObject(value)))
+  ));
+};
+
 const partIdentity = (record) => {
   const properties = record?.payload?.properties;
   const part = properties?.part;
@@ -74,6 +91,7 @@ export const createJournalTrimmer = (options = {}) => {
         trimmedDeltas: 0,
         coalescedParts: 0,
         coalescedSessionUpdates: 0,
+        coalescedRuntimeSyncs: 0,
       };
       counters.set(sessionKey, counter);
     }
@@ -89,7 +107,8 @@ export const createJournalTrimmer = (options = {}) => {
     const counter = counterFor(entry.sessionKey);
     const eliminated = Math.max(0, entry.count - 1);
     if (entry.kind === 'part') counter.coalescedParts += eliminated;
-    else counter.coalescedSessionUpdates += eliminated;
+    else if (entry.kind === 'session') counter.coalescedSessionUpdates += eliminated;
+    else if (entry.kind === 'runtime-sync') counter.coalescedRuntimeSyncs += eliminated;
     return addCoalescedCount(entry.record, entry.count);
   };
 
@@ -175,6 +194,10 @@ export const createJournalTrimmer = (options = {}) => {
 
     if (eventType === 'session.updated') {
       return hold(`session:${sessionKey}`, 'session', record, sessionKey);
+    }
+
+    if (isPropertyFreeRuntimeSync(record, sessionKey)) {
+      return hold('runtime:sync', 'runtime-sync', record, sessionKey);
     }
 
     const ready = [];

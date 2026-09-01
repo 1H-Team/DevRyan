@@ -935,6 +935,7 @@ export function createBotPurgeAdapter({
   authorization,
   getCredentialVault = () => null,
   getEnvironmentSecrets = () => null,
+  purgeIntegrations = async () => {},
   dockerProvider,
   getIndexer = () => null,
   getRuntimeStatus = null,
@@ -1025,8 +1026,9 @@ export function createBotPurgeAdapter({
       const environmentResult = environment && typeof environment.purgeBot === 'function'
         ? await environment.purgeBot(snapshot.botId)
         : { vaultDeletedCount: 0 };
+      await purgeIntegrations(snapshot.botId);
       return {
-        detail: `${local.deletedCount} local credential entries and ${environmentResult.vaultDeletedCount} environment secrets removed`,
+        detail: `${local.deletedCount} local credential entries, ${environmentResult.vaultDeletedCount} environment secrets, and Bot transport/speech credentials removed`,
       };
     }
     if (resourceId === 'browser_profiles') {

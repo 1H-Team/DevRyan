@@ -167,9 +167,15 @@ const resolveElectronBinary = async (override, mode) => {
   return binary;
 };
 
-const dispatchKey = async (cdp, key, code = key) => {
+const dispatchKey = async (cdp, key, code = key, { modifiers = 0 } = {}) => {
   const virtualKeyCode = key === 'Tab' ? 9 : key === 'Enter' ? 13 : key === 'Escape' ? 27 : 0;
-  const base = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode };
+  const base = {
+    key,
+    code,
+    modifiers,
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode,
+  };
   await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...base });
   if (key === 'Enter') {
     await cdp.send('Input.dispatchKeyEvent', {
@@ -180,6 +186,49 @@ const dispatchKey = async (cdp, key, code = key) => {
     });
   }
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+};
+
+const verifyRemoteKeyboardRelease = async (cdp, timeoutMs) => {
+  const focused = await evaluate(cdp, `(() => {
+    const keyboard = document.querySelector('[data-bot-computer-keyboard]');
+    if (!(keyboard instanceof HTMLTextAreaElement) || keyboard.tabIndex !== 0) return false;
+    keyboard.focus({ preventScroll: true });
+    return document.activeElement === keyboard;
+  })()`);
+  if (!focused) throw new Error('Remote keyboard target could not receive focus');
+  await dispatchKey(cdp, 'Escape', 'Escape', { modifiers: 3 });
+  await waitForEvaluation(cdp, `(() => {
+    const keyboard = document.querySelector('[data-bot-computer-keyboard]');
+    return keyboard?.getAttribute('data-bot-computer-keyboard-released') === 'true'
+      && keyboard.tabIndex === -1
+      && document.activeElement !== keyboard;
+  })()`, { timeoutMs, label: 'remote keyboard focus release' });
+  await dispatchKey(cdp, 'Tab', 'Tab');
+  const nextControl = await evaluate(cdp, `(() => ({
+    text: document.activeElement?.textContent?.trim() || '',
+    focusVisible: document.activeElement instanceof HTMLElement
+      && document.activeElement.matches(':focus-visible'),
+  }))()`);
+  if (nextControl.text !== 'Stop Screen Viewing' || !nextControl.focusVisible) {
+    throw new Error(`Remote keyboard escape did not restore control navigation: ${JSON.stringify(nextControl)}`);
+  }
+  await evaluate(cdp, 'document.activeElement instanceof HTMLElement && document.activeElement.blur()');
+  return nextControl;
+};
+
+const verifyRemotePointerInput = async (cdp, timeoutMs) => {
+  await clickCenter(cdp, "document.querySelector('[data-bot-computer-canvas]')");
+  await waitForEvaluation(cdp, `
+    (window.__DEVRYAN_VISUAL_HUMAN_INPUT_EVENT_COUNT__ || 0) >= 2
+  `, { timeoutMs, label: 'remote pointer input dispatch' });
+  const eventCount = await evaluate(
+    cdp,
+    'window.__DEVRYAN_VISUAL_HUMAN_INPUT_EVENT_COUNT__ || 0',
+  );
+  if (!Number.isSafeInteger(eventCount) || eventCount < 2) {
+    throw new Error(`Remote pointer input did not dispatch: ${eventCount}`);
+  }
+  return eventCount;
 };
 
 const clickCenter = async (cdp, selectorExpression) => {
@@ -228,6 +277,63 @@ const layoutAssertionsExpression = `(() => {
     : ['missing_error_collector'];
   const secretPattern = /(Bearer\\s+[A-Za-z0-9._~-]{8,}|sk-[A-Za-z0-9]{8,}|BEGIN PRIVATE KEY|rawArguments|credentialValue|hiddenTarget|devryan-secret-fixture)/i;
   const text = body.innerText || '';
+  const fixtureState = new URLSearchParams(location.search).get('state') || '';
+  const acknowledgmentFixture = fixtureState === 'ack_running' || fixtureState === 'ack_result';
+  const acknowledgmentCount = (text.match(/I’ll open the release dashboard and verify the production checks first[.]/g) || []).length;
+  const genericAcknowledgmentPresent = /Got it — I’m on it[.]/.test(text);
+  const transcriptOrder = Array.from(document.querySelectorAll('[data-bot-message-id]'))
+    .map((element) => element.getAttribute('data-bot-message-id'));
+  const expectedAnswerOrder = fixtureState === 'ack_result'
+    ? ['d1000000-0000-4000-8000-000000000002', 'd1000000-0000-4000-8000-000000000001']
+    : ['d1000000-0000-4000-8000-000000000002'];
+  const acknowledgmentContract = !acknowledgmentFixture || (
+    acknowledgmentCount === 0
+    && !genericAcknowledgmentPresent
+    && transcriptOrder.length === expectedAnswerOrder.length
+    && transcriptOrder.every((id, index) => id === expectedAnswerOrder[index])
+    && Boolean(document.querySelector('[data-bot-typing-indicator]')) === (fixtureState === 'ack_running')
+  );
+  const internalWorkLanguage = /Clarifying connection and management capabilities|Assessing browser control requirements|Requesting runtime access/i.test(text);
+  const screenState = document.querySelector('[data-bot-screen-view-state]')?.getAttribute('data-bot-screen-view-state') || null;
+  const expectedScreenState = ({
+    screen_connecting: 'connecting',
+    screen_owned: 'viewing',
+    screen_view_only: 'viewing',
+    screen_conflict: 'viewing',
+    screen_wait_owned: 'viewing',
+    screen_wait_other: 'viewing',
+    screen_disconnected: 'screen-unavailable',
+    screen_off: 'off',
+  })[fixtureState] || null;
+  const expectedInputState = ['screen_owned', 'screen_wait_owned'].includes(fixtureState)
+    ? 'enabled'
+    : ['screen_view_only', 'screen_conflict'].includes(fixtureState) ? 'disabled' : null;
+  const screenContract = expectedScreenState === null || (
+    screenState === expectedScreenState
+    && (expectedInputState === null
+      || document.querySelector('[data-bot-computer-input]')?.getAttribute('data-bot-computer-input') === expectedInputState)
+  );
+  const controlWait = document.querySelector('[data-bot-control-wait]');
+  const expectedControlWait = fixtureState === 'screen_wait_owned'
+    ? 'owned'
+    : fixtureState === 'screen_wait_other' ? 'other' : null;
+  const controlWaitContract = expectedControlWait === null || (
+    controlWait?.getAttribute('data-bot-control-wait') === expectedControlWait
+    && (expectedControlWait !== 'owned'
+      || Array.from(controlWait.querySelectorAll('button')).some((button) => button.textContent?.trim() === 'Return Control'))
+  );
+  const expectedImageState = fixtureState === 'image_loading'
+    ? 'loading'
+    : fixtureState === 'image_ready'
+      ? 'ready'
+      : fixtureState === 'image_error' ? 'error' : null;
+  const imagePreview = document.querySelector('[data-bot-image-state]');
+  const imageContract = expectedImageState === null || (
+    imagePreview?.getAttribute('data-bot-image-state') === expectedImageState
+    && (expectedImageState !== 'ready' || imagePreview.querySelector('img'))
+    && (expectedImageState !== 'error'
+      || Array.from(imagePreview.querySelectorAll('button')).some((button) => button.textContent?.includes('Retry Image')))
+  );
   const values = Array.from(document.querySelectorAll('input,textarea'))
     .map((element) => element.value || '')
     .join(' ');
@@ -264,13 +370,26 @@ const layoutAssertionsExpression = `(() => {
     focusedInView = rect.top >= 0 && rect.bottom <= viewportHeight;
   }
   return {
-    ok: errors.length === 0 && overflow.length === 0 && !secretPattern.test(text) && !secretPattern.test(values) && unnamedDialogs === 0 && focusedInView && focusScopeInView && Math.abs(headerTop) <= 1,
+    ok: errors.length === 0 && overflow.length === 0 && !secretPattern.test(text) && !secretPattern.test(values) && unnamedDialogs === 0 && focusedInView && focusScopeInView && Math.abs(headerTop) <= 1 && acknowledgmentContract && !internalWorkLanguage && screenContract && controlWaitContract && imageContract,
     errors,
     overflow,
     secretSentinelFound: secretPattern.test(text) || secretPattern.test(values),
     unnamedDialogs,
     focusedInView,
     focusScopeInView,
+    acknowledgmentContract,
+    acknowledgmentCount,
+    genericAcknowledgmentPresent,
+    transcriptOrder,
+    internalWorkLanguage,
+    screenContract,
+    controlWaitContract,
+    expectedControlWait,
+    imageContract,
+    expectedImageState,
+    screenState,
+    expectedScreenState,
+    expectedInputState,
     headerTop,
     viewport: { width: window.innerWidth, height: window.innerHeight },
   };
@@ -283,6 +402,14 @@ const assertKeyboardFocus = async (cdp) => {
       : null,
     scroll: { x: window.scrollX, y: window.scrollY },
     bodyRect: (() => { const rect = document.body.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }; })(),
+    visibleTabbableCount: Array.from((document.querySelector('[data-visual-focus-scope="true"]') || document)
+      .querySelectorAll('button,a[href],input,select,textarea,[tabindex]'))
+      .filter((element) => {
+        if (!(element instanceof HTMLElement) || element.hasAttribute('disabled') || element.tabIndex < 0) return false;
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0
+          && rect.top < window.innerHeight && rect.left < window.innerWidth;
+      }).length,
     tabbables: Array.from((document.querySelector('[data-visual-focus-scope="true"]') || document)
       .querySelectorAll('button,a[href],input,select,textarea,[tabindex]'))
       .filter((element) => element instanceof HTMLElement && !element.hasAttribute('disabled') && element.tabIndex >= 0)
@@ -294,6 +421,7 @@ const assertKeyboardFocus = async (cdp) => {
     const candidates = Array.from(scope.querySelectorAll('button,a[href],input,select,textarea,[tabindex]'));
     const origin = candidates.find((element) => {
       if (!(element instanceof HTMLElement) || element.hasAttribute('disabled') || element.tabIndex < 0) return false;
+      if (element.hasAttribute('data-bot-computer-keyboard')) return false;
       const rect = element.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0
         && rect.bottom > 0 && rect.right > 0
@@ -323,7 +451,8 @@ const assertKeyboardFocus = async (cdp) => {
       moved,
     };
   })()`);
-  if (!result?.visible || !result.focusVisible || !result.moved) {
+  if (!result?.visible || !result.focusVisible
+    || (!result.moved && before.visibleTabbableCount > 1)) {
     throw new Error(`Keyboard Tab did not produce a visible focus target: ${JSON.stringify({ result, before })}`);
   }
   const restoreScroll = `(() => {
@@ -508,12 +637,45 @@ export const runProductionBotsVisualCapture = async (options) => {
       await wait(100);
       await alignFixtureFocusScope(cdp);
       const focus = await assertKeyboardFocus(cdp);
+      const remotePointerInput = entry.state === 'screen_owned'
+        ? await verifyRemotePointerInput(cdp, options.timeoutMs)
+        : null;
+      const remoteKeyboard = entry.state === 'screen_owned'
+        ? await verifyRemoteKeyboardRelease(cdp, options.timeoutMs)
+        : null;
       if (entry.interaction === 'legacy_dialog') {
         await prepareLegacyDialog(cdp, options.timeoutMs);
         await wait(250);
       }
       if (entry.interaction === 'activity_hidden') {
         await verifyTranscriptOmitsActivity(cdp);
+      }
+      if (entry.state === 'image_ready' || entry.state === 'image_error') {
+        await waitForEvaluation(cdp, `
+          document.querySelector('[data-bot-image-state]')?.getAttribute('data-bot-image-state')
+            === '${entry.state === 'image_ready' ? 'ready' : 'error'}'
+        `, { timeoutMs: options.timeoutMs, label: `${entry.id} image state` });
+      }
+      if (entry.interaction === 'retry_refusal') {
+        await clickCenter(cdp, "Array.from(document.querySelectorAll('[data-bot-run-failure] button')).find((button) => button.textContent?.includes('Retry safely'))");
+        await waitForEvaluation(cdp, `
+          document.querySelector('[data-bot-run-failure]')?.textContent?.includes('configuration has changed')
+            && !document.querySelector('[data-bot-run-failure] button')
+            && document.querySelector('article')?.textContent?.includes('release package is prepared')
+        `, { timeoutMs: options.timeoutMs, label: `${entry.id} permanent retry refusal` });
+      }
+      if (entry.state === 'timeout') {
+        await waitForEvaluation(cdp, `
+          document.querySelector('[data-bot-run-failure]')?.textContent?.includes('response time limit')
+            && !document.querySelector('[data-bot-run-failure] button')
+            && document.querySelector('article')?.textContent?.includes('release package is prepared')
+        `, { timeoutMs: options.timeoutMs, label: `${entry.id} timeout explanation` });
+      }
+      if (entry.interaction === 'image_retry') {
+        await clickCenter(cdp, "Array.from(document.querySelectorAll('[data-bot-image-state] button')).find((button) => button.textContent?.includes('Retry Image'))");
+        await waitForEvaluation(cdp, `
+          document.querySelector('[data-bot-image-state]')?.getAttribute('data-bot-image-state') === 'error'
+        `, { timeoutMs: options.timeoutMs, label: `${entry.id} image retry` });
       }
       await resetFixtureDocumentScroll(cdp);
       await alignFixtureFocusScope(cdp);
@@ -541,6 +703,8 @@ export const runProductionBotsVisualCapture = async (options) => {
         screenshot,
         assertions,
         keyboardFocus: focus,
+        remotePointerInput,
+        remoteKeyboard,
         rendererErrorCount: rendererErrors.length,
       });
       process.stdout.write(`[production-bots-visual] PASS ${entry.id}\n`);

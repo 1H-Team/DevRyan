@@ -5,6 +5,9 @@ Sidebar-specific hooks for session lists, filters, ordering, and selection behav
 
 ## Design
 Hook utilities keep list logic out of sidebar presentational components.
+`useSidebarUserActivityHydration.ts` restores missing root prompt recency only
+for the active directory with bounded pagination/concurrency and passive child
+store writes, so historical ordering never activates inactive runtimes.
 
 ## Flow
 Hooks subscribe to session stores, derive visible rows, and expose actions/callbacks.

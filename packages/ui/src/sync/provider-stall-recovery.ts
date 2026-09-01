@@ -1,4 +1,5 @@
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import { hostOwnsPrimaryRecovery } from "@/stores/usePrimaryRecoveryStore"
 
 import { buildProviderRecoveryInput } from "@/lib/messages/providerRecovery"
 import type { ProviderRecoveryInput } from "@/stores/useProviderRecoveryStore"
@@ -29,6 +30,7 @@ export async function stopStalledProviderAndOfferRecovery(
   record: ProviderStallRecord,
   dependencies: ProviderStallRecoveryDependencies,
 ): Promise<ProviderStallResolution> {
+  if (hostOwnsPrimaryRecovery(record.sessionID)) return "stream-resumed"
   await dependencies.resyncSession(record.sessionID, {
     directory: record.directory,
     reason: "manual",

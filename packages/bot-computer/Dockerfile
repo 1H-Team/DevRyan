@@ -10,11 +10,15 @@ RUN apt-get update \
       chromium \
       fonts-liberation \
       fonts-noto-color-emoji \
+      xvfb \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 devryan \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin devryan \
     && mkdir -p /opt/devryan /data/chromium /workspace \
     && chown -R 10001:10001 /opt/devryan /data/chromium /workspace
+
+COPY --chown=0:0 packages/bot-computer/chromium-policies/managed/devryan-browser.json \
+  /etc/chromium/policies/managed/devryan-browser.json
 
 WORKDIR /opt/devryan
 COPY --chown=10001:10001 packages/bot-computer/package.json ./package.json

@@ -31,7 +31,7 @@ describe('dedicated Browser panel', () => {
 
   test('persists panel state and carries the collision-safe v17 migration', () => {
     expect(store).toContain('browserPanelByDirectory: state.browserPanelByDirectory');
-    expect(store).toContain('version: 19,');
+    expect(store).toContain('version: 20,');
     expect(store).toContain('// v16 -> v17: Browser becomes a dedicated sibling panel.');
     expect(store).toContain("return tab.mode === 'browser'");
   });

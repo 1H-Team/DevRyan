@@ -12,6 +12,8 @@ const MAX_ARGUMENT_BYTES = 8 * 1024;
 const CLEANUP_TIMEOUT_MS = 3_000;
 const MAX_CONNECTION_ENTRIES = 100;
 const TURN_MESSAGE_LOOKUP_LIMIT = 200;
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1']);
+const NO_PREVIEW_HANDOFF_MESSAGE = 'No branch preview is configured for this branch. Start or identify the local site, then retry open with its full loopback URL.';
 const RETRYABLE_TRANSPORT_STATUS_CODES = new Set([502, 503, 504]);
 const BROWSER_ERROR_CODES = Object.freeze({
   inputInvalid: 'DEVRYAN_BROWSER_INPUT_INVALID',
@@ -24,8 +26,11 @@ const BROWSER_ERROR_CODES = Object.freeze({
   leaseReleaseFailed: 'DEVRYAN_BROWSER_LEASE_RELEASE_FAILED',
   connectionFailed: 'DEVRYAN_BROWSER_CONNECTION_FAILED',
   commandFailed: 'DEVRYAN_BROWSER_COMMAND_FAILED',
+  evalError: 'DEVRYAN_BROWSER_EVAL_ERROR',
+  inspectionFailed: 'DEVRYAN_BROWSER_INSPECTION_FAILED',
   commandTimeout: 'DEVRYAN_BROWSER_COMMAND_TIMEOUT',
   commandAborted: 'DEVRYAN_BROWSER_COMMAND_ABORTED',
+  branchPreviewAuthFailed: 'branch_preview_auth_failed',
 });
 // agent-browser 0.33.2 parses this global option before the command and accepts
 // human-readable s/m/h values, normalizing them internally to milliseconds.
@@ -70,6 +75,7 @@ const ALLOWED_COMMANDS = new Set([
   'get',
   'highlight',
   'hover',
+  'inspect',
   'is',
   'keyboard',
   'mouse',
@@ -264,6 +270,105 @@ export const wrapBrowserEvalSnippet = (snippet) => {
   return `(async () => { ${trimmed} })()`;
 };
 
+const normalizeInspectionText = (value, field) => {
+  const text = requireText(value, field);
+  if (Buffer.byteLength(text) > MAX_ARGUMENT_BYTES || text.includes('\0')) {
+    throw browserError(BROWSER_ERROR_CODES.inputInvalid, `${field} is too large or contains a null byte`);
+  }
+  return text;
+};
+
+const normalizeInspectionNames = (value, field) => {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > MAX_ARGUMENTS) {
+    throw browserError(BROWSER_ERROR_CODES.inputInvalid, `${field} must be an array of at most ${MAX_ARGUMENTS} strings`);
+  }
+  return [...new Set(value.map((name, index) => normalizeInspectionText(name, `${field}[${index}]`)))];
+};
+
+const normalizeInspection = (command, args, input) => {
+  const fields = ['selector', 'styles', 'attributes'];
+  if (command !== 'inspect') {
+    if (fields.some((field) => Object.hasOwn(input, field))) {
+      throw browserError(BROWSER_ERROR_CODES.inputInvalid, 'selector, styles, and attributes are only available with inspect');
+    }
+    return null;
+  }
+  if (args.length > 0) {
+    throw browserError(BROWSER_ERROR_CODES.inputInvalid, 'inspect uses selector, styles, and attributes instead of args');
+  }
+  const inspection = {
+    selector: normalizeInspectionText(input.selector, 'selector'),
+    styles: normalizeInspectionNames(input.styles, 'styles'),
+    attributes: normalizeInspectionNames(input.attributes, 'attributes'),
+  };
+  if (Buffer.byteLength(JSON.stringify(inspection)) > MAX_ARGUMENT_BYTES) {
+    throw browserError(BROWSER_ERROR_CODES.inputInvalid, 'inspect request is too large');
+  }
+  return inspection;
+};
+
+// A single synchronous evaluation keeps the queried element and its styles in
+// the same DOM snapshot. Caller strings are JSON data, never executable source.
+const buildBrowserInspectionScript = (inspection) => `(() => {
+  const request = ${JSON.stringify(inspection)};
+  let matches;
+  try {
+    matches = document.querySelectorAll(request.selector);
+  } catch (error) {
+    if (error?.name === 'SyntaxError') return { error: 'invalid_selector' };
+    throw error;
+  }
+  let status = 'ambiguous';
+  if (matches.length === 0) status = 'missing';
+  else if (matches.length === 1) status = 'found';
+  const result = {
+    status,
+    selector: request.selector,
+    matchCount: matches.length,
+    styles: {},
+    attributes: {},
+  };
+  if (matches.length !== 1) return result;
+  const element = matches[0];
+  if (request.styles.length > 0) {
+    const computed = getComputedStyle(element);
+    result.styles = Object.fromEntries(request.styles.map(name => [name, computed.getPropertyValue(name)]));
+  }
+  result.attributes = Object.fromEntries(request.attributes.map(name => [name, element.getAttribute(name)]));
+  return result;
+})()`;
+
+const isInspectionMap = (value, names, allowNull = false) => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+  && Object.keys(value).length === names.length
+  && names.every((name) => Object.hasOwn(value, name)
+    && (typeof value[name] === 'string' || (allowNull && value[name] === null)))
+);
+
+const parseBrowserInspectionResult = (output, inspection, sensitiveValues = []) => {
+  let result;
+  try {
+    result = JSON.parse(output);
+  } catch {
+    throw browserError(BROWSER_ERROR_CODES.inspectionFailed, 'Browser inspection returned invalid or truncated JSON');
+  }
+  if (result?.error === 'invalid_selector' && Object.keys(result).length === 1) {
+    throw browserError(BROWSER_ERROR_CODES.inputInvalid, 'inspect selector is not valid CSS; correct it before trying again');
+  }
+  let validStatus = false;
+  if (result?.status === 'found') validStatus = result.matchCount === 1;
+  else if (result?.status === 'missing') validStatus = result.matchCount === 0;
+  else if (result?.status === 'ambiguous') validStatus = result.matchCount > 1;
+  if (!validStatus || !Number.isSafeInteger(result.matchCount)
+    || result.selector !== sanitizeSensitiveText(inspection.selector, sensitiveValues)
+    || !isInspectionMap(result.styles, result.status === 'found' ? inspection.styles : [])
+    || !isInspectionMap(result.attributes, result.status === 'found' ? inspection.attributes : [], true)) {
+    throw browserError(BROWSER_ERROR_CODES.inspectionFailed, 'Browser inspection returned an invalid result');
+  }
+  return result;
+};
+
 const validateInvocation = (commandInput, argsInput) => {
   const command = requireText(commandInput, 'command').toLowerCase();
   if (!/^[a-z][a-z0-9-]*$/.test(command)) {
@@ -307,6 +412,45 @@ const validateInvocation = (commandInput, argsInput) => {
   return { command, args };
 };
 
+const normalizeConfiguredPreviewUrl = (value) => {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return '';
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+};
+
+const resolveOpenCommandArguments = (args, previewUrl) => {
+  const configuredPreview = normalizeConfiguredPreviewUrl(previewUrl);
+  if (args.length === 0) {
+    if (configuredPreview) return [configuredPreview];
+    return null;
+  }
+  if (!configuredPreview) return args;
+
+  const urlIndex = args.findIndex((argument) => !argument.startsWith('-'));
+  if (urlIndex < 0) return args;
+  let requested;
+  try {
+    requested = new URL(args[urlIndex]);
+  } catch {
+    return args;
+  }
+  if (
+    (requested.protocol !== 'http:' && requested.protocol !== 'https:')
+    || !LOOPBACK_HOSTNAMES.has(requested.hostname.toLowerCase())
+  ) return args;
+
+  const previewOrigin = new URL(configuredPreview).origin;
+  const mapped = new URL(`${requested.pathname}${requested.search}${requested.hash}`, previewOrigin);
+  const next = [...args];
+  next[urlIndex] = mapped.toString();
+  return next;
+};
+
 const normalizeTimeout = (value) => {
   if (value === undefined) return DEFAULT_TIMEOUT_MS;
   if (!Number.isFinite(value)) {
@@ -341,6 +485,7 @@ const runBinary = ({
   sensitiveValues,
   cwd,
   errorCode = BROWSER_ERROR_CODES.commandFailed,
+  callerEval = false,
 }) => new Promise((resolve, reject) => {
   if (signal?.aborted) {
     reject(browserError(BROWSER_ERROR_CODES.commandAborted, 'Agent browser command was aborted'));
@@ -431,6 +576,16 @@ const runBinary = ({
     const safeOutput = sanitizeSensitiveText(combined, sensitiveValues);
     const suffix = truncated ? '\n[output truncated at 65536 bytes]' : '';
     if (code !== 0) {
+      // Only the pinned CLI's explicit evaluation exception envelope identifies
+      // caller JavaScript misuse. Connection/process failures and our generated
+      // inspect script retain their actionable runtime error codes.
+      if (callerEval && /^(?:✗\s*)?Evaluation error:\s*(?:TypeError|ReferenceError|SyntaxError):/.test(safeOutput)) {
+        reject(browserError(
+          BROWSER_ERROR_CODES.evalError,
+          `${safeOutput}${suffix}\nUse inspect for DOM/style checks, or check that an element exists before calling DOM APIs.`,
+        ));
+        return;
+      }
       reject(browserError(
         errorCode,
         safeOutput ? `Agent browser command failed: ${safeOutput}${suffix}` : 'Agent browser command failed',
@@ -468,11 +623,14 @@ const requestJson = async ({ environment, url, method, body, signal, errorCode }
   }
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
+    const remoteCode = typeof payload?.error?.code === 'string' ? payload.error.code.trim() : '';
     const message = typeof payload?.error?.message === 'string' && payload.error.message.trim()
       ? payload.error.message.trim()
       : `Agent browser lease request failed (${response.status})`;
     throw browserError(
-      errorCode,
+      remoteCode === BROWSER_ERROR_CODES.branchPreviewAuthFailed
+        ? BROWSER_ERROR_CODES.branchPreviewAuthFailed
+        : errorCode,
       sanitizeSensitiveText(message, [environment.token, environment.binaryPath]),
       {
         statusCode: response.status,
@@ -578,6 +736,15 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
   const client = pluginContext.client;
   const connections = new Map();
   const connectionAttempts = new Map();
+  const failedAcquisitionKeys = new Set();
+
+  const rememberFailedAcquisition = (reuseKey) => {
+    failedAcquisitionKeys.delete(reuseKey);
+    failedAcquisitionKeys.add(reuseKey);
+    while (failedAcquisitionKeys.size > MAX_CONNECTION_ENTRIES) {
+      failedAcquisitionKeys.delete(failedAcquisitionKeys.values().next().value);
+    }
+  };
 
   const acquire = async (scope, signal) => retryOnceOnTransportFailure(() => requestJson({
     environment,
@@ -693,14 +860,18 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
   return {
     tool: {
       devryan_browser: tool({
-        description: 'Drive a temporary DevRyan in-app browser lease for website inspection and visual verification. DevRyan owns connection, process, profile, namespace, and session options. Always call close when verification is finished.',
+        description: 'Drive a temporary DevRyan in-app browser lease for website inspection and visual verification. Prefer inspect with a CSS selector and optional styles/attributes for safe DOM checks; it reports found, missing, or ambiguous without changing the page. A missing result is not successful visual verification. Call open without a URL first: the assigned branch preview opens when configured, otherwise DevRyan returns successful guidance to start or identify the local site and retry with its full loopback URL. Explicit loopback URLs are mapped to the assigned preview when configured. DevRyan owns connection, process, profile, namespace, and session options. Always call close when verification is finished.',
         args: {
-          command: tool.schema.string().describe('One agent-browser command, such as open, snapshot, click, fill, reload, screenshot, or close.'),
+          command: tool.schema.string().describe('One browser command, such as open, snapshot, inspect, click, fill, reload, screenshot, or close.'),
           args: tool.schema.array(tool.schema.string()).optional().describe('Command arguments as an ordered string array. Do not pass connection, process, profile, namespace, session, or daemon options.'),
+          selector: tool.schema.string().optional().describe('Required only for inspect: a CSS selector. Exactly one match is needed to read values.'),
+          styles: tool.schema.array(tool.schema.string()).optional().describe('Inspect only: CSS property names, such as animation-duration or --accent. Defaults to an empty array.'),
+          attributes: tool.schema.array(tool.schema.string()).optional().describe('Inspect only: attribute names, such as data-state. Defaults to an empty array; absent values are null.'),
           timeout_ms: tool.schema.number().int().min(1).max(MAX_TIMEOUT_MS).optional().describe('Command timeout in milliseconds. Defaults to 30000 and is capped at 120000.'),
         },
         async execute(input, context) {
           const { command, args } = validateInvocation(input?.command, input?.args);
+          const inspection = normalizeInspection(command, args, input);
           const timeoutMs = normalizeTimeout(input?.timeout_ms);
           const invocationScope = buildScope(context);
           const scope = {
@@ -711,12 +882,31 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
             messageID: await resolveTurnMessageID(invocationScope, client),
           };
           const reuseKey = `${scope.opencodeSessionID}\u0000${scope.messageID}`;
-          const lease = await acquire(scope, context?.abort);
+          if (command === 'close' && failedAcquisitionKeys.has(reuseKey)) {
+            return 'Browser lease already closed.';
+          }
+          let lease;
+          try {
+            lease = await acquire(scope, context?.abort);
+            failedAcquisitionKeys.delete(reuseKey);
+          } catch (error) {
+            rememberFailedAcquisition(reuseKey);
+            throw error;
+          }
           const leaseId = requireText(
             lease?.leaseId,
             'lease response leaseId',
             BROWSER_ERROR_CODES.leaseResponseInvalid,
           );
+          const commandArgs = command === 'open'
+            ? resolveOpenCommandArguments(args, lease?.previewUrl)
+            : args;
+          if (commandArgs === null) {
+            if (lease?.created === true) {
+              await releaseForCleanup(leaseId, scope).catch(() => undefined);
+            }
+            return NO_PREVIEW_HANDOFF_MESSAGE;
+          }
           const wsUrl = requireText(
             lease?.wsUrl,
             'lease response endpoint',
@@ -753,7 +943,7 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
               await withCleanupSignal((signal) => touch(leaseId, scope, signal));
               await runBinary({
                 binaryPath: environment.binaryPath,
-                args: [...prefix, 'close', ...args],
+                args: [...prefix, 'close', ...commandArgs],
                 timeoutMs,
                 signal: context?.abort,
                 spawnImpl,
@@ -778,20 +968,33 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
           try {
             result = await runBinary({
               binaryPath: environment.binaryPath,
-              args: [...prefix, command, ...args],
+              args: inspection
+                ? [...prefix, 'eval', buildBrowserInspectionScript(inspection)]
+                : [...prefix, command, ...commandArgs],
               timeoutMs,
               signal: context?.abort,
               spawnImpl,
               sensitiveValues,
               cwd: environment.installRoot,
+              callerEval: command === 'eval',
+              errorCode: inspection ? BROWSER_ERROR_CODES.inspectionFailed : BROWSER_ERROR_CODES.commandFailed,
             });
+            if (inspection) parseBrowserInspectionResult(result, inspection, sensitiveValues);
           } catch (error) {
             commandError = error;
           }
           try {
             await touch(leaseId, scope, context?.abort);
           } catch (touchError) {
-            if (!commandError) commandError = touchError;
+            if (!commandError) {
+              commandError = touchError;
+            } else if (commandError.code === BROWSER_ERROR_CODES.evalError
+              || commandError.code === BROWSER_ERROR_CODES.inputInvalid) {
+              // An expected caller mistake must not hide a simultaneous host
+              // failure. Both messages are already sanitized at their source.
+              touchError.message += `\nBrowser command also failed: ${commandError.message}`;
+              commandError = touchError;
+            }
           }
           if (commandError) throw commandError;
           return result;
@@ -811,9 +1014,14 @@ export const __test = Object.assign(() => ({}), {
   BROWSER_ERROR_CODES,
   MANAGED_IDLE_TIMEOUT,
   MAX_CONNECTION_ENTRIES,
+  NO_PREVIEW_HANDOFF_MESSAGE,
   getManagedEnvironment,
+  buildBrowserInspectionScript,
+  parseBrowserInspectionResult,
+  normalizeInspection,
   normalizeArguments,
   normalizeTimeout,
+  resolveOpenCommandArguments,
   runBinary,
   validateInvocation,
 });

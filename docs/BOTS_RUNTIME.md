@@ -14,9 +14,11 @@ The user-facing model is documented in
 defaults and new configurations always run through OpenCode. Bot Settings has
 Overview, Resources, Memory, Members, Routines, and Lifecycle. Resources owns
 the persistent computer files, optional on-demand Skills/SOPs, protected
-provider credentials, and concise environment secrets. There is no user-facing
-MCP, AG-UI, policy/access matrix, Library/source workflow, revision/bundle,
-recovery, or advanced-instruction configuration.
+provider credentials, and concise environment secrets. Overview owns the
+public profile plus Soul/personality, Standing Role, Objectives, and compact
+primary Provider/Model/Thinking controls. There is
+no user-facing MCP, AG-UI, policy/access matrix, Library/source workflow,
+revision/bundle, recovery, or advanced-instruction configuration.
 
 Some sections below document retained persistence and adapters. Those paths are
 compatibility/security machinery only: immutable revisions still pin admitted
@@ -36,9 +38,9 @@ following prerequisites must all be true:
    shows an explicit unsupported-host message, and the legacy Tauri shell does
    not own this feature.
 2. Supabase multi-user mode is configured and every repository migration,
-   through `supabase/migrations/20260827100000_agent_agnostic_bots_program.sql`,
+   through `supabase/migrations/20260901160000_bot_runtime_scope_and_audit_repair.sql`,
    is deployed. A schema-cache miss returns `migration_required` with
-   `requiredMigration: "20260827100000"`; it must never fall back to local
+   `requiredMigration: "20260901160000"`; it must never fall back to local
    plaintext state. The required marker is a minimum: newer 14-digit markers
    are accepted, and Bot migrations remain backward-compatible for at least one
    desktop release so database-first rollout does not disable older clients.
@@ -78,7 +80,7 @@ startup failure on that run.
 | Bot-egress proxy | Uses purpose-separated model, agent-endpoint, and browser capabilities. It revalidates the active revision, exact policy, DNS answers, and reserved-address rules before opening an upstream socket. | It rejects loopback, LAN, RFC1918/ULA, link-local, metadata, multicast, wildcard, redirects, and rebinding destinations. Only the proxy joins the public-NAT network. |
 | Computer container | Owns a persistent Chromium login profile and scoped scratch space, exposes only reviewed browser commands, and stages files through the private gateway. Chromium uses an authenticated explicit proxy with QUIC and implicit loopback bypass disabled. | It has no shell, evaluate, script, raw CDP, host-path, Docker, generic proxy endpoint, or direct public interface. Browser networking defaults to public-only and may be narrowed to an exact host/port allowlist. |
 | Local indexer | Holds a disposable SQLite FTS/vector plaintext projection and pinned offline embedding model. | It has no outbound NAT, accepts exact namespaces only, and is never the source of truth. Reasoning containers do not receive its bearer token. |
-| Shared UI | Receives principal-scoped snapshots/events, encrypted-object download routes, generic run IDs, low-frequency computer metadata, and an ephemeral MJPEG screencast. | Keys, credentials, cookies, Docker details, adapter-specific execution IDs, and unauthorized Bot/channel identifiers never enter browser state. Screencast frames are not retained. |
+| Shared UI | Receives principal-scoped snapshots/events, encrypted-object download routes, generic run IDs, low-frequency computer metadata, and an ephemeral MJPEG screencast decoded into a canvas. | Keys, credentials, cookies, Docker details, adapter-specific execution IDs, and unauthorized Bot/channel identifiers never enter browser state. Screencast frames and human input content are not retained. |
 
 The production connector registry contains only the host-owned
 `connector:workspace` and explicit `connector:shared` adapters. Bot MCP is not
@@ -96,12 +98,15 @@ identity.
 The Shared adapter accepts only a bounded explicit file payload for the current
 run/channel. It cannot scan a computer or accept a host/container path.
 
-`devryan_bot image.generate` is a separate reviewed operation in
-`devryan-bot-tools@1.2.0`. The server exposes it only when the admitted model is
+`devryan_image` is a separate reviewed primary-agent tool in
+`devryan-bot-tools@1.3.0`, with required `prompt`, `out`, and `quality` fields
+and optional `size` and `images`. The server exposes it only when the admitted model is
 OpenAI with a resolved ChatGPT OAuth credential; API keys and all other
 providers fail with `bot_image_generation_unavailable`. It delegates to the
 pinned `opencode-gpt-imagegen@0.1.10` inside the `1.1.8` runtime image and uses
-the existing scoped `auth.json`. Egress remains limited to
+the existing scoped `auth.json`. Subagents are denied the tool. The hidden
+legacy `devryan_bot image.generate` executor remains compatible with persisted
+1.2.0 calls. Egress remains limited to
 `auth.openai.com:443` and `chatgpt.com:443`.
 
 ## Reasoning adapters and durable execution
@@ -118,6 +123,14 @@ completion, and optional warm leases. Adapters emit normalized ordered start,
 text, governed-tool-intent, artifact, checkpoint, usage, completion, and error
 events. OpenCode session/segment interpretation stays in the OpenCode adapter;
 AG-UI protocol interpretation stays in the AG-UI adapter.
+
+OpenCode has exactly one reasoning-runtime owner per Bot/channel. Provider
+start/stop operations are serialized on that channel scope, same-run warm
+leases may be adopted, and provisional/background work receives
+`bot_runtime_scope_busy` while an interactive run owns the scope. An
+interactive run may replace a provisional owner only after the old runtime has
+finished cleanup. Cleanup is owner-fenced, so a late close from the old run can
+never stop the replacement container. Different channels remain independent.
 
 Durable runs project both adapters into `agent_adapter`, `agent_thread_id`, and
 bounded `agent_execution` state. Existing OpenCode columns remain during the
@@ -232,6 +245,11 @@ key is omitted entirely when unset, so revisions written before souls existed
 still hash to their stored `compiled_hash`. Soul boundaries are behavioral —
 enforcement still lives in the action policy.
 
+Managers edit Soul, Standing Role, and Objectives in Settings → Bots →
+Overview. These fields stay in a local Overview draft until Apply Changes is
+confirmed. An Active Bot without an existing working revision derives one at
+that point; publication affects future runs only.
+
 The user-facing lifecycle begins with **Setup incomplete**, followed by
 `active <-> paused` and `active|paused -> retired`; retirement is terminal. A
 setup Bot remains visible only in Settings and cannot appear in chat until
@@ -302,25 +320,43 @@ not undo the database commit, and the next reconnect snapshot is authoritative.
 ## Chat latency, streaming, and safe retry
 
 Production Bot chat uses an immediate local turn path separate from durable
-synchronization. Submit atomically inserts the optimistic user row, clears the
-composer, updates ordering, and marks only the short acceptance request pending.
-The server reconciles the same client message ID in its `202` response. A
-definitive rejection removes the row and restores the exact draft and attachment
-IDs; an ambiguous network result retains **Not confirmed**, refreshes canonical
-history, and retries once with the same message ID/idempotency key.
+synchronization. Submit atomically inserts the optimistic user row and one empty
+pending assistant response, clears the composer, updates ordering, and marks
+only the short acceptance request pending. The server reconciles the same
+client message and assistant-response IDs in its `202` response. A definitive
+rejection removes both rows and restores the exact draft and attachment IDs; an
+ambiguous network result retains **Not confirmed**, refreshes canonical history,
+and retries once with the same identities.
 
 Acceptance performs one joined service-role authorization read, concurrent
-Library source pinning, and one encrypted message/run transaction. The admitted
-run is always queued with a pending model snapshot. Event publication, Shared
+Library source pinning, and one encrypted user-message/pending-response/run
+transaction. A no-tool turn promotes that row directly to the result, so a
+greeting or simple question receives one natural answer. When the Bot needs a
+tool or external action, its first short, request-specific sentence is written
+in the configured Soul voice and promotes that row to a finalized
+acknowledgment; a separate pending row then becomes the final result. The
+acknowledgment stays visible after completion and reload but is excluded from
+previews, model context, memory summaries, notifications, and final-result
+selection. The admitted run is queued with a pending model snapshot. Event publication, Shared
 copy preparation, FIFO claim, model catalog and credential checks, config
 materialization, and runtime startup occur after the response. Opening an idle,
 active, send-capable channel requests an optional two-minute warm lease. At most
 two principal/channel/revision/Library-bound leases keep the exact preallocated
 run-scoped runtime, credential, gateway capability, compiled revision, and
 Library materialization ready without creating a durable message or run. An
-eligible send atomically adopts its run ID; attachments, routines, mismatch,
-expiry, or warm failure use the cold path. Release, LRU eviction, invalidation,
-shutdown, and replacement run the full scoped cleanup.
+eligible send atomically adopts its run ID. Provisional preparation may select
+and materialize credentials, but it never writes model state to the
+not-yet-admitted run. Adoption persists the selected model during the normal
+queued-to-running transition. Attachments, routines, mismatch, expiry, or warm
+failure use the cold path. Release, LRU eviction, invalidation, shutdown, and
+replacement clean every provisional credential, artifact, environment file,
+capability, and container.
+
+Completed-run memory extraction is lower priority than conversation. Its
+database claim skips every channel with a non-terminal Bot run. If an
+interactive run wins the remaining admission race, extraction settles as
+`defer`, returns to the durable queue without consuming an attempt or creating
+a Bot Audit issue, and resumes after the channel becomes idle.
 
 The initiating user receives `message.streaming` full-text snapshots through a
 short-lived, revalidated channel-access lease. The first provider text is sent
@@ -330,14 +366,18 @@ slow database event cannot rewind newer live text. Final/terminal events,
 revocation, removal, principal reset, and SSE reconnect snapshots clear the
 transient store.
 
-Tool-use turns keep one canonical `result` checkpoint. Any unexpected pre-tool
-or inter-tool prose is cleared at the next tool boundary and remains private;
-post-tool result text streams back into that same bubble. New runs never create
-an acknowledgment row. Historical acknowledgment rows remain readable for
-storage compatibility but are hidden from transcripts and previews. Tool-free
-turns use the same single-message streaming path. Typing begins at local send
-acceptance, covers queued/starting/running, and stops for visible output,
-terminal state, approval, or reconciliation.
+Every turn starts with one canonical pending checkpoint for model-owned output.
+If no tool is needed, it becomes the sole natural `result`. If a tool is needed,
+the model first emits exactly one short, request-specific sentence in the Bot's
+configured Soul voice; the dispatcher promotes that sentence to the durable
+`acknowledgment`, creates a separate pending result, and keeps inter-tool prose
+private. Generic receipts and additional progress narration are forbidden. The
+streaming sanitizer buffers and removes structural agent-work headings—including
+Clarifying, Assessing, Investigating, and Requesting forms—before even a partial
+heading can flash. An empty sanitized result fails visibly as
+`bot_response_missing`. Ordinary typing dots stop once visible response content
+is present; only approvals, reconciliation, cancellation, and failure state may
+appear before the final result.
 
 Only a failed run with no generic agent execution handle, assistant output, or
 action attempt can be retryable. Retry atomically requeues that same run for its
@@ -361,6 +401,14 @@ repaired to its committed state before the desired update is retried. Individual
 Docker commands remain capped at two minutes, and progress exposes only safe
 phases such as image counts, service start, and health verification.
 
+After Compose returns, activation allows the four fixed services up to 90
+seconds to converge from `starting` to `healthy`, polling without recreating
+containers. A stopped service fails immediately. Setup, repair, update, and
+rollback write their committed installation record only after that convergence;
+failed updates retain the prior current manifest and staged candidate. Every
+finished lifecycle operation publishes `ready` or `failed`, never an orphaned
+intermediate phase.
+
 Once Docker is healthy, the in-process server reconciles and starts shared Bot
 infrastructure and warms the model catalog. This boundary does not lease model
 credentials, create per-Bot reasoning or computer containers, or eagerly
@@ -376,7 +424,7 @@ failures retain the bounded startup retry path.
 Before first setup:
 
 1. Deploy the Supabase migrations using the deployment's normal migration
-   process and confirm `20260826140000` is present in the target database.
+   process and confirm `20260830150000` is present in the target database.
 2. Start Docker Desktop and wait for `docker info` to succeed.
 3. Install a packaged DevRyan build containing the release-generated
    `bot-runtime/images.release.json`. Never hand-author or bypass the signature,
@@ -413,7 +461,11 @@ All four mutations remain local desktop operations. App-bound mode uses the
 existing local-only Electron IPC (`desktop_bot_runtime_*`); service mode forwards
 the same fixed verbs over the authenticated loopback runtime-service contract.
 No generic Docker or Compose HTTP endpoint exists. The same boundary exposes an
-operation-status read and safe progress state. The Settings publication-readiness dialog and current
+operation-status read and safe progress state. Because background-service
+progress originates in a windowless Electron process, Bot UI consumers poll
+that authenticated read only while an operation is nonterminal, retain local
+IPC for app-bound immediacy, stop at `ready`/`failed`, and then refresh
+authoritative capabilities. The Settings publication-readiness dialog and current
 conversation surface present authoritative Setup/Repair progress and retryable
 sanitized failures without clearing draft text or attachments.
 Update/Rollback remain main-process operations and
@@ -447,7 +499,7 @@ retried as a new action. A write becomes `unknown`, moves its run to
 record complete/abandon or authorize a fresh idempotency key after checking the
 external system.
 
-When background Bots are enabled, the signed `--runtime-service` process owns
+When background Bots are enabled, the packaged `--runtime-service` process owns
 run dispatch, routines, memory consolidation, computer supervision, and Docker
 management after every Electron window closes. launchd restarts a crashed
 service, while the owner-generation fence prevents a second process from
@@ -455,30 +507,39 @@ admitting work for the same data directory. The renderer connects through a
 one-time OS-sealed bootstrap, then uses an HttpOnly SameSite cookie and CSRF
 header; stale or unsupported protocol generations are rejected.
 
-On macOS 13 and later, first enable registers the signed bundle LaunchAgent via
-`SMAppService` and surfaces approval/System Settings state. Older supported
-hosts require explicit consent before writing a private mode-0600 per-user
-LaunchAgent that runs the same executable. Handoff checkpoints work, stops the
-in-process owner, starts and verifies the service, connects the short-lived
-desktop-host broker, and reloads. Failure unregisters the service and restores
-the in-process owner only after proving the service owner stopped.
+On macOS 13 and later, first launch asks the in-process native bridge to register
+the bundled LaunchAgent via `SMAppService`. If macOS requires approval, Bots
+remain available while DevRyan is open and Settings shows the exact Login Items
+action. If an unsigned build reports `not_found` while the bundled definition is
+physically present, DevRyan automatically uses the same private mode-0600
+per-user LaunchAgent used by older supported hosts. An existing managed private
+agent remains authoritative across upgrades. A physically missing bundled
+definition stays a fail-closed installation error. The handoff checkpoints Bot work,
+starts and verifies the service, connects the short-lived desktop-host broker,
+and reloads. Failure unregisters the service and restores the in-process owner only
+after proving the service owner stopped; uncertain ownership remains fail-closed.
 
-Release packaging must build the native service-control helper for the same
+Release packaging must build the N-API service-control bridge for the same
 architecture as the Electron artifact and place it at
-`Contents/Resources/native/DevRyanRuntimeServiceControl`. The agent plist must
+`Contents/Resources/native/DevRyanRuntimeServiceControl.node`. The bridge is
+loaded by the Electron main process because Apple resolves the LaunchAgent
+against the calling app's bundle. The agent plist must
 be sealed at
 `Contents/Library/LaunchAgents/dev.openchamber.desktop.runtime-service.plist`.
-Both local packaging and release CI run the finished-app verifier, which rejects
-a missing or non-executable helper, the wrong Mach-O architecture, invalid plist
-keys, an invalid code signature, or a Developer Team mismatch. Source-development
-launches do not register the signed service, even when they reuse a packaged
-Electron shell; use an installed packaged build for end-to-end launchd testing.
+Both local packaging and release CI verify the unpacked app, ZIP, and DMG and
+run a status probe through the packaged DevRyan executable. The gate rejects a
+missing bridge, wrong Mach-O architecture, invalid plist, `not_found` status,
+or invalid signature integrity; optional Developer ID verification additionally
+requires a matching Team identity and non-ad-hoc signature. Source-development
+launches do not register the packaged service, even when they
+reuse a packaged Electron shell; use an installed packaged build for end-to-end
+launchd testing.
 
-Settings treats registration failures as stable, sanitized states. A missing,
-unreadable, non-executable, or wrong-architecture helper is a non-retryable build
-failure and requires installing a repaired DevRyan build. `requires_approval`
-is the only state that directs the user to Login Items. Control launch failures
-and timeouts remain retryable after reopening the app.
+Settings treats registration failures as stable, sanitized states and
+distinguishes a missing bridge, invalid/incompatible bridge, missing bundled
+service definition, approval requirement, registration failure, and unresolved
+service connection. `requires_approval` is the only state that directs the user
+to Login Items.
 
 Closing the app releases only the broker for native focus, notification, and
 browser/CDP capabilities. Bot services continue; a UI-only operation receives
@@ -544,7 +605,7 @@ the encrypted object through the authorized object route, verify the MIME type,
 decode before display, and revoke bounded object URLs deterministically. Exact
 Shared-path Markdown images deduplicate against the mapping; SVG remains rejected.
 
-For `image.generate`, the dispatcher inspects only finalized tool parts after
+For `devryan_image` and legacy `image.generate`, the dispatcher inspects only finalized tool parts after
 authoritative idle, then securely exports at most 12 regular files below the
 reasoning `/workspace` before container teardown. The supervisor rejects links,
 linked ancestors, wrong runtime ownership, path escapes, unknown magic bytes,
@@ -568,6 +629,19 @@ Security/lifecycle audit retention defaults to 365 days. The configured
 `DEVRYAN_BOT_AUDIT_RETENTION_DAYS` cannot be below the database-enforced 30-day
 floor. Pruning crosses the durable audit-delivery barrier first. Transcript,
 object, memory, and purge lifetimes are separate from this audit policy.
+
+Every distinct database transition of a run into `failed` or `interrupted`
+also appends a content-free run diagnostic to this ledger. The administrator
+Bot Audit viewer is issues-first, supports immutable list/detail inspection and
+audited context copy, and remains readable when Bot execution is degraded. It
+may clear entries from the shared review projection without deleting immutable
+ledger rows; retention is the only ledger deletion path. Runtime failure
+settlement uses one idempotent, row-locking service transaction, so the terminal
+run and its trigger-owned audit event commit together. Publication occurs only
+from the returned persisted row. Bounded write retries tolerate uncertain
+commits; startup recovery terminalizes an orphan it cannot safely resume, and
+the schema migration backfills terminal rows missing ledger evidence without
+duplicating existing or cleared records.
 
 Deleting a channel requires the owner to acknowledge that reviewed shared
 learning survives. Private channel objects, channel summaries/index data, and
@@ -669,8 +743,38 @@ container egress are blocked. A proxy failure disables browser networking; it
 never falls back to direct access. Browser-purpose capabilities rotate through
 an exact, runtime-authenticated computer control route without restarting the
 persistent Chromium profile. If the host cannot confirm rotation, it stops the
-owned computer rather than retaining stale authority. Live Computer screencast JPEGs are ephemeral
-fan-out and must never be treated as retained evidence.
+owned computer rather than retaining stale authority. Live Computer screencast
+JPEGs use a bounded multipart parser and are drawn only after complete JPEG
+decode into the fixed 1280×720, device-scale-1 canvas. The newest decoded frame
+wins; a five-second first-frame deadline closes the stale viewer and exposes
+Retry. Frames are ephemeral fan-out and must never be treated as retained
+evidence.
+
+The computer image runs stock Chromium headed inside a private 24-bit Xvfb
+display with TCP listening disabled; it does not use headless mode, stealth
+patches, fingerprint spoofing, CAPTCHA solving, or synthetic human motion.
+Startup verifies the exact root-owned JavaScript/first-party/third-party cookie
+policy and the X11 socket before health succeeds. Xvfb loss fails health and
+closes Chromium, while normal shutdown closes Chromium before Xvfb. The status
+diagnostic is memory-only and exposes only origin, status, redirect/repetition
+counts, standardized failure reasons, normalized blocked host, browser
+mode/version, display readiness, and managed-policy states. Paths, queries,
+headers, cookies, page/console content, screenshots, credentials, challenge
+payloads, coordinates, and typed input are forbidden.
+
+Take Control remains a human-only, Operator-authorized lease. The canvas maps
+coordinates through its actual contain rectangle and rejects letterbox input.
+Pointer hover/click/right-click/double-click/drag, bounded wheel input, ordered
+keyboard events, text/IME/paste, navigation keys, and modifier shortcuts are
+sent only for the currently attached `viewId` and owned lease. Disconnect,
+return, expiry, role/channel changes, and conflicts disable input immediately;
+`Ctrl+Alt+Escape` leaves remote keyboard focus. Audit records only batch event
+types, count, and duration—never text, keys, modifiers, or coordinates.
+Hover movement may coalesce, but held-button movement remains ordered and
+pointer down/up events are never discarded by backlog pressure. A queued real
+release is drained before Return Control or view teardown; no movement is
+synthesized. During visible owned control, the UI polls status every two seconds
+and updates only for a diagnostic revision or prerequisite/health change.
 
 `computerPolicy.isolationTier` is `standard` or `runsc`. For `runsc`, Electron
 checks Docker's declared runtime list and executes a disposable owned,

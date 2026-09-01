@@ -376,6 +376,48 @@ describe('managed agent-browser installer', () => {
 });
 
 describe('managed agent-browser skill provisioning', () => {
+  it.each([false, true])('delivers the bundled inspection guidance while preserving modified copies (modified: %s)', async (modified) => {
+    const root = makeTemporaryDirectory();
+    const options = {
+      dataRoot: join(root, 'data'),
+      homeDir: join(root, 'home'),
+      managedElectron: true,
+    };
+    const previousSourcePath = join(root, 'previous-SKILL.md');
+    writeFileSync(previousSourcePath, '---\nname: agent-browser\n---\n\nPrevious managed guidance\n', 'utf8');
+    const previous = await provisionAgentBrowserSkill({ ...options, sourceSkillPath: previousSourcePath });
+    expect(previous).toMatchObject({ ok: true, state: 'ready' });
+    const previousManifest = readFileSync(previous.manifestPath, 'utf8');
+    const userContent = '---\nname: agent-browser\n---\n\nUser browser workflow\n';
+    if (modified) writeFileSync(previous.targetSkillPath, userContent, 'utf8');
+
+    const result = await provisionAgentBrowserSkill(options);
+    const bundledSource = readFileSync(new URL('./assets/agent-browser/SKILL.md', import.meta.url), 'utf8');
+    expect(bundledSource).toContain('command: "inspect"');
+
+    if (modified) {
+      expect(result).toMatchObject({
+        ok: false,
+        state: 'conflict',
+        changed: false,
+        conflicts: [{ code: 'user-modified-skill', path: previous.targetSkillPath }],
+      });
+      expect(readFileSync(previous.targetSkillPath, 'utf8')).toBe(userContent);
+      expect(readFileSync(previous.manifestPath, 'utf8')).toBe(previousManifest);
+      return;
+    }
+
+    expect(result).toMatchObject({ ok: true, state: 'ready', changed: true, conflicts: [] });
+    expect(readFileSync(result.targetSkillPath, 'utf8')).toBe(bundledSource);
+    expect(JSON.parse(readFileSync(result.manifestPath, 'utf8'))).toMatchObject({
+      managedHash: result.managedHash,
+      sourceHash: result.managedHash,
+      targetSkillPath: result.targetSkillPath,
+    });
+    expect(readFileSync(result.manifestPath, 'utf8')).not.toBe(previousManifest);
+    await expect(provisionAgentBrowserSkill(options)).resolves.toMatchObject({ ok: true, changed: false });
+  });
+
   it('installs, updates untouched copies, and no-ops when unchanged', async () => {
     const root = makeTemporaryDirectory();
     const dataRoot = join(root, 'data');

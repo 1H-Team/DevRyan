@@ -94,7 +94,7 @@ const hasPrimaryUsageWindow = (usage) => Boolean(
   usage?.windows?.['5h'] || usage?.windows?.['7d']
 );
 
-const buildDegradedStatusResult = (statusUsage, primaryFailure) => buildResult({
+const buildDegradedStatusResult = (statusUsage, primaryFailure, fallbackFailure) => buildResult({
   providerId,
   providerName,
   ok: false,
@@ -103,6 +103,9 @@ const buildDegradedStatusResult = (statusUsage, primaryFailure) => buildResult({
   usageUpdatedAt: statusUsage.ok ? statusUsage.usageUpdatedAt : undefined,
   error: primaryFailure.error || statusUsage.error || 'Claude usage is unavailable.',
   errorCode: primaryFailure.code || statusUsage.code,
+  warnings: fallbackFailure?.error && fallbackFailure.error !== primaryFailure.error
+    ? [fallbackFailure.error]
+    : undefined,
 });
 
 export const fetchClaudeQuota = async ({
@@ -116,6 +119,7 @@ export const fetchClaudeQuota = async ({
   workingDirectory = null,
   isExternalRuntime = false,
   claudeProxyBaseUrl = null,
+  claudeCodeLaunch,
 } = {}) => {
   if (isExternalRuntime) {
     return buildResult({
@@ -232,7 +236,18 @@ export const fetchClaudeQuota = async ({
 
   let cliResult;
   try {
-    cliResult = await fetchCliUsage();
+    cliResult = claudeCodeLaunch === null
+      ? {
+          ok: false,
+          code: 'claude_code_usage_failed',
+          error: 'Claude Code was not found in the managed runtime or on PATH.',
+        }
+      : await fetchCliUsage(claudeCodeLaunch
+        ? {
+            command: claudeCodeLaunch.executable,
+            env: { ...process.env, PATH: claudeCodeLaunch.pathValue },
+          }
+        : undefined);
   } catch (error) {
     cliResult = {
       ok: false,
@@ -251,10 +266,10 @@ export const fetchClaudeQuota = async ({
     });
   }
 
-  return buildDegradedStatusResult(readStatusUsage(), {
-    code: cliResult.code || meridianResult.code || oauthFailure?.code,
-    error: cliResult.error || meridianResult.error || oauthFailure?.error,
-  });
+  const primaryFailure = resolvedProxyBaseUrl
+    ? meridianResult
+    : oauthFailure || meridianResult;
+  return buildDegradedStatusResult(readStatusUsage(), primaryFailure, cliResult);
 };
 
 export const fetchQuota = fetchClaudeQuota;

@@ -918,7 +918,7 @@ export const ProjectActionsButton = ({
   const browserTrigger = (
     <button
       type="button"
-      onClick={isLocalElectronBrowser ? undefined : handleManualBrowserAction}
+      onClick={isManagedBrowserRuntime ? undefined : handleManualBrowserAction}
       aria-label={browserActionLabel}
       title={browserActionLabel}
       disabled={!canOpenBlankBrowser}
@@ -941,7 +941,7 @@ export const ProjectActionsButton = ({
     </button>
   );
 
-  const browserControl = !canUseBrowser ? null : isLocalElectronBrowser ? (
+  const browserControl = !canUseBrowser ? null : isManagedBrowserRuntime ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>{browserTrigger}</DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-80 max-h-[70vh] overflow-y-auto">

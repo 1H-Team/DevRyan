@@ -20,6 +20,8 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import type { GitHubAuthStatus } from '@/lib/api/types';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
+import { getAuthPrincipal } from '@/lib/authSession';
+import { preloadSettingsView } from '@/components/views/settingsViewLoader';
 
 type Props = {
   onOpenSettings: () => void;
@@ -182,6 +184,11 @@ export function SidebarFooter({
 }: Props): React.ReactNode {
   const { t } = useI18n();
   const { currentTheme, setThemeMode } = useThemeSystem();
+  const preloadSettings = React.useCallback(() => {
+    const principal = getAuthPrincipal();
+    const useManagedView = principal.scope === 'managed' && principal.role !== 'admin';
+    void preloadSettingsView(useManagedView).catch(() => undefined);
+  }, []);
   const isDarkMode = currentTheme.metadata.variant === 'dark';
   const themeToggleLabel = isDarkMode
     ? t('sessions.sidebar.footer.actions.switchToLightMode')
@@ -233,7 +240,15 @@ export function SidebarFooter({
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <button type="button" onClick={onOpenSettings} className={footerButtonClassName} aria-label={t('sessions.sidebar.footer.actions.settings')}>
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                onPointerEnter={preloadSettings}
+                onPointerDown={preloadSettings}
+                onFocus={preloadSettings}
+                className={footerButtonClassName}
+                aria-label={t('sessions.sidebar.footer.actions.settings')}
+              >
                 <RiSettings3Line className="h-4.5 w-4.5" />
               </button>
             </TooltipTrigger>

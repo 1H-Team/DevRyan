@@ -14,6 +14,7 @@ interface SettingsSectionTabsProps {
   ariaLabel: string;
   idPrefix: string;
   onTabChange: (slug: SettingsPageSlug) => void;
+  pendingSlug?: SettingsPageSlug | null;
   tabs: readonly SettingsSectionTab[];
   children: React.ReactNode;
 }
@@ -23,6 +24,7 @@ export const SettingsSectionTabs: React.FC<SettingsSectionTabsProps> = ({
   ariaLabel,
   idPrefix,
   onTabChange,
+  pendingSlug = null,
   tabs,
   children,
 }) => {
@@ -46,6 +48,7 @@ export const SettingsSectionTabs: React.FC<SettingsSectionTabsProps> = ({
               key={tab.slug}
               id={`${idPrefix}-${tab.slug}-tab`}
               aria-controls={`${idPrefix}-panel`}
+              aria-busy={pendingSlug === tab.slug || undefined}
               value={tab.slug}
               className={cn(
                 'flex h-8 min-w-0 cursor-pointer items-center justify-center rounded-[9px] border px-2 text-center typography-ui-label font-medium',
@@ -56,6 +59,9 @@ export const SettingsSectionTabs: React.FC<SettingsSectionTabsProps> = ({
               )}
             >
               <span className="truncate">{tab.label}</span>
+              {pendingSlug === tab.slug ? (
+                <span className="ml-1.5 h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current" aria-hidden="true" />
+              ) : null}
             </Tabs.Tab>
           ))}
         </Tabs.List>

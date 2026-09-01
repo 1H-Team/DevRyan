@@ -21,6 +21,11 @@ export const PRODUCTION_BOTS_VISUAL_MATRIX = Object.freeze([
   visualCase('agent-revoked-light-r220', 'agent', 'revoked', { rail: 220 }),
   visualCase('agent-privacy-warning-dark-narrow', 'agent', 'privacy_warning', { theme: 'dark', viewport: narrow }),
 
+  visualCase('overview-provider-model-light-r280', 'overview', 'provider_model'),
+  visualCase('overview-missing-credential-dark-narrow', 'overview', 'missing_credential', {
+    theme: 'dark', viewport: narrow, drawer: 'closed',
+  }),
+
   visualCase('spec-trusted-light-r500', 'spec', 'trusted', { rail: 500 }),
   visualCase('spec-untrusted-dark-r280', 'spec', 'untrusted', { theme: 'dark' }),
   visualCase('spec-tampered-light-r220', 'spec', 'tampered', { rail: 220 }),
@@ -56,7 +61,45 @@ export const PRODUCTION_BOTS_VISUAL_MATRIX = Object.freeze([
   visualCase('transcript-reconciliation-dark-r500', 'transcript', 'reconciliation', { theme: 'dark', rail: 500 }),
   visualCase('transcript-partial-failure-light-narrow', 'transcript', 'partial_failure', { viewport: narrow, drawer: 'open' }),
   visualCase('transcript-paused-dark-r280', 'transcript', 'paused', { theme: 'dark' }),
+  visualCase('transcript-retry-refused-light', 'transcript', 'retry_refused', { interaction: 'retry_refusal' }),
+  visualCase('transcript-timeout-dark-narrow', 'transcript', 'timeout', { theme: 'dark', viewport: narrow, drawer: 'closed' }),
   visualCase('transcript-retired-light-r500', 'transcript', 'retired', { rail: 500 }),
+  visualCase('transcript-ack-running-light-admin-r280', 'transcript', 'ack_running'),
+  visualCase('transcript-ack-running-dark-developer-narrow', 'transcript', 'ack_running', {
+    theme: 'dark', role: 'developer', viewport: narrow, drawer: 'closed',
+  }),
+  visualCase('transcript-ack-result-dark-admin-r500', 'transcript', 'ack_result', {
+    theme: 'dark', rail: 500,
+  }),
+  visualCase('transcript-ack-result-light-developer-narrow', 'transcript', 'ack_result', {
+    role: 'developer', viewport: narrow, drawer: 'closed',
+  }),
+  visualCase('transcript-image-loading-light-admin-r280', 'transcript', 'image_loading'),
+  visualCase('transcript-image-ready-dark-admin-r500', 'transcript', 'image_ready', {
+    theme: 'dark', rail: 500,
+  }),
+  visualCase('transcript-image-error-light-developer-narrow', 'transcript', 'image_error', {
+    role: 'developer', viewport: narrow, drawer: 'closed', interaction: 'image_retry',
+  }),
+
+  visualCase('screen-connecting-light-admin-r280', 'screen', 'screen_connecting'),
+  visualCase('screen-owned-dark-admin-r500', 'screen', 'screen_owned', { theme: 'dark', rail: 500 }),
+  visualCase('screen-view-only-light-developer-narrow', 'screen', 'screen_view_only', {
+    role: 'developer', viewport: narrow, drawer: 'closed',
+  }),
+  visualCase('screen-conflict-light-admin-r220', 'screen', 'screen_conflict', { rail: 220 }),
+  visualCase('screen-wait-owned-dark-admin-r500', 'screen', 'screen_wait_owned', {
+    theme: 'dark', rail: 500,
+  }),
+  visualCase('screen-wait-other-light-admin-narrow', 'screen', 'screen_wait_other', {
+    viewport: narrow, drawer: 'closed',
+  }),
+  visualCase('screen-disconnected-dark-developer-r280', 'screen', 'screen_disconnected', {
+    theme: 'dark', role: 'developer',
+  }),
+  visualCase('screen-off-light-admin-narrow', 'screen', 'screen_off', {
+    viewport: narrow, drawer: 'closed',
+  }),
 ]);
 
 export const productionBotsVisualUrl = (baseUrl, entry) => {

@@ -313,13 +313,16 @@ const createHarness = (overrides = {}) => {
     environmentSecrets,
     recoveryBundle,
     purgeRuntime,
+    auditQuery: overrides.auditQuery || null,
     botHost: overrides.botHost || host('healthy'),
     encryption: { getKey: () => Buffer.alloc(32) },
     getSchemaFailure: overrides.getSchemaFailure || (() => null),
     getControlPlaneFailure: overrides.getControlPlaneFailure || (() => null),
     getExecutionFailure: overrides.getExecutionFailure || (() => null),
+    getStartupState: overrides.getStartupState || (() => 'ready'),
     resolveCapabilities: overrides.resolveCapabilities || null,
     getRuntimeServices: overrides.getRuntimeServices || null,
+    recordDiagnostic: overrides.recordDiagnostic || (() => {}),
   });
   return {
     blobStore,
@@ -357,6 +360,73 @@ const createHarness = (overrides = {}) => {
 };
 
 describe('Production Bots capabilities and routes', () => {
+  it('serves Bot audit reads outside execution-health middleware', async () => {
+    const auditQuery = {
+      clear: vi.fn(async () => ({ clearedCount: 3 })),
+      list: vi.fn(async () => ({ logs: [], nextCursor: null })),
+      options: vi.fn(async () => ({ bots: [] })),
+      detail: vi.fn(async () => ({ log: { eventId: ACTION_ID } })),
+    };
+    const harness = createHarness({
+      auditQuery,
+      getExecutionFailure: () => ({ code: 'bot_runtime_docker_unavailable' }),
+      getStartupState: () => 'failed',
+    });
+
+    const principal = { id: USER_ID, role: 'admin', scope: 'managed' };
+    const list = await harness.invoke('GET', '/api/bot-audit', {
+      principal,
+      query: { result: 'issues' },
+    });
+    const options = await harness.invoke('GET', '/api/bot-audit/options', { principal });
+    const detail = await harness.invoke('GET', '/api/bot-audit/:eventId', {
+      principal,
+      params: { eventId: ACTION_ID },
+    });
+
+    expect(list.payload).toEqual({ logs: [], nextCursor: null });
+    expect(options.payload).toEqual({ bots: [] });
+    expect(detail.payload).toEqual({ log: { eventId: ACTION_ID } });
+    expect(auditQuery.list).toHaveBeenCalledWith(principal, { result: 'issues' });
+    const clear = await harness.invoke('DELETE', '/api/bot-audit', { principal, query: { range: '7d' } });
+    expect(clear.payload).toEqual({ clearedCount: 3 });
+    expect(auditQuery.clear).toHaveBeenCalledWith(principal, { range: '7d' });
+    expect(harness.middleware.some(({ paths }) => paths.includes('/api/bot-audit'))).toBe(false);
+  });
+
+  it('returns stable migration and dependency envelopes for Bot audit reads', async () => {
+    const principal = { id: USER_ID, role: 'admin', scope: 'managed' };
+    const stale = createHarness({
+      auditQuery: {
+        list: vi.fn(async () => {
+          throw Object.assign(new Error('migration required'), {
+            code: 'bot_schema_migration_required',
+            requiredMigration: '20260830150000',
+          });
+        }),
+      },
+    });
+    const migration = await stale.invoke('GET', '/api/bot-audit', { principal });
+    expect(migration.statusCode).toBe(503);
+    expect(migration.payload).toEqual({
+      error: 'Database migration required',
+      code: 'bot_schema_migration_required',
+      requiredMigration: '20260830150000',
+      retryable: false,
+    });
+
+    const unavailable = createHarness({
+      auditQuery: { list: vi.fn(async () => { throw new TypeError('fetch failed'); }) },
+    });
+    const dependency = await unavailable.invoke('GET', '/api/bot-audit', { principal });
+    expect(dependency.statusCode).toBe(503);
+    expect(dependency.payload).toEqual({
+      error: 'Bot audit is temporarily unavailable',
+      code: 'dependency_unavailable',
+      retryable: true,
+    });
+  });
+
   it('registers the static Bot event stream before the dynamic Bot detail path', () => {
     const harness = createHarness();
     expect(harness.registrations.indexOf('GET /api/bots/events')).toBeLessThan(
@@ -539,6 +609,12 @@ describe('Production Bots capabilities and routes', () => {
       .resolves.toMatchObject({ state: 'supabase_unavailable', available: false });
     await expect(resolveBotCapabilities({
       hasSupabase: true,
+      botHost: host('healthy'),
+      encryption,
+      startupState: 'starting',
+    })).resolves.toMatchObject({ state: 'bots_starting', code: 'bots_starting', available: false });
+    await expect(resolveBotCapabilities({
+      hasSupabase: true,
       botHost: { owner: 'web' },
       encryption,
     })).resolves.toMatchObject({ state: 'unsupported_host', owner: 'web' });
@@ -587,6 +663,36 @@ describe('Production Bots capabilities and routes', () => {
       expect(result.state).toBe(expectedState);
       expect(result.available).toBe(expectedState === 'healthy');
     }
+  });
+
+  it('keeps every non-capability Bot route fail-closed while startup is active', async () => {
+    const harness = createHarness({ getStartupState: () => 'starting' });
+    const capabilities = await harness.invoke('GET', '/api/bots/capabilities');
+    expect(capabilities.payload).toMatchObject({
+      available: false,
+      state: 'bots_starting',
+      code: 'bots_starting',
+    });
+
+    const startupBoundary = harness.middleware[0];
+    expect(startupBoundary.paths).toEqual(expect.arrayContaining([
+      '/api/bots',
+      '/api/bot-actions',
+      '/api/bot-channels',
+      '/api/bot-runs',
+      '/api/bot-specs',
+      '/api/bot-signers',
+    ]));
+    const response = createResponse();
+    const next = vi.fn();
+    startupBoundary.handler({}, response, next);
+    expect(response.statusCode).toBe(503);
+    expect(response.payload).toEqual({
+      error: 'Bots are still starting',
+      code: 'bots_starting',
+      retryable: true,
+    });
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('reports a stale Bot schema before inspecting Docker', async () => {
@@ -723,6 +829,8 @@ describe('Production Bots capabilities and routes', () => {
       '/api/bot-actions',
       '/api/bot-channels',
       '/api/bot-runs',
+      '/api/bot-specs',
+      '/api/bot-signers',
     ]);
   });
 
@@ -1081,6 +1189,21 @@ describe('Production Bots capabilities and routes', () => {
     });
   });
 
+  it.each([
+    ['execution_started', 409], ['revision_changed', 409],
+    ['access_revoked', 403], ['concurrent_active_run', 409],
+  ])('preserves retry status and explicit %s refusal', async (retryReason, statusCode) => {
+    const harness = createHarness();
+    harness.dispatcher.retryRun.mockRejectedValueOnce(Object.assign(new Error('Retry refused'), {
+      code: 'bot_run_retry_unavailable', statusCode, details: { retryReason },
+    }));
+    const result = await harness.invoke('POST', '/api/bot-runs/:runId/retry', {
+      params: { runId: RUN_ID }, body: {},
+    });
+    expect(result.statusCode).toBe(statusCode);
+    expect(result.payload.details).toEqual({ retryReason });
+  });
+
   it('routes conversational routine drafting separately from reviewed activation', async () => {
     const harness = createHarness();
     const drafted = await harness.invoke('POST', '/api/bots/:botId/routines/draft', {
@@ -1214,8 +1337,53 @@ describe('Production Bots capabilities and routes', () => {
     }));
   });
 
+  it('routes lease- and view-bound human input without logging its content', async () => {
+    const recordDiagnostic = vi.fn();
+    const harness = createHarness({ recordDiagnostic });
+    const events = [
+      { type: 'pointer', phase: 'down', x: 10, y: 20, button: 'left', buttons: 1, clickCount: 1 },
+      { type: 'text', text: 'never log me' },
+    ];
+    const response = await harness.invoke(
+      'POST',
+      '/api/bots/:botId/computer/control/command',
+      {
+        params: { botId: BOT_ID },
+        body: {
+          viewId: 'view_opaque',
+          leaseId: 'lease-1',
+          command: 'input',
+          args: { events },
+        },
+      },
+    );
+
+    expect(response.payload).toEqual({ result: { ok: true } });
+    expect(harness.browserService.humanCommand).toHaveBeenCalledWith({
+      principal: expect.objectContaining({ id: USER_ID }),
+      botId: BOT_ID,
+      viewId: 'view_opaque',
+      leaseId: 'lease-1',
+      command: 'input',
+      args: { events },
+    });
+    const diagnostic = recordDiagnostic.mock.calls.at(-1)?.[0];
+    expect(diagnostic).toMatchObject({
+      mark: 'bot.computer.view.human_input_dispatch',
+      payload: {
+        botId: BOT_ID,
+        viewId: 'view_opaque',
+        eventTypes: ['pointer', 'text'],
+        eventCount: 2,
+      },
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain('never log me');
+    expect(JSON.stringify(diagnostic)).not.toContain('"x"');
+  });
+
   it('creates, streams, and stops passive computer viewers without a control lease', async () => {
-    const harness = createHarness();
+    const recordDiagnostic = vi.fn();
+    const harness = createHarness({ recordDiagnostic });
     const created = await harness.invoke('POST', '/api/bots/:botId/computer/view', {
       params: { botId: BOT_ID },
       body: { channelId: CHANNEL_ID },
@@ -1243,6 +1411,12 @@ describe('Production Bots capabilities and routes', () => {
       signal: expect.any(AbortSignal),
     }));
     expect(harness.browserService.stopComputerView).toHaveBeenCalledTimes(1);
+    expect(recordDiagnostic.mock.calls.map(([entry]) => entry.mark)).toEqual([
+      'bot.computer.view.created',
+      'bot.computer.view.attached',
+      'bot.computer.view.first_stream_chunk',
+      'bot.computer.view.closed',
+    ]);
 
     const stopped = await harness.invoke(
       'DELETE',
@@ -1250,6 +1424,10 @@ describe('Production Bots capabilities and routes', () => {
       { params: { botId: BOT_ID, viewId: 'view_opaque' } },
     );
     expect(stopped.payload).toEqual({ stopped: true });
+    expect(recordDiagnostic.mock.calls.at(-1)?.[0]).toMatchObject({
+      mark: 'bot.computer.view.stopped',
+      payload: { botId: BOT_ID, viewId: 'view_opaque', stopped: true },
+    });
     expect(harness.browserService.stopComputerView).toHaveBeenLastCalledWith({
       principal: expect.objectContaining({ id: USER_ID }),
       botId: BOT_ID,
@@ -1332,7 +1510,7 @@ describe('Production Bots capabilities and routes', () => {
     expect(response.payload).toEqual({
       error: 'Database migration required',
       code: 'bot_schema_migration_required',
-      requiredMigration: '20260827100000',
+        requiredMigration: '20260901160000',
     });
   });
 });

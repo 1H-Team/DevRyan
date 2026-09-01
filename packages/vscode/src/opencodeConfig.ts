@@ -10,7 +10,7 @@ import {
   isAnthropicOAuthPluginSpec,
   reconcileAnthropicOAuthPluginSpecs,
 } from './anthropicOAuthPlugin';
-import { resolveProjectPlansDirectory } from '../../web/server/lib/projects/project-id.js';
+import { getOpenChamberDataDir } from './managedOpenCodeRegistry';
 import {
   buildDevRyanDefaultPluginInventory,
   type DevRyanDefaultPlugin,
@@ -27,6 +27,7 @@ import {
   getDevRyanManagedPluginForSpec,
   getDevRyanManagedPluginRegistrationForConfigPath,
 } from '../../web/server/lib/opencode/managed-plugins.js';
+import { resolveActiveProjectWorktreeContainer } from '../../web/server/lib/opencode/worktree-permissions.js';
 
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
 const AGENT_DIR = path.join(OPENCODE_CONFIG_DIR, 'agents');
@@ -2092,7 +2093,11 @@ const normalizeRuntimeExternalDirectoryVariants = (directory?: string | null): s
   return candidates;
 };
 
-const buildRuntimeExternalDirectories = (workingDirectory?: string): string[] => {
+const buildRuntimeExternalDirectories = (
+  workingDirectory?: string,
+  dataDirectory: string = getOpenChamberDataDir(),
+  openCodeDataDirectory?: string,
+): string[] => {
   const seen = new Set<string>();
   const result: string[] = [];
   const addDirectory = (directory?: string | null) => {
@@ -2108,9 +2113,10 @@ const buildRuntimeExternalDirectories = (workingDirectory?: string): string[] =>
   if (process.platform !== 'win32') {
     addDirectory('/tmp');
   }
+  addDirectory(dataDirectory);
   addDirectory(workingDirectory);
   addDirectory(findWorktreeRoot(workingDirectory));
-  addDirectory(resolveProjectPlansDirectory(workingDirectory));
+  addDirectory(resolveActiveProjectWorktreeContainer(workingDirectory, { openCodeDataDirectory }));
   return result.sort((a, b) => a.localeCompare(b));
 };
 
@@ -2463,7 +2469,7 @@ const syncSlimConfigOverlay = (targetConfigDirectory: string, workingDirectory?:
 
 export const syncRuntimeAgentOverlays = (
   workingDirectory?: string,
-  options: { hiddenSkills?: unknown[] } = {},
+  options: { hiddenSkills?: unknown[]; dataDirectory?: string; openCodeDataDirectory?: string } = {},
 ): {
   changed: boolean;
   targetConfigDirectory: string | null;
@@ -2487,7 +2493,11 @@ export const syncRuntimeAgentOverlays = (
     : getBaseConfigAgents(workingDirectory);
   const baseAgents = new Map(baseAgentList.map((agent) => [agent.name, agent]));
   const overrides = listManagedRuntimeAgentModelOverrides(workingDirectory);
-  const runtimeExternalDirectories = buildRuntimeExternalDirectories(workingDirectory);
+  const runtimeExternalDirectories = buildRuntimeExternalDirectories(
+    workingDirectory,
+    options.dataDirectory,
+    options.openCodeDataDirectory,
+  );
   const hiddenSkills = Array.isArray(options.hiddenSkills)
     ? options.hiddenSkills.filter((skill): skill is { name?: unknown; path?: unknown } => (
       Boolean(skill) && typeof skill === 'object' && !Array.isArray(skill)

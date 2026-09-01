@@ -111,3 +111,79 @@ describe('Production Bot Shared files store', () => {
     expect(store.getState().fileIdsByMessageId).toEqual({});
   });
 });
+
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+};
+
+describe('Shared inventory async authority', () => {
+  test('keeps files added and updated by events while an older listing was in flight', async () => {
+    const page = deferred<{ sharedFiles: BotSharedFile[]; nextCursor: null }>();
+    const api = { listSharedFiles: () => page.promise };
+    const store = createBotSharedFilesStore();
+    const older = sharedFile('old', CHANNEL_A);
+    store.getState().upsertFile(older);
+    const request = store.getState().loadChannel(BOT_ID, CHANNEL_A, api);
+    expect(store.getState().loadChannel(BOT_ID, CHANNEL_A, api)).toBe(request);
+    const added = sharedFile('new', CHANNEL_A);
+    const updated = { ...older, copyState: 'ready' as const, updatedAt: '2026-08-25T11:00:00.000Z' };
+    store.getState().upsertFile(added);
+    store.getState().upsertFile(updated);
+    page.resolve({ sharedFiles: [older], nextCursor: null });
+    await request;
+    expect(store.getState().filesById.old).toBe(updated);
+    expect(store.getState().filesById.new).toBe(added);
+  });
+
+  test('discards an old listing across A→B→A principal resets', async () => {
+    const page = deferred<{ sharedFiles: BotSharedFile[]; nextCursor: null }>();
+    const store = createBotSharedFilesStore();
+    store.getState().resetPrincipal(USER_ID);
+    const request = store.getState().loadChannel(BOT_ID, CHANNEL_A, { listSharedFiles: () => page.promise });
+    store.getState().resetPrincipal('other');
+    store.getState().resetPrincipal(USER_ID);
+    page.resolve({ sharedFiles: [sharedFile('old-account', CHANNEL_A)], nextCursor: null });
+    await request;
+    expect(store.getState().filesById).toEqual({});
+  });
+
+  test('discards a late first listing after access revocation even when no files had loaded', async () => {
+    const page = deferred<{ sharedFiles: BotSharedFile[]; nextCursor: null }>();
+    const store = createBotSharedFilesStore();
+    store.getState().replaceSnapshot([channel(CHANNEL_A)]);
+    const request = store.getState().loadChannel(BOT_ID, CHANNEL_A, { listSharedFiles: () => page.promise });
+    store.getState().replaceSnapshot([]);
+    store.getState().replaceSnapshot([channel(CHANNEL_A)]);
+    page.resolve({ sharedFiles: [sharedFile('revoked', CHANNEL_A)], nextCursor: null });
+    await request;
+    expect(store.getState().filesById).toEqual({});
+  });
+
+  test('retains unrelated message-file index identity on a copy status update', () => {
+    const store = createBotSharedFilesStore();
+    const first = sharedFile('first', CHANNEL_A, { messageId: 'message-first' });
+    const second = sharedFile('second', CHANNEL_A, { messageId: 'message-second' });
+    store.getState().upsertFile(first);
+    store.getState().upsertFile(second);
+    const before = store.getState().fileIdsByMessageId['message-first'];
+    store.getState().upsertFile({ ...second, copyState: 'ready', updatedAt: '2026-08-25T12:00:00.000Z' });
+    expect(store.getState().fileIdsByMessageId['message-first']).toBe(before);
+  });
+});
+
+test('Shared action scope cannot become current again after account or channel revocation', () => {
+  const store = createBotSharedFilesStore();
+  store.getState().resetPrincipal(USER_ID);
+  store.getState().replaceSnapshot([channel(CHANNEL_A)]);
+  const beforeAccountSwitch = store.getState().captureScope(CHANNEL_A);
+  store.getState().resetPrincipal('other');
+  store.getState().resetPrincipal(USER_ID);
+  store.getState().replaceSnapshot([channel(CHANNEL_A)]);
+  expect(beforeAccountSwitch()).toBe(false);
+  const beforeRevocation = store.getState().captureScope(CHANNEL_A);
+  store.getState().replaceSnapshot([]);
+  store.getState().replaceSnapshot([channel(CHANNEL_A)]);
+  expect(beforeRevocation()).toBe(false);
+});

@@ -151,7 +151,8 @@ describe('fetchClaudeQuota', () => {
 
     expect(result.ok).toBe(false);
     expect(result.configured).toBe(true);
-    expect(result.error).toBe('Claude CLI failed');
+    expect(result.error).toBe('The active Claude quota proxy could not be resolved.');
+    expect(result.warnings).toEqual(['Claude CLI failed']);
     expect(result.usageUpdatedAt).toBe(456);
     expect(result.usage.windows['5h'].usedPercent).toBe(6);
   });
@@ -198,7 +199,32 @@ describe('fetchClaudeQuota', () => {
 
     expect(result.ok).toBe(false);
     expect(result.configured).toBe(true);
-    expect(result.error).toBe('Claude Code usage unavailable');
+    expect(result.error).toBe('Meridian unavailable');
+    expect(result.warnings).toEqual(['Claude Code usage unavailable']);
+  });
+
+  it('passes the resolved managed Claude launch to the CLI fallback', async () => {
+    const fetchCliUsage = vi.fn(async () => ({
+      ok: true,
+      usage: { windows: { '5h': { usedPercent: 9 } } },
+      usageUpdatedAt: 123,
+    }));
+    const result = await fetchClaudeQuota({
+      readAuth: () => ({}),
+      hasProxyConfig: () => true,
+      fetchCliUsage,
+      claudeCodeLaunch: {
+        executable: '/managed/claude',
+        pathValue: '/managed:/usr/bin',
+        source: 'managed',
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fetchCliUsage).toHaveBeenCalledWith({
+      command: '/managed/claude',
+      env: expect.objectContaining({ PATH: '/managed:/usr/bin' }),
+    });
   });
 });
 

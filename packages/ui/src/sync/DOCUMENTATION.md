@@ -87,8 +87,29 @@ the same draft is a silent no-op. The owner snapshots the submitted text,
 attachments, target, agent, model, variant, and plan mode once, promotes the
 same controller from the draft key to the created session, and removes that
 exact draft once. Validation, abort, creation, and transport failures release
-only the controller they own, so an explicit retry can claim the draft without
-allowing an older completion to clear or replace a newer owner.
+only the controller they own. `session-creation.ts` owns the immutable attempt,
+content-free timing marks, and durable outcome marker in a narrow store. Only
+`session_create_restart_rejected` permits automatic readiness retries, within
+one 120-second deadline including target preparation. An ambiguous timeout,
+reset, 5xx, or cancellation after dispatch retains the local draft and requires
+explicit **Retry as new session** confirmation, including after reload.
+Cancel stops local preparation immediately; a late authoritative result records
+its original attempt/session/directory without selecting it or sending a prompt.
+Promotion cannot select a session over another selected target or delete a draft
+edited during creation. Text/attachments remain in their existing local draft
+stores until authoritative creation; session sends and revert transactions retain
+their existing optimistic rollback behavior. `SessionCreationStatus` subscribes
+only to the current draft's attempt, stays hidden during ordinary preparation
+and creation, and renders retained-draft recovery controls only for unknown or
+late-created outcomes.
+Flush raw composer text before taking the submission snapshot. Promotion compares
+that raw text and the attachment mutation revision, not the transformed prompt.
+Late persistence cannot recreate a deleted/promoted draft, and a failed first
+prompt restores only its own session without replacing a newer composer edit.
+Account transitions reload the UI; late outcome updates also recheck the storage
+principal so they cannot copy markers across accounts before reload completes.
+Attachment edit actions claim composer revisions in `input-store`; attachment
+hydration or a new array reference on remount must not invalidate revert input.
 
 Fresh-draft send resolution and composer display use the same authoritative
 agent-default resolver. Precedence is explicit draft selection, then the
@@ -140,6 +161,13 @@ workspace changes into the session.
 Permanent session deletion clears the exact attribution entry. Directory
 disposal clears the directory's entries. Revert boundaries are respected during
 projection, so hidden tool parts cannot retain attribution.
+
+Bulk permanent deletion returns successful and failed IDs plus safe structured
+failure details (`sessionId`, message, and optional HTTP status). Optimistic
+reconciliation restores only genuine failures, so a partial batch cannot
+resurrect sessions the server already deleted. Coding Agents surfaces use a
+single shared failure reason when one is available and reserve the generic
+retry text for mixed or unavailable causes.
 
 ## Message pagination and first-page loading
 
@@ -454,6 +482,18 @@ would reintroduce duplicate optimistic content and retain the shadow forever.
 
 Live activity/status indicators must not depend on this cache. They must derive from aggregated child-store state.
 
+### Active sidebar prompt recency
+
+`session_user_activity` is a low-frequency directory projection containing the
+latest visible user-message timestamp for root sessions. It updates when a user
+prompt reaches optimistic transport dispatch, including Implement Plan and a
+queued prompt whose FIFO turn has begun. History materialization, user-message
+events, removals, revert/unrevert, rollback, archive, and deletion reconcile the
+same value. Assistant messages, streaming parts, status changes, title changes,
+and ordinary `session.time.updated` churn preserve its reference and cannot
+reorder the Agents sidebar. Missing historical values are hydrated only for the
+active directory; inactive runtimes are never bootstrapped for ordering.
+
 When an authoritative `session.status` event advances a loaded session to
 `busy` or `retry`, the sync boundary settles older terminal notification and
 completion attention for that session and its loaded descendants. This makes an
@@ -552,12 +592,12 @@ Keep this in sync with `handleDirectoryEvent` in `sync-context.tsx`:
 
 | Event type | Fields to clone |
 |---|---|
-| `session.created/updated/deleted` | `session`, `permission`, `todo`, `part` |
+| `session.created/updated/deleted` | `session`, `permission`, `todo`, `part`; reconcile/clear `session_user_activity` where applicable |
 | `session.diff` | `session_diff` |
 | `session.status` | `session_status` |
 | `todo.updated` | `todo` |
-| `message.updated` | `message` |
-| `message.removed` | `message`, `part` |
+| `message.updated` | `message`; `session_user_activity` only for an accepted root user message |
+| `message.removed` | `message`, `part`; reconcile `session_user_activity` when removing a user message |
 | `message.part.updated` | `part`; `message` only when inserting a provisional live assistant message for an orphan assistant text/reasoning/tool part |
 | `message.part.removed/delta` | `part` |
 | `vcs.branch.updated` | (none — mutates `draft.vcs` directly) |

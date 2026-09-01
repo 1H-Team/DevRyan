@@ -133,6 +133,13 @@ Notification delivery additionally consumes:
 - `notificationTemplates.planReady`: `{ title, message }`, defaulting to `Plan ready` / `A plan is ready for review`.
 - `notificationTemplates.permission`: `{ title, message }`, defaulting to `Permissions needed` / `Folder access is required: {last_message}`. For folder requests, `{last_message}` resolves to the first requested path pattern.
 
+The settings boundary always projects `notificationTemplates` as a total record
+for completion, Plan Ready, error, question, permission, and subtask events.
+Managed personal overrides may be sparse on disk for backward compatibility;
+reads inherit missing entries from effective host defaults, and the next
+personal settings mutation persists the normalized record without replacing
+valid custom entries.
+
 The foreground browser preference `nativeNotificationsEnabled` is personal
 managed settings state. The UI obtains browser permission from the direct user
 gesture, then persists it through `PUT /api/config/settings`; the multi-user

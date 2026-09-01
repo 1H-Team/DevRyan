@@ -165,9 +165,7 @@ export const resolveBotControlPresentation = ({
     ownedByViewer,
     actorLabel: ownedByViewer
       ? 'you'
-      : control.actorType
-        ? `${control.actorType} ${control.actorId?.slice(0, 8) ?? ''}`.trim()
-        : control.actorId?.slice(0, 8) ?? 'human',
+      : 'another operator',
     expiresInSeconds: Math.max(0, Math.ceil((control.expiresAt - now) / 1000)),
   };
 };

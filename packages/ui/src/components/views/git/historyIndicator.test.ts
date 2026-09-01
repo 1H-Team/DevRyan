@@ -22,14 +22,18 @@ describe('resolveHistoryCommitIndicator', () => {
 
     expect(indicator.hasHeadRing).toBe(true);
     expect(indicator.hasPushedFill).toBe(false);
+    expect(indicator.dotColor).toBe('var(--surface-muted-foreground)');
+    expect(indicator.ringColor).toBe('var(--status-success)');
     expect(indicator.ariaLabelKey).toBe('gitView.history.commitStatus.latestLocalCommit');
   });
 
   test('fills the latest pushed commit when local HEAD is ahead', () => {
-    const indicator = resolveHistoryCommitIndicator(createEntry({ isHead: false, isSyncPoint: true }));
+    const indicator = resolveHistoryCommitIndicator(createEntry({ isHead: false, isRemoteHead: true, isSyncPoint: true }));
 
     expect(indicator.hasHeadRing).toBe(false);
     expect(indicator.hasPushedFill).toBe(true);
+    expect(indicator.dotColor).toBe('var(--status-success)');
+    expect(indicator.ringColor).toBeNull();
     expect(indicator.ariaLabelKey).toBe('gitView.history.commitStatus.latestPushedCommit');
   });
 
@@ -38,6 +42,8 @@ describe('resolveHistoryCommitIndicator', () => {
 
     expect(indicator.hasHeadRing).toBe(true);
     expect(indicator.hasPushedFill).toBe(true);
+    expect(indicator.dotColor).toBe('var(--status-success)');
+    expect(indicator.ringColor).toBe('var(--status-success)');
     expect(indicator.ariaLabelKey).toBe('gitView.history.commitStatus.localAndPushedCommit');
   });
 
@@ -46,6 +52,64 @@ describe('resolveHistoryCommitIndicator', () => {
 
     expect(indicator.hasHeadRing).toBe(false);
     expect(indicator.hasPushedFill).toBe(false);
+    expect(indicator.dotColor).toBe('var(--surface-muted-foreground)');
+    expect(indicator.ringColor).toBeNull();
+    expect(indicator.ariaLabelKey).toBe('gitView.history.commitStatus.olderCommit');
+  });
+
+  test('keeps local HEAD gray with a green ring when origin is ahead', () => {
+    const indicator = resolveHistoryCommitIndicator(createEntry({
+      isHead: true,
+      isRemoteHead: false,
+      isSyncPoint: true,
+      syncStatus: 'remote',
+    }));
+
+    expect(indicator.dotColor).toBe('var(--surface-muted-foreground)');
+    expect(indicator.ringColor).toBe('var(--status-success)');
+    expect(indicator.hasHeadRing).toBe(true);
+    expect(indicator.hasPushedFill).toBe(false);
+    expect(indicator.ariaLabelKey).toBe('gitView.history.commitStatus.latestLocalCommit');
+  });
+
+  test('fills the remote tip when origin is ahead without adding a ring', () => {
+    const indicator = resolveHistoryCommitIndicator(createEntry({
+      isHead: false,
+      isRemoteHead: true,
+      isSyncPoint: false,
+    }));
+
+    expect(indicator.dotColor).toBe('var(--status-success)');
+    expect(indicator.ringColor).toBeNull();
+    expect(indicator.ariaLabelKey).toBe('gitView.history.commitStatus.latestPushedCommit');
+  });
+
+  test('keeps a shared ancestor separate from both tips neutral', () => {
+    const indicator = resolveHistoryCommitIndicator(createEntry({
+      isHead: false,
+      isRemoteHead: false,
+      isSyncPoint: true,
+    }));
+
+    expect(indicator.dotColor).toBe('var(--surface-muted-foreground)');
+    expect(indicator.ringColor).toBeNull();
+    expect(indicator.hasPushedFill).toBe(false);
+    expect(indicator.ariaLabelKey).toBe('gitView.history.commitStatus.olderCommit');
+  });
+
+  test('keeps local HEAD gray with a green ring without upstream metadata', () => {
+    const indicator = resolveHistoryCommitIndicator(createEntry({ isHead: true }));
+
+    expect(indicator.dotColor).toBe('var(--surface-muted-foreground)');
+    expect(indicator.ringColor).toBe('var(--status-success)');
+    expect(indicator.ariaLabelKey).toBe('gitView.history.commitStatus.latestLocalCommit');
+  });
+
+  test('does not infer the remote tip from a sync point when tip metadata is missing', () => {
+    const indicator = resolveHistoryCommitIndicator(createEntry({ isSyncPoint: true }));
+
+    expect(indicator.dotColor).toBe('var(--surface-muted-foreground)');
+    expect(indicator.ringColor).toBeNull();
     expect(indicator.ariaLabelKey).toBe('gitView.history.commitStatus.olderCommit');
   });
 

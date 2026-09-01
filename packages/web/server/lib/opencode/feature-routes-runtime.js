@@ -80,6 +80,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       emitSyntheticOpenCodeEvent,
       resolveZenModel,
       resolveZenModelNonBlocking,
+      fetchFreeZenModels,
       xaiToolCatalogRuntime,
       recordCommitTiming,
       resolveManagedProject,
@@ -298,12 +299,14 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
       isExternalOpenCode,
+      buildAugmentedPath,
       ownsSession,
     });
     registerGitHubRoutes(app);
     registerGitRoutes(app, {
       resolveZenModel,
       resolveCommitZenModel: resolveZenModelNonBlocking,
+      fetchFreeZenModels,
       recordCommitTiming,
     });
     registerMagicPromptRoutes(app, {

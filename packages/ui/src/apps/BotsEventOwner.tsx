@@ -31,6 +31,7 @@ import {
 } from '@/stores/useBotSharedFilesStore';
 import { type BotsStore, useBotsStore } from '@/stores/useBotsStore';
 import { useBotLiveMessageStore } from '@/stores/useBotLiveMessageStore';
+import { useBotComputerActivityStore, type BotComputerActivity } from '@/stores/useBotComputerActivityStore';
 import {
   createBotCapabilityConnectionController,
   createBotEventConnectionController,
@@ -65,6 +66,8 @@ const BOT_EVENT_KINDS = Object.freeze([
   'run.queued',
   'run.started',
   'run.waiting_approval',
+  'run.waiting_control',
+  'run.control_resumed',
   'run.needs_reconciliation',
   'run.completed',
   'run.failed',
@@ -73,6 +76,8 @@ const BOT_EVENT_KINDS = Object.freeze([
   'action.proposed',
   'action.pending_approval',
   'action.approved',
+  'action.waiting_control',
+  'action.control_resumed',
   'action.denied',
   'action.unknown',
   'action.failed',
@@ -82,6 +87,7 @@ const BOT_EVENT_KINDS = Object.freeze([
   'memory.changed',
   'shared_file.updated',
   'computer.status',
+  'computer.activity',
   'computer.control.take',
   'computer.control.heartbeat',
   'computer.control.return',
@@ -122,16 +128,25 @@ const nullableStringOr = (value: unknown, fallback: string | null): string | nul
   return typeof value === 'string' ? value : fallback;
 };
 
-const markFinalBotResponse = (): void => {
+const markFinalBotResponse = (message: BotMessage): void => {
   try {
     if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
       performance.clearMarks?.('bot.final-response');
       performance.mark('bot.final-response');
+      const name = `bot.final-response:${message.runId || message.id}`;
+      performance.clearMarks?.(name);
+      performance.mark(name);
     }
   } catch {
     // Instrumentation must never affect canonical reconciliation.
   }
 };
+
+const isComputerActivity = (value: unknown): value is BotComputerActivity => (
+  isRecord(value) && typeof value.botId === 'string' && typeof value.channelId === 'string'
+  && typeof value.runId === 'string' && Number.isSafeInteger(value.revision)
+  && ['active', 'waiting', 'idle'].includes(String(value.state))
+);
 
 const parseBot = (value: unknown, previous?: BotSummary): BotSummary | null => {
   if (!isRecord(value)) return null;
@@ -393,6 +408,7 @@ const epochFromId = (id: string): string | null => {
 };
 
 const removeBotScopedState = (stores: BotEventStores, botId: string): void => {
+  useBotComputerActivityStore.getState().removeBot(botId);
   stores.operations.getState().removeComputer(botId);
   stores.shared.getState().removeBot(botId);
   stores.bots.getState().removeMembership(botId);
@@ -411,6 +427,7 @@ const removeBotScopedState = (stores: BotEventStores, botId: string): void => {
 };
 
 const removeChannelScopedState = (stores: BotEventStores, channelId: string): void => {
+  useBotComputerActivityStore.getState().removeChannel(channelId);
   const view = Object.values(stores.operations.getState().computerViewsByBotId)
     .find((entry) => entry.channelId === channelId);
   if (view) void stores.operations.getState().stopComputerView(view.botId).catch(() => undefined);
@@ -426,6 +443,13 @@ const removeChannelScopedState = (stores: BotEventStores, channelId: string): vo
 const applyEvent = (stores: BotEventStores, event: BotEventEnvelope): void => {
   const { payload } = event;
   const liveStore = stores.live ?? useBotLiveMessageStore;
+  if (event.kind === 'computer.activity' && isComputerActivity(payload.activity)) {
+    const activity = payload.activity;
+    if (stores.channels.getState().channelsById[activity.channelId]?.botId === activity.botId) {
+      useBotComputerActivityStore.getState().upsert(activity);
+    }
+    return;
+  }
   if (event.kind === 'memory.changed') {
     const botId = event.botId || (typeof payload.botId === 'string' ? payload.botId : null);
     if (botId && typeof window !== 'undefined') {
@@ -490,8 +514,8 @@ const applyEvent = (stores: BotEventStores, event: BotEventEnvelope): void => {
       Number.isSafeInteger(payload.streamRevision) ? Number(payload.streamRevision) : null,
       payload.message.finalizedAt !== null,
     );
-    if (payload.message.role === 'assistant' && payload.message.finalizedAt !== null) {
-      markFinalBotResponse();
+    if (payload.message.role === 'assistant' && payload.message.assistantPhase === 'result' && payload.message.finalizedAt !== null) {
+      markFinalBotResponse(payload.message);
     }
     if (isChannelPreview(payload.channelPreview)) {
       stores.channels.getState().upsertPreview(payload.channelPreview);
@@ -510,6 +534,7 @@ const applyEvent = (stores: BotEventStores, event: BotEventEnvelope): void => {
     stores.operations.getState().upsertRun(run);
     if (['completed', 'failed', 'cancelled', 'interrupted'].includes(run.state)) {
       liveStore.getState().clearRun(run.id);
+      stores.channels.getState().pruneInactiveCache();
     }
     return;
   }
@@ -571,6 +596,9 @@ export const createBotEventReconciler = ({
         stores.channels.getState().replaceSnapshot(snapshot);
         stores.operations.getState().replaceSnapshot(snapshot);
         stores.shared.getState().replaceSnapshot(snapshot.channels);
+        const activities = Array.isArray(event.payload.computerActivity) ? event.payload.computerActivity : [];
+        useBotComputerActivityStore.getState().replace(activities.filter(isComputerActivity).filter((activity) =>
+          snapshot.channels.some((channel) => channel.id === activity.channelId && channel.botId === activity.botId)));
         (stores.live ?? useBotLiveMessageStore).getState().reset();
         const activeBotIds = new Set(snapshot.bots
           .filter((bot) => bot.lifecycle === 'active')
@@ -594,6 +622,7 @@ export const createBotEventReconciler = ({
 let ownerCount = 0;
 let cleanupGeneration = 0;
 const resetStores = (principalId: string | null): void => {
+  useBotComputerActivityStore.getState().reset();
   useBotsStore.getState().resetPrincipal(principalId);
   useBotChannelStore.getState().resetPrincipal(principalId);
   useBotOperationsStore.getState().resetPrincipal(principalId);

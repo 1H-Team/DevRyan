@@ -185,6 +185,7 @@ const createHarness = async ({
   missingGithubReassignmentFunction = false,
   missingAnalyticsRetentionFunctions = false,
   activityPurgeResult = { deletedCount: 0, protectedCount: 0 },
+  userActivityPurgeResult = { complete: true, deletedCount: 0, remainingCount: 0 },
   dependencyUnavailableAtStartup = false,
   dependencyFailureStatusAtStartup = 0,
   localOwnershipRows = [],
@@ -285,9 +286,11 @@ const createHarness = async ({
       if (sessionMatch) {
         const sessionId = decodeURIComponent(sessionMatch[1]);
         const index = mutableOpenCodeSessions.findIndex((session) => session.id === sessionId);
-        if (index < 0) return jsonResponse({ message: 'not found' }, 404);
         if (method === 'DELETE') {
           openCodeDeleteRequests.push({ sessionId, url: url.toString() });
+        }
+        if (index < 0) return jsonResponse({ message: 'not found' }, 404);
+        if (method === 'DELETE') {
           if (openCodeDeleteUnavailable) return jsonResponse({ message: 'delete unavailable' }, 503);
           mutableOpenCodeSessions.splice(index, 1);
           return jsonResponse(true);
@@ -411,8 +414,17 @@ const createHarness = async ({
       }
       return jsonResponse(activityPurgeResult);
     }
+    if (url.pathname === '/rest/v1/rpc/devryan_purge_user_activity_logs') {
+      if (missingAnalyticsRetentionFunctions) {
+        return jsonResponse({
+          code: 'PGRST202',
+          message: 'Could not find the function public.devryan_purge_user_activity_logs in the schema cache',
+        }, 404);
+      }
+      return jsonResponse(userActivityPurgeResult);
+    }
     if (url.pathname === '/rest/v1/rpc/devryan_bot_schema_version') {
-      return jsonResponse('20260827100000');
+      return jsonResponse('20260901160000');
     }
     if (!url.pathname.startsWith('/rest/v1/')) return jsonResponse({ message: 'not found' }, 404);
 
@@ -1289,6 +1301,31 @@ describe('multi-user authentication runtime', () => {
     }));
   });
 
+  it('rejects a restart before upstream creation, and never labels a dispatched reset retryable', async () => {
+    const harness = await createHarness();
+    const recordCreationTiming = vi.fn();
+    let restarting = true;
+    const handlers = registerAdminRoutes(harness, {
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      isSessionCreationRestarting: () => restarting,
+      recordCreationTiming,
+    });
+    const request = () => ({ ...makeRequest({ method: 'POST', path: '/api/session', body: { title: 'PRIVATE TITLE' }, csrf: true }),
+      originalUrl: '/api/session', principal: { scope: 'managed', id: USER_IDS.admin, role: 'admin', assignments: [] } });
+    const rejected = makeResponse();
+    await handlers.get('POST /api/session')(request(), rejected, vi.fn());
+    expect(rejected.payload).toMatchObject({ code: 'session_create_restart_rejected', retryable: true });
+    expect(harness.getOpenCodeSessionCreateCount()).toBe(0);
+    restarting = false;
+    harness.fetchImpl.mockRejectedValueOnce(new Error('ECONNRESET'));
+    const unknown = makeResponse();
+    await handlers.get('POST /api/session')(request(), unknown, vi.fn());
+    expect(unknown.payload).toMatchObject({ code: 'session_create_outcome_unknown', retryable: false });
+    expect(recordCreationTiming.mock.calls.map(([entry]) => entry.mark)).toContain('session.creation.upstream_create_started');
+    expect(JSON.stringify(recordCreationTiming.mock.calls)).not.toContain('PRIVATE TITLE');
+  });
+
   it('allows owned-plan routes for developers without opening generic filesystem access', async () => {
     const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plan-policy-'));
     const outsidePath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plan-policy-outside-'));
@@ -1463,6 +1500,64 @@ describe('multi-user authentication runtime', () => {
     expect(deniedResponse.payload.error).toBe('GitHub access is disabled by policy');
   });
 
+  it('lets managed users inherit host Magic Prompts without granting mutation access', async () => {
+    const harness = await createHarness();
+    const developerLogin = await passwordLogin(harness);
+
+    const readResponse = makeResponse();
+    const readNext = vi.fn(() => readResponse.json({
+      version: 1,
+      overrides: { 'plan.implement.visible': 'Implement plan.' },
+    }));
+    await harness.runtime.authController.requireAuth(
+      makeRequest({ cookie: developerLogin.cookie, path: '/magic-prompts' }),
+      readResponse,
+      readNext,
+    );
+    expect(readNext).toHaveBeenCalledOnce();
+    expect(readResponse.statusCode).toBe(200);
+    expect(readResponse.payload.overrides['plan.implement.visible']).toBe('Implement plan.');
+
+    for (const request of [
+      { method: 'PUT', path: '/magic-prompts/plan.implement.visible' },
+      { method: 'DELETE', path: '/magic-prompts/plan.implement.visible' },
+      { method: 'DELETE', path: '/magic-prompts' },
+    ]) {
+      const response = makeResponse();
+      await harness.runtime.authController.requireAuth(
+        makeRequest({
+          cookie: developerLogin.cookie,
+          method: request.method,
+          path: request.path,
+          csrf: true,
+        }),
+        response,
+        vi.fn(),
+      );
+      expect(response.statusCode, `${request.method} ${request.path}`).toBe(403);
+      expect(response.payload.error, `${request.method} ${request.path}`).toBe(
+        'Read access to magic-prompts settings is disabled by policy',
+      );
+    }
+
+    const adminHarness = await createHarness({ signedInRole: 'admin' });
+    const adminLogin = await passwordLogin(adminHarness, { role: 'admin' });
+    const adminMutationResponse = makeResponse();
+    const adminMutationNext = vi.fn(() => adminMutationResponse.json({ ok: true }));
+    await adminHarness.runtime.authController.requireAuth(
+      makeRequest({
+        cookie: adminLogin.cookie,
+        method: 'PUT',
+        path: '/magic-prompts/plan.implement.visible',
+        csrf: true,
+      }),
+      adminMutationResponse,
+      adminMutationNext,
+    );
+    expect(adminMutationNext).toHaveBeenCalledOnce();
+    expect(adminMutationResponse.statusCode).toBe(200);
+  });
+
   it('denies every Bot route family when the per-user Bots capability is disabled', async () => {
     const harness = await createHarness({
       userPolicies: [{
@@ -1580,6 +1675,11 @@ describe('multi-user authentication runtime', () => {
         ownership('partial-delete', USER_IDS.admin),
         ownership('developer-active', USER_IDS.developer),
         { ...ownership('tombstoned', USER_IDS.admin), archived_at: '2026-08-01T00:00:00.000Z' },
+        {
+          ...ownership('revoked-tombstone', USER_IDS.admin),
+          branch_name: 'revoked',
+          archived_at: '2026-08-01T00:00:00.000Z',
+        },
       ],
       openCodeSessions: [
         { id: 'developer-active', directory: developerDirectory, time: { updated: 400 } },
@@ -1693,6 +1793,33 @@ describe('multi-user authentication runtime', () => {
     });
     expect(harness.openCodeDeleteRequests).toEqual([]);
 
+    const foreignTombstoneDelete = makeResponse();
+    await handlers.get('DELETE /api/session/:sessionID')({
+      body: undefined,
+      method: 'DELETE',
+      originalUrl: '/api/session/tombstoned',
+      params: { sessionID: 'tombstoned' },
+      principal: developer,
+    }, foreignTombstoneDelete, vi.fn());
+    expect({ status: foreignTombstoneDelete.statusCode, payload: foreignTombstoneDelete.payload }).toEqual({
+      status: 404,
+      payload: { error: 'Session not found' },
+    });
+
+    const revokedTombstoneDelete = makeResponse();
+    await handlers.get('DELETE /api/session/:sessionID')({
+      body: undefined,
+      method: 'DELETE',
+      originalUrl: '/api/session/revoked-tombstone',
+      params: { sessionID: 'revoked-tombstone' },
+      principal: admin,
+    }, revokedTombstoneDelete, vi.fn());
+    expect({ status: revokedTombstoneDelete.statusCode, payload: revokedTombstoneDelete.payload }).toEqual({
+      status: 404,
+      payload: { error: 'Session not found' },
+    });
+    expect(harness.openCodeDeleteRequests).toEqual([]);
+
     const journalDirectory = path.join(harness.directory, 'harness', 'journal');
     await fs.mkdir(journalDirectory, { recursive: true });
     const journalMarker = path.join(journalDirectory, 'retained-after-delete');
@@ -1722,7 +1849,40 @@ describe('multi-user authentication runtime', () => {
     expect(harness.auditEvents).toContainEqual(expect.objectContaining({
       action: 'session.deleted',
       success: true,
-      metadata: expect.objectContaining({ upstreamDeleted: true, ownershipTombstoned: true }),
+      metadata: expect.objectContaining({
+        upstreamDeleted: true,
+        upstreamAlreadyAbsent: false,
+        ownershipTombstoned: true,
+        idempotentReplay: false,
+      }),
+    }));
+
+    const replayResponse = makeResponse();
+    await handlers.get('DELETE /api/session/:sessionID')({
+      body: undefined,
+      method: 'DELETE',
+      originalUrl: '/api/session/tombstoned',
+      params: { sessionID: 'tombstoned' },
+      principal: admin,
+    }, replayResponse, vi.fn());
+    const replayAudit = await waitForAudit(harness, 'session.deleted', 'tombstoned');
+
+    expect({ status: replayResponse.statusCode, payload: replayResponse.payload }).toEqual({
+      status: 200,
+      payload: true,
+    });
+    expect(harness.openCodeDeleteRequests).toEqual([{
+      sessionId: 'admin-active',
+      url: 'http://opencode.test/session/admin-active',
+    }]);
+    expect(replayAudit).toEqual(expect.objectContaining({
+      success: true,
+      metadata: expect.objectContaining({
+        upstreamDeleted: false,
+        upstreamAlreadyAbsent: false,
+        ownershipTombstoned: true,
+        idempotentReplay: true,
+      }),
     }));
 
     harness.setOwnershipArchiveUnavailable(true);
@@ -1740,9 +1900,50 @@ describe('multi-user authentication runtime', () => {
     expect(harness.getOwnership('partial-delete')?.archived_at).toBeNull();
     expect(partialAudit).toEqual(expect.objectContaining({
       success: false,
-      metadata: expect.objectContaining({ upstreamDeleted: true, ownershipTombstoned: false }),
+      metadata: expect.objectContaining({
+        upstreamDeleted: true,
+        upstreamAlreadyAbsent: false,
+        ownershipTombstoned: false,
+        idempotentReplay: false,
+      }),
     }));
     await expect(fs.readFile(journalMarker, 'utf8')).resolves.toBe('diagnostic evidence');
+
+    harness.setOwnershipArchiveUnavailable(false);
+    const recoveryResponse = makeResponse();
+    await handlers.get('DELETE /api/session/:sessionID')({
+      body: undefined,
+      method: 'DELETE',
+      originalUrl: '/api/session/partial-delete',
+      params: { sessionID: 'partial-delete' },
+      principal: admin,
+    }, recoveryResponse, vi.fn());
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const deleteAudits = harness.auditEvents.filter((event) => (
+        event.action === 'session.deleted' && event.target_id === 'partial-delete'
+      ));
+      if (deleteAudits.length >= 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const recoveryAudit = harness.auditEvents.filter((event) => (
+      event.action === 'session.deleted' && event.target_id === 'partial-delete'
+    )).at(-1);
+
+    expect({ status: recoveryResponse.statusCode, payload: recoveryResponse.payload }).toEqual({
+      status: 200,
+      payload: true,
+    });
+    expect(harness.getOwnership('partial-delete')?.archived_at).toEqual(expect.any(String));
+    expect(harness.openCodeDeleteRequests.filter(({ sessionId }) => sessionId === 'partial-delete')).toHaveLength(2);
+    expect(recoveryAudit).toEqual(expect.objectContaining({
+      success: true,
+      metadata: expect.objectContaining({
+        upstreamDeleted: false,
+        upstreamAlreadyAbsent: true,
+        ownershipTombstoned: true,
+        idempotentReplay: false,
+      }),
+    }));
   });
 
   it('deletes owned legacy archived sessions by ownership without forwarding a directory scope', async () => {
@@ -1826,6 +2027,28 @@ describe('multi-user authentication runtime', () => {
     const current = await runDelete('current-archived', repositoryPath);
     expect(current.response.statusCode).toBe(200);
     expect(harness.openCodeDeleteRequests[1]?.url).toBe('http://opencode.test/session/current-archived');
+
+    const currentReplay = await runDelete('current-archived', repositoryPath);
+    expect({ status: currentReplay.response.statusCode, payload: currentReplay.response.payload }).toEqual({
+      status: 200,
+      payload: true,
+    });
+    expect(harness.openCodeDeleteRequests).toHaveLength(2);
+    expect(harness.analyticsRetentionLocks.has(USER_IDS.developer)).toBe(true);
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const replayAudits = harness.auditEvents.filter((event) => (
+        event.action === 'session.deleted' && event.target_id === 'current-archived'
+      ));
+      if (replayAudits.length >= 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(harness.auditEvents.filter((event) => (
+      event.action === 'session.deleted' && event.target_id === 'current-archived'
+    )).at(-1)?.metadata).toEqual(expect.objectContaining({
+      analyticsRetentionLocked: true,
+      idempotentReplay: true,
+      ownershipTombstoned: true,
+    }));
 
     const foreign = await runDelete('foreign-archived', legacyDirectory);
     expect(foreign.response.statusCode).toBe(404);
@@ -1974,6 +2197,57 @@ describe('multi-user authentication runtime', () => {
     expect(JSON.parse(String(rpcCall?.[1]?.body))).toEqual({
       p_preserve_event_id: expect.any(String),
     });
+  });
+
+  it('clears one visible human user complete analytics snapshot behind admin confirmation', async () => {
+    const harness = await createHarness({
+      signedInRole: 'admin',
+      profiles: [
+        fixtureProfile('developer', { account_kind: 'human' }),
+        fixtureProfile('admin', { account_kind: 'human' }),
+      ],
+      userActivityPurgeResult: { complete: true, deletedCount: 15, remainingCount: 0 },
+    });
+    const handlers = new Map();
+    const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
+      method,
+      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+    ]));
+    harness.runtime.registerRoutes(app);
+    const admin = { scope: 'managed', id: USER_IDS.admin, role: 'admin' };
+
+    const unconfirmed = makeResponse();
+    await handlers.get('DELETE /api/admin/users/:userId/analytics')({
+      body: {}, principal: admin, params: { userId: USER_IDS.developer },
+    }, unconfirmed);
+    expect(unconfirmed.statusCode).toBe(400);
+
+    const denied = makeResponse();
+    await handlers.get('DELETE /api/admin/users/:userId/analytics')({
+      body: { confirm: true },
+      principal: { scope: 'managed', id: USER_IDS.developer, role: 'developer' },
+      params: { userId: USER_IDS.developer },
+    }, denied);
+    expect(denied.statusCode).toBe(403);
+
+    const response = makeResponse();
+    await handlers.get('DELETE /api/admin/users/:userId/analytics')({
+      body: { confirm: true }, principal: admin, params: { userId: USER_IDS.developer },
+    }, response);
+    expect(response.payload).toEqual({ purged: true, deletedCount: 15, remainingCount: 0 });
+
+    const rpcCall = harness.fetchImpl.mock.calls.find(([input]) => (
+      String(input).includes('/rest/v1/rpc/devryan_purge_user_activity_logs')
+    ));
+    expect(JSON.parse(String(rpcCall?.[1]?.body))).toEqual({
+      p_user_id: USER_IDS.developer,
+      p_preserve_event_id: expect.any(String),
+    });
+    const audit = await waitForAudit(harness, 'activity.user_purged', USER_IDS.developer);
+    expect(audit).toEqual(expect.objectContaining({
+      actor_user_id: USER_IDS.admin,
+      target_user_id: USER_IDS.developer,
+    }));
   });
 
   it('saves GitHub association with the profile without revoking app sessions', async () => {
@@ -3085,6 +3359,40 @@ describe('multi-user authentication runtime', () => {
     expect(deniedResponse.payload.fields).toEqual(['nativeNotificationsEnabled']);
   });
 
+  it('returns and heals total notification templates for sparse managed overrides', async () => {
+    const completion = { title: 'Personal completion', message: 'Done' };
+    const harness = await createHarness({
+      userPolicies: [{
+        user_id: USER_IDS.developer,
+        settings_overrides: { notificationTemplates: { completion } },
+      }],
+    });
+    const login = await passwordLogin(harness, { role: 'developer' });
+    const handlers = registerAdminRoutes(harness, {
+      readSettingsFromDiskMigrated: async () => ({
+        nativeNotificationsEnabled: false,
+        notificationTemplates: {
+          error: { title: 'Host error', message: 'Failed' },
+        },
+      }),
+    });
+    const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+    const readResponse = makeResponse();
+
+    await handlers.get('GET /api/config/settings')({ principal }, readResponse, vi.fn());
+    expect(readResponse.payload.notificationTemplates.completion).toEqual(completion);
+    expect(readResponse.payload.notificationTemplates.error).toEqual({ title: 'Host error', message: 'Failed' });
+    expect(Object.keys(readResponse.payload.notificationTemplates)).toHaveLength(6);
+
+    const writeResponse = makeResponse();
+    await handlers.get('PUT /api/config/settings')({
+      body: { nativeNotificationsEnabled: true },
+      principal,
+    }, writeResponse, vi.fn());
+    expect(Object.keys(harness.getUserPolicy(USER_IDS.developer).settings_overrides.notificationTemplates))
+      .toHaveLength(6);
+  });
+
   it('resolves managed child execution from root ownership without affecting administrators or Council', async () => {
     const repositoryPath = await createGitRepo();
     const projectId = '73333333-3333-4333-8333-333333333333';
@@ -3526,6 +3834,7 @@ describe('multi-user authentication runtime', () => {
   });
 
   it('starts in a fail-closed degraded state and preserves the local ownership index during an outage', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
     const ownership = {
       session_id: 'session-offline',
       user_id: USER_IDS.developer,
@@ -3540,6 +3849,8 @@ describe('multi-user authentication runtime', () => {
       localOwnershipRows: [ownership],
       ownershipRows: [ownership],
     });
+
+    expect(timeoutSpy).toHaveBeenCalledWith(5_000);
 
     expect(harness.runtime.getControlPlaneStatus()).toMatchObject({
       state: 'degraded',
@@ -4091,6 +4402,7 @@ describe('multi-user authentication runtime', () => {
       botHost: { owner: 'electron', getStatus },
       encryption: { getKey: () => Buffer.alloc(32, 0x45) },
     });
+    await harness.runtime.botsRuntime.start();
     const handlers = registerAdminRoutes(harness);
     const response = makeResponse();
 

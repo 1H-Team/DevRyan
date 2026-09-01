@@ -275,59 +275,82 @@ const createPlugin = async ({
   environment = process.env,
   fetchImpl = globalThis.fetch,
   imageToolFactory = null,
+  beforeImage = async () => {},
 } = {}) => {
   if (typeof toolApi !== 'function' || typeof fetchImpl !== 'function'
     || !toolApi.schema?.enum || !toolApi.schema?.unknown || !toolApi.schema?.string) {
     fail(ERROR_CODES.configInvalid, 'OpenCode tool runtime is unavailable');
   }
   const capability = validateEnvironment(environment);
-  const exposedOperations = capability.chatgptImageGeneration
-    ? OPERATIONS
-    : OPERATIONS.filter((operation) => operation !== 'image.generate');
+  const exposedOperations = OPERATIONS.filter((operation) => operation !== 'image.generate');
   const imageTool = capability.chatgptImageGeneration && imageToolFactory
     ? await imageToolFactory()
     : null;
-  return {
-    tool: {
-      devryan_bot: toolApi({
-        description: 'The authenticated DevRyan Bot gateway, including the persistent browser connector. For browser work use operation computer.command with payload { idempotencyKey, command, args, target, limits }; start with navigate or snapshot and use returned element refs for interactions. The browser is available whenever the Bot is Active.',
-        args: {
-          operation: toolApi.schema.enum(exposedOperations),
-          payload: toolApi.schema.unknown(),
-        },
-        execute: async (input, context) => {
-          const validated = validateInput(input);
-          if (validated.operation === 'image.generate') {
-            if (!capability.chatgptImageGeneration || typeof imageTool?.execute !== 'function') {
-              fail(ERROR_CODES.imageGenerationUnavailable,
-                'ChatGPT OAuth image generation is unavailable for this run');
-            }
-            return imageTool.execute(validateImageInput(validated.payload), context);
+  const executeImage = async (input, context) => {
+    const imageInput = validateImageInput(input);
+    await beforeImage();
+    try { return await imageTool.execute(imageInput, context); } catch (error) {
+      // The reviewed dependency includes provider response text in exceptions.
+      // Never send that body to tools, history, diagnostics or exports.
+      if (typeof error?.message === 'string' && /^codex responses request failed: 401 /.test(error.message)) {
+        throw Object.assign(new Error('bot_opencode_provider_authentication: Reconnect the selected host OpenAI account in Providers and Bot Settings.'),
+          { code: 'bot_opencode_provider_authentication' });
+      }
+      fail('bot_image_generation_failed', 'Image generation failed. No provider response details were retained.');
+    }
+  };
+  const tools = {
+    devryan_bot: toolApi({
+      description: 'The authenticated DevRyan Bot gateway, including the persistent browser connector. For browser work use operation computer.command with payload { idempotencyKey, command, args, target, limits }; start with navigate or snapshot and use returned element refs for interactions. The browser is available whenever the Bot is Active. Image generation is a separate devryan_image tool; never guess an image.generate gateway payload.',
+      args: {
+        operation: toolApi.schema.enum(exposedOperations),
+        payload: toolApi.schema.unknown(),
+      },
+      execute: async (input, context) => {
+        const validated = validateInput(input);
+        if (validated.operation === 'image.generate') {
+          if (!capability.chatgptImageGeneration || typeof imageTool?.execute !== 'function') {
+            fail(ERROR_CODES.imageGenerationUnavailable,
+              'ChatGPT OAuth image generation is unavailable for this run');
           }
-          return executeGatewayOperation({ input, context, capability, fetchImpl });
-        },
+          return executeImage(validated.payload, context);
+        }
+        return executeGatewayOperation({ input, context, capability, fetchImpl });
+      },
+    }),
+    devryan_write: toolApi({
+      description: 'Create or replace one file in the isolated Bot workspace. This write always follows the configured action policy and may pause for human approval.',
+      args: {
+        path: toolApi.schema.string(),
+        content: toolApi.schema.string(),
+      },
+      execute: async (input, context) => executeGatewayOperation({
+        input: workspaceWriteInput(input, context),
+        context,
+        capability,
+        fetchImpl,
       }),
-      devryan_write: toolApi({
-        description: 'Create or replace one file in the isolated Bot workspace. This write always follows the configured action policy and may pause for human approval.',
-        args: {
-          path: toolApi.schema.string(),
-          content: toolApi.schema.string(),
-        },
-        execute: async (input, context) => executeGatewayOperation({
-          input: workspaceWriteInput(input, context),
-          context,
-          capability,
-          fetchImpl,
-        }),
-      }),
-    },
+    }),
+  };
+  if (imageTool && typeof imageTool.execute === 'function' && imageTool.args) {
+    tools.devryan_image = toolApi({
+      description: 'Generate a raster image with the authorized ChatGPT image tool. Required arguments are prompt, out, and quality; size and images are optional. Save out inside /workspace, for example /workspace/generated-images/result.png. Successful images attach to the assistant reply automatically.',
+      args: imageTool.args,
+      execute: executeImage,
+    });
+  }
+  return {
+    tool: tools,
   };
 };
 
 const DevRyanBotPlugin = async (pluginInput) => {
   const { tool } = await import('@opencode-ai/plugin');
-  return createPlugin({
+  const { default: oauthPlugin } = await import('/opt/devryan/devryan-openai-oauth.mjs');
+  const oauthHooks = await oauthPlugin(pluginInput);
+  const tools = await createPlugin({
     toolApi: tool,
+    beforeImage: () => oauthHooks['tool.execute.before']?.({ tool: 'devryan_image' }),
     imageToolFactory: async () => {
       const { default: imagePlugin } = await import('opencode-gpt-imagegen');
       if (!imagePlugin || typeof imagePlugin.server !== 'function') {
@@ -340,6 +363,7 @@ const DevRyanBotPlugin = async (pluginInput) => {
       return loaded.tool.gpt_imagegen;
     },
   });
+  return { ...tools, ...(oauthHooks.config ? { config: oauthHooks.config } : {}) };
 };
 
 export default DevRyanBotPlugin;

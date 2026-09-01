@@ -19,10 +19,11 @@ export const BOT_FILE_TOOLS = Object.freeze(['edit', 'glob', 'grep', 'read', 'wr
 export const BOT_RUNTIME_TOOLS = Object.freeze(['bash', 'git', 'task', 'terminal']);
 // The gateway plugin version is a deployment fact, not a per-Bot setting. The
 // server stamps this onto every contract it writes.
-export const BOT_CURRENT_GATEWAY_PLUGIN_VERSION = 'devryan-bot-tools@1.2.0';
+export const BOT_CURRENT_GATEWAY_PLUGIN_VERSION = 'devryan-bot-tools@1.3.0';
 
 const REVIEWED_WORKSPACE_WRITE_PLUGIN_VERSIONS = new Set([
   'devryan-bot-tools@1.1.0',
+  'devryan-bot-tools@1.2.0',
   BOT_CURRENT_GATEWAY_PLUGIN_VERSION,
 ]);
 
@@ -482,6 +483,7 @@ const buildOpenCodeConfig = (contract, skillNames = []) => {
   const permissions = {
     '*': 'deny',
     devryan_bot: 'allow',
+    devryan_image: 'allow',
     bash: runtimeTools.includes('bash') ? 'allow' : 'deny',
     terminal: runtimeTools.includes('terminal') ? 'allow' : 'deny',
     git: runtimeTools.includes('git') ? 'allow' : 'deny',
@@ -525,7 +527,7 @@ const buildOpenCodeConfig = (contract, skillNames = []) => {
     promptSections.push('Use devryan_write for every workspace file change. Workspace writes may pause until an authorized person approves the exact path and content.');
   }
   if (autonomousRuntime) {
-    promptSections.push('Work autonomously inside the scoped Bot container and managed workspace. Files explicitly provided to this Bot live in /workspace/Resources; inspect them when relevant and treat those computer files as the source of truth. Never seek host files, Docker access, host credentials, raw browser/CDP, direct MCP, or DevRyan host-task orchestration. Use devryan_bot for governed browser and external actions. When image.generate is available, use it for requested raster images; successful images attach automatically, so do not call artifact.put for them or promise a later Shared-folder publication. Use artifact.put to publish other generated files explicitly, and never scan or expose unrelated computer files.');
+    promptSections.push('Work autonomously inside the scoped Bot container and managed workspace. Files explicitly provided to this Bot live in /workspace/Resources; inspect them when relevant and treat those computer files as the source of truth. Never seek host files, Docker access, host credentials, raw browser/CDP, direct MCP, or DevRyan host-task orchestration. Use devryan_bot for governed browser and external actions. When devryan_image is available, call it with its exact prompt, out, and quality arguments, save out under /workspace/generated-images, and rely on automatic attachment; never guess an image.generate gateway payload, call artifact.put for the image, or promise a later Shared-folder publication. Use artifact.put to publish other generated files explicitly, and never scan or expose unrelated computer files.');
   }
   const assignedSkillPermission = Object.hasOwn(contract, 'skillBindings')
     ? { skill: skillPermissions }
@@ -535,6 +537,7 @@ const buildOpenCodeConfig = (contract, skillNames = []) => {
     task: 'deny',
     devryan_task: 'deny',
     devryan_bot: 'deny',
+    devryan_image: 'deny',
     browser: 'deny',
     devryan_browser: 'deny',
     mcp: 'deny',

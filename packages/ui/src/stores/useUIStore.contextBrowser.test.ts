@@ -90,11 +90,60 @@ describe('useUIStore dedicated browser panel', () => {
     useUIStore.getState().openBrowserPanel(DIRECTORY);
     useUIStore.getState().openBrowserLease(DIRECTORY, { leaseId: 'lease-a', rootSessionId: 'root-a' });
     useUIStore.getState().openBrowserLease(DIRECTORY, { leaseId: 'lease-b', rootSessionId: 'root-a' });
+    useUIStore.getState().pruneBrowserLeaseTabs([]);
+
+    expect(useUIStore.getState().browserLeaseTabsByDirectory[DIRECTORY]).toEqual([]);
+    expect(useUIStore.getState().activeBrowserLeaseIdByDirectory[DIRECTORY]).toBeNull();
+    expect(useUIStore.getState().browserPanelByDirectory[DIRECTORY]?.isOpen).toBe(true);
+    expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]).toBeTruthy();
+  });
+
+  test('collapses an empty panel when its sole authoritative lease ends', () => {
+    useUIStore.getState().openBrowserLease(DIRECTORY, { leaseId: 'lease-a', rootSessionId: 'root-a' });
+    useUIStore.getState().toggleBrowserPanelExpanded(DIRECTORY);
+
+    useUIStore.getState().pruneBrowserLeaseTabs([]);
+
+    expect(useUIStore.getState().browserLeaseTabsByDirectory[DIRECTORY]).toEqual([]);
+    expect(useUIStore.getState().activeBrowserLeaseIdByDirectory[DIRECTORY]).toBeNull();
+    expect(useUIStore.getState().browserPanelByDirectory[DIRECTORY]?.isOpen).toBe(false);
+    expect(useUIStore.getState().browserPanelByDirectory[DIRECTORY]?.expanded).toBe(false);
+  });
+
+  test('selects a surviving lease when the active lease ends without manual tabs', () => {
+    useUIStore.getState().openBrowserLease(DIRECTORY, { leaseId: 'lease-a', rootSessionId: 'root-a' });
+    useUIStore.getState().openBrowserLease(DIRECTORY, { leaseId: 'lease-b', rootSessionId: 'root-a' });
+
+    useUIStore.getState().pruneBrowserLeaseTabs(['lease-a']);
+
+    expect(useUIStore.getState().browserLeaseTabsByDirectory[DIRECTORY]?.map((tab) => tab.leaseId))
+      .toEqual(['lease-a']);
+    expect(useUIStore.getState().activeBrowserLeaseIdByDirectory[DIRECTORY]).toBe('lease-a');
+    expect(useUIStore.getState().browserPanelByDirectory[DIRECTORY]?.isOpen).toBe(true);
+  });
+
+  test('preserves the active lease when only an inactive lease ends', () => {
+    useUIStore.getState().openBrowserLease(DIRECTORY, { leaseId: 'lease-a', rootSessionId: 'root-a' });
+    useUIStore.getState().openBrowserLease(DIRECTORY, { leaseId: 'lease-b', rootSessionId: 'root-a' });
+    const panelBefore = useUIStore.getState().browserPanelByDirectory;
+    const activeBefore = useUIStore.getState().activeBrowserLeaseIdByDirectory;
+
     useUIStore.getState().pruneBrowserLeaseTabs(['lease-b']);
 
     expect(useUIStore.getState().browserLeaseTabsByDirectory[DIRECTORY]?.map((tab) => tab.leaseId))
       .toEqual(['lease-b']);
-    expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]).toBeTruthy();
+    expect(useUIStore.getState().activeBrowserLeaseIdByDirectory[DIRECTORY]).toBe('lease-b');
+    expect(useUIStore.getState().browserPanelByDirectory).toBe(panelBefore);
+    expect(useUIStore.getState().activeBrowserLeaseIdByDirectory).toBe(activeBefore);
+  });
+
+  test('treats repeated authoritative lease membership as a no-op', () => {
+    useUIStore.getState().openBrowserLease(DIRECTORY, { leaseId: 'lease-a', rootSessionId: 'root-a' });
+    const stateBefore = useUIStore.getState();
+
+    useUIStore.getState().pruneBrowserLeaseTabs(['lease-a']);
+
+    expect(useUIStore.getState()).toBe(stateBefore);
   });
 
   test('expanding either sibling panel collapses the other expanded state', () => {

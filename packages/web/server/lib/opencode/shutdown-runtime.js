@@ -19,6 +19,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     getManagedOrchestrationRuntime,
     getBrowserLeaseRuntime,
     getCursorSdkRuntime,
+    getSessionTitleRuntime,
     shouldSkipOpenCodeStop,
     getOpenCodePort,
     getOpenCodeProcess,
@@ -128,6 +129,17 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       try {
         await cursorSdkRuntime.dispose();
       } catch {
+      }
+    }
+
+    const sessionTitleRuntime = typeof getSessionTitleRuntime === 'function'
+      ? getSessionTitleRuntime()
+      : null;
+    if (sessionTitleRuntime && typeof sessionTitleRuntime.dispose === 'function') {
+      try {
+        await sessionTitleRuntime.dispose();
+      } catch (error) {
+        console.warn('Error stopping session title runtime:', error);
       }
     }
 

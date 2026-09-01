@@ -10,7 +10,7 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map(closeComputerHttpServer));
 });
 
-const fixture = async ({ browserOverrides = {}, rotateEgressToken } = {}) => {
+const fixture = async ({ browserOverrides = {}, rotateEgressToken, readiness, releaseInput } = {}) => {
   const calls = [];
   const screencast = createScreencastBroker({ now: () => 1234 });
   const browser = {
@@ -21,13 +21,14 @@ const fixture = async ({ browserOverrides = {}, rotateEgressToken } = {}) => {
     status: () => ({ running: true, launching: false }),
     ...browserOverrides,
   };
-  const control = createControlLeaseManager({ randomBytes: () => Buffer.alloc(18, 6) });
+  const control = createControlLeaseManager({ randomBytes: () => Buffer.alloc(18, 6), releaseInput });
   const server = createComputerHttpServer({
     token: TOKEN,
     browser,
     control,
     screencast,
     rotateEgressToken: rotateEgressToken || (() => undefined),
+    readiness: readiness || (() => true),
   });
   servers.push(server);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -60,12 +61,52 @@ const request = ({ port, pathname, body, token = TOKEN, headers = {} }) => new P
 });
 
 describe('authenticated computer HTTP API', () => {
+  test('awaits held-input release before returning the lease and fences admitted human commands', async () => {
+    let finishRelease;
+    let markRelease;
+    let assertHumanOwner;
+    const releasing = new Promise((resolve) => { markRelease = resolve; });
+    const released = new Promise((resolve) => { finishRelease = resolve; });
+    const { port, control } = await fixture({ releaseInput: () => { markRelease(); return released; },
+      browserOverrides: { executeHuman: async (_command, _args, options) => { assertHumanOwner = options.assertAuthorized; return {}; } } });
+    const actor = { actorId: 'user-01', actorType: 'user' };
+    const lease = control.take(actor);
+    const owner = { ...actor, leaseId: lease.leaseId };
+    expect((await request({ port, pathname: '/v1/control/command', body: { ...owner, command: 'snapshot', args: {} } })).statusCode).toBe(200);
+    const returned = request({ port, pathname: '/v1/control/return', body: owner });
+    await releasing;
+    expect(() => assertHumanOwner()).toThrow();
+    expect(() => control.assertAgentAvailable()).toThrow();
+    finishRelease();
+    const response = await returned;
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body).result).toEqual({ returned: true });
+    expect(control.snapshot()).toBeNull();
+  });
+
+  test('reports input-release failure without returning a successful control response', async () => {
+    const { port, control } = await fixture({ releaseInput: async () => { throw new Error('CDP failed'); } });
+    const actor = { actorId: 'user-01', actorType: 'user' };
+    const lease = control.take(actor);
+    const response = await request({ port, pathname: '/v1/control/return', body: { ...actor, leaseId: lease.leaseId } });
+    expect(response.statusCode).toBe(503);
+    expect(JSON.parse(response.body).error.code).toBe('DEVRYAN_BOT_CONTROL_RELEASE_FAILED');
+    expect(() => control.assertAgentAvailable()).toThrow();
+  });
+
   test('keeps health public and protects every operational route', async () => {
     const { port } = await fixture();
     expect((await request({ port, pathname: '/healthz', token: null })).statusCode).toBe(200);
     const denied = await request({ port, pathname: '/v1/status', token: null });
     expect(denied.statusCode).toBe(401);
     expect(denied.headers['www-authenticate']).toContain('Bearer');
+  });
+
+  test('fails health checks when the virtual display or managed policy is unavailable', async () => {
+    const { port } = await fixture({ readiness: () => false });
+    const response = await request({ port, pathname: '/healthz', token: null });
+    expect(response.statusCode).toBe(503);
+    expect(JSON.parse(response.body)).toEqual({ ok: false });
   });
 
   test('routes reviewed agent commands and refuses arbitrary server paths', async () => {
@@ -136,7 +177,22 @@ describe('authenticated computer HTTP API', () => {
   });
 
   test('streams authenticated JPEG frames without adding persistence', async () => {
-    const { port, screencast } = await fixture();
+    let unsubscribed = 0;
+    let markUnsubscribed;
+    const cleanupFinished = new Promise((resolve) => { markUnsubscribed = resolve; });
+    const { port, screencast } = await fixture({
+      browserOverrides: {
+        subscribeScreencast: async (subscriber) => {
+          subscriber({
+            frame: Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0xff, 0xd9]),
+            width: 800,
+            height: 600,
+            capturedAt: 1234,
+          });
+          return async () => { unsubscribed += 1; markUnsubscribed(); };
+        },
+      },
+    });
     const received = await new Promise((resolve, reject) => {
       const client = http.request({
         host: '127.0.0.1',
@@ -150,10 +206,6 @@ describe('authenticated computer HTTP API', () => {
           response.destroy();
           resolve({ statusCode: response.statusCode, contentType: response.headers['content-type'], chunk });
         });
-        queueMicrotask(() => screencast.publishJpeg(
-          Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0xff, 0xd9]),
-          { width: 800, height: 600 },
-        ));
       });
       client.once('error', reject);
       client.end();
@@ -162,6 +214,43 @@ describe('authenticated computer HTTP API', () => {
     expect(received.contentType).toContain('multipart/x-mixed-replace');
     expect(received.chunk.includes(Buffer.from('Content-Type: image/jpeg'))).toBe(true);
     expect(screencast.snapshot().retainedFrames).toBe(0);
+    await cleanupFinished;
+    expect(unsubscribed).toBe(1);
+  });
+
+  test('cleans a viewer that disconnects while subscription setup is pending', async () => {
+    let releaseSubscription;
+    let markStarted;
+    let activeSubscriptions = 0;
+    const started = new Promise((resolve) => { markStarted = resolve; });
+    const pending = new Promise((resolve) => { releaseSubscription = resolve; });
+    const { port } = await fixture({
+      browserOverrides: {
+        subscribeScreencast: async () => {
+          markStarted();
+          await pending;
+          activeSubscriptions += 1;
+          return async () => { activeSubscriptions -= 1; };
+        },
+      },
+    });
+    const client = http.request({
+      host: '127.0.0.1',
+      port,
+      path: '/v1/screencast',
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    client.on('error', () => undefined);
+    client.end();
+    await started;
+    client.destroy();
+    releaseSubscription();
+
+    const deadline = Date.now() + 1_000;
+    while (activeSubscriptions !== 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(activeSubscriptions).toBe(0);
   });
 
   test('returns a stable conflict before headers when the Bot browser is not open', async () => {

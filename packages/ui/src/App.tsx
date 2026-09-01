@@ -1,6 +1,7 @@
 import React from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ChatView } from '@/components/views/ChatView';
+import { AgentHandoffGuardProvider } from '@/components/chat/AgentHandoffGuard';
 import { FireworksProvider } from '@/contexts/FireworksContext';
 import { Toaster } from '@/components/ui/sonner';
 import { MemoryDebugPanel } from '@/components/ui/MemoryDebugPanel';
@@ -1089,7 +1090,9 @@ function App({ apis }: AppProps) {
               <div className="h-full text-foreground bg-background">
                 <EmbeddedSessionSelectionGate embeddedSessionChat={embeddedSessionChat} isVSCodeRuntime={isVSCodeRuntime} />
                 <SyncAppEffects embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled} />
-                <ChatView />
+                <AgentHandoffGuardProvider>
+                  <ChatView />
+                </AgentHandoffGuardProvider>
                 <Toaster />
               </div>
             </TooltipProvider>
@@ -1130,7 +1133,9 @@ function App({ apis }: AppProps) {
                     onRetry={() => { void handleManualInitRetry(); }}
                     isRetrying={manualInitRetrying}
                   >
-                    <MainLayout />
+                    <AgentHandoffGuardProvider>
+                      <MainLayout />
+                    </AgentHandoffGuardProvider>
                     <Toaster />
                     <>
                       <ConfigUpdateOverlay />

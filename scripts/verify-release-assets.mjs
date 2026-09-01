@@ -27,8 +27,8 @@ export function legacyBrandedReleaseAssetNames(assetNames) {
   return assetNames.filter((name) => /^openchamber[_-]/i.test(name));
 }
 
-async function fetchJson(url, token) {
-  const response = await fetch(url, {
+async function fetchJson(url, token, { allowNotFound = false, fetchImpl = fetch } = {}) {
+  const response = await fetchImpl(url, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
@@ -36,6 +36,7 @@ async function fetchJson(url, token) {
     },
   });
 
+  if (allowNotFound && response.status === 404) return null;
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`GitHub API request failed (${response.status}) for ${url}: ${body}`);
@@ -44,8 +45,30 @@ async function fetchJson(url, token) {
   return response.json();
 }
 
+export async function fetchReleaseByTag({ repo, tag, token, fetchImpl = fetch }) {
+  const direct = await fetchJson(
+    `https://api.github.com/repos/${repo}/releases/tags/${tag}`,
+    token,
+    { allowNotFound: true, fetchImpl },
+  );
+  if (direct) return direct;
+
+  for (let page = 1; ; page += 1) {
+    const releases = await fetchJson(
+      `https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}`,
+      token,
+      { fetchImpl },
+    );
+    const release = releases.find((candidate) => candidate.tag_name === tag);
+    if (release) return release;
+    if (releases.length < 100) break;
+  }
+
+  throw new Error(`GitHub release ${tag} was not found in ${repo}, including drafts`);
+}
+
 async function fetchReleaseAssetNames({ repo, tag, token }) {
-  const release = await fetchJson(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, token);
+  const release = await fetchReleaseByTag({ repo, tag, token });
   const assetNames = [];
 
   for (let page = 1; ; page += 1) {

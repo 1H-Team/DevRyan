@@ -10,6 +10,7 @@ import {
 } from './validation.js';
 import { createBotSharedFileAdmissions } from './shared-files.js';
 import { publicBotActionAttempt } from './approval-service.js';
+import { isBotRunRetryable } from './retry-policy.js';
 
 const DEPLOYMENT_KEY_ID = 'deployment-v1';
 const MAX_MESSAGE_BYTES = 1024 * 1024;
@@ -78,7 +79,7 @@ const publicRun = (row) => Object.freeze({
   computerScopeKey: row.computer_scope_key,
   queueSequence: row.queue_sequence == null ? null : Number(row.queue_sequence),
   state: row.state,
-  retryable: row.state === 'failed' && row.context_snapshot?.retryable === true,
+  retryable: isBotRunRetryable(row),
   interruptionKind: row.interruption_kind || null,
   createdAt: row.created_at || null,
   updatedAt: row.updated_at || null,
@@ -339,6 +340,13 @@ export function createBotChannels({
     const find = () => getAssistantCheckpoint({ run, assistantPhase });
     let message = await find();
     if (message) return message;
+    // Tool publications attach to the admitted response while it is pending.
+    // Only final-answer reconciliation promotes that row to result, so a file
+    // cannot create a competing result bubble or finalize unverified prose.
+    if (assistantPhase === 'result') {
+      const pending = await getAssistantCheckpoint({ run, assistantPhase: 'pending' });
+      if (pending) return pending;
+    }
     try {
       return await createAssistantCheckpoint({ run, messageId, assistantPhase });
     } catch (error) {
@@ -456,6 +464,21 @@ export function createBotChannels({
       return withKey(async (key) => decryptMessage(row, key));
     },
 
+    async loadRunAssistantResult({ runId, channelId } = {}) {
+      const normalizedRunId = validateUuid(runId, 'runId');
+      const normalizedChannelId = validateUuid(channelId, 'channelId');
+      const row = await store.repositories.bot_messages.get({
+        run_id: normalizedRunId,
+        channel_id: normalizedChannelId,
+        role: 'assistant',
+        assistant_phase: 'result',
+      });
+      if (!row || row.finalized_at === null) {
+        fail('Bot run assistant result is missing', 'bot_message_not_found', 409);
+      }
+      return withKey(async (key) => decryptMessage(row, key));
+    },
+
     async decryptMemory(memory) {
       if (!memory?.id || !memory.encrypted_content) {
         fail('Bot memory is invalid', 'bot_memory_invalid', 500);
@@ -485,7 +508,7 @@ export function createBotChannels({
       assertExactObject(input, {
         label: 'Bot user message admission',
         required: [
-          'principal', 'preflight', 'messageId', 'runId', 'revisionId', 'idempotencyKey',
+          'principal', 'preflight', 'messageId', 'acknowledgmentId', 'runId', 'revisionId', 'idempotencyKey',
           'text', 'attachmentIds', 'computerScopeKey', 'modelSnapshot', 'contextSnapshot',
         ],
       });
@@ -495,6 +518,7 @@ export function createBotChannels({
         fail('Bot channel preflight is invalid', 'bot_channel_invalid', 500);
       }
       const messageId = validateUuid(input.messageId, 'messageId');
+      const acknowledgmentId = validateUuid(input.acknowledgmentId, 'acknowledgmentId');
       const runId = validateUuid(input.runId, 'runId');
       const revisionId = validateUuid(input.revisionId, 'revisionId');
       const actorUserId = validateUuid(input.principal?.id, 'principal.id');
@@ -533,8 +557,16 @@ export function createBotChannels({
         text,
         attachmentIds,
       }));
+      const acknowledgmentBodyEnvelope = await withKey(async (key) => encryptMessage(key, {
+        channelId,
+        messageId: acknowledgmentId,
+        text: '',
+        attachmentIds: [],
+      }));
+      const admittedAt = now().toISOString();
       const admitted = await store.enqueueMessageRun({
         messageId,
+        acknowledgmentId,
         runId,
         botId,
         channelId,
@@ -545,10 +577,14 @@ export function createBotChannels({
         computerScopeKey,
         actorUserId,
         bodyEnvelope,
+        acknowledgmentBodyEnvelope,
         attachmentCount: attachmentIds.length,
-        finalizedAt: now().toISOString(),
+        finalizedAt: admittedAt,
         sharedFiles,
       });
+      if (!admitted?.message || !admitted?.run || !admitted?.acknowledgment) {
+        fail('Bot message admission did not return its complete transcript', 'bot_repository_invalid', 500);
+      }
       const message = admitted.message
         ? (admitted.created === true ? Object.freeze({
             id: admitted.message.id,
@@ -564,9 +600,25 @@ export function createBotChannels({
             finalizedAt: admitted.message.finalized_at,
           }) : await withKey(async (key) => decryptMessage(admitted.message, key)))
         : null;
+      const acknowledgment = admitted.acknowledgment
+        ? (admitted.created === true ? Object.freeze({
+            id: admitted.acknowledgment.id,
+            channelId: admitted.acknowledgment.channel_id,
+            runId: admitted.acknowledgment.run_id,
+            actorUserId: null,
+            role: 'assistant',
+            assistantPhase: admitted.acknowledgment.assistant_phase || null,
+            sequence: Number(admitted.acknowledgment.sequence),
+            body: Object.freeze({ text: '', attachmentIds: Object.freeze([]) }),
+            attachmentCount: 0,
+            createdAt: admitted.acknowledgment.created_at,
+            finalizedAt: admitted.acknowledgment.finalized_at || null,
+          }) : await withKey(async (key) => decryptMessage(admitted.acknowledgment, key)))
+        : null;
       return Object.freeze({
         created: admitted.created === true,
         message,
+        acknowledgment,
         run: admitted.run ? publicRun(admitted.run) : null,
         rawRun: admitted.run || null,
       });
@@ -590,7 +642,9 @@ export function createBotChannels({
           || message.assistant_phase !== 'pending' || finalizedAt === null)) {
         fail('Bot assistant checkpoint phase promotion is invalid', 'bot_message_invalid', 500);
       }
-      const normalizedText = typeof text === 'string' ? text : '';
+      const normalizedText = sanitizeBotConversationalText(
+        typeof text === 'string' ? text : '',
+      );
       const bodyEnvelope = await withKey(async (key) => encryptMessage(key, {
         channelId: message.channel_id,
         messageId: message.id,

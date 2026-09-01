@@ -17,6 +17,7 @@ const REVISION_ID = 'f0000000-0000-4000-8000-000000000001';
 const RUN_ID = 'e0000000-0000-4000-8000-000000000001';
 const USER_ID = 'a0000000-0000-4000-8000-000000000001';
 const CLIENT_MESSAGE_ID = 'd0000000-0000-4000-8000-000000000099';
+const ACKNOWLEDGMENT_ID = 'd0000000-0000-4000-8000-000000000100';
 const NOW = '2026-08-23T10:00:00.000Z';
 
 const channel = (id: string): BotChannel => ({
@@ -52,6 +53,23 @@ const message = (
   finalizedAt: NOW,
   ...overrides,
 });
+
+const pendingResponse = (overrides: Partial<BotMessage> = {}): BotMessage => message(CHANNEL_A, 2, {
+  id: ACKNOWLEDGMENT_ID,
+  runId: RUN_ID,
+  actorUserId: null,
+  role: 'assistant',
+  assistantPhase: 'pending',
+  body: { text: '', attachmentIds: [] },
+  attachmentCount: 0,
+  finalizedAt: null,
+  ...overrides,
+});
+
+const sequentialUuid = (...values: string[]) => {
+  let index = 0;
+  return () => values[index++] || values[values.length - 1];
+};
 
 const run = (): BotRun => ({
   id: RUN_ID,
@@ -300,7 +318,7 @@ describe('Production Bot channel store', () => {
     const acceptedRuns: BotRun[] = [];
     const store = createBotChannelStore({
       api,
-      uuid: () => CLIENT_MESSAGE_ID,
+      uuid: sequentialUuid(CLIENT_MESSAGE_ID, ACKNOWLEDGMENT_ID),
       now: () => new Date(NOW),
       getPrincipalId: () => USER_ID,
       onRunAccepted: (acceptedRun) => acceptedRuns.push(acceptedRun),
@@ -311,6 +329,7 @@ describe('Production Bot channel store', () => {
     const send = store.getState().sendDraft(CHANNEL_A);
     expect(request).toEqual({
       messageId: CLIENT_MESSAGE_ID,
+      acknowledgmentId: ACKNOWLEDGMENT_ID,
       idempotencyKey: `bot-message:${CLIENT_MESSAGE_ID}`,
       text: 'Ship it',
       attachmentIds: [],
@@ -318,8 +337,13 @@ describe('Production Bot channel store', () => {
     expect(store.getState().messagesById[CLIENT_MESSAGE_ID].id).toBe(CLIENT_MESSAGE_ID);
     expect(store.getState().messagesById[CLIENT_MESSAGE_ID].runId).toBeNull();
     expect(store.getState().messagesById[CLIENT_MESSAGE_ID].body.text).toBe('Ship it');
-    expect(store.getState().messageIdsByChannelId[CHANNEL_A]).toEqual([CLIENT_MESSAGE_ID]);
-    expect(store.getState().draftsByChannelId[CHANNEL_A]).toBe(undefined);
+    expect(store.getState().messageIdsByChannelId[CHANNEL_A]).toEqual([
+      CLIENT_MESSAGE_ID,
+      ACKNOWLEDGMENT_ID,
+    ]);
+    expect(store.getState().messagesById[ACKNOWLEDGMENT_ID].assistantPhase)
+      .toBe('pending');
+    expect(store.draftStore.getState().draftsByChannelId[CHANNEL_A]).toBe(undefined);
     expect(store.getState().pendingMessageIdByChannelId[CHANNEL_A]).toBe(CLIENT_MESSAGE_ID);
 
     accepted.resolve({
@@ -329,12 +353,13 @@ describe('Production Bot channel store', () => {
         runId: RUN_ID,
         body: { text: 'Ship it', attachmentIds: [] },
       }),
+      acknowledgment: pendingResponse(),
       run: run(),
     });
     await send;
 
     expect(store.getState().messagesById[CLIENT_MESSAGE_ID].runId).toBe(RUN_ID);
-    expect(store.getState().draftsByChannelId[CHANNEL_A]).toBe(undefined);
+    expect(store.draftStore.getState().draftsByChannelId[CHANNEL_A]).toBe(undefined);
     expect(store.getState().pendingMessageIdByChannelId[CHANNEL_A]).toBe(undefined);
     expect(acceptedRuns).toEqual([run()]);
   });
@@ -344,7 +369,7 @@ describe('Production Bot channel store', () => {
     const api = { sendMessage: () => failed.promise } as unknown as BotsApi;
     const store = createBotChannelStore({
       api,
-      uuid: () => CLIENT_MESSAGE_ID,
+      uuid: sequentialUuid(CLIENT_MESSAGE_ID, ACKNOWLEDGMENT_ID),
       getPrincipalId: () => USER_ID,
     });
     store.getState().replaceSnapshot({ channels: [channel(CHANNEL_A)] });
@@ -354,7 +379,7 @@ describe('Production Bot channel store', () => {
     });
 
     const send = store.getState().sendDraft(CHANNEL_A);
-    expect(store.getState().draftsByChannelId[CHANNEL_A]).toBe(undefined);
+    expect(store.draftStore.getState().draftsByChannelId[CHANNEL_A]).toBe(undefined);
     expect(store.getState().messagesById[CLIENT_MESSAGE_ID]?.body.text).toBe('Do not lose this');
     failed.reject(new BotsApiError('Docker Desktop is stopped', {
       status: 503,
@@ -364,7 +389,8 @@ describe('Production Bot channel store', () => {
     expect((error as BotsApiError).code).toBe('bot_runtime_docker_unavailable');
 
     expect(store.getState().messagesById[CLIENT_MESSAGE_ID]).toBe(undefined);
-    expect(store.getState().draftsByChannelId[CHANNEL_A]).toEqual({
+    expect(store.getState().messagesById[ACKNOWLEDGMENT_ID]).toBe(undefined);
+    expect(store.draftStore.getState().draftsByChannelId[CHANNEL_A]).toEqual({
       text: 'Do not lose this',
       attachmentIds: ['a0000000-0000-4000-8000-000000000010'],
     });
@@ -386,12 +412,17 @@ describe('Production Bot channel store', () => {
         if (requests.length === 1) {
           throw new BotsApiError('connection closed', { status: 0, code: 'network_error' });
         }
-        return { created: true, message: acceptedMessage, run: run() };
+        return {
+          created: true,
+          message: acceptedMessage,
+          acknowledgment: pendingResponse(),
+          run: run(),
+        };
       },
     } as unknown as BotsApi;
     const store = createBotChannelStore({
       api,
-      uuid: () => CLIENT_MESSAGE_ID,
+      uuid: sequentialUuid(CLIENT_MESSAGE_ID, ACKNOWLEDGMENT_ID),
       now: () => new Date(NOW),
       getPrincipalId: () => USER_ID,
     });
@@ -404,7 +435,10 @@ describe('Production Bot channel store', () => {
     expect(requests).toHaveLength(2);
     expect(requests[1]).toEqual(requests[0]);
     expect(requests[0]?.idempotencyKey).toBe(`bot-message:${CLIENT_MESSAGE_ID}`);
-    expect(store.getState().messageIdsByChannelId[CHANNEL_A]).toEqual([CLIENT_MESSAGE_ID]);
+    expect(store.getState().messageIdsByChannelId[CHANNEL_A]).toEqual([
+      CLIENT_MESSAGE_ID,
+      ACKNOWLEDGMENT_ID,
+    ]);
     expect(store.getState().unconfirmedMessageIds[CLIENT_MESSAGE_ID]).toBe(undefined);
     expect(store.getState().pendingMessageIdByChannelId[CHANNEL_A]).toBe(undefined);
   });
@@ -423,7 +457,7 @@ describe('Production Bot channel store', () => {
     } as unknown as BotsApi;
     const store = createBotChannelStore({
       api,
-      uuid: () => CLIENT_MESSAGE_ID,
+      uuid: sequentialUuid(CLIENT_MESSAGE_ID, ACKNOWLEDGMENT_ID),
       getPrincipalId: () => USER_ID,
     });
     store.getState().replaceSnapshot({ channels: [channel(CHANNEL_A)] });
@@ -434,11 +468,14 @@ describe('Production Bot channel store', () => {
     expect((error as BotsApiError).code).toBe('bot_invalid_response');
     expect(requests).toHaveLength(2);
     expect(requests[1]).toEqual(requests[0]);
-    expect(store.getState().messageIdsByChannelId[CHANNEL_A]).toEqual([CLIENT_MESSAGE_ID]);
+    expect(store.getState().messageIdsByChannelId[CHANNEL_A]).toEqual([
+      CLIENT_MESSAGE_ID,
+      ACKNOWLEDGMENT_ID,
+    ]);
     expect(store.getState().messagesById[CLIENT_MESSAGE_ID]?.body.text).toBe('Maybe accepted');
     expect(store.getState().unconfirmedMessageIds[CLIENT_MESSAGE_ID]).toBe(true);
     expect(store.getState().pendingMessageIdByChannelId[CHANNEL_A]).toBe(undefined);
-    expect(store.getState().draftsByChannelId[CHANNEL_A]).toBe(undefined);
+    expect(store.draftStore.getState().draftsByChannelId[CHANNEL_A]).toBe(undefined);
     expect(store.getState().sendErrorCodeByChannelId[CHANNEL_A]).toBe('bot_message_not_confirmed');
   });
 
@@ -450,7 +487,10 @@ describe('Production Bot channel store', () => {
       body: { text: 'Already committed', attachmentIds: [] },
     });
     const api = {
-      listMessages: async () => ({ messages: [canonical], nextCursor: null }),
+      listMessages: async () => ({
+        messages: [canonical, pendingResponse()],
+        nextCursor: null,
+      }),
       sendMessage: async () => {
         sendCalls += 1;
         throw new BotsApiError('connection closed', { status: 0, code: 'network_error' });
@@ -458,7 +498,7 @@ describe('Production Bot channel store', () => {
     } as unknown as BotsApi;
     const store = createBotChannelStore({
       api,
-      uuid: () => CLIENT_MESSAGE_ID,
+      uuid: sequentialUuid(CLIENT_MESSAGE_ID, ACKNOWLEDGMENT_ID),
       getPrincipalId: () => USER_ID,
     });
     store.getState().replaceSnapshot({ channels: [channel(CHANNEL_A)] });
@@ -507,9 +547,12 @@ describe('Production Bot channel store', () => {
 
   test('keeps the original failed message when safe run retry is rejected', async () => {
     const attachmentId = 'a0000000-0000-4000-8000-000000000010';
+    const refreshed = { ...run(), state: 'failed' as const, retryable: true };
+    const acceptedRuns: BotRun[] = [];
     const api = {
+      getRunStatus: async () => ({ run: refreshed }),
       retryRun: async () => {
-        throw new BotsApiError('not retryable', { status: 409, code: 'bot_run_not_retryable' });
+        throw new BotsApiError('not retryable', { status: 409, code: 'bot_run_not_retryable', details: { retryReason: 'execution_started' } });
       },
     } as unknown as BotsApi;
     const source = message(CHANNEL_A, 1, {
@@ -518,15 +561,24 @@ describe('Production Bot channel store', () => {
       attachmentCount: 1,
     });
     const store = createBotChannelStore({
-      api,
+      api, onRunAccepted: (current) => acceptedRuns.push(current),
     });
     store.getState().replaceSnapshot({ channels: [channel(CHANNEL_A)] });
     store.getState().upsertMessage(source);
+    const partial = message(CHANNEL_A, 2, { role: 'assistant', runId: RUN_ID,
+      actorUserId: null, body: { text: 'Partial response', attachmentIds: [] } });
+    store.getState().upsertMessage(partial);
+    store.getState().setDraft(CHANNEL_A, { text: 'Unsent follow-up', attachmentIds: [attachmentId] });
+    const draft = store.draftStore.getState().draftsByChannelId[CHANNEL_A];
+
 
     const error = await store.getState().retryRun(RUN_ID)
       .catch((caught: unknown) => caught);
+    expect(acceptedRuns).toEqual([{ ...refreshed, retryable: false }]);
     expect((error as BotsApiError).code).toBe('bot_run_not_retryable');
     expect(store.getState().messagesById[source.id]).toBe(source);
+    expect(store.getState().messagesById[partial.id]).toBe(partial);
+    expect(store.draftStore.getState().draftsByChannelId[CHANNEL_A]).toBe(draft);
     expect(store.getState().sendErrorCodeByChannelId[CHANNEL_A]).toBe('bot_run_not_retryable');
   });
 
@@ -545,4 +597,120 @@ describe('Production Bot channel store', () => {
 
     expect(store.getState().messagesById).toEqual({});
   });
+});
+
+describe('Bot transcript asynchronous reconciliation', () => {
+  test('initial history preserves SSE additions, finalization, and deletion during the fetch', async () => {
+    const page = deferred<{ messages: BotMessage[]; nextCursor: null }>();
+    const store = createBotChannelStore({ api: { listMessages: () => page.promise } as unknown as BotsApi });
+    store.getState().replaceSnapshot({ channels: [channel(CHANNEL_A)] });
+    const partial = pendingResponse({ body: { text: 'internal preamble', attachmentIds: [] } });
+    store.getState().upsertMessage(partial);
+    const request = store.getState().loadInitialMessages(CHANNEL_A);
+    const final = { ...partial, assistantPhase: 'result' as const, finalizedAt: NOW, body: { text: 'Verified answer', attachmentIds: [] } };
+    const added = message(CHANNEL_A, 3);
+    store.getState().upsertMessage(final);
+    store.getState().upsertMessage(added);
+    store.getState().removeMessage(message(CHANNEL_A, 1).id);
+    page.resolve({ messages: [message(CHANNEL_A, 1), partial], nextCursor: null });
+    await request;
+    expect(store.getState().messagesById[final.id]).toBe(final);
+    expect(store.getState().messagesById[added.id]).toBe(added);
+    expect(store.getState().messagesById[message(CHANNEL_A, 1).id]).toBeUndefined();
+  });
+
+  test('never regresses a finalized answer even after the fetch starts later', async () => {
+    const final = pendingResponse({ assistantPhase: 'result', finalizedAt: NOW, body: { text: 'Final', attachmentIds: [] } });
+    const store = createBotChannelStore({ api: {
+      listMessages: async () => ({ messages: [{ ...final, finalizedAt: null, body: { text: 'Partial', attachmentIds: [] } }], nextCursor: null }),
+    } as unknown as BotsApi });
+    store.getState().replaceSnapshot({ channels: [channel(CHANNEL_A)] });
+    store.getState().upsertMessage(final);
+    await store.getState().refreshLatestMessages(CHANNEL_A);
+    expect(store.getState().messagesById[final.id]).toBe(final);
+  });
+
+  test('rejects old channel requests after revoke/regrant under the same principal', async () => {
+    const page = deferred<{ messages: BotMessage[]; nextCursor: null }>();
+    const store = createBotChannelStore({ api: { listMessages: () => page.promise } as unknown as BotsApi });
+    store.getState().replaceSnapshot({ channels: [channel(CHANNEL_A)] });
+    const request = store.getState().loadInitialMessages(CHANNEL_A);
+    store.getState().removeChannel(CHANNEL_A);
+    store.getState().upsertChannel(channel(CHANNEL_A));
+    page.resolve({ messages: [message(CHANNEL_A, 1)], nextCursor: null });
+    await request;
+    expect(store.getState().messagesById).toEqual({});
+  });
+
+  test('keeps draft keystrokes entirely outside transcript notifications', () => {
+    const store = createBotChannelStore();
+    store.getState().replaceSnapshot({ channels: [channel(CHANNEL_A)] });
+    let notifications = 0;
+    const unsubscribe = store.subscribe(() => { notifications += 1; });
+    for (let index = 0; index < 100; index += 1) store.getState().setDraft(CHANNEL_A, { text: `Draft ${index}`, attachmentIds: [] });
+    unsubscribe();
+    expect(notifications).toBe(0);
+    expect(store.draftStore.getState().draftsByChannelId[CHANNEL_A].text).toBe('Draft 99');
+    store.getState().resetPrincipal(USER_ID);
+    expect(store.draftStore.getState().draftsByChannelId).toEqual({});
+  });
+
+  test('retries startup 502/503 reads with a fixed bound, preserving explicit failure after exhaustion', async () => {
+    let attempts = 0;
+    const delays: number[] = [];
+    const store = createBotChannelStore({ delay: async (ms) => { delays.push(ms); }, api: {
+      listMessages: async () => { attempts += 1; throw new BotsApiError('Starting', { status: 503, code: 'unavailable' }); },
+    } as unknown as BotsApi });
+    store.getState().replaceSnapshot({ channels: [channel(CHANNEL_A)] });
+    await expect(store.getState().loadInitialMessages(CHANNEL_A)).rejects.toThrow();
+    expect(attempts).toBe(4);
+    expect(delays).toEqual([250, 750, 1500]);
+    expect(store.getState().loadingByChannelId[CHANNEL_A]).toBeUndefined();
+    expect(store.getState().loadErrorCodeByChannelId[CHANNEL_A]).toBe('unavailable');
+  });
+
+  test('caps inactive history by both channels and bytes, preserving active, busy, and optimistic work', () => {
+    const store = createBotChannelStore({ maxCachedChannels: 1, maxCachedBytes: 1500, isChannelBusy: (id) => id === 'busy' });
+    const ids = ['active', 'busy', 'optimistic', 'old', 'new', 'oversized'];
+    store.getState().replaceSnapshot({ channels: ids.map(channel) });
+    store.getState().setActiveChannel('active');
+    for (const [index, id] of ids.entries()) {
+      store.getState().mergeMessagePage(id, { messages: [message(id, index + 1, {
+        id: `message-${id}`, finalizedAt: id === 'optimistic' ? null : NOW,
+        body: { text: id === 'oversized' ? 'x'.repeat(2000) : id, attachmentIds: [] },
+      })], nextCursor: null });
+    }
+    expect(store.getState().messageIdsByChannelId.active).toEqual(['message-active']);
+    expect(store.getState().messageIdsByChannelId.busy).toEqual(['message-busy']);
+    expect(store.getState().messageIdsByChannelId.optimistic).toEqual(['message-optimistic']);
+    expect(store.getState().messageIdsByChannelId.old).toBeUndefined();
+    expect(store.getState().messageIdsByChannelId.oversized).toBeUndefined();
+    expect(store.getState().channelsById.old).toBeDefined();
+    expect(store.getState().nextCursorByChannelId.old).toBeUndefined();
+  });
+});
+
+test('terminal run cache pruning releases previously busy transcript buckets', () => {
+  let busy = true;
+  const store = createBotChannelStore({ maxCachedChannels: 1, isChannelBusy: () => busy });
+  store.getState().replaceSnapshot({ channels: [channel(CHANNEL_A), channel(CHANNEL_B)] });
+  store.getState().mergeMessagePage(CHANNEL_A, { messages: [message(CHANNEL_A, 1)], nextCursor: null });
+  store.getState().mergeMessagePage(CHANNEL_B, { messages: [message(CHANNEL_B, 2)], nextCursor: null });
+  expect(Object.keys(store.getState().messageIdsByChannelId)).toHaveLength(2);
+  busy = false;
+  store.getState().pruneInactiveCache();
+  expect(Object.keys(store.getState().messageIdsByChannelId)).toHaveLength(1);
+});
+
+test('a fetched final answer outranks a partial event delivered during the read', async () => {
+  const page = deferred<{ messages: BotMessage[]; nextCursor: null }>();
+  const store = createBotChannelStore({ api: { listMessages: () => page.promise } as unknown as BotsApi });
+  store.getState().replaceSnapshot({ channels: [channel(CHANNEL_A)] });
+  const request = store.getState().loadInitialMessages(CHANNEL_A);
+  const partial = pendingResponse({ assistantPhase: 'result', body: { text: 'Out-of-order partial', attachmentIds: [] } });
+  store.getState().upsertMessage(partial);
+  const final = { ...partial, finalizedAt: NOW, body: { text: 'Verified final', attachmentIds: [] } };
+  page.resolve({ messages: [final], nextCursor: null });
+  await request;
+  expect(store.getState().messagesById[final.id]).toBe(final);
 });

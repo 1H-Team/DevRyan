@@ -1,11 +1,26 @@
 import { getSafeSessionStorage } from '@/stores/utils/safeStorage';
-import { lazy } from 'react';
+import React, { lazy } from 'react';
 
 declare const __APP_VERSION__: string | undefined;
 
 const RELOAD_STORAGE_KEY = 'openchamber:chunk-import-reload';
 const RETRY_DELAY_MS = 250;
 const RELOAD_GUARD_MS = 30_000;
+
+export class ChunkLoadTimeoutError extends Error {
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number) {
+    super(`Settings failed to load within ${timeoutMs}ms`);
+    this.name = 'ChunkLoadTimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+interface ChunkRecoveryOptions {
+  retries?: number;
+  timeoutMs?: number;
+}
 
 const DYNAMIC_IMPORT_ERROR_PATTERNS = [
   /Importing a module script failed/i,
@@ -80,18 +95,41 @@ function scheduleReloadOnce(error: unknown): void {
   }, 0);
 }
 
+function loadWithOptionalTimeout<T>(load: () => Promise<T>, timeoutMs?: number): Promise<T> {
+  if (typeof timeoutMs !== 'number' || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return load();
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new ChunkLoadTimeoutError(timeoutMs)), timeoutMs);
+    load().then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export async function importWithChunkRecovery<T>(
   load: () => Promise<T>,
-  options: { retries?: number } = {},
+  options: ChunkRecoveryOptions = {},
 ): Promise<T> {
   const retries = options.retries ?? 1;
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
-      return await load();
+      return await loadWithOptionalTimeout(load, options.timeoutMs);
     } catch (error) {
       lastError = error;
+      if (error instanceof ChunkLoadTimeoutError) {
+        break;
+      }
       if (!isDynamicImportError(error) || attempt >= retries) {
         break;
       }
@@ -108,3 +146,45 @@ export async function importWithChunkRecovery<T>(
 }
 
 export const lazyWithChunkRecovery: typeof lazy = (load) => lazy(() => importWithChunkRecovery(load));
+
+export function retryableLazyWithChunkRecovery<Props extends object>(
+  load: () => Promise<{ default: React.ComponentType<Props> }>,
+  options: ChunkRecoveryOptions = {},
+): React.ComponentType<Props> {
+  type LoadStatus = 'pending' | 'resolved' | 'rejected';
+
+  let loadStatus: LoadStatus;
+  let LazyComponent: React.LazyExoticComponent<React.ComponentType<Props>>;
+
+  const createLazyComponent = () => {
+    loadStatus = 'pending';
+    return lazy(() => importWithChunkRecovery(load, options).then(
+      (module) => {
+        loadStatus = 'resolved';
+        return module;
+      },
+      (error: unknown) => {
+        loadStatus = 'rejected';
+        throw error;
+      },
+    ));
+  };
+
+  // Keep one lazy payload stable while it is pending. Creating React.lazy in a
+  // component instance or hook initializer can suspend before that component
+  // commits, causing React to recreate the payload on every retry and leave the
+  // UI on its loading fallback forever. A rejected payload is replaced only
+  // when an error boundary renders this wrapper again after a user retry.
+  LazyComponent = createLazyComponent();
+
+  const RetryableLazyComponent: React.FC<Props> = (props) => {
+    if (loadStatus === 'rejected') {
+      LazyComponent = createLazyComponent();
+    }
+
+    return React.createElement(LazyComponent, props);
+  };
+
+  RetryableLazyComponent.displayName = 'RetryableLazyComponent';
+  return RetryableLazyComponent;
+}

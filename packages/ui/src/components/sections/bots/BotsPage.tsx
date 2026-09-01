@@ -30,6 +30,7 @@ import { botsDesktopApi, type BotsDesktopApi } from '@/lib/botsDesktopApi';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { useAuthPrincipal } from '@/lib/authSession';
 import { useI18n } from '@/lib/i18n';
+import { botChannelSelectors, useBotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotsStore } from '@/stores/useBotsStore';
 import { BotEditor } from './BotEditor';
 import { BotGallery } from './BotGallery';
@@ -105,6 +106,12 @@ export const BotsPage: React.FC<BotsPageProps> = ({
   const canCreate = capabilityCanCreateBot ?? canCreateBot;
   const runtimeRecoveryKind = resolveBotRuntimeRecovery(capabilities, desktopApi.isAvailable());
   const busyAction = getPendingBotAction(pendingBotMutations, detail?.bot.id || null);
+  const ownerChannelId = useBotChannelStore(
+    botChannelSelectors.ownerChannelId(detail?.bot.id || '', principal.id),
+  );
+  const ownerChannelMessageCount = useBotChannelStore((state) => (
+    ownerChannelId ? state.channelsById[ownerChannelId]?.lastMessageSequence || 0 : 0
+  ));
 
   const refreshCapabilities = React.useCallback(async () => {
     const next = await api.getCapabilities();
@@ -382,13 +389,27 @@ export const BotsPage: React.FC<BotsPageProps> = ({
             })}
             onPublishRevision={(revision, contract, profile) => void runBotMutation(detail.bot.id, 'publish-revision', async () => {
               let runtimeRecoveryAttempted = false;
+              let revisionToPublish = revision;
+              let detailForPublish = detail;
+              if (revision.activatedAt !== null) {
+                const created = await api.createBotRevision(detail.bot.id, {
+                  basedOnRevisionId: revision.id,
+                  contract,
+                });
+                revisionToPublish = created.revision;
+                detailForPublish = {
+                  ...detail,
+                  revisions: [...detail.revisions, created.revision],
+                };
+                setDetail(detailForPublish);
+              }
               const desktopAvailable = desktopApi.isAvailable();
               const publish = (
                 targetRevision: BotRevisionDetail,
                 targetDetail: BotManagementDetail,
                 includeAvatar: boolean,
               ) => api.publishBotRevision(detail.bot.id, targetRevision.id, {
-                contract: targetRevision === revision ? contract : targetRevision.contract,
+                contract: targetRevision === revisionToPublish ? contract : targetRevision.contract,
                 expectedUpdatedAt: targetRevision.updatedAt,
                 profile: {
                   name: profile.name,
@@ -401,7 +422,7 @@ export const BotsPage: React.FC<BotsPageProps> = ({
               const loadBlockedState = async () => {
                 const [nextDetail, health] = await Promise.all([
                   api.getBot(detail.bot.id),
-                  api.getBotActivationHealth(detail.bot.id, revision.id),
+                  api.getBotActivationHealth(detail.bot.id, revisionToPublish.id),
                 ]);
                 setDetail(nextDetail);
                 setActivationHealth(health);
@@ -413,13 +434,17 @@ export const BotsPage: React.FC<BotsPageProps> = ({
                 setCatalog((current) => current.map((bot) => (
                   bot.id === finalBot.id ? finalBot : bot
                 )));
-                setDetail((current) => current ? {
-                  ...current,
-                  bot: finalBot,
-                  revisions: current.revisions.map((entry) => (
-                    entry.id === result.revision.id ? result.revision : entry
-                  )),
-                } : current);
+                setDetail((current) => {
+                  if (!current) return current;
+                  const hasRevision = current.revisions.some((entry) => entry.id === result.revision.id);
+                  return {
+                    ...current,
+                    bot: finalBot,
+                    revisions: hasRevision
+                      ? current.revisions.map((entry) => entry.id === result.revision.id ? result.revision : entry)
+                      : [...current.revisions, result.revision],
+                  };
+                });
                 setActivationHealth(result.health);
                 setRuntimeRecoveryError(null);
                 setPublicationNotice(result.avatarCleanupRequired
@@ -439,7 +464,7 @@ export const BotsPage: React.FC<BotsPageProps> = ({
               }
 
               try {
-                applyPublished(await publish(revision, detail, true));
+                applyPublished(await publish(revisionToPublish, detailForPublish, true));
               } catch (error) {
                 if (!(error instanceof BotsApiError) || error.code !== 'bot_activation_blocked') {
                   throw error;
@@ -457,7 +482,7 @@ export const BotsPage: React.FC<BotsPageProps> = ({
 
                 const refreshed = await api.getBot(detail.bot.id);
                 const savedRevision = refreshed.revisions.find((entry): entry is BotRevisionDetail => (
-                  entry.id === revision.id && Object.hasOwn(entry, 'contract')
+                  entry.id === revisionToPublish.id && Object.hasOwn(entry, 'contract')
                 ));
                 if (!savedRevision) throw error;
                 try {
@@ -546,6 +571,14 @@ export const BotsPage: React.FC<BotsPageProps> = ({
                 ],
               } : current);
             })}
+            onReconnectCredential={(credential) => runBotMutation(detail.bot.id, 'credential', async () => {
+              const result = await api.reconnectBotCredential(detail.bot.id, credential.id, {
+                connectionId: 'host:openai', expectedUpdatedAt: credential.updatedAt,
+              });
+              setDetail((current) => current ? { ...current,
+                credentials: current.credentials.map((entry) => entry.id === result.credential.id ? result.credential : entry),
+              } : current);
+            })}
             onTransition={(lifecycle) => void runBotMutation(detail.bot.id, `lifecycle:${lifecycle}`, async () => {
               const result = await api.transitionBotLifecycle(detail.bot.id, {
                 lifecycle,
@@ -554,6 +587,18 @@ export const BotsPage: React.FC<BotsPageProps> = ({
               useBotsStore.getState().upsertBot(result.bot);
               await refreshSelected();
             })}
+            hasChatHistory={ownerChannelMessageCount > 0}
+            onClearChatHistory={ownerChannelId ? () => void runBotMutation(detail.bot.id, 'clear-chat-history', async () => {
+              const result = await api.deleteBotChannel(ownerChannelId);
+              useBotChannelStore.getState().removeChannel(ownerChannelId);
+              try {
+                const replacement = await api.getOrCreateOwnerChannel(detail.bot.id);
+                useBotChannelStore.getState().upsertChannel(replacement.channel);
+              } catch {
+                void useBotChannelStore.getState().ensureOwnerChannel(detail.bot.id).catch(() => undefined);
+              }
+              setPublicationNotice(result.notice || 'Chat history cleared.');
+            }) : undefined}
             onDeleteCompletely={(request) => void runBotMutation(detail.bot.id, 'purge-complete', async () => {
               const result = await api.deleteBotCompletely(detail.bot.id, request);
               if (result.purge.botDeleted) {

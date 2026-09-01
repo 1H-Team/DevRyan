@@ -31,6 +31,7 @@ const {
     default: ReasoningGroup,
     ReasoningDisclosure,
 } = await import('./ReasoningGroup');
+const { resolveReasoningRunActiveState } = await import('../reasoningGrouping');
 const {
     formatReasoningDuration,
     getReasoningDurationMilliseconds,
@@ -62,7 +63,12 @@ const entries = (parts: Part[]) => parts.map((part) => ({ part, messageId: 'mess
 
 const renderGroup = (
     parts: Part[],
-    options: { providerID?: string; isMessageCompleted?: boolean; isMobile?: boolean } = {},
+    options: {
+        providerID?: string;
+        isMessageCompleted?: boolean;
+        isTrailingLiveRun?: boolean;
+        isMobile?: boolean;
+    } = {},
 ): string => renderToStaticMarkup(
     <ReasoningGroup entries={entries(parts)} providerID="openai" {...options} />,
 );
@@ -73,7 +79,7 @@ describe('reasoning duration presentation', () => {
         expect(formatReasoningDuration(95_000)).toBe('1m 35s');
         expect(formatReasoningDuration(3_723_000)).toBe('1h 2m 3s');
         expect(formatReasoningDuration(1)).toBe('1s');
-        expect(formatReasoningDuration(0)).toBe('0s');
+        expect(formatReasoningDuration(0)).toBe('<1s');
     });
 
     test('uses the wall-clock span across adjacent parts, including overlap', () => {
@@ -108,6 +114,56 @@ describe('reasoning duration presentation', () => {
 });
 
 describe('ReasoningGroup', () => {
+    test('keeps only the trailing reasoning run active across ended-part gaps', () => {
+        expect(resolveReasoningRunActiveState({
+            isMessageCompleted: false,
+            hasActivePart: false,
+            isTrailingLiveRun: true,
+        })).toBe(true);
+        expect(resolveReasoningRunActiveState({
+            isMessageCompleted: false,
+            hasActivePart: false,
+            isTrailingLiveRun: false,
+        })).toBe(false);
+        expect(resolveReasoningRunActiveState({
+            isMessageCompleted: true,
+            hasActivePart: true,
+            isTrailingLiveRun: true,
+        })).toBe(false);
+    });
+
+    test('does not flash a terminal zero-second label between adjacent live parts', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-gap-1', text: 'First.', start: 1_000, end: 1_000 }),
+            reasoningPart({ id: 'reasoning-gap-2', text: 'Second.', start: 1_000, end: 1_000 }),
+        ], { isTrailingLiveRun: true });
+
+        expect(html).toContain('data-reasoning-disclosure-active="true"');
+        expect(html).toContain('Thinking…');
+        expect(html).not.toContain('Thought for');
+    });
+
+    test('terminalizes a non-trailing ended run without reporting zero seconds', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-ended-1', text: 'First.', start: 1_000, end: 1_000 }),
+            reasoningPart({ id: 'reasoning-ended-2', text: 'Second.', start: 1_000, end: 1_000 }),
+        ]);
+
+        expect(html).toContain('data-reasoning-disclosure-active="false"');
+        expect(html).toContain('Thought for &lt;1s');
+        expect(html).not.toContain('Thought for 0s');
+    });
+
+    test('message completion wins over a stale trailing-run hint', () => {
+        const html = renderGroup([
+            reasoningPart({ id: 'reasoning-completed', text: 'Done.', start: 1_000, end: 17_000 }),
+        ], { isMessageCompleted: true, isTrailingLiveRun: true });
+
+        expect(html).toContain('data-reasoning-disclosure-active="false"');
+        expect(html).toContain('Thought for 16s');
+        expect(html).not.toContain('Thinking…');
+    });
+
     test('recognizes the native Enter and Space activation keys only', () => {
         expect(isReasoningDisclosureToggleKey('Enter')).toBe(true);
         expect(isReasoningDisclosureToggleKey(' ')).toBe(true);

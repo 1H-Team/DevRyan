@@ -1,7 +1,7 @@
 # packages/electron/
 
 ## Responsibility
-Primary desktop shell and signed background-runtime executable. App-bound mode
+Primary desktop shell and packaged background-runtime executable. App-bound mode
 boots the DevRyan web server in-process; service-client mode connects to the
 fenced launchd owner; `--runtime-service` creates no window and owns the server,
 Production Bots, routines, memory, computer supervision, and Docker management.
@@ -22,6 +22,14 @@ and desktop-host broker bridges.
   defer to the authoritative main-process live-URL gate instead of denying the
   eventual local renderer.
 - **Manager modules**: `ssh-manager.mjs` and `speech-manager.mjs` encapsulate long-running native integrations and emit structured status events.
+- **Responsive startup**: foreground app-bound launch asks the in-process web
+  server to listen with OpenCode deferred, activates the renderer, and only then
+  resumes OpenCode plus Bot preparation in the background. Automatic runtime-
+  service preflight persists an app-bound fallback and is used directly, so an
+  unavailable signed service cannot trigger the stale 20-second connection wait.
+  Packaged startup leaves Chromium caches intact; the existing explicit cache-
+  clear command remains available. Window hangs, recoveries, renderer exits,
+  and main-frame load failures are recorded as content-free lifecycle logs.
 - **Native state controllers**: `keep-awake-controller.mjs` wraps `powerSaveBlocker` with idempotent apply/stop semantics for the desktop Keep Awake setting.
 - **Bot key ownership**: `bot-secret-store.mjs` creates one 32-byte deployment
   key, seals it with Electron `safeStorage`, and exposes only a defensive-copy
@@ -32,19 +40,25 @@ and desktop-host broker bridges.
 - **Background runtime ownership**: `runtime-service.mjs` owns the versioned
   instance/port/protocol/health/owner-generation descriptor, OS-sealed rotating
   one-time bootstrap, 12-hour renderer session, and short desktop-host lease.
-  `runtime-service-registration.mjs` uses the signed SMAppService helper on
-  macOS 13+ and an explicit-consent, mode-0600 per-user LaunchAgent on older
-  supported hosts. Transactional enable/disable/update handoffs checkpoint and
+  `runtime-service-registration.mjs` uses an Electron-loaded N-API bridge so
+  `SMAppService` runs inside the calling DevRyan bundle on macOS 13+ when macOS
+  recognizes the bundled definition. Unsigned builds that report `not_found`
+  despite carrying that definition, plus older supported hosts, use the private
+  mode-0600 per-user LaunchAgent. An existing managed legacy agent takes
+  precedence so upgrades never create competing registrations. First launch
+  automatically registers the service; approval and safely recoverable failure
+  retain app-bound Bot execution. Transactional enable/disable/update handoffs checkpoint and
   drain before ownership changes; stale/current+1 protocols fail closed while
   current and previous protocols remain rollout-compatible.
   Source-development launches explicitly report the signed service as
   unavailable so a reused packaged shell cannot register stale bundled code.
-  `scripts/build-runtime-service-control.mjs` cross-compiles the helper for the
+  `scripts/build-runtime-service-control.mjs` cross-compiles the bridge for the
   Electron matrix target, while `scripts/verify-runtime-service-package.mjs`
-  rejects packaged apps missing the helper, target architecture, valid agent
-  plist, executable signature, or matching Developer Team identity.
+  opens the ZIP and DMG, executes the packaged status probe, and rejects
+  artifacts missing the bridge, target architecture, valid agent plist,
+  Developer ID signature, notarization prerequisites, or matching Team identity.
 - **Desktop-host broker**: `desktop-host-broker.mjs` projects only short-lived
-  focus, notification, and browser/CDP capabilities from the foreground app to
+  focus, notification, browser/CDP, and browser-observation capabilities from the foreground app to
   the service. App absence returns `desktop_host_unavailable`; it does not stop
   server, routine, memory, or computer ownership.
 - **Bot recovery ownership**: `bot-recovery-dialog.mjs` owns native `.drbr`
@@ -64,7 +78,11 @@ and desktop-host broker bridges.
   argv-only process calls. `ensureReady` is the authoritative, single-flight
   background operation: it checks, sets up, updates, or repairs within three
   state transitions and one 15-minute deadline while retaining the two-minute
-  cap on each Docker command. It emits only sanitized phase/count/code snapshots
+  cap on each Docker command. After Compose starts the fixed topology, it polls
+  for up to 90 seconds of service-health convergence without recreating
+  containers and commits installation state only after health succeeds; failed
+  updates retain the prior manifest plus staged candidate. It emits only
+  sanitized phase/count/code snapshots with terminal `ready`/`failed` guarantees
   through runtime capability state. Docker Desktop's virtualized socket group
   and native Linux's resolved socket group are supplied only to the engine-proxy
   container; the supervisor has no socket mount. Server callbacks accept only fixed
@@ -124,10 +142,11 @@ and desktop-host broker bridges.
   mode, SIGTERM/SIGINT checkpoint and stop the owned runtime; closing foreground
   windows releases the desktop broker but leaves the launchd owner running.
 - **Cache maintenance**: `cache-maintenance.mjs` measures and clears Electron HTTP/code caches for the app session, the agent-browser partition, and every registered isolated manual-browser partition during startup maintenance and Settings/Help cleanup actions, without touching current app storage such as localStorage, cookies, or IndexedDB.
-- **Browser surface ownership**: `browser-surface-manager.mjs` owns manual and lease `WebContentsView` instances. Agent leases retain the dedicated legacy partition; manual surfaces use a main-derived persistent partition hashed from canonical DevRyan origin plus authenticated principal ID. The main process resolves `/auth/session`, enforces the Browser capability for local and configured remote renderers, periodically revalidates active contexts, and destroys manual surfaces on logout, account change, or revocation. A one-time migration clears the former shared profile because its cookies cannot safely be assigned to one user; an Electron-owned registry retains only hashed partition names for cache maintenance. Renderer IPC names allowlisted surface/workspace IDs, and the manager validates the requesting window, authenticated context, and clamped bounds before navigation, layout, capture, inspection, DevTools, viewport emulation, pop-out, dock, focus, activation, or release. Element inspection removes its overlay, waits for the clean frame, then returns bounded rendered markup and an immediate PNG page capture in one correlated result; shared UI crops that frame to the padded visible element bounds. Token-free snapshots carry the sanitized Responsive/Desktop/Mobile mode plus length-capped page favicon metadata; navigation clears stale favicons before the next `page-favicon-updated` event. Fixed modes use Electron device emulation with centered, no-upscale bounds and are reapplied whenever a surface is attached or laid out. Manual surfaces are grouped by opaque workspace ID so one pop-out hosts the active page while sibling views remain parked; switching pages preserves DOM/history/cookies within that user's profile.
+- **Browser surface ownership**: `browser-surface-manager.mjs` owns manual and lease `WebContentsView` instances. Ordinary agent leases retain the dedicated legacy partition; configured branch previews use a main-derived persistent partition hashed from authoritative owner ID plus exact preview origin, while manual surfaces use a separate hash of canonical DevRyan origin plus authenticated renderer principal ID. `branch-preview-browser.mjs` validates that identity and injects Cloudflare Access headers only for matching HTTPS requests and WSS handshakes to the authoritative preview origin; the Electron host's network performs that egress. The main process resolves `/auth/session`, enforces the Browser capability for local and configured remote renderers, periodically revalidates active contexts, and destroys manual surfaces on logout, account change, or revocation. A one-time migration clears the former shared profile because its cookies cannot safely be assigned to one user; an Electron-owned registry retains only hashed partition names for cache maintenance. Renderer IPC names allowlisted surface/workspace IDs, and the manager validates the requesting window, authenticated context, and clamped bounds before navigation, layout, capture, inspection, DevTools, viewport emulation, pop-out, dock, focus, activation, or release. Element inspection removes its overlay, waits for the clean frame, then returns bounded rendered markup and an immediate PNG page capture in one correlated result; shared UI crops that frame to the padded visible element bounds. Token-free snapshots carry the sanitized Responsive/Desktop/Mobile mode plus length-capped page favicon metadata; navigation clears stale favicons before the next `page-favicon-updated` event. Fixed modes use Electron device emulation with centered, no-upscale bounds and are reapplied whenever a surface is attached or laid out. Manual surfaces are grouped by opaque workspace ID so one pop-out hosts the active page while sibling views remain parked; switching pages preserves DOM/history/cookies within that user's profile.
 - **Navigation outcomes**: `browser-navigation-error.mjs` classifies Electron's benign `ERR_ABORTED` result so superseded or redirected app-window and browser-surface navigations do not surface as failures; all other navigation errors remain rejected.
 - **Browser DevTools**: `browser-devtools-controller.mjs` idempotently opens or closes Chromium DevTools in a caller-owned `WebContentsView`, clamps its dock bounds, and can rehost the same dock with its browser surface across pop-out/dock transitions. Electron's custom host uses `detach` mode while view bounds provide the physical dock.
-- **Session-scoped agent browser leases**: `browser-cdp-bridge.mjs` owns one asynchronous loopback WebSocket listener and a fenced map of per-lease capability token, main-owned surface contents, debugger session, client, in-flight commands, and orphan timer. The renderer batch-claims exact `(directory, rootSessionId)` ownership; `main.mjs` waits only for that claim, creates and binds the surface before returning the private capability URL, and publishes token-free metadata plus a surface ID only to the owner window. Moving or popping the surface does not change lease ownership, CDP attachment, context claims, or menu presence. Agent input is projected through a page overlay owned by the surface manager, and screenshot commands temporarily suppress it.
+- **Session-scoped agent browser leases**: `browser-cdp-bridge.mjs` owns one asynchronous loopback WebSocket listener and a fenced map of per-lease capability token, main-owned surface contents, debugger session, client, in-flight commands, and orphan timer. The renderer batch-claims exact `(directory, rootSessionId)` ownership when it has the session locally. For authoritative managed ownership, `main.mjs` may instead broker the remote account through the single privileged workstation main window, without requiring that renderer to log into the remote owner. It creates and binds the surface before returning the private capability URL and publishes token-free metadata plus a surface ID only to the host window. Moving or popping the surface does not change lease ownership, CDP attachment, context claims, or menu presence. Agent input is projected through one isolated-world 28×32 system-arrow overlay whose hotspot is its tip, whose pressed state scales subtly, and which hides after four idle seconds. Agent screenshots temporarily suppress the overlay, while observation frames retain it.
+- **Demand-driven browser observation**: `browser-surface-manager.mjs` owns one shared capture loop per observed lease. It permits one capture in flight, caps output at 1280×720, emits JPEG quality 65 at no more than eight frames per second, drops frames for backpressured subscribers, retains no frame history, and stops immediately with the final subscriber. App-bound server callbacks consume it directly; runtime-service callbacks relay the same multipart stream through the authenticated foreground desktop-host broker. Endpoint absence or foreground-host loss is a view-only availability failure and does not mutate CDP control or lease lifecycle.
 - **Managed agent-browser runtime**: Electron lazily provisions the packaged `agent-browser` skill and exact pinned CLI under the active `OPENCHAMBER_DATA_DIR` only from the managed-child launch callback. Configured external/remote OpenCode runtimes are not mutated. The three private child variables are supplied through that injected lifecycle callback instead of ambient `process.env`. Local-only `desktop_agent_browser_status|install|repair` IPC supports Settings without exposing mutation over HTTP; failures are nonfatal to desktop startup.
 - **Diagnostics export**: `desktop_export_diagnostics` owns the native save
   dialog and streams the in-process server ZIP through a private sibling
@@ -161,15 +180,21 @@ and desktop-host broker bridges.
 - **Depends on**: `@openchamber/web` server entrypoint, Electron runtime APIs, `electron-updater`, OS facilities.
 - **Consumes/hosts**: web UI bundle served from local web server; startup splash and boot metadata are injected from main process.
 - **Contract with shared UI**: `__TAURI__` invoke commands and emitted `openchamber:*` events. Browser surfaces use local-only `desktop_browser_surface_*` operations plus surface-ID capture and DevTools commands; manual groups add local-only `desktop_browser_workspace_*` activate/pop-out/dock/focus operations. Window-scoped token-free `browser-surface-updated` snapshots include manual workspace/tab identity. Agent leases use snapshot, exact context claims, observed-lease selection, `desktop_agent_browser_*`, window-scoped `browser-agent-leases`, and global-count-only `browser-agent-lease-total`; the old bind command remains a compatibility status read instead of accepting renderer `webContentsId` ownership.
-- **Packaging/release hooks**: `packages/electron/scripts/*` for bundling main process, native helper build/signing, release metadata finalization.
+- **Packaging/release hooks**: `packages/electron/scripts/*` for bundling the main process, native bridge build/signing, archive verification, and release metadata finalization.
 - **Window-state persistence**: `window-state-persistence.mjs` snapshots native `BrowserWindow` values before queued settings writes, so shutdown never retains a destroyed native window.
 - **Quit cleanup**: `quit-cleanup.mjs` checkpoints Bot runs, stops Bot
   dispatcher/index requests, then orders normal app quit after general
   owned-resource cleanup; it deduplicates the main-process stop promise and
   bounds a genuinely hung cleanup at ten seconds without deleting named Bot
   volumes.
-- **Native packaging verification**: `scripts/native-module-paths.mjs` resolves workspace/transitive native modules without assuming Bun hoisting, while `scripts/packaged-native-modules.mjs` rejects artifacts missing required Electron ABI bindings or Cursor SDK platform artifacts (`rg`, `cursorsandbox`, and both tree-sitter bindings). `scripts/verify-runtime-service-package.mjs` separately enforces the signed background-service helper and LaunchAgent contract on the finished app for both release architectures. Cursor SDK 1.0.28 uses Node's built-in SQLite, so no transitive Cursor `sqlite3` ABI rebuild is performed.
+- **Native packaging verification**: `scripts/native-module-paths.mjs` resolves workspace/transitive native modules without assuming Bun hoisting, while `scripts/packaged-native-modules.mjs` rejects artifacts missing required Electron ABI bindings or Cursor SDK platform artifacts (`rg`, `cursorsandbox`, and both tree-sitter bindings). `scripts/verify-runtime-service-package.mjs` separately enforces the in-process background bridge and LaunchAgent contract in the unpacked app, ZIP, and DMG for both release architectures; unsigned artifacts must expose the usable private-agent fallback and may not probe as `not_found`. Cursor SDK 1.0.28 uses Node's built-in SQLite, so no transitive Cursor `sqlite3` ABI rebuild is performed.
 - **Regression suite**: `bun run test` recursively discovers Electron `*.test.*` files outside generated/package output and runs them under Bun; the suite contract rejects missed files, and the root full and affected validation gates invoke this package suite.
+- **Browser inspection acceptance**: `tests/browser-inspection/run.mjs` explicitly
+  launches the pinned Electron runtime with an isolated temporary profile and
+  network-blocked in-memory tooltip fixture. It executes the managed browser
+  plugin's generated inspection script in Chromium and verifies present,
+  dismissed, ambiguous, invalid-selector, and escaped-selector results without
+  loading the production runtime or touching its journal; see the fixture README.
 - **Native pointer acceptance**: `scripts/bot-catalog-native-pointer-smoke.mjs`
   launches the current source Electron runtime with isolated DevRyan and Chromium
   data, signs in through the loopback-only Test Administrator endpoint, locates

@@ -1,5 +1,4 @@
 import fs from 'node:fs/promises';
-import { constants as fsConstants } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile as execFileCallback } from 'node:child_process';
@@ -67,28 +66,6 @@ const legacyPlist = ({ executablePath, dataDirectory }) => `<?xml version="1.0" 
 </plist>
 `;
 
-const parseHelperOutput = (stdout) => {
-  if (typeof stdout !== 'string' || Buffer.byteLength(stdout) > MAX_OUTPUT_BYTES) {
-    fail('Runtime service control returned invalid output', 'runtime_service_control_invalid');
-  }
-  let payload;
-  try {
-    payload = JSON.parse(stdout.trim());
-  } catch {
-    fail('Runtime service control returned invalid output', 'runtime_service_control_invalid');
-  }
-  const code = payload?.code ?? null;
-  if (!payload
-    || typeof payload !== 'object'
-    || Array.isArray(payload)
-    || typeof payload.ok !== 'boolean'
-    || !ALLOWED_STATES.has(payload.state)
-    || (code !== null && typeof code !== 'string')) {
-    fail('Runtime service control returned invalid output', 'runtime_service_control_invalid');
-  }
-  return Object.freeze({ ok: payload.ok, state: payload.state, code });
-};
-
 export const createRuntimeServiceRegistration = ({
   platform = process.platform,
   macosMajor,
@@ -101,6 +78,8 @@ export const createRuntimeServiceRegistration = ({
   fsPromises = fs,
   execFile = execFileDefault,
   developmentMode = false,
+  nativeControl = null,
+  nativeControlErrorCode = null,
 } = {}) => {
   if (platform !== 'darwin') {
     return Object.freeze({
@@ -118,10 +97,11 @@ export const createRuntimeServiceRegistration = ({
   }
 
   const modern = macosMajor >= 13 && isPackaged === true;
-  const helper = resourcesPath
-    ? path.join(resourcesPath, 'native', 'DevRyanRuntimeServiceControl')
-    : '';
   const legacyPath = path.join(homeDirectory, 'Library', 'LaunchAgents', `${LABEL}.legacy.plist`);
+  const bundledPlistPath = typeof resourcesPath === 'string' && path.isAbsolute(resourcesPath)
+    ? path.resolve(resourcesPath, '..', 'Library', 'LaunchAgents', `${LABEL}.plist`)
+    : null;
+  let activeMode = modern ? 'smappservice' : 'legacy';
 
   if (developmentMode === true) {
     return Object.freeze({
@@ -141,79 +121,43 @@ export const createRuntimeServiceRegistration = ({
     });
   }
 
-  const preflightHelper = async () => {
-    let entry;
-    try {
-      entry = await fsPromises.stat(helper);
-    } catch (error) {
-      if (error?.code === 'ENOENT') {
-        fail(
-          'This DevRyan build is missing the signed background runtime helper',
-          'runtime_service_helper_missing',
-        );
-      }
-      fail(
-        'The signed background runtime helper could not be inspected',
-        'runtime_service_helper_unreadable',
-      );
+  const callNativeControl = async (command) => {
+    if (!modern) fail('SMAppService is unavailable', 'smappservice_unavailable');
+    if (!nativeControl) {
+      const code = typeof nativeControlErrorCode === 'string'
+        ? nativeControlErrorCode
+        : 'runtime_service_native_bridge_missing';
+      const message = code === 'runtime_service_native_bridge_missing'
+        ? 'This DevRyan build is missing the background runtime native bridge'
+        : 'The background runtime native bridge could not be loaded';
+      fail(message, code);
     }
-    if (!entry.isFile()) {
-      fail(
-        'The signed background runtime helper is invalid',
-        'runtime_service_helper_invalid',
-      );
+    if (typeof nativeControl[command] !== 'function') {
+      fail('The background runtime native bridge is invalid', 'runtime_service_native_bridge_invalid');
     }
-    try {
-      await fsPromises.access(helper, fsConstants.X_OK);
-    } catch {
-      fail(
-        'The signed background runtime helper is not executable',
-        'runtime_service_helper_not_executable',
-      );
-    }
-  };
-
-  const callHelper = async (command) => {
-    if (!modern || !helper) fail('SMAppService is unavailable', 'smappservice_unavailable');
-    await preflightHelper();
     let result;
     try {
-      result = await execFile(helper, [command], {
-        encoding: 'utf8',
-        maxBuffer: MAX_OUTPUT_BYTES,
-        timeout: 15_000,
-      });
+      result = await nativeControl[command]();
     } catch (error) {
-      if (typeof error?.stdout === 'string' && error.stdout.trim()) return parseHelperOutput(error.stdout);
-      if (error?.code === 'ENOENT') {
-        fail(
-          'This DevRyan build is missing the signed background runtime helper',
-          'runtime_service_helper_missing',
-        );
-      }
-      if (error?.code === 'EACCES') {
-        fail(
-          'The signed background runtime helper is not executable',
-          'runtime_service_helper_not_executable',
-        );
-      }
-      if (error?.killed === true || error?.code === 'ETIMEDOUT') {
-        fail('Background runtime control timed out', 'runtime_service_control_timeout');
-      }
-      if (/bad cpu type|wrong architecture/i.test(String(error?.stderr || error?.message || ''))) {
-        fail(
-          'The signed background runtime helper does not support this Mac',
-          'runtime_service_helper_wrong_arch',
-        );
-      }
-      fail('Background runtime control could not start', 'runtime_service_control_launch_failed');
+      const code = typeof error?.code === 'string' && error.code.startsWith('runtime_service_')
+        ? error.code
+        : 'runtime_service_native_bridge_failed';
+      fail('Background runtime control failed', code);
     }
-    return parseHelperOutput(result.stdout);
+    const code = result?.code ?? null;
+    if (!result
+      || typeof result !== 'object'
+      || typeof result.ok !== 'boolean'
+      || !ALLOWED_STATES.has(result.state)
+      || (code !== null && typeof code !== 'string')) {
+      fail('The background runtime native bridge returned an invalid result', 'runtime_service_native_bridge_invalid');
+    }
+    return Object.freeze({ ok: result.ok, state: result.state, code });
   };
 
   const modernStatus = async () => {
     try {
-      return await callHelper('status');
+      return await callNativeControl('status');
     } catch (error) {
       if (error instanceof RuntimeServiceRegistrationError) {
         return Object.freeze({ ok: false, state: 'unavailable', code: error.code });
@@ -223,8 +167,8 @@ export const createRuntimeServiceRegistration = ({
   };
 
   const registerModern = async () => {
-    const result = await callHelper('register');
-    if (!result.ok) {
+    const result = await callNativeControl('register');
+    if (!result.ok && result.state !== 'not_found') {
       fail(
         'macOS could not register the signed background runtime',
         result.code || 'smappservice_registration_failed',
@@ -236,6 +180,28 @@ export const createRuntimeServiceRegistration = ({
   const legacyStatus = async () => {
     const exists = await fsPromises.stat(legacyPath).then((entry) => entry.isFile(), () => false);
     return Object.freeze({ ok: true, state: exists ? 'enabled' : 'not_registered', code: null });
+  };
+
+  const bundledDefinitionExists = async () => (
+    bundledPlistPath !== null
+      && await fsPromises.stat(bundledPlistPath).then((entry) => entry.isFile(), () => false)
+  );
+
+  const selectModernMode = async () => {
+    const legacy = await legacyStatus();
+    if (legacy.state === 'enabled') {
+      activeMode = 'legacy';
+      return Object.freeze({ mode: activeMode, status: legacy });
+    }
+
+    const current = await modernStatus();
+    if (current.state === 'not_found' && await bundledDefinitionExists()) {
+      activeMode = 'legacy';
+      return Object.freeze({ mode: activeMode, status: legacy });
+    }
+
+    activeMode = 'smappservice';
+    return Object.freeze({ mode: activeMode, status: current });
   };
 
   const registerLegacy = async ({ allowLegacy = false } = {}) => {
@@ -277,13 +243,39 @@ export const createRuntimeServiceRegistration = ({
   };
 
   return Object.freeze({
-    status: () => (modern ? modernStatus() : legacyStatus()),
-    register: (options) => (modern ? registerModern() : registerLegacy(options)),
-    unregister: () => (modern ? callHelper('unregister') : unregisterLegacy()),
-    settingsUrl: modern
-      ? 'x-apple.systempreferences:com.apple.LoginItems-Settings.extension'
-      : null,
-    mode: modern ? 'smappservice' : 'legacy',
+    status: async () => {
+      if (!modern) return legacyStatus();
+      return (await selectModernMode()).status;
+    },
+    register: async (options) => {
+      if (!modern) return registerLegacy(options);
+      const selected = await selectModernMode();
+      if (selected.mode === 'legacy') return registerLegacy(options);
+      const registered = await registerModern();
+      if (registered.state === 'not_found' && await bundledDefinitionExists()) {
+        activeMode = 'legacy';
+        return registerLegacy(options);
+      }
+      return registered;
+    },
+    unregister: async () => {
+      if (!modern) return unregisterLegacy();
+      const legacy = await legacyStatus();
+      if (activeMode === 'legacy' || legacy.state === 'enabled') {
+        activeMode = 'legacy';
+        return unregisterLegacy();
+      }
+      activeMode = 'smappservice';
+      return callNativeControl('unregister');
+    },
+    get settingsUrl() {
+      return activeMode === 'smappservice'
+        ? 'x-apple.systempreferences:com.apple.LoginItems-Settings.extension'
+        : null;
+    },
+    get mode() {
+      return activeMode;
+    },
     legacyPath,
   });
 };

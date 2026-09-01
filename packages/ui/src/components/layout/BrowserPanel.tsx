@@ -1,9 +1,11 @@
 import React from 'react';
-import { RiCloseLine, RiFullscreenExitLine, RiFullscreenLine, RiGlobalLine } from '@remixicon/react';
+import { RiCloseLine, RiFullscreenExitLine, RiFullscreenLine, RiGlobalLine, RiLoader4Line } from '@remixicon/react';
 
 import { Button } from '@/components/ui/button';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
+import { startBrowserAgentView, stopBrowserAgentView, type BrowserAgentViewSession } from '@/lib/browserAgentApi';
+import { isDesktopLocalOriginActive, isElectronShell } from '@/lib/desktop';
 import { resolveRootSessionID } from '@/lib/sessionLineage';
 import { cn } from '@/lib/utils';
 import {
@@ -47,6 +49,10 @@ const BrowserLeasePane: React.FC<{ leaseId: string; active: boolean }> = React.m
   const lease = useBrowserAgentStore(leaseSelector);
   if (!lease) return null;
 
+  if (lease.transport === 'stream') {
+    return <RemoteBrowserLeasePane leaseId={leaseId} active={active} />;
+  }
+
   return (
     <div
       className={cn('absolute inset-0', active ? 'z-10 opacity-100' : 'z-0 pointer-events-none opacity-0')}
@@ -64,6 +70,100 @@ const BrowserLeasePane: React.FC<{ leaseId: string; active: boolean }> = React.m
   );
 });
 BrowserLeasePane.displayName = 'BrowserLeasePane';
+
+const RemoteBrowserLeasePane: React.FC<{ leaseId: string; active: boolean }> = React.memo(({ leaseId, active }) => {
+  const { t } = useI18n();
+  const leaseSelector = React.useMemo(() => browserAgentLeaseSelectors.lease(leaseId), [leaseId]);
+  const lease = useBrowserAgentStore(leaseSelector);
+  const leaseAvailable = Boolean(lease);
+  const [view, setView] = React.useState<BrowserAgentViewSession | null>(null);
+  const [state, setState] = React.useState<'idle' | 'connecting' | 'live' | 'error'>('idle');
+  const [retry, setRetry] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!active || !leaseAvailable) {
+      setView(null);
+      setState('idle');
+      return;
+    }
+    let disposed = false;
+    let currentView: BrowserAgentViewSession | null = null;
+    setState('connecting');
+    void startBrowserAgentView(leaseId).then((created) => {
+      if (disposed) {
+        void stopBrowserAgentView(created);
+        return;
+      }
+      currentView = created;
+      setView(created);
+    }).catch(() => {
+      if (!disposed) setState('error');
+    });
+    return () => {
+      disposed = true;
+      setView(null);
+      if (currentView) void stopBrowserAgentView(currentView);
+    };
+  }, [active, leaseAvailable, leaseId, retry]);
+
+  if (!lease) return null;
+  return (
+    <div
+      className={cn('absolute inset-0 flex flex-col bg-background', active ? 'z-10 opacity-100' : 'z-0 pointer-events-none opacity-0')}
+      aria-hidden={!active}
+      data-browser-lease-pane={leaseId}
+      data-browser-remote-view-state={state}
+    >
+      <div className="flex h-[38px] shrink-0 items-center justify-between gap-3 border-b border-border/40 bg-[var(--surface-background)] px-3">
+        <div className="min-w-0">
+          <span className="block truncate typography-ui-label text-foreground">
+            {lease.agent ? `${lease.agent} · ${lease.title || lease.hostname || 'Browser'}` : lease.title || lease.hostname || 'Browser'}
+          </span>
+        </div>
+        <span className="shrink-0 rounded-full border border-border/60 bg-[var(--surface-elevated)] px-2 py-0.5 typography-micro text-muted-foreground">
+          {t('contextPanel.browser.viewOnly')}
+        </span>
+      </div>
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
+        {view ? (
+          <img
+            src={view.streamUrl}
+            alt={t('contextPanel.browser.liveViewAlt')}
+            className="pointer-events-none h-full w-full select-none object-contain"
+            draggable={false}
+            onLoad={() => setState('live')}
+            onError={() => {
+              setView(null);
+              setState('error');
+              void stopBrowserAgentView(view);
+            }}
+          />
+        ) : null}
+        {state !== 'live' ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-white/80">
+            {state === 'connecting' ? <RiLoader4Line className="size-6 animate-spin motion-reduce:animate-none" /> : <RiGlobalLine className="size-7" />}
+            <p className="typography-ui-label text-white">
+              {state === 'error'
+                ? t('contextPanel.browser.liveViewUnavailable')
+                : t('contextPanel.browser.agentDriving')}
+            </p>
+            <p className="max-w-sm typography-micro text-white/65">
+              {state === 'error'
+                ? t('contextPanel.browser.liveViewUnavailableHint')
+                : t('contextPanel.browser.liveViewConnecting')}
+            </p>
+            {state === 'error' ? (
+              <Button type="button" variant="secondary" size="sm" onClick={() => setRetry((value) => value + 1)}>
+                {t('contextPanel.preview.actions.retry')}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+});
+RemoteBrowserLeasePane.displayName = 'RemoteBrowserLeasePane';
 
 const BrowserLeaseRootPruner: React.FC<{ directory: string }> = React.memo(({ directory }) => {
   const tabs = useUIStore((state) => state.browserLeaseTabsByDirectory[directory] ?? EMPTY_BROWSER_LEASE_TABS);
@@ -120,6 +220,7 @@ export const BrowserPanel: React.FC = () => {
     && liveLeaseIds.includes(activeLeaseId)
     ? activeLeaseId
     : null;
+  const usesNativeLeaseSurface = isElectronShell() && isDesktopLocalOriginActive();
   const [isResizing, setIsResizing] = React.useState(false);
   const [availableWidth, setAvailableWidth] = React.useState<number | null>(null);
   const panelRef = React.useRef<HTMLElement | null>(null);
@@ -172,12 +273,12 @@ export const BrowserPanel: React.FC = () => {
   }, []);
 
   React.useEffect(() => {
-    void setObservedBrowserAgentLease(observedLeaseId);
-  }, [observedLeaseId]);
+    if (usesNativeLeaseSurface) void setObservedBrowserAgentLease(observedLeaseId);
+  }, [observedLeaseId, usesNativeLeaseSurface]);
 
   React.useEffect(() => () => {
-    void setObservedBrowserAgentLease(null);
-  }, []);
+    if (usesNativeLeaseSurface) void setObservedBrowserAgentLease(null);
+  }, [usesNativeLeaseSurface]);
 
   const applyLiveWidth = React.useCallback((nextWidth: number) => {
     panelRef.current?.style.setProperty('--oc-browser-panel-width', `${nextWidth}px`);

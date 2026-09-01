@@ -1,6 +1,6 @@
 # VS Code Backend Modules
 
-Managed OpenCode startup provisions the same sanitized repository-owned user profile used by web/Electron before generating runtime overlays. It resolves `default-config/user-profile` from the extension bundle, preserves user-modified managed files, installs missing declared plugins into the user's OpenCode config directory, and fails visibly when required package installation cannot complete. Shared provisioning gives Meridian's OpenCode adapter a combined Claude Code/client prompt default, migrates the previously owned client-only baseline, and preserves explicit user prompt choices and unrelated Meridian settings. The provider bridge exposes the same safe persistent Claude-only compatibility switch as web/Electron; configured external runtimes are read-only. Managed agent overlays allow the active workspace, its worktree root, and the matching canonical `~/.config/openchamber/projects/<project-id>/plans` directory while preserving each agent's role-level read/edit restrictions. They also apply the web-owned approved-skill resolver: locally discovered OpenCode and `.agents` paths are authoritative, live runtime metadata may enrich exact path matches only, hidden, retired, cache, upstream-only, `.cursor`, `.codex`, and `.claude` skills are removed, and every skill-capable managed agent receives deny-by-default exact-name permissions plus only its visible named directories. Managed launches remove a broad external-skill disable flag and force the Claude-only skill disable flag so `.agents` remains available while `.claude` is never registered. When OpenAI is active through auth, `OPENAI_API_KEY`, or provider config, the managed overlay adds liveness bounds of 120 seconds for response headers, 300 seconds between stream chunks, and 15 minutes for the whole request. Explicit numeric values or `false` remain authoritative; each startup sync replaces stale DevRyan-generated values, removes the generated row when OpenAI becomes inactive, and never creates model availability.
+Managed OpenCode startup provisions the same sanitized repository-owned user profile used by web/Electron before generating runtime overlays. It resolves `default-config/user-profile` from the extension bundle, preserves user-modified managed files, installs missing declared plugins into the user's OpenCode config directory, and fails visibly when required package installation cannot complete. Shared provisioning gives Meridian's OpenCode adapter a combined Claude Code/client prompt default, migrates the previously owned client-only baseline, and preserves explicit user prompt choices and unrelated Meridian settings. The provider bridge exposes the same safe persistent Claude-only compatibility switch as web/Electron; configured external runtimes are read-only. Managed agent overlays allow the active workspace, its Git worktree root, the active project's OpenCode worktree container, and the resolved DevRyan data root (`OPENCHAMBER_DATA_DIR`, otherwise `~/.config/openchamber`) while preserving each agent's role-level read/edit restrictions. The project container resolves under `XDG_DATA_HOME` (otherwise `~/.local/share`) from Git/OpenCode project metadata or the active OpenCode worktree path; sibling worktrees are allowed without exposing the shared parent or unrelated projects, and unresolved identity adds no broad fallback. The process-wide data-root rule covers plan files for every project without exposing unrelated `~/.config` directories. They also apply the web-owned approved-skill resolver: locally discovered OpenCode and `.agents` paths are authoritative, live runtime metadata may enrich exact path matches only, hidden, retired, cache, upstream-only, `.cursor`, `.codex`, and `.claude` skills are removed, and every skill-capable managed agent receives deny-by-default exact-name permissions plus only its visible named directories. Managed launches remove a broad external-skill disable flag and force the Claude-only skill disable flag so `.agents` remains available while `.claude` is never registered. When OpenAI is active through auth, `OPENAI_API_KEY`, or provider config, the managed overlay adds liveness bounds of 120 seconds for response headers, 300 seconds between stream chunks, and 15 minutes for the whole request. Explicit numeric values or `false` remain authoritative; each startup sync replaces stale DevRyan-generated values, removes the generated row when OpenAI becomes inactive, and never creates model availability.
 
 On POSIX hosts, those managed overlays also allow `/tmp` and its canonical real path for every agent that declares a permission block, without widening the agent's read, edit, or tool permissions.
 
@@ -50,7 +50,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 
 - `bridge-git-special-runtime.ts`
   - Specialized Git flows (`commit-message`, `pr-description`, `conflict-details`) and generation helpers.
-  - Commit-message drafts accept selected paths and staging mode, then collect status/history, line statistics, and at most two bounded batch diffs in the extension host. The shared runtime gives direct Zen generation the remainder of a 4.5-second end-to-end budget, repairs overlong Conventional Commit subjects, returns two to four commit-body details, and falls back to a deterministic factual local draft after slow, unavailable, or invalid AI output. Slow models enter a five-minute cooldown and one action never performs a second provider attempt. Sanitized timings include AI/local source and provider outcome; no OpenCode session is created. The context-based bridge message remains supported; PR generation retains its separate existing flow.
+  - Commit-message drafts accept selected paths and staging mode, then collect status/history, line statistics, and at most two bounded batch diffs in the extension host. The shared runtime gives direct Zen generation the remainder of a 20-second end-to-end budget, repairs overlong Conventional Commit subjects, returns two to four commit-body details, and falls back to a deterministic factual local draft after slow, unavailable, or invalid AI output. Slow models enter a five-minute cooldown and one action never performs a second provider attempt. Sanitized timings include AI/local source and provider outcome; no OpenCode session is created. The context-based bridge message remains supported; PR generation retains its separate existing flow.
 
 - `bridge-git-process-runtime.ts`
   - Git process execution and environment setup (`execGit`), including SSH agent socket resolution.
@@ -58,6 +58,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 - `bridge-fs-runtime.ts`
   - Bridge handlers for filesystem-related message routes.
   - Uses shared FS helpers via injected dependencies.
+  - Generates PR title/body JSON directly through every live zero-cost Zen model with a 15-second per-model timeout; it never creates or prompts an OpenCode session and does not consult the selected chat model.
 
 - `bridge-fs-helpers-runtime.ts`
   - Filesystem/path/search helper functions:
@@ -95,7 +96,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     mark exact scopes; restart ownership remains here rather than in UI prompts.
 
 - `opencodeVersionPolicy.ts`
-  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.23 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
+  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.25 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
 
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers. Shared settings migrate the legacy wide-chat boolean to the numeric chat-width preference before returning it to the webview.
@@ -108,6 +109,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Includes session activity snapshot bridge handler used by webview parity routes (`/api/session-activity`).
   - Includes Zen utility model parity handler used by shared notification settings (`/api/zen/models`).
   - Mirrors web/Electron Claude Code status and configuration with `claude auth status --json`, avoiding model requests during authentication checks and returning structured signed-in, signed-out, unavailable, and execution-error states.
+  - Reuses the web-owned read-only Claude executable resolver for both authentication and quota fallback, preferring `CLAUDE_CODE_CLI`, then the provisioned managed profile, then the extension host PATH. External OpenCode quota requests never inspect host-local Claude state.
   - Hosts the HTTP-shaped managed quota credential contract for the webview, including independent host-side 16 KB enforcement and the same safe error/status shapes as web/Electron.
 
 - `anthropicOAuthPlugin.ts` and `claudeAuthStatus.ts`
@@ -184,3 +186,11 @@ The webview maps `GET`, `PUT`, `POST validate`, `POST import`, and `DELETE` unde
 3. Connected managed runtimes initialize/reconcile the persisted ledger. The bundled plugin uses authoritative assistant ownership plus non-blocking barrier status before primary-agent work tools, while keeping required skill invocation available; safe task and compaction events are broadcast to each open webview, while initial state remains recoverable through snapshots.
 4. Webviews use `/api/orchestration/*`, which `webview/api/orchestration.ts` maps to the extension bridge.
 5. Deactivation stops the private host and scheduler before stopping OpenCode, preserving terminal/partial records while releasing listeners and active work.
+# Primary provider recovery
+
+`extension.ts` composes the shared harness recovery host using extension private
+storage and the managed OpenCode URL. `harnessRuntime.ts` owns its lifecycle and
+feeds events before journal trimming. Both bridge prompt paths and Stop share
+the controller; the private managed bridge carries plugin admission. Webviews
+receive `openchamber:primary-recovery` projections and also reconcile snapshots.
+Policy defaults to observe. See `docs/PROVIDER_RECOVERY.md` for the safety contract.

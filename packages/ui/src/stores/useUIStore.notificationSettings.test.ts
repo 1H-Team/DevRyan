@@ -61,6 +61,38 @@ describe('useUIStore Plan Ready notification preferences', () => {
     expect((migrated.notificationTemplates as Record<string, unknown>).permission).toEqual({ title: '', message: '' });
   });
 
+  test('repairs sparse v19 managed snapshots without replacing custom templates', () => {
+    const migrate = useUIStore.persist.getOptions().migrate;
+    const completion = { title: 'Custom completion', message: 'Review {session_name}' };
+    const migrated = migrate?.({
+      notificationTemplates: { completion },
+    }, 19) as Record<string, unknown>;
+    const templates = migrated.notificationTemplates as Record<string, unknown>;
+
+    expect(templates.completion).toBe(completion);
+    expect(templates.planReady).toEqual({ title: '', message: '' });
+    expect(templates.error).toEqual({ title: '', message: '' });
+    expect(templates.question).toEqual({ title: '', message: '' });
+    expect(templates.permission).toEqual({ title: '', message: '' });
+    expect(templates.subtask).toEqual({ title: '', message: '' });
+  });
+
+  test('normalizes sparse templates supplied through the public store action', () => {
+    const original = useUIStore.getState().notificationTemplates;
+    try {
+      useUIStore.getState().setNotificationTemplates({
+        completion: { title: 'Only completion', message: 'Done' },
+      } as typeof original);
+
+      const templates = useUIStore.getState().notificationTemplates;
+      expect(templates.completion).toEqual({ title: 'Only completion', message: 'Done' });
+      expect(templates.permission).toEqual({ title: '', message: '' });
+      expect(templates.subtask).toEqual({ title: '', message: '' });
+    } finally {
+      useUIStore.getState().setNotificationTemplates(original);
+    }
+  });
+
   test('updates one template field without replacing untouched template entries', () => {
     const original = useUIStore.getState().notificationTemplates;
     const originalCompletion = original.completion;

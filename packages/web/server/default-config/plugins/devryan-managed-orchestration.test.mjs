@@ -2631,8 +2631,7 @@ describe('DevRyan managed orchestration plugin', () => {
       path: { id: 'ses_root' },
       query: { directory: '/workspace' },
       body: {
-        // No explicit messageID: OpenCode must mint an ordered one, or the wake
-        // can sort below the session's latest message and never be processed.
+        messageID: expect.stringMatching(/^msg_[0-9a-f]{26}$/),
         agent: 'orchestrator',
         model: {
           providerID: 'openai',

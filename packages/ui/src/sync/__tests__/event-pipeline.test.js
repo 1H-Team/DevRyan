@@ -13,6 +13,7 @@ const storage = new Map();
 
 function installDomStubs() {
   storage.clear();
+  const windowEvents = new EventTarget();
   globalThis.document = {
     visibilityState: 'visible',
     addEventListener() {},
@@ -33,8 +34,9 @@ function installDomStubs() {
         storage.delete(key);
       },
     },
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener: windowEvents.addEventListener.bind(windowEvents),
+    removeEventListener: windowEvents.removeEventListener.bind(windowEvents),
+    dispatchEvent: windowEvents.dispatchEvent.bind(windowEvents),
   };
 }
 

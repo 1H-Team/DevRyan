@@ -65,8 +65,9 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
 - `session-id.js`: canonical four-way record attribution plus session-parent
   relations shared by storage and export selection.
 - `journal-trim.js`: bounded pre-sanitization policy that drops streaming
-  deltas and coalesces repeated part/session updates. It flushes on completion,
-  lifecycle boundaries, debounce, drain, and capacity pressure.
+  deltas and coalesces repeated part/session updates plus property-free,
+  unattributed `sync` events. It flushes on completion, lifecycle boundaries,
+  debounce, drain, and capacity pressure.
 - `sanitizer.js` and `journal.js`: always-on, bounded, sanitized NDJSON capture
   partitioned into `sessions/<sessionID>/` and an unattributed `runtime/`
   bucket. Each bucket has an atomic manifest, gzip-compressed closed chunks,
@@ -100,8 +101,9 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   closed chunks are the final tier.
 - `message.part.delta` is intentionally omitted. Repeated
   `message.part.updated` and `session.updated` events are last-write-wins with
-  stored `coalesced` counts and manifest trim totals; intentional trims never
-  emit `gap` records.
+  stored `coalesced` counts and manifest trim totals. Property-free,
+  unattributed `sync` events use the same bounded last-write-wins window without
+  changing live SSE delivery; intentional trims never emit `gap` records.
 - Large sanitized strings are stored as bucket-local gzip blobs. Binary attachments
   retain only filename/MIME/size/SHA-256 metadata.
 - Worktree terminal receipts retain 90 days or 2,000 operations; active
@@ -124,6 +126,9 @@ From the repository root, run `bun scripts/journal.mjs list`, then
 `bun scripts/journal.mjs show <sessionID>`. The zero-dependency CLI reads gzip,
 active plain chunks, runtime records, and legacy segments. It also supports
 type/event/time/grep/tail filters plus `gaps`, `blob`, and `path` commands.
+The default `gaps` command trusts valid zero-gap bucket manifests and scans only
+positive, missing, or invalid manifests plus legacy segments. Use `gaps
+--verify` to scan every chunk when checking the manifests themselves.
 
 An administrator Error Log event UUID locates a durable sanitized summary; it
 is not expected to appear in this journal. Resolve the UUID through the Error
@@ -138,3 +143,10 @@ prompts, tool output, lifecycle ordering, recovery behavior, and detailed
 failure evidence. If the relevant host journal is unavailable, expired, or has
 a qualifying gap, report the limitation instead of reconstructing missing
 detail.
+# Primary provider recovery
+
+The dependency-free `provider-recovery` controller and `provider-recovery-host`
+adapter own primary turn admission, semantic liveness, durable recovery and
+cancellation across web/Electron and VS Code. Default policy is observe. Full
+safety, protocol, storage, rollout and rollback contracts are documented in
+[`docs/PROVIDER_RECOVERY.md`](../../docs/PROVIDER_RECOVERY.md).

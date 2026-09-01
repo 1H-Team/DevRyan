@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizeNativeServerSource, patchNativeServerSource, prepareNativeContextModeHotfix } from './context-mode-native-hotfix.js';
 
 export const CONTEXT_MODE_HOTFIX_VERSION = '1.0.169';
 export const CONTEXT_MODE_HOTFIX_ORIGINAL_SHA256 =
@@ -228,6 +229,8 @@ export const applyContextModeHotfix = ({
   configDirectory,
   fs: fsApi = fs,
   expectedOriginalSha256 = CONTEXT_MODE_HOTFIX_ORIGINAL_SHA256,
+  expectedPluginSha256,
+  expectedExecutorSha256,
   recoveryModuleSource,
 } = {}) => {
   const packageRoot = path.join(configDirectory, 'node_modules', 'context-mode');
@@ -239,7 +242,7 @@ export const applyContextModeHotfix = ({
   let serverSource;
   try {
     packageJson = JSON.parse(fsApi.readFileSync(packageJsonPath, 'utf8'));
-    serverSource = fsApi.readFileSync(serverPath, 'utf8');
+    serverSource = normalizeNativeServerSource(fsApi.readFileSync(serverPath, 'utf8'));
   } catch (error) {
     return incompatible(`Context-mode hotfix files are unavailable: ${error?.message || error}`);
   }
@@ -283,18 +286,40 @@ export const applyContextModeHotfix = ({
     });
   }
 
+  let nativeFiles;
+  try {
+    nativeFiles = prepareNativeContextModeHotfix({ packageRoot, fsApi, expectedPluginSha256, expectedExecutorSha256 });
+  } catch (error) {
+    return incompatible(error.message);
+  }
+  patchedSource = patchNativeServerSource(patchedSource);
   const helperSource = recoveryModuleSource
     ?? CONTEXT_MODE_CONTENT_STORE_RECOVERY_SOURCE;
-  const serverChanged = serverSource !== patchedSource;
+  const serverChanged = fsApi.readFileSync(serverPath, 'utf8') !== patchedSource;
   const helperChanged = !fsApi.existsSync(recoveryPath)
     || fsApi.readFileSync(recoveryPath, 'utf8') !== helperSource;
 
+  // Validate every upstream hash before touching any file. Helpers and server
+  // land before the adapter that activates workers; interrupted provisioning
+  // is idempotent and the existing adapter remains usable until its rename.
+  let nativeChanged = false;
+  for (const [filePath, content] of nativeFiles.slice(1)) {
+    if (!fsApi.existsSync(filePath) || fsApi.readFileSync(filePath, 'utf8') !== content) {
+      atomicWrite({ fsApi, filePath, content });
+      nativeChanged = true;
+    }
+  }
   if (helperChanged) atomicWrite({ fsApi, filePath: recoveryPath, content: helperSource });
   if (serverChanged) atomicWrite({ fsApi, filePath: serverPath, content: patchedSource });
+  const [pluginPath, pluginSource] = nativeFiles[0];
+  if (fsApi.readFileSync(pluginPath, 'utf8') !== pluginSource) {
+    atomicWrite({ fsApi, filePath: pluginPath, content: pluginSource });
+    nativeChanged = true;
+  }
 
   return {
     ok: true,
-    changed: helperChanged || serverChanged,
+    changed: helperChanged || serverChanged || nativeChanged,
     version: CONTEXT_MODE_HOTFIX_VERSION,
     originalSha256: observedOriginalSha256,
     patchedSha256: sha256(patchedSource),

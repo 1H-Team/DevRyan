@@ -1,4 +1,6 @@
 import React from 'react';
+import { SessionCreationStatus } from './SessionCreationStatus';
+import { useSessionCreationStore } from '@/sync/session-creation';
 import { Textarea } from '@/components/ui/textarea';
 import {
     RiAddCircleLine,
@@ -44,6 +46,7 @@ import { createScopedBlockingRequestsSelector } from './lib/blockingRequests';
 import { QuestionCard } from './QuestionCard';
 import { useInlineCommentDraftStore, type InlineCommentDraft } from '@/stores/useInlineCommentDraftStore';
 import { appendInlineComments } from '@/lib/messages/inlineComments';
+import { admitQueuedRecoveryIntent } from '@/lib/primaryRecoveryApi';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
 import { AttachedFilesList, AttachedVSCodeFileChips, ActiveEditorFileSuggestion } from './FileAttachment';
 import { QueuedMessageTab } from './QueuedMessageTab';
@@ -658,6 +661,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         draftPersistenceRef.current = createComposerDraftPersistenceController({
             storage: draftStorage,
             updateDraftText: (draftId, text) => draftTextUpdateRef.current(draftId, text),
+            draftExists: (draftId) => Boolean(useSessionUIStore.getState().draftsById[draftId]),
         });
     }
     const draftPersistence = draftPersistenceRef.current;
@@ -1099,7 +1103,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const composerRevisionSnapshotRef = React.useRef({
         targetKey: activeDraftTargetKey,
         message,
-        attachedFiles,
     });
     const skipNextComposerRevisionRef = React.useRef(false);
     React.useLayoutEffect(() => {
@@ -1110,16 +1113,17 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         } else if (
             currentSessionId
             && !targetChanged
-            && (previous.message !== message || previous.attachedFiles !== attachedFiles)
+            && previous.message !== message
         ) {
             markSessionComposerEdited(currentSessionId);
         }
         composerRevisionSnapshotRef.current = {
             targetKey: activeDraftTargetKey,
             message,
-            attachedFiles,
         };
-    }, [activeDraftTargetKey, attachedFiles, currentSessionId, message]);
+    // Attachment edit actions claim their revision synchronously in input-store.
+    // Hydration/remount can replace an identical array and is not a user edit.
+    }, [activeDraftTargetKey, currentSessionId, message]);
 
     React.useLayoutEffect(() => {
         setActiveComposerSession(currentSessionId);
@@ -1462,6 +1466,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         queuedOnly?: boolean;
     };
     const handleSubmitRef = React.useRef<(options?: SubmitOptions) => Promise<void>>(async () => {});
+    const retrySessionCreation = React.useCallback(() => { void handleSubmitRef.current(); }, []);
     const submitInFlightRef = React.useRef(false);
     const queueActionInFlightRef = React.useRef(false);
 
@@ -1489,6 +1494,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             }
         }
 
+        try { await admitQueuedRecoveryIntent(currentSessionId); }
+        catch (error) {
+            toast.error(error instanceof Error ? error.message : 'The host could not accept the queued input.');
+            return;
+        }
         const drafts = consumeDrafts(currentSessionId);
         if (drafts.length > 0) {
             messageToQueue = appendInlineComments(messageToQueue, drafts);
@@ -1972,14 +1982,22 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 await sessionActions.interruptCurrentOperationForSteeredSend(currentSessionId);
             }
 
-            retireDraftTarget(submittedDraftTarget);
+            if (submittedDraftTarget.kind === 'draft') {
+                // Flush the latest raw composer text before capturing creation
+                // ownership; a delayed debounce is not a later user edit.
+                clearPendingDraftPersist();
+                useSessionUIStore.getState().updateNewSessionDraftText(submittedDraftTarget.id, inputSnapshot.message);
+                persistDraftImmediately(submittedDraftTarget, inputSnapshot.message);
+            } else {
+                retireDraftTarget(submittedDraftTarget);
+            }
 
             // Optimistically clear the visible composer the instant we commit to
             // sending, so a late revert/draft restore (which sets pendingInputText
             // after its own async round-trip) cannot leave stale text behind that
             // then gets re-sent on the next Enter. On a hard failure the catch below
             // restores inputSnapshot.message; soft network errors intentionally do not.
-            if (!queuedOnly) {
+            if (!queuedOnly && submittedDraftTarget.kind !== 'draft') {
                 clearCommittedComposerText({
                     attachedFilesCount: attachedFiles.length,
                     textarea: textareaRef.current,
@@ -2007,7 +2025,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 sendPlanMode
             );
 
-            clearSubmittedComposer();
+            if (submittedDraftTarget.kind !== 'draft') clearSubmittedComposer();
 
             if (typeof window === 'undefined') {
                 scrollToBottom?.();
@@ -2025,6 +2043,16 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 setLinkedPr(null);
             }
         } catch (error: unknown) {
+            // Draft creation never clears the composer optimistically. Leave
+            // the original draft (and its attachments) untouched, even when
+            // this completion arrives after navigation to another target.
+            if (submittedDraftTarget.kind === 'draft' && useSessionUIStore.getState().draftsById[submittedDraftTarget.id]) {
+                releaseDraftTarget(submittedDraftTarget);
+                if (!(error instanceof Error && error.name === 'AbortError')) {
+                    toast.error(error instanceof Error ? error.message : 'Session creation failed. Your draft is retained.');
+                }
+                return;
+            }
             if (submittedDraftTarget.kind === 'draft') {
                 const sessionState = useSessionUIStore.getState();
                 const promotionDidNotComplete = sessionState.currentDraftId === submittedDraftTarget.id || !sessionState.currentSessionId;
@@ -2061,13 +2089,26 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 normalized.includes('gateway timeout') ||
                 normalized === 'failed to send message';
 
+            const createdSessionId = submittedDraftTarget.kind === 'draft'
+                ? useSessionCreationStore.getState().attempts[submittedDraftTarget.id]?.sessionId
+                : undefined;
+            const submittedRecoveryTarget: ComposerDraftTarget = createdSessionId
+                ? { kind: 'session', id: createdSessionId }
+                : submittedDraftTarget;
+
             const restoreSubmittedDraftMessage = () => {
-                // The composer is now cleared optimistically before the send (for any
-                // target, not just drafts), so restore the original text on a hard
-                // failure regardless of whether this was a new-session draft.
+                // Existing session sends clear optimistically; new drafts clear
+                // only when promoted. Restore hard failures to their own target.
                 if (!inputSnapshot.message) {
                     return;
                 }
+                const current = useSessionUIStore.getState();
+                const liveTarget = resolveComposerDraftTarget(current.currentSessionId, current.currentDraftId);
+                if (getComposerDraftTargetKey(liveTarget) !== getComposerDraftTargetKey(submittedRecoveryTarget)) {
+                    if (createdSessionId) draftPersistence.restoreIfEmpty(submittedRecoveryTarget, inputSnapshot.message);
+                    return;
+                }
+                if (messageRef.current && messageRef.current !== inputSnapshot.message) return;
                 messageRef.current = inputSnapshot.message;
                 setMessage(inputSnapshot.message);
                 if (textareaRef.current) {
@@ -2079,13 +2120,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 if (allAttachments.length === 0) {
                     return;
                 }
-                const sessionState = useSessionUIStore.getState();
-                const liveTarget = resolveComposerDraftTarget(sessionState.currentSessionId, sessionState.currentDraftId);
-                const recoveryTarget = submittedDraftTarget.kind === 'draft'
-                    && (sessionState.currentDraftId === submittedDraftTarget.id || !sessionState.currentSessionId)
-                    ? submittedDraftTarget
-                    : liveTarget;
-                const recoveryTargetKey = getComposerDraftTargetKey(recoveryTarget);
+                const recoveryTargetKey = getComposerDraftTargetKey(submittedRecoveryTarget);
                 if (recoveryTargetKey === 'none') return;
                 useInputStore.getState().mergeAttachedFilesForTarget(recoveryTargetKey, allAttachments);
             };
@@ -4134,6 +4169,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             style={isMobile && inputBarOffset > 0 ? { marginBottom: `${inputBarOffset}px` } : undefined}
         >
             <div className={cn('chat-input-column relative overflow-visible', isDesktopExpanded && 'flex flex-1 min-h-0 flex-col')}>
+                <SessionCreationStatus draftId={currentSessionId ? null : currentDraftId} onRetry={retrySessionCreation} />
                 <AttachedFilesList />
                 {hasDrafts && (
                     <div className="flex flex-wrap items-center gap-2 pb-2">

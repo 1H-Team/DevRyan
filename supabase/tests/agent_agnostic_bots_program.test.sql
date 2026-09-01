@@ -138,8 +138,8 @@ select has_function(
 );
 select is(
   public.devryan_bot_schema_version(),
-  '20260827100000'::text,
-  'schema marker includes agent-agnostic foundations'
+  '20260901160000'::text,
+  'schema marker includes terminal settlement and audit repair'
 );
 
 select * from finish();

@@ -187,7 +187,7 @@ export const createTurnEvidenceRuntime = (options = {}) => {
     if (event.type === 'turn_started') {
       if (!accepting) return;
       void enqueue(key, () => start(event));
-    } else if (event.type === 'turn_completed' || event.type === 'turn_aborted') {
+    } else if (event.type === 'turn_completed' || event.type === 'turn_aborted' || event.type === 'turn_failed') {
       void enqueue(key, () => finish(event));
     }
   };

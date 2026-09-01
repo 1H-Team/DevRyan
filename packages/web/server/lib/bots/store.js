@@ -1,4 +1,5 @@
 import { normalizePageLimit, validateUuid } from './validation.js';
+import { BOT_RETRY_REASONS } from './retry-policy.js';
 
 const table = ({
   columns,
@@ -184,6 +185,16 @@ export const BOT_TABLES = Object.freeze({
     columns: ['id', 'event_id', 'bot_id', 'actor_user_id', 'target_type', 'target_id', 'action', 'result', 'metadata', 'created_at'],
     writable: ['event_id', 'bot_id', 'actor_user_id', 'target_type', 'target_id', 'action', 'result', 'metadata', 'created_at'],
   }),
+  bot_memory_extraction_jobs: table({
+    columns: [
+      'run_id', 'bot_id', 'channel_id', 'revision_id', 'state', 'candidate_envelope',
+      'candidate_persisted_at', 'attempt_count', 'next_attempt_at', 'lease_owner',
+      'lease_until', 'last_phase', 'last_error_code', 'completed_at', 'created_at', 'updated_at',
+    ],
+    writable: [],
+    keys: ['run_id'],
+    cursor: ['created_at', 'run_id'],
+  }),
   bot_eval_cases: table({
     columns: ['id', 'bot_id', 'name', 'input_envelope', 'expected_outcome', 'created_by', 'created_at', 'updated_at', 'archived_at'],
     writable: ['id', 'bot_id', 'name', 'input_envelope', 'expected_outcome', 'created_by', 'archived_at'],
@@ -204,12 +215,18 @@ const RPC_NAMES = Object.freeze({
   enqueueMessageRun: 'devryan_enqueue_bot_message_run',
   retryRun: 'devryan_retry_bot_run',
   claimRun: 'devryan_claim_bot_run',
+  settleRunTerminal: 'devryan_settle_bot_run_terminal',
   expireApprovals: 'devryan_expire_bot_approvals',
   claimRoutineOccurrence: 'devryan_claim_bot_routine_occurrence',
   createBot: 'devryan_create_bot',
   activateRevision: 'devryan_activate_bot_revision',
   publishRevision: 'devryan_publish_bot_revision',
   commitMemoryVersion: 'devryan_commit_bot_memory_version',
+  commitChannelSummary: 'devryan_commit_bot_channel_summary',
+  enqueueMemoryExtractionJob: 'devryan_enqueue_bot_memory_extraction_job',
+  claimMemoryExtractionJob: 'devryan_claim_bot_memory_extraction_job',
+  persistMemoryExtractionCandidates: 'devryan_persist_bot_memory_extraction_candidates',
+  settleMemoryExtractionJob: 'devryan_settle_bot_memory_extraction_job',
   deleteChannel: 'devryan_delete_bot_channel',
   pruneAudit: 'devryan_prune_bot_audit',
   purgeResource: 'devryan_purge_bot_resource',
@@ -607,9 +624,9 @@ export function createBotStore({ supabase, logger = null } = {}) {
 
   const enqueueMessageRun = async (input) => {
     const fields = [
-      'messageId', 'runId', 'botId', 'channelId', 'revisionId', 'idempotencyKey',
+      'messageId', 'acknowledgmentId', 'runId', 'botId', 'channelId', 'revisionId', 'idempotencyKey',
       'modelSnapshot', 'contextSnapshot', 'computerScopeKey', 'actorUserId',
-      'bodyEnvelope', 'attachmentCount', 'finalizedAt',
+      'bodyEnvelope', 'acknowledgmentBodyEnvelope', 'attachmentCount', 'finalizedAt',
       'sharedFiles',
     ];
     if (!input || typeof input !== 'object' || Array.isArray(input)
@@ -618,6 +635,7 @@ export function createBotStore({ supabase, logger = null } = {}) {
     }
     const result = await callRpc('enqueueMessageRun', {
       p_message_id: input.messageId,
+      p_acknowledgment_id: input.acknowledgmentId,
       p_run_id: input.runId,
       p_bot_id: input.botId,
       p_channel_id: input.channelId,
@@ -628,6 +646,7 @@ export function createBotStore({ supabase, logger = null } = {}) {
       p_computer_scope: input.computerScopeKey,
       p_actor_user_id: input.actorUserId,
       p_body_envelope: cloneValue(input.bodyEnvelope),
+      p_acknowledgment_body_envelope: cloneValue(input.acknowledgmentBodyEnvelope),
       p_attachment_count: input.attachmentCount,
       p_finalized_at: input.finalizedAt,
       p_shared_files: cloneValue(input.sharedFiles),
@@ -676,11 +695,17 @@ export function createBotStore({ supabase, logger = null } = {}) {
       execution_started: ['This Bot run already started execution', 'bot_run_retry_unavailable', 409],
       revision_changed: ['This Bot run is no longer valid for the active revision', 'bot_run_retry_unavailable', 409],
       channel_unavailable: ['This Bot channel is no longer available', 'bot_run_retry_unavailable', 409],
+      access_revoked: ['Bot conversation access is no longer available', 'bot_channel_forbidden', 403],
+      attachments_expired: ['These attachments have expired; reattach the files', 'bot_object_expired', 410],
       concurrent_active_run: ['Another Bot run is active in this computer scope', 'bot_run_retry_unavailable', 409],
     });
-    const [message, code, statusCode] = reasons[result.reason]
-      || ['This Bot run cannot be retried', 'bot_run_retry_unavailable', 409];
-    throw new BotStoreError(message, code, statusCode);
+    const retryReason = BOT_RETRY_REASONS.has(result.reason) ? result.reason : 'not_retryable';
+    const [message, code, statusCode] = reasons[retryReason];
+    const error = new BotStoreError(message, code, statusCode);
+    error.details = Object.freeze({
+      retryReason,
+    });
+    throw error;
   };
 
   const repositories = Object.fromEntries(Object.keys(BOT_TABLES).map((tableName) => [
@@ -724,6 +749,15 @@ export function createBotStore({ supabase, logger = null } = {}) {
       p_runtime_owner: runtimeOwner,
       p_lease_until: leaseUntil,
     })),
+    settleRunTerminal: async ({ runId, state, interruptionKind, contextSnapshot, finishedAt }) => (
+      firstRow(await callRpc('settleRunTerminal', {
+        p_run_id: runId,
+        p_state: state,
+        p_interruption_kind: interruptionKind,
+        p_context_snapshot: cloneValue(contextSnapshot),
+        p_finished_at: finishedAt,
+      }))
+    ),
     expireApprovals: async ({ computerScopeKey = null, now }) => callRpc('expireApprovals', {
       p_computer_scope: computerScopeKey,
       p_now: now,
@@ -818,6 +852,53 @@ export function createBotStore({ supabase, logger = null } = {}) {
       p_source_kind: input.sourceKind,
       p_source_metadata: cloneValue(input.sourceMetadata),
       p_expected_updated_at: input.expectedUpdatedAt,
+    })),
+    commitChannelSummary: async ({ channelId, botId, expectedCheckpointNumber, summaryEnvelope }) => {
+      const row = firstRow(await callRpc('commitChannelSummary', {
+        p_channel_id: channelId,
+        p_bot_id: botId,
+        p_expected_checkpoint_number: expectedCheckpointNumber,
+        p_summary_envelope: cloneValue(summaryEnvelope),
+      }));
+      if (!row) {
+        throw new BotStoreError(
+          'Bot channel summary checkpoint changed before commit',
+          'bot_summary_checkpoint_conflict',
+          409,
+        );
+      }
+      return row;
+    },
+    enqueueMemoryExtractionJob: async ({ runId }) => firstRow(
+      await callRpc('enqueueMemoryExtractionJob', { p_run_id: runId }),
+    ),
+    claimMemoryExtractionJob: async ({ leaseOwner, leaseUntil }) => firstRow(
+      await callRpc('claimMemoryExtractionJob', {
+        p_lease_owner: leaseOwner,
+        p_lease_until: leaseUntil,
+      }),
+    ),
+    persistMemoryExtractionCandidates: async ({ runId, leaseOwner, candidateEnvelope }) => firstRow(
+      await callRpc('persistMemoryExtractionCandidates', {
+        p_run_id: runId,
+        p_lease_owner: leaseOwner,
+        p_candidate_envelope: cloneValue(candidateEnvelope),
+      }),
+    ),
+    settleMemoryExtractionJob: async ({
+      runId,
+      leaseOwner,
+      disposition,
+      nextAttemptAt = null,
+      phase = null,
+      errorCode = null,
+    }) => firstRow(await callRpc('settleMemoryExtractionJob', {
+      p_run_id: runId,
+      p_lease_owner: leaseOwner,
+      p_disposition: disposition,
+      p_next_attempt_at: nextAttemptAt,
+      p_phase: phase,
+      p_error_code: errorCode,
     })),
     deleteChannel: async ({ channelId, actorId }) => firstRow(await callRpc('deleteChannel', {
       p_channel_id: channelId,

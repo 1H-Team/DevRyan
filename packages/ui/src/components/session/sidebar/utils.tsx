@@ -2,6 +2,7 @@ import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 export { resolveSessionDiffStats } from '@/lib/sessionDiffStats';
 import type { SessionAssistantActivity } from '@/sync/session-assistant-activity';
+import type { SessionUserActivity } from '@/sync/session-user-activity';
 import type { WorktreeMetadata } from '@/types/worktree';
 import type { SessionNode } from './types';
 
@@ -142,10 +143,6 @@ const getSessionCreatedAt = (session: Session): number => {
   return toFiniteNumber(session.time?.created) ?? 0;
 };
 
-const getSessionUpdatedAt = (session: Session): number => {
-  return toFiniteNumber(session.time?.updated) ?? toFiniteNumber(session.time?.created) ?? 0;
-};
-
 const getCounsellorTitleNumber = (session: Session): number | undefined => {
   const match = /^Counsellor\s+(\d+)\s*:/i.exec((session.title ?? '').trim());
   if (!match) return undefined;
@@ -164,14 +161,52 @@ const getSessionArchivedAt = (session: Session): number => {
   return toFiniteNumber(session.time?.archived) ?? 0;
 };
 
+const hasParentSession = (session: Session): boolean => {
+  return Boolean((session as Session & { parentID?: string | null }).parentID);
+};
+
 export const getArchivedParentSessionId = (session: Session): string => {
   return (session as Session & { parentID?: string | null }).parentID || session.id;
+};
+
+export const getSessionUserActivityAt = (
+  session: Session,
+  sessionUserActivity?: SessionUserActivity,
+): number | undefined => hasParentSession(session)
+  ? undefined
+  : toFiniteNumber(sessionUserActivity?.[session.id]);
+
+export const getSessionPromptSortAt = (
+  session: Session,
+  sessionUserActivity?: SessionUserActivity,
+): number => getSessionUserActivityAt(session, sessionUserActivity) ?? getSessionCreatedAt(session);
+
+const compareSessionsByUserActivity = (
+  a: Session,
+  b: Session,
+  sessionUserActivity?: SessionUserActivity,
+): number => {
+  const aPromptAt = getSessionUserActivityAt(a, sessionUserActivity);
+  const bPromptAt = getSessionUserActivityAt(b, sessionUserActivity);
+  if ((aPromptAt !== undefined) !== (bPromptAt !== undefined)) {
+    return aPromptAt !== undefined ? -1 : 1;
+  }
+
+  const promptDelta = getSessionPromptSortAt(b, sessionUserActivity)
+    - getSessionPromptSortAt(a, sessionUserActivity);
+  if (promptDelta !== 0) return promptDelta;
+
+  const createdDelta = getSessionCreatedAt(b) - getSessionCreatedAt(a);
+  if (createdDelta !== 0) return createdDelta;
+
+  return b.id.localeCompare(a.id);
 };
 
 export const compareSessionsByPinnedAndTime = (
   a: Session,
   b: Session,
   pinnedSessionIds: Set<string>,
+  sessionUserActivity?: SessionUserActivity,
 ): number => {
   const counsellorDelta = compareCounsellorTitles(a, b);
   if (counsellorDelta !== undefined) return counsellorDelta;
@@ -182,7 +217,7 @@ export const compareSessionsByPinnedAndTime = (
     return aPinned ? -1 : 1;
   }
 
-  return getSessionUpdatedAt(b) - getSessionUpdatedAt(a);
+  return compareSessionsByUserActivity(a, b, sessionUserActivity);
 };
 
 export const compareSessionsByPinnedAndCreated = (

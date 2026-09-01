@@ -22,7 +22,10 @@ disabled, while stored terminal preferences remain untouched.
 `notificationToggle.ts` requests browser permission at most once from the user
 gesture, persists the personal preference before showing it enabled, and keeps
 the previous state with an actionable error when permission or persistence
-fails. Background push-subscription controls remain separate.
+fails. Notification template reads also fall back to the centralized total
+six-event template shape, so sparse legacy account state cannot crash the
+editor when notification controls become visible. Background push-subscription
+controls remain separate.
 
 ## Flow
 Settings navigation selects a section; section reads/writes config through hooks/APIs. `AboutSettings.tsx` is also routed as the cross-runtime Settings → About page. Its Data Retention section owns session cleanup and one unified Error Logs control: session-count/size status, export, and clearing the past 24 hours, 7 days, 14 days, or all logs. In Electron, the confirmed all-logs clear also removes the Chromium application cache and shows its size on a second line; bounded time ranges leave the cache untouched, and chat history is never part of either operation. Desktop-only components such as `DesktopKeepAwakeSettings.tsx` and `DesktopNetworkSettings.tsx` appear only for the local desktop origin.

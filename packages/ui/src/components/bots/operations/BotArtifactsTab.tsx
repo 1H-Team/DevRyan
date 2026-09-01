@@ -133,21 +133,33 @@ export const BotArtifactsTab: React.FC<BotArtifactsTabProps> = ({
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(false);
   const [busyId, setBusyId] = React.useState<string | null>(null);
+  const viewGenerationRef = React.useRef(0);
+  React.useLayoutEffect(() => {
+    viewGenerationRef.current += 1;
+    setBusyId(null);
+    return () => { viewGenerationRef.current += 1; };
+  }, [botId, channelId, principal.id]);
+  const captureView = React.useCallback(() => {
+    const scopeIsCurrent = sharedFilesStore.getState().captureScope(channelId);
+    const generation = viewGenerationRef.current;
+    return () => scopeIsCurrent() && generation === viewGenerationRef.current;
+  }, [channelId, sharedFilesStore]);
 
   const load = React.useCallback(async ({ quiet = false } = {}) => {
+    const isCurrent = captureView();
     if (!quiet) setLoading(true);
     try {
-      const result = await api.listSharedFiles(botId, channelId);
-      sharedFilesStore.getState().replaceChannel(channelId, result.sharedFiles);
+      const files = await sharedFilesStore.getState().loadChannel(botId, channelId, api);
+      if (!isCurrent()) return [];
       setError(false);
-      return result.sharedFiles;
+      return files;
     } catch {
-      setError(true);
+      if (isCurrent()) setError(true);
       return [];
     } finally {
-      if (!quiet) setLoading(false);
+      if (!quiet && isCurrent()) setLoading(false);
     }
-  }, [api, botId, channelId, sharedFilesStore]);
+  }, [api, botId, captureView, channelId, sharedFilesStore]);
 
   React.useEffect(() => {
     let active = true;
@@ -164,12 +176,14 @@ export const BotArtifactsTab: React.FC<BotArtifactsTabProps> = ({
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [load]);
+  }, [load, principal.id]);
 
   const download = async (file: BotSharedFile) => {
+    const isCurrent = captureView();
     setBusyId(file.id);
     try {
       const blob = await api.downloadObject(botId, file.objectId);
+      if (!isCurrent()) return;
       const href = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = href;
@@ -178,9 +192,9 @@ export const BotArtifactsTab: React.FC<BotArtifactsTabProps> = ({
       URL.revokeObjectURL(href);
       setError(false);
     } catch {
-      setError(true);
+      if (isCurrent()) setError(true);
     } finally {
-      setBusyId(null);
+      if (isCurrent()) setBusyId(null);
     }
   };
 
@@ -219,11 +233,13 @@ export const BotArtifactsTab: React.FC<BotArtifactsTabProps> = ({
               onOpenComputer?.(entry.computerPath);
             }}
             onRetry={(entry) => {
+              const isCurrent = captureView();
               setBusyId(entry.id);
               void api.retrySharedFile(botId, channelId, entry.id).then((result) => {
+                if (!isCurrent()) return;
                 sharedFilesStore.getState().upsertFile(result.sharedFile);
                 setError(false);
-              }).catch(() => setError(true)).finally(() => setBusyId(null));
+              }).catch(() => { if (isCurrent()) setError(true); }).finally(() => { if (isCurrent()) setBusyId(null); });
             }}
           />
         ))}

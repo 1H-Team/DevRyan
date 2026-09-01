@@ -129,7 +129,25 @@ export const openExternalUrl = async (url: string): Promise<boolean> => {
   }
 
   try {
-    return Boolean(window.open(normalizedTarget, '_blank', 'noopener,noreferrer'));
+    // Open synchronously so the result is a real popup-block signal. Passing
+    // `noopener` in the feature string intentionally makes window.open return
+    // null even when the browser opened the tab, which looks like a block.
+    const opened = window.open('', '_blank');
+    if (!opened) {
+      return false;
+    }
+    try {
+      opened.opener = null;
+      opened.location.replace(normalizedTarget);
+      return true;
+    } catch {
+      try {
+        opened.close();
+      } catch {
+        // Best-effort cleanup for a browsing context we cannot navigate.
+      }
+      return false;
+    }
   } catch {
     return false;
   }

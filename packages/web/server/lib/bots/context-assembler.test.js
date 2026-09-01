@@ -136,6 +136,13 @@ describe('Production Bot context assembly', () => {
     const channels = {
       loadRecentMessages: vi.fn(async () => [
         { id: 'message-1', role: 'assistant', sequence: 7, body: { text: 'Earlier answer' } },
+        {
+          id: 'message-ack',
+          role: 'assistant',
+          assistantPhase: 'acknowledgment',
+          sequence: 6,
+          body: { text: 'I’ll inspect the deployment checks first.' },
+        },
       ]),
       decryptMemory: vi.fn(async (memory) => ({ text: `${memory.logical_key} memory` })),
     };
@@ -189,6 +196,7 @@ describe('Production Bot context assembly', () => {
     expect(result.parts).toHaveLength(4);
     expect(result.parts[0].text).toContain('Bounded checkpoint');
     expect(result.parts[0].text).toContain('Earlier answer');
+    expect(result.parts[0].text).not.toContain('inspect the deployment checks');
     expect(result.parts[0].text).toContain('deployment.cadence memory');
     expect(result.parts[0].text).toContain('owner.preference memory');
     expect(result.parts[0].text).toContain('Reviewed Library fact');
@@ -201,7 +209,10 @@ describe('Production Bot context assembly', () => {
     });
     expect(result.parts[1].text).toContain('natural conversation');
     expect(result.parts[1].text).toContain('Do not use progress or status headings');
-    expect(result.parts[1].text).toContain('without first sending an acknowledgment or preamble');
+    expect(result.parts[1].text).toContain("configured personality");
+    expect(result.parts[1].text).toContain('without acknowledgment or progress prose');
+    expect(result.parts[1].text).toContain('interface shows that you are working');
+    expect(result.parts[1].text).toContain('needs no tool, reply directly');
     expect(result.parts[1].text).toContain('Do not narrate progress between tools');
     expect(result.parts[1].text).toContain('send one useful, natural response');
     expect(result.parts[1].text).toContain('explain it honestly');
@@ -234,4 +245,20 @@ describe('Production Bot context assembly', () => {
       beforeQueueSequence: 8,
     });
   });
+  it('reuses decryption only for the exact live memory version and never restores tombstoned rows', async () => {
+    let memory = { id: 'memory-a', bot_id: BOT_ID, active_version_id: 'version-1', updated_at: '2026-08-31T00:00:00Z', logical_key: 'preference', encrypted_content: {} };
+    const channels = { loadRecentMessages: vi.fn(async () => []), decryptMemory: vi.fn(async (row) => ({ text: row.active_version_id })) };
+    const store = { getPreviousChannelRun: vi.fn(async () => null), repositories: { bot_runs: {}, bot_memories: { list: vi.fn(async () => ({ items: memory ? [memory] : [] })) } } };
+    const assembler = createBotContextAssembler({ store, channels });
+    const input = { run: { channel_id: CHANNEL_ID }, bot: { id: BOT_ID }, channel: { id: CHANNEL_ID, summary: null }, revision: { id: REVISION_ID, contract: {} }, queryText: 'Hello' };
+    await assembler.assemble(input);
+    await assembler.assemble(input);
+    expect(channels.decryptMemory).toHaveBeenCalledTimes(1);
+    memory = { ...memory, active_version_id: 'version-2', updated_at: '2026-08-31T00:01:00Z' };
+    expect((await assembler.assemble(input)).parts[0].text).toContain('version-2');
+    expect(channels.decryptMemory).toHaveBeenCalledTimes(2);
+    memory = null;
+    expect((await assembler.assemble(input)).parts[0].text).not.toContain('version-2');
+  });
+
 });

@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  RiChatDeleteLine,
   RiDeleteBinLine,
   RiPauseCircleLine,
   RiPlayCircleLine,
@@ -19,7 +20,9 @@ export type BotLifecycleActionsProps = {
   readOnly?: boolean;
   busyAction?: string | null;
   error?: string | null;
+  hasChatHistory?: boolean;
   onTransition: (lifecycle: 'active' | 'paused' | 'retired') => void;
+  onClearChatHistory?: () => void;
   onDeleteCompletely?: (request: BotCompleteDeleteRequest) => void;
   onRetryPurge?: (resourceIds: readonly string[]) => void;
 };
@@ -30,15 +33,19 @@ export const BotLifecycleActions: React.FC<BotLifecycleActionsProps> = ({
   readOnly = false,
   busyAction = null,
   error = null,
+  hasChatHistory = false,
   onTransition,
+  onClearChatHistory,
   onDeleteCompletely,
   onRetryPurge,
 }) => {
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [clearHistoryOpen, setClearHistoryOpen] = React.useState(false);
   const [typedName, setTypedName] = React.useState('');
 
   React.useEffect(() => {
     setDeleteOpen(false);
+    setClearHistoryOpen(false);
     setTypedName('');
   }, [bot.id]);
 
@@ -46,6 +53,7 @@ export const BotLifecycleActions: React.FC<BotLifecycleActionsProps> = ({
     .filter((step) => step.status === 'failed' || step.status === 'pending')
     .map((step) => step.id) || [];
   const deleting = busyAction === 'purge-complete';
+  const clearingHistory = busyAction === 'clear-chat-history';
   const visibleState = !bot.activeRevisionId
     ? 'Setup incomplete'
     : bot.lifecycle === 'active' ? 'Active' : 'Paused';
@@ -80,6 +88,52 @@ export const BotLifecycleActions: React.FC<BotLifecycleActionsProps> = ({
             )}
           </div>
         ) : null}
+      </div>
+
+      <div className="rounded-xl border border-border/70 p-4">
+        {!clearHistoryOpen ? (
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 className="typography-ui-label font-medium text-foreground">Chat history</h4>
+              <p className="typography-micro text-muted-foreground">
+                Remove the messages and attachments shown in your chat. Shared learning remains available to the Bot.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={!hasChatHistory || busyAction !== null || !onClearChatHistory}
+              onClick={() => setClearHistoryOpen(true)}
+            >
+              <RiChatDeleteLine className="h-3.5 w-3.5" aria-hidden /> Clear History
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3 rounded-xl border border-[var(--status-error)]/40 bg-[var(--status-error)]/5 p-4" role="alertdialog" aria-label="Clear Chat History">
+            <div>
+              <h4 className="typography-ui-label font-semibold text-foreground">Clear your chat with {bot.name}?</h4>
+              <p className="mt-1 typography-ui text-muted-foreground">
+                Messages and chat attachments will be permanently removed. Shared learning will not be deleted.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" size="xs" variant="ghost" disabled={clearingHistory} onClick={() => setClearHistoryOpen(false)}>Cancel</Button>
+              <Button
+                type="button"
+                size="xs"
+                variant="destructive"
+                disabled={clearingHistory || !onClearChatHistory}
+                onClick={() => {
+                  setClearHistoryOpen(false);
+                  onClearChatHistory?.();
+                }}
+              >
+                <RiChatDeleteLine className="h-3.5 w-3.5" aria-hidden /> {clearingHistory ? 'Clearing…' : 'Clear Permanently'}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {!readOnly ? (

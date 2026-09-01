@@ -91,7 +91,7 @@ const invalidatePendingAttachmentReads = (targetKey: string): void => {
   attachmentInvalidationGenerations.set(targetKey, getAttachmentInvalidationGeneration(targetKey) + 1)
 }
 
-const getAttachmentMutationRevision = (targetKey: string): number =>
+export const getAttachmentMutationRevision = (targetKey: string): number =>
   attachmentMutationRevisions.get(targetKey) ?? 0
 
 const markAttachmentMutation = (targetKey: string): void => {
@@ -340,6 +340,7 @@ export const useInputStore = create<InputState>()((set, get) => ({
     claimActiveComposerEdit()
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const targetKey = activeAttachmentTargetKey
+    if (targetKey) markAttachmentMutation(targetKey)
     const generation = targetKey
       ? getAttachmentInvalidationGeneration(targetKey)
       : attachmentReadGeneration
@@ -640,6 +641,7 @@ export const useInputStore = create<InputState>()((set, get) => ({
       (f) => f.source === 'vscode' && f.vscodeSource === 'selection' && f.filename === file.name && f.vscodePath === path
     )
     if (isDuplicate || pendingVSCodeSelectionKeys.has(selectionKey)) return
+    if (targetKey) markAttachmentMutation(targetKey)
     claimActiveComposerEdit()
     pendingVSCodeSelectionKeys.add(selectionKey)
     let dataUrl: string

@@ -133,7 +133,7 @@ describe('main-owned browser surface contract', () => {
 
   test('binds manual surfaces to a main-derived per-user Browser context', () => {
     expect(managerSource).toContain("throw new Error('Authenticated Browser context is required')");
-    expect(managerSource).toContain("partition: kind === 'manual' ? browserContext.partition : BROWSER_WEBVIEW_PARTITION");
+    expect(managerSource).toContain("safeString(browserPartition, 256) || BROWSER_WEBVIEW_PARTITION");
     expect(managerSource).toContain('existingWorkspace.browserContextKey !== browserContext.contextKey');
     expect(managerSource).toContain("throw new Error('Browser surface belongs to another authenticated context')");
     expect(mainSource).toContain('createManualBrowserContext({ origin, principalId: principal.id })');
@@ -165,5 +165,30 @@ describe('main-owned browser surface contract', () => {
     expect(inspect).toContain("mime: 'image/png'");
     expect(inspect).toContain('target: result.target');
     expect(inspect.indexOf('executeJavaScript(')).toBeLessThan(inspect.indexOf('capturePage()'));
+  });
+
+  test('streams bounded non-retained lease frames only while viewers are subscribed', () => {
+    expect(managerSource).toContain('AGENT_OBSERVATION_FRAME_INTERVAL_MS = 125');
+    expect(managerSource).toContain('AGENT_OBSERVATION_MAX_WIDTH = 1280');
+    expect(managerSource).toContain('AGENT_OBSERVATION_MAX_HEIGHT = 720');
+    expect(managerSource).toContain('AGENT_OBSERVATION_JPEG_QUALITY = 65');
+    expect(managerSource).toContain('const subscribeLeaseFrames =');
+    expect(managerSource).toContain('surface.observationSubscribers.size === 0');
+    expect(managerSource).toContain('stopLeaseObservationCapture(surface)');
+    expect(managerSource).not.toContain('lastObservationFrame');
+  });
+
+  test('uses a tip-anchored contrast-safe system arrow and hides it after four seconds', () => {
+    const start = managerSource.indexOf('const installCursorOverlay =');
+    const end = managerSource.indexOf('\n\nexport const createBrowserSurfaceManager', start);
+    const cursor = managerSource.slice(start, end);
+    expect(cursor).toContain('width:28px;height:32px');
+    expect(cursor).toContain('fill="#fff"');
+    expect(cursor).toContain('stroke="#202124"');
+    expect(cursor).toContain('<path d="M0 0');
+    expect(cursor).toContain('filter:drop-shadow');
+    expect(cursor).toContain("cursor.style.left = point.x + 'px'");
+    expect(cursor).not.toContain('translate(-50%,-50%)');
+    expect(cursor).toContain('}, 4000);');
   });
 });

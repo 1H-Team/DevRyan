@@ -178,6 +178,20 @@ describe("input-store attachments", () => {
     expect(useInputStore.getState().pendingRestoredInputs.size).toBe(0)
   })
 
+  test('attachment hydration during a revert does not claim a user edit, but picking a new attachment does', async () => {
+    const sessionId = 'session-revert-hydration'
+    setActiveComposerSession(sessionId)
+    const input = useInputStore.getState()
+    const expectedComposerRevision = getSessionComposerRevision(sessionId)
+    input.queueRestoredInput({ sessionId, text: 'restored after remount', attachments: [], expectedComposerRevision })
+    await input.activateAttachedFilesTarget(`session:${sessionId}`)
+    await input.activateAttachedFilesTarget(`session:${sessionId}`)
+    expect(input.consumeRestoredInput(sessionId, getSessionComposerRevision(sessionId))?.text).toBe('restored after remount')
+    input.queueRestoredInput({ sessionId, text: 'stale after user edit', attachments: [], expectedComposerRevision })
+    input.addVSCodeFileAttachment('/synthetic/new.txt', 'new.txt', 4)
+    expect(input.consumeRestoredInput(sessionId, getSessionComposerRevision(sessionId))).toBeNull()
+  })
+
   test("keeps ordered attachments isolated per composer target", async () => {
     await useInputStore.getState().activateAttachedFilesTarget("draft:a")
 

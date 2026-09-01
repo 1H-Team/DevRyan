@@ -1723,6 +1723,7 @@ const AssistantMessageBody = React.memo(({
                             responseStyleLevel={turnGroupingContext?.responseStyleLevel}
                             onContentChange={onContentChange}
                             isMessageCompleted={isMessageCompleted}
+                            isTrailingLiveRun={groupEndIndex === localManagedTaskDispatch.contentParts.length - 1}
                             isMobile={isMobile}
                         />
                     );
@@ -2062,7 +2063,7 @@ const AssistantMessageBody = React.memo(({
               <TextSelectionMenu containerRef={messageContentRef} />
               <div
                   className={cn(
-                      'message-content-text flex flex-col leading-relaxed overflow-hidden text-foreground/90',
+                      'message-content-text flex flex-col leading-relaxed overflow-x-clip text-foreground/90',
                       isMobile ? 'gap-y-2' : 'gap-y-3',
                   )}
                   data-session-output-stack="true"

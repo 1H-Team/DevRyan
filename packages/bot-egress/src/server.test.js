@@ -43,7 +43,7 @@ const start = async (overrides = {}) => {
   return { server, port: server.address().port };
 };
 
-const proxyRequest = ({ port, target, token = TOKEN, basic = false }) => new Promise((resolve, reject) => {
+const proxyRequest = ({ port, target, token = TOKEN, basic = false, cookie = null }) => new Promise((resolve, reject) => {
   const socket = net.connect({ host: '127.0.0.1', port });
   const chunks = [];
   socket.once('error', reject);
@@ -65,7 +65,7 @@ const proxyRequest = ({ port, target, token = TOKEN, basic = false }) => new Pro
       : `Bearer ${token}`;
     const authorization = token ? `Proxy-Authorization: ${credential}\r\n` : '';
     socket.write(
-      `POST ${target} HTTP/1.1\r\nHost: proxy.invalid\r\n${authorization}Content-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}`,
+      `POST ${target} HTTP/1.1\r\nHost: proxy.invalid\r\n${authorization}${cookie ? `Cookie: ${cookie}\r\n` : ''}Content-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}`,
     );
   });
 });
@@ -221,6 +221,37 @@ describe('authenticated model egress proxy', () => {
     expect((await proxyRequest({ port, target: 'https://private.example/' })).statusCode).toBe(403);
     expect((await proxyRequest({ port, target: 'https://rebind.example/' })).statusCode).toBe(403);
     expect(forwards).toBe(1);
+  });
+
+  test('preserves browser Cookie and Set-Cookie headers at the governed egress boundary', async () => {
+    let forwardedCookie = null;
+    const { port } = await start({
+      authorizeToken: async () => ({
+        active: true,
+        botId: 'bot-01',
+        revisionId: 'revision-01',
+        purpose: 'browser',
+        networkMode: 'public_only',
+        hosts: [],
+        expiresAt: NOW + 60_000,
+      }),
+      forwardHttp: async ({ request, response }) => {
+        forwardedCookie = request.headers.cookie;
+        response.writeHead(200, {
+          'set-cookie': 'embedded_session=accepted; Secure; SameSite=None',
+        });
+        response.end('ok');
+      },
+    });
+
+    const response = await proxyRequest({
+      port,
+      target: 'https://embedded.example/session',
+      cookie: 'browser_session=retained',
+    });
+
+    expect(forwardedCookie).toBe('browser_session=retained');
+    expect(response.headers['set-cookie']).toBe('embedded_session=accepted; Secure; SameSite=None');
   });
 
   test('keeps browser allowlists exact by host and port', async () => {

@@ -56,6 +56,30 @@ afterEach(() => {
 });
 
 describe('VS Code prompt admission proxy', () => {
+  it('includes local preparation in the session creation deadline instead of dispatching after expiry', async () => {
+    const upstream = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ id: 'ses_bad' }));
+    deps.tryHandleLocalFsProxy.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return null;
+    });
+    const result = await handleProxyBridgeMessage({ id: 'create-expired', type: 'api:proxy',
+      payload: { method: 'POST', path: '/session', headers: { 'x-devryan-creation-budget-ms': '1' }, bodyBase64: Buffer.from('{}').toString('base64') },
+    }, context as never, deps);
+    const data = result?.data as { status: number; bodyBase64: string };
+    expect(data.status).toBe(408);
+    expect(JSON.parse(Buffer.from(data.bodyBase64, 'base64').toString())).toMatchObject({ code: 'session_create_not_dispatched', retryable: false });
+    expect(upstream).not.toHaveBeenCalled();
+  });
+  it('does not label a dispatched session-create connection failure retryable', async () => {
+    const upstream = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNRESET'));
+    const result = await handleProxyBridgeMessage({ id: 'create-unknown', type: 'api:proxy',
+      payload: { method: 'POST', path: '/session?directory=%2Frepo', bodyBase64: Buffer.from('{}').toString('base64') },
+    }, context as never, deps);
+    const data = result?.data as { status: number; bodyBase64: string };
+    expect(data.status).toBe(502);
+    expect(JSON.parse(Buffer.from(data.bodyBase64, 'base64').toString())).toMatchObject({ code: 'session_create_outcome_unknown', retryable: false });
+    expect(upstream).toHaveBeenCalledTimes(1);
+  });
   it('schedules bounded placeholder recovery after a successful session list', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json([
       { id: 'ses_1', title: 'Untitled Session' },

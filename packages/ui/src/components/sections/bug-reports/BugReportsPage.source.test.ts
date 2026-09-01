@@ -18,8 +18,23 @@ describe('managed Bug Reports settings page', () => {
     expect(source).toContain("visitedTabs.has('reports')");
     expect(source).toContain("visitedTabs.has('agent-audit')");
     expect(source).toContain("visitedTabs.has('bot-audit')");
-    expect(botAudit).toContain("settings.bugReports.botAudit.empty");
-    expect(botAudit).not.toContain('fetch(');
+    expect(botAudit).toContain("const [resultFilter, setResultFilter] = React.useState<BotAuditResultFilter>('issues')");
+    expect(botAudit).toContain("const [botFilter, setBotFilter] = React.useState('all')");
+    expect(botAudit).toContain("const [actorFilter, setActorFilter] = React.useState('all')");
+    expect(botAudit).toContain("const [dateFilter, setDateFilter] = React.useState<DateFilter>('all')");
+    expect(botAudit).toContain('onClick={() => setSelectedEventId(log.eventId)}');
+    expect(botAudit).toContain('formatBotContext(detail)');
+    expect(botAudit).toContain("'DevRyan Bot audit context'");
+    expect(botAudit).toContain('listBotAuditOptions(controller.signal)');
+    expect(botAudit).toContain('listErrorLogActors(controller.signal)');
+    expect(botAudit).toContain('<DropdownMenuRadioGroup value={resultFilter}');
+    expect(botAudit).toContain('<DropdownMenuRadioGroup value={botFilter}');
+    expect(botAudit).toContain('<DropdownMenuRadioGroup value={actorFilter}');
+    expect(botAudit).toContain('<DropdownMenuRadioGroup value={dateFilter}');
+    expect(botAudit).toContain('<DropdownMenuRadioGroup value={String(pageSize)}');
+    expect(botAudit).toContain("sourceSurface: 'settings'");
+    expect(botAudit).not.toContain('clearErrorLogs');
+    expect(botAudit).not.toContain('diagnostics.export');
     expect(botAudit).not.toContain('useRuntimeAPIs');
   });
 

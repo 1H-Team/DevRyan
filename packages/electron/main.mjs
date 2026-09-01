@@ -41,6 +41,8 @@ import {
   createDesktopHostBrokerClient,
 } from './desktop-host-broker.mjs';
 import { createRuntimeServiceRegistration } from './runtime-service-registration.mjs';
+import { createRuntimeServiceNativeControl } from './runtime-service-native.mjs';
+import { prepareAutomaticRuntimeService } from './runtime-service-startup.mjs';
 import {
   buildQuitRiskSnapshot,
   emptyQuitRisk,
@@ -74,6 +76,12 @@ import {
   createManualBrowserContext,
   readAuthorizedBrowserPrincipal,
 } from './native-browser-context.mjs';
+import {
+  AGENT_PREVIEW_PARTITION_PREFIX,
+  createAgentPreviewPartition,
+  injectBranchPreviewHeaders,
+  normalizeAgentPreviewCredential,
+} from './branch-preview-browser.mjs';
 
 const execFileAsync = promisify(execFile);
 const botRecoveryDialog = createBotRecoveryDialog({ dialog });
@@ -82,6 +90,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isDev = process.env.OPENCHAMBER_ELECTRON_DEV === '1' || !app.isPackaged;
 const isRuntimeServiceMode = process.argv.includes('--runtime-service');
+const isRuntimeServiceControlProbe = process.argv.includes('--runtime-service-control=status');
 
 const DEEP_LINK_PROTOCOL = 'openchamber';
 const STARTUP_RETRY_HOST = 'retry-startup';
@@ -104,7 +113,7 @@ if (isRuntimeServiceMode) {
   app.setPath('userData', serviceUserDataDirectory);
 }
 
-if (!app.requestSingleInstanceLock()) {
+if (!isRuntimeServiceControlProbe && !app.requestSingleInstanceLock()) {
   app.exit(0);
   process.exit(0);
 }
@@ -276,8 +285,10 @@ let runtimeServiceRegistration = null;
 let browserSurfaceManager = null;
 const nativeBrowserContextsByWindow = new Map();
 const nativeBrowserAuthorizationPromises = new Map();
-const registeredManualBrowserPartitions = new Set();
+const registeredBrowserPartitions = new Set();
 const configuredBrowserPartitions = new Set();
+const configuredBranchPreviewInterceptors = new Set();
+const branchPreviewCredentialsByPartition = new Map();
 let browserPartitionRegistryWrite = Promise.resolve();
 const NATIVE_BROWSER_AUTH_CACHE_MS = 5_000;
 const NATIVE_BROWSER_REVALIDATE_MS = 10_000;
@@ -1118,6 +1129,12 @@ const spawnLocalServer = async () => {
         }
       : () => resolveBridgeStatusForDiscovery(),
     getBrowserCdpDiscoveryToken: () => state.browserCdpDiscoveryToken || '',
+    getBrowserLeaseObservationSnapshot: isRuntimeServiceMode
+      ? (request) => desktopHostBrokerClient.browserLeaseObservationSnapshot(request)
+      : (request) => getDesktopBrowserLeaseObservationSnapshot(request),
+    openBrowserLeaseObservationStream: isRuntimeServiceMode
+      ? (request) => desktopHostBrokerClient.openBrowserLeaseObservationStream(request)
+      : (request) => openDesktopBrowserLeaseObservationStream(request),
     createBrowserLease: isRuntimeServiceMode
       ? (request) => desktopHostBrokerClient.createBrowserLease(request)
       : (request) => createDesktopBrowserLease(request),
@@ -1128,7 +1145,7 @@ const spawnLocalServer = async () => {
       ? (request) => desktopHostBrokerClient.releaseBrowserLease(request)
       : (request) => releaseDesktopBrowserLease(request),
     runtimeServiceController: isRuntimeServiceMode ? state.runtimeServiceCoordinator : null,
-    deferOpenCodeStartup: isRuntimeServiceMode,
+    deferOpenCodeStartup: true,
     productionBotsExecutionDisabled,
     onDesktopHostLease: isRuntimeServiceMode
       ? async (lease) => {
@@ -1355,7 +1372,7 @@ const setRuntimeServiceCookie = async (url, setCookieHeader) => {
 };
 
 const registerDesktopHostLease = async (url, broker) => {
-  const response = await session.defaultSession.fetch(`${url}/api/runtime-service/desktop-host`, {
+  const register = (capabilities) => session.defaultSession.fetch(`${url}/api/runtime-service/desktop-host`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1365,9 +1382,16 @@ const registerDesktopHostLease = async (url, broker) => {
       leaseId: broker.leaseId,
       brokerPort: broker.port,
       brokerToken: broker.token,
-      capabilities: broker.capabilities,
+      capabilities,
     }),
   });
+  let response = await register(broker.capabilities);
+  if (response.status === 400 && broker.capabilities.includes('browser_observation')) {
+    // Previous runtime-service builds reject unknown capabilities. Preserve
+    // their existing desktop-host operations while explicitly leaving remote
+    // observation unavailable for that mixed-version pairing.
+    response = await register(broker.capabilities.filter((value) => value !== 'browser_observation'));
+  }
   if (!response.ok) {
     const error = new Error('Runtime service rejected the desktop host lease');
     error.code = response.status === 401
@@ -1390,6 +1414,8 @@ const startDesktopHostBroker = async () => {
       createBrowserLease: (request) => createDesktopBrowserLease(request),
       touchBrowserLease: (request) => touchDesktopBrowserLease(request),
       releaseBrowserLease: (request) => releaseDesktopBrowserLease(request),
+      browserLeaseObservationSnapshot: (request) => getDesktopBrowserLeaseObservationSnapshot(request),
+      openBrowserLeaseObservationStream: (request) => openDesktopBrowserLeaseObservationStream(request),
     },
   });
   return state.desktopHostBroker;
@@ -1489,13 +1515,29 @@ const macosMajorVersion = () => {
 };
 
 const getRuntimeServiceRegistration = () => {
-  runtimeServiceRegistration ||= createRuntimeServiceRegistration({
+  if (runtimeServiceRegistration) return runtimeServiceRegistration;
+  let nativeControl = null;
+  let nativeControlErrorCode = null;
+  if (process.platform === 'darwin'
+    && app.isPackaged
+    && process.env.OPENCHAMBER_ELECTRON_DEV !== '1') {
+    try {
+      nativeControl = createRuntimeServiceNativeControl({ resourcesPath: process.resourcesPath });
+    } catch (error) {
+      nativeControlErrorCode = typeof error?.code === 'string'
+        ? error.code
+        : 'runtime_service_native_bridge_load_failed';
+    }
+  }
+  runtimeServiceRegistration = createRuntimeServiceRegistration({
     macosMajor: macosMajorVersion(),
     isPackaged: app.isPackaged,
     executablePath: process.execPath,
     resourcesPath: process.resourcesPath,
     dataDirectory: dataRootDirectory(),
     developmentMode: process.env.OPENCHAMBER_ELECTRON_DEV === '1',
+    nativeControl,
+    nativeControlErrorCode,
   });
   return runtimeServiceRegistration;
 };
@@ -1691,6 +1733,20 @@ const resumeBackgroundRuntimeAfterAppUpdate = async () => {
   });
 };
 
+const autoEnableBackgroundRuntimeOnFirstLaunch = async () => {
+  const settings = readSettingsRoot();
+  return prepareAutomaticRuntimeService({
+    currentMode: settings.productionBotsRuntimeMode,
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    registration: getRuntimeServiceRegistration(),
+    setMode: (mode) => mutateSettingsRoot((root) => {
+      root.productionBotsRuntimeMode = mode;
+    }),
+    log,
+  });
+};
+
 const buildContentOriginPolicy = () => {
   const config = readDesktopHostsConfig();
   return {
@@ -1711,7 +1767,7 @@ const browserPartitionRegistryPath = () => path.join(app.getPath('userData'), 'b
 const persistRegisteredManualBrowserPartitions = () => {
   const targetPath = browserPartitionRegistryPath();
   const temporaryPath = `${targetPath}.tmp-${process.pid}`;
-  const body = `${JSON.stringify([...registeredManualBrowserPartitions].sort(), null, 2)}\n`;
+  const body = `${JSON.stringify([...registeredBrowserPartitions].sort(), null, 2)}\n`;
   browserPartitionRegistryWrite = browserPartitionRegistryWrite
     .catch(() => undefined)
     .then(async () => {
@@ -1728,8 +1784,11 @@ const loadRegisteredManualBrowserPartitions = () => {
     const parsed = JSON.parse(fs.readFileSync(browserPartitionRegistryPath(), 'utf8'));
     if (!Array.isArray(parsed)) return;
     for (const value of parsed) {
-      if (typeof value !== 'string' || !value.startsWith(MANUAL_BROWSER_PARTITION_PREFIX)) continue;
-      registeredManualBrowserPartitions.add(value);
+      if (
+        typeof value !== 'string'
+        || (!value.startsWith(MANUAL_BROWSER_PARTITION_PREFIX) && !value.startsWith(AGENT_PREVIEW_PARTITION_PREFIX))
+      ) continue;
+      registeredBrowserPartitions.add(value);
       configureBrowserWebviewPartition(value);
     }
   } catch (error) {
@@ -1737,9 +1796,9 @@ const loadRegisteredManualBrowserPartitions = () => {
   }
 };
 
-const registerManualBrowserPartition = (partition) => {
-  if (registeredManualBrowserPartitions.has(partition)) return;
-  registeredManualBrowserPartitions.add(partition);
+const registerBrowserPartition = (partition) => {
+  if (registeredBrowserPartitions.has(partition)) return;
+  registeredBrowserPartitions.add(partition);
   configureBrowserWebviewPartition(partition);
   persistRegisteredManualBrowserPartitions();
 };
@@ -1764,7 +1823,7 @@ const fetchNativeBrowserContext = async (browserWindow) => {
   const principal = readAuthorizedBrowserPrincipal(await response.json().catch(() => null));
   if (!principal) throw new Error('Browser access is disabled');
   const context = createManualBrowserContext({ origin, principalId: principal.id });
-  registerManualBrowserPartition(context.partition);
+  registerBrowserPartition(context.partition);
   return { ...context, verifiedAt: Date.now() };
 };
 
@@ -2189,11 +2248,16 @@ const resolveBrowserLeaseOwnerWindow = (metadata) => {
   const claimKey = browserLeaseWindowClaimKey(metadata?.directory, metadata?.rootSessionId);
   if (!claimKey) return null;
   const claim = browserLeaseWindowClaims.get(claimKey);
-  if (!claim) return null;
-  const claimedWindow = browserWindowById(claim.ownerWindowId);
-  if (isPrivilegedLeaseWindow(claimedWindow)) return claimedWindow;
-  browserLeaseWindowClaims.delete(claimKey);
-  return null;
+  if (claim) {
+    const claimedWindow = browserWindowById(claim.ownerWindowId);
+    if (isPrivilegedLeaseWindow(claimedWindow)) return claimedWindow;
+    browserLeaseWindowClaims.delete(claimKey);
+  }
+  if (metadata?.authoritativeOwner !== true || !safeLeaseString(metadata?.ownerUserId, 256)) return null;
+  if (isPrivilegedLeaseWindow(state.mainWindow)) return state.mainWindow;
+  return BrowserWindow.getAllWindows()
+    .filter(isPrivilegedLeaseWindow)
+    .sort((left, right) => left.id - right.id)[0] || null;
 };
 
 const safeBrowserLeaseSnapshot = (leaseId, owner) => {
@@ -2315,6 +2379,69 @@ const ensureBrowserCdpBridge = async () => {
   return await browserCdpBridgePromise;
 };
 
+const BROWSER_OBSERVATION_BOUNDARY = 'devryan-agent-browser-frame';
+
+const getDesktopBrowserLeaseObservationSnapshot = ({ leaseIds = [] } = {}) => {
+  const requested = new Set(Array.isArray(leaseIds)
+    ? leaseIds.filter((value) => typeof value === 'string')
+    : []);
+  const leases = [];
+  for (const [leaseId, owner] of browserLeaseOwners) {
+    if (!requested.has(leaseId)) continue;
+    const status = browserCdpBridge?.getLeaseStatus(leaseId);
+    if (!status?.ok) continue;
+    const surface = browserSurfaceManager?.snapshotForLease(leaseId);
+    leases.push({
+      leaseId,
+      agent: safeLeaseString(owner.metadata?.agent, 256) || 'Agent',
+      title: safeLeaseString(surface?.title, 1_024),
+      hostname: hostnameForBrowserUrl(surface?.url),
+      lastActivityAt: Number.isFinite(status.lastActivityAt) ? status.lastActivityAt : Date.now(),
+      clientAttached: (status.clients ?? 0) > 0,
+    });
+  }
+  return { leases };
+};
+
+const openDesktopBrowserLeaseObservationStream = ({ leaseId, signal } = {}) => {
+  const manager = getBrowserSurfaceManager();
+  let canPush = true;
+  let unsubscribe = () => {};
+  const stream = new Readable({
+    read() {
+      canPush = true;
+    },
+    destroy(error, callback) {
+      unsubscribe();
+      callback(error);
+    },
+  });
+  const close = () => {
+    if (!stream.destroyed) stream.push(null);
+  };
+  unsubscribe = manager.subscribeLeaseFrames(leaseId, {
+    onFrame: (jpeg) => {
+      if (!canPush || stream.destroyed) return;
+      const header = Buffer.from(
+        `--${BROWSER_OBSERVATION_BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.byteLength}\r\n\r\n`,
+      );
+      canPush = stream.push(Buffer.concat([header, jpeg, Buffer.from('\r\n')]));
+    },
+    onClose: close,
+  });
+  const abort = () => stream.destroy(signal?.reason instanceof Error ? signal.reason : undefined);
+  if (signal?.aborted) abort();
+  else signal?.addEventListener?.('abort', abort, { once: true });
+  stream.once('close', () => {
+    signal?.removeEventListener?.('abort', abort);
+    unsubscribe();
+  });
+  return {
+    contentType: `multipart/x-mixed-replace; boundary=${BROWSER_OBSERVATION_BOUNDARY}`,
+    body: stream,
+  };
+};
+
 const LEASE_GUEST_BIND_POLL_MS = 50;
 const LEASE_OWNER_CLAIM_TIMEOUT_MS = 5_000;
 
@@ -2329,18 +2456,37 @@ const waitForBrowserLeaseOwnerWindow = async (metadata) => {
   return null;
 };
 
-const createDesktopBrowserLease = async ({ leaseId, metadata = {}, onClosed } = {}) => {
+const createDesktopBrowserLease = async ({ leaseId, metadata = {}, previewCredential = null, onClosed } = {}) => {
   if (!readAgentBrowserControlEnabled()) throw new Error('agent_browser_disabled');
   if (typeof leaseId !== 'string' || !leaseId) throw new Error('invalid_browser_lease');
   if (browserLeaseOwners.has(leaseId)) throw new Error('browser_lease_exists');
 
-  // Task/session events can reach the managed child just before the renderer's
-  // exact context-claim IPC. Wait briefly for that exact claim; never fall back
-  // to focus, another directory, or another root.
+  // Prefer an exact renderer claim. Authoritative managed ownership may fall
+  // back to the workstation's privileged main window so a remote account does
+  // not need a second Electron login merely to host its browser surface.
   const ownerWindow = await waitForBrowserLeaseOwnerWindow(metadata);
   if (!ownerWindow) throw new Error('browser_lease_window_unavailable');
   const owner = { ownerWindowId: ownerWindow.id, metadata: { ...metadata } };
   browserLeaseOwners.set(leaseId, owner);
+
+  let browserPartition = '';
+  if (metadata?.authoritativeOwner === true && metadata?.previewOrigin) {
+    try {
+      browserPartition = createAgentPreviewPartition({
+        ownerUserId: metadata.ownerUserId,
+        previewOrigin: metadata.previewOrigin,
+      }) || '';
+      if (!browserPartition) throw new Error('branch_preview_context_invalid');
+      registerBrowserPartition(browserPartition);
+      configureAgentPreviewPartition(browserPartition, {
+        expectedOrigin: metadata.previewOrigin,
+        credential: previewCredential,
+      });
+    } catch (error) {
+      removeBrowserLeaseOwner(leaseId);
+      throw error;
+    }
+  }
 
   let bridge;
   let started;
@@ -2374,6 +2520,7 @@ const createDesktopBrowserLease = async ({ leaseId, metadata = {}, onClosed } = 
     const { webContents: surfaceContents } = getBrowserSurfaceManager().createLeaseSurface(ownerWindow, {
       leaseId,
       initialUrl: metadata?.url,
+      browserPartition,
     });
     const bound = bridge.bindLeaseGuest(leaseId, surfaceContents, { ownerWindowId: ownerWindow.id });
     if (!bound.ok) throw new Error(`browser_lease_${bound.state || 'bind_failed'}`);
@@ -2685,6 +2832,25 @@ const configureBrowserWebviewPartition = (partition) => {
 
 const configureBrowserWebviewSession = () => configureBrowserWebviewPartition(BROWSER_WEBVIEW_PARTITION);
 
+const configureAgentPreviewPartition = (partition, { expectedOrigin, credential } = {}) => {
+  const normalizedCredential = normalizeAgentPreviewCredential(credential, expectedOrigin);
+  if (normalizedCredential) branchPreviewCredentialsByPartition.set(partition, normalizedCredential);
+  else branchPreviewCredentialsByPartition.delete(partition);
+
+  const browserSession = configureBrowserWebviewPartition(partition);
+  if (configuredBranchPreviewInterceptors.has(partition)) return browserSession;
+  browserSession.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (details, callback) => {
+    callback({
+      requestHeaders: injectBranchPreviewHeaders(
+        { url: details.url, requestHeaders: details.requestHeaders },
+        branchPreviewCredentialsByPartition.get(partition),
+      ),
+    });
+  });
+  configuredBranchPreviewInterceptors.add(partition);
+  return browserSession;
+};
+
 const clearLegacySharedBrowserProfileOnce = async () => {
   const markerPath = path.join(app.getPath('userData'), 'browser-profile-isolation-v1');
   if (fs.existsSync(markerPath)) return;
@@ -2700,7 +2866,7 @@ const clearLegacySharedBrowserProfileOnce = async () => {
 const cacheMaintenanceSessions = () => ({
   defaultSession: session.defaultSession,
   browserSession: session.fromPartition(BROWSER_WEBVIEW_PARTITION),
-  browserSessions: Array.from(registeredManualBrowserPartitions, (partition) => session.fromPartition(partition)),
+  browserSessions: Array.from(registeredBrowserPartitions, (partition) => session.fromPartition(partition)),
 });
 
 const createBrowserWindow = ({ label, restoreGeometry, url }) => {
@@ -2764,6 +2930,38 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   browserWindow.on('blur', () => {
     state.focusedWindowIds.delete(browserWindow.id);
   });
+  browserWindow.on('unresponsive', () => {
+    log.warn('[renderer] window became unresponsive', {
+      label: browserWindow.__ocLabel,
+      windowId: browserWindow.id,
+    });
+  });
+  browserWindow.on('responsive', () => {
+    log.info('[renderer] window became responsive', {
+      label: browserWindow.__ocLabel,
+      windowId: browserWindow.id,
+    });
+  });
+  browserWindow.webContents.on('render-process-gone', (_event, details) => {
+    log.error('[renderer] render process exited', {
+      label: browserWindow.__ocLabel,
+      windowId: browserWindow.id,
+      reason: details?.reason || 'unknown',
+      exitCode: Number.isInteger(details?.exitCode) ? details.exitCode : null,
+    });
+  });
+  browserWindow.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, _validatedUrl, isMainFrame) => {
+      if (isMainFrame !== true || errorCode === -3) return;
+      log.warn('[renderer] main frame failed to load', {
+        label: browserWindow.__ocLabel,
+        windowId: browserWindow.id,
+        errorCode,
+        errorDescription: String(errorDescription || '').slice(0, 240),
+      });
+    },
+  );
 
   // Traffic lights disappear during dock-restore animation when using
   // titleBarStyle:'hidden' + custom trafficLightPosition. macOS caches a
@@ -3451,9 +3649,16 @@ const startDesktopRuntime = () => {
       desktopStartupFailed = false;
 
       installPowerResumeHook();
-      if (isLocalStartupTarget(startupContext)
-        && readSettingsRoot().productionBotsRuntimeMode !== 'disabled') {
-        prepareBotRuntimeInBackground();
+      if (isLocalStartupTarget(startupContext)) {
+        const openCodeStartup = Promise.resolve(
+          state.serverHandle?.resumeDeferredOpenCodeStartup?.(),
+        );
+        void openCodeStartup.catch((error) => {
+          log.error('[electron] deferred OpenCode startup failed', startupErrorDetails(error));
+        });
+        if (readSettingsRoot().productionBotsRuntimeMode !== 'disabled') {
+          void openCodeStartup.then(() => prepareBotRuntimeInBackground()).catch(() => undefined);
+        }
       }
     } catch (error) {
       desktopStartupFailed = true;
@@ -4951,6 +5156,13 @@ app.whenReady().then(async () => {
     platform: process.platform,
     arch: process.arch,
   });
+  if (isRuntimeServiceControlProbe) {
+    const registration = getRuntimeServiceRegistration();
+    const result = await registration.status();
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    app.exit(result.ok && result.state !== 'not_found' ? 0 : 2);
+    return;
+  }
   if (isRuntimeServiceMode) {
     state.runtimeServiceCoordinator = await createRuntimeServiceCoordinator({
       dataDirectory: dataRootDirectory(),
@@ -5000,16 +5212,28 @@ app.whenReady().then(async () => {
     url: null,
   });
 
-  if (runtimeServiceModeEnabled()) {
+  const automaticRuntime = await autoEnableBackgroundRuntimeOnFirstLaunch();
+  if (automaticRuntime.mode === 'service') {
     await resumeBackgroundRuntimeAfterAppUpdate();
-    await connectToRuntimeService();
-  }
-
-  if (app.isPackaged) {
-    await clearElectronRuntimeCaches({
-      ...cacheMaintenanceSessions(),
-      log,
-    });
+    try {
+      await waitForRuntimeServiceConnection();
+    } catch (error) {
+      await getRuntimeServiceRegistration().unregister().catch(() => undefined);
+      const stopped = await waitForRuntimeServiceOwnerStopped();
+      if (!stopped) {
+        const ownershipError = new Error('Background runtime ownership could not be resolved safely');
+        ownershipError.code = 'runtime_service_owner_active';
+        throw ownershipError;
+      }
+      await mutateSettingsRoot((root) => {
+        root.productionBotsRuntimeMode = 'app_bound';
+      });
+      state.runtimeServiceClient = false;
+      state.sidecarUrl = null;
+      log.warn('[runtime-service] startup rolled back to app-bound Bots', {
+        code: error?.code || 'runtime_service_start_failed',
+      });
+    }
   }
 
   const initial = extractInitialDeepLinks();

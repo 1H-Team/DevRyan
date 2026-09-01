@@ -2,12 +2,43 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  fetchReleaseByTag,
   legacyBrandedReleaseAssetNames,
   missingRequiredReleaseAssets,
   requiredReleaseAssetNames,
 } from './verify-release-assets.mjs';
 
 describe('release asset verification', () => {
+  it('finds a draft when GitHub does not expose it through the tag endpoint', async () => {
+    const requests = [];
+    const fetchImpl = async (url) => {
+      requests.push(url);
+      if (url.includes('/releases/tags/')) {
+        return {
+          ok: false,
+          status: 404,
+          text: async () => '{"message":"Not Found"}',
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [{ id: 42, tag_name: 'v1.1.8', draft: true }],
+      };
+    };
+
+    const release = await fetchReleaseByTag({
+      repo: '1H-Team/DevRyan',
+      tag: 'v1.1.8',
+      token: 'test-token',
+      fetchImpl,
+    });
+
+    assert.deepEqual(release, { id: 42, tag_name: 'v1.1.8', draft: true });
+    assert.equal(requests.length, 2);
+    assert.match(requests[1], /\/releases\?per_page=100&page=1$/);
+  });
+
   it('requires both macOS app package architectures and update metadata', () => {
     assert.deepEqual(requiredReleaseAssetNames('1.1.1'), [
       'DevRyan-1.1.1-arm64.dmg',

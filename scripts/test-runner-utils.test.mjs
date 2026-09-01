@@ -210,6 +210,27 @@ describe('release workflow', () => {
     );
   });
 
+  test('keeps every pre-final GitHub Release upload in draft state', () => {
+    const workflow = readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8');
+    const finalPublish = workflow.indexOf('- name: Publish release');
+    assert.notEqual(finalPublish, -1, 'final release publication step not found');
+
+    const preFinalWorkflow = workflow.slice(0, finalPublish);
+    for (const stepName of [
+      'Create GitHub Release',
+      'Upload npm tarball to release',
+      'Upload Bot runtime manifest to release',
+      'Upload DMG / ZIP / blockmaps to release',
+      'Upload combined latest-mac.yml to release',
+    ]) {
+      const step = preFinalWorkflow.match(new RegExp(
+        `- name: ${stepName.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\n(?<body>[\\s\\S]*?)(?:\\n      - name: |$)`,
+      ));
+      assert.ok(step?.groups?.body, `${stepName} step not found`);
+      assert.match(step.groups.body, /draft: true/, `${stepName} must preserve the draft release`);
+    }
+  });
+
   test('installs Electron macOS optional dependencies for runner and package target architectures', () => {
     const workflow = readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8');
     const electronJobMatch = workflow.match(/  build-desktop-electron-macos:\n(?<job>[\s\S]*?)(?:\n  [a-zA-Z0-9_-]+:\n|\n$)/);
@@ -219,6 +240,20 @@ describe('release workflow', () => {
     assert.ok(installStepMatch?.groups?.step, 'Electron install dependencies step not found');
 
     assert.match(installStepMatch.groups.step, /bun install --frozen-lockfile --cpu '\*' --os darwin/);
+  });
+
+  test('keeps Electron macOS releases permanently unsigned', () => {
+    const workflow = readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8');
+    const electronJobMatch = workflow.match(/  build-desktop-electron-macos:\n(?<job>[\s\S]*?)(?:\n  [a-zA-Z0-9_-]+:\n|\n$)/);
+    assert.ok(electronJobMatch?.groups?.job, 'build-desktop-electron-macos job not found');
+
+    const job = electronJobMatch.groups.job;
+    assert.match(job, /CSC_IDENTITY_AUTO_DISCOVERY: 'false'/);
+    assert.match(job, /-c\.mac\.identity=null -c\.mac\.notarize=false -c\.dmg\.sign=false/);
+    assert.doesNotMatch(job, /--require-developer-id/);
+    assert.doesNotMatch(job, /Install Apple Certificate/);
+    assert.doesNotMatch(job, /secrets\.APPLE_/);
+    assert.doesNotMatch(job, /Verify signature \+ entitlements \+ notarization/);
   });
 });
 

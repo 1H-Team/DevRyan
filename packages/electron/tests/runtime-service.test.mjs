@@ -133,7 +133,7 @@ describe('launchd runtime-service ownership and handshake', () => {
         state: 'connected',
         leaseId: '123e4567-e89b-42d3-a456-426614174000',
         expiresAt: '2026-08-27T10:00:30.000Z',
-        capabilities: ['browser_cdp', 'focus'],
+        capabilities: ['browser_cdp', 'browser_observation', 'focus'],
       },
     });
     assert.equal(coordinator.publicStatus().desktopHost.state, 'connected');

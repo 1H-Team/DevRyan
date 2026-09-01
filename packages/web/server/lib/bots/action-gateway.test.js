@@ -62,6 +62,7 @@ const routineSnapshot = (overrides = {}) => ({
 
 const createHarness = ({
   connectorRegistry: connectorOverride,
+  browserService: browserOverride,
   runContextSnapshot = null,
   onRunSettled = vi.fn(async () => {}),
   policy = { defaultEffect: 'allow', defaultRisk: 'low', rules: [] },
@@ -150,13 +151,14 @@ const createHarness = ({
     },
     ...quotaServices,
   };
-  const browserService = {
+  const browserService = browserOverride || {
     executeAction: vi.fn(async ({ command }) => ({
       result: command === 'snapshot' ? { nodes: [{ ref: 'button-1' }] } : { clicked: true },
       operationKind: command === 'snapshot' ? 'read' : 'write',
       nativeExactlyOnce: false,
       writeGuarantee: command === 'snapshot' ? 'safe_to_retry' : 'unknown_on_transport_loss',
     })),
+    waitForControlRelease: vi.fn(async () => ({ released: true })),
   };
   const connectorRegistry = connectorOverride || {
     validate: vi.fn(async () => {
@@ -179,13 +181,30 @@ const createHarness = ({
   };
   const evidenceService = { capture: vi.fn(async () => null) };
   const eventStream = { publish: vi.fn(async () => ({ delivered: 1 })) };
-  const channels = { audienceForChannel: vi.fn(async () => [USER_ID]) };
+  const channels = {
+    audienceForChannel: vi.fn(async () => [USER_ID]),
+    publicRun: vi.fn((row) => ({
+      id: row.id,
+      botId: row.bot_id,
+      channelId: row.channel_id,
+      revisionId: row.revision_id,
+      computerScopeKey: row.computer_scope_key,
+      queueSequence: null,
+      state: row.state,
+      retryable: false,
+      interruptionKind: row.interruption_kind || null,
+      createdAt: row.created_at || NOW,
+      updatedAt: row.updated_at,
+      startedAt: row.started_at || null,
+      finishedAt: row.finished_at || null,
+    })),
+  };
   const authorization = {
     requireOperator: vi.fn(async () => ({ membership: { role: 'operator' } })),
     requireActiveMembership: vi.fn(async () => ({ membership: { role: 'operator' } })),
   };
   const audit = vi.fn(async () => {});
-  const gateway = createBotActionGateway({
+  const gatewayOptions = {
     store,
     channels,
     authorization,
@@ -200,9 +219,11 @@ const createHarness = ({
     onRunSettled,
     now: () => new Date(NOW),
     uuid: () => `f0000000-0000-4000-8000-${String(nextActionId++).padStart(12, '0')}`,
-  });
+  };
+  const gateway = createBotActionGateway(gatewayOptions);
   return {
     gateway,
+    restartGateway: () => createBotActionGateway(gatewayOptions),
     store,
     actions,
     browserService,
@@ -243,6 +264,136 @@ describe('Bot fail-closed action gateway', () => {
     });
     expect(JSON.stringify(harness.actions[0].encrypted_args)).not.toContain('button-1');
     expect(JSON.stringify(harness.actions[0].execution_receipt)).not.toContain('nodes');
+  });
+
+  it('durably waits for human control and resumes the exact idempotent action once', async () => {
+    let releaseControl;
+    let enterControlWait;
+    const controlReleased = new Promise((resolve) => { releaseControl = resolve; });
+    const controlWaitEntered = new Promise((resolve) => { enterControlWait = resolve; });
+    const executeAction = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('held'), {
+        code: 'bot_browser_control_held',
+        remoteCode: 'DEVRYAN_BOT_CONTROL_HELD',
+        preExecution: true,
+        transportUncertain: false,
+      }))
+      .mockResolvedValue({
+        result: { nodes: [{ ref: 'button-1' }] },
+        operationKind: 'read',
+        nativeExactlyOnce: false,
+        writeGuarantee: 'safe_to_retry',
+      });
+    const browserService = {
+      executeAction,
+      waitForControlRelease: vi.fn(async () => {
+        enterControlWait();
+        return controlReleased;
+      }),
+    };
+    const harness = createHarness({ browserService });
+    const pending = harness.gateway.handleGatewayOperation({
+      claims: claims(),
+      operation: 'computer.command',
+      payload: computerPayload(),
+    });
+    await controlWaitEntered;
+    expect(harness.actions[0]?.state).toBe('waiting_control');
+    expect(harness.getRun().state).toBe('waiting_control');
+    expect(harness.audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'bot.action.waiting_control',
+      result: 'success',
+      metadata: expect.objectContaining({ remoteCode: 'DEVRYAN_BOT_CONTROL_HELD' }),
+    }));
+    releaseControl();
+    await expect(pending).resolves.toMatchObject({ result: { nodes: [{ ref: 'button-1' }] } });
+    expect(executeAction).toHaveBeenCalledTimes(2);
+    expect(browserService.waitForControlRelease).toHaveBeenCalledTimes(1);
+    expect(harness.actions[0]).toMatchObject({ state: 'succeeded' });
+    expect(harness.getRun().state).toBe('running');
+    expect(harness.eventStream.publish).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'run.waiting_control',
+    }));
+    expect(harness.eventStream.publish).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'action.control_resumed',
+    }));
+  });
+
+  it('keeps only allowlisted browser remote codes in failed-action audit metadata', async () => {
+    const browserService = {
+      executeAction: vi.fn(async () => {
+        throw Object.assign(new Error('stale reference'), {
+          code: 'bot_browser_reference_stale',
+          remoteCode: 'DEVRYAN_BOT_REF_STALE',
+          preExecution: true,
+          transportUncertain: false,
+        });
+      }),
+      waitForControlRelease: vi.fn(async () => ({ released: true })),
+    };
+    const harness = createHarness({ browserService });
+
+    await expect(harness.gateway.handleGatewayOperation({
+      claims: claims(),
+      operation: 'computer.command',
+      payload: computerPayload(),
+    })).rejects.toMatchObject({ code: 'bot_browser_reference_stale' });
+    expect(harness.audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'bot.action.failed',
+      result: 'failure',
+      metadata: expect.objectContaining({ remoteCode: 'DEVRYAN_BOT_REF_STALE' }),
+    }));
+  });
+
+  it('resumes a persisted control wait after restart with the same idempotency key', async () => {
+    const browserService = {
+      executeAction: vi.fn()
+        .mockRejectedValueOnce(Object.assign(new Error('held'), {
+          code: 'bot_browser_control_held', remoteCode: 'DEVRYAN_BOT_CONTROL_HELD', preExecution: true,
+        }))
+        .mockResolvedValue({ result: { nodes: [] }, operationKind: 'read', writeGuarantee: 'safe_to_retry' }),
+      waitForControlRelease: vi.fn()
+        .mockRejectedValueOnce(Object.assign(new Error('restart'), { code: 'bot_runtime_stopped' }))
+        .mockResolvedValue({ released: true }),
+    };
+    const harness = createHarness({ browserService });
+    const input = { claims: claims(), operation: 'computer.command', payload: computerPayload() };
+    await expect(harness.gateway.handleGatewayOperation(input)).rejects.toMatchObject({ code: 'bot_runtime_stopped' });
+    expect(harness.actions[0].state).toBe('waiting_control');
+    const originalId = harness.actions[0].id;
+    await expect(harness.restartGateway().handleGatewayOperation(input)).resolves.toMatchObject({ result: { nodes: [] } });
+    expect(harness.actions).toHaveLength(1);
+    expect(harness.actions[0]).toMatchObject({ id: originalId, state: 'succeeded' });
+    expect(browserService.executeAction).toHaveBeenCalledTimes(2);
+    expect(harness.audit.mock.calls.some(([event]) => event.result === 'failure')).toBe(false);
+  });
+
+  it('executes a write exactly once across repeated human lease races', async () => {
+    let writes = 0;
+    let fences = 2;
+    const browserService = {
+      executeAction: vi.fn(async () => {
+        if (fences-- > 0) throw Object.assign(new Error('held'), {
+          code: 'bot_browser_control_held', remoteCode: 'DEVRYAN_BOT_CONTROL_HELD', preExecution: true,
+        });
+        writes += 1;
+        return { result: { clicked: true }, operationKind: 'write', writeGuarantee: 'unknown_on_transport_loss' };
+      }),
+      waitForControlRelease: vi.fn(async () => ({ released: true })),
+    };
+    const harness = createHarness({ browserService });
+    const input = {
+      claims: claims(), operation: 'computer.command',
+      payload: computerPayload({ command: 'click', args: { ref: 'button-1' }, target: {
+        origin: 'https://example.com', goal: 'Open reviewed settings', ref: 'button-1',
+      } }),
+    };
+    await harness.gateway.handleGatewayOperation(input);
+    await harness.gateway.handleGatewayOperation(input);
+    expect(writes).toBe(1);
+    expect(browserService.waitForControlRelease).toHaveBeenCalledTimes(2);
+    expect(harness.actions).toHaveLength(1);
+    expect(harness.actions[0]).toMatchObject({ state: 'succeeded', unknown_outcome: false });
   });
 
   it('invalidates an idempotent retry when args or target change', async () => {

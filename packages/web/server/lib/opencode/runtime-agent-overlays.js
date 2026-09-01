@@ -5,7 +5,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'yaml';
 
-import { resolveProjectPlansDirectory } from '../projects/project-id.js';
 import {
   findWorktreeRoot,
   getConfigPaths,
@@ -19,6 +18,7 @@ import {
   buildBlockedManagedRuntimeMcpOverlay,
   filterManagedRuntimePluginEntries,
 } from './runtime-surface-policy.js';
+import { getOpenChamberDataDir } from './managed-process-registry.js';
 import {
   applyRuntimeExternalDirectoryPolicy,
   sanitizeAgentSkillPolicy,
@@ -30,6 +30,7 @@ import {
 } from './provider-integrations.js';
 import { isAnthropicOAuthPluginSpec } from './anthropic-oauth-plugin.js';
 import { isRuntimePluginFileName } from './default-config-assets.js';
+import { resolveActiveProjectWorktreeContainer } from './worktree-permissions.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CONFIG_DIR = path.resolve(__dirname, '../../default-config');
@@ -861,7 +862,11 @@ const shouldWriteRuntimePermissionOverlay = (agent, options = {}) => (
   && isPlainObject(agent?.frontmatter?.permission)
 );
 
-const buildRuntimeExternalDirectories = (workingDirectory) => {
+const buildRuntimeExternalDirectories = (
+  workingDirectory,
+  dataDirectory = getOpenChamberDataDir(),
+  openCodeDataDirectory,
+) => {
   const dirs = [];
   const addDir = (dir) => {
     if (typeof dir !== 'string' || !dir.trim()) {
@@ -876,13 +881,14 @@ const buildRuntimeExternalDirectories = (workingDirectory) => {
   if (process.platform !== 'win32') {
     addDir('/tmp');
   }
+  addDir(dataDirectory);
   if (!workingDirectory) {
     return dirs;
   }
 
   addDir(workingDirectory);
   addDir(findWorktreeRoot(workingDirectory));
-  addDir(resolveProjectPlansDirectory(workingDirectory));
+  addDir(resolveActiveProjectWorktreeContainer(workingDirectory, { openCodeDataDirectory }));
   return dirs;
 };
 
@@ -921,7 +927,11 @@ export const syncRuntimeAgentOverlays = async (options = {}) => {
   const targetAgentDirectory = path.join(targetConfigDirectory, 'agents');
   const targetPluginDirectory = path.join(targetConfigDirectory, 'plugins');
   const overrides = normalizeOverrides(options, workingDirectory);
-  const runtimeExternalDirectories = buildRuntimeExternalDirectories(workingDirectory);
+  const runtimeExternalDirectories = buildRuntimeExternalDirectories(
+    workingDirectory,
+    options.dataDirectory,
+    options.openCodeDataDirectory,
+  );
   const runtimeSkillPolicy = buildRuntimeSkillPolicy(options.skillPolicy, runtimeExternalDirectories);
   const runtimeOptions = {
     ...options,

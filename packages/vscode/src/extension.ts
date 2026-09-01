@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { createPrimaryRecoveryHost, createPrimaryRecoveryManagedAdapter } from '@openchamber/harness-runtime';
 import { ChatViewProvider } from './ChatViewProvider';
 import { AgentManagerPanelProvider } from './AgentManagerPanelProvider';
 import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
@@ -176,6 +177,27 @@ export async function activate(context: vscode.ExtensionContext) {
   );
   const harnessRuntime = getVsCodeHarnessRuntime();
   if (harnessRuntime) {
+    const primaryRecovery = createPrimaryRecoveryHost({
+      dataDirectory: context.globalStorageUri.fsPath,
+      buildOpenCodeUrl: (pathname) => {
+        const base = openCodeManager?.getApiUrl();
+        if (!base) throw new Error('OpenCode is unavailable');
+        return new URL(pathname.replace(/^\//, ''), `${base.replace(/\/$/, '')}/`);
+      },
+      getOpenCodeAuthHeaders: () => openCodeManager?.getOpenCodeAuthHeaders() ?? {},
+      isManaged: () => openCodeManager?.getDebugInfo().mode === 'managed',
+      authorize: async () => openCodeManager?.getDebugInfo().mode === 'managed',
+      ...createPrimaryRecoveryManagedAdapter(async (request) => {
+        if (!managedOrchestrationRuntime) throw new Error('Managed runtime is unavailable');
+        return managedOrchestrationRuntime.handleRpc(request);
+      }),
+      publishEvent: publishSessionViewEvent,
+      recordIncident: (incident) => harnessRuntime.record({ type: 'lifecycle', event: incident.event,
+        sessionID: incident.sessionID, messageID: incident.messageID, payload: incident }),
+    });
+    harnessRuntime.setPrimaryRecoveryRuntime(primaryRecovery);
+  }
+  if (harnessRuntime) {
     const commandDeadlineRuntime = createVsCodeCommandDeadlineRuntime({
       store: harnessRuntime.commandDeadlineStore,
       manager: openCodeManager,
@@ -201,6 +223,13 @@ export async function activate(context: vscode.ExtensionContext) {
     getWorkAdmissionBlock: () => (
       getVsCodeHarnessRuntime()?.getPromptAdmissionBlock() ?? null
     ),
+    auxiliaryRpcHandlers: {
+      primary_recovery: async (params) => {
+        const runtime = getVsCodeHarnessRuntime()?.getPrimaryRecoveryRuntime();
+        if (!runtime) throw new Error('Primary recovery runtime is unavailable');
+        return runtime.plugin(params);
+      },
+    },
     logger: console,
   });
 

@@ -13,6 +13,7 @@ import {
   createRecordStore,
   createTurnEvidenceRuntime,
   type CommandDeadlineController,
+  type PrimaryRecoveryHost,
   type CommandDeadlineRecord,
   type DiagnosticJournal,
   type DiagnosticSanitizer,
@@ -86,6 +87,8 @@ export interface VsCodeHarnessRuntime {
   ): () => boolean;
   setContextModeRecoveryStatusProvider(provider: () => ContextModeRecoveryStatus | null): void;
   setCommandDeadlineRuntime(runtime: CommandDeadlineController): void;
+  setPrimaryRecoveryRuntime(runtime: PrimaryRecoveryHost): void;
+  getPrimaryRecoveryRuntime(): PrimaryRecoveryHost | null;
   observeCommandDeadlineEvent(payload: unknown, directory?: string | null): Promise<boolean>;
   reconcileCommandDeadlines(): Promise<void>;
   beginDrain(): void;
@@ -253,6 +256,7 @@ export const createVsCodeHarnessRuntime = (
   const promptAdmission = createPromptAdmissionController();
   let getContextModeRecoveryStatus: () => ContextModeRecoveryStatus | null = () => null;
   let commandDeadlineRuntime: CommandDeadlineController | null = null;
+  let primaryRecoveryRuntime: PrimaryRecoveryHost | null = null;
   let initialization: Promise<void> | null = null;
 
   const record = (entry: Record<string, unknown>): boolean => journal.enqueue({
@@ -308,6 +312,8 @@ export const createVsCodeHarnessRuntime = (
     setCommandDeadlineRuntime(nextRuntime) {
       commandDeadlineRuntime = nextRuntime;
     },
+    setPrimaryRecoveryRuntime(nextRuntime) { primaryRecoveryRuntime = nextRuntime; },
+    getPrimaryRecoveryRuntime() { return primaryRecoveryRuntime; },
     observeCommandDeadlineEvent(payload, directory = null) {
       return commandDeadlineRuntime?.observe(payload, directory) ?? Promise.resolve(false);
     },
@@ -344,6 +350,7 @@ export const createVsCodeHarnessRuntime = (
     },
     recordOpenCodeEvent(value, directory = null) {
       const normalized = getEventPayload(value);
+      primaryRecoveryRuntime?.observe(normalized.payload);
       const resolvedDirectory = normalized.directory || directory;
       record({
         type: 'open_code_event',
@@ -417,6 +424,7 @@ export const createVsCodeHarnessRuntime = (
         worktreeRuntime.drain(),
         evidenceRuntime.drain(),
         commandDeadlineRuntime?.drain(),
+        primaryRecoveryRuntime?.drain(),
         worktreeStore.drain(),
         commandDeadlineStore.drain(),
         evidenceStore.drain(),

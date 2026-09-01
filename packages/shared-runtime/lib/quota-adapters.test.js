@@ -465,6 +465,55 @@ describe('xAI shared quota adapter', () => {
     expect(result.usage.windows.credits).toMatchObject({ usedPercent: null, valueLabel: '42 credits' });
   });
 
+  test('treats an omitted percentage in a valid weekly period as zero usage', async () => {
+    const resetAt = Date.parse('2026-08-18T00:00:00Z');
+    const result = await fetchXaiQuotaAdapter({
+      credential: { accessToken: 'access' },
+      now,
+      fetchImpl: async (url) => url === XAI_RESET_BANK_URL
+        ? response(new Uint8Array(), 200, {}, url)
+        : response({
+          config: {
+            currentPeriod: {
+              type: 'USAGE_PERIOD_TYPE_WEEKLY',
+              start: '2026-08-11T00:00:00Z',
+              end: '2026-08-18T00:00:00Z',
+            },
+          },
+        }),
+    });
+
+    expect(result.usage.windows.weekly).toMatchObject({
+      usedPercent: 0,
+      remainingPercent: 100,
+      windowSeconds: 604_800,
+      resetAt,
+    });
+    expect(result.warnings).toBeUndefined();
+  });
+
+  test('warns when a present xAI usage percentage is malformed', async () => {
+    const result = await fetchXaiQuotaAdapter({
+      credential: { accessToken: 'access' },
+      now,
+      fetchImpl: async (url) => url === XAI_RESET_BANK_URL
+        ? response(new Uint8Array(), 200, {}, url)
+        : response({
+          config: {
+            creditUsagePercent: 'invalid',
+            currentPeriod: {
+              type: 'USAGE_PERIOD_TYPE_WEEKLY',
+              start: '2026-08-11T00:00:00Z',
+              end: '2026-08-18T00:00:00Z',
+            },
+          },
+        }),
+    });
+
+    expect(result.usage.windows.weekly).toMatchObject({ usedPercent: null });
+    expect(result.warnings).toContain('weekly billing did not include a usage percentage.');
+  });
+
   test('normalizes valid reset tokens without exposing provider token IDs', async () => {
     const soon = Date.parse('2026-08-20T00:00:00Z');
     const later = Date.parse('2026-09-12T00:00:00Z');

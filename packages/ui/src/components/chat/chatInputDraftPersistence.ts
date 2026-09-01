@@ -80,6 +80,7 @@ const saveMentions = (storage: Storage, target: ComposerDraftTarget, mentions: S
 export const createComposerDraftPersistenceController = (options: {
   storage: Storage
   updateDraftText: (draftId: string, text: string) => void
+  draftExists?: (draftId: string) => boolean
 }) => {
   const retiredTargetKeys = new Set<string>()
   const lastPersistedDraftByKey = new Map<string, string>()
@@ -104,6 +105,9 @@ export const createComposerDraftPersistenceController = (options: {
     if (target.kind === "none" || isRetired(target)) {
       return confirmedMentions
     }
+    // Promotion/deletion may complete before the mounted composer's target
+    // effect. Never let that old effect recreate an orphaned draft input key.
+    if (target.kind === 'draft' && options.draftExists?.(target.id) === false) return confirmedMentions
 
     const key = getComposerDraftStorageKey(target)
     if (!key) return confirmedMentions
@@ -138,6 +142,10 @@ export const createComposerDraftPersistenceController = (options: {
     retiredTargetKeys.delete(getComposerDraftTargetKey(target))
   }
 
+  const restoreIfEmpty = (target: ComposerDraftTarget, draft: string): void => {
+    if (!load(target)) save(target, draft, new Set())
+  }
+
   return {
     clear,
     isRetired,
@@ -145,6 +153,7 @@ export const createComposerDraftPersistenceController = (options: {
     loadConfirmedMentions,
     release,
     retire,
+    restoreIfEmpty,
     save,
   }
 }

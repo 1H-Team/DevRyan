@@ -4,7 +4,6 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { listRuntimePluginAssets } from '../../web/server/lib/opencode/default-config-assets.js';
-import { resolveProjectPlansDirectory } from '../../web/server/lib/projects/project-id.js';
 import { deleteSkill, discoverSkills, getSkillSources } from './opencodeConfig';
 
 const writeJson = (filePath, data) => {
@@ -207,6 +206,7 @@ describe('VS Code Cursor SDK config handling', () => {
   let originalSlimPreset;
   let originalOpenAIApiKey;
   let originalOpenCodeConfigDirectory;
+  let originalDataDirectory;
 
   afterEach(() => {
     if (originalHome === undefined) {
@@ -229,6 +229,11 @@ describe('VS Code Cursor SDK config handling', () => {
     } else {
       process.env.OPENCODE_CONFIG_DIR = originalOpenCodeConfigDirectory;
     }
+    if (originalDataDirectory === undefined) {
+      delete process.env.OPENCHAMBER_DATA_DIR;
+    } else {
+      process.env.OPENCHAMBER_DATA_DIR = originalDataDirectory;
+    }
     if (tempHome) {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
@@ -236,6 +241,7 @@ describe('VS Code Cursor SDK config handling', () => {
     originalSlimPreset = undefined;
     originalOpenAIApiKey = undefined;
     originalOpenCodeConfigDirectory = undefined;
+    originalDataDirectory = undefined;
     vi.resetModules();
   });
 
@@ -245,10 +251,12 @@ describe('VS Code Cursor SDK config handling', () => {
     originalSlimPreset = process.env.OH_MY_OPENCODE_SLIM_PRESET;
     originalOpenAIApiKey = process.env.OPENAI_API_KEY;
     originalOpenCodeConfigDirectory = process.env.OPENCODE_CONFIG_DIR;
+    originalDataDirectory = process.env.OPENCHAMBER_DATA_DIR;
     process.env.HOME = tempHome;
     delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
     delete process.env.OPENAI_API_KEY;
     delete process.env.OPENCODE_CONFIG_DIR;
+    delete process.env.OPENCHAMBER_DATA_DIR;
     vi.resetModules();
     return import('./opencodeConfig');
   };
@@ -688,8 +696,13 @@ describe('VS Code Cursor SDK config handling', () => {
     const { syncRuntimeAgentOverlays } = await loadRuntime();
     const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-overlay-repo-'));
     const projectDir = path.join(repoDir, 'packages', 'app');
+    const openCodeDataDirectory = path.join(tempHome, '.local', 'share', 'opencode');
+    const projectId = 'project-one';
+    const projectWorktreeContainer = path.join(openCodeDataDirectory, 'worktree', projectId);
     fs.mkdirSync(path.join(repoDir, '.git'), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, '.git', 'opencode'), `${projectId}\n`, 'utf8');
     fs.mkdirSync(projectDir, { recursive: true });
+    fs.mkdirSync(projectWorktreeContainer, { recursive: true });
     writeAgentMarkdown(path.join(projectDir, '.opencode', 'agents'), 'reviewer', [
       'mode: subagent',
       'permission:',
@@ -709,28 +722,71 @@ describe('VS Code Cursor SDK config handling', () => {
         },
       },
     });
+    const dataDirectory = path.join(tempHome, '.config', 'openchamber');
+    fs.mkdirSync(dataDirectory, { recursive: true });
 
-    const result = syncRuntimeAgentOverlays(projectDir);
+    const result = syncRuntimeAgentOverlays(projectDir, { openCodeDataDirectory });
     const frontmatter = readAgentFrontmatter(path.join(result.targetConfigDirectory, 'agents', 'explorer.md'));
     const reviewerFrontmatter = readAgentFrontmatter(
       path.join(result.targetConfigDirectory, 'agents', 'reviewer.md'),
     );
-    const plansDirectory = resolveProjectPlansDirectory(projectDir, tempHome);
 
     expect(frontmatter).toContain(`${repoDir}/*: allow`);
     expect(frontmatter).toContain(`${projectDir}/*: allow`);
-    expect(frontmatter).toContain(`${plansDirectory}/*: allow`);
+    expect(frontmatter).toContain(`${projectWorktreeContainer}/*: allow`);
+    expect(frontmatter).toContain(`${dataDirectory}/*: allow`);
+    expect(frontmatter).toContain(`${fs.realpathSync(dataDirectory)}/*: allow`);
+    expect(frontmatter).not.toContain(`${path.join(tempHome, '.config')}/*: allow`);
+    expect(frontmatter).not.toContain(`${path.join(openCodeDataDirectory, 'worktree')}/*: allow`);
+    expect(frontmatter).not.toContain(`${path.join(openCodeDataDirectory, 'worktree', 'project-two')}/*: allow`);
+    expect(path.join(
+      dataDirectory,
+      'projects',
+      'another-project',
+      'plans',
+      'revision.md',
+    ).startsWith(`${dataDirectory}${path.sep}`)).toBe(true);
     if (process.platform !== 'win32') {
       expect(frontmatter).toContain('/tmp/*: allow');
       expect(frontmatter).toContain(`${fs.realpathSync('/tmp')}/*: allow`);
     }
     expect(frontmatter).toContain('"*": ask');
     expect(frontmatter).toContain('"*.env": ask');
-    expect(fs.existsSync(plansDirectory)).toBe(false);
-    expect(reviewerFrontmatter).toContain(`${plansDirectory}/*: allow`);
+    expect(reviewerFrontmatter).toContain(`${dataDirectory}/*: allow`);
     expect(reviewerFrontmatter).toContain('"*": deny');
     expect(reviewerFrontmatter).toContain('"*.env": ask');
     fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('uses OPENCHAMBER_DATA_DIR for VS Code runtime agent overlays', async () => {
+    const { syncRuntimeAgentOverlays } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-data-root-project-'));
+    const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-data-root-'));
+    process.env.OPENCHAMBER_DATA_DIR = dataDirectory;
+    writeAgentMarkdown(path.join(projectDir, '.opencode', 'agents'), 'reviewer', [
+      'mode: subagent',
+      'permission:',
+      '  "*": deny',
+      '  external_directory:',
+      '    "*": ask',
+      '  read:',
+      '    "*": allow',
+    ]);
+
+    try {
+      const result = syncRuntimeAgentOverlays(projectDir);
+      const frontmatter = readAgentFrontmatter(
+        path.join(result.targetConfigDirectory, 'agents', 'reviewer.md'),
+      );
+
+      expect(frontmatter).toContain(`${dataDirectory}/*: allow`);
+      expect(frontmatter).toContain(`${fs.realpathSync(dataDirectory)}/*: allow`);
+      expect(frontmatter).not.toContain(`${path.join(tempHome, '.config', 'openchamber')}/*: allow`);
+      expect(frontmatter).toContain('"*": deny');
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+      fs.rmSync(dataDirectory, { recursive: true, force: true });
+    }
   });
 
   it('lists Slim-managed agents instead of packaged defaults and writes overrides to Slim config', async () => {

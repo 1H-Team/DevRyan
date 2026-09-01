@@ -23,6 +23,10 @@ Coding Agents owns drafts/projects/sessions/search/multi-run/scheduled actions,
 while Bots owns only `components/bots/sidebar/`. Bot selection coalesces owner
 channel creation without clearing the ordinary session/draft/main-tab state;
 switching back restores it. `SessionNodeItem.tsx` remains Bot-unaware.
+Active root rows and automatic worktree groups consume the low-frequency latest
+visible user-prompt projection. Pinned and manual ordering remain authoritative;
+assistant streaming, status, title, and `session.time.updated` churn never move
+active rows. Elapsed-time labels and row-local clocks remain absent.
 
 ## Flow
 Session entities from stores become sidebar rows; user actions dispatch store/API updates.

@@ -26,6 +26,7 @@ with bot_relations(name) as (
     ('bot_memories'),
     ('bot_memory_versions'),
     ('bot_memory_sources'),
+    ('bot_memory_extraction_jobs'),
     ('bot_library_sources'),
     ('bot_library_versions'),
     ('bot_audit_events'),
@@ -44,7 +45,7 @@ with bot_relations(name) as (
     ('bot_channel_acl'), ('bot_messages'), ('bot_objects'), ('bot_runs'),
     ('bot_action_attempts'), ('bot_approvals'), ('bot_credentials'), ('bot_routines'),
     ('bot_routine_occurrences'), ('bot_memories'), ('bot_memory_versions'),
-    ('bot_memory_sources'), ('bot_library_sources'), ('bot_library_versions'),
+    ('bot_memory_sources'), ('bot_memory_extraction_jobs'), ('bot_library_sources'), ('bot_library_versions'),
     ('bot_audit_events'), ('bot_eval_cases'), ('bot_eval_runs'),
     ('bot_shared_files'), ('bot_environment_secrets')
 )
@@ -59,7 +60,7 @@ with bot_relations(name) as (
     ('bot_channel_acl'), ('bot_messages'), ('bot_objects'), ('bot_runs'),
     ('bot_action_attempts'), ('bot_approvals'), ('bot_credentials'), ('bot_routines'),
     ('bot_routine_occurrences'), ('bot_memories'), ('bot_memory_versions'),
-    ('bot_memory_sources'), ('bot_library_sources'), ('bot_library_versions'),
+    ('bot_memory_sources'), ('bot_memory_extraction_jobs'), ('bot_library_sources'), ('bot_library_versions'),
     ('bot_audit_events'), ('bot_eval_cases'), ('bot_eval_runs'),
     ('bot_shared_files'), ('bot_environment_secrets')
 )
@@ -74,7 +75,7 @@ with bot_relations(name) as (
     ('bot_channel_acl'), ('bot_messages'), ('bot_objects'), ('bot_runs'),
     ('bot_action_attempts'), ('bot_approvals'), ('bot_credentials'), ('bot_routines'),
     ('bot_routine_occurrences'), ('bot_memories'), ('bot_memory_versions'),
-    ('bot_memory_sources'), ('bot_library_sources'), ('bot_library_versions'),
+    ('bot_memory_sources'), ('bot_memory_extraction_jobs'), ('bot_library_sources'), ('bot_library_versions'),
     ('bot_audit_events'), ('bot_eval_cases'), ('bot_eval_runs'),
     ('bot_shared_files'), ('bot_environment_secrets')
 )
@@ -91,7 +92,7 @@ with bot_relations(name) as (
     ('bot_channel_acl'), ('bot_messages'), ('bot_objects'), ('bot_runs'),
     ('bot_action_attempts'), ('bot_approvals'), ('bot_credentials'), ('bot_routines'),
     ('bot_routine_occurrences'), ('bot_memories'), ('bot_memory_versions'),
-    ('bot_memory_sources'), ('bot_library_sources'), ('bot_library_versions'),
+    ('bot_memory_sources'), ('bot_memory_extraction_jobs'), ('bot_library_sources'), ('bot_library_versions'),
     ('bot_audit_events'), ('bot_eval_cases'), ('bot_eval_runs'),
     ('bot_shared_files'), ('bot_environment_secrets')
 )
@@ -108,7 +109,7 @@ with bot_relations(name) as (
     ('bot_channel_acl'), ('bot_messages'), ('bot_objects'), ('bot_runs'),
     ('bot_action_attempts'), ('bot_approvals'), ('bot_credentials'), ('bot_routines'),
     ('bot_routine_occurrences'), ('bot_memories'), ('bot_memory_versions'),
-    ('bot_memory_sources'), ('bot_library_sources'), ('bot_library_versions'),
+    ('bot_memory_sources'), ('bot_memory_extraction_jobs'), ('bot_library_sources'), ('bot_library_versions'),
     ('bot_audit_events'), ('bot_eval_cases'), ('bot_eval_runs'),
     ('bot_shared_files'), ('bot_environment_secrets')
 )
@@ -141,6 +142,7 @@ select ok(
       'public.bot_memories'::regclass,
       'public.bot_memory_versions'::regclass,
       'public.bot_memory_sources'::regclass,
+      'public.bot_memory_extraction_jobs'::regclass,
       'public.bot_library_sources'::regclass,
       'public.bot_library_versions'::regclass,
       'public.bot_audit_events'::regclass,
@@ -186,8 +188,11 @@ select has_index('public', 'bot_objects', 'bot_objects_expiry_idx', 'expiring ev
 select has_index('public', 'bot_routines', 'bot_routines_due_idx', 'due routine index exists');
 select has_index('public', 'bot_memories', 'bot_memories_active_scope_idx', 'active memory scope index exists');
 select has_index('public', 'bot_memory_sources', 'bot_memory_sources_channel_idx', 'memory provenance index exists');
+select has_index('public', 'bot_memory_extraction_jobs', 'bot_memory_extraction_jobs_due_idx', 'memory extraction retry queue index exists');
+select has_index('public', 'bot_memory_extraction_jobs', 'bot_memory_extraction_jobs_one_leased_per_bot_idx', 'one extraction lease per Bot index exists');
 select has_index('public', 'bot_library_versions', 'bot_library_versions_published_idx', 'Library version index exists');
 select has_index('public', 'bot_audit_events', 'bot_audit_events_target_time_idx', 'audit target cursor index exists');
+select has_index('public', 'bot_audit_events', 'bot_audit_events_issues_time_idx', 'audit issues cursor index exists');
 select has_index('public', 'bot_shared_files', 'bot_shared_files_channel_created_idx', 'Shared conversation index exists');
 select has_index('public', 'bot_shared_files', 'bot_shared_files_retry_idx', 'Shared retry queue index exists');
 select has_index('public', 'bot_shared_files', 'bot_shared_files_source_key_idx', 'generated-image source key is unique');
@@ -210,6 +215,8 @@ select has_index(
 
 select has_trigger('public', 'bots', 'bots_updated_at', 'Bot controls use the shared updated-at trigger');
 select has_trigger('public', 'bot_runs', 'bot_runs_updated_at', 'run state uses the shared updated-at trigger');
+select has_trigger('public', 'bot_runs', 'bot_runs_terminal_audit', 'terminal run states append Bot audit events');
+select has_trigger('public', 'bot_runs', 'bot_runs_enqueue_memory_extraction', 'completed runs enqueue durable memory extraction');
 select has_trigger('public', 'bot_revisions', 'bot_revisions_protect_activated', 'activated revisions are protected');
 select has_trigger('public', 'bot_revisions', 'bot_revisions_updated_at', 'Draft revisions use optimistic updated-at state');
 select has_trigger('public', 'bot_memberships', 'bot_memberships_preserve_final_manager', 'the final active Manager is protected');
@@ -232,8 +239,16 @@ select ok(
   'atomic message/run/Shared admission RPC exists'
 );
 select ok(
+  to_regprocedure('public.devryan_enqueue_bot_message_run(uuid,uuid,uuid,uuid,uuid,uuid,text,jsonb,jsonb,text,uuid,jsonb,jsonb,integer,timestamp with time zone,jsonb)') is not null,
+  'atomic message/run/acknowledgment admission RPC exists'
+);
+select ok(
   to_regprocedure('public.devryan_claim_bot_run(text,text,timestamp with time zone)') is not null,
   'run claim RPC exists'
+);
+select ok(
+  to_regprocedure('public.devryan_settle_bot_run_terminal(uuid,text,text,jsonb,timestamp with time zone)') is not null,
+  'idempotent terminal run settlement RPC exists'
 );
 select ok(
   to_regprocedure('public.devryan_expire_bot_approvals(text,timestamp with time zone)') is not null,
@@ -254,6 +269,17 @@ select ok(
 select ok(
   to_regprocedure('public.devryan_commit_bot_memory_version(uuid,uuid,uuid,uuid,text,uuid,text,jsonb,text,numeric,jsonb,text,uuid,uuid,uuid,uuid,text,jsonb,timestamp with time zone)') is not null,
   'atomic memory version RPC exists'
+);
+select ok(
+  to_regprocedure('public.devryan_commit_bot_channel_summary(uuid,uuid,bigint,jsonb)') is not null,
+  'checkpoint-CAS summary RPC exists'
+);
+select ok(
+  to_regprocedure('public.devryan_enqueue_bot_memory_extraction_job(uuid)') is not null
+  and to_regprocedure('public.devryan_claim_bot_memory_extraction_job(text,timestamp with time zone)') is not null
+  and to_regprocedure('public.devryan_persist_bot_memory_extraction_candidates(uuid,text,jsonb)') is not null
+  and to_regprocedure('public.devryan_settle_bot_memory_extraction_job(uuid,text,text,timestamp with time zone,text,text)') is not null,
+  'durable memory extraction job RPCs exist'
 );
 select ok(
   to_regprocedure('public.devryan_delete_bot_channel(uuid,uuid)') is not null,
@@ -285,12 +311,19 @@ with bot_functions(signature) as (
     ('public.devryan_allocate_bot_message_sequence(uuid)'),
     ('public.devryan_enqueue_bot_message_run(uuid,uuid,uuid,uuid,uuid,text,jsonb,jsonb,text,uuid,jsonb,integer,timestamp with time zone)'),
     ('public.devryan_enqueue_bot_message_run(uuid,uuid,uuid,uuid,uuid,text,jsonb,jsonb,text,uuid,jsonb,integer,timestamp with time zone,jsonb)'),
+    ('public.devryan_enqueue_bot_message_run(uuid,uuid,uuid,uuid,uuid,uuid,text,jsonb,jsonb,text,uuid,jsonb,jsonb,integer,timestamp with time zone,jsonb)'),
     ('public.devryan_claim_bot_run(text,text,timestamp with time zone)'),
+    ('public.devryan_settle_bot_run_terminal(uuid,text,text,jsonb,timestamp with time zone)'),
     ('public.devryan_expire_bot_approvals(text,timestamp with time zone)'),
     ('public.devryan_claim_bot_routine_occurrence(uuid,timestamp with time zone,uuid)'),
     ('public.devryan_create_bot(uuid,uuid,text,text,jsonb,text,uuid)'),
     ('public.devryan_activate_bot_revision(uuid,uuid,uuid)'),
     ('public.devryan_commit_bot_memory_version(uuid,uuid,uuid,uuid,text,uuid,text,jsonb,text,numeric,jsonb,text,uuid,uuid,uuid,uuid,text,jsonb,timestamp with time zone)'),
+    ('public.devryan_commit_bot_channel_summary(uuid,uuid,bigint,jsonb)'),
+    ('public.devryan_enqueue_bot_memory_extraction_job(uuid)'),
+    ('public.devryan_claim_bot_memory_extraction_job(text,timestamp with time zone)'),
+    ('public.devryan_persist_bot_memory_extraction_candidates(uuid,text,jsonb)'),
+    ('public.devryan_settle_bot_memory_extraction_job(uuid,text,text,timestamp with time zone,text,text)'),
     ('public.devryan_delete_bot_channel(uuid,uuid)'),
     ('public.devryan_prune_bot_audit(timestamp with time zone)'),
     ('public.devryan_bot_send_context(uuid,uuid)'),
@@ -312,12 +345,19 @@ with bot_functions(signature) as (
     ('public.devryan_allocate_bot_message_sequence(uuid)'),
     ('public.devryan_enqueue_bot_message_run(uuid,uuid,uuid,uuid,uuid,text,jsonb,jsonb,text,uuid,jsonb,integer,timestamp with time zone)'),
     ('public.devryan_enqueue_bot_message_run(uuid,uuid,uuid,uuid,uuid,text,jsonb,jsonb,text,uuid,jsonb,integer,timestamp with time zone,jsonb)'),
+    ('public.devryan_enqueue_bot_message_run(uuid,uuid,uuid,uuid,uuid,uuid,text,jsonb,jsonb,text,uuid,jsonb,jsonb,integer,timestamp with time zone,jsonb)'),
     ('public.devryan_claim_bot_run(text,text,timestamp with time zone)'),
+    ('public.devryan_settle_bot_run_terminal(uuid,text,text,jsonb,timestamp with time zone)'),
     ('public.devryan_expire_bot_approvals(text,timestamp with time zone)'),
     ('public.devryan_claim_bot_routine_occurrence(uuid,timestamp with time zone,uuid)'),
     ('public.devryan_create_bot(uuid,uuid,text,text,jsonb,text,uuid)'),
     ('public.devryan_activate_bot_revision(uuid,uuid,uuid)'),
     ('public.devryan_commit_bot_memory_version(uuid,uuid,uuid,uuid,text,uuid,text,jsonb,text,numeric,jsonb,text,uuid,uuid,uuid,uuid,text,jsonb,timestamp with time zone)'),
+    ('public.devryan_commit_bot_channel_summary(uuid,uuid,bigint,jsonb)'),
+    ('public.devryan_enqueue_bot_memory_extraction_job(uuid)'),
+    ('public.devryan_claim_bot_memory_extraction_job(text,timestamp with time zone)'),
+    ('public.devryan_persist_bot_memory_extraction_candidates(uuid,text,jsonb)'),
+    ('public.devryan_settle_bot_memory_extraction_job(uuid,text,text,timestamp with time zone,text,text)'),
     ('public.devryan_delete_bot_channel(uuid,uuid)'),
     ('public.devryan_prune_bot_audit(timestamp with time zone)'),
     ('public.devryan_bot_send_context(uuid,uuid)'),
@@ -757,6 +797,79 @@ select is(
 
 select is(
   (public.devryan_enqueue_bot_message_run(
+    'e0000000-0000-4000-8000-000000000006',
+    'e0000000-0000-4000-8000-000000000007',
+    'f0000000-0000-4000-8000-000000000009',
+    'b0000000-0000-4000-8000-000000000001',
+    'd0000000-0000-4000-8000-000000000001',
+    'c0000000-0000-4000-8000-000000000001',
+    'atomic-acknowledgment-one',
+    '{"providerId":"openai","modelId":"gpt-5"}'::jsonb,
+    '{"version":1}'::jsonb,
+    'bot:b0000000-0000-4000-8000-000000000001:atomic-acknowledgment',
+    'a0000000-0000-4000-8000-000000000001',
+    '{"ciphertext":"encrypted-with-ack"}'::jsonb,
+    '{"ciphertext":"encrypted-empty-ack"}'::jsonb,
+    0,
+    now(),
+    '[]'::jsonb
+  )->'acknowledgment'->>'id'),
+  'e0000000-0000-4000-8000-000000000007',
+  'atomic admission returns its unresolved assistant response'
+);
+
+select is(
+  (select acknowledgment.sequence - user_message.sequence
+   from public.bot_messages acknowledgment
+   join public.bot_messages user_message
+     on user_message.run_id = acknowledgment.run_id
+    and user_message.role = 'user'
+   where acknowledgment.id = 'e0000000-0000-4000-8000-000000000007'
+     and acknowledgment.role = 'assistant'
+     and acknowledgment.assistant_phase = 'pending'
+     and acknowledgment.finalized_at is null),
+  1::bigint,
+  'the pending response follows its accepted user message without synthetic text'
+);
+
+update public.bot_messages
+set assistant_phase = 'acknowledgment', finalized_at = now()
+where id = 'e0000000-0000-4000-8000-000000000007';
+
+select is(
+  (public.devryan_enqueue_bot_message_run(
+    'e0000000-0000-4000-8000-000000000006',
+    'e0000000-0000-4000-8000-000000000007',
+    'f0000000-0000-4000-8000-000000000010',
+    'b0000000-0000-4000-8000-000000000001',
+    'd0000000-0000-4000-8000-000000000001',
+    'c0000000-0000-4000-8000-000000000001',
+    'atomic-acknowledgment-one',
+    '{"providerId":"openai","modelId":"gpt-5"}'::jsonb,
+    '{"version":1}'::jsonb,
+    'bot:b0000000-0000-4000-8000-000000000001:atomic-acknowledgment',
+    'a0000000-0000-4000-8000-000000000001',
+    '{"ciphertext":"different-message-iv"}'::jsonb,
+    '{"ciphertext":"different-ack-iv"}'::jsonb,
+    0,
+    now(),
+    '[]'::jsonb
+  )->>'created')::boolean,
+  false,
+  'retrying after contextual acknowledgment promotion reconciles without duplicates'
+);
+
+select is(
+  (select count(*) from public.bot_messages
+   where run_id = 'f0000000-0000-4000-8000-000000000009'
+     and role = 'assistant'
+     and assistant_phase = 'acknowledgment'),
+  1::bigint,
+  'idempotent response admission leaves exactly one contextual acknowledgment'
+);
+
+select is(
+  (public.devryan_enqueue_bot_message_run(
     'e0000000-0000-4000-8000-000000000003',
     'f0000000-0000-4000-8000-000000000006',
     'b0000000-0000-4000-8000-000000000001',
@@ -785,8 +898,8 @@ select is(
 
 select is(
   public.devryan_bot_schema_version(),
-  '20260826140000',
-  'the Bot schema marker includes environment-secret metadata'
+  '20260901160000',
+  'the Bot schema marker includes runtime-scope and terminal-audit repair'
 );
 
 insert into public.bot_messages (
@@ -1478,7 +1591,7 @@ insert into public.bot_runs (
     'd0000000-0000-4000-8000-000000000001',
     'c0000000-0000-4000-8000-000000000001',
     'retry-safe', '{"version":1,"state":"pending"}'::jsonb,
-    '{"retryable":true,"failurePhase":"runtime_start"}'::jsonb,
+    '{"retryable":true,"failurePhase":"startup"}'::jsonb,
     'bot:retry-safe', null, null, 'failed', now() - interval '1 minute', now()
   ),
   (
@@ -1487,7 +1600,7 @@ insert into public.bot_runs (
     'd0000000-0000-4000-8000-000000000001',
     'c0000000-0000-4000-8000-000000000001',
     'retry-session', '{"version":1,"state":"pending"}'::jsonb,
-    '{"retryable":true}'::jsonb, 'bot:retry-session', 'session-existing', null,
+    '{"retryable":true,"failurePhase":"startup"}'::jsonb, 'bot:retry-session', 'session-existing', null,
     'failed', now() - interval '1 minute', now()
   ),
   (
@@ -1496,7 +1609,7 @@ insert into public.bot_runs (
     'd0000000-0000-4000-8000-000000000001',
     'c0000000-0000-4000-8000-000000000001',
     'retry-segment', '{"version":1,"state":"pending"}'::jsonb,
-    '{"retryable":true}'::jsonb, 'bot:retry-segment', null, 'segment-existing',
+    '{"retryable":true,"failurePhase":"startup"}'::jsonb, 'bot:retry-segment', null, 'segment-existing',
     'failed', now() - interval '1 minute', now()
   ),
   (
@@ -1505,7 +1618,7 @@ insert into public.bot_runs (
     'd0000000-0000-4000-8000-000000000001',
     'c0000000-0000-4000-8000-000000000001',
     'retry-assistant', '{"version":1,"state":"pending"}'::jsonb,
-    '{"retryable":true}'::jsonb, 'bot:retry-assistant', null, null,
+    '{"retryable":true,"failurePhase":"startup"}'::jsonb, 'bot:retry-assistant', null, null,
     'failed', now() - interval '1 minute', now()
   ),
   (
@@ -1514,7 +1627,7 @@ insert into public.bot_runs (
     'd0000000-0000-4000-8000-000000000001',
     'c0000000-0000-4000-8000-000000000001',
     'retry-action', '{"version":1,"state":"pending"}'::jsonb,
-    '{"retryable":true}'::jsonb, 'bot:retry-action', null, null,
+    '{"retryable":true,"failurePhase":"startup"}'::jsonb, 'bot:retry-action', null, null,
     'failed', now() - interval '1 minute', now()
   ),
   (
@@ -1532,7 +1645,7 @@ insert into public.bot_runs (
     'd0000000-0000-4000-8000-000000000001',
     'c2000000-0000-4000-8000-000000000001',
     'retry-retired', '{"version":1,"state":"pending"}'::jsonb,
-    '{"retryable":true}'::jsonb, 'bot:retry-retired', null, null,
+    '{"retryable":true,"failurePhase":"startup"}'::jsonb, 'bot:retry-retired', null, null,
     'failed', now() - interval '1 minute', now()
   ),
   (
@@ -1541,7 +1654,7 @@ insert into public.bot_runs (
     'd0000000-0000-4000-8000-000000000001',
     'c0000000-0000-4000-8000-000000000001',
     'retry-concurrent-failed', '{"version":1,"state":"pending"}'::jsonb,
-    '{"retryable":true}'::jsonb, 'bot:retry-concurrent', null, null,
+    '{"retryable":true,"failurePhase":"startup"}'::jsonb, 'bot:retry-concurrent', null, null,
     'failed', now() - interval '1 minute', now()
   ),
   (
@@ -1787,6 +1900,229 @@ select ok(
   exists (select 1 from public.bot_audit_events
           where event_id = '30000000-0000-4000-8000-000000000002'),
   'audit history inside the retention floor survives'
+);
+
+-- Durable memory extraction jobs recover leases without exposing candidates.
+delete from public.bot_memory_extraction_jobs
+where run_id <> 'f0000000-0000-4000-8000-000000000001';
+
+set local role service_role;
+
+select is(
+  (select state from public.bot_memory_extraction_jobs
+   where run_id = 'f0000000-0000-4000-8000-000000000001'),
+  'queued',
+  'a completed run automatically owns a queued extraction job'
+);
+
+select is_empty(
+  $$select run_id from public.devryan_claim_bot_memory_extraction_job(
+    'memory-worker-blocked', now() + interval '5 minutes'
+  )$$,
+  'memory extraction is not claimed while its channel has an active Bot run'
+);
+
+select results_eq(
+  $$select id, state from public.devryan_settle_bot_run_terminal(
+    'f0000000-0000-4000-8000-000000000002',
+    'failed', 'bot_opencode_request_failed',
+    '{"failurePhase":"execution","retryable":false}'::jsonb,
+    now()
+  )$$,
+  $$values (
+    'f0000000-0000-4000-8000-000000000002'::uuid,
+    'failed'::text
+  )$$,
+  'terminal settlement releases the active channel transactionally'
+);
+
+select lives_ok(
+  $$select public.devryan_settle_bot_run_terminal(
+    'f0000000-0000-4000-8000-000000000002',
+    'failed', 'bot_opencode_request_failed',
+    '{"failurePhase":"execution","retryable":false}'::jsonb,
+    now()
+  )$$,
+  'terminal settlement is idempotent after an uncertain commit'
+);
+
+select is(
+  (select count(*) from public.bot_audit_events
+   where target_type = 'bot_run'
+     and target_id = 'f0000000-0000-4000-8000-000000000002'
+     and action = 'bot.run.failed'),
+  1::bigint,
+  'idempotent terminal settlement creates exactly one immutable audit event'
+);
+
+select is(
+  (select count(*) from public.bot_audit_review_events
+   where target_type = 'bot_run'
+     and target_id = 'f0000000-0000-4000-8000-000000000002'
+     and action = 'bot.run.failed'
+     and result = 'failure'),
+  1::bigint,
+  'a persisted failed response appears in the default Bot Audit issues source'
+);
+
+-- Earlier FIFO/approval/recovery fixtures intentionally leave other runs live
+-- on this shared channel. Settle them before testing the idle-channel claim.
+update public.bot_runs
+set state = 'interrupted',
+    interruption_kind = 'test_fixture_settled',
+    finished_at = now()
+where channel_id = 'd0000000-0000-4000-8000-000000000001'
+  and id <> 'f0000000-0000-4000-8000-000000000001'
+  and state in (
+    'queued', 'starting', 'running', 'waiting_approval',
+    'waiting_control', 'needs_reconciliation'
+  );
+
+select results_eq(
+  $$select run_id, attempt_count
+    from public.devryan_claim_bot_memory_extraction_job(
+      'memory-worker-a', now() + interval '5 minutes'
+    )$$,
+  $$values ('f0000000-0000-4000-8000-000000000001'::uuid, 1)$$,
+  'the first memory worker leases the completed run'
+);
+
+select lives_ok(
+  $$select public.devryan_settle_bot_memory_extraction_job(
+    'f0000000-0000-4000-8000-000000000001',
+    'memory-worker-a', 'defer', now() + interval '1 second',
+    'admission', 'bot_runtime_scope_busy'
+  )$$,
+  'a late runtime admission race defers without failing extraction'
+);
+
+select results_eq(
+  $$select state, attempt_count
+    from public.bot_memory_extraction_jobs
+    where run_id = 'f0000000-0000-4000-8000-000000000001'$$,
+  $$values ('queued'::text, 0)$$,
+  'runtime-scope deferral does not consume an extraction attempt'
+);
+
+update public.bot_memory_extraction_jobs
+set next_attempt_at = now()
+where run_id = 'f0000000-0000-4000-8000-000000000001';
+
+select results_eq(
+  $$select run_id, attempt_count
+    from public.devryan_claim_bot_memory_extraction_job(
+      'memory-worker-b', now() + interval '5 minutes'
+    )$$,
+  $$values ('f0000000-0000-4000-8000-000000000001'::uuid, 1)$$,
+  'a deferred extraction resumes with its original attempt budget'
+);
+
+select lives_ok(
+  $$select public.devryan_persist_bot_memory_extraction_candidates(
+    'f0000000-0000-4000-8000-000000000001',
+    'memory-worker-b',
+    '{"ciphertext":"encrypted-candidates"}'::jsonb
+  )$$,
+  'classified candidates persist before commit'
+);
+
+update public.bot_memory_extraction_jobs
+set lease_until = now() - interval '1 second'
+where run_id = 'f0000000-0000-4000-8000-000000000001';
+
+select results_eq(
+  $$select run_id, attempt_count, candidate_envelope
+    from public.devryan_claim_bot_memory_extraction_job(
+      'memory-worker-c', now() + interval '5 minutes'
+    )$$,
+  $$values (
+    'f0000000-0000-4000-8000-000000000001'::uuid,
+    2,
+    '{"ciphertext":"encrypted-candidates"}'::jsonb
+  )$$,
+  'an expired lease is reclaimed without losing classified candidates'
+);
+
+select lives_ok(
+  $$select public.devryan_settle_bot_memory_extraction_job(
+    'f0000000-0000-4000-8000-000000000001',
+    'memory-worker-c', 'succeeded', null, 'complete', null
+  )$$,
+  'the recovered extraction settles durably'
+);
+
+-- Summary CAS ignores unrelated channel timestamps and conflicts only on its
+-- monotonic checkpoint.
+update public.bot_channels
+set last_message_at = now()
+where id = 'd0000000-0000-4000-8000-000000000001';
+
+select results_eq(
+  $$select current_checkpoint_number
+    from public.devryan_commit_bot_channel_summary(
+      'd0000000-0000-4000-8000-000000000001',
+      'b0000000-0000-4000-8000-000000000001',
+      0,
+      '{"ciphertext":"summary-one"}'::jsonb
+    )$$,
+  $$values (1::bigint)$$,
+  'unrelated channel activity does not invalidate summary commit'
+);
+
+select is_empty(
+  $$select * from public.devryan_commit_bot_channel_summary(
+    'd0000000-0000-4000-8000-000000000001',
+    'b0000000-0000-4000-8000-000000000001',
+    0,
+    '{"ciphertext":"stale-summary"}'::jsonb
+  )$$,
+  'a stale summary checkpoint cannot overwrite the committed summary'
+);
+
+select is(
+  (select source->>'_replayed'
+   from public.devryan_commit_bot_memory_version(
+    '40000000-0000-4000-8000-000000000001',
+    '41000000-0000-4000-8000-000000000099',
+    '42000000-0000-4000-8000-000000000001',
+    'b0000000-0000-4000-8000-000000000001',
+    'shared', null, 'deployment.region',
+    '{"ciphertext":"ignored-replay"}'::jsonb, 'normal', 0.9,
+    '{"classifierVersion":1}'::jsonb, 'classifier',
+    'a0000000-0000-4000-8000-000000000002',
+    'd0000000-0000-4000-8000-000000000002', null, null,
+    'run', '{"messageIds":[]}'::jsonb, null
+  )),
+  'true',
+  'a stable automatic source returns its existing immutable version on replay'
+);
+
+insert into public.bot_audit_events (
+  event_id, target_type, target_id, action, result, created_at
+) values
+  ('30000000-0000-4000-8000-000000000090', 'bot_run',
+   'f0000000-0000-4000-8000-000000000090', 'bot.memory.extract', 'failure',
+   '2026-08-31T12:00:00Z'),
+  ('30000000-0000-4000-8000-000000000091', 'bot_run',
+   'f0000000-0000-4000-8000-000000000090', 'bot.memory.extract', 'success',
+   '2026-08-31T12:01:00Z');
+
+select is(
+  (select resolved_by_event_id
+   from public.bot_audit_events_with_resolution
+   where event_id = '30000000-0000-4000-8000-000000000090'),
+  '30000000-0000-4000-8000-000000000091'::uuid,
+  'a later extraction success resolves the earlier immutable issue projection'
+);
+
+select is(
+  (select count(*) from public.bot_audit_events
+   where event_id in (
+     '30000000-0000-4000-8000-000000000090',
+     '30000000-0000-4000-8000-000000000091'
+   )),
+  2::bigint,
+  'audit resolution preserves both historical events'
 );
 
 select * from finish();

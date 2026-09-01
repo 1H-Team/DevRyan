@@ -514,7 +514,7 @@ describe('Production Bots event reconciliation', () => {
     expect(botsStore.getState().botsById).toEqual({});
     expect(channelStore.getState().channelsById).toEqual({});
     expect(channelStore.getState().messagesById).toEqual({});
-    expect(channelStore.getState().draftsByChannelId).toEqual({});
+    expect(channelStore.draftStore.getState().draftsByChannelId).toEqual({});
     expect(operationsStore.getState().runsById).toEqual({});
     expect(operationsStore.getState().actionsById).toEqual({});
     expect(sharedFilesStore.getState().filesById).toEqual({});

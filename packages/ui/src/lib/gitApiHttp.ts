@@ -492,25 +492,19 @@ export async function generateCommitMessageDraft(
 
 export async function generatePullRequestDescription(
   directory: string,
-  payload: { base: string; head: string; context?: string; zenModel?: string; providerId?: string; modelId?: string }
+  payload: { base: string; head: string; context?: string; prompt?: string }
 ): Promise<{ title: string; body: string }> {
-  const { base, head, context, zenModel, providerId, modelId } = payload;
+  const { base, head, context, prompt } = payload;
   if (!base || !head) {
     throw new Error('base and head are required');
   }
 
-  const requestBody: { base: string; head: string; context?: string; zenModel?: string; providerId?: string; modelId?: string } = { base, head };
+  const requestBody: { base: string; head: string; context?: string; prompt?: string } = { base, head };
   if (context?.trim()) {
     requestBody.context = context.trim();
   }
-  if (zenModel) {
-    requestBody.zenModel = zenModel;
-  }
-  if (providerId) {
-    requestBody.providerId = providerId;
-  }
-  if (modelId) {
-    requestBody.modelId = modelId;
+  if (prompt?.trim()) {
+    requestBody.prompt = prompt.trim();
   }
 
   const response = await fetch(buildUrl(`${API_BASE}/pr-description`, directory), {

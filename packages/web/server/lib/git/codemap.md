@@ -1,7 +1,7 @@
 # packages/web/server/lib/git/
 
 ## Responsibility
-Git service layer for repository operations, direct commit-message generation, auth credential persistence, git identity storage, and conventional commit template setup used by UI and automation routes.
+Git service layer for repository operations, direct commit-message and PR-description generation, auth credential persistence, git identity storage, and conventional commit template setup used by UI and automation routes.
 
 ## Design
 - **Facade export**: `index.js` re-exports service, credential, and identity modules as a single API.
@@ -18,6 +18,7 @@ Git service layer for repository operations, direct commit-message generation, a
   - `template-routes.js`: global commit template/hook status, install, uninstall, and content endpoints
   - `commit-message.js`: session-free direct Zen generation and conventional-subject validation
   - `commit-message-context.js`: bounded authoritative context collection for the single-request draft route
+  - `pr-description.js`: session-free direct free-Zen PR title/body generation
 - **Route adapter**: `routes.js` maps HTTP requests to service operations.
 - **Durable worktree host**: `service.js` injects Git/setup/project effects into
   `@openchamber/harness-runtime`; durable state and retry policy do not live in

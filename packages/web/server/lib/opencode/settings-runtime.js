@@ -1,18 +1,5 @@
 import { createProjectIdFromPath } from '../projects/project-id.js';
-
-const DEFAULT_NOTIFICATION_TEMPLATES = {
-  completion: { title: 'Session complete', message: '{session_name} is ready to review' },
-  planReady: { title: 'Plan ready', message: 'A plan is ready for review' },
-  error: { title: 'Tool error', message: '{last_message}' },
-  question: { title: 'Input needed', message: '{last_message}' },
-  permission: { title: 'Permissions needed', message: 'Folder access is required: {last_message}' },
-  subtask: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
-};
-
-const LEGACY_COMPLETION_NOTIFICATION_TEMPLATES = [
-  { title: '{agent_name} is ready', message: '{model_name} completed the task' },
-  { title: '{agent_name} is ready', message: '{last_message}' },
-];
+import { normalizeNotificationTemplates } from './notification-settings.js';
 
 const THEME_CATALOG_VERSION = 3;
 const DEFAULT_LIGHT_THEME_ID = 'devryan-default-light';
@@ -22,36 +9,6 @@ const REMOVED_THEME_IDS = {
   'onedarkpro-light': DEFAULT_LIGHT_THEME_ID,
   'carbonfox-dark': DEFAULT_DARK_THEME_ID,
   'onedarkpro-dark': DEFAULT_DARK_THEME_ID,
-};
-
-const ensureNotificationTemplateShape = (templates) => {
-  const input = templates && typeof templates === 'object' ? templates : {};
-  let changed = false;
-  const next = {};
-
-  for (const event of Object.keys(DEFAULT_NOTIFICATION_TEMPLATES)) {
-    const currentEntry = input[event];
-    const base = DEFAULT_NOTIFICATION_TEMPLATES[event];
-    const isLegacyCompletion = event === 'completion'
-      && LEGACY_COMPLETION_NOTIFICATION_TEMPLATES.some((legacy) => (
-        currentEntry?.title === legacy.title && currentEntry?.message === legacy.message
-      ));
-    const currentTitle = isLegacyCompletion
-      ? base.title
-      : (typeof currentEntry?.title === 'string' ? currentEntry.title : base.title);
-    const currentMessage = isLegacyCompletion
-      ? base.message
-      : (typeof currentEntry?.message === 'string' ? currentEntry.message : base.message);
-    if (isLegacyCompletion) {
-      changed = true;
-    }
-    if (!currentEntry || typeof currentEntry.title !== 'string' || typeof currentEntry.message !== 'string') {
-      changed = true;
-    }
-    next[event] = { title: currentTitle, message: currentMessage };
-  }
-
-  return { templates: next, changed };
 };
 
 export const createSettingsRuntime = (deps) => {
@@ -690,7 +647,7 @@ export const createSettingsRuntime = (deps) => {
       changed = true;
     }
 
-    const { templates, changed: templatesChanged } = ensureNotificationTemplateShape(settings.notificationTemplates);
+    const { templates, changed: templatesChanged } = normalizeNotificationTemplates(settings.notificationTemplates);
     if (templatesChanged || !settings.notificationTemplates || typeof settings.notificationTemplates !== 'object') {
       next.notificationTemplates = templates;
       changed = true;

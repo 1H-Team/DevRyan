@@ -636,7 +636,7 @@ describe("createSessionRecord startup readiness", () => {
       attempts += 1
       if (attempts === 1) {
         return Promise.resolve({
-          error: new Error("OpenCode is restarting"),
+          error: Object.assign(new Error("OpenCode is restarting"), { code: 'session_create_restart_rejected', retryable: true }),
           response: { status: 503 },
         })
       }
@@ -1513,6 +1513,7 @@ describe("deleteSessions archived behavior", () => {
     expect(await deleteSessions(["parent"])).toEqual({
       deletedIds: ["parent", "child"],
       failedIds: [],
+      failures: [],
     })
 
     expect(sessionAbortCalls.map((params) => params.sessionID)).toEqual(["child", "parent"])
@@ -1533,6 +1534,7 @@ describe("deleteSessions archived behavior", () => {
     expect(await deleteSessions(["archived-session"])).toEqual({
       deletedIds: ["archived-session"],
       failedIds: [],
+      failures: [],
     })
 
     expect(sessionDeleteCalls).toEqual([
@@ -1646,6 +1648,7 @@ describe("deleteSessions archived behavior", () => {
     expect(await deleteSessions(["archived-parent"])).toEqual({
       deletedIds: ["archived-parent", "archived-child", "archived-grandchild"],
       failedIds: [],
+      failures: [],
     })
 
     expect(sessionDeleteCalls.map((params) => params.sessionID)).toEqual([
@@ -1703,6 +1706,7 @@ describe("deleteSessions archived behavior", () => {
     expect(await resultPromise).toEqual({
       deletedIds: ["archived-parent", "archived-child", "archived-grandchild"],
       failedIds: [],
+      failures: [],
     })
   })
 
@@ -1728,6 +1732,7 @@ describe("deleteSessions archived behavior", () => {
     expect(await deleteSessions(["archived-parent", "archived-child", "archived-parent"])).toEqual({
       deletedIds: ["archived-parent", "archived-child", "archived-grandchild"],
       failedIds: [],
+      failures: [],
     })
 
     expect(sessionDeleteCalls.map((params) => params.sessionID)).toEqual([
@@ -1783,6 +1788,7 @@ describe("deleteSessions archived behavior", () => {
     expect(await resultPromise).toEqual({
       deletedIds: ["archived-parent", "archived-child-a", "archived-child-b"],
       failedIds: [],
+      failures: [],
     })
   })
 
@@ -1820,6 +1826,7 @@ describe("deleteSessions archived behavior", () => {
     expect(await resultPromise).toEqual({
       deletedIds: ["archived-parent", "archived-child"],
       failedIds: [],
+      failures: [],
     })
   })
 
@@ -1856,6 +1863,7 @@ describe("deleteSessions archived behavior", () => {
     expect(await resultPromise).toEqual({
       deletedIds: ["archived-a", "archived-b"],
       failedIds: [],
+      failures: [],
     })
     expect(mockGlobalArchivedSessions.map((session) => session.id)).toEqual([])
     expect(globalRemoveCalls.map((call) => call.ids)).toEqual([["archived-a", "archived-b"]])
@@ -1881,6 +1889,7 @@ describe("deleteSessions archived behavior", () => {
     expect(await withMutedConsoleError(() => deleteSessions(["archived-session"]))).toEqual({
       deletedIds: [],
       failedIds: ["archived-session"],
+      failures: [{ sessionId: "archived-session", message: "delete failed" }],
     })
 
     expect(sessionDeleteCalls).toEqual([
@@ -1908,9 +1917,45 @@ describe("deleteSessions archived behavior", () => {
     expect(await withMutedConsoleError(() => deleteSessions(["archived-session"]))).toEqual({
       deletedIds: [],
       failedIds: ["archived-session"],
+      failures: [{ sessionId: "archived-session", message: "delete failed" }],
     })
     expect(sessionDeleteOptions).toEqual([{ throwOnError: true }])
     expect(store.getState().session.map((item) => item.id)).toEqual(["archived-session"])
+  })
+
+  test("keeps successful deletes removed and returns structured details only for real failures", async () => {
+    const archivedA = {
+      ...makeSession("archived-a"),
+      directory: "/archived/project",
+    } as unknown as Session
+    const archivedB = {
+      ...makeSession("archived-b"),
+      directory: "/archived/project",
+    } as unknown as Session
+    mockGlobalArchivedSessions = [archivedA, archivedB]
+    const store = createStore({}, [archivedA, archivedB])
+    const childStores = createChildStores([["/archived/project", store]])
+    sessionDeleteHandler = (params) => {
+      if (params.sessionID === "archived-b") {
+        return Promise.reject(Object.assign(new Error("OpenCode is restarting"), { status: 503 }))
+      }
+      return Promise.resolve({ data: true })
+    }
+
+    const { setActionRefs, deleteSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    expect(await withMutedConsoleError(() => deleteSessions(["archived-a", "archived-b"]))).toEqual({
+      deletedIds: ["archived-a"],
+      failedIds: ["archived-b"],
+      failures: [{
+        sessionId: "archived-b",
+        message: "OpenCode is restarting",
+        status: 503,
+      }],
+    })
+    expect(store.getState().session.map((session) => session.id)).toEqual(["archived-b"])
+    expect(globalRestoreCalls.at(-1)?.ids).toEqual(["archived-b"])
   })
 
   test("registers and settles delete membership before requesting a fresh global snapshot", async () => {
@@ -1928,6 +1973,7 @@ describe("deleteSessions archived behavior", () => {
     expect(await deleteSessions(["archived-session"])).toEqual({
       deletedIds: ["archived-session"],
       failedIds: [],
+      failures: [],
     })
     expect(membershipBeginCalls).toEqual([{
       kind: "delete",
@@ -2683,6 +2729,54 @@ describe("revertToMessage scoped revert", () => {
     expect(store.getState().message["session-a"]?.map((message) => message.id)).toHaveLength(2)
     expect(store.getState().message["session-a"]?.at(-1)?.role).toBe("user")
     expect(store.getState().message["session-a"]?.at(-1)?.id.startsWith("msg_")).toBe(true)
+  })
+
+  test("updates root prompt recency at dispatch and restores it when transport fails", async () => {
+    const before = { id: "msg_before", sessionID: "session-a", role: "user", time: { created: 1 } } as unknown as Message
+    const store = createStore({}, [makeSession("session-a")])
+    store.setState({
+      message: { "session-a": [before] },
+      part: { msg_before: [] },
+      session_user_activity: { "session-a": 1 },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { setActionRefs, setOptimisticRefs, optimisticSend } = await import("./session-actions")
+    const { applyOptimisticAdd, applyOptimisticRemove } = await import("./optimistic")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    setOptimisticRefs(
+      (input) => store.setState((state) => {
+        const draft = { message: { ...state.message }, part: { ...state.part } }
+        applyOptimisticAdd(draft, input)
+        return draft
+      }),
+      (input) => store.setState((state) => {
+        const draft = { message: { ...state.message }, part: { ...state.part } }
+        applyOptimisticRemove(draft, input)
+        return draft
+      }),
+    )
+
+    let activityDuringDispatch = 0
+    let thrown: unknown = null
+    try {
+      await optimisticSend({
+        sessionId: "session-a",
+        content: "implement plan",
+        providerID: "provider",
+        modelID: "model",
+        directory: "/test/project",
+        send: () => {
+          activityDuringDispatch = store.getState().session_user_activity["session-a"] ?? 0
+          return Promise.reject(new Error("send failed"))
+        },
+      })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown instanceof Error ? thrown.message : "").toBe("send failed")
+    expect(activityDuringDispatch).toBeGreaterThan(1)
+    expect(store.getState().session_user_activity["session-a"]).toBe(1)
   })
 
   test("adds and rolls back a deterministic Cursor assistant placeholder with the optimistic user message", async () => {

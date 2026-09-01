@@ -38,16 +38,24 @@ describe('BotEditor information architecture', () => {
     }
   });
 
-  test('keeps Overview to one durable profile and simple status', () => {
+  test('restores the core identity fields without the removed advanced fields', () => {
     const markup = editor();
     expect(markup).toContain('Overview</button>');
     expect(markup).toContain('Profile');
     expect(markup).toContain('Description');
+    expect(markup).toContain('Soul');
+    expect(markup).toContain('Personality &amp; Values');
+    expect(markup).toContain('Standing Role');
+    expect(markup).toContain('Objectives · One per Line');
+    expect(markup).toContain('Provider');
+    expect(markup).toContain('Model');
+    expect(markup).toContain('Thinking');
     expect(markup).toContain('Status');
     expect(markup).not.toContain('Short Summary');
-    expect(markup).not.toContain('Soul');
     expect(markup).not.toContain('Operating Instructions');
     expect(markup).not.toContain('Prohibited Instructions');
+    expect(markup).not.toContain('Extra Instructions');
+    expect(markup).not.toContain('Maximum Output Tokens');
     expect(markup).toContain('Apply Changes');
   });
 
@@ -70,9 +78,20 @@ describe('BotEditor information architecture', () => {
     expect(source).toContain("<div hidden={tab !== 'overview'} className=\"space-y-7\">");
     expect(source).not.toContain("{tab === 'overview' ? (");
     expect(source).toContain('onEditChange={setProfileEdit}');
+    expect(source).toContain('const [contractDraft, setContractDraft]');
+    expect(source).toContain('setContractDraft(authoritativeContractRef.current);');
+    expect(source).toContain('selectedRevision?.updatedAt');
+    expect(source).toContain('botCoreIdentityChanged(contractDraft, contract)');
     expect(source).toContain('name: detail.bot.name');
     expect(source).toContain('title: detail.bot.title');
     expect(source).toContain('[detail.bot.avatarFallback, detail.bot.avatarUrl, detail.bot.id, detail.bot.name, detail.bot.summary, detail.bot.title]');
+  });
+
+  test('publishes identity edits but leaves profile-only changes on the immediate save path', () => {
+    expect(source).toContain('const publishesRevision = Boolean(workingRevision || contractDirty);');
+    expect(source).toContain('{publishesRevision ? (');
+    expect(source).toContain('onSaveProfile?.(profileEdit.request)');
+    expect(source).toContain('onPublishRevision(selectedRevision, contractDraft, profileEdit.request);');
   });
 
   test('keeps provider credentials Bot-owned and write-only', () => {

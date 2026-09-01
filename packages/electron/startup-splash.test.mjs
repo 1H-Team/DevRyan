@@ -133,7 +133,7 @@ describe('Electron startup splash', () => {
     expect(startupBlock).toContain('if (isLocalStartupTarget(startupContext)');
     expect(startupBlock).not.toContain('await requirePreparedBotRuntime();');
     expect(startupBlock.indexOf('await activateMainWindow('))
-      .toBeLessThan(startupBlock.indexOf('prepareBotRuntimeInBackground();'));
+      .toBeLessThan(startupBlock.indexOf('prepareBotRuntimeInBackground()'));
     expect(retryBlock).toContain('await requirePreparedBotRuntime();');
     expect(retryBlock).toContain('await activatePendingBotStartupContext();');
     expect(retryBlock).not.toContain('killSidecar');

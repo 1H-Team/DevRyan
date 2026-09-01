@@ -12,6 +12,12 @@ describe('session output spacing', () => {
 
         expect(source).toContain('message-content-text flex flex-col leading-relaxed');
         expect(source).toContain("isMobile ? 'gap-y-2' : 'gap-y-3'");
+        // The stack only needs horizontal containment. `overflow-hidden` clipped the
+        // Agent Dispatch card's 1px bottom border whenever the turn continued below it
+        // (the card is the last child and the wrapper drops to `pb-0`), and on mobile it
+        // matched the blanket `.overflow-hidden { overflow-y: auto }` rule in mobile.css.
+        expect(source).toContain('leading-relaxed overflow-x-clip text-foreground/90');
+        expect(source).not.toContain('leading-relaxed overflow-hidden');
         expect(source).toContain('data-session-output-stack="true"');
         const stackMarker = source.indexOf('data-session-output-stack="true"');
         const managedTaskList = source.lastIndexOf('<ManagedTaskList');

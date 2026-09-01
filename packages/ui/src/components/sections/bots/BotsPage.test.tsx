@@ -26,6 +26,9 @@ describe('BotsPage', () => {
     expect(markup).toContain('Research Desk');
     expect(markup).toContain('Profile');
     expect(markup).toContain('Description');
+    expect(markup).toContain('Soul');
+    expect(markup).toContain('Standing Role');
+    expect(markup).toContain('Objectives · One per Line');
     expect(markup).not.toContain('Short Summary');
     expect(markup).not.toContain('Operating Instructions');
     expect(markup).toContain('Apply Changes');
@@ -101,6 +104,20 @@ describe('BotsPage', () => {
     expect(source).toContain('runtimeOperation.progress.message || null');
   });
 
+  test('creates a derived revision only when an active Bot identity is applied', () => {
+    const source = readFileSync(resolve(testDir, 'BotsPage.tsx'), 'utf8');
+    const publishStart = source.indexOf('onPublishRevision=');
+    const publishEnd = source.indexOf('runtimeRecoveryKind=', publishStart);
+    const handler = source.slice(publishStart, publishEnd);
+
+    expect(handler).toContain('if (revision.activatedAt !== null)');
+    expect(handler).toContain('api.createBotRevision(detail.bot.id');
+    expect(handler).toContain('basedOnRevisionId: revision.id');
+    expect(handler).toContain('revisionToPublish = created.revision');
+    expect(handler).toContain('publish(revisionToPublish, detailForPublish, true)');
+    expect(handler).not.toContain('if (revision.activatedAt === null)');
+  });
+
   test('submits complete deletion once and removes a deleted Bot from the catalog', () => {
     const source = readFileSync(resolve(testDir, 'BotsPage.tsx'), 'utf8');
 
@@ -112,6 +129,19 @@ describe('BotsPage', () => {
     const deleteHandler = source.slice(deleteStart, deleteEnd);
     expect(deleteHandler.indexOf('invalidateBot(detail.bot.id);')).toBeLessThan(deleteHandler.indexOf('await loadCatalog();'));
     expect(source).toContain('await loadCatalog();');
+  });
+
+  test('clears the owner chat channel and creates an empty replacement', () => {
+    const source = readFileSync(resolve(testDir, 'BotsPage.tsx'), 'utf8');
+    const clearStart = source.indexOf("runBotMutation(detail.bot.id, 'clear-chat-history'");
+    const clearEnd = source.indexOf('onDeleteCompletely=', clearStart);
+    const clearHandler = source.slice(clearStart, clearEnd);
+
+    expect(clearHandler).toContain('api.deleteBotChannel(ownerChannelId)');
+    expect(clearHandler).toContain('removeChannel(ownerChannelId)');
+    expect(clearHandler).toContain('api.getOrCreateOwnerChannel(detail.bot.id)');
+    expect(clearHandler).toContain('upsertChannel(replacement.channel)');
+    expect(clearHandler).toContain('setPublicationNotice(result.notice');
   });
 
   test('scopes pending mutations to the Bot being edited and tracks creation separately', () => {

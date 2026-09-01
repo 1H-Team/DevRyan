@@ -7,6 +7,7 @@ import { assertBotJsonValue } from '@openchamber/bots-runtime';
 import { validateUuid } from './validation.js';
 
 export const BOT_PRIVATE_GATEWAY_PATH = '/api/bots/private/gateway';
+export const BOT_PRIVATE_OAUTH_PATH = '/api/bots/private/oauth';
 export const BOT_GATEWAY_OPERATIONS = Object.freeze([
   'action.request',
   'artifact.get',
@@ -226,6 +227,7 @@ const failurePayload = (error) => {
 
 export function createBotGatewayHost({
   handleOperation,
+  handleOAuth = null,
   host = '127.0.0.1',
   port = 0,
   bodyLimit = DEFAULT_BODY_LIMIT,
@@ -255,7 +257,7 @@ export function createBotGatewayHost({
 
   const server = http.createServer(async (request, response) => {
     try {
-      if (request.method !== 'POST' || request.url !== BOT_PRIVATE_GATEWAY_PATH) {
+      if (request.method !== 'POST' || ![BOT_PRIVATE_GATEWAY_PATH, BOT_PRIVATE_OAUTH_PATH].includes(request.url)) {
         fail('Bot gateway route was not found', 'bot_gateway_not_found', 404);
       }
       assertDockerOrigin(request, boundPort);
@@ -272,6 +274,23 @@ export function createBotGatewayHost({
         fail('Bot gateway authentication is required', 'bot_gateway_unauthorized', 401);
       }
       const body = await readBoundedJson(request, bodyLimit);
+      if (request.url === BOT_PRIVATE_OAUTH_PATH) {
+        if (!handleOAuth || claims.kind !== 'reasoning' || body?.protocol !== 1
+          || !['ready', 'access'].includes(body?.operation)
+          || Object.keys(body).sort().join(',') !== 'operation,protocol') {
+          fail('Bot OAuth request is invalid', 'bot_oauth_access_denied', 403);
+        }
+        try {
+          const result = await handleOAuth(claims, body.operation);
+          if (capabilities.get(digest) !== claims || claims.expiresAt <= now()) {
+            fail('Bot OAuth capability expired', 'bot_oauth_access_denied', 403);
+          }
+          sendJson(response, 200, result, 32 * 1024);
+        } catch (error) {
+          sendJson(response, error.statusCode || 503, { code: error.code || 'bot_oauth_coordinator_unavailable' }, 1024);
+        }
+        return;
+      }
       const operation = validateRequestBody(body, claims);
       const controller = new AbortController();
       request.once('aborted', () => controller.abort());

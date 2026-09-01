@@ -1,12 +1,15 @@
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import type { SessionAssistantActivity } from '@/sync/session-assistant-activity';
+import type { SessionUserActivity } from '@/sync/session-user-activity';
 import type { WorktreeMetadata } from '@/types/worktree';
 import type { SessionGroup, SessionNode } from '../types';
 import {
   compareArchivedSessionsByParentAssistantActivity,
   compareSessionsByPinnedAndTime,
   dedupeSessionsById,
+  getSessionPromptSortAt,
+  getSessionUserActivityAt,
   getArchivedScopeKey,
   normalizeForBranchComparison,
   normalizePath,
@@ -20,6 +23,7 @@ type Args = {
   homeDirectory: string | null;
   worktreeMetadata: Map<string, WorktreeMetadata>;
   pinnedSessionIds: Set<string>;
+  sessionUserActivity: SessionUserActivity;
   archivedAssistantActivity: SessionAssistantActivity;
   gitBranches: Map<string, string | null>;
   isVSCode: boolean;
@@ -144,7 +148,7 @@ export const useSessionGrouping = (args: Args) => {
         if (isArchivedSession(a) && isArchivedSession(b)) {
           return compareArchivedSessionsByParentAssistantActivity(a, b, args.archivedAssistantActivity);
         }
-        return compareSessionsByPinnedAndTime(a, b, args.pinnedSessionIds);
+        return compareSessionsByPinnedAndTime(a, b, args.pinnedSessionIds, args.sessionUserActivity);
       };
       const compareArchivedBucketSessions = (a: Session, b: Session) => {
         const aArchived = isArchivedSession(a);
@@ -155,7 +159,7 @@ export const useSessionGrouping = (args: Args) => {
         if (aArchived !== bArchived) {
           return aArchived ? -1 : 1;
         }
-        return compareSessionsByPinnedAndTime(a, b, args.pinnedSessionIds);
+        return compareSessionsByPinnedAndTime(a, b, args.pinnedSessionIds, args.sessionUserActivity);
       };
       const sortedProjectSessions = dedupeSessionsById(projectSessions)
         .sort(compareProjectSessions);
@@ -260,38 +264,44 @@ export const useSessionGrouping = (args: Args) => {
       }];
 
       // Calculate activity info for each worktree to determine sorting priority
-      const worktreeActivityInfo = new Map<string, { hasActiveSession: boolean; lastUpdatedAt: number }>();
+      const worktreeActivityInfo = new Map<string, { hasActiveSession: boolean; hasUserActivity: boolean; lastPromptAt: number }>();
       availableWorktrees.forEach((meta) => {
         const directory = normalizePath(meta.path) ?? meta.path;
         const sessionsInWorktree = groupedNodes.get(directory) ?? [];
         const hasActiveSession = sessionsInWorktree.length > 0;
-        // Calculate the latest update time among all sessions in this worktree
-        const lastUpdatedAt = sessionsInWorktree.reduce((max, node) => {
-          const updatedAt = Number(node.session.time?.updated ?? node.session.time?.created ?? 0);
-          if (!Number.isFinite(updatedAt)) {
-            return max;
-          }
-          return Math.max(max, updatedAt);
+        const hasUserActivity = sessionsInWorktree.some((node) => (
+          getSessionUserActivityAt(node.session, args.sessionUserActivity) !== undefined
+        ));
+        // Automatic worktree order follows the same user-prompt recency as its
+        // session rows. Assistant/session metadata churn must not move groups.
+        const lastPromptAt = sessionsInWorktree.reduce((max, node) => {
+          const userActivityAt = getSessionUserActivityAt(node.session, args.sessionUserActivity);
+          if (hasUserActivity && userActivityAt === undefined) return max;
+          return Math.max(max, userActivityAt ?? getSessionPromptSortAt(node.session, args.sessionUserActivity));
         }, 0);
 
-        worktreeActivityInfo.set(directory, { hasActiveSession, lastUpdatedAt });
+        worktreeActivityInfo.set(directory, { hasActiveSession, hasUserActivity, lastPromptAt });
       });
 
-      // Sort worktrees: active first (by last updated desc), then inactive (by label asc)
+      // Sort worktrees: active first (by last user prompt), then inactive by label.
       const sortedWorktrees = [...availableWorktrees].sort((a, b) => {
         const aDir = normalizePath(a.path) ?? a.path;
         const bDir = normalizePath(b.path) ?? b.path;
-        const aInfo = worktreeActivityInfo.get(aDir) ?? { hasActiveSession: false, lastUpdatedAt: 0 };
-        const bInfo = worktreeActivityInfo.get(bDir) ?? { hasActiveSession: false, lastUpdatedAt: 0 };
+        const aInfo = worktreeActivityInfo.get(aDir) ?? { hasActiveSession: false, hasUserActivity: false, lastPromptAt: 0 };
+        const bInfo = worktreeActivityInfo.get(bDir) ?? { hasActiveSession: false, hasUserActivity: false, lastPromptAt: 0 };
 
         // First priority: active status (active first)
         if (aInfo.hasActiveSession !== bInfo.hasActiveSession) {
           return aInfo.hasActiveSession ? -1 : 1;
         }
 
-        // Second priority: for active worktrees, sort by last updated (desc)
+        // Second priority: for active worktrees, sort by latest user prompt.
         if (aInfo.hasActiveSession && bInfo.hasActiveSession) {
-          return bInfo.lastUpdatedAt - aInfo.lastUpdatedAt;
+          if (aInfo.hasUserActivity !== bInfo.hasUserActivity) {
+            return aInfo.hasUserActivity ? -1 : 1;
+          }
+          const activityDelta = bInfo.lastPromptAt - aInfo.lastPromptAt;
+          if (activityDelta !== 0) return activityDelta;
         }
 
         // Third priority: for inactive worktrees, sort by label (asc)
@@ -344,7 +354,7 @@ export const useSessionGrouping = (args: Args) => {
 
       return groups;
     },
-    [args.homeDirectory, args.worktreeMetadata, args.pinnedSessionIds, args.archivedAssistantActivity, args.gitBranches, args.isVSCode, t],
+    [args.homeDirectory, args.worktreeMetadata, args.pinnedSessionIds, args.sessionUserActivity, args.archivedAssistantActivity, args.gitBranches, args.isVSCode, t],
   );
 
   return {

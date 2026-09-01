@@ -33,6 +33,8 @@ import type {
 } from '@/lib/botsApi';
 import { cn } from '@/lib/utils';
 import { BotComputerFiles } from './BotComputerFiles';
+import { BotCoreIdentityEditor } from './BotCoreIdentityEditor';
+import { botCoreIdentityChanged } from './botCoreIdentityPresentation';
 import { BotCredentials, type SaveBotCredentialInput } from './BotCredentials';
 import {
   BotDetails,
@@ -46,6 +48,7 @@ import { BotMemberships } from './BotMemberships';
 import { BotMemoryConsole } from './BotMemoryConsole';
 import { BotRoutines } from './BotRoutines';
 import { BotSkills } from './BotSkills';
+import { BotTelegramConnection } from './BotTelegramConnection';
 import { validateBotRevisionConfiguration } from './botManagementPresentation';
 
 type EditorTab = 'overview' | 'resources' | 'memory' | 'membership' | 'routines' | 'lifecycle';
@@ -94,7 +97,10 @@ export type BotEditorProps = {
   onRevokeMembership: (membership: BotManagedMembership) => void;
   onSaveCredential: (input: SaveBotCredentialInput) => MutationResult;
   onRotateCredential?: (credential: BotCredentialMetadata, secret: string) => MutationResult;
+  onReconnectCredential?: (credential: BotCredentialMetadata) => MutationResult;
   onTransition: (lifecycle: 'active' | 'paused' | 'retired') => void;
+  hasChatHistory?: boolean;
+  onClearChatHistory?: () => void;
   onDeleteCompletely?: (request: BotCompleteDeleteRequest) => void;
   onRetryPurge?: (resourceIds: readonly string[]) => void;
   onResourcesChanged?: () => void | Promise<void>;
@@ -126,7 +132,10 @@ export const BotEditor: React.FC<BotEditorProps> = ({
   onRevokeMembership,
   onSaveCredential,
   onRotateCredential,
+  onReconnectCredential,
   onTransition,
+  hasChatHistory = false,
+  onClearChatHistory,
   onDeleteCompletely,
   onRetryPurge,
   onResourcesChanged,
@@ -142,6 +151,9 @@ export const BotEditor: React.FC<BotEditorProps> = ({
   const activeRevision = revisions.find((revision) => revision.id === detail.bot.activeRevisionId) || null;
   const selectedRevision = workingRevision || activeRevision || revisions[0] || null;
   const contract = selectedRevision?.contract || null;
+  const authoritativeContractRef = React.useRef(contract);
+  authoritativeContractRef.current = contract;
+  const [contractDraft, setContractDraft] = React.useState<BotRevisionContract | null>(() => contract);
   const [profileEdit, setProfileEdit] = React.useState<BotProfileEdit>(() => ({
     request: { name: detail.bot.name, title: detail.bot.title, summary: detail.bot.summary },
     dirty: false,
@@ -149,6 +161,9 @@ export const BotEditor: React.FC<BotEditorProps> = ({
   }));
 
   React.useEffect(() => setTab('overview'), [detail.bot.id]);
+  React.useEffect(() => {
+    setContractDraft(authoritativeContractRef.current);
+  }, [detail.bot.id, selectedRevision?.id, selectedRevision?.updatedAt]);
   React.useEffect(() => {
     setProfileEdit({
       request: { name: detail.bot.name, title: detail.bot.title, summary: detail.bot.summary },
@@ -162,10 +177,12 @@ export const BotEditor: React.FC<BotEditorProps> = ({
   }, [detail.canManage, tab]);
 
   const readOnly = !detail.canManage;
+  const contractDirty = Boolean(contract && contractDraft && botCoreIdentityChanged(contractDraft, contract));
+  const publishesRevision = Boolean(workingRevision || contractDirty);
   const canActivate = Boolean(
-    workingRevision
-    && contract
-    && validateBotRevisionConfiguration(contract).valid
+    selectedRevision
+    && contractDraft
+    && validateBotRevisionConfiguration(contractDraft).valid
     && profileEdit.valid
     && onPublishRevision,
   );
@@ -179,12 +196,12 @@ export const BotEditor: React.FC<BotEditorProps> = ({
     && Boolean(selectedRevision)
   );
 
-  const actionBar = detail.canManage && (workingRevision || profileEdit.dirty) ? (
+  const actionBar = detail.canManage && (publishesRevision || profileEdit.dirty) ? (
     <div className={cn(
       'sticky bottom-0 z-10 -mx-4 mt-7 flex items-center justify-end gap-2 border-t border-border bg-background/95 px-4 py-3 backdrop-blur-sm',
       'supports-[backdrop-filter]:bg-background/85',
     )}>
-      {workingRevision ? (
+      {publishesRevision ? (
         <Button type="button" size="sm" disabled={!canActivate || busyAction !== null} onClick={() => setActivateConfirmOpen(true)}>
           {busyAction === 'publish-revision' ? 'Activating…' : detail.bot.activeRevisionId ? 'Apply Changes' : 'Activate Bot'}
         </Button>
@@ -249,6 +266,18 @@ export const BotEditor: React.FC<BotEditorProps> = ({
               showSaveAction={false}
               onEditChange={setProfileEdit}
             />
+            {contractDraft ? (
+              <BotCoreIdentityEditor
+                botName={profileEdit.request.name || detail.bot.name}
+                value={contractDraft}
+                modelOptions={modelOptions}
+                credentials={detail.credentials}
+                readOnly={readOnly}
+                onChange={setContractDraft}
+                onNavigateCredentials={() => setTab('resources')}
+              />
+            ) : null}
+            <BotTelegramConnection key={detail.bot.id} botId={detail.bot.id} canManage={detail.canManage} active={tab === 'overview'} />
             <BotStatusSummary bot={detail.bot} />
             {!contract ? <p className="rounded-xl border border-border/70 p-4 typography-ui text-muted-foreground">This Bot does not have a saved configuration.</p> : null}
             {actionBar}
@@ -273,6 +302,7 @@ export const BotEditor: React.FC<BotEditorProps> = ({
                 busy={busyAction === 'credential'}
                 onSave={onSaveCredential}
                 onRotate={onRotateCredential}
+                onReconnect={onReconnectCredential}
               />
               <BotEnvironmentSecrets botId={detail.bot.id} readOnly={readOnly} />
             </div>
@@ -288,7 +318,9 @@ export const BotEditor: React.FC<BotEditorProps> = ({
               readOnly={readOnly}
               busyAction={busyAction}
               error={errorMessage}
+              hasChatHistory={hasChatHistory}
               onTransition={onTransition}
+              onClearChatHistory={onClearChatHistory}
               onDeleteCompletely={onDeleteCompletely}
               onRetryPurge={onRetryPurge}
             />
@@ -306,11 +338,11 @@ export const BotEditor: React.FC<BotEditorProps> = ({
             <Button type="button" variant="ghost" onClick={() => setActivateConfirmOpen(false)}>Cancel</Button>
             <Button
               type="button"
-              disabled={!workingRevision || !contract || !canActivate || busyAction !== null}
+              disabled={!selectedRevision || !contractDraft || !canActivate || busyAction !== null}
               onClick={() => {
-                if (!workingRevision || !contract || !onPublishRevision) return;
+                if (!selectedRevision || !contractDraft || !onPublishRevision) return;
                 setActivateConfirmOpen(false);
-                onPublishRevision(workingRevision, contract, profileEdit.request);
+                onPublishRevision(selectedRevision, contractDraft, profileEdit.request);
               }}
             >{detail.bot.activeRevisionId ? 'Apply Changes' : 'Activate Bot'}</Button>
           </DialogFooter>

@@ -51,7 +51,7 @@ The reset-credit endpoint is undocumented and can change independently of the st
 
 OpenCode Zen, z.ai, Kimi, Codex, xAI, DeepSeek, and OpenCode Go host modules are deliberately thin: credential discovery and persistence stay in the host, while requests and payload normalization live in `@openchamber/shared-runtime`. This keeps web/Electron and VS Code output equivalent and makes adapters independently testable with injected `fetch` and clock functions.
 
-xAI requests the pinned CLI billing endpoint with manual redirect handling. Redirects are rejected, and an HTTP 401 permits one refresh-and-retry when a refresh token and host persistence callback are available; otherwise the result asks the user to re-authenticate. After billing succeeds, the shared adapter uses the effective OAuth access token for a bounded, best-effort request to the private `https://grok.com/prod_mc_billing.ConsumerUiSvc/GetRemainingResets` gRPC-Web method. It exposes only the number and expiry dates of valid banked resets through the existing reset-credit contract; provider token IDs remain private and redemption is intentionally unsupported. Empty inventories are omitted. Authentication, protocol, redirect, timeout, oversized-body, and parse failures preserve the successful billing result and add a sanitized warning. DeepSeek maps available currency balances to value-only rows because the API does not expose a percentage window.
+xAI requests the pinned CLI billing endpoint with manual redirect handling. Redirects are rejected, and an HTTP 401 permits one refresh-and-retry when a refresh token and host persistence callback are available; otherwise the result asks the user to re-authenticate. A recognized weekly or monthly period with a valid reset timestamp and an omitted percentage is normalized as zero usage to account for protobuf default-value omission; an explicitly malformed percentage remains a warning. After billing succeeds, the shared adapter uses the effective OAuth access token for a bounded, best-effort request to the private `https://grok.com/prod_mc_billing.ConsumerUiSvc/GetRemainingResets` gRPC-Web method. It exposes only the number and expiry dates of valid banked resets through the existing reset-credit contract; provider token IDs remain private and redemption is intentionally unsupported. Empty inventories are omitted. Authentication, protocol, redirect, timeout, oversized-body, and parse failures preserve the successful billing result and add a sanitized warning. DeepSeek maps available currency balances to value-only rows because the API does not expose a percentage window.
 
 ## Internal-only provider module
 - `providers/openai.js` exists for logic parity/reuse but is intentionally not registered for dispatcher ID routing.
@@ -69,6 +69,8 @@ The Claude provider uses these sources in priority order:
 2. For a locally managed `opencode-with-claude` runtime, the quota route resolves Anthropic's effective `baseURL` from the active OpenCode `/config/providers` response and calls Meridian's structured quota endpoint. Only explicit `http://127.0.0.1:<port>` and `http://localhost:<port>` origins are allowed; the request has a timeout and a 64 KB response limit.
 3. If the structured endpoint is unavailable (including older Meridian versions), DevRyan runs `claude -p /usage --output-format json --no-session-persistence --max-turns 1` and maps the returned subscription limits.
 4. Legacy status-line data may be returned only with `ok: false` and a visible warning after all live sources fail. A provider with a viable configured source remains `configured: true` on total refresh failure so the Usage UI shows the error instead of hiding Anthropic.
+
+The Claude CLI fallback shares one read-only executable resolver with provider authentication checks. An explicit `CLAUDE_CODE_CLI` is authoritative; otherwise DevRyan prefers the Claude Code executable provisioned in the managed OpenCode profile, then searches the host's augmented PATH. Refresh never installs or changes Claude Code. External OpenCode runtimes never resolve or execute host-local Claude state. If the live OAuth or Meridian source and the CLI fallback both fail, the live-source failure remains the primary error and the CLI failure is returned as a warning.
 
 ### Anthropic active context
 
@@ -136,6 +138,12 @@ and state/transport to `packages/ui/src/stores/useQuotaStore.ts`.
   but it does not disable the baseline refresh.
 - Header, desktop chrome, VS Code, and Usage settings surfaces can request a
   manual refresh but do not own timers.
+- Managed non-administrator requests derive their directory hint from the
+  accepted principal's assignments at request time. The active assignment is
+  preferred; a stale or revoked client directory falls back to the default
+  assignment, then the first assignment. Callers with no assignments omit the
+  hint so account-global providers can still refresh. Local and managed
+  administrators retain host-directory pass-through.
 - Provider requests are deduplicated per provider. A coordinator request that
   arrives during a cycle is merged into at most one ordered follow-up cycle.
 - Successful data is retained when a later request fails. UI state records

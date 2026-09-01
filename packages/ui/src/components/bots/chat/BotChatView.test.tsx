@@ -130,7 +130,7 @@ describe('BotChatView', () => {
     expect(source).not.toContain('OpenCode');
   });
 
-  test('uses the selected Bot name and full profile avatar for assistant messages', () => {
+  test('uses the selected Bot name without rendering a transcript avatar for assistant messages', () => {
     const assistantMessage = message('assistant-message', 2, 'run');
     const previousMessages = useBotChannelStore.getState().messagesById;
     const initialState = useBotChannelStore.getInitialState();
@@ -148,9 +148,43 @@ describe('BotChatView', () => {
 
       expect(markup).toContain('Release Steward');
       expect(markup).toContain('aria-label="Message from Release Steward"');
-      expect(markup).toContain('src="/api/bots/release-steward/avatar"');
-      expect(markup).toContain('h-14 w-14 rounded-full');
+      expect(markup).not.toContain('src="/api/bots/release-steward/avatar"');
+      expect(markup).not.toContain('h-14 w-14');
       expect(markup).not.toContain('>Bot<');
+    } finally {
+      useBotChannelStore.setState({ messagesById: previousMessages });
+      Object.assign(initialState, { messagesById: previousInitialMessages });
+    }
+  });
+
+  test('hides historical contextual acknowledgments without deleting their canonical record', () => {
+    const acknowledgment = {
+      ...message('contextual-acknowledgment', 2, 'tool-run'),
+      assistantPhase: 'acknowledgment' as const,
+      body: {
+        text: "I’ll open Buffer and check which account is connected.",
+        attachmentIds: [],
+      },
+    };
+    const previousMessages = useBotChannelStore.getState().messagesById;
+    const initialState = useBotChannelStore.getInitialState();
+    const previousInitialMessages = initialState.messagesById;
+    const messagesById = { [acknowledgment.id]: acknowledgment };
+    useBotChannelStore.setState({ messagesById });
+    Object.assign(initialState, { messagesById });
+
+    try {
+      const markup = renderToStaticMarkup(
+        <I18nProvider>
+          <BotMessageRow bot={bot} messageId={acknowledgment.id} />
+        </I18nProvider>,
+      );
+
+      const rowSource = readFileSync(resolve(testDir, 'BotMessageRow.tsx'), 'utf8');
+      expect(markup).toBe('');
+      expect(useBotChannelStore.getState().messagesById[acknowledgment.id]).toBe(acknowledgment);
+      expect(rowSource).not.toContain('bots.chat.message.acknowledgment');
+      expect(markup).not.toContain('Got it — I’m on it.');
     } finally {
       useBotChannelStore.setState({ messagesById: previousMessages });
       Object.assign(initialState, { messagesById: previousInitialMessages });
@@ -203,7 +237,7 @@ describe('BotChatView', () => {
     }
   });
 
-  test('uses streamed content itself instead of an updating label', () => {
+  test('keeps unfinalized prose hidden for both running and cancelled work', () => {
     const assistantMessage = {
       ...message('settled-assistant-message', 2, 'settled-run'),
       finalizedAt: null,
@@ -225,7 +259,7 @@ describe('BotChatView', () => {
       const settledMarkup = renderToStaticMarkup(
         <I18nProvider><BotMessageRow bot={bot} messageId={assistantMessage.id} /></I18nProvider>,
       );
-      expect(settledMarkup).not.toContain('Updating…');
+      expect(settledMarkup).toBe('');
 
       const runningRuns = { 'settled-run': run('settled-run', 'v1', 'running') };
       useBotOperationsStore.setState({ runsById: runningRuns });
@@ -233,7 +267,7 @@ describe('BotChatView', () => {
       const runningMarkup = renderToStaticMarkup(
         <I18nProvider><BotMessageRow bot={bot} messageId={assistantMessage.id} /></I18nProvider>,
       );
-      expect(runningMarkup).not.toContain('Updating…');
+      expect(runningMarkup).toBe('');
     } finally {
       useBotChannelStore.setState({ messagesById: previousMessages });
       useBotOperationsStore.setState({ runsById: previousRuns });
@@ -242,7 +276,7 @@ describe('BotChatView', () => {
     }
   });
 
-  test('renders a requester-only live assistant row before a canonical row exists', () => {
+  test('buffers requester-only live prose until a verified canonical final exists', () => {
     const liveState = useBotLiveMessageStore.getState();
     const liveInitialState = useBotLiveMessageStore.getInitialState();
     const previousInitialMessages = liveInitialState.messagesById;
@@ -265,8 +299,7 @@ describe('BotChatView', () => {
         <I18nProvider><BotMessageRow bot={bot} messageId="live-assistant" /></I18nProvider>,
       );
 
-      expect(markup).toContain('data-bot-message-id="live-assistant"');
-      expect(markup).toContain('Release Steward');
+      expect(markup).toBe('');
     } finally {
       useBotLiveMessageStore.getState().reset();
       Object.assign(liveInitialState, { messagesById: previousInitialMessages });
@@ -481,14 +514,61 @@ describe('BotChatView', () => {
     }
   });
 
-  test('removes channel metadata and the inline run-status strip', () => {
+  test('does not blame attachments for OAuth or timeout failures', () => {
+    const operationsInitial = useBotOperationsStore.getInitialState();
+    const previousRuns = useBotOperationsStore.getState().runsById;
+    const previousInitialRuns = operationsInitial.runsById;
+    try {
+      const oauth = {
+        ...run('oauth', 'v1', 'failed'),
+        retryable: true,
+        interruptionKind: 'bot_opencode_request_failed',
+      };
+      const timeout = {
+        ...run('timeout', 'v1', 'failed'),
+        retryable: false,
+        interruptionKind: 'bot_opencode_request_timeout',
+      };
+      const attachments = {
+        ...run('attachments', 'v1', 'failed'),
+        retryable: false,
+        interruptionKind: 'bot_artifact_materialization_failed',
+      };
+      const runsById = { oauth, timeout, attachments };
+      useBotOperationsStore.setState({ runsById });
+      Object.assign(operationsInitial, { runsById });
+
+      const renderFailure = (runId: string) => renderToStaticMarkup(
+        <I18nProvider>
+          <BotRunFailureNotice runId={runId} channelId="channel" sourceHasAttachments />
+        </I18nProvider>,
+      );
+      expect(renderFailure('oauth')).toContain('stopped before it could finish');
+      expect(renderFailure('oauth')).not.toContain('processing the attached files');
+      expect(renderFailure('timeout')).toContain('response time limit');
+      expect(renderFailure('timeout')).not.toContain('processing the attached files');
+      expect(renderFailure('attachments')).toContain('processing the attached files');
+    } finally {
+      useBotOperationsStore.setState({ runsById: previousRuns });
+      Object.assign(operationsInitial, { runsById: previousInitialRuns });
+    }
+  });
+
+  test('removes channel metadata and warms only from explicit composer intent', () => {
     const chatSource = readFileSync(resolve(testDir, 'BotChatView.tsx'), 'utf8');
+    const composerSource = readFileSync(resolve(testDir, 'BotComposer.tsx'), 'utf8');
     expect(chatSource).not.toContain("t('bots.chat.privateContinuity')");
     expect(chatSource).not.toContain('t(`bots.composer.access.${channel.accessRole}`)');
     expect(chatSource).not.toContain('BotRunStatus');
-    expect(chatSource).toContain('warmBotChannel(prewarmChannelId)');
+    expect(chatSource).toContain('onRuntimeIntent={requestRuntimePrewarm}');
+    expect(chatSource).not.toContain("if (!['completed', 'failed', 'cancelled', 'interrupted'].includes(latestRun.state))");
+    expect(composerSource).toContain('onFocusCapture={onRuntimeIntent}');
+    expect(composerSource).toContain('onPointerDownCapture={onRuntimeIntent}');
+    expect(composerSource).toContain('onRuntimeIntent?.();');
     const rowSource = readFileSync(resolve(testDir, 'BotMessageRow.tsx'), 'utf8');
-    expect(rowSource).toContain("'flex min-w-0 max-w-[92%] items-end gap-3 sm:max-w-[78%]'");
+    expect(rowSource).toContain('min-w-0 max-w-[92%] sm:max-w-[78%]');
+    expect(rowSource).not.toContain('showAvatar');
+    expect(rowSource).not.toContain('<BotAvatar');
   });
 
   test('derives typing from queued, starting, and running states only', () => {
@@ -501,7 +581,7 @@ describe('BotChatView', () => {
     expect(resolveBotTypingRunId(null)).toBeNull();
   });
 
-  test('keeps typing visible through empty checkpoints and hides it on visible response content', () => {
+  test('keeps working feedback through acknowledgments and partial prose until final output', () => {
     const emptyCheckpoint = {
       ...message('empty-checkpoint', 2, 'active-run'),
       body: { text: '   ', attachmentIds: [] },
@@ -535,17 +615,22 @@ describe('BotChatView', () => {
       typingRunId: 'active-run',
       messageIds: [visibleText.id],
       messagesById: { [visibleText.id]: visibleText },
-    })).toBe(false);
+    })).toBe(true);
     expect(shouldShowBotTypingIndicator({
       typingRunId: 'active-run',
       messageIds: [visibleAttachment.id],
       messagesById: { [visibleAttachment.id]: visibleAttachment },
-    })).toBe(false);
+    })).toBe(true);
     expect(shouldShowBotTypingIndicator({
       typingRunId: 'active-run',
       messageIds: [acknowledgment.id],
       messagesById: { [acknowledgment.id]: acknowledgment },
     })).toBe(true);
+    expect(shouldShowBotTypingIndicator({
+      typingRunId: 'active-run',
+      messageIds: [visibleText.id],
+      messagesById: { [visibleText.id]: { ...visibleText, finalizedAt: '2026-08-23T00:00:03.000Z' } },
+    })).toBe(false);
     expect(shouldShowBotTypingIndicator({
       typingRunId: null,
       messageIds: [],
@@ -553,14 +638,15 @@ describe('BotChatView', () => {
     })).toBe(false);
   });
 
-  test('renders accessible avatar-level typing dots with reduced-motion support', () => {
+  test('renders accessible avatar-free typing dots with reduced-motion support', () => {
     const markup = renderToStaticMarkup(
       <I18nProvider><BotTypingIndicator bot={bot} /></I18nProvider>,
     );
 
     expect(markup).toContain('aria-label="Release Steward is typing"');
     expect(markup).toContain('data-bot-typing-indicator="bot"');
-    expect(markup).toContain('src="/api/bots/release-steward/avatar"');
+    expect(markup).not.toContain('src="/api/bots/release-steward/avatar"');
+    expect(markup).not.toContain('h-14 w-14');
     expect(markup.match(/animate-bot-typing-dot/g)?.length).toBe(3);
     expect(markup).toContain('motion-reduce:animate-none');
   });
@@ -634,6 +720,8 @@ describe('BotChatView', () => {
     expect(source).toContain('pending: runtimeOperation.pending');
     expect(source).toContain("runtimeOperation.progress?.phase === 'failed'");
     expect(source).toContain('runtimeOperation.progress.message || null');
+    expect(source).toContain("phase !== 'ready' && phase !== 'failed'");
+    expect(source).toContain('void useBotsStore.getState().loadCapabilities()');
     expect(source).not.toContain('setRuntimeActionPending');
   });
 });

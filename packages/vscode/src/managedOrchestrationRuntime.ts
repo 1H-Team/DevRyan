@@ -257,6 +257,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
   createTaskId?: () => string;
   createLeaseToken?: () => string;
   getWorkAdmissionBlock?: () => { code: string; error: string } | null;
+  auxiliaryRpcHandlers?: Record<string, (params: Record<string, unknown>) => Promise<unknown>>;
   validateAgentExecution?: (input: {
     directory: string;
     providerId: string;
@@ -457,6 +458,8 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
     request: ManagedOrchestrationRpcRequest,
     context: ManagedOrchestrationRpcContext = {},
   ) => {
+    const auxiliary = options.auxiliaryRpcHandlers?.[request.method];
+    if (auxiliary) return auxiliary(request.params ?? {});
     await ensureInitialized();
     const params = request.params ?? {};
     const resultMode = resolveManagedResultMode(params.resultMode);

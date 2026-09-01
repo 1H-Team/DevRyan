@@ -59,7 +59,7 @@ export const createDefaultBotRevisionContract = (
   reasoning: { maxOutputTokens: 16_384 },
   fileTools: AUTONOMOUS_FILE_TOOLS,
   runtimeTools: AUTONOMOUS_RUNTIME_TOOLS,
-  gatewayPluginVersion: 'devryan-bot-tools@1.2.0',
+  gatewayPluginVersion: 'devryan-bot-tools@1.3.0',
   libraryVersionIds: [],
   skillBindings: [],
   mcpBindings: [],

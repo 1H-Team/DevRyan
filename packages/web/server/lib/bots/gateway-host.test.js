@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   BOT_PRIVATE_GATEWAY_PATH,
+  BOT_PRIVATE_OAUTH_PATH,
   createBotGatewayHost,
 } from './gateway-host.js';
 
@@ -65,6 +66,47 @@ const validBody = (overrides = {}) => ({
 });
 
 describe('private Docker Bot gateway host', () => {
+  it('keeps OAuth out of tool operations and rejects caller-selected scope, browser and computer requests', async () => {
+    const handleOAuth = vi.fn(async (claims) => ({ generation: claims.runId, accessToken: 'fixture-short-lived' }));
+    const handleOperation = vi.fn();
+    const gateway = createBotGatewayHost({ handleOperation, handleOAuth });
+    gateways.push(gateway);
+    await gateway.start();
+    const address = gateway.getAddress();
+    const { token } = issue(gateway);
+    const call = (overrides = {}) => request({ address, token, path: BOT_PRIVATE_OAUTH_PATH,
+      body: { operation: 'access', protocol: 1 }, ...overrides });
+    expect((await call()).status).toBe(200);
+    expect(handleOperation).not.toHaveBeenCalled();
+    for (const overrides of [
+      { body: { operation: 'access', protocol: 1, botId: BOT_ID } },
+      { body: { operation: 'access', protocol: 1, connectionId: 'host:openai' } },
+      { body: { operation: 'access', protocol: 1, url: 'https://example.com' } },
+      { headers: { origin: 'http://127.0.0.1' } },
+      { headers: { cookie: 'session=fixture' } },
+      { token: issue(gateway, { kind: 'computer' }).token },
+    ]) expect((await call(overrides)).status).toBe(403);
+    expect((await request({ address, token, body: validBody({ operation: 'access' }) })).status).toBe(403);
+    expect(handleOAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not release access credentials when a run is revoked during refresh', async () => {
+    let finish;
+    let started;
+    const ready = new Promise((resolve) => { started = resolve; });
+    const gateway = createBotGatewayHost({ handleOperation: vi.fn(), handleOAuth: async () => {
+      started();
+      return new Promise((resolve) => { finish = resolve; });
+    } });
+    gateways.push(gateway);
+    await gateway.start();
+    const pending = request({ address: gateway.getAddress(), token: issue(gateway).token,
+      path: BOT_PRIVATE_OAUTH_PATH, body: { operation: 'access', protocol: 1 } });
+    await ready;
+    gateway.revokeRun(RUN_ID);
+    finish({ accessToken: 'must-not-leak' });
+    expect(await pending).toEqual({ status: 403, body: { code: 'bot_oauth_access_denied' } });
+  });
   it('binds a random loopback port and authorizes exact run/channel/revision claims', async () => {
     const handleOperation = vi.fn(async ({ claims, operation, payload }) => ({
       botId: claims.botId,

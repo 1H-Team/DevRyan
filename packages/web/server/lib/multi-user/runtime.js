@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { beginSessionCreationTrace, creationUnknownPayload, creationRestartPayload, creationNotDispatchedPayload } from '../opencode/session-creation.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -39,9 +40,12 @@ import {
   validateSettingsChanges,
   validateSettingsPermissionsPayload,
 } from './policy.js';
+import { normalizeNotificationTemplates } from '../opencode/notification-settings.js';
 import { runWithRequestPrincipal } from './request-context.js';
 import { createSupabaseServerClient, SupabaseRequestError } from './supabase-client.js';
 import { createSessionVault } from './vault.js';
+import { createBranchPreviewVault } from './branch-preview-vault.js';
+import { createBranchPreviewService } from './branch-previews.js';
 import { createSessionOwnershipIndex } from './session-ownership-index.js';
 import { createAuditOutbox } from './audit-outbox.js';
 import { createAnalyticsRetentionService } from './analytics-retention.js';
@@ -360,7 +364,7 @@ const hostGlobalMutation = (req) => {
 };
 
 const hostGlobalRead = (requestPath) => {
-  if (/^\/(?:auth|provider|mcp|magic-prompts|openchamber\/tunnel)(?:\/|$)/.test(requestPath)) return true;
+  if (/^\/(?:auth|provider|mcp|openchamber\/tunnel)(?:\/|$)/.test(requestPath)) return true;
   if (requestPath === '/openchamber/events' || requestPath === '/openchamber/scheduled-tasks/status') return false;
   if (/^\/projects\/[^/]+\/icon$/.test(requestPath)) return false;
   if (/^\/projects\/[^/]+\/(?:branch-target|scheduled-tasks(?:\/[^/]+)?(?:\/run)?)$/.test(requestPath)) return false;
@@ -473,6 +477,7 @@ const localAdminPrincipal = Object.freeze({
 
 const CONTROL_PLANE_RETRY_BASE_MS = 5_000;
 const CONTROL_PLANE_RETRY_MAX_MS = 60_000;
+const INITIAL_CONTROL_PLANE_TIMEOUT_MS = 5_000;
 const TRANSIENT_DEPENDENCY_ERROR_CODES = new Set([
   'ECONNREFUSED',
   'ECONNRESET',
@@ -516,6 +521,7 @@ export async function createMultiUserRuntime({
   encryption = Object.freeze({ getKey: null }),
   recordDiagnostic = () => {},
   botsExecutionEnabled = true,
+  oauthCoordinator = null,
 } = {}) {
   const config = resolveMultiUserConfig({ dataDirectory });
 
@@ -566,6 +572,7 @@ export async function createMultiUserRuntime({
 
   if (!config.enabled) {
     const botsRuntime = createBotsRuntime({
+      oauthCoordinator,
       supabase: null,
       audit: async () => {},
       principalPolicy: {
@@ -588,6 +595,7 @@ export async function createMultiUserRuntime({
       filterEventForPrincipal: () => true,
       recordOpenCodeActivity: async () => false,
       canSessionTokenHashAccess: async () => true,
+      resolveBrowserLeaseContext: async () => null,
       getPublicPrincipal: publicPrincipal,
       resolveScheduledTaskAccess: async () => ({ state: 'runnable' }),
     };
@@ -636,6 +644,12 @@ export async function createMultiUserRuntime({
   const analyticsRetention = createAnalyticsRetentionService({ supabase });
   const readUserPolicy = createUserPolicyReader({ supabase, logger });
   const vault = await createSessionVault({ dataDirectory: config.dataDirectory });
+  const branchPreviewVault = await createBranchPreviewVault({ dataDirectory: config.dataDirectory });
+  const branchPreviews = createBranchPreviewService({
+    supabase,
+    vault: branchPreviewVault,
+    fetchImpl,
+  });
   const ownershipIndex = await createSessionOwnershipIndex({ dataDirectory: config.dataDirectory });
   let controlPlaneRetryTimer = null;
   let controlPlaneSyncPromise = null;
@@ -661,12 +675,12 @@ export async function createMultiUserRuntime({
     controlPlaneRetryTimer.unref?.();
   };
 
-  const refreshOwnershipIndex = () => {
+  const refreshOwnershipIndex = ({ timeoutMs } = {}) => {
     if (controlPlaneDisposed) return Promise.resolve(controlPlaneStatus);
     if (controlPlaneSyncPromise) return controlPlaneSyncPromise;
     const current = (async () => {
       try {
-        const durableOwnershipRows = await supabase.rest('opencode_session_ownership');
+        const durableOwnershipRows = await supabase.rest('opencode_session_ownership', { timeoutMs });
         await ownershipIndex.rebuild(durableOwnershipRows);
         if (controlPlaneRetryTimer) {
           clearTimeout(controlPlaneRetryTimer);
@@ -702,7 +716,7 @@ export async function createMultiUserRuntime({
     return current;
   };
 
-  await refreshOwnershipIndex();
+  await refreshOwnershipIndex({ timeoutMs: INITIAL_CONTROL_PLANE_TIMEOUT_MS });
   const principalCache = new Map();
   const loginAttempts = new Map();
   const connectionsByUser = new Map();
@@ -944,8 +958,26 @@ export async function createMultiUserRuntime({
     return eventId;
   };
 
+  // Transport jobs have no browser session. Resolve account and effective Bot policy
+  // afresh for every job without loading unrelated project or worktree state.
+  const resolveBotPrincipal = async (userId) => {
+    const profile = await supabase.rest('user_profiles', {
+      query: { id: `eq.${escapeFilterValue(userId)}`, limit: 1 }, maybeSingle: true,
+    });
+    if (!profile || profile.status !== 'active') return null;
+    const [rolePolicy, userPolicy] = await Promise.all([
+      supabase.rest('role_policies', { query: { role: `eq.${profile.role}`, limit: 1 }, maybeSingle: true }),
+      readUserPolicy(userId),
+    ]);
+    const policy = normalizeRolePolicy(profile.role, rolePolicy, userPolicy);
+    if (policy.bots !== true) return null;
+    return { id: profile.id, role: profile.role, scope: 'managed', status: profile.status,
+      policy, assignments: [], appSessionId: null };
+  };
   const botsRuntime = createBotsRuntime({
+    oauthCoordinator,
     supabase,
+    resolvePrincipal: resolveBotPrincipal,
     audit,
     principalPolicy: {
       isGlobalAdmin: (principal) => principal?.scope === 'managed' && principal?.role === 'admin',
@@ -957,7 +989,9 @@ export async function createMultiUserRuntime({
     executionEnabled: botsExecutionEnabled,
     withAuditDeliveryBarrier: auditOutbox.withFlushedDeliveryBarrier,
   });
-  await botsRuntime.start();
+  void botsRuntime.start().catch((error) => {
+    logger.warn?.('[MultiUser] Bot control plane startup failed:', summarizeDependencyError(error).message);
+  });
 
   const setBoundedProjectionContext = (cache, key, value, maximum = 5_000) => {
     if (!key) return;
@@ -1763,6 +1797,11 @@ export async function createMultiUserRuntime({
   const archiveAndDeleteBranchGrants = async ({ userId, project, rows }) => {
     const branchRows = Array.isArray(rows) ? rows : [];
     if (branchRows.length === 0) return [];
+    const previewVaultReferences = await branchPreviews.collectVaultReferences({
+      userId,
+      projectId: project.id,
+      branchNames: branchRows.map((row) => row.branch_name),
+    });
     await supabase.rest('user_project_branches', {
       method: 'DELETE',
       query: {
@@ -1777,13 +1816,19 @@ export async function createMultiUserRuntime({
       projectId: project.id,
       branchNames: branchRows.map((row) => row.branch_name),
     });
+    await branchPreviews.deleteVaultReferences(previewVaultReferences).catch((error) => {
+      logger.warn?.('[MultiUser] Removed branch preview metadata but could not purge an orphaned vault entry:', error);
+    });
     return [];
   };
 
   const archiveAndDeleteProjectAccess = async ({ userId, project }) => {
-    const branchRows = await supabase.rest('user_project_branches', {
-      query: { user_id: `eq.${escapeFilterValue(userId)}`, project_id: `eq.${escapeFilterValue(project.id)}` },
-    });
+    const [branchRows, previewVaultReferences] = await Promise.all([
+      supabase.rest('user_project_branches', {
+        query: { user_id: `eq.${escapeFilterValue(userId)}`, project_id: `eq.${escapeFilterValue(project.id)}` },
+      }),
+      branchPreviews.collectVaultReferences({ userId, projectId: project.id }),
+    ]);
     await supabase.rest('user_project_access', {
       method: 'DELETE',
       query: { user_id: `eq.${escapeFilterValue(userId)}`, project_id: `eq.${escapeFilterValue(project.id)}` },
@@ -1822,6 +1867,9 @@ export async function createMultiUserRuntime({
         });
       }
     }
+    await branchPreviews.deleteVaultReferences(previewVaultReferences).catch((error) => {
+      logger.warn?.('[MultiUser] Removed project preview metadata but could not purge an orphaned vault entry:', error);
+    });
     return { branchCount: (branchRows || []).length };
   };
 
@@ -2535,6 +2583,48 @@ export async function createMultiUserRuntime({
     return ownershipIndex.get(sessionId);
   };
 
+  const resolveBrowserLeaseContext = async ({ rootSessionId, directory = '' } = {}) => {
+    const sessionId = typeof rootSessionId === 'string' ? rootSessionId.trim() : '';
+    if (!sessionId) return null;
+    const owner = await sessionOwnership(sessionId);
+    if (!owner || owner.archived_at) return null;
+    const principal = await loadPrincipal(owner.user_id);
+    if (!principal) {
+      throw Object.assign(new Error('Managed browser owner is unavailable'), {
+        statusCode: 503,
+        code: 'browser_owner_context_unavailable',
+      });
+    }
+    if (principal.policy?.browser !== true) {
+      throw Object.assign(new Error('Browser access is disabled for this account'), {
+        statusCode: 403,
+        code: 'agent_browser_disabled',
+      });
+    }
+    const planContext = await resolveOwnedSessionPlanContext(principal, sessionId, directory);
+    if (!planContext) {
+      throw Object.assign(new Error('Managed browser ownership does not match the requested directory'), {
+        statusCode: 403,
+        code: 'browser_owner_context_mismatch',
+      });
+    }
+    const preview = await branchPreviews.resolveLeaseContext({
+      userId: owner.user_id,
+      projectId: owner.project_id,
+      branchName: owner.branch_name,
+    });
+    return {
+      metadata: {
+        authoritativeOwner: true,
+        ownerUserId: owner.user_id,
+        projectId: owner.project_id,
+        branchName: owner.branch_name,
+        ...(preview?.metadata || {}),
+      },
+      credential: preview?.credential || null,
+    };
+  };
+
   const resolveOwnedSessionPlanContext = async (principal, sessionId, requestedDirectory = '') => {
     if (principal?.scope !== 'managed') return null;
     const owner = await sessionOwnership(sessionId);
@@ -2636,6 +2726,15 @@ export async function createMultiUserRuntime({
     if (provisionalSessionIds.has(sessionId)) return false;
     return Boolean(await resolveOwnedSessionPlanContext(principal, sessionId));
   };
+
+  const hasCurrentSessionOwnershipGrant = (principal, owner) => (
+    principal?.scope === 'managed'
+    && owner?.user_id === principal.id
+    && (principal.assignments || []).some((assignment) => (
+      assignment.projectId === owner.project_id
+      && assignment.branchName === owner.branch_name
+    ))
+  );
 
   const canSessionTokenHashAccess = async (tokenHash, sessionId) => {
     if (!/^[a-f0-9]{64}$/.test(String(tokenHash || ''))) return false;
@@ -2960,7 +3059,7 @@ export async function createMultiUserRuntime({
     return payload?.type === 'openchamber:heartbeat' || payload?.type === 'server.connected';
   };
 
-  const fetchUpstreamJson = async ({ req, buildOpenCodeUrl, getOpenCodeAuthHeaders, pathname, method = req.method, body = req.body }) => {
+  const fetchUpstreamJson = async ({ req, buildOpenCodeUrl, getOpenCodeAuthHeaders, pathname, method = req.method, body = req.body, timeoutMs = 120_000 }) => {
     const sourceUrl = new URL(req.originalUrl || req.url, 'http://127.0.0.1');
     const target = new URL(buildOpenCodeUrl(pathname, ''));
     for (const [key, value] of sourceUrl.searchParams) target.searchParams.set(key, value);
@@ -2972,7 +3071,7 @@ export async function createMultiUserRuntime({
         ...getOpenCodeAuthHeaders(),
       },
       body: body !== undefined && method !== 'GET' ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(Math.max(1, Math.floor(timeoutMs))),
     });
     const text = await response.text();
     let payload = null;
@@ -2986,6 +3085,8 @@ export async function createMultiUserRuntime({
     getOpenCodeAuthHeaders,
     listConfigAgents: listConfigAgentsForDirectory,
     getConfigApplyMutationResponse = () => ({ requiresReload: false }),
+    isSessionCreationRestarting = () => false,
+    recordCreationTiming = () => {},
   } = {}) => {
     if (typeof listConfigAgentsForDirectory === 'function') {
       listManagedConfigAgents = listConfigAgentsForDirectory;
@@ -4118,7 +4219,7 @@ export async function createMultiUserRuntime({
     app.get('/api/admin/users/:userId/projects/:projectId', async (req, res) => {
       if (!canReviewUsers(req.principal)) return jsonError(res, 403, 'User review access required');
       try {
-        const [access, branches] = await Promise.all([
+        const [access, branches, previews] = await Promise.all([
           supabase.rest('user_project_access', {
             query: {
               user_id: `eq.${escapeFilterValue(req.params.userId)}`,
@@ -4134,9 +4235,103 @@ export async function createMultiUserRuntime({
               order: 'created_at.asc',
             },
           }),
+          branchPreviews.list(req.params.userId, req.params.projectId),
         ]);
-        return res.json({ access, branches: branches || [] });
+        const previewByBranch = new Map(previews.map((preview) => [preview.branchName, preview]));
+        return res.json({
+          access,
+          branches: (branches || []).map((branch) => ({
+            ...branch,
+            preview: previewByBranch.get(branch.branch_name) || null,
+          })),
+        });
       } catch (error) { return jsonError(res, error?.status || 500, error.message); }
+    });
+
+    app.put('/api/admin/users/:userId/projects/:projectId/branches/:branchName/preview', async (req, res) => {
+      if (!canManageUsers(req.principal)) return jsonError(res, 403, 'User management edit access required');
+      const branchName = normalizeLogicalBranchName(req.params.branchName);
+      if (!branchName) return jsonError(res, 400, 'Branch name is required');
+      try {
+        const previous = await branchPreviews.list(req.params.userId, req.params.projectId);
+        const existing = previous.find((entry) => entry.branchName === branchName) || null;
+        const preview = await branchPreviews.upsert({
+          userId: req.params.userId,
+          projectId: req.params.projectId,
+          branchName,
+          previewUrl: req.body?.previewUrl,
+          ...(Object.prototype.hasOwnProperty.call(req.body || {}, 'serviceToken')
+            ? { serviceToken: req.body.serviceToken }
+            : {}),
+        });
+        await audit(req.principal, 'branch_preview.saved', {
+          targetType: 'user',
+          targetId: req.params.userId,
+          projectId: req.params.projectId,
+          metadata: {
+            branchName,
+            changes: buildSafeFieldDeltas(
+              existing
+                ? { previewUrl: existing.previewUrl, serviceTokenConfigured: existing.serviceTokenConfigured }
+                : {},
+              { previewUrl: preview.previewUrl, serviceTokenConfigured: preview.serviceTokenConfigured },
+            ),
+          },
+        });
+        return res.json({ preview });
+      } catch (error) {
+        return jsonError(res, error?.statusCode || error?.status || 500, error.message, {
+          ...(error?.code ? { code: error.code } : {}),
+        });
+      }
+    });
+
+    app.post('/api/admin/users/:userId/projects/:projectId/branches/:branchName/preview/test', async (req, res) => {
+      if (!canManageUsers(req.principal)) return jsonError(res, 403, 'User management edit access required');
+      const branchName = normalizeLogicalBranchName(req.params.branchName);
+      if (!branchName) return jsonError(res, 400, 'Branch name is required');
+      try {
+        const result = await branchPreviews.test({
+          userId: req.params.userId,
+          projectId: req.params.projectId,
+          branchName,
+          previewUrl: req.body?.previewUrl,
+          ...(Object.prototype.hasOwnProperty.call(req.body || {}, 'serviceToken')
+            ? { serviceToken: req.body.serviceToken }
+            : {}),
+        });
+        return res.json(result);
+      } catch (error) {
+        return jsonError(res, error?.statusCode || error?.status || 500, error.message, {
+          ...(error?.code ? { code: error.code } : {}),
+        });
+      }
+    });
+
+    app.delete('/api/admin/users/:userId/projects/:projectId/branches/:branchName/preview', async (req, res) => {
+      if (!canManageUsers(req.principal)) return jsonError(res, 403, 'User management edit access required');
+      const branchName = normalizeLogicalBranchName(req.params.branchName);
+      if (!branchName) return jsonError(res, 400, 'Branch name is required');
+      try {
+        const removed = await branchPreviews.remove({
+          userId: req.params.userId,
+          projectId: req.params.projectId,
+          branchName,
+        });
+        if (removed) {
+          await audit(req.principal, 'branch_preview.removed', {
+            targetType: 'user',
+            targetId: req.params.userId,
+            projectId: req.params.projectId,
+            metadata: { branchName },
+          });
+        }
+        return res.json({ removed });
+      } catch (error) {
+        return jsonError(res, error?.statusCode || error?.status || 500, error.message, {
+          ...(error?.code ? { code: error.code } : {}),
+        });
+      }
     });
 
     app.put('/api/admin/users/:userId/projects/:projectId', async (req, res) => {
@@ -4579,6 +4774,26 @@ export async function createMultiUserRuntime({
       }
     });
 
+    app.delete('/api/admin/users/:userId/analytics', async (req, res) => {
+      if (!requireAnalyticsAdmin(req.principal)) return jsonError(res, 403, 'Administrator access required');
+      if (req.body?.confirm !== true) return jsonError(res, 400, 'Analytics clear confirmation is required');
+      try {
+        const target = await loadAnalyticsTarget(req.params.userId);
+        if (!target) return jsonError(res, 404, 'User not found');
+        const purgeEventId = await audit(req.principal, 'activity.user_purged', {
+          targetType: 'user',
+          targetId: target.id,
+        });
+        const result = await auditOutbox.withFlushedDeliveryBarrier(() => analyticsRetention.purgeUser({
+          userId: target.id,
+          preserveEventId: purgeEventId,
+        }));
+        return res.json({ purged: true, ...result });
+      } catch (error) {
+        return runtimeErrorResponse(res, error);
+      }
+    });
+
     app.get('/api/admin/activity', async (req, res) => {
       if (!canReviewUsers(req.principal)) return jsonError(res, 403, 'User review access required');
       const limit = Math.min(250, Math.max(1, Number(req.query?.limit || 100)));
@@ -4669,7 +4884,15 @@ export async function createMultiUserRuntime({
             }
             accepted = validated.accepted;
             previousSettings = Object.fromEntries(Object.keys(accepted).map((field) => [field, currentEffective[field]]));
-            return { ...currentOverrides, ...accepted };
+            const nextOverrides = { ...currentOverrides, ...accepted };
+            if (nextOverrides.notificationTemplates && typeof nextOverrides.notificationTemplates === 'object') {
+              const hostTemplates = normalizeNotificationTemplates(hostSettings.notificationTemplates).templates;
+              nextOverrides.notificationTemplates = normalizeNotificationTemplates(
+                nextOverrides.notificationTemplates,
+                hostTemplates,
+              ).templates;
+            }
+            return nextOverrides;
           });
           const nextSettings = Object.fromEntries(Object.keys(accepted).map((field) => [field, accepted[field]]));
           await audit(req.principal, 'settings.updated', {
@@ -5006,14 +5229,31 @@ export async function createMultiUserRuntime({
 
       app.post('/api/session', async (req, res, next) => {
         if (req.principal?.scope !== 'managed') return next();
+        const trace = beginSessionCreationTrace(req, recordCreationTiming);
+        if (trace.remainingMs() <= 0) {
+          trace.mark('deadline_before_creation');
+          return res.status(408).json(creationNotDispatchedPayload());
+        }
+        if (isSessionCreationRestarting()) {
+          trace.mark('restart_rejected_before_creation');
+          return res.status(503).json(creationRestartPayload());
+        }
         try {
-          const { response, payload } = await fetchUpstreamJson({ req, buildOpenCodeUrl, getOpenCodeAuthHeaders, pathname: '/session', method: 'POST' });
-          if (!response.ok) return res.status(response.status).send(typeof payload === 'string' ? payload : JSON.stringify(payload));
+          trace.mark('upstream_create_started');
+          const { response, payload } = await fetchUpstreamJson({ req, buildOpenCodeUrl, getOpenCodeAuthHeaders, pathname: '/session', method: 'POST', timeoutMs: trace.remainingMs() });
+          if (!response.ok) {
+            trace.mark('upstream_create_rejected');
+            if (response.status >= 500) return res.status(response.status).json(creationUnknownPayload());
+            return res.status(response.status).send(typeof payload === 'string' ? payload : JSON.stringify(payload));
+          }
           const sessionId = typeof payload?.id === 'string' ? payload.id : '';
-          if (!sessionId) return jsonError(res, 502, 'OpenCode session response did not include an id');
+          if (!sessionId) return res.status(502).json(creationUnknownPayload());
+          trace.mark('upstream_created', sessionId);
           provisionalSessionIds.add(sessionId);
           try {
+            trace.mark('ownership_commit_started', sessionId);
             await recordSessionOwnership(req.principal, payload);
+            trace.mark('ownership_committed', sessionId);
           } catch (error) {
             const cleanupComplete = await cleanupProvisionalSession({ req, sessionId });
             if (cleanupComplete) {
@@ -5022,19 +5262,21 @@ export async function createMultiUserRuntime({
               scheduleProvisionalSessionCleanup({ req, sessionId });
             }
             const failure = authFailurePayload(error);
+            trace.mark(cleanupComplete ? 'ownership_failed_cleanup_complete' : 'ownership_failed_cleanup_pending', sessionId);
             return jsonError(res, failure.status, failure.error, {
-              code: failure.code,
+              code: cleanupComplete ? failure.code : 'session_create_outcome_unknown',
               retryable: false,
               ...(failure.requiredMigration ? { requiredMigration: failure.requiredMigration } : {}),
             });
           }
           provisionalSessionIds.delete(sessionId);
           notifyManagedSessionOwnershipCommitted(payload);
+          trace.mark('acknowledged', sessionId);
           return res.status(response.status).json(payload);
-        // Upstream-connection failures (OpenCode restarting or briefly down)
-        // are transient — the flag lets the client retry instead of surfacing
-        // the first failure. Ownership failures above stay retryable: false.
-        } catch (error) { return jsonError(res, 502, error.message, { retryable: true }); }
+        } catch {
+          trace.mark('outcome_unknown');
+          return res.status(502).json(creationUnknownPayload());
+        }
       });
 
       app.get('/api/session/status', async (req, res, next) => {
@@ -5082,7 +5324,9 @@ export async function createMultiUserRuntime({
       app.delete('/api/session/:sessionID', async (req, res, next) => {
         if (req.principal?.scope !== 'managed') return next();
         let upstreamDeleted = false;
+        let upstreamAlreadyAbsent = false;
         let ownershipTombstoned = false;
+        let idempotentReplay = false;
         const retentionRequired = req.principal.role !== 'admin';
         let analyticsRetentionLocked = !retentionRequired;
         let auditRegistered = false;
@@ -5097,12 +5341,17 @@ export async function createMultiUserRuntime({
               targetType: 'session',
               targetId: req.params.sessionID,
               sessionId: req.params.sessionID,
-              success: res.statusCode < 400 && upstreamDeleted && ownershipTombstoned && analyticsRetentionLocked,
+              success: res.statusCode < 400
+                && (upstreamDeleted || upstreamAlreadyAbsent || idempotentReplay)
+                && ownershipTombstoned
+                && analyticsRetentionLocked,
               metadata: {
                 statusCode: res.statusCode,
                 upstreamDeleted,
+                upstreamAlreadyAbsent,
                 ownershipTombstoned,
                 analyticsRetentionLocked,
+                idempotentReplay,
               },
             }).catch((error) => logger.error?.('[MultiUser] Failed to persist session delete audit:', error));
           };
@@ -5110,12 +5359,35 @@ export async function createMultiUserRuntime({
           res.once('close', recordOutcome);
         };
         try {
-          if (!await ensureOwnedSession(req.principal, req.params.sessionID)) return jsonError(res, 404, 'Session not found');
+          let owner = await sessionOwnership(req.params.sessionID);
+          if (owner?.archived_at) {
+            if (!hasCurrentSessionOwnershipGrant(req.principal, owner)) {
+              return jsonError(res, 404, 'Session not found');
+            }
+            idempotentReplay = true;
+            ownershipTombstoned = true;
+          } else {
+            if (!await ensureOwnedSession(req.principal, req.params.sessionID)) {
+              owner = await sessionOwnership(req.params.sessionID);
+              if (!owner?.archived_at || !hasCurrentSessionOwnershipGrant(req.principal, owner)) {
+                return jsonError(res, 404, 'Session not found');
+              }
+              idempotentReplay = true;
+              ownershipTombstoned = true;
+            } else {
+              owner = await sessionOwnership(req.params.sessionID);
+              if (!owner || !hasCurrentSessionOwnershipGrant(req.principal, owner)) {
+                return jsonError(res, 404, 'Session not found');
+              }
+            }
+          }
           registerDeleteAudit();
-          const owner = await sessionOwnership(req.params.sessionID);
           if (retentionRequired) {
             await analyticsRetention.lockUser(req.principal.id);
             analyticsRetentionLocked = true;
+          }
+          if (idempotentReplay) {
+            return res.status(200).json(true);
           }
           const { response, payload } = await fetchUpstreamJson({
             req,
@@ -5125,8 +5397,11 @@ export async function createMultiUserRuntime({
             method: 'DELETE',
             body: undefined,
           });
-          if (!response.ok) return res.status(response.status).send(typeof payload === 'string' ? payload : JSON.stringify(payload));
-          upstreamDeleted = true;
+          if (!response.ok && response.status !== 404) {
+            return res.status(response.status).send(typeof payload === 'string' ? payload : JSON.stringify(payload));
+          }
+          upstreamDeleted = response.ok;
+          upstreamAlreadyAbsent = response.status === 404;
           const archivedAt = new Date().toISOString();
           await supabase.rest('opencode_session_ownership', {
             method: 'PATCH', query: { session_id: `eq.${req.params.sessionID}` },
@@ -5134,6 +5409,9 @@ export async function createMultiUserRuntime({
           });
           await ownershipIndex.set({ ...owner, archived_at: archivedAt });
           ownershipTombstoned = true;
+          if (upstreamAlreadyAbsent) {
+            return res.status(200).json(true);
+          }
           return res.status(response.status).json(payload);
         } catch (error) { return runtimeErrorResponse(res, error, 502); }
       });
@@ -5197,6 +5475,7 @@ export async function createMultiUserRuntime({
     ownsSession,
     resolveOwnedSessionPlanContext,
     resolveSessionAgentExecution,
+    resolveBrowserLeaseContext,
     canSessionTokenHashAccess,
     audit,
     resolveManagedProject,

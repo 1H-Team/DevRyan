@@ -171,6 +171,7 @@ export type TurnLifecycleEventType =
   | 'tool_completed'
   | 'turn_completed'
   | 'turn_aborted'
+  | 'turn_failed'
   | 'session_idle';
 
 export interface TurnLifecycleEvent {
@@ -672,3 +673,73 @@ export function parseEvidenceNumstat(raw: string): Array<{
 }>;
 
 export function toPublicEvidenceRecord(record: EvidenceRecord): Record<string, unknown>;
+export type PrimaryRecoveryState = 'observing' | 'stopping' | 'reconciling' | 'recovery_reserved' | 'recovering' | 'completed' | 'needs_attention' | 'cancelled' | 'superseded';
+export interface PrimaryRecoverySnapshot {
+  schemaVersion: 1;
+  mode: 'off' | 'observe' | 'enforce';
+  supported: boolean;
+  enforced: boolean;
+  progressTimeoutMs: number | false;
+  stopConfirmed?: boolean;
+  record: null | {
+    sessionID: string; anchorID: string; failedID: string | null; recoveryID: string | null;
+    state: PrimaryRecoveryState; revision: number; attemptCount: number; maxAttempts: 1;
+    readOnly: boolean; providerID: string; modelID: string; agent: string; variant: string | null;
+    reason: string | null; updatedAt: number;
+  };
+}
+export interface PrimaryRecoveryController {
+  initialize(): Promise<void>;
+  drain(): Promise<void>;
+  observe(payload: unknown): void;
+  reconcile(): Promise<void>;
+  getSnapshot(sessionID: string): Promise<PrimaryRecoverySnapshot>;
+  control(sessionID: string, action: string, expectedRevision?: number): Promise<PrimaryRecoverySnapshot>;
+  plugin(input: Record<string, unknown>): Promise<unknown>;
+}
+export interface PrimaryRecoveryHost extends PrimaryRecoveryController {
+  handleRequest(method: string, path: string, body: unknown, context?: { owner?: string | null }): Promise<null | { status: number; body: unknown }>;
+}
+export interface PrimaryRecoveryHostOptions {
+  dataDirectory: string;
+  mode?: 'off' | 'observe' | 'enforce';
+  progressTimeoutMs?: number | false;
+  buildOpenCodeUrl(pathname: string): string | URL;
+  getOpenCodeAuthHeaders?(): Record<string, string>;
+  isManaged(): boolean;
+  authorize(record: { owner: string | null; sessionID: string; directory: string }): Promise<boolean>;
+  managedBarrier(sessionID: string): Promise<unknown>;
+  cancelDescendants?(sessionID: string): Promise<void>;
+  publishEvent?(event: unknown, options?: { directory: string }): void | Promise<void>;
+  recordIncident?(incident: { event: string; sessionID?: string; messageID?: string; [key: string]: unknown }): void;
+  fetchImpl?: typeof fetch;
+}
+export function createPrimaryRecoveryHost(options: PrimaryRecoveryHostOptions): PrimaryRecoveryHost;
+export function createPrimaryRecoveryManagedAdapter(rpc: (request: { method: string; params: Record<string, unknown> }) => Promise<unknown>): Pick<PrimaryRecoveryHostOptions, 'managedBarrier' | 'cancelDescendants'>;
+export const PROVIDER_RECOVERY_POLICY_VERSION: 1;
+export const PROVIDER_PROGRESS_TIMEOUT_MS: number;
+export const RECOVERY_READ_TOOLS: readonly string[];
+export const RECOVERY_CONTINUATION: string;
+export function classifyPrimaryTransportError(error: unknown, runtimeVersion: string): null | { kind: string; source: string };
+export interface PrimaryRecoveryExecutionRecord {
+  sessionID: string; directory: string; anchorID: string; providerID: string; modelID: string;
+  agent: string; variant: string | null; tools: Record<string, boolean>; owner: string | null;
+  recoveryID: string | null; failedID: string | null; state: PrimaryRecoveryState; attemptCount: number;
+  revision: number; guardedIDs: string[]; createdAt: number; updatedAt: number;
+}
+export function createPrimaryRecoveryController(options: {
+  directory: string; mode?: 'off' | 'observe' | 'enforce'; progressTimeoutMs?: number | false;
+  isManaged(): boolean;
+  authorize(record: PrimaryRecoveryExecutionRecord): Promise<boolean>;
+  observeTurn(record: PrimaryRecoveryExecutionRecord, options?: { signal: AbortSignal }): Promise<unknown>;
+  abortSession(record: PrimaryRecoveryExecutionRecord): Promise<unknown>;
+  promptSession(record: PrimaryRecoveryExecutionRecord, body: unknown): Promise<unknown>;
+  publishEvent?: PrimaryRecoveryHostOptions['publishEvent'];
+  recordIncident?: PrimaryRecoveryHostOptions['recordIncident'];
+  now?(): number; wait?(ms: number): Promise<void>; pollMs?: number; settlementMs?: number;
+  createMessageID?(): string;
+  getToolPolicy?(record: PrimaryRecoveryExecutionRecord): Promise<{ toolIDs: string[]; allowedReadTools: string[] }>;
+}): PrimaryRecoveryController & {
+  admit(input: { sessionID: string; directory: string; primary: boolean; owner?: string | null; body: unknown }): Promise<unknown>;
+  readRecord(sessionID: string): Promise<PrimaryRecoveryExecutionRecord | null>;
+};

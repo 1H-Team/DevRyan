@@ -182,6 +182,39 @@ export const collectJournalPaths = async (journalDirectory) => {
   return output;
 };
 
+const manifestHasVerifiedZeroGaps = (manifest) => (
+  manifest !== null
+  && Number.isFinite(manifest?.gapCount)
+  && manifest.gapCount === 0
+);
+
+export const collectGapPaths = async (journalDirectory, { verify = false } = {}) => {
+  if (verify) return collectJournalPaths(journalDirectory);
+
+  const output = [];
+  const rootEntries = await fs.readdir(journalDirectory, { withFileTypes: true }).catch(() => []);
+  output.push(...rootEntries
+    .filter((entry) => entry.isFile() && LEGACY_SEGMENT.test(entry.name))
+    .map((entry) => path.join(journalDirectory, entry.name))
+    .sort());
+
+  const sessionsDirectory = path.join(journalDirectory, 'sessions');
+  const sessionEntries = await fs.readdir(sessionsDirectory, { withFileTypes: true }).catch(() => []);
+  for (const entry of sessionEntries.sort((left, right) => left.name.localeCompare(right.name))) {
+    if (!entry.isDirectory()) continue;
+    const bucketDirectory = path.join(sessionsDirectory, entry.name);
+    const manifest = await readJson(path.join(bucketDirectory, 'manifest.json'));
+    if (!manifestHasVerifiedZeroGaps(manifest)) output.push(...await chunkPaths(bucketDirectory));
+  }
+
+  const runtimeDirectory = path.join(journalDirectory, 'runtime');
+  const runtimeManifest = await readJson(path.join(runtimeDirectory, 'manifest.json'));
+  if (!manifestHasVerifiedZeroGaps(runtimeManifest)) {
+    output.push(...await chunkPaths(runtimeDirectory));
+  }
+  return output;
+};
+
 export const readRecordsFromPaths = async function* (paths) {
   for (const filePath of paths) {
     const rawInput = createReadStream(filePath);
@@ -286,8 +319,11 @@ const show = async (journalDirectory, sessionID, args) => {
   for (const record of selected) process.stdout.write(`${JSON.stringify(record)}\n`);
 };
 
-const gaps = async (journalDirectory) => {
-  for await (const record of readRecordsFromPaths(await collectJournalPaths(journalDirectory))) {
+const gaps = async (journalDirectory, args) => {
+  const unsupported = args.filter((arg) => arg !== '--verify');
+  if (unsupported.length > 0) throw new Error(`Unknown gaps option: ${unsupported[0]}`);
+  const verify = args.includes('--verify');
+  for await (const record of readRecordsFromPaths(await collectGapPaths(journalDirectory, { verify }))) {
     if (record?.type === 'gap') process.stdout.write(`${JSON.stringify(record)}\n`);
   }
 };
@@ -315,7 +351,7 @@ const blob = async (journalDirectory, relativePath) => {
 const usage = `Usage:
   bun scripts/journal.mjs [--dir <journal-dir>] list
   bun scripts/journal.mjs [--dir <journal-dir>] show <sessionID|runtime> [--type <type>] [--event <event>] [--since <time>] [--until <time>] [--grep <text>] [--tail <count>]
-  bun scripts/journal.mjs [--dir <journal-dir>] gaps
+  bun scripts/journal.mjs [--dir <journal-dir>] gaps [--verify]
   bun scripts/journal.mjs [--dir <journal-dir>] blob <relative-path>
   bun scripts/journal.mjs [--dir <journal-dir>] path
 `;
@@ -338,7 +374,7 @@ export const main = async (argv = process.argv.slice(2)) => {
     return;
   }
   if (command === 'gaps') {
-    await gaps(journalDirectory);
+    await gaps(journalDirectory, args.slice(1));
     return;
   }
   if (command === 'blob') {

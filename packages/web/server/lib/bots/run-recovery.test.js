@@ -14,6 +14,13 @@ const run = (state = 'running') => ({
 
 const createHarness = ({ runs = [run()], actions = [] } = {}) => {
   const store = {
+    settleRunTerminal: vi.fn(async (input) => ({
+      ...run(),
+      state: input.state,
+      interruption_kind: input.interruptionKind,
+      context_snapshot: input.contextSnapshot,
+      finished_at: input.finishedAt,
+    })),
     repositories: {
       bot_runs: {
         list: vi.fn(async ({ filters }) => ({
@@ -104,10 +111,52 @@ describe('Production Bot restart recovery', () => {
     expect(harness.store.repositories.bot_runs.updateIfRevision).not.toHaveBeenCalled();
   });
 
+  it('terminalizes an orphan transactionally when startup recovery cannot resume it', async () => {
+    const harness = createHarness();
+    harness.dispatcher.resumeRun.mockRejectedValueOnce(Object.assign(
+      new Error('runtime unavailable'),
+      { code: 'bot_opencode_request_failed' },
+    ));
+
+    const result = await harness.recovery.recover();
+
+    expect(result.interrupted).toBe(1);
+    expect(harness.store.settleRunTerminal).toHaveBeenCalledWith(expect.objectContaining({
+      runId: RUN_ID,
+      state: 'interrupted',
+      interruptionKind: 'bot_opencode_request_failed',
+      contextSnapshot: expect.objectContaining({
+        failurePhase: 'recovery',
+        failureStage: 'startup_recovery',
+      }),
+    }));
+    expect(harness.store.repositories.bot_runs.updateIfRevision).not.toHaveBeenCalled();
+  });
+
   it('leaves approval and reconciliation states durable across restart', async () => {
     const harness = createHarness({ runs: [run('waiting_approval'), run('needs_reconciliation')] });
     const result = await harness.recovery.recover();
     expect(result.waiting).toBe(2);
     expect(harness.dispatcher.resumeRun).not.toHaveBeenCalled();
+  });
+
+  it('resumes a durable browser-control wait with its persisted action identity', async () => {
+    const harness = createHarness({
+      runs: [run('waiting_control')],
+      actions: [{
+        id: 'action-1',
+        state: 'waiting_control',
+        action: 'click',
+        target: { operationKind: 'write' },
+        updated_at: UPDATED_AT,
+      }],
+    });
+    const result = await harness.recovery.recover();
+    expect(result.resumed).toBe(1);
+    expect(result.needsReconciliation).toBe(0);
+    expect(harness.dispatcher.resumeRun).toHaveBeenCalledWith(expect.objectContaining({
+      id: RUN_ID,
+      state: 'waiting_control',
+    }));
   });
 });

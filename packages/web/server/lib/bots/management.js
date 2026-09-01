@@ -10,6 +10,7 @@ import {
   validateBotRevisionRuntimeContract,
 } from './config-compiler.js';
 import { sanitizeBotCredentialMetadata } from './credential-vault.js';
+import { isHostOpenAiCredential } from './host-oauth-connections.js';
 import { decryptBotJson, encryptBotJson } from './encryption.js';
 import { sanitizeBotModelOptions } from './model-catalog.js';
 import { buildStarterSoul } from './soul-template.js';
@@ -107,7 +108,7 @@ const publicMaskedCredentialIdentifier = (row) => {
   return typeof masked === 'string' && /^••••\S{4}$/u.test(masked) ? masked : null;
 };
 
-const publicCredential = (row) => Object.freeze({
+const publicCredential = (row, authState = 'unknown') => Object.freeze({
   id: row.id,
   provider: row.provider,
   label: publicCredentialLabel(row),
@@ -115,6 +116,7 @@ const publicCredential = (row) => Object.freeze({
   scope: row.credential_scope,
   maskedIdentifier: publicMaskedCredentialIdentifier(row),
   status: row.status,
+  authState,
   version: Number.isSafeInteger(Number(row.metadata?.secretVersion))
     && Number(row.metadata?.secretVersion) > 0
     ? Number(row.metadata.secretVersion)
@@ -333,6 +335,7 @@ export function createBotManagement({
     detail: 'Standard container isolation is available.',
   }),
   getCredentialVault = () => null,
+  getOAuthConnections = async () => null,
   readHostProviderAuth = readProviderAuthRecord,
   eventStream = null,
   blobStore = null,
@@ -645,7 +648,11 @@ export function createBotManagement({
       memberships: Object.freeze(memberships.map(
         (row) => publicMembership(row, profiles.get(row.user_id) || null),
       )),
-      credentials: Object.freeze(credentials.map(publicCredential)),
+      credentials: Object.freeze(await Promise.all(credentials.map(async (row) => {
+        if (!isHostOpenAiCredential(row)) return publicCredential(row);
+        const connections = await getOAuthConnections().catch(() => null);
+        return publicCredential(row, connections ? await connections.authState(row) : 'unavailable');
+      }))),
       evalCases: Object.freeze(evalCases),
     });
   };
@@ -1864,6 +1871,10 @@ export function createBotManagement({
       );
     }
 
+    const oauthMetadata = provider === 'openai'
+      ? (await getOAuthConnections())?.bindingMetadata()
+      : null;
+    if (provider === 'openai' && !oauthMetadata) fail('Managed OAuth is unavailable', 'bot_oauth_coordinator_unavailable', 503);
     const id = uuid();
     const row = await store.insert('bot_credentials', {
       id,
@@ -1873,7 +1884,7 @@ export function createBotManagement({
       credential_scope: credentialScope,
       owner_user_id: ownerUserId,
       local_vault_reference: `bot-credential:${id}`,
-      metadata: { label, connectionId },
+      metadata: { label, connectionId, ...oauthMetadata },
       status: 'active',
       created_by: validateUuid(principal.id, 'principal.id'),
       revoked_at: null,
@@ -1888,6 +1899,23 @@ export function createBotManagement({
       metadata: { provider, credentialScope, kind: 'oauth' },
     });
     return Object.freeze({ credential: publicCredential(row) });
+  };
+
+  const reconnectCredentialConnection = async (principal, botId, credentialId, request) => {
+    const decision = await managerDecision(principal, botId);
+    assertExactObject(request, { label: 'Bot OAuth reconnection', required: ['connectionId', 'expectedUpdatedAt'] });
+    if (request.connectionId !== 'host:openai') fail('OAuth connection is invalid', 'bot_oauth_connection_unavailable', 409);
+    const current = await store.get('bot_credentials', { id: validateUuid(credentialId, 'credentialId'), bot_id: decision.bot.id });
+    if (!current || current.status !== 'active' || current.revoked_at !== null) fail('Active Bot credential not found', 'bot_credential_not_found', 404);
+    if (!isHostOpenAiCredential(current)) fail('Only host OpenAI OAuth can be reconnected here', 'bot_credential_kind_invalid', 409);
+    const expectedUpdatedAt = normalizeExpectedRevision(request.expectedUpdatedAt);
+    if (current.updated_at !== expectedUpdatedAt) fail('Bot credential changed', 'bot_revision_conflict', 409);
+    const connections = await getOAuthConnections();
+    if (!connections) fail('Managed OAuth is unavailable', 'bot_oauth_coordinator_unavailable', 503);
+    const row = await connections.reconnect(current, expectedUpdatedAt);
+    await audit({ principal, botId: decision.bot.id, targetType: 'bot_credential', targetId: current.id,
+      action: 'bot.credential.reconnect_oauth', result: 'success', metadata: { provider: 'openai', credentialScope: current.credential_scope } });
+    return { credential: publicCredential(row, await connections.authState(row)) };
   };
 
   const createCredentialConnection = async (principal, botId, request) => {
@@ -2291,6 +2319,7 @@ export function createBotManagement({
     searchDirectory,
     saveCredentialMetadata: invalidating(saveCredentialMetadata),
     createOAuthCredentialConnection: invalidating(createOAuthCredentialConnection),
+    reconnectCredentialConnection: invalidating(reconnectCredentialConnection),
     createCredentialConnection: invalidating(createCredentialConnection),
     rotateCredentialConnection: invalidating(rotateCredentialConnection),
     listEvalCases,

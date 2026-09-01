@@ -49,6 +49,7 @@ describe('Production Bots Supabase repositories', () => {
       'bot_skill_packages',
       'bot_mcp_bindings',
       'bot_audit_events',
+      'bot_memory_extraction_jobs',
       'bot_eval_cases',
       'bot_eval_runs',
     ]);
@@ -174,6 +175,26 @@ describe('Production Bots Supabase repositories', () => {
       p_lease_until: '2026-08-22T10:05:00.000Z',
     });
 
+    supabase.rpc.mockResolvedValueOnce([{
+      id: 'run-1',
+      state: 'failed',
+      context_snapshot: { failurePhase: 'startup' },
+    }]);
+    await expect(store.settleRunTerminal({
+      runId: 'run-1',
+      state: 'failed',
+      interruptionKind: 'bot_opencode_request_failed',
+      contextSnapshot: { failurePhase: 'startup' },
+      finishedAt: '2026-08-22T10:00:01.000Z',
+    })).resolves.toEqual(expect.objectContaining({ id: 'run-1', state: 'failed' }));
+    expect(supabase.rpc).toHaveBeenCalledWith('devryan_settle_bot_run_terminal', {
+      p_run_id: 'run-1',
+      p_state: 'failed',
+      p_interruption_kind: 'bot_opencode_request_failed',
+      p_context_snapshot: { failurePhase: 'startup' },
+      p_finished_at: '2026-08-22T10:00:01.000Z',
+    });
+
     supabase.rpc.mockResolvedValueOnce({ actions: [], runs: [], scopeKeys: [] });
     await expect(store.expireApprovals({
       computerScopeKey: 'bot:one',
@@ -190,6 +211,68 @@ describe('Production Bots Supabase repositories', () => {
     expect(supabase.storageUpload).toHaveBeenCalledTimes(1);
     expect(supabase.storageDownload).toHaveBeenCalledTimes(1);
     expect(supabase.storageDelete).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps memory extraction leases and checkpoint CAS behind fixed transactions', async () => {
+    const supabase = createSupabase();
+    const job = { run_id: 'run-1', state: 'queued' };
+    supabase.rpc
+      .mockResolvedValueOnce([{ id: BOT_ID, current_checkpoint_number: 4 }])
+      .mockResolvedValueOnce([job])
+      .mockResolvedValueOnce([{ ...job, state: 'leased' }])
+      .mockResolvedValueOnce([{ ...job, candidate_envelope: { ciphertext: 'opaque' } }])
+      .mockResolvedValueOnce([{ ...job, state: 'succeeded' }]);
+    const store = createBotStore({ supabase });
+
+    await expect(store.commitChannelSummary({
+      channelId: 'channel-1',
+      botId: BOT_ID,
+      expectedCheckpointNumber: 3,
+      summaryEnvelope: { ciphertext: 'opaque-summary' },
+    })).resolves.toMatchObject({ current_checkpoint_number: 4 });
+    await store.enqueueMemoryExtractionJob({ runId: 'run-1' });
+    await store.claimMemoryExtractionJob({
+      leaseOwner: 'worker-1',
+      leaseUntil: '2026-08-22T10:05:00.000Z',
+    });
+    await store.persistMemoryExtractionCandidates({
+      runId: 'run-1',
+      leaseOwner: 'worker-1',
+      candidateEnvelope: { ciphertext: 'opaque' },
+    });
+    await store.settleMemoryExtractionJob({
+      runId: 'run-1',
+      leaseOwner: 'worker-1',
+      disposition: 'succeeded',
+      phase: 'complete',
+    });
+
+    expect(supabase.rpc.mock.calls).toEqual([
+      ['devryan_commit_bot_channel_summary', {
+        p_channel_id: 'channel-1',
+        p_bot_id: BOT_ID,
+        p_expected_checkpoint_number: 3,
+        p_summary_envelope: { ciphertext: 'opaque-summary' },
+      }],
+      ['devryan_enqueue_bot_memory_extraction_job', { p_run_id: 'run-1' }],
+      ['devryan_claim_bot_memory_extraction_job', {
+        p_lease_owner: 'worker-1',
+        p_lease_until: '2026-08-22T10:05:00.000Z',
+      }],
+      ['devryan_persist_bot_memory_extraction_candidates', {
+        p_run_id: 'run-1',
+        p_lease_owner: 'worker-1',
+        p_candidate_envelope: { ciphertext: 'opaque' },
+      }],
+      ['devryan_settle_bot_memory_extraction_job', {
+        p_run_id: 'run-1',
+        p_lease_owner: 'worker-1',
+        p_disposition: 'succeeded',
+        p_next_attempt_at: null,
+        p_phase: 'complete',
+        p_error_code: null,
+      }],
+    ]);
   });
 
   it('treats the server-only schema marker as a minimum and fails closed on invalid or older versions', async () => {
@@ -323,6 +406,7 @@ describe('Production Bots Supabase repositories', () => {
     const store = createBotStore({ supabase });
     const input = {
       messageId: 'd0000000-0000-4000-8000-000000000001',
+      acknowledgmentId: 'd0000000-0000-4000-8000-000000000002',
       runId: 'e0000000-0000-4000-8000-000000000001',
       botId: BOT_ID,
       channelId: 'c0000000-0000-4000-8000-000000000001',
@@ -333,6 +417,7 @@ describe('Production Bots Supabase repositories', () => {
       computerScopeKey: `bot:${BOT_ID}`,
       actorUserId: 'a0000000-0000-4000-8000-000000000001',
       bodyEnvelope: { ciphertext: 'opaque' },
+      acknowledgmentBodyEnvelope: { ciphertext: 'ack-opaque' },
       attachmentCount: 0,
       finalizedAt: CREATED_AT,
       sharedFiles: [],
@@ -341,6 +426,7 @@ describe('Production Bots Supabase repositories', () => {
     await expect(store.enqueueMessageRun(input)).resolves.toMatchObject({ created: true });
     expect(supabase.rpc).toHaveBeenCalledWith('devryan_enqueue_bot_message_run', {
       p_message_id: input.messageId,
+      p_acknowledgment_id: input.acknowledgmentId,
       p_run_id: input.runId,
       p_bot_id: input.botId,
       p_channel_id: input.channelId,
@@ -351,6 +437,7 @@ describe('Production Bots Supabase repositories', () => {
       p_computer_scope: input.computerScopeKey,
       p_actor_user_id: input.actorUserId,
       p_body_envelope: input.bodyEnvelope,
+      p_acknowledgment_body_envelope: input.acknowledgmentBodyEnvelope,
       p_attachment_count: 0,
       p_finalized_at: CREATED_AT,
       p_shared_files: [],
@@ -439,7 +526,12 @@ describe('Production Bots Supabase repositories', () => {
 
     supabase.rpc.mockResolvedValueOnce({ ok: false, reason: 'execution_started' });
     await expect(store.retryRun({ runId, actorUserId, now: CREATED_AT }))
-      .rejects.toMatchObject({ code: 'bot_run_retry_unavailable', statusCode: 409 });
+      .rejects.toMatchObject({ code: 'bot_run_retry_unavailable', statusCode: 409,
+        details: { retryReason: 'execution_started' } });
+    supabase.rpc.mockResolvedValueOnce({ ok: false, reason: '__proto__' });
+    await expect(store.retryRun({ runId, actorUserId, now: CREATED_AT }))
+      .rejects.toMatchObject({ code: 'bot_run_retry_unavailable', statusCode: 409,
+        details: { retryReason: 'not_retryable' } });
   });
 
   it('fails closed when Supabase is absent', async () => {

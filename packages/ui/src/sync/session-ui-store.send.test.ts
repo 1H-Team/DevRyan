@@ -175,7 +175,7 @@ mock.module("./session-actions", () => ({
     }
     return Array.from(result)
   }),
-  deleteSessions: mock(() => Promise.resolve({ deletedIds: [], failedIds: [] })),
+  deleteSessions: mock(() => Promise.resolve({ deletedIds: [], failedIds: [], failures: [] })),
   deleteSessionInDirectory: mock(() => Promise.resolve(true)),
   archiveSession: mock(() => Promise.resolve(true)),
   archiveSessions: mock(() => Promise.resolve({ archivedIds: [], failedIds: [] })),
@@ -660,7 +660,9 @@ const setManagedDeveloper = () => setAuthPrincipal({
 })
 
 describe("session-ui-store send routing", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    const { useSessionCreationStore } = await import('./session-creation')
+    useSessionCreationStore.setState({ attempts: {} })
     restoreOpencodeClientMock()
     installOpencodeClientMock()
     optimisticCalls.length = 0
@@ -2338,9 +2340,11 @@ describe("session-ui-store send routing", () => {
       title: undefined,
       directory: "/repo",
       parentID: null,
-      options: undefined,
+      options: createSessionCalls[0]?.options,
     }])
     expect(prewarmCursorSessionCalls).toEqual([])
+    expect(typeof createSessionCalls[0]?.options?.attemptId).toBe('string')
+    expect(createSessionCalls[0]?.options?.signal).toBeInstanceOf(AbortSignal)
     expect(globalUpsertCalls).toEqual([])
     expect(useSessionUIStore.getState().currentSessionId).toBe("session-created")
     expect(optimisticCalls[0]).toEqual({
@@ -2390,7 +2394,7 @@ describe("session-ui-store send routing", () => {
     expect(sendMessageCalls).toHaveLength(0)
 
     deferredCreateSession?.resolve(mockCreatedSession)
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect((useSessionUIStore.getState() as unknown as { hasPendingSendAbort: (key: string) => boolean }).hasPendingSendAbort("session-created")).toBe(true)
     expect((useSessionUIStore.getState() as unknown as { hasPendingSendAbort: (key: string) => boolean }).hasPendingSendAbort("draft:draft-send")).toBe(false)
     expect(sendMessageCalls[0]?.signal).toBeInstanceOf(AbortSignal)
@@ -2453,10 +2457,10 @@ describe("session-ui-store send routing", () => {
     expect(optimisticCalls[0]?.content).toBe("the complete draft prompt")
     expect(sendMessageCalls).toHaveLength(1)
     expect(savedSessionModels).toHaveLength(1)
-    expect(useSessionUIStore.getState().draftsById["draft-send"]).toBe(undefined)
+    expect(useSessionUIStore.getState().draftsById["draft-send"]?.text).toBe('the truncated draft')
   })
 
-  test("aborting a claimed draft before creation releases it for one explicit retry", async () => {
+  test("aborting a dispatched create retains the draft and requires explicit retry confirmation", async () => {
     mockCreatedSession = { id: "session-aborted", directory: "/repo" }
     deferNextCreateSession = true
     useSessionUIStore.setState({
@@ -2496,6 +2500,11 @@ describe("session-ui-store send routing", () => {
     expect(useSessionUIStore.getState().hasPendingSendAbort("draft:draft-send")).toBe(false)
 
     mockCreatedSession = { id: "session-retry", directory: "/repo" }
+    const { useSessionCreationStore, forgetCreationAttempt } = await import('./session-creation')
+    await expect(useSessionUIStore.getState().sendMessage('retry this draft', 'provider-a', 'model-a')).rejects.toThrow('Retry as new session')
+    const attempt = useSessionCreationStore.getState().attempts['draft-send']
+    expect(attempt.sessionId).toBe('session-aborted')
+    forgetCreationAttempt(attempt.draftId, attempt.id)
     await useSessionUIStore.getState().sendMessage(
       "retry this draft",
       "provider-a",
@@ -3814,6 +3823,91 @@ describe("session-ui-store send routing", () => {
     expect(sendMessageCalls[0]?.variant).toBe("high")
   })
 
+  for (const target of ['draft', 'session']) test(`late creation preserves navigation to another ${target}`, async () => {
+    mockCreatedSession = { id: 'session-late', directory: '/repo' }
+    deferNextCreateSession = true
+    const original = { id: 'draft-original', text: 'original prompt', createdAt: 1, updatedAt: 1, directoryOverride: '/repo', parentID: null }
+    const other = { ...original, id: 'draft-other', text: 'keep this composer' }
+    useSessionUIStore.setState({ currentSessionId: null, currentDraftId: original.id,
+      draftsById: { [original.id]: original, [other.id]: other }, draftOrder: [original.id, other.id],
+      newSessionDraft: { open: true, ...original } })
+    const send = useSessionUIStore.getState().sendMessage(original.text, 'provider-a', 'model-a')
+    useSessionUIStore.setState({ currentSessionId: target === 'session' ? 'session-other' : null,
+      currentDraftId: target === 'draft' ? other.id : null,
+      newSessionDraft: target === 'draft' ? { open: true, ...other } : { open: false, parentID: null, directoryOverride: null } })
+    deferredCreateSession?.resolve(mockCreatedSession)
+    await send
+    const state = useSessionUIStore.getState()
+    expect(state.currentSessionId).toBe(target === 'session' ? 'session-other' : null)
+    expect(state.currentDraftId).toBe(target === 'draft' ? other.id : null)
+    expect(state.draftsById[other.id].text).toBe(other.text)
+    expect(sendMessageCalls).toHaveLength(1)
+    expect(optimisticCalls[0].sessionId).toBe('session-late')
+    expect(optimisticCalls[0].content).toBe(original.text)
+  })
+
+  test('new attachments during creation remain on the original draft', async () => {
+    mockCreatedSession = { id: 'session-late-files', directory: '/repo' }
+    deferNextCreateSession = true
+    const draft = { id: 'draft-files', text: 'same text', createdAt: 1, updatedAt: 1, directoryOverride: '/repo', parentID: null }
+    useSessionUIStore.setState({ currentSessionId: null, currentDraftId: draft.id, draftsById: { [draft.id]: draft },
+      draftOrder: [draft.id], newSessionDraft: { open: true, ...draft } })
+    const send = useSessionUIStore.getState().sendMessage(draft.text, 'provider-a', 'model-a')
+    useInputStore.getState().mergeAttachedFilesForTarget(`draft:${draft.id}`, [{ id: 'late-file', file: new File(['test'], 'late.txt'), filename: 'late.txt', mimeType: 'text/plain', size: 4, dataUrl: 'data:text/plain;base64,dGVzdA==', source: 'local' }])
+    deferredCreateSession?.resolve(mockCreatedSession)
+    await send
+    expect(useSessionUIStore.getState().currentDraftId).toBe(draft.id)
+    expect(useSessionUIStore.getState().draftsById[draft.id].text).toBe(draft.text)
+    await useInputStore.getState().activateAttachedFilesTarget(`draft:${draft.id}`)
+    expect(useInputStore.getState().attachedFiles[0]?.id).toBe('late-file')
+  })
+
+  test('raw composer text may differ from the transformed prompt without preventing promotion', async () => {
+    mockCreatedSession = { id: 'session-transformed', directory: '/repo' }
+    const draft = { id: 'draft-raw', text: '@Builder fix it', createdAt: 1, updatedAt: 1, directoryOverride: '/repo', parentID: null }
+    useSessionUIStore.setState({ currentSessionId: null, currentDraftId: draft.id, draftsById: { [draft.id]: draft },
+      draftOrder: [draft.id], newSessionDraft: { open: true, ...draft } })
+    await useSessionUIStore.getState().sendMessage('fix it', 'provider-a', 'model-a')
+    expect(useSessionUIStore.getState().currentSessionId).toBe('session-transformed')
+    expect(useSessionUIStore.getState().draftsById[draft.id]).toBeUndefined()
+  })
+
+  test('deleting a draft during creation prevents late prompt dispatch and selection', async () => {
+    mockCreatedSession = { id: 'session-late', directory: '/repo' }
+    deferNextCreateSession = true
+    useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: '/repo' })
+    const draftId = useSessionUIStore.getState().currentDraftId!
+    const send = useSessionUIStore.getState().sendMessage('cancel this prompt', 'provider-a', 'model-a')
+    const rejected = send.catch((error: unknown) => error)
+    useSessionUIStore.getState().deleteNewSessionDraft(draftId)
+    expect(await rejected).toBeInstanceOf(Error)
+    deferredCreateSession?.resolve(mockCreatedSession)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(sendMessageCalls).toHaveLength(0)
+    expect(useSessionUIStore.getState().currentSessionId).not.toBe('session-late')
+    expect(useSessionUIStore.getState().draftsById[draftId]).toBeUndefined()
+  })
+
+  test('promotes within 100 ms of acknowledgment across 30 captured draft submissions', async () => {
+    const { getCreationTimings } = await import('./session-creation')
+    const before = new Set(getCreationTimings().map((entry) => entry.attemptId))
+    for (let index = 0; index < 30; index++) {
+      mockCreatedSession = { id: `session-perf-${index}`, directory: '/repo' }
+      const draft = { id: `draft-perf-${index}`, text: 'synthetic performance prompt', directoryOverride: '/repo', parentID: null, createdAt: 1, updatedAt: 1 }
+      useSessionUIStore.setState({ currentSessionId: null, currentDraftId: draft.id,
+        draftsById: { [draft.id]: draft }, draftOrder: [draft.id], newSessionDraft: { ...draft, open: true } })
+      await useSessionUIStore.getState().sendMessage(draft.text, 'provider-a', 'model-a')
+    }
+    const timings = getCreationTimings().filter((entry) => !before.has(entry.attemptId))
+    const durations = timings.filter((entry) => entry.mark === 'acknowledged').map((ack) => {
+      const promoted = timings.find((entry) => entry.attemptId === ack.attemptId && entry.mark === 'promoted')!
+      return promoted.at - ack.at
+    })
+    expect(durations).toHaveLength(30)
+    expect(Math.max(...durations)).toBeLessThan(100)
+    console.log(`Session promotion benchmark: 30 samples, max ${Math.max(...durations)} ms`)
+  })
+
   test("draft sends retire the promoted draft state", async () => {
     mockCreatedSession = { id: "session-new", directory: "/repo" }
     useSessionUIStore.setState({
@@ -4320,6 +4414,10 @@ describe("session-ui-store send routing", () => {
     expect(state.hasPendingSendAbort("draft:draft-send")).toBe(false)
 
     mockCreatedSession = { id: "session-retry", directory: "/repo" }
+    const { useSessionCreationStore, forgetCreationAttempt } = await import('./session-creation')
+    const attempt = useSessionCreationStore.getState().attempts['draft-send']
+    expect(attempt.phase).toBe('unknown')
+    forgetCreationAttempt(attempt.draftId, attempt.id)
     await useSessionUIStore.getState().sendMessage(
       "message from draft",
       "provider-current",

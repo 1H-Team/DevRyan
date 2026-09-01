@@ -6,6 +6,7 @@ import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 
 import {
+  collectGapPaths,
   collectJournalPaths,
   formatJournalRows,
   listJournalRows,
@@ -83,5 +84,46 @@ describe('journal CLI helpers', () => {
     const filters = parseShowFilters(['--event', 'session.updated', '--since', '2', '--tail', '1']);
     assert.equal(recordMatches(records[0], filters), false);
     assert.equal(recordMatches(records[1], filters), true);
+  });
+
+  test('uses manifests to skip verified zero-gap buckets unless verification is requested', async () => {
+    const directory = await temporaryDirectory();
+    const zeroGapBucket = path.join(directory, 'sessions/zero');
+    const positiveGapBucket = path.join(directory, 'sessions/positive');
+    const unknownBucket = path.join(directory, 'sessions/unknown');
+    const runtimeBucket = path.join(directory, 'runtime');
+    await Promise.all([
+      fs.mkdir(zeroGapBucket, { recursive: true }),
+      fs.mkdir(positiveGapBucket, { recursive: true }),
+      fs.mkdir(unknownBucket, { recursive: true }),
+      fs.mkdir(runtimeBucket, { recursive: true }),
+    ]);
+    await Promise.all([
+      fs.writeFile(path.join(zeroGapBucket, 'manifest.json'), JSON.stringify({ gapCount: 0 })),
+      fs.writeFile(path.join(positiveGapBucket, 'manifest.json'), JSON.stringify({ gapCount: 1 })),
+      fs.writeFile(path.join(runtimeBucket, 'manifest.json'), JSON.stringify({ gapCount: 0 })),
+      fs.writeFile(path.join(zeroGapBucket, '000001.ndjson.open'), '{"type":"gap"}\n'),
+      fs.writeFile(path.join(positiveGapBucket, '000001.ndjson.open'), '{"type":"gap"}\n'),
+      fs.writeFile(path.join(unknownBucket, '000001.ndjson.open'), '{"type":"gap"}\n'),
+      fs.writeFile(path.join(runtimeBucket, '000001.ndjson.open'), '{"type":"gap"}\n'),
+      fs.writeFile(path.join(directory, '1-000001.ndjson'), '{"type":"gap"}\n'),
+    ]);
+
+    const fastPaths = (await collectGapPaths(directory)).map((filePath) => path.relative(directory, filePath));
+    assert.deepEqual(fastPaths, [
+      '1-000001.ndjson',
+      path.join('sessions', 'positive', '000001.ndjson.open'),
+      path.join('sessions', 'unknown', '000001.ndjson.open'),
+    ]);
+
+    const verifiedPaths = (await collectGapPaths(directory, { verify: true }))
+      .map((filePath) => path.relative(directory, filePath));
+    assert.deepEqual(verifiedPaths, [
+      '1-000001.ndjson',
+      path.join('sessions', 'positive', '000001.ndjson.open'),
+      path.join('sessions', 'unknown', '000001.ndjson.open'),
+      path.join('sessions', 'zero', '000001.ndjson.open'),
+      path.join('runtime', '000001.ndjson.open'),
+    ]);
   });
 });

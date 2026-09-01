@@ -40,6 +40,7 @@ export const createWebHarnessRuntime = (options = {}) => {
   let worktreeRuntime = null;
   let evidenceRuntime = null;
   let commandDeadlineRuntime = null;
+  let primaryRecoveryRuntime = null;
 
   const initialize = () => {
     initialization ??= Promise.all([
@@ -49,6 +50,7 @@ export const createWebHarnessRuntime = (options = {}) => {
       worktreeRuntime?.reconcileOnStartup?.(),
       evidenceRuntime?.initialize?.(),
       commandDeadlineRuntime?.initialize?.(),
+      primaryRecoveryRuntime?.initialize?.(),
     ]).then(() => {
       promptAdmission.markReady();
     });
@@ -169,6 +171,7 @@ export const createWebHarnessRuntime = (options = {}) => {
       worktreeRuntime?.drain?.(),
       evidenceRuntime?.drain?.(),
       commandDeadlineRuntime?.drain?.(),
+      primaryRecoveryRuntime?.drain?.(),
       worktreeStore.drain(),
       commandDeadlineStore.drain(),
     ]);
@@ -189,6 +192,7 @@ export const createWebHarnessRuntime = (options = {}) => {
     controlJournalMiddleware,
     record,
     recordOpenCodeEvent(payload, directory = null) {
+      primaryRecoveryRuntime?.observe(payload);
       return record({
         type: 'open_code_event',
         directory,
@@ -213,6 +217,7 @@ export const createWebHarnessRuntime = (options = {}) => {
     setWorktreeRuntime,
     setEvidenceRuntime,
     setCommandDeadlineRuntime,
+    setPrimaryRecoveryRuntime(runtime) { primaryRecoveryRuntime = runtime; },
     getWorktreeRuntime: () => worktreeRuntime,
     getWorktreeReceipts,
     getCommandDeadlineRecoveryStatus: () => commandDeadlineRuntime?.getStatus?.() ?? null,

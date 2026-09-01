@@ -620,6 +620,7 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       express.json({ limit: '1mb' })(req, res, next);
     } else if (
       req.path.startsWith('/api/desktop/browser-leases')
+      || req.path.startsWith('/api/browser/agent-leases')
       || req.path.startsWith('/api/config/apply')
       || req.path.startsWith('/api/preview')
     ) {

@@ -8,6 +8,7 @@ export type BotRunState =
   | 'starting'
   | 'running'
   | 'waiting_approval'
+  | 'waiting_control'
   | 'needs_reconciliation'
   | 'completed'
   | 'failed'
@@ -342,6 +343,7 @@ export type BotCredentialMetadata = {
   scope: 'team' | 'user';
   maskedIdentifier: string | null;
   status: string;
+  authState?: 'unknown' | 'ready' | 'reauth_required' | 'unavailable';
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -687,9 +689,48 @@ export type BotComputerControl = {
   expiresAt: number | null;
 };
 
+export type BotComputerWebCapabilityState = 'enabled' | 'disabled' | 'unknown';
+
+export type BotComputerNavigationDiagnostic = {
+  revision: number;
+  observedAt: number;
+  origin: string | null;
+  statusCode: number | null;
+  redirectCount: number;
+  repetitionCount: number;
+  kind:
+    | 'healthy'
+    | 'blocked_cookies'
+    | 'subresource_failure'
+    | 'egress_denied'
+    | 'site_rejection';
+  reason: string;
+  blockedHost: string | null;
+};
+
+export type BotComputerBrowserStatus = {
+  running?: boolean;
+  healthy?: boolean;
+  launching?: boolean;
+  lifecycleState?: 'stopped' | 'launching' | 'running';
+  generation?: number;
+  lastFailureCode?: string | null;
+  screencastSubscribers?: number;
+  mode?: 'headed_virtual' | 'headless_legacy';
+  engineVersion?: string | null;
+  displayReady?: boolean;
+  webCapabilities?: {
+    managedPolicy?: 'enforced' | 'missing' | 'unknown';
+    javascript?: BotComputerWebCapabilityState;
+    firstPartyCookies?: BotComputerWebCapabilityState;
+    thirdPartyCookies?: BotComputerWebCapabilityState;
+  };
+  lastNavigationDiagnostic?: BotComputerNavigationDiagnostic | null;
+};
+
 export type BotComputerStatus = {
   botId: string;
-  browser: Readonly<Record<string, unknown>>;
+  browser: Readonly<BotComputerBrowserStatus>;
   control: BotComputerControl | null;
   screencast: {
     subscribers: number;
@@ -706,7 +747,41 @@ export type BotComputerViewSession = {
   channelId: string;
   streamUrl: string;
   startedAt: string;
+  runId?: string;
 };
+
+export type BotHumanInputModifier = 'Alt' | 'Control' | 'Meta' | 'Shift';
+
+export type BotHumanInputEvent =
+  | {
+      type: 'pointer';
+      phase: 'move' | 'down' | 'up';
+      x: number;
+      y: number;
+      button: 'none' | 'left' | 'middle' | 'right';
+      buttons: number;
+      clickCount: number;
+    }
+  | {
+      type: 'wheel';
+      x: number;
+      y: number;
+      deltaX: number;
+      deltaY: number;
+    }
+  | {
+      type: 'key';
+      phase: 'down' | 'up';
+      key: string;
+      code: string;
+      modifiers: readonly BotHumanInputModifier[];
+      location: number;
+      repeat: boolean;
+    }
+  | {
+      type: 'text';
+      text: string;
+    };
 
 export type BotObject = {
   id: string;
@@ -939,6 +1014,7 @@ export type BotMessagePage = {
 
 export type BotSendMessageRequest = {
   messageId: string;
+  acknowledgmentId?: string;
   idempotencyKey: string;
   text: string;
   attachmentIds: readonly string[];
@@ -949,6 +1025,7 @@ export type BotSendMessageRequest = {
 export type BotSendMessageResponse = {
   created: boolean;
   message: BotMessage;
+  acknowledgment: BotMessage;
   run: BotRun;
 };
 
@@ -980,7 +1057,57 @@ export class BotsApiError extends Error {
   }
 }
 
+export const BOT_RETRY_REASONS = [
+  'not_found', 'wrong_actor', 'not_retryable', 'execution_started',
+  'revision_changed', 'channel_unavailable', 'access_revoked',
+  'concurrent_active_run', 'attachments_expired',
+] as const;
+export type BotRetryReason = typeof BOT_RETRY_REASONS[number];
+
+export const getBotRetryReason = (error: unknown): BotRetryReason | null => {
+  if (!(error instanceof BotsApiError) || !isRecord(error.details)) return null;
+  const candidate = error.details.retryReason;
+  return BOT_RETRY_REASONS.find((reason) => reason === candidate) ?? null;
+};
+
+export type BotTelegramDelivery = {
+  id: string; state: string; errorCode: string | null; kind: string;
+  partIndex: number; createdAt: string; updatedAt: string;
+};
+export type BotTelegramStatus = {
+  hostOnline?: boolean; executionReady?: boolean;
+  canPair?: boolean;
+  enabled: boolean; configured: boolean; state: string; errorCode?: string | null;
+  requiredMigration?: string; username?: string | null; botIdentity?: string | null;
+  pairing: { id: string; state: string; telegramUserId: string | null; displayName: string | null;
+    expiresAt: string; confirmedAt: string | null } | null;
+  preferences: { routineDelivery: boolean; voiceReplies: boolean };
+  deliveries: BotTelegramDelivery[];
+};
+export type BotSpeechConfiguration = {
+  enabled: boolean;
+  stt: { baseUrl: string; model: string; apiKey?: string } | null;
+  tts: { baseUrl: string; model: string; voice: string; apiKey?: string } | null;
+};
+export type BotSpeechStatus = {
+  botId: string; enabled: boolean; generation: string;
+  stt: { baseUrl: string; model: string; hasApiKey: boolean; ready: boolean } | null;
+  tts: { baseUrl: string; model: string; voice: string; hasApiKey: boolean; ready: boolean } | null;
+  limits: { maximumInputSeconds: number; maximumInputBytes: number; maximumReplyCharacters: number };
+};
+
 export type BotsApi = {
+  getTelegramStatus(botId: string): Promise<BotTelegramStatus>;
+  configureTelegram(botId: string, request: { enabled: boolean; token?: string }): Promise<BotTelegramStatus>;
+  disconnectTelegram(botId: string): Promise<BotTelegramStatus>;
+  createTelegramPairing(botId: string): Promise<{ pairingId: string; expiresAt: string; url: string }>;
+  confirmTelegramPairing(botId: string, pairingId: string): Promise<BotTelegramStatus>;
+  revokeTelegramPairing(botId: string): Promise<BotTelegramStatus>;
+  setTelegramPreferences(botId: string, preferences: BotTelegramStatus['preferences']): Promise<BotTelegramStatus>;
+  retryTelegramDelivery(botId: string, deliveryId: string): Promise<{ retryQueued: boolean; mayDuplicateLastPart: boolean }>;
+  getSpeechStatus(botId: string): Promise<BotSpeechStatus>;
+  configureSpeech(botId: string, request: BotSpeechConfiguration): Promise<BotSpeechStatus>;
+  checkSpeech(botId: string): Promise<{ stt: { ready: boolean; code: string | null }; tts: { ready: boolean; code: string | null } }>;
   getCapabilities(): Promise<BotCapabilities>;
   listBots(): Promise<{ bots: BotSummary[]; canCreateBot: boolean }>;
   createBot(request: {
@@ -1157,6 +1284,10 @@ export type BotsApi = {
     secret: string;
     expectedUpdatedAt: string;
   }): Promise<{ credential: BotCredentialMetadata }>;
+  reconnectBotCredential(botId: string, credentialId: string, request: {
+    connectionId: 'host:openai';
+    expectedUpdatedAt: string;
+  }): Promise<{ credential: BotCredentialMetadata }>;
   listBotEnvironmentSecrets(botId: string): Promise<{
     environmentSecrets: readonly BotEnvironmentSecretMetadata[];
   }>;
@@ -1283,7 +1414,6 @@ export type BotsApi = {
   deleteBotChannel(channelId: string): Promise<{
     deleted: true;
     channelId: string;
-    deletedPrivateMemories: number;
     retainedSharedMemories: number;
     deletedMessages: number;
     deletedObjects: number;
@@ -1315,7 +1445,7 @@ export type BotsApi = {
   }>;
   getActionEvidence(actionId: string, objectId: string): Promise<Blob>;
   getComputerStatus(botId: string): Promise<BotComputerStatus>;
-  startComputerView(botId: string, channelId: string): Promise<{ view: BotComputerViewSession }>;
+  startComputerView(botId: string, channelId: string, runId?: string): Promise<{ view: BotComputerViewSession }>;
   stopComputerView(botId: string, viewId: string): Promise<{ stopped: boolean }>;
   takeComputerControl(botId: string): Promise<{ botId: string; control: BotComputerControl | null }>;
   heartbeatComputerControl(botId: string, leaseId: string): Promise<{
@@ -1327,10 +1457,11 @@ export type BotsApi = {
     control: BotComputerControl | null;
   }>;
   sendHumanComputerCommand(botId: string, request: {
+    viewId?: string;
     leaseId: string;
     command: string;
     args: Readonly<Record<string, unknown>>;
-  }): Promise<{ result: unknown }>;
+  }, signal?: AbortSignal): Promise<{ result: unknown }>;
   uploadObject(botId: string, channelId: string, request: {
     contentType: string;
     dataBase64: string;
@@ -1434,6 +1565,7 @@ export const createBotsApi = ({ fetchImpl = fetch }: { fetchImpl?: typeof fetch 
     input: string,
     method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     body?: unknown,
+    signal?: AbortSignal,
   ): Promise<T> => (
     (() => {
       const headers = new Headers();
@@ -1442,6 +1574,7 @@ export const createBotsApi = ({ fetchImpl = fetch }: { fetchImpl?: typeof fetch 
       return requestJson<T>(input, {
         method,
         headers,
+        ...(signal ? { signal } : {}),
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     })()
@@ -1458,6 +1591,17 @@ export const createBotsApi = ({ fetchImpl = fetch }: { fetchImpl?: typeof fetch 
   );
 
   const api: BotsApi = {
+    getTelegramStatus: (botId) => requestJson(`/api/bots/${encoded(botId)}/telegram`),
+    configureTelegram: (botId, body) => mutateJson(`/api/bots/${encoded(botId)}/telegram`, 'PUT', body),
+    disconnectTelegram: (botId) => mutateJson(`/api/bots/${encoded(botId)}/telegram`, 'DELETE'),
+    createTelegramPairing: (botId) => mutateJson(`/api/bots/${encoded(botId)}/telegram/pairing`, 'POST'),
+    confirmTelegramPairing: (botId, pairingId) => mutateJson(`/api/bots/${encoded(botId)}/telegram/pairing/confirm`, 'POST', { pairingId }),
+    revokeTelegramPairing: (botId) => mutateJson(`/api/bots/${encoded(botId)}/telegram/pairing`, 'DELETE'),
+    setTelegramPreferences: (botId, body) => mutateJson(`/api/bots/${encoded(botId)}/telegram/preferences`, 'PUT', body),
+    retryTelegramDelivery: (botId, deliveryId) => mutateJson(`/api/bots/${encoded(botId)}/telegram/deliveries/retry`, 'POST', { deliveryId }),
+    getSpeechStatus: (botId) => requestJson(`/api/bots/${encoded(botId)}/speech`),
+    configureSpeech: (botId, body) => mutateJson(`/api/bots/${encoded(botId)}/speech`, 'PUT', body),
+    checkSpeech: (botId) => mutateJson(`/api/bots/${encoded(botId)}/speech/check`, 'POST'),
     getCapabilities: () => requestJson('/api/bots/capabilities'),
     listBots: () => requestJson('/api/bots'),
     createBot: (body) => mutateJson('/api/bots', 'POST', body),
@@ -1607,6 +1751,9 @@ export const createBotsApi = ({ fetchImpl = fetch }: { fetchImpl?: typeof fetch 
       `/api/bots/${encoded(botId)}/credentials/${encoded(credentialId)}/rotate`,
       'POST',
       body,
+    ),
+    reconnectBotCredential: (botId, credentialId, body) => mutateJson(
+      `/api/bots/${encoded(botId)}/credentials/${encoded(credentialId)}/reconnect`, 'POST', body,
     ),
     getBotPurgePreview: (botId) => requestJson(
       `/api/bots/${encoded(botId)}/purge-preview`,
@@ -1816,10 +1963,10 @@ export const createBotsApi = ({ fetchImpl = fetch }: { fetchImpl?: typeof fetch 
     getComputerStatus: (botId) => requestJson(
       `/api/bots/${encoded(botId)}/computer/status`,
     ),
-    startComputerView: (botId, channelId) => mutateJson(
+    startComputerView: (botId, channelId, runId) => mutateJson(
       `/api/bots/${encoded(botId)}/computer/view`,
       'POST',
-      { channelId },
+      { channelId, ...(runId ? { runId } : {}) },
     ),
     stopComputerView: (botId, viewId) => mutateJson(
       `/api/bots/${encoded(botId)}/computer/view/${encoded(viewId)}`,
@@ -1828,10 +1975,11 @@ export const createBotsApi = ({ fetchImpl = fetch }: { fetchImpl?: typeof fetch 
     takeComputerControl: (botId) => control(botId, 'take'),
     heartbeatComputerControl: (botId, leaseId) => control(botId, 'heartbeat', leaseId),
     returnComputerControl: (botId, leaseId) => control(botId, 'return', leaseId),
-    sendHumanComputerCommand: (botId, body) => mutateJson(
+    sendHumanComputerCommand: (botId, body, signal) => mutateJson(
       `/api/bots/${encoded(botId)}/computer/control/command`,
       'POST',
       body,
+      signal,
     ),
     uploadObject: (botId, channelId, body) => mutateJson(
       `/api/bots/${encoded(botId)}/channels/${encoded(channelId)}/objects`,

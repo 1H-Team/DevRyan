@@ -17,6 +17,7 @@ const RUN_TRANSITIONS = Object.freeze({
   starting: new Set(['running', 'failed', 'cancelled', 'interrupted']),
   running: new Set([
     'waiting_approval',
+    'waiting_control',
     'needs_reconciliation',
     'completed',
     'failed',
@@ -25,6 +26,15 @@ const RUN_TRANSITIONS = Object.freeze({
   ]),
   waiting_approval: new Set([
     'running',
+    'waiting_control',
+    'needs_reconciliation',
+    'failed',
+    'cancelled',
+    'interrupted',
+  ]),
+  waiting_control: new Set([
+    'running',
+    'waiting_approval',
     'needs_reconciliation',
     'failed',
     'cancelled',
@@ -41,7 +51,8 @@ const ACTION_TRANSITIONS = Object.freeze({
   proposed: new Set(['pending_approval', 'approved', 'failed', 'denied', 'cancelled']),
   pending_approval: new Set(['approved', 'failed', 'denied', 'cancelled']),
   approved: new Set(['executing', 'failed', 'denied', 'cancelled']),
-  executing: new Set(['succeeded', 'failed', 'unknown']),
+  executing: new Set(['waiting_control', 'succeeded', 'failed', 'unknown']),
+  waiting_control: new Set(['executing', 'failed', 'cancelled']),
   succeeded: new Set(),
   failed: new Set(),
   unknown: new Set(['reconciled']),

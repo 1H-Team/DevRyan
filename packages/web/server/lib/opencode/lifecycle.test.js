@@ -865,6 +865,12 @@ describe('OpenCode lifecycle', () => {
     expect(spawnMock).not.toHaveBeenCalled();
     expect(runtime.__testState.openCodeProcess).toBe(existingProcess);
     expect(runtime.__testState.isOpenCodeReady).toBe(true);
+    expect(runtime.__testState.openCodeProbe).toMatchObject({ succeeded: false, lastSuccessAt: null });
+    const failedAt = runtime.__testState.openCodeProbe.lastFailureAt;
+    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ healthy: true, version: '1.18.25' }) }));
+    await runtime.triggerHealthCheck();
+    expect(runtime.__testState.openCodeProbe).toMatchObject({ succeeded: true, lastFailureAt: failedAt });
+    expect(runtime.__testState.openCodeProbe.lastSuccessAt).toBeTypeOf('number');
   });
 
   it('restarts a definitely exited managed child even when session activity is still marked busy', async () => {

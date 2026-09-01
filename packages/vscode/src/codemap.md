@@ -4,6 +4,11 @@
 VS Code extension-host implementation: activation lifecycle, command surface, webview providers, OpenCode process management, and bridge runtime handlers.
 
 ## Design
+- Session creation uses the shared captured-attempt controller. The proxy bridge
+  reports an explicit restart rejection only before dispatch and never marks
+  ambiguous post-dispatch failures retryable. Managed provisioning embeds the
+  same hash-checked Context Mode worker helpers as web/Electron.
+- Primary recovery is composed in `extension.ts` from `@openchamber/harness-runtime`. `harnessRuntime.ts` observes canonical events; both proxy send paths and Stop in `bridge-proxy-runtime.ts` use the same host admission and recovery HTTP contract as web/Electron. `managedOrchestrationRuntime.ts` carries the plugin's private RPC independently of scheduler initialization.
 - `extension.ts` is the orchestrator entrypoint.
 - Provider classes (`ChatViewProvider`, `SessionEditorPanelProvider`, `AgentManagerPanelProvider`) encapsulate webview setup and host↔webview synchronization.
 - `bridge.ts` is a dispatcher that routes message types to focused runtime modules (`bridge-fs-runtime`, `bridge-git-runtime`, `bridge-system-runtime`, etc.).

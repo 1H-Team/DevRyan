@@ -85,10 +85,8 @@ describe('SessionNodeItem row hover metadata', () => {
     expect(source).not.toContain('@container/session-sidebar-row');
     expect(source).not.toContain('session-sidebar-row__compact-time');
     expect(sidebarSource).not.toContain('useSidebarAgeClockLifecycle');
-    expect(sidebarSource).not.toContain('useSidebarUserActivityHydration');
     expect(existsSync(join(testDir, 'SessionCompactAge.tsx'))).toBe(false);
     expect(existsSync(join(testDir, 'sidebarAgeClock.ts'))).toBe(false);
-    expect(existsSync(join(testDir, 'hooks', 'useSidebarUserActivityHydration.ts'))).toBe(false);
     expect(styles).not.toContain('@container session-sidebar-row');
     expect(styles).not.toContain('.session-sidebar-row__compact-time');
   });

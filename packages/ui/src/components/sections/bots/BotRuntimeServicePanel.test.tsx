@@ -1,5 +1,6 @@
 import React from 'react';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { BotsDesktopApi, RuntimeServiceStatus } from '@/lib/botsDesktopApi';
@@ -45,7 +46,7 @@ describe('Bot background runtime presentation', () => {
       handshake: null,
     }), false).label).toBe('Approval required');
     expect(runtimeServicePresentation(status({ connected: false, handshake: null }), false).label)
-      .toBe('Background runtime degraded');
+      .toBe('Background runtime connection failed');
     expect(runtimeServicePresentation(status({
       handshake: { ...status().handshake!, health: 'starting' },
     }), false).label).toBe('Starting background runtime');
@@ -66,12 +67,28 @@ describe('Bot background runtime presentation', () => {
       registration: {
         ok: false,
         state: 'unavailable',
-        code: 'runtime_service_helper_missing',
+        code: 'runtime_service_native_bridge_missing',
       },
       connected: false,
       handshake: null,
       canEnable: false,
-    }), false).label).toBe('Background runtime unavailable in this build');
+    }), false).label).toBe('Background runtime bridge missing');
+    expect(runtimeServicePresentation(status({
+      registration: { ok: false, state: 'not_found', code: null },
+      connected: false,
+      handshake: null,
+      canEnable: false,
+    }), false).label).toBe('Background service definition not found');
+    expect(runtimeServicePresentation(status({
+      registration: {
+        ok: false,
+        state: 'unavailable',
+        code: 'runtime_service_native_bridge_load_failed',
+      },
+      connected: false,
+      handshake: null,
+      canEnable: false,
+    }), false).label).toBe('Background runtime bridge invalid');
     expect(runtimeServicePresentation(status({
       registrationMode: 'unavailable',
       registration: {
@@ -105,7 +122,7 @@ describe('Bot background runtime presentation', () => {
       registration: {
         ok: false,
         state: 'unavailable',
-        code: 'runtime_service_helper_missing',
+        code: 'runtime_service_native_bridge_missing',
       },
     });
     const markup = renderToStaticMarkup(
@@ -114,7 +131,30 @@ describe('Bot background runtime presentation', () => {
       </I18nProvider>,
     );
 
-    expect(markup).toContain('Background runtime unavailable in this build');
+    expect(markup).toContain('Background runtime bridge missing');
     expect(markup).not.toContain('Enable Background Bots');
+  });
+
+  test('offers private LaunchAgent enablement and retains manual confirmation', () => {
+    const legacy = status({
+      configuredMode: 'app_bound',
+      registrationMode: 'legacy',
+      registration: { ok: true, state: 'not_registered', code: null },
+      connected: false,
+      handshake: null,
+      settingsUrl: null,
+      canEnable: true,
+    });
+    const markup = renderToStaticMarkup(
+      <I18nProvider>
+        <BotRuntimeServicePanel canManage desktopApi={desktopApi} initialStatus={legacy} />
+      </I18nProvider>,
+    );
+    const source = readFileSync(new URL('./BotRuntimeServicePanel.tsx', import.meta.url), 'utf8');
+
+    expect(markup).toContain('Enable Background Bots');
+    expect(source).toContain("status?.registrationMode === 'legacy'");
+    expect(source).toContain('setLegacyConsentOpen(true)');
+    expect(source).toContain('This DevRyan build uses a private per-user LaunchAgent');
   });
 });

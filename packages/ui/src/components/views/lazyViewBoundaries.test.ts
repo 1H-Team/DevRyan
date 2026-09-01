@@ -66,13 +66,16 @@ describe('shared lazy view boundaries', () => {
   test('declares top-level heavy views once with chunk-load recovery', () => {
     const source = readSource('components/views/lazyViews.tsx');
     const planViewLoader = readSource('components/views/planViewLoader.ts');
+    const settingsViewLoader = readSource('components/views/settingsViewLoader.ts');
     const statusRow = readSource('components/chat/StatusRow.tsx');
 
-    expect(source).toContain("import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery'");
+    expect(source).toContain('lazyWithChunkRecovery, retryableLazyWithChunkRecovery');
     expect(source).toContain("import { loadPlanView } from './planViewLoader';");
     expect(source).toContain('<ErrorBoundary>');
-    expect(source).toContain('<React.Suspense fallback={null}>');
+    expect(source).toContain('<React.Suspense fallback={fallback}>');
     expect(source).toContain('export const LazyPlanView = /* @__PURE__ */ lazyWithChunkRecovery(loadPlanView);');
+    expect(source).toContain('export const LazySettingsView = /* @__PURE__ */ retryableLazyWithChunkRecovery');
+    expect(source).toContain('timeoutMs: 10_000');
     expect(planViewLoader).toContain("import { importWithChunkRecovery } from '@/lib/chunkLoadRecovery';");
     expect(planViewLoader).toContain('export const loadPlanView = () =>');
     expect(planViewLoader).toContain('export const preloadPlanView = () => importWithChunkRecovery(loadPlanView);');
@@ -84,8 +87,15 @@ describe('shared lazy view boundaries', () => {
         ? '@/components/views/agent-manager/AgentManagerView'
         : `@/components/views/${viewName}`;
 
-      expect(source).toContain(`export const Lazy${viewName} = /* @__PURE__ */ lazyWithChunkRecovery`);
-      const moduleOwner = viewName === 'PlanView' ? planViewLoader : source;
+      const helper = viewName === 'SettingsView'
+        ? 'retryableLazyWithChunkRecovery'
+        : 'lazyWithChunkRecovery';
+      expect(source).toContain(`export const Lazy${viewName} = /* @__PURE__ */ ${helper}`);
+      const moduleOwner = viewName === 'PlanView'
+        ? planViewLoader
+        : viewName === 'SettingsView'
+          ? settingsViewLoader
+          : source;
       expect(moduleOwner).toContain(`import('${modulePath}')`);
     }
   });
@@ -145,13 +155,27 @@ describe('shared lazy view boundaries', () => {
     expect(commandPalette).not.toContain("from '@/components/views/SettingsView'");
   });
 
-  test('loads settings sections only after their page is selected', () => {
+  test('prepares settings sections without adding them to the settings entry chunk', () => {
     const settingsView = readSource('components/views/SettingsView.tsx');
+    const sectionLoaders = readSource('components/views/settingsSectionLoaders.ts');
 
-    expect(settingsView).toContain("import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery'");
-    expect(settingsView).toContain('const LazyOpenChamberPage = /* @__PURE__ */ lazyWithChunkRecovery');
-    expect(settingsView).toContain('const LazyUserManagementPage = /* @__PURE__ */ lazyWithChunkRecovery');
-    expect(settingsView).toContain('const LazyBugReportsPage = /* @__PURE__ */ lazyWithChunkRecovery');
+    expect(sectionLoaders).toContain("import { importWithChunkRecovery } from '@/lib/chunkLoadRecovery'");
+    expect(sectionLoaders).toContain('createPreparedSettingsComponent');
+    expect(sectionLoaders).toContain('if (loadedModule)');
+    expect(sectionLoaders).toContain('return React.createElement(loadedModule.default, props)');
+    expect(settingsView).toContain('PreparedOpenChamberPage');
+    expect(settingsView).toContain('PreparedUserManagementPage');
+    expect(settingsView).toContain('PreparedBugReportsPage');
+    expect(settingsView).toContain('<React.Suspense fallback={<SettingsLoadFallback />}>');
+    expect(settingsView).toContain('preloadSettingsSection(targetPage.slug)');
+    expect(settingsView).toContain('usePreparedSettingsNavigation');
+    expect(settingsView).toContain('displayedSlug: settingsSlug');
+    expect(settingsView).toContain('requestedSlug: requestedSettingsSlug');
+    expect(settingsView).toContain('visiblePages.map((page) => page.slug)');
+    expect(sectionLoaders).toContain('preloadSettingsSectionsWhenIdle');
+    expect(sectionLoaders).toContain('resources.every((resource) => resource.isReady())');
+    expect(sectionLoaders).toContain("import('@/components/sections/openchamber/OpenChamberPage')");
+    expect(sectionLoaders).toContain('const sectionPreloads = new Map');
     expect(settingsView).toContain('<SettingsSectionBoundary>{renderPageContent(settingsSlug)}</SettingsSectionBoundary>');
     expect(settingsView).not.toContain("import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage'");
     expect(settingsView).not.toContain("import { UserManagementPage } from '@/components/sections/users/UserManagementPage'");
@@ -161,16 +185,21 @@ describe('shared lazy view boundaries', () => {
     const source = readSource('components/views/lazyViews.tsx');
     const managedSettingsView = readSource('components/views/ManagedSettingsView.tsx');
 
-    expect(source).toContain('export const LazyManagedSettingsView = /* @__PURE__ */ lazyWithChunkRecovery');
-    expect(source).toContain("import('@/components/views/ManagedSettingsView')");
+    const settingsViewLoader = readSource('components/views/settingsViewLoader.ts');
+    expect(source).toContain('export const LazyManagedSettingsView = /* @__PURE__ */ retryableLazyWithChunkRecovery');
+    expect(settingsViewLoader).toContain("import('@/components/views/ManagedSettingsView')");
     expect(managedSettingsView).not.toContain("from '@/components/views/SettingsView'");
     expect(managedSettingsView).toContain('canAccessSettingsDestination(principal, page.slug)');
+    expect(managedSettingsView).toContain('pages.map((page) => page.slug)');
+    expect(managedSettingsView).toContain('usePreparedSettingsNavigation');
     expect(managedSettingsView).toContain('<SettingsPagePermissionBoundary slug={activeSlug}>');
     expect(managedSettingsView).toContain('backButtonRef.current?.focus({ preventScroll: true })');
     expect(managedSettingsView).toContain('aria-modal="true"');
     expect(managedSettingsView).toContain('<ConfigApplyControls variant="sidebar" />');
     expect(managedSettingsView).toContain("group: 'Development'");
-    expect(managedSettingsView).toContain('const LazyBugReportsPage = /* @__PURE__ */ lazyWithChunkRecovery');
+    expect(managedSettingsView).toContain('PreparedBugReportsPage');
+    expect(managedSettingsView).toContain('displayedSlug: activeSlug');
+    expect(managedSettingsView).toContain('requestedSlug: requestedActiveSlug');
     for (const page of ['appearance', 'chat', 'shortcuts', 'sessions', 'notifications', 'agents', 'providers', 'usage', 'mcp', 'bug-reports']) {
       expect(managedSettingsView).toContain(`slug: '${page}'`);
     }

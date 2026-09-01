@@ -709,7 +709,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const agentTriggerIconSize = sizeVariant === 'mobile' ? 'h-[18px] w-[18px]' : 'h-[14.4px] w-[14.4px]';
     const agentTriggerTextSize = isCompact ? 'text-[calc(var(--text-micro)*0.9)]' : 'text-[calc(var(--text-meta)*0.9)]';
     const inlineGapClass = sizeVariant === 'mobile' ? 'gap-x-1' : sizeVariant === 'vscode' ? 'gap-x-2' : 'gap-x-3';
-    const variantLabelAlignmentClass = isDesktop || isVSCodeRuntime ? 'translate-y-[3px]' : undefined;
+    const variantLabelAlignmentClass = isDesktop || isVSCodeRuntime
+        ? 'translate-y-[3px]'
+        : 'translate-y-[2px]';
+    const variantGroupSpacingClass = '-ml-1';
+    const agentLabelAlignmentClass = isDesktop || isVSCodeRuntime ? undefined : '-translate-y-px';
     const renderEditModeIcon = React.useCallback((mode: EditPermissionMode, iconClass = editToggleIconClass) => {
         const combinedClassName = cn(iconClass, 'flex-shrink-0');
         const modeColors = getEditModeColors(mode);
@@ -3881,7 +3885,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                                     className={cn(
                                                         'model-controls__agent-label',
                                                         agentTriggerTextSize,
-                                                        'font-medium min-w-0 truncate text-muted-foreground'
+                                                        'font-medium min-w-0 truncate text-muted-foreground',
+                                                        agentLabelAlignmentClass,
                                                     )}
                                                 >
                                                     {readinessLabel}
@@ -3902,6 +3907,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                                         'model-controls__agent-label',
                                                         agentTriggerTextSize,
                                                         'font-medium min-w-0 truncate text-foreground',
+                                                        agentLabelAlignmentClass,
                                                         isDesktop ? 'max-w-[198px]' : undefined
                                                     )}
                                                 >
@@ -4091,7 +4097,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         {isCompact ? renderVariantSelector() : null}
                         {!isCompact ? renderAgentSelector() : null}
                         {renderModelSelector()}
-                        {!isCompact ? <div className="-ml-1 flex min-w-0 shrink-0">{renderVariantSelector()}</div> : null}
+                        {!isCompact ? <div className={cn('flex min-w-0 shrink-0', variantGroupSpacingClass)}>{renderVariantSelector()}</div> : null}
                         {isCompact ? renderAgentSelector() : null}
                     </div>
                 </div>

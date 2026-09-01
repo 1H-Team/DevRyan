@@ -30,25 +30,58 @@ export function createControlLeaseManager({
   now = Date.now,
   randomBytes = crypto.randomBytes,
   onEvent = () => undefined,
+  releaseInput = null,
 } = {}) {
   if (!Number.isInteger(ttlMs) || ttlMs < 1_000 || ttlMs > 120_000
-    || typeof now !== 'function' || typeof randomBytes !== 'function' || typeof onEvent !== 'function') {
+    || typeof now !== 'function' || typeof randomBytes !== 'function' || typeof onEvent !== 'function'
+    || (releaseInput !== null && typeof releaseInput !== 'function')) {
     fail('Control lease configuration is invalid', 'DEVRYAN_BOT_CONTROL_CONFIG_INVALID', 500);
   }
   let lease = null;
+  let releasing = false;
+  let releaseOperation = null;
+  let releaseError = null;
+  let releaseInputHandler = releaseInput;
   const waiters = new Set();
 
-  const notifyAgentWaiters = () => {
-    for (const resolve of waiters) resolve();
+  const notifyAgentWaiters = (error) => {
+    for (const resolve of waiters) resolve(error);
     waiters.clear();
   };
 
-  const expire = () => {
-    if (lease && lease.expiresAt <= now()) {
-      const expired = lease;
+  const releaseLease = (type) => {
+    if (releaseOperation) return releaseOperation;
+    const returned = lease;
+    releasing = true;
+    releaseError = null;
+    const complete = () => {
       lease = null;
-      onEvent(Object.freeze({ type: 'expired', ...expired }));
+      releasing = false;
+      onEvent(Object.freeze({ type, ...returned, ...(type === 'returned' ? { returnedAt: now() } : {}) }));
       notifyAgentWaiters();
+      return Object.freeze({ returned: true });
+    };
+    if (!releaseInputHandler) return complete();
+    // Fence ownership synchronously, before cleanup yields to pending CDP work.
+    let cleanup;
+    try { cleanup = releaseInputHandler(); } catch (error) { cleanup = Promise.reject(error); }
+    releaseOperation = Promise.resolve(cleanup).then(complete, () => {
+      releaseError = new ComputerControlError(
+        'Held computer input could not be released; retry Return Control',
+        'DEVRYAN_BOT_CONTROL_RELEASE_FAILED',
+        503,
+      );
+      onEvent(Object.freeze({ type: 'release_failed', ...returned }));
+      notifyAgentWaiters(releaseError);
+      throw releaseError;
+    }).finally(() => { releaseOperation = null; });
+    return releaseOperation;
+  };
+
+  const expire = () => {
+    if (lease && !releasing && lease.expiresAt <= now()) {
+      const result = releaseLease('expired');
+      if (result && typeof result.catch === 'function') void result.catch(() => undefined);
     }
   };
 
@@ -60,6 +93,8 @@ export function createControlLeaseManager({
   const take = (actorInput) => {
     const actor = validateActor(actorInput);
     expire();
+    if (releaseError) throw releaseError;
+    if (releasing) fail('Computer input is still being released', 'DEVRYAN_BOT_CONTROL_HELD');
     if (lease && (lease.actorId !== actor.actorId || lease.actorType !== actor.actorType)) {
       fail('Another person holds computer control', 'DEVRYAN_BOT_CONTROL_CONFLICT');
     }
@@ -74,7 +109,7 @@ export function createControlLeaseManager({
     return lease;
   };
 
-  const requireOwnedLease = (input) => {
+  const requireOwnedLease = (input, { allowReleasing = false } = {}) => {
     if (!input || typeof input !== 'object' || Array.isArray(input)
       || Object.keys(input).sort().join('\0') !== 'actorId\0actorType\0leaseId') {
       fail('Control lease request is invalid', 'DEVRYAN_BOT_CONTROL_ACTOR_INVALID', 400);
@@ -84,6 +119,10 @@ export function createControlLeaseManager({
     if (!lease || lease.leaseId !== input.leaseId
       || lease.actorId !== actor.actorId || lease.actorType !== actor.actorType) {
       fail('Control lease is not owned by this actor', 'DEVRYAN_BOT_CONTROL_NOT_OWNER');
+    }
+    if (!allowReleasing && releasing) {
+      if (releaseError) throw releaseError;
+      fail('Computer input is still being released', 'DEVRYAN_BOT_CONTROL_NOT_OWNER');
     }
     return actor;
   };
@@ -96,16 +135,22 @@ export function createControlLeaseManager({
   };
 
   const returnControl = (input) => {
-    requireOwnedLease(input);
-    const returned = lease;
-    lease = null;
-    onEvent(Object.freeze({ type: 'returned', ...returned, returnedAt: now() }));
-    notifyAgentWaiters();
-    return Object.freeze({ returned: true });
+    requireOwnedLease(input, { allowReleasing: true });
+    return releaseLease('returned');
+  };
+
+  const assertAgentAvailable = () => {
+    expire();
+    if (releaseError) throw releaseError;
+    if (lease) {
+      fail('A person holds computer control', 'DEVRYAN_BOT_CONTROL_HELD');
+    }
+    return true;
   };
 
   const waitForAgent = ({ signal, timeoutMs = 120_000 } = {}) => {
     expire();
+    if (releaseError) return Promise.reject(releaseError);
     if (!lease) return Promise.resolve();
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) {
       fail('Agent wait timeout is invalid', 'DEVRYAN_BOT_CONTROL_WAIT_INVALID', 400);
@@ -121,7 +166,7 @@ export function createControlLeaseManager({
         if (error) reject(error);
         else resolve();
       };
-      const onRelease = () => finish();
+      const onRelease = (error) => finish(error);
       const onAbort = () => finish(new ComputerControlError(
         'Agent command was aborted while human control was active',
         'DEVRYAN_BOT_COMMAND_ABORTED',
@@ -142,9 +187,16 @@ export function createControlLeaseManager({
   };
 
   return Object.freeze({
+    setInputReleaseHandler(handler) {
+      if (typeof handler !== 'function' || lease || releasing) {
+        fail('Control input cleanup configuration is invalid', 'DEVRYAN_BOT_CONTROL_CONFIG_INVALID', 500);
+      }
+      releaseInputHandler = handler;
+    },
     take,
     heartbeat,
     returnControl,
+    assertAgentAvailable,
     waitForAgent,
     assertOwner: (input) => Object.freeze({ ...lease, ...requireOwnedLease(input) }),
     snapshot: publicLease,

@@ -24,8 +24,9 @@ Role-aware shared-host user and access administration inside Settings.
 - `UserDetail.tsx` owns the accessible Core Details / Policy Overrides /
   Analytics tab shell. Panels remain mounted so profile, branch, permission,
   capability, and advanced-JSON drafts survive tab changes. Core contains
-  Profile, Projects & Branches, and Access Links; Policy uses three independent
-  collapsibles with explicit `Inherit (On|Off)` effective values.
+  Profile and Projects & Branches; access-link management remains on the User
+  Management overview. Policy uses independent collapsibles with explicit
+  `Inherit (On|Off)` effective values.
 - `RolePoliciesSection.tsx` exposes Browser alongside the other core role
   capabilities. `UserDetail.tsx` derives the matching tri-state Browser
   override from the shared capability list, so absent values inherit the role.
@@ -34,6 +35,9 @@ Role-aware shared-host user and access administration inside Settings.
   administrators inherit visible Behavior. The stored override is sparse, so
   an explicit `false` is retained when it is the developer's deviation from
   the role default.
+- Source Overrides includes `Hide Update Tab`, a sparse per-user visibility
+  override that removes Update from Source in the right sidebar without changing
+  the user's underlying Git authorization.
 - Core Capability Overrides also exposes `Create branches`. Developers inherit
   Off, senior developers inherit On, and a sparse per-user override can change
   the effective value without changing the role template.
@@ -49,7 +53,10 @@ Role-aware shared-host user and access administration inside Settings.
   user/time zone. Its full-range graph selects at most one day, while separate
   day-scoped event requests drive the totals, work blocks, prompts, and safe
   change/interaction detail. Prompts are grouped under initially collapsed
-  durable session IDs; pagination merges into the existing groups.
+  durable session IDs; pagination merges into the existing groups. An
+  administrator can clear the selected human user's complete current analytics
+  snapshot through a confirmed server mutation; only the administrative purge
+  marker remains in the separate audit view.
   `userAnalyticsPresentation.ts` formats immutable send-time model identifiers,
   including legacy missing-data fallbacks. Senior developers retain the
   sanitized audit list.
@@ -76,8 +83,13 @@ Role-aware shared-host user and access administration inside Settings.
   passwords, export, and purge are rendered only for administrators.
 - Project paths remain administrator-only inputs. Assignment controls expose
   project labels, branch-visibility filters, and one default branch. They do
-  not choose credentials; branch saves derive the GitHub identity from the
-  user's saved profile.
+  not choose GitHub credentials; branch saves derive that identity from the
+  user's saved profile. Each checked, already-saved branch can expand into a
+  separate preview editor with HTTPS URL, write-only Cloudflare Client ID and
+  Secret, connection test, verified save/rotation, and removal. Saves only show
+  configured state after the server validates the effective URL and token.
+  Preview mutations use their own branch-specific endpoint so visibility saves
+  preserve unchanged tokens.
 - Account selectors offer only unassigned credentials plus the current user's
   saved credential. The server and database enforce the same one-to-one rule.
 - The server omits profiles classified as `agent_test`, keeping AI-only feature

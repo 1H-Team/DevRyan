@@ -14,3 +14,11 @@ available.
 
 Diagnostics are always enabled and remain local until the user explicitly
 exports a bundle.
+# Primary provider recovery host
+
+`provider-recovery.js` composes the shared harness controller, managed-task
+barriers, session-token reauthorization and Express request middleware.
+`runtime.js` feeds canonical events before journal trimming and drains the
+controller with the host. Electron inherits this in-process backend. The private
+orchestration bridge carries the bundled plugin handshake and execution guard.
+See `docs/PROVIDER_RECOVERY.md` for policy and release gates.

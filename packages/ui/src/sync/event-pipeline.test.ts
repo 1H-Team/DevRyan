@@ -98,6 +98,7 @@ class FakeWebSocket {
 }
 
 function installBrowserStubs(options: { isVSCode?: boolean } = {}) {
+  const windowEvents = new EventTarget()
   globalThis.window = {
     location: {
       href: "http://127.0.0.1:5173/",
@@ -106,8 +107,9 @@ function installBrowserStubs(options: { isVSCode?: boolean } = {}) {
     __OPENCHAMBER_RUNTIME_APIS__: options.isVSCode
       ? { runtime: { platform: "vscode", isDesktop: false, isVSCode: true, label: "VS Code" } }
       : undefined,
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener: windowEvents.addEventListener.bind(windowEvents),
+    removeEventListener: windowEvents.removeEventListener.bind(windowEvents),
+    dispatchEvent: windowEvents.dispatchEvent.bind(windowEvents),
   } as unknown as Window & typeof globalThis
   globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket
 }

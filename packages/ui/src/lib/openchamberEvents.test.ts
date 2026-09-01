@@ -20,4 +20,15 @@ describe('OpenChamber event parsing', () => {
       properties: { projectId: '' },
     })).toBeNull();
   });
+
+  test('projects content-free browser lease invalidations', () => {
+    expect(parseOpenChamberEventEnvelope({
+      type: 'openchamber:browser-agent-leases-changed',
+      properties: { revision: 7, leaseId: 'must-not-project' },
+    })).toEqual({ type: 'browser-agent-leases-changed', revision: 7 });
+    expect(parseOpenChamberEventEnvelope({
+      type: 'openchamber:browser-agent-leases-changed',
+      properties: { revision: -1 },
+    })).toBeNull();
+  });
 });

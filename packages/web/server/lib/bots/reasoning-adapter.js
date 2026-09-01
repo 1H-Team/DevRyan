@@ -1,8 +1,7 @@
 import { assertBotJsonValue } from '@openchamber/bots-runtime';
 
 import {
-  isPublicBotAssistantTextPart,
-  sanitizeBotConversationalText,
+  sanitizeBotConversationalTextParts,
 } from './response-sanitizer.js';
 
 export const BOT_REASONING_ADAPTER_KINDS = Object.freeze(['opencode', 'ag_ui']);
@@ -17,6 +16,7 @@ export const BOT_REASONING_EVENT_KINDS = Object.freeze([
   'run.completed',
   'run.error',
 ]);
+export const BOT_REASONING_PREPARATION_PERSISTENCE = Object.freeze(['durable', 'ephemeral']);
 
 const REQUIRED_METHODS = Object.freeze([
   'health',
@@ -38,6 +38,17 @@ export class BotReasoningAdapterError extends Error {
     this.diagnostics = diagnostics ? Object.freeze({ ...diagnostics }) : null;
   }
 }
+
+export const normalizeBotReasoningPreparationPersistence = (value = 'durable') => {
+  if (!BOT_REASONING_PREPARATION_PERSISTENCE.includes(value)) {
+    throw new BotReasoningAdapterError(
+      'Bot reasoning preparation persistence is invalid',
+      'bot_agent_adapter_invalid',
+      400,
+    );
+  }
+  return value;
+};
 
 export const resolveBotReasoningBinding = (contract = {}) => {
   const candidate = contract?.agent;
@@ -132,10 +143,7 @@ export const createBotReasoningEvent = (kind, payload = {}) => {
 export const projectBotReasoningResponse = (parts) => {
   const ordered = Array.isArray(parts) ? parts : [];
   const firstToolIndex = ordered.findIndex((part) => part?.type === 'tool');
-  const publicText = (values) => sanitizeBotConversationalText(values
-    .filter(isPublicBotAssistantTextPart)
-    .map((part) => part.text)
-    .join(''));
+  const publicText = (values) => sanitizeBotConversationalTextParts(values);
   if (firstToolIndex < 0) {
     return Object.freeze({
       toolObserved: false,
@@ -149,7 +157,7 @@ export const projectBotReasoningResponse = (parts) => {
   }
   return Object.freeze({
     toolObserved: true,
-    acknowledgmentText: publicText(ordered.slice(0, firstToolIndex)),
+    acknowledgmentText: '',
     resultText: publicText(ordered.slice(lastToolIndex + 1)),
   });
 };

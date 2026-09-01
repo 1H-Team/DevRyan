@@ -1,6 +1,6 @@
 import express from 'express';
 import request from '../../test-supertest.js';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -67,6 +67,12 @@ const createApp = (overrides = {}) => {
       requiresReload: false,
     })),
     buildAugmentedPath: vi.fn(() => process.env.PATH || ''),
+    resolveClaudeCodeLaunch: vi.fn(({ pathValue }) => {
+      const executable = join(pathValue, 'claude');
+      return existsSync(executable)
+        ? { executable, pathValue, source: 'path' }
+        : null;
+    }),
     getOpenCodeWorkingDirectory: vi.fn(() => '/tmp/project'),
     setOpenCodeWorkingDirectory: vi.fn(),
     restartOpenCode: vi.fn(async () => undefined),
@@ -1410,6 +1416,7 @@ describe('OpenCode provider routes', () => {
     ['builder', 'orchestrator'].flatMap((agent) =>
       [false, true].flatMap((planMode) => [
         ['openai', 'gpt-5.6-sol'],
+        ['anthropic', 'claude-sonnet-4-5'],
         ['xai', 'grok-4.6'],
         ['opencode', 'nemotron-3.5-lightning-free'],
       ].map(([providerID, modelID]) => ({ agent, planMode, providerID, modelID }))),

@@ -8,9 +8,14 @@ import { registerGitRoutes } from './routes.js';
 const makeApp = ({
   resolveZenModel = vi.fn(async (override) => override || 'gpt-5-nano'),
   resolveCommitZenModel,
+  fetchFreeZenModels = vi.fn(async () => [{ id: 'free-a' }, { id: 'free-b' }]),
   generateCommitMessage = vi.fn(async () => ({
     subject: 'feat: add generated source file',
     highlights: [],
+  })),
+  generatePullRequestDescription = vi.fn(async () => ({
+    title: 'Use direct Zen PR generation',
+    body: '## Summary\n- Avoid chat sessions',
   })),
   recordCommitTiming = vi.fn(),
   loadGitLibraries = async () => ({
@@ -31,11 +36,20 @@ const makeApp = ({
   registerGitRoutes(app, {
     resolveZenModel,
     resolveCommitZenModel,
+    fetchFreeZenModels,
     generateCommitMessage,
+    generatePullRequestDescription,
     recordCommitTiming,
     loadGitLibraries,
   });
-  return { app, generateCommitMessage, resolveZenModel, recordCommitTiming };
+  return {
+    app,
+    generateCommitMessage,
+    generatePullRequestDescription,
+    fetchFreeZenModels,
+    resolveZenModel,
+    recordCommitTiming,
+  };
 };
 
 const requestBody = {
@@ -219,5 +233,35 @@ describe('POST /api/git/commit-message', () => {
         selectedFiles: [{ path: 'src/slow.ts', index: '?', workingDir: '?' }],
       }),
     }));
+  });
+});
+
+describe('POST /api/git/pr-description', () => {
+  it('uses the complete free catalog and rendered prompt without model selection', async () => {
+    const { app, generatePullRequestDescription, fetchFreeZenModels, resolveZenModel } = makeApp();
+    const response = await request(app)
+      .post('/api/git/pr-description?directory=/repo')
+      .send({ base: 'main', head: 'feature/direct-pr', prompt: 'Return the Generate PR JSON' })
+      .expect(200);
+
+    expect(response.body).toEqual({
+      title: 'Use direct Zen PR generation',
+      body: '## Summary\n- Avoid chat sessions',
+    });
+    expect(fetchFreeZenModels).toHaveBeenCalledTimes(1);
+    expect(generatePullRequestDescription).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: 'Return the Generate PR JSON',
+      models: [{ id: 'free-a' }, { id: 'free-b' }],
+    }));
+    expect(resolveZenModel).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing Generate PR instructions', async () => {
+    const { app, generatePullRequestDescription } = makeApp();
+    await request(app)
+      .post('/api/git/pr-description?directory=/repo')
+      .send({ base: 'main', head: 'feature/direct-pr' })
+      .expect(400);
+    expect(generatePullRequestDescription).not.toHaveBeenCalled();
   });
 });

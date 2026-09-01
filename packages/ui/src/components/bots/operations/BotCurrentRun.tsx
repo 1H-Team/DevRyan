@@ -3,12 +3,9 @@ import { RiCloseLine, RiTimeLine } from '@remixicon/react';
 
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
-import type { BotRun } from '@/lib/botsApi';
 import { useBotOperationsStore, type BotOperationsStore } from '@/stores/useBotOperationsStore';
 
-const activeStates = new Set<BotRun['state']>([
-  'queued', 'starting', 'running', 'waiting_approval', 'needs_reconciliation',
-]);
+import { selectBotCurrentRunId } from './selectBotCurrentRun';
 
 export const BotCurrentRun: React.FC<{
   channelId: string;
@@ -16,17 +13,15 @@ export const BotCurrentRun: React.FC<{
   operationsStore?: BotOperationsStore;
 }> = ({ channelId, canCancel, operationsStore = useBotOperationsStore }) => {
   const { t } = useI18n();
-  const runId = operationsStore((state) => {
-    const ids = state.runIdsByChannelId[channelId] || [];
-    for (let index = ids.length - 1; index >= 0; index -= 1) {
-      const candidate = state.runsById[ids[index]];
-      if (candidate && activeStates.has(candidate.state)) return candidate.id;
-    }
-    return null;
-  });
+  const runId = operationsStore((state) => selectBotCurrentRunId(state, channelId));
+  const queuedCount = operationsStore((state) => (
+    (state.runIdsByChannelId[channelId] ?? []).reduce((count, id) => (
+      count + (id !== runId && state.runsById[id]?.state === 'queued' ? 1 : 0)
+    ), 0)
+  ));
   const run = operationsStore((state) => runId ? state.runsById[runId] : undefined);
-  const [cancelling, setCancelling] = React.useState(false);
-  const [failed, setFailed] = React.useState(false);
+  const [cancellingId, setCancellingId] = React.useState<string | null>(null);
+  const [failedId, setFailedId] = React.useState<string | null>(null);
 
   if (!run) return null;
 
@@ -36,7 +31,8 @@ export const BotCurrentRun: React.FC<{
       <span className="min-w-0 flex-1 truncate typography-micro text-foreground">
         {run.state === 'waiting_approval' ? 'Waiting for confirmation' : t(`bots.run.${run.state}`)}
       </span>
-      {failed ? <span className="typography-micro text-[var(--status-error)]">Cancel failed</span> : null}
+      {queuedCount > 0 ? <span className="shrink-0 typography-micro text-muted-foreground">{queuedCount} queued</span> : null}
+      {failedId === run.id ? <span className="typography-micro text-[var(--status-error)]">Cancel failed</span> : null}
       {canCancel ? (
         <Button
           type="button"
@@ -44,16 +40,16 @@ export const BotCurrentRun: React.FC<{
           variant="ghost"
           className="h-6 w-6"
           aria-label={t('bots.run.cancelAria')}
-          disabled={cancelling}
+          disabled={cancellingId === run.id}
           onClick={async () => {
-            setCancelling(true);
-            setFailed(false);
+            setCancellingId(run.id);
+            setFailedId(null);
             try {
               await operationsStore.getState().cancelRun(run.id);
             } catch {
-              setFailed(true);
+              setFailedId(run.id);
             } finally {
-              setCancelling(false);
+              setCancellingId((id) => id === run.id ? null : id);
             }
           }}
         >

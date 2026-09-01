@@ -694,6 +694,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         responseStyleLevel={responseStyleLevel}
                         onContentChange={onContentChange}
                         isMessageCompleted={isMessageCompleted}
+                        isTrailingLiveRun={index === visibleRows.length - 1}
                         isMobile={isMobile}
                     />
                 );
@@ -710,6 +711,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         responseStyleLevel={responseStyleLevel}
                         onContentChange={onContentChange}
                         isMessageCompleted={isMessageCompleted}
+                        isTrailingLiveRun={index === visibleRows.length - 1}
                         isMobile={isMobile}
                     />
                 );

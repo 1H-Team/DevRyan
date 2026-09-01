@@ -99,12 +99,17 @@ authorized before Git runs.
 ### Commit Message Generation
 - `POST /api/git/commit-message/draft`: Accept `{ selectedFiles, stagedOnly, guidance?, zenModel? }`, collect authoritative Git context in the host, and return the shared workflow result `{ status, commits, message?, warnings? }`. Status and six recent subjects are loaded concurrently; up to 200 unique validated paths use at most two batched one-context-line diffs with a 16,000-character combined patch budget.
 - `POST /api/git/commit-message`: Compatibility route that accepts bounded, pre-collected worktree context plus optional wording guidance and returns `{ message: { subject, highlights } }`.
-- Generation uses a cached free Zen model through the direct `opencode.ai/zen` API under a 4.5-second end-to-end deadline. A slow or unavailable model enters a five-minute cooldown so later requests use another cached candidate or skip directly to the local fallback; one Generate action never waits for a second provider attempt. The flow never creates, prompts, switches, or deletes an OpenCode session.
+- Generation uses a cached free Zen model through the direct `opencode.ai/zen` API under a 20-second end-to-end deadline. A slow or unavailable model enters a five-minute cooldown so later requests use another cached candidate or skip directly to the local fallback; one Generate action never waits for a second provider attempt. The flow never creates, prompts, switches, or deletes an OpenCode session.
 - Chat-completion requests are capped at 220 tokens with hidden reasoning disabled; compatible Responses requests are capped at 256 output tokens. The compact JSON response contains a Conventional Commit subject and two to four details.
 - Shared runtime policy repairs otherwise-valid overlong subjects at a word boundary. Invalid, timed-out, or unavailable AI output becomes a deterministic factual draft derived from selected paths, statuses, and line statistics. Responses disclose fallback or partial context through `warnings` while still returning a usable draft.
 - Both routes are read-only for managed mutation-lock purposes, while authentication, CSRF, workspace containment, and Git policy checks still apply. Sanitized phase timings are written to the diagnostic journal, and web responses expose context/model/provider/parsing durations through `Server-Timing`.
 - Route registration accepts an injected direct generator for deterministic contract tests; production defaults to `generateCommitMessageDirect`.
 - Subjects must match the repository Conventional Commit types, remain at or below 72 characters, and omit trailing punctuation. Highlights are inserted as commit-body bullets. The route does not stage, commit, or otherwise mutate Git state.
+
+### Pull Request Description Generation
+- `POST /api/git/pr-description` accepts the already-rendered Generate PR instructions plus base/head metadata and returns `{ title, body }`.
+- The route calls the live zero-cost Zen catalog directly, tries every model sequentially with a 15-second timeout per model, and accepts the first valid title/body JSON object.
+- Generation never creates, prompts, polls, switches, or deletes an OpenCode session and never resolves the user's selected/default chat model. Exhausting the free catalog returns an error without changing the caller's draft fields.
 - `removeRemote(directory, options)`: Remove a configured remote (except `origin`).
 - `deleteRemoteBranch(directory, options)`: Delete a remote branch.
 

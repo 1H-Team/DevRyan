@@ -20,9 +20,16 @@ ownership, directory opacity, and audit control plane.
   server-only Supabase/PostgREST plus bounded private Storage transport, and
   encrypted token persistence. `runtime.js` injects that transport into the
   focused sibling `../bots/` control-plane module.
+- `branch-preview-vault.js`, `branch-previews.js`: dedicated encrypted
+  Cloudflare service-token storage and the server-only per-grant preview domain
+  service. Database/API projections contain only the HTTPS URL and configured
+  state. Saves probe the effective URL and token before committing either store,
+  while draft tests, first-use probes, and Electron handoff retain credentials
+  in host memory.
 - `policy.js`: exact role templates, canonical settings Read/Edit permissions,
   sparse per-user overrides (including default-on Bots access and the
-  developer-default hidden Global Agent Behavior UI), route/field ownership,
+  developer-default hidden Global Agent Behavior UI and Source Update-tab
+  visibility), route/field ownership,
   and capability evaluation. Generic personal settings saves are authorized by
   each changed field's owner rather than a coarse Sessions-page gate.
 - `managed-agent-defaults.js`: validates sparse single-model per-account
@@ -58,11 +65,13 @@ ownership, directory opacity, and audit control plane.
   validation, privacy-safe field deltas, opaque event cursors, reviewer
   redaction, and DST-aware daily activity aggregation.
 - `analytics-retention.js`: monotonic managed-developer retention locks,
-  protected audit purge dispatch, and migration-contract errors.
+  protected global audit purging, exact-target administrator analytics clearing,
+  and migration-contract errors.
 
 ## Flow
 
-1. `runtime.js` loads private Supabase configuration and the encrypted vault.
+1. `runtime.js` loads private Supabase configuration plus separate encrypted
+   application-session and branch-preview credential vaults.
 2. Login exchanges credentials with Supabase Auth, or explicitly selects one
    loopback-only agent-test role, and issues an opaque app cookie.
 3. Each API/WS request resolves a live profile, effective policy, and assignments.
@@ -85,10 +94,14 @@ ownership, directory opacity, and audit control plane.
    linked resolution evidence; newly queued events deliver after the barrier.
 8. Exact owned session deletion strips legacy directory scope, locks non-admin
    analytics retention, deletes upstream content, and tombstones ownership.
+   Authorized retries recover an already-absent upstream session or accept an
+   existing tombstone without weakening foreign-session `404` behavior.
 9. Missing session ownership is repaired only when a canonical directory maps
    to one active user; archived tombstones and ambiguous matches remain hidden.
 10. Revocation closes live connections and archives affected ownership records;
    shared real worktrees are never moved or removed by visibility-grant changes.
+   Branch/project removal cascades preview metadata and cleans its opaque host
+   vault reference without exposing credential material.
 11. Explicit managed settings saves serialize per principal. Fresh drafts and
    owned child dispatches overlay sparse personal agent defaults on the live
    host catalog; resets restore live inheritance. Council always uses its
@@ -98,7 +111,9 @@ ownership, directory opacity, and audit control plane.
     contracts map to the pinned Bot migration `503` envelope before Bot work is
     admitted. The compatibility gate includes durable profile/avatar columns,
     write-only Bot environment-secret metadata, generated-image source keys,
-    and the exact-version publish RPC. Immutable Skill/MCP binding rows,
+    the exact-version publish RPC, and `waiting_control` run/action constraints,
+    active-scope indexes, and claim/retry/delete RPCs. The latter are exercised
+    by `supabase/tests/bot_waiting_control.test.sql`. Immutable Skill/MCP binding rows,
     encrypted profile avatars, and separately confirmed host-vault secret
     records are included in recovery and
     ordered purge. Retired-Bot purge preserves audit rows and crosses the outbox

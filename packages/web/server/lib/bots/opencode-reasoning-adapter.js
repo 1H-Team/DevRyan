@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
 import { projectBotAssistantResponse } from './opencode-provider.js';
+import { normalizeBotRunError } from './error-normalization.js';
 import {
   BotReasoningAdapterError,
   createBotReasoningEvent,
+  normalizeBotReasoningPreparationPersistence,
 } from './reasoning-adapter.js';
 
 const SESSION_ERROR_KINDS = Object.freeze({
@@ -32,14 +34,24 @@ export const classifyOpenCodeRunError = (error) => {
     ? error.name
     : 'UnknownError';
   const rawStatus = data.statusCode ?? data.status ?? error?.statusCode ?? error?.status;
-  const statusCode = Number.isInteger(rawStatus) && rawStatus >= 100 && rawStatus <= 599
+  let statusCode = Number.isInteger(rawStatus) && rawStatus >= 100 && rawStatus <= 599
     ? rawStatus
     : null;
   const explicitRetryable = typeof data.isRetryable === 'boolean'
     ? data.isRetryable
     : (typeof error?.isRetryable === 'boolean' ? error.isRetryable : null);
   let classified = SESSION_ERROR_KINDS[providerErrorType] || SESSION_ERROR_KINDS.UnknownError;
-  if (providerErrorType === 'APIError') {
+  const message = typeof data.message === 'string' ? data.message : error?.message;
+  const refreshFailure = providerErrorType === 'UnknownError'
+    && ['Token refresh failed: 400', 'Token refresh failed: 401', 'Token refresh failed: 403'].includes(message)
+    ? Number(message.slice(-3)) : null;
+  const coordinatedAuthFailure = error?.code === 'bot_opencode_provider_authentication'
+    || (providerErrorType === 'UnknownError'
+      && message === 'bot_opencode_provider_authentication: Reconnect the selected host OpenAI account in Providers and Bot Settings.');
+  if (refreshFailure || coordinatedAuthFailure || (providerErrorType === 'APIError' && statusCode === 401)) {
+    statusCode = refreshFailure || 401;
+    classified = SESSION_ERROR_KINDS.ProviderAuthError;
+  } else if (providerErrorType === 'APIError') {
     const retryable = explicitRetryable ?? (
       statusCode === 408 || statusCode === 409 || statusCode === 425 || statusCode === 429
       || (statusCode !== null && statusCode >= 500)
@@ -49,10 +61,15 @@ export const classifyOpenCodeRunError = (error) => {
       retryable,
     };
   }
+  for (const code of ['bot_oauth_refresh_unavailable', 'bot_oauth_persistence_failed', 'bot_oauth_coordinator_unavailable']) {
+    if (error?.code === code || (providerErrorType === 'UnknownError' && message === `${code}: Managed OpenAI authentication is unavailable.`)) {
+      classified = { interruptionKind: code, retryable: false };
+    }
+  }
   return Object.freeze({
     providerErrorType,
     statusCode,
-    retryable: explicitRetryable ?? classified.retryable,
+    retryable: classified === SESSION_ERROR_KINDS.ProviderAuthError ? false : explicitRetryable ?? classified.retryable,
     providerReference: boundedProviderReference(error),
     interruptionKind: classified.interruptionKind,
   });
@@ -102,15 +119,23 @@ export function createOpenCodeReasoningAdapter({
         messageId: info?.id || '',
         role: info?.role || '',
         tokens: info?.tokens || {},
+        parentId: info?.parentID || null,
+        finish: info?.finish || null,
+        completedAt: info?.time?.completed || null,
+        requestId: runId,
       });
     } else if (event.type === 'message.part.updated') {
       const part = properties.part;
-      if (part?.type === 'text') {
+      if (part && typeof part.id === 'string' && typeof part.messageID === 'string'
+        && part.type !== 'tool') {
         normalized = createBotReasoningEvent('assistant.text', {
           messageId: part.messageID,
           partId: part.id,
-          text: part.text,
+          text: part.type === 'text' && typeof part.text === 'string' ? part.text : '',
           mode: 'replace',
+          partType: part.type || 'unknown',
+          visible: part.type === 'text' && part.ignored !== true && part.synthetic !== true,
+          requestId: runId,
           ignored: part.ignored === true,
           synthetic: part.synthetic === true,
         });
@@ -128,6 +153,10 @@ export function createOpenCodeReasoningAdapter({
           partId: properties.partID,
           text: properties.delta,
           mode: 'append',
+          // A delta carries no type/visibility. Only a typed replacement may
+          // classify this part, and final inspection remains authoritative.
+          partType: 'unknown',
+          requestId: runId,
         });
       }
     } else if (event.type === 'session.error') {
@@ -138,7 +167,7 @@ export function createOpenCodeReasoningAdapter({
         diagnostics,
       });
     } else if (event.type === 'session.status' && properties.status?.type === 'idle') {
-      normalized = createBotReasoningEvent('run.completed', {});
+      normalized = createBotReasoningEvent('run.completed', { requestId: runId });
     }
     if (!normalized) return false;
     await listener.onEvent(normalized);
@@ -152,15 +181,30 @@ export function createOpenCodeReasoningAdapter({
       return Object.freeze({ ok: true, adapter: 'opencode' });
     },
     async prepareRevision(input) {
+      const persistence = normalizeBotReasoningPreparationPersistence(input.persistence);
       const preparedInput = (catalog) => {
         const compiled = input.compiled || prewarmCache?.peekCompiled(
           input.run.channelId,
           input.run.revisionId,
         ) || null;
         return {
-          ...input,
+          run: input.run,
+          contract: input.contract,
           catalog,
+          ...(input.attachmentIds !== undefined
+            ? { attachmentIds: input.attachmentIds }
+            : {}),
+          ...(input.libraryVersionIds !== undefined
+            ? { libraryVersionIds: input.libraryVersionIds }
+            : {}),
+          ...(input.attachmentDeliveryMode !== undefined
+            ? { attachmentDeliveryMode: input.attachmentDeliveryMode }
+            : {}),
+          ...(persistence === 'ephemeral'
+            ? { mode: 'warm' }
+            : (input.mode !== undefined ? { mode: input.mode } : {})),
           ...(compiled ? { compiled } : {}),
+          ...(input.signal ? { signal: input.signal } : {}),
         };
       };
       let catalog = input.catalog;
@@ -169,13 +213,19 @@ export function createOpenCodeReasoningAdapter({
       try {
         result = await provider.startReasoningRun(preparedInput(catalog ?? null));
       } catch (error) {
-        if (error?.code !== 'bot_model_unavailable' || !loadModelCatalog) throw error;
+        if (error?.code !== 'bot_model_unavailable' || !loadModelCatalog) {
+          throw normalizeBotRunError(error);
+        }
         catalog = await loadModelCatalog({ force: true });
-        result = await provider.startReasoningRun(preparedInput(catalog));
+        try {
+          result = await provider.startReasoningRun(preparedInput(catalog));
+        } catch (error) {
+          throw normalizeBotRunError(error);
+        }
       }
       return Object.freeze({ modelSnapshot: result.modelSnapshot, prepared: result });
     },
-    async startRun({ runId, title, execution = null, continuation = null }) {
+    async startRun({ runId, title, execution = null, continuation = null, signal }) {
       const effectiveExecution = execution || (continuation && continuation.create === false
         ? continuation.execution
         : null);
@@ -196,7 +246,12 @@ export function createOpenCodeReasoningAdapter({
           }),
         });
       }
-      const session = await provider.createSegment({ runId, title });
+      let session;
+      try {
+        session = await provider.createSegment({ runId, title, ...(signal ? { signal } : {}) });
+      } catch (error) {
+        throw normalizeBotRunError(error);
+      }
       const segmentId = effectiveExecution?.segmentId || uuid();
       return Object.freeze({
         threadId: session.id,
@@ -213,13 +268,22 @@ export function createOpenCodeReasoningAdapter({
         }),
       });
     },
-    async continueRun({ runId, handle, parts, onEvent }) {
+    async continueRun({ runId, handle, parts, onEvent, signal }) {
       listeners.set(runId, { threadId: handle.threadId, onEvent });
-      await provider.prompt({ runId, sessionId: handle.threadId, parts });
+      try {
+        await provider.prompt({ runId, sessionId: handle.threadId, parts, ...(signal ? { signal } : {}) });
+      } catch (error) {
+        throw normalizeBotRunError(error);
+      }
       return Object.freeze({ accepted: true, handle });
     },
-    async inspectRun({ runId, handle }) {
-      const inspection = await provider.inspectSegment({ runId, sessionId: handle.threadId });
+    async inspectRun({ runId, handle, signal }) {
+      let inspection;
+      try {
+        inspection = await provider.inspectSegment({ runId, sessionId: handle.threadId, ...(signal ? { signal } : {}) });
+      } catch (error) {
+        throw normalizeBotRunError(error);
+      }
       return Object.freeze({
         ...inspection,
         assistantProjection: inspection.assistantProjection
@@ -242,7 +306,11 @@ export function createOpenCodeReasoningAdapter({
           503,
         );
       }
-      return provider.runNoToolsStructured(input);
+      try {
+        return await provider.runNoToolsStructured(input);
+      } catch (error) {
+        throw normalizeBotRunError(error);
+      }
     },
     async exportArtifact({ runId, path }) {
       if (typeof provider.exportGeneratedImage !== 'function') {
@@ -260,7 +328,7 @@ export function createOpenCodeReasoningAdapter({
         revisionId: input.run.revisionId,
         contract: input.contract,
       });
-      return this.prepareRevision(input);
+      return this.prepareRevision({ ...input, mode: 'warm' });
     },
     async releaseWarm({ runId }) {
       return this.closeRun({ runId });

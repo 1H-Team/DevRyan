@@ -25,6 +25,8 @@ export const BOT_RUNTIME_STATE_VERSION = 1;
 const execFileAsync = promisify(execFile);
 const DEFAULT_COMMAND_TIMEOUT_MS = 120_000;
 export const DEFAULT_BOT_RUNTIME_READY_DEADLINE_MS = 15 * 60_000;
+const DEFAULT_SERVICE_HEALTH_TIMEOUT_MS = 90_000;
+const SERVICE_HEALTH_POLL_INTERVAL_MS = 1_000;
 const MAX_READY_TRANSITIONS = 3;
 const FIXED_DOCKER_CANDIDATES = Object.freeze([
   '/opt/homebrew/bin/docker',
@@ -115,10 +117,11 @@ const INDEXER_OPERATIONS = Object.freeze({
 });
 
 export class BotRuntimeManagerError extends Error {
-  constructor(message, code) {
+  constructor(message, code, diagnostics = null) {
     super(message);
     this.name = 'BotRuntimeManagerError';
     this.code = code;
+    this.diagnostics = diagnostics;
   }
 }
 
@@ -227,6 +230,10 @@ const defaultRunProcess = async (file, args, { env, timeoutMs = DEFAULT_COMMAND_
     };
   }
 };
+
+const defaultWait = (milliseconds) => new Promise((resolve) => {
+  setTimeout(resolve, milliseconds);
+});
 
 export async function resolveDockerExecutable({
   env = process.env,
@@ -842,8 +849,14 @@ const serviceIssues = (rows) => {
     const health = String(row?.Health || row?.health || '').toLowerCase();
     if (!row) {
       issues.push({ code: 'service_missing', service, message: `Bot runtime service ${service} is missing` });
+    } else if (['dead', 'exited'].includes(state)) {
+      issues.push({ code: 'service_stopped', service, message: `Bot runtime service ${service} stopped` });
     } else if (state !== 'running' || (health && health !== 'healthy')) {
-      issues.push({ code: 'service_unhealthy', service, message: `Bot runtime service ${service} is unhealthy` });
+      issues.push({
+        code: 'service_unhealthy',
+        service,
+        message: `Bot runtime service ${service} is unhealthy`,
+      });
     }
   }
   return issues;
@@ -859,13 +872,15 @@ export function createBotRuntimeManager({
   baseEnvironment = process.env,
   loadRuntimeEnvironment,
   fetchImpl = globalThis.fetch,
+  wait = defaultWait,
+  now = Date.now,
 } = {}) {
   if (typeof composePath !== 'string' || !path.isAbsolute(composePath)) {
     fail('Bot runtime compose path must be absolute', 'bot_runtime_configuration_invalid');
   }
   if (typeof loadManifest !== 'function' || typeof resolveDocker !== 'function'
     || typeof runProcess !== 'function' || typeof loadRuntimeEnvironment !== 'function'
-    || typeof fetchImpl !== 'function') {
+    || typeof fetchImpl !== 'function' || typeof wait !== 'function' || typeof now !== 'function') {
     fail('Bot runtime manager dependencies are invalid', 'bot_runtime_configuration_invalid');
   }
   const installationState = stateStore || createFileBotRuntimeStateStore({ dataDirectory });
@@ -974,13 +989,13 @@ export function createBotRuntimeManager({
   ) => {
     const remainingMs = deadlineAt === null
       ? DEFAULT_COMMAND_TIMEOUT_MS
-      : deadlineAt - Date.now();
+      : deadlineAt - now();
     if (remainingMs <= 0) deadlineError();
     const result = normalizeProcessResult(await runProcess(dockerPath, args, {
       env: environment,
       timeoutMs: Math.min(DEFAULT_COMMAND_TIMEOUT_MS, remainingMs),
     }));
-    if (deadlineAt !== null && Date.now() >= deadlineAt) deadlineError();
+    if (deadlineAt !== null && now() >= deadlineAt) deadlineError();
     return result;
   };
 
@@ -1341,7 +1356,9 @@ export function createBotRuntimeManager({
         : null,
     ]);
     if (portResult.exitCode !== 0) {
-      fail('Bot supervisor is unavailable', 'bot_runtime_supervisor_unavailable');
+      throw new BotRuntimeManagerError('Bot supervisor is unavailable', 'bot_runtime_supervisor_unavailable', {
+        stage: 'supervisor_port', reason: 'docker_command_failed',
+      });
     }
     if (includeEgress && egressPortResult.exitCode !== 0) {
       fail('Bot model egress is unavailable', 'bot_runtime_egress_unavailable');
@@ -1965,8 +1982,16 @@ export function createBotRuntimeManager({
           SUPERVISOR_OPERATIONS.exportWorkspaceImage,
         ].includes(pathname) ? 120_000 : 30_000),
       });
-    } catch {
-      fail('Bot supervisor is unavailable', 'bot_runtime_supervisor_unavailable');
+    } catch (error) {
+      const transportCode = error?.cause?.code || error?.code;
+      const reason = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+        ? 'timeout'
+        : ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND'].includes(transportCode)
+          ? transportCode
+          : 'transport_error';
+      throw new BotRuntimeManagerError('Bot supervisor is unavailable', 'bot_runtime_supervisor_unavailable', {
+        stage: 'supervisor_request', reason,
+      });
     }
     const payload = await readSupervisorResponse(
       response,
@@ -2259,6 +2284,38 @@ export function createBotRuntimeManager({
     return serviceIssues(parseComposeRows(result.stdout));
   };
 
+  const waitForHealthyServices = async (
+    dockerPath,
+    manifest,
+    failureCode,
+    deadlineAt = null,
+  ) => {
+    publishProgress({ phase: 'verifying_health' });
+    const healthDeadline = Math.min(
+      deadlineAt ?? Number.POSITIVE_INFINITY,
+      now() + DEFAULT_SERVICE_HEALTH_TIMEOUT_MS,
+    );
+    while (true) {
+      let issues;
+      try {
+        issues = await inspectServices(dockerPath, manifest, healthDeadline);
+      } catch (error) {
+        if (error?.code === 'bot_runtime_startup_timeout' && now() >= healthDeadline) {
+          fail('Bot runtime services did not become healthy before the readiness deadline', failureCode);
+        }
+        throw error;
+      }
+      if (issues.length === 0) return;
+      const stoppedService = issues.find((issue) => issue.code === 'service_stopped');
+      if (stoppedService) fail(stoppedService.message, failureCode);
+      const remainingMs = healthDeadline - now();
+      if (remainingMs <= 0) {
+        fail('Bot runtime services did not become healthy before the readiness deadline', failureCode);
+      }
+      await wait(Math.min(SERVICE_HEALTH_POLL_INTERVAL_MS, remainingMs));
+    }
+  };
+
   const runtimeStatus = async ({
     dockerPath,
     currentState,
@@ -2356,17 +2413,22 @@ export function createBotRuntimeManager({
     currentState,
     desiredManifest,
     changed,
+    failureCode,
     deadlineAt = null,
   }) => {
-    publishProgress({ phase: 'verifying_health' });
-    const issues = await inspectServices(dockerPath, currentState.current, deadlineAt);
+    await waitForHealthyServices(
+      dockerPath,
+      currentState.current,
+      failureCode,
+      deadlineAt,
+    );
     return {
       ...baseStatus({
-        state: issues.length === 0 ? 'healthy' : 'degraded',
-        code: issues.length === 0 ? null : 'bot_runtime_degraded',
+        state: 'healthy',
+        code: null,
         currentState,
         desiredManifest,
-        issues,
+        issues: [],
       }),
       changed,
     };
@@ -2406,14 +2468,16 @@ export function createBotRuntimeManager({
       previous: null,
       staged: null,
     };
-    await installationState.write(nextState);
-    return activatedStatus({
+    const status = await activatedStatus({
       dockerPath,
       currentState: nextState,
       desiredManifest,
       changed: true,
+      failureCode: 'bot_runtime_setup_failed',
       deadlineAt,
     });
+    await installationState.write(nextState);
+    return status;
   };
 
   const repairInternal = async ({ deadlineAt = null } = {}) => {
@@ -2452,14 +2516,16 @@ export function createBotRuntimeManager({
     );
     await composeUp(dockerPath, currentState.current, 'bot_runtime_repair_failed', deadlineAt);
     const repairedState = { ...currentState, staged: null };
-    await installationState.write(repairedState);
-    return activatedStatus({
+    const status = await activatedStatus({
       dockerPath,
       currentState: repairedState,
       desiredManifest,
       changed: true,
+      failureCode: 'bot_runtime_repair_failed',
       deadlineAt,
     });
+    await installationState.write(repairedState);
+    return status;
   };
 
   const updateInternal = async ({ deadlineAt = null } = {}) => {
@@ -2486,14 +2552,16 @@ export function createBotRuntimeManager({
       previous: currentState.current,
       staged: null,
     };
-    await installationState.write(updatedState);
-    return activatedStatus({
+    const status = await activatedStatus({
       dockerPath,
       currentState: updatedState,
       desiredManifest,
       changed: true,
+      failureCode: 'bot_runtime_update_failed',
       deadlineAt,
     });
+    await installationState.write(updatedState);
+    return status;
   };
 
   const rollbackInternal = async ({ deadlineAt = null } = {}) => {
@@ -2517,14 +2585,16 @@ export function createBotRuntimeManager({
           previous: currentState.current,
           staged: null,
         };
-    await installationState.write(rolledBackState);
-    return activatedStatus({
+    const status = await activatedStatus({
       dockerPath,
       currentState: rolledBackState,
       desiredManifest,
       changed: true,
+      failureCode: 'bot_runtime_rollback_failed',
       deadlineAt,
     });
+    await installationState.write(rolledBackState);
+    return status;
   };
 
   const serializeMutation = (operation) => {
@@ -2598,7 +2668,7 @@ export function createBotRuntimeManager({
       fail('Bot runtime lifecycle deadline is invalid', 'bot_runtime_request_invalid');
     }
     return {
-      deadlineAt: Date.now() + deadlineMs,
+      deadlineAt: now() + deadlineMs,
       onProgress: typeof options?.onProgress === 'function' ? options.onProgress : null,
     };
   };
@@ -2632,7 +2702,13 @@ export function createBotRuntimeManager({
     record.promise = serializeMutation(async () => {
       try {
         const result = await operation({ deadlineAt: normalized.deadlineAt });
-        publishProgress({ phase: result?.state === 'healthy' ? 'ready' : 'verifying_health' });
+        if (result?.state !== 'healthy') {
+          fail(
+            result?.issues?.[0]?.message || 'Bot runtime operation did not become healthy',
+            result?.code || 'bot_runtime_operation_failed',
+          );
+        }
+        publishProgress({ phase: 'ready' });
         return result;
       } catch (error) {
         publishProgress({

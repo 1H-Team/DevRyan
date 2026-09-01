@@ -32,6 +32,7 @@ import {
 import {
   BotReasoningAdapterError,
   createBotReasoningEvent,
+  normalizeBotReasoningPreparationPersistence,
 } from './reasoning-adapter.js';
 
 const AG_UI_PROTOCOL_VERSION = 'ag-ui/v1';
@@ -360,6 +361,8 @@ export const parseAgUiEventStream = async ({
         partId: `text:${event.messageId}`,
         text: event.delta,
         mode: 'append',
+        partType: 'text',
+        visible: true,
       });
     } else if (event.type === EventType.TEXT_MESSAGE_END) {
       if (!state.activeText || event.messageId !== state.activeText) {
@@ -383,6 +386,8 @@ export const parseAgUiEventStream = async ({
         partId: `text:${messageId}`,
         text: event.delta,
         mode: 'append',
+        partType: 'text',
+        visible: true,
       });
     } else if (event.type === EventType.TOOL_CALL_START) {
       const toolCallId = boundedId(event.toolCallId, 'tool call ID');
@@ -556,6 +561,9 @@ export function createAgUiReasoningAdapter({
     || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 60 * 60 * 1_000) {
     throw new TypeError('AG-UI reasoning adapter is misconfigured');
   }
+  // Only successfully parsed, invocation-bound terminal responses are retained.
+  // This ephemeral map deliberately cannot manufacture recovery after restart.
+  const completions = new Map();
   const loadConnection = async (binding) => {
     const connection = normalizeAgUiConnectionDescriptor(await resolveConnection(binding.connectionRef));
     if (connection.descriptorDigest !== binding.connectionDigest) {
@@ -588,7 +596,7 @@ export function createAgUiReasoningAdapter({
         },
         body: `${canonicalizeBotJson(parsedInput.data)}\n`,
         redirect: 'manual',
-        signal: signal || AbortSignal.timeout(Math.min(timeoutMs, connection.limits.requestTimeoutMs)),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(Math.min(timeoutMs, connection.limits.requestTimeoutMs))].filter(Boolean)),
         maximumBytes: connection.limits.maximumStreamBytes,
         purpose: 'agent',
         botId: binding.botId || connection.botId,
@@ -646,7 +654,8 @@ export function createAgUiReasoningAdapter({
         bearer = null;
       }
     },
-    async prepareRevision({ binding }) {
+    async prepareRevision({ binding, persistence = 'durable' }) {
+      normalizeBotReasoningPreparationPersistence(persistence);
       const connection = await loadConnection(binding);
       return Object.freeze({
         modelSnapshot: Object.freeze({
@@ -677,6 +686,7 @@ export function createAgUiReasoningAdapter({
       });
     },
     async continueRun({ runId, handle, binding, parts = null, toolMessage = null, onEvent, signal }) {
+      completions.delete(runId);
       const connection = await loadConnection(binding);
       const invocationId = uuid();
       const priorMessages = [...(handle.execution?.messages || [])];
@@ -704,11 +714,20 @@ export function createAgUiReasoningAdapter({
         context: [],
         forwardedProps: {},
       };
+      const responseParts = new Map();
+      let assistantMessageId = null;
       const parsed = await parseAgUiEventStream({
         source: await invoke({ connection, binding, input, signal }),
         expectedRunId: invocationId,
         expectedThreadId: handle.threadId,
-        onEvent,
+        onEvent: async (event) => {
+          if (event.kind === 'assistant.message') assistantMessageId = event.payload.messageId;
+          if (event.kind === 'assistant.text') {
+            const key = `${event.payload.messageId}:${event.payload.partId}`;
+            responseParts.set(key, (responseParts.get(key) || '') + event.payload.text);
+          }
+          await onEvent(createBotReasoningEvent(event.kind, { ...event.payload, requestId: runId }));
+        },
         limits: connection.limits,
       });
       if (parsed.toolIntent) {
@@ -737,9 +756,25 @@ export function createAgUiReasoningAdapter({
         pendingToolCall: parsed.toolIntent,
         messages: Object.freeze(priorMessages),
       });
+      if (!parsed.toolIntent && parsed.status === 'completed') {
+        completions.set(runId, Object.freeze({
+          requestId: runId,
+          promptObserved: true,
+          status: 'idle',
+          assistantTerminal: true,
+          assistantMessageId,
+          assistantProjection: Object.freeze({
+            toolObserved: Boolean(toolMessage),
+            acknowledgmentText: '',
+            resultText: [...responseParts.values()].join(''),
+            generatedImages: [],
+          }),
+        }));
+      }
       return Object.freeze({ ...parsed, handle: Object.freeze({ ...handle, execution }) });
     },
-    async inspectRun({ handle }) {
+    async inspectRun({ runId, handle }) {
+      if (completions.has(runId)) return completions.get(runId);
       if (!handle?.execution?.invocationId) {
         return Object.freeze({ status: 'not_started', resumable: true, handle });
       }
@@ -755,7 +790,8 @@ export function createAgUiReasoningAdapter({
       // the host request is the only safe local cancellation mechanism.
       return Object.freeze({ cancelled: true, remoteState: 'unknown' });
     },
-    async closeRun() {
+    async closeRun({ runId } = {}) {
+      completions.delete(runId);
       return Object.freeze({ closed: true });
     },
     async completeStructured({ binding, prompt, schema, title = 'Structured task', system = '' }) {

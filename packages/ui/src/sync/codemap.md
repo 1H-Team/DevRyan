@@ -4,6 +4,12 @@
 Implements client-side sync primitives for session/event reconciliation and cache updates.
 
 ## Design
+
+`session-creation.ts` owns captured creation attempts, the overall deadline,
+explicit pre-creation retry policy, persisted unknown outcomes, and bounded
+content-free timing marks. `SessionCreationStatus` is the narrow recovery-only
+UI consumer for unknown or late-created outcomes;
+`session-actions.ts` and `session-ui-store.ts` own transport and safe promotion.
 Event-reducer style updates with normalized entities and optimistic-safe merge utilities.
 `evidence-store.ts` owns bounded, TTL-evicted per-session checkpoint records and
 lazy diff summaries without adding evidence state to high-frequency message
@@ -33,6 +39,10 @@ queued snapshots remain stronger sources.
 `sync-refs.ts` owns the imperative `SessionUIState` store reference consumed by `session-actions.ts`; `session-ui-store.ts` registers the completed store after initialization. This preserves the existing action/store cycle without a direct runtime import, lets focused action tests register a narrow store without process-wide module replacement, and lets authoritative `session.deleted` handling synchronously clear an exact stale current-session selection created by deletion in another renderer.
 `session-actions.ts` also owns creation-time directory routing: an explicit requested directory is registered and selected before any server-returned textual path alias, while the returned session metadata remains unchanged. Archive and unarchive project membership into both the versioned global index and loaded directory stores before awaiting transport. Optimistic session-removal rollback is reconciliatory: failed archive/delete paths restore only a still-missing target, while failed unarchive restores only the exact optimistic session object it owns, preserving newer live session records in both cases. Failed scoped reverts restore their local snapshot immediately and then always refetch bounded authoritative history so suffix events suppressed during the pending transaction cannot strand concurrent turns. Unexpected-abort refetches keep exact `(directory, session)` promise ownership and recheck it after the response; permanent deletion or directory disposal releases that owner so a late snapshot cannot restore retired messages, while archive preserves recovery.
 `session-recency.ts` owns the finite updated/created ordering contract used before session-event branch cloning, inside the directory reducer, during direct title mirroring, and by global upserts. Equal or missing timestamps remain eligible; strictly older records are no-ops except that a meaningful generated/manual title may fill a newer placeholder without replacing any newer metadata.
+`session-user-activity.ts` owns the separate low-frequency sidebar ordering
+projection: the latest visible root user message, reconciled across optimistic
+dispatch/rollback, live events, history materialization, revert, archive, and
+deletion. Assistant events never change this projection.
 Synthetic session-status compatibility events are normalized in `event-pipeline.ts` before routing/coalescing, terminal assistant status settlement stays provider-neutral and trailing-turn scoped in `event-reducer.ts`, and active-session stale recovery stays scoped to the viewed session in `sync-context.tsx`. An authoritative root `session.idle` or idle `session.status` also triggers one root-scoped managed-orchestration snapshot only while that root still projects active work, repairing a missed terminal managed event across web, Electron, and VS Code without polling. The reducer's message no-op gate includes `parentID`, allowing an owning non-terminal `message.updated` to hydrate a provisional assistant created from an earlier part event. Reconnect status snapshots use per-candidate semantic baselines before both merge points, so a newer live status event cannot be overwritten by a delayed snapshot.
 Composer context usage uses a narrow selected-session record projection: message metadata remains reactive, only terminal token/compaction parts can change the projected parts, and streaming text preserves references. The first mounted consumer may bootstrap a missing Anthropic provider snapshot; after that, `sync-context.tsx` refreshes the actively viewed session once at authoritative `session.idle` instead of sampling every intermediate assistant tool-call completion. This keeps provider measurement updates visible without subscribing composer chrome to high-frequency part deltas.
 `reconnect-recovery.ts` also owns exact empty pending tool-input, initial blank inference-shell, and long-running Context Mode/shell fingerprints plus their semantic-age policy. `provider-stall-recovery.ts` performs a final resync/fingerprint check before a confirmed abort hands the turn to ordinary provider recovery. Tool-input stalls remain manual; an unchanged blank inference shell is stopped automatically after five minutes, while confirmed long-running tools expose a final-resync Stop action. No recovery prompt or command is ever resent automatically.
@@ -50,3 +60,4 @@ SSE/polling events enter reducers, then produce store patches consumed by chat/s
 
 ## Integration
 Bridges lib/opencode streams with Zustand stores and session/chat components.
+- Primary host recovery: `event-pipeline.ts` consumes versioned per-session projections before ordinary event reduction. `provider-stall-recovery.ts` yields to an enforcing host; reconnect refreshes the narrow recovery projection. The host remains the admission and cancellation authority.

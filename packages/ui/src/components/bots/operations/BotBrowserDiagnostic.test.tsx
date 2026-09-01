@@ -28,7 +28,7 @@ describe('BotBrowserDiagnostic', () => {
       control: { leaseId: 'lease', actorId: CONTROLLER_ID, actorType: 'admin', takenAt: 100, expiresAt: 12_500 },
       principalId: VIEWER_ID,
       now: 10_000,
-    })).toEqual({ active: true, ownedByViewer: false, actorLabel: 'admin a0000000', expiresInSeconds: 3 });
+    })).toEqual({ active: true, ownedByViewer: false, actorLabel: 'another operator', expiresInSeconds: 3 });
   });
 
   test('renders the safe shell without starting a stream during server rendering', () => {
@@ -60,10 +60,35 @@ describe('BotBrowserDiagnostic', () => {
     expect(markup).not.toContain('<img');
   });
 
-  test('mounts only the server-issued ephemeral stream and keeps control separate', async () => {
+  test('mounts only the server-issued ephemeral stream and waits for its first frame', async () => {
     const status: BotComputerStatus = {
       botId: BOT_ID,
-      browser: { url: 'https://example.com' },
+      browser: {
+        running: true,
+        healthy: true,
+        lifecycleState: 'running',
+        generation: 1,
+        mode: 'headed_virtual',
+        engineVersion: 'Chromium/151.0',
+        displayReady: true,
+        webCapabilities: {
+          managedPolicy: 'enforced',
+          javascript: 'enabled',
+          firstPartyCookies: 'enabled',
+          thirdPartyCookies: 'enabled',
+        },
+        lastNavigationDiagnostic: {
+          revision: 2,
+          observedAt: Date.now(),
+          origin: null,
+          statusCode: 403,
+          redirectCount: 0,
+          repetitionCount: 0,
+          kind: 'egress_denied',
+          reason: 'egress_policy_denied',
+          blockedHost: 'challenge.example',
+        },
+      },
       control: {
         leaseId: 'lease',
         actorId: CONTROLLER_ID,
@@ -106,11 +131,14 @@ describe('BotBrowserDiagnostic', () => {
         />
       </I18nProvider>,
     );
-    expect(markup).toContain(`/computer/view/view_opaque/stream`);
-    expect(markup).toContain('data-bot-screen-view-state="viewing"');
-    expect(markup).toContain('admin a0000000 has control');
+    expect(markup).toContain('data-bot-computer-canvas="true"');
+    expect(markup).toContain('data-bot-screen-view-state="connecting"');
+    expect(markup).toContain('Connecting to the Bot desktop');
+    expect(markup).toContain('opacity-0');
+    expect(markup).toContain('another operator has control');
     expect(markup).toContain('Agent input is paused');
-    expect(markup).toContain('Live diagnostic · frames are never recorded');
+    expect(markup).toContain('data-bot-browser-warning="egress-denied"');
+    expect(markup).toContain('does not allow challenge.example');
     expect(markup).toContain('Stop Screen Viewing');
     expect(markup).toContain('disabled=""');
 
@@ -132,15 +160,97 @@ describe('BotBrowserDiagnostic', () => {
     expect(memberMarkup).not.toContain('Return Control');
   });
 
+  test('a residual cookie diagnostic never outranks a real browser failure', async () => {
+    const status: BotComputerStatus = {
+      botId: BOT_ID,
+      browser: {
+        running: true,
+        healthy: false,
+        lifecycleState: 'running',
+        generation: 1,
+        mode: 'headed_virtual',
+        engineVersion: 'Chromium/151.0',
+        displayReady: true,
+        webCapabilities: {
+          managedPolicy: 'enforced',
+          javascript: 'enabled',
+          firstPartyCookies: 'enabled',
+          thirdPartyCookies: 'enabled',
+        },
+        lastNavigationDiagnostic: {
+          revision: 3,
+          observedAt: Date.now(),
+          origin: 'https://challenge.example',
+          statusCode: null,
+          redirectCount: 0,
+          repetitionCount: 0,
+          kind: 'blocked_cookies',
+          reason: 'cookie_UserPreferences',
+          blockedHost: null,
+        },
+      },
+      control: null,
+      screencast: { subscribers: 1, lastFrameAt: Date.now(), retainedFrames: 0 },
+      framesRecorded: false,
+      arbitraryWebsiteExactlyOnce: false,
+    };
+    const api = {
+      startComputerView: async () => ({
+        view: {
+          id: 'view_opaque',
+          botId: BOT_ID,
+          channelId: CHANNEL_ID,
+          streamUrl: `/api/bots/${BOT_ID}/computer/view/view_opaque/stream`,
+          startedAt: '2026-08-25T00:00:00.000Z',
+        },
+      }),
+      stopComputerView: async () => ({ stopped: true }),
+    } as unknown as BotsApi;
+    const operationsStore = createBotOperationsStore({ api });
+    operationsStore.getState().resetPrincipal(VIEWER_ID);
+    operationsStore.getState().replaceSnapshot({ runs: [], pendingApprovals: [], computers: [status] });
+    await operationsStore.getState().startComputerView(BOT_ID, CHANNEL_ID);
+    Object.assign(operationsStore.getInitialState(), operationsStore.getState());
+
+    const markup = renderToStaticMarkup(
+      <I18nProvider>
+        <BotBrowserDiagnostic
+          botId={BOT_ID}
+          channelId={CHANNEL_ID}
+          botActive
+          principalId={VIEWER_ID}
+          canControl
+          active
+          operationsStore={operationsStore}
+        />
+      </I18nProvider>,
+    );
+    expect(markup).toContain('data-bot-browser-warning="browser-failure"');
+    expect(markup).not.toContain('data-bot-browser-warning="blocked-cookies"');
+  });
+
   test('keeps screen pixels out of every Zustand store', () => {
     const source = readFileSync(resolve(testDir, 'BotBrowserDiagnostic.tsx'), 'utf8');
+    const canvas = readFileSync(resolve(testDir, 'BotComputerCanvas.tsx'), 'utf8');
     const operationStore = readFileSync(resolve(testDir, '../../../stores/useBotOperationsStore.ts'), 'utf8');
 
-    expect(source).toContain('<img');
-    expect(source).toContain('src={visibleView.streamUrl}');
+    expect(source).toContain('<BotComputerCanvas');
+    expect(source).toContain('const FIRST_FRAME_TIMEOUT_MS = 5_000;');
+    expect(source).toContain('const COMPUTER_STATUS_POLL_MS = 2_000;');
+    expect(source).toContain('refreshComputerDiagnostic(botId)');
+    expect(canvas).toContain('fetch(view.streamUrl');
+    expect(canvas).toContain('createImageBitmap');
+    expect(canvas).toContain("new BotMjpegParser(botMjpegBoundary(response.headers.get('content-type')))");
+    expect(canvas).toContain('bitmap?.close();');
+    expect(canvas).toContain('inputDispatchingRef.current');
+    expect(canvas).toContain('queueBotHumanInputEvent(batch, event, INPUT_BACKLOG_LIMIT)');
+    expect(canvas).not.toContain('sendChainRef');
+    expect(canvas).toContain('setKeyboardNavigationReleased(true);');
+    expect(canvas).toContain('tabIndex={inputEnabled && !keyboardNavigationReleased ? 0 : -1}');
+    expect(source).toContain('if (operationsStore.getState().computerViewsByBotId[botId]?.id !== expectedViewId) return;');
     expect(source).toContain('if (!active || !botActive || view || viewPending || viewErrorCode');
     expect(source).toContain('|| streamFailed || autoStartSuppressed) return;');
-    expect(source).toContain('startComputerView(botId, channelId)');
+    expect(source).toContain('startComputerView(botId, channelId, runId)');
     expect(source).toContain('stopComputerView(botId)');
     expect(operationStore).not.toContain('frameData');
     expect(operationStore).not.toContain('canvas');

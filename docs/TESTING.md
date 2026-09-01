@@ -115,7 +115,7 @@ as unavailable and retain deterministic test evidence separately.
 Live multi-user verification uses the password-free `agent_test` accounts from
 `AGENTS.md`. Build the current UI/server first, then start an isolated data root
 on a spare port when the user's app already owns the normal runtime. Confirm the
-target Supabase deployment contains migration `20260827100000` before creating a
+target Supabase deployment contains migration `20260830150000` before creating a
 synthetic Bot. If the migration is missing, retain the `migration_required`
 evidence, create no fixture, and mark membership/transcript/ACL/runtime cases
 unavailable rather than bypassing the control plane.
@@ -142,7 +142,14 @@ viewports, 220/280/500px rails, the mobile drawer, OpenCode/AG-UI connection
 states, signed-spec trust/binding/diff failures, matcher/quota states,
 browser-egress and runsc failures, runtime-service lifecycle, exact transcript
 Activity/Approval focus, partial failures, paused/retired Bots, and
-administrator/developer presentation. The capture blocks on clipping/overflow,
+administrator/developer presentation. It also covers the persistent optimistic/
+canonical acknowledgment before a final-only result and the decoded Computer
+canvas in connecting, live, disconnected, owned, view-only, and conflicting
+control states. Durable control-wait scenes cover owner Return Control and
+another-operator presentation. Generated-image scenes cover loading, decoded
+ready, and error/retry states independently of Shared publication. These are
+deterministic component fixtures, not evidence of a live OAuth generation.
+The capture blocks on clipping/overflow,
 stale scroll origin, focused-row visibility, keyboard Tab/Enter/Escape, focus
 rings, unnamed dialogs, secret sentinels, console errors, and unhandled
 rejections. Browser-network scenes also block unless the real network/isolation

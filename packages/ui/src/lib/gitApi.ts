@@ -4,8 +4,7 @@ import type { GitPullResult, GitPushResult, GitRemote, GitStatus, RuntimeAPIs } 
 import * as gitHttp from './gitApiHttp';
 import { opencodeClient } from './opencode/client';
 import { renderMagicPrompt, type MagicPromptId } from './magicPrompts';
-import { useSessionUIStore } from '@/sync/session-ui-store';
-import { consumeLastCreateSessionError, createSession, createSessionRecord } from '@/sync/session-actions';
+import { createSessionRecord } from '@/sync/session-actions';
 import { useContextStore } from '@/stores/contextStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import {
@@ -546,10 +545,9 @@ export async function executeApprovedCommitPlan(
 
 export async function generatePullRequestDescription(
   directory: string,
-  payload: { base: string; head: string; context?: string; zenModel?: string; providerId?: string; modelId?: string }
+  payload: { base: string; head: string; context?: string }
 ): Promise<import('./api/types').GeneratedPullRequestDescription> {
   const startedAt = Date.now();
-  const generationSession = await resolvePullRequestGenerationContext(directory);
 
   const commitLog = await getGitLog(directory, {
     from: payload.base,
@@ -587,20 +585,15 @@ export async function generatePullRequestDescription(
   const changedFiles = Array.from(filesSet).sort().slice(0, 300);
 
   console.info('[git-generation][browser] request', {
-    transport: 'session',
+    transport: 'direct_zen',
     kind: 'pr',
     directory,
-    sessionId: generationSession.sessionId,
-    providerId: generationSession.providerID,
-    modelId: generationSession.modelID,
-    agent: generationSession.agent,
     base: payload.base,
     head: payload.head,
     commits: commits.length,
     changedFiles: changedFiles.length,
   });
 
-  const visiblePrompt = await renderMagicPrompt('git.pr.generate.visible');
   const hiddenPrompt = await renderMagicPrompt('git.pr.generate.instructions', {
     base_branch: payload.base,
     head_branch: payload.head,
@@ -610,23 +603,16 @@ export async function generatePullRequestDescription(
   });
 
   try {
-    const structured = await runJsonGenerationInActiveSession({
-      directory,
-      visiblePrompt,
-      hiddenPrompt,
-      generationSession,
-      kind: 'pr',
+    const runtimeGit = getRuntimeGit();
+    const generator = runtimeGit?.generatePullRequestDescription ?? gitHttp.generatePullRequestDescription;
+    const result = await generator(directory, {
+      base: payload.base,
+      head: payload.head,
+      ...(payload.context?.trim() ? { context: payload.context.trim() } : {}),
+      prompt: hiddenPrompt,
     });
-
-    const structuredRecord = structured && typeof structured === 'object' && !Array.isArray(structured)
-      ? structured as Record<string, unknown>
-      : {};
-    const result = {
-      title: typeof structuredRecord.title === 'string' ? structuredRecord.title.trim() : '',
-      body: typeof structuredRecord.body === 'string' ? structuredRecord.body.trim() : '',
-    };
     console.info('[git-generation][browser] success', {
-      transport: 'session',
+      transport: 'direct_zen',
       kind: 'pr',
       elapsedMs: Date.now() - startedAt,
       titleLength: result.title.length,
@@ -636,14 +622,14 @@ export async function generatePullRequestDescription(
   } catch (error) {
     if (isGitGenerationCancelledError(error)) {
       console.info('[git-generation][browser] cancelled', {
-        transport: 'session',
+        transport: 'direct_zen',
         kind: 'pr',
         elapsedMs: Date.now() - startedAt,
       });
       throw error;
     }
     console.error('[git-generation][browser] failed', {
-      transport: 'session',
+      transport: 'direct_zen',
       kind: 'pr',
       elapsedMs: Date.now() - startedAt,
       message: error instanceof Error ? error.message : String(error),
@@ -676,18 +662,6 @@ export class GitGenerationCancelledError extends Error {
 export const isGitGenerationCancelledError = (error: unknown): error is GitGenerationCancelledError =>
   error instanceof Error && error.name === 'GitGenerationCancelledError';
 
-const resolveCurrentGenerationSessionId = (): string | null => {
-  const sessionId = useSessionUIStore.getState().currentSessionId;
-  return typeof sessionId === 'string' && sessionId.trim().length > 0 ? sessionId : null;
-};
-
-const resolveGenerationAgent = (sessionId: string | null): string | undefined => {
-  const context = useContextStore.getState();
-  const config = useConfigStore.getState();
-  const agent = sessionId ? context.getSessionAgentSelection(sessionId) : null;
-  return agent || config.currentAgentName || undefined;
-};
-
 const resolveGenerationModel = (
   sessionId: string | null,
   agent: string | undefined,
@@ -705,58 +679,6 @@ const resolveGenerationModel = (
 const resolveCurrentGenerationVariant = (): string | undefined => {
   const variant = useConfigStore.getState().currentVariant;
   return typeof variant === 'string' && variant.trim().length > 0 ? variant.trim() : undefined;
-};
-
-const buildSessionGenerationContext = (
-  sessionId: string,
-  options?: { sessionCreatedForGeneration?: boolean },
-): SessionGenerationContext => {
-  const agent = resolveGenerationAgent(sessionId);
-  const selectedModel = resolveGenerationModel(sessionId, agent);
-
-  if (!selectedModel?.providerId || !selectedModel?.modelId) {
-    throw new Error(NO_GENERATION_MODEL_MESSAGE);
-  }
-
-  return {
-    sessionId,
-    providerID: selectedModel.providerId,
-    modelID: selectedModel.modelId,
-    agent,
-    variant: resolveCurrentGenerationVariant(),
-    ...(options?.sessionCreatedForGeneration ? { sessionCreatedForGeneration: true } : {}),
-  };
-};
-
-const resolvePullRequestGenerationContext = async (directory: string): Promise<SessionGenerationContext> => {
-  const sessionId = resolveCurrentGenerationSessionId();
-  if (sessionId) {
-    return buildSessionGenerationContext(sessionId);
-  }
-
-  const agent = resolveGenerationAgent(null);
-  const selectedModel = resolveGenerationModel(null, agent);
-  if (!selectedModel?.providerId || !selectedModel?.modelId) {
-    throw new Error(NO_GENERATION_MODEL_MESSAGE);
-  }
-
-  const session = await createSession(undefined, directory, null);
-  if (!session?.id) {
-    const createError = consumeLastCreateSessionError();
-    if (createError instanceof Error) {
-      throw createError;
-    }
-    throw new Error('Unable to create a session for pull request generation');
-  }
-
-  return {
-    sessionId: session.id,
-    providerID: selectedModel.providerId,
-    modelID: selectedModel.modelId,
-    agent,
-    variant: resolveCurrentGenerationVariant(),
-    sessionCreatedForGeneration: true,
-  };
 };
 
 const resolveCommitGenerationContext = async (directory: string): Promise<SessionGenerationContext> => {

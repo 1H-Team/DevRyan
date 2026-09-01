@@ -1,5 +1,9 @@
 import type {
   BugReportDetail,
+  BotAuditBotOption,
+  BotAuditDetail,
+  BotAuditResultFilter,
+  BotAuditSummary,
   BugReportStatus,
   CursorPage,
   ErrorLogActorOption,
@@ -146,9 +150,66 @@ export const listErrorLogActors = async (signal?: AbortSignal): Promise<ErrorLog
     .sort((left, right) => left.displayName.localeCompare(right.displayName));
 };
 
+export const listBotAudit = async ({
+  result = 'issues',
+  bot,
+  actor,
+  search,
+  from,
+  to,
+  limit = 50,
+  cursor,
+  signal,
+}: {
+  result?: BotAuditResultFilter;
+  bot?: string | 'all';
+  actor?: string | 'all';
+  search?: string;
+  from?: string | null;
+  to?: string | null;
+  limit?: number;
+  cursor?: string | null;
+  signal?: AbortSignal;
+}): Promise<CursorPage<BotAuditSummary>> => {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (result !== 'issues') query.set('result', result);
+  if (bot && bot !== 'all') query.set('bot', bot);
+  if (actor && actor !== 'all') query.set('actor', actor);
+  if (search?.trim()) query.set('q', search.trim());
+  if (from) query.set('from', from);
+  if (to) query.set('to', to);
+  if (cursor) query.set('cursor', cursor);
+  const payload = await requestJson<{ logs: BotAuditSummary[]; nextCursor: string | null }>(
+    `/api/bot-audit?${query}`,
+    { signal },
+  );
+  return { items: payload.logs, nextCursor: payload.nextCursor };
+};
+
+export const listBotAuditOptions = async (signal?: AbortSignal): Promise<BotAuditBotOption[]> => {
+  const payload = await requestJson<{ bots: BotAuditBotOption[] }>('/api/bot-audit/options', { signal });
+  return payload.bots || [];
+};
+
+export const getBotAudit = async (eventId: string, signal?: AbortSignal): Promise<BotAuditDetail> => {
+  const payload = await requestJson<{ log: BotAuditDetail }>(
+    `/api/bot-audit/${encodeURIComponent(eventId)}`,
+    { signal },
+  );
+  return payload.log;
+};
+
 export const clearErrorLogs = async (range: ErrorLogClearRange): Promise<number> => {
   const query = new URLSearchParams({ range });
   const payload = await requestJson<{ clearedCount: number; linkedResolutionCount: number }>(`/api/error-logs?${query}`, {
+    method: 'DELETE',
+  });
+  return payload.clearedCount;
+};
+
+export const clearBotAudit = async (range: ErrorLogClearRange): Promise<number> => {
+  const query = new URLSearchParams({ range });
+  const payload = await requestJson<{ clearedCount: number }>(`/api/bot-audit?${query}`, {
     method: 'DELETE',
   });
   return payload.clearedCount;

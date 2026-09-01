@@ -22,7 +22,7 @@ export function resolveHistoryCommitIndicator(entry: GitLogEntry): HistoryCommit
   const successColor = 'var(--status-success)';
   const neutralColor = 'var(--surface-muted-foreground)';
   const hasHeadRing = !!entry.isHead;
-  const hasPushedFill = !!entry.isSyncPoint || !!entry.isRemoteHead;
+  const hasPushedFill = !!entry.isRemoteHead;
 
   if (hasHeadRing && hasPushedFill) {
     return {

@@ -1,5 +1,10 @@
 import { registerPwaManifestRoute } from './pwa-manifest-routes.js';
 
+const IMMUTABLE_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+const REVALIDATE_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
+const INDEX_CACHE_CONTROL = 'no-cache';
+const SERVICE_WORKER_CACHE_CONTROL = 'no-store';
+
 export const createStaticRoutesRuntime = (dependencies) => {
   const {
     fs,
@@ -30,10 +35,25 @@ export const createStaticRoutesRuntime = (dependencies) => {
       console.log(`Serving static files from ${distPath}`);
       app.use(express.static(distPath, {
         setHeaders(res, filePath) {
+          if (typeof filePath !== 'string') return;
+
           // Service workers should never be long-cached; iOS is especially sensitive.
-          if (typeof filePath === 'string' && filePath.endsWith(`${path.sep}sw.js`)) {
-            res.setHeader('Cache-Control', 'no-store');
+          if (filePath.endsWith(`${path.sep}sw.js`)) {
+            res.setHeader('Cache-Control', SERVICE_WORKER_CACHE_CONTROL);
+            return;
           }
+
+          if (filePath.endsWith(`${path.sep}index.html`)) {
+            res.setHeader('Cache-Control', INDEX_CACHE_CONTROL);
+            return;
+          }
+
+          if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+            res.setHeader('Cache-Control', IMMUTABLE_ASSET_CACHE_CONTROL);
+            return;
+          }
+
+          res.setHeader('Cache-Control', REVALIDATE_CACHE_CONTROL);
         },
       }));
 
@@ -48,6 +68,7 @@ export const createStaticRoutesRuntime = (dependencies) => {
       });
 
       app.get(/^(?!\/api|.*\.(js|css|svg|png|jpg|jpeg|gif|ico|woff|woff2|ttf|eot|map)).*$/, (_req, res) => {
+        res.setHeader('Cache-Control', INDEX_CACHE_CONTROL);
         res.sendFile(path.join(distPath, 'index.html'));
       });
       return;
@@ -62,4 +83,11 @@ export const createStaticRoutesRuntime = (dependencies) => {
   return {
     registerStaticRoutes,
   };
+};
+
+export {
+  IMMUTABLE_ASSET_CACHE_CONTROL,
+  INDEX_CACHE_CONTROL,
+  REVALIDATE_CACHE_CONTROL,
+  SERVICE_WORKER_CACHE_CONTROL,
 };

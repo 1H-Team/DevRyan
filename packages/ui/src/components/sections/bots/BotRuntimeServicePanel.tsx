@@ -137,7 +137,7 @@ export const BotRuntimeServicePanel: React.FC<BotRuntimeServicePanelProps> = ({
           <DialogHeader>
             <DialogTitle>Enable background Bots?</DialogTitle>
             <DialogDescription>
-              This macOS version uses a private per-user LaunchAgent with strict file permissions. It runs the same signed DevRyan executable and keeps Bot routines, memory, and computer supervision active after the window closes.
+              This DevRyan build uses a private per-user LaunchAgent with strict file permissions. It runs the installed DevRyan executable and keeps Bot routines, memory, and computer supervision active after the window closes.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

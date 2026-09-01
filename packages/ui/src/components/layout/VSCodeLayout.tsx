@@ -32,6 +32,8 @@ import { useProviderBackedContextUsage } from '@/hooks/useProviderBackedContextU
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { RiAddLine, RiArrowLeftLine, RiRobot2Line, RiSettings3Line, RiTimerLine } from '@remixicon/react';
 import { LazyBotView, LazySettingsView, LazyViewBoundary } from '@/components/views/lazyViews';
+import { SettingsLoadFallback } from '@/components/views/SettingsLoadFallback';
+import { preloadSettingsView } from '@/components/views/settingsViewLoader';
 import { useBotsStore } from '@/stores/useBotsStore';
 import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
 import { useConfigApplyStatusLifecycle } from '@/components/views/config-apply/useConfigApplyStatusLifecycle';
@@ -462,7 +464,7 @@ export const VSCodeLayout: React.FC = () => {
         </div>
       ) : currentView === 'settings' ? (
         // Settings view
-        <LazyViewBoundary>
+        <LazyViewBoundary fallback={<SettingsLoadFallback />}>
           <LazySettingsView
             onClose={() => {
               const fallback: VSCodeContentView = usesExpandedLayout ? 'chat' : 'sessions';
@@ -743,6 +745,9 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
       {onSettings && (
         <button
           onClick={onSettings}
+          onPointerEnter={() => void preloadSettingsView(false).catch(() => undefined)}
+          onPointerDown={() => void preloadSettingsView(false).catch(() => undefined)}
+          onFocus={() => void preloadSettingsView(false).catch(() => undefined)}
           className="inline-flex h-9 w-9 items-center justify-center p-2 text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           aria-label={t('vscodeLayout.actions.settingsAria')}
         >

@@ -21,14 +21,17 @@ describe('BotLifecycleActions', () => {
       <I18nProvider>
         <BotLifecycleActions
           bot={detail.bot}
+          hasChatHistory
           onTransition={() => {}}
+          onClearChatHistory={() => {}}
           onDeleteCompletely={() => {}}
         />
       </I18nProvider>,
     );
-    for (const label of ['Lifecycle', 'Current state', 'Active', 'Pause', 'Delete Bot']) {
+    for (const label of ['Lifecycle', 'Current state', 'Active', 'Pause', 'Chat history', 'Clear History', 'Delete Bot']) {
       expect(markup).toContain(label);
     }
+    expect(markup).toContain('Shared learning remains available to the Bot.');
     for (const removed of ['Retire', 'Granular purge', 'Preview Purge', 'Delete Bot Completely']) {
       expect(markup).not.toContain(removed);
     }

@@ -10,14 +10,33 @@ import { describe, expect, test } from 'bun:test';
 import {
   ComputerBrowserError,
   clearStaleChromiumStartupArtifacts,
+  chromiumLaunchArguments,
   createBrowserController,
+  createHumanInputDispatcher,
+  dispatchHumanInputEvents,
   REVIEWED_BROWSER_COMMANDS,
+  validateHumanInputArgs,
 } from './browser.js';
 import { createAccessibilityRefStore } from './refs.js';
 import { createControlLeaseManager } from './control.js';
 import { createScreencastBroker } from './screencast.js';
 
 describe('Chromium startup artifact cleanup', () => {
+  test('launches headed Chromium while retaining the fixed profile, proxy, and viewport', () => {
+    const args = chromiumLaunchArguments({
+      profileDirectory: '/data/chromium',
+      proxyUrl: 'http://127.0.0.1:41234',
+    });
+    expect(args).not.toContain('--headless=new');
+    expect(args).toContain('--window-size=1280,720');
+    expect(args).toContain('--force-device-scale-factor=1');
+    expect(args).toContain('--proxy-server=http://127.0.0.1:41234');
+    expect(args).toContain('--proxy-bypass-list=<-loopback>');
+    expect(args).toContain('--user-data-dir=/data/chromium');
+    expect(args).toContain('--disable-extensions');
+    expect(args).toContain('--disable-quic');
+  });
+
   test('removes only disposable singleton and CDP artifacts before relaunch', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-browser-artifacts-'));
     const outside = path.join(directory, '..', `${path.basename(directory)}-outside`);
@@ -45,6 +64,54 @@ describe('Chromium startup artifact cleanup', () => {
 
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0xff, 0xd9]);
 
+describe('held human input cleanup', () => {
+  const pointerDown = { type: 'pointer', phase: 'down', x: 12, y: 24, button: 'left', buttons: 1, clickCount: 1 };
+  const keyDown = { type: 'key', phase: 'down', key: 'Shift', code: 'ShiftLeft', modifiers: ['Shift'], location: 1, repeat: false };
+
+  test('releases held keys/buttons despite a hung acknowledgment and fences the remaining old batch', async () => {
+    const calls = [];
+    let acknowledge;
+    let markDown;
+    const downStarted = new Promise((resolve) => { markDown = resolve; });
+    const hung = new Promise((resolve) => { acknowledge = resolve; });
+    const dispatcher = createHumanInputDispatcher({ send: async (method, params) => {
+      calls.push([method, params]);
+      if (params.type === 'mousePressed') { markDown(); await hung; }
+    } });
+    await dispatcher.dispatch([keyDown]);
+    const oldBatch = dispatcher.dispatch([pointerDown, { ...keyDown, key: 'x', code: 'KeyX' }]).catch((error) => error);
+    await downStarted;
+    await dispatcher.release();
+    expect(calls.map(([, params]) => params.type)).toEqual(['keyDown', 'mousePressed', 'keyUp', 'mouseReleased']);
+    await dispatcher.dispatch([{ type: 'text', text: 'new lease' }]);
+    acknowledge();
+    expect(await oldBatch).toMatchObject({ code: 'DEVRYAN_BOT_CONTROL_NOT_OWNER' });
+    expect(calls.filter(([, params]) => params.code === 'KeyX')).toHaveLength(0);
+    const before = calls.length;
+    await dispatcher.release();
+    expect(calls).toHaveLength(before);
+  });
+
+  test('revalidates authority before each event and bounds failed release without forgetting held keys', async () => {
+    let owned = true;
+    let refuseRelease = true;
+    const calls = [];
+    const dispatcher = createHumanInputDispatcher({ releaseTimeoutMs: 20, send: async (_method, params) => {
+      calls.push(params);
+      if (params.type === 'keyDown') owned = false;
+      if (params.type === 'keyUp' && refuseRelease) await new Promise(() => undefined);
+    } });
+    await expect(dispatcher.dispatch([keyDown, { type: 'text', text: 'must not dispatch' }], {
+      assertAuthorized() { if (!owned) throw Object.assign(new Error('Revoked'), { code: 'DEVRYAN_BOT_CONTROL_NOT_OWNER' }); },
+    })).rejects.toMatchObject({ code: 'DEVRYAN_BOT_CONTROL_NOT_OWNER' });
+    expect(calls).toHaveLength(1);
+    await expect(dispatcher.release()).rejects.toMatchObject({ code: 'DEVRYAN_BOT_CONTROL_RELEASE_FAILED' });
+    refuseRelease = false;
+    await dispatcher.release();
+    expect(calls.map(({ type }) => type)).toEqual(['keyDown', 'keyUp', 'keyUp']);
+  });
+});
+
 const fixture = () => {
   const calls = [];
   let pageHandler = () => undefined;
@@ -69,6 +136,10 @@ const fixture = () => {
     select: async (node, value) => calls.push(['select', node.backendNodeId, value]),
     key: async (key) => calls.push(['key', key]),
     scroll: async (value) => calls.push(['scroll', value]),
+    input: async (events) => {
+      calls.push(['input', events]);
+      return { dispatched: events.length };
+    },
     upload: async (node, filePath) => calls.push(['upload', node.backendNodeId, filePath]),
     screenshot: async () => jpeg,
     close: async () => {
@@ -238,20 +309,125 @@ describe('reviewed computer browser commands', () => {
     });
   });
 
-  test('pauses agent commands during human control and closes before profile reset', async () => {
+  test('fences agent commands before execution during human control and closes before profile reset', async () => {
     const { controller, control, calls } = fixture();
     const lease = control.take({ actorId: 'user-01', actorType: 'user' });
-    let completed = false;
-    const pending = controller.execute('snapshot', {}).then(() => { completed = true; });
-    await Promise.resolve();
-    expect(completed).toBe(false);
-    control.returnControl({ actorId: 'user-01', actorType: 'user', leaseId: lease.leaseId });
-    await pending;
+    await expect(controller.execute('snapshot', {})).rejects.toMatchObject({
+      code: 'DEVRYAN_BOT_CONTROL_HELD',
+    });
+    expect(calls).not.toContainEqual(['snapshot']);
+    await control.returnControl({ actorId: 'user-01', actorType: 'user', leaseId: lease.leaseId });
+    await controller.execute('snapshot', {});
     await controller.resetProfile();
     expect(calls).toContainEqual(['close']);
   });
 
-  test('starts capture for the first viewer and stops it after the last viewer', async () => {
+  test('dispatches bounded full-fidelity input only for a human controller', async () => {
+    const { controller, control, calls } = fixture();
+    control.take({ actorId: 'user-01', actorType: 'user' });
+    const events = [
+      { type: 'pointer', phase: 'move', x: 40, y: 50, button: 'none', buttons: 0, clickCount: 0 },
+      { type: 'pointer', phase: 'down', x: 40, y: 50, button: 'right', buttons: 2, clickCount: 2 },
+      { type: 'pointer', phase: 'up', x: 40, y: 50, button: 'right', buttons: 0, clickCount: 2 },
+      { type: 'wheel', x: 40, y: 50, deltaX: 0, deltaY: 120 },
+      {
+        type: 'key',
+        phase: 'down',
+        key: 'a',
+        code: 'KeyA',
+        modifiers: ['Meta'],
+        location: 0,
+        repeat: false,
+      },
+      { type: 'text', text: 'pasted text' },
+    ];
+
+    expect(validateHumanInputArgs({ events })).toHaveLength(events.length);
+    await expect(controller.executeHuman('input', { events })).resolves.toEqual({
+      dispatched: events.length,
+    });
+    expect(calls).toContainEqual(['input', events]);
+    await expect(controller.execute('input', { events }))
+      .rejects.toMatchObject({ code: 'DEVRYAN_BOT_BROWSER_COMMAND_DENIED' });
+    expect(() => validateHumanInputArgs({
+      events: [{ ...events[0], x: 1281 }],
+    })).toThrow(/Pointer x/i);
+    expect(REVIEWED_BROWSER_COMMANDS).not.toContain('input');
+  });
+
+  test('maps ordered human batches to Chromium CDP input events', async () => {
+    const calls = [];
+    const events = validateHumanInputArgs({
+      events: [
+        { type: 'pointer', phase: 'down', x: 12, y: 24, button: 'middle', buttons: 4, clickCount: 1 },
+        { type: 'pointer', phase: 'up', x: 12, y: 24, button: 'middle', buttons: 0, clickCount: 1 },
+        { type: 'wheel', x: 12, y: 24, deltaX: 4, deltaY: -8 },
+        {
+          type: 'key', phase: 'down', key: 'k', code: 'KeyK',
+          modifiers: ['Control', 'Meta'], location: 0, repeat: true,
+        },
+        {
+          type: 'key', phase: 'down', key: 'x', code: 'KeyX',
+          modifiers: [], location: 0, repeat: false,
+        },
+        {
+          type: 'key', phase: 'up', key: 'x', code: 'KeyX',
+          modifiers: [], location: 0, repeat: false,
+        },
+        {
+          type: 'key', phase: 'down', key: 'Enter', code: 'Enter',
+          modifiers: [], location: 0, repeat: false,
+        },
+        {
+          type: 'key', phase: 'down', key: 'Backspace', code: 'Backspace',
+          modifiers: [], location: 0, repeat: false,
+        },
+        {
+          type: 'key', phase: 'down', key: 'ArrowLeft', code: 'ArrowLeft',
+          modifiers: [], location: 0, repeat: false,
+        },
+        { type: 'text', text: 'hello' },
+      ],
+    });
+    await dispatchHumanInputEvents({
+      events,
+      send: async (method, params) => calls.push([method, params]),
+    });
+
+    expect(calls[0]).toEqual(['Input.dispatchMouseEvent', expect.objectContaining({
+      type: 'mousePressed', button: 'middle', buttons: 4, clickCount: 1,
+    })]);
+    expect(calls[1]).toEqual(['Input.dispatchMouseEvent', expect.objectContaining({
+      type: 'mouseReleased', button: 'middle', buttons: 0,
+    })]);
+    expect(calls[2]).toEqual(['Input.dispatchMouseEvent', expect.objectContaining({
+      type: 'mouseWheel', deltaX: 4, deltaY: -8,
+    })]);
+    expect(calls[3]).toEqual(['Input.dispatchKeyEvent', expect.objectContaining({
+      type: 'keyDown', modifiers: 6, autoRepeat: true,
+    })]);
+    expect(calls[4]).toEqual(['Input.dispatchKeyEvent', expect.objectContaining({
+      type: 'keyDown', text: 'x', unmodifiedText: 'x',
+      windowsVirtualKeyCode: 88, nativeVirtualKeyCode: 88,
+    })]);
+    expect(calls[5]).toEqual(['Input.dispatchKeyEvent', expect.objectContaining({
+      type: 'keyUp', key: 'x', code: 'KeyX', windowsVirtualKeyCode: 88,
+    })]);
+    expect(calls[6]).toEqual(['Input.dispatchKeyEvent', expect.objectContaining({
+      type: 'keyDown', key: 'Enter', text: '\r', unmodifiedText: '\r',
+      windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13,
+    })]);
+    expect(calls[7]).toEqual(['Input.dispatchKeyEvent', expect.objectContaining({
+      type: 'keyDown', key: 'Backspace', windowsVirtualKeyCode: 8,
+    })]);
+    expect('text' in calls[7][1]).toBe(false);
+    expect(calls[8]).toEqual(['Input.dispatchKeyEvent', expect.objectContaining({
+      type: 'keyDown', key: 'ArrowLeft', windowsVirtualKeyCode: 37,
+    })]);
+    expect(calls[9]).toEqual(['Input.insertText', { text: 'hello' }]);
+  });
+
+  test('seeds every viewer with a current frame and stops capture after the last viewer', async () => {
     const { controller, calls, screencast } = fixture();
     expect(controller.status().running).toBe(false);
     expect(calls).not.toContainEqual(['startScreencast']);
@@ -265,11 +441,50 @@ describe('reviewed computer browser commands', () => {
     expect(controller.status().running).toBe(true);
     expect(calls.filter(([kind]) => kind === 'startScreencast')).toHaveLength(1);
     expect(screencast.snapshot().subscribers).toBe(2);
-    expect(firstFrames).toHaveLength(1);
+    expect(firstFrames).toHaveLength(3);
+    expect(secondFrames).toHaveLength(1);
     await closeFirst();
     expect(calls).not.toContainEqual(['stopScreencast']);
     await closeSecond();
     expect(calls.filter(([kind]) => kind === 'stopScreencast')).toHaveLength(1);
+    expect(screencast.snapshot().subscribers).toBe(0);
+  });
+
+  test('rolls back the first viewer when the current-frame capture fails', async () => {
+    const calls = [];
+    const refs = createAccessibilityRefStore({ randomBytes: () => Buffer.alloc(8, 7) });
+    const control = createControlLeaseManager();
+    const screencast = createScreencastBroker();
+    const controller = createBrowserController({
+      launchDriver: async () => ({
+        isHealthy: () => true,
+        onTerminated: () => () => undefined,
+        setPageChangeHandler: () => undefined,
+        startScreencast: async () => {
+          calls.push('start');
+          return async () => calls.push('stop');
+        },
+        screenshot: async () => {
+          throw new ComputerBrowserError(
+            'fixture capture failed',
+            'DEVRYAN_BOT_BROWSER_COMMAND_FAILED',
+            502,
+          );
+        },
+        navigate: async () => {},
+        close: async () => {},
+      }),
+      refs,
+      control,
+      workspace: {},
+      profiles: {},
+      screencast,
+    });
+
+    await expect(controller.subscribeScreencast(() => undefined))
+      .rejects.toMatchObject({ code: 'DEVRYAN_BOT_BROWSER_COMMAND_FAILED' });
+    expect(calls).toEqual(['start', 'stop']);
+    expect(controller.status().screencastSubscribers).toBe(0);
     expect(screencast.snapshot().subscribers).toBe(0);
   });
 
@@ -347,6 +562,7 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
   const execFileAsync = promisify(execFile);
   const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
   const integrationToken = 'fixture-runtime-token-0123456789abcdef0123456789';
+  const browserEgressToken = 'drb1.fixture.browser-egress';
 
   const docker = async (...args) => execFileAsync('docker', args, {
     cwd: repositoryRoot,
@@ -414,9 +630,119 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         response.end('<!doctype html><title>Next</title><h1>Next page</h1>');
         return;
       }
+      if (request.method === 'GET' && target.pathname === '/hold-challenge') {
+        const accepted = String(request.headers.cookie || '').includes('hold_verified=accepted');
+        if (accepted) {
+          response.writeHead(302, { location: '/hold-destination' }).end();
+          return;
+        }
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(`<!doctype html>
+          <title>Verification</title>
+          <style>html,body{margin:0}button{position:absolute;left:80px;top:100px;width:200px;height:60px}</style>
+          <button id="hold">Press and hold</button><output id="status"></output>
+          <script>
+            let pressedAt=0;
+            const button=document.querySelector('#hold');
+            button.addEventListener('pointerdown',()=>{pressedAt=Date.now()});
+            button.addEventListener('pointerup',()=>{
+              if(pressedAt&&Date.now()-pressedAt>=600){
+                document.cookie='hold_verified=accepted; Path=/; Max-Age=3600; SameSite=Lax';
+                location.assign('/hold-destination');
+              }else{
+                document.querySelector('#status').textContent='Hold incomplete';
+              }
+            });
+          </script>`);
+        return;
+      }
+      if (request.method === 'GET' && target.pathname === '/hold-destination') {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end('<!doctype html><title>Accepted</title><h1>Verification accepted</h1>');
+        return;
+      }
       if (request.method === 'GET' && target.pathname === '/files') {
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
         response.end('<!doctype html><title>Files</title><label for="upload">Upload file</label><input id="upload" type="file"><a href="/browser-download">Download fixture</a>');
+        return;
+      }
+      if (request.method === 'GET' && target.pathname === '/interactive') {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(`<!doctype html>
+          <title>Human input fixture</title>
+          <style>
+            html,body{margin:0;width:100%;min-height:1400px;font:16px sans-serif}
+            #text{position:absolute;left:80px;top:80px;width:240px;height:40px}
+            #action{position:absolute;left:80px;top:150px;width:160px;height:50px}
+            #drag{position:absolute;left:80px;top:230px;width:80px;height:80px;background:#58a}
+            #drop{position:absolute;left:300px;top:230px;width:120px;height:80px;background:#8a5}
+            #hover{position:absolute;left:80px;top:350px;width:160px;height:50px;background:#ddd}
+            #status{position:fixed;left:20px;bottom:20px;background:white;padding:8px}
+          </style>
+          <input id="text" aria-label="Remote text">
+          <button id="action">Remote action</button>
+          <div id="drag">Drag</div><div id="drop">Drop</div><div id="hover">Hover</div>
+          <output id="status" aria-live="polite"></output>
+          <script>
+            const state={click:0,double:0,right:0,middle:0,drag:0,hover:0,wheel:0,text:'',nav:0,shortcut:0};
+            const status=document.querySelector('#status');
+            const render=()=>{status.textContent='click='+state.click+' double='+state.double+' right='+state.right+' middle='+state.middle+' drag='+state.drag+' hover='+state.hover+' wheel='+state.wheel+' text='+state.text+' nav='+state.nav+' shortcut='+state.shortcut};
+            const action=document.querySelector('#action');
+            action.addEventListener('click',()=>{state.click+=1;render()});
+            action.addEventListener('dblclick',()=>{state.double+=1;render()});
+            action.addEventListener('contextmenu',(event)=>{event.preventDefault();state.right+=1;render()});
+            action.addEventListener('auxclick',(event)=>{if(event.button===1)state.middle+=1;render()});
+            document.querySelector('#hover').addEventListener('pointermove',()=>{state.hover=1;render()});
+            let dragging=false;
+            document.querySelector('#drag').addEventListener('pointerdown',()=>{dragging=true});
+            document.addEventListener('pointerup',(event)=>{const bounds=document.querySelector('#drop').getBoundingClientRect();if(dragging&&event.clientX>=bounds.left&&event.clientX<=bounds.right&&event.clientY>=bounds.top&&event.clientY<=bounds.bottom)state.drag=1;dragging=false;render()});
+            document.querySelector('#text').addEventListener('input',(event)=>{state.text=event.target.value;render()});
+            window.addEventListener('scroll',()=>{state.wheel=window.scrollY>0?1:0;render()});
+            window.addEventListener('keydown',(event)=>{if(event.key.startsWith('Arrow'))state.nav=1;if(event.ctrlKey&&event.altKey&&event.key.toLowerCase()==='k')state.shortcut=1;render()});
+            render();
+          </script>`);
+        return;
+      }
+      if (request.method === 'GET' && target.pathname === '/web-capabilities') {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(`<!doctype html>
+          <title>Web capabilities</title>
+          <h1 id="status">JavaScript disabled</h1>
+          <script>
+            document.cookie = 'script_cookie=accepted; Path=/; Max-Age=3600; SameSite=Lax';
+            document.querySelector('#status').textContent = document.cookie.includes('script_cookie=accepted')
+              ? 'JavaScript and cookies enabled'
+              : 'Cookies disabled';
+          </script>`);
+        return;
+      }
+      if (request.method === 'GET' && target.pathname === '/third-party-top') {
+        const address = server.address();
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(`<!doctype html>
+          <title>Third-party cookie capability</title>
+          <h1 id="status">Third-party cookies disabled</h1>
+          <iframe src="http://localhost:${address.port}/third-party-frame"></iframe>
+          <script>
+            window.addEventListener('message', (event) => {
+              if (event.origin === 'http://localhost:${address.port}' && event.data === 'third-party-cookie-enabled') {
+                document.querySelector('#status').textContent = 'Third-party cookies enabled';
+              }
+            });
+          </script>`);
+        return;
+      }
+      if (request.method === 'GET' && target.pathname === '/third-party-frame') {
+        const accepted = String(request.headers.cookie || '').includes('third_party_session=accepted');
+        response.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          ...(accepted ? {} : {
+            'set-cookie': 'third_party_session=accepted; Path=/; Max-Age=3600; Secure; SameSite=None',
+          }),
+        });
+        response.end(accepted
+          ? `<!doctype html><script>parent.postMessage('third-party-cookie-enabled', '*')</script>`
+          : '<!doctype html><meta http-equiv="refresh" content="0;url=/third-party-frame">');
         return;
       }
       if (request.method === 'GET' && target.pathname === '/browser-download') {
@@ -433,7 +759,59 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
     const address = server.address();
     return Object.freeze({
       gatewayUrl: `http://host.docker.internal:${address.port}`,
+      thirdPartyUrl: `http://127.0.0.1:${address.port}/third-party-top`,
       publishedDownload: () => publishedDownload,
+      close: () => new Promise((resolve, reject) => server.close((error) => (
+        error ? reject(error) : resolve()
+      ))),
+    });
+  };
+
+  const startFixtureEgress = async () => {
+    const server = http.createServer((request, response) => {
+      if (request.headers['proxy-authorization'] !== `Bearer ${browserEgressToken}`) {
+        response.writeHead(407).end();
+        return;
+      }
+      let target;
+      try {
+        target = new URL(request.url);
+      } catch {
+        response.writeHead(400).end();
+        return;
+      }
+      if (target.protocol !== 'http:'
+        || !['host.docker.internal', '127.0.0.1', 'localhost'].includes(target.hostname)) {
+        response.writeHead(403).end();
+        return;
+      }
+      const headers = { ...request.headers, host: target.host };
+      delete headers['proxy-authorization'];
+      delete headers['proxy-connection'];
+      const forwarded = http.request({
+        hostname: '127.0.0.1',
+        port: target.port,
+        method: request.method,
+        path: `${target.pathname}${target.search}`,
+        headers,
+      }, (forwardedResponse) => {
+        response.writeHead(forwardedResponse.statusCode || 502, forwardedResponse.headers);
+        forwardedResponse.pipe(response);
+      });
+      forwarded.once('error', () => response.writeHead(502).end());
+      request.pipe(forwarded);
+    });
+    server.on('connect', (_request, socket) => {
+      socket.end('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+    });
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(43_121, '0.0.0.0', () => {
+        server.off('error', reject);
+        resolve();
+      });
+    });
+    return Object.freeze({
       close: () => new Promise((resolve, reject) => server.close((error) => (
         error ? reject(error) : resolve()
       ))),
@@ -459,8 +837,9 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
     requestComputer({ baseUrl, body: { command, args } })
   );
 
-  const receiveFirstScreencastFrame = (baseUrl) => new Promise((resolve, reject) => {
+  const openScreencastViewer = (baseUrl) => new Promise((resolve, reject) => {
     const target = new URL('/v1/screencast', baseUrl);
+    let settled = false;
     const timer = setTimeout(() => {
       request.destroy();
       reject(new Error('Timed out waiting for the first Docker screencast frame'));
@@ -476,14 +855,20 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         chunks.push(chunk);
         const received = Buffer.concat(chunks);
         if (!received.includes(Buffer.from('Content-Type: image/jpeg'))) return;
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
-        response.destroy();
-        resolve({ statusCode: response.statusCode, headers: response.headers, chunk: received });
+        resolve({
+          statusCode: response.statusCode,
+          headers: response.headers,
+          chunk: received,
+          close: () => response.destroy(),
+        });
       });
     });
     request.once('error', (error) => {
       clearTimeout(timer);
-      reject(error);
+      if (!settled) reject(error);
     });
     request.end();
   });
@@ -515,6 +900,7 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
       const profileVolume = `${container}-profile`;
       const scratchVolume = `${container}-scratch`;
       const fixtureSite = await startFixtureSite();
+      let fixtureEgress = null;
       let containerExists = false;
       let imageExists = false;
       let volumesExist = false;
@@ -537,6 +923,7 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
           '--tmpfs', '/tmp:rw,noexec,nosuid,size=256m,mode=1777',
           '--tmpfs', '/run:rw,noexec,nosuid,size=16m,mode=755',
           '--add-host', 'host.docker.internal:host-gateway',
+          '--add-host', 'egress:host-gateway',
           '--publish', '127.0.0.1::43122',
           '--volume', `${profileVolume}:/data/chromium:rw`,
           '--volume', `${scratchVolume}:/workspace:rw`,
@@ -544,6 +931,8 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
           '--env', `DEVRYAN_BOT_RUN_ID=${runId}`,
           '--env', 'DEVRYAN_BOT_SCOPE_MODE=team',
           '--env', `DEVRYAN_BOT_GATEWAY_URL=${fixtureSite.gatewayUrl}`,
+          '--env', 'DEVRYAN_BROWSER_EGRESS_URL=http://egress:43121/',
+          '--env', `DEVRYAN_BROWSER_EGRESS_TOKEN=${browserEgressToken}`,
           image,
         );
         containerExists = true;
@@ -579,6 +968,36 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         return Number(stdout.trim());
       };
 
+      const xvfbProcessCount = async () => {
+        const script = [
+          "const fs=require('node:fs')",
+          'let count=0',
+          "for(const name of fs.readdirSync('/proc')){",
+          "if(!/^\\d+$/.test(name))continue",
+          "try{const executable=fs.readlinkSync('/proc/'+name+'/exe')",
+          "if(executable.endsWith('/Xvfb'))count+=1}catch{}",
+          '}',
+          'process.stdout.write(String(count))',
+        ].join(';');
+        const { stdout } = await docker('exec', container, 'node', '-e', script);
+        return Number(stdout.trim());
+      };
+
+      const killXvfb = async () => {
+        const script = [
+          "const fs=require('node:fs')",
+          'const targets=[]',
+          "for(const name of fs.readdirSync('/proc')){",
+          "if(!/^\\d+$/.test(name))continue",
+          "try{const executable=fs.readlinkSync('/proc/'+name+'/exe')",
+          "if(executable.endsWith('/Xvfb'))targets.push(Number(name))}catch{}",
+          '}',
+          "for(const pid of targets){try{process.kill(pid,'SIGKILL')}catch{}}",
+          'if(targets.length<1)process.exit(2)',
+        ].join(';');
+        await docker('exec', container, 'node', '-e', script);
+      };
+
       const killChromium = async () => {
         const script = [
           "const fs=require('node:fs')",
@@ -602,6 +1021,7 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
       };
 
       try {
+        fixtureEgress = await startFixtureEgress();
         await docker(
           'build', '--quiet', '--file', 'packages/bot-computer/Dockerfile',
           '--tag', image, '.',
@@ -612,6 +1032,17 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         volumesExist = true;
 
         let baseUrl = await startContainer('run-fixture-01');
+        await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/web-capabilities` });
+        const webCapabilities = await commandComputer(baseUrl, 'snapshot', {});
+        expect(webCapabilities.payload.result.nodes.some(
+          (node) => node.name === 'JavaScript and cookies enabled',
+        )).toBe(true);
+        await commandComputer(baseUrl, 'navigate', { url: fixtureSite.thirdPartyUrl });
+        await commandComputer(baseUrl, 'wait', { milliseconds: 500 });
+        const thirdPartyCookies = await commandComputer(baseUrl, 'snapshot', {});
+        expect(thirdPartyCookies.payload.result.nodes.some(
+          (node) => node.name === 'Third-party cookies enabled',
+        )).toBe(true);
         await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/login` });
         const login = await commandComputer(baseUrl, 'snapshot', {});
         await commandComputer(baseUrl, 'fill', { ref: findRef(login, 'Username'), text: 'agent' });
@@ -626,8 +1057,21 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         expect(persistedBeforeCrash.payload.result.nodes.some((node) => node.name === 'Signed in'))
           .toBe(true);
         const beforeCrash = await computerStatus(baseUrl);
-        expect(beforeCrash.browser).toMatchObject({ running: true, healthy: true, generation: 2 });
+        expect(beforeCrash.browser).toMatchObject({
+          running: true,
+          healthy: true,
+          generation: 2,
+          mode: 'headed_virtual',
+          displayReady: true,
+          webCapabilities: {
+            managedPolicy: 'enforced',
+            javascript: 'enabled',
+            firstPartyCookies: 'enabled',
+            thirdPartyCookies: 'enabled',
+          },
+        });
         expect(await chromiumProcessCount()).toBe(1);
+        expect(await xvfbProcessCount()).toBe(1);
 
         await killChromium();
         expect((await commandComputer(
@@ -661,10 +1105,15 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         expect(persistedAfterRepeatedRecovery.payload.result.nodes
           .some((node) => node.name === 'Signed in')).toBe(true);
 
-        const firstFrame = await receiveFirstScreencastFrame(baseUrl);
-        expect(firstFrame.statusCode).toBe(200);
-        expect(firstFrame.headers['content-type']).toContain('multipart/x-mixed-replace');
-        expect(firstFrame.chunk.includes(Buffer.from('Content-Type: image/jpeg'))).toBe(true);
+        const firstViewer = await openScreencastViewer(baseUrl);
+        expect(firstViewer.statusCode).toBe(200);
+        expect(firstViewer.headers['content-type']).toContain('multipart/x-mixed-replace');
+        expect(firstViewer.chunk.includes(Buffer.from('Content-Type: image/jpeg'))).toBe(true);
+        const lateViewer = await openScreencastViewer(baseUrl);
+        expect(lateViewer.statusCode).toBe(200);
+        expect(lateViewer.chunk.includes(Buffer.from('Content-Type: image/jpeg'))).toBe(true);
+        lateViewer.close();
+        firstViewer.close();
         await waitForScreencastStop(baseUrl);
 
         const staleRef = findRef(signedIn, 'Signed in');
@@ -672,6 +1121,8 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         const stale = await commandComputer(baseUrl, 'click', { ref: staleRef });
         expect(stale.response.status).toBe(409);
         expect(stale.payload.error.code).toBe('DEVRYAN_BOT_REF_STALE');
+
+        await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/interactive` });
 
         const firstLease = await requestComputer({
           baseUrl,
@@ -684,11 +1135,62 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
           body: { actorId: 'user-02', actorType: 'user' },
         });
         expect(concurrentLease.response.status).toBe(409);
-        const paused = commandComputer(baseUrl, 'snapshot', {});
-        expect(await Promise.race([
-          paused.then(() => 'completed'),
-          new Promise((resolve) => setTimeout(() => resolve('paused'), 150)),
-        ])).toBe('paused');
+        for (let heartbeat = 0; heartbeat < 2; heartbeat += 1) {
+          const renewed = await requestComputer({
+            baseUrl,
+            pathname: '/v1/control/heartbeat',
+            body: {
+              actorId: 'user-01',
+              actorType: 'user',
+              leaseId: firstLease.payload.lease.leaseId,
+            },
+          });
+          expect(renewed.response.status).toBe(200);
+          const fenced = await commandComputer(baseUrl, 'snapshot', {});
+          expect(fenced.response.status).toBe(409);
+          expect(fenced.payload.error.code).toBe('DEVRYAN_BOT_CONTROL_HELD');
+        }
+        const humanEvents = [
+          { type: 'pointer', phase: 'move', x: 160, y: 375, button: 'none', buttons: 0, clickCount: 0 },
+          { type: 'pointer', phase: 'down', x: 160, y: 175, button: 'left', buttons: 1, clickCount: 1 },
+          { type: 'pointer', phase: 'up', x: 160, y: 175, button: 'left', buttons: 0, clickCount: 1 },
+          { type: 'pointer', phase: 'down', x: 160, y: 175, button: 'left', buttons: 1, clickCount: 2 },
+          { type: 'pointer', phase: 'up', x: 160, y: 175, button: 'left', buttons: 0, clickCount: 2 },
+          { type: 'pointer', phase: 'down', x: 160, y: 175, button: 'right', buttons: 2, clickCount: 1 },
+          { type: 'pointer', phase: 'up', x: 160, y: 175, button: 'right', buttons: 0, clickCount: 1 },
+          { type: 'pointer', phase: 'down', x: 160, y: 175, button: 'middle', buttons: 4, clickCount: 1 },
+          { type: 'pointer', phase: 'up', x: 160, y: 175, button: 'middle', buttons: 0, clickCount: 1 },
+          { type: 'pointer', phase: 'move', x: 120, y: 270, button: 'none', buttons: 0, clickCount: 0 },
+          { type: 'pointer', phase: 'down', x: 120, y: 270, button: 'left', buttons: 1, clickCount: 1 },
+          { type: 'pointer', phase: 'move', x: 350, y: 270, button: 'none', buttons: 1, clickCount: 0 },
+          { type: 'pointer', phase: 'up', x: 350, y: 270, button: 'left', buttons: 0, clickCount: 1 },
+          { type: 'pointer', phase: 'down', x: 160, y: 100, button: 'left', buttons: 1, clickCount: 1 },
+          { type: 'pointer', phase: 'up', x: 160, y: 100, button: 'left', buttons: 0, clickCount: 1 },
+          { type: 'key', phase: 'down', key: 'h', code: 'KeyH', modifiers: [], location: 0, repeat: false },
+          { type: 'key', phase: 'up', key: 'h', code: 'KeyH', modifiers: [], location: 0, repeat: false },
+          { type: 'key', phase: 'down', key: 'i', code: 'KeyI', modifiers: [], location: 0, repeat: false },
+          { type: 'key', phase: 'up', key: 'i', code: 'KeyI', modifiers: [], location: 0, repeat: false },
+          { type: 'text', text: ' pasted' },
+          { type: 'key', phase: 'down', key: 'ArrowLeft', code: 'ArrowLeft', modifiers: [], location: 0, repeat: false },
+          { type: 'key', phase: 'up', key: 'ArrowLeft', code: 'ArrowLeft', modifiers: [], location: 0, repeat: false },
+          { type: 'key', phase: 'down', key: 'k', code: 'KeyK', modifiers: ['Alt', 'Control'], location: 0, repeat: false },
+          { type: 'key', phase: 'up', key: 'k', code: 'KeyK', modifiers: ['Alt', 'Control'], location: 0, repeat: false },
+          { type: 'wheel', x: 600, y: 500, deltaX: 0, deltaY: 300 },
+        ];
+        const humanInput = await requestComputer({
+          baseUrl,
+          pathname: '/v1/control/command',
+          body: {
+            actorId: 'user-01',
+            actorType: 'user',
+            leaseId: firstLease.payload.lease.leaseId,
+            command: 'input',
+            args: { events: humanEvents },
+          },
+        });
+        expect(humanInput.response.status).toBe(200);
+        expect(humanInput.payload.result).toEqual({ dispatched: humanEvents.length });
+        await new Promise((resolve) => setTimeout(resolve, 100));
         await requestComputer({
           baseUrl,
           pathname: '/v1/control/return',
@@ -698,7 +1200,66 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
             leaseId: firstLease.payload.lease.leaseId,
           },
         });
-        expect((await paused).response.status).toBe(200);
+        const afterHumanInput = await commandComputer(baseUrl, 'snapshot', {});
+        expect(afterHumanInput.response.status).toBe(200);
+        const inputStatus = afterHumanInput.payload.result.nodes
+          .map((node) => node.name)
+          .find((name) => typeof name === 'string' && name.includes('click='));
+        expect(inputStatus).toContain('click=2');
+        expect(inputStatus).toContain('double=1');
+        expect(inputStatus).toContain('right=1');
+        expect(inputStatus).toContain('middle=1');
+        expect(inputStatus).toContain('drag=1');
+        expect(inputStatus).toContain('hover=1');
+        expect(inputStatus).toContain('wheel=1');
+        expect(inputStatus).toContain('text=hi pasted');
+        expect(inputStatus).toContain('nav=1');
+        expect(inputStatus).toContain('shortcut=1');
+
+        await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/hold-challenge` });
+        const challenge = await commandComputer(baseUrl, 'snapshot', {});
+        expect(challenge.payload.result.nodes.some((node) => node.name === 'Press and hold')).toBe(true);
+        const holdLease = await requestComputer({
+          baseUrl,
+          pathname: '/v1/control/take',
+          body: { actorId: 'user-01', actorType: 'user' },
+        });
+        const holdInput = (phase, buttons) => requestComputer({
+          baseUrl,
+          pathname: '/v1/control/command',
+          body: {
+            actorId: 'user-01',
+            actorType: 'user',
+            leaseId: holdLease.payload.lease.leaseId,
+            command: 'input',
+            args: {
+              events: [{
+                type: 'pointer', phase, x: 180, y: 130,
+                button: 'left', buttons, clickCount: 1,
+              }],
+            },
+          },
+        });
+        expect((await holdInput('down', 1)).response.status).toBe(200);
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        expect((await holdInput('up', 0)).response.status).toBe(200);
+        await requestComputer({
+          baseUrl,
+          pathname: '/v1/control/return',
+          body: {
+            actorId: 'user-01',
+            actorType: 'user',
+            leaseId: holdLease.payload.lease.leaseId,
+          },
+        });
+        await commandComputer(baseUrl, 'wait', { milliseconds: 500 });
+        const acceptedChallenge = await commandComputer(baseUrl, 'snapshot', {});
+        expect(acceptedChallenge.payload.result.nodes
+          .some((node) => node.name === 'Verification accepted')).toBe(true);
+        await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/hold-challenge` });
+        const acceptedReload = await commandComputer(baseUrl, 'snapshot', {});
+        expect(acceptedReload.payload.result.nodes
+          .some((node) => node.name === 'Verification accepted')).toBe(true);
 
         await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/files` });
         const files = await commandComputer(baseUrl, 'snapshot', {});
@@ -722,6 +1283,10 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/private` });
         const persisted = await commandComputer(baseUrl, 'snapshot', {});
         expect(persisted.payload.result.nodes.some((node) => node.name === 'Signed in')).toBe(true);
+        await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/hold-challenge` });
+        const persistedChallenge = await commandComputer(baseUrl, 'snapshot', {});
+        expect(persistedChallenge.payload.result.nodes
+          .some((node) => node.name === 'Verification accepted')).toBe(true);
         expect((await commandComputer(baseUrl, 'download', {
           filename: 'browser-download.txt',
         })).response.status).toBe(200);
@@ -735,6 +1300,12 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/private` });
         const loggedOut = await commandComputer(baseUrl, 'snapshot', {});
         expect(loggedOut.payload.result.nodes.some((node) => node.name === 'Username')).toBe(true);
+        await killXvfb();
+        const displayDeadline = Date.now() + 5_000;
+        while (Date.now() < displayDeadline && (await fetch(`${baseUrl}/healthz`)).status !== 503) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect((await fetch(`${baseUrl}/healthz`)).status).toBe(503);
         expect(await stopContainer()).toBe(0);
       } finally {
         if (containerExists) await docker('rm', '--force', container).catch(() => undefined);
@@ -742,8 +1313,9 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
           await docker('volume', 'rm', '--force', profileVolume, scratchVolume).catch(() => undefined);
         }
         if (imageExists) await docker('image', 'rm', '--force', image).catch(() => undefined);
+        await fixtureEgress?.close().catch(() => undefined);
         await fixtureSite.close();
       }
-    }, 300_000);
+    }, 420_000);
   });
 }

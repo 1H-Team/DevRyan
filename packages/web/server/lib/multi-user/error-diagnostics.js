@@ -75,6 +75,7 @@ const INPUT_PATTERNS = [
   /\bmanaged task barrier\b/i,
   /\btask barrier (?:is )?active\b/i,
   /\bpolicy denial\b/i,
+  /^The user has specified a rule which prevents you from using this specific tool call\./i,
   /\bJSON record.{0,80}(?:65,?536|65536).{0,80}(?:bytes?|limit)\b/i,
 ];
 
@@ -130,6 +131,8 @@ const BROWSER_TARGET_PATTERNS = [
   /\bDEVRYAN_BROWSER_(?:STALE_REF|INVALID_COMMAND|UNSAFE_EVAL)\b/i,
   /\bDEVRYAN_BROWSER_(?:COMMAND_)?TIMEOUT\b/i,
   /\bbrowser (?:command|operation) timed out\b/i,
+  /\bagent browser command failed:\s*(?:✗\s*)?operation timed out\b/i,
+  /\bERR_NAME_NOT_RESOLVED\b/i,
 ];
 
 const BENIGN_CLIENT_PATTERNS = [
@@ -193,6 +196,18 @@ const ACTIONABLE_BROWSER_ERROR_CODES = new Set([
   'browser_owner_context_unavailable',
   'lineage_unavailable',
 ]);
+const EXPECTED_BROWSER_INPUT_ERROR_CODES = new Set([
+  'devryan_browser_eval_error',
+  'devryan_browser_input_invalid',
+]);
+const BROWSER_RUNTIME_ERROR_CODES = new Set([
+  'devryan_browser_lease_touch_failed',
+  'devryan_browser_inspection_failed',
+]);
+// OpenCode may serialize Error.message without retaining Error.code. Match only
+// the plugin's top-level prefix, never a code quoted inside another failure.
+const BROWSER_INPUT_ERROR_PREFIX = /^DEVRYAN_BROWSER_(?:EVAL_ERROR|INPUT_INVALID):/;
+const BROWSER_RUNTIME_ERROR_PREFIX = /^DEVRYAN_BROWSER_(?:LEASE_TOUCH_FAILED|INSPECTION_FAILED):/;
 
 const expected = (classification) => ({ ...classification, disposition: 'expected' });
 const actionable = (classification) => ({ ...classification, disposition: 'actionable' });
@@ -224,6 +239,26 @@ const toolFailureClassification = (metadata, { legacy = false } = {}) => {
   const tool = normalizedToolName(metadata);
   const errorCode = normalizedErrorCode(metadata);
 
+  // Lease-touch and generated-inspection failures may contain misleading input
+  // details. Their explicit runtime classification wins over message patterns.
+  if (
+    !legacy
+    && tool === 'devryan_browser'
+    && (metadata.errorCode !== undefined && metadata.errorCode !== null
+      ? BROWSER_RUNTIME_ERROR_CODES.has(errorCode)
+      : BROWSER_RUNTIME_ERROR_PREFIX.test(failureText.trim()))
+  ) {
+    return actionable({ impact: 'medium', failureClass: 'integration_runtime' });
+  }
+  if (
+    !legacy
+    && tool === 'devryan_browser'
+    && (metadata.errorCode !== undefined && metadata.errorCode !== null
+      ? EXPECTED_BROWSER_INPUT_ERROR_CODES.has(errorCode)
+      : BROWSER_INPUT_ERROR_PREFIX.test(failureText.trim()))
+  ) {
+    return expected({ impact: 'low', failureClass: 'input' });
+  }
   if (!legacy && EXPECTED_TOOL_ERROR_CODES.has(errorCode)) {
     return expected({ impact: 'low', failureClass: 'input' });
   }

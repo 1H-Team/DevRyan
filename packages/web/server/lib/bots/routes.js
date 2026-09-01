@@ -68,12 +68,20 @@ export const resolveBotCapabilities = async ({
   schemaFailure = null,
   controlPlaneFailure = null,
   executionFailure = null,
+  startupState = 'ready',
 } = {}) => {
   const owner = typeof botHost?.owner === 'string' ? botHost.owner : 'unsupported';
   if (!hasSupabase) {
     return capability({
       state: 'supabase_unavailable',
       code: 'bots_supabase_unavailable',
+      owner,
+    });
+  }
+  if (startupState === 'starting' || startupState === 'idle') {
+    return capability({
+      state: 'bots_starting',
+      code: 'bots_starting',
       owner,
     });
   }
@@ -200,14 +208,28 @@ export function registerBotRoutes(app, {
   botSpecService = null,
   recoveryBundle = null,
   purgeRuntime = null,
+  auditQuery = null,
   botHost,
   encryption,
   getSchemaFailure = () => null,
   getControlPlaneFailure = () => null,
   getExecutionFailure = () => null,
+  getStartupState = () => 'ready',
   resolveCapabilities = null,
   getRuntimeServices = null,
+  recordDiagnostic = () => {},
 } = {}) {
+  const markComputerView = (stage, payload) => {
+    try {
+      recordDiagnostic({
+        type: 'timing',
+        mark: `bot.computer.view.${stage}`,
+        payload,
+      });
+    } catch {
+      // Diagnostics must never affect screen viewing.
+    }
+  };
   if (!app || typeof app.get !== 'function') throw new TypeError('Bot routes require an Express app');
 
   const runtimeService = (name, initialValue) => (
@@ -230,6 +252,50 @@ export function registerBotRoutes(app, {
     }
   };
 
+  app.get('/api/bot-audit', async (req, res) => {
+    try {
+      if (!auditQuery) throw Object.assign(new Error('Bot audit is unavailable'), {
+        code: 'bots_unavailable', statusCode: 503,
+      });
+      return res.json(await auditQuery.list(req.principal, req.query));
+    } catch (error) {
+      return botAuditRouteError(res, error);
+    }
+  });
+
+  app.delete('/api/bot-audit', async (req, res) => {
+    try {
+      if (!auditQuery) throw Object.assign(new Error('Bot audit is unavailable'), {
+        code: 'bots_unavailable', statusCode: 503,
+      });
+      return res.json(await auditQuery.clear(req.principal, req.query));
+    } catch (error) {
+      return botAuditRouteError(res, error);
+    }
+  });
+
+  app.get('/api/bot-audit/options', async (req, res) => {
+    try {
+      if (!auditQuery) throw Object.assign(new Error('Bot audit is unavailable'), {
+        code: 'bots_unavailable', statusCode: 503,
+      });
+      return res.json(await auditQuery.options(req.principal));
+    } catch (error) {
+      return botAuditRouteError(res, error);
+    }
+  });
+
+  app.get('/api/bot-audit/:eventId', async (req, res) => {
+    try {
+      if (!auditQuery) throw Object.assign(new Error('Bot audit is unavailable'), {
+        code: 'bots_unavailable', statusCode: 503,
+      });
+      return res.json(await auditQuery.detail(req.principal, req.params.eventId));
+    } catch (error) {
+      return botAuditRouteError(res, error);
+    }
+  });
+
   app.get('/api/bots/capabilities', async (req, res) => {
     try {
       const resolved = typeof resolveCapabilities === 'function'
@@ -241,6 +307,7 @@ export function registerBotRoutes(app, {
             schemaFailure: getSchemaFailure(),
             controlPlaneFailure: getControlPlaneFailure(),
             executionFailure: getExecutionFailure(),
+            startupState: getStartupState(),
           });
       return res.json({
         ...resolved,
@@ -253,8 +320,22 @@ export function registerBotRoutes(app, {
 
   if (typeof app.use === 'function') {
     app.use(
-      ['/api/bots', '/api/bot-actions', '/api/bot-channels', '/api/bot-runs'],
+      [
+        '/api/bots',
+        '/api/bot-actions',
+        '/api/bot-channels',
+        '/api/bot-runs',
+        '/api/bot-specs',
+        '/api/bot-signers',
+      ],
       (_req, res, next) => {
+        if (getStartupState() === 'starting' || getStartupState() === 'idle') {
+          return res.status(503).json({
+            error: 'Bots are still starting',
+            code: 'bots_starting',
+            retryable: true,
+          });
+        }
         const failure = getSchemaFailure();
         if (!failure) return next();
         return res.status(failure.status || 503).json({
@@ -847,6 +928,14 @@ export function registerBotRoutes(app, {
     } catch (error) {
       return botRouteError(res, error);
     }
+  });
+
+  app.post('/api/bots/:botId/credentials/:credentialId/reconnect', async (req, res) => {
+    try {
+      if (!management) throw Object.assign(new Error('Bot management is unavailable'), { code: 'bots_unavailable', statusCode: 503 });
+      return res.json(await management.reconnectCredentialConnection(req.principal,
+        validateUuid(req.params.botId, 'botId'), validateUuid(req.params.credentialId, 'credentialId'), req.body));
+    } catch (error) { return botRouteError(res, error); }
   });
 
   app.post('/api/bots/:botId/credentials/:credentialId/rotate', async (req, res) => {
@@ -1715,15 +1804,29 @@ export function registerBotRoutes(app, {
       assertExactObject(req.body, {
         label: 'Bot human computer command',
         required: ['leaseId', 'command', 'args'],
+        optional: ['viewId'],
       });
+      const startedAt = performance.now();
+      const result = await browserService.humanCommand({
+        principal: req.principal,
+        botId: validateUuid(req.params.botId, 'botId'),
+        viewId: req.body.viewId,
+        leaseId: req.body.leaseId,
+        command: req.body.command,
+        args: req.body.args,
+      });
+      if (req.body.command === 'input' && Array.isArray(req.body.args?.events)) {
+        markComputerView('human_input_dispatch', {
+          botId: req.params.botId,
+          viewId: req.body.viewId || null,
+          eventTypes: [...new Set(req.body.args.events.map((event) => event?.type)
+            .filter((type) => typeof type === 'string'))].sort(),
+          eventCount: req.body.args.events.length,
+          durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+        });
+      }
       return res.json({
-        result: await browserService.humanCommand({
-          principal: req.principal,
-          botId: validateUuid(req.params.botId, 'botId'),
-          leaseId: req.body.leaseId,
-          command: req.body.command,
-          args: req.body.args,
-        }),
+        result,
       });
     } catch (error) {
       return botRouteError(res, error);
@@ -1735,12 +1838,19 @@ export function registerBotRoutes(app, {
       if (!browserService) throw Object.assign(new Error('Bot computer is unavailable'), {
         code: 'bots_unavailable', statusCode: 503,
       });
-      assertExactObject(req.body, { label: 'Bot computer view', required: ['channelId'] });
-      return res.status(201).json(await browserService.startComputerView({
+      assertExactObject(req.body, { label: 'Bot computer view', required: ['channelId'], optional: ['runId'] });
+      const result = await browserService.startComputerView({
         principal: req.principal,
         botId: validateUuid(req.params.botId, 'botId'),
         channelId: validateUuid(req.body.channelId, 'channelId'),
-      }));
+        ...(req.body.runId ? { runId: validateUuid(req.body.runId, 'runId') } : {}),
+      });
+      markComputerView('created', {
+        botId: result.view.botId,
+        channelId: result.view.channelId,
+        viewId: result.view.id,
+      });
+      return res.status(201).json(result);
     } catch (error) {
       return botRouteError(res, error);
     }
@@ -1749,9 +1859,12 @@ export function registerBotRoutes(app, {
   app.get('/api/bots/:botId/computer/view/:viewId/stream', async (req, res) => {
     const controller = new AbortController();
     const abort = () => controller.abort();
-    req.once?.('close', abort);
+    req.once?.('aborted', abort);
+    res.once?.('close', abort);
     const botId = req.params.botId;
     const viewId = req.params.viewId;
+    let reader = null;
+    let firstChunk = true;
     try {
       if (!browserService) throw Object.assign(new Error('Bot computer is unavailable'), {
         code: 'bots_unavailable', statusCode: 503,
@@ -1770,10 +1883,15 @@ export function registerBotRoutes(app, {
       res.setHeader('Cache-Control', 'private, no-store, no-transform');
       res.setHeader('X-DevRyan-Frames-Recorded', 'false');
       res.flushHeaders?.();
-      const reader = upstream.body.getReader();
+      markComputerView('attached', { botId, viewId });
+      reader = upstream.body.getReader();
       while (!controller.signal.aborted && !res.writableEnded && !res.destroyed) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (firstChunk) {
+          firstChunk = false;
+          markComputerView('first_stream_chunk', { botId, viewId });
+        }
         if (!res.write(Buffer.from(value))) {
           await new Promise((resolve) => {
             const finish = () => {
@@ -1788,14 +1906,15 @@ export function registerBotRoutes(app, {
           });
         }
       }
-      await reader.cancel().catch(() => undefined);
       return res.end?.();
     } catch (error) {
       if (res.headersSent) return res.end?.();
       return botRouteError(res, error);
     } finally {
-      req.off?.('close', abort);
+      req.off?.('aborted', abort);
+      res.off?.('close', abort);
       controller.abort();
+      await reader?.cancel().catch(() => undefined);
       if (browserService) {
         await browserService.stopComputerView({
           principal: req.principal,
@@ -1803,6 +1922,11 @@ export function registerBotRoutes(app, {
           viewId,
         }).catch(() => undefined);
       }
+      markComputerView('closed', {
+        botId,
+        viewId,
+        receivedChunk: !firstChunk,
+      });
     }
   });
 
@@ -1811,11 +1935,17 @@ export function registerBotRoutes(app, {
       if (!browserService) throw Object.assign(new Error('Bot computer is unavailable'), {
         code: 'bots_unavailable', statusCode: 503,
       });
-      return res.json(await browserService.stopComputerView({
+      const result = await browserService.stopComputerView({
         principal: req.principal,
         botId: validateUuid(req.params.botId, 'botId'),
         viewId: req.params.viewId,
-      }));
+      });
+      markComputerView('stopped', {
+        botId: req.params.botId,
+        viewId: req.params.viewId,
+        stopped: result.stopped,
+      });
+      return res.json(result);
     } catch (error) {
       return botRouteError(res, error);
     }
@@ -1947,4 +2077,20 @@ const botRouteError = (res, error, fallbackStatus = 500) => {
     });
   }
   return jsonError(res, error, fallbackStatus);
+};
+
+const botAuditRouteError = (res, error) => {
+  const migration = productionBotsMigrationFailurePayload(error);
+  if (migration) return res.status(migration.status).json({
+    error: migration.error,
+    code: migration.code,
+    requiredMigration: migration.requiredMigration,
+    retryable: false,
+  });
+  if (error?.name === 'BotAuditQueryError') return jsonError(res, error);
+  return res.status(503).json({
+    error: 'Bot audit is temporarily unavailable',
+    code: 'dependency_unavailable',
+    retryable: true,
+  });
 };

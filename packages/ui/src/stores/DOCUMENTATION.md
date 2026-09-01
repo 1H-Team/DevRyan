@@ -301,6 +301,9 @@ ordinary OpenCode session/message branches:
   restores the captured draft; ambiguous transport failure retains a
   `Not confirmed` row, refreshes history, and retries the same ID exactly once.
   Explicit failed-run retry requeues the same server run and creates no message.
+  Refusals refresh run status without mutating drafts or messages; a permanent
+  refusal clears stale retry eligibility even if an older status projection
+  still allows it. Principal changes discard late retry/status responses.
 - `useBotLiveMessageStore.ts` owns only requester-streaming message records and
   one live message ID per channel. Revisions are monotonic, payloads are capped
   at 192 KiB, and canonical/final/terminal/channel/principal/reconnect boundaries

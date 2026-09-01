@@ -21,6 +21,7 @@ import {
   responsivenessPerfObserve,
 } from "@/stores/utils/streamDebug"
 import { appendStreamingTextDelta } from "./part-delta"
+import { usePrimaryRecoveryStore } from "@/stores/usePrimaryRecoveryStore"
 
 export type QueuedEvent = {
   directory: string
@@ -640,12 +641,20 @@ export function createEventPipeline(input: EventPipelineInput) {
     // "Connection lost" until something else (HTTP health check) happens
     // to race a setState({isConnected: true}) through.
     onReconnect?.()
+    globalThis.window?.dispatchEvent(new globalThis.Event("openchamber:primary-recovery-reconnect"))
   }
 
   const enqueueEvent = (directory: string, payload: Event) => {
     responsivenessPerfCount("event_pipeline.enqueue_count")
     const normalizedPayload = normalizeIncomingEvent(payload)
     const normalizedType = (normalizedPayload as unknown as { type?: string }).type
+    if (normalizedType === "openchamber:primary-recovery") {
+      const data = normalizedPayload as unknown as { properties?: { sessionID?: unknown; recovery?: unknown } }
+      if (typeof data.properties?.sessionID === "string") {
+        usePrimaryRecoveryStore.getState().accept(data.properties.sessionID, data.properties.recovery)
+      }
+      return
+    }
     if (
       normalizedType === "openchamber:managed-task"
       || normalizedType === "openchamber:managed-task-removed"

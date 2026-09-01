@@ -18,6 +18,7 @@ export default {
         { id: 'assistant-image-gallery-chunk', identities: ['GeneratedImageResult'] },
         { id: 'mini-chat-app-chunk', identities: ['renderElectronMiniChatApp'] },
         { id: 'terminal-view-chunk', identities: ['TerminalView'] },
+        { id: 'usage-gated-bot-panels', identities: ['BotOperationsRail', 'BotSidebarSection'] },
         {
           id: 'lazy-top-level-view-chunks',
           identities: ['DiffView', 'FilesView', 'GitView', 'MultiRunWindow', 'PlanView', 'SettingsView'],
@@ -56,6 +57,7 @@ export default {
         { id: 'markdown-renderer-chunk', identities: ['MarkdownRendererImpl'] },
         { id: 'tool-output-dialog-chunk', identities: ['ToolOutputDialog'] },
         { id: 'assistant-image-gallery-chunk', identities: ['GeneratedImageResult'] },
+        { id: 'usage-gated-bot-panels', identities: ['BotOperationsRail', 'BotSidebarSection'] },
         { id: 'lazy-vscode-view-chunks', identities: ['AgentManagerView', 'SettingsView'] },
         {
           id: 'lazy-session-dialog-chunks',

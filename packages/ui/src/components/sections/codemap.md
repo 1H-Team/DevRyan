@@ -8,13 +8,19 @@ Defines settings-domain feature sections (providers, agents, Bots, MCP, skills, 
 - **Shared settings scaffolding**: `shared/*` centralizes layout primitives (sidebar/header/layout/page wrappers) to keep section UIs consistent.
 - **Metadata-driven navigation**: section availability and routing are coordinated through settings metadata (`lib/settings/metadata`) rather than hardcoded branching inside each section.
 - **Managed quota credentials**: `providers/ManagedQuotaCredentials.tsx` is the shared, secret-non-prefilling editor for OpenCode Go, Ollama Cloud, and Cursor dashboard/OAuth quota credentials; it reuses the single quota refresh coordinator.
-- **Shared-host administration**: `users/UserManagementPage.tsx` renders role-aware user/invite/activity review for senior developers and full user, project, branch, GitHub-account, policy, audit export/purge administration for admins.
+- **Shared-host administration**: `users/UserManagementPage.tsx` renders role-aware user/invite/activity review for senior developers and full user, project, branch, GitHub-account, policy, audit export/purge administration for admins. Checked persisted branches expose a separate write-only preview URL/service-token editor with connection testing, rotation, and removal.
 - **Managed issue intake and diagnostics**: `bug-reports/BugReportsPage.tsx` provides permission-gated report submission plus lazily mounted administrator report/error review without adding broadly shared store state.
 - **Production Bot management**: `bots/` provides a profile-first catalog and
   the simplified Overview, Resources, Memory, Members, Routines, and Lifecycle
   settings. The shared `components/bots/BotAvatar.tsx` consistently projects
   encrypted avatars, migrated glyphs, then initials. Overview owns name, title,
-  avatar, and status without a short-summary or advanced-instruction layer.
+  avatar, Soul/personality, Standing Role, Objectives, primary Provider/Model/Thinking, and status without a
+  short-summary or advanced-instruction layer. Core identity changes remain
+  revision-backed and apply only to future runs.
+  `BotTelegramConnection.tsx` independently saves each Bot's native Telegram
+  configuration and each member's one-use pairing/routine/voice preferences.
+  `BotSpeechSettings.tsx` separately saves host-owned encrypted speech settings
+  and checks provider readiness; neither editor receives existing credentials.
   Resources combines capability-first defaults, the persistent Bot computer,
   desktop file/folder import with Finder reveal, optional on-demand Skills/SOPs,
   protected provider API keys/accounts, and concise write-only environment

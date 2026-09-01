@@ -45,8 +45,9 @@ this journal.
   until retention or an explicit clear removes them; they are never regrouped.
 
 Streaming \`message.part.delta\` events are intentionally omitted. Repeated
-\`message.part.updated\` and \`session.updated\` events are last-write-wins; a flushed
-record's \`coalesced\` field reports how many source records it represents. A blob stub
+\`message.part.updated\`, \`session.updated\`, and property-free unattributed \`sync\`
+events are last-write-wins; a flushed record's \`coalesced\` field reports how many
+source records it represents. A blob stub
 looks like \`{"type":"blob","path":"sessions/<id>/blobs/<sha>.txt.gz","size":123,"sha256":"…"}\`.
 
 ## Recipes
@@ -114,6 +115,7 @@ const emptyManifest = (sessionID, runtime, rebuilt = false) => ({
   trimmedDeltas: 0,
   coalescedParts: 0,
   coalescedSessionUpdates: 0,
+  coalescedRuntimeSyncs: 0,
   models: [],
   chunkCount: 0,
   bytes: 0,
@@ -359,8 +361,14 @@ export const createDiagnosticJournal = (options = {}) => {
         trimmedDeltas: 0,
         coalescedParts: 0,
         coalescedSessionUpdates: 0,
+        coalescedRuntimeSyncs: 0,
       };
-      for (const field of ['trimmedDeltas', 'coalescedParts', 'coalescedSessionUpdates']) {
+      for (const field of [
+        'trimmedDeltas',
+        'coalescedParts',
+        'coalescedSessionUpdates',
+        'coalescedRuntimeSyncs',
+      ]) {
         const delta = Math.max(0, (stats[field] ?? 0) - (previous[field] ?? 0));
         if (delta > 0) {
           bucket.manifest[field] = (bucket.manifest[field] ?? 0) + delta;
@@ -705,6 +713,7 @@ export const createDiagnosticJournal = (options = {}) => {
         trimmedDeltas: runtimeBucket.manifest.trimmedDeltas,
         coalescedParts: runtimeBucket.manifest.coalescedParts,
         coalescedSessionUpdates: runtimeBucket.manifest.coalescedSessionUpdates,
+        coalescedRuntimeSyncs: runtimeBucket.manifest.coalescedRuntimeSyncs,
       };
       const wasRebuilt = runtimeBucket.manifest.rebuilt;
       const referencedBlobs = new Set();

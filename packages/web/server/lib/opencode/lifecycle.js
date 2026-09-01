@@ -164,6 +164,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     getManagedOpenCodeShellEnvSnapshot,
     getManagedOrchestrationEnvironment = async () => ({}),
     getManagedBrowserEnvironment = async () => ({}),
+    getManagedOAuthEnvironment = async () => ({}),
     pauseManagedBrowserLeases = async () => null,
     resumeManagedBrowserLeases = async () => false,
     getActiveSessionCount = () => 0,
@@ -635,7 +636,15 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   };
 
   const isOpenCodeProcessHealthy = async () => {
+    const startedAt = Date.now();
+    let succeeded = false;
+    const recordProbe = () => {
+      state.openCodeProbe = { checkedAt: Date.now(), succeeded, durationMs: Date.now() - startedAt,
+        lastSuccessAt: succeeded ? Date.now() : (state.openCodeProbe?.lastSuccessAt ?? null),
+        lastFailureAt: succeeded ? (state.openCodeProbe?.lastFailureAt ?? null) : Date.now() };
+    };
     if (!state.openCodeProcess || !state.openCodePort) {
+      recordProbe();
       return false;
     }
 
@@ -653,9 +662,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       if (body?.healthy === true && typeof body.version === 'string' && body.version.trim().length > 0) {
         state.openCodeVersion = body.version.trim();
       }
-      return body?.healthy === true;
+      succeeded = body?.healthy === true;
+      return succeeded;
     } catch {
       return false;
+    } finally {
+      recordProbe();
     }
   };
 
@@ -913,6 +925,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     delete processEnvironment.DEVRYAN_BROWSER_CDP_DISCOVERY_URL;
     delete processEnvironment.DEVRYAN_BROWSER_CDP_TOKEN;
     delete processEnvironment.DEVRYAN_AGENT_BROWSER_BIN;
+    delete processEnvironment.DEVRYAN_OPENAI_OAUTH_URL;
+    delete processEnvironment.DEVRYAN_OPENAI_OAUTH_TOKEN;
+    Object.assign(processEnvironment, await getManagedOAuthEnvironment());
     for (const key of Object.keys(processEnvironment)) {
       if (key.startsWith('AGENT_BROWSER_')) delete processEnvironment[key];
     }

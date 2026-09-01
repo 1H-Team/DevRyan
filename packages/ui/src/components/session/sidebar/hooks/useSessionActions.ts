@@ -4,6 +4,7 @@ import { toast } from '@/components/ui';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useI18n } from '@/lib/i18n';
 import type { MainTab } from '@/stores/useUIStore';
+import type { DeleteSessionsResult } from '@/sync/session-actions';
 
 type DeleteSessionConfirmSetter = React.Dispatch<React.SetStateAction<{
   session: Session;
@@ -32,7 +33,7 @@ type Args = {
   shareSession: (id: string) => Promise<Session | null>;
   unshareSession: (id: string) => Promise<Session | null>;
   deleteSession: (id: string) => Promise<boolean>;
-  deleteSessions: (ids: string[]) => Promise<{ deletedIds: string[]; failedIds: string[] }>;
+  deleteSessions: (ids: string[]) => Promise<DeleteSessionsResult>;
   archiveSession: (id: string) => Promise<boolean>;
   archiveSessions: (ids: string[]) => Promise<{ archivedIds: string[]; failedIds: string[] }>;
   unarchiveSession: (id: string) => Promise<boolean>;

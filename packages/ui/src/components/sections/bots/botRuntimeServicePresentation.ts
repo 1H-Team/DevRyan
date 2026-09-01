@@ -17,15 +17,36 @@ export const runtimeServicePresentation = (status: RuntimeServiceStatus | null, 
   };
   if (status?.registration.code === 'runtime_service_packaged_build_required') return {
     label: 'Background runtime unavailable in development',
-    detail: 'Use an installed packaged DevRyan build to test signed background Bots.',
+    detail: 'Use an installed packaged DevRyan build to test background Bots.',
     tone: 'border-border bg-[var(--surface-subtle)]',
     Icon: RiShutDownLine,
     spin: false,
   };
-  if (status?.registration.state === 'not_found'
-    || status?.registration.code?.startsWith('runtime_service_helper_')) return {
-    label: 'Background runtime unavailable in this build',
-    detail: 'Install a repaired DevRyan build containing the signed background service.',
+  if (status?.registration.code === 'runtime_service_native_bridge_missing') return {
+    label: 'Background runtime bridge missing',
+    detail: 'This installation is incomplete. Reinstall the current DevRyan build.',
+    tone: 'border-[var(--status-error)]/35 bg-[var(--status-error)]/10',
+    Icon: RiErrorWarningLine,
+    spin: false,
+  };
+  if (status?.registration.code === 'runtime_service_native_bridge_load_failed'
+    || status?.registration.code === 'runtime_service_native_bridge_invalid') return {
+    label: 'Background runtime bridge invalid',
+    detail: 'The native service bridge is damaged or incompatible with this Mac. Reinstall DevRyan.',
+    tone: 'border-[var(--status-error)]/35 bg-[var(--status-error)]/10',
+    Icon: RiErrorWarningLine,
+    spin: false,
+  };
+  if (status?.registration.state === 'not_found') return {
+    label: 'Background service definition not found',
+    detail: 'DevRyan’s bundled LaunchAgent is missing. Reinstall the current build.',
+    tone: 'border-[var(--status-error)]/35 bg-[var(--status-error)]/10',
+    Icon: RiErrorWarningLine,
+    spin: false,
+  };
+  if (status?.registration.code?.startsWith('runtime_service_helper_')) return {
+    label: 'Legacy background helper invalid',
+    detail: 'This installation contains an unusable legacy service helper. Reinstall DevRyan.',
     tone: 'border-[var(--status-error)]/35 bg-[var(--status-error)]/10',
     Icon: RiErrorWarningLine,
     spin: false,
@@ -46,14 +67,14 @@ export const runtimeServicePresentation = (status: RuntimeServiceStatus | null, 
   };
   if (status?.connected && status.handshake?.health === 'starting') return {
     label: 'Starting background runtime',
-    detail: 'The signed service owns the data directory and is bringing Bot services online.',
+    detail: 'The background service owns the data directory and is bringing Bot services online.',
     tone: 'border-[var(--status-info)]/35 bg-[var(--status-info)]/10',
     Icon: RiLoader4Line,
     spin: true,
   };
   if (status?.connected && status.handshake?.health === 'updating') return {
     label: 'Updating background runtime',
-    detail: 'Bot work is checkpointed while the signed service update completes.',
+    detail: 'Bot work is checkpointed while the background service update completes.',
     tone: 'border-[var(--status-info)]/35 bg-[var(--status-info)]/10',
     Icon: RiLoader4Line,
     spin: true,
@@ -82,15 +103,15 @@ export const runtimeServicePresentation = (status: RuntimeServiceStatus | null, 
     spin: false,
   };
   if (status?.configuredMode === 'service') return {
-    label: 'Background runtime degraded',
-    detail: 'DevRyan will not start a second server while service ownership is unresolved.',
+    label: 'Background runtime connection failed',
+    detail: 'Service ownership is unresolved, so DevRyan will not risk starting a second runtime.',
     tone: 'border-[var(--status-error)]/35 bg-[var(--status-error)]/10',
     Icon: RiErrorWarningLine,
     spin: false,
   };
   return {
     label: 'Bots stop when DevRyan quits',
-    detail: 'Enable the signed background runtime so scheduled work and supervision remain reliable.',
+    detail: 'Enable the background runtime so scheduled work and supervision remain reliable.',
     tone: 'border-[var(--status-warning)]/35 bg-[var(--status-warning)]/10',
     Icon: RiErrorWarningLine,
     spin: false,

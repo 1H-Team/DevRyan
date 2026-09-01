@@ -15,6 +15,11 @@ import {
   clampChatWidth,
 } from '@/lib/chatLayout';
 import { useManualBrowserTabsStore } from './useManualBrowserTabsStore';
+import {
+  EMPTY_NOTIFICATION_TEMPLATES,
+  normalizeNotificationTemplates,
+  type NotificationTemplates,
+} from '@/lib/settings/notificationTemplates';
 
 export type MainTab = 'chat' | 'plan' | 'git' | 'diff' | 'terminal';
 export type RightSidebarTab = 'git' | 'files';
@@ -104,15 +109,6 @@ const LEGACY_DEFAULT_NOTIFICATION_TEMPLATES = {
   error: { title: 'Tool error', message: '{last_message}' },
   question: { title: '{agent_name} needs input', message: '{last_message}' },
   subtask: { title: 'Subtask complete', message: '{last_message}' },
-} as const;
-
-const EMPTY_NOTIFICATION_TEMPLATES = {
-  completion: { title: '', message: '' },
-  planReady: { title: '', message: '' },
-  error: { title: '', message: '' },
-  question: { title: '', message: '' },
-  permission: { title: '', message: '' },
-  subtask: { title: '', message: '' },
 } as const;
 
 const isSameTemplateValue = (
@@ -727,14 +723,7 @@ interface UIStore {
   notifyOnPermission: boolean;
 
   // Per-event notification templates
-  notificationTemplates: {
-    completion: { title: string; message: string };
-    planReady: { title: string; message: string };
-    error: { title: string; message: string };
-    question: { title: string; message: string };
-    permission: { title: string; message: string };
-    subtask: { title: string; message: string };
-  };
+  notificationTemplates: NotificationTemplates;
 
   // Summarization settings
   summarizeLastMessage: boolean;
@@ -1570,25 +1559,53 @@ export const useUIStore = create<UIStore>()(
               .map((leaseId) => normalizeContextTargetPath(leaseId))
               .filter((leaseId): leaseId is string => Boolean(leaseId)),
           );
+          const manualWorkspaces = useManualBrowserTabsStore.getState().byDirectory;
 
           set((state) => {
             let nextTabsByDirectory: Record<string, BrowserLeaseTab[]> | null = null;
             let nextActiveByDirectory: Record<string, string | null> | null = null;
+            let nextPanelByDirectory: Record<string, BrowserPanelDirectoryState> | null = null;
+            let touchedAt: number | null = null;
             for (const [directory, tabs] of Object.entries(state.browserLeaseTabsByDirectory)) {
               const nextTabs = tabs.filter((tab) => active.has(tab.leaseId));
               if (nextTabs.length === tabs.length) continue;
               nextTabsByDirectory ??= { ...state.browserLeaseTabsByDirectory };
               nextTabsByDirectory[directory] = nextTabs;
-              const activeLeaseId = state.activeBrowserLeaseIdByDirectory[directory] ?? null;
-              if (activeLeaseId && !active.has(activeLeaseId)) {
+
+              const manualTabCount = manualWorkspaces[directory]?.tabs.length ?? 0;
+              const currentActiveLeaseId = state.activeBrowserLeaseIdByDirectory[directory] ?? null;
+              const nextActiveLeaseId = currentActiveLeaseId
+                && nextTabs.some((tab) => tab.leaseId === currentActiveLeaseId)
+                ? currentActiveLeaseId
+                : manualTabCount === 0
+                  ? nextTabs[0]?.leaseId ?? null
+                  : null;
+              if (nextActiveLeaseId !== currentActiveLeaseId) {
                 nextActiveByDirectory ??= { ...state.activeBrowserLeaseIdByDirectory };
-                nextActiveByDirectory[directory] = null;
+                nextActiveByDirectory[directory] = nextActiveLeaseId;
+              }
+
+              const currentPanel = state.browserPanelByDirectory[directory];
+              if (
+                nextTabs.length === 0
+                && manualTabCount === 0
+                && (currentPanel?.isOpen || currentPanel?.expanded)
+              ) {
+                nextPanelByDirectory ??= { ...state.browserPanelByDirectory };
+                touchedAt ??= Date.now();
+                nextPanelByDirectory[directory] = {
+                  ...currentPanel,
+                  isOpen: false,
+                  expanded: false,
+                  touchedAt,
+                };
               }
             }
-            if (!nextTabsByDirectory && !nextActiveByDirectory) return state;
+            if (!nextTabsByDirectory && !nextActiveByDirectory && !nextPanelByDirectory) return state;
             return {
               ...(nextTabsByDirectory ? { browserLeaseTabsByDirectory: nextTabsByDirectory } : {}),
               ...(nextActiveByDirectory ? { activeBrowserLeaseIdByDirectory: nextActiveByDirectory } : {}),
+              ...(nextPanelByDirectory ? { browserPanelByDirectory: nextPanelByDirectory } : {}),
             };
           });
         },
@@ -2534,10 +2551,12 @@ export const useUIStore = create<UIStore>()(
         setNotifyOnError: (value) => { set({ notifyOnError: value }); },
         setNotifyOnQuestion: (value) => { set({ notifyOnQuestion: value }); },
         setNotifyOnPermission: (value) => { set({ notifyOnPermission: value }); },
-        setNotificationTemplates: (templates) => { set({ notificationTemplates: templates }); },
+        setNotificationTemplates: (templates) => {
+          set({ notificationTemplates: normalizeNotificationTemplates(templates) });
+        },
         updateNotificationTemplate: (event, field, value) => {
           set((state) => {
-            const template = state.notificationTemplates[event];
+            const template = state.notificationTemplates[event] ?? EMPTY_NOTIFICATION_TEMPLATES[event];
             if (template[field] === value) {
               return state;
             }
@@ -2647,7 +2666,7 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createJSONStorage(() => getSafeStorage()),
-        version: 19,
+        version: 20,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
             return persistedState;
@@ -2713,6 +2732,13 @@ export const useUIStore = create<UIStore>()(
                 permission: { ...EMPTY_NOTIFICATION_TEMPLATES.permission },
               };
             }
+          }
+
+          // v19 -> v20: older managed-account snapshots could persist a sparse
+          // object while already carrying the latest store version. Restore the
+          // total renderer contract without replacing valid custom templates.
+          if (version < 20) {
+            state.notificationTemplates = normalizeNotificationTemplates(state.notificationTemplates);
           }
 
           // v2 -> v3: collapse 3 memory-limit fields into single messageLimit.

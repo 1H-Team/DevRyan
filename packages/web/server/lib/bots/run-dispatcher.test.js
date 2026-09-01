@@ -4,6 +4,7 @@ import {
   classifyOpenCodeRunError,
   createOpenCodeReasoningAdapter,
 } from './opencode-reasoning-adapter.js';
+import { projectBotAssistantResponse } from './opencode-provider.js';
 import { createBotRunDispatcher } from './run-dispatcher.js';
 
 const BOT_ID = 'b0000000-0000-4000-8000-000000000001';
@@ -64,6 +65,15 @@ const baseHarness = ({
         started_at: '2026-08-23T10:00:00.000Z',
       };
     }),
+    settleRunTerminal: vi.fn(async (input) => ({
+      id: input.runId,
+      bot_id: BOT_ID,
+      channel_id: CHANNEL_ID,
+      state: input.state,
+      context_snapshot: input.contextSnapshot,
+      interruption_kind: input.interruptionKind,
+      finished_at: input.finishedAt,
+    })),
   };
   const channels = {
     preflightMessage: vi.fn(async () => ({
@@ -180,6 +190,19 @@ describe('Production Bot FIFO run dispatcher', () => {
     await expect(enqueue(harness.dispatcher)).resolves.toMatchObject({ created: true });
     expect(harness.channels.enqueueUserMessage).toHaveBeenCalledTimes(1);
     expect(harness.runtimePreflight).not.toHaveBeenCalled();
+  });
+
+  it('derives one stable assistant response id for legacy clients that omit it', async () => {
+    const harness = baseHarness();
+
+    await enqueue(harness.dispatcher);
+    await enqueue(harness.dispatcher);
+
+    const responseIds = harness.channels.enqueueUserMessage.mock.calls
+      .map(([input]) => input.acknowledgmentId);
+    expect(responseIds[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(responseIds[1]).toBe(responseIds[0]);
+    expect(responseIds[0]).not.toBe(MESSAGE_ID);
   });
 
   it('does not let canonical event delivery or run claiming delay durable acceptance', async () => {
@@ -509,14 +532,8 @@ describe('Production Bot FIFO run dispatcher', () => {
     prewarmCache = null,
     checkpointIntervalMs = 10,
     recordDiagnostic = vi.fn(),
-    inspection = {
-      promptObserved: false,
-      status: 'idle',
-      assistantMessageId: null,
-      assistantText: '',
-      assistantTerminal: false,
-      providerContextRatio: 0,
-    },
+    settleRunTerminal = null,
+    inspection = null,
     logger = { warn: vi.fn() },
   } = {}) => {
     let revision = 0;
@@ -545,6 +562,17 @@ describe('Production Bot FIFO run dispatcher', () => {
     });
     const store = {
       claimRun: vi.fn(async () => null),
+      settleRunTerminal: settleRunTerminal || vi.fn(async (input) => {
+        if (['completed', 'failed', 'cancelled', 'interrupted'].includes(row.state)) return row;
+        return updateIfRevision({ id: input.runId }, {
+          state: input.state,
+          interruption_kind: input.interruptionKind,
+          context_snapshot: input.contextSnapshot,
+          lease_owner: null,
+          lease_until: null,
+          finished_at: input.finishedAt,
+        });
+      }),
       repositories: {
         bots: { get: vi.fn(async () => ({ id: BOT_ID, tenancy: 'team' })) },
         bot_channels: { get: vi.fn(async () => ({
@@ -561,6 +589,8 @@ describe('Production Bot FIFO run dispatcher', () => {
           retired_at: null,
           updated_at: '2026-08-23T09:00:00.000Z',
         })) },
+        bot_messages: { list: vi.fn(async () => ({ items: [], nextCursor: null })) },
+        bot_action_attempts: { list: vi.fn(async () => ({ items: [], nextCursor: null })) },
         bot_runs: {
           get: vi.fn(async () => row),
           list: vi.fn(async () => ({ items: [], nextCursor: null })),
@@ -569,24 +599,21 @@ describe('Production Bot FIFO run dispatcher', () => {
       },
     };
     const assistantMessages = new Map();
-    const assistantMessageId = (phase) => (
-      phase === 'result'
-        ? 'e0000000-0000-4000-8000-000000000011'
-        : 'e0000000-0000-4000-8000-000000000010'
-    );
+    let assistantMessageIndex = 10;
     const getAssistantMessage = (phase) => assistantMessages.get(phase) || null;
     const getOrCreateAssistantMessage = (phase = 'pending') => {
       const existing = getAssistantMessage(phase);
       if (existing) return existing;
       const message = {
-        id: assistantMessageId(phase),
+        id: `e0000000-0000-4000-8000-${String(assistantMessageIndex).padStart(12, '0')}`,
         channel_id: CHANNEL_ID,
         run_id: row.id,
         role: 'assistant',
         assistant_phase: phase,
-        sequence: phase === 'result' ? 3 : 2,
+        sequence: assistantMessageIndex - 8,
         finalized_at: null,
       };
+      assistantMessageIndex += 1;
       assistantMessages.set(phase, message);
       return message;
     };
@@ -675,6 +702,19 @@ describe('Production Bot FIFO run dispatcher', () => {
     };
     let eventHandler = null;
     let promptHook = async () => {};
+    const providerRecords = new Map();
+    let providerIdle = false;
+    const inspectFixture = () => {
+      if (inspection) return inspection;
+      const record = [...providerRecords.values()].filter((item) => item.info?.role === 'assistant').at(-1);
+      return {
+        promptObserved: opencodeProvider.prompt.mock.calls.length > 0,
+        status: providerIdle ? 'idle' : 'busy',
+        assistantMessageId: record?.info?.id || null,
+        assistantTerminal: providerIdle && Boolean(record),
+        assistantProjection: projectBotAssistantResponse([...(record?.parts.values() || [])]),
+      };
+    };
     const opencodeProvider = {
       start: vi.fn(async () => undefined),
       setEventHandler: vi.fn((handler) => { eventHandler = handler; }),
@@ -685,7 +725,7 @@ describe('Production Bot FIFO run dispatcher', () => {
       })),
       createSegment: vi.fn(async () => ({ id: 'ses_bot_1' })),
       prompt: vi.fn(async (...args) => promptHook(...args)),
-      inspectSegment: vi.fn(async () => inspection),
+      inspectSegment: vi.fn(async () => inspectFixture()),
       exportGeneratedImage,
       abort: vi.fn(async () => ({})),
       stopReasoningRun: vi.fn(async () => ({})),
@@ -743,7 +783,23 @@ describe('Production Bot FIFO run dispatcher', () => {
       logger,
       getRow: () => row,
       setPromptHook: (hook) => { promptHook = hook; },
-      emit: (event) => eventHandler({ runId: row.id, event }),
+      emit: (event) => {
+        const info = event.properties?.info;
+        const part = event.properties?.part;
+        const messageId = info?.id || part?.messageID || event.properties?.messageID;
+        if (messageId) {
+          const record = providerRecords.get(messageId) || { info: {}, parts: new Map() };
+          if (info) record.info = info;
+          if (part) record.parts.set(part.id, structuredClone(part));
+          if (event.type === 'message.part.delta') {
+            const previous = record.parts.get(event.properties.partID);
+            if (previous && event.properties.field === 'text') previous.text += event.properties.delta;
+          }
+          providerRecords.set(messageId, record);
+        }
+        if (event.type === 'session.status') providerIdle = event.properties.status.type === 'idle';
+        return eventHandler({ runId: row.id, event });
+      },
     };
   };
 
@@ -808,6 +864,87 @@ describe('Production Bot FIFO run dispatcher', () => {
     await harness.dispatcher.shutdown();
   });
 
+  it('persists a DOM timeout as a stable string code before execution starts', async () => {
+    const startReasoningRun = vi.fn(async () => {
+      throw new DOMException('deadline', 'TimeoutError');
+    });
+    const harness = createExecutionHarness({ startReasoningRun });
+
+    await harness.dispatcher.resumeRun(harness.getRow());
+
+    expect(harness.getRow()).toMatchObject({
+      state: 'failed',
+      interruption_kind: 'bot_opencode_request_timeout',
+      context_snapshot: expect.objectContaining({
+        failurePhase: 'startup',
+        failureStage: 'startup',
+      }),
+    });
+    expect(typeof harness.getRow().interruption_kind).toBe('string');
+    expect(harness.eventStream.publish).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'run.failed',
+      payload: expect.objectContaining({ code: 'bot_opencode_request_timeout' }),
+    }));
+  });
+
+  it('retries idempotent terminal persistence and publishes failure only from the persisted row', async () => {
+    const settleRunTerminal = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('connection reset'), { code: 'ECONNRESET' }))
+      .mockRejectedValueOnce(Object.assign(new Error('response lost'), { code: 'ETIMEDOUT' }))
+      .mockImplementationOnce(async (input) => ({
+        id: input.runId,
+        bot_id: BOT_ID,
+        channel_id: CHANNEL_ID,
+        revision_id: REVISION_ID,
+        state: input.state,
+        context_snapshot: input.contextSnapshot,
+        interruption_kind: input.interruptionKind,
+        finished_at: input.finishedAt,
+      }));
+    const startReasoningRun = vi.fn(async () => {
+      throw Object.assign(new Error('provider unavailable'), { code: 'bot_opencode_request_failed' });
+    });
+    const harness = createExecutionHarness({ startReasoningRun, settleRunTerminal });
+
+    const recovery = harness.dispatcher.resumeRun(harness.getRow());
+    await waitFor(() => expect(settleRunTerminal).toHaveBeenCalledTimes(1));
+    expect(harness.eventStream.publish.mock.calls.some(
+      ([event]) => event.kind === 'run.failed',
+    )).toBe(false);
+    await recovery;
+
+    expect(settleRunTerminal).toHaveBeenCalledTimes(3);
+    expect(harness.eventStream.publish).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'run.failed',
+      payload: expect.objectContaining({ code: 'bot_opencode_request_failed' }),
+    }));
+  });
+
+  it('journals terminal persistence exhaustion without publishing an unpersisted failure', async () => {
+    const settleRunTerminal = vi.fn(async () => {
+      throw Object.assign(new Error('database unavailable'), { code: 'bot_database_unavailable' });
+    });
+    const startReasoningRun = vi.fn(async () => {
+      throw Object.assign(new Error('provider unavailable'), { code: 'bot_opencode_request_failed' });
+    });
+    const harness = createExecutionHarness({ startReasoningRun, settleRunTerminal });
+
+    await expect(harness.dispatcher.resumeRun(harness.getRow()))
+      .rejects.toMatchObject({ code: 'bot_database_unavailable' });
+    expect(settleRunTerminal).toHaveBeenCalledTimes(3);
+    expect(harness.recordDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      mark: 'bot.turn.terminal_persistence_failed',
+      payload: expect.objectContaining({
+        intendedState: 'failed',
+        code: 'bot_database_unavailable',
+        attempts: 3,
+      }),
+    }));
+    expect(harness.eventStream.publish.mock.calls.some(
+      ([event]) => event.kind === 'run.failed',
+    )).toBe(false);
+  });
+
   it('coalesces assistant checkpoints and finalizes only on authoritative idle', async () => {
     const harness = createExecutionHarness();
     harness.setPromptHook(async () => {
@@ -866,8 +1003,15 @@ describe('Production Bot FIFO run dispatcher', () => {
     expect(harness.opencodeProvider.stopReasoningRun).toHaveBeenCalledTimes(1);
   });
 
-  it('clears pre-tool and inter-tool text and publishes one post-tool result', async () => {
-    const harness = createExecutionHarness({ checkpointIntervalMs: 500 });
+  it('buffers all pre-tool and inter-tool prose and publishes only the final result', async () => {
+    const streamAccessLeases = {
+      establish: vi.fn(),
+      authorize: vi.fn(async () => true),
+      isAuthorized: vi.fn(() => true),
+      invalidateChannel: vi.fn(),
+    };
+    const harness = createExecutionHarness({ checkpointIntervalMs: 500, streamAccessLeases });
+    harness.eventStream.publish.mockResolvedValue({ delivered: 1 });
     harness.setPromptHook(async () => {
       await harness.emit({
         type: 'message.updated',
@@ -934,9 +1078,14 @@ describe('Production Bot FIFO run dispatcher', () => {
     expect(finalized).toHaveLength(1);
     expect(finalized[0]).toMatchObject({
       text: 'The site is healthy and the checkout completed successfully.',
-      assistantPhase: null,
+      assistantPhase: 'result',
     });
     expect(finalized.map((input) => input.text).join('\n')).not.toContain('Capturing another snapshot');
+    const streamedText = harness.eventStream.publish.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.kind === 'message.streaming')
+      .map((event) => event.payload.text);
+    expect(streamedText).toEqual([]);
     expect(harness.getRow().state).toBe('completed');
   });
 
@@ -1123,6 +1272,25 @@ describe('Production Bot FIFO run dispatcher', () => {
     });
   });
 
+  it.each(['assistant', 'action', 'unavailable'])('fails closed on startup retry evidence: %s', async (evidence) => {
+    const harness = createExecutionHarness({ runtimePreflight: vi.fn(async () => {
+      throw Object.assign(new Error('runtime unavailable'), { code: 'bot_runtime_supervisor_unavailable' });
+    }) });
+    if (evidence === 'assistant') {
+      harness.store.repositories.bot_messages.list.mockResolvedValue({ items: [{
+        channel_id: CHANNEL_ID, assistant_phase: 'result', finalized_at: null,
+        attachment_count: 0, actor_user_id: null,
+      }] });
+    } else if (evidence === 'action') {
+      harness.store.repositories.bot_action_attempts.list.mockResolvedValue({ items: [{ state: 'cancelled' }] });
+    } else {
+      harness.store.repositories.bot_action_attempts.list.mockRejectedValue(new Error('database unavailable'));
+    }
+    await harness.dispatcher.resumeRun(harness.getRow());
+    expect(harness.getRow()).toMatchObject({ state: 'failed', context_snapshot: { retryable: false } });
+    expect(harness.opencodeProvider.prompt).not.toHaveBeenCalled();
+  });
+
   it('forces one model-catalog refresh when startup reports a stale unavailable model', async () => {
     const getModelCatalog = vi.fn()
       .mockResolvedValueOnce({ generation: 1 })
@@ -1146,10 +1314,10 @@ describe('Production Bot FIFO run dispatcher', () => {
 
     expect(getModelCatalog.mock.calls).toEqual([[], [{ force: true }]]);
     expect(startReasoningRun).toHaveBeenCalledTimes(2);
-    expect(harness.getRow().state).toBe('completed');
+    expect(harness.getRow()).toMatchObject({ state: 'failed', interruption_kind: 'bot_response_missing' });
   });
 
-  it('delivers the first requester text immediately and coalesces a trailing full snapshot', async () => {
+  it('buffers fragmented public text until the verified canonical final answer', async () => {
     const streamAccessLeases = {
       establish: vi.fn(),
       authorize: vi.fn(async () => true),
@@ -1161,9 +1329,7 @@ describe('Production Bot FIFO run dispatcher', () => {
       checkpointIntervalMs: 500,
     });
     harness.eventStream.publish.mockResolvedValue({ delivered: 1 });
-    let firstDeliveryMs = Number.POSITIVE_INFINITY;
     harness.setPromptHook(async () => {
-      const providerTextAt = performance.now();
       await harness.emit({
         type: 'message.updated',
         properties: {
@@ -1183,8 +1349,7 @@ describe('Production Bot FIFO run dispatcher', () => {
       await Promise.resolve();
       expect(harness.eventStream.publish.mock.calls.some(
         ([event]) => event.kind === 'message.streaming',
-      )).toBe(true);
-      firstDeliveryMs = performance.now() - providerTextAt;
+      )).toBe(false);
       await harness.emit({
         type: 'message.part.delta',
         properties: {
@@ -1211,12 +1376,7 @@ describe('Production Bot FIFO run dispatcher', () => {
     const streamed = harness.eventStream.publish.mock.calls
       .map(([event]) => event)
       .filter((event) => event.kind === 'message.streaming');
-    expect(streamed).toHaveLength(2);
-    expect(streamed.map((event) => event.audienceUserIds)).toEqual([[USER_ID], [USER_ID]]);
-    expect(streamed.map((event) => event.payload.text)).toEqual(['H', 'Hi!']);
-    expect(streamed.map((event) => event.payload.revision)).toEqual([1, 3]);
-    expect(streamed.map((event) => event.payload.sequence)).toEqual([1, 2]);
-    expect(firstDeliveryMs).toBeLessThan(100);
+    expect(streamed).toEqual([]);
     const canonical = harness.eventStream.publish.mock.calls
       .map(([event]) => event)
       .filter((event) => event.kind === 'message.updated');
@@ -1225,10 +1385,7 @@ describe('Production Bot FIFO run dispatcher', () => {
       mark: 'bot.turn.first_provider_text',
       payload: expect.objectContaining({ runId: harness.getRow().id }),
     }));
-    expect(harness.recordDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
-      mark: 'bot.turn.first_requester_delivery',
-      payload: expect.objectContaining({ runId: harness.getRow().id }),
-    }));
+
   });
 
   it('never streams provider-hidden text or a leading agent-work label', async () => {
@@ -1263,8 +1420,8 @@ describe('Production Bot FIFO run dispatcher', () => {
         type: 'message.part.updated',
         properties: {
           part: {
-            id: 'answer', messageID: 'msg_assistant', sessionID: 'ses_bot_1',
-            type: 'text', text: '**Craft',
+            id: 'work-label', messageID: 'msg_assistant', sessionID: 'ses_bot_1',
+            type: 'reasoning', text: 'Advising user on manual browser steps',
           },
         },
       });
@@ -1276,7 +1433,7 @@ describe('Production Bot FIFO run dispatcher', () => {
         properties: {
           part: {
             id: 'answer', messageID: 'msg_assistant', sessionID: 'ses_bot_1',
-            type: 'text', text: '**Crafting warm pricing prompt**Hey! The pricing page is ready.',
+            type: 'text', text: 'JavaScript and cookies aren’t exposed as settings I can change here.',
           },
         },
       });
@@ -1292,13 +1449,13 @@ describe('Production Bot FIFO run dispatcher', () => {
     const streamed = harness.eventStream.publish.mock.calls
       .map(([event]) => event)
       .filter((event) => event.kind === 'message.streaming');
-    expect(streamed.map((event) => event.payload.text)).toEqual([
-      'Hey! The pricing page is ready.',
-    ]);
+    expect(streamed).toEqual([]);
     const canonical = harness.eventStream.publish.mock.calls
       .map(([event]) => event)
       .filter((event) => event.kind === 'message.updated');
-    expect(canonical.at(-1).payload.message.body.text).toBe('Hey! The pricing page is ready.');
+    expect(canonical.at(-1).payload.message.body.text).toBe(
+      'JavaScript and cookies aren’t exposed as settings I can change here.',
+    );
   });
 
   it('suppresses requester streaming when authorization is uncertain', async () => {
@@ -1339,7 +1496,7 @@ describe('Production Bot FIFO run dispatcher', () => {
     expect(harness.eventStream.publish.mock.calls.some(
       ([event]) => event.kind === 'message.updated',
     )).toBe(true);
-    expect(streamAccessLeases.authorize).toHaveBeenCalled();
+    expect(streamAccessLeases.authorize).not.toHaveBeenCalled();
   });
 
   it('falls back to canonical checkpoints above the 192 KiB live text cap', async () => {
@@ -1471,6 +1628,9 @@ describe('Production Bot FIFO run dispatcher', () => {
             info: { id: 'msg_assistant', sessionID: 'ses_bot_1', role: 'assistant' },
           },
         });
+        void harness.emit({ type: 'message.part.updated', properties: { part: {
+          id: 'answer', messageID: 'msg_assistant', sessionID: 'ses_bot_1', type: 'text', text: 'Safe answer',
+        } } });
         void harness.emit({
           type: 'session.status',
           properties: { sessionID: 'ses_bot_1', status: { type: 'idle' } },
@@ -1496,7 +1656,7 @@ describe('Production Bot FIFO run dispatcher', () => {
   it('publishes completion before asynchronous memory follow-up and ignores follow-up failure', async () => {
     const followUp = deferred();
     const onRunCompleted = vi.fn(async () => followUp.promise);
-    const harness = createExecutionHarness({ onRunCompleted });
+    const harness = createExecutionHarness({ onRunCompleted, inspection: { promptObserved: true, status: 'idle', assistantTerminal: true, assistantMessageId: 'answer', assistantProjection: { resultText: 'Done.', generatedImages: [] } } });
     harness.setPromptHook(async () => {
       setTimeout(() => {
         void harness.emit({
@@ -1519,7 +1679,7 @@ describe('Production Bot FIFO run dispatcher', () => {
     const failingFollowUp = vi.fn(async () => {
       throw Object.assign(new Error('index unavailable'), { code: 'bot_indexer_unavailable' });
     });
-    const failingHarness = createExecutionHarness({ onRunCompleted: failingFollowUp });
+    const failingHarness = createExecutionHarness({ onRunCompleted: failingFollowUp, inspection: { promptObserved: true, status: 'idle', assistantTerminal: true, assistantMessageId: 'answer', assistantProjection: { resultText: 'Done.', generatedImages: [] } } });
     failingHarness.setPromptHook(async () => {
       setTimeout(() => {
         void failingHarness.emit({
@@ -1583,6 +1743,7 @@ describe('Production Bot FIFO run dispatcher', () => {
     expect(harness.opencodeProvider.inspectSegment).toHaveBeenCalledWith({
       runId: 'f0000000-0000-4000-8000-000000000010',
       sessionId: 'ses_recovered',
+      signal: expect.any(AbortSignal),
     });
     expect(harness.opencodeProvider.prompt).not.toHaveBeenCalled();
     expect(harness.opencodeProvider.createSegment).not.toHaveBeenCalled();
@@ -1624,7 +1785,85 @@ describe('Production Bot FIFO run dispatcher', () => {
       .map(([input]) => input)
       .filter((input) => input.finalizedAt);
     expect(finalized).toHaveLength(1);
-    expect(finalized[0]).toMatchObject({ text: 'The result is ready.' });
+    expect(finalized[0]).toMatchObject({
+      text: 'The result is ready.',
+      assistantPhase: 'result',
+    });
+    expect(harness.getRow().state).toBe('completed');
+  });
+
+  it('uses the final provider record even when a late metadata update hides identical streamed text', async () => {
+    const harness = createExecutionHarness({ inspection: {
+      promptObserved: true, status: 'idle', assistantTerminal: true,
+      assistantMessageId: 'answer', assistantProjection: { resultText: 'Verified final answer.', generatedImages: [] },
+    } });
+    harness.setPromptHook(async () => {
+      await harness.emit({ type: 'message.updated', properties: { info: { id: 'answer', role: 'assistant', sessionID: 'ses_bot_1' } } });
+      const part = { id: 'part', messageID: 'answer', sessionID: 'ses_bot_1', type: 'text', text: 'Private response planning' };
+      await harness.emit({ type: 'message.part.updated', properties: { part } });
+      await harness.emit({ type: 'message.part.updated', properties: { part: { ...part, ignored: true } } });
+      await harness.emit({ type: 'message.part.delta', properties: { messageID: 'answer', partID: 'reasoning', field: 'text', delta: 'Secret thought', sessionID: 'ses_bot_1' } });
+      await harness.emit({ type: 'message.part.updated', properties: { part: { ...part, id: 'reasoning', type: 'reasoning', text: 'Secret thought' } } });
+      expect(harness.channels.updateAssistantCheckpoint).not.toHaveBeenCalled();
+      await harness.emit({ type: 'session.status', properties: { sessionID: 'ses_bot_1', status: { type: 'idle' } } });
+    });
+    await harness.dispatcher.resumeRun(harness.getRow());
+    expect(harness.channels.updateAssistantCheckpoint.mock.calls.map(([input]) => input.text)).toEqual(['Verified final answer.']);
+    expect(JSON.stringify(harness.eventStream.publish.mock.calls)).not.toMatch(/Secret thought|Private response planning/);
+  });
+
+  it('reconciles a missed final SSE event without resubmitting the prompt', async () => {
+    const harness = createExecutionHarness({ runTimeoutMs: 3_000, inspection: {
+      promptObserved: true, status: 'idle', assistantTerminal: true,
+      assistantMessageId: 'answer', assistantProjection: { resultText: 'Recovered from provider records.', generatedImages: [] },
+    } });
+    await harness.dispatcher.resumeRun(harness.getRow());
+    expect(harness.getRow().state).toBe('completed');
+    expect(harness.opencodeProvider.prompt).toHaveBeenCalledTimes(1);
+    expect(harness.channels.updateAssistantCheckpoint).toHaveBeenLastCalledWith(expect.objectContaining({ text: 'Recovered from provider records.' }));
+  });
+
+  it('bounds prompt submission itself and aborts its request signal', async () => {
+    const harness = createExecutionHarness({ runTimeoutMs: 40 });
+    harness.setPromptHook(() => new Promise(() => {}));
+    await harness.dispatcher.resumeRun(harness.getRow());
+    expect(harness.getRow()).toMatchObject({ state: 'failed', interruption_kind: 'bot_run_timeout' });
+    expect(harness.opencodeProvider.prompt.mock.calls[0][0].signal.aborted).toBe(true);
+    expect(harness.opencodeProvider.abort).toHaveBeenCalledTimes(1);
+    expect(harness.opencodeProvider.prompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('times out preparation and closes a late-created runtime without submitting', async () => {
+    const prepared = deferred();
+    const harness = createExecutionHarness({ runTimeoutMs: 40, startReasoningRun: vi.fn(() => prepared.promise) });
+    await harness.dispatcher.resumeRun(harness.getRow());
+    expect(harness.getRow()).toMatchObject({ state: 'failed', interruption_kind: 'bot_run_timeout' });
+    prepared.resolve({ modelSnapshot: { providerId: 'openai', modelId: 'gpt-5.6-sol' } });
+    await waitFor(() => expect(harness.opencodeProvider.stopReasoningRun).toHaveBeenCalledTimes(1));
+    expect(harness.opencodeProvider.prompt).not.toHaveBeenCalled();
+  });
+
+  it('fails empty verified answers even when no tool was used', async () => {
+    const harness = createExecutionHarness({ inspection: {
+      promptObserved: true, status: 'idle', assistantTerminal: true,
+      assistantMessageId: 'answer', assistantProjection: { resultText: '', generatedImages: [] },
+    } });
+    harness.setPromptHook(() => harness.emit({ type: 'session.status', properties: { sessionID: 'ses_bot_1', status: { type: 'idle' } } }));
+    await harness.dispatcher.resumeRun(harness.getRow());
+    expect(harness.getRow()).toMatchObject({ state: 'failed', interruption_kind: 'bot_response_missing' });
+  });
+
+  it('accepts a verified file-only response bound to the current result message', async () => {
+    const harness = createExecutionHarness({ inspection: {
+      promptObserved: true, status: 'idle', assistantTerminal: false,
+      assistantMessageId: 'answer', assistantProjection: { resultText: '', generatedImages: [] },
+    } });
+    harness.setPromptHook(async () => {
+      const pending = await harness.channels.getAssistantCheckpoint({ assistantPhase: 'pending' });
+      pending.attachment_count = 1;
+      await harness.emit({ type: 'session.status', properties: { sessionID: 'ses_bot_1', status: { type: 'idle' } } });
+    });
+    await harness.dispatcher.resumeRun(harness.getRow());
     expect(harness.getRow().state).toBe('completed');
   });
 
@@ -1659,7 +1898,7 @@ describe('Production Bot FIFO run dispatcher', () => {
     });
   });
 
-  it('persists a safe retryable API session failure and logs only bounded classification fields', async () => {
+  it('forbids same-run retry after a transient provider failure while retaining provider advice', async () => {
     const logger = { warn: vi.fn() };
     const harness = createExecutionHarness({ logger });
     harness.setPromptHook(async () => {
@@ -1687,7 +1926,7 @@ describe('Production Bot FIFO run dispatcher', () => {
     expect(harness.getRow()).toMatchObject({
       state: 'failed',
       interruption_kind: 'bot_opencode_api_retryable',
-      context_snapshot: { retryable: true },
+      context_snapshot: { failurePhase: 'execution', retryable: false },
     });
     expect(logger.warn).toHaveBeenCalledWith('[BotsDispatcher] Bot run failed', {
       code: 'bot_opencode_api_retryable',

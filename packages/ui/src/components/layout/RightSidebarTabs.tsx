@@ -2,7 +2,7 @@ import React from 'react';
 import { RiFolder3Line, RiGitBranchLine } from '@remixicon/react';
 
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
-import { LazyGitView, LazyViewBoundary } from '@/components/views/lazyViews';
+import { LazyBotOperationsRail, LazyGitView, LazyViewBoundary } from '@/components/views/lazyViews';
 import { useGitStore } from '@/stores/useGitStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
@@ -10,7 +10,6 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
 import { SidebarFilesTree } from './SidebarFilesTree';
 import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
-import { BotOperationsRail } from '@/components/bots/operations/BotOperationsRail';
 import { botChannelSelectors, useBotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotsStore } from '@/stores/useBotsStore';
 import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
@@ -89,7 +88,7 @@ export const RightSidebarTabs: React.FC = () => {
   }
 
   if (botMode && selectedBotId) {
-    return <BotOperationsRail botId={selectedBotId} channelId={botChannelId} />;
+    return <LazyViewBoundary><LazyBotOperationsRail botId={selectedBotId} channelId={botChannelId} /></LazyViewBoundary>;
   }
 
   if (botMode) {

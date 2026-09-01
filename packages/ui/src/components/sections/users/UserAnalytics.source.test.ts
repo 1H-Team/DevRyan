@@ -57,6 +57,20 @@ describe('user detail tabs and analytics source contract', () => {
     expect(analyticsSource).toContain('No analytics are available.');
   });
 
+  test('removes access-link controls from core details and provides a confirmed analytics clear', () => {
+    expect(detailSource).not.toContain('title="Access Links"');
+    expect(detailSource).not.toContain('Create Access Link');
+    expect(detailSource).not.toContain('TunnelPresetPickerDialog');
+    expect(analyticsSource).toContain('Clear All Analytics');
+    expect(analyticsSource).toContain("method: 'DELETE'");
+    expect(analyticsSource).toContain("'X-DevRyan-CSRF': '1'");
+    expect(analyticsSource).toContain('JSON.stringify({ confirm: true })');
+    expect(analyticsSource).toContain('<ConfirmActionDialog');
+    expect(analyticsSource).toContain('Cleared all ${result.deletedCount.toLocaleString()} analytics records for this user.');
+    expect(analyticsSource).toContain('The administrative purge marker will remain in the audit log.');
+    expect(analyticsSource).not.toContain('retention-protected records remain');
+  });
+
   test('formats prompt agent, model, and thinking metadata through shared helpers', () => {
     expect(analyticsSource).toContain("formatPromptAgentLabel(metadataString(event, 'agent'))");
     expect(analyticsSource).toContain("formatPromptThinkingLabel(metadataString(event, 'variant'), provider)");

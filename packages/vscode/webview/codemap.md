@@ -4,6 +4,7 @@
 Browser-side bootstrap for the VS Code-hosted DevRyan UI. It initializes runtime APIs backed by the extension bridge, manages startup/loading UX, and adapts VS Code theme/connection state into the shared React app.
 
 ## Design
+- `main.tsx` forwards versioned `openchamber:primary-recovery` projections to the shared recovery card; HTTP-shaped recovery controls use the existing API proxy.
 - **Adapter pattern**: `main.tsx` builds VS Code-specific runtime APIs and assigns them to `window.__OPENCHAMBER_RUNTIME_APIS__` consumed by shared UI, including bridge-backed session-plan storage, Claude Code authentication status, and the HTTP-shaped read-only OpenCode update-check route used by settings.
 - **Bridge client modules** (`api/*`): narrow wrappers for git/files/settings/notifications/permissions/editor/proxy calls to extension host.
 - **Bootstrap resilience**: connection status state machine + overlay logic tolerates delayed API readiness and partial fetch failures.

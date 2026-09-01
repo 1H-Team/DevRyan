@@ -54,7 +54,7 @@ const releaseSourceManifest = ({ releaseId = '1.2.3', digestCharacter = 'a' } = 
   channel: 'release',
   releaseId,
   sourceRevision: '1'.repeat(40),
-  openCodeVersion: '1.18.23',
+  openCodeVersion: '1.18.25',
   schemaVersion: '20260823150227',
   pluginHash: `sha256:${'f'.repeat(64)}`,
   images: Object.fromEntries(BOT_RUNTIME_IMAGE_KEYS.map((key) => [key, {
@@ -157,7 +157,8 @@ const createFakeRunner = ({
         : { exitCode: 0, stdout: 'started', stderr: '' };
     }
     if (args[0] === 'compose' && args.includes('ps')) {
-      return { exitCode: 0, stdout: JSON.stringify(serviceRows), stderr: '' };
+      const rows = typeof serviceRows === 'function' ? serviceRows() : serviceRows;
+      return { exitCode: 0, stdout: JSON.stringify(rows), stderr: '' };
     }
     if (args[0] === 'compose' && args.includes('port')) {
       const publishedPort = args.includes('egress')
@@ -179,6 +180,8 @@ const createManager = ({
   stateStore = createMemoryStateStore(),
   dataDirectory,
   fetchImpl,
+  wait,
+  now,
 } = {}) => ({
   manager: createBotRuntimeManager({
     composePath: COMPOSE,
@@ -193,6 +196,8 @@ const createManager = ({
       ...(dataDirectory ? { hostRuntimeRoot: path.join(dataDirectory, 'bots', 'runtime') } : {}),
     }),
     ...(fetchImpl ? { fetchImpl } : {}),
+    ...(wait ? { wait } : {}),
+    ...(now ? { now } : {}),
   }),
   runner,
   stateStore,
@@ -220,7 +225,7 @@ describe('Bot runtime manifest', () => {
       channel: 'release',
       releaseId: '1.2.3',
       sourceRevision: '1'.repeat(40),
-      openCodeVersion: '1.18.23',
+      openCodeVersion: '1.18.25',
       schemaVersion: '20260823150227',
       pluginHash: `sha256:${'f'.repeat(64)}`,
       images: {},
@@ -410,6 +415,26 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     expect(requests[0].options.headers.authorization).toMatch(/^Bearer [A-Za-z0-9_-]{43}$/);
     await expect(manager.requestIndexer({ operation: 'arbitrary', body: {} }))
       .rejects.toMatchObject({ code: 'bot_runtime_request_invalid' });
+  });
+
+  test.each([
+    ['ECONNREFUSED', 'ECONNREFUSED'], ['ECONNRESET', 'ECONNRESET'],
+    ['unexpected-private-value', 'transport_error'],
+  ])('bounds supervisor transport diagnostics for %s', async (code, reason) => {
+    const manifest = releaseManifest();
+    const dataDirectory = await createTemporaryDirectory();
+    const { manager } = createManager({
+      manifest, dataDirectory,
+      stateStore: createMemoryStateStore({ version: 1, current: manifest, previous: null, staged: null }),
+      fetchImpl: async () => { throw Object.assign(new Error('private endpoint and payload'), { cause: { code } }); },
+    });
+    const error = await manager.stop({ kind: 'computer',
+      botId: 'b0000000-0000-4000-8000-000000000001',
+      scopeKey: 'bot:b0000000-0000-4000-8000-000000000001',
+    }).catch((caught) => caught);
+    expect(error).toMatchObject({ code: 'bot_runtime_supervisor_unavailable',
+      diagnostics: { stage: 'supervisor_request', reason } });
+    expect(JSON.stringify(error)).not.toContain('private');
   });
 
   test('distinguishes Docker not installed from Docker installed but stopped', async () => {
@@ -765,6 +790,103 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       previous: { fingerprint: desired.fingerprint },
       staged: null,
     });
+  });
+
+  test('waits for fixed services to converge before committing an update', async () => {
+    const previous = releaseManifest({ releaseId: '1.2.2', digestCharacter: 'b' });
+    const desired = releaseManifest({ releaseId: '1.2.3', digestCharacter: 'c' });
+    const stateStore = createMemoryStateStore({
+      version: 1,
+      current: previous,
+      previous: null,
+      staged: null,
+    });
+    let serviceInspection = 0;
+    const startingServices = healthyServices().map((row) => ({ ...row, Health: 'starting' }));
+    const runner = createFakeRunner({
+      serviceRows: () => (++serviceInspection === 1 ? startingServices : healthyServices()),
+    });
+    const waits = [];
+    const { manager } = createManager({
+      manifest: desired,
+      stateStore,
+      runner,
+      wait: async (milliseconds) => { waits.push(milliseconds); },
+    });
+    const progress = [];
+
+    await expect(manager.update({ onProgress: (event) => progress.push(event) }))
+      .resolves.toMatchObject({ state: 'healthy', changed: true });
+
+    expect(waits).toEqual([1_000]);
+    expect(runner.calls.filter(({ args }) => args.includes('up'))).toHaveLength(1);
+    expect(stateStore.writes).toHaveLength(2);
+    expect(stateStore.writes[0]).toMatchObject({
+      current: { fingerprint: previous.fingerprint },
+      staged: { fingerprint: desired.fingerprint },
+    });
+    expect(stateStore.writes[1]).toMatchObject({
+      current: { fingerprint: desired.fingerprint },
+      previous: { fingerprint: previous.fingerprint },
+      staged: null,
+    });
+    expect(progress.at(-1)).toMatchObject({ phase: 'ready' });
+  });
+
+  test('fails unhealthy activation terminally and retains the staged update', async () => {
+    const previous = releaseManifest({ releaseId: '1.2.2', digestCharacter: 'd' });
+    const desired = releaseManifest({ releaseId: '1.2.3', digestCharacter: 'e' });
+    const stateStore = createMemoryStateStore({
+      version: 1,
+      current: previous,
+      previous: null,
+      staged: null,
+    });
+    const unhealthyServices = healthyServices().map((row, index) => (
+      index === 0 ? { ...row, Health: 'unhealthy' } : row
+    ));
+    let clock = 0;
+    const progress = [];
+    const { manager } = createManager({
+      manifest: desired,
+      stateStore,
+      runner: createFakeRunner({ serviceRows: unhealthyServices }),
+      now: () => clock,
+      wait: async (milliseconds) => { clock += milliseconds; },
+    });
+
+    await expect(manager.update({
+      deadlineMs: 100_000,
+      onProgress: (event) => progress.push(event),
+    })).rejects.toMatchObject({ code: 'bot_runtime_update_failed' });
+
+    expect(stateStore.writes).toHaveLength(1);
+    expect(stateStore.reads()).toMatchObject({
+      current: { fingerprint: previous.fingerprint },
+      staged: { fingerprint: desired.fingerprint },
+    });
+    expect(progress.at(-1)).toMatchObject({
+      phase: 'failed',
+      code: 'bot_runtime_update_failed',
+    });
+  });
+
+  test('does not commit setup when a fixed service exits during activation', async () => {
+    const stateStore = createMemoryStateStore();
+    const stoppedServices = healthyServices().map((row, index) => (
+      index === 0 ? { ...row, State: 'exited', Health: 'unhealthy' } : row
+    ));
+    const progress = [];
+    const { manager } = createManager({
+      stateStore,
+      runner: createFakeRunner({ serviceRows: stoppedServices }),
+    });
+
+    await expect(manager.setup({ onProgress: (event) => progress.push(event) }))
+      .rejects.toMatchObject({ code: 'bot_runtime_setup_failed' });
+
+    expect(stateStore.writes).toEqual([]);
+    expect(progress.at(-1)).toMatchObject({ phase: 'failed', code: 'bot_runtime_setup_failed' });
   });
 
   test('leaves a failed staged update recoverable and makes healthy repair idempotent', async () => {

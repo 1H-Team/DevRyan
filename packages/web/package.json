@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/web",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
@@ -32,7 +32,7 @@
     "@openchamber/shared-runtime": "workspace:*",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@octokit/rest": "^22.0.1",
-    "@opencode-ai/sdk": "^1.18.23",
+    "@opencode-ai/sdk": "^1.18.25",
     "@simplewebauthn/server": "13.3.0",
     "adm-zip": "^0.6.0",
     "better-sqlite3": "^12.10.0",
@@ -55,7 +55,7 @@
     "yazl": "^3.3.1"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "1.18.23",
+    "@opencode-ai/plugin": "1.18.25",
     "@base-ui/react": "^1.4.0",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-go": "^6.0.1",

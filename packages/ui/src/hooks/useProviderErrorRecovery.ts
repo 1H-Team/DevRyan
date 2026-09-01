@@ -5,6 +5,7 @@ import { isQueuedMessageFlushInFlight } from '@/components/chat/queuedSend';
 import { buildProviderRecoveryInput } from '@/lib/messages/providerRecovery';
 import { useMessageQueueStore } from '@/stores/messageQueueStore';
 import { useProviderRecoveryStore } from '@/stores/useProviderRecoveryStore';
+import { hostOwnsPrimaryRecovery } from '@/stores/usePrimaryRecoveryStore';
 import { aggregateLiveSessionStatuses } from '@/sync/live-aggregate';
 import {
   getSyncBlockingRequestCountAnyDirectory,
@@ -63,6 +64,7 @@ export function useProviderErrorRecovery(enabled = true): void {
           ? getSyncSessions(directory).find((candidate) => candidate.id === sessionId)
           : undefined;
         if (!isPrimaryProviderRecoverySession(session)) continue;
+        if (hostOwnsPrimaryRecovery(sessionId)) continue;
 
         nextStatuses.set(sessionId, status.type);
         const messages = directory ? getSyncMessages(sessionId, directory) : [];

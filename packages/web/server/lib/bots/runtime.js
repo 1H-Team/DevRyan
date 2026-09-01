@@ -12,6 +12,7 @@ import { createBotActionGateway } from './action-gateway.js';
 import { createBotAgentConnections } from './agent-connections.js';
 import { createBotApprovalService } from './approval-service.js';
 import { createBotArtifactService } from './artifact-service.js';
+import { createBotAuditQuery } from './audit-query.js';
 import { createBotAuditRetention } from './audit-retention.js';
 import { createBotAuthorization } from './authorization.js';
 import { createBotBlobStore } from './blob-store.js';
@@ -25,6 +26,10 @@ import { createDockerBotComputerBackend } from './computer-backend.js';
 import { createBotConnectorRegistry } from './connector-registry.js';
 import { createBotContextAssembler } from './context-assembler.js';
 import { createBotCredentialVault } from './credential-vault.js';
+import { createBotTelegramService } from './telegram/service.js';
+import { registerBotTelegramRoutes } from './telegram-routes.js';
+import { createBotVoiceService } from './bot-voice.js';
+import { registerBotVoiceRoutes } from './bot-voice-routes.js';
 import { createBotEnvironmentSecretVault } from './environment-secret-vault.js';
 import { createBotEnvironmentSecrets } from './environment-secrets.js';
 import { createBotDockerProvider } from './docker-provider.js';
@@ -58,6 +63,7 @@ import { createBotStore } from './store.js';
 import { createBotSourceScanner } from './source-scanner.js';
 import { createBotSpecService } from './bot-spec.js';
 import { createBotSpecSigner } from './bot-spec-signer.js';
+import { runBotStructuredTask } from './structured-task.js';
 
 const defaultPrincipalPolicy = Object.freeze({
   isGlobalAdmin: (principal) => (
@@ -105,6 +111,8 @@ export function createBotsRuntime({
   withAuditDeliveryBarrier = async (operation) => operation(),
   recordDiagnostic = () => {},
   executionEnabled = true,
+  resolvePrincipal = null,
+  oauthCoordinator = null,
 } = {}) {
   if (typeof dataDirectory !== 'string' || !path.isAbsolute(dataDirectory)) {
     throw new TypeError('Bots runtime requires an absolute data directory');
@@ -176,6 +184,7 @@ export function createBotsRuntime({
   const policyEngine = createBotPolicyEngine();
   let gatewayOperationHandler = null;
   const gatewayHost = createBotGatewayHost({
+    handleOAuth: (claims, operation) => modelCredentialBroker.runtimeOAuth(claims, operation),
     handleOperation(input) {
       if (!gatewayOperationHandler) {
         throw new BotGatewayHostError(
@@ -198,8 +207,11 @@ export function createBotsRuntime({
     gatewayHost,
     computerRuntimeManager,
     eventStream,
+    audienceForChannel: (channelId) => channels.audienceForChannel(channelId),
     audit: botAudit,
+    recordDiagnostic,
   });
+  eventStream.addSnapshotSource('computer_activity', (principal) => browserService.activity.snapshotForPrincipal(principal));
   const evidenceService = createBotEvidenceService({
     store,
     blobStore,
@@ -227,6 +239,7 @@ export function createBotsRuntime({
     eventStream,
     encryption,
     audit: botAudit,
+    recordDiagnostic,
     onRunSettled: (input) => routineSettlementHandler?.(input),
   });
   gatewayOperationHandler = actionGateway.handleGatewayOperation;
@@ -307,7 +320,8 @@ export function createBotsRuntime({
         revisionId: input.revision.id,
       });
       const runId = randomUUID();
-      const prepared = await selection.adapter.prepareRevision({
+      return runBotStructuredTask({
+        adapter: selection.adapter,
         run: {
           id: runId,
           botId: input.bot.id,
@@ -318,24 +332,14 @@ export function createBotsRuntime({
         },
         contract: input.revision.contract,
         binding,
-        attachmentIds: [],
-        libraryVersionIds: [],
+        prompt: input.prompt,
+        schema: input.schema,
+        title: `Bot memory extraction ${input.runId.slice(0, 8)}`,
+        system: 'Extract structured memory only. Do not call tools or perform actions.',
       });
-      try {
-        return await selection.adapter.completeStructured({
-          runId,
-          binding,
-          prepared,
-          prompt: input.prompt,
-          schema: input.schema,
-          title: `Bot memory extraction ${input.runId.slice(0, 8)}`,
-          system: 'Extract structured memory only. Do not call tools or perform actions.',
-        });
-      } finally {
-        await selection.adapter.closeRun({ runId, binding }).catch(() => undefined);
-      }
     },
     audit: botAudit,
+    recordDiagnostic,
     onMemoryChanged: async ({ botId, source }) => {
       await eventStream.publish({
         kind: 'memory.changed',
@@ -376,6 +380,8 @@ export function createBotsRuntime({
     ? null
     : Object.freeze({ code: 'bots_background_disabled' });
   let started = false;
+  let startupState = store.available ? 'idle' : 'unavailable';
+  let startPromise = null;
   let retryTimer = null;
   let credentialVaultStartPromise = null;
   let executionStartPromise = null;
@@ -384,12 +390,36 @@ export function createBotsRuntime({
   let approvalExpiryTimer = null;
   let approvalExpirySweep = null;
   let shutdownPromise = null;
+  let backgroundStopped = false;
+  let telegramService = null;
+  let voiceService = null;
+  let integrationStartPromise = null;
+  const startIntegrations = async () => {
+    if (!store.available || typeof encryption?.getKey !== 'function' || typeof resolvePrincipal !== 'function') return;
+    if (telegramService) return;
+    integrationStartPromise ||= (async () => {
+      voiceService ||= createBotVoiceService({ dataDirectory, encryption, authorization, resolvePrincipal });
+      telegramService = await createBotTelegramService({
+        supabase, store, authorization, channels, blobStore, encryption, dataDirectory,
+        resolvePrincipal, getDispatcher: () => backgroundStopped ? null : dispatcher,
+        speech: voiceService,
+        isOwner: () => executionEnabled && started && !backgroundStopped && !shutdownPromise,
+      });
+      if (executionEnabled && !backgroundStopped && !shutdownPromise) telegramService.start();
+    })().finally(() => { integrationStartPromise = null; });
+    return integrationStartPromise;
+  };
+  const auditQuery = createBotAuditQuery({
+    supabase,
+    assertSchemaVersion: (expectedVersion) => store.assertSchemaVersion(expectedVersion),
+  });
   const management = createBotManagement({
     store,
     authorization,
     encryption,
     blobStore,
     getCredentialVault: () => credentialVault,
+    getOAuthConnections: async () => (await ensureModelCredentialBroker()).oauthConnections,
     eventStream,
     loadModelCatalog: async () => {
       if (typeof botHost?.getModelCatalog !== 'function') {
@@ -546,6 +576,11 @@ export function createBotsRuntime({
     authorization,
     getCredentialVault: () => credentialVault,
     getEnvironmentSecrets: () => environmentSecrets,
+    purgeIntegrations: async (botId) => {
+      await startIntegrations();
+      await telegramService?.purgeBot({ botId });
+      await voiceService?.purgeBot(botId);
+    },
     dockerProvider,
     getIndexer: () => indexerClient,
     getRuntimeStatus: typeof botHost?.getStatus === 'function'
@@ -630,6 +665,7 @@ export function createBotsRuntime({
       dataDirectory,
       credentialVault,
       store,
+      oauthCoordinator,
     });
     return modelCredentialBroker;
   };
@@ -697,6 +733,7 @@ export function createBotsRuntime({
         gatewayHost,
         artifactService,
         environmentSecrets,
+        recordDiagnostic,
       });
       await opencodeProvider.start();
       await computerRuntimeManager.start();
@@ -765,7 +802,8 @@ export function createBotsRuntime({
             botId: bot.id,
             revisionId: revision.id,
           });
-          const prepared = await selection.adapter.prepareRevision({
+          return runBotStructuredTask({
+            adapter: selection.adapter,
             run: {
               id: draftRunId,
               botId: bot.id,
@@ -776,22 +814,11 @@ export function createBotsRuntime({
             },
             contract: revision.contract,
             binding,
-            attachmentIds: [],
-            libraryVersionIds: [],
+            prompt,
+            schema,
+            title,
+            system,
           });
-          try {
-            return await selection.adapter.completeStructured({
-              runId: draftRunId,
-              binding,
-              prepared,
-              prompt,
-              schema,
-              title,
-              system,
-            });
-          } finally {
-            await selection.adapter.closeRun({ runId: draftRunId, binding }).catch(() => undefined);
-          }
         },
       });
       routineRuntime ||= createBotRoutineRuntime({
@@ -811,7 +838,10 @@ export function createBotsRuntime({
         audit: botAudit,
       });
       routineSettlementHandler = async (input) => {
+        if (input?.run) await browserService.activity.endRun(input.run).catch(() => undefined);
         await routineRuntime?.onRunSettled(input);
+        // Durable transport reconciliation also runs periodically after a restart.
+        await telegramService?.notifyRoutineCompleted(input).catch(() => undefined);
       };
       dispatcher ||= createBotRunDispatcher({
         store,
@@ -931,6 +961,7 @@ export function createBotsRuntime({
       encryption,
       schemaFailure,
       controlPlaneFailure,
+      startupState,
     };
     if (executionEnabled && started && executionFailure && !schemaFailure && !controlPlaneFailure) {
       const live = await resolveBotCapabilities(input);
@@ -961,7 +992,14 @@ export function createBotsRuntime({
             schedulerStatus: executionFailure ? 'unavailable' : 'idle',
             checkpointStatus: executionFailure ? 'unknown' : 'idle',
           };
-      const activeStates = ['queued', 'starting', 'running', 'waiting_approval', 'needs_reconciliation'];
+      const activeStates = [
+        'queued',
+        'starting',
+        'running',
+        'waiting_approval',
+        'waiting_control',
+        'needs_reconciliation',
+      ];
       const [activeRunCounts, pendingApprovalCount] = await Promise.all([
         Promise.all(activeStates.map((state) => countRows(
           store.repositories.bot_runs,
@@ -998,6 +1036,7 @@ export function createBotsRuntime({
     eventStream,
     audit: botAudit,
     auditRetention,
+    auditQuery,
     recoveryBundle,
     purgeRuntime,
     dockerProvider,
@@ -1033,6 +1072,7 @@ export function createBotsRuntime({
     getSchemaFailure: () => schemaFailure,
     getControlPlaneFailure: () => controlPlaneFailure,
     getExecutionFailure: () => executionFailure,
+    getStartupState: () => startupState,
     reconcileExecution: () => resolveCurrentCapabilities(),
     async prepareStartup({ ensureRuntime, onStatus = () => {} } = {}) {
       if (!store.available) {
@@ -1070,21 +1110,44 @@ export function createBotsRuntime({
       gatewayOperationHandler = handler;
     },
     async start() {
-      if (started || !store.available) return;
-      started = true;
-      await startRetention();
-      if (!schemaFailure && !controlPlaneFailure) {
-        try {
-          await startCredentialVault();
-        } catch (error) {
-          executionFailure = {
-            code: typeof error?.code === 'string'
-              ? error.code
-              : 'bot_credential_vault_unavailable',
-          };
-        }
+      if (!store.available) {
+        startupState = 'unavailable';
+        return;
       }
-      if (executionEnabled && !schemaFailure && !controlPlaneFailure) await startExecution();
+      if (startPromise) return startPromise;
+      if (started && startupState !== 'failed') return;
+      started = true;
+      startupState = 'starting';
+      startPromise = (async () => {
+        await startRetention();
+        if (!schemaFailure && !controlPlaneFailure) {
+          try {
+            await startCredentialVault();
+          } catch (error) {
+            executionFailure = {
+              code: typeof error?.code === 'string'
+                ? error.code
+                : 'bot_credential_vault_unavailable',
+            };
+          }
+        }
+        if (executionEnabled && !schemaFailure && !controlPlaneFailure) await startExecution();
+        if (!schemaFailure && !controlPlaneFailure) {
+          await startIntegrations().catch(() => {
+            recordDiagnostic({ type: 'lifecycle', event: 'bot.integrations.unavailable', payload: { code: 'bot_integrations_unavailable' } });
+          });
+        }
+        startupState = 'ready';
+      })().catch((error) => {
+        startupState = 'failed';
+        controlPlaneFailure ||= {
+          code: typeof error?.code === 'string' ? error.code : 'bots_startup_failed',
+        };
+        throw error;
+      }).finally(() => {
+        startPromise = null;
+      });
+      return startPromise;
     },
     registerRoutes(app) {
       registerBotRoutes(app, {
@@ -1110,11 +1173,13 @@ export function createBotsRuntime({
         botSpecService,
         recoveryBundle,
         purgeRuntime,
+        auditQuery,
         botHost,
         encryption,
         getSchemaFailure: () => schemaFailure,
         getControlPlaneFailure: () => controlPlaneFailure,
         getExecutionFailure: () => executionFailure,
+        getStartupState: () => startupState,
         resolveCapabilities: () => resolveCurrentCapabilities(),
         getRuntimeServices: () => ({
           memoryRuntime,
@@ -1127,18 +1192,26 @@ export function createBotsRuntime({
           dispatcher,
           agentConnections,
         }),
+        recordDiagnostic,
       });
+      registerBotTelegramRoutes(app, { getService: () => telegramService });
+      registerBotVoiceRoutes(app, { getService: () => voiceService });
     },
     getQuitRiskStatus,
     checkpointBotRuns: () => routineRuntime?.checkpoint()
       || Promise.resolve(Object.freeze({ status: 'idle' })),
     async stopDispatcher() {
+      backgroundStopped = true;
+      await integrationStartPromise?.catch(() => undefined);
+      await telegramService?.stop();
+      await voiceService?.shutdown();
       await routineRuntime?.shutdown();
       await dispatcher?.shutdown();
     },
     async shutdown() {
       if (shutdownPromise) return shutdownPromise;
       shutdownPromise = (async () => {
+        await startPromise?.catch(() => undefined);
         if (retryTimer) clearTimeout(retryTimer);
         retryTimer = null;
         if (executionRetryTimer) clearTimeout(executionRetryTimer);
@@ -1146,6 +1219,10 @@ export function createBotsRuntime({
         if (approvalExpiryTimer) clearInterval(approvalExpiryTimer);
         approvalExpiryTimer = null;
         try {
+          backgroundStopped = true;
+          await integrationStartPromise?.catch(() => undefined);
+          await telegramService?.stop();
+          await voiceService?.shutdown();
           if (routineRuntime) await routineRuntime.shutdown();
           if (dispatcher) await dispatcher.shutdown();
           if (memoryRuntime) await memoryRuntime.shutdown();

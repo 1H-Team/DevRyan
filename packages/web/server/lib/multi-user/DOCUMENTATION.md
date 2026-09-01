@@ -38,14 +38,15 @@ credential and environment-secret values remain in separate host-local vaults.
 State-changing concurrency contracts live in service-role-only, security-invoker
 RPCs: joined send context and channel audience reads, message sequence allocation,
 FIFO run claiming by computer scope, atomic safe same-run retry, idempotent routine
-occurrence claiming, revision activation, bounded audit pruning, and Draft/Retired
+occurrence claiming, extraction claim/deferral, idempotent terminal-run settlement,
+revision activation, bounded audit pruning, and Draft/Retired
 granular purge and server-retired one-shot full deletion.
 Activated revisions and all history/version/audit records are immutable. The Bot
 server layer must pass Supabase errors through
 `productionBotsMigrationFailurePayload()` before continuing: a missing Bot
 relation, column, or RPC fails closed as HTTP `503` with
 `code: "bot_schema_migration_required"` and
-`requiredMigration: "20260826140000"`. Runtime startup additionally verifies
+`requiredMigration: "20260901160000"`. Runtime startup additionally verifies
 the service-role-only `devryan_bot_schema_version()` marker, and one route
 boundary blocks every Bot read or mutation while that marker is stale.
 
@@ -56,12 +57,42 @@ Bots runtime during authentication-runtime disposal. Bot repositories,
 authorization, encryption, object handling, capabilities, and retention remain
 in the focused `lib/bots/` module.
 
+Native Telegram jobs have no browser session. The injected Bot principal
+resolver freshly reads active profile, role policy and individual policy,
+rejects disabled effective `bots` access, and avoids unrelated project/worktree
+lookups. Existing Bot membership and exact channel authorization still run at
+admission and delivery. Optional Telegram schema readiness does not raise the
+global Bot schema marker or disable existing Bot chat.
+
 ## Assigned branch targets
 
 - Local refs (`dev`, `refs/heads/dev`) and same-name remote refs are one logical grant.
 - `GET /api/admin/projects/:projectId/branches` retains `branches: string[]` and adds provenance-aware `branchOptions` records.
 - `POST /api/projects/:projectId/branch-target` accepts a granted logical branch and idempotency key. It reuses a linked worktree only after reconciling its durable bootstrap receipt, automatically retries a failed existing-branch `populate_worktree` stage, uses the primary checkout only when it is already on that exact branch, or creates a durable worktree from the local/preferred remote ref. It never falls back to another branch.
 - Worktree creation requests from managed non-admin users are validated against their granted base branches in core request policy.
+
+## Branch preview access
+
+- `user_branch_previews` stores one normalized HTTPS preview URL and optional
+  opaque service-token vault reference per user/project/logical branch grant.
+  The Cloudflare Client ID and Client Secret live only in the dedicated
+  AES-256-GCM host vault and never enter Supabase, API reads, audit deltas,
+  diagnostics, or renderer metadata.
+- Administrator-only branch-specific preview routes create/rotate, test, and
+  remove the configuration independently from branch-visibility saves. Create
+  and rotate validate the effective URL and service token before either the
+  metadata row or encrypted vault entry changes; an Access login redirect or
+  rejected token returns `branch_preview_auth_failed` and preserves the prior
+  configuration. The separate test route validates unsaved drafts.
+  Removing a branch or project cascades the metadata row and purges its vault
+  entry after the grant mutation succeeds.
+- First Browser use resolves the root session's authoritative owner and current
+  project/branch. A single bounded HEAD probe (GET range fallback only when
+  necessary) validates the stored Access token; no task-start connection,
+  reverse proxy, background polling, or page-traffic relay is created.
+- Lease metadata exposes only owner/project/branch identity, preview URL, origin,
+  and configured status. The credential is passed separately through the
+  private server-to-Electron callback and never retained in the lease record.
 
 ## Runtime metadata and personal schedules
 
@@ -151,7 +182,7 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   `retryable: true` during that grace window. The UI suppresses management
   requests, explains the degraded state, and retries authoritative session
   validation until access can be restored without reauthentication.
-- An initial transient Supabase outage does not prevent the local web/Electron
+- The initial ownership refresh uses a five-second deadline. An initial transient Supabase outage does not prevent the local web/Electron
   runtime from listening. Startup preserves the private on-disk session
   ownership index, reports `multiUserControlPlane.state = "degraded"` from the
   health endpoint, and retries the authoritative ownership refresh with bounded
@@ -193,6 +224,9 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   Browser target creation, project-instance discovery, local probing, inline
   presentation, and pop-out continuity without disabling the separate Preview
   surface.
+- Source Update-tab visibility is a sparse per-user presentation override. It
+  removes that tab from the right sidebar for the affected managed user without
+  granting or revoking any Git capability or server-side operation.
 - Browser target creation, project-instance registration, and local-instance
   probing are runtime operations rather than host-configuration mutations.
   Their route handlers enforce Browser capability, project ownership, origin,
@@ -213,7 +247,10 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   Bots migration dependency errors, and strict agent-test identity
   discovery/selection.
 - `supabase-client.js`: Auth Admin, password/refresh, and PostgREST transport.
-- `vault.js`: encrypted atomic token vault.
+- `vault.js`: encrypted atomic application-session token vault.
+- `branch-preview-vault.js`, `branch-previews.js`: dedicated encrypted preview
+  credential persistence plus URL validation, redacted CRUD, connection probes,
+  branch-cascade cleanup, and authoritative Browser lease resolution.
 - `audit-outbox.js`: sanitized atomic audit queue with idempotent Supabase
   delivery and an exclusive flushed-delivery barrier for snapshot clearing.
 - `policy.js`: role defaults, per-page Read/Edit evaluation, capability merging,
@@ -244,6 +281,15 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   values are returned; Edit determines which changes and page-owned mutations
   are accepted. `settings_pages` remains a legacy Read projection while
   `settings_permissions` and `settings_permission_overrides` are authoritative.
+- Managed notification-template overrides inherit missing event entries from
+  the effective host template set. GET and PUT responses always expose the
+  total six-event contract, and any later personal settings mutation repairs a
+  sparse legacy override while preserving valid customized entries.
+- Host-authored Magic Prompt overrides are execution settings inherited by all
+  authenticated managed users. `GET /api/magic-prompts` remains available to
+  action consumers even when the Magic Prompts settings page is hidden, while
+  the page itself and every PUT/DELETE mutation remain protected by the
+  canonical Magic Prompts Read/Edit permission.
 - `user_policies.settings_overrides` is also the service-only store for sparse
   account defaults: `defaultAgent`, `defaultPlanMode`, and
   `agentModelSelections[agentName]`. `GET /api/config/settings` reports the
@@ -344,8 +390,11 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   writes the local ownership index and audit record before publishing one
   authoritative `session.created` event. Exhaustion rolls back the single
   OpenCode session and returns `503 identity_unavailable` with
-  `retryable: false`; incomplete cleanup remains hidden and is retried in the
-  background.
+  `retryable: false`; incomplete cleanup remains hidden, returns
+  `session_create_outcome_unknown` with `retryable: false`, and is retried in the
+  background. Only an explicit restart rejection before dispatch is retryable;
+  transport failures after dispatch cannot prove that creation failed. Early
+  attempt timings record upstream creation and ownership commit separately.
 - Administrators and developers have identical lifecycle ownership rules: each
   can archive, unarchive, or hard-delete only their own sessions. Archive uses
   OpenCode's reversible timestamp. Exact `DELETE /api/session/:sessionID`
@@ -353,8 +402,14 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   project/branch grant. Any SDK-supplied directory query, body field, or header
   is removed before path translation and OpenCode forwarding, so an owned
   archived session can be deleted after its legacy directory leaves the current
-  worktree grant. All other session routes retain directory translation and
-  scope checks; foreign sessions retain the indistinguishable `404` response.
+  worktree grant. Deletion is idempotent only inside that same strong boundary:
+  an owned tombstone with a still-current grant returns the SDK-compatible
+  boolean success without another upstream call, while an active owned row
+  whose upstream session is already absent completes its tombstone and returns
+  success. This also makes an upstream-delete/tombstone-write partial failure
+  recoverable on retry. Foreign, revoked, or unowned IDs retain the
+  indistinguishable `404` response. All other session routes retain directory
+  translation and scope checks.
 - Before deleting OpenCode content for a developer or senior developer, the
   runtime monotonically locks that user's analytics retention. A missing
   `20260807100000` migration fails with `503 schema_migration_required` before
@@ -429,6 +484,26 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   low-impact `command_exit`, because the command failed without the tool runtime
   itself failing.
   Structured error codes take precedence over compatibility message matching.
+  For `devryan_browser`, `DEVRYAN_BROWSER_EVAL_ERROR` marks explicitly identified
+  caller-authored JavaScript TypeError, ReferenceError, and SyntaxError failures;
+  `DEVRYAN_BROWSER_INPUT_INVALID` marks rejected browser input, including invalid
+  inspection selectors. Both stay failed tool calls with sanitized details but
+  classify as `low` / `input` / `expected`. When OpenCode serializes the error as
+  a string, only an exact leading `DEVRYAN_BROWSER_EVAL_ERROR:` or
+  `DEVRYAN_BROWSER_INPUT_INVALID:` is accepted; embedded codes and prefixes from
+  other tools do not qualify, and a structured code blocks this string fallback.
+  `DEVRYAN_BROWSER_LEASE_TOUCH_FAILED`, as a structured code or exact leading
+  string prefix, takes priority over input-message patterns: a failed final
+  lease touch remains actionable even when it includes a secondary caller-eval
+  or invalid-selector failure.
+  Unexpected generated-script failures and malformed/truncated inspection
+  results use `DEVRYAN_BROWSER_INSPECTION_FAILED`; this browser-only structured
+  code or exact leading string prefix also remains actionable ahead of
+  input-message patterns. Invalid CSS selector syntax still uses
+  `DEVRYAN_BROWSER_INPUT_INVALID`. Other browser lease, connection, cleanup, and
+  command failures retain their existing classifications. This policy
+  applies to newly observed failures; it does not rewrite historical rows or
+  infer recovery from unrelated successful browser commands.
   Missing skills, invalid fields, explicit tool-policy denials, managed-task
   barriers, already-acknowledged results, patch-context misses, routine browser
   target/reference/evaluation errors, and benign client ResizeObserver notices
@@ -684,8 +759,25 @@ visible without storing session content.
   and never-locked users remain purgeable. Export reads every retained page
   instead of truncating at 10,000 rows; non-admin exports apply the same
   detailed-action removal and metadata stripping as the list.
+- `DELETE /api/admin/users/:userId/analytics` requires an exact administrator,
+  an explicit confirmation body, and a visible human target. It first records
+  and flushes the administrative purge marker behind the durable outbox
+  delivery barrier, then calls the service-role-only
+  `devryan_purge_user_activity_logs` RPC. The RPC installs an exact-target,
+  transaction-local retention bypass, deletes every actor- or target-linked row
+  in the flushed snapshot regardless of retention locks, preserves the purge
+  marker, and rolls back unless its zero-remaining-row postcondition holds.
+  Direct deletes, global activity purges, and unrelated users remain protected.
+  The response returns `{ purged, deletedCount, remainingCount: 0 }`. Events
+  queued after the barrier remain as newer analytics instead of being lost in
+  the clear snapshot.
 
 Apply `20260810120000_clipboard_analytics_text.sql` before
 `20260810130000_managed_error_diagnostics.sql`. Both migrations are additive;
 historical copy rows remain metadata-only because their text cannot be
 reconstructed, while diagnostic backfill preserves existing audit metadata.
+Apply `20260830023917_purge_user_analytics.sql`, followed by
+`20260830123704_admin_clear_all_user_analytics.sql`, before exposing the
+per-user Clear Analytics action. The latter installs the exact-target trigger
+bypass and complete-snapshot RPC contract. Both RPC revisions are security
+invoker and grant execution exclusively to `service_role`.

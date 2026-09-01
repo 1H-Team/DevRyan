@@ -23,6 +23,7 @@ import { resolveNotificationTemplatesFromSettingsSnapshot } from '@/lib/notifica
 import { parseAgentModelSelections } from '@/lib/agentModelSelection';
 import { canEditSettingsPage, getAuthPrincipal } from '@/lib/authSession';
 import { DEFAULT_CHAT_WIDTH, WIDE_CHAT_WIDTH } from '@/lib/chatLayout';
+import { normalizeNotificationTemplates } from '@/lib/settings/notificationTemplates';
 
 const persistToLocalStorage = (settings: DesktopSettings) => {
   if (typeof window === 'undefined') {
@@ -853,31 +854,7 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
     result.notifyOnPermission = candidate.notifyOnPermission;
   }
   if (candidate.notificationTemplates && typeof candidate.notificationTemplates === 'object') {
-    const templates = candidate.notificationTemplates as Record<string, unknown>;
-    const validateTemplate = (key: string): { title: string; message: string } | undefined => {
-      const value = templates[key];
-      if (!value || typeof value !== 'object') return undefined;
-      const obj = value as Record<string, unknown>;
-      const title = typeof obj.title === 'string' ? obj.title : '';
-      const message = typeof obj.message === 'string' ? obj.message : '';
-      return { title, message };
-    };
-    const completion = validateTemplate('completion');
-    const planReady = validateTemplate('planReady');
-    const error = validateTemplate('error');
-    const question = validateTemplate('question');
-    const permission = validateTemplate('permission');
-    const subtask = validateTemplate('subtask');
-    if (completion || planReady || error || question || permission || subtask) {
-      result.notificationTemplates = {
-        completion: completion ?? { title: 'Task Complete', message: 'Your task has finished.' },
-        planReady: planReady ?? { title: 'Plan ready', message: 'A plan is ready for review' },
-        error: error ?? { title: 'Error Occurred', message: 'An error occurred while processing your task.' },
-        question: question ?? { title: 'Input Needed', message: 'Please provide input to continue.' },
-        permission: permission ?? { title: 'Permissions needed', message: '{last_message}' },
-        subtask: subtask ?? { title: 'Subtask Complete', message: 'A subtask has finished.' },
-      };
-    }
+    result.notificationTemplates = normalizeNotificationTemplates(candidate.notificationTemplates);
   }
   if (typeof candidate.summarizeLastMessage === 'boolean') {
     result.summarizeLastMessage = candidate.summarizeLastMessage;

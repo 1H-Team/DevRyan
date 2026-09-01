@@ -12,7 +12,7 @@ Dependency-free, JSON-only policy contracts shared by every Production Bots host
   keys before portable-spec verification.
 - `lifecycle.js`: Bot lifecycle graph and immutable activated-revision policy.
 - `policy.js`: channel ACL/member decisions, approval classes, and exact action hashing.
-- `run-state.js`: run/action transition graphs, unknown-write classification, and one-lease admission.
+- `run-state.js`: run/action transition graphs including durable `waiting_control`, unknown-write classification, and one-lease admission.
 - `routines.js`: missed-run defaults and bounded recovery occurrence selection.
 - `opencode/devryan-bot-tools.mjs`: capability-bound private gateway plugin for
   governed memory, Library, computer/action, explicit Shared publication, and
@@ -22,6 +22,7 @@ Dependency-free, JSON-only policy contracts shared by every Production Bots host
   server-compiled read-only runtime config. `launch-opencode.mjs` imports the
   fixed per-run environment JSON without shell evaluation; the legacy
   initializer remains a fixture-only image command.
+- `opencode/oauth.integration.mjs` / `oauth-fixture.mjs`: disposable Docker acceptance with no internet, fixture TLS/OAuth/provider endpoints, managed host plus two Bot processes, forced refreshes and the real pinned image plugin. No production login, container or image tag is modified.
 
 ## Invariants
 
@@ -32,8 +33,10 @@ Dependency-free, JSON-only policy contracts shared by every Production Bots host
 4. Activated revision content and terminal run/action state cannot be reopened through these contracts.
 5. An executing write interrupted without a receipt becomes `unknown`, never an automatically retryable failure.
 6. A live computer-scope lease admits only its owning run.
-7. `image.generate` exists only for a server-derived OpenAI ChatGPT OAuth
-   capability; credentials never become a tool argument.
+7. Primary-agent `devryan_image` exists only for a server-derived OpenAI ChatGPT
+   OAuth capability and reuses the pinned plugin schema. The legacy
+   `image.generate` executor remains compatible but unadvertised; credentials
+   never become a tool argument.
 8. Environment variables enter only from the fixed read-only per-run JSON and
    are inherited by reasoning children, never the computer runtime.
 9. Legacy revisions resolve to OpenCode/matcher v1 without hash rewriting;

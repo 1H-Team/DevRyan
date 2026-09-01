@@ -110,3 +110,16 @@ export const isReasoningPartActive = (part: Part): boolean => {
     const time = (part as Part & { time?: { end?: number } }).time;
     return typeof time?.end !== 'number';
 };
+
+// A provider can close one reasoning part immediately before announcing the
+// next. The trailing run still belongs to the live reasoning edge during that
+// gap; older runs yield as soon as a newer semantic row exists.
+export const resolveReasoningRunActiveState = ({
+    isMessageCompleted,
+    hasActivePart,
+    isTrailingLiveRun,
+}: {
+    isMessageCompleted: boolean;
+    hasActivePart: boolean;
+    isTrailingLiveRun: boolean;
+}): boolean => !isMessageCompleted && (hasActivePart || isTrailingLiveRun);

@@ -13,7 +13,7 @@ import { useBotOperationsNavigationStore } from '@/stores/useBotOperationsNaviga
 import { useBotsStore, type BotsStore } from '@/stores/useBotsStore';
 import { BotApprovalsTab } from './BotApprovalsTab';
 import { BotArtifactsTab } from './BotArtifactsTab';
-import { BotBrowserDiagnostic } from './BotBrowserDiagnostic';
+import { useBotComputerActivityStore } from '@/stores/useBotComputerActivityStore';
 import { BotCurrentRun } from './BotCurrentRun';
 
 type OperationsTab = 'computer' | 'approvals' | 'shared';
@@ -68,7 +68,6 @@ export const BotOperationsRail: React.FC<BotOperationsRailProps> = ({
   ));
   const channel = channelStore((state) => channelId ? state.channelsById[channelId] : undefined);
   const membership = botsStore((state) => state.membershipsByBotId[botId]);
-  const botLifecycle = botsStore((state) => state.botsById[botId]?.lifecycle ?? null);
   const connectionState = operationsStore((state) => state.connectionState);
   const connectionErrorCode = operationsStore((state) => state.connectionErrorCode);
   const pendingCount = operationsStore((state) => state.pendingApprovalIds.filter((actionId) => (
@@ -156,15 +155,12 @@ export const BotOperationsRail: React.FC<BotOperationsRailProps> = ({
             </Tabs.List>
 
             <Tabs.Panel value="computer" className="min-h-0 flex-1 overflow-hidden [[hidden]]:hidden">
-              <BotBrowserDiagnostic
-                botId={botId}
-                channelId={channel.id}
-                botActive={botLifecycle === 'active'}
-                principalId={principal.id}
-                canControl={canOperate}
-                active={activeTab === 'computer'}
-                operationsStore={operationsStore}
-              />
+              <div className="space-y-3 p-4 typography-meta text-muted-foreground">
+                <p>The shared Bot computer appears in the conversation when the Bot uses it. Members share its files and saved logins.</p>
+                <Button variant="outline" size="sm" onClick={() => useBotComputerActivityStore.getState().show(botId, channel.id)}>
+                  <RiComputerLine /> Open in Conversation
+                </Button>
+              </div>
             </Tabs.Panel>
             <Tabs.Panel value="approvals" className="min-h-0 flex-1 overflow-y-auto [[hidden]]:hidden">
               <BotApprovalsTab
@@ -179,7 +175,10 @@ export const BotOperationsRail: React.FC<BotOperationsRailProps> = ({
               <BotArtifactsTab
                 botId={botId}
                 channelId={channel.id}
-                onOpenComputer={() => setActiveTab('computer')}
+                onOpenComputer={() => {
+                  setActiveTab('computer');
+                  if (channel) useBotComputerActivityStore.getState().show(botId, channel.id);
+                }}
               />
             </Tabs.Panel>
           </Tabs.Root>

@@ -49,6 +49,19 @@ const exactRoutes = Object.freeze({
   'POST /v1/browser/create': 'createBrowserLease',
   'POST /v1/browser/touch': 'touchBrowserLease',
   'POST /v1/browser/release': 'releaseBrowserLease',
+  'POST /v1/browser/observe': 'openBrowserLeaseObservationStream',
+  'POST /v1/browser/observation-snapshot': 'browserLeaseObservationSnapshot',
+});
+
+const waitForDrain = (response) => new Promise((resolve) => {
+  const cleanup = () => {
+    response.off('drain', onDrain);
+    response.off('close', onClose);
+  };
+  const onDrain = () => { cleanup(); resolve(true); };
+  const onClose = () => { cleanup(); resolve(false); };
+  response.once('drain', onDrain);
+  response.once('close', onClose);
 });
 
 export const createDesktopHostBroker = async ({
@@ -79,6 +92,24 @@ export const createDesktopHostBroker = async ({
     try {
       const body = request.method === 'GET' ? undefined : await readJson(request);
       const result = await handler(body);
+      if (handlerName === 'openBrowserLeaseObservationStream') {
+        if (!/^multipart\/x-mixed-replace\s*;\s*boundary=/i.test(result?.contentType || '') || !result?.body) {
+          throw Object.assign(new Error('Browser observation stream is invalid'), {
+            code: 'browser_observation_unavailable',
+          });
+        }
+        response.writeHead(200, {
+          'Content-Type': result.contentType,
+          'Cache-Control': 'no-store, no-cache, must-revalidate, no-transform',
+          'X-Accel-Buffering': 'no',
+        });
+        for await (const chunk of result.body) {
+          if (response.destroyed) break;
+          if (!response.write(chunk) && !await waitForDrain(response)) break;
+        }
+        if (!response.destroyed && !response.writableEnded) response.end();
+        return;
+      }
       return sendJson(response, 200, result ?? { ok: true });
     } catch (error) {
       return sendJson(response, 503, {
@@ -96,7 +127,7 @@ export const createDesktopHostBroker = async ({
     leaseId,
     token,
     port: address.port,
-    capabilities: Object.freeze(['focus', 'notifications', 'browser_cdp']),
+    capabilities: Object.freeze(['focus', 'notifications', 'browser_cdp', 'browser_observation']),
     close: () => new Promise((resolve) => server.close(resolve)),
   });
 };
@@ -149,11 +180,59 @@ export const createDesktopHostBrokerClient = ({
     }
     return payload;
   };
+  const openBrowserLeaseObservationStream = async ({ leaseId, signal } = {}) => {
+    const lease = getLease();
+    if (!lease
+      || !Number.isSafeInteger(lease.brokerPort)
+      || lease.brokerPort < 1
+      || lease.brokerPort > 65_535
+      || !TOKEN_PATTERN.test(lease.brokerToken)
+      || !lease.capabilities?.includes?.('browser_observation')
+      || Date.parse(lease.expiresAt) <= Date.now()) {
+      throw new DesktopHostUnavailableError();
+    }
+    const connectController = new AbortController();
+    const connectTimeout = setTimeout(() => connectController.abort(), 10_000);
+    connectTimeout.unref?.();
+    const signals = [connectController.signal];
+    if (signal) signals.push(signal);
+    let response;
+    try {
+      response = await fetchImpl(`http://127.0.0.1:${lease.brokerPort}/v1/browser/observe`, {
+        method: 'POST',
+        redirect: 'error',
+        signal: AbortSignal.any(signals),
+        headers: {
+          Authorization: `Bearer ${lease.brokerToken}`,
+          'X-DevRyan-Desktop-Host-Version': String(PROTOCOL_VERSION),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ leaseId }),
+      });
+    } catch {
+      throw new DesktopHostUnavailableError();
+    } finally {
+      clearTimeout(connectTimeout);
+    }
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.ok || !response.body || !/^multipart\/x-mixed-replace\s*;\s*boundary=/i.test(contentType)) {
+      try { await response.body?.cancel?.(); } catch { }
+      throw new DesktopHostUnavailableError('Live agent browser viewing is unavailable');
+    }
+    return { contentType, body: response.body };
+  };
   return Object.freeze({
     status: () => request('GET', '/v1/status'),
     notify: (payload) => request('POST', '/v1/notify', payload),
     createBrowserLease: (payload) => request('POST', '/v1/browser/create', payload),
     touchBrowserLease: (payload) => request('POST', '/v1/browser/touch', payload),
     releaseBrowserLease: (payload) => request('POST', '/v1/browser/release', payload),
+    browserLeaseObservationSnapshot: (payload) => {
+      if (!getLease()?.capabilities?.includes?.('browser_observation')) {
+        throw new DesktopHostUnavailableError('Live agent browser viewing is unavailable');
+      }
+      return request('POST', '/v1/browser/observation-snapshot', payload);
+    },
+    openBrowserLeaseObservationStream,
   });
 };

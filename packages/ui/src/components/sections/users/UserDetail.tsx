@@ -4,8 +4,6 @@ import {
   RiArrowLeftLine,
   RiArrowRightSLine,
   RiDeleteBinLine,
-  RiErrorWarningLine,
-  RiFileCopyLine,
   RiGitBranchLine,
   RiKey2Line,
   RiLink,
@@ -24,11 +22,8 @@ import {
   type SettingsPermissionOverrides,
   type SettingsPermissions,
 } from '@/lib/settings/permissions';
-import { AccessLinksList } from './AccessLinksSection';
 import { ConfirmActionDialog } from './ConfirmActionDialog';
-import { TunnelPresetPickerDialog, type TunnelPresetSelection } from './TunnelPresetPickerDialog';
 import { SettingsPermissionOverrideMatrix } from './SettingsPermissionMatrix';
-import { copyTextToClipboard } from '@/lib/clipboard';
 import { UserAnalytics } from './UserAnalytics';
 import { ResetPasswordDialog } from './ResetPasswordDialog';
 import {
@@ -44,7 +39,6 @@ import {
   type CapabilityKey,
   type CapabilityOverride,
   type GitHubAccountRow,
-  type InviteRow,
   type McpPolicyOverride,
   type ProjectRow,
   type Role,
@@ -59,12 +53,18 @@ interface UserDetailProps {
   canViewDetailedAnalytics: boolean;
   projects: ProjectRow[];
   githubAccounts: GitHubAccountRow[];
-  invites: InviteRow[];
   activity: ActivityRow[];
   onBack: () => void;
   onUsersChanged: () => Promise<void> | void;
-  onInvitesChanged: () => Promise<void> | void;
   onTemporaryPassword: (password: string) => void;
+}
+
+interface BranchPreviewDraft {
+  previewUrl: string;
+  clientId: string;
+  clientSecret: string;
+  serviceTokenConfigured: boolean;
+  savedPreviewUrl: string;
 }
 
 export const UserDetail: React.FC<UserDetailProps> = ({
@@ -73,11 +73,9 @@ export const UserDetail: React.FC<UserDetailProps> = ({
   canViewDetailedAnalytics,
   projects,
   githubAccounts,
-  invites,
   activity,
   onBack,
   onUsersChanged,
-  onInvitesChanged,
   onTemporaryPassword,
 }) => {
   const [busy, setBusy] = React.useState(false);
@@ -86,14 +84,11 @@ export const UserDetail: React.FC<UserDetailProps> = ({
   const [settingsPolicyOpen, setSettingsPolicyOpen] = React.useState(true);
   const [capabilityPolicyOpen, setCapabilityPolicyOpen] = React.useState(true);
   const [agentsPolicyOpen, setAgentsPolicyOpen] = React.useState(false);
+  const [sourcePolicyOpen, setSourcePolicyOpen] = React.useState(false);
   const [mcpPolicyOpen, setMcpPolicyOpen] = React.useState(false);
   const [advancedPolicyOpen, setAdvancedPolicyOpen] = React.useState(false);
   const [mcpServerNames, setMcpServerNames] = React.useState<string[] | null>(null);
 
-  const userInvites = React.useMemo(
-    () => invites.filter((invite) => invite.email.toLowerCase() === user.email.toLowerCase()),
-    [invites, user.email],
-  );
   const userActivity = React.useMemo(
     () => activity.filter((row) => row.target_id === user.id),
     [activity, user.id],
@@ -142,39 +137,6 @@ export const UserDetail: React.FC<UserDetailProps> = ({
     } finally { setBusy(false); }
   };
 
-  const [invitePickerOpen, setInvitePickerOpen] = React.useState(false);
-  const [inviteBanner, setInviteBanner] = React.useState<{
-    url: string;
-    tunnelName: string | null;
-    tunnelActive: boolean;
-  } | null>(null);
-
-  const createInvite = async (selection: TunnelPresetSelection) => {
-    setBusy(true);
-    try {
-      const payload = await requestJson<{ invite: { url: string } }>('/api/admin/invites', {
-        method: 'POST',
-        body: JSON.stringify({
-          email: user.email,
-          expiresInDays: 2,
-          ...(selection.tunnelPresetId ? { tunnelPresetId: selection.tunnelPresetId } : {}),
-        }),
-      });
-      const url = new URL(payload.invite.url, window.location.origin).toString();
-      await copyTextToClipboard(url, { sourceSurface: 'settings', copyKind: 'text' });
-      setInvitePickerOpen(false);
-      setInviteBanner({
-        url,
-        tunnelName: selection.tunnelName,
-        tunnelActive: selection.tunnelPresetId ? selection.tunnelActive : true,
-      });
-      await onInvitesChanged();
-      toast.success('Single-use invitation copied');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to create invitation');
-    } finally { setBusy(false); }
-  };
-
   // --- Policy overrides ------------------------------------------------------
 
   const [policyLoading, setPolicyLoading] = React.useState(false);
@@ -188,6 +150,8 @@ export const UserDetail: React.FC<UserDetailProps> = ({
     agentsHidePermissionsUi: boolean;
     inheritedAgentsHideGlobalBehaviorUi: boolean;
     agentsHideGlobalBehaviorUi: boolean;
+    inheritedSourceHideUpdateTab: boolean;
+    sourceHideUpdateTab: boolean;
     mcpOverrides: Record<string, McpPolicyOverride>;
   }>({
     permissionOverrides: {},
@@ -198,6 +162,8 @@ export const UserDetail: React.FC<UserDetailProps> = ({
     agentsHidePermissionsUi: false,
     inheritedAgentsHideGlobalBehaviorUi: false,
     agentsHideGlobalBehaviorUi: false,
+    inheritedSourceHideUpdateTab: false,
+    sourceHideUpdateTab: false,
     mcpOverrides: {},
   });
   const effectivePermissions = React.useMemo(() => mergeSettingsPermissionOverrides(
@@ -216,6 +182,8 @@ export const UserDetail: React.FC<UserDetailProps> = ({
       const featureOverrides = payload.policy.feature_overrides || {};
       const inheritedAgentsHideGlobalBehaviorUi = payload.inheritedPolicy.featureOverrides?.agents?.hideGlobalBehaviorUi === true;
       const rawAgentsHideGlobalBehaviorUi = featureOverrides.agents?.hideGlobalBehaviorUi;
+      const inheritedSourceHideUpdateTab = payload.inheritedPolicy.featureOverrides?.source?.hideUpdateTab === true;
+      const rawSourceHideUpdateTab = featureOverrides.source?.hideUpdateTab;
       setPolicyDraft({
         permissionOverrides: payload.policy.settings_permission_overrides || {},
         inheritedPermissions: payload.inheritedPolicy.settingsPermissions,
@@ -227,6 +195,10 @@ export const UserDetail: React.FC<UserDetailProps> = ({
         agentsHideGlobalBehaviorUi: typeof rawAgentsHideGlobalBehaviorUi === 'boolean'
           ? rawAgentsHideGlobalBehaviorUi
           : inheritedAgentsHideGlobalBehaviorUi,
+        inheritedSourceHideUpdateTab,
+        sourceHideUpdateTab: typeof rawSourceHideUpdateTab === 'boolean'
+          ? rawSourceHideUpdateTab
+          : inheritedSourceHideUpdateTab,
         mcpOverrides: Object.fromEntries(Object.entries(featureOverrides.mcp || {})
           .filter(([, state]) => state === 'on' || state === 'off')),
       });
@@ -269,6 +241,11 @@ export const UserDetail: React.FC<UserDetailProps> = ({
           ? { hideGlobalBehaviorUi: policyDraft.agentsHideGlobalBehaviorUi }
           : {}),
       };
+      const sourceFeatureOverrides = {
+        ...(policyDraft.sourceHideUpdateTab !== policyDraft.inheritedSourceHideUpdateTab
+          ? { hideUpdateTab: policyDraft.sourceHideUpdateTab }
+          : {}),
+      };
       await requestJson(`/api/admin/users/${encodeURIComponent(user.id)}/policy`, {
         method: 'PUT',
         body: JSON.stringify({
@@ -277,6 +254,7 @@ export const UserDetail: React.FC<UserDetailProps> = ({
           settingsOverrides,
           featureOverrides: {
             ...(Object.keys(agentFeatureOverrides).length > 0 ? { agents: agentFeatureOverrides } : {}),
+            ...(Object.keys(sourceFeatureOverrides).length > 0 ? { source: sourceFeatureOverrides } : {}),
             ...(Object.keys(mcpFeatureOverrides).length > 0 ? { mcp: mcpFeatureOverrides } : {}),
           },
         }),
@@ -308,6 +286,11 @@ export const UserDetail: React.FC<UserDetailProps> = ({
   const [assignmentBranches, setAssignmentBranches] = React.useState<string[]>([]);
   const [assignmentBranchOptions, setAssignmentBranchOptions] = React.useState<BranchOption[]>([]);
   const [assignmentExists, setAssignmentExists] = React.useState(false);
+  const [persistedAssignmentBranches, setPersistedAssignmentBranches] = React.useState<string[]>([]);
+  const [branchPreviewDrafts, setBranchPreviewDrafts] = React.useState<Record<string, BranchPreviewDraft>>({});
+  const [openBranchPreviews, setOpenBranchPreviews] = React.useState<Record<string, boolean>>({});
+  const [previewBusyBranch, setPreviewBusyBranch] = React.useState<string | null>(null);
+  const [removePreviewBranch, setRemovePreviewBranch] = React.useState<string | null>(null);
   const [removeAccessOpen, setRemoveAccessOpen] = React.useState(false);
 
   React.useEffect(() => {
@@ -319,6 +302,8 @@ export const UserDetail: React.FC<UserDetailProps> = ({
       setAssignmentBranches([]);
       setAssignmentBranchOptions([]);
       setAssignmentExists(false);
+      setPersistedAssignmentBranches([]);
+      setBranchPreviewDrafts({});
       return;
     }
     void Promise.all([
@@ -327,7 +312,14 @@ export const UserDetail: React.FC<UserDetailProps> = ({
       ),
       requestJson<{
         access: { is_default: boolean } | null;
-        branches: Array<{ branch_name: string; is_default: boolean }>;
+        branches: Array<{
+          branch_name: string;
+          is_default: boolean;
+          preview?: {
+            previewUrl: string;
+            serviceTokenConfigured: boolean;
+          } | null;
+        }>;
       }>(`/api/admin/users/${encodeURIComponent(user.id)}/projects/${encodeURIComponent(assignment.projectId)}`),
     ]).then(([available, currentAccess]) => {
       const options = available.branchOptions?.length
@@ -341,6 +333,17 @@ export const UserDetail: React.FC<UserDetailProps> = ({
         .filter((branch) => available.branches.includes(branch));
       const assignedDefault = currentAccess.branches.find((row) => row.is_default)?.branch_name || '';
       const fallback = available.defaultBranch || available.branches?.[0] || '';
+      setPersistedAssignmentBranches(assignedBranches);
+      setBranchPreviewDrafts(Object.fromEntries(options.map((option) => {
+        const preview = currentAccess.branches.find((row) => row.branch_name === option.name)?.preview;
+        return [option.name, {
+          previewUrl: preview?.previewUrl || '',
+          clientId: '',
+          clientSecret: '',
+          serviceTokenConfigured: preview?.serviceTokenConfigured === true,
+          savedPreviewUrl: preview?.previewUrl || '',
+        } satisfies BranchPreviewDraft];
+      })));
       setAssignment((current) => ({
         ...current,
         branches: assignedBranches.length > 0 ? assignedBranches : fallback ? [fallback] : [],
@@ -366,11 +369,121 @@ export const UserDetail: React.FC<UserDetailProps> = ({
         }),
       });
       setAssignmentExists(true);
+      setPersistedAssignmentBranches(assignment.branches);
+      setBranchPreviewDrafts((current) => Object.fromEntries(
+        Object.entries(current).filter(([branchName]) => assignment.branches.includes(branchName)),
+      ));
       await onUsersChanged();
       toast.success('Project and branch assigned');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to assign project');
     } finally { setBusy(false); }
+  };
+
+  const branchPreviewEndpoint = React.useCallback((branchName: string) => (
+    `/api/admin/users/${encodeURIComponent(user.id)}/projects/${encodeURIComponent(assignment.projectId)}/branches/${encodeURIComponent(branchName)}/preview`
+  ), [assignment.projectId, user.id]);
+
+  const updateBranchPreviewDraft = (branchName: string, changes: Partial<BranchPreviewDraft>) => {
+    setBranchPreviewDrafts((current) => {
+      const previous = current[branchName] || {
+        previewUrl: '',
+        clientId: '',
+        clientSecret: '',
+        serviceTokenConfigured: false,
+        savedPreviewUrl: '',
+      };
+      return {
+        ...current,
+        [branchName]: {
+          ...previous,
+          ...changes,
+        },
+      };
+    });
+  };
+
+  const branchPreviewServiceToken = (draft: BranchPreviewDraft) => {
+    const clientId = draft.clientId.trim();
+    const clientSecret = draft.clientSecret.trim();
+    if (Boolean(clientId) !== Boolean(clientSecret)) {
+      throw new Error('Enter both Client ID and Client Secret to replace the service token');
+    }
+    return clientId && clientSecret ? { clientId, clientSecret } : undefined;
+  };
+
+  const saveBranchPreview = async (branchName: string) => {
+    const draft = branchPreviewDrafts[branchName];
+    if (!draft?.previewUrl.trim()) return;
+    setPreviewBusyBranch(branchName);
+    try {
+      const serviceToken = branchPreviewServiceToken(draft);
+      const payload = await requestJson<{ preview: {
+        previewUrl: string;
+        serviceTokenConfigured: boolean;
+      } }>(branchPreviewEndpoint(branchName), {
+        method: 'PUT',
+        body: JSON.stringify({
+          previewUrl: draft.previewUrl.trim(),
+          ...(serviceToken ? { serviceToken } : {}),
+        }),
+      });
+      updateBranchPreviewDraft(branchName, {
+        previewUrl: payload.preview.previewUrl,
+        savedPreviewUrl: payload.preview.previewUrl,
+        serviceTokenConfigured: payload.preview.serviceTokenConfigured,
+        clientId: '',
+        clientSecret: '',
+      });
+      toast.success(`Preview saved and verified for ${branchName}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to save branch preview');
+    } finally {
+      setPreviewBusyBranch(null);
+    }
+  };
+
+  const testBranchPreview = async (branchName: string) => {
+    const draft = branchPreviewDrafts[branchName];
+    if (!draft?.previewUrl.trim()) return;
+    setPreviewBusyBranch(branchName);
+    try {
+      const serviceToken = branchPreviewServiceToken(draft);
+      await requestJson(branchPreviewEndpoint(branchName) + '/test', {
+        method: 'POST',
+        body: JSON.stringify({
+          previewUrl: draft.previewUrl.trim(),
+          ...(serviceToken ? { serviceToken } : {}),
+        }),
+      });
+      toast.success(`Connection to ${branchName} preview succeeded`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Branch preview connection failed');
+    } finally {
+      setPreviewBusyBranch(null);
+    }
+  };
+
+  const removeBranchPreview = async () => {
+    const branchName = removePreviewBranch;
+    if (!branchName) return;
+    setPreviewBusyBranch(branchName);
+    try {
+      await requestJson(branchPreviewEndpoint(branchName), { method: 'DELETE' });
+      updateBranchPreviewDraft(branchName, {
+        previewUrl: '',
+        savedPreviewUrl: '',
+        serviceTokenConfigured: false,
+        clientId: '',
+        clientSecret: '',
+      });
+      setRemovePreviewBranch(null);
+      toast.success(`Preview removed for ${branchName}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to remove branch preview');
+    } finally {
+      setPreviewBusyBranch(null);
+    }
   };
 
   const removeProjectAccess = async () => {
@@ -381,6 +494,8 @@ export const UserDetail: React.FC<UserDetailProps> = ({
         method: 'DELETE',
       });
       setAssignmentExists(false);
+      setPersistedAssignmentBranches([]);
+      setBranchPreviewDrafts({});
       setAssignment((current) => ({ ...current, branches: [], defaultBranch: '' }));
       setRemoveAccessOpen(false);
       await onUsersChanged();
@@ -522,11 +637,6 @@ export const UserDetail: React.FC<UserDetailProps> = ({
                 <RiKey2Line className="h-4 w-4" /> Reset Password
               </Button>
             )}
-            {isAdmin && user.role !== 'admin' && (
-              <Button variant="outline" size="sm" onClick={() => setInvitePickerOpen(true)} disabled={busy || user.status === 'archived'}>
-                <RiLink className="h-4 w-4" /> Create Access Link
-              </Button>
-            )}
           </div>
         </div>
       </SettingsSection>
@@ -566,24 +676,133 @@ export const UserDetail: React.FC<UserDetailProps> = ({
                 </select>
               </label>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {assignmentBranches.map((branch) => (
-                <label key={branch} className="flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2 typography-meta text-foreground">
-                  <Checkbox
-                    checked={assignment.branches.includes(branch)}
-                    disabled={!isAdmin}
-                    onChange={(checked) => setAssignment((current) => ({
-                      ...current,
-                      branches: checked ? [...new Set([...current.branches, branch])] : current.branches.filter((value) => value !== branch),
-                      defaultBranch: !checked && current.defaultBranch === branch ? '' : current.defaultBranch,
-                    }))}
-                    ariaLabel={`Show ${branch}`}
-                    className="size-4"
-                    iconClassName="size-4"
-                  />
-                  {assignmentBranchLabel(branch)}
-                </label>
-              ))}
+            <div className="grid gap-2">
+              {assignmentBranches.map((branch) => {
+                const checked = assignment.branches.includes(branch);
+                const persisted = persistedAssignmentBranches.includes(branch);
+                const previewOpen = openBranchPreviews[branch] === true;
+                const draft = branchPreviewDrafts[branch] || {
+                  previewUrl: '',
+                  clientId: '',
+                  clientSecret: '',
+                  serviceTokenConfigured: false,
+                  savedPreviewUrl: '',
+                };
+                const previewBusy = previewBusyBranch === branch;
+                const hasPreview = Boolean(draft.savedPreviewUrl);
+                return (
+                  <div key={branch} className="overflow-hidden rounded-xl border border-border/60 bg-[var(--surface-elevated)]">
+                    <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                      <label className="flex min-w-0 items-center gap-2 typography-meta text-foreground">
+                        <Checkbox
+                          checked={checked}
+                          disabled={!isAdmin}
+                          onChange={(nextChecked) => setAssignment((current) => ({
+                            ...current,
+                            branches: nextChecked ? [...new Set([...current.branches, branch])] : current.branches.filter((value) => value !== branch),
+                            defaultBranch: !nextChecked && current.defaultBranch === branch ? '' : current.defaultBranch,
+                          }))}
+                          ariaLabel={`Show ${branch}`}
+                          className="size-4"
+                          iconClassName="size-4"
+                        />
+                        <span className="truncate">{assignmentBranchLabel(branch)}</span>
+                        {assignment.defaultBranch === branch ? (
+                          <span className="rounded-full bg-[var(--interactive-primary)]/10 px-2 py-0.5 typography-micro text-[var(--interactive-primary)]">Default</span>
+                        ) : null}
+                      </label>
+                      {checked ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={() => setOpenBranchPreviews((current) => ({ ...current, [branch]: !previewOpen }))}
+                          aria-expanded={previewOpen}
+                          aria-controls={`branch-preview-${branch}`}
+                        >
+                          <RiLink className="h-4 w-4" />
+                          {hasPreview ? 'Preview Configured' : 'Add Preview'}
+                          <RiArrowDownSLine className={`h-4 w-4 transition-transform ${previewOpen ? 'rotate-180' : ''}`} />
+                        </Button>
+                      ) : null}
+                    </div>
+                    {checked && previewOpen ? (
+                      <div id={`branch-preview-${branch}`} className="space-y-3 border-t border-border/60 bg-[var(--surface-subtle)]/30 p-3">
+                        {!persisted ? (
+                          <p className="typography-meta text-[var(--status-warning)]">Save branch visibility before configuring its preview.</p>
+                        ) : null}
+                        <label className="block space-y-1 typography-meta text-foreground">
+                          <span>Preview URL</span>
+                          <Input
+                            aria-label={`Preview URL for ${branch}`}
+                            value={draft.previewUrl}
+                            placeholder="https://preview.example.com"
+                            disabled={!isAdmin || previewBusy}
+                            onChange={(event) => updateBranchPreviewDraft(branch, { previewUrl: event.target.value })}
+                          />
+                        </label>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <label className="space-y-1 typography-meta text-foreground">
+                            <span>Client ID</span>
+                            <Input
+                              aria-label={`Preview Client ID for ${branch}`}
+                              value={draft.clientId}
+                              placeholder={draft.serviceTokenConfigured ? 'Enter to replace token' : 'Cloudflare Access Client ID'}
+                              autoComplete="off"
+                              disabled={!isAdmin || previewBusy}
+                              onChange={(event) => updateBranchPreviewDraft(branch, { clientId: event.target.value })}
+                            />
+                          </label>
+                          <label className="space-y-1 typography-meta text-foreground">
+                            <span>Client Secret</span>
+                            <Input
+                              type="password"
+                              aria-label={`Preview Client Secret for ${branch}`}
+                              value={draft.clientSecret}
+                              placeholder={draft.serviceTokenConfigured ? 'Enter to replace token' : 'Cloudflare Access Client Secret'}
+                              autoComplete="new-password"
+                              disabled={!isAdmin || previewBusy}
+                              onChange={(event) => updateBranchPreviewDraft(branch, { clientSecret: event.target.value })}
+                            />
+                          </label>
+                        </div>
+                        {draft.serviceTokenConfigured ? (
+                          <p className="flex items-center gap-2 typography-meta text-[var(--status-success)]">
+                            <RiKey2Line className="h-4 w-4" /> Service token configured. Saved credentials remain write-only.
+                          </p>
+                        ) : null}
+                        {isAdmin ? (
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void testBranchPreview(branch)}
+                              disabled={!persisted || previewBusy || !draft.previewUrl.trim()}
+                            >
+                              Test Connection
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => void saveBranchPreview(branch)}
+                              disabled={!persisted || previewBusy || !draft.previewUrl.trim()}
+                            >
+                              {draft.serviceTokenConfigured ? 'Save / Replace Token' : 'Save Preview'}
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => setRemovePreviewBranch(branch)}
+                              disabled={previewBusy || !hasPreview}
+                            >
+                              <RiDeleteBinLine className="h-4 w-4" /> Remove
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
             {isAdmin ? (
               <div className="flex flex-wrap gap-2">
@@ -597,39 +816,6 @@ export const UserDetail: React.FC<UserDetailProps> = ({
             ) : null}
           </div>
         </SettingsSection>
-
-      <SettingsSection
-        title="Access Links"
-        description="Single-use links issued for this user."
-        divider
-      >
-        <div className="space-y-3">
-          {inviteBanner && (
-            <div className="rounded-lg border border-[var(--status-success)]/30 bg-[var(--status-success)]/10 p-3">
-              <div className="typography-ui-label font-medium">
-                Single-Use Invitation — Shown Once
-                {inviteBanner.tunnelName ? ` · via ${inviteBanner.tunnelName}` : ''}
-              </div>
-              <code className="mt-1 block break-all typography-code text-foreground">{inviteBanner.url}</code>
-              {!inviteBanner.tunnelActive && (
-                <p className="mt-2 flex items-start gap-2 typography-meta text-foreground">
-                  <RiErrorWarningLine className="mt-0.5 h-4 w-4 shrink-0 text-[var(--status-warning)]" />
-                  The selected managed tunnel is not running. Start it before the recipient opens this link.
-                </p>
-              )}
-              <Button
-                variant="ghost"
-                size="xs"
-                className="mt-2"
-                onClick={() => void copyTextToClipboard(inviteBanner.url, { sourceSurface: 'settings', copyKind: 'text' })}
-              >
-                <RiFileCopyLine className="h-4 w-4" /> Copy Invitation
-              </Button>
-            </div>
-          )}
-          <AccessLinksList invites={userInvites} onChanged={onInvitesChanged} canEdit={isAdmin} emptyLabel="No access links have been issued for this user." />
-        </div>
-      </SettingsSection>
         </Tabs.Panel>
 
         <Tabs.Panel value="policy" keepMounted className="max-w-4xl [[hidden]]:hidden">
@@ -790,6 +976,42 @@ export const UserDetail: React.FC<UserDetailProps> = ({
               </div>
             </Collapsible>
 
+            <Collapsible open={sourcePolicyOpen} onOpenChange={setSourcePolicyOpen}>
+              <div className="rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25">
+                <CollapsibleTrigger className="rounded-xl px-3 py-3">
+                  <span className="min-w-0">
+                    <span className="block typography-ui-label font-semibold text-foreground">Source Overrides</span>
+                    <span className="block typography-micro text-muted-foreground">Control Which Source Actions This User Can See in the Right Sidebar.</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="rounded-full bg-[var(--surface-elevated)] px-2 py-0.5 typography-micro text-muted-foreground">
+                      {Number(policyDraft.sourceHideUpdateTab !== policyDraft.inheritedSourceHideUpdateTab)} Overrides
+                    </span>
+                    {sourcePolicyOpen ? <RiArrowDownSLine className="h-4 w-4" /> : <RiArrowRightSLine className="h-4 w-4" />}
+                  </span>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="px-3 pb-3">
+                  <label className="flex items-start gap-2 rounded-lg border border-border/60 bg-[var(--surface-elevated)] px-3 py-2 typography-meta text-foreground">
+                    <Checkbox
+                      checked={policyDraft.sourceHideUpdateTab}
+                      disabled={!isAdmin || policyLoading || busy || user.role === 'admin'}
+                      onChange={(checked) => setPolicyDraft((current) => ({ ...current, sourceHideUpdateTab: checked }))}
+                      ariaLabel="Hide Source Update Tab"
+                      className="mt-0.5 size-4"
+                      iconClassName="size-4"
+                    />
+                    <span>
+                      <span className="block typography-ui-label text-foreground">Hide Update Tab</span>
+                      <span className="block typography-micro text-muted-foreground">
+                        Removes the Update Tab from Source in the Right Sidebar for This User.
+                        {' '}Inherited: {policyDraft.inheritedSourceHideUpdateTab ? 'On' : 'Off'}.
+                      </span>
+                    </span>
+                  </label>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
+
             <Collapsible open={mcpPolicyOpen} onOpenChange={setMcpPolicyOpen}>
               <div className="rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25">
                 <CollapsibleTrigger className="rounded-xl px-3 py-3">
@@ -911,11 +1133,15 @@ export const UserDetail: React.FC<UserDetailProps> = ({
         busy={busy}
         onConfirm={() => void resetUserPolicy()}
       />
-      <TunnelPresetPickerDialog
-        open={invitePickerOpen}
-        onOpenChange={setInvitePickerOpen}
-        busy={busy}
-        onCreate={(selection) => void createInvite(selection)}
+      <ConfirmActionDialog
+        open={removePreviewBranch !== null}
+        onOpenChange={(open) => { if (!open) setRemovePreviewBranch(null); }}
+        title="Remove Branch Preview"
+        description={`Remove the preview URL and stored service token for ${removePreviewBranch || 'this branch'}?`}
+        confirmLabel="Remove Preview"
+        destructive
+        busy={removePreviewBranch ? previewBusyBranch === removePreviewBranch : false}
+        onConfirm={() => void removeBranchPreview()}
       />
     </div>
   );

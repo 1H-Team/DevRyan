@@ -30,6 +30,12 @@ export type SaveBotCredentialInput =
     };
 
 type MutationResult = boolean | void | Promise<boolean | void>;
+const authLabels = {
+  reauth_required: 'Reconnect OpenAI in Providers, then reconnect this account.',
+  unavailable: 'Managed OpenAI authentication is unavailable. Check the host runtime.',
+  ready: 'Shared host login is ready.',
+  unknown: 'Shared login will be checked before use.',
+};
 
 export const BotCredentials: React.FC<{
   credentials: readonly BotCredentialMetadata[];
@@ -38,7 +44,8 @@ export const BotCredentials: React.FC<{
   busy: boolean;
   onSave: (input: SaveBotCredentialInput) => MutationResult;
   onRotate?: (credential: BotCredentialMetadata, secret: string) => MutationResult;
-}> = ({ credentials, providers, readOnly, busy, onSave, onRotate }) => {
+  onReconnect?: (credential: BotCredentialMetadata) => MutationResult;
+}> = ({ credentials, providers, readOnly, busy, onSave, onRotate, onReconnect }) => {
   const [provider, setProvider] = React.useState('');
   const [label, setLabel] = React.useState('');
   const [kind, setKind] = React.useState<'api_key' | 'oauth'>('api_key');
@@ -157,10 +164,20 @@ export const BotCredentials: React.FC<{
               <div className="min-w-0">
                 <p className="typography-ui-label font-medium text-foreground">{credential.label || credential.provider}</p>
                 <p className="typography-micro text-muted-foreground">{credential.provider} · {credential.maskedIdentifier || 'Stored securely'} · {credential.status}</p>
+                {credential.kind === 'oauth' && credential.provider === 'openai' ? (
+                  <p className="typography-micro text-muted-foreground">
+                    {authLabels[credential.authState || 'unknown']}
+                  </p>
+                ) : null}
               </div>
               {!readOnly && credential.kind === 'api_key' && onRotate ? (
                 <Button type="button" size="xs" variant="outline" disabled={busy} onClick={() => { setRotatingId((current) => current === credential.id ? null : credential.id); setRotationSecret(''); }}>
                   Replace
+                </Button>
+              ) : null}
+              {!readOnly && credential.kind === 'oauth' && credential.provider === 'openai' && onReconnect ? (
+                <Button type="button" size="xs" variant="outline" disabled={busy} onClick={() => { void onReconnect(credential); }}>
+                  Reconnect Host Account
                 </Button>
               ) : null}
             </div>

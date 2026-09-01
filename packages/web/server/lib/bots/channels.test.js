@@ -7,6 +7,7 @@ const BOT_ID = 'b0000000-0000-4000-8000-000000000001';
 const CHANNEL_ID = 'c0000000-0000-4000-8000-000000000001';
 const MESSAGE_ID = 'd0000000-0000-4000-8000-000000000001';
 const EMPTY_MESSAGE_ID = 'd0000000-0000-4000-8000-000000000002';
+const ACKNOWLEDGMENT_ID = 'd0000000-0000-4000-8000-000000000003';
 const RUN_ID = 'e0000000-0000-4000-8000-000000000001';
 const REVISION_ID = 'f0000000-0000-4000-8000-000000000001';
 const USER_ID = 'a0000000-0000-4000-8000-000000000001';
@@ -63,6 +64,19 @@ const createHarness = ({ existingChannel = channel() } = {}) => {
         attachment_count: input.attachmentCount,
         created_at: NOW,
         finalized_at: NOW,
+      },
+      acknowledgment: {
+        id: input.acknowledgmentId,
+        channel_id: input.channelId,
+        run_id: input.runId,
+        actor_user_id: null,
+        role: 'assistant',
+        assistant_phase: 'pending',
+        sequence: 2,
+        body_envelope: input.acknowledgmentBodyEnvelope,
+        attachment_count: 0,
+        created_at: NOW,
+        finalized_at: null,
       },
       run: {
         id: input.runId,
@@ -148,7 +162,7 @@ describe('Production Bot continuous channels', () => {
       keyId: 'deployment-v1',
       value: {
         version: 1,
-        text: '**Crafting warm pricing prompt**Hey! The pricing page is ready.',
+        text: 'Advising user on manual browser stepsJavaScript and cookies aren’t exposed as settings I can change here.',
         attachmentIds: [],
       },
       associatedData: messageAssociatedData(CHANNEL_ID, MESSAGE_ID),
@@ -175,7 +189,84 @@ describe('Production Bot continuous channels', () => {
       channelId: CHANNEL_ID,
     });
 
-    expect(page.messages[0].body.text).toBe('Hey! The pricing page is ready.');
+    expect(page.messages[0].body.text).toBe(
+      'Advising user on manual browser stepsJavaScript and cookies aren’t exposed as settings I can change here.',
+    );
+  });
+
+  it('loads only the exact finalized assistant result for extraction recovery', async () => {
+    const harness = createHarness();
+    const envelope = encryptBotJson({
+      key: KEY,
+      keyId: 'deployment-v1',
+      value: { version: 1, text: 'Final answer.', attachmentIds: [] },
+      associatedData: messageAssociatedData(CHANNEL_ID, MESSAGE_ID),
+    });
+    harness.messageRepository.get.mockResolvedValueOnce({
+      id: MESSAGE_ID,
+      channel_id: CHANNEL_ID,
+      run_id: RUN_ID,
+      actor_user_id: null,
+      role: 'assistant',
+      assistant_phase: 'result',
+      sequence: 2,
+      body_envelope: envelope,
+      attachment_count: 0,
+      created_at: NOW,
+      finalized_at: NOW,
+    });
+
+    await expect(harness.channels.loadRunAssistantResult({
+      runId: RUN_ID,
+      channelId: CHANNEL_ID,
+    })).resolves.toMatchObject({ body: { text: 'Final answer.' }, assistantPhase: 'result' });
+    expect(harness.messageRepository.get).toHaveBeenCalledWith({
+      run_id: RUN_ID,
+      channel_id: CHANNEL_ID,
+      role: 'assistant',
+      assistant_phase: 'result',
+    });
+
+    harness.messageRepository.get.mockResolvedValueOnce({ finalized_at: null });
+    await expect(harness.channels.loadRunAssistantResult({
+      runId: RUN_ID,
+      channelId: CHANNEL_ID,
+    })).rejects.toMatchObject({ code: 'bot_message_not_found' });
+  });
+
+  it('sanitizes assistant checkpoints before encrypting them', async () => {
+    const harness = createHarness();
+    const assistant = {
+      id: MESSAGE_ID,
+      channel_id: CHANNEL_ID,
+      run_id: RUN_ID,
+      actor_user_id: null,
+      role: 'assistant',
+      assistant_phase: 'pending',
+      sequence: 2,
+      attachment_count: 0,
+      created_at: NOW,
+      finalized_at: null,
+    };
+    harness.store.updateMessageCheckpoint.mockResolvedValueOnce(assistant);
+
+    const updated = await harness.channels.updateAssistantCheckpoint({
+      message: assistant,
+      text: 'Evaluating external action limitationsI’ll check Buffer’s page state now.',
+    });
+
+    expect(updated.body.text).toBe('Evaluating external action limitationsI’ll check Buffer’s page state now.');
+    const persisted = harness.store.updateMessageCheckpoint.mock.calls[0][0];
+    expect(decryptBotJson({
+      key: KEY,
+      envelope: persisted.bodyEnvelope,
+      expectedKeyId: 'deployment-v1',
+      associatedData: messageAssociatedData(CHANNEL_ID, MESSAGE_ID),
+    })).toEqual({
+      version: 1,
+      text: 'Evaluating external action limitationsI’ll check Buffer’s page state now.',
+      attachmentIds: [],
+    });
   });
 
   it('encrypts the client-stable message and delegates one atomic message/run write', async () => {
@@ -184,6 +275,7 @@ describe('Production Bot continuous channels', () => {
       principal: { id: USER_ID },
       preflight: { bot: bot(), channel: channel() },
       messageId: MESSAGE_ID,
+      acknowledgmentId: ACKNOWLEDGMENT_ID,
       runId: RUN_ID,
       revisionId: REVISION_ID,
       idempotencyKey: 'client-message-1',
@@ -198,6 +290,14 @@ describe('Production Bot continuous channels', () => {
     expect(harness.store.enqueueMessageRun).toHaveBeenCalledTimes(1);
     const input = harness.store.enqueueMessageRun.mock.calls[0][0];
     expect(JSON.stringify(input.bodyEnvelope)).not.toContain('Keep this private');
+    expect(result.acknowledgment).toMatchObject({
+      id: ACKNOWLEDGMENT_ID,
+      runId: RUN_ID,
+      assistantPhase: 'pending',
+      body: { text: '' },
+      finalizedAt: null,
+    });
+    expect(JSON.stringify(input.acknowledgmentBodyEnvelope)).not.toContain('Got it');
     expect(decryptBotJson({
       key: KEY,
       envelope: input.bodyEnvelope,
@@ -214,6 +314,12 @@ describe('Production Bot continuous channels', () => {
       value: { version: 1, text: 'Original request', attachmentIds: [] },
       associatedData: messageAssociatedData(CHANNEL_ID, MESSAGE_ID),
     });
+    const persistedAcknowledgmentEnvelope = encryptBotJson({
+      key: KEY,
+      keyId: 'deployment-v1',
+      value: { version: 1, text: '', attachmentIds: [] },
+      associatedData: messageAssociatedData(CHANNEL_ID, ACKNOWLEDGMENT_ID),
+    });
     harness.store.enqueueMessageRun.mockResolvedValueOnce({
       created: false,
       message: {
@@ -227,6 +333,19 @@ describe('Production Bot continuous channels', () => {
         attachment_count: 0,
         created_at: NOW,
         finalized_at: NOW,
+      },
+      acknowledgment: {
+        id: ACKNOWLEDGMENT_ID,
+        channel_id: CHANNEL_ID,
+        run_id: RUN_ID,
+        actor_user_id: null,
+        role: 'assistant',
+        assistant_phase: 'pending',
+        sequence: 2,
+        body_envelope: persistedAcknowledgmentEnvelope,
+        attachment_count: 0,
+        created_at: NOW,
+        finalized_at: null,
       },
       run: {
         id: RUN_ID,
@@ -242,6 +361,7 @@ describe('Production Bot continuous channels', () => {
       principal: { id: USER_ID },
       preflight: { bot: bot(), channel: channel() },
       messageId: MESSAGE_ID,
+      acknowledgmentId: ACKNOWLEDGMENT_ID,
       runId: RUN_ID,
       revisionId: REVISION_ID,
       idempotencyKey: 'client-message-1',
@@ -254,6 +374,12 @@ describe('Production Bot continuous channels', () => {
 
     expect(retried.created).toBe(false);
     expect(retried.message.body.text).toBe('Original request');
+    expect(retried.acknowledgment).toMatchObject({
+      id: ACKNOWLEDGMENT_ID,
+      assistantPhase: 'pending',
+      body: { text: '' },
+      finalizedAt: null,
+    });
   });
 
   it('accepts an attachment-only message and still rejects an entirely empty message', async () => {
@@ -262,6 +388,7 @@ describe('Production Bot continuous channels', () => {
       principal: { id: USER_ID },
       preflight: { bot: bot(), channel: channel() },
       messageId: MESSAGE_ID,
+      acknowledgmentId: ACKNOWLEDGMENT_ID,
       runId: RUN_ID,
       revisionId: REVISION_ID,
       idempotencyKey: 'attachment-only',
@@ -276,6 +403,7 @@ describe('Production Bot continuous channels', () => {
       principal: { id: USER_ID },
       preflight: { bot: bot(), channel: channel() },
       messageId: MESSAGE_ID,
+      acknowledgmentId: ACKNOWLEDGMENT_ID,
       runId: RUN_ID,
       revisionId: REVISION_ID,
       idempotencyKey: 'empty',
@@ -302,6 +430,7 @@ describe('Production Bot continuous channels', () => {
       principal: { id: USER_ID },
       preflight: { bot: bot(), channel: channel() },
       messageId: MESSAGE_ID,
+      acknowledgmentId: ACKNOWLEDGMENT_ID,
       runId: RUN_ID,
       revisionId: REVISION_ID,
       idempotencyKey: 'expired-retry',
@@ -355,13 +484,14 @@ describe('Production Bot continuous channels', () => {
     expect(harness.messageRepository.insert).not.toHaveBeenCalled();
   });
 
-  it('creates distinct pending and result checkpoints for one run', async () => {
+  it('reuses the admitted pending response for tool file publication', async () => {
     const harness = createHarness();
-    await harness.channels.getOrCreateAssistantCheckpoint({
+    const pending = await harness.channels.getOrCreateAssistantCheckpoint({
       run: { id: RUN_ID, channel_id: CHANNEL_ID },
       messageId: MESSAGE_ID,
       assistantPhase: 'pending',
     });
+    harness.messageRepository.get.mockImplementation(async ({ assistant_phase }) => assistant_phase === 'pending' ? pending : null);
     await harness.channels.getOrCreateAssistantCheckpoint({
       run: { id: RUN_ID, channel_id: CHANNEL_ID },
       messageId: EMPTY_MESSAGE_ID,
@@ -370,7 +500,7 @@ describe('Production Bot continuous channels', () => {
 
     expect(harness.messageRepository.insert.mock.calls.map(([message]) => (
       message.assistant_phase
-    ))).toEqual(['pending', 'result']);
+    ))).toEqual(['pending']);
   });
 
   it('projects an authorized catalog and run snapshot without contracts or OpenCode segment IDs', async () => {

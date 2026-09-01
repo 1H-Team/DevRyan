@@ -3,6 +3,7 @@ import { RiErrorWarningLine, RiRefreshLine } from '@remixicon/react';
 
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
+import { BotsApiError, getBotRetryReason, type BotRetryReason } from '@/lib/botsApi';
 import { useBotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotOperationsStore } from '@/stores/useBotOperationsStore';
 
@@ -12,56 +13,81 @@ type BotRunFailureNoticeProps = {
   sourceHasAttachments: boolean;
 };
 
-const RUNTIME_CONFIGURATION_FAILURES = new Set([
-  'bot_compiled_config_conflict',
-  'bot_compiled_config_invalid',
-  'bot_runtime_scoped_file_invalid',
-]);
+const isAttachmentFailure = (code: string | null) => Boolean(code && (
+  code.startsWith('bot_attachment_')
+  || code.startsWith('bot_artifact_')
+  || code.startsWith('bot_shared_file_')
+  || code.startsWith('bot_object_')
+));
+
+const failureMessageKey = (code: string | null) => {
+  switch (code) {
+    case 'bot_object_expired': return 'bots.chat.failure.reattach';
+    case 'bot_opencode_provider_authentication': return 'bots.chat.failure.authentication';
+    case 'bot_oauth_coordinator_unavailable':
+    case 'bot_oauth_runtime_update_required':
+    case 'bot_oauth_refresh_unavailable':
+    case 'bot_oauth_persistence_failed': return 'bots.chat.failure.runtimeUnavailable';
+    case 'bot_compiled_config_conflict':
+    case 'bot_compiled_config_invalid':
+    case 'bot_runtime_scoped_file_invalid': return 'bots.chat.failure.configuration';
+    case 'bot_opencode_content_filter': return 'bots.chat.failure.contentFilter';
+    case 'bot_opencode_api_rejected': return 'bots.chat.failure.rejected';
+    case 'bot_run_timeout':
+    case 'bot_opencode_request_timeout': return 'bots.chat.failure.timeout';
+    case 'bots_unavailable':
+    case 'bot_runtime_docker_unavailable':
+    case 'bot_agent_adapter_unavailable':
+    case 'bot_runtime_supervisor_unavailable':
+    case 'bot_browser_recovery_failed':
+    case 'bot_opencode_start_timeout': return 'bots.chat.failure.runtimeUnavailable';
+    default: return isAttachmentFailure(code)
+      ? 'bots.chat.failure.attachments'
+      : 'bots.chat.failure.generic';
+  }
+};
+
+const retryMessageKeys = {
+  not_found: 'bots.chat.failure.retryMissing',
+  wrong_actor: 'bots.chat.failure.retryWrongActor',
+  not_retryable: 'bots.chat.failure.retryUnsafe',
+  execution_started: 'bots.chat.failure.retryUnsafe',
+  revision_changed: 'bots.chat.failure.retryRevisionChanged',
+  channel_unavailable: 'bots.chat.failure.retryAccessLost',
+  access_revoked: 'bots.chat.failure.retryAccessLost',
+  concurrent_active_run: 'bots.chat.failure.retryBusy',
+  attachments_expired: 'bots.chat.failure.reattach',
+} as const;
 
 export const BotRunFailureNotice: React.FC<BotRunFailureNoticeProps> = ({
   runId,
   channelId,
-  sourceHasAttachments,
 }) => {
   const { t } = useI18n();
   const run = useBotOperationsStore((state) => state.runsById[runId]);
   const channelPending = useBotChannelStore((state) => (
     Boolean(state.pendingMessageIdByChannelId[channelId])
   ));
-  const sendErrorCode = useBotChannelStore((state) => state.sendErrorCodeByChannelId[channelId]);
   const [retryPending, setRetryPending] = React.useState(false);
-  const [retryFailed, setRetryFailed] = React.useState(false);
+  const [retryFailure, setRetryFailure] = React.useState<{ reason: BotRetryReason | null } | null>(null);
+  React.useEffect(() => { setRetryFailure(null); }, [runId]);
 
   if (!run || (run.state !== 'failed' && run.state !== 'interrupted')) return null;
-  const retryable = run.retryable;
-  const messageKey = run.interruptionKind === 'bot_object_expired'
-    ? 'bots.chat.failure.reattach'
-    : run.interruptionKind === 'bot_opencode_provider_authentication'
-    ? 'bots.chat.failure.authentication'
-    : run.interruptionKind && RUNTIME_CONFIGURATION_FAILURES.has(run.interruptionKind)
-      ? 'bots.chat.failure.configuration'
-    : run.interruptionKind === 'bot_opencode_content_filter'
-      ? 'bots.chat.failure.contentFilter'
-      : run.interruptionKind === 'bot_opencode_api_rejected'
-        ? 'bots.chat.failure.rejected'
-        : sourceHasAttachments
-          ? 'bots.chat.failure.attachments'
-          : 'bots.chat.failure.generic';
+  const retryable = run.retryable && (!retryFailure?.reason || retryFailure.reason === 'concurrent_active_run');
+  const messageKey = failureMessageKey(run.interruptionKind);
 
   return (
     <div
-      className="ml-[68px] flex items-start gap-2 rounded-xl border border-[var(--status-error)]/30 bg-[var(--status-error)]/5 px-3 py-2.5"
+      className="flex items-start gap-2 rounded-xl border border-[var(--status-error)]/30 bg-[var(--status-error)]/5 px-3 py-2.5"
       role="alert"
       data-bot-run-failure={run.id}
     >
       <RiErrorWarningLine className="mt-0.5 h-4 w-4 shrink-0 text-[var(--status-error)]" aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="typography-ui-label text-foreground">{t(messageKey)}</p>
-        {retryFailed ? (
+        {retryFailure ? (
           <p className="mt-1 typography-micro text-[var(--status-error)]">
-            {t(sendErrorCode === 'bot_object_expired'
-              ? 'bots.chat.failure.reattach'
-              : 'bots.chat.failure.retryFailed')}
+            {t(retryFailure.reason ? retryMessageKeys[retryFailure.reason] : 'bots.chat.failure.retryFailed')}
           </p>
         ) : null}
       </div>
@@ -73,11 +99,17 @@ export const BotRunFailureNotice: React.FC<BotRunFailureNoticeProps> = ({
           disabled={retryPending || channelPending}
           onClick={async () => {
             setRetryPending(true);
-            setRetryFailed(false);
+            setRetryFailure(null);
             try {
               await useBotChannelStore.getState().retryRun(run.id);
-            } catch {
-              setRetryFailed(true);
+            } catch (error) {
+              let reason = getBotRetryReason(error);
+              if (!reason && error instanceof BotsApiError) {
+                if (error.status === 403) reason = 'access_revoked';
+                else if (error.code === 'bot_object_expired') reason = 'attachments_expired';
+                else if (error.status === 409) reason = 'not_retryable';
+              }
+              setRetryFailure({ reason });
             } finally {
               setRetryPending(false);
             }

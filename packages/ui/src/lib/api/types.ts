@@ -574,7 +574,7 @@ export interface GitAPI {
   ): Promise<GeneratedCommitWorkflowResult>;
   generatePullRequestDescription(
     directory: string,
-    payload: { base: string; head: string; context?: string; zenModel?: string; providerId?: string; modelId?: string }
+    payload: { base: string; head: string; context?: string; prompt?: string }
   ): Promise<GeneratedPullRequestDescription>;
   listGitWorktrees(directory: string): Promise<GitWorktreeInfo[]>;
   getPrimaryWorktreeRoot?(directory: string): Promise<string>;

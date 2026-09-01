@@ -463,9 +463,12 @@ export async function createBotCredentialVault({
       return { credential: publicMetadata(record), secret };
     },
 
-    async rotate(credentialId, secretInput, metadataInput = undefined) {
+    async rotate(credentialId, secretInput, metadataInput = undefined, { expectedSecretVersion } = {}) {
       return mutate(async () => {
         const record = findRecord(credentialId);
+        if (expectedSecretVersion !== undefined && record.secretVersion !== expectedSecretVersion) {
+          fail('Bot credential changed before rotation', 'bot_credential_rotation_conflict');
+        }
         if (record.status === 'revoked') {
           fail('Bot credential has been revoked', 'bot_credential_revoked');
         }

@@ -84,6 +84,33 @@ describe('Production Bots runtime composition', () => {
     expect(runtime.gatewayHost.getAddress()).toBeNull();
   });
 
+  it('exposes an explicit starting state until the schema preflight settles', async () => {
+    const dataDirectory = await makeDirectory();
+    let releaseSchema;
+    const schemaGate = new Promise((resolve) => { releaseSchema = resolve; });
+    const supabase = {
+      rest: vi.fn(),
+      rpc: vi.fn(async (name) => {
+        if (name === 'devryan_bot_schema_version') {
+          await schemaGate;
+          return PRODUCTION_BOTS_MIGRATION;
+        }
+        return 0;
+      }),
+      storageUpload: vi.fn(),
+      storageDownload: vi.fn(),
+      storageDelete: vi.fn(),
+    };
+    const runtime = createBotsRuntime({ supabase, dataDirectory });
+
+    const startup = runtime.start();
+    expect(runtime.getStartupState()).toBe('starting');
+    releaseSchema();
+    await startup;
+    expect(runtime.getStartupState()).toBe('ready');
+    await runtime.shutdown();
+  });
+
   it('keeps every Bot subsystem unavailable when the schema marker is stale', async () => {
     const dataDirectory = await makeDirectory();
     const supabase = {

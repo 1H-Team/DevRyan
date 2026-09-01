@@ -3,7 +3,7 @@ const MAX_BOOTSTRAP_TOKEN_LENGTH = 256;
 const MAX_BROKER_TOKEN_LENGTH = 256;
 const DESKTOP_HOST_LEASE_TTL_MS = 30_000;
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-const CAPABILITIES = new Set(['focus', 'notifications', 'browser_cdp']);
+const CAPABILITIES = new Set(['focus', 'notifications', 'browser_cdp', 'browser_observation']);
 
 const isLoopbackAddress = (value) => {
   const normalized = typeof value === 'string' ? value.toLowerCase() : '';

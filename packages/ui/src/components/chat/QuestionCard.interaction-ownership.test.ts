@@ -18,10 +18,10 @@ const optionRowSource = readFileSync(
   fileURLToPath(new URL("./QuestionOptionRow.tsx", import.meta.url)),
   "utf8",
 )
-const customPillStart = source.indexOf("t('chat.questionCard.customPlaceholder')")
-const customPillInput = source.slice(
-  source.lastIndexOf("<input", customPillStart),
-  source.indexOf("/>", customPillStart) + 2,
+const customEditorStart = source.indexOf("t('chat.questionCard.customPlaceholder')")
+const customAnswerTextarea = source.slice(
+  source.lastIndexOf("<textarea", customEditorStart),
+  source.indexOf("/>", customEditorStart) + 2,
 )
 
 describe("QuestionCard option interaction ownership", () => {
@@ -41,12 +41,19 @@ describe("QuestionCard option interaction ownership", () => {
     expect(source).not.toContain("chat.questionCard.dismiss")
   })
 
-  test("wires the custom answer pill through existing custom-mode state", () => {
-    expect(customPillInput).toContain("<input")
-    expect(customPillInput).toContain("onKeyDown={handleKeyDown}")
+  test("uses an expanding multiline custom-answer editor with stable keyboard behavior", () => {
+    expect(customAnswerTextarea).toContain("<textarea")
+    expect(customAnswerTextarea).toContain("rows={1}")
+    expect(customAnswerTextarea).toContain("field-sizing-content")
+    expect(customAnswerTextarea).toContain("max-h-[min(40vh,18rem)]")
+    expect(customAnswerTextarea).toContain("whitespace-pre-wrap")
+    expect(customAnswerTextarea).toContain("onKeyDown={handleKeyDown}")
     expect(source).toContain("deriveCustomModeFromText")
+    expect(source).toContain("shouldHandleQuestionAnswerEnter")
     // Focusing alone must not activate custom mode — only typed text does.
-    expect(customPillInput).not.toContain("onFocus")
+    expect(customAnswerTextarea).not.toContain("onFocus")
+    // Actions stay out of the text row so they do not consume answer width.
+    expect(source).toContain("border-t border-border/30")
   })
 
   test("collapses submitted requests optimistically instead of showing a blocking spinner", () => {

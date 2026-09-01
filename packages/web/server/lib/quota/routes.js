@@ -29,6 +29,7 @@ import {
   createMeridianClaudeContextUsageClient,
   resolveSafeClaudeQuotaUrl,
 } from './providers/claude-meridian.js';
+import { resolveClaudeCodeLaunch as resolveClaudeCodeLaunchDefault } from '../opencode/claude-cli-runtime.js';
 
 const jsonParser = express.json({ limit: MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES });
 const CLAUDE_PROVIDER_IDS = new Set([
@@ -139,6 +140,8 @@ export function registerQuotaRoutes(app, {
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders = () => ({}),
   isExternalOpenCode = () => false,
+  buildAugmentedPath,
+  resolveClaudeCodeLaunch = resolveClaudeCodeLaunchDefault,
   ownsSession,
   claudeContextUsageClient: claudeContextUsageClientOverride,
   credentialRuntime: credentialRuntimeOverrides,
@@ -319,11 +322,20 @@ export function registerQuotaRoutes(app, {
       const claudeProxyBaseUrl = CLAUDE_PROVIDER_IDS.has(providerId)
         ? await resolveClaudeProxyBaseUrl(workingDirectory)
         : null;
+      const externalRuntime = isExternalOpenCode();
+      const claudeCodeLaunch = CLAUDE_PROVIDER_IDS.has(providerId) && !externalRuntime
+        ? resolveClaudeCodeLaunch({
+            pathValue: typeof buildAugmentedPath === 'function'
+              ? buildAugmentedPath()
+              : process.env.PATH || '',
+          })
+        : null;
       res.json(await fetchQuotaForProvider(providerId, {
         forceRefresh,
         workingDirectory,
-        isExternalRuntime: isExternalOpenCode(),
+        isExternalRuntime: externalRuntime,
         claudeProxyBaseUrl,
+        ...(CLAUDE_PROVIDER_IDS.has(providerId) ? { claudeCodeLaunch } : {}),
       }));
     } catch (error) {
       console.error('Failed to fetch quota:', error);

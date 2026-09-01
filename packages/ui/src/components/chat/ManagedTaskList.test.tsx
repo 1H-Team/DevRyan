@@ -1057,7 +1057,7 @@ describe('managed task presentation', () => {
     expect(managedTaskListSource).toContain('loadSnapshot({ rootSessionId })');
   });
 
-  test('renders two same-turn task rows inside one Agent Dispatch card', () => {
+  test('renders five same-turn task rows across two agents inside one Agent Dispatch card', () => {
     const fallbacks = [
       {
         partId: 'fixer-start',
@@ -1079,6 +1079,36 @@ describe('managed task presentation', () => {
         childSessionId: 'ses_designer',
         directory: '/workspace',
       },
+      {
+        partId: 'fixer-review',
+        taskId: 'dvr_task_fixer_review',
+        dispatchCallId: 'call_fixer_review',
+        agent: 'fixer',
+        label: 'review-border-painting',
+        status: 'completed' as const,
+        childSessionId: 'ses_fixer_review',
+        directory: '/workspace',
+      },
+      {
+        partId: 'designer-narrow',
+        taskId: 'dvr_task_designer_narrow',
+        dispatchCallId: 'call_designer_narrow',
+        agent: 'designer',
+        label: 'check-narrow-layout',
+        status: 'completed' as const,
+        childSessionId: 'ses_designer_narrow',
+        directory: '/workspace',
+      },
+      {
+        partId: 'fixer-dark',
+        taskId: 'dvr_task_fixer_dark',
+        dispatchCallId: 'call_fixer_dark',
+        agent: 'fixer',
+        label: 'check-dark-theme',
+        status: 'running' as const,
+        childSessionId: 'ses_fixer_dark',
+        directory: '/workspace',
+      },
     ];
     const html = renderToStaticMarkup(
       <I18nProvider>
@@ -1090,14 +1120,19 @@ describe('managed task presentation', () => {
     );
 
     expect(html.match(/data-managed-task-card="true"/g)).toHaveLength(1);
-    expect(html).toContain('relative isolate overflow-hidden rounded-xl border border-transparent');
-    expect(html).toContain('after:z-10');
+    expect(html).toContain('relative isolate overflow-hidden rounded-xl border border-[color:var(--managed-task-card-border)]');
+    expect(html).toContain('--managed-task-card-border:color-mix(in srgb, var(--primary-base) 16%, var(--border))');
+    // The card border must be a real box-model border, not an inset-shadow overlay: overflow:hidden
+    // (forced on mobile) clips child paint, so an ::after shadow border gets its bottom edge cut off
+    // once several sub-agent rows make the card tall enough to land on a fractional pixel height.
+    expect(html).not.toContain('after:shadow-[inset_0_0_0_1px_var(--managed-task-card-border)]');
+    expect(html.match(/data-managed-task-fallback-id=/g)).toHaveLength(5);
     expect(html.match(/<h3[^>]*>Agent Dispatch<\/h3>/g)).toHaveLength(1);
     expect(html).toContain('Fixer');
     expect(html).toContain('Designer');
     expect(html).toContain('Normalize Review Text Boundary');
     expect(html).toContain('Refine Public Review Card');
-    expect(html.match(/Open Subtask/g)).toHaveLength(2);
+    expect(html.match(/Open Subtask/g)).toHaveLength(5);
   });
 
   test('keeps message-scoped dispatch projections isolated across user turns', () => {
@@ -1456,19 +1491,23 @@ describe('managed task presentation', () => {
     expect(source).not.toContain('pb-1 pt-1');
     expect(source).not.toContain('pb-2 pt-3');
     expect(source).toContain('data-managed-task-card="true"');
-    expect(source).toContain('relative isolate overflow-hidden rounded-xl border border-transparent');
-    expect(source).toContain('after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:border');
-    expect(source).toContain('after:border-[color-mix(in_srgb,var(--primary-base)_16%,var(--border))]');
-    expect(source).toContain("after:content-['']");
+    expect(source).toContain('relative isolate overflow-hidden rounded-xl border border-[color:var(--managed-task-card-border)]');
+    expect(source).toContain("'--managed-task-card-border': 'color-mix(in srgb, var(--primary-base) 16%, var(--border))'");
+    // A real box-model border survives the forced overflow:hidden below; an inset-shadow ::after border
+    // does not (its bottom edge is clipped when multiple sub-agent rows make the card tall).
+    expect(source).not.toContain('after:shadow-[inset_0_0_0_1px_var(--managed-task-card-border)]');
+    expect(source).not.toContain("after:content-['']");
     expect(mobileStyles).toContain('[data-managed-task-card="true"]');
     expect(mobileStyles).toContain('overflow: hidden !important;');
   });
 
-  test('optically centers the agent icon and name within a fixed-height header', () => {
+  test('centers the agent icon and name without clipping text descenders', () => {
     const source = readFileSync(fileURLToPath(new URL('./ManagedTaskList.tsx', import.meta.url)), 'utf8');
 
     expect(source).toContain('flex h-7 items-center');
-    expect(source).toContain('inline-flex min-w-0 translate-y-1 items-center gap-1.5 leading-none');
+    expect(source).toContain('inline-flex min-w-0 items-center gap-1.5');
+    expect(source).not.toContain('translate-y-1');
+    expect(source).not.toContain('leading-none');
     expect(source).not.toContain('bg-muted/25 px-3 py-1.5');
   });
 

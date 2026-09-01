@@ -1,5 +1,26 @@
 const DEFAULT_IDLE_TTL_MS = 2 * 60 * 1_000;
 const DEFAULT_MAX_LEASES = 2;
+const SAFE_PREPARATION_STAGES = new Set([
+  'gateway',
+  'config',
+  'credentials',
+  'environment',
+  'artifacts',
+  'container',
+  'readiness',
+  'admission',
+  'unknown',
+]);
+
+const safeErrorCode = (value) => (
+  typeof value === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(value)
+    ? value
+    : 'bot_warm_prepare_failed'
+);
+
+const safePreparationStage = (value) => (
+  SAFE_PREPARATION_STAGES.has(value) ? value : 'unknown'
+);
 
 const publicLease = (entry) => Object.freeze({
   state: entry.state,
@@ -134,9 +155,12 @@ export function createBotWarmRuntimeLeases({
         return entry;
       }).catch((error) => {
         forget(entry);
-        note('warm_miss', entry, { reason: 'prepare_failed' });
+        const errorCode = safeErrorCode(error?.code);
+        const stage = safePreparationStage(error?.botRuntimeStage);
+        note('warm_miss', entry, { reason: 'prepare_failed', stage, errorCode });
         logger?.warn?.('[BotsWarmLease] runtime preparation failed', {
-          code: error?.code || 'bot_warm_prepare_failed',
+          code: errorCode,
+          stage,
           channelId: entry.channelId,
         });
         throw error;

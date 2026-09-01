@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@opencode-ai/plugin', () => {
@@ -60,7 +61,10 @@ const makeChild = ({ stdout = '', stderr = '', code = 0, close = true } = {}) =>
   return child;
 };
 
-const stubLeaseFetch = ({ wsUrl = 'ws://127.0.0.1:54321/devtools/page/private-capability' } = {}) => {
+const stubLeaseFetch = ({
+  wsUrl = 'ws://127.0.0.1:54321/devtools/page/private-capability',
+  previewUrl,
+} = {}) => {
   const requests = [];
   vi.stubGlobal('fetch', vi.fn(async (url, init) => {
     const request = {
@@ -76,6 +80,7 @@ const stubLeaseFetch = ({ wsUrl = 'ws://127.0.0.1:54321/devtools/page/private-ca
         leaseId: 'dvr_lease_1',
         wsUrl,
         created: requests.filter((entry) => entry.url.endsWith('/api/desktop/browser-leases')).length === 1,
+        ...(previewUrl ? { previewUrl } : {}),
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     return new Response(JSON.stringify({ ok: true }), {
@@ -202,6 +207,113 @@ describe('DevRyan agent browser plugin', () => {
     expect(client.session.messages).toHaveBeenCalledTimes(2);
   });
 
+  it('opens the configured branch preview when open has no explicit URL', async () => {
+    stubLeaseFetch({ previewUrl: 'https://dev1.1health.ae/' });
+    const spawnImpl = vi.fn((binary, args) => makeChild({
+      stdout: args.includes('connect') ? 'connected\n' : 'opened\n',
+    }));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+
+    await expect(plugin.tool.devryan_browser.execute({ command: 'open' }, context()))
+      .resolves.toBe('opened');
+    expect(spawnImpl.mock.calls.some(([, args]) => (
+      args.at(-2) === 'open' && args.at(-1) === 'https://dev1.1health.ae/'
+    ))).toBe(true);
+  });
+
+  it('maps loopback opens to the configured preview and preserves the full resource path', () => {
+    expect(__test.resolveOpenCommandArguments(
+      ['http://127.0.0.1:8083/dashboard?mode=review#summary'],
+      'https://dev1.1health.ae/',
+    )).toEqual(['https://dev1.1health.ae/dashboard?mode=review#summary']);
+    expect(__test.resolveOpenCommandArguments(
+      ['https://www.1health.ae/dashboard?mode=review#summary'],
+      'https://dev1.1health.ae/',
+    )).toEqual(['https://www.1health.ae/dashboard?mode=review#summary']);
+    expect(__test.resolveOpenCommandArguments(
+      ['http://localhost:4173/dashboard?mode=review#summary'],
+      '',
+    )).toEqual(['http://localhost:4173/dashboard?mode=review#summary']);
+  });
+
+  it('returns a successful local handoff and releases a newly created unused lease', async () => {
+    const requests = stubLeaseFetch();
+    const spawnImpl = vi.fn();
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+
+    await expect(plugin.tool.devryan_browser.execute({ command: 'open' }, context()))
+      .resolves.toBe(__test.NO_PREVIEW_HANDOFF_MESSAGE);
+    expect(spawnImpl).not.toHaveBeenCalled();
+    expect(requests.some((request) => request.url.endsWith('/touch'))).toBe(false);
+    expect(requests.at(-1)).toMatchObject({
+      method: 'DELETE',
+      url: 'http://127.0.0.1:45678/api/desktop/browser-leases/dvr_lease_1',
+    });
+  });
+
+  it('leaves a reused lease untouched during the local handoff', async () => {
+    const requests = stubLeaseFetch();
+    const spawnImpl = vi.fn((binary, args) => makeChild({
+      stdout: args.includes('connect') ? 'connected\n' : 'opened\n',
+    }));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    const tool = plugin.tool.devryan_browser;
+
+    await expect(tool.execute(
+      { command: 'open', args: ['http://127.0.0.1:4173/'] },
+      context(),
+    )).resolves.toBe('opened');
+    const spawnCount = spawnImpl.mock.calls.length;
+    const touchCount = requests.filter((request) => request.url.endsWith('/touch')).length;
+
+    await expect(tool.execute({ command: 'open' }, context()))
+      .resolves.toBe(__test.NO_PREVIEW_HANDOFF_MESSAGE);
+    expect(spawnImpl).toHaveBeenCalledTimes(spawnCount);
+    expect(requests.filter((request) => request.url.endsWith('/touch'))).toHaveLength(touchCount);
+    expect(requests.some((request) => request.method === 'DELETE')).toBe(false);
+
+    await expect(tool.execute({ command: 'close' }, context()))
+      .resolves.toBe('Browser lease closed.');
+  });
+
+  it('preserves the branch preview authentication failure code', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'branch_preview_auth_failed',
+        message: 'Branch preview service-token authentication failed',
+      },
+    }), { status: 401, headers: { 'content-type': 'application/json' } })));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl: vi.fn() });
+
+    await expect(plugin.tool.devryan_browser.execute({ command: 'open' }, context()))
+      .rejects.toMatchObject({
+        code: __test.BROWSER_ERROR_CODES.branchPreviewAuthFailed,
+        statusCode: 401,
+        retryable: false,
+      });
+  });
+
+  it('makes close idempotent after lease authentication fails', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'branch_preview_auth_failed',
+        message: 'Cloudflare Access rejected the branch preview service token',
+      },
+    }), { status: 401, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchImpl);
+    const spawnImpl = vi.fn();
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+
+    await expect(plugin.tool.devryan_browser.execute({ command: 'open' }, context()))
+      .rejects.toMatchObject({ code: __test.BROWSER_ERROR_CODES.branchPreviewAuthFailed });
+    await expect(plugin.tool.devryan_browser.execute({ command: 'close' }, context()))
+      .resolves.toBe('Browser lease already closed.');
+    await expect(plugin.tool.devryan_browser.execute({ command: 'close' }, context()))
+      .resolves.toBe('Browser lease already closed.');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(spawnImpl).not.toHaveBeenCalled();
+  });
+
   it('retries idempotent lease acquisition once on 503 and executes the browser command once', async () => {
     let acquireCalls = 0;
     vi.stubGlobal('fetch', vi.fn(async (url, init) => {
@@ -308,7 +420,7 @@ describe('DevRyan agent browser plugin', () => {
     await expect(tool.execute({ command: 'unknown-command' }, context()))
       .rejects.toThrow('not available through DevRyan browser leases');
     await expect(tool.execute({ command: 'inspect' }, context()))
-      .rejects.toThrow('not available through DevRyan browser leases');
+      .rejects.toThrow('selector is required');
     for (const flag of ['--auto-connect', '--restore', '--extension', '--proxy', '--engine', '--action-policy', '--idle-timeout', '-p']) {
       await expect(tool.execute({ command: 'open', args: ['https://example.com', flag] }, context()))
         .rejects.toThrow('managed by DevRyan');
@@ -503,6 +615,232 @@ describe('DevRyan agent browser plugin', () => {
 
     await expect(plugin.tool.devryan_browser.execute({ command: 'snapshot' }, context()))
       .rejects.toThrow('<redacted> at <redacted>');
+  });
+});
+
+describe('safe browser inspection', () => {
+  const inspection = {
+    selector: '[role="tooltip"]',
+    styles: ['animation-duration', '--accent'],
+    attributes: ['data-state', 'aria-label'],
+  };
+  const found = {
+    status: 'found', selector: inspection.selector, matchCount: 1,
+    styles: { 'animation-duration': '0.15s', '--accent': 'teal' },
+    attributes: { 'data-state': 'open', 'aria-label': null },
+  };
+
+  it.each([
+    { command: 'inspect' },
+    { command: 'inspect', selector: ' ' },
+    { command: 'inspect', selector: 12 },
+    { command: 'inspect', selector: 'a\0b' },
+    { command: 'inspect', selector: 'x'.repeat(8193) },
+    { command: 'inspect', selector: '#x', args: ['--json'] },
+    { command: 'inspect', selector: '#x', styles: 'display' },
+    { command: 'inspect', selector: '#x', styles: [''] },
+    { command: 'inspect', selector: '#x', styles: Array(65).fill('display') },
+    { command: 'inspect', selector: '#x', attributes: [false] },
+    { command: 'inspect', selector: '#x', attributes: ['x'.repeat(8190)] },
+    { command: 'snapshot', selector: '#x' },
+    { command: 'eval', args: ['document.title'], styles: [] },
+    { command: 'close', attributes: null },
+  ])('rejects invalid inspection input before acquiring a lease (case %#)', async (input) => {
+    const requests = stubLeaseFetch();
+    const spawnImpl = vi.fn();
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    await expect(plugin.tool.devryan_browser.execute(input, context()))
+      .rejects.toMatchObject({ code: 'DEVRYAN_BROWSER_INPUT_INVALID' });
+    expect(requests).toEqual([]);
+    expect(spawnImpl).not.toHaveBeenCalled();
+  });
+
+  it('reads present values and safely reports removal or ambiguity on the same lease', async () => {
+    const requests = stubLeaseFetch();
+    const element = { getAttribute: (name) => found.attributes[name] };
+    let matches = [element];
+    const querySelectorAll = vi.fn(() => matches);
+    const getComputedStyle = vi.fn(() => ({ getPropertyValue: (name) => found.styles[name] }));
+    const spawnImpl = vi.fn((binary, args) => {
+      if (args.includes('connect')) return makeChild();
+      expect(args.at(-2)).toBe('eval');
+      const result = runInNewContext(args.at(-1), { document: { querySelectorAll }, getComputedStyle });
+      return makeChild({ stdout: JSON.stringify(result) });
+    });
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    const execute = () => plugin.tool.devryan_browser.execute({ command: 'inspect', ...inspection }, context());
+    expect(JSON.parse(await execute())).toEqual(found);
+    matches = [];
+    expect(JSON.parse(await execute())).toEqual({
+      status: 'missing', selector: inspection.selector, matchCount: 0, styles: {}, attributes: {},
+    });
+    matches = [element, element];
+    expect(JSON.parse(await execute())).toEqual({
+      status: 'ambiguous', selector: inspection.selector, matchCount: 2, styles: {}, attributes: {},
+    });
+    expect(getComputedStyle).toHaveBeenCalledTimes(1);
+    expect(querySelectorAll.mock.calls).toEqual(Array(3).fill([inspection.selector]));
+    expect(spawnImpl.mock.calls.filter(([, args]) => args.includes('connect'))).toHaveLength(1);
+    expect(requests.filter((entry) => entry.url.endsWith('/touch'))).toHaveLength(6);
+    expect(requests.filter((entry) => entry.method === 'DELETE')).toHaveLength(0);
+  });
+
+  it('defaults lists to empty and serializes quotes and source-like text as data', () => {
+    const selector = '[data-label="quoted\\\"value"]; throw new Error("injected")';
+    const normalized = __test.normalizeInspection('inspect', [], { selector });
+    const querySelectorAll = vi.fn(() => [{ getAttribute: vi.fn() }]);
+    const getComputedStyle = vi.fn();
+    const result = runInNewContext(__test.buildBrowserInspectionScript(normalized), {
+      document: { querySelectorAll }, getComputedStyle,
+    });
+    expect(querySelectorAll).toHaveBeenCalledExactlyOnceWith(selector);
+    expect(result).toEqual({ status: 'found', selector, matchCount: 1, styles: {}, attributes: {} });
+    expect(getComputedStyle).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates requested names and preserves special map keys as own properties', () => {
+    const normalized = __test.normalizeInspection('inspect', [], {
+      selector: '#x', styles: ['--accent', '--accent'], attributes: ['__proto__', 'constructor'],
+    });
+    expect(normalized.styles).toEqual(['--accent']);
+    const output = runInNewContext(__test.buildBrowserInspectionScript(normalized), {
+      document: { querySelectorAll: () => [{ getAttribute: () => null }] },
+      getComputedStyle: () => ({ getPropertyValue: () => 'teal' }),
+    });
+    expect(__test.parseBrowserInspectionResult(JSON.stringify(output), normalized).attributes)
+      .toEqual(JSON.parse('{"__proto__":null,"constructor":null}'));
+  });
+
+  it('maps only invalid CSS selectors to an input error and still touches the lease', async () => {
+    const requests = stubLeaseFetch();
+    const spawnImpl = vi.fn((binary, args) => {
+      if (args.includes('connect')) return makeChild();
+      const result = runInNewContext(args.at(-1), {
+        document: { querySelectorAll: () => { throw new DOMException('Invalid selector', 'SyntaxError'); } },
+      });
+      return makeChild({ stdout: JSON.stringify(result) });
+    });
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    await expect(plugin.tool.devryan_browser.execute({ command: 'inspect', selector: '[' }, context()))
+      .rejects.toMatchObject({ code: 'DEVRYAN_BROWSER_INPUT_INVALID' });
+    expect(requests.filter((entry) => entry.url.endsWith('/touch'))).toHaveLength(2);
+    expect(spawnImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not mask unexpected errors from its fixed inspection script', async () => {
+    stubLeaseFetch();
+    const failure = '✗ Evaluation error: TypeError: Invalid input in inspector internals';
+    const spawnImpl = vi.fn((binary, args) => args.includes('connect')
+      ? makeChild() : makeChild({ stderr: failure, code: 1 }));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    await expect(plugin.tool.devryan_browser.execute({ command: 'inspect', ...inspection }, context()))
+      .rejects.toMatchObject({ code: 'DEVRYAN_BROWSER_INSPECTION_FAILED', message: expect.stringContaining(failure) });
+    expect(() => runInNewContext(__test.buildBrowserInspectionScript(inspection), {
+      document: { querySelectorAll: () => { throw new TypeError('query failed'); } },
+    })).toThrow('query failed');
+  });
+
+  it.each([
+    'not JSON',
+    '{}',
+    'null',
+    JSON.stringify({ ...found, status: 'missing' }),
+    JSON.stringify({ ...found, matchCount: 2 }),
+    JSON.stringify({ ...found, selector: '#different' }),
+    JSON.stringify({ ...found, styles: { 'animation-duration': 0.15, '--accent': 'teal' } }),
+    JSON.stringify({ ...found, attributes: {} }),
+    JSON.stringify({ error: 'invalid_selector', unexpected: true }),
+  ])('rejects invalid inspector output as a runtime failure: %s', (output) => {
+    expect(() => __test.parseBrowserInspectionResult(output, inspection))
+      .toThrow('DEVRYAN_BROWSER_INSPECTION_FAILED');
+  });
+
+  it('keeps sanitized result values and rejects truncated results without claiming success', async () => {
+    stubLeaseFetch();
+    let output = JSON.stringify({ ...found, attributes: { 'data-state': 'private-token', 'aria-label': null } });
+    const spawnImpl = vi.fn((binary, args) => args.includes('connect') ? makeChild() : makeChild({ stdout: output }));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    expect(JSON.parse(await plugin.tool.devryan_browser.execute({ command: 'inspect', ...inspection }, context()))
+      .attributes['data-state']).toBe('<redacted>');
+    output = JSON.stringify({ ...found, attributes: { 'data-state': 'x'.repeat(70000), 'aria-label': null } });
+    await expect(plugin.tool.devryan_browser.execute({ command: 'inspect', ...inspection }, context()))
+      .rejects.toMatchObject({ code: 'DEVRYAN_BROWSER_INSPECTION_FAILED', message: expect.stringContaining('truncated') });
+  });
+
+  it('compares redacted selector identity without exposing the private value', () => {
+    const request = { selector: '[data-id="private-token"]', styles: [], attributes: [] };
+    const output = JSON.stringify({
+      status: 'missing', selector: '[data-id="<redacted>"]', matchCount: 0, styles: {}, attributes: {},
+    });
+    expect(__test.parseBrowserInspectionResult(output, request, ['private-token']).selector)
+      .toBe('[data-id="<redacted>"]');
+  });
+});
+
+describe('caller eval error boundary', () => {
+  it.each([
+    [{ command: 'eval', args: ['getComputedStyle(null)'] },
+      { stderr: '✗ Evaluation error: TypeError: missing tooltip', code: 1 }, 'DEVRYAN_BROWSER_EVAL_ERROR'],
+    [{ command: 'inspect', selector: '[' },
+      { stdout: '{"error":"invalid_selector"}' }, 'DEVRYAN_BROWSER_INPUT_INVALID'],
+  ])('preserves a final lease failure over an expected caller error (case %#)', async (input, childResult, inputCode) => {
+    stubLeaseFetch();
+    const fetchLease = fetch;
+    let touches = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url, init) => {
+      if (String(url).endsWith('/touch') && ++touches === 2) {
+        return new Response(JSON.stringify({ error: { message: 'lease host unavailable private-token' } }), { status: 503 });
+      }
+      return fetchLease(url, init);
+    }));
+    const spawnImpl = vi.fn((binary, args) => args.includes('connect') ? makeChild() : makeChild(childResult));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    let failure;
+    try { await plugin.tool.devryan_browser.execute(input, context()); } catch (error) { failure = error; }
+    expect(failure).toMatchObject({ code: 'DEVRYAN_BROWSER_LEASE_TOUCH_FAILED' });
+    expect(failure.message).toContain('lease host unavailable <redacted>');
+    expect(failure.message).toContain(`Browser command also failed: ${inputCode}:`);
+    expect(failure.message).not.toContain('private-token');
+    expect(touches).toBe(2);
+    expect(spawnImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['TypeError', 'ReferenceError', 'SyntaxError'])('identifies explicit %s exceptions, retaining failure and safe guidance', async (name) => {
+    const requests = stubLeaseFetch();
+    const failure = `✗ Evaluation error: ${name}: private-token is not an Element`;
+    const spawnImpl = vi.fn((binary, args) => args.includes('connect') ? makeChild() : makeChild({ stderr: failure, code: 1 }));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    await expect(plugin.tool.devryan_browser.execute({ command: 'eval', args: ['getComputedStyle(null)'] }, context()))
+      .rejects.toMatchObject({
+        code: 'DEVRYAN_BROWSER_EVAL_ERROR',
+        message: expect.stringContaining(`${name}: <redacted> is not an Element`),
+      });
+    expect(requests.filter((entry) => entry.url.endsWith('/touch'))).toHaveLength(2);
+    expect(spawnImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    'ECONNREFUSED: unable to connect',
+    'Error: page has closed',
+    '✗ Evaluation error: Error: unexplained failure',
+    'transport failed: ✗ Evaluation error: TypeError: disconnected',
+  ])('does not downgrade other eval command failures: %s', async (failure) => {
+    stubLeaseFetch();
+    const spawnImpl = vi.fn((binary, args) => args.includes('connect') ? makeChild() : makeChild({ stderr: failure, code: 1 }));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    await expect(plugin.tool.devryan_browser.execute({ command: 'eval', args: ['document.title'] }, context()))
+      .rejects.toMatchObject({ code: 'DEVRYAN_BROWSER_COMMAND_FAILED' });
+  });
+
+  it('does not classify process start failures as caller JavaScript errors', async () => {
+    stubLeaseFetch();
+    const spawnImpl = vi.fn((binary, args) => {
+      if (args.includes('connect')) return makeChild();
+      throw new TypeError('✗ Evaluation error: TypeError: process unavailable');
+    });
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    await expect(plugin.tool.devryan_browser.execute({ command: 'eval', args: ['document.title'] }, context()))
+      .rejects.toMatchObject({ code: 'DEVRYAN_BROWSER_COMMAND_FAILED' });
   });
 });
 

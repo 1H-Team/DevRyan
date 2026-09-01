@@ -4,6 +4,7 @@ import {
   RiBrainLine,
   RiCalendarLine,
   RiChatHistoryLine,
+  RiDeleteBinLine,
   RiFileList2Line,
   RiFileSearchLine,
   RiFlashlightLine,
@@ -14,6 +15,7 @@ import {
   RiTimeLine,
 } from '@remixicon/react';
 
+import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -28,6 +30,7 @@ import {
   type UserRow,
 } from './types';
 import { ActivityList } from './ActivitySection';
+import { ConfirmActionDialog } from './ConfirmActionDialog';
 import {
   formatMinutes,
   formatPromptAgentLabel,
@@ -435,6 +438,8 @@ export const UserAnalytics: React.FC<UserAnalyticsProps> = ({
   const [rangeLoading, setRangeLoading] = React.useState(false);
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
+  const [clearOpen, setClearOpen] = React.useState(false);
+  const [clearBusy, setClearBusy] = React.useState(false);
   const [rangeError, setRangeError] = React.useState<string | null>(null);
   const [detailError, setDetailError] = React.useState<string | null>(null);
   const [loadedDetailScope, setLoadedDetailScope] = React.useState<string | null>(null);
@@ -564,6 +569,34 @@ export const UserAnalytics: React.FC<UserAnalyticsProps> = ({
     }
   };
 
+  const clearAnalytics = async () => {
+    setClearBusy(true);
+    try {
+      const result = await requestJson<{ deletedCount: number; remainingCount: number }>(
+        `/api/admin/users/${encodeURIComponent(user.id)}/analytics`,
+        {
+          method: 'DELETE',
+          headers: { 'X-DevRyan-CSRF': '1' },
+          body: JSON.stringify({ confirm: true }),
+        },
+      );
+      setClearOpen(false);
+      setSelectedDate(null);
+      setRangeData(null);
+      setPrompts([]);
+      setInteractions([]);
+      setChanges([]);
+      setNextCursor(null);
+      setLoadedDetailScope(null);
+      setReloadNonce((value) => value + 1);
+      toast.success(`Cleared all ${result.deletedCount.toLocaleString()} analytics records for this user.`);
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : 'Analytics could not be cleared');
+    } finally {
+      setClearBusy(false);
+    }
+  };
+
   if (!canViewDetailed) {
     return (
       <div className="max-w-4xl space-y-4">
@@ -659,7 +692,7 @@ export const UserAnalytics: React.FC<UserAnalyticsProps> = ({
             </div>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <select aria-label="Analytics Time Zone" className={cn(selectClassName, 'w-44')} value={timeZone} onChange={(event) => updateTimeZone(event.target.value)}>
             {!zones.includes(timeZone) ? <option value={timeZone}>{timeZone}</option> : null}
             {zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
@@ -667,8 +700,22 @@ export const UserAnalytics: React.FC<UserAnalyticsProps> = ({
           <Button variant="outline" onClick={() => setReloadNonce((value) => value + 1)} disabled={loading} aria-label="Refresh Analytics">
             <RiRefreshLine className={cn('h-4 w-4', loading && 'animate-spin')} /> Refresh
           </Button>
+          <Button variant="destructive" onClick={() => setClearOpen(true)} disabled={loading || clearBusy}>
+            <RiDeleteBinLine className="h-4 w-4" /> Clear All Analytics
+          </Button>
         </div>
       </div>
+
+      <ConfirmActionDialog
+        open={clearOpen}
+        onOpenChange={setClearOpen}
+        title="Clear All User Analytics"
+        description={`Permanently clear all current prompt, interaction, and safe change analytics for ${user.display_name}? The administrative purge marker will remain in the audit log.`}
+        confirmLabel="Clear All Analytics"
+        destructive
+        busy={clearBusy}
+        onConfirm={() => void clearAnalytics()}
+      />
 
       {error ? (
         <div role="alert" className="rounded-xl border border-[var(--status-error)]/35 bg-[var(--status-error)]/10 px-4 py-3 typography-meta text-foreground">

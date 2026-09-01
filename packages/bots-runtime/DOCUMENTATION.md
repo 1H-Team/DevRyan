@@ -64,6 +64,13 @@ and reservation IDs so execution-time fact drift invalidates the decision.
 
 Run and action transitions are explicit allowlists. Settled terminal states cannot transition again. `needs_reconciliation` is not terminal: it blocks normal completion until the uncertain operation is resolved.
 
+`waiting_control` is an active, durable pre-execution state for both runs and
+action attempts. A human browser lease fences execution without failing the
+action or making a write uncertain. Return or natural expiry resumes the same
+idempotent attempt; renewed leases keep it waiting and cancellation remains
+available. Database claim/index rules prevent another run from taking the
+computer scope during this wait.
+
 If transport is lost while an action is executing, a read becomes `failed` and may be retried as a new action. A write becomes `unknown`; its only direct state transition is `reconciled`. This prevents arbitrary website writes from replaying without evidence or an Operator decision.
 
 `decideBotRunAdmission` is a pure mirror of the database claim invariant. An absent or expired lease admits a run, the current owning run is idempotently admitted, and a different run is refused while the lease remains live. The Supabase RPC remains the authoritative atomic claim.
@@ -81,7 +88,7 @@ bun run --cwd packages/bots-runtime test
 ## Scoped OpenCode runtime
 
 `docker/opencode/Dockerfile` pins both `opencode-ai` and its plugin API to
-1.18.23, pins the reviewed `opencode-gpt-imagegen@0.1.10`, and runs as UID/GID
+1.18.25, pins the reviewed `opencode-gpt-imagegen@0.1.10`, and runs as UID/GID
 10001. The server compiles the single-agent config
 into an immutable host channel/hash directory; Electron verifies it and the
 supervisor mounts it read-only at `/runtime-config`. The reviewed gateway
@@ -111,13 +118,20 @@ returns the gateway result as the text contract required by OpenCode tools.
 publication path;
 it carries bounded bytes through the governed gateway and never accepts a host
 or existing computer path. The gateway contract at
-`devryan-bot-tools@1.2.0` also exposes `image.generate`, internally delegating
-only to the pinned `gpt_imagegen` tool. The server grants that operation solely
-when the admitted model snapshot resolves to OpenAI ChatGPT OAuth; API keys and
-other providers receive `bot_image_generation_unavailable`. The resulting
+`devryan-bot-tools@1.3.0` exposes the dedicated primary-agent `devryan_image`
+tool, reusing the pinned `gpt_imagegen` schema: required `prompt`, `out`, and
+`quality`, optional `size` and `images`. For example:
+`devryan_image({prompt: "A small blue bird", out: "/workspace/generated-images/bird.png", quality: "low"})`.
+The server grants this tool solely when the admitted model snapshot resolves
+to OpenAI ChatGPT OAuth. API-key and other-provider runs receive no image tool;
+subagents cannot invoke it. Existing `1.2.0` revisions remain compatible and the
+legacy `devryan_bot` `image.generate` executor remains available for persisted
+calls, but is no longer advertised. The resulting
 workspace image is collected and attached by the host after tool finalization,
 so the Bot never needs a second `artifact.put` call or a promise to publish it
-later.
+later. Both direct and legacy completed-tool results use the same bounded,
+validated encrypted attachment path; optional Shared publication does not
+control inline transcript visibility.
 
 The fixed launcher parses the host-materialized per-run
 `/runtime-secrets/environment.json` document and assigns its validated values

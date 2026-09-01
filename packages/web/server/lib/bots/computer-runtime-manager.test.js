@@ -57,6 +57,10 @@ describe('Active Bot computer runtime manager', () => {
     }));
     expect(manager.getFailure(BOT_B)?.code).toBe('bot_fixture_failed');
 
+    const inspectionsBeforeHotEnsure = dockerProvider.inspectComputer.mock.calls.length;
+    await manager.ensureBot(bot(BOT_A));
+    expect(dockerProvider.inspectComputer).toHaveBeenCalledTimes(inspectionsBeforeHotEnsure);
+
     const firstToken = manager.getRuntime(BOT_A).token;
     const restarted = await manager.restartBot(bot(BOT_A));
     expect(restarted.token).not.toBe(firstToken);
@@ -66,6 +70,8 @@ describe('Active Bot computer runtime manager', () => {
 
     states.set(BOT_A, 'stopped');
     await manager.sweep();
+    expect(dockerProvider.inspectComputer.mock.calls.length)
+      .toBeGreaterThan(inspectionsBeforeHotEnsure);
     expect(dockerProvider.ensureComputer.mock.calls.filter(([input]) => input.botId === BOT_A)).toHaveLength(3);
 
     await manager.shutdown();

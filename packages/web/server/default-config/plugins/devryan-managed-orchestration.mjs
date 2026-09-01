@@ -1249,16 +1249,8 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         return false;
       }
 
-      // Deliberately no explicit messageID. OpenCode message IDs are ordered,
-      // and it processes the turn only when the incoming user message sorts
-      // after the session's latest message. A content-derived id (this used to
-      // be a sha256 slice) sorts arbitrarily, so roughly whenever it landed
-      // below the last assistant id the wake was written "into the past":
-      // OpenCode logged `loop step=0` then `exiting loop` without ever running,
-      // leaving the parent idle forever holding an unanswered message. Letting
-      // OpenCode mint the id keeps it ordered; the marker plus
-      // `recoveryContinuationsSent` already provide the de-duplication the
-      // fixed id was there for.
+      // Use a fresh sortable ID, never a content-derived hash. OpenCode ignores
+      // a wake whose identity sorts before the session's current tail.
       const prompt = [
         marker,
         `A DevRyan-managed sub-agent reached a terminal result that this turn never collected,`,
@@ -1269,10 +1261,19 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       ].join(' ');
       let promptDelivered = false;
       try {
+        // A time-sortable identity lets the primary host serialize this managed
+        // continuation with recovery and user input before OpenCode sees it.
+        const wakeMessageID = `msg_${(BigInt(Date.now()) * 4096n).toString(16).slice(-12).padStart(12, '0')}${crypto.randomBytes(7).toString('hex')}`;
+        const primaryInstance = globalThis[Symbol.for('devryan.primary-recovery.instance.v1')];
+        if (typeof primaryInstance === 'string') {
+          await callRpc('primary_recovery', { action: 'continuation', sessionID: rootSessionId,
+            userMessageID: wakeMessageID, instanceID: primaryInstance });
+        }
         const response = await client.session.promptAsync({
           path: { id: rootSessionId },
           query: { directory },
           body: {
+            messageID: wakeMessageID,
             agent: execution.agent,
             model: {
               providerID: execution.providerId,

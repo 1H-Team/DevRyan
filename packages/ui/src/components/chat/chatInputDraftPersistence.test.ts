@@ -27,6 +27,32 @@ const createMemoryStorage = (): Storage => {
 }
 
 describe("chat input draft persistence", () => {
+  test('a failed first prompt restores its session without overwriting another composer or a newer edit', () => {
+    const controller = createComposerDraftPersistenceController({ storage: createMemoryStorage(), updateDraftText: () => {} })
+    const session = resolveComposerDraftTarget('created-session', null)
+    const other = resolveComposerDraftTarget(null, 'other-draft')
+    controller.save(other, 'keep this draft', new Set())
+    controller.restoreIfEmpty(session, 'failed first prompt')
+    expect(controller.load(session)).toBe('failed first prompt')
+    expect(controller.load(other)).toBe('keep this draft')
+    controller.save(session, 'newer session edit', new Set())
+    controller.restoreIfEmpty(session, 'old failure')
+    expect(controller.load(session)).toBe('newer session edit')
+  })
+  test('late composer saves cannot recreate a promoted or deleted draft', () => {
+    const storage = createMemoryStorage()
+    let exists = true
+    const updates: string[] = []
+    const controller = createComposerDraftPersistenceController({ storage,
+      draftExists: () => exists, updateDraftText: (_id, text) => updates.push(text) })
+    const target = resolveComposerDraftTarget(null, 'original')
+    controller.save(target, 'original text', new Set())
+    controller.clear(target)
+    exists = false
+    controller.save(target, 'late text', new Set(['file']))
+    expect(storage.getItem(getComposerDraftStorageKey(target)!)).toBeNull()
+    expect(updates).toEqual(['original text'])
+  })
   test("none targets never write legacy new-draft storage", () => {
     const storage = createMemoryStorage()
     const updates: Array<{ draftId: string; text: string }> = []

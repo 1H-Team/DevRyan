@@ -36,6 +36,7 @@ const renderComposer = (value: BotChannel, runtimeState = 'healthy', runtimeAvai
     attachmentIds: ['e0000000-0000-4000-8000-000000000001'],
   });
   Object.assign(channelStore.getInitialState(), channelStore.getState());
+  Object.assign(channelStore.draftStore.getInitialState(), channelStore.draftStore.getState());
   return renderToStaticMarkup(
     <I18nProvider>
       <BotComposer

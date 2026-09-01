@@ -93,7 +93,7 @@ describe('multi-user authentication compatibility', () => {
       { status: 404, payload: { code: 'PGRST205' } },
     );
 
-    expect(PRODUCTION_BOTS_MIGRATION).toBe('20260827100000');
+    expect(PRODUCTION_BOTS_MIGRATION).toBe('20260901160000');
     expect(authFailurePayload(missingBots)).toEqual({
       status: 503,
       error: 'Identity service unavailable',

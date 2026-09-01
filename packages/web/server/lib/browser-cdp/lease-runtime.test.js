@@ -110,6 +110,68 @@ describe('browser lease runtime', () => {
     });
   });
 
+  it('adds authoritative preview metadata while passing credentials only to the host callback', async () => {
+    const resolveBrowserLeaseContext = vi.fn(async () => ({
+      metadata: {
+        authoritativeOwner: true,
+        ownerUserId: 'user-1',
+        projectId: 'project-1',
+        branchName: 'dev',
+        previewUrl: 'https://dev1.1health.ae/',
+        previewOrigin: 'https://dev1.1health.ae',
+        serviceTokenConfigured: true,
+      },
+      credential: {
+        origin: 'https://dev1.1health.ae',
+        clientId: 'client.access',
+        clientSecret: 'secret',
+      },
+    }));
+    const { runtime, createBrowserLease } = createRuntime({
+      runtime: { resolveBrowserLeaseContext },
+    });
+
+    const lease = await runtime.acquire(scope());
+    expect(lease).toMatchObject({
+      previewUrl: 'https://dev1.1health.ae/',
+      serviceTokenConfigured: true,
+    });
+    expect(resolveBrowserLeaseContext).toHaveBeenCalledWith(expect.objectContaining({
+      rootSessionId: 'ses_root',
+      directory: '/workspace',
+    }));
+    expect(createBrowserLease).toHaveBeenCalledWith(expect.objectContaining({
+      previewCredential: {
+        origin: 'https://dev1.1health.ae',
+        clientId: 'client.access',
+        clientSecret: 'secret',
+      },
+      metadata: expect.objectContaining({
+        ownerUserId: 'user-1',
+        previewUrl: 'https://dev1.1health.ae/',
+      }),
+    }));
+    expect(JSON.stringify(runtime.getSnapshot())).not.toContain('client.access');
+    expect(JSON.stringify(runtime.getSnapshot())).not.toContain('secret');
+  });
+
+  it('preserves the branch preview authentication failure code', async () => {
+    const { runtime } = createRuntime({
+      runtime: {
+        resolveBrowserLeaseContext: vi.fn(async () => {
+          throw Object.assign(new Error('Branch preview service-token authentication failed'), {
+            code: 'branch_preview_auth_failed',
+            statusCode: 401,
+          });
+        }),
+      },
+    });
+    await expect(runtime.acquire(scope())).rejects.toMatchObject({
+      code: 'branch_preview_auth_failed',
+      statusCode: 401,
+    });
+  });
+
   it('serializes concurrent acquisition only within the exact reuse key', async () => {
     let releaseCreate;
     const createGate = new Promise((resolve) => { releaseCreate = resolve; });

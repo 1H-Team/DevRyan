@@ -1,8 +1,8 @@
 import React from 'react';
-import { RiRefreshLine, RiRobot2Line } from '@remixicon/react';
+import { RiRefreshLine, RiRobot2Line, RiUserSharedLine } from '@remixicon/react';
 
 import { Button } from '@/components/ui/button';
-import { botsApi, type BotSummary } from '@/lib/botsApi';
+import { type BotSummary } from '@/lib/botsApi';
 import { releaseBotChannelPrewarm, warmBotChannel } from '@/lib/botPrewarmLease';
 import { botsDesktopApi } from '@/lib/botsDesktopApi';
 import { useI18n } from '@/lib/i18n';
@@ -15,8 +15,8 @@ import { botRuntimeProgressLabel, useBotRuntimeOperation } from '../useBotRuntim
 import { BotComposer, type BotRuntimeRecoveryAction } from './BotComposer';
 import { BotMessageList } from './BotMessageList';
 import { resolveBotTypingRunId } from './botTypingState';
-
-const EMPTY_RUN_IDS: readonly string[] = Object.freeze([]);
+import { selectBotCurrentRunId } from '../operations/selectBotCurrentRun';
+import { BotInlineComputer } from './BotInlineComputer';
 
 type BotChatViewProps = {
   bot: BotSummary;
@@ -32,23 +32,22 @@ export const BotChatView: React.FC<BotChatViewProps> = ({ bot, channelId }) => {
   const acceptingMessage = useBotChannelStore((state) => (
     channelId ? state.pendingMessageIdByChannelId[channelId] !== undefined : false
   ));
-  const runIds = useBotOperationsStore((state) => (
-    channelId ? state.runIdsByChannelId[channelId] ?? EMPTY_RUN_IDS : EMPTY_RUN_IDS
-  ));
   const latestRun = useBotOperationsStore((state) => {
-    for (let index = runIds.length - 1; index >= 0; index -= 1) {
-      const run = state.runsById[runIds[index]];
-      if (run) return run;
-    }
-    return null;
+    const id = channelId ? selectBotCurrentRunId(state, channelId) : null;
+    return id ? state.runsById[id] : null;
   });
   const [runtimeActionError, setRuntimeActionError] = React.useState<string | null>(null);
+  const refreshedRuntimeOperationRef = React.useRef<string | null>(null);
   const runtimeOperation = useBotRuntimeOperation(botsDesktopApi);
   const recoveryKind = resolveBotRuntimeRecovery(capabilities, botsDesktopApi.isAvailable());
   const typingRunId = resolveBotTypingRunId(latestRun);
   const prewarmChannelId = channel?.id;
   const canPrewarmChannel = channel?.canSend === true && channel.lifecycle === 'active';
   const channelAvailable = channel !== undefined;
+  const requestRuntimePrewarm = React.useCallback(() => {
+    if (!prewarmChannelId || !canPrewarmChannel) return;
+    void warmBotChannel(prewarmChannelId).catch(() => undefined);
+  }, [canPrewarmChannel, prewarmChannelId]);
 
   React.useEffect(() => {
     if (!channelId || !channelAvailable) return;
@@ -58,9 +57,7 @@ export const BotChatView: React.FC<BotChatViewProps> = ({ bot, channelId }) => {
 
   React.useEffect(() => {
     if (!channelId || !channelAvailable) return;
-    void botsApi.listSharedFiles(bot.id, channelId).then(({ sharedFiles }) => {
-      useBotSharedFilesStore.getState().replaceChannel(channelId, sharedFiles);
-    }).catch(() => undefined);
+    void useBotSharedFilesStore.getState().loadChannel(bot.id, channelId).catch(() => undefined);
   }, [bot.id, channelAvailable, channelId]);
 
   React.useEffect(() => {
@@ -73,16 +70,18 @@ export const BotChatView: React.FC<BotChatViewProps> = ({ bot, channelId }) => {
   }, [channelId]);
 
   React.useEffect(() => {
-    if (!prewarmChannelId || !canPrewarmChannel) return;
-    void warmBotChannel(prewarmChannelId).catch(() => undefined);
+    if (!prewarmChannelId) return;
     return () => { void releaseBotChannelPrewarm(prewarmChannelId); };
-  }, [canPrewarmChannel, prewarmChannelId]);
+  }, [prewarmChannelId]);
 
   React.useEffect(() => {
-    if (!prewarmChannelId || !canPrewarmChannel || !latestRun) return;
-    if (!['completed', 'failed', 'cancelled', 'interrupted'].includes(latestRun.state)) return;
-    void warmBotChannel(prewarmChannelId).catch(() => undefined);
-  }, [canPrewarmChannel, latestRun, prewarmChannelId]);
+    const phase = runtimeOperation.progress?.phase;
+    if (phase !== 'ready' && phase !== 'failed') return;
+    const operationKey = `${runtimeOperation.progress?.id}:${phase}`;
+    if (refreshedRuntimeOperationRef.current === operationKey) return;
+    refreshedRuntimeOperationRef.current = operationKey;
+    void useBotsStore.getState().loadCapabilities();
+  }, [runtimeOperation.progress?.id, runtimeOperation.progress?.phase]);
 
   const recoveryAction = React.useMemo<BotRuntimeRecoveryAction | null>(() => {
     if (!recoveryKind) return null;
@@ -96,7 +95,6 @@ export const BotChatView: React.FC<BotChatViewProps> = ({ bot, channelId }) => {
           if (recoveryKind === 'setup') await botsDesktopApi.setup();
           else if (recoveryKind === 'update') await botsDesktopApi.update();
           else await botsDesktopApi.repair();
-          await useBotsStore.getState().loadCapabilities();
         } catch (error) {
           setRuntimeActionError(error instanceof Error ? error.message : t('bots.runtime.actionFailed'));
         } finally {
@@ -137,12 +135,24 @@ export const BotChatView: React.FC<BotChatViewProps> = ({ bot, channelId }) => {
         channelId={channel.id}
         typingRunId={typingRunId}
         acceptingMessage={acceptingMessage}
+        computerSlot={<BotInlineComputer botId={bot.id} channelId={channel.id} botActive={bot.lifecycle === 'active'} />}
       />
+      {latestRun?.state === 'waiting_control' ? (
+        <div
+          className="mx-3 mb-2 flex items-center gap-2 rounded-md border border-[var(--status-warning)]/40 bg-[var(--status-warning)]/10 px-3 py-2 typography-micro text-foreground"
+          data-bot-chat-control-wait
+          role="status"
+        >
+          <RiUserSharedLine className="h-4 w-4 shrink-0 text-[var(--status-warning)]" aria-hidden />
+          {t('bots.chat.waitingBrowserControl')}
+        </div>
+      ) : null}
       <BotComposer
         botId={bot.id}
         channel={channel}
         runtimeState={capabilities?.state ?? 'runtime_unavailable'}
         runtimeAvailable={capabilities?.available === true && bot.lifecycle === 'active'}
+        onRuntimeIntent={requestRuntimePrewarm}
         recoveryAction={recoveryAction}
         recoveryError={runtimeActionError || (
           recoveryKind && runtimeOperation.progress?.phase === 'failed'

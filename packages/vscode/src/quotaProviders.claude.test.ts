@@ -227,6 +227,43 @@ describe('VS Code Claude quota parity', () => {
 
     expect(result.ok).toBe(false);
     expect(result.configured).toBe(true);
-    expect(result.error).toBe('Claude Code usage unavailable');
+    expect(result.error).toBe('Claude quota proxy returned HTTP 503.');
+    expect(result.warnings).toEqual(['Claude Code usage unavailable']);
+  });
+
+  it('passes the resolved managed launch to the Claude usage fallback', async () => {
+    const fetchClaudeCodeUsage = vi.fn(async () => ({
+      ok: true as const,
+      usage: {
+        windows: {
+          '5h': {
+            usedPercent: 8,
+            remainingPercent: 92,
+            windowSeconds: 18_000,
+            resetAfterSeconds: null,
+            resetAt: null,
+            resetAtFormatted: null,
+            resetAfterFormatted: null,
+          },
+        },
+      },
+      usageUpdatedAt: 123,
+    }));
+    const result = await fetchClaudeQuota({
+      readAuth: () => ({}),
+      claudeProxyConfigured: true,
+      claudeCodeLaunch: {
+        executable: '/managed/claude',
+        pathValue: '/managed:/usr/bin',
+        source: 'managed',
+      },
+      fetchClaudeCodeUsage,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fetchClaudeCodeUsage).toHaveBeenCalledWith({
+      command: '/managed/claude',
+      env: expect.objectContaining({ PATH: '/managed:/usr/bin' }),
+    });
   });
 });

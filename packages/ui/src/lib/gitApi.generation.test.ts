@@ -66,6 +66,11 @@ let directGeneratedMessage = {
   subject: "feat: run commit workflow",
   highlights: [] as string[],
 }
+let directGeneratedPr = {
+  title: "Add generated output parsing",
+  body: "## Summary\n- Parse JSON from free Zen",
+}
+let directPrError: Error | null = null
 
 mock.module("@/sync/session-ui-store", () => ({
   useSessionUIStore: {
@@ -121,6 +126,11 @@ mock.module("./gitApiHttp", () => ({
   generateCommitMessageDraft: mock(async (_directory: string, request: Record<string, unknown>) => {
     directGenerationRequests.push(request)
     return { status: "complete", commits: [directGeneratedMessage] }
+  }),
+  generatePullRequestDescription: mock(async (_directory: string, request: Record<string, unknown>) => {
+    directGenerationRequests.push(request)
+    if (directPrError) throw directPrError
+    return directGeneratedPr
   }),
   getCommitFiles: mock(async () => ({
     files: [
@@ -302,6 +312,11 @@ describe("git generation routing", () => {
       subject: "feat: run commit workflow",
       highlights: [],
     }
+    directGeneratedPr = {
+      title: "Add generated output parsing",
+      body: "## Summary\n- Parse JSON from free Zen",
+    }
+    directPrError = null
   })
 
   test("parses structured-output tool parts for commit plan preview", async () => {
@@ -468,19 +483,12 @@ describe("git generation routing", () => {
     expect(createSessionCalls).toHaveLength(1)
   })
 
-  test("parses prose-wrapped PR JSON from the active session without structured-output format", async () => {
+  test("sends the rendered Generate PR prompt directly without touching chat", async () => {
     currentSessionId = "active-session"
     sessionModelSelections.set("active-session", {
       providerId: "provider-active",
       modelId: "model-active",
     })
-    promptResponseText = [
-      "Here is the pull request draft:",
-      "```json",
-      "{\"title\":\"Add generated output parsing\",\"body\":\"## Summary\\n- Parse JSON from model text\\n\\n## Testing\\n- Added coverage\"}",
-      "```",
-    ].join("\n")
-
     const result = await generatePullRequestDescriptionQuietly("/repo", {
       base: "main",
       head: "feature/generated-output",
@@ -489,61 +497,35 @@ describe("git generation routing", () => {
 
     expect(result).toEqual({
       title: "Add generated output parsing",
-      body: "## Summary\n- Parse JSON from model text\n\n## Testing\n- Added coverage",
+      body: "## Summary\n- Parse JSON from free Zen",
     })
-    expect(promptCalls).toHaveLength(1)
-    expect(promptCalls[0]?.sessionID).toBe("active-session")
-    expect(promptCalls[0]?.format).toBe(undefined)
+    expect(directGenerationRequests).toHaveLength(1)
+    expect(directGenerationRequests[0]?.base).toBe("main")
+    expect(directGenerationRequests[0]?.head).toBe("feature/generated-output")
+    expect(directGenerationRequests[0]?.context).toBe("Prefer concise descriptions.")
+    expect(String(directGenerationRequests[0]?.prompt)).toContain("hidden pr prompt")
+    expect(String(directGenerationRequests[0]?.prompt)).toContain("feat: add generated output parsing")
+    expect(String(directGenerationRequests[0]?.prompt)).toContain("src/generated.ts")
+    expect(promptCalls).toHaveLength(0)
     expect(createSessionCalls).toHaveLength(0)
     expect(deleteSessionCalls).toHaveLength(0)
   })
 
-  test("creates and selects a visible session when PR generation has no active session", async () => {
-    promptResponseText = JSON.stringify({
-      title: "Create PR generation session",
-      body: "## Summary\n- Create a session before generating",
-    })
-
+  test("does not require a selected model for direct PR generation", async () => {
+    currentProviderId = null
+    currentModelId = null
     const result = await generatePullRequestDescriptionQuietly("/repo", {
       base: "main",
       head: "feature/pr-session",
     })
-
-    expect(result).toEqual({
-      title: "Create PR generation session",
-      body: "## Summary\n- Create a session before generating",
-    })
-    expect(createSessionCalls).toEqual([{ title: undefined, directory: "/repo", parentId: null }])
-    expect(currentSessionId).toBe("legacy-generated-1")
-    expect(promptCalls).toHaveLength(1)
-    expect(promptCalls[0]?.sessionID).toBe("legacy-generated-1")
-    expect(promptCalls[0]?.directory).toBe("/repo")
-    expect(deleteSessionCalls).toHaveLength(0)
-  })
-
-  test("does not create a PR generation session when no model is selected", async () => {
-    currentProviderId = null
-    currentModelId = null
-
-    let generationError: unknown
-    try {
-      await generatePullRequestDescriptionQuietly("/repo", {
-        base: "main",
-        head: "feature/pr-session",
-      })
-    } catch (error) {
-      generationError = error
-    }
-
-    expect(generationError).toBeInstanceOf(Error)
-    expect((generationError as Error).message).toBe("Select a model before generating with AI")
+    expect(result).toEqual(directGeneratedPr)
     expect(createSessionCalls).toHaveLength(0)
     expect(promptCalls).toHaveLength(0)
     expect(deleteSessionCalls).toHaveLength(0)
   })
 
-  test("surfaces PR generation session creation failures without prompting", async () => {
-    sessionCreateError = new Error("session.create failed: OpenCode is unavailable")
+  test("surfaces direct PR generation failures without creating a session", async () => {
+    directPrError = new Error("Unable to generate a pull request description with the available free Zen models")
 
     let generationError: unknown
     try {
@@ -556,30 +538,9 @@ describe("git generation routing", () => {
     }
 
     expect(generationError).toBeInstanceOf(Error)
-    expect((generationError as Error).message).toBe("session.create failed: OpenCode is unavailable")
-    expect(createSessionCalls).toEqual([{ title: undefined, directory: "/repo", parentId: null }])
-    expect(currentSessionId).toBeNull()
+    expect((generationError as Error).message).toBe(directPrError.message)
+    expect(createSessionCalls).toHaveLength(0)
     expect(promptCalls).toHaveLength(0)
-    expect(deleteSessionCalls).toHaveLength(0)
-  })
-
-  test("retains an auto-created PR session when generation fails", async () => {
-    promptResponseText = "not json"
-
-    let generationError: unknown
-    try {
-      await generatePullRequestDescriptionQuietly("/repo", {
-        base: "main",
-        head: "feature/pr-session",
-      })
-    } catch (error) {
-      generationError = error
-    }
-
-    expect(generationError).toBeInstanceOf(Error)
-    expect((generationError as Error).message.startsWith("Generation failed: model did not return JSON")).toBe(true)
-    expect(currentSessionId).toBe("legacy-generated-1")
-    expect(promptCalls[0]?.sessionID).toBe("legacy-generated-1")
     expect(deleteSessionCalls).toHaveLength(0)
   })
 })

@@ -8,9 +8,9 @@ const source = readFileSync(
 );
 
 describe('ProgressiveGroup mobile reasoning', () => {
-  test('forwards mobile and terminal state to every reasoning group renderer', () => {
+  test('forwards mobile, terminal, and trailing-run state to every reasoning group renderer', () => {
     expect(source).toContain('isMobile: boolean;')
-    expect(source.match(/isMessageCompleted=\{isMessageCompleted\}\s+isMobile=\{isMobile\}/g)).toHaveLength(2)
+    expect(source.match(/isMessageCompleted=\{isMessageCompleted\}\s+isTrailingLiveRun=\{index === visibleRows\.length - 1\}\s+isMobile=\{isMobile\}/g)).toHaveLength(2)
   })
 
   test('removes clipped xAI reasoning before activity rows and preview counts are derived', () => {

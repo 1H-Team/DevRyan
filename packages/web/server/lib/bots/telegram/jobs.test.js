@@ -1,0 +1,51 @@
+import { expect, test } from 'vitest';
+import { createTelegramJobScheduler } from './jobs.js';
+
+const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return { resolve, promise }; };
+test('Telegram jobs bound media globally and per Bot without blocking text or controls', async () => {
+  const scheduler = createTelegramJobScheduler(); const pending = deferred();
+  const start = (id, lane, botId = 'a') => scheduler.start({ id, lane, botId, pairingId: id, operation: () => pending.promise });
+  expect(start('voice-a', 'voice')).not.toBeNull();
+  expect(start('voice-a-duplicate', 'voice')).toBeNull();
+  expect(start('voice-b', 'voice', 'b')).not.toBeNull();
+  expect(start('voice-c', 'voice', 'c')).toBeNull();
+  expect(start('text', 'message')).not.toBeNull();
+  expect(start('cancel', 'command')).not.toBeNull();
+  expect(start('speech', 'synthesis')).not.toBeNull();
+  expect(start('text-output', 'delivery')).not.toBeNull();
+  expect(start('text-output', 'delivery')).toBeNull();
+  pending.resolve(); await scheduler.wait(); expect(scheduler.active()).toEqual([]);
+});
+test('Telegram jobs abort only the intended pairing and release failed identities', async () => {
+  const scheduler = createTelegramJobScheduler(); const pending = deferred(); const signals = [];
+  const launch = (id, pairingId) => scheduler.start({ id, pairingId, botId: id, generation: 'g', userId: pairingId, lane: 'message', operation: async (signal) => { signals.push(signal); await pending.promise; if (signal.aborted) throw new Error('cancelled'); } });
+  const first = launch('a', 'pairing-a'); const second = launch('b', 'pairing-b');
+  await Promise.resolve(); scheduler.abortWhere((job) => job.pairingId === 'pairing-a');
+  expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
+  pending.resolve(); await Promise.allSettled([first, second]);
+  expect(scheduler.active()).toEqual([]); expect(launch('a', 'pairing-a')).not.toBeNull(); await scheduler.wait();
+});
+test('mixed ingress, output and control pools each enforce their global and per-Bot cap', async () => {
+  const scheduler = createTelegramJobScheduler(); const pending = deferred();
+  const start = (id, lane, botId) => scheduler.start({ id, lane, botId, operation: () => pending.promise });
+  for (let index = 0; index < 3; index += 1) expect(start(`text-a-${index}`, 'message', 'a')).not.toBeNull();
+  expect(start('text-a-full', 'message', 'a')).toBeNull();
+  expect(start('media-a', 'media', 'a')).not.toBeNull();
+  expect(start('voice-a-full', 'voice', 'a')).toBeNull();
+  for (let index = 0; index < 3; index += 1) expect(start(`text-b-${index}`, 'message', 'b')).not.toBeNull();
+  expect(start('voice-b', 'voice', 'b')).not.toBeNull();
+  expect(start('media-c-global-full', 'media', 'c')).toBeNull();
+  for (let index = 0; index < 2; index += 1) expect(start(`delivery-a-${index}`, 'delivery', 'a')).not.toBeNull();
+  expect(start('delivery-a-full', 'delivery', 'a')).toBeNull();
+  expect(start('delivery-b', 'delivery', 'b')).not.toBeNull();
+  expect(start('delivery-c', 'delivery', 'c')).not.toBeNull();
+  expect(start('delivery-global-full', 'delivery', 'd')).toBeNull();
+  expect(start('cancel-a', 'command', 'a')).not.toBeNull();
+  expect(start('cancel-a-full', 'command', 'a')).toBeNull();
+  expect(start('cancel-b', 'command', 'b')).not.toBeNull();
+  expect(start('cancel-global-full', 'command', 'c')).toBeNull();
+  expect(start('synthesis-a', 'synthesis', 'a')).not.toBeNull();
+  expect(start('synthesis-b', 'synthesis', 'b')).not.toBeNull();
+  expect(start('synthesis-global-full', 'synthesis', 'c')).toBeNull();
+  pending.resolve(); await scheduler.wait(); expect(scheduler.active()).toEqual([]);
+});

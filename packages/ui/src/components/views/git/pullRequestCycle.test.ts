@@ -54,6 +54,7 @@ describe('reusable PR branch lifecycle', () => {
 
   test('navigates current detail to list, selected detail, and back', () => {
     expect(nextPullRequestPanelView('current', 'show-list')).toBe('list');
+    expect(nextPullRequestPanelView('list', 'show-current')).toBe('current');
     expect(nextPullRequestPanelView('list', 'show-selected')).toBe('selected');
     expect(nextPullRequestPanelView('selected', 'show-list')).toBe('list');
   });

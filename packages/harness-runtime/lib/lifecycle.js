@@ -139,7 +139,7 @@ export const createLifecycleTracker = (options = {}) => {
     turn.settledAt = settledAt;
     turn.outcome = outcome;
     emit({
-      type: outcome === 'aborted' ? 'turn_aborted' : 'turn_completed',
+      type: outcome === 'failed' ? 'turn_failed' : outcome === 'aborted' ? 'turn_aborted' : 'turn_completed',
       ...turn,
       reason,
       at: settledAt,
@@ -282,7 +282,8 @@ export const createLifecycleTracker = (options = {}) => {
     ) {
       const info = asObject(properties.info);
       const sessionID = sessionIdFrom(properties, info);
-      settleTurn(activeTurn(sessionID), 'aborted', type);
+      const cancelled = /^(AbortError|MessageAbortedError)$/.test(asString(asObject(properties.error).name));
+      settleTurn(activeTurn(sessionID), type === 'session.error' && !cancelled ? 'failed' : 'aborted', type);
     }
   };
 

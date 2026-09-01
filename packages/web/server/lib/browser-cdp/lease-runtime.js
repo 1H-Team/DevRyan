@@ -132,6 +132,8 @@ export const createBrowserLeaseRuntime = (options = {}) => {
   const touchBrowserLease = options.touchBrowserLease;
   const releaseBrowserLease = options.releaseBrowserLease;
   const getBrowserLeaseAvailability = options.getBrowserLeaseAvailability;
+  const resolveBrowserLeaseContext = options.resolveBrowserLeaseContext;
+  const onObservationChanged = options.onObservationChanged;
   const buildOpenCodeUrl = options.buildOpenCodeUrl;
   const getOpenCodeAuthHeaders = options.getOpenCodeAuthHeaders ?? (() => ({}));
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -154,6 +156,16 @@ export const createBrowserLeaseRuntime = (options = {}) => {
   let shuttingDown = false;
   let admissionEpoch = 0;
   let activeReset = null;
+
+  const emitObservationChanged = (record) => {
+    try {
+      onObservationChanged?.({
+        leaseId: record?.leaseId,
+        ownerUserId: record?.metadata?.ownerUserId,
+      });
+    } catch {
+    }
+  };
 
   const runExclusiveForKey = (key, operation) => {
     const previous = keyTails.get(key) ?? Promise.resolve();
@@ -369,6 +381,8 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     wsUrl: record.wsUrl,
     created,
     generation: record.generation,
+    previewUrl: normalizeOptionalString(record.metadata.previewUrl),
+    serviceTokenConfigured: record.metadata.serviceTokenConfigured === true,
   });
 
   const removeRecordLocked = (record) => {
@@ -386,7 +400,9 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     return await runExclusiveForKey(record.reuseKey, async () => {
       const current = leasesByID.get(leaseId);
       if (!current || current.fence !== fence) return false;
-      return removeRecordLocked(current);
+      const removed = removeRecordLocked(current);
+      if (removed) emitObservationChanged(current);
+      return removed;
     });
   };
 
@@ -407,7 +423,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
       } catch (error) {
         assertAdmission(epoch);
         if (error instanceof BrowserLeaseError && error.code === 'agent_browser_disabled' && existing) {
-          removeRecordLocked(existing);
+          if (removeRecordLocked(existing)) emitObservationChanged(existing);
           try {
             await releaseBrowserLease?.({ leaseId: existing.leaseId, reason: 'agent_browser_disabled' });
           } catch {
@@ -433,11 +449,29 @@ export const createBrowserLeaseRuntime = (options = {}) => {
       assertAdmission(epoch);
       await readAvailability();
       assertAdmission(epoch);
+      let resolvedContext = null;
+      if (typeof resolveBrowserLeaseContext === 'function') {
+        try {
+          resolvedContext = await resolveBrowserLeaseContext({
+            rootSessionId,
+            opencodeSessionID: scope.opencodeSessionID,
+            directory: scope.directory,
+            agent: scope.agent,
+          });
+        } catch (error) {
+          assertAdmission(epoch);
+          const code = normalizeOptionalString(error?.code) || 'browser_owner_context_unavailable';
+          const message = normalizeOptionalString(error?.message) || 'Browser owner context is unavailable';
+          throw new BrowserLeaseError(code, message, Number(error?.statusCode) || 503);
+        }
+      }
+      assertAdmission(epoch);
       const leaseId = createLeaseID();
       const fence = createFence();
       const timestamp = now();
       const generation = timestamp;
       const metadata = Object.freeze({
+        ...(isRecord(resolvedContext?.metadata) ? resolvedContext.metadata : {}),
         rootSessionId,
         opencodeSessionID: scope.opencodeSessionID,
         messageID: scope.messageID,
@@ -461,6 +495,9 @@ export const createBrowserLeaseRuntime = (options = {}) => {
         const result = await createBrowserLease({
           leaseId,
           metadata,
+          previewCredential: isRecord(resolvedContext?.credential)
+            ? resolvedContext.credential
+            : null,
           onClosed: (reason) => {
             void handleHostClosed(leaseId, fence, reason).catch(() => undefined);
           },
@@ -472,6 +509,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
         assertAdmission(epoch);
         current.wsUrl = normalizeHostResult(result);
         current.lastActivityAt = now();
+        emitObservationChanged(current);
         return publicLease(current, true);
       } catch (error) {
         const current = leasesByID.get(leaseId);
@@ -528,13 +566,14 @@ export const createBrowserLeaseRuntime = (options = {}) => {
         || hostTouchResult?.state === 'not_found'
         || hostTouchResult?.state === 'missing';
       if (hostLeaseMissing) {
-        removeRecordLocked(current);
+        if (removeRecordLocked(current)) emitObservationChanged(current);
         throw new BrowserLeaseError('browser_lease_not_found', 'Browser lease was not found', 404);
       }
       if (leasesByID.get(leaseId)?.fence !== current.fence) {
         throw new BrowserLeaseError('browser_lease_not_found', 'Browser lease was not found', 404);
       }
       current.lastActivityAt = now();
+      emitObservationChanged(current);
       return { leaseId, touched: true };
     });
   };
@@ -546,6 +585,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
       return removeRecordLocked(current);
     });
     if (!removed) return false;
+    emitObservationChanged(record);
     try {
       await releaseBrowserLease?.({ leaseId: record.leaseId, reason });
     } catch {

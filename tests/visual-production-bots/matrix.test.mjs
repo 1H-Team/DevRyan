@@ -14,13 +14,18 @@ describe('Production Bots visual fixture matrix', () => {
     expect(PRODUCTION_BOTS_VISUAL_MATRIX.some((entry) => entry.viewport.width === 390 && entry.drawer === 'open')).toBe(true);
     expect(PRODUCTION_BOTS_VISUAL_MATRIX.some((entry) => entry.viewport.width === 390 && entry.drawer === 'closed')).toBe(true);
     for (const state of [
+      'provider_model', 'missing_credential',
       'opencode', 'healthy', 'testing', 'failed', 'revoked', 'privacy_warning',
       'trusted', 'untrusted', 'tampered', 'binding_failed', 'diff',
       'validation_error', 'quota_exhausted', 'public_only', 'allowlist',
       'private_denial', 'proxy_failure', 'standard', 'runsc', 'runsc_unavailable',
       'consent', 'starting', 'connected', 'degraded', 'updating', 'disabled',
       'desktop_unavailable', 'empty', 'loading', 'pending', 'settled',
-      'reconciliation', 'partial_failure', 'paused', 'retired',
+      'reconciliation', 'partial_failure', 'paused', 'retired', 'ack_running',
+      'retry_refused', 'timeout', 'ack_result', 'screen_connecting', 'screen_owned', 'screen_view_only',
+      'image_loading', 'image_ready', 'image_error',
+      'screen_conflict', 'screen_wait_owned', 'screen_wait_other',
+      'screen_disconnected', 'screen_off',
     ]) {
       expect(PRODUCTION_BOTS_VISUAL_MATRIX.some((entry) => entry.state === state)).toBe(true);
     }

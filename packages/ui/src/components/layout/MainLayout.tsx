@@ -29,6 +29,7 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { isDesktopShell } from '@/lib/desktop';
 import { getSettingsFullPageOverlayClassName } from '@/components/views/SettingsView.styles';
+import { SettingsLoadFallback } from '@/components/views/SettingsLoadFallback';
 import { useConfigApplyStatusLifecycle } from '@/components/views/config-apply/useConfigApplyStatusLifecycle';
 import {
     DeferredLazyView,
@@ -821,7 +822,7 @@ export const MainLayout: React.FC = () => {
                         className={getSettingsFullPageOverlayClassName()}
                         style={isMobile ? { paddingTop: 'var(--oc-safe-area-top, 0px)' } : undefined}
                     >
-                        <LazyViewBoundary>
+                        <LazyViewBoundary fallback={<SettingsLoadFallback />}>
                             {principal.scope === 'managed' && principal.role !== 'admin' ? (
                                 <LazyManagedSettingsView onClose={() => setSettingsDialogOpen(false)} />
                             ) : (

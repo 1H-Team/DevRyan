@@ -34,7 +34,7 @@ describe('removed files main tab', () => {
   });
 
   test('migrates a stale persisted value so it cannot render a blank view', () => {
-    expect(uiStore).toContain('version: 19,');
+    expect(uiStore).toContain('version: 20,');
     expect(uiStore).toContain("if (state.activeMainTab === 'files') {");
   });
 

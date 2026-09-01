@@ -31,6 +31,7 @@ type BotComposerProps = {
   runtimeAvailable: boolean;
   recoveryAction?: BotRuntimeRecoveryAction | null;
   recoveryError?: string | null;
+  onRuntimeIntent?: () => void;
   api?: Pick<BotsApi, 'uploadObject'>;
   channelStore?: BotChannelStore;
 };
@@ -42,11 +43,12 @@ export const BotComposer: React.FC<BotComposerProps> = ({
   runtimeAvailable,
   recoveryAction = null,
   recoveryError = null,
+  onRuntimeIntent,
   api = botsApi,
   channelStore = useBotChannelStore,
 }) => {
   const { t } = useI18n();
-  const draft = channelStore((state) => state.draftsByChannelId[channel.id]) ?? {
+  const draft = channelStore.draftStore((state) => state.draftsByChannelId[channel.id]) ?? {
     text: '',
     attachmentIds: [],
   };
@@ -81,6 +83,7 @@ export const BotComposer: React.FC<BotComposerProps> = ({
     setUploading(false);
     setDraggingFiles(false);
     setUploadFailures([]);
+    return () => { uploadGenerationRef.current += 1; };
   }, [channel.id]);
 
   React.useEffect(() => {
@@ -93,6 +96,9 @@ export const BotComposer: React.FC<BotComposerProps> = ({
     if (!hasWriteAccess || accepting || uploadingRef.current || files.length === 0) return;
 
     const uploadGeneration = ++uploadGenerationRef.current;
+    const draftGeneration = channelStore.draftStore.getState().generation;
+    const stillCurrent = () => uploadGenerationRef.current === uploadGeneration
+      && channelStore.draftStore.getState().generation === draftGeneration;
     uploadingRef.current = true;
     setUploading(true);
     setUploadFailures([]);
@@ -100,9 +106,10 @@ export const BotComposer: React.FC<BotComposerProps> = ({
       const result = await uploadBotAttachmentFiles({
         files,
         getAttachmentCount: () => (
-          channelStore.getState().draftsByChannelId[channel.id]?.attachmentIds.length || 0
+          channelStore.draftStore.getState().draftsByChannelId[channel.id]?.attachmentIds.length || 0
         ),
         upload: async ({ file, contentType, dataBase64 }) => {
+          if (!stillCurrent()) throw new Error('Bot conversation changed');
           const { object } = await api.uploadObject(botId, channel.id, {
             contentType,
             dataBase64,
@@ -111,7 +118,8 @@ export const BotComposer: React.FC<BotComposerProps> = ({
           return object.id;
         },
         onUploaded: ({ objectId }) => {
-          const current = channelStore.getState().draftsByChannelId[channel.id] ?? {
+          if (!stillCurrent()) return;
+          const current = channelStore.draftStore.getState().draftsByChannelId[channel.id] ?? {
             text: '',
             attachmentIds: [],
           };
@@ -121,11 +129,11 @@ export const BotComposer: React.FC<BotComposerProps> = ({
           });
         },
       });
-      if (uploadGenerationRef.current === uploadGeneration) {
+      if (stillCurrent()) {
         setUploadFailures(result.failures);
       }
     } finally {
-      if (uploadGenerationRef.current === uploadGeneration) {
+      if (stillCurrent()) {
         uploadingRef.current = false;
         setUploading(false);
       }
@@ -178,6 +186,8 @@ export const BotComposer: React.FC<BotComposerProps> = ({
 
         <form
           aria-label={t('bots.composer.formAria')}
+          onFocusCapture={onRuntimeIntent}
+          onPointerDownCapture={onRuntimeIntent}
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
@@ -224,6 +234,7 @@ export const BotComposer: React.FC<BotComposerProps> = ({
             event.stopPropagation();
             resetFileDrag();
             if (!canAttach) return;
+            onRuntimeIntent?.();
             void attachFiles(collectBotAttachmentFiles(event.dataTransfer));
           }}
         >
@@ -248,7 +259,10 @@ export const BotComposer: React.FC<BotComposerProps> = ({
             disabled={!hasWriteAccess || accepting}
             placeholder={hasWriteAccess ? t('bots.composer.placeholder') : t('bots.composer.readOnly')}
             className="min-h-[72px] w-full resize-none bg-transparent px-3.5 pb-2 pt-3 typography-body text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
-            onChange={(event) => updateDraft({ text: event.target.value, attachmentIds: draft.attachmentIds })}
+            onChange={(event) => {
+              onRuntimeIntent?.();
+              updateDraft({ text: event.target.value, attachmentIds: draft.attachmentIds });
+            }}
             onKeyDown={(event) => {
               if (!shouldSubmitBotComposerKey({
                 key: event.key,

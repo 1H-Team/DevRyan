@@ -23,6 +23,7 @@ import {
   writeManagedQuotaCredential,
 } from './quotaCredentials';
 import { mutateAuthFile, writeAuthFile as writeOpenCodeAuthFile } from './opencodeAuth';
+import type { ClaudeCodeLaunch } from '../../web/server/lib/opencode/claude-cli-runtime.js';
 
 type AuthEntry = Record<string, unknown> | string;
 type AuthFile = Record<string, AuthEntry>;
@@ -97,7 +98,11 @@ type FetchQuotaOptions = {
   claudeProxyConfigured?: boolean;
   isExternalRuntime?: boolean;
   forceRefresh?: boolean;
-  fetchClaudeCodeUsage?: () => Promise<ReturnType<typeof parseClaudeCodeUsageOutput>>;
+  fetchClaudeCodeUsage?: (options?: {
+    command?: string;
+    env?: NodeJS.ProcessEnv;
+  }) => Promise<ReturnType<typeof parseClaudeCodeUsageOutput>>;
+  claudeCodeLaunch?: ClaudeCodeLaunch | null;
 };
 
 const ANTHROPIC_AUTH_ALIASES = [
@@ -1485,11 +1490,17 @@ export const parseClaudeCodeUsageOutput = (raw: string, now = Date.now()): {
   }
 };
 
-const fetchClaudeCodeUsage = (): Promise<ReturnType<typeof parseClaudeCodeUsageOutput>> => new Promise((resolve) => {
+const fetchClaudeCodeUsage = ({
+  command = process.env.CLAUDE_CODE_CLI || 'claude',
+  env = process.env,
+}: {
+  command?: string;
+  env?: NodeJS.ProcessEnv;
+} = {}): Promise<ReturnType<typeof parseClaudeCodeUsageOutput>> => new Promise((resolve) => {
   let stdout = '';
   let stderr = '';
   let settled = false;
-  const child = spawn(process.env.CLAUDE_CODE_CLI || 'claude', [
+  const child = spawn(command, [
     '-p',
     '/usage',
     '--output-format',
@@ -1499,7 +1510,7 @@ const fetchClaudeCodeUsage = (): Promise<ReturnType<typeof parseClaudeCodeUsageO
     '1',
   ], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: process.env,
+    env,
   });
   const finish = (result: ReturnType<typeof parseClaudeCodeUsageOutput>) => {
     if (settled) return;
@@ -1703,7 +1714,14 @@ export const fetchClaudeQuota = async (options: FetchQuotaOptions = {}): Promise
 
   let cliResult: ReturnType<typeof parseClaudeCodeUsageOutput>;
   try {
-    cliResult = await (options.fetchClaudeCodeUsage ?? fetchClaudeCodeUsage)();
+    cliResult = options.claudeCodeLaunch === null
+      ? { ok: false, error: 'Claude Code was not found in the managed runtime or on PATH.' }
+      : await (options.fetchClaudeCodeUsage ?? fetchClaudeCodeUsage)(options.claudeCodeLaunch
+        ? {
+            command: options.claudeCodeLaunch.executable,
+            env: { ...process.env, PATH: options.claudeCodeLaunch.pathValue },
+          }
+        : undefined);
   } catch (error) {
     cliResult = {
       ok: false,
@@ -1728,8 +1746,9 @@ export const fetchClaudeQuota = async (options: FetchQuotaOptions = {}): Promise
     configured: true,
     usage: degraded.usage,
     usageUpdatedAt: degraded.usageUpdatedAt,
-    error: cliResult.error ?? proxyError ?? oauthError ?? 'Claude usage is unavailable.',
-    errorCode: 'claude_code_usage_failed',
+    error: proxyError ?? oauthError ?? cliResult.error ?? 'Claude usage is unavailable.',
+    errorCode: 'claude_meridian_unavailable',
+    warnings: cliResult.error && cliResult.error !== proxyError ? [cliResult.error] : undefined,
   });
 };
 

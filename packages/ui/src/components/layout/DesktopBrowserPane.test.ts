@@ -166,7 +166,7 @@ describe('standalone web browser surface', () => {
     expect(source).toContain("if (state.origin !== origin || !state.base || !parsed) return { ...state, src: '', routed: true };");
     expect(source).toContain('if (parsed && !isBrowserHostRoutedUrl(next)) openExternal(next);');
     expect(source).toContain('Your browser blocked the new tab.');
-    expect(source).toContain('This site opens in your regular browser.');
+    expect(source).toContain("This site opens in your regular browser using this device's connection.");
     expect(source).toContain('onExternalNavigate: handleHandoffNavigate');
     expect(diagnosticsSource).toContain('onExternalNavigate?: (url: string) => void;');
   });

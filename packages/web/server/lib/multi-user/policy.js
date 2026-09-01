@@ -1,3 +1,5 @@
+import { normalizeNotificationTemplates } from '../opencode/notification-settings.js';
+
 export const ROLE_NAMES = Object.freeze(['admin', 'senior_developer', 'developer']);
 
 export const SETTINGS_PERMISSION_SLUGS = Object.freeze([
@@ -70,6 +72,14 @@ export function normalizeFeatureOverrides(value) {
     }
     if (Object.keys(normalizedAgents).length > 0) normalized.agents = normalizedAgents;
   }
+  const source = value.source;
+  if (source && typeof source === 'object' && !Array.isArray(source)) {
+    const normalizedSource = {};
+    if (typeof source.hideUpdateTab === 'boolean') {
+      normalizedSource.hideUpdateTab = source.hideUpdateTab;
+    }
+    if (Object.keys(normalizedSource).length > 0) normalized.source = normalizedSource;
+  }
   const mcp = value.mcp;
   if (mcp && typeof mcp === 'object' && !Array.isArray(mcp)) {
     const servers = {};
@@ -89,7 +99,7 @@ export function validateFeatureOverridesPayload(value) {
     return { valid: false, error: 'Feature overrides must be an object' };
   }
   for (const key of Object.keys(value)) {
-    if (!['agents', 'mcp'].includes(key)) {
+    if (!['agents', 'source', 'mcp'].includes(key)) {
       return { valid: false, error: `Unknown feature override section: ${key}` };
     }
   }
@@ -101,6 +111,17 @@ export function validateFeatureOverridesPayload(value) {
     for (const key of Object.keys(agents)) {
       if (!['hidePermissionsUi', 'hideGlobalBehaviorUi'].includes(key) || typeof agents[key] !== 'boolean') {
         return { valid: false, error: `Invalid agent feature override: ${key}` };
+      }
+    }
+  }
+  const source = value.source;
+  if (source !== undefined) {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) {
+      return { valid: false, error: 'Source feature overrides must be an object' };
+    }
+    for (const key of Object.keys(source)) {
+      if (key !== 'hideUpdateTab' || typeof source[key] !== 'boolean') {
+        return { valid: false, error: `Invalid Source feature override: ${key}` };
       }
     }
   }
@@ -347,6 +368,7 @@ export function normalizeRolePolicy(role, row = null, userPolicy = null) {
   };
   next.featureOverrides = {
     ...(Object.keys(mergedAgents).length > 0 ? { agents: mergedAgents } : {}),
+    ...(userFeatureOverrides.source ? { source: userFeatureOverrides.source } : {}),
     ...(userFeatureOverrides.mcp ? { mcp: userFeatureOverrides.mcp } : {}),
   };
   return next;
@@ -413,7 +435,12 @@ export function settingsPageForRequest(requestPath, method = 'GET') {
   if (/^\/config\/skills\/(?:catalog|install|scan)(?:\/|$)/.test(path)) return 'skills.catalog';
   if (/^\/config\/skills(?:\/|$)/.test(path)) return 'skills.installed';
   if (/^\/config\/(?:plugins|slim)(?:\/|$)/.test(path)) return 'plugins';
-  if (/^\/magic-prompts(?:\/|$)/.test(path)) return 'magic-prompts';
+  // Reading the effective host prompt catalog is a chat/action runtime
+  // dependency. Keep the editor and every mutation permission-gated without
+  // requiring managed users to see the Magic Prompts settings page.
+  if (/^\/magic-prompts(?:\/|$)/.test(path)) {
+    return method === 'GET' ? null : 'magic-prompts';
+  }
   // The chat bootstrap needs the read-only provider/model catalog even when
   // the Providers settings page is hidden. Mutations remain page-gated.
   if (path === '/config/providers' && method === 'GET') return null;
@@ -454,6 +481,13 @@ export function buildEffectiveSettings({ principal, hostSettings, userOverrides 
     if (Object.prototype.hasOwnProperty.call(userOverrides, key)) effective[key] = userOverrides[key];
     else if (Object.prototype.hasOwnProperty.call(hostSettings, key)) effective[key] = hostSettings[key];
   }
+  if (allowed === null || allowed.has('notificationTemplates')) {
+    const hostTemplates = normalizeNotificationTemplates(hostSettings.notificationTemplates).templates;
+    effective.notificationTemplates = normalizeNotificationTemplates(
+      userOverrides.notificationTemplates,
+      hostTemplates,
+    ).templates;
+  }
   // Branch grants are visibility metadata. Every managed role receives the
   // real repository path and one project entry per projectId.
   const byProject = new Map();
@@ -493,6 +527,9 @@ export function buildEffectiveSettings({ principal, hostSettings, userOverrides 
         hidePermissionsUi: principal?.policy?.featureOverrides?.agents?.hidePermissionsUi === true,
         hideGlobalBehaviorUi: principal?.policy?.featureOverrides?.agents?.hideGlobalBehaviorUi === true,
       },
+      source: {
+        hideUpdateTab: principal?.policy?.featureOverrides?.source?.hideUpdateTab === true,
+      },
       mcp: { ...(principal?.policy?.featureOverrides?.mcp || {}) },
     },
     settingsOverrideKeys: [...(allowed || Object.keys(userOverrides))]
@@ -510,7 +547,9 @@ export function validateSettingsChanges({ principal, changes, currentEffective }
   const dedicatedAgentDefaultFields = new Set(['agentModelSelections', 'defaultModel', 'defaultVariant']);
   for (const [key, value] of Object.entries(changes || {})) {
     if (allowed.has(key) && !dedicatedAgentDefaultFields.has(key)) {
-      accepted[key] = value;
+      accepted[key] = key === 'notificationTemplates'
+        ? normalizeNotificationTemplates(value, normalizeNotificationTemplates(currentEffective?.notificationTemplates).templates).templates
+        : value;
       continue;
     }
     if (JSON.stringify(value) !== JSON.stringify(currentEffective?.[key])) rejected.push(key);

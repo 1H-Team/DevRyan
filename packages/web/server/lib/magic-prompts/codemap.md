@@ -14,5 +14,6 @@ Persistence/runtime for user magic-prompt overrides plus REST routes to read, se
 3. DELETE `:id` removes one override; DELETE collection resets all overrides.
 
 ## Integration
-- Mounted from server startup and consumed by UI settings/prompt editing surfaces.
+- Mounted from server startup and consumed by UI settings/prompt editing surfaces and action execution.
 - Stores only override deltas; base prompt catalog remains in upstream prompt definitions.
+- The effective GET catalog is an authenticated runtime dependency inherited by all managed users. Settings-page visibility and every PUT/DELETE mutation remain controlled by the canonical Magic Prompts Read/Edit permission.

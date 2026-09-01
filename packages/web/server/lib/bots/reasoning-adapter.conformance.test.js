@@ -15,7 +15,7 @@ const sse = (...events) => events.map((event, index) => (
   `id: event-${index + 1}\ndata: ${JSON.stringify(event)}\n\n`
 )).join('');
 
-const openCodeHarness = () => {
+const openCodeHarness = ({ prewarmCache = null } = {}) => {
   let eventHandler = null;
   const provider = {
     start: vi.fn(async () => undefined),
@@ -71,9 +71,11 @@ const openCodeHarness = () => {
     adapter: createOpenCodeReasoningAdapter({
       provider,
       loadModelCatalog: async () => [],
+      prewarmCache,
       uuid: () => 'segment-opencode',
     }),
     binding: { kind: 'opencode', models: {} },
+    provider,
   };
 };
 
@@ -149,10 +151,10 @@ describe.each([
     expect(prepared.modelSnapshot).toEqual(expect.objectContaining({ modelId: expect.any(String) }));
 
     const handle = await adapter.startRun({ runId: 'durable-run' });
-    expect(handle).toMatchObject({
-      threadId: expect.any(String),
-      execution: { adapter: adapter.kind, checkpointVersion: 1 },
-    });
+    const originalThreadId = handle.threadId;
+    expect(typeof handle.threadId).toBe('string');
+    expect(handle.execution.adapter).toBe(adapter.kind);
+    expect(handle.execution.checkpointVersion).toBe(1);
     const continuedHandle = await adapter.startRun({
       runId: 'durable-run-next',
       continuation: {
@@ -161,7 +163,7 @@ describe.each([
         execution: handle.execution,
       },
     });
-    expect(continuedHandle.threadId).toBe(handle.threadId);
+    expect(continuedHandle.threadId).toBe(originalThreadId);
     const events = [];
     await adapter.continueRun({
       runId: 'durable-run',
@@ -189,6 +191,98 @@ describe.each([
       prompt: 'Return ok',
       schema: { type: 'object', required: ['ok'] },
     })).resolves.toEqual({ ok: true });
+  });
+});
+
+describe('OpenCode BotReasoningAdapter provider boundary', () => {
+  const run = {
+    id: 'durable-run',
+    botId: 'bot-id',
+    channelId: 'channel-id',
+    revisionId: 'revision-id',
+  };
+  const contract = { models: { primary: { providerId: 'openai', modelId: 'test' } } };
+  const binding = { kind: 'opencode', models: contract.models };
+
+  it('projects only supported provider fields for a cold revision preparation', async () => {
+    const { adapter, provider } = openCodeHarness();
+    const compiled = { compiledHash: 'a'.repeat(64), contract };
+
+    await adapter.prepareRevision({
+      run,
+      contract,
+      binding,
+      attachmentIds: ['attachment-id'],
+      libraryVersionIds: ['library-version-id'],
+      attachmentDeliveryMode: 'compatibility',
+      compiled,
+    });
+
+    expect(provider.startReasoningRun).toHaveBeenCalledWith({
+      run,
+      contract,
+      catalog: [],
+      attachmentIds: ['attachment-id'],
+      libraryVersionIds: ['library-version-id'],
+      attachmentDeliveryMode: 'compatibility',
+      compiled,
+    });
+    expect(provider.startReasoningRun.mock.calls[0][0]).not.toHaveProperty('binding');
+  });
+
+  it('keeps adapter binding private while preserving cached compilation on warm preparation', async () => {
+    const compiled = { compiledHash: 'b'.repeat(64), contract };
+    const prewarmCache = {
+      prewarm: vi.fn(),
+      peekCompiled: vi.fn(() => compiled),
+    };
+    const { adapter, provider } = openCodeHarness({ prewarmCache });
+
+    await adapter.warm({
+      run,
+      contract,
+      binding,
+      attachmentIds: [],
+      libraryVersionIds: [],
+    });
+
+    expect(prewarmCache.prewarm).toHaveBeenCalledWith({
+      channelId: run.channelId,
+      revisionId: run.revisionId,
+      contract,
+    });
+    expect(provider.startReasoningRun).toHaveBeenCalledWith({
+      run,
+      contract,
+      catalog: [],
+      attachmentIds: [],
+      libraryVersionIds: [],
+      mode: 'warm',
+      compiled,
+    });
+    expect(provider.startReasoningRun.mock.calls[0][0]).not.toHaveProperty('binding');
+  });
+
+  it('maps ephemeral preparation to provisional OpenCode credentials', async () => {
+    const { adapter, provider } = openCodeHarness();
+
+    await adapter.prepareRevision({
+      run,
+      contract,
+      binding,
+      attachmentIds: [],
+      libraryVersionIds: [],
+      persistence: 'ephemeral',
+    });
+
+    expect(provider.startReasoningRun).toHaveBeenCalledWith({
+      run,
+      contract,
+      catalog: [],
+      attachmentIds: [],
+      libraryVersionIds: [],
+      mode: 'warm',
+    });
   });
 });
 

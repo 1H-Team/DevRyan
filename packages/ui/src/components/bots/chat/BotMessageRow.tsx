@@ -1,14 +1,11 @@
 import React from 'react';
 import { RiAttachment2 } from '@remixicon/react';
 
-import { BotAvatar } from '@/components/bots/BotAvatar';
 import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer';
 import type { BotSummary } from '@/lib/botsApi';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { useBotChannelStore } from '@/stores/useBotChannelStore';
-import { useBotLiveMessageStore } from '@/stores/useBotLiveMessageStore';
-import { useBotOperationsStore } from '@/stores/useBotOperationsStore';
 import { useBotSharedFilesStore } from '@/stores/useBotSharedFilesStore';
 import { stripAssistantImageMarkdown } from '../../../../../shared-runtime/lib/assistant-image-sources.js';
 import { BotResultAttachments } from './BotResultAttachments';
@@ -16,7 +13,6 @@ import { BotResultAttachments } from './BotResultAttachments';
 type BotMessageRowProps = {
   bot: BotSummary;
   messageId: string;
-  showAvatar?: boolean;
 };
 
 const formatMessageTime = (value: string): string => {
@@ -27,8 +23,6 @@ const formatMessageTime = (value: string): string => {
     minute: '2-digit',
   });
 };
-
-const TERMINAL_RUN_STATES = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 
 const markOptimisticRender = (): void => {
   try {
@@ -41,38 +35,43 @@ const markOptimisticRender = (): void => {
   }
 };
 
-export const BotMessageRow = React.memo<BotMessageRowProps>(({ bot, messageId, showAvatar = true }) => {
+export const BotMessageRow = React.memo<BotMessageRowProps>(({ bot, messageId }) => {
   const { t } = useI18n();
   const message = useBotChannelStore((state) => state.messagesById[messageId]);
   const notConfirmed = useBotChannelStore((state) => state.unconfirmedMessageIds[messageId] === true);
-  const liveMessage = useBotLiveMessageStore((state) => state.messagesById[messageId]);
   const sharedFileCount = useBotSharedFilesStore(
     (state) => state.fileIdsByMessageId[messageId]?.length ?? 0,
   );
-  const runId = message?.runId ?? liveMessage?.runId ?? null;
-  const runState = useBotOperationsStore((state) => (
-    runId ? state.runsById[runId]?.state : undefined
-  ));
   React.useLayoutEffect(() => {
     if (message?.role === 'user' && message.runId === null && message.finalizedAt === null) {
       markOptimisticRender();
     }
-  }, [message?.finalizedAt, message?.role, message?.runId]);
+    if (message?.role === 'assistant' && message.assistantPhase !== 'acknowledgment' && message.finalizedAt !== null) {
+      try {
+        if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
+          performance.clearMarks?.(`bot.final-render:${messageId}`);
+          performance.mark(`bot.final-render:${messageId}`);
+        }
+      } catch {
+        // Rendering must not depend on browser performance instrumentation.
+      }
+    }
+  }, [message?.assistantPhase, message?.body.text, message?.finalizedAt, message?.role, message?.runId, messageId]);
 
-  if (!message && !liveMessage) return null;
+  if (!message) return null;
 
-  const role = message?.role ?? 'assistant';
+  const role = message.role;
   const isUser = role === 'user';
   const isAssistant = role === 'assistant';
   if (!isUser && !isAssistant) return null;
-  const text = liveMessage?.text ?? message?.body.text ?? '';
+  if (isAssistant && (message.assistantPhase === 'acknowledgment' || message.finalizedAt === null)) return null;
+  const text = message.body.text;
   const attachmentIds = message?.body.attachmentIds ?? [];
   const attachmentCount = message?.attachmentCount ?? 0;
-  if (isAssistant && text.trim().length === 0 && attachmentCount === 0 && sharedFileCount === 0) return null;
+  if (isAssistant && text.trim().length === 0
+    && attachmentCount === 0 && sharedFileCount === 0) return null;
   const actorLabel = isUser ? t('bots.chat.message.you') : bot.name;
-  const isUpdating = (liveMessage !== undefined || message?.finalizedAt === null)
-    && (runState === undefined || !TERMINAL_RUN_STATES.has(runState));
-  const createdAt = message?.createdAt ?? liveMessage?.createdAt ?? '';
+  const createdAt = message.createdAt;
   const displayedText = isAssistant ? stripAssistantImageMarkdown(text) : text;
 
   return (
@@ -82,15 +81,7 @@ export const BotMessageRow = React.memo<BotMessageRowProps>(({ bot, messageId, s
       className={cn('group flex min-w-0', isUser ? 'justify-end' : 'justify-start')}
       aria-label={t('bots.chat.message.aria', { actor: actorLabel })}
     >
-      <div className={cn(
-        'flex min-w-0 max-w-[92%] items-end gap-3 sm:max-w-[78%]',
-        isUser && 'flex-row-reverse',
-      )}>
-        {isAssistant ? (
-          showAvatar ? (
-            <BotAvatar bot={bot} className="h-14 w-14 rounded-full typography-ui-label" />
-          ) : <span className="h-14 w-14 shrink-0" aria-hidden />
-        ) : null}
+      <div className="min-w-0 max-w-[92%] sm:max-w-[78%]">
         <div className="min-w-0">
           <div
             className={cn(
@@ -105,9 +96,10 @@ export const BotMessageRow = React.memo<BotMessageRowProps>(({ bot, messageId, s
             ) : (
               <MarkdownRenderer
                 content={displayedText}
+                loadingFallback={<p data-bot-final-text-fallback className="whitespace-pre-wrap break-words">{displayedText}</p>}
                 messageId={messageId}
-                isStreaming={isUpdating}
-                disableStreamAnimation={false}
+                isStreaming={false}
+                disableStreamAnimation={true}
                 enableFileReferences={false}
                 variant="assistant"
               />

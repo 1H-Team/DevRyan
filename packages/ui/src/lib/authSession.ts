@@ -27,6 +27,7 @@ export interface AuthAssignment {
 
 export interface AuthFeatureOverrides {
   agents?: { hidePermissionsUi?: boolean; hideGlobalBehaviorUi?: boolean };
+  source?: { hideUpdateTab?: boolean };
   mcp?: Record<string, 'on' | 'off'>;
 }
 
@@ -155,6 +156,12 @@ export const isGlobalAgentBehaviorUiHidden = (principal: AuthPrincipal): boolean
   principal.scope === 'managed'
   && principal.role !== 'admin'
   && principal.policy.featureOverrides?.agents?.hideGlobalBehaviorUi === true
+);
+
+export const isSourceUpdateTabHidden = (principal: AuthPrincipal): boolean => (
+  principal.scope === 'managed'
+  && principal.role !== 'admin'
+  && principal.policy.featureOverrides?.source?.hideUpdateTab === true
 );
 
 export const canEditPersonalAgentModels = (principal: AuthPrincipal): boolean => (

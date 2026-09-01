@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { beginSessionCreationTrace, isSessionCreateRequest } from './lib/opencode/session-creation.js';
 import express from 'express';
 import compression from 'compression';
 import path from 'path';
@@ -55,6 +56,8 @@ import {
 import { createCanonicalOpenCodeEventProcessor } from './lib/event-stream/canonical-ingestion.js';
 import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/search.js';
 import { createOpenCodeLifecycleRuntime } from './lib/opencode/lifecycle.js';
+import { createOpenAiOAuthCoordinator } from './lib/opencode/openai-oauth-coordinator.js';
+import { createOpenAiOAuthBridge, registerManagedOAuthMutationGate } from './lib/opencode/openai-oauth-bridge.js';
 import { resolveContextModeCapability } from './lib/opencode/context-mode-hotfix.js';
 import { createConfigApplyCoordinator, createConfigChangeMarker } from '@openchamber/shared-runtime';
 import { syncPackagedAgents } from './lib/opencode/packaged-agent-sync.js';
@@ -93,10 +96,7 @@ import { createTurnTimingRuntime, registerTurnTimingRoutes } from './lib/opencod
 import { createAgentRuntimeWarmup, registerAgentRuntimeWarmupRoute } from './lib/opencode/agent-runtime-warmup.js';
 import { createProjectPrewarmRuntime } from './lib/opencode/project-prewarm-runtime.js';
 import { createXaiToolCatalogRuntime } from './lib/opencode/xai-tool-catalog-runtime.js';
-import {
-  DEFAULT_TITLE_FALLBACK_ZEN_MODEL,
-  createStandardSessionTitleRuntime,
-} from './lib/opencode/standard-session-title-runtime.js';
+import { createStandardSessionTitleRuntime } from './lib/opencode/standard-session-title-runtime.js';
 import { createHarnessPreflight, registerHarnessPreflightRoute } from './lib/opencode/harness-preflight.js';
 import { inspectClaudeRuntimeCompatibility } from './lib/opencode/claude-runtime-compatibility.js';
 import { resolveApprovedSkills } from './lib/opencode/skill-policy.js';
@@ -127,10 +127,12 @@ import { createLocalInstanceStatusRuntime } from './lib/preview/local-instances-
 import { createProjectPreviewInstancesRuntime } from './lib/preview/project-instances-runtime.js';
 import { createBrowserCdpDiscoveryRuntime } from './lib/browser-cdp/discovery-runtime.js';
 import { createBrowserLeaseRuntime } from './lib/browser-cdp/lease-runtime.js';
+import { createBrowserObservationRuntime } from './lib/browser-cdp/observation-runtime.js';
 import { dynamicNoStoreMiddleware } from './lib/http-cache-policy.js';
 import { createWebManagedOrchestrationRuntime } from './lib/orchestration/runtime.js';
 import { registerManagedOrchestrationRoutes } from './lib/orchestration/routes.js';
 import { createWebHarnessRuntime } from './lib/harness/runtime.js';
+import { createWebPrimaryRecoveryRuntime } from './lib/harness/provider-recovery.js';
 import { createWebCommandDeadlineRuntime } from './lib/harness/command-deadline-runtime.js';
 import { registerDiagnosticsRoutes } from './lib/diagnostics/routes.js';
 import { registerMemoryDebugRoutes } from './lib/debug/memory-routes.js';
@@ -282,6 +284,12 @@ function shouldSkipCompression(req, res) {
   }
 
   const pathname = req.path || req.url || '';
+  if (
+    pathname.startsWith('/api/browser/agent-leases/')
+    && pathname.endsWith('/stream')
+  ) {
+    return true;
+  }
   if ((pathname === '/api' || pathname.startsWith('/api/')) && shouldSkipApiCompression()) {
     return true;
   }
@@ -567,6 +575,7 @@ const rejectWebSocketUpgrade = (...args) => requestSecurityRuntime.rejectWebSock
 const isRequestOriginAllowed = (...args) => requestSecurityRuntime.isRequestOriginAllowed(...args);
 let globalMessageStreamHub = null;
 let multiUserRuntime = null;
+let browserObservationRuntime = null;
 
 const notificationEmitterRuntime = createNotificationEmitterRuntime({
   process,
@@ -615,6 +624,21 @@ const broadcastManagedSessionOwnershipCommitted = (session) => {
       ? session.directory
       : 'global',
   });
+};
+
+const broadcastBrowserAgentLeasesChanged = (principalId, revision) => {
+  if (typeof principalId !== 'string' || !principalId) return;
+  for (const client of uiOpenChamberEventClients) {
+    if (client?.principalId !== principalId) continue;
+    try {
+      writeSseEvent(client.response, {
+        type: 'openchamber:browser-agent-leases-changed',
+        properties: { revision },
+      });
+    } catch {
+      uiOpenChamberEventClients.delete(client);
+    }
+  }
 };
 
 const sessionRuntime = createSessionRuntime({
@@ -1071,10 +1095,7 @@ const standardSessionTitleRuntime = createStandardSessionTitleRuntime({
   getOpenCodeAuthHeaders,
   fetchFreeZenModels,
   getCachedZenModels,
-  resolveZenModel,
-  resolveZenFallbackModel: (model) => (
-    resolveZenModelNonBlocking(model)?.fallbackModel || DEFAULT_TITLE_FALLBACK_ZEN_MODEL
-  ),
+  outboxFilePath: path.join(OPENCHAMBER_DATA_DIR, 'session-title-outbox.json'),
   onTitleGenerated: ({ session, title, directory }) => {
     emitSyntheticOpenCodeEvent({
       type: 'session.updated',
@@ -1295,7 +1316,13 @@ Object.defineProperties(openCodeLifecycleState, {
   resolvedWslDistro: { get: () => resolvedWslDistro, set: (value) => { resolvedWslDistro = value; } },
 });
 
+const openAiOAuthCoordinator = createOpenAiOAuthCoordinator({
+  stateFile: path.join(OPENCHAMBER_DATA_DIR, 'runtime', 'openai-oauth-state.json'),
+  recordDiagnostic: (entry) => harnessRuntime.record(entry),
+});
+const openAiOAuthBridge = createOpenAiOAuthBridge({ coordinator: openAiOAuthCoordinator });
 const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
+  getManagedOAuthEnvironment: () => openAiOAuthBridge.environment(),
   state: openCodeLifecycleState,
   env: {
     ENV_CONFIGURED_OPENCODE_PORT,
@@ -1343,6 +1370,7 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   }),
   syncRuntimeAgentOverlays: (options) => syncRuntimeAgentOverlays({
     ...options,
+    dataDirectory: OPENCHAMBER_DATA_DIR,
     packagedAgentDirectory: path.join(defaultConfigRoot, 'agents'),
     packagedPluginDirectory: path.join(defaultConfigRoot, 'plugins'),
   }),
@@ -1406,6 +1434,18 @@ const commandDeadlineRuntime = createWebCommandDeadlineRuntime({
   sanitizeError: (error) => harnessRuntime.sanitizer.sanitizeText(error),
 });
 harnessRuntime.setCommandDeadlineRuntime(commandDeadlineRuntime);
+const primaryRecoveryRuntime = createWebPrimaryRecoveryRuntime({
+  dataDirectory: OPENCHAMBER_DATA_DIR,
+  buildOpenCodeUrl: (pathname) => buildOpenCodeUrl(pathname, ''),
+  getOpenCodeAuthHeaders,
+  isManaged: () => !(isExternalOpenCode || ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST),
+  getManagedRuntime: () => managedOrchestrationRuntime,
+  getMultiUserRuntime: () => multiUserRuntime,
+  publishEvent: emitSyntheticOpenCodeEvent,
+  recordIncident: (incident) => harnessRuntime.record({ type: 'lifecycle', event: incident.event,
+    sessionID: incident.sessionID, messageID: incident.messageID, payload: incident }),
+});
+harnessRuntime.setPrimaryRecoveryRuntime(primaryRecoveryRuntime);
 observeCommandDeadline = (payload) => commandDeadlineRuntime.observe(payload);
 const canForceConfigRestart = (principal) => (
   principal?.scope === 'local-admin' || principal?.role === 'admin'
@@ -1551,6 +1591,7 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   getManagedOrchestrationRuntime: () => managedOrchestrationRuntime,
   getBrowserLeaseRuntime: () => browserLeaseRuntime,
   getCursorSdkRuntime: () => cursorSdkRuntime,
+  getSessionTitleRuntime: () => standardSessionTitleRuntime,
   shouldSkipOpenCodeStop: () => ENV_SKIP_OPENCODE_START || isExternalOpenCode,
   getOpenCodePort: () => openCodePort,
   getOpenCodeProcess: () => openCodeProcess,
@@ -1715,7 +1756,13 @@ async function main(options = {}) {
 
   console.log(`Starting OpenChamber on port ${port === 0 ? 'auto' : port}`);
 
-  const sayTTSCapability = await detectSayTtsCapability(process);
+  const startupStartedAt = Date.now();
+  const reportStartupPhase = (phase, text) => {
+    onOpenCodeStartupStatus?.(text);
+    console.log(`[startup] phase=${phase} elapsedMs=${Date.now() - startupStartedAt}`);
+  };
+  reportStartupPhase('services', 'Starting local services…');
+  const sayTTSCapabilityPromise = detectSayTtsCapability(process);
 
   // Startup model validation is best-effort and runs in background.
   void validateZenModelAtStartup();
@@ -1736,7 +1783,9 @@ async function main(options = {}) {
   expressApp = app;
   server = http.createServer(app);
 
-  multiUserRuntime = await createMultiUserRuntime({
+  reportStartupPhase('identity', 'Loading local access policy…');
+  const multiUserRuntimePromise = createMultiUserRuntime({
+    oauthCoordinator: openAiOAuthCoordinator,
     dataDirectory: OPENCHAMBER_DATA_DIR,
     fetchImpl: fetch,
     logger: console,
@@ -1780,6 +1829,11 @@ async function main(options = {}) {
     recordDiagnostic: (entry) => harnessRuntime.record(entry),
     botsExecutionEnabled: options.productionBotsExecutionDisabled !== true,
   });
+  const [nextMultiUserRuntime, sayTTSCapability] = await Promise.all([
+    multiUserRuntimePromise,
+    sayTTSCapabilityPromise,
+  ]);
+  multiUserRuntime = nextMultiUserRuntime;
   if (multiUserRuntime.enabled) {
     console.log('Supabase multi-user identity and policy enforcement enabled');
   }
@@ -1804,8 +1858,22 @@ async function main(options = {}) {
       options.getBrowserLeaseAvailability,
       options.getBrowserCdpBridgeStatus,
     ].find((candidate) => typeof candidate === 'function') ?? null,
+    resolveBrowserLeaseContext: multiUserRuntime.resolveBrowserLeaseContext,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    onObservationChanged: (event) => browserObservationRuntime?.handleLeaseChanged(event),
+  });
+  browserObservationRuntime = createBrowserObservationRuntime({
+    getLeaseRecords: () => browserLeaseRuntime.getSnapshot(),
+    ownsSession: (principal, sessionId) => multiUserRuntime.ownsSession(principal, sessionId),
+    getHostLeaseMetadata: typeof options.getBrowserLeaseObservationSnapshot === 'function'
+      ? options.getBrowserLeaseObservationSnapshot
+      : null,
+    openHostLeaseStream: typeof options.openBrowserLeaseObservationStream === 'function'
+      ? options.openBrowserLeaseObservationStream
+      : null,
+    onPrincipalChanged: broadcastBrowserAgentLeasesChanged,
+    audit: (principal, action, context) => multiUserRuntime.audit(principal, action, context),
   });
   const browserCdpDiscoveryRuntime = createBrowserCdpDiscoveryRuntime({
     getBridgeStatus: typeof options.getBrowserCdpBridgeStatus === 'function'
@@ -1845,6 +1913,7 @@ async function main(options = {}) {
         openCodeApiPrefixDetected: true,
         isOpenCodeReady,
         lastOpenCodeError,
+        openCodeProbe: openCodeLifecycleState.openCodeProbe ?? null,
         lastOpenCodeLaunchDiagnostics,
         opencodeBinaryResolved: resolvedOpencodeBinary || null,
         opencodeBinarySource: resolvedOpencodeBinarySource || null,
@@ -1918,7 +1987,18 @@ async function main(options = {}) {
     },
   });
   uiAuthController = bootstrapResult.uiAuthController;
+  // Must precede managed session routes, which intercept the generic proxy.
+  app.use('/api/session', (req, res, next) => {
+    if (isSessionCreateRequest(req)) {
+      const trace = beginSessionCreationTrace(req, (entry) => harnessRuntime.record(entry));
+      res.once('finish', () => trace.mark('response_finished'));
+      res.once('close', () => { if (!res.writableFinished) trace.mark('client_disconnected'); });
+    }
+    next();
+  });
   multiUserRuntime.registerRoutes(app, {
+    isSessionCreationRestarting: () => isRestartingOpenCode || !isOpenCodeReady,
+    recordCreationTiming: (entry) => harnessRuntime.record(entry),
     readSettingsFromDiskMigrated,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
@@ -1936,6 +2016,10 @@ async function main(options = {}) {
       };
     },
   });
+  browserObservationRuntime.registerRoutes(app);
+  app.use('/api/session/:sessionID',
+    express.json({ limit: '50mb', verify: (req, _res, buf) => { req.rawBody = buf; } }),
+    primaryRecoveryRuntime.middleware);
   app.use(
     '/api/session/:sessionID/prompt_async',
     express.json({ limit: '50mb', verify: (req, _res, buf) => { req.rawBody = buf; } }),
@@ -1969,6 +2053,7 @@ async function main(options = {}) {
     resolveAgentExecution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
       ?? params.fallbackExecution,
     auxiliaryRpcHandlers: {
+      primary_recovery: (params) => primaryRecoveryRuntime.plugin(params),
       resolve_agent_execution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
         ?? params.fallbackExecution,
     },
@@ -2102,6 +2187,8 @@ async function main(options = {}) {
     fetchImpl: fetch,
   }));
 
+  registerManagedOAuthMutationGate(app, { coordinator: openAiOAuthCoordinator,
+    isManaged: () => Boolean(openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode) });
   await featureRoutesRuntime.registerRoutes(app, {
     crypto,
     fs,
@@ -2154,6 +2241,7 @@ async function main(options = {}) {
     writeSseEvent,
     emitSyntheticOpenCodeEvent,
     resolveZenModel,
+    fetchFreeZenModels,
     xaiToolCatalogRuntime,
     resolveZenModelNonBlocking,
     recordCommitTiming: (req, payload) => harnessRuntime.record({
@@ -2238,11 +2326,14 @@ async function main(options = {}) {
     canUseBrowser,
   });
   server.once('close', () => {
+    void openAiOAuthBridge.close().catch(() => undefined);
+    browserObservationRuntime?.closeAll();
     projectPreviewInstancesRuntime.shutdown();
     previewProxyRuntime.shutdown();
     xaiToolCatalogRuntime.stopPeriodicRefresh();
   });
 
+  reportStartupPhase('listener', 'Opening DevRyan…');
   const startupPipelineResult = await startupPipelineRuntime.run({
     app,
     server,
@@ -2308,6 +2399,8 @@ async function main(options = {}) {
   } catch (error) {
     console.warn('[ScheduledTasks] Failed to start runtime:', error?.message || error);
   }
+
+  reportStartupPhase('ready', 'DevRyan is ready.');
 
   return {
     expressApp: app,

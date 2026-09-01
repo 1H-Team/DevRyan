@@ -21,6 +21,8 @@ export const shouldShowBotTypingIndicator = ({
     return message?.role === 'assistant'
       && message.runId === typingRunId
       && message.assistantPhase !== 'acknowledgment'
-      && (message.body.text.trim().length > 0 || message.attachmentCount > 0);
+      && message.finalizedAt !== null
+      && (message.body.text.trim().length > 0
+        || message.attachmentCount > 0);
   });
 };

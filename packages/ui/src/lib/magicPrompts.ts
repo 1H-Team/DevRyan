@@ -486,10 +486,7 @@ Final step:
     title: 'Implement Plan Visible Prompt',
     group: 'Planning',
     description: 'Visible user message when sending a saved plan into an implement flow.',
-    placeholders: [
-      { key: 'plan_title', description: 'Current plan title.' },
-    ],
-    template: 'Implement this plan: {{plan_title}}',
+    template: 'Implement plan.',
   },
   {
     id: 'plan.implement.instructions',

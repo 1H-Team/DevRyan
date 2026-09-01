@@ -9,6 +9,8 @@ API contracts.
 
 ## Where to change things
 
+- Primary provider liveness, durable attempt/cancellation fences and read-only recovery: `lib/provider-recovery.js`, `lib/provider-recovery-policy.js`; shared host HTTP adapter: `lib/provider-recovery-host.js`.
+
 - Atomic private persistence and cross-process file locking: `lib/atomic-file.js`, `lib/record-store.js`
 - Host storage layout: `lib/paths.js`
 - Turn correlation: `lib/lifecycle.js`

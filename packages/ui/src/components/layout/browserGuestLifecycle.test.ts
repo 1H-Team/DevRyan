@@ -117,4 +117,12 @@ describe('session-scoped browser lease lifecycle', () => {
     expect(separatorIndex).toBeGreaterThan(backIndex);
     expect(manualIndex).toBeGreaterThan(separatorIndex);
   });
+
+  test('uses a view-only ephemeral stream for tunneled lease presentation', () => {
+    expect(browserPanel).toContain("lease.transport === 'stream'");
+    expect(browserPanel).toContain('startBrowserAgentView(leaseId)');
+    expect(browserPanel).toContain('stopBrowserAgentView(currentView)');
+    expect(browserPanel).toContain('pointer-events-none h-full w-full');
+    expect(projectActions).toContain('isManagedBrowserRuntime ? (');
+  });
 });

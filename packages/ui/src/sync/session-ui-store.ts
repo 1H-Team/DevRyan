@@ -13,6 +13,8 @@
  */
 
 import { create } from "zustand"
+import { beginCreationAttempt, forgetCreationAttempt, updateFailedCreationAttempt, markCreationTiming,
+  SESSION_CREATION_DEADLINE_MS, updateCreationAttempt, useSessionCreationStore, waitForCreationStep, type CreationAttempt } from './session-creation'
 import type { Session, Part, Message, TextPart } from "@opencode-ai/sdk/v2/client"
 import type { AttachedFile, SessionContextUsage, SessionWorktreeAttachment } from "@/stores/types/sessionTypes"
 import type { WorktreeMetadata } from "@/types/worktree"
@@ -94,8 +96,9 @@ import {
   refetchSessionMessages,
   getSessionIdsWithDescendants,
   consumeLastCreateSessionError,
+  type DeleteSessionsResult,
 } from "./session-actions"
-import { useInputStore, type SyntheticContextPart } from "./input-store"
+import { getAttachmentMutationRevision, useInputStore, type SyntheticContextPart } from "./input-store"
 import { getDraftComposerTargetKey } from "./composer-target"
 import { useSelectionStore } from "./selection-store"
 import { useViewportStore } from "./viewport-store"
@@ -807,6 +810,9 @@ export type SessionUIState = {
     sessionId: string
     directoryHint?: string | null
     submittedText?: string
+    draftTextAtSubmit?: string
+    draftAttachmentRevision?: number
+    duplicateDraftCandidates?: Record<string, ChatDraft>
   }) => void
   setNewSessionDraftTarget: (target: { projectId?: string | null; selectedProjectId?: string | null; directoryOverride?: string | null }, options?: { force?: boolean }) => void
   updateNewSessionDraftSendConfig: (patch: SendConfig) => void
@@ -857,7 +863,7 @@ export type SessionUIState = {
 
   createSession: (title?: string, directoryOverride?: string | null, parentID?: string | null) => Promise<Session | null>
   deleteSession: (id: string, options?: Record<string, unknown>) => Promise<boolean>
-  deleteSessions: (ids: string[], options?: Record<string, unknown>) => Promise<{ deletedIds: string[]; failedIds: string[] }>
+  deleteSessions: (ids: string[], options?: Record<string, unknown>) => Promise<DeleteSessionsResult>
   archiveSession: (id: string) => Promise<boolean>
   archiveSessions: (ids: string[], options?: Record<string, unknown>) => Promise<{ archivedIds: string[]; failedIds: string[] }>
   unarchiveSession: (id: string) => Promise<boolean>
@@ -2075,6 +2081,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   },
 
   deleteNewSessionDraft: (draftId) => {
+    get().abortPendingSend(`draft:${draftId}`)
+    const attempt = useSessionCreationStore.getState().attempts[draftId]
+    if (attempt) forgetCreationAttempt(draftId, attempt.id)
     useSelectionStore.getState().clearDraftSelection(draftId)
     useInputStore.getState().removeAttachedFilesTarget(getDraftComposerTargetKey(draftId))
     set((s) => {
@@ -2126,8 +2135,14 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     })
   },
 
-  promoteDraftToSession: ({ draftId, sessionId, directoryHint, submittedText }) => {
+  promoteDraftToSession: ({ draftId, sessionId, directoryHint, submittedText, draftTextAtSubmit, draftAttachmentRevision, duplicateDraftCandidates }) => {
     const previousSessionId = get().currentSessionId
+    const originalDraft = draftId ? get().draftsById[draftId] : null
+    const draftUnedited = (!originalDraft || originalDraft.text === (draftTextAtSubmit ?? submittedText))
+      && (!draftId || draftAttachmentRevision === undefined
+        || getAttachmentMutationRevision(getDraftComposerTargetKey(draftId)) === draftAttachmentRevision)
+    const selectedOriginal = (!draftId || get().currentDraftId === draftId || previousSessionId === sessionId)
+      && draftUnedited
     set((s) => {
       let draftsById = s.draftsById
       let draftOrder = s.draftOrder
@@ -2136,13 +2151,15 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const promotedText = getDraftPromotionText(promotedDraft?.text ?? submittedText ?? null)
       const promotedDirectory = getDraftPromotionDirectory(promotedDraft, directoryHint ?? null)
 
-      if (draftId) {
+      if (draftId && draftUnedited) {
         removedDraftIds.add(draftId)
       }
 
-      if (promotedText.length > 0) {
+      if (selectedOriginal && promotedText.length > 0) {
         for (const [id, draft] of Object.entries(s.draftsById)) {
           if (id === draftId) continue
+          if (useSessionCreationStore.getState().attempts[id]) continue
+          if (duplicateDraftCandidates && duplicateDraftCandidates[id] !== draft) continue
           if (getDraftPromotionText(draft.text) !== promotedText) continue
           if (getDraftPromotionDirectory(draft) !== promotedDirectory) continue
           removedDraftIds.add(id)
@@ -2159,19 +2176,17 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         draftOrder = s.draftOrder.filter((id) => !removedDraftIds.has(id))
       }
 
-      clearLegacyNewDraftInput(safeStorage)
+      if (selectedOriginal) clearLegacyNewDraftInput(safeStorage)
       persistDrafts(safeStorage, draftsById, draftOrder)
 
       return {
         draftsById,
         draftOrder,
-        currentSessionId: sessionId,
-        currentDraftId: null,
-        newSessionDraft: { ...DEFAULT_DRAFT },
-        error: null,
+        ...(selectedOriginal ? { currentSessionId: sessionId, currentDraftId: null,
+          newSessionDraft: { ...DEFAULT_DRAFT }, error: null } : {}),
       }
     })
-    applyCurrentSessionSideEffects(sessionId, directoryHint, previousSessionId, get)
+    if (selectedOriginal) applyCurrentSessionSideEffects(sessionId, directoryHint, previousSessionId, get)
   },
 
   setNewSessionDraftTarget: (target) => {
@@ -2478,12 +2493,16 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const draftAbortController = get().claimPendingSendAbort(draftAbortKey)
       if (!draftAbortController) return
       let pendingAbortKey = draftAbortKey
+      let creationAttempt: CreationAttempt | undefined
       try {
       if (draft.targetPreparationError) {
         get().clearPendingSendAbort(draftAbortKey, draftAbortController)
         throw new Error(draft.targetPreparationError)
       }
       const capturedDraft = capturedDraftId ? get().draftsById[capturedDraftId] : null
+      const duplicateDraftCandidates = get().draftsById
+      const draftTextAtSubmit = capturedDraft?.text ?? content
+      const draftAttachmentRevision = capturedDraftId ? getAttachmentMutationRevision(getDraftComposerTargetKey(capturedDraftId)) : undefined
       const draftSendConfig = normalizeDraftSendConfig(capturedDraft?.sendConfig ?? draft.sendConfig)
       const resolvedPlanMode = typeof draftSendConfig?.planMode === "boolean"
         ? draftSendConfig.planMode
@@ -2508,12 +2527,35 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         : undefined
       const configState = useConfigStore.getState()
 
+      const draftSelection = resolveDraftSendSelection({
+        requestedAgent: draftAgentSelection ? undefined : trimmedAgent,
+        currentAgent: configState.currentAgentName,
+        settingsDefaultAgent: configState.settingsDefaultAgent,
+        agents: (configState.agents ?? []) as SendConfigAgent[],
+        providers: (configState.providers ?? []) as SendConfigProvider[],
+        inputProviderID: providerID, inputModelID: modelID, inputVariant: variant,
+        currentProviderID: configState.currentProviderId, currentModelID: configState.currentModelId,
+        currentVariant: configState.currentVariant, draftAgentSelection, draftModelSelection,
+        draftAgentModelSelection, draftAgentModelVariant, draftSendConfig,
+      })
+      const effectiveDraftAgent = draftSelection.agent
+      const effectiveProviderID = draftSelection.providerID
+      const effectiveModelID = draftSelection.modelID
+      const effectiveVariant = draftSelection.variant
+      if (!effectiveProviderID || !effectiveModelID) throw new Error('Cannot send message: provider or model not selected')
+      creationAttempt = beginCreationAttempt({ draftId: capturedDraftId ?? draftAbortKey,
+        directory: draftDirectoryOverride, text: submittedDraftText, attachments: submittedAttachments,
+        providerID: effectiveProviderID, modelID: effectiveModelID, agent: effectiveDraftAgent,
+        variant: effectiveVariant, planMode: resolvedPlanMode })
+      const attempt = creationAttempt
+      const preparationSignal = AbortSignal.any([draftAbortController.signal, AbortSignal.timeout(SESSION_CREATION_DEADLINE_MS)])
+
       if (draft.pendingWorktreeRequestId) {
-        draftDirectoryOverride = await waitForPendingDraftWorktreeRequest(draft.pendingWorktreeRequestId)
+        draftDirectoryOverride = await waitForCreationStep(waitForPendingDraftWorktreeRequest(draft.pendingWorktreeRequestId), preparationSignal)
         throwIfAborted(draftAbortController.signal)
         get().resolvePendingDraftWorktreeTarget(draft.pendingWorktreeRequestId, draftDirectoryOverride)
         draftBootstrapPendingDirectory = normalizePath(
-          get().newSessionDraft.bootstrapPendingDirectory ?? null,
+          (capturedDraftId ? get().draftsById[capturedDraftId]?.bootstrapPendingDirectory : draft.bootstrapPendingDirectory) ?? null,
         )
         // The worktree-bootstrap wait is independent of config activation, so
         // start it now and await it at its usual gate below — serializing the
@@ -2524,41 +2566,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
           draftBootstrapWaitPromise = waitForWorktreeBootstrapForSend(draftDirectoryOverride)
           draftBootstrapWaitPromise.catch(() => {})
         }
-        await activateConfigForDirectory(draftDirectoryOverride)
+        await waitForCreationStep(activateConfigForDirectory(draftDirectoryOverride), preparationSignal)
         throwIfAborted(draftAbortController.signal)
-      }
-
-      const draftSelection = resolveDraftSendSelection({
-        requestedAgent: draftAgentSelection ? undefined : trimmedAgent,
-        currentAgent: configState.currentAgentName,
-        settingsDefaultAgent: configState.settingsDefaultAgent,
-        agents: (configState.agents ?? []) as SendConfigAgent[],
-        providers: (configState.providers ?? []) as SendConfigProvider[],
-        inputProviderID: providerID,
-        inputModelID: modelID,
-        inputVariant: variant,
-        currentProviderID: configState.currentProviderId,
-        currentModelID: configState.currentModelId,
-        currentVariant: configState.currentVariant,
-        draftAgentSelection,
-        draftModelSelection,
-        draftAgentModelSelection,
-        draftAgentModelVariant,
-        draftSendConfig,
-      })
-      const effectiveDraftAgent = draftSelection.agent
-      const effectiveProviderID = draftSelection.providerID
-      const effectiveModelID = draftSelection.modelID
-      const effectiveVariant = draftSelection.variant
-
-      if (!effectiveProviderID || !effectiveModelID) {
-        get().clearPendingSendAbort(draftAbortKey, draftAbortController)
-        throw new Error("Cannot send message: provider or model not selected")
       }
 
       if (draftDirectoryOverride && draftBootstrapPendingDirectory) {
         try {
-          await (draftBootstrapWaitPromise ?? waitForWorktreeBootstrapForSend(draftDirectoryOverride))
+          await waitForCreationStep(draftBootstrapWaitPromise ?? waitForWorktreeBootstrapForSend(draftDirectoryOverride), preparationSignal)
           throwIfAborted(draftAbortController.signal)
         } catch (error) {
           get().clearPendingSendAbort(draftAbortKey, draftAbortController)
@@ -2566,7 +2580,21 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         }
       }
 
-      const created = await createSessionRecordAction(draft.title, draftDirectoryOverride, draft.parentID ?? null)
+      preparationSignal.throwIfAborted()
+      markCreationTiming(attempt.id, 'target-prepared')
+      updateCreationAttempt(attempt, { phase: 'creating' })
+      markCreationTiming(attempt.id, 'upstream-create')
+      const creation = createSessionRecordAction(draft.title, draftDirectoryOverride, draft.parentID ?? null, {
+        signal: draftAbortController.signal, attemptId: attempt.id,
+        deadlineAt: attempt.startedAt + SESSION_CREATION_DEADLINE_MS, throwOnError: true,
+        onLateSuccess: (session) => updateCreationAttempt(attempt, { phase: 'created', sessionId: session.id,
+          directoryHint: draftDirectoryOverride ?? session.directory }),
+      })
+      creation.then((session) => {
+        if (session && draftAbortController.signal.aborted) updateCreationAttempt(attempt, { phase: 'created', sessionId: session.id,
+          directoryHint: draftDirectoryOverride ?? session.directory })
+      }, () => {})
+      const created = await waitForCreationStep(creation, draftAbortController.signal)
       if (!created?.id) {
         get().clearPendingSendAbort(draftAbortKey, draftAbortController)
         const createError = consumeLastCreateSessionError()
@@ -2576,6 +2604,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         throw new Error("Failed to create session")
       }
       const createdDirectory = normalizePath(draftDirectoryOverride ?? created.directory ?? null)
+      updateCreationAttempt(attempt, { phase: 'created', sessionId: created.id, directoryHint: createdDirectory ?? undefined })
+      markCreationTiming(attempt.id, 'acknowledged', created.id)
       if (effectiveDraftAgent?.trim().toLowerCase() === "builder") {
         useSelectionStore.getState().markBuilderHandoffCleared(created.id)
       }
@@ -2600,7 +2630,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
       activateConfigForDirectoryInBackground(draftDirectoryOverride ?? created.directory ?? null)
 
-      if (capturedDraftId) {
+      if (capturedDraftId && (!get().draftsById[capturedDraftId] || get().draftsById[capturedDraftId]?.text === draftTextAtSubmit)
+        && getAttachmentMutationRevision(getDraftComposerTargetKey(capturedDraftId)) === draftAttachmentRevision) {
         useSelectionStore.getState().promoteDraftSelectionToSession(capturedDraftId, created.id)
       }
 
@@ -2619,7 +2650,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       if (resolvedPlanMode) {
         useSelectionStore.getState().setSessionPlanMode(created.id, true)
       }
-      useSelectionStore.getState().clearDraftPlanMode()
+      if (get().currentDraftId === capturedDraftId) useSelectionStore.getState().clearDraftPlanMode()
 
       get().initializeNewOpenChamberSession(created.id, configState.agents ?? [])
 
@@ -2628,7 +2659,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         sessionId: created.id,
         directoryHint: createdDirectory,
         submittedText: submittedDraftText,
+        draftTextAtSubmit,
+        draftAttachmentRevision,
+        duplicateDraftCandidates,
       })
+      markCreationTiming(attempt.id, 'promoted', created.id)
 
       if (draftTargetFolderId) {
         const scopeKey = draftDirectoryOverride || created.directory || null
@@ -2687,10 +2722,19 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
             },
           },
         })
+        markCreationTiming(attempt.id, 'prompt-accepted', created.id)
+        if (!capturedDraftId || !get().draftsById[capturedDraftId]) forgetCreationAttempt(attempt.draftId, attempt.id)
       } finally {
         get().clearPendingSendAbort(created.id, promotedAbortController)
       }
       return
+      } catch (error) {
+        if (creationAttempt) {
+          // Created records are never retried as if no server mutation happened.
+          // The narrow store also persists unknown outcomes across reloads.
+          updateFailedCreationAttempt(creationAttempt, error)
+        }
+        throw error
       } finally {
         get().clearPendingSendAbort(pendingAbortKey, draftAbortController)
       }

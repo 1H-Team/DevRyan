@@ -19,7 +19,6 @@ import type { OpenChamberSection } from '@/components/sections/openchamber/types
 import { useDeviceInfo } from '@/lib/device';
 import { isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
-import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { ConfigApplyControls } from '@/components/views/config-apply/ConfigApplyControls';
 import {
   SETTINGS_PAGE_METADATA,
@@ -50,7 +49,6 @@ import {
 import { canAccessSettingsPage, useAuthPrincipal } from '@/lib/authSession';
 import { SettingsPagePermissionBoundary } from '@/lib/settings/permission-context';
 import { setStoragePrincipal } from '@/stores/utils/safeStorage';
-import { LazyBotsPage } from './lazyViews';
 import {
   CapabilityMutationBoundary,
   CapabilitySettingsWorkspace,
@@ -60,88 +58,41 @@ import {
   canAccessSettingsDestination,
   isBotCapabilitySettingsSlug,
 } from './SettingsView.access';
-
-const LazyAgentsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/agents/AgentsSidebar').then((module) => ({ default: module.AgentsSidebar })),
-);
-const LazyAgentsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/agents/AgentsPage').then((module) => ({ default: module.AgentsPage })),
-);
-const LazyBehaviorPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/behavior/BehaviorPage').then((module) => ({ default: module.BehaviorPage })),
-);
-const LazyCommandsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/commands/CommandsSidebar').then((module) => ({ default: module.CommandsSidebar })),
-);
-const LazyCommandsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/commands/CommandsPage').then((module) => ({ default: module.CommandsPage })),
-);
-const LazyMcpSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/mcp/McpSidebar').then((module) => ({ default: module.McpSidebar })),
-);
-const LazyMcpPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/mcp/McpPage').then((module) => ({ default: module.McpPage })),
-);
-const LazySkillsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/skills/SkillsSidebar').then((module) => ({ default: module.SkillsSidebar })),
-);
-const LazySkillsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/skills/SkillsPage').then((module) => ({ default: module.SkillsPage })),
-);
-const LazyPluginsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/plugins/PluginsSidebar').then((module) => ({ default: module.PluginsSidebar })),
-);
-const LazyPluginsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/plugins/PluginsPage').then((module) => ({ default: module.PluginsPage })),
-);
-const LazyProjectsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/projects/ProjectsSidebar').then((module) => ({ default: module.ProjectsSidebar })),
-);
-const LazyProjectsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/projects/ProjectsPage').then((module) => ({ default: module.ProjectsPage })),
-);
-const LazyRemoteInstancesSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/remote-instances/RemoteInstancesSidebar').then((module) => ({ default: module.RemoteInstancesSidebar })),
-);
-const LazyRemoteInstancesPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/remote-instances/RemoteInstancesPage').then((module) => ({ default: module.RemoteInstancesPage })),
-);
-const LazyProvidersSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/providers/ProvidersSidebar').then((module) => ({ default: module.ProvidersSidebar })),
-);
-const LazyProvidersPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/providers/ProvidersPage').then((module) => ({ default: module.ProvidersPage })),
-);
-const LazyUsageSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/usage/UsageSidebar').then((module) => ({ default: module.UsageSidebar })),
-);
-const LazyUsagePage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/usage/UsagePage').then((module) => ({ default: module.UsagePage })),
-);
-const LazyMagicPromptsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/magic-prompts/MagicPromptsSidebar').then((module) => ({ default: module.MagicPromptsSidebar })),
-);
-const LazyMagicPromptsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/magic-prompts/MagicPromptsPage').then((module) => ({ default: module.MagicPromptsPage })),
-);
-const LazyGitPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/git-identities/GitPage').then((module) => ({ default: module.GitPage })),
-);
-const LazyOpenChamberPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/openchamber/OpenChamberPage').then((module) => ({ default: module.OpenChamberPage })),
-);
-const LazyAboutSettings = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/openchamber/AboutSettings').then((module) => ({ default: module.AboutSettings })),
-);
-const LazyUserManagementPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/users/UserManagementPage').then((module) => ({ default: module.UserManagementPage })),
-);
-const LazyBugReportsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/sections/bug-reports/BugReportsPage').then((module) => ({ default: module.BugReportsPage })),
-);
+import { SettingsLoadFallback } from './SettingsLoadFallback';
+import { usePreparedSettingsNavigation } from './usePreparedSettingsNavigation';
+import {
+  PreparedAboutSettings,
+  PreparedAgentsPage,
+  PreparedAgentsSidebar,
+  PreparedBehaviorPage,
+  PreparedBotsPage,
+  PreparedBugReportsPage,
+  PreparedCommandsPage,
+  PreparedCommandsSidebar,
+  PreparedGitPage,
+  PreparedMagicPromptsPage,
+  PreparedMagicPromptsSidebar,
+  PreparedMcpPage,
+  PreparedMcpSidebar,
+  PreparedOpenChamberPage,
+  PreparedPluginsPage,
+  PreparedPluginsSidebar,
+  PreparedProjectsPage,
+  PreparedProjectsSidebar,
+  PreparedProvidersPage,
+  PreparedProvidersSidebar,
+  PreparedRemoteInstancesPage,
+  PreparedRemoteInstancesSidebar,
+  PreparedSkillsPage,
+  PreparedSkillsSidebar,
+  PreparedUsagePage,
+  PreparedUsageSidebar,
+  PreparedUserManagementPage,
+  preloadSettingsSection,
+} from './settingsSectionLoaders';
 const SettingsSectionBoundary: React.FC<React.PropsWithChildren> = ({ children }) => (
   <ErrorBoundary>
-    <React.Suspense fallback={<div className="h-full min-h-0 bg-background" aria-busy="true" />}>
+    <React.Suspense fallback={<SettingsLoadFallback />}>
       {children}
     </React.Suspense>
   </ErrorBoundary>
@@ -186,7 +137,10 @@ function isPageAvailable(page: SettingsPageMeta, ctx: SettingsRuntimeContext): b
   return page.isAvailable(ctx);
 }
 
-const SettingsHome: React.FC<{ onOpen: (slug: SettingsPageSlug) => void }> = ({ onOpen }) => {
+const SettingsHome: React.FC<{
+  onOpen: (slug: SettingsPageSlug) => void;
+  pendingSlug?: SettingsPageSlug | null;
+}> = ({ onOpen, pendingSlug = null }) => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
   const providersDestinationSlug: SettingsPageSlug = canAccessSettingsDestination(principal, 'providers')
@@ -222,12 +176,21 @@ const SettingsHome: React.FC<{ onOpen: (slug: SettingsPageSlug) => void }> = ({ 
               key={card.slug}
               type="button"
               onClick={() => onOpen(card.slug)}
+              onPointerEnter={() => void preloadSettingsSection(card.slug).catch(() => undefined)}
+              onPointerDown={() => void preloadSettingsSection(card.slug).catch(() => undefined)}
+              onFocus={() => void preloadSettingsSection(card.slug).catch(() => undefined)}
+              aria-busy={pendingSlug === card.slug || undefined}
               className={cn(
                 'rounded-lg border border-border bg-[var(--surface-elevated)] p-4 text-left',
                 'hover:bg-[var(--interactive-hover)] transition-colors'
               )}
             >
-              <div className="typography-ui-label text-foreground">{card.title}</div>
+              <div className="flex items-center gap-2 typography-ui-label text-foreground">
+                <span>{card.title}</span>
+                {pendingSlug === card.slug ? (
+                  <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current" aria-hidden="true" />
+                ) : null}
+              </div>
               <div className="typography-micro text-muted-foreground/70">{card.description}</div>
             </button>
           ))}
@@ -247,7 +210,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const isSettingsDialogOpen = useUIStore((state) => state.isSettingsDialogOpen);
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
   const isBehaviorAliasPage = isBehaviorSettingsAlias(settingsPageRaw);
-  const settingsSlug = resolveSettingsSlug(settingsPageRaw);
+  const requestedSettingsSlug = resolveSettingsSlug(settingsPageRaw);
   const [mobileStage, setMobileStage] = React.useState<MobileStage>('nav');
   const autoNavSlugRef = React.useRef<string | null>(null);
 
@@ -292,17 +255,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   }, [runtimeCtx, principal]);
 
   React.useEffect(() => {
-    if (settingsSlug === 'home' || visiblePages.some((page) => page.slug === settingsSlug)) {
+    if (requestedSettingsSlug === 'home' || visiblePages.some((page) => page.slug === requestedSettingsSlug)) {
       return;
     }
 
     const fallbackSlug = getSettingsDestinationFallbackSlug(
-      settingsSlug,
+      requestedSettingsSlug,
       new Set(visiblePages.map((page) => page.slug)),
     );
     setSettingsPage(fallbackSlug ?? 'home');
     if (!fallbackSlug) setMobileStage('nav');
-  }, [setSettingsPage, settingsSlug, visiblePages]);
+  }, [requestedSettingsSlug, setSettingsPage, visiblePages]);
 
   const groupedVisiblePages = React.useMemo(() => {
     const visiblePageBySlug = new Map(visiblePages.map((page) => [page.slug, page]));
@@ -321,6 +284,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       }))
       .filter((section) => section.destinations.length > 0);
   }, [visiblePages]);
+  const preloadSlugs = React.useMemo(
+    () => visiblePages.map((page) => page.slug),
+    [visiblePages],
+  );
+  const { displayedSlug: settingsSlug, pendingSlug, prepareAndCommit } = usePreparedSettingsNavigation({
+    requestedSlug: requestedSettingsSlug,
+    preloadSlugs,
+  });
 
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
 
@@ -426,7 +397,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     setSettingsPage('agents');
   }, [isBehaviorAliasPage, setSettingsPage]);
 
-  const openPage = React.useCallback((slug: SettingsPageSlug) => {
+  const commitOpenPage = React.useCallback((slug: SettingsPageSlug) => {
     setSettingsPage(slug);
     autoNavSlugRef.current = slug;
     if (!isMobile) {
@@ -440,7 +411,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     setMobileStage(def.kind === 'split' ? 'page-sidebar' : 'page-content');
   }, [isMobile, setSettingsPage]);
 
-  const selectSettingsSectionTab = React.useCallback((slug: SettingsPageSlug) => {
+  const openPage = React.useCallback((slug: SettingsPageSlug) => {
+    prepareAndCommit(slug, () => commitOpenPage(slug));
+  }, [commitOpenPage, prepareAndCommit]);
+
+  const commitSettingsSectionTab = React.useCallback((slug: SettingsPageSlug) => {
     setSettingsPage(slug);
     autoNavSlugRef.current = slug;
     if (!isMobile) return;
@@ -458,6 +433,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
     setMobileStage((stage) => stage === 'page-content' ? 'page-content' : 'page-sidebar');
   }, [isMobile, setSettingsPage]);
+
+  const selectSettingsSectionTab = React.useCallback((slug: SettingsPageSlug) => {
+    prepareAndCommit(slug, () => commitSettingsSectionTab(slug));
+  }, [commitSettingsSectionTab, prepareAndCommit]);
 
   const activePageMeta = React.useMemo(() => {
     return getSettingsPageMeta(settingsSlug);
@@ -557,12 +536,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
           : 'settings.providers.tabs.aria')}
         idPrefix={idPrefix}
         onTabChange={selectSettingsSectionTab}
+        pendingSlug={pendingSlug}
         tabs={tabs}
       >
         {content}
       </SettingsSectionTabs>
     );
-  }, [getPageTitle, selectSettingsSectionTab, settingsSlug, t, visiblePages]);
+  }, [getPageTitle, pendingSlug, selectSettingsSectionTab, settingsSlug, t, visiblePages]);
 
   const renderUnavailable = React.useCallback(() => {
     return (
@@ -581,25 +561,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     }
     switch (slug) {
       case 'projects':
-        return <LazyProjectsSidebar onItemSelect={opts.onItemSelect} />;
+        return <PreparedProjectsSidebar onItemSelect={opts.onItemSelect} />;
       case 'remote-instances':
-        return <LazyRemoteInstancesSidebar onItemSelect={opts.onItemSelect} />;
+        return <PreparedRemoteInstancesSidebar onItemSelect={opts.onItemSelect} />;
       case 'agents':
-        return <LazyAgentsSidebar onItemSelect={opts.onItemSelect} />;
+        return <PreparedAgentsSidebar onItemSelect={opts.onItemSelect} />;
       case 'commands':
-        return <LazyCommandsSidebar onItemSelect={opts.onItemSelect} />;
+        return <PreparedCommandsSidebar onItemSelect={opts.onItemSelect} />;
       case 'mcp':
-        return <LazyMcpSidebar onItemSelect={opts.onItemSelect} />;
+        return <PreparedMcpSidebar onItemSelect={opts.onItemSelect} />;
       case 'skills.installed':
-        return <LazySkillsSidebar onItemSelect={opts.onItemSelect} />;
+        return <PreparedSkillsSidebar onItemSelect={opts.onItemSelect} />;
       case 'plugins':
-        return <LazyPluginsSidebar onItemSelect={opts.onItemSelect} />;
+        return <PreparedPluginsSidebar onItemSelect={opts.onItemSelect} />;
       case 'providers':
-        return <LazyProvidersSidebar onItemSelect={opts.onItemSelect} />;
+        return <PreparedProvidersSidebar onItemSelect={opts.onItemSelect} />;
       case 'usage':
-        return <LazyUsageSidebar onItemSelect={opts.onItemSelect} />;
+        return <PreparedUsageSidebar onItemSelect={opts.onItemSelect} />;
       case 'magic-prompts':
-        return <LazyMagicPromptsSidebar onItemSelect={opts.onItemSelect} />;
+        return <PreparedMagicPromptsSidebar onItemSelect={opts.onItemSelect} />;
       default:
         return null;
     }
@@ -616,44 +596,44 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
     switch (slug) {
       case 'home':
-        return <SettingsHome onOpen={openPage} />;
+        return <SettingsHome onOpen={openPage} pendingSlug={pendingSlug} />;
       case 'users':
-        return <LazyUserManagementPage />;
+        return <PreparedUserManagementPage />;
       case 'bug-reports':
-        return <LazyBugReportsPage />;
+        return <PreparedBugReportsPage />;
       case 'projects':
-        return <LazyProjectsPage />;
+        return <PreparedProjectsPage />;
       case 'remote-instances':
-        return <LazyRemoteInstancesPage />;
+        return <PreparedRemoteInstancesPage />;
       case 'agents':
-        return <LazyAgentsPage />;
+        return <PreparedAgentsPage />;
       case 'behavior':
-        return <LazyBehaviorPage />;
+        return <PreparedBehaviorPage />;
       case 'commands':
-        return <LazyCommandsPage />;
+        return <PreparedCommandsPage />;
       case 'mcp':
-        return <LazyMcpPage />;
+        return <PreparedMcpPage />;
       case 'skills.installed':
-        return <LazySkillsPage view="installed" />;
+        return <PreparedSkillsPage view="installed" />;
       case 'skills.catalog':
-        return <LazySkillsPage view="catalog" />;
+        return <PreparedSkillsPage view="catalog" />;
       case 'plugins':
-        return <LazyPluginsPage />;
+        return <PreparedPluginsPage />;
       case 'providers':
-        return <LazyProvidersPage />;
+        return <PreparedProvidersPage />;
       case 'usage':
-        return <LazyUsagePage />;
+        return <PreparedUsagePage />;
       case 'bots':
-        return <LazyBotsPage />;
+        return <PreparedBotsPage />;
       case 'magic-prompts':
-        return <LazyMagicPromptsPage />;
+        return <PreparedMagicPromptsPage />;
       case 'git':
-        return <LazyGitPage />;
+        return <PreparedGitPage />;
       case 'about':
         return (
           <div className="h-full overflow-auto">
             <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
-              <LazyAboutSettings />
+              <PreparedAboutSettings />
             </div>
           </div>
         );
@@ -665,12 +645,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       case 'voice':
       case 'tunnel': {
         const section = openChamberSectionBySlug[slug] ?? 'visual';
-        return <LazyOpenChamberPage section={section} />;
+        return <PreparedOpenChamberPage section={section} />;
       }
       default:
-        return <SettingsHome onOpen={openPage} />;
+        return <SettingsHome onOpen={openPage} pendingSlug={pendingSlug} />;
     }
-  }, [openChamberSectionBySlug, openPage, principal, renderUnavailable, runtimeCtx]);
+  }, [openChamberSectionBySlug, openPage, pendingSlug, principal, renderUnavailable, runtimeCtx]);
 
   const renderPageContent = React.useCallback((slug: SettingsPageSlug) => {
     const content = renderRawPageContent(slug);
@@ -769,6 +749,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
                         <button
                           type="button"
                           onClick={() => openPage(targetPage.slug)}
+                          onPointerEnter={() => void preloadSettingsSection(targetPage.slug).catch(() => undefined)}
+                          onPointerDown={() => void preloadSettingsSection(targetPage.slug).catch(() => undefined)}
+                          onFocus={() => void preloadSettingsSection(targetPage.slug).catch(() => undefined)}
+                          aria-busy={pendingSlug === targetPage.slug || undefined}
                           aria-current={selected ? 'page' : undefined}
                           className={getSettingsNavButtonClassName(selected)}
                         >
@@ -777,6 +761,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
                             <span className="typography-ui-label font-normal truncate">
                               {destination.labelKey ? t(destination.labelKey) : getPageTitle(targetPage.slug)}
                             </span>
+                            {pendingSlug === targetPage.slug ? (
+                              <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current" aria-hidden="true" />
+                            ) : null}
                           </span>
                         </button>
                       </TooltipTrigger>
@@ -876,7 +863,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
   const renderDesktopContent = () => {
     if (!activePageMeta || settingsSlug === 'home') {
-      return <SettingsHome onOpen={openPage} />;
+      return <SettingsHome onOpen={openPage} pendingSlug={pendingSlug} />;
     }
 
     if (activePageMeta.kind === 'split') {

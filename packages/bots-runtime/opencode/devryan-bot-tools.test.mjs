@@ -189,18 +189,34 @@ describe('scoped OpenCode Bot plugin', () => {
     ]);
   });
 
-  test('delegates image.generate only for a server-granted OAuth capability', async () => {
+  test('publishes an exact dedicated image tool only for a server-granted OAuth capability', async () => {
+    let credentialChecks = 0;
     const execute = async (input, context) => ({
       output: `Generated image saved to ${input.out}.`,
       metadata: { out: `/workspace/${input.out}` },
       context,
     });
+    const args = {
+      prompt: toolApi.schema.string(),
+      out: toolApi.schema.string(),
+      quality: toolApi.schema.enum(['low', 'medium', 'high', 'auto']),
+    };
     const loaded = await exports.__test.createPlugin({
       toolApi,
       environment: { ...environment(), DEVRYAN_BOT_CHATGPT_IMAGE_GENERATION: '1' },
-      imageToolFactory: async () => ({ execute }),
+      imageToolFactory: async () => ({ args, execute }),
+      beforeImage: async () => { credentialChecks++; },
     });
-    expect(loaded.tool.devryan_bot.args.operation.values).toContain('image.generate');
+    expect(loaded.tool.devryan_bot.args.operation.values).not.toContain('image.generate');
+    expect(loaded.tool.devryan_bot.description).toContain('separate devryan_image tool');
+    expect(loaded.tool.devryan_image.args).toBe(args);
+    await expect(loaded.tool.devryan_image.execute({
+      prompt: 'A blue square', out: 'blue.png', quality: 'medium',
+    }, { directory: '/workspace' })).resolves.toMatchObject({
+      metadata: { out: '/workspace/blue.png' },
+    });
+    // The legacy executor remains callable for persisted tool parts, but is no
+    // longer advertised to the model.
     await expect(loaded.tool.devryan_bot.execute({
       operation: 'image.generate',
       payload: { prompt: 'A blue square', out: 'blue.png', quality: 'medium' },
@@ -211,8 +227,10 @@ describe('scoped OpenCode Bot plugin', () => {
     const unavailable = await exports.__test.createPlugin({
       toolApi,
       environment: environment(),
-      imageToolFactory: async () => ({ execute }),
+      imageToolFactory: async () => ({ args, execute }),
     });
+    expect(credentialChecks).toBe(2);
+    expect(unavailable.tool.devryan_image).toBeUndefined();
     expect(unavailable.tool.devryan_bot.args.operation.values).not.toContain('image.generate');
     await expect(unavailable.tool.devryan_bot.execute({
       operation: 'image.generate',
@@ -223,6 +241,9 @@ describe('scoped OpenCode Bot plugin', () => {
     await expect(loaded.tool.devryan_bot.execute({
       operation: 'image.generate',
       payload: { prompt: 'No escape', out: '/tmp/blue.png', quality: 'medium' },
+    }, {})).rejects.toMatchObject({ code: 'DEVRYAN_BOT_INPUT_INVALID' });
+    await expect(loaded.tool.devryan_image.execute({
+      prompt: 'No escape', out: '/tmp/blue.png', quality: 'medium',
     }, {})).rejects.toMatchObject({ code: 'DEVRYAN_BOT_INPUT_INVALID' });
   });
 
@@ -237,7 +258,7 @@ describe('scoped OpenCode Bot plugin', () => {
     const primary = entrypoint.slice(entrypoint.indexOf('bot: {'), entrypoint.indexOf('explore: {'));
     for (const tool of [
       'read', 'write', 'edit', 'glob', 'grep', 'bash', 'terminal', 'git', 'task',
-      'devryan_bot', 'devryan_write',
+      'devryan_bot', 'devryan_image', 'devryan_write',
     ]) {
       expect(primary).toContain(`${tool}: 'allow'`);
     }
@@ -249,8 +270,9 @@ describe('scoped OpenCode Bot plugin', () => {
     const subagents = entrypoint.slice(entrypoint.indexOf('explore: {'));
     expect(subagents).toContain("task: 'deny'");
     expect(subagents).toContain("devryan_bot: 'deny'");
+    expect(subagents).toContain("devryan_image: 'deny'");
     expect(subagents).toContain("browser: 'deny'");
-    expect(dockerfile).toContain('opencode-ai@1.18.23 @opencode-ai/plugin@1.18.23 opencode-gpt-imagegen@0.1.10');
+    expect(dockerfile).toContain('opencode-ai@1.18.25 @opencode-ai/plugin@1.18.25 opencode-gpt-imagegen@0.1.10');
     expect(dockerfile).toContain("node_modules/opencode-gpt-imagegen/package.json");
     expect(entrypoint).toContain('launch-opencode.mjs');
     expect(dockerfile).toContain('bash=5.2.15-2+b13');

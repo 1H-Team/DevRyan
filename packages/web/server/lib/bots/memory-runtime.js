@@ -1,7 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { channelSummaryAssociatedData, memoryAssociatedData } from './channels.js';
-import { encryptBotJson } from './encryption.js';
+import { decryptBotJson, encryptBotJson } from './encryption.js';
 import {
   botChannelMemoryNamespace,
   botSharedMemoryNamespace,
@@ -22,6 +22,21 @@ import {
 const DEPLOYMENT_KEY_ID = 'deployment-v1';
 const MAX_MEMORY_TEXT_BYTES = 16 * 1024;
 const MAX_SUMMARY_ITEMS = 80;
+const MAX_SUMMARY_COMMIT_ATTEMPTS = 3;
+const SUMMARY_RETRY_DELAYS_MS = Object.freeze([25, 75]);
+const EXTRACTION_JOB_CONCURRENCY = 2;
+const EXTRACTION_JOB_LEASE_MS = 10 * 60 * 1_000;
+const EXTRACTION_JOB_POLL_MS = 5_000;
+const EXTRACTION_JOB_MAX_ATTEMPTS = 8;
+const EXTRACTION_JOB_RETRY_DELAYS_MS = Object.freeze([
+  1_000,
+  5_000,
+  30_000,
+  2 * 60_000,
+  10 * 60_000,
+  30 * 60_000,
+  60 * 60_000,
+]);
 const MAX_ALL_ROWS = 25_000;
 const MEMORY_SENSITIVITIES = new Set(['normal', 'confidential', 'restricted']);
 const UNFINISHED_RUN_STATES = new Set([
@@ -29,8 +44,53 @@ const UNFINISHED_RUN_STATES = new Set([
   'starting',
   'running',
   'waiting_approval',
+  'waiting_control',
   'needs_reconciliation',
 ]);
+const TERMINAL_EXTRACTION_CODES = new Set([
+  'bot_memory_extraction_invalid',
+  'bot_memory_extraction_too_large',
+  'bot_memory_summary_decrypt_failed',
+  'bot_memory_candidate_envelope_invalid',
+  'bot_encryption_envelope_invalid',
+  'bot_encryption_envelope_unsupported',
+  'bot_encryption_failed',
+  'bot_encryption_key_mismatch',
+  'bot_encryption_plaintext_invalid',
+  'bot_message_not_found',
+  'bot_opencode_configuration_invalid',
+  'bot_opencode_request_invalid',
+  'bot_opencode_response_invalid',
+  'bot_run_not_found',
+  'bot_run_not_completed',
+  'bot_not_found',
+  'bot_channel_not_found',
+  'bot_revision_not_found',
+  'bot_revision_conflict',
+]);
+
+const extractionErrorRetryable = (error, fallback = false) => {
+  if (typeof error?.details?.retryable === 'boolean') return error.details.retryable;
+  if (typeof error?.diagnostics?.retryable === 'boolean') return error.diagnostics.retryable;
+  if (TERMINAL_EXTRACTION_CODES.has(error?.code)) return false;
+  const statusCode = Number(error?.statusCode || error?.status);
+  if (statusCode === 408 || statusCode === 429 || (statusCode >= 500 && statusCode <= 599)) {
+    return true;
+  }
+  return fallback;
+};
+
+const stableUuid = (...parts) => {
+  const bytes = Buffer.from(createHash('sha256').update(parts.join('\0')).digest().subarray(0, 16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+const candidateAssociatedData = (runId) => (
+  `devryan:bot-memory-extraction:${validateUuid(runId, 'runId')}`
+);
 
 export class BotMemoryRuntimeError extends Error {
   constructor(message, code = 'bot_memory_invalid', statusCode = 400, details = null) {
@@ -158,27 +218,63 @@ export function createBotMemoryRuntime({
   audit = async () => {},
   onMemoryChanged = async () => {},
   loadAdditionalIndexDocuments = async () => [],
+  recordDiagnostic = () => {},
   uuid = randomUUID,
   now = () => new Date(),
   logger = console,
   consolidationIntervalMs,
+  extractionConcurrency = EXTRACTION_JOB_CONCURRENCY,
+  extractionLeaseMs = EXTRACTION_JOB_LEASE_MS,
+  extractionPollMs = EXTRACTION_JOB_POLL_MS,
+  extractionRetryDelaysMs = EXTRACTION_JOB_RETRY_DELAYS_MS,
 } = {}) {
   if (!store?.repositories?.bot_memories || typeof store.commitMemoryVersion !== 'function'
+    || typeof store.commitChannelSummary !== 'function'
+    || typeof store.enqueueMemoryExtractionJob !== 'function'
+    || typeof store.claimMemoryExtractionJob !== 'function'
+    || typeof store.persistMemoryExtractionCandidates !== 'function'
+    || typeof store.settleMemoryExtractionJob !== 'function'
     || typeof store.deleteChannel !== 'function'
     || !authorization || typeof authorization.requireManager !== 'function'
     || !channels || typeof channels.decryptMemory !== 'function'
     || typeof channels.decryptSummary !== 'function'
+    || typeof channels.loadRunUserMessage !== 'function'
+    || typeof channels.loadRunAssistantResult !== 'function'
     || !indexer || typeof indexer.upsert !== 'function' || typeof indexer.delete !== 'function'
     || typeof indexer.rebuild !== 'function' || typeof indexer.status !== 'function'
     || typeof extractCandidates !== 'function' || typeof audit !== 'function'
     || typeof onMemoryChanged !== 'function'
     || typeof loadAdditionalIndexDocuments !== 'function'
-    || typeof uuid !== 'function' || typeof now !== 'function') {
+    || typeof recordDiagnostic !== 'function'
+    || typeof uuid !== 'function' || typeof now !== 'function'
+    || !Number.isSafeInteger(extractionConcurrency) || extractionConcurrency < 1
+    || !Number.isSafeInteger(extractionLeaseMs) || extractionLeaseMs < 1_000
+    || !Number.isSafeInteger(extractionPollMs) || extractionPollMs < 1
+    || !Array.isArray(extractionRetryDelaysMs) || extractionRetryDelaysMs.length < 1) {
     throw new TypeError('Bot memory runtime is misconfigured');
   }
 
   const pendingExtractions = new Set();
+  const summaryCommitTails = new Map();
+  const extractionOwner = `bot-memory:${process.pid}:${randomUUID()}`;
+  let extractionWakeTimer = null;
+  let extractionPumpPromise = null;
+  let activeExtractionWorkers = 0;
+  let workerStarted = false;
   let stopped = false;
+
+  const delaySummaryRetry = (attempt) => new Promise((resolve) => {
+    setTimeout(resolve, SUMMARY_RETRY_DELAYS_MS[attempt] || 0);
+  });
+
+  const withSummaryCommitLock = (channelId, task) => {
+    const previous = summaryCommitTails.get(channelId) || Promise.resolve();
+    const current = previous.catch(() => undefined).then(task);
+    summaryCommitTails.set(channelId, current);
+    return current.finally(() => {
+      if (summaryCommitTails.get(channelId) === current) summaryCommitTails.delete(channelId);
+    });
+  };
 
   const notifyMemoryChanged = async (input) => {
     try {
@@ -269,6 +365,69 @@ export function createBotMemoryRuntime({
     }
   };
 
+  const emitExtractionDiagnostic = (event, job, payload = {}) => {
+    try {
+      recordDiagnostic({
+        type: 'lifecycle',
+        event,
+        sessionID: job?.run_id || null,
+        payload: {
+          runId: job?.run_id || null,
+          botId: job?.bot_id || null,
+          channelId: job?.channel_id || null,
+          attemptCount: Number(job?.attempt_count || 0),
+          ...payload,
+        },
+      });
+    } catch {
+      // Diagnostics must never change extraction settlement.
+    }
+  };
+
+  const encryptClassifiedCandidates = (runId, classified, revisionId) => withKey((key) => (
+    encryptBotJson({
+      key,
+      keyId: DEPLOYMENT_KEY_ID,
+      value: {
+        version: 1,
+        revisionId,
+        accepted: classified.accepted,
+        rejectedCount: classified.rejected.length,
+      },
+      associatedData: candidateAssociatedData(runId),
+    })
+  ));
+
+  const decryptClassifiedCandidates = async (job) => {
+    let value;
+    try {
+      value = await withKey((key) => decryptBotJson({
+        key,
+        envelope: job.candidate_envelope,
+        expectedKeyId: DEPLOYMENT_KEY_ID,
+        associatedData: candidateAssociatedData(job.run_id),
+      }));
+    } catch (error) {
+      throw new BotMemoryRuntimeError(
+        'Bot memory candidate envelope could not be decrypted',
+        'bot_memory_candidate_envelope_invalid',
+        500,
+        { phase: 'candidate_load', retryable: false },
+      );
+    }
+    if (!value || value.version !== 1 || !Array.isArray(value.accepted)
+      || !Number.isSafeInteger(value.rejectedCount) || value.rejectedCount < 0
+      || typeof value.revisionId !== 'string') {
+      throw new BotMemoryRuntimeError(
+        'Bot memory candidate envelope is invalid',
+        'bot_memory_candidate_envelope_invalid',
+        500,
+        { phase: 'candidate_load', retryable: false },
+      );
+    }
+    return value;
+  };
+
   const encryptMemory = (memoryId, text) => withKey(async (key) => encryptBotJson({
     key,
     keyId: DEPLOYMENT_KEY_ID,
@@ -318,38 +477,58 @@ export function createBotMemoryRuntime({
     sourceMetadata,
     expectedUpdatedAt,
     memoryId = null,
+    sourceId = null,
   }) => {
-    const existing = memoryId
+    let existing = memoryId
       ? await loadMemory(candidate.botId, memoryId)
       : await findLogicalMemory(candidate);
-    const resolvedMemoryId = existing?.id || validateUuid(uuid(), 'memoryId');
+    let resolvedMemoryId = existing?.id || validateUuid(uuid(), 'memoryId');
     if (memoryId && existing.logical_key !== candidate.logicalKey) {
       fail('Bot memory identity is immutable', 'bot_memory_identity_immutable', 409);
     }
-    const encryptedContent = await encryptMemory(resolvedMemoryId, text);
-    const result = await store.commitMemoryVersion({
-      memoryId: resolvedMemoryId,
-      versionId: validateUuid(uuid(), 'memoryVersionId'),
-      sourceId: validateUuid(uuid(), 'memorySourceId'),
-      botId: candidate.botId,
-      scope: candidate.scope,
-      subjectUserId: candidate.subjectUserId,
-      logicalKey: candidate.logicalKey,
-      encryptedContent,
-      sensitivity: normalizeSensitivity(candidate.sensitivity),
-      confidence: normalizeConfidence(candidate.confidence),
-      classifierMetadata: structuredClone(candidate.classifierMetadata || {}),
-      creatorKind,
-      createdBy,
-      channelId,
-      runId,
-      messageId,
-      sourceKind,
-      sourceMetadata: structuredClone(sourceMetadata || {}),
-      expectedUpdatedAt: existing
-        ? (expectedUpdatedAt === undefined ? existing.updated_at : expectedUpdatedAt)
-        : null,
-    });
+    const resolvedSourceId = sourceId
+      ? validateUuid(sourceId, 'memorySourceId')
+      : validateUuid(uuid(), 'memorySourceId');
+    let identityRace = false;
+    let result;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const encryptedContent = await encryptMemory(resolvedMemoryId, text);
+      try {
+        result = await store.commitMemoryVersion({
+          memoryId: resolvedMemoryId,
+          versionId: validateUuid(uuid(), 'memoryVersionId'),
+          sourceId: resolvedSourceId,
+          botId: candidate.botId,
+          scope: candidate.scope,
+          subjectUserId: candidate.subjectUserId,
+          logicalKey: candidate.logicalKey,
+          encryptedContent,
+          sensitivity: normalizeSensitivity(candidate.sensitivity),
+          confidence: normalizeConfidence(candidate.confidence),
+          classifierMetadata: structuredClone(candidate.classifierMetadata || {}),
+          creatorKind,
+          createdBy,
+          channelId,
+          runId,
+          messageId,
+          sourceKind,
+          sourceMetadata: structuredClone(sourceMetadata || {}),
+          expectedUpdatedAt: identityRace
+            ? null
+            : existing
+              ? (expectedUpdatedAt === undefined ? existing.updated_at : expectedUpdatedAt)
+              : null,
+        });
+        break;
+      } catch (error) {
+        if (memoryId || creatorKind !== 'classifier' || attempt > 0
+          || !['40001', 'bot_revision_conflict'].includes(error?.code)) throw error;
+        existing = await findLogicalMemory(candidate);
+        if (!existing) throw error;
+        resolvedMemoryId = existing.id;
+        identityRace = true;
+      }
+    }
     if (!result?.memory || !result?.version || typeof result.activated !== 'boolean') {
       fail('Bot memory transaction returned invalid data', 'bot_memory_store_invalid', 502);
     }
@@ -371,61 +550,131 @@ export function createBotMemoryRuntime({
     metadata,
   });
 
-  const applyThreadOnly = async (candidate) => {
-    const channel = await store.repositories.bot_channels.get({
-      id: candidate.provenance.channelId,
-      bot_id: candidate.botId,
-    });
-    if (!channel) return { activated: false, reason: 'channel_missing' };
-    const current = await channels.decryptSummary(channel).catch(() => null);
-    const currentItems = Array.isArray(current?.items) ? current.items : [];
-    if (currentItems.some((item) => item.sourceRunId === candidate.provenance.runId
-      && item.logicalKey === candidate.logicalKey)) {
-      return { activated: false, reason: 'already_present' };
+  const synchronizeSummary = async (channel, summary) => {
+    for (let attempt = 0; attempt < MAX_SUMMARY_COMMIT_ATTEMPTS; attempt += 1) {
+      try {
+        await indexer.upsert(summaryDocument(channel, summary));
+        return true;
+      } catch (error) {
+        if (attempt + 1 >= MAX_SUMMARY_COMMIT_ATTEMPTS) {
+          logger?.warn?.('[BotsMemory] channel summary index sync remains pending', {
+            code: error?.code || 'bot_memory_index_sync_failed',
+            channelId: channel.id,
+            attemptCount: attempt + 1,
+          });
+          return false;
+        }
+        await delaySummaryRetry(attempt);
+      }
     }
-    const checkpoint = Number(channel.current_checkpoint_number || 0) + 1;
-    const items = [...currentItems, {
-      logicalKey: candidate.logicalKey,
-      text: candidate.statement,
-      sensitivity: candidate.sensitivity,
-      confidence: candidate.confidence,
-      sourceRunId: candidate.provenance.runId,
-      sourceMessageIds: [...candidate.provenance.messageIds],
-    }].slice(-MAX_SUMMARY_ITEMS);
-    const envelope = await withKey(async (key) => encryptBotJson({
-      key,
-      keyId: DEPLOYMENT_KEY_ID,
-      value: { version: 1, items },
-      associatedData: channelSummaryAssociatedData(channel.id, checkpoint),
-    }));
-    const updated = await store.repositories.bot_channels.updateIfRevision(
-      { id: channel.id, bot_id: channel.bot_id },
-      { current_checkpoint_number: checkpoint, summary_envelope: envelope },
-      channel.updated_at,
-    );
-    await indexer.upsert(summaryDocument(updated, { version: 1, items }));
-    return { activated: true };
+    return false;
   };
 
-  const runAlreadyExtracted = async (input) => {
-    const sourcePage = await store.repositories.bot_memory_sources.list({
-      filters: { run_id: input.run.id },
-      limit: 1,
-    });
-    if (sourcePage.items.length > 0) return true;
-    const currentChannel = await store.repositories.bot_channels.get({
-      id: input.channel.id,
-      bot_id: input.bot.id,
-    });
-    const summary = currentChannel
-      ? await channels.decryptSummary(currentChannel).catch(() => null)
-      : null;
-    return Array.isArray(summary?.items)
-      && summary.items.some((item) => item.sourceRunId === input.run.id);
+  const applyThreadOnly = (candidate) => withSummaryCommitLock(
+    candidate.provenance.channelId,
+    async () => {
+      for (let attempt = 0; attempt < MAX_SUMMARY_COMMIT_ATTEMPTS; attempt += 1) {
+        const channel = await store.repositories.bot_channels.get({
+          id: candidate.provenance.channelId,
+          bot_id: candidate.botId,
+        });
+        if (!channel) return { activated: false, reason: 'channel_missing', attemptCount: attempt + 1 };
+        let current;
+        try {
+          current = await channels.decryptSummary(channel);
+        } catch (error) {
+          throw new BotMemoryRuntimeError(
+            'Bot channel summary could not be decrypted',
+            'bot_memory_summary_decrypt_failed',
+            500,
+            { phase: 'thread_summary_decrypt', retryable: false, attemptCount: attempt + 1 },
+          );
+        }
+        const currentItems = Array.isArray(current?.items) ? current.items : [];
+        if (currentItems.some((item) => item.sourceRunId === candidate.provenance.runId
+          && item.logicalKey === candidate.logicalKey)) {
+          const indexSynchronized = await synchronizeSummary(channel, { version: 1, items: currentItems });
+          return {
+            activated: false,
+            reason: 'already_present',
+            idempotent: true,
+            indexPending: !indexSynchronized,
+            attemptCount: attempt + 1,
+          };
+        }
+        const checkpoint = Number(channel.current_checkpoint_number || 0) + 1;
+        const items = [...currentItems, {
+          logicalKey: candidate.logicalKey,
+          text: candidate.statement,
+          sensitivity: candidate.sensitivity,
+          confidence: candidate.confidence,
+          sourceRunId: candidate.provenance.runId,
+          sourceMessageIds: [...candidate.provenance.messageIds],
+        }].slice(-MAX_SUMMARY_ITEMS);
+        const envelope = await withKey(async (key) => encryptBotJson({
+          key,
+          keyId: DEPLOYMENT_KEY_ID,
+          value: { version: 1, items },
+          associatedData: channelSummaryAssociatedData(channel.id, checkpoint),
+        }));
+        try {
+          const updated = await store.commitChannelSummary({
+            channelId: channel.id,
+            botId: channel.bot_id,
+            expectedCheckpointNumber: Number(channel.current_checkpoint_number || 0),
+            summaryEnvelope: envelope,
+          });
+          const indexSynchronized = await synchronizeSummary(updated, { version: 1, items });
+          return {
+            activated: true,
+            indexPending: !indexSynchronized,
+            attemptCount: attempt + 1,
+          };
+        } catch (error) {
+          if (error?.code !== 'bot_summary_checkpoint_conflict') throw error;
+          if (attempt + 1 >= MAX_SUMMARY_COMMIT_ATTEMPTS) {
+            return {
+              activated: false,
+              reason: 'checkpoint_conflict',
+              retryable: true,
+              attemptCount: attempt + 1,
+            };
+          }
+          await delaySummaryRetry(attempt);
+        }
+      }
+      return { activated: false, reason: 'checkpoint_conflict', retryable: true };
+    },
+  );
+
+  const loadExtractionInput = async (job) => {
+    const run = await store.repositories.bot_runs.get({ id: job.run_id });
+    if (!run) fail('Bot extraction run is missing', 'bot_run_not_found', 404);
+    if (run.state !== 'completed') {
+      fail('Bot extraction run is not completed', 'bot_run_not_completed', 409);
+    }
+    const [bot, channel, revision] = await Promise.all([
+      store.repositories.bots.get({ id: job.bot_id }),
+      store.repositories.bot_channels.get({ id: job.channel_id, bot_id: job.bot_id }),
+      store.repositories.bot_revisions.get({ id: job.revision_id, bot_id: job.bot_id }),
+    ]);
+    if (!bot) fail('Bot extraction Bot is missing', 'bot_not_found', 404);
+    if (!channel) fail('Bot extraction channel is missing', 'bot_channel_not_found', 404);
+    if (!revision) fail('Bot extraction revision is missing', 'bot_revision_not_found', 404);
+    const [userMessage, assistantMessage] = await Promise.all([
+      channels.loadRunUserMessage({ runId: run.id, channelId: channel.id }),
+      channels.loadRunAssistantResult({ runId: run.id, channelId: channel.id }),
+    ]);
+    return Object.freeze({ run, bot, channel, revision, userMessage, assistantMessage });
   };
 
-  const extractCompletedRun = async (input) => {
-    if (await runAlreadyExtracted(input)) return Object.freeze({ skipped: true });
+  const classifyCompletedRun = async (job, input) => {
+    if (job.candidate_envelope) {
+      emitExtractionDiagnostic('bot.memory.extraction.recovery', job, {
+        phase: 'candidate_load',
+      });
+      return decryptClassifiedCandidates(job);
+    }
     const assistantText = typeof input.assistantMessage?.body?.text === 'string'
       ? input.assistantMessage.body.text
       : '';
@@ -441,74 +690,163 @@ export function createBotMemoryRuntime({
       userText,
       assistantText,
     });
-    const output = await extractCandidates({
-      runId: input.run.id,
-      prompt,
-      schema: BOT_MEMORY_EXTRACTION_SCHEMA,
-      bot: input.bot,
-      channel: input.channel,
-      revision: input.revision,
+    let output;
+    try {
+      output = await extractCandidates({
+        runId: input.run.id,
+        prompt,
+        schema: BOT_MEMORY_EXTRACTION_SCHEMA,
+        bot: input.bot,
+        channel: input.channel,
+        revision: input.revision,
+      });
+    } catch (error) {
+      throw new BotMemoryRuntimeError(
+        'Bot memory provider request failed',
+        error?.code || 'bot_memory_provider_failed',
+        error?.statusCode || 502,
+        { phase: 'classification', retryable: extractionErrorRetryable(error) },
+      );
+    }
+    let classified;
+    try {
+      classified = classifyBotMemoryCandidates({
+        output,
+        botId: input.bot.id,
+        channelId: input.channel.id,
+        runId: input.run.id,
+        ownerUserId: input.channel.owner_user_id,
+        messageIds,
+        transcript: `${userText}\n${assistantText}`,
+      });
+    } catch (error) {
+      throw new BotMemoryRuntimeError(
+        'Bot memory classifier output is unrecoverable',
+        error?.code || 'bot_memory_extraction_invalid',
+        error?.statusCode || 422,
+        { phase: 'classification_validation', retryable: false },
+      );
+    }
+    const candidateEnvelope = await encryptClassifiedCandidates(
+      input.run.id,
+      classified,
+      input.revision.id,
+    );
+    let persisted;
+    try {
+      persisted = await store.persistMemoryExtractionCandidates({
+        runId: job.run_id,
+        leaseOwner: extractionOwner,
+        candidateEnvelope,
+      });
+    } catch (error) {
+      throw new BotMemoryRuntimeError(
+        'Bot memory candidates could not be persisted',
+        error?.code || 'bot_memory_candidate_persistence_failed',
+        error?.statusCode || 503,
+        { phase: 'candidate_persistence', retryable: true },
+      );
+    }
+    emitExtractionDiagnostic('bot.memory.extraction.candidates_persisted', persisted || job, {
+      acceptedCount: classified.accepted.length,
+      rejectedCount: classified.rejected.length,
     });
-    const classified = classifyBotMemoryCandidates({
-      output,
-      botId: input.bot.id,
-      channelId: input.channel.id,
-      runId: input.run.id,
-      ownerUserId: input.channel.owner_user_id,
-      messageIds,
-      transcript: `${userText}\n${assistantText}`,
+    return Object.freeze({
+      version: 1,
+      revisionId: input.revision.id,
+      accepted: classified.accepted,
+      rejectedCount: classified.rejected.length,
     });
+  };
+
+  const applyClassifiedCandidates = async (input, classified) => {
+    if (classified.revisionId !== input.revision.id) {
+      fail('Bot extraction revision changed', 'bot_revision_not_found', 409);
+    }
     let activated = 0;
-    let conflicts = 0;
+    let superseded = 0;
+    let idempotent = 0;
+    let skipped = 0;
+    let indexPending = 0;
+    let retryAttempts = 0;
     const changedMemoryIds = [];
     for (const candidate of classified.accepted) {
       if (candidate.scope === 'thread_only') {
         const result = await applyThreadOnly(candidate);
+        retryAttempts += Math.max(0, Number(result.attemptCount || 1) - 1);
+        if (result.indexPending) indexPending += 1;
         if (result.activated) activated += 1;
-        else conflicts += 1;
+        else if (result.idempotent) idempotent += 1;
+        else if (result.reason === 'checkpoint_conflict') {
+          throw new BotMemoryRuntimeError(
+            'Bot channel summary checkpoint remained contended',
+            'bot_summary_checkpoint_conflict',
+            409,
+            { phase: 'summary_commit', retryable: true, attemptCount: result.attemptCount },
+          );
+        }
+        else skipped += 1;
         continue;
       }
-      const result = await commitVersion({
-        candidate: {
-          ...candidate,
-          classifierMetadata: candidate.classifier,
-        },
-        text: candidate.statement,
-        creatorKind: 'classifier',
-        createdBy: input.channel.owner_user_id,
-        channelId: candidate.provenance.channelId,
-        runId: candidate.provenance.runId,
-        messageId: candidate.provenance.messageIds[0],
-        sourceKind: 'run',
-        sourceMetadata: {
-          messageIds: [...candidate.provenance.messageIds],
-          classifierVersion: candidate.classifier.version,
-          revisionId: input.revision.id,
-        },
-      });
+      let result;
+      try {
+        result = await commitVersion({
+          candidate: {
+            ...candidate,
+            classifierMetadata: candidate.classifier,
+          },
+          text: candidate.statement,
+          creatorKind: 'classifier',
+          createdBy: input.channel.owner_user_id,
+          channelId: candidate.provenance.channelId,
+          runId: candidate.provenance.runId,
+          messageId: candidate.provenance.messageIds[0],
+          sourceKind: 'run',
+          sourceId: stableUuid(
+            'bot-memory-source-v1',
+            candidate.provenance.runId,
+            candidate.logicalKey,
+          ),
+          sourceMetadata: {
+            messageIds: [...candidate.provenance.messageIds],
+            classifierVersion: candidate.classifier.version,
+            revisionId: input.revision.id,
+          },
+        });
+      } catch (error) {
+        throw new BotMemoryRuntimeError(
+          'Bot memory version commit failed',
+          error?.code || 'bot_memory_commit_failed',
+          error?.statusCode || 503,
+          { phase: 'memory_commit', retryable: true },
+        );
+      }
+      if (result.source?._replayed === true) idempotent += 1;
       if (!result.activated) {
-        conflicts += 1;
+        superseded += 1;
         continue;
       }
-      await synchronizeMemory(result.memory, { text: candidate.statement });
+      try {
+        await synchronizeMemory(result.memory, { text: candidate.statement });
+      } catch (error) {
+        throw new BotMemoryRuntimeError(
+          'Bot memory index synchronization failed',
+          error?.code || 'bot_memory_index_sync_failed',
+          error?.statusCode || 503,
+          { phase: 'index_sync', retryable: true },
+        );
+      }
       changedMemoryIds.push(result.memory.id);
-      activated += 1;
+      if (result.source?._replayed !== true) activated += 1;
     }
-    await audit({
-      principal: { id: input.channel.owner_user_id, scope: 'managed' },
-      botId: input.bot.id,
-      targetType: 'bot_run',
-      targetId: input.run.id,
-      action: 'bot.memory.extract',
-      result: conflicts > 0 ? 'partial' : 'success',
-      metadata: {
-        acceptedCount: classified.accepted.length,
-        rejectedCount: classified.rejected.length,
-        activatedCount: activated,
-        conflictCount: conflicts,
-        revisionId: input.revision.id,
-      },
-    });
+    if (indexPending > 0) {
+      throw new BotMemoryRuntimeError(
+        'Bot memory index synchronization remains pending',
+        'bot_memory_index_sync_failed',
+        503,
+        { phase: 'index_sync', retryable: true },
+      );
+    }
     if (changedMemoryIds.length > 0) {
       await notifyMemoryChanged({
         botId: input.bot.id,
@@ -520,8 +858,183 @@ export function createBotMemoryRuntime({
       accepted: classified.accepted.length,
       rejected: classified.rejected.length,
       activated,
-      conflicts,
+      idempotent,
+      skipped,
+      superseded,
+      indexPending,
+      retryAttempts,
     });
+  };
+
+  const isDuplicateAudit = (error) => (
+    error?.code === '23505' || error?.payload?.code === '23505'
+  );
+
+  const recordExtractionAudit = async (input, job, result, metadata) => {
+    try {
+      await audit({
+        principal: input?.channel?.owner_user_id
+          ? { id: input.channel.owner_user_id, scope: 'managed' }
+          : null,
+        botId: job.bot_id,
+        targetType: 'bot_run',
+        targetId: job.run_id,
+        action: 'bot.memory.extract',
+        result,
+        metadata,
+        eventId: stableUuid('bot-memory-extraction-audit-v1', job.run_id, result),
+      });
+    } catch (error) {
+      if (!isDuplicateAudit(error)) throw error;
+    }
+  };
+
+  const processExtractionJob = async (job) => {
+    emitExtractionDiagnostic('bot.memory.extraction.claim', job, {
+      hasPersistedCandidates: Boolean(job.candidate_envelope),
+    });
+    let input = null;
+    try {
+      input = await loadExtractionInput(job);
+      const classified = await classifyCompletedRun(job, input);
+      const result = await applyClassifiedCandidates(input, {
+        ...classified,
+        rejected: Array.from({ length: classified.rejectedCount }, () => null),
+      });
+      await recordExtractionAudit(input, job, 'success', {
+        acceptedCount: result.accepted,
+        rejectedCount: result.rejected,
+        activatedCount: result.activated,
+        idempotentCount: result.idempotent,
+        skippedCount: result.skipped,
+        supersededCount: result.superseded,
+        conflictCount: 0,
+        indexPendingCount: 0,
+        retryAttemptCount: Math.max(0, Number(job.attempt_count || 1) - 1) + result.retryAttempts,
+        revisionId: input.revision.id,
+        recovered: Boolean(job.candidate_envelope) || Number(job.attempt_count || 0) > 1,
+      });
+      await store.settleMemoryExtractionJob({
+        runId: job.run_id,
+        leaseOwner: extractionOwner,
+        disposition: 'succeeded',
+        phase: 'complete',
+      });
+      emitExtractionDiagnostic('bot.memory.extraction.success', job, {
+        acceptedCount: result.accepted,
+        activatedCount: result.activated,
+        idempotentCount: result.idempotent,
+        supersededCount: result.superseded,
+      });
+    } catch (error) {
+      const code = error?.code || 'bot_memory_extraction_failed';
+      const phase = error?.details?.phase || 'recovery';
+      if (code === 'bot_runtime_scope_busy') {
+        const delayMs = extractionPollMs;
+        await store.settleMemoryExtractionJob({
+          runId: job.run_id,
+          leaseOwner: extractionOwner,
+          disposition: 'defer',
+          nextAttemptAt: new Date(now().getTime() + delayMs).toISOString(),
+          phase: 'admission',
+          errorCode: code,
+        });
+        emitExtractionDiagnostic('bot.memory.extraction.deferred', job, {
+          code,
+          phase: 'admission',
+          delayMs,
+        });
+        return;
+      }
+      const attemptCount = Number(job.attempt_count || 1);
+      const terminal = TERMINAL_EXTRACTION_CODES.has(code)
+        || error?.details?.retryable === false
+        || attemptCount >= Math.min(EXTRACTION_JOB_MAX_ATTEMPTS, extractionRetryDelaysMs.length + 1);
+      if (terminal) {
+        await recordExtractionAudit(input, job, 'failure', {
+          code,
+          phase,
+          retryable: false,
+          attemptCount,
+        });
+        await store.settleMemoryExtractionJob({
+          runId: job.run_id,
+          leaseOwner: extractionOwner,
+          disposition: 'terminal',
+          phase,
+          errorCode: code,
+        });
+        emitExtractionDiagnostic('bot.memory.extraction.terminal_failure', job, { code, phase });
+        return;
+      }
+      const delayMs = extractionRetryDelaysMs[Math.min(
+        extractionRetryDelaysMs.length - 1,
+        Math.max(0, attemptCount - 1),
+      )];
+      await store.settleMemoryExtractionJob({
+        runId: job.run_id,
+        leaseOwner: extractionOwner,
+        disposition: 'retry',
+        nextAttemptAt: new Date(now().getTime() + delayMs).toISOString(),
+        phase,
+        errorCode: code,
+      });
+      emitExtractionDiagnostic('bot.memory.extraction.retry', job, { code, phase, delayMs });
+    }
+  };
+
+  const scheduleExtractionPump = (delayMs = 0) => {
+    if (stopped || !workerStarted || extractionWakeTimer) return;
+    extractionWakeTimer = setTimeout(() => {
+      extractionWakeTimer = null;
+      void pumpExtractions();
+    }, delayMs);
+    extractionWakeTimer.unref?.();
+  };
+
+  const runExtractionPump = async () => {
+    if (stopped) return;
+    while (activeExtractionWorkers < extractionConcurrency) {
+      let job;
+      try {
+        job = await store.claimMemoryExtractionJob({
+          leaseOwner: extractionOwner,
+          leaseUntil: new Date(now().getTime() + extractionLeaseMs).toISOString(),
+        });
+      } catch (error) {
+        logger?.warn?.('[BotsMemory] extraction claim failed', {
+          code: error?.code || 'bot_memory_extraction_claim_failed',
+        });
+        scheduleExtractionPump(extractionPollMs);
+        return;
+      }
+      if (!job) {
+        scheduleExtractionPump(extractionPollMs);
+        return;
+      }
+      activeExtractionWorkers += 1;
+      const task = processExtractionJob(job)
+        .catch((error) => {
+          logger?.warn?.('[BotsMemory] extraction settlement failed', {
+            code: error?.code || 'bot_memory_extraction_settlement_failed',
+            runId: job.run_id,
+          });
+        })
+        .finally(() => {
+          activeExtractionWorkers -= 1;
+          pendingExtractions.delete(task);
+          scheduleExtractionPump(0);
+        });
+      pendingExtractions.add(task);
+    }
+  };
+
+  const pumpExtractions = () => {
+    if (extractionPumpPromise) return extractionPumpPromise;
+    extractionPumpPromise = runExtractionPump().finally(() => {
+      extractionPumpPromise = null;
+    });
+    return extractionPumpPromise;
   };
 
   const loadConsolidationMemories = async () => {
@@ -584,30 +1097,18 @@ export function createBotMemoryRuntime({
   });
 
   return Object.freeze({
-    enqueueCompletedRun(input) {
+    async enqueueCompletedRun(input) {
       if (stopped) return Promise.resolve(Object.freeze({ skipped: true }));
-      const task = Promise.resolve().then(() => extractCompletedRun(input)).catch(async (error) => {
-        logger?.warn?.('[BotsMemory] completed-run extraction failed', {
-          code: error?.code || 'bot_memory_extraction_failed',
-          runId: input?.run?.id || null,
-        });
-        await audit({
-          principal: input?.channel?.owner_user_id
-            ? { id: input.channel.owner_user_id, scope: 'managed' }
-            : null,
-          botId: input?.bot?.id || null,
-          targetType: 'bot_run',
-          targetId: input?.run?.id || null,
-          action: 'bot.memory.extract',
-          result: 'failure',
-          metadata: { code: error?.code || 'bot_memory_extraction_failed' },
-        }).catch(() => undefined);
-        return Object.freeze({ failed: true, code: error?.code || 'bot_memory_extraction_failed' });
-      }).finally(() => pendingExtractions.delete(task));
-      pendingExtractions.add(task);
-      // Extraction is a follow-up to a completed turn, not part of the turn's
-      // response path. Keeping it tracked still makes shutdown deterministic.
-      return Promise.resolve(Object.freeze({ queued: true }));
+      const runId = validateUuid(input?.run?.id, 'run.id');
+      const job = await store.enqueueMemoryExtractionJob({ runId });
+      emitExtractionDiagnostic('bot.memory.extraction.enqueued', job || {
+        run_id: runId,
+        bot_id: input?.bot?.id || null,
+        channel_id: input?.channel?.id || null,
+      });
+      workerStarted = true;
+      await pumpExtractions();
+      return Object.freeze({ queued: true });
     },
 
     async listForManager(principal, botId, { cursor = null, limit } = {}) {
@@ -971,10 +1472,14 @@ export function createBotMemoryRuntime({
       consolidation.start();
       const status = await indexer.status();
       if (status?.state !== 'rebuild_required') {
+        workerStarted = true;
+        await pumpExtractions();
         return Object.freeze({ indexState: status?.state || null, rebuilt: false });
       }
       const { documents } = await buildCompleteIndexDocuments();
       await indexer.rebuild(documents);
+      workerStarted = true;
+      await pumpExtractions();
       return Object.freeze({
         indexState: 'ready',
         rebuilt: true,
@@ -984,12 +1489,22 @@ export function createBotMemoryRuntime({
 
     async shutdown() {
       stopped = true;
+      workerStarted = false;
+      if (extractionWakeTimer) clearTimeout(extractionWakeTimer);
+      extractionWakeTimer = null;
       await consolidation.shutdown();
+      if (extractionPumpPromise) await extractionPumpPromise;
       await Promise.allSettled([...pendingExtractions]);
     },
 
     runConsolidation: () => consolidation.sweep(),
     getPendingExtractionCount: () => pendingExtractions.size,
-    waitForPendingExtractions: () => Promise.allSettled([...pendingExtractions]),
+    async waitForPendingExtractions() {
+      await pumpExtractions();
+      while (pendingExtractions.size > 0) {
+        await Promise.allSettled([...pendingExtractions]);
+        await pumpExtractions();
+      }
+    },
   });
 }

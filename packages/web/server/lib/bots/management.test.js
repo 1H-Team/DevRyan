@@ -93,6 +93,7 @@ const createHarness = ({
   preflightCapabilities,
   credentialVault = null,
   readHostProviderAuth = vi.fn(() => null),
+  getOAuthConnections,
   eventStream = null,
   audit = vi.fn(async () => {}),
 } = {}) => {
@@ -128,6 +129,7 @@ const createHarness = ({
       preflightCapabilities,
       getCredentialVault: () => credentialVault,
       readHostProviderAuth,
+      getOAuthConnections,
       eventStream,
       audit,
       uuid: vi.fn(() => RUN_ID),
@@ -198,7 +200,7 @@ describe('Bot management control plane', () => {
         contract: expect.objectContaining({
           ...contract,
           // Server-derived: the client cannot set these.
-          gatewayPluginVersion: 'devryan-bot-tools@1.2.0',
+          gatewayPluginVersion: 'devryan-bot-tools@1.3.0',
           operatingInstructions: '',
           prohibitedInstructions: '',
           advancedPrompt: '',
@@ -391,6 +393,7 @@ describe('Bot management control plane', () => {
     }));
     const harness = createHarness({
       insert,
+      getOAuthConnections: async () => ({ bindingMetadata: () => ({ connectionId: 'host:openai', oauthAccountKey: 'safe-account-hash' }) }),
       loadModelCatalog: vi.fn(async () => ({
         providers: [{ id: 'openai', name: 'OpenAI', models: [] }],
       })),
@@ -435,7 +438,7 @@ describe('Bot management control plane', () => {
     expect(insert).toHaveBeenCalledWith('bot_credentials', expect.objectContaining({
       provider: 'openai',
       kind: 'oauth',
-      metadata: { label: 'My OpenAI account', connectionId: 'host:openai' },
+      metadata: { label: 'My OpenAI account', connectionId: 'host:openai', oauthAccountKey: 'safe-account-hash' },
     }));
     expect(JSON.stringify(result)).not.toContain('host-access-must-not-leak');
     expect(JSON.stringify(insert.mock.calls)).not.toContain('host-refresh-must-not-leak');
@@ -452,6 +455,27 @@ describe('Bot management control plane', () => {
         ownerUserId: null,
       },
     )).rejects.toMatchObject({ code: 'bot_oauth_connection_unavailable', statusCode: 409 });
+  });
+
+  it('requires Manager access and an exact revision to reconnect without exposing account identity', async () => {
+    const current = { id: RUN_ID, bot_id: BOT_ID, provider: 'openai', kind: 'oauth', status: 'active',
+      revoked_at: null, updated_at: NOW, credential_scope: 'team', owner_user_id: null, metadata: { label: 'Selected account' } };
+    const connections = { reconnect: vi.fn(async () => ({ ...current, metadata: { ...current.metadata, oauthAccountKey: 'private-account-hash' } })),
+      authState: vi.fn(async () => 'ready') };
+    const harness = createHarness({ get: vi.fn(async () => current), getOAuthConnections: async () => connections });
+    const request = { connectionId: 'host:openai', expectedUpdatedAt: NOW };
+    const result = await harness.management.reconnectCredentialConnection(principal, BOT_ID, RUN_ID, request);
+    expect(harness.authorization.requireManager).toHaveBeenCalled();
+    expect(connections.reconnect).toHaveBeenCalledWith(current, NOW);
+    expect(result.credential).toMatchObject({ id: RUN_ID, authState: 'ready' });
+    expect(JSON.stringify([result, harness.audit.mock.calls])).not.toContain('private-account-hash');
+    await expect(harness.management.reconnectCredentialConnection(principal, BOT_ID, RUN_ID,
+      { ...request, expectedUpdatedAt: '2026-08-22T00:00:00.000Z' })).rejects.toMatchObject({ code: 'bot_revision_conflict' });
+    await expect(harness.management.reconnectCredentialConnection(principal, BOT_ID, RUN_ID,
+      { ...request, accessToken: 'must-not-be-accepted' })).rejects.toBeDefined();
+    harness.authorization.requireManager.mockRejectedValueOnce(Object.assign(new Error('manager required'), { code: 'bot_manager_required' }));
+    await expect(harness.management.reconnectCredentialConnection(principal, BOT_ID, RUN_ID, request)).rejects.toMatchObject({ code: 'bot_manager_required' });
+    expect(connections.reconnect).toHaveBeenCalledTimes(1);
   });
 
   it('creates an encrypted API-key connection as an OpenCode auth record without returning secrets', async () => {
@@ -885,7 +909,7 @@ describe('Bot management control plane', () => {
       expectedUpdatedAt: NOW,
     });
     const saved = updateIfRevision.mock.calls[0][2].contract;
-    expect(saved.gatewayPluginVersion).toBe('devryan-bot-tools@1.2.0');
+    expect(saved.gatewayPluginVersion).toBe('devryan-bot-tools@1.3.0');
     expect(saved.libraryVersionIds).toEqual(['f0000000-0000-4000-8000-00000000000b']);
   });
 

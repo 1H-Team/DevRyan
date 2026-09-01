@@ -50,28 +50,28 @@ describe("isTransientSessionCreateError", () => {
     )).toBe(false)
   })
 
-  test("restarting bodies are retried", () => {
+  test("only explicit pre-creation restart rejections are retried", () => {
     expect(isTransientSessionCreateError(
-      wrap({ error: "OpenCode is restarting", restarting: true }, 503),
+      wrap({ error: "OpenCode is restarting", restarting: true, code: 'session_create_restart_rejected', retryable: true }, 503),
     )).toBe(true)
   })
 
-  test("explicit retryable: true is retried", () => {
+  test("generic retryable: true does not authorize another create", () => {
     expect(isTransientSessionCreateError(
       wrap({ error: "OpenCode service unavailable", retryable: true }, 503),
-    )).toBe(true)
+    )).toBe(false)
   })
 
-  test("proxy-down 503 without flags is retried via the transient fallback", () => {
+  test("proxy-down 503 without a pre-creation rejection is not retried", () => {
     expect(isTransientSessionCreateError(
       wrap({ error: "OpenCode service unavailable" }, 503),
-    )).toBe(true)
+    )).toBe(false)
   })
 
-  test("harness-initializing 503 is retried", () => {
+  test("unqualified harness-initializing 503 is not retried", () => {
     expect(isTransientSessionCreateError(
       wrap({ error: "DevRyan harness is still initializing", code: "HARNESS_INITIALIZING" }, 503),
-    )).toBe(true)
+    )).toBe(false)
   })
 
   test("non-transient errors are not retried", () => {

@@ -31,6 +31,9 @@ export function createScreencastBroker({ now = Date.now } = {}) {
       frame,
       width: Number.isInteger(metadata.width) ? metadata.width : null,
       height: Number.isInteger(metadata.height) ? metadata.height : null,
+      deviceScaleFactor: Number.isFinite(metadata.deviceScaleFactor)
+        ? metadata.deviceScaleFactor
+        : null,
       capturedAt: now(),
     });
     frameCount += 1;

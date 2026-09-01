@@ -134,16 +134,14 @@ export const createVSCodeGitAPI = (): GitAPI => ({
 
   generatePullRequestDescription: async (
     directory: string,
-    payload: { base: string; head: string; context?: string; zenModel?: string; providerId?: string; modelId?: string }
+    payload: { base: string; head: string; context?: string; prompt?: string }
   ): Promise<GeneratedPullRequestDescription> => {
     return sendBridgeMessage<GeneratedPullRequestDescription>('api:git/pr-description', {
       directory,
       base: payload.base,
       head: payload.head,
       context: payload.context,
-      zenModel: payload.zenModel,
-      providerId: payload.providerId,
-      modelId: payload.modelId,
+      prompt: payload.prompt,
     });
   },
 

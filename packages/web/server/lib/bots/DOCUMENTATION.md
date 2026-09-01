@@ -2,6 +2,8 @@
 
 The cross-component operator and security runbook is `docs/BOTS_RUNTIME.md`.
 This document remains the implementation contract for the server control plane.
+Retry repair verification and outstanding live acceptance are recorded in
+`docs/BOT_SAFE_RETRY_REPAIR_2026-08-30.md`.
 
 ## Current simplified product boundary
 
@@ -115,6 +117,14 @@ health, preparation, continuation, inspection, cancellation, close, structured
 completion, and normalized-event contract; it also rejects provider semantics in
 the dispatcher source boundary.
 
+OpenCode reasoning ownership is exclusive per Bot/channel. `opencode-provider.js`
+serializes start/stop operations by that scope, permits same-run warm adoption,
+and rejects provisional/background admission with `bot_runtime_scope_busy` while
+an interactive owner is active. Interactive admission may preempt a provisional
+owner only after its cleanup completes. Stop and failed-start cleanup are fenced
+by the current scope owner, so an old run can never stop or release a newer one;
+different channel scopes continue concurrently.
+
 `ag-ui-reasoning-adapter.js` pins the reviewed `@ag-ui/core@0.0.58` subset. A
 Manager-owned connection resolves to one exact public HTTPS/SSE endpoint with
 none or encrypted bearer authentication; its descriptor digest excludes the
@@ -133,16 +143,49 @@ egress authorities equal the catalog. The chosen snapshot is persisted to
 `bot_runs` with the caller's optimistic revision. No candidate produces the
 stable `bot_model_unavailable` error; prompts cannot supply an override.
 
-Only the chosen provider record is copied from the host OpenCode auth file.
-The broker materializes one provider under
+For API keys and other providers, the broker materializes one provider under
 `bots/runtime/auth/<runId>/auth.json` with `0600` permissions, mounts only that
 file at OpenCode's auth path without shadowing its persistent data volume,
 ingests any refreshed record into the OS-sealed vault on stop, and removes the
 plaintext directory. Startup rollback removes it without attempting refresh.
+Host-linked OpenAI OAuth instead uses `host-oauth-connections.js` and the
+managed `openai-oauth-coordinator.js`. Existing credential/revision IDs stay
+fixed. A legacy sealed snapshot must prove its account matches the current
+host account before migration; missing/different identities need explicit
+Manager reconnection. Metadata holds `connectionId` and a one-way account
+identity key; projections expose only `authState` (`unknown`, `ready`,
+`reauth_required`, `unavailable`). Migrated vault entries contain a reference,
+never reusable OAuth tokens. Scoped auth starts as a non-secret discriminator;
+finalization never ingests its OpenAI OAuth contents.
+
+`POST /api/bots/:botId/credentials/:credentialId/reconnect` requires Manager
+authorization, `connectionId: "host:openai"`, and `expectedUpdatedAt`. It
+updates the existing credential with optimistic concurrency and invalidates
+unused warm runtimes. It does not repair a revoked provider login; reconnect
+that account in Providers first. Active runs pinned to a different account
+fail authentication rather than silently switching.
+
+The separate private `/api/bots/private/oauth` endpoint accepts only protocol
+1 `ready`/`access` requests from reasoning capabilities. Bot/run/channel/revision
+and permitted connection are derived from live server claims, not body fields.
+It has no agent-tool registration, renderer route, URL proxy, cookies, or CORS.
+Revoked/expired capabilities cannot receive a pending refresh result. Provider
+discovery initializes and checks the plugin before warm admission; adoption,
+prompt dispatch, structured work and every provider request revalidate access.
+Cold startup retries one content-free, transient provider-discovery failure
+before any prompt exists. Authentication/configuration rejections are never
+retried and retain their stable reconnect code. Attachment materialization,
+runtime readiness, prompt acceptance, and cleanup emit count/byte/class-only
+journal records without filenames or content.
 The broker also derives one non-secret image capability bit. It is true only
 for an admitted `openai` snapshot whose resolved credential kind is `oauth`;
 API keys, other providers, and caller input cannot enable it. The reasoning
 container uses the existing scoped `auth.json`, never a second credential path.
+The reviewed image wrapper checks access immediately before both dedicated and
+legacy image calls, updates the bind-mounted inode with access-only credentials,
+and strips dependency exceptions containing provider response bodies.
+
+Rollout and offline Docker acceptance: `docs/BOT_OAUTH_COORDINATION.md`.
 
 `environment-secret-vault.js` stores Bot-wide values only in a dedicated
 host-local deployment-key-encrypted file with atomic replacement. Supabase
@@ -182,7 +225,7 @@ HTTP server are torn down.
 ## Supabase repositories
 
 `store.js` defines every relation and fixed RPC through migration
-`20260827100000`. Each
+`20260901160000`. Each
 repository has a literal select list and literal writable fields. Request JSON
 is never spread into a PostgREST body. Unsupported filters or fields fail before
 network I/O, and diagnostic logging contains only operation, table, and field
@@ -205,11 +248,17 @@ Cross-row operations are restricted to the migration-owned functions:
 - `devryan_retry_bot_run`
 - `devryan_allocate_bot_message_sequence`
 - `devryan_claim_bot_run`
+- `devryan_settle_bot_run_terminal`
 - `devryan_expire_bot_approvals`
 - `devryan_claim_bot_routine_occurrence`
 - `devryan_activate_bot_revision`
 - `devryan_publish_bot_revision`
 - `devryan_commit_bot_memory_version`
+- `devryan_commit_bot_channel_summary`
+- `devryan_enqueue_bot_memory_extraction_job`
+- `devryan_claim_bot_memory_extraction_job`
+- `devryan_persist_bot_memory_extraction_candidates`
+- `devryan_settle_bot_memory_extraction_job`
 - `devryan_delete_bot_channel`
 - `devryan_prune_bot_audit`
 - `devryan_purge_bot_resource`
@@ -228,7 +277,7 @@ while missing, malformed, or older markers fail closed. Bot migrations must
 therefore remain backward-compatible for at least one desktop release. A stale
 marker or a schema-cache miss for any Bot table/function produces HTTP 503 with
 `code: "bot_schema_migration_required"` and
-`requiredMigration: "20260827100000"`.
+`requiredMigration: "20260901160000"`.
 
 The migration adds nullable `agent_adapter`, `agent_thread_id`, and bounded
 `agent_execution` fields to durable runs and backfills the projection from
@@ -492,8 +541,11 @@ is idempotent under concurrent inserts, and every read/send still evaluates the
 current Bot membership plus channel ACL. A stable client message ID and
 idempotency key are passed to `devryan_enqueue_bot_message_run`, which inserts
 the finalized encrypted user message and its queued run in one database
-transaction. A retry returns and decrypts the already-persisted message; caller
-text from a conflicting retry is never reflected back as canonical content.
+transaction. The current admission overload also inserts one empty,
+unfinalized `assistant_phase="pending"` row using the client-provided
+acknowledgment ID or a server-generated fallback. A retry returns and decrypts
+the already-persisted user and pending assistant messages; caller text from a
+conflicting retry is never reflected back as canonical content.
 Attachment admission also creates durable `bot_shared_files` mappings in that
 transaction. The FIFO claim function will not claim the queued head until every
 required mapping is `ready`; preparation failures remain visible and retryable
@@ -504,8 +556,9 @@ Message admission also accepts the optional server-validated
 context snapshot. Ordinary sends default to `auto`. Admission uses one joined
 service-only send-context RPC, applies the existing JavaScript policy to those
 authoritative records, resolves configured Library sources concurrently, and
-commits an encrypted message plus a queued run with a pending immutable
-adapter/model snapshot. The HTTP `202` does not wait
+commits an encrypted user message, its pending assistant response, and a queued run with a
+pending immutable adapter/model snapshot. The HTTP `202` publishes both
+messages but does not wait
 for event publication, Shared-file preparation, FIFO claim, model/credential
 checks, config compilation, or runtime startup.
 
@@ -522,16 +575,20 @@ AG-UI uses its pinned connection health/digest instead.
 queue position.
 
 `POST /api/bot-channels/:channelId/prewarm` prepares the immutable revision and
-model catalog, then starts one exact run-scoped reasoning runtime without a
-durable message or run. `warm-runtime-leases.js` binds its opaque lease and
+model catalog, then starts one exact run-scoped reasoning runtime in explicit
+provisional mode without a durable message or run. Credential selection and
+materialization therefore skip `bot_runs` model-snapshot writes until normal
+admission claims the same preallocated run ID. `warm-runtime-leases.js` binds its opaque lease and
 preallocated run ID to the principal, channel, active revision, and Library
 snapshot. It keeps at most two live leases with a two-minute idle TTL and LRU
 eviction. Eligible attachment-free sends atomically claim the lease; attachments,
 routines, expiry, mismatch, or preparation failure fall back to the cold path.
 `DELETE /api/bot-channels/:channelId/prewarm/:leaseId` releases an unused lease.
 Release, expiry, eviction, revision/channel invalidation, shutdown, and cold-path
-replacement stop the runtime and revoke credentials, capabilities, and staged
-files through the provider's normal scoped cleanup.
+replacement stop the runtime and revoke credentials, capabilities, environment
+files, artifacts, and containers through the provider's normal scoped cleanup.
+Preparation failures retain content-free `stage` and `errorCode` diagnostics;
+they are not collapsed to one `prepare_failed` label.
 
 Electron's app-bound or background owner uses the separate
 `prepareStartup`/server-handle `prepareBotRuntime()` contract after bounded HTTP
@@ -544,32 +601,43 @@ record. This host-wide warmup never requests a model credential, creates a
 reasoning container, creates a computer container, or compiles every Bot
 revision. The authenticated selected-channel prewarm above remains lazy.
 
-Only a failure recorded before a generic agent execution handle, assistant
-output, or action attempt can expose `retryable: true`.
-`POST /api/bot-runs/:runId/retry`
-uses `devryan_retry_bot_run` to lock and requeue that same run for its initiating
-user and still-valid pinned revision. It preserves the original message,
-idempotency identity, Library snapshot, attachments, and FIFO sequence. Wrong
-actors, retired revisions, non-retryable failures, partial execution, and an
-active run in the same computer scope fail closed; retry is never automatic.
+Only an explicitly classified startup failure before any generic or legacy
+execution identifier, submitted prompt, assistant output, or action attempt can
+expose `retryable: true`. Provider retry advice cannot authorize replay of an
+executed Bot run. `retry-policy.js` also applies this conservative projection to
+historical failure flags.
+`POST /api/bot-runs/:runId/retry` uses `devryan_retry_bot_run` to acquire the
+computer-scope lock before locking and requeueing that same run. It checks the
+initiating actor, current access, active pinned revision, attachments, execution
+identifiers (including AG-UI invocation IDs), and active scope ownership. Only
+an unfinalized, attachment-free pending admission placeholder is exempt from
+assistant-output evidence. Prompt execution persists its identity before that
+placeholder can acquire response text. Acknowledgments, results, finalized
+rows, and every action attempt block replay.
+Retry preserves the original user message, placeholder, idempotency identity,
+Library snapshot, attachments, and FIFO sequence. Existing HTTP status codes
+remain unchanged; an allowlisted `details.retryReason` explains permanent
+refusals and temporary scope contention. Retry is never automatic. Migration
+`20260830210000_bot_safe_run_retry.sql` must precede the updated runtime.
 
-Requester-only `message.streaming` events carry monotonic full-text revisions.
-The first text is delivered immediately, with later leading/trailing snapshots
-coalesced to at most one every 50 ms. Text above 192 KiB falls back to encrypted
-canonical checkpoints. A short-lived admission lease authorizes the direct
-path, revalidates current access, and is synchronously invalidated on relevant
-access/lifecycle changes; uncertainty suppresses the stream. Canonical events
-use the joined audience RPC and remain failure-independent.
+The final-answer path deliberately buffers ambiguous text until completion:
+the runtime cannot reliably distinguish commentary before a tool from a final
+answer while streaming. Legacy `message.streaming` contracts remain recognized
+but are not rendered. Canonical events use the joined audience RPC and remain
+failure-independent; immediate client working feedback does not require prose.
 
 The send response emits `Server-Timing` for authorization, Library pinning,
 admission, and total acceptance. Content-free journal milestones cover request,
-durable acceptance, claim, runtime readiness, prompt acceptance, first provider
-text, first requester delivery, first canonical checkpoint, and terminal
-outcome. Additional content-free server and browser marks separate warm
-start/hit/miss/expiry and lease adoption, runtime startup, Shared mapping
-creation, preview fetch, and image decode from
-provider/image-generation duration. Message content, credentials, tokens, and
-decrypted configuration are never recorded.
+durable acceptance, pending-response readiness/publication, claim, runtime
+readiness, prompt acceptance, first provider result, first requester delivery,
+first canonical checkpoint, and terminal outcome. Additional content-free
+server and browser marks separate verified final-answer paint, provisional
+warm preparation/adoption/failure stage, runtime startup, Shared mapping
+creation, preview fetch, complete screen-frame draw, human-input dispatch, and
+image decode from provider/image-generation duration. Correlation is limited to
+safe Bot/channel/run/view identifiers. Message content, input text/keys/
+coordinates, credentials, tokens, and decrypted configuration are never
+recorded.
 
 `computer-runtime-manager.js` owns one Bot-scoped computer for every Active Bot
 while the fenced runtime owner is running. It starts Active computers during bootstrap and
@@ -656,8 +724,11 @@ and records a `direction: bot` mapping. Transport uncertainty remains
 non-replayable.
 
 ChatGPT image generation is a narrower automatic path. The reviewed
-`devryan_bot image.generate` operation delegates internally to the pinned image
-plugin only for the server-derived OpenAI OAuth capability. After authoritative
+`devryan_image` tool exposes the pinned image plugin's exact `prompt`, `out`,
+`quality`, optional `size`, and optional `images` schema only to the primary
+agent and only for the server-derived OpenAI OAuth capability. The legacy
+`devryan_bot image.generate` executor remains readable for persisted 1.2 calls
+but is no longer model-visible. After authoritative
 idle and assistant checkpoint finalization—but before reasoning teardown—the
 dispatcher inspects only finalized image tool parts, accepts at most 12 relative
 workspace paths, and calls Electron's fixed secure export. The supervisor
@@ -691,38 +762,30 @@ durable context, preventing a failed provider execution from poisoning follow-up
 turns.
 
 Every assembled turn also includes one runtime-owned synthetic response-style
-instruction between the private context and the user's query. Tool turns must
-begin with one brief Bot-authored acknowledgment focused on the user's goal,
-must not narrate tools, snapshots, schemas, capabilities, or inter-tool
-progress, and must end with a separate useful result. Tool-free turns answer
-directly. The instruction is execution-only: it is not written into the
+instruction between the private context and the user's query. It requires a
+direct final answer without acknowledgments or pre-tool/inter-tool narration.
+The Bot retains its configured Soul and selected reasoning model.
+The instruction is execution-only: it is not written into the
 published revision contract, compiled hash, context snapshot, or canonical
 channel transcript, so existing Bots receive it on their next submitted turn
 without republishing.
 
-Assistant parts are accumulated in normalized adapter order only after the
-event's message ID is authoritatively identified as assistant-owned.
-Bounded out-of-order text waits in memory for its role event; user/system parts
-are discarded, unknown parts are never published, and finalization reads only
-the selected assistant message ID. Tool-free text promotes the pending
-checkpoint to `result` at idle. A first tool boundary promotes and finalizes the
-pending checkpoint as `acknowledgment`; a distinct `result` row receives only
-text after the last tool, while inter-tool narration is never projected. Empty
-post-tool output fails as `bot_response_missing`. This prevents internal
-run/context prompt parts from crossing the public checkpoint boundary. Mutable
-pending checkpoints are coalesced to at most two writes per second, phase
-uniqueness permits at most one acknowledgment and one result per run, and
-finalized encrypted rows reject later changes.
-Provider-marked synthetic or ignored text, reasoning parts, internal
-analysis/tool protocol blocks, and leading agent-work status labels are removed
-before requester streaming or canonical persistence. Incomplete leading status
-labels remain buffered, so a phrase such as a bold `Crafting ...` heading never
-briefly flashes before the conversational response. The same projection is
-applied when encrypted history is read, so already-persisted narration is hidden
-without rewriting the immutable message envelope.
-Each successful partial/final checkpoint publishes its decrypted authorized
-`message.updated` projection to the channel audience. The event never contains
-the encrypted envelope or hidden adapter identifiers.
+Normalized adapter events retain authoritative request/message/part identity,
+part type, visibility and completion. Finalization reconciles against provider
+records for the exact submitted request; reasoning, hidden and unknown fragments
+fail closed. The pending row is promoted to one final `result` only after that
+reconciliation. Missing text fails as `bot_response_missing` unless a valid
+persisted deliverable exists. Generated images are published before finality.
+`response-sanitizer.js` uses metadata only: it never removes legitimate sentences,
+literal protocol markers or code by natural-language heuristics. Historical
+acknowledgment rows are hidden by the UI without a destructive migration.
+OpenCode SSE reconnects with bounded backoff and read-only completion polling;
+it never resends an uncertain prompt. `request-lifetime.js` starts the deadline
+before preparation/submission and propagates cancellation to pending HTTP work.
+Successful authorized checkpoints publish `message.updated` projections to the
+channel audience. Unverified response text is never checkpointed; the UI shows
+pending work separately and paints answer text only after finality. Events never
+contain the encrypted envelope or hidden adapter identifiers.
 Cancellation calls the active adapter, queued cancellation is durable,
 and run timeout records a terminal failure before scoped-runtime cleanup.
 Adapter errors retain a safe subtype-specific
@@ -731,6 +794,14 @@ abort, structured output, context overflow, content filter, and unknown errors.
 Runtime logs contain only that safe error type, bounded status, retryability,
 and an allowlisted bounded provider reference; response bodies and headers are
 never logged or projected.
+`failure-diagnostics.js` additionally projects scoped OpenCode errors into the
+sanitized journal before adapter normalization. Records include Bot/run/session
+correlation, classification, bounded sanitized error text, HTTP status, and a
+safe request reference. Browser recovery records correlate the action attempt
+and recovery stage; Electron supervisor failures expose bounded transport
+classifications only. Headers, response bodies, credentials, and raw transport
+objects are excluded. These records do not add content to Bot Audit, and a
+journal failure cannot replace the original execution error.
 
 ## Structured background-owned routines
 
@@ -777,14 +848,42 @@ out.
 
 ## Layered automatic memory
 
-`memory-runtime.js` is the sole write authority for reusable Bot memory. After
-the dispatcher has finalized the assistant `result` checkpoint and published
-`run.completed`, it invokes a bounded follow-up through the run's selected
-adapter. The adapter creates a disposable structured-completion execution pinned
-to that run's already-selected model/connection, disables every tool, and
-requests the exact JSON schema from `memory-classifier.js`. Follow-up failure is
-content-free audited and can never change the completed run state or retract
-the already-published completion event.
+`memory-runtime.js` is the sole write authority for reusable Bot memory. A
+database trigger creates one service-only `bot_memory_extraction_jobs` row when
+a run becomes completed. The runtime claims jobs with expiring leases, admits
+at most one concurrent extraction per Bot, and uses a small global worker pool.
+It reconstructs the exact finalized user/result messages and pinned revision;
+it never replays the completed Bot turn or any external action. The adapter
+creates a disposable structured-completion execution pinned to that run's
+already-selected model/connection, disables every tool, and requests the exact
+JSON schema from `memory-classifier.js`. Disposable memory and routine-drafting
+tasks declare `persistence: ephemeral`; OpenCode maps that contract to the
+provisional credential path, so a synthetic task ID can never update
+`bot_runs.model_snapshot`.
+
+Accepted/rejected classifier output is encrypted with the deployment key and
+persisted on the job before any summary, version, or index commit. Lease expiry,
+process crashes, and restarts therefore resume the commit phase without another
+model request. Transient provider, checkpoint, storage, and index failures use
+bounded durable backoff; malformed, missing, deleted, or undecryptable inputs
+settle terminally. Underlying non-retryable classifications are preserved, and
+revision conflicts settle after one attempt instead of exhausting the retry
+schedule. Migration `20260901130000_bot_memory_extraction_conflict_recovery.sql`
+requeues only the historical terminal `classification` plus
+`bot_revision_conflict` signature; a later success resolves the prior issue in
+the audit projection without deleting the immutable event. Intermediate retries
+emit content-free journal lifecycle events but no Bot Audit issue. A success or
+exhausted terminal job emits one
+stable audit event and can never change the completed run state or retract the
+already-published completion event.
+
+Migration `20260901160000_bot_runtime_scope_and_audit_repair.sql` makes
+conversation ownership authoritative for extraction admission. The claim RPC
+skips jobs whose channel has any non-terminal run. The provider closes the
+remaining race with `bot_runtime_scope_busy`; memory settlement maps that code
+to `defer`, requeues the job, and restores the attempt count. Deferred work
+resumes after channel idle and emits only a content-free journal lifecycle
+record—not a Bot Audit issue.
 
 The classifier rejects unsupported fields/scopes, cross-user subjects,
 unrecognized provenance, long transcript copies, and credential-like values.
@@ -793,10 +892,21 @@ can retrieve from, and there is no owner-private layer. Personal or sensitive
 statements are still escalated to `confidential` so the console can surface
 them, but they are shared like everything else; temporary facts enter only the
 encrypted channel summary. Retained facts call
-`devryan_commit_bot_memory_version`, which serializes one logical identity,
-always inserts an immutable version/source, and activates it only when the
-captured `updated_at` still matches. A stale classifier or consolidation result
-therefore remains inspectable without overwriting a newer Manager version.
+`devryan_commit_bot_memory_version`, which serializes one logical identity.
+Automatic sources use a deterministic run/logical-key UUID; replay returns the
+existing immutable source/version. An initial identity race refetches and
+re-encrypts for the authoritative memory ID, while a Manager-won activation
+race preserves the classifier version as inactive and successful/superseded.
+Channel-summary commits are serialized per channel and call
+`devryan_commit_bot_channel_summary`, whose compare-and-swap value is only
+`current_checkpoint_number`. Unrelated channel activity cannot invalidate a
+summary. A genuine checkpoint conflict refetches, decrypts, rebases, and retries
+three times before the durable job backs off. Existing
+`(sourceRunId, logicalKey)` candidates are idempotent and repair a missing index
+entry; an undecryptable summary is never replaced with an empty one. Audit
+metadata separates activated, idempotent, superseded, skipped, conflict,
+index-sync, recovery, and retry counts without including memory or transcript
+content.
 
 `indexer-client.js` constructs the exact per-Bot and per-channel namespaces and
 delegates only bounded typed operations through Electron to the
@@ -847,7 +957,8 @@ Each channel projection carries only the principal's `owner`, `reader`, or
 `collaborator` access role and a derived send capability, so the composer does
 not infer write access from Bot-level membership.
 
-At startup, `run-recovery.js` inspects durable `starting` and `running` runs plus
+At startup, `run-recovery.js` inspects durable `starting`, `running`, and
+`waiting_control` runs plus
 their action ledger. Runs containing interrupted or already-unknown writes move
 to `needs_reconciliation` and are not replayed. Runs with no unsafe action may
 resume only after an optimistic lease takeover; a still-live foreign owner or a
@@ -856,7 +967,9 @@ inspects the generic execution handle: a busy execution is reattached, an idle
 terminal assistant is checkpointed/finalized, and only an execution with no
 observed prompt may submit it. A failed persisted-execution reconciliation becomes
 `interrupted`. Existing `needs_reconciliation` states and unexpired
-`waiting_approval` states are left durable for an operator decision.
+`waiting_approval` states are left durable for an operator decision. A
+`waiting_control` run resumes its persisted action and idempotency key instead
+of converting the pre-execution fence into a failed or uncertain action.
 
 `approval-service.js` calls the service-only
 `devryan_expire_bot_approvals` transaction at execution startup, every five
@@ -950,6 +1063,17 @@ Human take/heartbeat/return control is attributed to an Operator. Screencast
 frames are proxied ephemerally and never enter Supabase or the object store.
 Status, take/heartbeat/return, and reviewed human commands use the Bot-scoped
 `/api/bots/:botId/computer/*` contract, so they remain available between runs.
+The status projection allowlists the typed browser lifecycle, headed-mode,
+engine/display, managed web-capability, and sanitized navigation-diagnostic
+fields. Unknown container fields are discarded, and diagnostic origins are
+renormalized so paths, queries, headers, cookies, page content, and input data
+cannot cross into the renderer.
+An agent command encounters human control as the explicit pre-execution
+`DEVRYAN_BOT_CONTROL_HELD` fence. The gateway persists both the run and the same
+action attempt as `waiting_control`, polls the authoritative renewable lease,
+and resumes that exact attempt after return or natural expiry. Cancellation
+remains available. Wait and resume are successful lifecycle audit records;
+only allowlisted safe remote codes cross into audit metadata.
 Passive viewing is independent from control: any active Bot member may create a
 viewer only for a channel they may currently read. `POST
 /api/bots/:botId/computer/view` creates a principal/Bot/channel/scope-bound,
@@ -959,9 +1083,34 @@ disconnect, explicit stop, Bot deactivation, principal reset, or server shutdown
 Viewer creation idempotently ensures the continuously supervised Active-Bot
 runtime; it never activates a Draft, Paused, or Retired Bot. Attaching the
 one-use stream launches Chromium when the Active Bot has not used it yet, then
-starts the shared CDP screencast. The last disconnect stops screencasting without
-stopping the persistent browser. Passive viewing never grants control or pauses
-agent commands.
+starts the shared CDP screencast. The proxy aborts and cancels both stream layers
+from the response lifecycle, records content-free created/attached/first-stream-
+chunk/complete-frame/closed milestones, and settles the viewer exactly once. The last disconnect
+stops screencasting without stopping the persistent browser. Passive viewing
+never grants control or pauses agent commands.
+
+The renderer accepts only bounded multipart JPEG frames with mandatory content
+length, valid JPEG boundaries, a 2 MiB frame cap, and verified 1280×720,
+device-scale-1 metadata. It uses same-origin fetch, abortable incremental
+parsing, `createImageBitmap`, and a canvas; connection is established only after
+a complete JPEG is decoded and drawn. A five-second first-frame deadline closes
+the viewer and exposes Retry. Only the newest decoded frame is retained.
+
+The existing human-command route additionally accepts `command: "input"` with
+an exact attached `viewId`, owned lease ID, and up to 32 events/64 KiB. The
+discriminated event union covers pointer, wheel, key, and bounded Unicode text.
+The host revalidates principal, Bot membership, Operator role, channel read,
+CSRF, view attachment, and lease ownership immediately before dispatch. Input
+is disabled on disconnect, return, expiry, role/channel change, or conflict.
+The computer service dispatches ordered CDP input without exposing `input` to
+the Bot agent's reviewed command inventory. One batch audit records event types,
+count, and duration only; text, keys, modifiers, and coordinates are forbidden.
+An already-authorized active runtime does not repeat Docker inspection for each
+input batch; the periodic sweep remains the health authority. Continuous hover
+and wheel events are coalesced behind at most one in-flight request. Held-button
+movement remains ordered, discrete down/up events survive backlog pressure, a
+queued real release drains before control/view teardown, and audit delivery is scheduled after CDP
+dispatch so neither container inspection nor audit storage delays click effects.
 
 `evidence-service.js` captures only when the selected write policy requests it.
 The browser supplies a PNG, then the server crops to policy-bound target bounds,
@@ -970,6 +1119,69 @@ bounded encrypted artifact with an expiry. Retrieval requires Manager access
 and an exact Bot/action/object provenance binding.
 
 ## Authorization
+
+### Native Telegram and speech
+
+`telegram/` adds a transport to existing private owner channels, execution,
+memory, Skills, resources and routines; it does not introduce a second agent
+runtime or plugin marketplace. `/api/bots/:botId/telegram` exposes metadata-only
+reads and manager-only configuration. Pairing, revocation, preferences and
+delivery retry are member-scoped. `multi-user/runtime.js` supplies a freshly
+resolved active account and effective `policy.bots` for every transport job.
+Numeric Telegram IDs, ten-minute one-use nonces and confirmation inside DevRyan
+bind a Telegram DM to the existing member channel. Groups and public access are
+not supported. Saving connection changes requires re-pairing and invalidates
+old generation-bound work; uncertain delivery is surfaced, never silently
+re-executed. Unadmitted requests expire after fifteen minutes.
+
+The background owner long-polls with a durable encrypted inbox/outbox and
+database fencing; it never deletes another consumer's webhook or takes it over.
+Text, bounded media and opted-in future routine results share canonical verified
+answers. Text delivery precedes optional voice generation. Tokens use a separate
+host credential vault and never enter agent environment secrets or containers.
+The additive migration `20260831002620_bot_telegram_transport.sql` is optional
+for existing Bots; missing Telegram tables surface setup-required metadata
+without disabling ordinary Bot chat. Four service-only RLS tables and atomic
+lease/ingest/pairing RPCs are documented in `telegram/DOCUMENTATION.md`.
+Purge removes transport records and dedicated local credentials. Recovery
+bundles intentionally do not export Telegram or speech secrets: configure and
+pair again after restoring on another host. Production migration/release are
+separate deployment steps.
+
+`bot-voice.js` owns encrypted per-Bot speech settings under the host data root.
+GET/PUT `/api/bots/:botId/speech` and POST `/speech/check` never return API keys.
+Only explicitly configured OpenAI-compatible endpoints are used; native HTTPS
+requests pin validated public DNS addresses, reject redirects, and permit
+explicit loopback endpoints. Browser/global/API/OAuth credentials are never
+inherited. Input accepts bounded validated Ogg Opus or MP3, at most five minutes
+and 20 MiB. STT and TTS each run one job plus at most two waiting jobs per Bot,
+with 120-second deadlines, a global 64 MiB memory budget, and bounded operation
+deduplication. Empty transcripts fail without submitting prompts. Automatic
+speech uses the exact verified answer with a 4,000-character limit and no
+summarization turn. Speech failure never reruns successful text work. Purge and
+shutdown abort jobs and erase retained audio; diagnostics contain no transcript,
+audio, credentials or token-bearing URLs.
+
+### Inline computer ownership
+
+`computer-activity.js` publishes ephemeral channel-authorized `computer.activity`
+containing only Bot/channel/run/revision/state after actual computer execution
+starts. It is not inferred from prose or a persistent browser being open. SSE
+snapshots reauthorize each channel. Automatic view tickets include the owning
+run and are fenced both before and after asynchronous runtime preparation;
+handoff aborts attached streams synchronously. Manual viewing remains Bot-shared.
+No frames are placed in chat, diagnostics, Telegram or this activity projection.
+
+An attributed control lease is bound ephemerally to its viewer. Stream teardown
+uses the original actor and exact lease ID to relinquish only that lease, even
+after account change or membership revocation. This release-only cleanup does
+not perform a new privileged action or restart the computer. Control mutations
+are serialized per Bot, including late takeover cleanup, so closing an old
+viewer cannot relinquish a replacement viewer's new lease. Passive views do not
+release unrelated control. Failed cleanup is diagnostic-visible; the computer
+service keeps execution fenced until held input is safely released.
+
+### Membership and channel authorization
 
 Bot roles and channel ACLs are independent:
 
@@ -1028,6 +1240,7 @@ Expired evidence objects fail closed before decryption.
 
 `GET /api/bots/capabilities` returns stable, mutually distinguishable states:
 
+- `bots_starting`
 - `supabase_unavailable`
 - `migration_required`
 - `unsupported_host`
@@ -1047,6 +1260,11 @@ failure. When the host is healthy, the server retries its execution composition
 through a bounded single-flight reconciliation and clears the prior failure only
 after durable run recovery succeeds. Routes resolve execution services dynamically
 so a successful reconciliation does not require restarting DevRyan.
+The listener does not wait for schema, retention, credential-vault, or execution
+composition startup. While that bounded background startup is active, the
+capability route returns `bots_starting` and every other Bot route fails closed
+with a retryable typed `503`; schema and runtime-specific states replace it as
+soon as startup settles.
 
 ## Audit retention
 
@@ -1054,6 +1272,54 @@ Bot security/lifecycle audit rows are separate from transcript content. Metadata
 validation rejects content-bearing key families (prompt, message body, tool
 output, credentials, cookies, tokens, and similar payloads), enforces bounded
 JSON, and permits identifiers/digests/status codes needed for correlation.
+
+`20260828210316_bot_terminal_error_audit.sql` owns terminal run observability.
+Its `AFTER UPDATE OF state` trigger appends one dedicated Bot audit row whenever
+a run distinctly enters `failed` or `interrupted`, including approval denial or
+expiry and recovery paths. The row contains only Bot/run/channel/revision and
+adapter/thread identifiers plus terminal code/phase/retry facts. Foreign SDK
+and DOM failures cross a normalization boundary before this write: timeouts
+(including numeric DOM code 23), aborts, and unknown errors become bounded
+string codes, and diagnostics retain a content-free failure stage. A retry may
+later produce another terminal transition and therefore another event; repeated
+writes of the same terminal state produce none. Existing terminal rows are
+backfilled only when no matching run diagnostic exists.
+
+`20260901160000_bot_runtime_scope_and_audit_repair.sql` adds the idempotent
+`devryan_settle_bot_run_terminal` service RPC. It locks the run, returns an
+already-terminal row unchanged after uncertain commits, or persists
+`failed`/`interrupted` while releasing its lease. The existing trigger appends
+the audit row in that same transaction. Dispatcher publication uses only the
+returned persisted row and retries boundedly; exhaustion writes a sanitized
+`bot.turn.terminal_persistence_failed` journal mark. Startup recovery uses the
+same RPC when an orphan cannot be resumed. The migration also backfills missing
+terminal evidence by inspecting the immutable ledger, so cleared review records
+prevent duplicates just like visible records.
+
+`audit-query.js` exposes this append-only ledger through exact-managed-admin
+`GET /api/bot-audit`, `/api/bot-audit/options`, and
+`/api/bot-audit/:eventId`. The default result set is
+`failure | partial | unknown`; denied and successful events remain available by
+explicit filter. Reads use `(created_at, id)` keyset cursors, hydrate Bots and
+actors in batches, and replace invalid legacy metadata with a redaction marker
+per row. These routes assert the schema marker but intentionally bypass Bot
+execution-health middleware so Docker or adapter degradation cannot hide prior
+evidence. `DELETE /api/bot-audit?range=24h|7d|14d|all` clears the review list for
+all administrators, independently of list filters. Migration
+`20260830180651_bot_audit_clear.sql` adds the service-only
+`devryan_clear_bot_audit` RPC, which atomically inserts per-event dismissal
+records with administrator attribution and a bounded server timestamp. It
+requires an active administrator and preserves every immutable ledger row.
+Listings use the security-invoker `bot_audit_review_events` view. A later
+successful memory extraction annotates earlier failed/partial events for the
+same run with `resolvedAt` and `resolvedByEventId`; the default Issues query
+hides those resolved projections, while All and UUID detail keep the immutable
+history visible. Repeated clears count only newly cleared
+events; events inserted after the snapshot remain visible. Dismissals cascade
+away only when retention removes their corresponding ledger events. Missing
+clear schema returns an explicit migration-required error without falling back
+to deletion or browser-only state. Web and Electron share these routes; the
+managed-host settings page remains unavailable in VS Code.
 
 Retention defaults to 365 days and is configurable through
 `DEVRYAN_BOT_AUDIT_RETENTION_DAYS`. Values below the database-enforced 30-day

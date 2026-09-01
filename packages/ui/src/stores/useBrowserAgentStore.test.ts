@@ -42,6 +42,36 @@ describe('browser agent lease store', () => {
     expect(snapshot?.leases[0]?.url).toBe('http://localhost:3000/');
     expect(Object.hasOwn(snapshot?.leases[0] ?? {}, 'wsUrl')).toBe(false);
     expect(Object.hasOwn(snapshot?.leases[0] ?? {}, 'token')).toBe(false);
+    expect(snapshot?.leases[0]?.transport).toBe('native');
+  });
+
+  test('accepts the reduced tunneled projection without inventing native identifiers', () => {
+    const snapshot = sanitizeBrowserAgentLeaseSnapshot({
+      revision: 2,
+      leases: [{
+        leaseId: 'remote-lease',
+        rootSessionId: 'root-remote',
+        agent: 'Builder',
+        title: 'Live preview',
+        hostname: 'preview.example.test',
+        lastActivityAt: 200,
+        clientAttached: true,
+      }],
+    });
+    expect(snapshot?.leases[0]).toEqual({
+      transport: 'stream',
+      leaseId: 'remote-lease',
+      rootSessionId: 'root-remote',
+      opencodeSessionID: '',
+      directory: '',
+      surfaceId: '',
+      url: '',
+      agent: 'Builder',
+      title: 'Live preview',
+      hostname: 'preview.example.test',
+      lastActivityAt: 200,
+      clientAttached: true,
+    });
   });
 
   test('rejects stale revisions and preserves root index references when membership is unchanged', () => {

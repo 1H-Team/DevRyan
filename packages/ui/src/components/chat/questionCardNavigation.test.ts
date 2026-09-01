@@ -5,6 +5,7 @@ import {
   getNextQuestionIndex,
   getPreviousQuestionIndex,
   isQuestionAnswerComplete,
+  shouldHandleQuestionAnswerEnter,
 } from "./questionCardNavigation"
 
 describe("question card navigation", () => {
@@ -33,5 +34,56 @@ describe("question card navigation", () => {
     expect(getNextQuestionIndex(0, 3)).toBe(1)
     expect(getNextQuestionIndex(2, 3)).toBe(2)
     expect(getNextQuestionIndex(0, 0)).toBe(0)
+  })
+
+  test("desktop Enter submits while Shift+Enter remains available for a newline", () => {
+    expect(shouldHandleQuestionAnswerEnter({
+      key: "Enter",
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      isMobile: false,
+    })).toBe(true)
+    expect(shouldHandleQuestionAnswerEnter({
+      key: "Enter",
+      shiftKey: true,
+      ctrlKey: false,
+      metaKey: false,
+      isMobile: false,
+    })).toBe(false)
+  })
+
+  test("mobile Enter inserts a newline unless Command or Control is held", () => {
+    expect(shouldHandleQuestionAnswerEnter({
+      key: "Enter",
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      isMobile: true,
+    })).toBe(false)
+    expect(shouldHandleQuestionAnswerEnter({
+      key: "Enter",
+      shiftKey: false,
+      ctrlKey: true,
+      metaKey: false,
+      isMobile: true,
+    })).toBe(true)
+    expect(shouldHandleQuestionAnswerEnter({
+      key: "Enter",
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: true,
+      isMobile: true,
+    })).toBe(true)
+  })
+
+  test("non-Enter keys stay in the multiline editor", () => {
+    expect(shouldHandleQuestionAnswerEnter({
+      key: "a",
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      isMobile: false,
+    })).toBe(false)
   })
 })

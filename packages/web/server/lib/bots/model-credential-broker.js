@@ -12,6 +12,7 @@ import {
 } from '../opencode/auth.js';
 import { validateBotModelPolicy } from './config-compiler.js';
 import { resolveReviewedBotModelEgressHosts } from './model-catalog.js';
+import { createHostOAuthConnections, isHostOpenAiCredential } from './host-oauth-connections.js';
 import { validateUuid } from './validation.js';
 
 const MODEL_UNAVAILABLE = 'bot_model_unavailable';
@@ -65,10 +66,12 @@ const normalizeRun = (run, { requireUpdatedAt = true } = {}) => {
     'id',
     'ownerUserId',
     'revisionId',
-    ...(requireUpdatedAt ? ['updatedAt'] : []),
   ];
+  const keys = isPlainObject(run) ? Object.keys(run) : [];
   if (!isPlainObject(run)
-    || Object.keys(run).sort().join('\0') !== fields.sort().join('\0')) {
+    || fields.some((field) => !keys.includes(field))
+    || keys.some((field) => !fields.includes(field) && field !== 'updatedAt')
+    || (requireUpdatedAt && !keys.includes('updatedAt'))) {
     fail('Bot model selection run is invalid', 'bot_model_selection_invalid', 400);
   }
   const updatedAt = requireUpdatedAt && typeof run.updatedAt === 'string' ? run.updatedAt : null;
@@ -203,6 +206,7 @@ export function createBotModelCredentialBroker({
   dataDirectory,
   credentialVault,
   store = null,
+  oauthCoordinator = null,
   recordSelectedModel = null,
   readHostProviderAuth = readProviderAuthRecord,
   writeScopedAuth = writeScopedProviderAuthRecord,
@@ -224,6 +228,8 @@ export function createBotModelCredentialBroker({
   }
   const runRepository = store?.repositories?.bot_runs;
   const credentialRepository = store?.repositories?.bot_credentials;
+  const oauthConnections = createHostOAuthConnections({ coordinator: oauthCoordinator,
+    repository: credentialRepository, vault: credentialVault });
   const recordModel = typeof recordSelectedModel === 'function'
     ? recordSelectedModel
     : (runRepository?.updateIfRevision
@@ -251,6 +257,16 @@ export function createBotModelCredentialBroker({
       }
     }
 
+    if (isHostOpenAiCredential(credentialRow)) {
+      const binding = await oauthConnections.resolve(credentialRow);
+      await oauthConnections.access(binding.accountId, candidate.credentialId);
+      return { authType: 'oauth', accountId: binding.accountId,
+        // A non-secret discriminator keeps OpenCode's OAuth model metadata.
+        // Only the coordinated transport may authenticate provider requests.
+        secret: { type: 'oauth', access: '', refresh: '', expires: 0, accountId: binding.accountId },
+        hostOAuth: true };
+    }
+
     try {
       const stored = await credentialVault.read(candidate.credentialId);
       if (stored?.credential?.botId !== run.botId
@@ -258,6 +274,9 @@ export function createBotModelCredentialBroker({
         || stored?.credential?.status !== 'active'
         || !isPlainObject(stored.secret)) {
         fail('Bot model credential is unavailable');
+      }
+      if (candidate.providerId === 'openai' && stored.secret.type === 'oauth') {
+        fail('A bound host OAuth connection is required', 'bot_oauth_coordinator_unavailable');
       }
       return {
         secret: stored.secret,
@@ -269,6 +288,9 @@ export function createBotModelCredentialBroker({
 
     const selectedHostRecord = readHostProviderAuth(candidate.providerId);
     if (!isPlainObject(selectedHostRecord)) fail('Bot model credential is unavailable');
+    if (candidate.providerId === 'openai' && selectedHostRecord.type === 'oauth') {
+      fail('A bound host OAuth connection is required', 'bot_oauth_coordinator_unavailable');
+    }
     try {
       await credentialVault.create({
         id: candidate.credentialId,
@@ -318,6 +340,8 @@ export function createBotModelCredentialBroker({
           egressHosts,
           secret: credential.secret,
           authType: credential.authType,
+          hostOAuth: credential.hostOAuth === true,
+          accountId: credential.accountId,
         };
       } catch (error) {
         if (!isCandidateUnavailable(error)) throw error;
@@ -326,8 +350,90 @@ export function createBotModelCredentialBroker({
     fail('No configured Bot model is currently available');
   };
 
+  const materializeRun = async ({ rawRun, rawModels, catalog, provisional }) => {
+    const run = normalizeRun(rawRun, { requireUpdatedAt: provisional !== true });
+    let models;
+    try {
+      models = validateBotModelPolicy(rawModels);
+    } catch (error) {
+      fail(error.message, 'bot_model_selection_invalid', 400);
+    }
+    if (activeRuns.has(run.id)) {
+      fail('Bot run credentials are already materialized', 'bot_run_already_prepared', 409);
+    }
+    const selection = await choose({ run, models, catalog });
+    const authDirectory = path.join(authRoot, run.id);
+    await safeRemoveDirectory(authDirectory, fsPromises);
+    await fsPromises.mkdir(authRoot, { recursive: true, mode: 0o700 });
+    await fsPromises.chmod(authRoot, 0o700);
+    try {
+      await writeScopedAuth({
+        directory: authDirectory,
+        providerId: selection.candidate.providerId,
+        record: selection.secret,
+        fsPromises,
+      });
+      const snapshot = selectedSnapshot({ ...selection, now });
+      if (!provisional) await recordModel({ run, snapshot });
+      const metadata = {
+        runId: run.id,
+        providerId: selection.candidate.providerId,
+        credentialId: selection.candidate.credentialId,
+        authDirectory,
+        provisional: provisional === true,
+        hostOAuth: selection.hostOAuth === true,
+        accountId: selection.accountId,
+        run,
+        candidate: selection.candidate,
+      };
+      activeRuns.set(run.id, metadata);
+      return Object.freeze({
+        authDirectory,
+        model: Object.freeze({
+          providerId: selection.candidate.providerId,
+          modelId: selection.candidate.modelId,
+          variant: selection.candidate.variant || null,
+        }),
+        credentialId: selection.candidate.credentialId,
+        coordinatedOAuth: selection.hostOAuth === true,
+        egressHosts: selection.egressHosts,
+        chatgptImageGeneration: selection.candidate.providerId === 'openai'
+          && selection.authType === 'oauth',
+        modelSnapshot: snapshot,
+        provisional: provisional === true,
+      });
+    } catch (error) {
+      await safeRemoveDirectory(authDirectory, fsPromises);
+      throw error;
+    }
+  };
+
   return Object.freeze({
     authRoot,
+    oauthConnections,
+    async runtimeOAuth(claims, operation) {
+      const active = activeRuns.get(claims.runId);
+      if (!active || claims.kind !== 'reasoning' || claims.botId !== active.run.botId
+        || claims.channelId !== active.run.channelId || claims.revisionId !== active.run.revisionId) {
+        fail('Bot OAuth scope is invalid', 'bot_oauth_access_denied', 403);
+      }
+      if (operation === 'ready') {
+        active.runtimeReady = true;
+        return { protocol: 1, oauth: active.hostOAuth };
+      }
+      if (!active.hostOAuth) fail('Bot OAuth is unavailable', 'bot_oauth_access_denied', 403);
+      const current = await readCredential({ run: active.run, candidate: active.candidate });
+      if (!current.hostOAuth || current.accountId !== active.accountId) fail('Bot connection changed', 'bot_opencode_provider_authentication', 401);
+      if (activeRuns.get(claims.runId) !== active) fail('Bot OAuth scope is invalid', 'bot_oauth_access_denied', 403);
+      return oauthConnections.access(active.accountId, active.credentialId);
+    },
+    async assertRuntimeReady(runId) {
+      const active = activeRuns.get(runId);
+      if (!active?.hostOAuth) return;
+      if (!active.runtimeReady) fail('Update the Bot runtime to enable coordinated OAuth', 'bot_oauth_runtime_update_required');
+      await this.runtimeOAuth({ runId, botId: active.run.botId, channelId: active.run.channelId,
+        revisionId: active.run.revisionId, kind: 'reasoning' }, 'access');
+    },
     async preflightRun({ run: rawRun, models: rawModels, catalog } = {}) {
       const run = normalizeRun(rawRun, { requireUpdatedAt: false });
       let models;
@@ -352,53 +458,12 @@ export function createBotModelCredentialBroker({
       });
     },
 
-    async prepareRun({ run: rawRun, models: rawModels, catalog } = {}) {
-      const run = normalizeRun(rawRun);
-      let models;
-      try {
-        models = validateBotModelPolicy(rawModels);
-      } catch (error) {
-        fail(error.message, 'bot_model_selection_invalid', 400);
-      }
-      if (activeRuns.has(run.id)) fail('Bot run credentials are already materialized', 'bot_run_already_prepared', 409);
-      const selection = await choose({ run, models, catalog });
-      const authDirectory = path.join(authRoot, run.id);
-      await safeRemoveDirectory(authDirectory, fsPromises);
-      await fsPromises.mkdir(authRoot, { recursive: true, mode: 0o700 });
-      await fsPromises.chmod(authRoot, 0o700);
-      try {
-        await writeScopedAuth({
-          directory: authDirectory,
-          providerId: selection.candidate.providerId,
-          record: selection.secret,
-          fsPromises,
-        });
-        const snapshot = selectedSnapshot({ ...selection, now });
-        await recordModel({ run, snapshot });
-        const metadata = Object.freeze({
-          runId: run.id,
-          providerId: selection.candidate.providerId,
-          credentialId: selection.candidate.credentialId,
-          authDirectory,
-        });
-        activeRuns.set(run.id, metadata);
-        return Object.freeze({
-          authDirectory,
-          model: Object.freeze({
-            providerId: selection.candidate.providerId,
-            modelId: selection.candidate.modelId,
-            variant: selection.candidate.variant || null,
-          }),
-          credentialId: selection.candidate.credentialId,
-          egressHosts: selection.egressHosts,
-          chatgptImageGeneration: selection.candidate.providerId === 'openai'
-            && selection.authType === 'oauth',
-          modelSnapshot: snapshot,
-        });
-      } catch (error) {
-        await safeRemoveDirectory(authDirectory, fsPromises);
-        throw error;
-      }
+    async prepareRun({ run, models, catalog } = {}) {
+      return materializeRun({ rawRun: run, rawModels: models, catalog, provisional: false });
+    },
+
+    async prepareProvisionalRun({ run, models, catalog } = {}) {
+      return materializeRun({ rawRun: run, rawModels: models, catalog, provisional: true });
     },
 
     async finalizeRun(runId) {
@@ -409,13 +474,15 @@ export function createBotModelCredentialBroker({
       let failure = null;
       let refreshed = false;
       try {
-        const refreshedRecord = await readScopedAuth({
-          directory: active.authDirectory,
-          providerId: active.providerId,
-          fsPromises,
-        });
-        await credentialVault.rotate(active.credentialId, refreshedRecord);
-        refreshed = true;
+        if (!active.hostOAuth) {
+          const refreshedRecord = await readScopedAuth({
+            directory: active.authDirectory,
+            providerId: active.providerId,
+            fsPromises,
+          });
+          await credentialVault.rotate(active.credentialId, refreshedRecord);
+          refreshed = true;
+        }
       } catch (error) {
         failure = error;
       } finally {

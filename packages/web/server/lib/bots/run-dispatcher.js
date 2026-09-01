@@ -1,9 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { performance } from 'node:perf_hooks';
 
 import { resolveComputerScopeKey } from '@openchamber/bots-runtime';
 
 import { publicBotChannelPreview } from './channels.js';
+import { normalizeBotRunError } from './error-normalization.js';
+import { withBotAbort } from './request-lifetime.js';
 import {
   BotReasoningAdapterError,
   createBotReasoningAdapterRegistry,
@@ -13,17 +16,23 @@ import {
 import { validateBotRoutineSnapshot } from './routine-runtime.js';
 import { assertExactObject, validateBoundedString, validateUuid } from './validation.js';
 import { createBotWarmRuntimeLeases } from './warm-runtime-leases.js';
+import { hasBotExecutionIdentity, hasBotRetrySideEffects } from './retry-policy.js';
 
 const DEFAULT_LEASE_MS = 5 * 60 * 1000;
 const DEFAULT_RUN_TIMEOUT_MS = 15 * 60 * 1000;
 const CHECKPOINT_INTERVAL_MS = 500;
 const REQUESTER_STREAM_INTERVAL_MS = 50;
+const TERMINAL_SETTLEMENT_RETRY_DELAYS_MS = Object.freeze([0, 100, 500]);
 const MAX_REQUESTER_STREAM_TEXT_BYTES = 192 * 1024;
 const MAX_PENDING_MESSAGE_COUNT = 8;
 const MAX_PENDING_PART_COUNT = 128;
 const MAX_PENDING_TEXT_BYTES = 256 * 1024;
 const TERMINAL_RUN_STATES = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
-const GATEWAY_PAUSED_RUN_STATES = new Set(['waiting_approval', 'needs_reconciliation']);
+const GATEWAY_PAUSED_RUN_STATES = new Set([
+  'waiting_approval',
+  'waiting_control',
+  'needs_reconciliation',
+]);
 const ATTACHMENT_DELIVERY_MODES = new Set(['auto', 'compatibility']);
 
 const defaultIsRuntimeOwnerAlive = (owner) => {
@@ -58,7 +67,7 @@ const normalizeMessage = (value) => {
     assertExactObject(value, {
       label: 'Bot message request',
       required: ['messageId', 'idempotencyKey', 'text', 'attachmentIds'],
-      optional: ['attachmentDeliveryMode', 'prewarmLeaseId'],
+      optional: ['acknowledgmentId', 'attachmentDeliveryMode', 'prewarmLeaseId'],
     });
   } catch (error) {
     fail(error.message, error.code || 'bot_message_invalid', error.statusCode || 400);
@@ -69,6 +78,9 @@ const normalizeMessage = (value) => {
   }
   return Object.freeze({
     messageId: validateUuid(value.messageId, 'messageId'),
+    acknowledgmentId: value.acknowledgmentId === undefined
+      ? null
+      : validateUuid(value.acknowledgmentId, 'acknowledgmentId'),
     idempotencyKey: validateBoundedString(value.idempotencyKey, 'idempotencyKey', { maximum: 512 }),
     text: value.text,
     attachmentIds: value.attachmentIds,
@@ -116,6 +128,17 @@ const totalTokens = (tokens) => {
 };
 
 const nowIso = (now) => now().toISOString();
+
+const assistantResponseIdForMessage = (messageId) => {
+  const bytes = Buffer.from(createHash('sha256')
+    .update(`devryan-bot-assistant-response\0${messageId}`, 'utf8')
+    .digest()
+    .subarray(0, 16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
 
 export function createBotRunDispatcher({
   store,
@@ -194,6 +217,7 @@ export function createBotRunDispatcher({
 
   const drains = new Map();
   const activeExecutions = new Map();
+  const executionControllers = new Map();
   let executionOrdinal = 0;
   let shuttingDown = false;
   const warmAdaptersByRun = new Map();
@@ -335,6 +359,50 @@ export function createBotRunDispatcher({
     );
   };
 
+  const settleTerminalRun = async (run, {
+    state,
+    interruptionKind,
+    contextSnapshot,
+    finishedAt,
+  }) => {
+    let lastError = null;
+    for (const delayMs of TERMINAL_SETTLEMENT_RETRY_DELAYS_MS) {
+      if (delayMs > 0) await delay(delayMs);
+      try {
+        const persisted = await store.settleRunTerminal({
+          runId: run.id,
+          state,
+          interruptionKind,
+          contextSnapshot,
+          finishedAt,
+        });
+        if (persisted?.id) return persisted;
+        lastError = new BotRunDispatcherError(
+          'Bot terminal settlement returned no run',
+          'bot_run_terminal_settlement_missing',
+          503,
+        );
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    const persistenceCode = lastError?.code || 'bot_run_terminal_persistence_failed';
+    markDiagnostic('terminal_persistence_failed', {
+      botId: run.bot_id,
+      channelId: run.channel_id,
+      runId: run.id,
+      intendedState: state,
+      code: persistenceCode,
+      attempts: TERMINAL_SETTLEMENT_RETRY_DELAYS_MS.length,
+    });
+    logger?.warn?.('[BotsDispatcher] terminal run persistence failed', {
+      code: persistenceCode,
+      runId: run.id,
+      intendedState: state,
+    });
+    throw lastError;
+  };
+
   const assistantResponseProjection = (active) => {
     const messageId = active.providerMessageId || null;
     if (!messageId) return projectBotReasoningResponse([]);
@@ -352,6 +420,8 @@ export function createBotRunDispatcher({
     append = false,
     ignored,
     synthetic,
+    partType,
+    visible,
   } = {}) => {
     let parts = active.pendingPartsByMessage.get(messageId);
     if (!parts) {
@@ -369,8 +439,9 @@ export function createBotRunDispatcher({
     if (!parts.has(partId)) active.pendingPartCount += 1;
     active.pendingTextBytes += nextBytes - currentBytes;
     parts.set(partId, Object.freeze({
-      type: 'text',
+      type: partType && partType !== 'unknown' ? partType : (currentRecord?.type || 'unknown'),
       text: next,
+      ...(visible !== undefined ? { visible } : {}),
       ...(ignored === true || currentRecord?.ignored === true ? { ignored: true } : {}),
       ...(synthetic === true || currentRecord?.synthetic === true ? { synthetic: true } : {}),
     }));
@@ -390,7 +461,8 @@ export function createBotRunDispatcher({
   };
 
   const flushRequesterStream = (active) => {
-    if (!streamAccessLeases || active.streamSuppressed || active.streamTimer) return;
+    if (!streamAccessLeases || active.streamSuppressed || active.streamPaused
+      || active.streamTimer) return;
     const elapsed = performance.now() - active.lastStreamScheduledAt;
     const delayMs = active.streamSequence === 0
       ? 0
@@ -477,23 +549,29 @@ export function createBotRunDispatcher({
         runId: active.run.id,
       });
     }
-    flushRequesterStream(active);
+    // Ambiguous pre-tool prose must never cross the public boundary.
+    if (active.finalVerified) flushRequesterStream(active);
   };
 
   const updateKnownAssistantPart = (active, messageId, partId, value, {
     append = false,
     ignored,
     synthetic,
+    partType,
+    visible,
   } = {}) => {
     if (active.messageRolesById.get(messageId) !== 'assistant') return false;
     const parts = active.partsByMessage.get(messageId) || new Map();
     const currentRecord = parts.get(partId);
     const current = currentRecord?.type === 'text' ? currentRecord.text : '';
     const next = append ? `${current}${value}` : value;
-    if (next === current) return false;
+    if (next === current && (partType === undefined || partType === currentRecord?.type)
+      && ignored === currentRecord?.ignored && synthetic === currentRecord?.synthetic
+      && visible === currentRecord?.visible) return false;
     parts.set(partId, Object.freeze({
-      type: 'text',
+      type: partType && partType !== 'unknown' ? partType : (currentRecord?.type || 'unknown'),
       text: next,
+      ...(visible !== undefined ? { visible } : {}),
       ...(ignored === true || currentRecord?.ignored === true ? { ignored: true } : {}),
       ...(synthetic === true || currentRecord?.synthetic === true ? { synthetic: true } : {}),
     }));
@@ -509,7 +587,7 @@ export function createBotRunDispatcher({
     text = renderedAssistantText(active),
     assistantPhase = null,
   } = {}) => {
-    if (!message) return Promise.resolve(null);
+    if (!message || (!final && !active.finalVerified)) return Promise.resolve(null);
     const streamRevision = active.streamRevision;
     active.lastCheckpointAt = Date.now();
     active.checkpointWrite = active.checkpointWrite
@@ -547,7 +625,7 @@ export function createBotRunDispatcher({
   };
 
   const scheduleCheckpoint = (active) => {
-    if (!active.assistantMessage || active.checkpointTimer) return;
+    if (!active.finalVerified || !active.assistantMessage || active.streamPaused || active.checkpointTimer) return;
     const remaining = Math.max(
       0,
       checkpointIntervalMs - (Date.now() - active.lastCheckpointAt),
@@ -563,23 +641,8 @@ export function createBotRunDispatcher({
 
   const beginToolPhase = (active) => {
     active.toolObserved = true;
-    if (active.streamTimer) {
-      clearTimeout(active.streamTimer);
-      active.streamTimer = null;
-    }
-    if (active.checkpointTimer) {
-      clearTimeout(active.checkpointTimer);
-      active.checkpointTimer = null;
-    }
-    active.phaseTransition = active.phaseTransition
-      .then(async () => {
-        await active.streamDelivery.catch(() => undefined);
-        await checkpointWrite(active, {
-          text: '',
-          final: false,
-        });
-      })
-      .catch((error) => active.reject(error));
+    // Keep the one pending result. Acknowledgment and progress prose are never
+    // persisted; the UI represents activity using the authoritative run state.
   };
 
   const pendingPartTool = (active, messageId, partId) => {
@@ -618,8 +681,9 @@ export function createBotRunDispatcher({
 
   const observeReasoningEvent = async ({ runId, event } = {}) => {
     const active = activeExecutions.get(runId);
-    if (!active || !event || typeof event.kind !== 'string') return false;
+    if (!active || active.finalVerified || !event || typeof event.kind !== 'string') return false;
     const properties = event.payload || {};
+    if (properties.requestId && properties.requestId !== runId) return false;
     if (event.kind === 'assistant.message') {
       if (typeof properties.messageId === 'string' && typeof properties.role === 'string') {
         active.messageRolesById.set(properties.messageId, properties.role);
@@ -657,6 +721,8 @@ export function createBotRunDispatcher({
               append: properties.mode === 'append',
               ignored: properties.ignored,
               synthetic: properties.synthetic,
+              partType: properties.partType,
+              visible: properties.visible,
             },
           );
         } else if (role === undefined) {
@@ -669,6 +735,8 @@ export function createBotRunDispatcher({
               append: properties.mode === 'append',
               ignored: properties.ignored,
               synthetic: properties.synthetic,
+              partType: properties.partType,
+              visible: properties.visible,
             },
           );
         }
@@ -701,17 +769,62 @@ export function createBotRunDispatcher({
     return true;
   };
 
-  const waitForCompletion = (active) => {
-    let timeout;
-    const timedOut = new Promise((_, reject) => {
-      timeout = setTimeout(() => reject(new BotRunDispatcherError(
-        'Bot run timed out',
-        'bot_run_timeout',
-        504,
-      )), active.timeoutMs);
-      timeout.unref?.();
-    });
-    return Promise.race([active.completion, timedOut]).finally(() => clearTimeout(timeout));
+  const inspectCurrentCompletion = async (active) => {
+    const inspection = await withBotAbort(active.adapter.inspectRun({
+      runId: active.run.id,
+      handle: active.handle,
+      binding: active.adapterBinding,
+      signal: active.controller.signal,
+    }), active.controller.signal);
+    if (inspection.requestId && inspection.requestId !== active.run.id) {
+      throw new BotRunDispatcherError('Bot completion belongs to another request', 'bot_response_identity_invalid', 502);
+    }
+    return inspection;
+  };
+
+  const waitForCompletion = async (active) => {
+    // SSE idle is a wakeup, not an answer. Polling recovers missed final events
+    // without ever submitting the prompt again.
+    let completionObserved = false;
+    let incompleteIdleChecks = 0;
+    let inspectionFailures = 0;
+    while (true) {
+      if (!completionObserved) {
+        completionObserved = await withBotAbort(Promise.race([
+          active.completion.then(() => true),
+          delay(1_000, false, { signal: active.controller.signal }),
+        ]), active.controller.signal);
+      }
+      let inspection;
+      try {
+        inspection = await inspectCurrentCompletion(active);
+        inspectionFailures = 0;
+      } catch (error) {
+        if (!active.controller.signal.aborted && [502, 503, 504].includes(error?.statusCode)
+          && error?.code !== 'bot_opencode_run_failed' && ++inspectionFailures < 3) {
+          await delay(200, undefined, { signal: active.controller.signal });
+          continue;
+        }
+        throw error;
+      }
+      if (inspection.promptObserved === true && inspection.assistantTerminal === true
+        && inspection.status === 'idle') return inspection;
+      if (completionObserved && inspection.promptObserved === true && inspection.status === 'idle') {
+        // A terminal SSE idle plus the exact persisted request may have no
+        // answer at all; let the caller report that explicitly.
+        if (!inspection.assistantMessageId) return inspection;
+        if (++incompleteIdleChecks >= 5) {
+          const result = typeof channels.getAssistantCheckpoint === 'function'
+            ? (await channels.getAssistantCheckpoint({ run: active.run, assistantPhase: 'result' })
+              || await channels.getAssistantCheckpoint({ run: active.run, assistantPhase: 'pending' }))
+            : null;
+          if (inspection.assistantProjection?.generatedImages?.length > 0
+            || Number(result?.attachment_count) > 0) return inspection;
+          throw new BotRunDispatcherError('Bot stopped without a verified final response', 'bot_response_incomplete', 502);
+        }
+      }
+      if (completionObserved) await delay(100, undefined, { signal: active.controller.signal });
+    }
   };
 
   const executeDefault = async (claimed, { recovered = false } = {}) => {
@@ -723,6 +836,16 @@ export function createBotRunDispatcher({
     let current = claimed;
     let terminalState = 'completed';
     let terminalError = null;
+    const controller = new AbortController();
+    executionControllers.set(claimed.id, controller);
+    const timeoutMs = Number.isFinite(claimed.context_snapshot?.routine?.contract?.timeoutSeconds)
+      ? Math.max(10, claimed.context_snapshot.routine.contract.timeoutSeconds * 1_000)
+      : runTimeoutMs;
+    const deadline = setTimeout(() => controller.abort(new BotRunDispatcherError(
+      'Bot run timed out', 'bot_run_timeout', 504,
+    )), timeoutMs);
+    deadline.unref?.();
+    const bounded = (promise) => withBotAbort(promise, controller.signal);
     const persistedExecution = genericExecutionFromLegacyRun(claimed);
     let reconcilingPersistedExecution = Boolean(recovered && persistedExecution.threadId);
     try {
@@ -732,12 +855,12 @@ export function createBotRunDispatcher({
           .then((messages) => [...messages]
             .reverse()
             .find((message) => message.runId === claimed.id && message.role === 'user')));
-      const [bot, channel, revision, userMessage] = await Promise.all([
+      const [bot, channel, revision, userMessage] = await bounded(Promise.all([
         store.repositories.bots.get({ id: claimed.bot_id }),
         store.repositories.bot_channels.get({ id: claimed.channel_id, bot_id: claimed.bot_id }),
         store.repositories.bot_revisions.get({ id: claimed.revision_id, bot_id: claimed.bot_id }),
         loadUserMessage(),
-      ]);
+      ]));
       if (!bot || !channel || !revision) fail('Bot run context is unavailable', 'bot_run_context_missing', 409);
       if (!userMessage) fail('Bot run user message is missing', 'bot_message_not_found', 409);
       const selection = adapterRegistry.forRevision(revision.contract);
@@ -754,7 +877,7 @@ export function createBotRunDispatcher({
           409,
         );
       }
-      await runtimePreflight({ run: claimed, adapter: adapterBinding.kind });
+      await bounded(runtimePreflight({ run: claimed, adapter: adapterBinding.kind, signal: controller.signal }));
       const runInput = {
         id: claimed.id,
         botId: claimed.bot_id,
@@ -773,6 +896,7 @@ export function createBotRunDispatcher({
         currentMessageSequence: userMessage.sequence,
       });
       const runtimePromise = activeAdapter.prepareRevision({
+        signal: controller.signal,
         run: runInput,
         contract: revision.contract,
         binding: adapterBinding,
@@ -784,11 +908,17 @@ export function createBotRunDispatcher({
           ? claimed.context_snapshot.libraryVersionIds
           : [],
       });
+      // Preparation can finish after a cancelled non-abortable host callback.
+      // Release its late resource instead of resurrecting a cancelled runtime.
+      void runtimePromise.then(() => {
+        if (controller.signal.aborted) return activeAdapter.closeRun({ runId: claimed.id }).catch(() => undefined);
+        return undefined;
+      }, () => undefined);
       const runtimeStartedAt = performance.now();
-      const [assemblyResult, runtimeResult] = await Promise.allSettled([
+      const [assemblyResult, runtimeResult] = await bounded(Promise.allSettled([
         assemblyPromise,
         runtimePromise,
-      ]);
+      ]));
       if (runtimeResult.status === 'fulfilled') runtimeStarted = true;
       if (assemblyResult.status === 'rejected' || runtimeResult.status === 'rejected') {
         if (runtimeResult.status === 'fulfilled') {
@@ -819,12 +949,13 @@ export function createBotRunDispatcher({
             ...persistedExecution.execution,
           }
         : null;
-      adapterHandle = await activeAdapter.startRun({
+      adapterHandle = await bounded(activeAdapter.startRun({
+        signal: controller.signal,
         runId: claimed.id,
         title: `Bot channel ${channel.id.slice(0, 8)}`,
         execution: recoveredHandle,
         continuation: assembled.continuation,
-      });
+      }));
       reconcilingPersistedExecution = Boolean(recoveredHandle);
       const executionContextSnapshot = {
         ...assembled.contextSnapshot,
@@ -853,13 +984,16 @@ export function createBotRunDispatcher({
       const recoveredResult = recovered && typeof channels.getAssistantCheckpoint === 'function'
         ? await channels.getAssistantCheckpoint({ run: current, assistantPhase: 'result' })
         : null;
+      const recoveredAcknowledgment = recovered && typeof channels.getAssistantCheckpoint === 'function'
+        ? await channels.getAssistantCheckpoint({ run: current, assistantPhase: 'acknowledgment' })
+        : null;
       const recoveredPending = recovered && typeof channels.getAssistantCheckpoint === 'function'
         ? await channels.getAssistantCheckpoint({ run: current, assistantPhase: 'pending' })
         : null;
       const assistantMessage = recoveredResult || recoveredPending
         || await channels.getOrCreateAssistantCheckpoint({
           run: current,
-          assistantPhase: 'result',
+          assistantPhase: 'pending',
         });
       if (recovered && recoveredResult?.finalized_at) {
         current = await updateRun(current.id, {
@@ -898,7 +1032,10 @@ export function createBotRunDispatcher({
         resolveCompletion = resolve;
         rejectCompletion = reject;
       });
+      void completion.catch(() => undefined);
       active = {
+        controller,
+        finalVerified: false,
         run: current,
         adapter: activeAdapter,
         adapterBinding,
@@ -920,7 +1057,8 @@ export function createBotRunDispatcher({
         streamTimer: null,
         streamDelivery: Promise.resolve(),
         streamSuppressed: false,
-        toolObserved: false,
+        streamPaused: Boolean(recoveredAcknowledgment),
+        toolObserved: Boolean(recoveredAcknowledgment),
         phaseTransition: Promise.resolve(),
         firstProviderText: false,
         firstRequesterDelivery: false,
@@ -948,14 +1086,15 @@ export function createBotRunDispatcher({
         let toolMessage = null;
         let continuationCount = 0;
         while (true) {
-          const continuation = await activeAdapter.continueRun({
+          const continuation = await bounded(activeAdapter.continueRun({
+            signal: controller.signal,
             runId: current.id,
             handle: active.handle,
             binding: adapterBinding,
             parts,
             toolMessage,
             onEvent: (event) => observeReasoningEvent({ runId: current.id, event }),
-          });
+          }));
           if (continuation?.handle) {
             active.handle = continuation.handle;
             adapterHandle = continuation.handle;
@@ -1029,11 +1168,7 @@ export function createBotRunDispatcher({
       };
       if (recovered && recoveredHandle) {
         active.promptStarted = true;
-        const inspection = await activeAdapter.inspectRun({
-          runId: current.id,
-          handle: active.handle,
-          binding: adapterBinding,
-        });
+        const inspection = await inspectCurrentCompletion(active);
         if (inspection.resumable === false) {
           throw new BotRunDispatcherError(
             'The interrupted agent run cannot be inspected or resumed; retry it as a new run',
@@ -1076,14 +1211,14 @@ export function createBotRunDispatcher({
             settleActive(active);
           }
         } else {
-          active.promptStarted = false;
-          active.idleObservedDuringAcceptance = false;
-          await submitPrompt();
+          // An existing execution handle plus a missing request record is an
+          // uncertain submission, not proof that no side effects occurred.
+          throw new BotRunDispatcherError('The previous request could not be confirmed; it was not submitted again', 'bot_prompt_outcome_unknown', 409);
         }
       } else {
         await submitPrompt();
       }
-      await waitForCompletion(active);
+      const finalizedInspection = await waitForCompletion(active);
       await active.phaseTransition;
       if (active.streamTimer) clearTimeout(active.streamTimer);
       await active.streamDelivery.catch(() => undefined);
@@ -1091,27 +1226,21 @@ export function createBotRunDispatcher({
       await active.checkpointWrite.catch(() => undefined);
       current = await currentRun(current.id);
       if (GATEWAY_PAUSED_RUN_STATES.has(current?.state)) return current;
-      const responseProjection = assistantResponseProjection(active);
-      if (active.toolObserved && !responseProjection.resultText.trim()) {
-        throw new BotRunDispatcherError(
-          'Bot completed tool work without a final response',
-          'bot_response_missing',
-          502,
-        );
+      const responseProjection = finalizedInspection.assistantProjection;
+      if (!responseProjection) {
+        throw new BotRunDispatcherError('Bot final response could not be verified', 'bot_response_unverified', 502);
       }
-      const finalizedAssistantMessage = await checkpointWrite(active, {
-        final: true,
-        text: responseProjection.resultText,
-        assistantPhase: active.assistantMessage?.assistant_phase === 'pending'
-          ? 'result'
-          : null,
-      });
-      const finalizedInspection = await activeAdapter.inspectRun({
-        runId: current.id,
-        handle: active.handle,
-        binding: adapterBinding,
-      });
-      const generatedImages = finalizedInspection.assistantProjection?.generatedImages || [];
+      const generatedImages = responseProjection.generatedImages || [];
+      const persistedResponse = typeof channels.getAssistantCheckpoint === 'function'
+        ? (await channels.getAssistantCheckpoint({ run: current, assistantPhase: 'result' })
+          || await channels.getAssistantCheckpoint({ run: current, assistantPhase: 'pending' }))
+        : null;
+      if (persistedResponse) active.assistantMessage = persistedResponse;
+      const hasPublishedAttachment = Number(persistedResponse?.attachment_count) > 0;
+      if (!responseProjection.resultText.trim() && generatedImages.length === 0 && !hasPublishedAttachment) {
+        throw new BotRunDispatcherError('Bot completed without a final response', 'bot_response_missing', 502);
+      }
+      active.finalVerified = true;
       if (generatedImages.length > 0) {
         if (typeof activeAdapter.exportArtifact !== 'function'
           || typeof sharedFileService?.publishBotFile !== 'function') {
@@ -1156,6 +1285,11 @@ export function createBotRunDispatcher({
           );
         }
       }
+      const finalizedAssistantMessage = await checkpointWrite(active, {
+        final: true,
+        text: responseProjection.resultText,
+        assistantPhase: active.assistantMessage?.assistant_phase === 'pending' ? 'result' : null,
+      });
       current = await updateRun(current.id, {
         state: 'completed',
         context_snapshot: {
@@ -1183,6 +1317,8 @@ export function createBotRunDispatcher({
       });
       return current;
     } catch (error) {
+      if (controller.signal.aborted) error = controller.signal.reason;
+      error = normalizeBotRunError(error, { cancellationConfirmed: active?.cancelled === true });
       terminalError = error;
       terminalState = active?.cancelled || error?.code === 'bot_run_cancelled'
         ? 'cancelled'
@@ -1199,10 +1335,9 @@ export function createBotRunDispatcher({
       if (active?.assistantMessage) {
         await active.checkpointWrite.catch(() => undefined);
         if (!gatewayPaused) {
-          const projection = assistantResponseProjection(active);
           await checkpointWrite(active, {
             final: true,
-            text: projection.resultText,
+            text: '',
             assistantPhase: active.assistantMessage?.assistant_phase === 'pending'
               ? 'result'
               : null,
@@ -1222,36 +1357,66 @@ export function createBotRunDispatcher({
         return current;
       }
       const executionStarted = Boolean(
-        genericExecutionFromLegacyRun(durable).threadId || active?.promptStarted,
+        hasBotExecutionIdentity(durable)
+        || hasBotExecutionIdentity(claimed)
+        || adapterHandle?.threadId || adapterHandle?.execution?.threadId
+        || adapterHandle?.execution?.segmentId || adapterHandle?.execution?.invocationId
+        || active?.promptStarted
+        || active?.firstProviderText || active?.toolObserved,
       );
+      const sideEffects = !executionStarted && durable
+        ? await hasBotRetrySideEffects(store, durable).catch(() => true)
+        : true;
       const classifiedRetryable = typeof error?.diagnostics?.retryable === 'boolean'
         ? error.diagnostics.retryable
         : null;
-      current = await updateRun(claimed.id, {
+      const failureStage = typeof error?.botRuntimeStage === 'string'
+        ? error.botRuntimeStage
+        : (typeof error?.diagnostics?.stage === 'string'
+          ? error.diagnostics.stage
+          : (executionStarted ? 'execution' : 'startup'));
+      const interruptionKind = error?.code || 'bot_run_failed';
+      const contextSnapshot = {
+        ...(durable?.context_snapshot || claimed.context_snapshot || {}),
         state: terminalState,
-        interruption_kind: error?.code || 'bot_run_failed',
-        context_snapshot: {
-          ...(durable?.context_snapshot || claimed.context_snapshot || {}),
+        failurePhase: executionStarted ? 'execution' : 'startup',
+        failureStage,
+        retryable: terminalState === 'failed'
+          && !executionStarted && !sideEffects && classifiedRetryable !== false,
+      };
+      if (terminalState === 'cancelled') {
+        current = await updateRun(claimed.id, {
           state: terminalState,
-          failurePhase: executionStarted ? 'execution' : 'startup',
-          retryable: terminalState === 'failed'
-            && (classifiedRetryable ?? !executionStarted),
-        },
-        finished_at: nowIso(now),
-      }).catch(() => current);
-      await publish(`run.${terminalState}`, current, {
-        run: channels.publicRun(current),
-        code: error?.code || 'bot_run_failed',
-      }).catch(() => undefined);
+          interruption_kind: interruptionKind,
+          context_snapshot: contextSnapshot,
+          finished_at: nowIso(now),
+        });
+      } else {
+        current = await settleTerminalRun(durable || claimed, {
+          state: terminalState,
+          interruptionKind,
+          contextSnapshot,
+          finishedAt: nowIso(now),
+        });
+      }
+      if (current.state === terminalState) {
+        await publish(`run.${terminalState}`, current, {
+          run: channels.publicRun(current),
+          code: interruptionKind,
+        }).catch(() => undefined);
+      }
       markDiagnostic('terminal', {
         botId: current?.bot_id || claimed.bot_id,
         channelId: current?.channel_id || claimed.channel_id,
         runId: claimed.id,
         outcome: terminalState,
         code: error?.code || 'bot_run_failed',
+        failureStage,
       });
       return current;
     } finally {
+      clearTimeout(deadline);
+      executionControllers.delete(claimed.id);
       if (active) activeExecutions.delete(claimed.id);
       if (runtimeStarted && activeAdapter) await activeAdapter.closeRun({
         runId: claimed.id,
@@ -1320,16 +1485,31 @@ export function createBotRunDispatcher({
         try {
           await executeAndNotify(claimed, { drainIndex, recovered: false });
         } catch (error) {
+          error = normalizeBotRunError(error);
           logger?.warn?.('[BotsDispatcher] claimed run execution failed', {
             code: error?.code || 'bot_run_failed',
             runId: claimed.id,
           });
-          const failed = await updateRun(claimed.id, {
+          const interruptionKind = error?.code || 'bot_run_failed';
+          const failed = await settleTerminalRun(claimed, {
             state: 'failed',
-            interruption_kind: error?.code || 'bot_run_failed',
-            finished_at: nowIso(now),
+            interruptionKind,
+            contextSnapshot: {
+              ...(claimed.context_snapshot || {}),
+              state: 'failed',
+              failurePhase: 'execution',
+              failureStage: 'dispatcher',
+              retryable: false,
+            },
+            finishedAt: nowIso(now),
           }).catch(() => undefined);
           if (failed?.id && TERMINAL_RUN_STATES.has(failed.state)) {
+            if (failed.state === 'failed') {
+              await publish('run.failed', failed, {
+                run: channels.publicRun(failed),
+                code: interruptionKind,
+              }).catch(() => undefined);
+            }
             await notifyRunSettled({ run: failed });
           }
         }
@@ -1406,12 +1586,15 @@ export function createBotRunDispatcher({
       const runId = warmClaim.hit
         ? warmClaim.runId
         : validateUuid(uuid(), 'runId');
+      const acknowledgmentId = normalizedMessage.acknowledgmentId
+        || assistantResponseIdForMessage(normalizedMessage.messageId);
       let admitted;
       try {
         admitted = await timeStage(timing, 'admission', () => channels.enqueueUserMessage({
           principal,
           preflight,
           messageId: normalizedMessage.messageId,
+          acknowledgmentId,
           runId,
           revisionId: revision.id,
           idempotencyKey: normalizedMessage.idempotencyKey,
@@ -1442,6 +1625,14 @@ export function createBotRunDispatcher({
         runId: run?.id || null,
         created: admitted.created === true,
       });
+      if (admitted.acknowledgment) {
+        markDiagnostic('acknowledgment_ready', {
+          botId: run?.bot_id || preflight.bot.id,
+          channelId: preflight.channel.id,
+          messageId: admitted.acknowledgment.id,
+          runId: run?.id || null,
+        });
+      }
       if (streamAccessLeases && run) {
         streamAccessLeases.establish({
           principal,
@@ -1462,6 +1653,25 @@ export function createBotRunDispatcher({
               messageId: admitted.message?.id || normalizedMessage.messageId,
             },
           ));
+          if (admitted.acknowledgment) {
+            void publish('message.created', run, {
+              message: admitted.acknowledgment,
+              run: admitted.run,
+            }, principal?.id).then(() => {
+              markDiagnostic('acknowledgment_published', {
+                botId: run?.bot_id || preflight.bot.id,
+                channelId: preflight.channel.id,
+                messageId: admitted.acknowledgment.id,
+                runId: run?.id || null,
+              });
+            }).catch((error) => logger?.warn?.(
+              '[BotsDispatcher] acknowledgment publication failed',
+              {
+                code: error?.code || 'bot_event_publish_failed',
+                messageId: admitted.acknowledgment.id,
+              },
+            ));
+          }
         }
         if (requiresSharedPreparation) {
           void sharedFileService.prepareMessage({ messageId: normalizedMessage.messageId })
@@ -1481,6 +1691,7 @@ export function createBotRunDispatcher({
       return Object.freeze({
         created: admitted.created,
         message: admitted.message,
+        acknowledgment: admitted.acknowledgment,
         run: admitted.run,
       });
     },
@@ -1543,7 +1754,14 @@ export function createBotRunDispatcher({
       const normalizedRunId = validateUuid(runId, 'runId');
       const run = await currentRun(normalizedRunId);
       if (!run) fail('Bot run not found', 'bot_run_not_found', 404);
-      await channels.authorizeChannelSend({ principal, channelId: run.channel_id });
+      try {
+        await channels.authorizeChannelSend({ principal, channelId: run.channel_id });
+      } catch (error) {
+        if (error?.statusCode === 403) {
+          error.details = Object.freeze({ retryReason: 'access_revoked' });
+        }
+        throw error;
+      }
       const retried = await store.retryRun({
         runId: normalizedRunId,
         actorUserId: validateUuid(principal?.id, 'principal.id'),
@@ -1636,6 +1854,7 @@ export function createBotRunDispatcher({
         await cancelPendingActions(run);
         return channels.publicRun(run);
       }
+      executionControllers.get(run.id)?.abort(new BotRunDispatcherError('Bot run was cancelled', 'bot_run_cancelled', 409));
       const active = activeExecutions.get(run.id);
       if (active) {
         active.cancelled = true;
@@ -1676,6 +1895,9 @@ export function createBotRunDispatcher({
 
     async shutdown() {
       shuttingDown = true;
+      for (const controller of executionControllers.values()) {
+        controller.abort(new BotRunDispatcherError('Bot runtime shut down', 'bot_run_interrupted', 503));
+      }
       await warmRuntimeLeases?.shutdown();
       for (const active of activeExecutions.values()) {
         active.cancelled = true;

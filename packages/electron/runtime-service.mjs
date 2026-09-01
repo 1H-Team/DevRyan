@@ -103,7 +103,12 @@ const validateDesktopHost = (value) => {
     || (value.leaseId !== null && !isUuid(value.leaseId))
     || (value.expiresAt !== null && typeof value.expiresAt !== 'string')
     || !Array.isArray(value.capabilities)
-    || value.capabilities.some((item) => !['focus', 'notifications', 'browser_cdp'].includes(item))) {
+    || value.capabilities.some((item) => ![
+      'focus',
+      'notifications',
+      'browser_cdp',
+      'browser_observation',
+    ].includes(item))) {
     fail('Runtime service descriptor is invalid', 'runtime_service_descriptor_invalid');
   }
   return Object.freeze({

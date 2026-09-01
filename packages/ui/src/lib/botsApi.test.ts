@@ -1,8 +1,27 @@
 import { describe, expect, test } from 'bun:test';
 
-import { BotsApiError, createBotsApi, type BotRoutineContract } from './botsApi';
+import { BotsApiError, createBotsApi, getBotRetryReason, type BotRoutineContract } from './botsApi';
 
 describe('Production Bots HTTP client', () => {
+  test('aborts pending computer input HTTP without resending the command', async () => {
+    let requests = 0;
+    const controller = new AbortController();
+    const api = createBotsApi({ fetchImpl: async (_input, init) => {
+      requests += 1;
+      expect(init?.signal).toBe(controller.signal);
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true });
+      });
+    } });
+    const command = api.sendHumanComputerCommand('bot', {
+      viewId: 'view', leaseId: 'lease', command: 'input', args: { events: [] },
+    }, controller.signal);
+    const failure = command.catch((error: unknown) => error);
+    controller.abort();
+    expect(await failure).toBeInstanceOf(BotsApiError);
+    expect(requests).toBe(1);
+  });
+
   test('adds same-origin credentials and CSRF to mutations without changing the payload', async () => {
     const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
     const api = createBotsApi({
@@ -512,4 +531,16 @@ describe('Production Bots HTTP client', () => {
     expect(String(calls[2].input)).toBe('/api/bots/bot%2Fone/purge/retry');
     expect(JSON.parse(String(calls[2].init?.body))).toEqual({ resourceIds: ['channels'] });
   });
+});
+
+ test('accepts only allowlisted retry refusal reasons from the server', async () => {
+  for (const [reason, expected] of [['execution_started', 'execution_started'],
+    ['revision_changed', 'revision_changed'], ['access_revoked', 'access_revoked'],
+    ['concurrent_active_run', 'concurrent_active_run'], ['untrusted text', null]]) {
+    const api = createBotsApi({ fetchImpl: async () => new Response(JSON.stringify({
+      error: 'Retry refused', code: 'bot_run_retry_unavailable', details: { retryReason: reason },
+    }), { status: 409 }) });
+    const error = await api.retryRun('run-1').catch((caught: unknown) => caught);
+    expect(getBotRetryReason(error)).toBe(expected);
+  }
 });

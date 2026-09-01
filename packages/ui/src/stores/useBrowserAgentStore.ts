@@ -4,11 +4,14 @@ import {
   invokeDesktop,
   isDesktopLocalOriginActive,
   isElectronShell,
+  isStandaloneWebRuntime,
 } from '@/lib/desktop';
+import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { resolveRootSessionID } from '@/lib/sessionLineage';
 import { useUIStore } from '@/stores/useUIStore';
 
 export type BrowserAgentLease = {
+  transport: 'native' | 'stream';
   leaseId: string;
   surfaceId: string;
   rootSessionId: string;
@@ -134,9 +137,10 @@ const sanitizeLease = (value: unknown): BrowserAgentLease | null => {
   const candidate = value as Record<string, unknown>;
   const leaseId = normalizeRequiredString(candidate.leaseId, MAX_ID_LENGTH);
   const rootSessionId = normalizeRequiredString(candidate.rootSessionId, MAX_ID_LENGTH);
-  const opencodeSessionID = normalizeRequiredString(candidate.opencodeSessionID, MAX_ID_LENGTH);
-  const directory = normalizeRequiredString(candidate.directory, MAX_DIRECTORY_LENGTH);
-  if (!leaseId || !rootSessionId || !opencodeSessionID || !directory) return null;
+  const opencodeSessionID = normalizeOptionalString(candidate.opencodeSessionID, MAX_ID_LENGTH);
+  const directory = normalizeOptionalString(candidate.directory, MAX_DIRECTORY_LENGTH);
+  if (!leaseId || !rootSessionId) return null;
+  const transport = opencodeSessionID && directory ? 'native' : 'stream';
 
   const lastActivityAt = typeof candidate.lastActivityAt === 'number'
     && Number.isFinite(candidate.lastActivityAt)
@@ -155,6 +159,7 @@ const sanitizeLease = (value: unknown): BrowserAgentLease | null => {
   }
 
   return {
+    transport,
     leaseId,
     surfaceId: normalizeOptionalString(candidate.surfaceId, MAX_ID_LENGTH),
     rootSessionId,
@@ -194,7 +199,8 @@ export const sanitizeBrowserAgentLeaseSnapshot = (value: unknown): BrowserAgentL
 };
 
 const leasesEqual = (left: BrowserAgentLease, right: BrowserAgentLease): boolean => (
-  left.leaseId === right.leaseId
+  left.transport === right.transport
+  && left.leaseId === right.leaseId
   && left.rootSessionId === right.rootSessionId
   && left.opencodeSessionID === right.opencodeSessionID
   && left.directory === right.directory
@@ -377,6 +383,47 @@ export const claimBrowserAgentWindowContexts = async (
 };
 
 let listenersInstalled = false;
+let remoteRefreshPromise: Promise<void> | null = null;
+
+const resetBrowserAgentSnapshot = (): void => {
+  useBrowserAgentStore.setState({
+    revision: -1,
+    leasesById: new Map(),
+    leaseIds: EMPTY_LEASE_IDS,
+    leaseIdsByRoot: new Map(),
+    activeLeaseCount: 0,
+    observedLeaseId: null,
+  });
+  useUIStore.getState().pruneBrowserLeaseTabs(EMPTY_LEASE_IDS);
+};
+
+export const refreshRemoteBrowserAgentLeases = (): Promise<void> => {
+  if (!isStandaloneWebRuntime()) return Promise.resolve();
+  if (remoteRefreshPromise) return remoteRefreshPromise;
+  remoteRefreshPromise = fetch('/api/browser/agent-leases', {
+    credentials: 'include',
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+  }).then(async (response) => {
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) resetBrowserAgentSnapshot();
+      return;
+    }
+    const snapshot = await response.json();
+    const before = useBrowserAgentStore.getState();
+    // A principal can change while the server-wide observation revision stays
+    // constant. Reset only the revision gate before applying the authoritative
+    // owner-filtered replacement.
+    useBrowserAgentStore.setState({ revision: -1 });
+    applyAuthoritativeLeaseSnapshot(snapshot);
+    if (useBrowserAgentStore.getState().revision < 0) {
+      useBrowserAgentStore.setState({ revision: before.revision });
+    }
+  }).catch(() => undefined).finally(() => {
+    remoteRefreshPromise = null;
+  });
+  return remoteRefreshPromise;
+};
 
 const applyAuthoritativeLeaseSnapshot = (snapshot: unknown): void => {
   const before = useBrowserAgentStore.getState();
@@ -391,8 +438,19 @@ const applyAuthoritativeLeaseSnapshot = (snapshot: unknown): void => {
 };
 
 export const ensureBrowserAgentListeners = (): void => {
-  if (listenersInstalled || typeof window === 'undefined' || !isLocalElectronRenderer()) return;
+  if (listenersInstalled || typeof window === 'undefined') return;
+  if (!isLocalElectronRenderer() && !isStandaloneWebRuntime()) return;
   listenersInstalled = true;
+
+  if (isStandaloneWebRuntime()) {
+    subscribeOpenchamberEvents((event) => {
+      if (event.type === 'stream-ready' || event.type === 'browser-agent-leases-changed') {
+        void refreshRemoteBrowserAgentLeases();
+      }
+    });
+    void refreshRemoteBrowserAgentLeases();
+    return;
+  }
 
   window.addEventListener('browser-agent-leases', (event: Event) => {
     applyAuthoritativeLeaseSnapshot((event as CustomEvent<unknown>).detail);

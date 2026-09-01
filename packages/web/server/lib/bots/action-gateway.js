@@ -6,9 +6,13 @@ import {
 } from '@openchamber/bots-runtime';
 
 import { publicBotActionAttempt } from './approval-service.js';
-import { validateBotBrowserAction } from './browser-service.js';
+import {
+  safeBotBrowserAuditRemoteCode,
+  validateBotBrowserAction,
+} from './browser-service.js';
 import { decryptBotJson, encryptBotJson } from './encryption.js';
 import { guardBotRoutineAction } from './routine-runtime.js';
+import { createBotFailureRecorder } from './failure-diagnostics.js';
 import {
   assertExactObject,
   validateBoundedJsonObject,
@@ -18,7 +22,12 @@ import {
 } from './validation.js';
 
 const DEPLOYMENT_KEY_ID = 'deployment-v1';
-const ACTIVE_ACTION_RUN_STATES = new Set(['running', 'waiting_approval', 'needs_reconciliation']);
+const ACTIVE_ACTION_RUN_STATES = new Set([
+  'running',
+  'waiting_approval',
+  'waiting_control',
+  'needs_reconciliation',
+]);
 const ACTION_RESULT_MAX_BYTES = 192 * 1024;
 const MAX_SAFE_READ_ATTEMPTS = 3;
 const RESERVED_LIMIT_FIELDS = new Set(['allowedOperations', 'decisionExpiresAt']);
@@ -235,14 +244,17 @@ export function createBotActionGateway({
   eventStream,
   encryption,
   audit = async () => {},
+  recordDiagnostic = () => {},
   onRunSettled = async () => {},
   now = () => new Date(),
   uuid = randomUUID,
 } = {}) {
+  const recordFailure = createBotFailureRecorder(recordDiagnostic);
   if (!store?.repositories?.bot_action_attempts || !store.repositories?.bot_runs
     || !store.repositories?.bots || !store.repositories?.bot_channels
     || !store.repositories?.bot_revisions || !store.repositories?.bot_messages
     || !channels || typeof channels.audienceForChannel !== 'function'
+    || typeof channels.publicRun !== 'function'
     || !authorization || typeof authorization.requireOperator !== 'function'
     || typeof authorization.requireActiveMembership !== 'function'
     || !policyEngine || typeof policyEngine.classify !== 'function'
@@ -250,6 +262,7 @@ export function createBotActionGateway({
     || !approvalService || typeof approvalService.notifyPending !== 'function'
     || typeof approvalService.waitForDecision !== 'function'
     || !browserService || typeof browserService.executeAction !== 'function'
+    || typeof browserService.waitForControlRelease !== 'function'
     || !connectorRegistry || typeof connectorRegistry.execute !== 'function'
     || !evidenceService || typeof evidenceService.capture !== 'function'
     || !eventStream || typeof eventStream.publish !== 'function'
@@ -574,6 +587,14 @@ export function createBotActionGateway({
     payload: { action: publicBotActionAttempt(row), ...extra },
   });
 
+  const publishRun = async (kind, run, context) => eventStream.publish({
+    kind,
+    botId: run.bot_id,
+    channelId: context.channel.id,
+    audienceUserIds: await channels.audienceForChannel(context.channel.id),
+    payload: { run: channels.publicRun(run) },
+  });
+
   const auditAction = (actionName, result, row, context, metadata = {}) => audit({
     principal: context.principal,
     botId: row.bot_id,
@@ -725,6 +746,7 @@ export function createBotActionGateway({
   };
 
   const executeBrowser = (row, context, decrypted, decision, signal) => browserService.executeAction({
+    actionAttemptId: row.id,
     run: context.run,
     bot: context.bot,
     ownerUserId: context.channel.owner_user_id,
@@ -767,7 +789,8 @@ export function createBotActionGateway({
   };
 
   const executeApproved = async (row, context, decision, request, descriptor, signal) => {
-    if (Date.parse(row.decision_expires_at) <= now().getTime()) {
+    const resumingControlWait = row.state === 'waiting_control';
+    if (!resumingControlWait && Date.parse(row.decision_expires_at) <= now().getTime()) {
       await releaseQuotas(row, 'expired').catch(() => undefined);
       row = await updateAction(row, {
         state: 'failed',
@@ -776,7 +799,7 @@ export function createBotActionGateway({
       });
       fail('Bot action policy decision has expired', 'bot_policy_expired', 410);
     }
-    if (row.matcher_version === 2) {
+    if (!resumingControlWait && row.matcher_version === 2) {
       try {
         const liveContext = await loadContext({
           botId: row.bot_id,
@@ -845,8 +868,27 @@ export function createBotActionGateway({
         throw error;
       }
     }
+    if (resumingControlWait) {
+      await browserService.waitForControlRelease({
+        run: context.run,
+        bot: context.bot,
+        ownerUserId: context.channel.owner_user_id,
+        signal,
+      });
+    }
     try {
-      row = await updateAction(row, { state: 'executing', started_at: now().toISOString() });
+      row = await updateAction(row, {
+        state: 'executing',
+        started_at: row.started_at || now().toISOString(),
+      });
+      if (resumingControlWait) {
+        const resumedRun = await updateRunState(row.run_id, 'running').catch(() => undefined);
+        if (resumedRun) await publishRun('run.control_resumed', resumedRun, context);
+        await publishAction('action.control_resumed', row, context);
+        await auditAction('bot.action.control_resumed', 'success', row, context, {
+          phase: 'pre_execution_control_fence',
+        });
+      }
     } catch (error) {
       if (error?.code !== 'bot_revision_conflict') throw error;
       const winner = await store.repositories.bot_action_attempts.get({ id: row.id });
@@ -854,11 +896,17 @@ export function createBotActionGateway({
         const result = await withKey((key) => decryptResult(key, winner));
         return Object.freeze({ action: publicBotActionAttempt(winner), receipt: publicReceipt(winner), result });
       }
+      if (winner?.state === 'cancelled') {
+        fail('Bot action was cancelled with its run', 'bot_run_cancelled', 409);
+      }
       fail('Bot action is already executing', 'bot_action_in_progress', 409);
     }
     const decrypted = await withKey((key) => decryptArgs(key, row));
     let beforeEvidence = null;
-    if (decision.retainEvidence) {
+    const retainedBeforeEvidenceIds = resumingControlWait
+      ? (row.execution_receipt?.evidenceObjectIds || [])
+      : [];
+    if (decision.retainEvidence && retainedBeforeEvidenceIds.length === 0) {
       try {
         beforeEvidence = await evidenceService.capture({
           retain: true,
@@ -883,25 +931,78 @@ export function createBotActionGateway({
 
     let execution;
     let executionError = null;
+    let controlWaitCount = 0;
     const attempts = decision.operationKind === 'read'
       ? Number(decrypted.limits.maxAttempts || 1)
       : 1;
-    for (let attempt = 1; attempt <= attempts; attempt += 1) {
-      try {
-        execution = row.tool === 'browser'
-          ? await executeBrowser(row, context, decrypted, decision, signal)
-          : await executeConnector(row, context, decrypted, decision, signal);
-        executionError = null;
-        break;
-      } catch (error) {
-        executionError = error;
-        const retryableRead = decision.operationKind === 'read'
-          && error?.transportUncertain === true && attempt < attempts;
-        if (!retryableRead) break;
+    while (true) {
+      for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        try {
+          execution = row.tool === 'browser'
+            ? await executeBrowser(row, context, decrypted, decision, signal)
+            : await executeConnector(row, context, decrypted, decision, signal);
+          executionError = null;
+          break;
+        } catch (error) {
+          executionError = error;
+          const retryableRead = decision.operationKind === 'read'
+            && error?.transportUncertain === true && attempt < attempts;
+          if (!retryableRead) break;
+        }
       }
+      if (executionError?.code !== 'bot_browser_control_held'
+        || executionError?.preExecution !== true) break;
+      controlWaitCount += 1;
+      const evidenceObjectIds = [
+        ...retainedBeforeEvidenceIds,
+        ...(beforeEvidence ? [beforeEvidence.id] : []),
+      ];
+      row = await updateAction(row, {
+        state: 'waiting_control',
+        execution_receipt: {
+          version: 1,
+          operationKind: decision.operationKind,
+          evidenceObjectIds,
+          failureCode: null,
+        },
+      });
+      const waitingRun = await updateRunState(row.run_id, 'waiting_control');
+      await publishRun('run.waiting_control', waitingRun, context);
+      await publishAction('action.waiting_control', row, context);
+      await auditAction('bot.action.waiting_control', 'success', row, context, {
+        phase: 'pre_execution_control_fence',
+        retryable: true,
+        attemptCount: controlWaitCount,
+        remoteCode: executionError.remoteCode || null,
+      });
+      await browserService.waitForControlRelease({
+        run: { ...context.run, state: 'waiting_control' },
+        bot: context.bot,
+        ownerUserId: context.channel.owner_user_id,
+        signal,
+      });
+      row = await updateAction(row, { state: 'executing' });
+      const resumedRun = await updateRunState(row.run_id, 'running').catch(() => undefined);
+      if (resumedRun) await publishRun('run.control_resumed', resumedRun, context);
+      await publishAction('action.control_resumed', row, context);
+      await auditAction('bot.action.control_resumed', 'success', row, context, {
+        phase: 'pre_execution_control_fence',
+        attemptCount: controlWaitCount,
+      });
+      executionError = null;
     }
 
     if (executionError) {
+      recordFailure({
+        event: 'bot.action.failed', run: context.run, operationId: row.id,
+        stage: 'action_execution', error: executionError,
+      });
+      if (signal?.aborted || executionError?.code === 'bot_run_cancelled') {
+        const winner = await store.repositories.bot_action_attempts.get({ id: row.id });
+        if (winner?.state === 'cancelled') {
+          fail('Bot action was cancelled with its run', 'bot_run_cancelled', 409);
+        }
+      }
       const unknown = decision.operationKind === 'write'
         && executionError?.transportUncertain === true;
       row = await updateAction(row, {
@@ -944,6 +1045,7 @@ export function createBotActionGateway({
       await publishAction('action.failed', row, context);
       await auditAction('bot.action.failed', 'failure', row, context, {
         failureCode: executionError?.code || 'bot_action_execution_failed',
+        remoteCode: safeBotBrowserAuditRemoteCode(executionError?.remoteCode),
       });
       throw executionError;
     }
@@ -983,7 +1085,11 @@ export function createBotActionGateway({
       value: { version: 1, result: execution.result ?? {} },
       associatedData: actionResultAssociatedData(row.id, row.action_hash),
     }));
-    const evidenceObjectIds = [beforeEvidence?.id, afterEvidence?.id].filter(Boolean);
+    const evidenceObjectIds = [
+      ...retainedBeforeEvidenceIds,
+      beforeEvidence?.id,
+      afterEvidence?.id,
+    ].filter(Boolean);
     row = await updateAction(row, {
       state: 'succeeded',
       execution_receipt: {
@@ -1151,6 +1257,9 @@ export function createBotActionGateway({
     }
     if (existing.state === 'executing') {
       fail('Bot action is already executing', 'bot_action_in_progress', 409);
+    }
+    if (existing.state === 'waiting_control') {
+      return executeApproved(existing, context, decision, request, descriptor, signal);
     }
     if (existing.state === 'succeeded') {
       const result = await withKey((key) => decryptResult(key, existing));

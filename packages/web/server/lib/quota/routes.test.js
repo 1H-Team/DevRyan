@@ -1,4 +1,7 @@
 import express from 'express';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import request from '../../test-supertest.js';
@@ -251,11 +254,21 @@ describe('Claude quota runtime resolution', () => {
 
   it('passes the active managed OpenCode Anthropic proxy URL to the provider', async () => {
     const app = express();
+    const binDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-quota-path-'));
+    const claudeExecutable = path.join(binDirectory, 'claude');
+    fs.writeFileSync(claudeExecutable, '#!/bin/sh\n', { mode: 0o755 });
+    fs.chmodSync(claudeExecutable, 0o755);
+    const resolveClaudeCodeLaunch = vi.fn(({ pathValue }) => ({
+      executable: path.join(pathValue, 'claude'),
+      pathValue,
+      source: 'path',
+    }));
     const fetchQuotaForProvider = vi.fn(async (_providerId, options) => ({
       providerId: 'claude',
       proxyBaseUrl: options.claudeProxyBaseUrl,
       forceRefresh: options.forceRefresh,
       isExternalRuntime: options.isExternalRuntime,
+      claudeExecutable: options.claudeCodeLaunch?.executable,
     }));
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
@@ -274,6 +287,8 @@ describe('Claude quota runtime resolution', () => {
       buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:4096${requestPath}`,
       getOpenCodeAuthHeaders: () => ({ Authorization: 'Basic redacted' }),
       isExternalOpenCode: () => false,
+      buildAugmentedPath: () => binDirectory,
+      resolveClaudeCodeLaunch,
     });
 
     const response = await request(app).get('/api/quota/claude?refresh=true').expect(200);
@@ -282,12 +297,15 @@ describe('Claude quota runtime resolution', () => {
       proxyBaseUrl: 'http://127.0.0.1:55201',
       forceRefresh: true,
       isExternalRuntime: false,
+      claudeExecutable,
     });
     expect(fetchSpy).toHaveBeenCalledWith(
       'http://127.0.0.1:4096/config/providers',
       expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Basic redacted' }) }),
     );
+    expect(resolveClaudeCodeLaunch).toHaveBeenCalledWith({ pathValue: binDirectory });
     fetchSpy.mockRestore();
+    fs.rmSync(binDirectory, { recursive: true, force: true });
   });
 
   it('does not query or resolve a local proxy for external OpenCode', async () => {
@@ -296,6 +314,7 @@ describe('Claude quota runtime resolution', () => {
       providerId: 'claude',
       proxyBaseUrl: options.claudeProxyBaseUrl,
       isExternalRuntime: options.isExternalRuntime,
+      claudeCodeLaunch: options.claudeCodeLaunch,
     }));
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     registerQuotaRoutes(app, {
@@ -312,6 +331,7 @@ describe('Claude quota runtime resolution', () => {
       providerId: 'claude',
       proxyBaseUrl: null,
       isExternalRuntime: true,
+      claudeCodeLaunch: null,
     });
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();

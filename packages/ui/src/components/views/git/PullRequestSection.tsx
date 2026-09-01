@@ -1497,6 +1497,13 @@ export const PullRequestSection: React.FC<{
     setIsEditingPr(false);
   }, [branch, pr]);
 
+  const openCurrentPullRequest = React.useCallback(() => {
+    if (pr?.state === 'closed' || pr?.state === 'merged') {
+      startNextPr();
+    }
+    setPanelView((current) => nextPullRequestPanelView(current, 'show-current'));
+  }, [pr?.state, startNextPr]);
+
   const createPr = React.useCallback(async () => {
     if (!github?.prCreate) {
       toast.error(t('gitView.pr.toast.githubApiUnavailable'));
@@ -1739,33 +1746,63 @@ export const PullRequestSection: React.FC<{
   const containerClassName = 'border-0 bg-transparent rounded-none';
   const headerClassName = 'px-0 py-3 border-b border-border/40 flex flex-col gap-1';
   const bodyClassName = 'flex flex-col gap-3 py-3';
+  const currentBranchActionLabel = pr?.state === 'open'
+    ? t('gitView.pr.actions.viewCurrentPr', { number: pr.number })
+    : t('gitView.pr.actions.createPr');
+  const isCurrentBranchActionLoading = canShow && !isInitialStatusResolved;
+  const currentBranchActionButton = (
+    <Button
+      size="sm"
+      className="h-7 shrink-0 gap-1.5 px-2"
+      onClick={openCurrentPullRequest}
+      disabled={!canShow || isCurrentBranchActionLoading}
+    >
+      {isCurrentBranchActionLoading
+        ? <RiLoader4Line className="size-4 animate-spin" />
+        : <RiGitPullRequestLine className="size-4" />}
+      {currentBranchActionLabel}
+    </Button>
+  );
 
   return (
     <section className={containerClassName}>
       {panelView === 'list' ? (
         <div className="flex flex-col gap-3 py-3">
           <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-3">
-            <div className="min-w-0">
-              <h3 className="typography-ui-header font-semibold text-foreground">{t('gitView.pr.list.title')}</h3>
-              <p className="typography-micro text-muted-foreground">{t('gitView.pr.list.description')}</p>
+            <h3 className="min-w-0 typography-ui-header font-semibold text-foreground">{t('gitView.pr.list.title')}</h3>
+            <div className="flex shrink-0 items-center gap-1">
+              {canShow ? currentBranchActionButton : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="inline-flex"
+                      tabIndex={0}
+                      aria-label={t('gitView.pr.actions.creationUnavailableAria')}
+                    >
+                      {currentBranchActionButton}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent><p>{t('gitView.pullRequest.availableOnFeatureBranches')}</p></TooltipContent>
+                </Tooltip>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 px-0"
+                    onClick={() => void loadPullRequestList(1, true)}
+                    disabled={isLoadingPullRequestList}
+                    aria-label={t('gitView.pr.list.refreshAria')}
+                  >
+                    {isLoadingPullRequestList
+                      ? <RiLoader4Line className="size-4 animate-spin" />
+                      : <RiRefreshLine className="size-4" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent><p>{t('gitView.pr.list.refresh')}</p></TooltipContent>
+              </Tooltip>
             </div>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 px-0"
-                  onClick={() => void loadPullRequestList(1, true)}
-                  disabled={isLoadingPullRequestList}
-                  aria-label={t('gitView.pr.list.refreshAria')}
-                >
-                  {isLoadingPullRequestList
-                    ? <RiLoader4Line className="size-4 animate-spin" />
-                    : <RiRefreshLine className="size-4" />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent><p>{t('gitView.pr.list.refresh')}</p></TooltipContent>
-            </Tooltip>
           </div>
 
           <div className="relative">

@@ -285,6 +285,11 @@ export async function handleProxyBridgeMessage(
             : `/${requestPath.trim()}`
           : '/';
 
+      const isSessionCreation = normalizedMethod === 'POST' && /^\/session\/?$/.test(normalizedPath.split('?')[0]);
+      const suppliedCreationBudget = Number(Object.entries(headers ?? {}).find(([name]) => name.toLowerCase() === 'x-devryan-creation-budget-ms')?.[1]);
+      const creationDeadlineAt = Date.now() + (Number.isFinite(suppliedCreationBudget) && suppliedCreationBudget > 0
+        ? Math.min(120_000, suppliedCreationBudget) : 120_000);
+
       const localFsResponse = await deps.tryHandleLocalFsProxy(normalizedMethod, normalizedPath);
       if (localFsResponse) {
         return { id, type, success: true, data: localFsResponse };
@@ -303,10 +308,25 @@ export async function handleProxyBridgeMessage(
         }
       }
       recordSessionControl(normalizedMethod, normalizedPath, decodedBody);
+      const recoveryResult = await getVsCodeHarnessRuntime()?.getPrimaryRecoveryRuntime?.()?.handleRequest(
+        normalizedMethod, normalizedPath, decodedBody,
+      );
+      if (recoveryResult) return { id, type, success: true, data: {
+        status: recoveryResult.status, headers: { 'content-type': 'application/json' },
+        bodyBase64: deps.base64EncodeUtf8(JSON.stringify(recoveryResult.body)),
+      } };
 
-      const apiUrl = await waitForApiUrl(ctx?.manager);
+      const apiUrl = await waitForApiUrl(ctx?.manager, isSessionCreation ? Math.max(0, Math.min(30_000, creationDeadlineAt - Date.now())) : undefined);
+      const remainingCreationMs = creationDeadlineAt - Date.now();
+      if (isSessionCreation && remainingCreationMs <= 0) {
+        return { id, type, success: true, data: { status: 408, headers: { 'content-type': 'application/json' },
+          bodyBase64: deps.base64EncodeUtf8(JSON.stringify({ error: 'Session creation deadline elapsed before dispatch.',
+            code: 'session_create_not_dispatched', retryable: false })) } };
+      }
       if (!apiUrl) {
-        const data = deps.buildUnavailableApiResponse();
+        const data = isSessionCreation ? { status: 503, headers: { 'content-type': 'application/json' },
+          bodyBase64: deps.base64EncodeUtf8(JSON.stringify({ error: 'OpenCode is restarting',
+            code: 'session_create_restart_rejected', restarting: true, retryable: true })) } : deps.buildUnavailableApiResponse();
         return { id, type, success: true, data };
       }
 
@@ -343,6 +363,7 @@ export async function handleProxyBridgeMessage(
         const response = await fetch(targetUrl, {
           method: normalizedMethod,
           headers: requestHeaders,
+          ...(isSessionCreation ? { signal: AbortSignal.timeout(Math.max(1, Math.floor(remainingCreationMs))) } : {}),
           body:
             forwardedBodyBytes && normalizedMethod !== 'GET' && normalizedMethod !== 'HEAD'
               ? forwardedBodyBytes
@@ -350,6 +371,10 @@ export async function handleProxyBridgeMessage(
         });
 
         let arrayBuffer = await response.arrayBuffer();
+        if (isSessionCreation && response.status >= 500) {
+          arrayBuffer = new TextEncoder().encode(JSON.stringify({ error: 'Session creation outcome is unknown. A session may already exist.',
+            code: 'session_create_outcome_unknown', retryable: false })).buffer;
+        }
         if (
           response.ok
           && normalizedMethod === 'GET'
@@ -430,6 +455,7 @@ export async function handleProxyBridgeMessage(
       } catch (error) {
         const body = JSON.stringify({
           error: error instanceof Error ? error.message : 'Failed to reach OpenCode API',
+          ...(isSessionCreation ? { code: 'session_create_outcome_unknown', retryable: false } : {}),
         });
         const data: ApiProxyResponsePayload = {
           status: 502,
@@ -472,6 +498,13 @@ export async function handleProxyBridgeMessage(
       if (admissionFailure) {
         return { id, type, success: true, data: admissionFailure };
       }
+      const recoveryResult = await getVsCodeHarnessRuntime()?.getPrimaryRecoveryRuntime?.()?.handleRequest(
+        'POST', normalizedPath, decodeJsonBody(bodyText, 'text'),
+      );
+      if (recoveryResult) return { id, type, success: true, data: {
+        status: recoveryResult.status, headers: { 'content-type': 'application/json' },
+        bodyBase64: deps.base64EncodeUtf8(JSON.stringify(recoveryResult.body)),
+      } };
 
       const base = `${apiUrl.replace(/\/+$/, '')}/`;
       const targetUrl = new URL(normalizedPath.replace(/^\/+/, ''), base).toString();

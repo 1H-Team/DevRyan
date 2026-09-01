@@ -100,6 +100,25 @@ describe('session-partitioned diagnostic journal', () => {
     await journal.close();
   });
 
+  test('coalesces unattributed property-free sync records and persists the trim count', async () => {
+    const directory = await temporaryDirectory();
+    const journal = createJournal(directory);
+    journal.enqueue({ type: 'open_code_event', at: 1, payload: { type: 'sync' } });
+    journal.enqueue({ type: 'open_code_event', at: 2, payload: { type: 'sync' } });
+    await journal.flush();
+
+    expect(await journal.readRecords()).toMatchObject([{
+      at: 2,
+      coalesced: 2,
+      payload: { type: 'sync' },
+    }]);
+    const runtimeManifest = JSON.parse(
+      await fs.readFile(path.join(directory, 'runtime/manifest.json'), 'utf8'),
+    );
+    expect(runtimeManifest.coalescedRuntimeSyncs).toBe(1);
+    await journal.close();
+  });
+
   test('drops streaming deltas and coalesces part updates last-write-wins', async () => {
     const directory = await temporaryDirectory();
     const journal = createJournal(directory);

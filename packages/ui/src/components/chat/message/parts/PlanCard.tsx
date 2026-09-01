@@ -266,9 +266,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
       const title = extractPlanTitle(planText);
       const action: PlanSendAction = 'implement';
 
-      const visible = await renderMagicPrompt(getPlanSendVisiblePromptId(action), {
-        plan_title: title,
-      });
+      const visible = await renderMagicPrompt(getPlanSendVisiblePromptId(action));
       const instructions = await renderMagicPrompt(
         getPlanSendInstructionsPromptId(action),
         buildPlanSendPromptVariables({ action, title, path: planPath }),

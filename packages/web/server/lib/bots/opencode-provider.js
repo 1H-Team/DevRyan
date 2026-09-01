@@ -3,15 +3,23 @@ import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { classifyProviderTransportFailure } from '@openchamber/orchestration-runtime';
 
 import { BOT_GATEWAY_OPERATIONS } from './gateway-host.js';
+import { createBotFailureRecorder } from './failure-diagnostics.js';
+import { botRequestSignal, withBotAbort } from './request-lifetime.js';
 import {
-  isPublicBotAssistantTextPart,
-  sanitizeBotConversationalText,
+  sanitizeBotConversationalTextParts,
 } from './response-sanitizer.js';
 import { assertExactObject, validateBoundedJsonObject, validateBoundedString, validateUuid } from './validation.js';
 
 const WORKSPACE_DIRECTORY = '/workspace';
 const DEFAULT_READY_TIMEOUT_MS = 15_000;
 const ATTACHMENT_DELIVERY_MODES = new Set(['auto', 'compatibility']);
+const TRANSIENT_OAUTH_READINESS_FAILURES = new Set([
+  'request_timeout',
+  'response_header_timeout',
+  'stream_idle_timeout',
+  'connection_failure',
+  'provider_queue_timeout',
+]);
 
 const defaultSubscribeToEvents = async ({ client, signal, onEvent }) => {
   if (typeof client?.event?.subscribe !== 'function') return;
@@ -71,12 +79,16 @@ const safeUpstreamFailureClass = (error) => {
 
 const unwrap = (result, operation, { allowEmpty = false, logger = null } = {}) => {
   if (result?.error) {
+    const failureClass = safeUpstreamFailureClass(result.error);
     logger?.warn?.('[BotsOpenCode] scoped request rejected', {
       operation,
       statusCode: Number.isInteger(result.response?.status) ? result.response.status : null,
       upstreamError: safeUpstreamErrorName(result.error),
-      failureClass: safeUpstreamFailureClass(result.error),
+      failureClass,
     });
+    if (failureClass === 'provider_authentication') {
+      fail(`${operation} failed`, 'bot_opencode_provider_authentication', 401);
+    }
     fail(`${operation} failed`, 'bot_opencode_request_failed', 502);
   }
   if (!allowEmpty && (result?.data === undefined || result?.data === null)) {
@@ -85,19 +97,20 @@ const unwrap = (result, operation, { allowEmpty = false, logger = null } = {}) =
   return result?.data;
 };
 
-const defaultWaitForReady = async ({ endpoint, fetchImpl, timeoutMs = DEFAULT_READY_TIMEOUT_MS }) => {
+const defaultWaitForReady = async ({ endpoint, fetchImpl, timeoutMs = DEFAULT_READY_TIMEOUT_MS, signal }) => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    signal?.throwIfAborted();
     try {
       const response = await fetchImpl(`${endpoint}/global/health`, {
         headers: { accept: 'application/json' },
         redirect: 'error',
-        signal: AbortSignal.timeout(1_000),
+        signal: botRequestSignal(signal, null, 1_000),
       });
       if (response.ok) return;
     } catch {
     }
-    await delay(200);
+    await delay(200, undefined, { signal });
   }
   fail('Scoped OpenCode runtime did not become ready', 'bot_opencode_start_timeout', 504);
 };
@@ -107,7 +120,7 @@ const normalizeStartInput = (input) => {
     assertExactObject(input, {
       label: 'Bot OpenCode start request',
       required: ['run', 'contract', 'catalog'],
-      optional: ['attachmentIds', 'libraryVersionIds', 'attachmentDeliveryMode', 'compiled'],
+      optional: ['attachmentIds', 'libraryVersionIds', 'attachmentDeliveryMode', 'compiled', 'mode', 'signal'],
     });
   } catch (error) {
     fail(error.message, 'bot_opencode_request_invalid', 400);
@@ -125,7 +138,22 @@ const normalizeStartInput = (input) => {
       || !input.compiled.contract || typeof input.compiled.contract !== 'object')) {
     fail('Bot prewarmed config is invalid', 'bot_opencode_request_invalid', 400);
   }
-  return { ...input, attachmentDeliveryMode };
+  const mode = input.mode ?? 'run';
+  if (!['run', 'warm'].includes(mode)) {
+    fail('Bot OpenCode start mode is invalid', 'bot_opencode_request_invalid', 400);
+  }
+  return { ...input, attachmentDeliveryMode, mode };
+};
+
+const withRuntimeStage = (error, stage) => {
+  if (error && typeof error === 'object' && !error.botRuntimeStage) {
+    Object.defineProperty(error, 'botRuntimeStage', {
+      configurable: true,
+      enumerable: false,
+      value: stage,
+    });
+  }
+  return error;
 };
 
 const normalizeSessionTitle = (value) => {
@@ -195,11 +223,11 @@ const recordText = (record) => (Array.isArray(record?.parts) ? record.parts : []
 const SUCCESSFUL_TOOL_STATUSES = new Set(['completed', 'complete', 'done']);
 
 const generatedImageDescriptor = (part, index) => {
-  if (part?.type !== 'tool' || part.tool !== 'devryan_bot') return null;
+  if (part?.type !== 'tool' || !['devryan_bot', 'devryan_image'].includes(part.tool)) return null;
   const state = part.state && typeof part.state === 'object' ? part.state : {};
   const status = typeof state.status === 'string' ? state.status.trim().toLowerCase() : '';
   if (!SUCCESSFUL_TOOL_STATUSES.has(status)) return null;
-  if (state.input?.operation !== 'image.generate') return null;
+  if (part.tool === 'devryan_bot' && state.input?.operation !== 'image.generate') return null;
   const output = typeof state.metadata?.out === 'string' ? state.metadata.out.trim() : '';
   const relative = output.startsWith('/workspace/') ? output.slice('/workspace/'.length) : output;
   if (!relative || relative.startsWith('/') || relative.includes('\0') || relative.includes('\\')
@@ -229,10 +257,7 @@ const generatedImageDescriptors = (parts) => {
 export const projectBotAssistantResponse = (parts) => {
   const ordered = Array.isArray(parts) ? parts : [];
   const firstToolIndex = ordered.findIndex((part) => part?.type === 'tool');
-  const joinPublicText = (values) => sanitizeBotConversationalText(values
-    .filter(isPublicBotAssistantTextPart)
-    .map((part) => part.text)
-    .join(''));
+  const joinPublicText = (values) => sanitizeBotConversationalTextParts(values);
   if (firstToolIndex < 0) {
     return Object.freeze({
       toolObserved: false,
@@ -247,7 +272,7 @@ export const projectBotAssistantResponse = (parts) => {
   }
   return Object.freeze({
     toolObserved: true,
-    acknowledgmentText: joinPublicText(ordered.slice(0, firstToolIndex)),
+    acknowledgmentText: '',
     resultText: joinPublicText(ordered.slice(lastToolIndex + 1)),
     generatedImages: generatedImageDescriptors(ordered),
   });
@@ -255,6 +280,7 @@ export const projectBotAssistantResponse = (parts) => {
 
 const isTerminalAssistantRecord = (record) => {
   if (record?.info?.role !== 'assistant') return false;
+  if (['tool-calls', 'tool_calls', 'unknown'].includes(record.info.finish)) return false;
   if (typeof record.info.finish === 'string' && record.info.finish.trim()) return true;
   const completed = Number(record.info.time?.completed);
   return Number.isFinite(completed) && completed > 0;
@@ -295,11 +321,13 @@ export function createBotOpenCodeProvider({
   waitForReady = defaultWaitForReady,
   subscribeToEvents = defaultSubscribeToEvents,
   logger = console,
+  recordDiagnostic = () => {},
 } = {}) {
   if (!dockerProvider || typeof dockerProvider.ensureReasoning !== 'function'
     || typeof dockerProvider.stopReasoning !== 'function'
     || !configCompiler || typeof configCompiler.compile !== 'function'
     || !modelCredentialBroker || typeof modelCredentialBroker.prepareRun !== 'function'
+    || typeof modelCredentialBroker.prepareProvisionalRun !== 'function'
     || typeof modelCredentialBroker.preflightRun !== 'function'
     || typeof modelCredentialBroker.finalizeRun !== 'function'
     || typeof modelCredentialBroker.discardRun !== 'function'
@@ -316,9 +344,50 @@ export function createBotOpenCodeProvider({
     fail('Bot OpenCode provider is misconfigured', 'bot_opencode_configuration_invalid', 500);
   }
   const activeRuns = new Map();
+  const activeRunByScope = new Map();
+  const scopeLocks = new Map();
+  const recordFailure = createBotFailureRecorder(recordDiagnostic);
+  const recordLifecycle = (event, run, payload = {}) => {
+    try {
+      recordDiagnostic({
+        type: 'lifecycle',
+        event,
+        sessionID: run?.id || run?.runId || null,
+        payload: {
+          runId: run?.id || run?.runId || null,
+          botId: run?.botId || run?.bot_id || null,
+          channelId: run?.channelId || run?.channel_id || null,
+          ...payload,
+        },
+      });
+    } catch {
+      // Diagnostics never change runtime behavior.
+    }
+  };
   let started = false;
   let shutdownStarted = false;
   let eventHandler = null;
+
+  const reasoningScopeKey = (run) => `${validateUuid(
+    run?.botId || run?.bot_id,
+    'run.botId',
+  )}:${validateUuid(run?.channelId || run?.channel_id, 'run.channelId')}`;
+
+  const withScopeLock = (scopeKey, operation) => {
+    const previous = scopeLocks.get(scopeKey) || Promise.resolve();
+    const current = previous.catch(() => undefined).then(operation);
+    scopeLocks.set(scopeKey, current);
+    return current.finally(() => {
+      if (scopeLocks.get(scopeKey) === current) scopeLocks.delete(scopeKey);
+    });
+  };
+
+  const releaseScopeOwnership = (active) => {
+    if (activeRunByScope.get(active.scopeKey) === active.runId) {
+      activeRunByScope.delete(active.scopeKey);
+    }
+    activeRuns.delete(active.runId);
+  };
 
   const requireActive = (runId) => {
     const normalizedRunId = validateUuid(runId, 'runId');
@@ -329,21 +398,40 @@ export function createBotOpenCodeProvider({
 
   const stopActive = async (active) => {
     active.eventController?.abort();
+    active.requestController?.abort();
+    const ownsScope = activeRunByScope.get(active.scopeKey) === active.runId;
     try {
-      await dockerProvider.stopReasoning({
-        botId: active.botId,
-        channelId: active.channelId,
-      });
+      if (ownsScope) {
+        await dockerProvider.stopReasoning({
+          botId: active.botId,
+          channelId: active.channelId,
+        });
+      }
     } catch (error) {
       gatewayHost.revokeRun(active.runId);
-      await artifactService.cleanupRun(active.runId).catch(() => undefined);
+      releaseScopeOwnership(active);
+      const artifactsRemoved = await artifactService.cleanupRun(active.runId)
+        .then(() => true, () => false);
+      if (active.provisional) {
+        await modelCredentialBroker.discardRun(active.runId).catch(() => undefined);
+      } else {
+        await modelCredentialBroker.finalizeRun(active.runId).catch(() => undefined);
+      }
       await environmentSecrets.finalizeRun(active.runId).catch(() => undefined);
+      recordLifecycle('bot.attachments.cleanup', active, { removed: artifactsRemoved });
       throw error;
     }
     gatewayHost.revokeRun(active.runId);
-    activeRuns.delete(active.runId);
-    await artifactService.cleanupRun(active.runId);
-    await modelCredentialBroker.finalizeRun(active.runId);
+    releaseScopeOwnership(active);
+    try {
+      await artifactService.cleanupRun(active.runId);
+      recordLifecycle('bot.attachments.cleanup', active, { removed: true });
+    } catch (error) {
+      recordLifecycle('bot.attachments.cleanup', active, { removed: false });
+      throw error;
+    }
+    if (active.provisional) await modelCredentialBroker.discardRun(active.runId);
+    else await modelCredentialBroker.finalizeRun(active.runId);
     await environmentSecrets.finalizeRun(active.runId);
   };
 
@@ -380,6 +468,7 @@ export function createBotOpenCodeProvider({
     }), 'Bot structured-output session creation', { logger });
     const sessionId = normalizeSessionId(created?.id);
     try {
+      await modelCredentialBroker.assertRuntimeReady?.(active.runId);
       if (typeof active.client.session?.prompt !== 'function') {
         fail('Bot structured output is unavailable', 'bot_opencode_structured_unavailable', 502);
       }
@@ -418,6 +507,7 @@ export function createBotOpenCodeProvider({
     async preflightReasoningRun(input) {
       if (shutdownStarted) fail('Bot OpenCode provider is shutting down', 'bot_opencode_shutdown', 503);
       const normalized = normalizeStartInput(input);
+      normalized.signal?.throwIfAborted();
       const compiled = normalized.compiled || await configCompiler.compile({
         channelId: normalized.run.channelId,
         revisionId: normalized.run.revisionId,
@@ -444,21 +534,53 @@ export function createBotOpenCodeProvider({
     },
 
     async startReasoningRun(input) {
-      if (shutdownStarted) fail('Bot OpenCode provider is shutting down', 'bot_opencode_shutdown', 503);
       const normalized = normalizeStartInput(input);
       const runId = validateUuid(normalized.run.id, 'run.id');
-      if (activeRuns.has(runId)) return activeRuns.get(runId).publicRuntime;
-      await startGateway();
+      const scopeKey = reasoningScopeKey(normalized.run);
+      return withScopeLock(scopeKey, async () => {
+        if (shutdownStarted) fail('Bot OpenCode provider is shutting down', 'bot_opencode_shutdown', 503);
+        normalized.signal?.throwIfAborted();
+        if (activeRuns.has(runId)) {
+          const active = activeRuns.get(runId);
+          if (active.scopeKey !== scopeKey) {
+            fail('Bot run scope does not match its active runtime', 'bot_opencode_request_invalid', 409);
+          }
+          await modelCredentialBroker.assertRuntimeReady?.(runId);
+          if (normalized.mode === 'run') active.provisional = false;
+          return active.publicRuntime;
+        }
+        const ownerRunId = activeRunByScope.get(scopeKey);
+        if (ownerRunId) {
+          const owner = activeRuns.get(ownerRunId);
+          if (!owner) {
+            activeRunByScope.delete(scopeKey);
+          } else if (normalized.mode === 'warm' || owner.provisional !== true) {
+            throw withRuntimeStage(new BotOpenCodeProviderError(
+              'Bot reasoning scope is busy',
+              'bot_runtime_scope_busy',
+              409,
+            ), 'admission');
+          } else {
+            recordLifecycle('bot.runtime.preempted', owner, {
+              replacementRunId: runId,
+            });
+            await stopActive(owner);
+          }
+        }
+      await startGateway().catch((error) => { throw withRuntimeStage(error, 'gateway'); });
       const compiled = normalized.compiled || await configCompiler.compile({
         channelId: normalized.run.channelId,
         revisionId: normalized.run.revisionId,
         contract: normalized.contract,
-      });
-      const prepared = await modelCredentialBroker.prepareRun({
+      }).catch((error) => { throw withRuntimeStage(error, 'config'); });
+      const prepareCredentials = normalized.mode === 'warm'
+        ? modelCredentialBroker.prepareProvisionalRun.bind(modelCredentialBroker)
+        : modelCredentialBroker.prepareRun.bind(modelCredentialBroker);
+      const prepared = await prepareCredentials({
         run: normalized.run,
         models: compiled.contract.models,
         catalog: normalized.catalog,
-      });
+      }).catch((error) => { throw withRuntimeStage(error, 'credentials'); });
       const capability = gatewayHost.issueCapability({
         botId: normalized.run.botId,
         runId,
@@ -471,14 +593,32 @@ export function createBotOpenCodeProvider({
       let ensured;
       let materialized;
       let environment;
+      let client;
+      let runtimeStage = 'environment';
       try {
+        normalized.signal?.throwIfAborted();
         environment = await environmentSecrets.prepareRun(normalized.run);
+        normalized.signal?.throwIfAborted();
+        runtimeStage = 'artifacts';
         materialized = await artifactService.materializeRun({
           run: normalized.run,
           channel: { id: normalized.run.channelId },
           attachmentIds: normalized.attachmentIds || [],
           libraryVersionIds: normalized.libraryVersionIds || [],
         });
+        const attachments = materialized?.attachments || [];
+        recordLifecycle('bot.attachments.materialized', normalized.run, {
+          attachmentCount: attachments.length,
+          objectCount: Number(materialized?.objectCount || 0),
+          totalBytes: Number(materialized?.totalBytes || 0),
+          nativeCount: attachments.filter((item) => item.delivery === 'native').length,
+          inlineTextCount: attachments.filter((item) => item.delivery === 'inline_text').length,
+          mountedCount: attachments.filter((item) => item.delivery === 'mounted').length,
+          truncatedCount: attachments.filter((item) => item.truncated === true).length,
+          deliveryMode: normalized.attachmentDeliveryMode,
+        });
+        normalized.signal?.throwIfAborted();
+        runtimeStage = 'container';
         ensured = await dockerProvider.ensureReasoning({
           botId: normalized.run.botId,
           runId,
@@ -491,8 +631,67 @@ export function createBotOpenCodeProvider({
           environmentSecretCount: environment.count,
           chatgptImageGeneration: prepared.chatgptImageGeneration === true,
         });
-        await waitForReady({ endpoint: ensured.endpoint.baseUrl, fetchImpl });
+        normalized.signal?.throwIfAborted();
+        runtimeStage = 'readiness';
+        await waitForReady({ endpoint: ensured.endpoint.baseUrl, fetchImpl, signal: normalized.signal });
+        recordLifecycle('bot.runtime.ready', normalized.run, {
+          attachmentCount: Number(materialized?.attachments?.length || 0),
+        });
+        normalized.signal?.throwIfAborted();
+        client = createClient({ baseUrl: ensured.endpoint.baseUrl });
+        if (prepared.coordinatedOAuth) {
+          // Health is available before plugins initialize. Provider discovery
+          // loads the transport without submitting a message or running a tool.
+          runtimeStage = 'oauth_readiness';
+          let oauthReadinessAttempt = 0;
+          while (true) {
+            oauthReadinessAttempt += 1;
+            let response;
+            try {
+              response = await client.provider.list({ directory: WORKSPACE_DIRECTORY }, {
+                signal: botRequestSignal(normalized.signal, AbortSignal.timeout(30_000)),
+              });
+            } catch (error) {
+              const failureClass = safeUpstreamFailureClass(error);
+              const transient = error?.name === 'TimeoutError'
+                || TRANSIENT_OAUTH_READINESS_FAILURES.has(failureClass);
+              if (oauthReadinessAttempt < 2 && transient) {
+                recordLifecycle('bot.provider.oauth_readiness_retry', normalized.run, {
+                  attemptCount: oauthReadinessAttempt,
+                  failureClass,
+                });
+                await delay(250, undefined, { signal: normalized.signal });
+                continue;
+              }
+              throw error;
+            }
+            const failureClass = safeUpstreamFailureClass(response?.error);
+            const statusCode = Number(response?.response?.status);
+            const transient = response?.error && failureClass !== 'provider_authentication'
+              && (TRANSIENT_OAUTH_READINESS_FAILURES.has(failureClass)
+                || (statusCode >= 500 && statusCode <= 599));
+            if (oauthReadinessAttempt < 2 && transient) {
+              recordLifecycle('bot.provider.oauth_readiness_retry', normalized.run, {
+                attemptCount: oauthReadinessAttempt,
+                failureClass,
+                statusCode: Number.isInteger(statusCode) ? statusCode : null,
+              });
+              await delay(250, undefined, { signal: normalized.signal });
+              continue;
+            }
+            unwrap(response, 'Bot authentication capability', { logger });
+            break;
+          }
+          await modelCredentialBroker.assertRuntimeReady(runId);
+          recordLifecycle('bot.provider.oauth_ready', normalized.run, {
+            attemptCount: oauthReadinessAttempt,
+          });
+        }
       } catch (error) {
+        recordFailure({
+          event: 'bot.provider.failed', run: normalized.run,
+          stage: runtimeStage, error,
+        });
         if (ensured) {
           await dockerProvider.stopReasoning({
             botId: normalized.run.botId,
@@ -500,12 +699,13 @@ export function createBotOpenCodeProvider({
           }).catch(() => undefined);
         }
         gatewayHost.revokeRun(runId);
-        await artifactService.cleanupRun(runId).catch(() => undefined);
+        const artifactsRemoved = await artifactService.cleanupRun(runId)
+          .then(() => true, () => false);
+        recordLifecycle('bot.attachments.cleanup', normalized.run, { removed: artifactsRemoved });
         await environmentSecrets.finalizeRun(runId).catch(() => undefined);
         await modelCredentialBroker.discardRun(runId).catch(() => undefined);
-        throw error;
+        throw withRuntimeStage(error, runtimeStage);
       }
-      const client = createClient({ baseUrl: ensured.endpoint.baseUrl });
       const publicRuntime = Object.freeze({
         runId,
         botId: normalized.run.botId,
@@ -519,9 +719,12 @@ export function createBotOpenCodeProvider({
       const eventController = new AbortController();
       const active = {
         ...publicRuntime,
+        scopeKey,
+        provisional: normalized.mode === 'warm',
         client,
         publicRuntime,
         eventController,
+        requestController: new AbortController(),
         eventTask: null,
         attachmentParts: Object.freeze((materialized?.attachments || [])
           .filter((attachment) => (
@@ -559,11 +762,26 @@ export function createBotOpenCodeProvider({
         }))),
       };
       activeRuns.set(runId, active);
-      active.eventTask = Promise.resolve().then(() => subscribeToEvents({
+      activeRunByScope.set(scopeKey, runId);
+      // A dropped SSE transport never resubmits a prompt. Reconnect a bounded
+      // number of times; the dispatcher independently reconciles final records.
+      active.eventTask = (async () => {
+        for (let attempt = 0; attempt < 4 && !eventController.signal.aborted; attempt += 1) {
+          try {
+            await subscribeToEvents({
         client,
         signal: eventController.signal,
         onEvent: (event) => {
-          if (!event || !eventHandler) return;
+          if (!event) return;
+          if (event.type === 'session.error') {
+            recordFailure({
+              event: 'bot.provider.failed', run: normalized.run,
+              sessionId: event.properties?.sessionID, stage: 'session.error',
+              error: event.properties?.error,
+              reason: safeUpstreamFailureClass(event.properties?.error),
+            });
+          }
+          if (!eventHandler) return;
           void Promise.resolve(eventHandler({ runId, event })).catch((error) => {
             logger?.warn?.('[BotsOpenCode] event handler rejected an event', {
               code: error?.code || 'bot_opencode_event_handler_failed',
@@ -571,22 +789,42 @@ export function createBotOpenCodeProvider({
             });
           });
         },
-      })).catch((error) => {
+            });
+          } catch (error) {
+            if (eventController.signal.aborted) return;
+            recordFailure({ event: 'bot.provider.failed', run: normalized.run, stage: 'event_stream', error });
+          }
+          if (!eventController.signal.aborted && attempt < 3) {
+            await delay(250 * (2 ** attempt), undefined, { signal: eventController.signal });
+          }
+        }
+      })().catch((error) => {
         if (eventController.signal.aborted) return;
+        recordFailure({
+          event: 'bot.provider.failed', run: normalized.run,
+          stage: 'event_stream', error,
+        });
         logger?.warn?.('[BotsOpenCode] scoped event stream disconnected', {
           code: error?.code || 'bot_opencode_event_stream_failed',
           runId,
         });
       });
       return publicRuntime;
+      });
     },
 
     async createSegment(input = {}) {
-      exactMethodInput(input, 'Bot segment request', ['runId', 'title']);
+      exactMethodInput(input, 'Bot segment request', ['runId', 'title'], ['signal']);
       const active = requireActive(input.runId);
-      const response = await active.client.session.create({
+      const signal = botRequestSignal(input.signal, active.requestController.signal);
+      const response = await withBotAbort(active.client.session.create({
         directory: WORKSPACE_DIRECTORY,
         title: normalizeSessionTitle(input.title),
+      }, { signal }), signal);
+      if (response?.error) recordFailure({
+        event: 'bot.provider.failed', run: active, stage: 'session.create',
+        error: response.error, statusCode: response.response?.status,
+        reason: safeUpstreamFailureClass(response.error),
       });
       const session = unwrap(response, 'Bot session creation', { logger });
       if (!session || typeof session.id !== 'string' || !session.id) {
@@ -596,8 +834,9 @@ export function createBotOpenCodeProvider({
     },
 
     async prompt(input = {}) {
-      exactMethodInput(input, 'Bot prompt request', ['runId', 'sessionId', 'parts']);
+      exactMethodInput(input, 'Bot prompt request', ['runId', 'sessionId', 'parts'], ['signal']);
       const active = requireActive(input.runId);
+      await modelCredentialBroker.assertRuntimeReady?.(active.runId);
       const normalizedSessionId = normalizeSessionId(input.sessionId);
       const prompt = {
         sessionID: normalizedSessionId,
@@ -619,11 +858,22 @@ export function createBotOpenCodeProvider({
           ...active.attachmentParts,
         ], active.runId),
       };
-      await active.client.session.promptAsync(prompt, { throwOnError: false }).then((result) => unwrap(
-        result,
-        'Bot prompt',
-        { allowEmpty: true, logger },
-      ));
+      const signal = botRequestSignal(input.signal, active.requestController.signal);
+      recordLifecycle('bot.provider.prompt_submitting', active, {
+        attachmentCount: active.attachmentManifest.length,
+        nativeCount: active.attachmentParts.length,
+        inlineTextCount: active.attachmentTextParts.length,
+      });
+      const response = await withBotAbort(active.client.session.promptAsync(prompt, { throwOnError: false, signal }), signal);
+      if (response?.error) recordFailure({
+        event: 'bot.provider.failed', run: active, sessionId: normalizedSessionId,
+        stage: 'prompt.submit', error: response.error, statusCode: response.response?.status,
+        reason: safeUpstreamFailureClass(response.error),
+      });
+      unwrap(response, 'Bot prompt', { allowEmpty: true, logger });
+      recordLifecycle('bot.provider.prompt_accepted', active, {
+        attachmentCount: active.attachmentManifest.length,
+      });
       return Object.freeze({ accepted: true, model: active.model });
     },
 
@@ -642,21 +892,22 @@ export function createBotOpenCodeProvider({
     },
 
     async inspectSegment(input = {}) {
-      exactMethodInput(input, 'Bot segment inspection', ['runId', 'sessionId']);
+      exactMethodInput(input, 'Bot segment inspection', ['runId', 'sessionId'], ['signal']);
       const active = requireActive(input.runId);
       const sessionId = normalizeSessionId(input.sessionId);
       if (typeof active.client.session?.messages !== 'function'
         || typeof active.client.session?.status !== 'function') {
         fail('Bot segment inspection is unavailable', 'bot_opencode_inspection_unavailable', 502);
       }
-      const [messageResponse, statusResponse] = await Promise.all([
+      const signal = botRequestSignal(input.signal, active.requestController.signal);
+      const [messageResponse, statusResponse] = await withBotAbort(Promise.all([
         active.client.session.messages({
           sessionID: sessionId,
           directory: WORKSPACE_DIRECTORY,
           limit: 100,
-        }),
-        active.client.session.status({ directory: WORKSPACE_DIRECTORY }),
-      ]);
+        }, { signal }),
+        active.client.session.status({ directory: WORKSPACE_DIRECTORY }, { signal }),
+      ]), signal);
       const records = unwrap(messageResponse, 'Bot segment messages', { logger });
       const statuses = unwrap(statusResponse, 'Bot segment status', { logger });
       if (!Array.isArray(records) || !statuses || typeof statuses !== 'object') {
@@ -667,6 +918,7 @@ export function createBotOpenCodeProvider({
         record?.info?.role === 'user' && recordText(record).includes(marker)
       )) || null;
       let assistantRecord = null;
+      let requestAssistantRecords = [];
       if (promptRecord) {
         const promptId = promptRecord.info?.id;
         const direct = records.filter((record) => (
@@ -674,26 +926,32 @@ export function createBotOpenCodeProvider({
           && typeof promptId === 'string'
           && record.info.parentID === promptId
         ));
+        requestAssistantRecords = direct;
         assistantRecord = latestRecord(direct);
-        if (!assistantRecord) {
-          const promptIndex = records.indexOf(promptRecord);
-          assistantRecord = latestRecord(records.slice(promptIndex + 1).filter((record) => (
-            record?.info?.role === 'assistant'
-          )));
-        }
       }
       const statusType = typeof statuses[sessionId]?.type === 'string'
         ? statuses[sessionId].type.trim().toLowerCase()
         : '';
       const contextLimit = Number(active.modelSnapshot?.contextLimit || 0);
+      if (assistantRecord?.info?.error) {
+        fail('Bot provider did not complete the response', 'bot_opencode_run_failed', 502);
+      }
+      const finalProjection = projectBotAssistantResponse(assistantRecord?.parts);
+      const requestParts = requestAssistantRecords.flatMap((record) => record.parts || []);
+      const assistantProjection = Object.freeze({
+        ...finalProjection,
+        toolObserved: finalProjection.toolObserved || requestParts.some((part) => part?.type === 'tool'),
+        generatedImages: generatedImageDescriptors(requestParts),
+      });
       return Object.freeze({
+        requestId: active.runId,
         promptObserved: Boolean(promptRecord),
         status: !statusType || statusType === 'idle' ? 'idle' : 'busy',
         assistantMessageId: typeof assistantRecord?.info?.id === 'string'
           ? assistantRecord.info.id
           : null,
-        assistantText: assistantRecord ? recordText(assistantRecord) : '',
-        assistantProjection: projectBotAssistantResponse(assistantRecord?.parts),
+        assistantText: projectBotAssistantResponse(assistantRecord?.parts).resultText,
+        assistantProjection,
         assistantTerminal: isTerminalAssistantRecord(assistantRecord),
         providerContextRatio: contextLimit > 0
           ? Math.min(1, tokenTotal(assistantRecord?.info?.tokens) / contextLimit)
@@ -718,16 +976,21 @@ export function createBotOpenCodeProvider({
       exactMethodInput(input, 'Bot abort request', ['runId', 'sessionId']);
       const active = requireActive(input.runId);
       const normalizedSessionId = normalizeSessionId(input.sessionId);
-      const result = await active.client.session.abort({
+      active.requestController.abort();
+      const signal = botRequestSignal(null, null, 5_000);
+      const result = await withBotAbort(active.client.session.abort({
         sessionID: normalizedSessionId,
         directory: WORKSPACE_DIRECTORY,
-      });
+      }, { signal }), signal);
       return unwrap(result, 'Bot abort', { allowEmpty: true, logger });
     },
 
     async stopReasoningRun(runId) {
       const active = requireActive(runId);
-      await stopActive(active);
+      await withScopeLock(active.scopeKey, async () => {
+        const current = activeRuns.get(active.runId);
+        if (current) await stopActive(current);
+      });
       return Object.freeze({ stopped: true, runId: active.runId });
     },
 
@@ -743,7 +1006,10 @@ export function createBotOpenCodeProvider({
       const failures = [];
       for (const active of [...activeRuns.values()]) {
         try {
-          await stopActive(active);
+          await withScopeLock(active.scopeKey, async () => {
+            const current = activeRuns.get(active.runId);
+            if (current) await stopActive(current);
+          });
         } catch (error) {
           gatewayHost.revokeRun(active.runId);
           failures.push(error);

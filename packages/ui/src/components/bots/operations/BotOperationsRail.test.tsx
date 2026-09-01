@@ -237,8 +237,8 @@ describe('BotOperationsRail', () => {
       </I18nProvider>,
     );
 
-    expect(markup).toContain('Screen viewing is off');
-    expect(markup).toContain(`data-bot-live-computer="${BOT_ID}"`);
+    expect(markup).toContain('Open in Conversation');
+    expect(markup).not.toContain(`data-bot-live-computer="${BOT_ID}"`);
     expect(markup).not.toContain('No live computer');
   });
 
@@ -476,7 +476,7 @@ describe('BotOperationsRail', () => {
     expect(mainLayout).toContain('{!botMode ? <ContextPanel /> : null}');
     expect(mainLayout).toContain('{!botMode ? <BrowserPanel /> : null}');
     expect(mainLayout).toContain('canUseTerminal && !botMode');
-    expect(rightSidebar).toContain('return <BotOperationsRail');
+    expect(rightSidebar).toContain('return <LazyViewBoundary><LazyBotOperationsRail');
     expect(rightSidebar).toContain("useMainSidebarAudienceStore((state) => state.audience === 'bots')");
     expect(rightSidebar).toContain('isRightSidebarOpen && canUseGit && !botMode');
     expect(rightSidebar).not.toContain('Boolean(selectedBotId)');

@@ -8,7 +8,10 @@ import { createScreencastBroker } from './screencast.js';
 import { createProfileManager } from './profiles.js';
 import { createWorkspaceGateway } from './workspace.js';
 import { createBrowserController, launchChromiumDriver } from './browser.js';
+import { createBrowserDiagnostics } from './browser-diagnostics.js';
+import { startVirtualDisplay } from './display.js';
 import { startBrowserEgressRelay } from './egress-proxy.js';
+import { verifyManagedBrowserPolicy } from './managed-policy.js';
 
 const DEFAULT_PORT = 43122;
 const MAX_BODY_BYTES = 128 * 1024;
@@ -120,10 +123,12 @@ export function createComputerHttpServer({
   control,
   screencast,
   rotateEgressToken = null,
+  readiness = () => true,
 } = {}) {
   if (!browser || typeof browser.execute !== 'function'
     || typeof browser.subscribeScreencast !== 'function' || !control || !screencast
-    || (rotateEgressToken !== null && typeof rotateEgressToken !== 'function')) {
+    || (rotateEgressToken !== null && typeof rotateEgressToken !== 'function')
+    || typeof readiness !== 'function') {
     throw new TypeError('Computer service dependencies are invalid');
   }
   const authenticate = createComputerAuthenticator({ token });
@@ -131,7 +136,8 @@ export function createComputerHttpServer({
     try {
       const route = parseRoute(request);
       if (route === 'GET /healthz') {
-        sendJson(response, 200, { ok: true });
+        const ready = readiness() === true;
+        sendJson(response, ready ? 200 : 503, { ok: ready });
         return;
       }
       authenticate(readSingleHeader(request, 'authorization'));
@@ -145,12 +151,43 @@ export function createComputerHttpServer({
         return;
       }
       if (route === 'GET /v1/screencast') {
-        const unsubscribe = await browser.subscribeScreencast(({ frame, width, height, capturedAt }) => {
+        let unsubscribe = null;
+        let pendingFrame = null;
+        let streaming = false;
+        let cleaned = false;
+        const writeFrame = ({ frame, width, height, deviceScaleFactor, capturedAt }) => {
           if (response.destroyed || response.writableEnded) return;
           if (response.writableLength > MAX_STREAM_BUFFER_BYTES) return;
-          const header = Buffer.from(`--${STREAM_BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.byteLength}\r\nX-DevRyan-Width: ${width || 0}\r\nX-DevRyan-Height: ${height || 0}\r\nX-DevRyan-Captured-At: ${capturedAt}\r\n\r\n`);
+          const header = Buffer.from(`--${STREAM_BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.byteLength}\r\nX-DevRyan-Width: ${width || 0}\r\nX-DevRyan-Height: ${height || 0}\r\nX-DevRyan-Device-Scale-Factor: ${deviceScaleFactor || 0}\r\nX-DevRyan-Captured-At: ${capturedAt}\r\n\r\n`);
           response.write(Buffer.concat([header, frame, Buffer.from('\r\n')]));
+        };
+        const cleanup = () => {
+          if (cleaned) return;
+          cleaned = true;
+          pendingFrame = null;
+          const closeSubscription = unsubscribe;
+          unsubscribe = null;
+          void closeSubscription?.().catch(() => undefined);
+        };
+        request.once('aborted', cleanup);
+        response.once('close', cleanup);
+        unsubscribe = await browser.subscribeScreencast((event) => {
+          if (cleaned) return;
+          if (!streaming) {
+            // Keep only the newest in-flight frame until multipart headers are
+            // committed. This request-local handoff is cleared immediately and
+            // is not a screencast cache.
+            pendingFrame = event;
+            return;
+          }
+          writeFrame(event);
         });
+        if (cleaned || request.aborted || response.destroyed) {
+          const closeSubscription = unsubscribe;
+          unsubscribe = null;
+          await closeSubscription?.().catch(() => undefined);
+          return;
+        }
         response.writeHead(200, {
           'cache-control': 'no-store, no-transform',
           connection: 'keep-alive',
@@ -158,14 +195,12 @@ export function createComputerHttpServer({
           'x-content-type-options': 'nosniff',
         });
         response.flushHeaders();
-        let cleaned = false;
-        const cleanup = () => {
-          if (cleaned) return;
-          cleaned = true;
-          void unsubscribe();
-        };
-        request.once('aborted', cleanup);
-        response.once('close', cleanup);
+        streaming = true;
+        if (pendingFrame) {
+          const firstFrame = pendingFrame;
+          pendingFrame = null;
+          writeFrame(firstFrame);
+        }
         return;
       }
       const routes = new Set([
@@ -188,7 +223,7 @@ export function createComputerHttpServer({
         return;
       }
       if (route === 'POST /v1/control/return') {
-        sendJson(response, 200, { ok: true, result: control.returnControl(body) });
+        sendJson(response, 200, { ok: true, result: await control.returnControl(body) });
         return;
       }
       if (route === 'POST /v1/profile/reset') {
@@ -215,11 +250,13 @@ export function createComputerHttpServer({
         if (Object.keys(body).sort().join('\0') !== 'actorId\0actorType\0args\0command\0leaseId') {
           requestFail('Human browser command shape is invalid');
         }
-        control.assertOwner({
+        const owner = {
           actorId: body.actorId,
           actorType: body.actorType,
           leaseId: body.leaseId,
-        });
+        };
+        const assertAuthorized = () => control.assertOwner(owner);
+        assertAuthorized();
         const gatewayToken = readSingleHeader(request, 'x-devryan-gateway-token');
         if (['upload', 'download'].includes(body.command) && !GATEWAY_TOKEN_PATTERN.test(gatewayToken || '')) {
           requestFail('Artifact gateway authorization is required', 'DEVRYAN_BOT_FILE_AUTH_INVALID', 401);
@@ -228,6 +265,7 @@ export function createComputerHttpServer({
           ok: true,
           result: await browser.executeHuman(body.command, body.args, {
             gatewayToken: gatewayToken || null,
+            assertAuthorized,
           }),
         });
         return;
@@ -290,15 +328,30 @@ export async function startComputerService({
   port = DEFAULT_PORT,
   host = '0.0.0.0',
   launchDriver,
+  startDisplay = startVirtualDisplay,
+  verifyPolicy = verifyManagedBrowserPolicy,
+  diagnostics = createBrowserDiagnostics(),
   onControlEvent,
 } = {}) {
   const egressRelay = await startBrowserEgressRelay({
     upstreamUrl: egressProxyUrl,
     token: egressToken,
+    onDiagnostic: (event) => {
+      if (event?.kind === 'egress_denied') diagnostics.recordEgressDenied(event);
+    },
   });
   const profiles = createProfileManager({ profileDirectory, scratchDirectory, scopeMode });
   try {
     await profiles.initialize();
+  } catch (error) {
+    await egressRelay.close().catch(() => undefined);
+    throw error;
+  }
+  let webCapabilities;
+  let virtualDisplay;
+  try {
+    webCapabilities = await verifyPolicy();
+    virtualDisplay = await startDisplay();
   } catch (error) {
     await egressRelay.close().catch(() => undefined);
     throw error;
@@ -316,12 +369,24 @@ export async function startComputerService({
       profileDirectory,
       scratchDirectory,
       proxyUrl: egressRelay.proxyUrl,
+      display: virtualDisplay.display,
+      diagnostics,
     })),
     refs,
     control,
     workspace,
     profiles,
     screencast,
+    diagnostics,
+    environmentStatus: () => Object.freeze({
+      mode: 'headed_virtual',
+      engineVersion: null,
+      displayReady: virtualDisplay.status().ready,
+      webCapabilities,
+    }),
+  });
+  virtualDisplay.onTerminated(() => {
+    void browser.close().catch(() => undefined);
   });
   const server = createComputerHttpServer({
     token,
@@ -329,6 +394,10 @@ export async function startComputerService({
     control,
     screencast,
     rotateEgressToken: (nextToken) => egressRelay.rotateToken(nextToken),
+    readiness: () => (
+      virtualDisplay.status().ready
+      && webCapabilities.managedPolicy === 'enforced'
+    ),
   });
   try {
     await new Promise((resolve, reject) => {
@@ -336,6 +405,8 @@ export async function startComputerService({
       server.listen(port, host, resolve);
     });
   } catch (error) {
+    await browser.close().catch(() => undefined);
+    await virtualDisplay.close().catch(() => undefined);
     await egressRelay.close().catch(() => undefined);
     throw error;
   }
@@ -345,9 +416,11 @@ export async function startComputerService({
     control,
     screencast,
     egressRelay,
+    virtualDisplay,
     address: server.address(),
     async close() {
       await browser.close();
+      await virtualDisplay.close();
       await closeComputerHttpServer(server);
       await egressRelay.close();
     },

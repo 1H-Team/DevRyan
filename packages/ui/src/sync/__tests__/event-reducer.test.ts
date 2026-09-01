@@ -808,6 +808,7 @@ describe("applyDirectoryEvent", () => {
           } as unknown as Message,
         ],
       },
+      session_user_activity: { ses_1: 2 },
     })
 
     const result = applyDirectoryEvent(draft, {
@@ -1083,6 +1084,57 @@ describe("applyDirectoryEvent", () => {
     } finally {
       resetAbortGuardState()
     }
+  })
+
+  test("indexes root user message timestamps without reacting to assistant activity", () => {
+    const draft = state({ session: [testSession("ses_1")], session_user_activity: {} })
+
+    expect(applyDirectoryEvent(
+      draft,
+      messageUpdatedEvent(testMessage("msg_user", "ses_1", "user", 123)),
+    )).toBe(true)
+    expect(draft.session_user_activity).toEqual({ ses_1: 123 })
+
+    applyDirectoryEvent(
+      draft,
+      messageUpdatedEvent(testMessage("msg_assistant", "ses_1", "assistant", 456)),
+    )
+    expect(draft.session_user_activity).toEqual({ ses_1: 123 })
+  })
+
+  test("does not index child-session user messages", () => {
+    const draft = state({
+      session: [testSession("ses_child", "ses_parent")],
+      session_user_activity: {},
+    })
+
+    applyDirectoryEvent(
+      draft,
+      messageUpdatedEvent(testMessage("msg_user", "ses_child", "user", 789)),
+    )
+
+    expect(draft.session_user_activity).toEqual({})
+  })
+
+  test("recomputes user activity when revert hides the latest user message", () => {
+    const draft = state({
+      session: [testSession("ses_1")],
+      message: {
+        ses_1: [
+          testMessage("msg_1", "ses_1", "user", 100),
+          testMessage("msg_2", "ses_1", "assistant", 200),
+          testMessage("msg_3", "ses_1", "user", 300),
+        ],
+      },
+      session_user_activity: { ses_1: 300 },
+    })
+
+    applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: { info: testSession("ses_1", undefined, "msg_3") },
+    } as Event)
+
+    expect(draft.session_user_activity).toEqual({ ses_1: 100 })
   })
 
   test("does not reinsert messages hidden by a pending revert transaction", () => {

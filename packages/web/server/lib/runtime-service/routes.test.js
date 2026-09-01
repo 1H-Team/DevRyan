@@ -104,7 +104,7 @@ describe('runtime-service HTTP handshake', () => {
       leaseId: '123e4567-e89b-42d3-a456-426614174001',
       brokerPort: 44001,
       brokerToken: 'b'.repeat(43),
-      capabilities: ['browser_cdp', 'focus'],
+      capabilities: ['browser_cdp', 'browser_observation', 'focus'],
     };
 
     const missingCsrf = await fetch(`${fixture.baseUrl}/api/runtime-service/desktop-host`, {

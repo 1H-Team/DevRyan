@@ -4,6 +4,7 @@ import {
   generateCommitMessageDirect,
 } from './commit-message.js';
 import { collectCommitMessageContext, validateCommitMessageSelectedFiles } from './commit-message-context.js';
+import { generatePullRequestDescriptionDirect } from './pr-description.js';
 import { requireManagedAssignedBranch } from '../multi-user/branch-authorization.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
 import { COMMIT_DRAFT_DEADLINE_MS, createCommitModelCooldowns } from '@openchamber/shared-runtime';
@@ -66,7 +67,9 @@ const collectCommitContextWithinDeadline = async ({ promise, selectedFiles, stag
 export function registerGitRoutes(app, {
   resolveZenModel = async (override) => override || 'gpt-5-nano',
   resolveCommitZenModel,
+  fetchFreeZenModels,
   generateCommitMessage = generateCommitMessageDirect,
+  generatePullRequestDescription = generatePullRequestDescriptionDirect,
   recordCommitTiming = () => {},
   loadGitLibraries,
 } = {}) {
@@ -1062,6 +1065,53 @@ export function registerGitRoutes(app, {
       recordCommitGenerationTiming(req, timings, timingDetails);
       console.error('Failed to generate commit message draft:', error);
       return sendGitError(res, error, 'Failed to generate commit message');
+    }
+  });
+
+  app.post('/api/git/pr-description', async (req, res) => {
+    const startedAt = Date.now();
+    try {
+      const directory = typeof req.query.directory === 'string' ? req.query.directory.trim() : '';
+      const base = typeof req.body?.base === 'string' ? req.body.base.trim() : '';
+      const head = typeof req.body?.head === 'string' ? req.body.head.trim() : '';
+      const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
+      if (!directory) return res.status(400).json({ error: 'directory parameter is required' });
+      if (!base || !head) return res.status(400).json({ error: 'base and head are required' });
+      if (!prompt || prompt.length > 100_000) return res.status(400).json({ error: 'Generate PR prompt is required' });
+      if (typeof fetchFreeZenModels !== 'function') {
+        return res.status(503).json({ error: 'Free Zen model catalog is unavailable' });
+      }
+      const models = await fetchFreeZenModels();
+      if (!Array.isArray(models) || models.length === 0) {
+        return res.status(503).json({ error: 'No free Zen models are currently available' });
+      }
+      const generated = await generatePullRequestDescription({
+        prompt,
+        models,
+        onAttempt: (attempt) => recordCommitTiming(req, {
+          event: 'git_pr_description_model_attempt',
+          contextMs: 0,
+          modelMs: 0,
+          providerMs: attempt.durationMs,
+          parseMs: 0,
+          totalMs: attempt.durationMs,
+          outcome: attempt.outcome,
+          model: attempt.model,
+          catalogState: 'free_zen',
+          retried: attempt.attempt > 1,
+          providerOutcome: attempt.reason || attempt.outcome,
+        }),
+      });
+      const elapsedMs = Date.now() - startedAt;
+      res.setHeader('Server-Timing', `pr-total;dur=${elapsedMs}`);
+      return res.json({ title: generated.title, body: generated.body });
+    } catch (error) {
+      const elapsedMs = Date.now() - startedAt;
+      res.setHeader('Server-Timing', `pr-total;dur=${elapsedMs}`);
+      console.error('Failed to generate pull request description:', error?.message || error);
+      return res.status(error?.code === 'FREE_ZEN_EXHAUSTED' ? 502 : 500).json({
+        error: error?.message || 'Failed to generate pull request description',
+      });
     }
   });
 

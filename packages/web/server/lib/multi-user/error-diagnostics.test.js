@@ -74,6 +74,145 @@ describe('managed diagnostic classification', () => {
     }
   });
 
+  it.each(['DEVRYAN_BROWSER_EVAL_ERROR', 'DEVRYAN_BROWSER_INPUT_INVALID'])(
+    'classifies explicit browser input code %s in structured and OpenCode string errors',
+    (errorCode) => {
+      for (const metadata of [
+        { tool: 'devryan_browser', errorCode, failureText: 'opaque' },
+        { tool: 'devryan_browser', failureText: `${errorCode}: malformed browser inspection` },
+      ]) {
+        expect(classifyDiagnosticFailure({ action: 'tool.failed', metadata })).toEqual({
+          impact: 'low',
+          source: 'observed',
+          failureClass: 'input',
+          disposition: 'expected',
+        });
+      }
+    },
+  );
+
+  it.each([
+    ['DEVRYAN_BROWSER_LEASE_ACQUIRE_FAILED', 'upstream 503'],
+    ['DEVRYAN_BROWSER_CONNECTION_FAILED', 'connection closed'],
+    ['DEVRYAN_BROWSER_CLEANUP_FAILED', 'process did not exit'],
+    ['DEVRYAN_BROWSER_COMMAND_FAILED', 'unknown browser command'],
+    ['DEVRYAN_BROWSER_COMMAND_FAILED', "Agent browser command failed: ✗ Evaluation error: TypeError: Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'."],
+  ])('retains runtime classification for %s without the explicit input code', (errorCode, detail) => {
+    expect(classifyDiagnosticFailure({
+      action: 'tool.failed',
+      metadata: { tool: 'devryan_browser', errorCode, failureText: `${errorCode}: ${detail}` },
+    })).toEqual({
+      impact: 'medium',
+      source: 'observed',
+      failureClass: 'integration_runtime',
+      disposition: 'actionable',
+    });
+  });
+
+  it.each([
+    { failureText: 'DEVRYAN_BROWSER_COMMAND_FAILED: DEVRYAN_BROWSER_EVAL_ERROR: TypeError: unexpected failure' },
+    { failureText: 'Tool output mentioned DEVRYAN_BROWSER_EVAL_ERROR: TypeError: unexpected failure' },
+    { failureText: 'Error: DEVRYAN_BROWSER_EVAL_ERROR: TypeError: unexpected failure' },
+    { failureText: 'DEVRYAN_BROWSER_EVAL_ERROR_EXTRA: unexpected failure' },
+    { failureText: 'DEVRYAN_BROWSER_EVAL_ERROR unexpected failure' },
+    { failureText: 'DEVRYAN_BROWSER_INPUT_INVALID_EXTRA: unexpected failure' },
+    { errorCode: 'DEVRYAN_BROWSER_CONNECTION_FAILED', failureText: 'DEVRYAN_BROWSER_EVAL_ERROR: TypeError: unexpected failure' },
+    { errorCode: 'lineage_unavailable', failureText: 'DEVRYAN_BROWSER_INPUT_INVALID: rejected selector' },
+    { errorCode: 503, failureText: 'DEVRYAN_BROWSER_EVAL_ERROR: TypeError: unexpected failure' },
+  ])('does not let embedded codes or a string prefix override structured runtime codes: %j', (metadata) => {
+    expect(classifyDiagnosticFailure({
+      action: 'tool.failed',
+      metadata: { tool: 'devryan_browser', ...metadata },
+    })).toMatchObject({ impact: 'medium', failureClass: 'integration_runtime', disposition: 'actionable' });
+  });
+
+  it.each(['DEVRYAN_BROWSER_EVAL_ERROR', 'DEVRYAN_BROWSER_INPUT_INVALID'])(
+    'keeps the final lease touch actionable when it also reports %s',
+    (secondaryCode) => {
+      const errorCode = 'DEVRYAN_BROWSER_LEASE_TOUCH_FAILED';
+      const failureText = `${errorCode}: browser host unavailable\nBrowser command also failed: ${secondaryCode}: Invalid input: selector is required`;
+      for (const fields of [{ errorCode, failureText }, { failureText }]) {
+        expect(classifyDiagnosticFailure({
+          action: 'tool.failed',
+          metadata: { tool: 'devryan_browser', ...fields },
+        })).toEqual({
+          impact: 'medium',
+          source: 'observed',
+          failureClass: 'integration_runtime',
+          disposition: 'actionable',
+        });
+      }
+    },
+  );
+
+  it.each([
+    { tool: 'devryan_browser', failureText: 'DEVRYAN_BROWSER_LEASE_TOUCH_FAILED_EXTRA: Invalid input' },
+    { tool: 'devryan_browser', failureText: 'Invalid input: output mentioned DEVRYAN_BROWSER_LEASE_TOUCH_FAILED: unavailable' },
+    { tool: 'devryan_browser', errorCode: 'DEVRYAN_BROWSER_INPUT_INVALID', failureText: 'DEVRYAN_BROWSER_LEASE_TOUCH_FAILED: Invalid input' },
+    { tool: 'read', errorCode: 'DEVRYAN_BROWSER_LEASE_TOUCH_FAILED', failureText: 'Invalid input' },
+    { tool: 'read', failureText: 'DEVRYAN_BROWSER_LEASE_TOUCH_FAILED: Invalid input' },
+  ])('does not apply touch-failure precedence to another code or tool: %j', (metadata) => {
+    expect(classifyDiagnosticFailure({ action: 'tool.failed', metadata }))
+      .toMatchObject({ impact: 'low', failureClass: 'input', disposition: 'expected' });
+  });
+
+  it.each(['TypeError: Invalid input', 'TypeError: missing selector'])(
+    'keeps explicit generated-inspection failures actionable despite misleading detail: %s',
+    (detail) => {
+      const errorCode = 'DEVRYAN_BROWSER_INSPECTION_FAILED';
+      const failureText = `${errorCode}: Agent browser command failed: ✗ Evaluation error: ${detail}`;
+      for (const fields of [{ errorCode, failureText }, { failureText }]) {
+        expect(classifyDiagnosticFailure({
+          action: 'tool.failed',
+          metadata: { tool: 'devryan_browser', ...fields },
+        })).toEqual({
+          impact: 'medium',
+          source: 'observed',
+          failureClass: 'integration_runtime',
+          disposition: 'actionable',
+        });
+      }
+    },
+  );
+
+  it.each([
+    { tool: 'devryan_browser', failureText: 'DEVRYAN_BROWSER_INSPECTION_FAILED_EXTRA: Invalid input' },
+    { tool: 'devryan_browser', failureText: 'Invalid input: output mentioned DEVRYAN_BROWSER_INSPECTION_FAILED: defect' },
+    { tool: 'devryan_browser', errorCode: 'DEVRYAN_BROWSER_INPUT_INVALID', failureText: 'DEVRYAN_BROWSER_INSPECTION_FAILED: Invalid input' },
+    { tool: 'read', errorCode: 'DEVRYAN_BROWSER_INSPECTION_FAILED', failureText: 'Invalid input' },
+    { tool: 'read', failureText: 'DEVRYAN_BROWSER_INSPECTION_FAILED: Invalid input' },
+  ])('does not apply inspection-failure precedence to another code or tool: %j', (metadata) => {
+    expect(classifyDiagnosticFailure({ action: 'tool.failed', metadata }))
+      .toMatchObject({ impact: 'low', failureClass: 'input', disposition: 'expected' });
+  });
+
+  it('leaves historical inspection-code inference on its existing browser default', () => {
+    expect(inferLegacyDiagnostic({
+      action: 'tool.failed',
+      metadata: {
+        tool: 'devryan_browser',
+        errorCode: 'DEVRYAN_BROWSER_INSPECTION_FAILED',
+        failureText: 'DEVRYAN_BROWSER_INSPECTION_FAILED: TypeError: Invalid input',
+      },
+    })).toMatchObject({ impact: 'medium', source: 'inferred', disposition: 'actionable' });
+  });
+
+  it.each(['DEVRYAN_BROWSER_EVAL_ERROR', 'DEVRYAN_BROWSER_INPUT_INVALID'])(
+    'does not apply browser-only code %s to other tools or historical inference',
+    (errorCode) => {
+      for (const errorFields of [{ errorCode, failureText: 'opaque' }, { failureText: `${errorCode}: opaque` }]) {
+        expect(classifyDiagnosticFailure({
+          action: 'tool.failed',
+          metadata: { tool: 'mcp__connector__lookup', ...errorFields },
+        })).toMatchObject({ impact: 'medium', disposition: 'actionable' });
+        expect(inferLegacyDiagnostic({
+          action: 'tool.failed',
+          metadata: { tool: 'devryan_browser', ...errorFields },
+        })).toMatchObject({ impact: 'medium', source: 'inferred', disposition: 'actionable' });
+      }
+    },
+  );
+
   it('classifies the benign ResizeObserver notification as expected client noise', () => {
     expect(classifyDiagnosticFailure({
       action: 'client.error',
@@ -174,6 +313,50 @@ describe('managed diagnostic classification', () => {
       source: 'observed',
       failureClass: 'integration_runtime',
       disposition: 'expected',
+    });
+  });
+
+  it.each([
+    [
+      'skill',
+      'The user has specified a rule which prevents you from using this specific tool call. Here are some of the relevant rules [{"permission":"skill","pattern":"*","action":"deny"}]',
+    ],
+    [
+      'devryan_browser',
+      'DEVRYAN_BROWSER_INPUT_INVALID: open requires a URL because this branch has no configured preview',
+    ],
+    [
+      'devryan_browser',
+      'DEVRYAN_BROWSER_COMMAND_FAILED: Agent browser command failed: ✗ Operation timed out',
+    ],
+    [
+      'devryan_browser',
+      'DEVRYAN_BROWSER_COMMAND_FAILED: Agent browser command failed: ✗ Navigation failed: net::ERR_NAME_NOT_RESOLVED at /admin/support/live-chat/team-settings',
+    ],
+  ])('classifies observed audit noise from %s as expected input', (tool, failureText) => {
+    expect(classifyDiagnosticFailure({
+      action: 'tool.failed',
+      metadata: { tool, failureText },
+    })).toEqual({
+      impact: 'low',
+      source: 'observed',
+      failureClass: 'input',
+      disposition: 'expected',
+    });
+  });
+
+  it('keeps branch preview authentication failures actionable', () => {
+    expect(classifyDiagnosticFailure({
+      action: 'tool.failed',
+      metadata: {
+        tool: 'devryan_browser',
+        failureText: 'DEVRYAN_BROWSER_BRANCH_PREVIEW_AUTH_FAILED: Cloudflare Access rejected the branch preview service token',
+      },
+    })).toEqual({
+      impact: 'medium',
+      source: 'observed',
+      failureClass: 'integration_runtime',
+      disposition: 'actionable',
     });
   });
 

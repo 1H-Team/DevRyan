@@ -20,6 +20,7 @@ const createRuntime = (server, overrides = {}) => createGracefulShutdownRuntime(
   setMessageStreamRuntime: vi.fn(),
   getBotsRuntime: () => null,
   getCursorSdkRuntime: () => null,
+  getSessionTitleRuntime: () => null,
   shouldSkipOpenCodeStop: () => true,
   getOpenCodePort: () => null,
   getOpenCodeProcess: () => null,
@@ -68,6 +69,17 @@ describe('graceful shutdown runtime', () => {
     await runtime.gracefulShutdown({ exitProcess: false });
 
     expect(cursorSdkRuntime.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('flushes the durable session title outbox during graceful shutdown', async () => {
+    const sessionTitleRuntime = { dispose: vi.fn(async () => {}) };
+    const runtime = createRuntime(null, {
+      getSessionTitleRuntime: () => sessionTitleRuntime,
+    });
+
+    await runtime.gracefulShutdown({ exitProcess: false });
+
+    expect(sessionTitleRuntime.dispose).toHaveBeenCalledTimes(1);
   });
 
   it('stops the managed orchestration owner before provider runtime teardown', async () => {

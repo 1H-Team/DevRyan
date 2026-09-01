@@ -147,4 +147,36 @@ describe('Production Bot warm runtime leases', () => {
     expect(prepare).toHaveBeenCalledTimes(2);
     await leases.shutdown();
   });
+
+  it('records content-free preparation stage and error code diagnostics', async () => {
+    let index = 0;
+    const error = Object.assign(new Error('provider detail must stay out of diagnostics'), {
+      code: 'bot_opencode_start_timeout',
+      botRuntimeStage: 'readiness',
+    });
+    const record = vi.fn();
+    const leases = createBotWarmRuntimeLeases({
+      prepare: vi.fn(async () => { throw error; }),
+      stop: vi.fn(async () => {}),
+      uuid: () => ids[index++],
+      record,
+      logger: { warn: vi.fn() },
+    });
+    const lease = leases.begin(binding());
+    await expect(leases.claim({
+      leaseId: lease.leaseId,
+      principalId: binding().principalId,
+      channelId: binding().channelId,
+      revisionId: binding().revisionId,
+      librarySnapshotKey: binding().librarySnapshotKey,
+      messageId: 'e0000000-0000-4000-8000-000000000006',
+    })).resolves.toEqual({ hit: false, runId: null });
+    const failure = record.mock.calls.find(([mark]) => mark === 'warm_miss');
+    expect(failure?.[1]).toMatchObject({
+      reason: 'prepare_failed',
+      stage: 'readiness',
+      errorCode: 'bot_opencode_start_timeout',
+    });
+    expect(JSON.stringify(failure)).not.toContain(error.message);
+  });
 });

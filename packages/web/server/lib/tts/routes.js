@@ -289,7 +289,7 @@ export function registerTtsRoutes(app, { resolveZenModel, sayTTSCapability }) {
           bytes: req.body.length,
           mimeType,
           model,
-          baseURL,
+          hasBaseURL: Boolean(baseURL),
           language,
         });
 
@@ -297,14 +297,14 @@ export function registerTtsRoutes(app, { resolveZenModel, sayTTSCapability }) {
           audioBuffer: req.body,
           mimeType,
           model,
-          baseURL,
+          hasBaseURL: Boolean(baseURL),
           language,
         });
 
-        console.log('[STT] Transcript:', transcript?.slice(0, 120));
+        console.log('[STT] Transcription completed:', { characterCount: transcript?.length || 0 });
         res.json({ transcript: transcript ?? '' });
       } catch (error) {
-        console.error('[STT] Error:', error);
+        console.error('[STT] Transcription failed');
         if (!res.headersSent) {
           res.status(500).json({
             error: error instanceof Error ? error.message : 'Transcription failed',

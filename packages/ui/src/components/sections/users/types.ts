@@ -102,6 +102,7 @@ export type McpPolicyOverride = 'inherit' | 'on' | 'off';
 
 export interface UserFeatureOverrides {
   agents?: { hidePermissionsUi?: boolean; hideGlobalBehaviorUi?: boolean };
+  source?: { hideUpdateTab?: boolean };
   mcp?: Record<string, 'on' | 'off'>;
 }
 

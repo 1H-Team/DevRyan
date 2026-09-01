@@ -12,6 +12,10 @@ const DEFAULT_TOOLBAR_HEIGHT = 38;
 const DEFAULT_BROWSER_WORKSPACE_CHROME_HEIGHT = 70;
 const MAX_SURFACE_ID_LENGTH = 220;
 const MAX_FAVICON_URL_LENGTH = 32_768;
+const AGENT_OBSERVATION_FRAME_INTERVAL_MS = 125;
+const AGENT_OBSERVATION_MAX_WIDTH = 1280;
+const AGENT_OBSERVATION_MAX_HEIGHT = 720;
+const AGENT_OBSERVATION_JPEG_QUALITY = 65;
 
 export const BROWSER_VIEWPORT_PRESETS = Object.freeze({
   desktop: Object.freeze({ width: 1440, height: 900 }),
@@ -257,14 +261,19 @@ const installCursorOverlay = async (contents, input, visible) => {
     const id = '__devryan_agent_browser_cursor';
     let cursor = document.getElementById(id);
     if (!payload.visible) {
-      if (cursor) cursor.style.display = 'none';
+      if (cursor) {
+        cursor.style.display = 'none';
+        if (cursor.__devryanHideTimer) clearTimeout(cursor.__devryanHideTimer);
+        cursor.__devryanHideTimer = null;
+      }
       return;
     }
     if (!cursor) {
       cursor = document.createElement('div');
       cursor.id = id;
       cursor.setAttribute('aria-hidden', 'true');
-      cursor.style.cssText = 'position:fixed;z-index:2147483647;width:18px;height:18px;border-radius:999px;border:2px solid white;background:#3b82f6;box-shadow:0 1px 6px rgba(0,0,0,.45);pointer-events:none;transform:translate(-50%,-50%);transition:left 35ms linear,top 35ms linear;display:none;';
+      cursor.style.cssText = 'position:fixed;z-index:2147483647;width:28px;height:32px;pointer-events:none;transform-origin:0 0;transition:left 35ms linear,top 35ms linear,transform 70ms ease-out;display:none;filter:drop-shadow(0 2px 2px rgba(0,0,0,.42));';
+      cursor.innerHTML = '<svg viewBox="0 0 28 32" width="28" height="32" overflow="visible" xmlns="http://www.w3.org/2000/svg"><path d="M0 0v24.8l6.15-6.3 4.55 9.35 4.5-2.2-4.45-9.05H20z" fill="#fff" stroke="#202124" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></svg>';
       document.documentElement.appendChild(cursor);
     }
     const point = payload.input || {};
@@ -273,8 +282,15 @@ const installCursorOverlay = async (contents, input, visible) => {
       cursor.style.top = point.y + 'px';
       cursor.style.display = 'block';
       cursor.style.transform = point.kind === 'down'
-        ? 'translate(-50%,-50%) scale(.72)'
-        : 'translate(-50%,-50%) scale(1)';
+        ? 'scale(.9)'
+        : 'scale(1)';
+    }
+    if (cursor.style.display !== 'none') {
+      if (cursor.__devryanHideTimer) clearTimeout(cursor.__devryanHideTimer);
+      cursor.__devryanHideTimer = setTimeout(() => {
+        cursor.style.display = 'none';
+        cursor.__devryanHideTimer = null;
+      }, 4000);
     }
   })()`;
   try {
@@ -468,6 +484,7 @@ export const createBrowserSurfaceManager = ({
     initialUrl = 'about:blank',
     viewportMode = 'responsive',
     browserContext = null,
+    browserPartition = '',
   }) => {
     if (!isAliveWindow(ownerWindow)) throw new Error('Browser window is not available');
     if (kind === 'manual' && (!browserContext?.contextKey || !browserContext?.partition)) {
@@ -478,7 +495,9 @@ export const createBrowserSurfaceManager = ({
       : `manual:${ownerWindow.id}:${++surfaceCounter}`;
     const view = new WebContentsView({
       webPreferences: {
-        partition: kind === 'manual' ? browserContext.partition : BROWSER_WEBVIEW_PARTITION,
+        partition: kind === 'manual'
+          ? browserContext.partition
+          : safeString(browserPartition, 256) || BROWSER_WEBVIEW_PARTITION,
         backgroundThrottling: false,
         contextIsolation: true,
         nodeIntegration: false,
@@ -510,6 +529,9 @@ export const createBrowserSurfaceManager = ({
       frameSubscriptionActive: false,
       lastAgentInput: null,
       cursorSuppressionCount: 0,
+      observationSubscribers: new Set(),
+      observationTimer: null,
+      observationCaptureGeneration: 0,
     };
     surfaces.set(surfaceId, surface);
     if (surface.leaseId) leaseSurfaceByLeaseId.set(surface.leaseId, surfaceId);
@@ -649,12 +671,18 @@ export const createBrowserSurfaceManager = ({
     return snapshot(surface);
   };
 
-  const createLeaseSurface = (ownerWindow, { leaseId, initialUrl } = {}) => {
+  const createLeaseSurface = (ownerWindow, { leaseId, initialUrl, browserPartition = '' } = {}) => {
     const normalizedLeaseId = normalizeSurfaceId(leaseId);
     const existingId = leaseSurfaceByLeaseId.get(normalizedLeaseId);
     const existing = existingId ? surfaces.get(existingId) : null;
     if (existing) return { snapshot: snapshot(existing), webContents: existing.view.webContents };
-    const surface = createSurface({ kind: 'lease', ownerWindow, leaseId: normalizedLeaseId, initialUrl });
+    const surface = createSurface({
+      kind: 'lease',
+      ownerWindow,
+      leaseId: normalizedLeaseId,
+      initialUrl,
+      browserPartition,
+    });
     return { snapshot: snapshot(surface), webContents: surface.view.webContents };
   };
 
@@ -981,6 +1009,82 @@ export const createBrowserSurfaceManager = ({
     };
   };
 
+  const stopLeaseObservationCapture = (surface) => {
+    if (!surface) return;
+    surface.observationCaptureGeneration += 1;
+    if (surface.observationTimer) clearTimeout(surface.observationTimer);
+    surface.observationTimer = null;
+  };
+
+  const closeLeaseObservationSubscribers = (surface, reason = 'surface_closed') => {
+    stopLeaseObservationCapture(surface);
+    for (const subscriber of surface?.observationSubscribers ?? []) {
+      try { subscriber.onClose?.(reason); } catch { }
+    }
+    surface?.observationSubscribers?.clear?.();
+  };
+
+  const captureLeaseObservationFrame = async (surface) => {
+    const image = await surface.view.webContents.capturePage();
+    const size = image.getSize();
+    const scale = Math.min(
+      1,
+      AGENT_OBSERVATION_MAX_WIDTH / Math.max(1, size.width),
+      AGENT_OBSERVATION_MAX_HEIGHT / Math.max(1, size.height),
+    );
+    const frame = scale < 1
+      ? image.resize({
+        width: Math.max(1, Math.floor(size.width * scale)),
+        height: Math.max(1, Math.floor(size.height * scale)),
+      }).toJPEG(AGENT_OBSERVATION_JPEG_QUALITY)
+      : image.toJPEG(AGENT_OBSERVATION_JPEG_QUALITY);
+    return frame;
+  };
+
+  const startLeaseObservationCapture = (surface) => {
+    if (!surface || surface.observationSubscribers.size === 0 || surface.observationTimer) return;
+    const generation = ++surface.observationCaptureGeneration;
+    const captureNext = async () => {
+      surface.observationTimer = null;
+      if (
+        generation !== surface.observationCaptureGeneration
+        || surface.observationSubscribers.size === 0
+        || surface.view.webContents.isDestroyed?.()
+      ) return;
+      try {
+        const frame = await captureLeaseObservationFrame(surface);
+        if (generation !== surface.observationCaptureGeneration) return;
+        for (const subscriber of surface.observationSubscribers) {
+          try { subscriber.onFrame(frame); } catch { }
+        }
+      } catch (error) {
+        log(`[browser-surface] failed to capture observed lease ${surface.leaseId}`, error);
+      }
+      if (generation !== surface.observationCaptureGeneration || surface.observationSubscribers.size === 0) return;
+      surface.observationTimer = setTimeout(captureNext, AGENT_OBSERVATION_FRAME_INTERVAL_MS);
+      surface.observationTimer.unref?.();
+    };
+    void captureNext();
+  };
+
+  const subscribeLeaseFrames = (leaseId, subscriber) => {
+    const surface = surfaceForLease(leaseId);
+    if (!surface || typeof subscriber?.onFrame !== 'function') {
+      throw Object.assign(new Error('Browser lease surface is not available'), {
+        code: 'browser_observation_unavailable',
+      });
+    }
+    surface.observationSubscribers.add(subscriber);
+    startLeaseObservationCapture(surface);
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      surface.observationSubscribers.delete(subscriber);
+      if (surface.observationSubscribers.size === 0) stopLeaseObservationCapture(surface);
+    };
+  };
+
   const inspect = async (requestWindow, { surfaceId, cancel } = {}) => {
     const surface = getOwnedSurface(requestWindow, surfaceId);
     const result = await surface.view.webContents.executeJavaScript(
@@ -1027,6 +1131,7 @@ export const createBrowserSurfaceManager = ({
         }
       }
     }
+    closeLeaseObservationSubscribers(surface, reason);
     stopParkingCapture(surface);
     surface.cleanupContents?.();
     devToolsController?.destroyGuest?.(surface.view.webContents.id);
@@ -1158,6 +1263,7 @@ export const createBrowserSurfaceManager = ({
       const surface = surfaceForLease(leaseId);
       return surface ? snapshot(surface) : null;
     },
+    subscribeLeaseFrames,
     surfaceForLease,
   };
 };

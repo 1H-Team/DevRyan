@@ -15,6 +15,7 @@
 - `lib/assistant-image-sources.js` — shared supported-image canonicalization, Markdown extraction, code exclusion, and syntax stripping.
 - `lib/commit-message-draft.js` — shared deadline, prompt, AI normalization/repair, model cooldown, and deterministic commit-draft fallback policy.
 - `lib/free-zen-model-catalog.js` — served-model plus zero-cost catalog intersection, five-minute cache, stale snapshot, and single-flight refresh shared by web/Electron and VS Code.
+- `lib/free-zen-generation.js` — sequential per-model free-Zen rotation plus shared PR title/body JSON normalization.
 - `testing/assistant-image-fixtures.js` — golden parser fixtures shared by UI and web security tests.
 
 ## Where to change things
@@ -25,4 +26,5 @@
 - Change assistant image syntax rules only in `lib/assistant-image-sources.js` and update the shared golden fixtures so UI and server authorization stay equivalent.
 - Change cross-host commit draft formatting, deadline, repair, or fallback policy only in `lib/commit-message-draft.js`; Git context collection and provider transport stay with each host.
 - Change free OpenCode Zen discovery, cache, or cost-intersection rules only in `lib/free-zen-model-catalog.js`; host adapters own feature-specific model ordering and generation requests.
+- Change cross-host sequential free-model attempt semantics or PR output normalization only in `lib/free-zen-generation.js`; callers choose their per-model timeout and direct transport.
 - Add any new cross-host runtime module here only when it has no UI or host-process ownership.

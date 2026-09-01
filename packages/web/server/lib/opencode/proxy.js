@@ -1,4 +1,5 @@
 import express from 'express';
+import { beginSessionCreationTrace, creationUnknownPayload, creationRestartPayload, creationNotDispatchedPayload, isSessionCreateRequest } from './session-creation.js';
 import http from 'node:http';
 import https from 'node:https';
 import { createProxyMiddleware } from 'http-proxy-middleware';
@@ -547,11 +548,12 @@ export const registerOpenCodeProxy = (app, deps) => {
 
     const holdStart = Date.now();
     console.warn('[proxy] readiness hold engaged:', req.method, req.originalUrl);
-    const deadline = holdStart + Math.min(OPEN_CODE_READY_GRACE_MS, READINESS_HOLD_MAX_MS);
+    const creationTrace = isSessionCreateRequest(req) ? beginSessionCreationTrace(req) : null;
+    const deadline = holdStart + Math.min(OPEN_CODE_READY_GRACE_MS, READINESS_HOLD_MAX_MS, creationTrace?.remainingMs() ?? Infinity);
     while (Date.now() < deadline) {
       // Client gave up (closed/aborted) — stop holding.
       if (res.writableEnded || req.aborted) return;
-      await sleep(READINESS_HOLD_POLL_MS);
+      await sleep(Math.min(READINESS_HOLD_POLL_MS, Math.max(0, deadline - Date.now())));
       if (!isStillWaiting(getRuntime())) {
         req.readinessHoldMs = Date.now() - holdStart;
         console.warn(`[proxy] readiness hold released after ${req.readinessHoldMs}ms:`, req.method, req.originalUrl);
@@ -562,7 +564,7 @@ export const registerOpenCodeProxy = (app, deps) => {
     req.readinessHoldMs = Date.now() - holdStart;
     console.warn(`[proxy] readiness hold expired after ${req.readinessHoldMs}ms:`, req.method, req.originalUrl);
     if (!res.headersSent) {
-      res.status(503).json({
+      res.status(503).json(isSessionCreateRequest(req) ? creationRestartPayload() : {
         error: 'OpenCode is restarting',
         restarting: true,
       });
@@ -780,14 +782,42 @@ export const registerOpenCodeProxy = (app, deps) => {
           }
         }
       },
-      error: (err, _req, res) => {
+      error: (err, req, res) => {
         console.error('[proxy] OpenCode proxy error:', err.message);
         if (res && !res.headersSent && typeof res.status === 'function') {
-          res.status(503).json({ error: 'OpenCode service unavailable', retryable: true });
+          res.status(503).json(isSessionCreateRequest(req) ? creationUnknownPayload() : { error: 'OpenCode service unavailable', retryable: true });
         }
       },
     },
   }, resolveProxyAgent);
+  // Managed ownership intercepts this route earlier. For other runtimes, keep
+  // create on a bounded, single-dispatch path with unambiguous failure codes.
+  app.post('/api/session', async (req, res) => {
+    const trace = beginSessionCreationTrace(req);
+    if (trace.remainingMs() <= 0) {
+      trace.mark('deadline_before_creation');
+      return res.status(408).json(creationNotDispatchedPayload());
+    }
+    trace.mark('upstream_create_started');
+    try {
+      const rawPath = (req.originalUrl || req.url).replace(/^\/api/, '');
+      const response = await fetch(buildOpenCodeUrl(rawPath, ''), {
+        method: 'POST', headers: { ...collectForwardProxyHeaders(req.headers, getOpenCodeAuthHeaders()), 'content-type': 'application/json' },
+        body: JSON.stringify(req.body ?? {}), signal: AbortSignal.timeout(Math.floor(trace.remainingMs())),
+      });
+      if (response.status >= 500) {
+        await response.body?.cancel();
+        trace.mark('outcome_unknown');
+        return res.status(response.status).json(creationUnknownPayload());
+      }
+      const body = await response.text();
+      trace.mark(response.ok ? 'acknowledged' : 'upstream_create_rejected');
+      return res.status(response.status).type(response.headers.get('content-type') || 'application/json').send(body);
+    } catch {
+      trace.mark('outcome_unknown');
+      return res.status(502).json(creationUnknownPayload());
+    }
+  });
   const apiProxy = createProxyMiddleware(apiProxyOptions);
 
   app.use('/api', apiProxy);

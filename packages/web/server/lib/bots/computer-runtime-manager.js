@@ -118,11 +118,17 @@ export function createBotComputerRuntimeManager({
     return runtime;
   };
 
-  const ensureBot = (botInput) => {
+  const ensureBot = (botInput, { verifyHealth = false } = {}) => {
     const botId = validateUuid(botInput?.id, 'bot.id');
     return withLock(botId, async () => {
-      const bot = await requireActiveBot(botId, botInput);
       const current = runtimes.get(botId);
+      if (!verifyHealth && current
+        && botInput?.lifecycle === 'active'
+        && botInput.active_revision_id === current.revisionId
+        && Date.now() < current.tokenRefreshAt) {
+        return current;
+      }
+      const bot = await requireActiveBot(botId, botInput);
       if (current) {
         const inspected = await computerBackend.inspect({
           botId,
@@ -203,7 +209,7 @@ export function createBotComputerRuntimeManager({
     sweepPromise = (async () => {
       const activeBots = await listActiveBots();
       const activeIds = new Set(activeBots.map((bot) => bot.id));
-      await Promise.allSettled(activeBots.map((bot) => ensureBot(bot)));
+      await Promise.allSettled(activeBots.map((bot) => ensureBot(bot, { verifyHealth: true })));
       await Promise.allSettled([...runtimes.keys()]
         .filter((botId) => !activeIds.has(botId))
         .map(stopBot));

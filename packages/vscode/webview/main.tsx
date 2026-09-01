@@ -77,7 +77,7 @@ const handleConnectionMessage = (event: MessageEvent) => {
 window.addEventListener('message', handleConnectionMessage);
 window.addEventListener('message', (event: MessageEvent) => {
   const message = event.data;
-  if (isManagedOrchestrationWindowEventType(message?.type)) {
+  if (isManagedOrchestrationWindowEventType(message?.type) || message?.type === 'openchamber:primary-recovery') {
     window.dispatchEvent(new CustomEvent(message.type, { detail: message }));
   }
 });

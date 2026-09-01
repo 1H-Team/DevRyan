@@ -11,8 +11,18 @@ const BOT_ID = 'b0000000-0000-4000-8000-000000000001';
 const CHANNEL_ID = 'c0000000-0000-4000-8000-000000000001';
 const REVISION_ID = 'd0000000-0000-4000-8000-000000000001';
 const OWNER_ID = 'e0000000-0000-4000-8000-000000000001';
+const SECOND_RUN_ID = 'a0000000-0000-4000-8000-000000000002';
+const SECOND_CHANNEL_ID = 'c0000000-0000-4000-8000-000000000002';
 const TOKEN = 't'.repeat(43);
 const HASH = 'a'.repeat(64);
+
+const waitUntil = async (predicate) => {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  throw new Error('Timed out waiting for provider test condition');
+};
 
 const contract = () => ({
   models: {
@@ -33,6 +43,7 @@ const run = () => ({
 const createHarness = (overrides = {}) => {
   const calls = [];
   const client = {
+    provider: { list: vi.fn(async () => ({ data: { all: [] } })) },
     session: {
       create: vi.fn(async () => ({ data: { id: 'ses_bot_1' } })),
       prompt: vi.fn(async () => ({
@@ -100,6 +111,18 @@ const createHarness = (overrides = {}) => {
         },
         egressHosts: ['api.openai.com:443'],
         chatgptImageGeneration: true,
+      };
+    }),
+    prepareProvisionalRun: vi.fn(async () => {
+      calls.push('credential.prepare-provisional');
+      return {
+        model: { providerId: 'openai', modelId: 'gpt-5.6-sol', variant: 'high' },
+        modelSnapshot: {
+          providerId: 'openai', modelId: 'gpt-5.6-sol', candidateIndex: 0, contextLimit: 100,
+        },
+        egressHosts: ['api.openai.com:443'],
+        chatgptImageGeneration: true,
+        provisional: true,
       };
     }),
     finalizeRun: vi.fn(async () => {
@@ -178,6 +201,175 @@ describe('scoped Bot OpenCode provider', () => {
     expect(harness.dockerProvider.ensureReasoning).not.toHaveBeenCalled();
   });
 
+  it('initializes OAuth capability before warmth and revalidates adoption without replay', async () => {
+    const harness = createHarness();
+    const prepared = await harness.modelCredentialBroker.prepareProvisionalRun();
+    harness.modelCredentialBroker.prepareProvisionalRun.mockResolvedValue({ ...prepared, coordinatedOAuth: true });
+    harness.modelCredentialBroker.assertRuntimeReady = vi.fn(async () => {});
+    await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [], mode: 'warm' });
+    expect(harness.client.provider.list).toHaveBeenCalledTimes(1);
+    expect(harness.modelCredentialBroker.assertRuntimeReady).toHaveBeenCalledTimes(1);
+    harness.modelCredentialBroker.assertRuntimeReady.mockRejectedValueOnce(Object.assign(new Error('reconnect'), { code: 'bot_opencode_provider_authentication' }));
+    await expect(harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] })).rejects.toMatchObject({ code: 'bot_opencode_provider_authentication' });
+    expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
+    await harness.provider.stopReasoningRun(RUN_ID);
+  });
+
+  it('retries one transient OAuth readiness failure before any prompt is submitted', async () => {
+    const recordDiagnostic = vi.fn();
+    const harness = createHarness({ recordDiagnostic });
+    const prepared = await harness.modelCredentialBroker.prepareProvisionalRun();
+    harness.modelCredentialBroker.prepareProvisionalRun.mockResolvedValue({
+      ...prepared,
+      coordinatedOAuth: true,
+    });
+    harness.modelCredentialBroker.assertRuntimeReady = vi.fn(async () => {});
+    harness.client.provider.list
+      .mockResolvedValueOnce({
+        error: { name: 'UnknownError', data: { message: 'ECONNRESET' } },
+        response: { status: 503 },
+      })
+      .mockResolvedValueOnce({ data: { all: [] } });
+
+    await harness.provider.startReasoningRun({
+      run: run(), contract: contract(), catalog: [], mode: 'warm',
+    });
+
+    expect(harness.client.provider.list).toHaveBeenCalledTimes(2);
+    expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
+    expect(recordDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'bot.provider.oauth_readiness_retry',
+      payload: expect.objectContaining({ attemptCount: 1 }),
+    }));
+  });
+
+  it('does not retry an OAuth authentication rejection', async () => {
+    const harness = createHarness();
+    const prepared = await harness.modelCredentialBroker.prepareProvisionalRun();
+    harness.modelCredentialBroker.prepareProvisionalRun.mockResolvedValue({
+      ...prepared,
+      coordinatedOAuth: true,
+    });
+    harness.modelCredentialBroker.assertRuntimeReady = vi.fn(async () => {});
+    harness.client.provider.list.mockResolvedValueOnce({
+      error: { name: 'ProviderAuthError', data: { message: 'OAuth credential rejected' } },
+      response: { status: 401 },
+    });
+
+    await expect(harness.provider.startReasoningRun({
+      run: run(), contract: contract(), catalog: [], mode: 'warm',
+    })).rejects.toMatchObject({ code: 'bot_opencode_provider_authentication' });
+    expect(harness.client.provider.list).toHaveBeenCalledTimes(1);
+    expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it('prepares warm credentials provisionally and adopts the active runtime by run id', async () => {
+    const harness = createHarness();
+    const warm = await harness.provider.startReasoningRun({
+      run: run(),
+      contract: contract(),
+      catalog: [],
+      mode: 'warm',
+    });
+    expect(harness.modelCredentialBroker.prepareProvisionalRun).toHaveBeenCalledTimes(1);
+    expect(harness.modelCredentialBroker.prepareRun).not.toHaveBeenCalled();
+
+    const adopted = await harness.provider.startReasoningRun({
+      run: run(),
+      contract: contract(),
+      catalog: [],
+    });
+    expect(adopted).toBe(warm);
+    expect(harness.modelCredentialBroker.prepareRun).not.toHaveBeenCalled();
+    await harness.provider.stopReasoningRun(RUN_ID);
+    expect(harness.modelCredentialBroker.finalizeRun).toHaveBeenCalledWith(RUN_ID);
+    expect(harness.modelCredentialBroker.discardRun).not.toHaveBeenCalled();
+  });
+
+  it('discards credentials when an unused provisional runtime is released', async () => {
+    const harness = createHarness();
+    await harness.provider.startReasoningRun({
+      run: run(),
+      contract: contract(),
+      catalog: [],
+      mode: 'warm',
+    });
+    await harness.provider.stopReasoningRun(RUN_ID);
+    expect(harness.modelCredentialBroker.discardRun).toHaveBeenCalledWith(RUN_ID);
+    expect(harness.modelCredentialBroker.finalizeRun).not.toHaveBeenCalled();
+  });
+
+  it('defers a provisional run while an interactive run owns the channel scope', async () => {
+    const harness = createHarness();
+    await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
+
+    await expect(harness.provider.startReasoningRun({
+      run: { ...run(), id: SECOND_RUN_ID },
+      contract: contract(),
+      catalog: [],
+      mode: 'warm',
+    })).rejects.toMatchObject({ code: 'bot_runtime_scope_busy', botRuntimeStage: 'admission' });
+    expect(harness.dockerProvider.ensureReasoning).toHaveBeenCalledTimes(1);
+    expect(harness.provider.getActiveRunCount()).toBe(1);
+    await harness.provider.stopReasoningRun(RUN_ID);
+  });
+
+  it('preempts a provisional scope owner before starting an interactive replacement', async () => {
+    const harness = createHarness();
+    await harness.provider.startReasoningRun({
+      run: run(), contract: contract(), catalog: [], mode: 'warm',
+    });
+    harness.calls.length = 0;
+
+    await harness.provider.startReasoningRun({
+      run: { ...run(), id: SECOND_RUN_ID },
+      contract: contract(),
+      catalog: [],
+    });
+
+    expect(harness.calls.indexOf('docker.stop')).toBeLessThan(harness.calls.indexOf('docker.ensure'));
+    expect(harness.modelCredentialBroker.discardRun).toHaveBeenCalledWith(RUN_ID);
+    expect(harness.provider.inspectRun(SECOND_RUN_ID)).toMatchObject({ runId: SECOND_RUN_ID });
+    const stopCount = harness.dockerProvider.stopReasoning.mock.calls.length;
+    await expect(harness.provider.stopReasoningRun(RUN_ID))
+      .rejects.toMatchObject({ code: 'bot_opencode_run_not_found' });
+    expect(harness.dockerProvider.stopReasoning).toHaveBeenCalledTimes(stopCount);
+    await harness.provider.stopReasoningRun(SECOND_RUN_ID);
+  });
+
+  it('starts different channel scopes concurrently', async () => {
+    const harness = createHarness();
+    let releaseFirst;
+    const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+    harness.dockerProvider.ensureReasoning.mockImplementation(async (input) => {
+      harness.calls.push('docker.ensure');
+      if (input.channelId === CHANNEL_ID) await firstGate;
+      return {
+        endpoint: {
+          host: '127.0.0.1',
+          port: input.channelId === CHANNEL_ID ? 55101 : 55102,
+          baseUrl: `http://127.0.0.1:${input.channelId === CHANNEL_ID ? 55101 : 55102}`,
+        },
+      };
+    });
+
+    const first = harness.provider.startReasoningRun({
+      run: run(), contract: contract(), catalog: [],
+    });
+    await waitUntil(() => harness.dockerProvider.ensureReasoning.mock.calls.length === 1);
+    await harness.provider.startReasoningRun({
+      run: { ...run(), id: SECOND_RUN_ID, channelId: SECOND_CHANNEL_ID },
+      contract: contract(),
+      catalog: [],
+    });
+    releaseFirst();
+    await first;
+
+    expect(harness.provider.getActiveRunCount()).toBe(2);
+    await harness.provider.stopReasoningRun(RUN_ID);
+    await harness.provider.stopReasoningRun(SECOND_RUN_ID);
+  });
+
   it('forwards only in-memory scoped events to the installed run observer', async () => {
     let onEvent;
     const subscribeToEvents = vi.fn(async (input) => {
@@ -196,6 +388,30 @@ describe('scoped Bot OpenCode provider', () => {
       runId: RUN_ID,
       event: expect.objectContaining({ type: 'session.status' }),
     });
+    await harness.provider.stopReasoningRun(RUN_ID);
+  });
+
+  it('journals scoped provider errors before dispatch normalization', async () => {
+    let onEvent;
+    const recordDiagnostic = vi.fn();
+    const harness = createHarness({ recordDiagnostic, subscribeToEvents: async (input) => {
+      onEvent = input.onEvent;
+      await new Promise((resolve) => input.signal.addEventListener('abort', resolve, { once: true }));
+    } });
+    const observer = vi.fn();
+    harness.provider.setEventHandler(observer);
+    await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
+    await Promise.resolve();
+    const event = { type: 'session.error', properties: { sessionID: 'ses_bot_1',
+      error: { name: 'UnknownError', data: { message: 'provider disconnected', requestId: 'req_123' } },
+    } };
+    onEvent(event);
+    expect(recordDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'bot.provider.failed', sessionID: 'ses_bot_1',
+      payload: expect.objectContaining({ runId: RUN_ID,
+        error: expect.objectContaining({ message: 'provider disconnected', ref: 'req_123' }) }),
+    }));
+    expect(observer).toHaveBeenCalledWith({ runId: RUN_ID, event });
     await harness.provider.stopReasoningRun(RUN_ID);
   });
 
@@ -257,7 +473,7 @@ describe('scoped Bot OpenCode provider', () => {
         type: 'text',
         text: `${botRunMarker(RUN_ID)}\nContinue the operations review.`,
       }],
-    }, { throwOnError: false });
+    }, { throwOnError: false, signal: expect.any(AbortSignal) });
     await expect(harness.provider.prompt({
       runId: RUN_ID,
       sessionId: session.id,
@@ -304,7 +520,8 @@ describe('scoped Bot OpenCode provider', () => {
       })),
       cleanupRun: vi.fn(async () => ({ removed: true })),
     };
-    const harness = createHarness({ artifactService });
+    const recordDiagnostic = vi.fn();
+    const harness = createHarness({ artifactService, recordDiagnostic });
     await harness.provider.startReasoningRun({
       run: run(), contract: contract(), catalog: [], attachmentIds: ['private'],
     });
@@ -336,6 +553,19 @@ describe('scoped Bot OpenCode provider', () => {
       part.synthetic === true && part.text.includes('<devryan_bot_attachments>')
     ))).toBe(true);
     expect(JSON.stringify(prompt.parts)).toContain('archive.zip');
+    expect(recordDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'bot.attachments.materialized',
+      payload: expect.objectContaining({
+        attachmentCount: 3,
+        nativeCount: 1,
+        inlineTextCount: 1,
+        mountedCount: 1,
+      }),
+    }));
+    expect(recordDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'bot.provider.prompt_accepted',
+      payload: expect.objectContaining({ attachmentCount: 3 }),
+    }));
   });
 
   it('compatibility delivery omits native file parts while preserving text and mounted paths', async () => {
@@ -390,7 +620,7 @@ describe('scoped Bot OpenCode provider', () => {
     expect(harness.client.session.abort).toHaveBeenCalledWith({
       sessionID: 'ses_bot_1',
       directory: '/workspace',
-    });
+    }, { signal: expect.any(AbortSignal) });
   });
 
   it('logs only bounded upstream identity when a scoped request is rejected', async () => {
@@ -508,6 +738,7 @@ describe('scoped Bot OpenCode provider', () => {
     });
 
     expect(inspection).toEqual({
+      requestId: RUN_ID,
       promptObserved: true,
       status: 'idle',
       assistantMessageId: 'msg_assistant',
@@ -525,11 +756,66 @@ describe('scoped Bot OpenCode provider', () => {
       sessionID: 'ses_bot_1',
       directory: '/workspace',
       limit: 100,
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(harness.client.session.status).toHaveBeenCalledWith({
       directory: '/workspace',
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not accept adjacent unparented history as the current request response', async () => {
+    const harness = createHarness();
+    await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
+    harness.client.session.messages.mockResolvedValue({ data: [
+      { info: { id: 'current-user', role: 'user' }, parts: [{ type: 'text', text: botRunMarker(RUN_ID) }] },
+      { info: { id: 'unrelated', role: 'assistant', parentID: 'older-user', finish: 'stop' }, parts: [{ type: 'text', text: 'Unrelated sensitive answer' }] },
+    ] });
+    const result = await harness.provider.inspectSegment({ runId: RUN_ID, sessionId: 'ses_bot_1' });
+    expect(result).toMatchObject({ promptObserved: true, assistantMessageId: null, assistantTerminal: false, assistantText: '' });
+    await harness.provider.shutdown();
+  });
+
+  it('collects generated images across assistant tool messages without including their progress prose', async () => {
+    const harness = createHarness();
+    await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
+    harness.client.session.messages.mockResolvedValue({ data: [
+      { info: { id: 'user', role: 'user' }, parts: [{ type: 'text', text: botRunMarker(RUN_ID) }] },
+      { info: { id: 'tool-message', role: 'assistant', parentID: 'user', finish: 'tool-calls', time: { created: 1 } }, parts: [
+        { type: 'text', text: 'I will generate it.' },
+        { id: 'image', type: 'tool', tool: 'devryan_image', state: { status: 'completed', metadata: { out: '/workspace/generated/image.png' } } },
+      ] },
+      { info: { id: 'final-message', role: 'assistant', parentID: 'user', finish: 'stop', time: { created: 2 } }, parts: [
+        { type: 'reasoning', text: 'Internal thought' }, { type: 'text', text: 'Here is the image.' },
+      ] },
+    ] });
+    const result = await harness.provider.inspectSegment({ runId: RUN_ID, sessionId: 'ses_bot_1' });
+    expect(result.assistantProjection).toEqual({ toolObserved: true, acknowledgmentText: '', resultText: 'Here is the image.', generatedImages: [{ toolPartId: 'image', sourcePath: 'generated/image.png' }] });
+    await harness.provider.shutdown();
+  });
+
+  it('reconnects a dropped event stream a bounded number of times without submitting prompts', async () => {
+    const subscribeToEvents = vi.fn(async () => { throw new Error('SSE connection closed'); });
+    const harness = createHarness({ subscribeToEvents });
+    await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
+    const until = Date.now() + 4_000;
+    while (subscribeToEvents.mock.calls.length < 4 && Date.now() < until) await new Promise((done) => setTimeout(done, 20));
+    expect(subscribeToEvents).toHaveBeenCalledTimes(4);
+    expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
+    await harness.provider.shutdown();
+  });
+
+  it('cancels a pending prompt HTTP request when the run is aborted', async () => {
+    const harness = createHarness();
+    await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
+    harness.client.session.promptAsync.mockImplementation(() => new Promise(() => {}));
+    const promise = harness.provider.prompt({ runId: RUN_ID, sessionId: 'ses_bot_1', parts: [{ type: 'text', text: 'Hello' }] });
+    void promise.catch(() => undefined);
+    await Promise.resolve();
+    await harness.provider.abort({ runId: RUN_ID, sessionId: 'ses_bot_1' });
+    await expect(promise).rejects.toBeDefined();
+    expect(harness.client.session.promptAsync.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(1);
+    await harness.provider.shutdown();
   });
 
   it('projects only pre-first-tool acknowledgment and post-last-tool result text', () => {
@@ -541,7 +827,7 @@ describe('scoped Bot OpenCode provider', () => {
       { type: 'text', text: 'Everything completed successfully.' },
     ])).toEqual({
       toolObserved: true,
-      acknowledgmentText: 'I’ll take care of that.',
+      acknowledgmentText: '',
       resultText: 'Everything completed successfully.',
       generatedImages: [],
     });
@@ -551,6 +837,15 @@ describe('scoped Bot OpenCode provider', () => {
       toolObserved: false,
       acknowledgmentText: '',
       resultText: 'A direct answer.',
+      generatedImages: [],
+    });
+    expect(projectBotAssistantResponse([
+      { type: 'reasoning', text: 'Advising user on manual browser steps' },
+      { type: 'text', text: 'JavaScript and cookies aren’t exposed as settings I can change here.' },
+    ])).toEqual({
+      toolObserved: false,
+      acknowledgmentText: '',
+      resultText: 'JavaScript and cookies aren’t exposed as settings I can change here.',
       generatedImages: [],
     });
     expect(projectBotAssistantResponse([
@@ -568,6 +863,19 @@ describe('scoped Bot OpenCode provider', () => {
     ]).generatedImages).toEqual([{
       toolPartId: 'tool_image_1',
       sourcePath: 'ads/health.png',
+    }]);
+    expect(projectBotAssistantResponse([{
+      id: 'tool_image_2',
+      type: 'tool',
+      tool: 'devryan_image',
+      state: {
+        status: 'completed',
+        input: { prompt: 'A blue square', out: 'generated-images/blue.png', quality: 'low' },
+        metadata: { out: '/workspace/generated-images/blue.png' },
+      },
+    }]).generatedImages).toEqual([{
+      toolPartId: 'tool_image_2',
+      sourcePath: 'generated-images/blue.png',
     }]);
     expect(projectBotAssistantResponse([{
       id: 'tool_image_failed',
@@ -608,9 +916,15 @@ describe('scoped Bot OpenCode provider', () => {
     expect(harness.artifactService.cleanupRun).toHaveBeenCalledWith(RUN_ID);
     expect(harness.modelCredentialBroker.discardRun).toHaveBeenCalledWith(RUN_ID);
     expect(harness.provider.getActiveRunCount()).toBe(0);
+
+    await harness.provider.startReasoningRun({
+      run: { ...run(), id: SECOND_RUN_ID }, contract: contract(), catalog: [],
+    });
+    expect(harness.provider.inspectRun(SECOND_RUN_ID)).toMatchObject({ runId: SECOND_RUN_ID });
+    await harness.provider.stopReasoningRun(SECOND_RUN_ID);
   });
 
-  it('revokes the run capability when Docker stop fails and keeps credentials for retry', async () => {
+  it('revokes and cleans the run when Docker stop fails', async () => {
     const harness = createHarness();
     await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
     harness.calls.length = 0;
@@ -623,10 +937,11 @@ describe('scoped Bot OpenCode provider', () => {
       .rejects.toMatchObject({ code: 'bot_runtime_docker_unavailable' });
 
     expect(harness.calls).toEqual([
-      'docker.stop', 'gateway.revoke', 'artifact.cleanup', 'environment.finalize',
+      'docker.stop', 'gateway.revoke', 'artifact.cleanup', 'credential.finalize',
+      'environment.finalize',
     ]);
-    expect(harness.modelCredentialBroker.finalizeRun).not.toHaveBeenCalled();
-    expect(harness.provider.getActiveRunCount()).toBe(1);
+    expect(harness.modelCredentialBroker.finalizeRun).toHaveBeenCalledWith(RUN_ID);
+    expect(harness.provider.getActiveRunCount()).toBe(0);
   });
 
   it('stops active Bot runtimes before shutting down the private gateway', async () => {

@@ -20,6 +20,8 @@ import {
   PROVIDER_TOOL_INPUT_STALL_REASON,
 } from '@/sync/provider-stall-recovery';
 import { ModelRecoveryCard } from './ModelRecoveryCard';
+import { HostPrimaryRecovery } from './HostPrimaryRecovery';
+import { usePrimaryRecoveryStore } from '@/stores/usePrimaryRecoveryStore';
 
 export const PrimaryModelRecovery = React.memo(({
   sessionId,
@@ -34,12 +36,16 @@ export const PrimaryModelRecovery = React.memo(({
     [sessionId],
   ));
   const providers = useConfigStore((state) => state.providers);
+  const hostEnforced = usePrimaryRecoveryStore((state) => {
+    const snapshot = state.snapshots[sessionId];
+    return Boolean(snapshot?.record && (snapshot.enforced || snapshot.record.readOnly));
+  });
 
   React.useLayoutEffect(() => {
     if (recovery) onContentChange?.();
   }, [onContentChange, recovery]);
 
-  if (!recovery) return null;
+  if (!recovery || hostEnforced) return <HostPrimaryRecovery sessionId={sessionId} />;
 
   const usageLimitReason = getProviderUsageLimitDisplayReason(recovery.reason);
   const isClaudeClassificationError = isClaudeThirdPartyUsageClassificationError(recovery.reason);
@@ -68,7 +74,7 @@ export const PrimaryModelRecovery = React.memo(({
   };
 
   return (
-    <ModelRecoveryCard
+    <><HostPrimaryRecovery sessionId={sessionId} showAvailability /><ModelRecoveryCard
       title={isClaudeClassificationError
         ? t('chat.modelRecovery.claudeCompatibilityPrompt')
         : t('chat.modelRecovery.primaryPrompt')}
@@ -96,7 +102,7 @@ export const PrimaryModelRecovery = React.memo(({
       retryingLabel={needsClaudeCompatibility
         ? t('chat.modelRecovery.enablingCompatibility')
         : undefined}
-    />
+    /></>
   );
 });
 

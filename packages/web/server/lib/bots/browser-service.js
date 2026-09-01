@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import { createBotFailureRecorder } from './failure-diagnostics.js';
+import { createBotComputerActivity } from './computer-activity.js';
 
 import {
   BOT_BROWSER_MUTATING_ACTIONS,
@@ -18,6 +20,7 @@ const ACTIVE_RUN_STATES = new Set([
   'starting',
   'running',
   'waiting_approval',
+  'waiting_control',
   'needs_reconciliation',
 ]);
 const ALL_BROWSER_ACTIONS = new Set([
@@ -34,13 +37,32 @@ const UNCERTAIN_REMOTE_CODES = new Set([
   'DEVRYAN_BOT_BROWSER_CLOSED',
   'DEVRYAN_BOT_BROWSER_COMMAND_TIMEOUT',
 ]);
+const SAFE_AUDIT_REMOTE_CODES = new Set([
+  ...RECOVERABLE_REMOTE_CODES,
+  ...UNCERTAIN_REMOTE_CODES,
+  'DEVRYAN_BOT_CONTROL_HELD',
+  'DEVRYAN_BOT_REF_STALE',
+  'DEVRYAN_BOT_REF_UNKNOWN',
+  'DEVRYAN_BOT_TARGET_NOT_VISIBLE',
+  'DEVRYAN_BOT_CONTROL_CONFLICT',
+]);
+const MAX_HUMAN_INPUT_EVENTS = 32;
+const HUMAN_POINTER_PHASES = new Set(['move', 'down', 'up']);
+const HUMAN_POINTER_BUTTONS = new Set(['none', 'left', 'middle', 'right']);
+const HUMAN_KEY_PHASES = new Set(['down', 'up']);
+const HUMAN_KEY_MODIFIERS = new Set(['Alt', 'Control', 'Meta', 'Shift']);
 
 export class BotBrowserServiceError extends Error {
   constructor(
     message,
     code = 'bot_browser_invalid',
     statusCode = 400,
-    { transportUncertain = false, remoteCode = null } = {},
+    {
+      transportUncertain = false,
+      remoteCode = null,
+      recoverable = false,
+      preExecution = false,
+    } = {},
   ) {
     super(message);
     this.name = 'BotBrowserServiceError';
@@ -48,6 +70,8 @@ export class BotBrowserServiceError extends Error {
     this.statusCode = statusCode;
     this.transportUncertain = transportUncertain;
     this.remoteCode = remoteCode;
+    this.recoverable = recoverable;
+    this.preExecution = preExecution;
   }
 }
 
@@ -55,11 +79,50 @@ const fail = (message, code, statusCode, options) => {
   throw new BotBrowserServiceError(message, code, statusCode, options);
 };
 
-export const classifyBotBrowserRemoteFailure = ({ statusCode, remoteCode } = {}) => Object.freeze({
-  code: statusCode === 409 ? 'bot_browser_control_conflict' : 'bot_browser_command_failed',
-  transportUncertain: UNCERTAIN_REMOTE_CODES.has(remoteCode),
-  recoverable: RECOVERABLE_REMOTE_CODES.has(remoteCode),
-});
+export const classifyBotBrowserRemoteFailure = ({ statusCode, remoteCode } = {}) => {
+  if (remoteCode === 'DEVRYAN_BOT_CONTROL_HELD') {
+    return Object.freeze({
+      code: 'bot_browser_control_held',
+      transportUncertain: false,
+      recoverable: true,
+      preExecution: true,
+    });
+  }
+  if (remoteCode === 'DEVRYAN_BOT_REF_STALE' || remoteCode === 'DEVRYAN_BOT_REF_UNKNOWN') {
+    return Object.freeze({
+      code: 'bot_browser_reference_stale',
+      transportUncertain: false,
+      recoverable: true,
+      preExecution: true,
+    });
+  }
+  if (remoteCode === 'DEVRYAN_BOT_TARGET_NOT_VISIBLE') {
+    return Object.freeze({
+      code: 'bot_browser_target_not_visible',
+      transportUncertain: false,
+      recoverable: true,
+      preExecution: true,
+    });
+  }
+  if (remoteCode === 'DEVRYAN_BOT_CONTROL_CONFLICT') {
+    return Object.freeze({
+      code: 'bot_browser_control_conflict',
+      transportUncertain: false,
+      recoverable: false,
+      preExecution: true,
+    });
+  }
+  return Object.freeze({
+    code: statusCode === 409 ? 'bot_browser_conflict' : 'bot_browser_command_failed',
+    transportUncertain: UNCERTAIN_REMOTE_CODES.has(remoteCode),
+    recoverable: RECOVERABLE_REMOTE_CODES.has(remoteCode),
+    preExecution: false,
+  });
+};
+
+export const safeBotBrowserAuditRemoteCode = (remoteCode) => (
+  SAFE_AUDIT_REMOTE_CODES.has(remoteCode) ? remoteCode : null
+);
 
 export const botBrowserOperationKind = (command) => {
   const normalized = typeof command === 'string' ? command.trim().toLowerCase() : '';
@@ -118,6 +181,79 @@ export const validateBotBrowserAction = ({ command, args, target, limits } = {})
     target: normalizedTarget,
     limits: normalizedLimits,
   });
+};
+
+const validCoordinate = (value, maximum) => Number.isFinite(value) && value >= 0 && value <= maximum;
+
+export const validateBotHumanInput = (args) => {
+  const normalized = validateBoundedJsonObject(args ?? {}, 'args', 64 * 1024);
+  try {
+    assertExactObject(normalized, { label: 'Bot human input', required: ['events'] });
+  } catch (error) {
+    fail(error.message, 'bot_browser_input_invalid', 400);
+  }
+  if (!Array.isArray(normalized.events) || normalized.events.length < 1
+    || normalized.events.length > MAX_HUMAN_INPUT_EVENTS) {
+    fail('Bot human input batch is invalid', 'bot_browser_input_invalid', 400);
+  }
+  for (const event of normalized.events) {
+    if (!event || typeof event !== 'object' || Array.isArray(event)) {
+      fail('Bot human input event is invalid', 'bot_browser_input_invalid', 400);
+    }
+    try {
+      if (event.type === 'pointer') {
+        assertExactObject(event, {
+          label: 'Bot human pointer input',
+          required: ['type', 'phase', 'x', 'y', 'button', 'buttons', 'clickCount'],
+        });
+        if (!HUMAN_POINTER_PHASES.has(event.phase) || !HUMAN_POINTER_BUTTONS.has(event.button)
+          || !validCoordinate(event.x, 1280) || !validCoordinate(event.y, 720)
+          || !Number.isInteger(event.buttons) || event.buttons < 0 || event.buttons > 31
+          || !Number.isInteger(event.clickCount) || event.clickCount < 0 || event.clickCount > 3
+          || (event.phase !== 'move' && event.button === 'none')) {
+          fail('Bot human pointer input is invalid', 'bot_browser_input_invalid', 400);
+        }
+      } else if (event.type === 'wheel') {
+        assertExactObject(event, {
+          label: 'Bot human wheel input',
+          required: ['type', 'x', 'y', 'deltaX', 'deltaY'],
+        });
+        if (!validCoordinate(event.x, 1280) || !validCoordinate(event.y, 720)
+          || ![event.deltaX, event.deltaY].every((value) => (
+            Number.isFinite(value) && Math.abs(value) <= 100_000
+          ))) {
+          fail('Bot human wheel input is invalid', 'bot_browser_input_invalid', 400);
+        }
+      } else if (event.type === 'key') {
+        assertExactObject(event, {
+          label: 'Bot human key input',
+          required: ['type', 'phase', 'key', 'code', 'modifiers', 'location', 'repeat'],
+        });
+        if (!HUMAN_KEY_PHASES.has(event.phase)
+          || typeof event.key !== 'string' || event.key.length > 128 || event.key.includes('\0')
+          || typeof event.code !== 'string' || event.code.length > 128 || event.code.includes('\0')
+          || !Array.isArray(event.modifiers) || event.modifiers.length > HUMAN_KEY_MODIFIERS.size
+          || new Set(event.modifiers).size !== event.modifiers.length
+          || event.modifiers.some((modifier) => !HUMAN_KEY_MODIFIERS.has(modifier))
+          || !Number.isInteger(event.location) || event.location < 0 || event.location > 3
+          || typeof event.repeat !== 'boolean') {
+          fail('Bot human key input is invalid', 'bot_browser_input_invalid', 400);
+        }
+      } else if (event.type === 'text') {
+        assertExactObject(event, { label: 'Bot human text input', required: ['type', 'text'] });
+        if (typeof event.text !== 'string' || event.text.length < 1
+          || event.text.length > 32 * 1024 || event.text.includes('\0')) {
+          fail('Bot human text input is invalid', 'bot_browser_input_invalid', 400);
+        }
+      } else {
+        fail('Bot human input event type is invalid', 'bot_browser_input_invalid', 400);
+      }
+    } catch (error) {
+      if (error instanceof BotBrowserServiceError) throw error;
+      fail(error.message, 'bot_browser_input_invalid', 400);
+    }
+  }
+  return Object.freeze({ events: Object.freeze(normalized.events) });
 };
 
 const readBoundedBody = async (response, maximumBytes = COMPUTER_RESPONSE_LIMIT) => {
@@ -186,7 +322,12 @@ const defaultTransport = Object.freeze({
         'Bot computer rejected the request',
         classification.code,
         response.status >= 400 && response.status <= 599 ? response.status : 502,
-        { transportUncertain: classification.transportUncertain, remoteCode },
+        {
+          transportUncertain: classification.transportUncertain,
+          remoteCode,
+          recoverable: classification.recoverable,
+          preExecution: classification.preExecution,
+        },
       );
     }
     return payload.result ?? payload.lease ?? payload;
@@ -232,18 +373,110 @@ const publicControl = (value) => {
   });
 };
 
+const statusString = (value, pattern, maximum = 128) => (
+  typeof value === 'string' && value.length <= maximum && pattern.test(value) ? value : undefined
+);
+
+const statusInteger = (value, maximum = Number.MAX_SAFE_INTEGER) => (
+  Number.isSafeInteger(value) && value >= 0 && value <= maximum ? value : undefined
+);
+
+const statusOrigin = (value) => {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password
+      ? url.origin
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+export const publicBotComputerBrowserStatus = (value) => {
+  const browser = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const capabilities = browser.webCapabilities && typeof browser.webCapabilities === 'object'
+    && !Array.isArray(browser.webCapabilities) ? browser.webCapabilities : {};
+  const rawDiagnostic = browser.lastNavigationDiagnostic
+    && typeof browser.lastNavigationDiagnostic === 'object'
+    && !Array.isArray(browser.lastNavigationDiagnostic)
+    ? browser.lastNavigationDiagnostic
+    : null;
+  const diagnosticKind = statusString(
+    rawDiagnostic?.kind,
+    /^(healthy|blocked_cookies|subresource_failure|egress_denied|site_rejection)$/u,
+  );
+  const diagnosticRevision = statusInteger(rawDiagnostic?.revision);
+  const diagnostic = diagnosticKind && diagnosticRevision !== undefined
+    ? Object.freeze({
+        revision: diagnosticRevision,
+        observedAt: statusInteger(rawDiagnostic.observedAt) ?? 0,
+        origin: statusOrigin(rawDiagnostic.origin),
+        statusCode: Number.isInteger(rawDiagnostic.statusCode)
+          && rawDiagnostic.statusCode >= 100 && rawDiagnostic.statusCode <= 599
+          ? rawDiagnostic.statusCode
+          : null,
+        redirectCount: statusInteger(rawDiagnostic.redirectCount, 1_000_000) ?? 0,
+        repetitionCount: statusInteger(rawDiagnostic.repetitionCount, 1_000_000) ?? 0,
+        kind: diagnosticKind,
+        reason: statusString(rawDiagnostic.reason, /^[A-Za-z0-9_.:-]+$/u) || 'unknown',
+        blockedHost: statusString(
+          rawDiagnostic.blockedHost,
+          /^(?=.{1,253}$)[A-Za-z0-9.-]+$/u,
+          253,
+        )?.toLowerCase() || null,
+      })
+    : null;
+  const capabilityState = (entry) => (
+    ['enabled', 'disabled', 'unknown'].includes(entry) ? entry : 'unknown'
+  );
+  const managedPolicy = ['enforced', 'missing', 'unknown'].includes(capabilities.managedPolicy)
+    ? capabilities.managedPolicy
+    : 'unknown';
+  const lifecycleState = statusString(browser.lifecycleState, /^(stopped|launching|running)$/u);
+  const mode = statusString(browser.mode, /^(headed_virtual|headless_legacy)$/u);
+  const generation = statusInteger(browser.generation);
+  const screencastSubscribers = statusInteger(browser.screencastSubscribers, 10_000);
+  return Object.freeze({
+    ...(typeof browser.running === 'boolean' ? { running: browser.running } : {}),
+    ...(typeof browser.healthy === 'boolean' ? { healthy: browser.healthy } : {}),
+    ...(typeof browser.launching === 'boolean' ? { launching: browser.launching } : {}),
+    ...(lifecycleState ? { lifecycleState } : {}),
+    ...(generation !== undefined ? { generation } : {}),
+    lastFailureCode: statusString(browser.lastFailureCode, /^DEVRYAN_BOT_[A-Z0-9_]+$/u) || null,
+    ...(screencastSubscribers !== undefined ? { screencastSubscribers } : {}),
+    ...(mode ? { mode } : {}),
+    engineVersion: statusString(browser.engineVersion, /^[\x20-\x7e]+$/u) || null,
+    ...(typeof browser.displayReady === 'boolean' ? { displayReady: browser.displayReady } : {}),
+    webCapabilities: Object.freeze({
+      managedPolicy,
+      javascript: capabilityState(capabilities.javascript),
+      firstPartyCookies: capabilityState(capabilities.firstPartyCookies),
+      thirdPartyCookies: capabilityState(capabilities.thirdPartyCookies),
+    }),
+    lastNavigationDiagnostic: diagnostic,
+  });
+};
+
 export function createBotBrowserService({
   store,
   authorization,
   gatewayHost,
   computerRuntimeManager,
   eventStream,
+  audienceForChannel = async (channelId) => {
+    const channel = await store.repositories.bot_channels.get({ id: channelId });
+    return channel?.owner_user_id ? [channel.owner_user_id] : [];
+  },
   audit = async () => {},
+  recordDiagnostic = () => {},
   transport = defaultTransport,
   now = Date.now,
   randomBytesImpl = randomBytes,
   viewAttachTtlMs = VIEW_ATTACH_TTL_MS,
+  logger = console,
 } = {}) {
+  const recordFailure = createBotFailureRecorder(recordDiagnostic);
   if (!store?.repositories?.bot_runs || !store.repositories?.bots
     || !store.repositories?.bot_channels || !authorization
     || typeof authorization.requireOperator !== 'function'
@@ -387,8 +620,28 @@ export function createBotBrowserService({
   const shouldRecoverRead = (error, signal) => (
     !signal?.aborted
     && error instanceof BotBrowserServiceError
+    && error.preExecution !== true
     && (error.transportUncertain === true || RECOVERABLE_REMOTE_CODES.has(error.remoteCode))
   );
+
+  const waitForPoll = (milliseconds, signal) => new Promise((resolve, reject) => {
+    const finish = (error) => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onAbort = () => finish(new BotBrowserServiceError(
+      'Bot action was cancelled while waiting for browser control',
+      'bot_run_cancelled',
+      409,
+      { preExecution: true },
+    ));
+    const timer = setTimeout(() => finish(), milliseconds);
+    timer.unref?.();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+  });
 
   const withTransferCapability = async ({ runtime, run, command, operation }) => {
     if (!['upload', 'download'].includes(command)) {
@@ -424,13 +677,49 @@ export function createBotBrowserService({
     actorType: principal?.role === 'admin' ? 'admin' : 'user',
   });
 
+  // A stream retains only the authority needed to relinquish its own lease.
+  // This cleanup must still work after logout or membership revocation, when
+  // the old principal can no longer make an authenticated control request.
+  const releaseViewControl = async (view) => {
+    const owned = view.controlLease;
+    if (!owned) return;
+    view.controlLease = null;
+    try {
+      await transport.request({
+        runtime: owned.runtime, path: '/v1/control/return',
+        body: { ...owned.actor, leaseId: owned.leaseId },
+        signal: AbortSignal.timeout(3_000),
+      });
+      await publishControl('computer.control.return', { id: view.botId }, {
+        botId: view.botId, control: null,
+      }, null).catch(() => undefined);
+    } catch {
+      // The computer service retains its fence if releasing held input fails.
+      recordDiagnostic({ type: 'lifecycle', event: 'bot.computer.control.cleanup_failed',
+        payload: { botId: view.botId, code: 'bot_computer_control_cleanup_failed' } });
+    }
+  };
+
   const deleteViewSession = (view) => {
     if (!view || viewSessions.get(view.id) !== view) return false;
     viewSessions.delete(view.id);
     if (view.expiryTimer) clearTimeout(view.expiryTimer);
     view.controller.abort();
+    if (view.controlLease) {
+      view.controlRelease = withScopeLock(`control:${view.botId}`, () => releaseViewControl(view));
+      void view.controlRelease.catch(() => undefined);
+    }
     return true;
   };
+
+  const computerActivity = createBotComputerActivity({
+    audienceForChannel, authorization, publish: (event) => eventStream.publish(event),
+    closeViews(botId, runId) {
+      for (const view of viewSessions.values()) {
+        if (view.botId === botId && view.runId && view.runId !== runId) deleteViewSession(view);
+      }
+    },
+  });
 
   const publicView = (view) => Object.freeze({
     id: view.id,
@@ -438,38 +727,63 @@ export function createBotBrowserService({
     channelId: view.channelId,
     streamUrl: `/api/bots/${encodeURIComponent(view.botId)}/computer/view/${encodeURIComponent(view.id)}/stream`,
     startedAt: view.startedAt,
+    ...(view.runId ? { runId: view.runId } : {}),
   });
 
   const controlRequest = async ({ principal, botId, operation, leaseId = null }) => {
-    const { bot } = await authorizedBotContext(principal, botId, { operator: true });
-    const runtime = await runtimeForBot(bot);
-    const actor = controlActor(principal);
-    const path = `/v1/control/${operation}`;
-    const body = operation === 'take'
-      ? actor
-      : { ...actor, leaseId: validateBoundedString(leaseId, 'leaseId', { maximum: 160 }) };
-    const control = publicControl(await transport.request({ runtime, path, body }));
-    await publishControl(`computer.control.${operation}`, bot, { botId: bot.id, control }, principal);
-    await audit({
-      principal,
-      botId: bot.id,
-      targetType: 'bot_computer',
-      targetId: `bot:${bot.id}`,
-      action: `bot.computer.control.${operation}`,
-      result: 'success',
-      metadata: {
-        computerScopeKey: `bot:${bot.id}`,
-        controllerUserId: principal.id,
-        controlLeaseId: control?.leaseId || leaseId,
-        expiresAt: control?.expiresAt || null,
-      },
+    const normalizedBotId = validateUuid(botId, 'botId');
+    const requestedView = [...viewSessions.values()].find((view) => (
+      view.botId === normalizedBotId && view.principalId === principal?.id
+    ));
+    return withScopeLock(`control:${normalizedBotId}`, async () => {
+      const { bot } = await authorizedBotContext(principal, botId, { operator: true });
+      const runtime = await runtimeForBot(bot);
+      const actor = controlActor(principal);
+      if (operation === 'take' && requestedView && viewSessions.get(requestedView.id) !== requestedView) {
+        fail('Bot computer viewer session was closed', 'bot_browser_view_not_found', 404);
+      }
+      const path = `/v1/control/${operation}`;
+      const body = operation === 'take'
+        ? actor
+        : { ...actor, leaseId: validateBoundedString(leaseId, 'leaseId', { maximum: 160 }) };
+      const control = publicControl(await transport.request({ runtime, path, body }));
+      if (operation === 'take' && requestedView && control?.leaseId) {
+        requestedView.controlLease = { runtime, actor, leaseId: control.leaseId };
+        if (viewSessions.get(requestedView.id) !== requestedView) {
+          // Release within this lock before a replacement viewer can take control.
+          await releaseViewControl(requestedView);
+          fail('Bot computer viewer session was closed', 'bot_browser_view_not_found', 404);
+        }
+      }
+      if (operation === 'return') {
+        for (const view of viewSessions.values()) {
+          if (view.botId === bot.id && view.principalId === principal?.id
+            && view.controlLease?.leaseId === leaseId) view.controlLease = null;
+        }
+      }
+      await publishControl(`computer.control.${operation}`, bot, { botId: bot.id, control }, principal);
+      await audit({
+        principal,
+        botId: bot.id,
+        targetType: 'bot_computer',
+        targetId: `bot:${bot.id}`,
+        action: `bot.computer.control.${operation}`,
+        result: 'success',
+        metadata: {
+          computerScopeKey: `bot:${bot.id}`,
+          controllerUserId: principal.id,
+          controlLeaseId: control?.leaseId || leaseId,
+          expiresAt: control?.expiresAt || null,
+        },
+      });
+      return Object.freeze({ botId: bot.id, control });
     });
-    return Object.freeze({ botId: bot.id, control });
   };
 
   return Object.freeze({
     loadRunContext,
     ensureRuntime,
+    activity: computerActivity,
 
     async policyFacts({ run, bot, ownerUserId } = {}) {
       const runtime = await ensureRuntime({ run, bot, ownerUserId });
@@ -491,7 +805,7 @@ export function createBotBrowserService({
       return Object.freeze({ authoritativeUrl: url.href });
     },
 
-    async executeAction({ run, bot, ownerUserId, command, args, target, limits, decision, signal } = {}) {
+    async executeAction({ run, bot, ownerUserId, command, args, target, limits, decision, signal, actionAttemptId } = {}) {
       const normalized = validateBotBrowserAction({ command, args, target, limits });
       if (!decision || decision.actionHash === undefined || decision.expiresAt === undefined
         || decision.effect === 'deny' || Date.parse(decision.expiresAt) <= Date.now()) {
@@ -505,6 +819,7 @@ export function createBotBrowserService({
         }
       }
       let runtime = await ensureRuntime({ run, bot, ownerUserId });
+      await computerActivity.begin(run).catch(() => undefined);
       const requestCommand = () => withTransferCapability({
         runtime,
         run,
@@ -523,10 +838,26 @@ export function createBotBrowserService({
           result = await requestCommand();
         } catch (error) {
           if (normalized.operationKind !== 'read' || !shouldRecoverRead(error, signal)) throw error;
-          runtime = await recoverRuntime({ run, bot, ownerUserId, failedRuntime: runtime });
+          recordFailure({
+            event: 'bot.browser.recovery', run, operationId: actionAttemptId,
+            stage: 'command_failed', error,
+          });
+          try {
+            runtime = await recoverRuntime({ run, bot, ownerUserId, failedRuntime: runtime });
+          } catch (recoveryError) {
+            recordFailure({
+              event: 'bot.browser.recovery', run, operationId: actionAttemptId,
+              stage: 'runtime_restart_failed', error: recoveryError,
+            });
+            throw recoveryError;
+          }
           try {
             result = await requestCommand();
           } catch (recoveryError) {
+            recordFailure({
+              event: 'bot.browser.recovery', run, operationId: actionAttemptId,
+              stage: 'recovered_command_failed', error: recoveryError,
+            });
             throw new BotBrowserServiceError(
               'Bot computer browser recovery failed',
               'bot_browser_recovery_failed',
@@ -554,6 +885,33 @@ export function createBotBrowserService({
           );
         }
         throw error;
+      }
+    },
+
+    async waitForControlRelease({ run, bot, ownerUserId, signal } = {}) {
+      while (true) {
+        if (signal?.aborted) {
+          fail(
+            'Bot action was cancelled while waiting for browser control',
+            'bot_run_cancelled',
+            409,
+            { preExecution: true },
+          );
+        }
+        const runtime = await ensureRuntime({ run, bot, ownerUserId });
+        const status = await transport.request({
+          runtime,
+          path: '/v1/status',
+          method: 'GET',
+          signal,
+        });
+        const control = publicControl(status?.control);
+        if (!control) return Object.freeze({ released: true });
+        await computerActivity.begin(run, 'waiting').catch(() => undefined);
+        const remaining = Number.isFinite(control.expiresAt)
+          ? Math.max(50, control.expiresAt - now() + 1)
+          : 1_000;
+        await waitForPoll(Math.min(1_000, remaining), signal);
       }
     },
 
@@ -598,7 +956,7 @@ export function createBotBrowserService({
       const status = await transport.request({ runtime, path: '/v1/status', method: 'GET' });
       return Object.freeze({
         botId: bot.id,
-        browser: structuredClone(status.browser || {}),
+        browser: publicBotComputerBrowserStatus(status.browser),
         control: publicControl(status.control),
         screencast: {
           subscribers: Number(status.screencast?.subscribers || 0),
@@ -610,9 +968,19 @@ export function createBotBrowserService({
       });
     },
 
-    async startComputerView({ principal, botId, channelId } = {}) {
+    async startComputerView({ principal, botId, channelId, runId = null } = {}) {
       const context = await authorizedViewerContext(principal, botId, channelId);
+      if (runId !== null) {
+        validateUuid(runId, 'runId');
+        const activity = computerActivity.get(context.bot.id);
+        if (!activity || activity.runId !== runId || activity.channelId !== context.channel.id) {
+          fail('This conversation no longer owns automatic viewing', 'bot_computer_activity_changed', 409);
+        }
+      }
       await runtimeForBot(context.bot);
+      if (runId !== null && computerActivity.get(context.bot.id)?.runId !== runId) {
+        fail('This conversation no longer owns automatic viewing', 'bot_computer_activity_changed', 409);
+      }
       const principalId = validateUuid(principal?.id, 'principal.id');
       for (const existing of viewSessions.values()) {
         if (existing.botId === context.bot.id && existing.principalId === principalId) {
@@ -630,6 +998,7 @@ export function createBotBrowserService({
         channelId: context.channel.id,
         scopeKey: `bot:${context.bot.id}`,
         principalId,
+        runId,
         startedAt: new Date(timestamp).toISOString(),
         attachExpiresAt: timestamp + viewAttachTtlMs,
         attached: false,
@@ -656,6 +1025,9 @@ export function createBotBrowserService({
         deleteViewSession(view);
         throw error;
       }
+      if (viewSessions.get(id) !== view || view.controller.signal.aborted) {
+        fail('This conversation no longer owns automatic viewing', 'bot_computer_activity_changed', 409);
+      }
       return Object.freeze({ view: publicView(view) });
     },
 
@@ -674,12 +1046,21 @@ export function createBotBrowserService({
         fail('Bot computer viewer session expired', 'bot_browser_view_expired', 410);
       }
       const context = await authorizedViewerContext(principal, normalizedBotId, view.channelId);
+      if (view.runId && computerActivity.get(view.botId)?.runId !== view.runId) {
+        deleteViewSession(view);
+        fail('This conversation no longer owns automatic viewing', 'bot_computer_activity_changed', 409);
+      }
       if (context.bot.id !== view.botId || context.channel.id !== view.channelId
         || `bot:${context.bot.id}` !== view.scopeKey) {
         deleteViewSession(view);
         fail('Bot computer viewer session was not found', 'bot_browser_view_not_found', 404);
       }
       const runtime = await runtimeForBot(context.bot);
+      if (viewSessions.get(view.id) !== view || view.controller.signal.aborted
+        || (view.runId && computerActivity.get(view.botId)?.runId !== view.runId)) {
+        deleteViewSession(view);
+        fail('This conversation no longer owns automatic viewing', 'bot_computer_activity_changed', 409);
+      }
       view.attached = true;
       clearTimeout(view.expiryTimer);
       view.expiryTimer = null;
@@ -706,6 +1087,7 @@ export function createBotBrowserService({
         fail('Bot computer viewer session was not found', 'bot_browser_view_not_found', 404);
       }
       deleteViewSession(view);
+      await view.controlRelease;
       await audit({
         principal,
         botId: view.botId,
@@ -731,6 +1113,7 @@ export function createBotBrowserService({
       const runtime = runtimes.get(scopeKey);
       if (runtime?.gatewayToken) gatewayHost.revokeCapability(runtime.gatewayToken);
       runtimes.delete(scopeKey);
+      void computerActivity.removeBot(normalizedBotId).catch(() => undefined);
       return closed;
     },
 
@@ -738,26 +1121,55 @@ export function createBotBrowserService({
     heartbeatControl: (input) => controlRequest({ ...input, operation: 'heartbeat' }),
     returnControl: (input) => controlRequest({ ...input, operation: 'return' }),
 
-    async humanCommand({ principal, botId, leaseId, command, args } = {}) {
+    async humanCommand({ principal, botId, viewId = null, leaseId, command, args } = {}) {
       const { bot } = await authorizedBotContext(principal, botId, { operator: true });
       const runtime = await runtimeForBot(bot);
       const actor = controlActor(principal);
       const normalizedCommand = validateBoundedString(command, 'command', { maximum: 120 });
-      botBrowserOperationKind(normalizedCommand);
+      let normalizedArgs;
+      let inputMetadata = null;
+      let inputView = null;
+      if (normalizedCommand === 'input') {
+        const normalizedViewId = validateBoundedString(viewId, 'viewId', { maximum: 160 });
+        const view = viewSessions.get(normalizedViewId);
+        if (!view || view.botId !== bot.id || view.principalId !== principal?.id || !view.attached) {
+          fail('Bot computer viewer session was not found', 'bot_browser_view_not_found', 404);
+        }
+        await authorizedViewerContext(principal, bot.id, view.channelId);
+        if (viewSessions.get(view.id) !== view) {
+          fail('Bot computer viewer session was closed', 'bot_browser_view_not_found', 404);
+        }
+        inputView = view;
+        normalizedArgs = validateBotHumanInput(args);
+        inputMetadata = Object.freeze({
+          viewId: normalizedViewId,
+          eventTypes: [...new Set(normalizedArgs.events.map((event) => event.type))].sort(),
+          eventCount: normalizedArgs.events.length,
+        });
+      } else {
+        botBrowserOperationKind(normalizedCommand);
+        normalizedArgs = validateBoundedJsonObject(args ?? {}, 'args', 64 * 1024);
+      }
       if (normalizedCommand === 'upload' || normalizedCommand === 'download') {
         fail('Human file transfer requires a governed Bot run', 'bot_browser_capability_required', 409);
       }
+      const normalizedLeaseId = validateBoundedString(leaseId, 'leaseId', { maximum: 160 });
+      if (inputView && !inputView.controlLease) {
+        inputView.controlLease = { runtime, actor, leaseId: normalizedLeaseId };
+      }
+      const startedAt = performance.now();
       const result = await transport.request({
         runtime,
         path: '/v1/control/command',
         body: {
           ...actor,
-          leaseId: validateBoundedString(leaseId, 'leaseId', { maximum: 160 }),
+          leaseId: normalizedLeaseId,
           command: normalizedCommand,
-          args: validateBoundedJsonObject(args ?? {}, 'args', 64 * 1024),
+          args: normalizedArgs,
         },
       });
-      await audit({
+      const durationMs = Math.round((performance.now() - startedAt) * 100) / 100;
+      const auditInput = {
         principal,
         botId: bot.id,
         targetType: 'bot_computer',
@@ -768,12 +1180,29 @@ export function createBotBrowserService({
           computerScopeKey: `bot:${bot.id}`,
           controllerUserId: principal.id,
           commandType: normalizedCommand,
+          ...(inputMetadata ? {
+            viewId: inputMetadata.viewId,
+            eventTypes: inputMetadata.eventTypes,
+            eventCount: inputMetadata.eventCount,
+            durationMs,
+          } : {}),
         },
-      });
+      };
+      if (normalizedCommand === 'input') {
+        void Promise.resolve()
+          .then(() => audit(auditInput))
+          .catch((error) => logger?.warn?.(
+            '[BotsComputer] human-input audit failed',
+            { code: error?.code || 'bot_computer_audit_failed', botId: bot.id },
+          ));
+      } else {
+        await audit(auditInput);
+      }
       return result;
     },
 
     async shutdown() {
+      computerActivity.clear();
       for (const view of viewSessions.values()) deleteViewSession(view);
       const entries = [...runtimes.values()];
       runtimes.clear();

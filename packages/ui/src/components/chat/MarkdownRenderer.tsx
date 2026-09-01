@@ -19,8 +19,10 @@ const SimpleMarkdownRendererLazy = lazyWithChunkRecovery(() =>
 
 const fallback = <div className="break-words w-full min-w-0" />;
 
-export const MarkdownRenderer: React.FC<React.ComponentPropsWithoutRef<typeof MarkdownRendererLazy>> = (props) => (
-  <React.Suspense fallback={fallback}>
+export const MarkdownRenderer: React.FC<React.ComponentPropsWithoutRef<typeof MarkdownRendererLazy> & {
+  loadingFallback?: React.ReactNode;
+}> = ({ loadingFallback = fallback, ...props }) => (
+  <React.Suspense fallback={loadingFallback}>
     <MarkdownRendererLazy {...props} />
   </React.Suspense>
 );

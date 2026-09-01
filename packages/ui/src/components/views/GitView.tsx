@@ -84,7 +84,7 @@ import { validateCommitMessage } from '@/lib/commitTemplate';
 import { shouldAutoSelectGitChange } from '@/lib/git/commitWorkflowSafety';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { useI18n } from '@/lib/i18n';
-import { useAuthPrincipal } from '@/lib/authSession';
+import { isSourceUpdateTabHidden, useAuthPrincipal } from '@/lib/authSession';
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { resolveIntegrateBranchChoices, splitVisibleGitBranches } from './git/gitBranchVisibility';
 
@@ -216,6 +216,7 @@ export const GitView: React.FC = () => {
   const canUseHostGitIdentity = principal.scope !== 'managed' || principal.role === 'admin';
   const canRenameBranch = principal.scope !== 'managed' || principal.role === 'admin';
   const canCreateBranches = principal.scope !== 'managed' || principal.policy.createBranches;
+  const hideUpdateTab = isSourceUpdateTabHidden(principal);
   const currentDirectory = useEffectiveDirectory();
   const [worktreeBootstrapStatus, setWorktreeBootstrapStatus] = React.useState<GitWorktreeBootstrapStatus['status'] | null>(null);
   const [isWaitingForGitRefreshAfterBootstrap, setIsWaitingForGitRefreshAfterBootstrap] = React.useState(false);
@@ -523,19 +524,21 @@ export const GitView: React.FC = () => {
 
   const actionTabItems = React.useMemo(() => [
     { id: 'commit', label: t('gitView.tabs.commit'), icon: <RiGitCommitLine className="h-3 w-3" /> },
-    { id: 'branch', label: t('gitView.tabs.update'), icon: <RiGitMergeLine className="h-3 w-3" /> },
+    ...(!hideUpdateTab ? [{ id: 'branch', label: t('gitView.tabs.update'), icon: <RiGitMergeLine className="h-3 w-3" /> }] : []),
     { id: 'pr', label: t('gitView.tabs.pr'), icon: <RiGitPullRequestLine className="h-3 w-3" /> },
-  ], [t]);
+  ], [hideUpdateTab, t]);
   const [actionTab, setActionTab] = React.useState<ActionTab>(() => {
     if (typeof window === 'undefined') {
       return 'commit';
     }
     const stored = getSafeStorage().getItem(GIT_ACTION_TAB_STORAGE_KEY);
-    if (stored === 'worktree') {
+    if (!hideUpdateTab && stored === 'worktree') {
       return 'branch';
     }
+    if (hideUpdateTab && stored === 'branch') return 'commit';
     return isActionTab(stored) ? stored : 'commit';
   });
+  const visibleActionTab = hideUpdateTab && actionTab === 'branch' ? 'commit' : actionTab;
   const [remotes, setRemotes] = React.useState<GitRemote[]>([]);
   const setHistorySectionOpen = useGitStore((state) => state.setHistorySectionOpen);
   const isHistorySectionOpen = useGitHistorySectionOpen(currentDirectory ?? null);
@@ -2591,7 +2594,7 @@ export const GitView: React.FC = () => {
             isApplyingIdentity={isSettingIdentity}
             isWorktreeMode={!!worktreeMetadata}
             actionTabItems={actionTabItems}
-            activeActionTab={actionTab}
+            activeActionTab={visibleActionTab}
             onSelectActionTab={(tabID) => setActionTab(tabID as ActionTab)}
           />
 
@@ -2622,7 +2625,7 @@ export const GitView: React.FC = () => {
               disableHorizontal
               preventOverscroll
             >
-              {actionTab === 'commit' ? (
+              {visibleActionTab === 'commit' ? (
                 <div className="flex flex-1 flex-col gap-2 min-h-0">
                   {(changeEntries?.length ?? 0) > 0 ? (
                     <>
@@ -2749,7 +2752,7 @@ export const GitView: React.FC = () => {
                 </div>
               ) : null}
 
-              {actionTab === 'branch' ? (
+              {visibleActionTab === 'branch' ? (
                 <div className="space-y-4">
                   {canShowBranchWorkflows ? (
                     <>
@@ -2790,7 +2793,7 @@ export const GitView: React.FC = () => {
                 </div>
               ) : null}
 
-              {actionTab === 'pr' ? (
+              {visibleActionTab === 'pr' ? (
                 <div className="space-y-4">
                   {pullRequestProps ? (
                     <PullRequestSection

@@ -553,6 +553,109 @@ describe('OpenCode activity projection', () => {
     });
   });
 
+  it.each(['string', 'structured'])(
+    'projects the missing-tooltip evaluation failure from %s wire errors without retaining tool input',
+    (wireShape) => {
+      const errorCode = 'DEVRYAN_BROWSER_EVAL_ERROR';
+      const failureText = `${errorCode}: Agent browser evaluation failed: ✗ Evaluation error: TypeError: Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'. secret-token`;
+      const projected = projectOpenCodeActivity({
+        ownership,
+        sanitizeFailureText: (value) => value.replace('secret-token', '[REDACTED]'),
+        payload: {
+          type: 'message.part.updated',
+          properties: {
+            part: {
+              id: 'part-tooltip-eval',
+              messageID: 'message-tooltip-eval',
+              callID: 'call-tooltip-eval',
+              type: 'tool',
+              tool: 'devryan_browser',
+              sessionID: 'session-1',
+              state: {
+                status: 'error',
+                error: wireShape === 'string' ? failureText : { code: errorCode, message: failureText },
+                input: { command: 'eval', args: ['never retain this evaluation'] },
+                output: 'never retain this output',
+              },
+            },
+          },
+        },
+      });
+
+      expect(projected).toMatchObject({
+        action: 'tool.failed',
+        details: {
+          success: false,
+          diagnosticImpact: 'low',
+          diagnosticSource: 'observed',
+          diagnosticDisposition: 'expected',
+          metadata: {
+            tool: 'devryan_browser',
+            status: 'error',
+            toolId: 'part-tooltip-eval',
+            callId: 'call-tooltip-eval',
+            messageId: 'message-tooltip-eval',
+            failureClass: 'input',
+            failureText: failureText.replace('secret-token', '[REDACTED]'),
+          },
+        },
+      });
+      if (wireShape === 'structured') {
+        expect(projected.details.metadata.errorCode).toBe(errorCode);
+      } else {
+        expect(projected.details.metadata).not.toHaveProperty('errorCode');
+      }
+      expect(JSON.stringify(projected)).not.toContain('secret-token');
+      expect(JSON.stringify(projected)).not.toContain('never retain');
+    },
+  );
+
+  it.each([
+    ['devryan_browser', 'DEVRYAN_BROWSER_INPUT_INVALID: inspect rejected selector', 'low', 'input'],
+    ['devryan_browser', { code: 'DEVRYAN_BROWSER_INPUT_INVALID', message: 'inspect rejected selector' }, 'low', 'input'],
+    ['devryan_browser', 'DEVRYAN_BROWSER_COMMAND_FAILED: Agent browser command failed: ✗ Evaluation error: TypeError: generated inspection failed', 'medium', 'integration_runtime'],
+    ['devryan_browser', 'DEVRYAN_BROWSER_INSPECTION_FAILED: Agent browser command failed: ✗ Evaluation error: TypeError: Invalid input', 'medium', 'integration_runtime'],
+    ['devryan_browser', { code: 'DEVRYAN_BROWSER_INSPECTION_FAILED', message: 'Agent browser command failed: ✗ Evaluation error: TypeError: Invalid input' }, 'medium', 'integration_runtime'],
+    ['devryan_browser', 'DEVRYAN_BROWSER_INSPECTION_FAILED: Agent browser command failed: ✗ Evaluation error: TypeError: missing selector', 'medium', 'integration_runtime'],
+    ['devryan_browser', { code: 'DEVRYAN_BROWSER_INSPECTION_FAILED', message: 'Agent browser command failed: ✗ Evaluation error: TypeError: missing selector' }, 'medium', 'integration_runtime'],
+    ['devryan_browser', 'DEVRYAN_BROWSER_CONNECTION_FAILED: browser connection closed', 'medium', 'integration_runtime'],
+    ['devryan_browser', 'DEVRYAN_BROWSER_LEASE_TOUCH_FAILED: host unavailable\nBrowser command also failed: DEVRYAN_BROWSER_EVAL_ERROR: TypeError: Invalid input', 'medium', 'integration_runtime'],
+    ['devryan_browser', { code: 'DEVRYAN_BROWSER_LEASE_TOUCH_FAILED', message: 'host unavailable\nBrowser command also failed: DEVRYAN_BROWSER_EVAL_ERROR: TypeError: Invalid input' }, 'medium', 'integration_runtime'],
+    ['devryan_browser', 'DEVRYAN_BROWSER_LEASE_TOUCH_FAILED: host unavailable\nBrowser command also failed: DEVRYAN_BROWSER_INPUT_INVALID: Invalid input: selector is required', 'medium', 'integration_runtime'],
+    ['devryan_browser', { code: 'DEVRYAN_BROWSER_LEASE_TOUCH_FAILED', message: 'host unavailable\nBrowser command also failed: DEVRYAN_BROWSER_INPUT_INVALID: Invalid input: selector is required' }, 'medium', 'integration_runtime'],
+    ['devryan_browser', { code: 'DEVRYAN_BROWSER_CONNECTION_FAILED', message: 'DEVRYAN_BROWSER_EVAL_ERROR: TypeError: browser connection closed' }, 'medium', 'integration_runtime'],
+    ['devryan_browser', 'DEVRYAN_BROWSER_COMMAND_FAILED: output mentioned DEVRYAN_BROWSER_INPUT_INVALID: rejected selector', 'medium', 'integration_runtime'],
+    ['mcp__connector__lookup', 'DEVRYAN_BROWSER_EVAL_ERROR: TypeError: connector failed', 'medium', 'integration_runtime'],
+    ['mcp__connector__lookup', { code: 'DEVRYAN_BROWSER_INPUT_INVALID', message: 'connector failed' }, 'medium', 'integration_runtime'],
+  ])('projects precise browser classification for %s / %j', (tool, error, impact, failureClass) => {
+    const projected = projectOpenCodeActivity({
+      ownership,
+      payload: {
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'part-browser-classification',
+            type: 'tool',
+            tool,
+            sessionID: 'session-1',
+            state: { status: 'error', error },
+          },
+        },
+      },
+    });
+
+    expect(projected).toMatchObject({
+      action: 'tool.failed',
+      details: {
+        success: false,
+        diagnosticImpact: impact,
+        diagnosticSource: 'observed',
+        diagnosticDisposition: impact === 'low' ? 'expected' : 'actionable',
+        metadata: { tool, failureClass },
+      },
+    });
+  });
+
   it('excludes recoverable managed failures until abandoned and excludes successful retries', () => {
     const task = {
       owner: 'devryan',

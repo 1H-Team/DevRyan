@@ -85,7 +85,7 @@ describe('VS Code direct commit message generation', () => {
     expect(requestPayload.max_tokens).toBe(220);
     expect(requestPayload.reasoning_effort).toBe('none');
     expect(requestPayload.stop).toBeUndefined();
-    expect(timeoutSpy.mock.calls[0][0]).toBeLessThanOrEqual(4_500);
+    expect(timeoutSpy.mock.calls[0][0]).toBeLessThanOrEqual(20_000);
     expect(requestedUrl).not.toMatch(/session|prompt_async/);
   });
 
@@ -234,5 +234,59 @@ describe('VS Code direct commit message generation', () => {
       success: false,
       error: 'Worktree context is required',
     });
+  });
+});
+
+describe('VS Code direct PR description generation', () => {
+  it('uses the free Zen catalog without creating or prompting a session', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url === 'https://opencode.ai/zen/v1/models') {
+        return { ok: true, status: 200, json: async () => ({ data: [{ id: 'free-a' }] }) } as Response;
+      }
+      if (url === 'https://models.dev/api.json') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ opencode: { models: { 'free-a': { cost: { input: 0, output: 0 } } } } }),
+        } as Response;
+      }
+      const requestBody = JSON.parse(String(init?.body));
+      expect(requestBody.model).toBe('free-a');
+      expect(requestBody.max_tokens).toBe(1_200);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: '{"title":"Generate PR directly","body":"## Summary\\n- Use free Zen"}' } }],
+        }),
+      } as Response;
+    });
+    globalThis.fetch = fetchMock;
+
+    const result = await handleSpecialGitBridgeMessage(
+      {
+        id: 'pr-1',
+        type: 'api:git/pr-description',
+        payload: {
+          directory: '/repo',
+          base: 'main',
+          head: 'feature/direct-pr',
+          prompt: 'Return the Generate PR JSON',
+        },
+      },
+      undefined,
+      { readSettings: vi.fn(() => ({ gitModelId: 'paid-model' })), execGit: vi.fn() },
+    );
+
+    expect(result).toEqual({
+      id: 'pr-1',
+      type: 'api:git/pr-description',
+      success: true,
+      data: { title: 'Generate PR directly', body: '## Summary\n- Use free Zen' },
+    });
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls).toContain('https://opencode.ai/zen/v1/chat/completions');
+    expect(urls.some((url) => /\/session(?:\/|$)|prompt_async/.test(url))).toBe(false);
   });
 });

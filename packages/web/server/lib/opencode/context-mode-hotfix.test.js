@@ -17,6 +17,10 @@ import {
   createRecoveringContentStore,
   isRecoverableContextModeStoreError,
 } from './context-mode-content-store-recovery.js';
+import { NATIVE_EXECUTE_ORIGINAL, patchNativeServerSource } from './context-mode-native-hotfix.js';
+
+const ORIGINAL_PLUGIN_SOURCE = NATIVE_EXECUTE_ORIGINAL;
+const ORIGINAL_EXECUTOR_SOURCE = '            let timedOut = false;\n            let resolved = false;\n            proc.on("close", (exitCode) => {\n                clearTimeout(timer);';
 
 const ORIGINAL_SERVER_SOURCE = `import { ContentStore, cleanupStaleDBs, cleanupStaleContentDBs } from "./store.js";
 function getStore() {
@@ -69,6 +73,9 @@ describe('context-mode provisioning hotfix', () => {
       'utf8',
     );
     fs.writeFileSync(path.join(packageRoot, 'build', 'server.js'), source, 'utf8');
+    fs.mkdirSync(path.join(packageRoot, 'build', 'adapters', 'opencode'), { recursive: true });
+    fs.writeFileSync(path.join(packageRoot, 'build', 'adapters', 'opencode', 'plugin.js'), ORIGINAL_PLUGIN_SOURCE);
+    fs.writeFileSync(path.join(packageRoot, 'build', 'executor.js'), ORIGINAL_EXECUTOR_SOURCE);
     return root;
   };
 
@@ -77,6 +84,8 @@ describe('context-mode provisioning hotfix', () => {
     const options = {
       configDirectory,
       expectedOriginalSha256: sha256(ORIGINAL_SERVER_SOURCE),
+      expectedPluginSha256: sha256(ORIGINAL_PLUGIN_SOURCE),
+      expectedExecutorSha256: sha256(ORIGINAL_EXECUTOR_SOURCE),
     };
 
     const first = applyContextModeHotfix(options);
@@ -106,7 +115,7 @@ describe('context-mode provisioning hotfix', () => {
     expect(recoverySource).toContain('export const createRecoveringContentStore');
     expect(recoverySource).toContain('isRecoverableContextModeStoreError');
     expect(recoveryModule.isRecoverableContextModeStoreError(new Error('disk I/O error'))).toBe(true);
-    expect(transformContextModeServerSource(ORIGINAL_SERVER_SOURCE)).toBe(patched);
+    expect(patchNativeServerSource(transformContextModeServerSource(ORIGINAL_SERVER_SOURCE))).toBe(patched);
   });
 
   it('checks every file or directory path before deny policy and leaves inline content alone', async () => {
@@ -164,6 +173,24 @@ describe('context-mode provisioning hotfix', () => {
 
     expect(wrongVersion).toMatchObject({ ok: false, code: CONTEXT_MODE_HOTFIX_INCOMPATIBLE });
     expect(wrongHash).toMatchObject({ ok: false, code: CONTEXT_MODE_HOTFIX_INCOMPATIBLE });
+  });
+
+  it('does not partially patch a package when the native adapter or executor is incompatible', () => {
+    for (const relativePath of ['adapters/opencode/plugin.js', 'executor.js']) {
+      const configDirectory = createFixture();
+      const build = path.join(configDirectory, 'node_modules/context-mode/build');
+      const incompatiblePath = path.join(build, relativePath);
+      const incompatibleSource = fs.readFileSync(incompatiblePath, 'utf8') + '\n// unexpected source';
+      fs.writeFileSync(incompatiblePath, incompatibleSource);
+      const result = applyContextModeHotfix({ configDirectory,
+        expectedOriginalSha256: sha256(ORIGINAL_SERVER_SOURCE),
+        expectedPluginSha256: sha256(ORIGINAL_PLUGIN_SOURCE),
+        expectedExecutorSha256: sha256(ORIGINAL_EXECUTOR_SOURCE) });
+      expect(result).toMatchObject({ ok: false, code: CONTEXT_MODE_HOTFIX_INCOMPATIBLE });
+      expect(fs.readFileSync(path.join(build, 'server.js'), 'utf8')).toBe(ORIGINAL_SERVER_SOURCE);
+      expect(fs.readFileSync(incompatiblePath, 'utf8')).toBe(incompatibleSource);
+      expect(fs.existsSync(path.join(build, 'devryan-context-mode-worker.js'))).toBe(false);
+    }
   });
 });
 

@@ -21,6 +21,7 @@ import {
   getNextQuestionIndex,
   getPreviousQuestionIndex,
   isQuestionAnswerComplete,
+  shouldHandleQuestionAnswerEnter,
 } from './questionCardNavigation';
 import { deriveCustomModeFromText, getQuestionOptionPresentation } from './questionCardOptions';
 import { QuestionOptionRow } from './QuestionOptionRow';
@@ -238,12 +239,12 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     [customMode, customText, selectedOptions],
   );
 
-  const customInputRef = React.useRef<HTMLInputElement | null>(null);
+  const customInputRef = React.useRef<HTMLTextAreaElement | null>(null);
 
   const handleToggleOption = React.useCallback(
     (entry: QuestionEntry, label: string) => {
       setCustomMode((prev) => ({ ...prev, [entry.entryKey]: false }));
-      // Picking an option clears the custom pill so the visible state always
+      // Picking an option clears the custom answer so the visible state always
       // matches the answer that will be submitted.
       setCustomText((prev) => (prev[entry.entryKey] ? { ...prev, [entry.entryKey]: '' } : prev));
       setSelectedOptions((prev) => {
@@ -263,9 +264,9 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
       });
       if (nextIndex !== entry.flatIndex) setActiveIndex(nextIndex);
 
-      // Return focus to the answer pill so a follow-up Enter submits instead
+      // Return focus to the answer editor so a follow-up Enter submits instead
       // of re-activating the clicked option button (which would toggle
-      // multi-select answers off). Skipped on mobile: focusing the input
+      // multi-select answers off). Skipped on mobile: focusing the textarea
       // would pop the on-screen keyboard.
       if (!isMobile) {
         requestAnimationFrame(() => customInputRef.current?.focus());
@@ -382,9 +383,15 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   ]);
 
   const handleKeyDown = React.useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (isIMECompositionEvent(e)) return;
-      if (e.key === 'Enter' && !e.shiftKey && (!isMobile || e.ctrlKey || e.metaKey)) {
+      if (shouldHandleQuestionAnswerEnter({
+        key: e.key,
+        shiftKey: e.shiftKey,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+        isMobile,
+      })) {
         e.preventDefault();
         if (isLastQuestion && requiredSatisfied) {
           handleConfirm();
@@ -529,35 +536,72 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
         </div>
       ) : null}
 
-      {/* Custom answer pill with the actions inside it */}
+      {/* Custom answer editor with stable actions below the expanding text area. */}
       {activeEntry ? (
         <div className="pt-2">
           <div
             className={cn(
-              'flex min-w-0 items-center gap-1.5 rounded-full border border-border/50 py-1 pl-3 pr-1.5 transition-colors',
+              'min-w-0 overflow-hidden rounded-xl border border-border/50 transition-colors',
               'focus-within:border-primary/60',
               isSubmitting ? 'opacity-60' : null,
             )}
           >
-            <RiEditLine aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-            <input
-              ref={customInputRef}
-              type="text"
-              value={customText[activeEntry.entryKey] ?? ''}
-              onChange={(event: React.ChangeEvent<HTMLInputElement>) => (
-                handleCustomTextChange(activeEntry, event.target.value)
-              )}
-              onKeyDown={handleKeyDown}
-              placeholder={t('chat.questionCard.customPlaceholder')}
-              disabled={isSubmitting}
-              autoFocus={!isMobile}
-              className="min-w-0 flex-1 border-0 bg-transparent outline-none typography-meta text-foreground placeholder:text-muted-foreground/60 disabled:cursor-not-allowed"
-            />
+            <div className="flex min-w-0 items-start gap-2 px-3 py-2">
+              <RiEditLine aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+              <textarea
+                ref={customInputRef}
+                rows={1}
+                value={customText[activeEntry.entryKey] ?? ''}
+                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => (
+                  handleCustomTextChange(activeEntry, event.target.value)
+                )}
+                onKeyDown={handleKeyDown}
+                placeholder={t('chat.questionCard.customPlaceholder')}
+                aria-label={t('chat.questionCard.customPlaceholder')}
+                disabled={isSubmitting}
+                autoFocus={!isMobile}
+                className={cn(
+                  'field-sizing-content max-h-[min(40vh,18rem)] min-h-5 min-w-0 flex-1 resize-none overflow-y-auto',
+                  'border-0 bg-transparent p-0 typography-meta leading-5 text-foreground outline-none',
+                  'whitespace-pre-wrap break-words placeholder:text-muted-foreground/60 disabled:cursor-not-allowed',
+                )}
+              />
+            </div>
 
-            {boundedActiveIndex > 0 ? (
+            <div className="flex flex-wrap items-center justify-end gap-1 border-t border-border/30 px-1.5 py-1">
+              {boundedActiveIndex > 0 ? (
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  disabled={isSubmitting}
+                  className={cn(
+                    'mr-auto flex shrink-0 items-center gap-1 px-2 py-0.5 typography-meta font-medium rounded-full transition-colors',
+                    'text-muted-foreground hover:text-foreground hover:bg-interactive-hover/20',
+                    'disabled:opacity-50 disabled:cursor-not-allowed',
+                  )}
+                >
+                  <RiArrowLeftSLine className="h-3 w-3" />
+                  {t('chat.questionCard.back')}
+                </button>
+              ) : null}
+
               <button
                 type="button"
-                onClick={handleBack}
+                onClick={handlePrimaryAction}
+                disabled={primaryDisabled}
+                className={cn(
+                  'flex shrink-0 items-center gap-1 px-2 py-0.5 typography-meta font-medium rounded-full transition-colors',
+                  'text-[var(--status-success)] hover:bg-[rgb(var(--status-success)/0.1)]',
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
+                )}
+              >
+                {isLastQuestion ? <RiCheckLine className="h-3 w-3" /> : <RiArrowRightSLine className="h-3 w-3" />}
+                {isLastQuestion ? t('chat.questionCard.submit') : t('chat.questionCard.next')}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSkip}
                 disabled={isSubmitting}
                 className={cn(
                   'flex shrink-0 items-center gap-1 px-2 py-0.5 typography-meta font-medium rounded-full transition-colors',
@@ -565,37 +609,9 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
                   'disabled:opacity-50 disabled:cursor-not-allowed',
                 )}
               >
-                <RiArrowLeftSLine className="h-3 w-3" />
-                {t('chat.questionCard.back')}
+                {t('chat.questionCard.skip')}
               </button>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={handlePrimaryAction}
-              disabled={primaryDisabled}
-              className={cn(
-                'flex shrink-0 items-center gap-1 px-2 py-0.5 typography-meta font-medium rounded-full transition-colors',
-                'text-[var(--status-success)] hover:bg-[rgb(var(--status-success)/0.1)]',
-                'disabled:opacity-50 disabled:cursor-not-allowed',
-              )}
-            >
-              {isLastQuestion ? <RiCheckLine className="h-3 w-3" /> : <RiArrowRightSLine className="h-3 w-3" />}
-              {isLastQuestion ? t('chat.questionCard.submit') : t('chat.questionCard.next')}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleSkip}
-              disabled={isSubmitting}
-              className={cn(
-                'flex shrink-0 items-center gap-1 px-2 py-0.5 typography-meta font-medium rounded-full transition-colors',
-                'text-muted-foreground hover:text-foreground hover:bg-interactive-hover/20',
-                'disabled:opacity-50 disabled:cursor-not-allowed',
-              )}
-            >
-              {t('chat.questionCard.skip')}
-            </button>
+            </div>
           </div>
         </div>
       ) : null}

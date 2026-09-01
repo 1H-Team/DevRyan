@@ -8,6 +8,7 @@ import type { ResponseStyleLevel } from '@/lib/responseStyle';
 import {
     hasDisplayableReasoningText,
     isReasoningPartActive,
+    resolveReasoningRunActiveState,
 } from '../reasoningGrouping';
 import ReasoningPart from './ReasoningPart';
 import { isReasoningDisclosureToggleKey } from './reasoningDisclosureKeyboard';
@@ -25,6 +26,7 @@ interface ReasoningGroupProps {
     responseStyleLevel?: ResponseStyleLevel;
     onContentChange?: (reason?: ContentChangeReason) => void;
     isMessageCompleted?: boolean;
+    isTrailingLiveRun?: boolean;
     isMobile?: boolean;
 }
 
@@ -62,12 +64,17 @@ export const ReasoningDisclosure: React.FC<ReasoningDisclosureProps> = ({
     responseStyleLevel,
     onContentChange,
     isMessageCompleted = false,
+    isTrailingLiveRun = false,
     isMobile = false,
     isExpanded,
     onExpandedChange,
 }) => {
     const { t } = useI18n();
-    const isActive = !isMessageCompleted && entries.some((entry) => isReasoningPartActive(entry.part));
+    const isActive = resolveReasoningRunActiveState({
+        isMessageCompleted,
+        hasActivePart: entries.some((entry) => isReasoningPartActive(entry.part)),
+        isTrailingLiveRun,
+    });
     const sessionID = (entries[0]?.part as { sessionID?: unknown } | undefined)?.sessionID;
 
     React.useLayoutEffect(() => {
@@ -151,23 +158,30 @@ const ReasoningGroupInner: React.FC<ReasoningGroupProps> = ({
     responseStyleLevel,
     onContentChange,
     isMessageCompleted = false,
+    isTrailingLiveRun = false,
     isMobile = false,
 }) => {
     const [isExpanded, setIsExpanded] = React.useState(false);
+    const isActive = resolveReasoningRunActiveState({
+        isMessageCompleted,
+        hasActivePart: entries.some((entry) => isReasoningPartActive(entry.part)),
+        isTrailingLiveRun,
+    });
     const displayableEntries = React.useMemo(
-        () => entries.filter((entry) => (
+        () => entries.filter((entry, index) => (
             hasDisplayableReasoningText(entry.part, providerID)
-            || (!isMessageCompleted && isReasoningPartActive(entry.part))
+            || (isActive && (
+                isReasoningPartActive(entry.part)
+                || index === entries.length - 1
+            ))
         )),
-        [entries, isMessageCompleted, providerID],
+        [entries, isActive, providerID],
     );
 
     if (displayableEntries.length === 0) {
         return null;
     }
 
-    const isActive = !isMessageCompleted
-        && displayableEntries.some((entry) => isReasoningPartActive(entry.part));
     if (!shouldRenderReasoningDisclosure(displayableEntries, isActive)) {
         const entry = displayableEntries[0];
         if (!entry) return null;
@@ -191,6 +205,7 @@ const ReasoningGroupInner: React.FC<ReasoningGroupProps> = ({
             responseStyleLevel={responseStyleLevel}
             onContentChange={onContentChange}
             isMessageCompleted={isMessageCompleted}
+            isTrailingLiveRun={isTrailingLiveRun}
             isMobile={isMobile}
             isExpanded={isExpanded}
             onExpandedChange={setIsExpanded}
@@ -211,6 +226,7 @@ const ReasoningGroup = React.memo(ReasoningGroupInner, (previous, next) => (
     && previous.responseStyleLevel === next.responseStyleLevel
     && previous.onContentChange === next.onContentChange
     && previous.isMessageCompleted === next.isMessageCompleted
+    && previous.isTrailingLiveRun === next.isTrailingLiveRun
     && previous.isMobile === next.isMobile
 ));
 

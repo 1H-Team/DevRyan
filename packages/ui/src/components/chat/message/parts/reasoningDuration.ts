@@ -33,10 +33,9 @@ export const getReasoningDurationMilliseconds = (
 
 export const formatReasoningDuration = (milliseconds: number): string | null => {
     if (!Number.isFinite(milliseconds) || milliseconds < 0) return null;
+    if (milliseconds === 0) return '<1s';
 
-    const roundedSeconds = milliseconds > 0
-        ? Math.max(1, Math.round(milliseconds / 1_000))
-        : 0;
+    const roundedSeconds = Math.max(1, Math.round(milliseconds / 1_000));
     if (roundedSeconds < 60) {
         return `${roundedSeconds}s`;
     }

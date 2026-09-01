@@ -1018,16 +1018,22 @@ const normalizeXaiPayload = (payload, now) => {
   const windows = {};
   const warnings = [];
   const currentPeriod = asObject(config.currentPeriod ?? config.current_period);
-  const usedPercent = firstNumber(config, ['creditUsagePercent', 'credit_usage_percent']);
+  const usagePercentKeys = ['creditUsagePercent', 'credit_usage_percent'];
+  const hasUsagePercent = usagePercentKeys.some((key) => Object.prototype.hasOwnProperty.call(config, key));
+  const reportedUsedPercent = firstNumber(config, usagePercentKeys);
   const resetAt = firstTimestamp(currentPeriod, ['end', 'resetAt', 'reset_at'])
     ?? firstTimestamp(config, ['billingPeriodEnd', 'billing_period_end']);
+  const label = xaiPeriodLabel(currentPeriod?.type ?? currentPeriod?.kind);
+  const omittedZeroPercent = !hasUsagePercent
+    && resetAt !== null
+    && (label === 'weekly' || label === 'monthly');
+  const usedPercent = reportedUsedPercent ?? (omittedZeroPercent ? 0 : null);
   if (usedPercent !== null || resetAt !== null) {
     let windowSeconds = null;
     const startAt = firstTimestamp(currentPeriod, ['start', 'startAt', 'start_at']);
     if (startAt !== null && resetAt !== null && resetAt > startAt) {
       windowSeconds = Math.floor((resetAt - startAt) / 1000);
     }
-    const label = xaiPeriodLabel(currentPeriod?.type ?? currentPeriod?.kind);
     windows[label] = toSharedUsageWindow({
       usedPercent,
       windowSeconds,

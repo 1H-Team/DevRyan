@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import {
   fetchMagicPromptOverrides,
+  getDefaultMagicPromptTemplate,
   invalidateMagicPromptOverridesCache,
   MAGIC_PROMPT_DEFINITIONS,
+  renderMagicPrompt,
 } from "./magicPrompts"
 
 const originalFetch = globalThis.fetch
@@ -55,5 +57,38 @@ describe("magic prompt catalog", () => {
       "git.commit.generate.visible": "new commit visible",
       "git.pr.generate.visible": "pr visible",
     })
+  })
+
+  test("uses the concise Implement plan message without exposing the plan title", async () => {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      version: 1,
+      overrides: {},
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })
+
+    expect(getDefaultMagicPromptTemplate("plan.implement.visible")).toBe("Implement plan.")
+    const rendered = await renderMagicPrompt("plan.implement.visible", {
+      plan_title: "Fix auth email carryover",
+    })
+    expect(rendered).toBe("Implement plan.")
+  })
+
+  test("renders the host Implement Plan override for action consumers", async () => {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      version: 1,
+      overrides: {
+        "plan.implement.visible": "Use the approved implementation plan.",
+      },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })
+
+    const rendered = await renderMagicPrompt("plan.implement.visible", {
+      plan_title: "A title that must not be appended",
+    })
+    expect(rendered).toBe("Use the approved implementation plan.")
   })
 })

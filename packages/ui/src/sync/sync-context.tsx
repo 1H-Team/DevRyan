@@ -116,6 +116,7 @@ import type { PermissionRequest } from "@/types/permission"
 import type { QuestionRequest } from "@/types/question"
 import * as sessionActions from "./session-actions"
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
+import { updateSessionUserActivityFromMessages } from "./session-user-activity"
 import {
   clearCommittedRevertResendsForSessions,
   getEffectiveSessionRevertMessageID,
@@ -435,6 +436,29 @@ export function useAllSessionStatuses(enabled = true): Record<string, SessionSta
   return useLiveSyncSelector(
     useCallback((states) => (enabled ? aggregateLiveSessionStatuses(states) : EMPTY_SESSION_STATUS_MAP), [enabled]),
     areStatusMapsEquivalent,
+  )
+}
+
+const areSessionUserActivityMapsEquivalent = (left: Record<string, number>, right: Record<string, number>): boolean => {
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+  return leftKeys.every((key) => left[key] === right[key])
+}
+
+export function useAllSessionUserActivity(): Record<string, number> {
+  return useLiveSyncSelector(
+    useCallback((states) => {
+      const activity: Record<string, number> = {}
+      for (const state of states) {
+        for (const [sessionID, timestamp] of Object.entries(state.session_user_activity)) {
+          const current = activity[sessionID]
+          activity[sessionID] = current === undefined ? timestamp : Math.max(current, timestamp)
+        }
+      }
+      return activity
+    }, []),
+    areSessionUserActivityMapsEquivalent,
   )
 }
 
@@ -822,10 +846,18 @@ async function materializeSessionFromServer(
       })),
       { skipPartTypes: RECONNECT_SKIP_PARTS },
     )
+    const draft = {
+      ...state,
+      message: materialized.message,
+      part: materialized.part,
+      session_user_activity: state.session_user_activity,
+    }
+    const activityChanged = updateSessionUserActivityFromMessages(draft, sessionID)
     return {
       ...(materialized.sessionsChanged && materialized.session ? { session: materialized.session } : {}),
       message: materialized.message,
       part: materialized.part,
+      ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}),
     }
   })
   replayPendingPartDeltasForSession(directory, sessionID, store)
@@ -2103,9 +2135,11 @@ const removeDeletedSessionFromAllChildStores = (
         question: { ...current.question },
         message: { ...current.message },
         part: { ...current.part },
+        session_user_activity: { ...current.session_user_activity },
         revert_transaction: { ...current.revert_transaction },
       }
       dropSessionCaches(next, [sessionID])
+      delete next.session_user_activity[sessionID]
       delete next.revert_transaction[sessionID]
       return next
     })
@@ -2561,7 +2595,15 @@ export async function resyncDirectoryAfterReconnect(
       }
       const messagesChanged = materialized.messagesChanged
       const partsChanged = materialized.partsChanged
-      if (!sessionChanged && !messagesChanged && !partsChanged) {
+      const activityDraft = {
+        ...state,
+        session: sessions,
+        message: materialized.message,
+        part: materialized.part,
+        session_user_activity: state.session_user_activity,
+      }
+      const activityChanged = updateSessionUserActivityFromMessages(activityDraft, sessionId)
+      if (!sessionChanged && !messagesChanged && !partsChanged && !activityChanged) {
         return state
       }
 
@@ -2569,6 +2611,7 @@ export async function resyncDirectoryAfterReconnect(
         ...(sessionChanged ? { session: sessions, sessionTotal } : {}),
         ...(messagesChanged ? { message: materialized.message } : {}),
         ...(partsChanged ? { part: materialized.part } : {}),
+        ...(activityChanged ? { session_user_activity: activityDraft.session_user_activity } : {}),
       }
     })
 

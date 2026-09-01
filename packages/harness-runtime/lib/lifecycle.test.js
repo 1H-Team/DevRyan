@@ -62,7 +62,7 @@ describe('turn lifecycle tracker', () => {
     });
   });
 
-  test('settles an active turn as aborted on a session error', () => {
+  test('distinguishes a session failure from user cancellation', () => {
     const events = [];
     const tracker = createLifecycleTracker({ onTurnEvent: (event) => events.push(event) });
     tracker.recordPromptAccepted({ sessionID: 'ses_abort', messageID: 'msg_1' });
@@ -70,6 +70,6 @@ describe('turn lifecycle tracker', () => {
       type: 'session.error',
       properties: { sessionID: 'ses_abort' },
     });
-    expect(events.at(-1)).toMatchObject({ type: 'turn_aborted', sessionID: 'ses_abort' });
+    expect(events.at(-1)).toMatchObject({ type: 'turn_failed', sessionID: 'ses_abort' });
   });
 });

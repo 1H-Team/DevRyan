@@ -30,6 +30,9 @@ const EMPTY_PENDING_DISPATCHES: readonly PendingManagedTaskDispatch[] = [];
 const EMPTY_FALLBACK_TASKS: readonly ManagedTaskDispatchFallback[] = [];
 const EMPTY_CURSOR_NATIVE_TASKS: readonly CursorNativeTaskDispatch[] = [];
 const MISSING_DISPATCH_RECOVERY_DELAY_MS = 500;
+const MANAGED_TASK_CARD_STYLE: React.CSSProperties & Record<'--managed-task-card-border', string> = {
+  '--managed-task-card-border': 'color-mix(in srgb, var(--primary-base) 16%, var(--border))',
+};
 
 export const ManagedTaskPreparingRow = React.memo(({
   dispatch,
@@ -349,7 +352,8 @@ export const ManagedTaskList = React.memo(({
     >
       <div
         data-managed-task-card="true"
-        className="relative isolate overflow-hidden rounded-xl border border-transparent bg-[color-mix(in_srgb,var(--primary-base)_3%,var(--surface-background))] after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:border after:border-[color-mix(in_srgb,var(--primary-base)_16%,var(--border))] after:content-['']"
+        className="relative isolate overflow-hidden rounded-xl border border-[color:var(--managed-task-card-border)] bg-[color-mix(in_srgb,var(--primary-base)_3%,var(--surface-background))]"
+        style={MANAGED_TASK_CARD_STYLE}
       >
         <header className="flex items-center gap-2 border-b border-border/70 px-3 py-2">
           <RiGitBranchLine className="size-3.5 text-[var(--primary-base)]" aria-hidden="true" />
@@ -399,7 +403,7 @@ export const ManagedTaskList = React.memo(({
             return (
               <section key={group.agent.toLocaleLowerCase()} aria-label={agentLabel}>
                 <div className="flex h-7 items-center bg-muted/25 px-3 typography-meta text-muted-foreground">
-                  <span className="inline-flex min-w-0 translate-y-1 items-center gap-1.5 leading-none">
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
                     <RiAiAgentLine
                       className="size-3.5 shrink-0"
                       style={{ color: `var(${getAgentIconColor(group.agent).var})` }}

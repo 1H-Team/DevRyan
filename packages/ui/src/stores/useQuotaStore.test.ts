@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { opencodeClient } from '@/lib/opencode/client';
+import {
+  getAuthPrincipal,
+  setAuthPrincipal,
+  type AuthAssignment,
+  type AuthPrincipal,
+} from '@/lib/authSession';
 import type { ProviderResult, QuotaProviderId } from '@/types';
 import {
   BASELINE_QUOTA_REFRESH_MS,
@@ -8,6 +14,32 @@ import {
 } from './useQuotaStore';
 
 const originalFetch = globalThis.fetch;
+
+const managedPrincipal = (
+  assignments: AuthAssignment[],
+  role: AuthPrincipal['role'] = 'developer',
+): AuthPrincipal => ({
+  ...getAuthPrincipal(),
+  id: `${role}-1`,
+  email: `${role}-1@example.com`,
+  displayName: role,
+  role,
+  scope: 'managed',
+  assignments,
+});
+
+const assignment = (
+  projectId: string,
+  publicDirectory: string,
+  isDefault = false,
+): AuthAssignment => ({
+  projectId,
+  label: projectId,
+  branchName: 'main',
+  publicDirectory,
+  githubAccountId: null,
+  isDefault,
+});
 
 const providerResult = (
   providerId: QuotaProviderId,
@@ -33,6 +65,7 @@ const pendingResponse = () => {
 describe('useQuotaStore refresh ownership', () => {
   beforeEach(() => {
     globalThis.fetch = originalFetch;
+    setAuthPrincipal(null);
     opencodeClient.setDirectory(`/tmp/devryan-quota-store-${Date.now()}-${Math.random()}`);
     useQuotaStore.setState({
       results: [],
@@ -45,6 +78,108 @@ describe('useQuotaStore refresh ownership', () => {
       lastUpdated: null,
       error: null,
     });
+  });
+
+  test('uses the active managed assignment for discovery and provider refresh', async () => {
+    const first = assignment('project-1', '/projects/project-1/main', true);
+    const active = assignment('project-2', '/projects/project-2/main');
+    setAuthPrincipal(managedPrincipal([first, active]));
+    opencodeClient.setDirectory(active.publicDirectory);
+
+    const requests: Array<{ url: string; directory: string | null }> = [];
+    globalThis.fetch = (async (input, init) => {
+      const url = String(input);
+      requests.push({
+        url,
+        directory: new Headers(init?.headers).get('x-opencode-directory'),
+      });
+      if (url === '/api/quota/providers') {
+        return Response.json({ providers: ['codex'] });
+      }
+      return Response.json(providerResult('codex'));
+    }) as typeof fetch;
+
+    await useQuotaStore.getState().fetchAllQuotas({ rediscover: true });
+
+    expect(requests).toEqual([
+      { url: '/api/quota/providers', directory: active.publicDirectory },
+      { url: '/api/quota/codex', directory: active.publicDirectory },
+    ]);
+  });
+
+  test('falls back from a stale directory to the default managed assignment for forced refreshes', async () => {
+    const first = assignment('project-1', '/projects/project-1/main');
+    const fallback = assignment('project-2', '/projects/project-2/main', true);
+    setAuthPrincipal(managedPrincipal([first, fallback]));
+    opencodeClient.setDirectory('/projects/revoked/main');
+
+    const requests: Array<{ url: string; directory: string | null }> = [];
+    globalThis.fetch = (async (input, init) => {
+      const url = String(input);
+      requests.push({
+        url,
+        directory: new Headers(init?.headers).get('x-opencode-directory'),
+      });
+      if (url === '/api/quota/providers') {
+        return Response.json({ providers: ['codex'] });
+      }
+      return Response.json(providerResult('codex'));
+    }) as typeof fetch;
+
+    await useQuotaStore.getState().fetchAllQuotas({ rediscover: true, forceRefresh: true });
+
+    expect(requests).toEqual([
+      { url: '/api/quota/providers', directory: fallback.publicDirectory },
+      { url: '/api/quota/codex?refresh=true', directory: fallback.publicDirectory },
+    ]);
+  });
+
+  test('uses the first managed assignment when none is marked as default', async () => {
+    const first = assignment('project-1', '/projects/project-1/main');
+    const second = assignment('project-2', '/projects/project-2/main');
+    setAuthPrincipal(managedPrincipal([first, second]));
+    opencodeClient.setDirectory('/projects/revoked/main');
+
+    let directory: string | null = null;
+    globalThis.fetch = (async (_input, init) => {
+      directory = new Headers(init?.headers).get('x-opencode-directory');
+      return Response.json(providerResult('codex'));
+    }) as typeof fetch;
+
+    await useQuotaStore.getState().fetchProviderQuota('codex');
+
+    expect(directory).toBe(first.publicDirectory);
+  });
+
+  test('omits the directory header for a managed developer without assignments', async () => {
+    setAuthPrincipal(managedPrincipal([]));
+
+    let directory: string | null = 'not-requested';
+    globalThis.fetch = (async (_input, init) => {
+      directory = new Headers(init?.headers).get('x-opencode-directory');
+      return Response.json(providerResult('codex'));
+    }) as typeof fetch;
+
+    await useQuotaStore.getState().fetchProviderQuota('codex');
+
+    expect(directory).toBeNull();
+  });
+
+  test('preserves the current directory for local and managed administrators', async () => {
+    const directories: Array<string | null> = [];
+    globalThis.fetch = (async (_input, init) => {
+      directories.push(new Headers(init?.headers).get('x-opencode-directory'));
+      return Response.json(providerResult('codex'));
+    }) as typeof fetch;
+
+    opencodeClient.setDirectory('/local/admin/workspace');
+    await useQuotaStore.getState().fetchProviderQuota('codex');
+
+    setAuthPrincipal(managedPrincipal([], 'admin'));
+    opencodeClient.setDirectory('/managed/admin/workspace');
+    await useQuotaStore.getState().fetchProviderQuota('codex', { forceRefresh: true });
+
+    expect(directories).toEqual(['/local/admin/workspace', '/managed/admin/workspace']);
   });
 
   test('discovers and refreshes only configured known providers', async () => {

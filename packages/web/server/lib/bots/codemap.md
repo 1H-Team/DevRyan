@@ -29,10 +29,12 @@ Electron shell.
 - `routes.js`: authenticated `/api/bots/*` capability, management/routine,
   channel/message/run, Bot-SSE, and encrypted-object routes plus stable
   migration/error envelopes, including profile/avatar/model-option/publish
-  contracts.
+  contracts. Administrator-only `/api/bot-audit*` reads and review clearing are registered outside
+  execution-health middleware so historical diagnostics survive degradation.
 - `store.js`: one explicit-select repository per Bot table, cursor paging,
-  optimistic `updated_at` writes, fixed exact-version publish RPCs, and private
-  Storage delegation.
+  optimistic `updated_at` writes, fixed exact-version publish RPCs, durable
+  extraction-job lease/deferral transactions, idempotent terminal-run
+  settlement, checkpoint-CAS summaries, and private Storage delegation.
 - `management.js`: global-admin creation, settings-authorized catalog/detail operations,
   authoritative create capability, optimistic durable profiles and internal
   setup revisions, encrypted avatar publication/compensation, secret-free
@@ -72,9 +74,15 @@ Electron shell.
   classification, explicit copy publication, and deterministic cleanup.
 - `audit-retention.js`: content-free Bot audit events and the one-year/default,
   30-day-minimum retention job.
+- `audit-query.js`: exact-managed-admin Bot audit validation, resolution-aware issues-first
+  keyset queries, batch Bot/user hydration, deleted/former fallbacks, and
+  per-row metadata safety revalidation/redaction. Range-based review clearing
+  records separate service-only dismissal rows; retained ledger/UUID detail
+  reads and the retention policy remain unchanged.
 - `validation.js`: strict JSON/UUID/base64/page request boundaries.
 - `encryption.js`: exact deployment-key AES-256-GCM JSON envelopes.
 - `credential-vault.js`: host-local encrypted connector credential lifecycle.
+- `host-oauth-connections.js`: identity-proven legacy OpenAI OAuth migration, host-connection references, sanitized auth state and optimistic Manager reconnection. Shared refresh ownership lives in `../opencode/openai-oauth-coordinator.js`; `gateway-host.js` provides private run-scoped access-only delivery outside the tool operation registry.
 - `environment-secret-vault.js`: atomic host-local encrypted Bot environment
   values, opaque recovery export/restore, rotation/delete compensation, and
   Bot-scoped purge.
@@ -100,7 +108,8 @@ Electron shell.
 - `opencode-reasoning-adapter.js`: OpenCode session/segment/event translation,
   recovery, cancellation, warm leases, image export, and structured completion.
 - `ag-ui-reasoning-adapter.js`: pinned `@ag-ui/core@0.0.58` reviewed SSE subset,
-  exact event ordering/size/replay checks, sole `devryan_bot` tool contract,
+  exact event ordering/size/replay checks, the `devryan_bot` gateway and
+  OAuth-gated primary-agent `devryan_image` tool contracts,
   continuation via ToolMessage, and fail-closed recovery.
 - `agent-connections.js`: Bot-scoped Manager CRUD, encrypted bearer resolution,
   exact public HTTPS/SSE descriptors/digests, health checks, revocation, and
@@ -122,18 +131,31 @@ Electron shell.
   reasoning adapter, pinned-model prompts,
   disposable purpose-bound strict-JSON/no-tools runs for memory extraction and
   routine drafting, canonical event forwarding, capability rollback,
-  credential finalization, and shutdown.
-- `response-sanitizer.js`: deterministic public-text boundary that excludes
-  provider-hidden/synthetic parts, internal reasoning/tool protocol blocks,
-  and leading agent-work labels before streaming, persistence, or history
-  projection.
+  credential finalization, exclusive Bot/channel runtime ownership, fenced
+  stale cleanup, interactive preemption of provisional work, and shutdown.
+- `structured-task.js`: shared ephemeral no-tools structured completion lifecycle for memory
+  extraction and routine drafting; synthetic task IDs never persist durable run state.
+- `response-sanitizer.js`: metadata-only final public-text boundary; excludes
+  hidden/synthetic/reasoning/unclassified parts without heuristic word deletion.
+- `request-lifetime.js`: abort/deadline helpers spanning preparation, submission and recovery.
+- `error-normalization.js`: stable string-code boundary for foreign SDK, DOM timeout, and abort
+  failures before run persistence, publication, and diagnostics.
+- `computer-activity.js`: ephemeral run/channel ownership events and viewer fencing; no frames.
+- `telegram/`: native DM transport, fenced durable inbox/outbox, member pairing,
+  encrypted credentials, media, voice and routine delivery; see `telegram/DOCUMENTATION.md`.
+- `telegram-routes.js`: manager configuration and member pairing/delivery HTTP contract.
+- `bot-voice.js`, `bot-voice-audio.js`, `bot-voice-transport.js`: explicit host-owned
+  encrypted STT/TTS settings, validated audio, pinned DNS egress, concurrency and usage limits.
+- `bot-voice-routes.js`: metadata, independently saved speech configuration and readiness probes.
 - `indexer-client.js`: bounded exact-namespace client for the Electron-owned
   loopback retrieval index.
 - `memory-classifier.js`: strict extraction schema plus leakage, secret, scope,
   subject, and provenance classification boundary.
 - `memory-runtime.js`: asynchronous completed-run extraction, encrypted
-  immutable version commits, Remembered/Forgotten administration,
-  `memory.changed` publication, index rebuild, and tracked shutdown.
+  per-channel serialized/rebased/idempotent summary and immutable version
+  commits, Remembered/Forgotten administration, `memory.changed` publication,
+  non-attempt-consuming channel-busy deferral, index repair/rebuild, and tracked
+  shutdown.
 - `memory-consolidation.js`: bounded runtime-owned exact-duplicate planning and
   conflict-safe coalesced sweeps.
 - `routine-drafter.js`: exact JSON schema and no-tools conversational drafting
@@ -148,23 +170,29 @@ Electron shell.
   safe catalog/channel/run/finalized-preview snapshot plus audience projection. Public runs omit
   adapter-specific execution identity.
 - `context-assembler.js`: bounded revision/checkpoint/message/memory and retained
-  legacy-Library context plus the runtime-owned conversational response-style
-  instruction and deterministic continuation decisions. Legacy MCP assignments
-  do not contribute executable tools.
-- `run-dispatcher.js`: agent-neutral fast atomic acceptance with pending adapter/model snapshots,
-  post-response scoped FIFO claims, concurrent startup, requester-only coalesced
-  streaming, safe same-run retry, content-free timing milestones, attachment
+  legacy-Library context (excluding acknowledgments), plus the runtime-owned
+  Soul-aware answer-only instruction, revision-aware bounded memory cache and deterministic
+  continuation decisions. Legacy MCP assignments do not contribute executable tools.
+- `retry-policy.js`: conservative same-run retry eligibility and durable output/action evidence checks.
+- `failure-diagnostics.js`: bounded sanitized provider/browser failure journal projections, separate from content-free Bot Audit.
+- `run-dispatcher.js`: agent-neutral fast atomic user/pending-response/run
+  acceptance with pending adapter/model snapshots,
+  post-response scoped FIFO claims, concurrent startup, verified final-only
+  delivery, safe same-run retry, content-free timing milestones, attachment
   delivery, normalized adapter error classification, generic execution-handle recovery, checkpoint finalization,
   cancellation, timeout, and finalized generated-image secure export/publication
-  before reasoning teardown.
+  before reasoning teardown, plus bounded idempotent terminal persistence before
+  failure/interruption publication.
 - `prewarm-cache.js`: four-entry/five-minute non-secret channel/revision LRU,
   30-second model-catalog singleflight, health/config warming, and invalidation.
 - `warm-runtime-leases.js`: principal/channel/revision/Library-bound two-minute
-  reasoning-runtime leases, two-entry LRU, atomic run-ID adoption, and cleanup.
+  provisional reasoning-runtime leases, two-entry LRU, atomic run-ID adoption,
+  stage/error-code diagnostics, and full unused-runtime cleanup.
 - `stream-access-lease.js`: short-lived requester stream authorization with
   fail-closed revalidation and synchronous revocation invalidation.
 - `run-recovery.js`: restart inspection of durable runs/action attempts and
-  fail-closed reconciliation for interrupted writes.
+  fail-closed reconciliation for interrupted writes, including transactional
+  settlement of non-resumable orphan runs.
 - `event-stream.js`: snapshot-first, monotonic, principal-filtered Bot SSE kept
   separate from ordinary OpenCode event state.
 - `connector-registry.js`: complete connector interface with isolated-workspace
@@ -182,8 +210,10 @@ Electron shell.
   execution-time policy-fact revalidation,
   idempotent read/write dispatch, revision-plus-routine policy narrowing, result receipts,
   unknown-write quarantine, and explicit Operator reconciliation without replay.
-- `browser-service.js`: scoped computer lifecycle, reviewed command grants,
-  transient screencast proxy, and attributed human-control leases.
+- `browser-service.js`: scoped computer lifecycle, reviewed agent commands,
+  transient screencast proxy, view-bound full human input, and attributed
+  human-control leases, plus the allowlisted privacy-safe browser-status
+  projection used by diagnostic polling.
 - `computer-runtime-manager.js`: one continuously supervised computer per
   Active Bot, isolated health recovery, and lifecycle/shutdown stops.
 - `evidence-service.js`: policy-selected PNG crop/redaction, expiring encrypted
@@ -236,7 +266,9 @@ Electron shell.
 12. Browser transport uncertainty after a write persists `unknown` and pauses
     the run until an active member records an explicit non-replaying reconciliation.
 13. A finalized run publishes completion and schedules its no-tools extraction
-    follow-up asynchronously. Accepted facts enter shared, owner-private, or channel-only
+    follow-up asynchronously. Extraction claims skip channels with non-terminal
+    runs; a late interactive collision defers without spending an attempt or
+    creating an audit issue. Accepted facts enter shared, owner-private, or channel-only
     layers through immutable optimistic versions and exact local index
     namespaces.
 14. Conversational routine drafting runs in a disposable no-tools scope. After
@@ -251,6 +283,11 @@ Electron shell.
     Granular purge journals every host/database step and exposes partial results;
     one-shot complete deletion automatically retires live Bots and resumes prior
     incomplete work.
+16. An idempotent row-locking terminal RPC persists every `failed` or
+    `interrupted` transition, and a database trigger records it in the
+    append-only Bot audit ledger in the same transaction. The Settings viewer reads
+    that ledger independently of Docker/execution health, validates all filters
+    and cursors, and never returns transcript or tool/model content.
 
 ## Invariants
 
@@ -330,16 +367,21 @@ Electron shell.
   auth contains exactly one provider and is deleted after refresh ingestion.
 - Private gateway bearer values, model credentials, and model-egress tokens
   never enter public runtime projections or logs.
-- Failed Docker/model/runtime preflight performs no database write; successful
-  admission creates the user message and queued run atomically and idempotently.
+- Provisional model/runtime warming performs no write against an unadmitted run;
+  successful admission creates the user message, pending assistant response,
+  and queued run atomically and idempotently.
 - Reasoning runs are serialized by channel scope, the computer is always
   Bot-wide, and the database claim RPC—not the process-local drain—is the lease authority.
+  OpenCode additionally fences one reasoning owner per Bot/channel: interactive
+  turns outrank provisional extraction, and stale cleanup cannot stop a newer owner.
+- Terminal failure/interruption events are published only after the idempotent
+  terminal RPC returns the persisted row and its trigger-owned audit evidence is
+  durable. Audit repair never deletes ledger or clearing records.
 - Context never includes messages newer than the run's admitted message
   sequence. Clients resume from Supabase sequence, never OpenCode history.
-- Each run has one unresolved/result assistant row for tool-free work, or one
-  finalized acknowledgment plus one result row for tool work. Pending
-  checkpoints write at most twice per second and terminal message content is
-  immutable.
+- Every run promotes its admitted pending row to one verified result. Historical
+  acknowledgment rows remain stored but hidden and excluded from context/previews.
+  Terminal content is immutable; unknown or ambiguous partial text never publishes.
 - Bot SSE filters the principal before serializing private identifiers or
   payloads and never enters the ordinary session/message stores.
 - Interrupted writes are never replayed automatically; their runs enter

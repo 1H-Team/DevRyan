@@ -7,6 +7,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { VSCodeLayout } from '@/components/layout/VSCodeLayout';
+import { AgentHandoffGuardProvider } from '@/components/chat/AgentHandoffGuard';
 import { usePushVisibilityBeacon } from '@/hooks/usePushVisibilityBeacon';
 import { useRouter } from '@/hooks/useRouter';
 import { useWindowTitle } from '@/hooks/useWindowTitle';
@@ -405,7 +406,9 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
               <div className="h-full text-foreground bg-background">
                 <VSCodeStartupReadyDispatcher currentDirectory={currentDirectory} />
                 <SyncAppEffects embeddedBackgroundWorkEnabled={true} />
-                <VSCodeLayout />
+                <AgentHandoffGuardProvider>
+                  <VSCodeLayout />
+                </AgentHandoffGuardProvider>
                 <Toaster />
               </div>
             </TooltipProvider>

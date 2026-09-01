@@ -26,6 +26,10 @@ import { registerGitGenerationSession } from "@/lib/git/gitGenerationSessions"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
 import { materializeSessionSnapshots } from "./materialization"
 import { stripMessageDiffSnapshots } from "./sanitize"
+import {
+  updateSessionUserActivityFromMessage,
+  updateSessionUserActivityFromMessages,
+} from "./session-user-activity"
 import { postTurnTimingMark, streamDebugMark } from "@/stores/utils/streamDebug"
 import { markArchived, markUnarchived } from "./session-materializer"
 import type { RevertTransaction } from "./revert-transactions"
@@ -35,7 +39,7 @@ import {
 } from "./revert-transactions"
 import { hasMessageRecordInfo, unwrapMessageRecordsResult } from "./message-fetch"
 import { isSessionWorkingFromState } from "./session-working"
-import { retry, isTransientError } from "./retry"
+import { isSafeCreationRestart, runSessionCreation } from './session-creation'
 import { getSdkErrorMessage } from "@/lib/opencode/sdk-error"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
 import { createClientMessageId } from "./client-message-id"
@@ -53,9 +57,6 @@ const MESSAGE_REFETCH_SKIP_PARTS = new Set(["patch", "step-start", "step-finish"
 const BULK_SESSION_MUTATION_CONCURRENCY = 6
 const QUEUED_SEND_INTERRUPT_IDLE_WAIT_MS = 300
 const QUEUED_SEND_INTERRUPT_IDLE_POLL_MS = 25
-const SESSION_CREATE_RETRY_ATTEMPTS = 6
-const SESSION_CREATE_RETRY_DELAY_MS = 250
-const SESSION_CREATE_RETRY_MAX_DELAY_MS = 1000
 let revertTransactionVersion = 0
 type UnexpectedAbortReconcileOwner = {
   promise: Promise<void>
@@ -471,6 +472,16 @@ type OptimisticSessionUnarchiveSnapshot = {
 }
 
 type BulkMutationResult<K extends string> = Record<K, string[]> & { failedIds: string[] }
+export type SessionMutationFailure = {
+  sessionId: string
+  message: string
+  status?: number
+}
+export type DeleteSessionsResult = {
+  deletedIds: string[]
+  failedIds: string[]
+  failures: SessionMutationFailure[]
+}
 type SessionWithHierarchy = Session & {
   parentID?: string | null
   directory?: string | null
@@ -941,7 +952,7 @@ async function mutateSessionsInParallel(
   sessionIds: string[],
   mutate: (sessionId: string) => Promise<void>,
   logLabel: string,
-): Promise<{ successfulIds: string[]; failedIds: string[] }> {
+): Promise<{ successfulIds: string[]; failedIds: string[]; failures: SessionMutationFailure[] }> {
   const results = await runWithConcurrency(
     sessionIds,
     BULK_SESSION_MUTATION_CONCURRENCY,
@@ -951,21 +962,27 @@ async function mutateSessionsInParallel(
         return { sessionId, ok: true as const }
       } catch (error) {
         console.error(`[session-actions] ${logLabel} failed for ${sessionId}`, error)
-        return { sessionId, ok: false as const }
+        return {
+          sessionId,
+          ok: false as const,
+          failure: createSessionMutationFailure(sessionId, error),
+        }
       }
     },
   )
 
   const successfulIds: string[] = []
   const failedIds: string[] = []
+  const failures: SessionMutationFailure[] = []
   for (const result of results) {
     if (result.ok) {
       successfulIds.push(result.sessionId)
     } else {
       failedIds.push(result.sessionId)
+      failures.push(result.failure)
     }
   }
-  return { successfulIds, failedIds }
+  return { successfulIds, failedIds, failures }
 }
 
 async function abortWorkingSessionsBeforeRemoval(
@@ -1029,7 +1046,7 @@ async function mutateSessionsInDepthOrder(
   depthById: Map<string, number>,
   mutate: (sessionId: string) => Promise<void>,
   logLabel: string,
-): Promise<{ successfulIds: string[]; failedIds: string[] }> {
+): Promise<{ successfulIds: string[]; failedIds: string[]; failures: SessionMutationFailure[] }> {
   const idsByDepth = new Map<number, string[]>()
   for (const sessionId of sessionIds) {
     const depth = depthById.get(sessionId) ?? 0
@@ -1040,17 +1057,23 @@ async function mutateSessionsInDepthOrder(
 
   const successful = new Set<string>()
   const failed = new Set<string>()
+  const failuresById = new Map<string, SessionMutationFailure>()
   const depths = Array.from(idsByDepth.keys()).sort((a, b) => b - a)
   for (const depth of depths) {
     const idsAtDepth = idsByDepth.get(depth) ?? []
     const result = await mutateSessionsInParallel(idsAtDepth, mutate, logLabel)
     result.successfulIds.forEach((sessionId) => successful.add(sessionId))
     result.failedIds.forEach((sessionId) => failed.add(sessionId))
+    result.failures.forEach((failure) => failuresById.set(failure.sessionId, failure))
   }
 
   return {
     successfulIds: sessionIds.filter((sessionId) => successful.has(sessionId)),
     failedIds: sessionIds.filter((sessionId) => failed.has(sessionId)),
+    failures: sessionIds.flatMap((sessionId) => {
+      const failure = failuresById.get(sessionId)
+      return failure ? [failure] : []
+    }),
   }
 }
 
@@ -1181,6 +1204,15 @@ function stringifyErrorMessage(error: unknown): string {
   return getSdkErrorMessage(error)
 }
 
+function createSessionMutationFailure(sessionId: string, error: unknown): SessionMutationFailure {
+  const status = readErrorStatus(error)
+  return {
+    sessionId,
+    message: stringifyErrorMessage(error),
+    ...(status !== undefined ? { status } : {}),
+  }
+}
+
 export function createSessionCreateError(error: unknown, status?: number): Error {
   const message = stringifyErrorMessage(error)
   const formatted = new Error(status ? `session.create failed (${status}): ${message}` : `session.create failed: ${message}`)
@@ -1202,30 +1234,18 @@ export function createSessionCreateError(error: unknown, status?: number): Error
 }
 
 export function isTransientSessionCreateError(error: unknown): boolean {
-  if (error && typeof error === "object") {
-    const details = error as { code?: unknown; retryable?: unknown; restarting?: unknown }
-    // Must stay first: the formatted message contains "503", which the generic
-    // transient matcher below would otherwise treat as retryable.
-    if (details.retryable === false || details.code === "identity_unavailable") {
-      return false
-    }
-    if (details.restarting === true || details.retryable === true) {
-      return true
-    }
-  }
-  const message = stringifyErrorMessage(error).toLowerCase()
-  if (message.includes("opencode is restarting")) {
-    return true
-  }
-  return isTransientError(error)
+  return isSafeCreationRestart(error)
 }
 
-async function createSessionViaSdk(payload: SessionCreatePayload): Promise<Session> {
-  const result = await sdk().session.create(payload) as SessionCreateResult
+async function createSessionViaSdk(payload: SessionCreatePayload, signal: AbortSignal, attemptId?: string, deadlineAt?: number): Promise<Session> {
+  const result = await sdk().session.create(payload, { signal,
+    ...(attemptId ? { headers: { 'X-DevRyan-Creation-Attempt': attemptId,
+      'X-DevRyan-Creation-Budget-Ms': String(Math.max(1, (deadlineAt ?? Date.now() + 120_000) - Date.now())) } } : {}),
+  }) as SessionCreateResult
   if (result.error) {
     throw createSessionCreateError(result.error, result.response?.status ?? readErrorStatus(result.error))
   }
-  if (!result.data) {
+  if (!result.data || typeof result.data.id !== 'string' || !result.data.id) {
     throw createSessionCreateError("returned no data", result.response?.status)
   }
   return result.data
@@ -1248,21 +1268,21 @@ export async function createSessionRecord(
   title?: string,
   directoryOverride?: string | null,
   parentID?: string | null,
-  options?: { isGitGenerationSession?: boolean; isDraftPrewarmSession?: boolean },
+  options?: { isGitGenerationSession?: boolean; isDraftPrewarmSession?: boolean; signal?: AbortSignal;
+    attemptId?: string; deadlineAt?: number; throwOnError?: boolean; onLateSuccess?: (session: Session) => void },
 ): Promise<Session | null> {
   try {
     lastCreateSessionError = null
-    const session = await retry(
-      () => createSessionViaSdk({
+    const session = await runSessionCreation(
+      (signal) => createSessionViaSdk({
         directory: directoryOverride ?? dir(),
         title,
         parentID: parentID ?? undefined,
-      }),
+      }, signal, options?.attemptId, options?.deadlineAt),
       {
-        attempts: SESSION_CREATE_RETRY_ATTEMPTS,
-        delay: SESSION_CREATE_RETRY_DELAY_MS,
-        maxDelay: SESSION_CREATE_RETRY_MAX_DELAY_MS,
-        retryIf: isTransientSessionCreateError,
+        signal: options?.signal,
+        deadlineAt: options?.deadlineAt,
+        onLateSuccess: options?.onLateSuccess,
       },
     )
 
@@ -1292,6 +1312,7 @@ export async function createSessionRecord(
     }
     return session
   } catch (error) {
+    if (options?.throwOnError) throw error
     lastCreateSessionError = error
     console.error("[session-actions] createSession failed", error)
     return null
@@ -1304,19 +1325,23 @@ export async function deleteSession(sessionId: string, _options?: Record<string,
   return result.deletedIds.includes(sessionId)
 }
 
-export async function deleteSessions(sessionIds: string[]): Promise<{ deletedIds: string[]; failedIds: string[] }> {
+export async function deleteSessions(sessionIds: string[]): Promise<DeleteSessionsResult> {
   // Deletion cascades like archive/unarchive so parent deletes cannot leave
   // hidden child sessions behind, including when invoked from archived search.
   const { ids, directoryById: knownDirectoryById } = expandSessionIdsWithDescendants(sessionIds)
   if (ids.length === 0) {
-    return { deletedIds: [], failedIds: [] }
+    return { deletedIds: [], failedIds: [], failures: [] }
   }
 
   if (!useConfigStore.getState().isConnected) {
     try {
       await waitForConnectionOrThrow()
-    } catch {
-      return { deletedIds: [], failedIds: ids }
+    } catch (error) {
+      return {
+        deletedIds: [],
+        failedIds: ids,
+        failures: ids.map((sessionId) => createSessionMutationFailure(sessionId, error)),
+      }
     }
   }
 
@@ -1336,7 +1361,7 @@ export async function deleteSessions(sessionIds: string[]): Promise<{ deletedIds
     ui.setCurrentSession(null)
   }
 
-  const { successfulIds, failedIds } = await mutateSessionsInDepthOrder(
+  const { successfulIds, failedIds, failures } = await mutateSessionsInDepthOrder(
     ids,
     depthById,
     async (sessionId) => {
@@ -1358,7 +1383,7 @@ export async function deleteSessions(sessionIds: string[]): Promise<{ deletedIds
     void queueGlobalSessionsRefreshAfterMutation()
   }
 
-  return makeBulkResult("deletedIds", successfulIds, failedIds)
+  return { deletedIds: successfulIds, failedIds, failures }
 }
 
 /** Delete a session specifying which directory it lives in. Used by agent groups for cross-directory deletes. */
@@ -1690,6 +1715,15 @@ export async function optimisticSend(input: {
     },
   })
 
+  // The transport edge owns sidebar recency. Queued prompts reach this point
+  // only when FIFO dispatch actually starts, and assistant activity never
+  // mutates this projection.
+  storeForMessage.setState((state) => {
+    const draft = { ...state, session_user_activity: state.session_user_activity }
+    if (!updateSessionUserActivityFromMessage(draft, optimisticMessage)) return state
+    return { session_user_activity: draft.session_user_activity }
+  })
+
   // A new user-initiated turn supersedes any pending stop-during-retry guard —
   // its busy/retry statuses are authoritative again and must not be re-aborted.
   clearAbortGuard(input.sessionId)
@@ -1725,6 +1759,11 @@ export async function optimisticSend(input: {
     })
     input.onMessageRollback?.(messageID)
     rollbackRevertCommit(storeForMessage, input.sessionId, revertRollback)
+    storeForMessage.setState((state) => {
+      const draft = { ...state, session_user_activity: state.session_user_activity }
+      if (!updateSessionUserActivityFromMessages(draft, input.sessionId)) return state
+      return { session_user_activity: draft.session_user_activity }
+    })
     const s = storeForMessage.getState()
     storeForMessage.setState({
       session_status: {
@@ -2062,6 +2101,11 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   }
 
   store.setState(patch)
+  store.setState((nextState) => {
+    const draft = { ...nextState, session_user_activity: nextState.session_user_activity }
+    if (!updateSessionUserActivityFromMessages(draft, sessionId)) return nextState
+    return { session_user_activity: draft.session_user_activity }
+  })
   // Abort if busy after the transaction marker is active.
   const status = state.session_status[sessionId]
   if (status && status.type !== "idle") {
@@ -2141,6 +2185,11 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
       message: { ...current.message, [sessionId]: prevMessages },
       part: { ...current.part, ...removedParts },
     })
+    store.setState((nextState) => {
+      const draft = { ...nextState, session_user_activity: nextState.session_user_activity }
+      if (!updateSessionUserActivityFromMessages(draft, sessionId)) return nextState
+      return { session_user_activity: draft.session_user_activity }
+    })
     // The pending transaction intentionally suppresses suffix events. A second
     // client can add a message while even an initially idle revert is in
     // flight, so every failed revert launches a bounded authoritative refresh.
@@ -2206,10 +2255,18 @@ export async function refetchSessionMessages(
       })),
       { skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS },
     )
+    const draft = {
+      ...state,
+      message: materialized.message,
+      part: materialized.part,
+      session_user_activity: state.session_user_activity,
+    }
+    const activityChanged = updateSessionUserActivityFromMessages(draft, sessionId)
     return {
       ...(materialized.sessionsChanged && materialized.session ? { session: materialized.session } : {}),
       message: materialized.message,
       part: materialized.part,
+      ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}),
     }
   })
 }

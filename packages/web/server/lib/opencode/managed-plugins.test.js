@@ -39,7 +39,7 @@ afterEach(() => {
 describe('managed plugin manifest', () => {
   it('pins every dependency plugin and registers managed defaults by local path', () => {
     expect(DEVRYAN_MANAGED_PROFILE_DEPENDENCIES).toEqual({
-      '@opencode-ai/plugin': '1.18.23',
+      '@opencode-ai/plugin': '1.18.25',
       'adm-zip': '0.6.0',
       'mammoth': '1.12.1',
       'unpdf': '1.8.0',

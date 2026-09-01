@@ -10,14 +10,14 @@ const source = path.join(
   electronDirectory,
   'native',
   'runtime-service-control',
-  'RuntimeServiceControl.swift',
+  'RuntimeServiceControl.mm',
 );
 const outputDirectory = path.join(electronDirectory, 'resources', 'native');
-const output = path.join(outputDirectory, 'DevRyanRuntimeServiceControl');
+const output = path.join(outputDirectory, 'DevRyanRuntimeServiceControl.node');
 
 const targetArchitectures = Object.freeze({
-  arm64: Object.freeze({ swiftTarget: 'arm64-apple-macosx13.0', lipoName: 'arm64' }),
-  x64: Object.freeze({ swiftTarget: 'x86_64-apple-macosx13.0', lipoName: 'x86_64' }),
+  arm64: Object.freeze({ clangArch: 'arm64', lipoName: 'arm64' }),
+  x64: Object.freeze({ clangArch: 'x86_64', lipoName: 'x86_64' }),
 });
 
 const requestedArchitecture = process.env.ELECTRON_BUILDER_ARCH?.trim() || process.arch;
@@ -33,16 +33,49 @@ if (process.platform !== 'darwin') {
   process.exit(0);
 }
 
+const nodePrefix = process.config.variables.node_prefix;
+const nodeDirectory = process.env.npm_config_nodedir?.trim();
+const nodeIncludeCandidates = [
+  nodeDirectory,
+  nodeDirectory ? path.join(nodeDirectory, 'include', 'node') : '',
+  typeof nodePrefix === 'string' ? path.join(nodePrefix, 'include', 'node') : '',
+  path.resolve(path.dirname(process.execPath), '..', 'include', 'node'),
+].filter((candidate, index, candidates) => candidate && candidates.indexOf(candidate) === index);
+
+let nodeInclude = '';
+for (const candidate of nodeIncludeCandidates) {
+  try {
+    await fs.access(path.join(candidate, 'node_api.h'));
+    nodeInclude = candidate;
+    break;
+  } catch {
+    // Try the next supported Node installation layout.
+  }
+}
+if (!nodeInclude) {
+  throw new Error(
+    `Node N-API headers are unavailable; checked: ${nodeIncludeCandidates.join(', ') || '(none)'}`,
+  );
+}
+
 const result = spawnSync('xcrun', [
-  'swiftc',
+  'clang++',
   source,
-  '-O',
-  '-target', target.swiftTarget,
+  '-std=c++17',
+  '-O2',
+  '-fobjc-arc',
+  '-fmodules',
+  '-mmacosx-version-min=13.0',
+  '-arch', target.clangArch,
+  '-I', nodeInclude,
+  '-bundle',
+  '-undefined', 'dynamic_lookup',
+  '-framework', 'Foundation',
   '-framework', 'ServiceManagement',
   '-o', output,
 ], { stdio: 'inherit' });
 if (result.error) throw result.error;
-if (result.status !== 0) throw new Error(`swiftc failed with exit code ${result.status}`);
+if (result.status !== 0) throw new Error(`clang++ failed with exit code ${result.status}`);
 
 const architectureResult = spawnSync('/usr/bin/lipo', ['-archs', output], { encoding: 'utf8' });
 if (architectureResult.error) throw architectureResult.error;

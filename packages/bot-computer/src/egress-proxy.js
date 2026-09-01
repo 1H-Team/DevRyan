@@ -75,14 +75,14 @@ const sendConnectFailure = (socket, statusCode = 502) => {
   socket.end(`HTTP/1.1 ${statusCode} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
 };
 
-const validConnectAuthority = (value) => {
+const parseConnectAuthority = (value) => {
   if (typeof value !== 'string' || value.length < 3 || value.length > 512
-    || /[\u0000-\u0020\u007f%/?#\\]/u.test(value)) return false;
+    || /[\u0000-\u0020\u007f%/?#\\]/u.test(value)) return null;
   const match = /^(?:\[([0-9A-Fa-f:.]+)\]|([A-Za-z0-9.-]+)):(\d{1,5})$/u.exec(value);
-  if (!match) return false;
+  if (!match) return null;
   const port = Number(match[3]);
   const hostname = match[1] || match[2];
-  return port >= 1 && port <= 65_535
+  const valid = port >= 1 && port <= 65_535
     && hostname.length <= 253
     && !hostname.includes('..')
     && (match[1]
@@ -91,15 +91,18 @@ const validConnectAuthority = (value) => {
           label.length >= 1 && label.length <= 63
           && !label.startsWith('-') && !label.endsWith('-')
         )));
+  return valid ? Object.freeze({ hostname: hostname.toLowerCase(), port }) : null;
 };
 
 export function createBrowserEgressRelay({
   upstreamUrl,
   token,
   requestImpl = http.request,
+  onDiagnostic = () => undefined,
 } = {}) {
   const upstream = normalizeUpstream(upstreamUrl);
-  if (!TOKEN_PATTERN.test(token || '') || typeof requestImpl !== 'function') {
+  if (!TOKEN_PATTERN.test(token || '') || typeof requestImpl !== 'function'
+    || typeof onDiagnostic !== 'function') {
     fail('Browser egress relay token is invalid');
   }
   let activeToken = token;
@@ -124,6 +127,13 @@ export function createBrowserEgressRelay({
       path: target.href,
       headers: requestHeaders(request.headers, activeToken),
     }, (upstreamResponse) => {
+      if (upstreamResponse.statusCode === 403) {
+        onDiagnostic({
+          kind: 'egress_denied',
+          host: target.hostname.toLowerCase(),
+          statusCode: 403,
+        });
+      }
       response.writeHead(
         upstreamResponse.statusCode || 502,
         responseHeaders(upstreamResponse.headers),
@@ -138,7 +148,8 @@ export function createBrowserEgressRelay({
   });
 
   server.on('connect', (request, clientSocket, head) => {
-    if (!validConnectAuthority(request.url)) {
+    const authority = parseConnectAuthority(request.url);
+    if (!authority) {
       sendConnectFailure(clientSocket, 400);
       return;
     }
@@ -156,6 +167,13 @@ export function createBrowserEgressRelay({
     tunnel.setTimeout(30_000, () => tunnel.destroy());
     tunnel.once('connect', (upstreamResponse, upstreamSocket, upstreamHead) => {
       if (upstreamResponse.statusCode !== 200) {
+        if (upstreamResponse.statusCode === 403) {
+          onDiagnostic({
+            kind: 'egress_denied',
+            host: authority.hostname,
+            statusCode: 403,
+          });
+        }
         upstreamSocket.destroy();
         sendConnectFailure(clientSocket, upstreamResponse.statusCode || 502);
         return;

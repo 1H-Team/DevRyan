@@ -12,6 +12,7 @@ afterEach(() => {
 describe('createEventPipeline — system resume reconnect', () => {
   it('reconnects immediately on openchamber:system-resume event', async () => {
     const winListeners = {};
+    const dispatchedWindowEvents = [];
     globalThis.document = {
       visibilityState: 'visible',
       addEventListener() {},
@@ -24,6 +25,7 @@ describe('createEventPipeline — system resume reconnect', () => {
       },
       addEventListener(event, handler) { winListeners[event] = handler; },
       removeEventListener(event) { delete winListeners[event]; },
+      dispatchEvent(event) { dispatchedWindowEvents.push(event.type); winListeners[event.type]?.(event); return !event.defaultPrevented; },
     };
 
     const disconnectReasons = [];
@@ -106,6 +108,7 @@ describe('createEventPipeline — system resume reconnect', () => {
 
     // Should have made two SDK calls: initial connect + reconnect after resume.
     expect(eventCalls.length).toBe(2);
+    expect(dispatchedWindowEvents).toEqual(['openchamber:primary-recovery-reconnect', 'openchamber:primary-recovery-reconnect']);
     // Disconnect reason should include system_resume.
     expect(disconnectReasons.some((r) => r.includes('system_resume'))).toBe(true);
   });

@@ -5,9 +5,12 @@ import type { BridgeContext, BridgeResponse } from './bridge';
 import { getVsCodeHarnessRuntime } from './harness-runtime-access';
 import {
   COMMIT_DRAFT_DEADLINE_MS,
+  createFreeZenModelCatalog,
   createCommitModelCooldowns,
   generateCommitDraftWithDeadline,
+  normalizePullRequestDraft,
   normalizeGeneratedCommitDraft,
+  runFreeZenModelRotation,
   type SharedCommitDraftContext,
 } from '@openchamber/shared-runtime';
 
@@ -24,7 +27,6 @@ type SpecialGitDeps = {
   execGit: (args: string[], cwd: string) => Promise<ExecGitResult>;
 };
 
-const BRIDGE_ZEN_DEFAULT_MODEL = 'gpt-5-nano';
 const BRIDGE_COMMIT_DEFAULT_ZEN_MODEL = 'nemotron-3.5-lightning-free';
 const BRIDGE_COMMIT_ZEN_TIMEOUT_MS = COMMIT_DRAFT_DEADLINE_MS;
 const BRIDGE_COMMIT_MAX_SELECTED_FILES = 200;
@@ -34,13 +36,13 @@ const BRIDGE_COMMIT_MAX_TOTAL_DIFF_CHARS = 16_000;
 const BRIDGE_COMMIT_DIFF_CONTEXT_LINES = 1;
 const BRIDGE_COMMIT_DIFF_TRUNCATION_MARKER = '\n... [diff truncated]';
 const BRIDGE_COMMIT_CONTEXT_DEADLINE_MS = 1_500;
-const BRIDGE_GIT_GENERATION_TIMEOUT_MS = 2 * 60 * 1000;
-const BRIDGE_GIT_GENERATION_POLL_INTERVAL_MS = 500;
-const BRIDGE_GIT_MODEL_CATALOG_CACHE_TTL_MS = 30 * 1000;
+const BRIDGE_PR_MODEL_TIMEOUT_MS = 15_000;
+const BRIDGE_PR_MAX_TOKENS = 1_200;
 
-let bridgeGitModelCatalogCache: Set<string> | null = null;
-let bridgeGitModelCatalogCacheAt = 0;
 const bridgeCommitModelCooldowns = createCommitModelCooldowns();
+const bridgeFreeZenModelCatalog = createFreeZenModelCatalog({
+  fetchImpl: (...args) => fetch(...args),
+});
 
 type BridgeCommitFileContext = {
   path: string;
@@ -302,120 +304,6 @@ const recordBridgeCommitTiming = (payload: Record<string, unknown>): void => {
   }
 };
 
-const sleep = (ms: number) => new Promise<void>((resolve) => {
-  setTimeout(resolve, ms);
-});
-
-const readStringField = (value: unknown, key: string): string => {
-  if (!value || typeof value !== 'object') return '';
-  const record = value as Record<string, unknown>;
-  const candidate = record[key];
-  return typeof candidate === 'string' ? candidate.trim() : '';
-};
-
-const fetchBridgeGitModelCatalog = async (
-  apiUrl: string,
-  authHeaders?: Record<string, string>
-): Promise<Set<string>> => {
-  const now = Date.now();
-  if (bridgeGitModelCatalogCache && now - bridgeGitModelCatalogCacheAt < BRIDGE_GIT_MODEL_CATALOG_CACHE_TTL_MS) {
-    return bridgeGitModelCatalogCache;
-  }
-
-  const headers = authHeaders || {};
-  const modelsUrl = new URL(`${apiUrl.replace(/\/+$/, '')}/model`);
-  const response = await fetch(modelsUrl.toString(), {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      ...headers,
-    },
-    signal: AbortSignal.timeout(8_000),
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch model catalog');
-  }
-
-  const payload = await response.json().catch(() => null) as unknown;
-  const refs = new Set<string>();
-  if (Array.isArray(payload)) {
-    for (const item of payload) {
-      if (!item || typeof item !== 'object') {
-        continue;
-      }
-      const record = item as Record<string, unknown>;
-      const providerID = typeof record.providerID === 'string' ? record.providerID.trim() : '';
-      const modelID = typeof record.modelID === 'string' ? record.modelID.trim() : '';
-      if (providerID && modelID) {
-        refs.add(`${providerID}/${modelID}`);
-      }
-    }
-  }
-
-  bridgeGitModelCatalogCache = refs;
-  bridgeGitModelCatalogCacheAt = now;
-  return refs;
-};
-
-const resolveBridgeGitGenerationModel = async (
-  payloadModel: { providerId?: string; modelId?: string; zenModel?: string },
-  settings: Record<string, unknown>,
-  apiUrl: string,
-  authHeaders?: Record<string, string>
-): Promise<{ providerID: string; modelID: string }> => {
-  let catalog: Set<string> | null = null;
-  try {
-    catalog = await fetchBridgeGitModelCatalog(apiUrl, authHeaders);
-  } catch {
-    catalog = null;
-  }
-
-  const hasModel = (providerID: string, modelID: string): boolean => {
-    if (!catalog) {
-      return false;
-    }
-    return catalog.has(`${providerID}/${modelID}`);
-  };
-
-  const requestProviderId = typeof payloadModel.providerId === 'string' ? payloadModel.providerId.trim() : '';
-  const requestModelId = typeof payloadModel.modelId === 'string' ? payloadModel.modelId.trim() : '';
-  if (requestProviderId && requestModelId && hasModel(requestProviderId, requestModelId)) {
-    return { providerID: requestProviderId, modelID: requestModelId };
-  }
-
-  const settingsProviderId = readStringField(settings, 'gitProviderId');
-  const settingsModelId = readStringField(settings, 'gitModelId');
-  if (settingsProviderId && settingsModelId && hasModel(settingsProviderId, settingsModelId)) {
-    return { providerID: settingsProviderId, modelID: settingsModelId };
-  }
-
-  const payloadZenModel = typeof payloadModel.zenModel === 'string' ? payloadModel.zenModel.trim() : '';
-  const settingsZenModel = readStringField(settings, 'zenModel');
-  return {
-    providerID: 'zen',
-    modelID: payloadZenModel || settingsZenModel || BRIDGE_ZEN_DEFAULT_MODEL,
-  };
-};
-
-const extractTextFromMessageParts = (parts: unknown): string => {
-  if (!Array.isArray(parts)) {
-    return '';
-  }
-
-  const textParts = parts
-    .filter((part) => {
-      if (!part || typeof part !== 'object') return false;
-      const record = part as Record<string, unknown>;
-      return record.type === 'text' && typeof record.text === 'string';
-    })
-    .map((part) => (part as Record<string, unknown>).text as string)
-    .map((text) => text.trim())
-    .filter((text) => text.length > 0);
-
-  return textParts.join('\n').trim();
-};
-
 const extractZenResponseText = (data: unknown): string => {
   if (!data || typeof data !== 'object') return '';
   const record = data as Record<string, unknown>;
@@ -456,10 +344,12 @@ export const generateBridgeTextWithZen = async ({
   prompt,
   zenModel,
   timeoutMs = BRIDGE_COMMIT_ZEN_TIMEOUT_MS,
+  maxTokens = 220,
 }: {
   prompt: string;
   zenModel?: string;
   timeoutMs?: number;
+  maxTokens?: number;
 }): Promise<string> => {
   const model = typeof zenModel === 'string' && zenModel.trim() ? zenModel.trim() : BRIDGE_COMMIT_DEFAULT_ZEN_MODEL;
   const endpoint = /^(?:gpt-|claude-|gemini-)/.test(model) ? 'responses' : 'chat/completions';
@@ -472,13 +362,13 @@ export const generateBridgeTextWithZen = async ({
           input: [{ role: 'user', content: prompt }],
           stream: false,
           reasoning: { effort: 'low' },
-          max_output_tokens: 256,
+          max_output_tokens: Math.max(1, Math.trunc(maxTokens)),
         }
       : {
           model,
           messages: [{ role: 'user', content: prompt }],
           stream: false,
-          max_tokens: 220,
+          max_tokens: Math.max(1, Math.trunc(maxTokens)),
           reasoning_effort: 'none',
         }),
     signal: AbortSignal.timeout(Math.max(1, Math.trunc(timeoutMs))),
@@ -506,151 +396,6 @@ export const normalizeBridgeCommitSubject = (value: string): string => {
     throw new Error('Generated commit subject is not a valid conventional commit');
   }
   return normalized.message.subject;
-};
-
-const generateBridgeTextWithSessionFlow = async ({
-  apiUrl,
-  directory,
-  prompt,
-  providerID,
-  modelID,
-  authHeaders,
-}: {
-  apiUrl: string;
-  directory: string;
-  prompt: string;
-  providerID: string;
-  modelID: string;
-  authHeaders?: Record<string, string>;
-}): Promise<string> => {
-  const headers = authHeaders || {};
-  const apiBase = apiUrl.replace(/\/+$/, '');
-  const deadlineAt = Date.now() + BRIDGE_GIT_GENERATION_TIMEOUT_MS;
-  const remainingMs = () => Math.max(1_000, deadlineAt - Date.now());
-  let sessionId: string | null = null;
-
-  try {
-    const sessionUrl = new URL(`${apiBase}/session`);
-    if (directory) {
-      sessionUrl.searchParams.set('directory', directory);
-    }
-
-    const createResponse = await fetch(sessionUrl.toString(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers,
-      },
-      body: JSON.stringify({ title: 'Git Generation' }),
-      signal: AbortSignal.timeout(remainingMs()),
-    });
-
-    if (!createResponse.ok) {
-      throw new Error('Failed to create OpenCode session');
-    }
-
-    const session = await createResponse.json().catch(() => null) as unknown;
-    const sessionObj = session && typeof session === 'object' ? session as Record<string, unknown> : null;
-    const createdSessionId = sessionObj && typeof sessionObj.id === 'string' ? sessionObj.id : '';
-    if (!createdSessionId) {
-      throw new Error('Invalid session response');
-    }
-    sessionId = createdSessionId;
-
-    const promptUrl = new URL(`${apiBase}/session/${encodeURIComponent(sessionId)}/prompt_async`);
-    if (directory) {
-      promptUrl.searchParams.set('directory', directory);
-    }
-
-    const promptResponse = await fetch(promptUrl.toString(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers,
-      },
-      body: JSON.stringify({
-        model: {
-          providerID,
-          modelID,
-        },
-        parts: [{ type: 'text', text: prompt }],
-      }),
-      signal: AbortSignal.timeout(remainingMs()),
-    });
-
-    if (!promptResponse.ok) {
-      throw new Error('Failed to send prompt');
-    }
-
-    const messagesUrl = new URL(`${apiBase}/session/${encodeURIComponent(sessionId)}/message`);
-    if (directory) {
-      messagesUrl.searchParams.set('directory', directory);
-    }
-    messagesUrl.searchParams.set('limit', '10');
-
-    while (Date.now() < deadlineAt) {
-      await sleep(BRIDGE_GIT_GENERATION_POLL_INTERVAL_MS);
-
-      const messagesResponse = await fetch(messagesUrl.toString(), {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          ...headers,
-        },
-        signal: AbortSignal.timeout(remainingMs()),
-      });
-
-      if (!messagesResponse.ok) {
-        continue;
-      }
-
-      const messages = await messagesResponse.json().catch(() => null) as unknown;
-      if (!Array.isArray(messages)) {
-        continue;
-      }
-
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const message = messages[i] as Record<string, unknown> | null;
-        if (!message || typeof message !== 'object') {
-          continue;
-        }
-        const info = message.info as Record<string, unknown> | undefined;
-        if (info?.role !== 'assistant' || info?.finish !== 'stop') {
-          continue;
-        }
-
-        const text = extractTextFromMessageParts(message.parts);
-        if (text) {
-          return text;
-        }
-      }
-    }
-
-    throw new Error('Timeout waiting for generation to complete');
-  } finally {
-    if (sessionId) {
-      const deleteUrl = new URL(`${apiBase}/session/${encodeURIComponent(sessionId)}`);
-      try {
-        await fetch(deleteUrl.toString(), {
-          method: 'DELETE',
-          headers,
-          signal: AbortSignal.timeout(5_000),
-        });
-      } catch {
-        // ignore cleanup failures
-      }
-    }
-  }
-};
-
-const parseJsonObjectSafe = (value: string): Record<string, unknown> | null => {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    return parsed as Record<string, unknown>;
-  } catch {
-    return null;
-  }
 };
 
 export async function handleSpecialGitBridgeMessage(
@@ -874,14 +619,11 @@ export async function handleSpecialGitBridgeMessage(
     }
 
     case 'api:git/pr-description': {
-      const { directory, base, head, context, providerId, modelId, zenModel: payloadZenModel } = (payload || {}) as {
+      const { directory, base, head, prompt } = (payload || {}) as {
         directory?: string;
         base?: string;
         head?: string;
-        context?: string;
-        providerId?: string;
-        modelId?: string;
-        zenModel?: string;
+        prompt?: string;
       };
       if (!directory) {
         return { id, type, success: false, error: 'Directory is required' };
@@ -890,76 +632,45 @@ export async function handleSpecialGitBridgeMessage(
         return { id, type, success: false, error: 'base and head are required' };
       }
 
-      let files: string[] = [];
-      try {
-        const listed = await gitService.getGitRangeFiles(directory, base, head);
-        files = Array.isArray(listed) ? listed : [];
-      } catch {
-        files = [];
+      const generationPrompt = typeof prompt === 'string' ? prompt.trim() : '';
+      if (!generationPrompt || generationPrompt.length > 100_000) {
+        return { id, type, success: false, error: 'Generate PR prompt is required' };
       }
-
-      if (files.length === 0) {
-        return { id, type, success: false, error: 'No diffs available for base...head' };
-      }
-
-      let diffSummaries = '';
-      for (const file of files) {
-        try {
-          const diff = await gitService.getGitRangeDiff(directory, base, head, file, 3);
-          const raw = typeof diff?.diff === 'string' ? diff.diff : '';
-          if (!raw.trim()) continue;
-          diffSummaries += `FILE: ${file}\n${raw}\n\n`;
-        } catch {
-          // ignore
-        }
-      }
-
-      if (!diffSummaries.trim()) {
-        return { id, type, success: false, error: 'No diffs available for selected files' };
-      }
-
-      const prompt = `You are drafting a GitHub Pull Request title + description. Respond in JSON of the shape {"title": string, "body": string} (ONLY JSON in response, no markdown fences) with these rules:\n- title: concise, sentence case, <= 80 chars, no trailing punctuation, no commit-style prefixes (no "feat:", "fix:")\n- body: GitHub-flavored markdown with these sections in this order: Summary, Testing, Notes\n- Summary: 3-6 bullet points describing user-visible changes; avoid internal helper function names\n- Testing: bullet list ("- Not tested" allowed)\n- Notes: bullet list; include breaking/rollout notes only when relevant\n\nContext:\n- base branch: ${base}\n- head branch: ${head}${context?.trim() ? `\n- Additional context: ${context.trim()}` : ''}\n\nDiff summary:\n${diffSummaries}`;
 
       try {
-        const apiUrl = ctx?.manager?.getApiUrl();
-        if (!apiUrl) {
-          return { id, type, success: false, error: 'OpenCode API unavailable' };
-        }
-
-        const settings = deps.readSettings(ctx) as Record<string, unknown>;
-        const { providerID, modelID } = await resolveBridgeGitGenerationModel(
-          { providerId, modelId, zenModel: payloadZenModel },
-          settings,
-          apiUrl,
-          ctx?.manager?.getOpenCodeAuthHeaders()
-        );
-        const raw = await generateBridgeTextWithSessionFlow({
-          apiUrl,
-          directory,
-          prompt,
-          providerID,
-          modelID,
-          authHeaders: ctx?.manager?.getOpenCodeAuthHeaders(),
+        const models = await bridgeFreeZenModelCatalog.fetchModels();
+        const result = await runFreeZenModelRotation({
+          models,
+          timeoutMs: BRIDGE_PR_MODEL_TIMEOUT_MS,
+          request: ({ model, timeoutMs }) => generateBridgeTextWithZen({
+            prompt: generationPrompt,
+            zenModel: model,
+            timeoutMs,
+            maxTokens: BRIDGE_PR_MAX_TOKENS,
+          }),
+          accept: normalizePullRequestDraft,
+          onAttempt: (attempt) => {
+            try {
+              getVsCodeHarnessRuntime()?.record({
+                type: 'timing',
+                mark: 'git_pr_description_model_attempt',
+                payload: {
+                  durationMs: attempt.durationMs,
+                  outcome: attempt.outcome,
+                  model: attempt.model,
+                  retry: attempt.attempt > 1,
+                  providerOutcome: attempt.reason || attempt.outcome,
+                },
+              });
+            } catch {
+              // Diagnostics must never block generation.
+            }
+          },
         });
-        if (!raw) {
-          return { id, type, success: false, error: 'No PR description returned by generator' };
+        if (!result.ok || !result.value) {
+          return { id, type, success: false, error: 'Unable to generate a pull request description with the available free Zen models' };
         }
-
-        const cleaned = String(raw)
-          .trim()
-          .replace(/^```json\s*/i, '')
-          .replace(/^```\s*/i, '')
-          .replace(/```\s*$/i, '')
-          .trim();
-
-        const parsed = parseJsonObjectSafe(cleaned) || parseJsonObjectSafe(raw);
-        if (parsed) {
-          const title = typeof parsed.title === 'string' ? parsed.title : '';
-          const body = typeof parsed.body === 'string' ? parsed.body : '';
-          return { id, type, success: true, data: { title, body } };
-        }
-
-        return { id, type, success: true, data: { title: '', body: String(raw) } };
+        return { id, type, success: true, data: result.value };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return { id, type, success: false, error: message };

@@ -103,7 +103,7 @@ describe('Electron browser lease host contract', () => {
     assert.doesNotMatch(mainSource, /browserLeaseWindowClaims\.clear\(\)/);
   });
 
-  test('waits only for the exact claim and retires stale window ownership', () => {
+  test('prefers the exact claim and permits only authoritative managed fallback ownership', () => {
     const resolverStart = mainSource.indexOf('const resolveBrowserLeaseOwnerWindow =');
     const resolverEnd = mainSource.indexOf('\n\nconst safeBrowserLeaseSnapshot', resolverStart);
     const resolverSource = mainSource.slice(resolverStart, resolverEnd);
@@ -112,6 +112,9 @@ describe('Electron browser lease host contract', () => {
     assert.match(resolverSource, /browserLeaseWindowClaims\.get\(claimKey\)/);
     assert.match(resolverSource, /browserLeaseWindowClaims\.delete\(claimKey\)/);
     assert.doesNotMatch(resolverSource, /for \(const .*browserLeaseWindowClaims/);
+    assert.match(resolverSource, /metadata\?\.authoritativeOwner !== true/);
+    assert.match(resolverSource, /isPrivilegedLeaseWindow\(state\.mainWindow\)/);
+    assert.doesNotMatch(resolverSource, /BrowserWindow\.getFocusedWindow\(\)/);
     assert.match(mainSource, /const ownerWindow = await waitForBrowserLeaseOwnerWindow\(metadata\)/);
     assert.match(mainSource, /if \(claim\.ownerWindowId === browserWindow\.id\) browserLeaseWindowClaims\.delete\(claimKey\)/);
   });

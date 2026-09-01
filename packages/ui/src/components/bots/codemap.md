@@ -18,13 +18,20 @@ unsupported VS Code presentation. Bot configuration lives separately in
   `components/shared/ProductAudienceTabs.tsx` and the narrow session-only
   `stores/useMainSidebarAudienceStore.ts`.
 - `chat/` owns conventional left/right grouped message presentation, the
-  retained composer, and the avatar-level typing indicator shown before a Bot's
-  first visible response content and at every tool boundary until the one result
-  bubble resumes. Historical acknowledgment rows stay hidden. The composer performs atomic optimistic local
-  echo and short acceptance locking. `chat/botAttachmentUpload.ts` owns the
+  retained composer, and the avatar-free typing indicator shown while the
+  assistant response is still empty. The composer atomically paints the
+  optimistic user row plus an empty pending assistant row, reconciles both
+  canonical IDs after acceptance, and rolls both back on a definitive rejection.
+  Both tool and no-tool turns promote that row to one verified final result.
+  Ambiguous streaming text and historical acknowledgments are hidden without
+  rewriting history. Older messages are virtualized above 100 rows; the trailing
+  20 remain mounted. Initial history failure has a direct Retry action.
+  `chat/botAttachmentUpload.ts` owns the
   supported private-file catalog, browser MIME normalization, limits, and
-  sequential partial-success handling for multi-file selections; live assistant
-  rows read only the narrow requester-stream store. `chat/BotResultAttachments.tsx`
+  sequential partial-success handling for multi-file selections.
+  `chat/BotInlineComputer.tsx` owns the single inline/expanded shared computer
+  viewer, driven by channel-authorized activity and narrow `useBotComputerActivityStore`.
+  `chat/BotResultAttachments.tsx`
   maps message-indexed Shared images and safe Markdown image references into
   viewport-gated placeholders; `chat/botImagePreviewCache.ts` owns abort,
   deduplication, MIME verification, byte/count bounds, and URL revocation.
@@ -35,11 +42,33 @@ unsupported VS Code presentation. Bot configuration lives separately in
   content-growth observer. It hides revision/checkpoint/tool
   transport records and does not use ordinary session
   or message components except the shared lazy Markdown renderer.
+  Composer focus, pointer, typing, and file-drop intent may request a best-effort
+  warm runtime lease; rendering or selecting the conversation alone never
+  starts a reasoning container.
 - `chat/BotMessageRow.tsx` keeps governed action metadata and controls out of
   assistant responses. Current run and confirmation state remains available in
   the separate Operations rail without adding tool-status rows to the transcript.
 - `operations/` owns the current run summary, confirmations/reconciliation,
   conversation Shared files, and the ephemeral live-computer diagnostic.
+  `BotComputerCanvas.tsx` owns bounded MJPEG fetch/decode/draw and the
+  one-in-flight human-input pump plus bounded pointer-release draining;
+  teardown aborts the input HTTP request, discards queued input, and releases
+  the stream immediately while server control return proceeds independently.
+  Retained expired leases keep an owner-only Return Control recovery action,
+  scoped status polling, and disabled input without renewing the old lease.
+  `BotBrowserDiagnostic.mounted.test.tsx` exercises hung-input teardown through
+  real mounted Stop, hidden-surface, and Return Control interactions;
+  `botHumanInputBuffer.ts` coalesces hover/wheel traffic while preserving held
+  movement and never discarding down/up events; `BotBrowserDiagnostic.tsx`
+  polls typed computer diagnostics only during visible owned control, shows
+  actionable cookie/dependency/display/site warnings, and renders durable
+  control waits with an owner-only Return Control action and no controller IDs;
+  `mjpegStream.ts` and `botComputerCoordinates.ts` keep binary parsing and
+  object-contain coordinate mapping outside React/store hot paths.
+- `chat/BotResultAttachments.tsx` preserves encrypted generated-image mappings
+  across all Shared-copy states and exposes verified loading, decoded, and
+  retryable-error previews. `BotChatView.tsx` surfaces durable browser waits
+  without putting action metadata in the assistant response.
 - `botPresentation.ts` owns pure runtime-copy, revision-marker, action-target,
   run-label, key-handling, and control-lease projections used by components and
   focused tests.
@@ -49,7 +78,7 @@ unsupported VS Code presentation. Bot configuration lives separately in
   operation from local click state, so reloads and failures retain accurate
   phase/error behavior without disturbing composer drafts or attachments.
 - Components consume `useBotsStore`, `useBotChannelStore`,
-  `useBotOperationsStore`, and `useBotSharedFilesStore` through narrow
+  `useBotDraftStore`, `useBotComputerActivityStore`, `useBotOperationsStore`, and `useBotSharedFilesStore` through narrow
   selectors. Shared copy-state events update one file leaf; screencast pixels
   bypass stores entirely.
 - Exact Confirmation navigation lives in a separate low-frequency store, and

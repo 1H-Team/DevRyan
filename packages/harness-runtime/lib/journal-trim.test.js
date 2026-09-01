@@ -78,4 +78,26 @@ describe('diagnostic journal trimming', () => {
       'session.status',
     ]);
   });
+
+  test('coalesces only property-free unattributed sync events', () => {
+    const trimmer = createJournalTrimmer();
+    const first = event('sync', {}, '');
+    const second = { ...event('sync', {}, ''), at: 2 };
+
+    expect(trimmer.admit(first)).toEqual([]);
+    expect(trimmer.admit(second)).toEqual([]);
+    expect(trimmer.flushAll()).toMatchObject([{
+      at: 2,
+      coalesced: 2,
+      payload: { type: 'sync', properties: {} },
+    }]);
+    expect(trimmer.stats().__runtime__.coalescedRuntimeSyncs).toBe(1);
+
+    expect(trimmer.admit(event('sync', { revision: 1 }, ''))).toEqual([
+      event('sync', { revision: 1 }, ''),
+    ]);
+    expect(trimmer.admit(event('sync', {}, 'ses_2'))).toEqual([
+      event('sync', {}, 'ses_2'),
+    ]);
+  });
 });

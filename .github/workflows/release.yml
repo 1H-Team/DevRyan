@@ -197,6 +197,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
+          draft: true
           files: artifacts/*.tgz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -272,6 +273,7 @@ jobs:
             --revision "$SOURCE_REVISION" \
             --repository-prefix "$REPOSITORY_PREFIX" \
             --check-anonymous
+          node scripts/smoke-bot-runtime-images.mjs --manifest "$MANIFEST"
 
       - name: Upload Bot runtime manifest for Electron release builds
         uses: actions/upload-artifact@v4
@@ -285,6 +287,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
+          draft: true
           files: artifacts/DevRyan-bot-runtime-images-${{ needs.create-release.outputs.version }}.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -322,48 +325,12 @@ jobs:
           name: bot-runtime-images
           path: ${{ runner.temp }}/bot-runtime-images
 
-      - name: Install Apple Certificate
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
-            echo "Apple signing certificate secrets are not configured; building an unsigned DMG."
-            exit 0
-          fi
-
-          KEYCHAIN_PATH=$RUNNER_TEMP/electron-signing.keychain-db
-          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          echo "$APPLE_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/certificate.p12
-          security import $RUNNER_TEMP/certificate.p12 \
-            -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 \
-            -k "$KEYCHAIN_PATH"
-
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: \
-            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
-          if ! security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -q "Developer ID Application"; then
-            echo "Error: imported certificate does not include a Developer ID Application identity."
-            exit 1
-          fi
-
       - name: Build Electron app
         working-directory: packages/electron
         env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.APPLE_CERTIFICATE != '' && 'true' || 'false' }}
+          # DevRyan macOS releases are intentionally unsigned. Keep certificate
+          # auto-discovery disabled even if a runner happens to have an identity.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           # rebuild-native.mjs reads this to target the right arch when
           # cross-building (runner is arm64; x64 matrix needs the hint).
           ELECTRON_BUILDER_ARCH: ${{ matrix.arch }}
@@ -382,11 +349,7 @@ jobs:
           # target Electron ABI before packaging, otherwise better-sqlite3/
           # node-pty/bun-pty crash on require inside the packaged app.
           bun run rebuild:native
-          if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ "${CSC_IDENTITY_AUTO_DISCOVERY:-false}" = "true" ]; then
-            ./node_modules/.bin/electron-builder --mac --${{ matrix.arch }} --publish=never
-          else
-            ./node_modules/.bin/electron-builder --mac --${{ matrix.arch }} --publish=never -c.mac.identity=null -c.mac.notarize=false -c.dmg.sign=false
-          fi
+          ./node_modules/.bin/electron-builder --mac --${{ matrix.arch }} --publish=never -c.mac.identity=null -c.mac.notarize=false -c.dmg.sign=false
           bun run verify:runtime-service-package -- --arch "${{ matrix.arch }}"
 
       - name: Verify Electron Cursor SDK native artifacts
@@ -521,78 +484,11 @@ jobs:
             fi
           done
 
-      - name: Verify signature + entitlements + notarization
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ] || [ -z "${APPLE_ID:-}" ] || [ -z "${APPLE_TEAM_ID:-}" ] || [ -z "${APPLE_PASSWORD:-}" ]; then
-            echo "Apple signing/notarization secrets are not configured; skipping notarization verification for unsigned DMG."
-            exit 0
-          fi
-
-          APP_DIR="packages/electron/dist/mac"
-          [ -d "packages/electron/dist/mac-arm64" ] && APP_DIR="packages/electron/dist/mac-arm64"
-
-          APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: .app not found under packages/electron/dist/mac*"
-            ls -la packages/electron/dist/
-            exit 1
-          fi
-
-          echo "Verifying $APP_PATH"
-          codesign -vv --deep --strict "$APP_PATH"
-
-          # Require hardened runtime
-          CS_INFO=$(codesign -dv --verbose=4 "$APP_PATH" 2>&1)
-          echo "$CS_INFO"
-          if ! echo "$CS_INFO" | grep -q "flags=.*runtime"; then
-            echo "Error: hardened runtime flag missing"
-            exit 1
-          fi
-
-          # Require notary ticket stapled
-          xcrun stapler validate "$APP_PATH"
-
-          # Require Gatekeeper acceptance for the app bundle.
-          spctl -a -vvv -t exec "$APP_PATH"
-
-          DMG_PATH=$(find packages/electron/dist -maxdepth 1 -name "*.dmg" -print -quit)
-          if [ -z "$DMG_PATH" ]; then
-            echo "Error: DMG not found under packages/electron/dist"
-            ls -la packages/electron/dist/
-            exit 1
-          fi
-
-          echo "Verifying DMG Gatekeeper assessment: $DMG_PATH"
-          spctl -a -vvv -t open --context context:primary-signature "$DMG_PATH"
-
-          ENTITLEMENTS=$(codesign -d --entitlements :- "$APP_PATH" 2>&1 || true)
-          if echo "$ENTITLEMENTS" | grep -q "com.apple.security.app-sandbox"; then
-            echo "Error: app sandbox entitlement is present"
-            exit 1
-          fi
-          for key in \
-            com.apple.security.cs.allow-jit \
-            com.apple.security.cs.allow-unsigned-executable-memory \
-            com.apple.security.cs.disable-library-validation
-          do
-            if ! echo "$ENTITLEMENTS" | grep -q "<key>$key</key>"; then
-              echo "Error: required entitlement missing: $key"
-              exit 1
-            fi
-          done
-
       - name: Upload DMG / ZIP / blockmaps to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
+          draft: true
           files: |
             packages/electron/dist/*.dmg
             packages/electron/dist/*.zip
@@ -635,6 +531,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
+          draft: true
           files: ${{ runner.temp }}/latest-mac.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

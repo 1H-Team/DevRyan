@@ -18,14 +18,14 @@ const mark = (name: string): void => {
   try { performance.mark(name); } catch { /* Diagnostics must not affect rendering. */ }
 };
 
-type ResultImage = Readonly<{
+export type ResultImage = Readonly<{
   key: string;
   alt: string;
   expectedType?: string;
   load(signal: AbortSignal): Promise<Blob>;
 }>;
 
-const BotResultImage: React.FC<{ image: ResultImage }> = ({ image }) => {
+export const BotResultImage: React.FC<{ image: ResultImage }> = ({ image }) => {
   const targetRef = React.useRef<HTMLDivElement | null>(null);
   const [nearViewport, setNearViewport] = React.useState(typeof IntersectionObserver === 'undefined');
   const [attempt, setAttempt] = React.useState(0);
@@ -72,6 +72,7 @@ const BotResultImage: React.FC<{ image: ResultImage }> = ({ image }) => {
     <div
       ref={targetRef}
       className="relative mt-2 aspect-[4/3] w-full max-w-2xl overflow-hidden rounded-xl border border-border/60 bg-muted/30"
+      data-bot-image-state={state}
     >
       {state === 'ready' && url ? (
         <img src={url} alt={image.alt} className="h-full w-full object-contain" />

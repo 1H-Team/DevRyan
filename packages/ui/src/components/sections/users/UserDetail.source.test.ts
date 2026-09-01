@@ -31,6 +31,18 @@ describe('user profile editing source contract', () => {
     expect(projectsSection).not.toContain('GitHub Account');
   });
 
+  test('keeps branch preview credentials write-only and independent from visibility saves', () => {
+    expect(source).toContain('branchPreviewEndpoint');
+    expect(source).toContain("method: 'PUT'");
+    expect(source).toContain("method: 'DELETE'");
+    expect(source).toContain("branchPreviewEndpoint(branchName) + '/test'");
+    expect(source).toContain('Service token configured. Saved credentials remain write-only.');
+    expect(source).toContain("autoComplete=\"new-password\"");
+    expect(source).toContain("serviceToken ? { serviceToken } : {}");
+    expect(source).toContain('Save / Replace Token');
+    expect(source).toContain('Save branch visibility before configuring its preview.');
+  });
+
   test('exposes Browser as both a role capability and a per-user tri-state override', () => {
     expect(typesSource).toContain("['browser', 'Browser']");
     expect(rolesSource).toContain("['can_use_browser', 'Browser']");
@@ -62,5 +74,12 @@ describe('user profile editing source contract', () => {
     expect(source).toContain('ariaLabel="Hide Global Agent Behavior"');
     expect(source).toContain('inheritedAgentsHideGlobalBehaviorUi');
     expect(source).toContain("{ hideGlobalBehaviorUi: policyDraft.agentsHideGlobalBehaviorUi }");
+  });
+
+  test('exposes a sparse Source Update-tab visibility override', () => {
+    expect(typesSource).toContain('source?: { hideUpdateTab?: boolean }');
+    expect(source).toContain('ariaLabel="Hide Source Update Tab"');
+    expect(source).toContain('inheritedSourceHideUpdateTab');
+    expect(source).toContain("{ hideUpdateTab: policyDraft.sourceHideUpdateTab }");
   });
 });

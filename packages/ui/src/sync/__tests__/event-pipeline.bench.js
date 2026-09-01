@@ -26,6 +26,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const storage = new Map();
+const windowEvents = new EventTarget();
 
 globalThis.document = {
   visibilityState: 'visible',
@@ -44,8 +45,9 @@ globalThis.window = {
       storage.delete(key);
     },
   },
-  addEventListener() {},
-  removeEventListener() {},
+  addEventListener: windowEvents.addEventListener.bind(windowEvents),
+  removeEventListener: windowEvents.removeEventListener.bind(windowEvents),
+  dispatchEvent: windowEvents.dispatchEvent.bind(windowEvents),
 };
 
 // ---------------------------------------------------------------------------

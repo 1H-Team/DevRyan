@@ -225,16 +225,17 @@ export function createBotApprovalService({
     const runId = validateUuid(run?.id, 'run.id');
     const botId = validateUuid(run?.bot_id, 'run.bot_id');
     const cancelled = [];
-    let cursor = null;
-    do {
-      const page = await store.repositories.bot_action_attempts.list({
-        filters: { run_id: runId, state: 'pending_approval' },
-        cursor,
-        limit: 100,
-      });
-      for (const candidate of page.items) {
+    for (const cancellableState of ['pending_approval', 'waiting_control']) {
+      let cursor = null;
+      do {
+        const page = await store.repositories.bot_action_attempts.list({
+          filters: { run_id: runId, state: cancellableState },
+          cursor,
+          limit: 100,
+        });
+        for (const candidate of page.items) {
         if (candidate.run_id !== runId || candidate.bot_id !== botId
-          || candidate.state !== 'pending_approval') continue;
+          || candidate.state !== cancellableState) continue;
         let action;
         try {
           action = await store.repositories.bot_action_attempts.updateIfRevision(
@@ -263,9 +264,10 @@ export function createBotApprovalService({
           audienceUserIds: await audienceForAction(action),
           payload: { action: publicBotActionAttempt(action) },
         });
-      }
-      cursor = page.nextCursor || null;
-    } while (cursor);
+        }
+        cursor = page.nextCursor || null;
+      } while (cursor);
+    }
     return Object.freeze(cancelled.map(publicBotActionAttempt));
   };
 

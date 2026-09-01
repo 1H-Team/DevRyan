@@ -1122,6 +1122,7 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
     setUrlInput(formatBrowserAddress(next));
   }, [historyIndex]);
   const openExternal = React.useCallback((value: string) => {
+    setExternalOpenBlocked(false);
     void openExternalUrl(value).then((opened) => setExternalOpenBlocked(!opened));
   }, []);
   const navigateFromUser = React.useCallback((value: string) => {
@@ -1279,7 +1280,9 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background p-6 text-center">
             <RiExternalLinkLine className="h-10 w-10 text-muted-foreground/60" aria-hidden="true" />
             <span className="typography-ui-header text-foreground">
-              {externalOpenBlocked ? 'Your browser blocked the new tab.' : 'This site opens in your regular browser.'}
+              {externalOpenBlocked
+                ? 'Your browser blocked the new tab.'
+                : "This site opens in your regular browser using this device's connection."}
             </span>
             <span className="max-w-lg break-all typography-micro text-muted-foreground">{currentUrl}</span>
             <Button type="button" variant="secondary" onClick={() => openExternal(currentUrl)}>

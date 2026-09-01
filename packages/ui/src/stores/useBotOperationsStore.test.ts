@@ -73,7 +73,22 @@ const action = (overrides: Partial<BotActionAttempt> = {}): BotActionAttempt => 
 
 const computer = (): BotComputerStatus => ({
   botId: BOT_ID,
-  browser: { url: 'https://example.com' },
+  browser: {
+    running: true,
+    healthy: true,
+    lifecycleState: 'running',
+    generation: 1,
+    mode: 'headed_virtual',
+    engineVersion: 'Chromium/151.0',
+    displayReady: true,
+    webCapabilities: {
+      managedPolicy: 'enforced',
+      javascript: 'enabled',
+      firstPartyCookies: 'enabled',
+      thirdPartyCookies: 'enabled',
+    },
+    lastNavigationDiagnostic: null,
+  },
   control: null,
   screencast: { subscribers: 0, lastFrameAt: null, retainedFrames: 0 },
   framesRecorded: false,
@@ -95,6 +110,42 @@ const deferred = <T>() => {
 };
 
 describe('Production Bot operations store', () => {
+  test('an expired-lease status poll cannot erase a newer control lease', async () => {
+    let resolveStatus!: (status: BotComputerStatus) => void;
+    const response = new Promise<BotComputerStatus>((resolve) => { resolveStatus = resolve; });
+    const api = { getComputerStatus: () => response } as unknown as BotsApi;
+    const store = createBotOperationsStore({ api });
+    store.getState().resetPrincipal(USER_ID);
+    const oldControl = { leaseId: 'expired', actorId: USER_ID, actorType: 'user', takenAt: 1, expiresAt: 2 };
+    store.getState().upsertComputer({ ...computer(), control: oldControl });
+    const pending = store.getState().refreshComputer(BOT_ID, oldControl.leaseId);
+    const nextControl = { ...oldControl, leaseId: 'current', expiresAt: Date.now() + 60_000 };
+    store.getState().updateComputerControl(BOT_ID, nextControl);
+    resolveStatus({ ...computer(), control: null });
+    await pending;
+    expect(store.getState().computersByBotId[BOT_ID]?.control).toBe(nextControl);
+  });
+
+  test('a stopped pending viewer cannot return after a newer run starts', async () => {
+    const first = deferred<Awaited<ReturnType<BotsApi['startComputerView']>>>();
+    const second = deferred<Awaited<ReturnType<BotsApi['startComputerView']>>>();
+    const stopped: string[] = [];
+    let starts = 0;
+    const api = { startComputerView: () => ++starts === 1 ? first.promise : second.promise,
+      stopComputerView: async (_id: string, viewId: string) => { stopped.push(viewId); return { stopped: true }; } } as unknown as BotsApi;
+    const store = createBotOperationsStore({ api });
+    const old = store.getState().startComputerView(BOT_ID, CHANNEL_A, RUN_A);
+    await store.getState().stopComputerView(BOT_ID);
+    const current = store.getState().startComputerView(BOT_ID, CHANNEL_B, RUN_B);
+    first.resolve({ view: { ...computerView(), runId: RUN_A } });
+    await old;
+    expect(store.getState().computerViewsByBotId[BOT_ID]).toBeUndefined();
+    expect(store.getState().computerViewPendingByBotId[BOT_ID]).toBe(true);
+    second.resolve({ view: { ...computerView(), id: 'view_new', channelId: CHANNEL_B, runId: RUN_B } });
+    await current;
+    expect(store.getState().computerViewsByBotId[BOT_ID].id).toBe('view_new');
+    expect(stopped).toEqual(['view_opaque']);
+  });
   test('keeps recent governed actions in Activity while deriving approvals from state', () => {
     const store = createBotOperationsStore();
     const completed = action({
@@ -237,6 +288,42 @@ describe('Production Bot operations store', () => {
     expect(Object.hasOwn(store.getState(), 'frames')).toBe(false);
     expect(store.getState().computersByBotId[BOT_ID].screencast.retainedFrames).toBe(0);
     expect(store.getState().computersByBotId[BOT_ID].framesRecorded).toBe(false);
+  });
+
+  test('updates diagnostic polling state only when its browser revision or health changes', async () => {
+    let response = computer();
+    const api = { getComputerStatus: async () => response } as unknown as BotsApi;
+    const store = createBotOperationsStore({ api });
+    store.getState().upsertComputer(computer());
+    const initialMap = store.getState().computersByBotId;
+
+    response = {
+      ...computer(),
+      screencast: { subscribers: 1, lastFrameAt: 1234, retainedFrames: 0 },
+    };
+    await store.getState().refreshComputerDiagnostic(BOT_ID);
+    expect(store.getState().computersByBotId).toBe(initialMap);
+
+    response = {
+      ...response,
+      browser: {
+        ...response.browser,
+        lastNavigationDiagnostic: {
+          revision: 2,
+          observedAt: 1234,
+          origin: 'https://airtable.com',
+          statusCode: 200,
+          redirectCount: 1,
+          repetitionCount: 3,
+          kind: 'site_rejection',
+          reason: 'navigation_loop',
+          blockedHost: null,
+        },
+      },
+    };
+    await store.getState().refreshComputerDiagnostic(BOT_ID);
+    expect(store.getState().computersByBotId).not.toBe(initialMap);
+    expect(store.getState().computersByBotId[BOT_ID].browser.lastNavigationDiagnostic?.revision).toBe(2);
   });
 
   test('coalesces automatic computer viewer startup and stops it by Bot', async () => {
