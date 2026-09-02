@@ -205,6 +205,7 @@ export function createBotsRuntime({
     store,
     computerBackend,
     gatewayHost,
+    encryption,
   });
   const browserService = createBotBrowserService({
     store,

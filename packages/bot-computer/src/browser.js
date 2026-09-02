@@ -14,9 +14,11 @@ export const REVIEWED_BROWSER_COMMANDS = Object.freeze([
   'upload',
   'download',
   'screenshot',
-  'close',
 ]);
 
+// The Bot browser is persistent shared-login infrastructure: nothing the model
+// can call may close or reset the Chromium process, so there is no reviewed
+// 'close' command. Shutdown and profile reset stay host-internal.
 const COMMANDS = new Set(REVIEWED_BROWSER_COMMANDS);
 const KEY_NAMES = new Set([
   'Enter',
@@ -46,6 +48,11 @@ const HUMAN_KEY_PHASES = new Set(['down', 'up']);
 const HUMAN_KEY_MODIFIERS = new Set(['Alt', 'Control', 'Meta', 'Shift']);
 const CDP_COMMAND_TIMEOUT_MS = 30_000;
 const CDP_CONNECT_TIMEOUT_MS = 10_000;
+// Chromium needs time after Browser.close to flush cookies and session state to
+// the persistent profile; a SIGKILL before that flush can lose a login.
+const BROWSER_EXIT_GRACE_MS = 10_000;
+const BROWSER_FORCED_EXIT_GRACE_MS = 5_000;
+const BROWSER_TERMINATE_GRACE_MS = 5_000;
 const MAX_POPUPS = 3;
 const RECOVERABLE_BROWSER_CODES = new Set([
   'DEVRYAN_BOT_BROWSER_CLOSED',
@@ -82,7 +89,9 @@ export const chromiumLaunchArguments = ({ profileDirectory, proxyUrl } = {}) => 
   '--remote-debugging-address=127.0.0.1',
   '--remote-debugging-port=0',
   `--user-data-dir=${profileDirectory}`,
-  'about:blank',
+  // No start URL: a command-line URL would defeat the managed RestoreOnStartup
+  // policy that keeps session cookies across relaunches. The driver creates its
+  // own page target and closes any restored tabs it does not drive.
 ]);
 
 export class ComputerBrowserError extends Error {
@@ -822,9 +831,16 @@ export async function launchChromiumDriver({
   connection.on('Target.targetCreated', (event) => {
     const targetInfo = event.targetInfo;
     if (targetInfo?.type !== 'page'
-      || !targets.some((target) => target.targetId === targetInfo.openerId)
       || targets.some((target) => target.targetId === targetInfo.targetId)) return;
     void queueTargetTransition(async () => {
+      if (targets.some((target) => target.targetId === targetInfo.targetId)) return;
+      if (!targets.some((target) => target.targetId === targetInfo.openerId)) {
+        // Pages no driven page opened (session-restored or startup tabs) are
+        // closed so each relaunch drives exactly one page. Only the tab goes
+        // away; the browser process and its persistent profile stay up.
+        await connection.send('Target.closeTarget', { targetId: targetInfo.targetId }).catch(() => undefined);
+        return;
+      }
       if (targets.length >= MAX_POPUPS + 1) {
         diagnostics?.recordPopupLimit?.({ url: targetInfo.url });
         await connection.send('Target.closeTarget', { targetId: targetInfo.targetId }).catch(() => undefined);
@@ -942,6 +958,39 @@ export async function launchChromiumDriver({
         load.cancel();
       }
     },
+    // Replaces every driven page with one fresh about:blank target while the
+    // Chromium process, its cookies and its storage stay intact. Used after a
+    // single CDP command timeout, where the page (not the browser) is stuck, so
+    // nothing here awaits a command sent to the possibly hung renderer.
+    async resetPage() {
+      return queueTargetTransition(async () => {
+        const { targetId } = await connection.send('Target.createTarget', { url: 'about:blank' });
+        let fresh;
+        try {
+          fresh = await attachPage(targetId);
+        } catch (error) {
+          void connection.send('Target.closeTarget', { targetId }).catch(() => undefined);
+          throw error;
+        }
+        const stale = targets.splice(0, targets.length, fresh);
+        void humanInput.release().catch(() => undefined);
+        const state = screencastState;
+        const streamed = stale.find((target) => state && target.sessionId === state.sessionId);
+        if (streamed) {
+          state.sessionId = null;
+          void sendTo(streamed, 'Page.stopScreencast').catch(() => undefined);
+        }
+        humanInput = createHumanInputDispatcher({
+          send: (method, params) => sendTo(fresh, method, params),
+        });
+        pageChangeHandler();
+        for (const target of stale) {
+          void connection.send('Target.closeTarget', { targetId: target.targetId }).catch(() => undefined);
+        }
+        await startScreencastOn(fresh, { seed: true }).catch(() => undefined);
+        return Object.freeze({ targetId: fresh.targetId, closedTargets: stale.length });
+      });
+    },
     async snapshot() {
       const target = active();
       const { nodes = [] } = await sendTo(target, 'Accessibility.getFullAXTree');
@@ -1019,10 +1068,16 @@ export async function launchChromiumDriver({
     },
     async close({ force = false } = {}) {
       await screencastState?.stop?.().catch(() => undefined);
-      if (!force) await connection.send('Browser.close').catch(() => undefined);
+      // Browser.close lets Chromium flush the persistent profile (cookie DB,
+      // session state). Its reply is not awaited so a stuck browser cannot stall
+      // shutdown past the container stop timeout; SIGTERM and then SIGKILL come
+      // only after the exit grace periods elapse.
+      if (!force) void connection.send('Browser.close').catch(() => undefined);
       if (force && child.exitCode === null) child.kill('SIGTERM');
-      if (!await waitForExit(child, force ? 2_000 : 5_000)) child.kill('SIGTERM');
-      if (!await waitForExit(child, 2_000)) child.kill('SIGKILL');
+      if (!await waitForExit(child, force ? BROWSER_FORCED_EXIT_GRACE_MS : BROWSER_EXIT_GRACE_MS)) {
+        child.kill('SIGTERM');
+      }
+      if (!await waitForExit(child, BROWSER_TERMINATE_GRACE_MS)) child.kill('SIGKILL');
       connection.close();
     },
   });
@@ -1083,6 +1138,24 @@ export function createBrowserController({
   const retireDriver = async (active, code) => {
     if (!clearDriver(active, code)) return false;
     await active.close({ force: true }).catch(() => undefined);
+    return true;
+  };
+
+  // One CDP timeout means one stuck page, not a dead browser. Swap only the page
+  // target so the same Chromium process (and every cookie it holds) serves the
+  // next command; relaunch only when even that fails or the process is gone.
+  const resetPage = async (active, code) => {
+    if (driver !== active) return false;
+    if (!active.isHealthy() || typeof active.resetPage !== 'function') {
+      return retireDriver(active, code);
+    }
+    refs.beginPage();
+    try {
+      await active.resetPage();
+    } catch {
+      return retireDriver(active, code);
+    }
+    diagnostics?.reset?.('page_reset');
     return true;
   };
 
@@ -1181,10 +1254,6 @@ export function createBrowserController({
       exactKeys(args, ['filename']);
       return workspace.publishDownload({ filename: args.filename, runtimeToken: gatewayToken });
     }
-    if (command === 'close') {
-      exactKeys(args, []);
-      return close();
-    }
     const perform = async (active) => {
       if (human) assertAuthorized();
       else control.assertAgentAvailable();
@@ -1270,7 +1339,8 @@ export function createBrowserController({
       } catch (error) {
         if (error?.code?.startsWith('DEVRYAN_BOT_CONTROL_')) throw error;
         const recoverable = RECOVERABLE_BROWSER_CODES.has(error?.code);
-        if (active) await retireDriver(active, error?.code);
+        if (active && error?.code === 'DEVRYAN_BOT_BROWSER_COMMAND_TIMEOUT') await resetPage(active, error.code);
+        else if (active) await retireDriver(active, error?.code);
         else if (recoverable) lastFailureCode = error.code;
         if (!recoverable || attempt === maximumAttempts) throw error;
         active = null;

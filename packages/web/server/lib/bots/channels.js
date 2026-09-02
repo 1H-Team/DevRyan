@@ -80,6 +80,35 @@ const publicChannel = (row, accessRole = 'owner') => Object.freeze({
   archivedAt: row.archived_at || null,
 });
 
+const RUN_FAILURE_PHASES = new Set(['startup', 'execution']);
+const RUN_FAILURE_STAGE_MAX_LENGTH = 80;
+const RUN_FAILURE_TOKEN_PATTERN = /^[A-Za-z0-9_.:-]+$/;
+
+const runFailureToken = (value, maxLength) => (
+  typeof value === 'string'
+    && value.length > 0
+    && value.length <= maxLength
+    && RUN_FAILURE_TOKEN_PATTERN.test(value)
+    ? value
+    : null
+);
+
+// The dispatcher records where a terminal failure happened in the run's
+// context snapshot. Only failed or interrupted runs expose it so a retried
+// (pending) run never carries a stale diagnosis into the chat.
+const runFailureDiagnostics = (row) => {
+  const snapshot = row.context_snapshot;
+  if ((row.state !== 'failed' && row.state !== 'interrupted')
+    || !snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+    return { failurePhase: null, failureStage: null };
+  }
+  const failurePhase = runFailureToken(snapshot.failurePhase, 32);
+  return {
+    failurePhase: failurePhase && RUN_FAILURE_PHASES.has(failurePhase) ? failurePhase : null,
+    failureStage: runFailureToken(snapshot.failureStage, RUN_FAILURE_STAGE_MAX_LENGTH),
+  };
+};
+
 const publicRun = (row) => Object.freeze({
   id: row.id,
   botId: row.bot_id,
@@ -91,6 +120,7 @@ const publicRun = (row) => Object.freeze({
   state: row.state,
   retryable: isBotRunRetryable(row),
   interruptionKind: row.interruption_kind || null,
+  ...runFailureDiagnostics(row),
   createdAt: row.created_at || null,
   updatedAt: row.updated_at || null,
   startedAt: row.started_at || null,

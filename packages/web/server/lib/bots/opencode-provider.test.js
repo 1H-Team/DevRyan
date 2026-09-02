@@ -672,7 +672,7 @@ describe('scoped Bot OpenCode provider', () => {
       format: { type: 'json_schema', schema, retryCount: 2 },
       system: 'Extract structured memory only. Do not call tools or perform actions.',
       parts: [{ type: 'text', text: 'Extract reusable memory.' }],
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(harness.client.session.delete).toHaveBeenCalledWith({
       sessionID: 'ses_bot_1',
       directory: '/workspace',
@@ -704,13 +704,13 @@ describe('scoped Bot OpenCode provider', () => {
     expect(harness.client.session.create).toHaveBeenLastCalledWith({
       directory: '/workspace',
       title: 'Bot Routine Draft',
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(harness.client.session.prompt).toHaveBeenLastCalledWith(expect.objectContaining({
       sessionID: 'ses_bot_1',
       tools: { '*': false },
       format: { type: 'json_schema', schema, retryCount: 2 },
       system: 'Return routine JSON only. Do not call tools or perform actions.',
-    }));
+    }), { signal: expect.any(AbortSignal) });
   });
 
   it('reconciles a persisted run marker and terminal assistant without replaying content', async () => {
@@ -752,6 +752,7 @@ describe('scoped Bot OpenCode provider', () => {
       },
       assistantTerminal: true,
       providerContextRatio: 0.6,
+      providerTokenTotal: expect.any(Number),
     });
     expect(harness.client.session.messages).toHaveBeenCalledWith({
       sessionID: 'ses_bot_1',

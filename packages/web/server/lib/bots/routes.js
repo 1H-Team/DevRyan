@@ -54,6 +54,7 @@ const capability = ({
     state: typeof runtime.state === 'string' ? runtime.state : null,
     code: typeof runtime.code === 'string' ? runtime.code : null,
     issues: publicIssues(runtime.issues),
+    warnings: publicIssues(runtime.warnings),
     canSetup: runtime.canSetup === true,
     canRepair: runtime.canRepair === true,
     canUpdate: runtime.canUpdate === true,

@@ -67,17 +67,27 @@ export const BOT_MEMORY_EXTRACTION_SCHEMA = Object.freeze({
   },
 });
 
+// Content-free reasons for an unusable classifier output. They reach the audit
+// and the log so a repeated failure can be diagnosed without reading the text.
+export const BOT_MEMORY_CLASSIFIER_REASONS = Object.freeze([
+  'not_json',
+  'shape',
+  'too_large',
+  'provenance',
+]);
+
 export class BotMemoryClassifierError extends Error {
-  constructor(message, code = 'bot_memory_extraction_invalid', statusCode = 422) {
+  constructor(message, code = 'bot_memory_extraction_invalid', statusCode = 422, reason = null) {
     super(message);
     this.name = 'BotMemoryClassifierError';
     this.code = code;
     this.statusCode = statusCode;
+    this.reason = BOT_MEMORY_CLASSIFIER_REASONS.includes(reason) ? reason : null;
   }
 }
 
-const fail = (message, code, statusCode) => {
-  throw new BotMemoryClassifierError(message, code, statusCode);
+const fail = (message, code, statusCode, reason) => {
+  throw new BotMemoryClassifierError(message, code, statusCode, reason);
 };
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -85,16 +95,78 @@ const exactFields = (value, expected) => (
   isRecord(value) && Object.keys(value).sort().join('\0') === [...expected].sort().join('\0')
 );
 
+// Structured-output models still wrap JSON in markdown fences, prefix it with a
+// sentence, or return the candidates array bare. Those are shape problems, not
+// trust problems: recover the object here and keep the per-candidate checks
+// strict. Anything that is not recoverable fails with a content-free reason.
+const stripCodeFence = (text) => {
+  const fenced = /^\s*```[a-zA-Z0-9_-]*\s*\n([\s\S]*?)\n?\s*```\s*$/.exec(text);
+  return fenced ? fenced[1] : text;
+};
+
+const extractBalancedJson = (text) => {
+  const openers = { '{': '}', '[': ']' };
+  for (let start = 0; start < text.length; start += 1) {
+    const opener = text[start];
+    if (!openers[opener]) continue;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < text.length; index += 1) {
+      const char = text[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') { inString = true; continue; }
+      if (char === '{' || char === '[') depth += 1;
+      else if (char === '}' || char === ']') {
+        depth -= 1;
+        if (depth === 0) {
+          const candidate = text.slice(start, index + 1);
+          try {
+            return JSON.parse(candidate);
+          } catch {
+            break;
+          }
+        }
+      }
+    }
+  }
+  return undefined;
+};
+
 const parseOutput = (value) => {
   if (typeof value !== 'string') return value;
   if (Buffer.byteLength(value, 'utf8') > 128 * 1024) {
-    fail('Bot memory extraction output is too large');
+    fail('Bot memory extraction output is too large', undefined, undefined, 'too_large');
   }
+  const trimmed = stripCodeFence(value.trim()).trim();
+  if (!trimmed) return { candidates: [] };
   try {
-    return JSON.parse(value);
+    return JSON.parse(trimmed);
   } catch {
-    fail('Bot memory extraction output is not valid JSON');
+    const recovered = extractBalancedJson(trimmed);
+    if (recovered !== undefined) return recovered;
+    fail('Bot memory extraction output is not valid JSON', undefined, undefined, 'not_json');
   }
+};
+
+// Accept `{ candidates: [...] }`, a bare array, or an object whose single
+// array-valued key carries the candidates. Extra top-level keys are ignored.
+const candidateListFrom = (parsed) => {
+  if (parsed === null || parsed === undefined) return [];
+  if (Array.isArray(parsed)) return parsed;
+  if (!isRecord(parsed)) return null;
+  if (Array.isArray(parsed.candidates)) return parsed.candidates;
+  if (parsed.candidates === null || parsed.candidates === undefined) {
+    const arrays = Object.values(parsed).filter((entry) => Array.isArray(entry));
+    if (arrays.length === 1) return arrays[0];
+    if (Object.keys(parsed).length === 0) return [];
+  }
+  return null;
 };
 
 const normalizedForQuoteCheck = (value) => value.normalize('NFKC').replace(/\s+/g, ' ').trim();
@@ -205,23 +277,28 @@ export function classifyBotMemoryCandidates({
   const normalizedRunId = validateUuid(runId, 'runId');
   const normalizedOwnerId = validateUuid(ownerUserId, 'ownerUserId');
   if (!Array.isArray(messageIds) || messageIds.length < 1 || messageIds.length > 8) {
-    fail('Bot memory extraction provenance is invalid');
+    fail('Bot memory extraction provenance is invalid', undefined, undefined, 'provenance');
   }
   const allowedMessageIds = new Set(messageIds.map((id, index) => validateUuid(id, `messageIds[${index}]`)));
   const rawTranscript = typeof transcript === 'string' ? transcript : '';
   if (Buffer.byteLength(rawTranscript, 'utf8') > MAX_TRANSCRIPT_BYTES) {
-    fail('Bot memory extraction transcript is too large', 'bot_memory_extraction_too_large', 413);
+    fail('Bot memory extraction transcript is too large', 'bot_memory_extraction_too_large', 413, 'too_large');
   }
 
   const parsed = parseOutput(output);
-  if (!exactFields(parsed, ['candidates']) || !Array.isArray(parsed.candidates)
-    || parsed.candidates.length > MAX_CANDIDATES) {
-    fail('Bot memory extraction output does not match the schema');
+  const candidateList = candidateListFrom(parsed);
+  if (candidateList === null) {
+    fail('Bot memory extraction output does not match the schema', undefined, undefined, 'shape');
   }
 
   const accepted = [];
   const rejected = [];
-  parsed.candidates.forEach((rawCandidate, index) => {
+  // A model that overflows the candidate cap has still produced usable facts;
+  // keep the first MAX_CANDIDATES and record the overflow instead of failing.
+  candidateList.slice(MAX_CANDIDATES).forEach((_, offset) => {
+    rejected.push(rejection(MAX_CANDIDATES + offset, 'too_many_candidates'));
+  });
+  candidateList.slice(0, MAX_CANDIDATES).forEach((rawCandidate, index) => {
     // Structured-output models routinely omit null-valued keys, capitalise
     // logical keys, or add an extra field. Those are shape problems, not
     // trust problems: normalise them and keep the trust checks below strict.

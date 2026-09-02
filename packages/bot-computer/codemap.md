@@ -30,8 +30,9 @@ browser panel or OpenCode browser tools.
 - `managed-policy.js` — startup verification for the exact root-owned mandatory
   JavaScript/cookie policy.
 - `chromium-policies/managed/devryan-browser.json` — root-owned image policy
-  that keeps JavaScript plus first- and third-party cookies enabled without
-  mutating persistent Bot profiles.
+  that keeps JavaScript plus first- and third-party cookies enabled and session
+  restore on (`RestoreOnStartup: 1`, so session cookies survive Chromium
+  relaunches) without mutating persistent Bot profiles.
 - `egress-proxy.js` — loopback authenticated relay into bot-egress with
   runtime-token rotation and no direct fallback.
 - `refs.js` — page-generation-fenced opaque accessibility references.
@@ -47,7 +48,11 @@ browser panel or OpenCode browser tools.
 ## Where to change things
 
 - Add or alter a browser command only in `browser.js` and its tests; never add
-  an arbitrary JavaScript/CDP passthrough.
+  an arbitrary JavaScript/CDP passthrough, and never add a command that closes
+  or resets the browser: it is persistent shared-login infrastructure. A single
+  CDP command timeout resets only the page target (`resetPage`); the Chromium
+  process is relaunched only when its connection or process is gone. Keep the
+  launch arguments free of a start URL and of flags that disable session restore.
 - Keep direct coordinate input human-only and lease-gated; never add `input` to
   the reasoning agent's reviewed command list.
 - Change HTTP routes or authentication in `server.js` and `auth.js`.

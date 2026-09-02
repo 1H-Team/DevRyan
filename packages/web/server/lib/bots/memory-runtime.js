@@ -50,7 +50,6 @@ const UNFINISHED_RUN_STATES = new Set([
   'needs_reconciliation',
 ]);
 const TERMINAL_EXTRACTION_CODES = new Set([
-  'bot_memory_extraction_invalid',
   'bot_memory_extraction_too_large',
   'bot_memory_summary_decrypt_failed',
   'bot_memory_candidate_envelope_invalid',
@@ -61,14 +60,34 @@ const TERMINAL_EXTRACTION_CODES = new Set([
   'bot_encryption_plaintext_invalid',
   'bot_message_not_found',
   'bot_opencode_configuration_invalid',
-  'bot_opencode_request_invalid',
-  'bot_opencode_response_invalid',
   'bot_run_not_found',
   'bot_run_not_completed',
   'bot_not_found',
   'bot_channel_not_found',
   'bot_revision_not_found',
 ]);
+// A classifier answer that is not usable JSON, or a runtime request the host
+// rejected while starting the extraction's own runtime, is usually a one-off
+// (a chatty model, a runtime preempted mid-start). Retry a bounded number of
+// times before giving up, and record why when giving up.
+const REPAIRABLE_EXTRACTION_CODES = new Set([
+  'bot_memory_extraction_invalid',
+  'bot_opencode_request_invalid',
+  'bot_opencode_response_invalid',
+]);
+const REPAIR_MAX_ATTEMPTS = 3;
+// The extraction lost its runtime to a chat run that arrived in the same
+// channel (or never got one). That is scheduling, not failure: requeue without
+// consuming an attempt.
+const DEFERRABLE_EXTRACTION_CODES = new Set([
+  'bot_runtime_scope_busy',
+  'bot_opencode_request_aborted',
+  'bot_opencode_run_not_found',
+]);
+const REPAIR_HINT = [
+  'Your previous answer could not be used because it was not valid JSON matching the schema.',
+  'Answer again with only the JSON object: no prose, no markdown fences, and exactly one top-level "candidates" array.',
+].join(' ');
 // Optimistic-concurrency conflicts (a Manager editing a memory while a turn is
 // being extracted, two workers touching one logical key, a serialization
 // failure) are transient. They retry under a tighter cap than provider outages
@@ -83,6 +102,8 @@ const CONFLICT_MAX_ATTEMPTS = 4;
 
 const extractionErrorRetryable = (error, fallback = false) => {
   if (RETRYABLE_EXTRACTION_CODES.has(error?.code)) return true;
+  if (REPAIRABLE_EXTRACTION_CODES.has(error?.code)) return true;
+  if (DEFERRABLE_EXTRACTION_CODES.has(error?.code)) return true;
   if (typeof error?.details?.retryable === 'boolean') return error.details.retryable;
   if (typeof error?.diagnostics?.retryable === 'boolean') return error.diagnostics.retryable;
   if (TERMINAL_EXTRACTION_CODES.has(error?.code)) return false;
@@ -754,13 +775,19 @@ export function createBotMemoryRuntime({
     return Object.freeze({ run, bot, channel, revision, userMessage, assistantMessage });
   };
 
-  const classifyCompletedRun = async (job, input) => {
+  const safeReason = (value) => (
+    typeof value === 'string' && /^[a-z][a-z0-9_:]{0,63}$/.test(value) ? value : null
+  );
+  const safeValidator = (value) => safeReason(value);
+
+  const classifyCompletedRun = async (job, input, { extractor = null, signal = null } = {}) => {
     if (job.candidate_envelope) {
       emitExtractionDiagnostic('bot.memory.extraction.recovery', job, {
         phase: 'candidate_load',
       });
       return decryptClassifiedCandidates(job);
     }
+    const extract = typeof extractor === 'function' ? extractor : extractCandidates;
     const assistantText = typeof input.assistantMessage?.body?.text === 'string'
       ? input.assistantMessage.body.text
       : '';
@@ -776,42 +803,84 @@ export function createBotMemoryRuntime({
       userText,
       assistantText,
     });
-    let output;
-    try {
-      output = await extractCandidates({
-        runId: input.run.id,
-        prompt,
-        schema: BOT_MEMORY_EXTRACTION_SCHEMA,
-        bot: input.bot,
-        channel: input.channel,
-        revision: input.revision,
-      });
-    } catch (error) {
-      throw new BotMemoryRuntimeError(
-        'Bot memory provider request failed',
-        error?.code || 'bot_memory_provider_failed',
-        error?.statusCode || 502,
-        { phase: 'classification', retryable: extractionErrorRetryable(error) },
-      );
-    }
+    const attemptCount = Math.max(1, Number(job.attempt_count || 1));
+    const requestOutput = async (requestPrompt) => {
+      try {
+        return await extract({
+          runId: input.run.id,
+          prompt: requestPrompt,
+          schema: BOT_MEMORY_EXTRACTION_SCHEMA,
+          bot: input.bot,
+          channel: input.channel,
+          revision: input.revision,
+          ...(signal ? { signal } : {}),
+        });
+      } catch (error) {
+        const code = error?.code || 'bot_memory_provider_failed';
+        const repairable = REPAIRABLE_EXTRACTION_CODES.has(code);
+        throw new BotMemoryRuntimeError(
+          'Bot memory provider request failed',
+          code,
+          error?.statusCode || 502,
+          {
+            phase: 'classification',
+            retryable: repairable
+              ? attemptCount < REPAIR_MAX_ATTEMPTS
+              : extractionErrorRetryable(error),
+            ...(safeValidator(error?.diagnostics?.validator)
+              ? { validator: error.diagnostics.validator }
+              : {}),
+            ...(error?.botRuntimeStage ? { stage: error.botRuntimeStage } : {}),
+          },
+        );
+      }
+    };
+    const classify = (output) => classifyBotMemoryCandidates({
+      output,
+      botId: input.bot.id,
+      channelId: input.channel.id,
+      runId: input.run.id,
+      ownerUserId: input.channel.owner_user_id,
+      messageIds,
+      transcript: `${userText}\n${assistantText}`,
+    });
+    let output = await requestOutput(prompt);
     let classified;
     try {
-      classified = classifyBotMemoryCandidates({
-        output,
-        botId: input.bot.id,
-        channelId: input.channel.id,
-        runId: input.run.id,
-        ownerUserId: input.channel.owner_user_id,
-        messageIds,
-        transcript: `${userText}\n${assistantText}`,
-      });
-    } catch (error) {
-      throw new BotMemoryRuntimeError(
-        'Bot memory classifier output is unrecoverable',
-        error?.code || 'bot_memory_extraction_invalid',
-        error?.statusCode || 422,
-        { phase: 'classification_validation', retryable: false },
-      );
+      classified = classify(output);
+    } catch (firstError) {
+      const reason = safeReason(firstError?.reason);
+      const repairable = firstError?.code === 'bot_memory_extraction_invalid'
+        && ['not_json', 'shape'].includes(reason);
+      let error = firstError;
+      if (repairable) {
+        // One immediate repair pass on the same runtime: the model sees the
+        // failure and answers with bare JSON far more often than not.
+        emitExtractionDiagnostic('bot.memory.extraction.repair', job, {
+          phase: 'classification_validation',
+          reason,
+        });
+        try {
+          output = await requestOutput(`${REPAIR_HINT}\n\n${prompt}`);
+          classified = classify(output);
+          error = null;
+        } catch (repairError) {
+          error = repairError instanceof BotMemoryRuntimeError ? repairError : (repairError || firstError);
+        }
+      }
+      if (error) {
+        if (error instanceof BotMemoryRuntimeError) throw error;
+        throw new BotMemoryRuntimeError(
+          'Bot memory classifier output is unrecoverable',
+          error?.code || 'bot_memory_extraction_invalid',
+          error?.statusCode || 422,
+          {
+            phase: 'classification_validation',
+            retryable: repairable && attemptCount < REPAIR_MAX_ATTEMPTS,
+            ...(safeReason(error?.reason) ? { reason: error.reason } : {}),
+          },
+        );
+      }
     }
     const candidateEnvelope = await encryptClassifiedCandidates(
       input.run.id,
@@ -982,14 +1051,15 @@ export function createBotMemoryRuntime({
     }
   };
 
-  const processExtractionJob = async (job) => {
+  const processExtractionJob = async (job, { extractor = null, signal = null, inline = false } = {}) => {
     emitExtractionDiagnostic('bot.memory.extraction.claim', job, {
       hasPersistedCandidates: Boolean(job.candidate_envelope),
+      inline,
     });
     let input = null;
     try {
       input = await loadExtractionInput(job);
-      const classified = await classifyCompletedRun(job, input);
+      const classified = await classifyCompletedRun(job, input, { extractor, signal });
       const result = await applyClassifiedCandidates(input, {
         ...classified,
         rejected: Array.from({ length: classified.rejectedCount }, () => null),
@@ -1022,7 +1092,13 @@ export function createBotMemoryRuntime({
     } catch (error) {
       const code = error?.code || 'bot_memory_extraction_failed';
       const phase = error?.details?.phase || 'recovery';
-      if (code === 'bot_runtime_scope_busy') {
+      const reason = safeReason(error?.details?.reason);
+      const validator = safeValidator(error?.details?.validator);
+      const stage = safeReason(error?.details?.stage);
+      const aborted = error?.name === 'AbortError' || error?.details?.normalizedFrom === 'AbortError';
+      // An inline pass that lost its runtime (aborted, preempted, or the run
+      // was closed under it) hands the job back to the durable queue intact.
+      if (DEFERRABLE_EXTRACTION_CODES.has(code) || stage === 'admission' || aborted) {
         const delayMs = extractionPollMs;
         await store.settleMemoryExtractionJob({
           runId: job.run_id,
@@ -1036,22 +1112,31 @@ export function createBotMemoryRuntime({
           code,
           phase: 'admission',
           delayMs,
+          inline,
+          ...(aborted ? { reason: 'aborted' } : {}),
         });
         return;
       }
       const attemptCount = Number(job.attempt_count || 1);
       const conflict = RETRYABLE_EXTRACTION_CODES.has(code);
-      const terminal = (!conflict && (TERMINAL_EXTRACTION_CODES.has(code)
-        || error?.details?.retryable === false))
-        || attemptCount >= (conflict
-          ? CONFLICT_MAX_ATTEMPTS
+      const repairable = !conflict && REPAIRABLE_EXTRACTION_CODES.has(code);
+      const attemptCap = conflict
+        ? CONFLICT_MAX_ATTEMPTS
+        : (repairable
+          ? REPAIR_MAX_ATTEMPTS
           : Math.min(EXTRACTION_JOB_MAX_ATTEMPTS, extractionRetryDelaysMs.length + 1));
+      const terminal = (!conflict && !repairable && (TERMINAL_EXTRACTION_CODES.has(code)
+        || error?.details?.retryable === false))
+        || attemptCount >= attemptCap;
       if (terminal) {
         await recordExtractionAudit(input, job, 'failure', {
           code,
           phase,
           retryable: false,
           attemptCount,
+          ...(reason ? { reason } : {}),
+          ...(validator ? { validator } : {}),
+          ...(stage ? { stage } : {}),
         });
         await store.settleMemoryExtractionJob({
           runId: job.run_id,
@@ -1066,8 +1151,16 @@ export function createBotMemoryRuntime({
           botId: job.bot_id,
           phase,
           attemptCount,
+          ...(reason ? { reason } : {}),
+          ...(validator ? { validator } : {}),
+          ...(stage ? { stage } : {}),
         });
-        emitExtractionDiagnostic('bot.memory.extraction.terminal_failure', job, { code, phase });
+        emitExtractionDiagnostic('bot.memory.extraction.terminal_failure', job, {
+          code,
+          phase,
+          ...(reason ? { reason } : {}),
+          ...(validator ? { validator } : {}),
+        });
         // The console shows failed extraction next to Remembered facts; tell it
         // now rather than waiting for its slow recovery poll.
         await notifyMemoryChanged({
@@ -1089,8 +1182,73 @@ export function createBotMemoryRuntime({
         phase,
         errorCode: code,
       });
-      emitExtractionDiagnostic('bot.memory.extraction.retry', job, { code, phase, delayMs });
+      logger?.warn?.('[BotsMemory] extraction attempt failed', {
+        ...botErrorLogFields(error, code),
+        runId: job.run_id,
+        botId: job.bot_id,
+        phase,
+        attemptCount,
+        delayMs,
+        ...(reason ? { reason } : {}),
+        ...(validator ? { validator } : {}),
+      });
+      emitExtractionDiagnostic('bot.memory.extraction.retry', job, {
+        code,
+        phase,
+        delayMs,
+        ...(reason ? { reason } : {}),
+        ...(validator ? { validator } : {}),
+      });
     }
+  };
+
+  // Extract on the runtime of the run that just completed, while the
+  // dispatcher still holds it. The durable job is claimed for this run only;
+  // when it is already leased elsewhere or the store predates the claim-by-run
+  // RPC, the queue worker handles it later exactly as before.
+  const extractInline = async (input) => {
+    if (stopped || typeof store.claimMemoryExtractionJobByRun !== 'function'
+      || typeof input?.extract !== 'function') {
+      return Object.freeze({ inline: false, reason: 'unavailable' });
+    }
+    const runId = validateUuid(input.run.id, 'run.id');
+    let job = null;
+    try {
+      job = await store.claimMemoryExtractionJobByRun({
+        runId,
+        leaseOwner: extractionOwner,
+        leaseUntil: new Date(now().getTime() + extractionLeaseMs).toISOString(),
+      });
+    } catch (error) {
+      logger?.warn?.('[BotsMemory] inline extraction claim failed', {
+        ...botErrorLogFields(error, 'bot_memory_extraction_claim_failed'),
+        runId,
+      });
+      return Object.freeze({ inline: false, reason: 'claim_failed' });
+    }
+    if (!job) return Object.freeze({ inline: false, reason: 'not_claimable' });
+    const extractor = async ({ prompt, schema, signal }) => input.extract({
+      prompt,
+      schema,
+      title: `Bot memory extraction ${runId.slice(0, 8)}`,
+      system: 'Extract structured memory only. Do not call tools or perform actions.',
+      ...(signal ? { signal } : {}),
+    });
+    const task = processExtractionJob(job, {
+      extractor,
+      signal: input.signal || null,
+      inline: true,
+    }).catch((error) => {
+      logger?.warn?.('[BotsMemory] inline extraction settlement failed', {
+        ...botErrorLogFields(error, 'bot_memory_extraction_settlement_failed'),
+        runId,
+      });
+    }).finally(() => {
+      pendingExtractions.delete(task);
+    });
+    pendingExtractions.add(task);
+    await task;
+    return Object.freeze({ inline: true });
   };
 
   const scheduleExtractionPump = (delayMs = 0) => {
@@ -1224,8 +1382,12 @@ export function createBotMemoryRuntime({
         channel_id: input?.channel?.id || null,
       });
       workerStarted = true;
+      if (typeof input?.extract === 'function') {
+        const inline = await extractInline(input);
+        if (inline.inline) return Object.freeze({ queued: true, inline: true });
+      }
       await pumpExtractions();
-      return Object.freeze({ queued: true });
+      return Object.freeze({ queued: true, inline: false });
     },
 
     async listForManager(principal, botId, { cursor = null, limit, state = null } = {}) {

@@ -37,7 +37,7 @@ const createHarness = ({ rows = [auditRow()], detailRow, bots, actors } = {}) =>
       : actors;
     throw new Error(`Unexpected table ${table}`);
   });
-  const assertSchemaVersion = vi.fn(async () => '20260902120000');
+  const assertSchemaVersion = vi.fn(async () => '20260903110000');
   const rpc = vi.fn(async () => ({ clearedCount: 2 }));
   return {
     rest,
@@ -81,7 +81,7 @@ describe('Bot audit query service', () => {
       actor: { displayName: 'Administrator', former: false },
     });
     expect(page.nextCursor).toEqual(expect.any(String));
-    expect(harness.assertSchemaVersion).toHaveBeenCalledWith('20260902120000');
+    expect(harness.assertSchemaVersion).toHaveBeenCalledWith('20260903110000');
     const request = harness.rest.mock.calls.find(([table]) => table === 'bot_audit_review_events')[1];
     expect(request.query).toMatchObject({
       result: 'in.(failure,partial,unknown)',
@@ -106,6 +106,8 @@ describe('Bot audit query service', () => {
     expect(filtered.query.actor_user_id).toBe(`eq.${ADMIN_ID}`);
     expect(filtered.query.and).toContain('id.lt.41');
     expect(filtered.query.and).toContain('metadata->>code.ilike.*timeout*');
+    expect(filtered.query.and).toContain('metadata->>failurePhase.ilike.*timeout*');
+    expect(filtered.query.and).toContain('metadata->>failureStage.ilike.*timeout*');
     expect(filtered.query.and).toContain('created_at.gte.2026-08-01T00:00:00.000Z');
   });
 
@@ -222,7 +224,7 @@ describe('Bot audit query service', () => {
     harness.rest.mockRejectedValueOnce({ payload: { code: 'PGRST205' } });
     await expect(harness.query.list(admin)).rejects.toMatchObject({
       code: 'bot_audit_clear_migration_required',
-      message: expect.stringContaining('20260902120000'),
+      message: expect.stringContaining('20260903110000'),
     });
   });
 });

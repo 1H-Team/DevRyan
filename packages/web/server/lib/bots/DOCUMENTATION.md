@@ -229,7 +229,7 @@ HTTP server are torn down.
 ## Supabase repositories
 
 `store.js` defines every relation and fixed RPC through migration
-`20260902120000`. Each
+`20260903110000`. Each
 repository has a literal select list and literal writable fields. Request JSON
 is never spread into a PostgREST body. Unsupported filters or fields fail before
 network I/O, and diagnostic logging contains only operation, table, and field
@@ -281,7 +281,7 @@ while missing, malformed, or older markers fail closed. Bot migrations must
 therefore remain backward-compatible for at least one desktop release. A stale
 marker or a schema-cache miss for any Bot table/function produces HTTP 503 with
 `code: "bot_schema_migration_required"` and
-`requiredMigration: "20260902120000"`.
+`requiredMigration: "20260903110000"`.
 
 The migration adds nullable `agent_adapter`, `agent_thread_id`, and bounded
 `agent_execution` fields to durable runs and backfills the projection from
@@ -872,6 +872,27 @@ JSON schema from `memory-classifier.js`. Disposable memory and routine-drafting
 tasks declare `persistence: ephemeral`; OpenCode maps that contract to the
 provisional credential path, so a synthetic task ID can never update
 `bot_runs.model_snapshot`.
+
+The dispatcher offers the completed run's still-active runtime to
+`enqueueCompletedRun` (`extract` callback plus a bounded abort signal). The
+runtime claims that run's job through
+`devryan_claim_bot_memory_extraction_job_by_run` (migration
+`20260903110000`), which honours the one-leased-job-per-Bot rule and never
+touches a job that already carries candidates, and processes it in place; an
+unavailable claim, a queued follow-up message, or an aborted pass leaves the job
+to the durable worker unchanged. The structured completion prefers the agent's
+validated `structured` value over the text parts, and the classifier recovers
+JSON wrapped in fences, prose, a bare array, or extra top-level keys while
+keeping every per-candidate trust check strict; an empty answer is zero
+candidates, not a failure. `bot_memory_extraction_invalid`,
+`bot_opencode_request_invalid`, and `bot_opencode_response_invalid` are
+repairable: one immediate repair pass with a content-free hint, then up to
+three durable attempts, after which the terminal audit metadata and log line
+carry a `reason` (`not_json`, `shape`, `too_large`, `provenance`) or the host
+`validator` label (`start_input`, `session_id`, `structured_schema`,
+`method_input`, `scope_mismatch`, …). `bot_opencode_request_aborted`,
+`bot_opencode_run_not_found`, `bot_runtime_scope_busy`, and any admission-stage
+or aborted failure settle as `defer` without consuming an attempt.
 
 Accepted/rejected classifier output is encrypted with the deployment key and
 persisted on the job before any summary, version, or index commit. Lease expiry,

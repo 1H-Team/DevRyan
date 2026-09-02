@@ -10,7 +10,7 @@ import { useBotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotOperationsStore } from '@/stores/useBotOperationsStore';
 import { useBotSharedFilesStore } from '@/stores/useBotSharedFilesStore';
 import { useBotsStore } from '@/stores/useBotsStore';
-import { resolveBotRuntimeRecovery } from '../botPresentation';
+import { resolveBotRuntimeRecovery, resolveBotRuntimeWarnings } from '../botPresentation';
 import { botRuntimeProgressLabel, useBotRuntimeOperation } from '../useBotRuntimeOperation';
 import { BotComposer, type BotRuntimeRecoveryAction } from './BotComposer';
 import { BotMessageList } from './BotMessageList';
@@ -152,6 +152,7 @@ export const BotChatView: React.FC<BotChatViewProps> = ({ bot, channelId }) => {
         channel={channel}
         runtimeState={capabilities?.state ?? 'runtime_unavailable'}
         runtimeAvailable={capabilities?.available === true && bot.lifecycle === 'active'}
+        runtimeWarnings={resolveBotRuntimeWarnings(capabilities)}
         onRuntimeIntent={requestRuntimePrewarm}
         recoveryAction={recoveryAction}
         recoveryError={runtimeActionError || (

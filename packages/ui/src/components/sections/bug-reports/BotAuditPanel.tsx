@@ -61,7 +61,7 @@ const DATE_RANGES = [
 ] as const;
 const CORRELATION_KEYS = [
   'botId', 'runId', 'channelId', 'revisionId', 'agentAdapter', 'agentThreadId',
-  'terminalState', 'failurePhase', 'retryable', 'retryCount',
+  'terminalState', 'failurePhase', 'failureStage', 'retryable', 'retryCount',
 ] as const;
 
 const dateFilterBound = (filter: DateFilter): string | null => {

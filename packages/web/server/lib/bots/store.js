@@ -225,6 +225,7 @@ const RPC_NAMES = Object.freeze({
   commitChannelSummary: 'devryan_commit_bot_channel_summary',
   enqueueMemoryExtractionJob: 'devryan_enqueue_bot_memory_extraction_job',
   claimMemoryExtractionJob: 'devryan_claim_bot_memory_extraction_job',
+  claimMemoryExtractionJobByRun: 'devryan_claim_bot_memory_extraction_job_by_run',
   persistMemoryExtractionCandidates: 'devryan_persist_bot_memory_extraction_candidates',
   settleMemoryExtractionJob: 'devryan_settle_bot_memory_extraction_job',
   requeueMemoryExtractionJob: 'devryan_requeue_bot_memory_extraction_job',
@@ -880,6 +881,16 @@ export function createBotStore({ supabase, logger = null } = {}) {
     ),
     claimMemoryExtractionJob: async ({ leaseOwner, leaseUntil }) => firstRow(
       await callRpc('claimMemoryExtractionJob', {
+        p_lease_owner: leaseOwner,
+        p_lease_until: leaseUntil,
+      }),
+    ),
+    // Claims one specific run's job so extraction can reuse that run's still
+    // active reasoning runtime. Returns null when the job is already leased,
+    // already carries candidates, or another job of the Bot holds the lease.
+    claimMemoryExtractionJobByRun: async ({ runId, leaseOwner, leaseUntil }) => firstRow(
+      await callRpc('claimMemoryExtractionJobByRun', {
+        p_run_id: runId,
         p_lease_owner: leaseOwner,
         p_lease_until: leaseUntil,
       }),

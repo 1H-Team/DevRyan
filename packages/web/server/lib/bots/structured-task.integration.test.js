@@ -141,7 +141,7 @@ describe('Bot structured task OpenCode integration', () => {
     expect(harness.client.session.prompt).toHaveBeenCalledWith(expect.objectContaining({
       tools: { '*': false },
       format: { type: 'json_schema', schema: BOT_MEMORY_EXTRACTION_SCHEMA, retryCount: 2 },
-    }));
+    }), { signal: expect.any(AbortSignal) });
   });
 
   it('drafts a reviewed routine through the same no-tools structured chain', async () => {
@@ -191,6 +191,6 @@ describe('Bot structured task OpenCode integration', () => {
     expect(harness.client.session.prompt).toHaveBeenCalledWith(expect.objectContaining({
       tools: { '*': false },
       format: expect.objectContaining({ type: 'json_schema' }),
-    }));
+    }), { signal: expect.any(AbortSignal) });
   });
 });

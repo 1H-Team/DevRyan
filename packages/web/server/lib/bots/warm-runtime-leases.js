@@ -1,6 +1,8 @@
 import { botErrorLogFields } from './error-normalization.js';
 
-const DEFAULT_IDLE_TTL_MS = 2 * 60 * 1_000;
+// A runtime kept warm for ten minutes covers the pause between a reply and the
+// next message far more often than two, at the cost of one idle container.
+const DEFAULT_IDLE_TTL_MS = 10 * 60 * 1_000;
 const DEFAULT_MAX_LEASES = 2;
 const SAFE_PREPARATION_STAGES = new Set([
   'gateway',
@@ -30,7 +32,21 @@ const publicLease = (entry) => Object.freeze({
   revisionId: entry.revisionId,
   expiresAt: new Date(entry.expiresAt).toISOString(),
   reason: null,
+  serverInitiated: entry.serverInitiated === true,
 });
+
+const adoptEntry = async (entry, messageId, note) => {
+  entry.claimedMessageId = messageId;
+  if (entry.timer) clearTimeout(entry.timer);
+  try {
+    await entry.promise;
+  } catch {
+    return Object.freeze({ hit: false, runId: null });
+  }
+  note('warm_hit', entry);
+  note('lease_adopted', entry, { messageId });
+  return Object.freeze({ hit: true, runId: entry.runId });
+};
 
 export function createBotWarmRuntimeLeases({
   prepare,
@@ -110,9 +126,11 @@ export function createBotWarmRuntimeLeases({
 
   return Object.freeze({
     begin(binding) {
+      // A server-initiated runtime is channel-scoped: any member who starts
+      // typing reuses it instead of replacing it with a principal-bound lease.
       const existing = [...leases.values()].find((entry) => (
         !entry.claimedMessageId
-        && entry.principalId === binding.principalId
+        && (entry.serverInitiated || entry.principalId === binding.principalId)
         && entry.channelId === binding.channelId
         && entry.revisionId === binding.revisionId
         && entry.librarySnapshotKey === binding.librarySnapshotKey
@@ -135,6 +153,7 @@ export function createBotWarmRuntimeLeases({
         channelId: binding.channelId,
         revisionId: binding.revisionId,
         librarySnapshotKey: binding.librarySnapshotKey,
+        serverInitiated: binding.serverInitiated === true,
         state: 'warming',
         claimedMessageId: null,
         lastAccessedAt: startedAt,
@@ -177,7 +196,8 @@ export function createBotWarmRuntimeLeases({
     async claim({ leaseId, principalId, channelId, revisionId, librarySnapshotKey, messageId }) {
       const entry = leases.get(leaseId);
       if (!entry || entry.expiresAt <= now()
-        || entry.principalId !== principalId || entry.channelId !== channelId
+        || (!entry.serverInitiated && entry.principalId !== principalId)
+        || entry.channelId !== channelId
         || entry.revisionId !== revisionId
         || entry.librarySnapshotKey !== librarySnapshotKey
         || (entry.claimedMessageId && entry.claimedMessageId !== messageId)) {
@@ -187,17 +207,25 @@ export function createBotWarmRuntimeLeases({
         try { record('warm_miss', { channelId, revisionId, leaseId, reason: 'unavailable' }); } catch {}
         return Object.freeze({ hit: false, runId: null });
       }
-      entry.claimedMessageId = messageId;
-      if (entry.timer) clearTimeout(entry.timer);
       touch(entry);
-      try {
-        await entry.promise;
-      } catch {
-        return Object.freeze({ hit: false, runId: null });
-      }
-      note('warm_hit', entry);
-      note('lease_adopted', entry, { messageId });
-      return Object.freeze({ hit: true, runId: entry.runId });
+      return adoptEntry(entry, messageId, note);
+    },
+
+    // A message sent without a client lease adopts a server-initiated warm
+    // runtime for the same channel, revision and Library snapshot. Client
+    // leases stay bound to the principal that requested them.
+    async claimForChannel({ channelId, revisionId, librarySnapshotKey, messageId }) {
+      const entry = [...leases.values()].reverse().find((candidate) => (
+        candidate.serverInitiated
+        && !candidate.claimedMessageId
+        && candidate.expiresAt > now()
+        && candidate.channelId === channelId
+        && candidate.revisionId === revisionId
+        && candidate.librarySnapshotKey === librarySnapshotKey
+      ));
+      if (!entry) return Object.freeze({ hit: false, runId: null });
+      touch(entry);
+      return adoptEntry(entry, messageId, note);
     },
 
     async release({ leaseId, principalId, channelId }) {

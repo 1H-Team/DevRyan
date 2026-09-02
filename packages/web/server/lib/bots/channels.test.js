@@ -567,6 +567,48 @@ describe('Production Bot continuous channels', () => {
     ))).toEqual(['pending']);
   });
 
+  it('projects failure phase and stage only for failed or interrupted runs', () => {
+    const { channels } = createHarness();
+    const base = {
+      id: RUN_ID,
+      bot_id: BOT_ID,
+      channel_id: CHANNEL_ID,
+      revision_id: REVISION_ID,
+      computer_scope_key: `bot:${BOT_ID}`,
+      queue_sequence: null,
+      created_at: NOW,
+      updated_at: NOW,
+      started_at: null,
+      finished_at: NOW,
+    };
+    expect(channels.publicRun({
+      ...base,
+      state: 'failed',
+      interruption_kind: 'bot_opencode_request_failed',
+      context_snapshot: { failurePhase: 'startup', failureStage: 'oauth_readiness', retryable: true },
+    })).toMatchObject({
+      interruptionKind: 'bot_opencode_request_failed',
+      failurePhase: 'startup',
+      failureStage: 'oauth_readiness',
+    });
+    expect(channels.publicRun({ ...base, state: 'interrupted', context_snapshot: { failurePhase: 'execution' } }))
+      .toMatchObject({ failurePhase: 'execution', failureStage: null });
+    expect(channels.publicRun({
+      ...base,
+      state: 'failed',
+      context_snapshot: { failurePhase: 'bogus', failureStage: `x${'y'.repeat(80)}` },
+    })).toMatchObject({ failurePhase: null, failureStage: null });
+    expect(channels.publicRun({ ...base, state: 'failed', context_snapshot: { failureStage: 'bad stage/with spaces' } }))
+      .toMatchObject({ failurePhase: null, failureStage: null });
+    expect(channels.publicRun({
+      ...base,
+      state: 'queued',
+      context_snapshot: { failurePhase: 'startup', failureStage: 'container' },
+    })).toMatchObject({ failurePhase: null, failureStage: null });
+    expect(channels.publicRun({ ...base, state: 'failed', context_snapshot: null }))
+      .toMatchObject({ failurePhase: null, failureStage: null });
+  });
+
   it('projects an authorized catalog and run snapshot without contracts or OpenCode segment IDs', async () => {
     const previewText = `Latest answer\n\n   ${'x'.repeat(700)}`;
     const normalizedPreviewText = previewText.replace(/\s+/gu, ' ').trim().slice(0, 512);

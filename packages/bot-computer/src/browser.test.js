@@ -37,6 +37,13 @@ describe('Chromium startup artifact cleanup', () => {
     expect(args).toContain('--user-data-dir=/data/chromium');
     expect(args).toContain('--disable-extensions');
     expect(args).toContain('--disable-quic');
+    // A start URL on the command line would defeat RestoreOnStartup session restore,
+    // and these flags would disable it outright.
+    expect(args).not.toContain('about:blank');
+    expect(args.every((argument) => argument.startsWith('--'))).toBe(true);
+    expect(args).not.toContain('--no-startup-window');
+    expect(args).not.toContain('--incognito');
+    expect(args).not.toContain('--guest');
   });
 
   test('removes only disposable singleton and CDP artifacts before relaunch', async () => {
@@ -186,12 +193,16 @@ const createCdpHarness = async () => {
   const calls = [];
   const sessionByTarget = new Map();
   let closed = false;
+  let createdTargets = 0;
   const connection = {
     ready: Promise.resolve(),
     async send(method, params = {}, sessionId) {
       calls.push({ method, params, sessionId });
       if (method === 'Browser.getVersion') return { product: 'Chromium/151.0' };
-      if (method === 'Target.createTarget') return { targetId: 'root' };
+      if (method === 'Target.createTarget') {
+        createdTargets += 1;
+        return { targetId: createdTargets === 1 ? 'root' : `fresh-${createdTargets}` };
+      }
       if (method === 'Target.attachToTarget') {
         const session = `${params.targetId}-session`;
         sessionByTarget.set(params.targetId, session);
@@ -306,6 +317,73 @@ describe('active Chromium page targets', () => {
     await harness.driver.close({ force: true });
   });
 
+  test('closes session-restored tabs it does not drive without touching the browser', async () => {
+    const harness = await createCdpHarness();
+
+    harness.emit('Target.targetCreated', { targetInfo: {
+      targetId: 'restored-1', type: 'page', url: 'https://app.example/dashboard',
+    } });
+    harness.emit('Target.targetCreated', { targetInfo: {
+      targetId: 'root', type: 'page', url: 'about:blank',
+    } });
+    harness.emit('Target.targetCreated', { targetInfo: {
+      targetId: 'worker-1', type: 'service_worker', url: 'https://app.example/sw.js',
+    } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(harness.calls).toContainEqual(expect.objectContaining({
+      method: 'Target.closeTarget', params: { targetId: 'restored-1' }, sessionId: undefined,
+    }));
+    expect(harness.calls).not.toContainEqual(expect.objectContaining({
+      method: 'Target.closeTarget', params: { targetId: 'root' },
+    }));
+    expect(harness.calls).not.toContainEqual(expect.objectContaining({
+      method: 'Target.closeTarget', params: { targetId: 'worker-1' },
+    }));
+    expect(harness.calls.some((call) => call.method === 'Browser.close')).toBe(false);
+    expect(harness.driver.status()).toMatchObject({ activeTargetCount: 1, popupOpen: false });
+    expect(harness.driver.isHealthy()).toBe(true);
+    await harness.driver.close({ force: true });
+  });
+
+  test('resets only the page after a stuck command and keeps the Chromium process', async () => {
+    const harness = await createCdpHarness();
+    let pageChanges = 0;
+    harness.driver.setPageChangeHandler(() => { pageChanges += 1; });
+    const frames = [];
+    await harness.driver.startScreencast((frame) => frames.push(frame));
+    harness.emit('Target.targetCreated', { targetInfo: {
+      targetId: 'popup-1', type: 'page', openerId: 'root', url: 'https://login.example/popup',
+    } });
+    await harness.waitForTargets(2);
+
+    const result = await harness.driver.resetPage();
+
+    expect(result).toEqual({ targetId: 'fresh-2', closedTargets: 2 });
+    expect(harness.driver.status()).toMatchObject({ activeTargetCount: 1, popupOpen: false });
+    expect(harness.driver.isHealthy()).toBe(true);
+    for (const targetId of ['root', 'popup-1']) {
+      expect(harness.calls).toContainEqual(expect.objectContaining({
+        method: 'Target.closeTarget', params: { targetId }, sessionId: undefined,
+      }));
+    }
+    expect(harness.calls.some((call) => call.method === 'Browser.close')).toBe(false);
+    expect(harness.calls).toContainEqual(expect.objectContaining({
+      method: 'Page.startScreencast', sessionId: 'fresh-2-session',
+    }));
+    expect(pageChanges).toBeGreaterThanOrEqual(1);
+
+    harness.emit('Target.targetDestroyed', { targetId: 'root' });
+    harness.emit('Target.targetDestroyed', { targetId: 'popup-1' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.driver.isHealthy()).toBe(true);
+    await harness.driver.screenshot({ format: 'jpeg', quality: 60 });
+    expect(harness.calls).toContainEqual(expect.objectContaining({
+      method: 'Page.captureScreenshot', sessionId: 'fresh-2-session',
+    }));
+    await harness.driver.close({ force: true });
+  });
+
   test('dismisses blocking dialogs while accepting beforeunload', async () => {
     const harness = await createCdpHarness();
     harness.emit('Page.javascriptDialogOpening', {
@@ -345,7 +423,15 @@ const recoveryFixture = () => {
     let healthy = true;
     let failSnapshot = false;
     let failClick = false;
+    let timeoutSnapshot = false;
+    let timeoutClick = false;
+    let failPageReset = false;
     const terminationHandlers = new Set();
+    const timedOut = () => new ComputerBrowserError(
+      'Chromium command timed out',
+      'DEVRYAN_BOT_BROWSER_COMMAND_TIMEOUT',
+      504,
+    );
     const terminate = (code = 'DEVRYAN_BOT_BROWSER_CLOSED') => {
       healthy = false;
       for (const handler of terminationHandlers) handler(code);
@@ -362,6 +448,10 @@ const recoveryFixture = () => {
       navigate: async () => {},
       async snapshot() {
         calls.push(['snapshot', number]);
+        if (timeoutSnapshot) {
+          timeoutSnapshot = false;
+          throw timedOut();
+        }
         if (failSnapshot) {
           failSnapshot = false;
           terminate();
@@ -375,6 +465,10 @@ const recoveryFixture = () => {
       },
       async click() {
         calls.push(['click', number]);
+        if (timeoutClick) {
+          timeoutClick = false;
+          throw timedOut();
+        }
         if (failClick) {
           failClick = false;
           terminate();
@@ -395,9 +489,20 @@ const recoveryFixture = () => {
         calls.push(['close', number]);
         terminate();
       },
+      async resetPage() {
+        calls.push(['resetPage', number]);
+        if (failPageReset) {
+          failPageReset = false;
+          throw timedOut();
+        }
+        return { targetId: `fresh-${number}`, closedTargets: 1 };
+      },
       terminate,
       failNextSnapshot: () => { failSnapshot = true; },
       failNextClick: () => { failClick = true; },
+      timeoutNextSnapshot: () => { timeoutSnapshot = true; },
+      timeoutNextClick: () => { timeoutClick = true; },
+      failNextPageReset: () => { failPageReset = true; },
       notifyLateTermination: () => {
         for (const handler of terminationHandlers) handler('DEVRYAN_BOT_BROWSER_CLOSED');
       },
@@ -435,10 +540,25 @@ describe('reviewed computer browser commands', () => {
   test('exposes the exact reviewed command inventory and no JavaScript evaluation', () => {
     expect(REVIEWED_BROWSER_COMMANDS).toEqual([
       'navigate', 'snapshot', 'click', 'fill', 'select', 'key', 'scroll', 'wait',
-      'upload', 'download', 'screenshot', 'close',
+      'upload', 'download', 'screenshot',
     ]);
     expect(REVIEWED_BROWSER_COMMANDS).not.toContain('evaluate');
     expect(REVIEWED_BROWSER_COMMANDS).not.toContain('javascript');
+    expect(REVIEWED_BROWSER_COMMANDS).not.toContain('close');
+  });
+
+  test('denies any command that would close the persistent browser', async () => {
+    const { controller, calls } = fixture();
+    await controller.execute('snapshot', {});
+    await expect(controller.execute('close', {}))
+      .rejects.toMatchObject({ code: 'DEVRYAN_BOT_BROWSER_COMMAND_DENIED' });
+    await expect(controller.executeHuman('close', {}))
+      .rejects.toMatchObject({ code: 'DEVRYAN_BOT_BROWSER_COMMAND_DENIED' });
+    expect(calls).not.toContainEqual(['close']);
+    expect(controller.status()).toMatchObject({ running: true, healthy: true, generation: 1 });
+    // Host-side shutdown and profile reset remain the only paths that close it.
+    await controller.close();
+    expect(calls).toContainEqual(['close']);
   });
 
   test('uses accessibility refs for interaction and invalidates them on page change', async () => {
@@ -711,6 +831,50 @@ describe('reviewed computer browser commands', () => {
     expect(harness.calls.filter(([kind]) => kind === 'click')).toHaveLength(1);
   });
 
+  test('keeps the same Chromium process and resets only the page after a command timeout', async () => {
+    const harness = recoveryFixture();
+    await harness.controller.execute('snapshot', {});
+    harness.drivers[0].timeoutNextSnapshot();
+
+    const recovered = await harness.controller.execute('snapshot', {});
+
+    expect(recovered.nodes[0].name).toBe('Save 1');
+    expect(harness.drivers).toHaveLength(1);
+    expect(harness.calls.filter(([kind]) => kind === 'launch')).toHaveLength(1);
+    expect(harness.calls).toContainEqual(['resetPage', 1]);
+    expect(harness.calls).not.toContainEqual(['close', 1]);
+    expect(harness.controller.status()).toMatchObject({
+      running: true,
+      healthy: true,
+      generation: 1,
+      lastFailureCode: null,
+    });
+
+    const snapshot = await harness.controller.execute('snapshot', {});
+    harness.drivers[0].timeoutNextClick();
+    await expect(harness.controller.execute('click', { ref: snapshot.nodes[0].ref }))
+      .rejects.toMatchObject({ code: 'DEVRYAN_BOT_BROWSER_COMMAND_TIMEOUT' });
+    expect(harness.calls.filter(([kind]) => kind === 'click')).toHaveLength(1);
+    expect(harness.calls.filter(([kind]) => kind === 'resetPage')).toHaveLength(2);
+    expect(harness.calls.filter(([kind]) => kind === 'launch')).toHaveLength(1);
+    expect(harness.controller.status()).toMatchObject({ running: true, healthy: true, generation: 1 });
+  });
+
+  test('relaunches only when the page reset itself fails after a timeout', async () => {
+    const harness = recoveryFixture();
+    await harness.controller.execute('snapshot', {});
+    harness.drivers[0].timeoutNextSnapshot();
+    harness.drivers[0].failNextPageReset();
+
+    const recovered = await harness.controller.execute('snapshot', {});
+
+    expect(recovered.nodes[0].name).toBe('Save 2');
+    expect(harness.calls).toContainEqual(['resetPage', 1]);
+    expect(harness.calls).toContainEqual(['close', 1]);
+    expect(harness.calls.filter(([kind]) => kind === 'launch')).toHaveLength(2);
+    expect(harness.controller.status()).toMatchObject({ running: true, healthy: true, generation: 2 });
+  });
+
   test('singleflights relaunch when concurrent reads arrive after a crash', async () => {
     const harness = recoveryFixture();
     await harness.controller.execute('snapshot', {});
@@ -776,19 +940,26 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         await readBody(request);
         response.writeHead(303, {
           location: '/private',
-          'set-cookie': 'fixture_session=accepted; Path=/; Max-Age=3600; HttpOnly; SameSite=Lax',
+          'set-cookie': [
+            'fixture_session=accepted; Path=/; Max-Age=3600; HttpOnly; SameSite=Lax',
+            // No Max-Age/Expires: a browser-session cookie that only survives a
+            // Chromium restart when session restore keeps it on disk.
+            'fixture_ephemeral=accepted; Path=/; HttpOnly; SameSite=Lax',
+          ],
         });
         response.end();
         return;
       }
       if (request.method === 'GET' && target.pathname === '/private') {
-        const signedIn = String(request.headers.cookie || '').includes('fixture_session=accepted');
+        const cookies = String(request.headers.cookie || '');
+        const signedIn = cookies.includes('fixture_session=accepted');
+        const sessionCookieKept = cookies.includes('fixture_ephemeral=accepted');
         response.writeHead(signedIn ? 200 : 302, {
           'content-type': 'text/html; charset=utf-8',
           ...(signedIn ? {} : { location: '/login' }),
         });
         response.end(signedIn
-          ? '<!doctype html><title>Private</title><h1>Signed in</h1>'
+          ? `<!doctype html><title>Private</title><h1>Signed in</h1>${sessionCookieKept ? '<h2>Session cookie kept</h2>' : ''}`
           : '');
         return;
       }
@@ -1239,7 +1410,12 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/private` });
         const signedIn = await commandComputer(baseUrl, 'snapshot', {});
         expect(signedIn.payload.result.nodes.some((node) => node.name === 'Signed in')).toBe(true);
-        await commandComputer(baseUrl, 'close', {});
+        expect(signedIn.payload.result.nodes.some((node) => node.name === 'Session cookie kept'))
+          .toBe(true);
+        // The agent can no longer close the persistent browser; the login survives.
+        const closeDenied = await commandComputer(baseUrl, 'close', {});
+        expect(closeDenied.response.status).toBe(400);
+        expect(closeDenied.payload.error.code).toBe('DEVRYAN_BOT_BROWSER_COMMAND_DENIED');
         await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/private` });
         const persistedBeforeCrash = await commandComputer(baseUrl, 'snapshot', {});
         expect(persistedBeforeCrash.payload.result.nodes.some((node) => node.name === 'Signed in'))
@@ -1248,7 +1424,7 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         expect(beforeCrash.browser).toMatchObject({
           running: true,
           healthy: true,
-          generation: 2,
+          generation: 1,
           mode: 'headed_virtual',
           displayReady: true,
           webCapabilities: {
@@ -1269,11 +1445,15 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         )).response.status).toBe(200);
         const recovered = await commandComputer(baseUrl, 'snapshot', {});
         expect(recovered.payload.result.nodes.some((node) => node.name === 'Signed in')).toBe(true);
+        // The browser-session cookie (no Max-Age) survived the Chromium relaunch.
+        expect(recovered.payload.result.nodes.some((node) => node.name === 'Session cookie kept'))
+          .toBe(true);
         expect((await computerStatus(baseUrl)).browser).toMatchObject({
           running: true,
           healthy: true,
-          generation: 3,
+          generation: 2,
           lastFailureCode: null,
+          activeTargetCount: 1,
         });
         expect(await chromiumProcessCount()).toBe(1);
 
@@ -1285,13 +1465,15 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         expect((await computerStatus(baseUrl)).browser).toMatchObject({
           running: true,
           healthy: true,
-          generation: 4,
+          generation: 3,
         });
         expect(await chromiumProcessCount()).toBe(1);
         await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/private` });
         const persistedAfterRepeatedRecovery = await commandComputer(baseUrl, 'snapshot', {});
         expect(persistedAfterRepeatedRecovery.payload.result.nodes
           .some((node) => node.name === 'Signed in')).toBe(true);
+        expect(persistedAfterRepeatedRecovery.payload.result.nodes
+          .some((node) => node.name === 'Session cookie kept')).toBe(true);
 
         const firstViewer = await openScreencastViewer(baseUrl);
         expect(firstViewer.statusCode).toBe(200);
@@ -1497,6 +1679,11 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/private` });
         const persisted = await commandComputer(baseUrl, 'snapshot', {});
         expect(persisted.payload.result.nodes.some((node) => node.name === 'Signed in')).toBe(true);
+        // Graceful shutdown flushed the profile, so even the browser-session cookie
+        // survived a full container stop/start.
+        expect(persisted.payload.result.nodes.some((node) => node.name === 'Session cookie kept'))
+          .toBe(true);
+        expect((await computerStatus(baseUrl)).browser).toMatchObject({ activeTargetCount: 1 });
         await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/hold-challenge` });
         const persistedChallenge = await commandComputer(baseUrl, 'snapshot', {});
         expect(persistedChallenge.payload.result.nodes

@@ -27,6 +27,12 @@ const DEFERRED_SETTLEMENT_DELAYS_MS = Object.freeze([1_000, 5_000, 30_000, 120_0
 const DEFERRED_SETTLEMENT_MAX_AGE_MS = 30 * 60 * 1000;
 const DRAIN_RETRY_MIN_MS = 2_000;
 const DRAIN_RETRY_MAX_MS = 60_000;
+// Memory extraction on the completed run's own runtime must never make the
+// next message wait long; past this budget the durable queue takes over.
+const INLINE_MEMORY_EXTRACTION_BUDGET_MS = 30_000;
+// A run whose runtime never started is replayed automatically this many times
+// before its failure is shown to the user.
+const AUTOMATIC_STARTUP_RETRY_LIMIT = 2;
 const MAX_REQUESTER_STREAM_TEXT_BYTES = 192 * 1024;
 const MAX_PENDING_MESSAGE_COUNT = 8;
 const MAX_PENDING_PART_COUNT = 128;
@@ -335,6 +341,97 @@ export function createBotRunDispatcher({
         code: fields.code,
       });
     }
+  };
+
+  const hasQueuedRun = async (channelId) => {
+    try {
+      const page = await store.repositories.bot_runs.list({
+        filters: { channel_id: channelId, state: 'queued' },
+        limit: 1,
+      });
+      return (page?.items || []).length > 0;
+    } catch {
+      return false;
+    }
+  };
+
+  // Shared by the user-facing retry and the automatic startup retry: publish
+  // the requeued run, re-copy Shared attachments when needed, then drain.
+  const scheduleRetriedRun = (retried, actorUserId) => {
+    const publicRun = channels.publicRun(retried);
+    setImmediate(() => {
+      void publish('run.queued', retried, { run: publicRun }, actorUserId)
+        .catch((error) => logger?.warn?.('[BotsDispatcher] retried-run publication failed', {
+          ...botErrorLogFields(error, 'bot_event_publish_failed'),
+          runId: retried.id,
+        }));
+      // A retried message with attachments re-copies its Shared files first;
+      // the claim proceeds through onMessageReady, and a copy that fails
+      // again fails the run visibly through onMessageBlocked.
+      const sharedRetry = sharedFileService && typeof sharedFileService.prepareMessage === 'function'
+        ? store.repositories.bot_messages.list({
+          filters: { run_id: retried.id, channel_id: retried.channel_id, role: 'user' },
+          limit: 1,
+        }).then(({ items }) => {
+          const userMessage = items[0];
+          if (!userMessage || Number(userMessage.attachment_count || 0) === 0) return false;
+          return sharedFileService.prepareMessage({ messageId: userMessage.id, force: true })
+            .then(() => true);
+        }).catch((error) => {
+          logger?.warn?.('[BotsDispatcher] retried-run Shared preparation failed', {
+            ...botErrorLogFields(error, 'bot_shared_file_copy_failed'),
+            runId: retried.id,
+          });
+          return false;
+        })
+        : Promise.resolve(false);
+      void sharedRetry.then(() => {
+        if (autoDispatch) void drainScope(retried.computer_scope_key);
+      });
+    });
+  };
+
+  const retryStartupFailure = async ({ runId, channelId }) => {
+    if (shuttingDown || typeof store.retryRun !== 'function') return false;
+    const { items } = await store.repositories.bot_messages.list({
+      filters: { run_id: runId, channel_id: channelId, role: 'user' },
+      limit: 1,
+    });
+    const actorUserId = items[0]?.actor_user_id;
+    if (!actorUserId) return false;
+    const retried = await store.retryRun({ runId, actorUserId, now: nowIso(now) });
+    markDiagnostic('startup_retry', {
+      channelId,
+      runId,
+      retryCount: Number(retried?.context_snapshot?.retryCount) || 0,
+    });
+    scheduleRetriedRun(retried, actorUserId);
+    return true;
+  };
+
+  const beginPostRunPrewarm = async ({ bot, channel, revision }) => {
+    if (!warmRuntimeLeases || shuttingDown) return null;
+    if (revision.activated_at === null || revision.retired_at !== null
+      || (bot.active_revision_id && bot.active_revision_id !== revision.id)) return null;
+    if (await hasQueuedRun(channel.id)) return null;
+    const libraryVersionIds = (await resolveLibrarySnapshot({
+      botId: bot.id,
+      configuredVersionIds: Array.isArray(revision.contract?.libraryVersionIds)
+        ? revision.contract.libraryVersionIds
+        : [],
+    })).map((versionId) => validateUuid(versionId, 'libraryVersionId'));
+    return warmRuntimeLeases.begin({
+      principalId: validateUuid(channel.owner_user_id, 'channel.owner_user_id'),
+      botId: bot.id,
+      channelId: channel.id,
+      revisionId: revision.id,
+      contract: revision.contract,
+      ownerUserId: channel.owner_user_id,
+      updatedAt: revision.updated_at || nowIso(now),
+      libraryVersionIds,
+      librarySnapshotKey: libraryVersionIds.join(':'),
+      serverInitiated: true,
+    });
   };
 
   const notifyRunSettled = async (input) => {
@@ -912,8 +1009,10 @@ export function createBotRunDispatcher({
           }
         }
         const limit = Number(active.modelSnapshot?.contextLimit || 0);
+        const tokenCount = totalTokens(properties.tokens);
+        active.providerTokenTotal = Math.max(Number(active.providerTokenTotal) || 0, tokenCount);
         if (limit > 0) {
-          active.providerContextRatio = Math.min(1, totalTokens(properties.tokens) / limit);
+          active.providerContextRatio = Math.min(1, tokenCount / limit);
         }
       }
     } else if (event.kind === 'assistant.text') {
@@ -1046,6 +1145,11 @@ export function createBotRunDispatcher({
     let current = claimed;
     let terminalState = 'completed';
     let terminalError = null;
+    let automaticRetry = null;
+    let bot = null;
+    let channel = null;
+    let revision = null;
+    let userMessage = null;
     const controller = new AbortController();
     executionControllers.set(claimed.id, controller);
     const timeoutMs = Number.isFinite(claimed.context_snapshot?.routine?.contract?.timeoutSeconds)
@@ -1065,7 +1169,7 @@ export function createBotRunDispatcher({
           .then((messages) => [...messages]
             .reverse()
             .find((message) => message.runId === claimed.id && message.role === 'user')));
-      const [bot, channel, revision, userMessage] = await bounded(Promise.all([
+      [bot, channel, revision, userMessage] = await bounded(Promise.all([
         store.repositories.bots.get({ id: claimed.bot_id }),
         store.repositories.bot_channels.get({ id: claimed.channel_id, bot_id: claimed.bot_id }),
         store.repositories.bot_revisions.get({ id: claimed.revision_id, bot_id: claimed.bot_id }),
@@ -1260,6 +1364,7 @@ export function createBotRunDispatcher({
         pendingPartCount: 0,
         pendingTextBytes: 0,
         providerContextRatio: 0,
+        providerTokenTotal: 0,
         requesterUserId: validateUuid(userMessage.actorUserId, 'message.actorUserId'),
         streamRevision: 0,
         streamSequence: 0,
@@ -1410,6 +1515,10 @@ export function createBotRunDispatcher({
           active.providerContextRatio = Math.max(
             0,
             Math.min(1, Number(inspection.providerContextRatio) || 0),
+          );
+          active.providerTokenTotal = Math.max(
+            Number(active.providerTokenTotal) || 0,
+            Number(inspection.providerTokenTotal) || 0,
           );
           if (inspection.assistantMessageId || inspection.assistantText
             || inspection.assistantProjection?.toolObserved === true) {
@@ -1603,10 +1712,31 @@ export function createBotRunDispatcher({
           ...executionContextSnapshot,
           completedUserTurns: executionContextSnapshot.completedUserTurns + 1,
           providerContextRatio: active.providerContextRatio,
+          providerTokenTotal: Number(active.providerTokenTotal) || 0,
         },
         finished_at: nowIso(now),
       });
       await publishCanonical('run.completed', current, { run: channels.publicRun(current) });
+      // Memory extraction runs on this run's still-active runtime, bounded so a
+      // follow-up message never waits long. When a message is already queued
+      // the durable queue takes over and the runtime is released right away.
+      const inlineExtraction = runtimeStarted && typeof activeAdapter.completeStructured === 'function'
+        && !(await hasQueuedRun(channel.id))
+        ? {
+            extract: (request) => activeAdapter.completeStructured({
+              runId: current.id,
+              prompt: request.prompt,
+              schema: request.schema,
+              ...(request.title ? { title: request.title } : {}),
+              ...(request.system ? { system: request.system } : {}),
+              ...(request.signal ? { signal: request.signal } : {}),
+            }),
+            signal: AbortSignal.any([
+              controller.signal,
+              AbortSignal.timeout(INLINE_MEMORY_EXTRACTION_BUDGET_MS),
+            ]),
+          }
+        : {};
       await notifyRunCompleted({
         run: current,
         bot,
@@ -1615,6 +1745,7 @@ export function createBotRunDispatcher({
         userMessage,
         assistantMessage: finalizedAssistantMessage,
         recovered,
+        ...inlineExtraction,
       });
       markDiagnostic('terminal', {
         botId: current.bot_id,
@@ -1725,6 +1856,14 @@ export function createBotRunDispatcher({
         ...botErrorLogFields(error, 'bot_run_failed'),
         failureStage,
       });
+      // A runtime that never started (slow container boot, readiness probe
+      // timeout) has no side effects to protect. Retry it on the user's behalf
+      // a bounded number of times before the failure is shown.
+      if (current?.state === 'failed' && contextSnapshot.failurePhase === 'startup'
+        && contextSnapshot.retryable === true
+        && (Number(contextSnapshot.retryCount) || 0) < AUTOMATIC_STARTUP_RETRY_LIMIT) {
+        automaticRetry = { runId: claimed.id, channelId: claimed.channel_id };
+      }
       return current;
     } finally {
       clearTimeout(deadline);
@@ -1753,6 +1892,24 @@ export function createBotRunDispatcher({
             retryable: terminalError.diagnostics.retryable,
             providerReference: terminalError.diagnostics.providerReference,
           } : {}),
+        });
+      }
+      if (automaticRetry) {
+        void retryStartupFailure(automaticRetry).catch((retryError) => {
+          logger?.warn?.('[BotsDispatcher] automatic startup retry failed', {
+            ...botErrorLogFields(retryError, 'bot_run_retry_failed'),
+            runId: automaticRetry.runId,
+          });
+        });
+      } else if (terminalState === 'completed' && channel && revision && bot) {
+        // Warm the next runtime for this channel now, while the user reads the
+        // answer, so the follow-up message adopts a ready container instead of
+        // paying a cold start. A queued message is about to start its own run.
+        void beginPostRunPrewarm({ bot, channel, revision }).catch((prewarmError) => {
+          logger?.warn?.('[BotsDispatcher] post-run prewarm failed', {
+            ...botErrorLogFields(prewarmError, 'bot_warm_prepare_failed'),
+            channelId: channel.id,
+          });
         });
       }
     }
@@ -1943,6 +2100,15 @@ export function createBotRunDispatcher({
         warmClaim = await warmRuntimeLeases.claim({
           leaseId: normalizedMessage.prewarmLeaseId,
           principalId: validateUuid(principal?.id, 'principal.id'),
+          channelId: preflight.channel.id,
+          revisionId: revision.id,
+          librarySnapshotKey: normalizedLibraryVersionIds.join(':'),
+          messageId: normalizedMessage.messageId,
+        });
+      }
+      if (warmRuntimeLeases && warmEligible && !warmClaim.hit
+        && typeof warmRuntimeLeases.claimForChannel === 'function') {
+        warmClaim = await warmRuntimeLeases.claimForChannel({
           channelId: preflight.channel.id,
           revisionId: revision.id,
           librarySnapshotKey: normalizedLibraryVersionIds.join(':'),
@@ -2209,36 +2375,7 @@ export function createBotRunDispatcher({
         now: nowIso(now),
       });
       const publicRun = channels.publicRun(retried);
-      setImmediate(() => {
-        void publish('run.queued', retried, { run: publicRun }, principal?.id)
-          .catch((error) => logger?.warn?.('[BotsDispatcher] retried-run publication failed', {
-            ...botErrorLogFields(error, 'bot_event_publish_failed'),
-            runId: retried.id,
-          }));
-        // A retried message with attachments re-copies its Shared files first;
-        // the claim proceeds through onMessageReady, and a copy that fails
-        // again fails the run visibly through onMessageBlocked.
-        const sharedRetry = sharedFileService && typeof sharedFileService.prepareMessage === 'function'
-          ? store.repositories.bot_messages.list({
-            filters: { run_id: retried.id, channel_id: retried.channel_id, role: 'user' },
-            limit: 1,
-          }).then(({ items }) => {
-            const userMessage = items[0];
-            if (!userMessage || Number(userMessage.attachment_count || 0) === 0) return false;
-            return sharedFileService.prepareMessage({ messageId: userMessage.id, force: true })
-              .then(() => true);
-          }).catch((error) => {
-            logger?.warn?.('[BotsDispatcher] retried-run Shared preparation failed', {
-              ...botErrorLogFields(error, 'bot_shared_file_copy_failed'),
-              runId: retried.id,
-            });
-            return false;
-          })
-          : Promise.resolve(false);
-        void sharedRetry.then(() => {
-          if (autoDispatch) void drainScope(retried.computer_scope_key);
-        });
-      });
+      scheduleRetriedRun(retried, principal?.id);
       return publicRun;
     },
 

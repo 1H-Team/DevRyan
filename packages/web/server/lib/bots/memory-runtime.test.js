@@ -140,6 +140,17 @@ const createHarness = ({
       });
       return { ...job };
     }),
+    claimMemoryExtractionJobByRun: vi.fn(async ({ runId, leaseOwner }) => {
+      const job = jobs.get(runId);
+      if (!job || job.state !== 'queued' || job.candidate_envelope) return null;
+      if ([...jobs.values()].some((candidate) => candidate.state === 'leased')) return null;
+      Object.assign(job, {
+        state: 'leased',
+        lease_owner: leaseOwner,
+        attempt_count: job.attempt_count + 1,
+      });
+      return { ...job };
+    }),
     persistMemoryExtractionCandidates: vi.fn(async ({ runId, candidateEnvelope }) => {
       const job = jobs.get(runId);
       Object.assign(job, { candidate_envelope: candidateEnvelope });
@@ -294,7 +305,7 @@ describe('Bot layered memory runtime', () => {
       }),
     });
 
-    await expect(harness.runtime.enqueueCompletedRun(completedRun())).resolves.toEqual({ queued: true });
+    await expect(harness.runtime.enqueueCompletedRun(completedRun())).resolves.toEqual({ queued: true, inline: false });
     await harness.runtime.waitForPendingExtractions();
     expect(harness.store.commitMemoryVersion).not.toHaveBeenCalled();
     expect(harness.audit).toHaveBeenCalledWith(expect.objectContaining({
@@ -309,16 +320,23 @@ describe('Bot layered memory runtime', () => {
     }));
   });
 
-  it('settles a malformed no-tools provider request without retrying it', async () => {
+  it('retries a rejected no-tools provider request a bounded number of times, then records the validator', async () => {
     const extractCandidates = vi.fn(async () => {
-      throw Object.assign(new Error('request invalid'), { code: 'bot_opencode_request_invalid' });
+      throw Object.assign(new Error('request invalid'), {
+        code: 'bot_opencode_request_invalid',
+        diagnostics: { validator: 'session_id' },
+      });
     });
     const harness = createHarness({ extractCandidates });
 
     await harness.runtime.enqueueCompletedRun(completedRun());
     await harness.runtime.waitForPendingExtractions();
+    if (extractCandidates.mock.calls.length < 3) await harness.runtime.start();
+    await waitUntil(() => extractCandidates.mock.calls.length === 3);
+    await harness.runtime.waitForPendingExtractions();
+    await waitUntil(() => harness.audit.mock.calls.some(([input]) => input.result === 'failure'));
 
-    expect(extractCandidates).toHaveBeenCalledTimes(1);
+    expect(extractCandidates).toHaveBeenCalledTimes(3);
     expect(harness.audit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'bot.memory.extract',
       result: 'failure',
@@ -326,7 +344,8 @@ describe('Bot layered memory runtime', () => {
         code: 'bot_opencode_request_invalid',
         phase: 'classification',
         retryable: false,
-        attemptCount: 1,
+        attemptCount: 3,
+        validator: 'session_id',
       }),
     }));
     expect(harness.logger.warn).toHaveBeenCalledWith(
@@ -336,9 +355,116 @@ describe('Bot layered memory runtime', () => {
         runId: RUN_ID,
         botId: BOT_ID,
         phase: 'classification',
-        attemptCount: 1,
+        attemptCount: 3,
+        validator: 'session_id',
       }),
     );
+    await harness.runtime.shutdown();
+  });
+
+  it('repairs a prose answer in place and only fails after the repair pass also misses', async () => {
+    const extractCandidates = vi.fn()
+      .mockResolvedValueOnce('Sure! Here are the facts I noticed in that conversation.')
+      .mockResolvedValueOnce('```json\n{"candidates": []}\n```');
+    const harness = createHarness({ extractCandidates });
+
+    await harness.runtime.enqueueCompletedRun(completedRun());
+    await harness.runtime.waitForPendingExtractions();
+
+    expect(extractCandidates).toHaveBeenCalledTimes(2);
+    expect(extractCandidates.mock.calls[1][0].prompt).toContain('was not valid JSON');
+    expect(harness.audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'bot.memory.extract',
+      result: 'success',
+    }));
+  });
+
+  it('gives up on an unusable classifier answer with a content-free reason after bounded attempts', async () => {
+    const extractCandidates = vi.fn(async () => 'I could not find anything worth remembering here.');
+    const harness = createHarness({ extractCandidates });
+
+    await harness.runtime.enqueueCompletedRun(completedRun());
+    await harness.runtime.waitForPendingExtractions();
+    // Each attempt is a request plus one repair pass.
+    if (extractCandidates.mock.calls.length < 6) await harness.runtime.start();
+    await waitUntil(() => extractCandidates.mock.calls.length === 6);
+    await harness.runtime.waitForPendingExtractions();
+    await waitUntil(() => harness.audit.mock.calls.some(([input]) => input.result === 'failure'));
+
+    expect(harness.audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'bot.memory.extract',
+      result: 'failure',
+      metadata: expect.objectContaining({
+        code: 'bot_memory_extraction_invalid',
+        phase: 'classification_validation',
+        retryable: false,
+        attemptCount: 3,
+        reason: 'not_json',
+      }),
+    }));
+    await harness.runtime.shutdown();
+  });
+
+  it('defers an extraction whose runtime was taken away instead of counting the attempt', async () => {
+    const extractCandidates = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('aborted'), { code: 'bot_opencode_request_aborted' }))
+      .mockResolvedValueOnce({ candidates: [] });
+    const harness = createHarness({ extractCandidates });
+
+    await harness.runtime.enqueueCompletedRun(completedRun());
+    await waitUntil(() => harness.store.settleMemoryExtractionJob.mock.calls.some(
+      ([input]) => input.disposition === 'defer',
+    ));
+    if (extractCandidates.mock.calls.length < 2) await harness.runtime.start();
+    await waitUntil(() => extractCandidates.mock.calls.length === 2);
+    await harness.runtime.waitForPendingExtractions();
+
+    expect(harness.store.settleMemoryExtractionJob).toHaveBeenCalledWith(expect.objectContaining({
+      disposition: 'defer',
+      errorCode: 'bot_opencode_request_aborted',
+    }));
+    expect(harness.audit).not.toHaveBeenCalledWith(expect.objectContaining({ result: 'failure' }));
+    await harness.runtime.shutdown();
+  });
+
+  it('extracts on the completed run\'s own runtime when the dispatcher offers it', async () => {
+    const extractCandidates = vi.fn(async () => ({ candidates: [] }));
+    const harness = createHarness({ extractCandidates });
+    const extract = vi.fn(async () => ({ candidates: [] }));
+
+    await expect(harness.runtime.enqueueCompletedRun({ ...completedRun(), extract }))
+      .resolves.toEqual({ queued: true, inline: true });
+
+    expect(extract).toHaveBeenCalledTimes(1);
+    expect(extract.mock.calls[0][0]).toEqual(expect.objectContaining({
+      title: expect.stringContaining('Bot memory extraction'),
+      system: expect.stringContaining('Do not call tools'),
+    }));
+    expect(extractCandidates).not.toHaveBeenCalled();
+    expect(harness.store.claimMemoryExtractionJobByRun).toHaveBeenCalledTimes(1);
+    expect(harness.store.claimMemoryExtractionJob).not.toHaveBeenCalled();
+    expect(harness.audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'bot.memory.extract',
+      result: 'success',
+    }));
+    expect(harness.store.settleMemoryExtractionJob).toHaveBeenCalledWith(expect.objectContaining({
+      runId: RUN_ID,
+      disposition: 'succeeded',
+    }));
+  });
+
+  it('falls back to the durable queue when the inline claim is unavailable', async () => {
+    const extractCandidates = vi.fn(async () => ({ candidates: [] }));
+    const harness = createHarness({ extractCandidates });
+    harness.store.claimMemoryExtractionJobByRun.mockResolvedValueOnce(null);
+    const extract = vi.fn(async () => ({ candidates: [] }));
+
+    await expect(harness.runtime.enqueueCompletedRun({ ...completedRun(), extract }))
+      .resolves.toEqual({ queued: true, inline: false });
+    await harness.runtime.waitForPendingExtractions();
+
+    expect(extract).not.toHaveBeenCalled();
+    expect(extractCandidates).toHaveBeenCalledTimes(1);
   });
 
   it('retries an optimistic conflict after a bounded delay and succeeds', async () => {
@@ -549,7 +675,7 @@ describe('Bot layered memory runtime', () => {
     harness.store.commitChannelSummary.mockRejectedValue(
       Object.assign(new Error('conflict'), { code: 'bot_summary_checkpoint_conflict' }),
     );
-    await expect(harness.runtime.enqueueCompletedRun(completedRun())).resolves.toEqual({ queued: true });
+    await expect(harness.runtime.enqueueCompletedRun(completedRun())).resolves.toEqual({ queued: true, inline: false });
     await harness.runtime.waitForPendingExtractions();
     // Optimistic conflicts get four durable attempts, each with the bounded
     // in-process summary retry, before the job is marked terminal.
@@ -659,7 +785,7 @@ describe('Bot layered memory runtime', () => {
     });
     harness.repositories.bot_memories.get.mockResolvedValue(null);
 
-    await expect(harness.runtime.enqueueCompletedRun(completedRun())).resolves.toEqual({ queued: true });
+    await expect(harness.runtime.enqueueCompletedRun(completedRun())).resolves.toEqual({ queued: true, inline: false });
     await harness.runtime.waitForPendingExtractions();
     expect(harness.store.commitMemoryVersion).toHaveBeenCalledWith(expect.objectContaining({
       scope: 'shared',

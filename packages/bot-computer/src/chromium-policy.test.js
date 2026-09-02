@@ -17,10 +17,26 @@ const policyPath = path.join(
 );
 
 describe('managed Bot Chromium policy', () => {
-  test('forces JavaScript and first- and third-party cookies on', async () => {
+  test('forces JavaScript, first- and third-party cookies, and session restore on', async () => {
     const policy = JSON.parse(await fs.readFile(policyPath, 'utf8'));
 
     expect(policy).toEqual(REQUIRED_BROWSER_POLICY);
+    // "Continue where you left off" keeps session cookies across Chromium restarts.
+    expect(policy.RestoreOnStartup).toBe(1);
+    expect(Object.keys(policy)).toEqual([
+      'BlockThirdPartyCookies', 'DefaultCookiesSetting', 'DefaultJavaScriptSetting', 'RestoreOnStartup',
+    ]);
+  });
+
+  test('rejects the previous policy shape without session restore', async () => {
+    const { RestoreOnStartup, ...withoutRestore } = REQUIRED_BROWSER_POLICY;
+    expect(RestoreOnStartup).toBe(1);
+    await expect(verifyManagedBrowserPolicy({
+      fsPromises: {
+        readFile: async () => JSON.stringify(withoutRestore),
+        stat: async () => ({ isFile: () => true, uid: 0, mode: 0o100644 }),
+      },
+    })).rejects.toBeInstanceOf(ManagedBrowserPolicyError);
   });
 
   test('installs the root-owned policy before the image switches users', async () => {

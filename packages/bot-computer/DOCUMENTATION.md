@@ -42,11 +42,16 @@ signed browser-purpose token and is called by the trusted host, never by the
 reasoning endpoint. The agent command route accepts only:
 
 `navigate`, `snapshot`, `click`, `fill`, `select`, `key`, `scroll`, `wait`,
-`upload`, `download`, `screenshot`, and `close`.
+`upload`, `download`, and `screenshot`.
 
 There is deliberately no evaluate, script, raw CDP, shell, filesystem-path, or
-generic browser endpoint. Snapshots turn backend DOM node IDs into opaque refs
-bound to a page generation. Navigation/close invalidates all earlier refs.
+generic browser endpoint, and no `close`: the browser is persistent shared-login
+infrastructure, so only host-side shutdown and the confirmed profile reset ever
+close it. The managed policy enables session restore (`RestoreOnStartup: 1`) so
+session cookies survive Chromium relaunches; a single CDP command timeout
+replaces only the page target and keeps the process. Snapshots turn backend DOM
+node IDs into opaque refs bound to a page generation. Navigation, a page reset,
+or a relaunch invalidates all earlier refs.
 Chromium is stabilized at a 1280×720 viewport with device scale factor 1, and
 screenshot/screencast metadata carries those verified dimensions.
 

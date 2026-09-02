@@ -19,6 +19,7 @@ import {
   verifyAnonymousBotRuntimeImageAccess,
   verifyBotRuntimeImagesManifest,
 } from './verify-bot-runtime-images.mjs';
+import { BOT_TARGET_OPENCODE_VERSION } from '../packages/web/server/lib/opencode/version-policy.js';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const currentVersion = JSON.parse(
@@ -292,8 +293,8 @@ describe('Bot runtime image build metadata', () => {
       root: repositoryRoot,
       version: currentVersion,
     });
-    assert.equal(metadata.openCodeVersion, '1.18.26');
-    assert.equal(metadata.schemaVersion, '20260902120000');
+    assert.equal(metadata.openCodeVersion, BOT_TARGET_OPENCODE_VERSION);
+    assert.equal(metadata.schemaVersion, '20260903110000');
     assert.match(metadata.pluginHash, /^sha256:[0-9a-f]{64}$/);
     assert.deepEqual(new Set(Object.values(metadata.packageVersions)), new Set([currentVersion]));
   });

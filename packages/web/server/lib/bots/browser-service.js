@@ -24,10 +24,11 @@ const ACTIVE_RUN_STATES = new Set([
   'waiting_control',
   'needs_reconciliation',
 ]);
+// The Bot browser is persistent shared-login infrastructure; no reviewed command
+// may close or reset the Chromium process, so 'close' is deliberately absent.
 const ALL_BROWSER_ACTIONS = new Set([
   ...BOT_BROWSER_READ_ACTIONS,
   ...BOT_BROWSER_MUTATING_ACTIONS,
-  'close',
 ]);
 const RECOVERABLE_REMOTE_CODES = new Set([
   'DEVRYAN_BOT_BROWSER_CLOSED',

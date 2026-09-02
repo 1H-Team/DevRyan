@@ -36,10 +36,12 @@ aborts a suspected stall nor sends automatic recovery. Existing renderer
 recovery remains the fallback until host enforcement is advertised.
 
 Enforcement requires a live managed runtime, exclusive private file-lock owner,
-healthy durable storage, OpenCode 1.18.25 verified through `/global/health`, and
-the bundled plugin handshake. Unsupported versions, external runtimes, and
-opt-in WebSocket/native transports remain manual. Do not expand this allowlist
-without transport and hook conformance tests.
+healthy durable storage, an allow-listed OpenCode version verified through
+`/global/health` (`PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS` in
+`provider-recovery-policy.js`: 1.18.25 and 1.18.26, the current host target
+pin), and the bundled plugin handshake. Unsupported versions, external
+runtimes, and opt-in WebSocket/native transports remain manual. Do not expand
+this allowlist without transport and hook conformance tests.
 
 A handshake in another directory is insufficient: the exact admitted turn must
 also have a pre-request hook receipt from that runtime instance, and the failed
@@ -87,7 +89,8 @@ bounded to 30 seconds with bounded individual observations. Idle, an abort
 acknowledgement, a failed read, and renderer-forced idle are not sufficient.
 Healthy status-map omission is accepted only with independent session,
 transcript and blocker checks. Generic timeout wording is ineligible; the exact
-1.18.25 `UnknownError` timeout shape has a version-specific compatibility rule.
+`UnknownError` timeout shape of an allow-listed runtime (1.18.25, 1.18.26) has
+a version-specific compatibility rule.
 
 With no prior work, recovery reuses original text and safe file/data attachment
 references. Otherwise it appends a continuation. It never removes history,

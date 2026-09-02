@@ -89,7 +89,7 @@ unsupported VS Code presentation. Bot configuration lives separately in
   retryable-error previews. `BotChatView.tsx` surfaces durable browser waits
   without putting action metadata in the assistant response.
 - `botPresentation.ts` owns pure runtime-copy, revision-marker, action-target,
-  run-label, key-handling, and control-lease projections used by components and
+  run-label, failure-message, key-handling, and control-lease projections used by components and
   focused tests.
 - `useBotRuntimeOperation.ts` projects Electron's authoritative lifecycle
   snapshot and window-scoped safe progress event into the chat and Bot settings

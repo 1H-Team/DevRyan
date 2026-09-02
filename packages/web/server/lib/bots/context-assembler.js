@@ -16,6 +16,11 @@ const MAX_MEMORY_RETRIEVAL_LIMIT = 50;
 const MAX_PINNED_MEMORIES = 8;
 const CONTEXT_RATIO_LIMIT = 0.6;
 const CONTINUATION_TURN_LIMIT = 40;
+// When the model's context limit is unknown the ratio cannot be computed. Fall
+// back to the absolute token total of the last turn; 100k tokens is well under
+// every current chat model's window but far past where replaying a long,
+// tool-heavy session starts costing latency and provider rejections.
+const CONTEXT_TOKEN_LIMIT_WHEN_UNKNOWN = 100_000;
 
 // Durable facts about the people in the conversation are always in context;
 // everything else competes on relevance to the current request, then recency.
@@ -85,12 +90,19 @@ export const decideBotContinuation = ({ revisionId, previousRun } = {}) => {
     previousRun.context_snapshot,
     'providerContextRatio',
   );
+  const providerTokenTotal = numericSnapshotValue(
+    previousRun.context_snapshot,
+    'providerTokenTotal',
+  );
   const completedUserTurns = Math.trunc(numericSnapshotValue(
     previousRun.context_snapshot,
     'completedUserTurns',
   ));
   if (providerContextRatio >= CONTEXT_RATIO_LIMIT) {
     return Object.freeze({ create: true, reason: 'context_threshold', completedUserTurns: 0 });
+  }
+  if (providerContextRatio <= 0 && providerTokenTotal >= CONTEXT_TOKEN_LIMIT_WHEN_UNKNOWN) {
+    return Object.freeze({ create: true, reason: 'context_tokens', completedUserTurns: 0 });
   }
   if (completedUserTurns >= CONTINUATION_TURN_LIMIT) {
     return Object.freeze({ create: true, reason: 'turn_limit', completedUserTurns: 0 });

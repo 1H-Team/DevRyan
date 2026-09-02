@@ -129,7 +129,7 @@ const cursorFilter = (cursor) => (
 );
 
 const searchFilter = (pattern) => (
-  `(action.ilike.*${pattern}*,target_type.ilike.*${pattern}*,target_id.ilike.*${pattern}*,metadata->>code.ilike.*${pattern}*,metadata->>failureCode.ilike.*${pattern}*,metadata->>interruptionCode.ilike.*${pattern}*)`
+  `(action.ilike.*${pattern}*,target_type.ilike.*${pattern}*,target_id.ilike.*${pattern}*,metadata->>code.ilike.*${pattern}*,metadata->>failureCode.ilike.*${pattern}*,metadata->>interruptionCode.ilike.*${pattern}*,metadata->>failurePhase.ilike.*${pattern}*,metadata->>failureStage.ilike.*${pattern}*)`
 );
 
 const logicFilter = ({ cursor, search, from, to }) => {

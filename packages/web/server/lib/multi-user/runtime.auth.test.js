@@ -424,7 +424,7 @@ const createHarness = async ({
       return jsonResponse(userActivityPurgeResult);
     }
     if (url.pathname === '/rest/v1/rpc/devryan_bot_schema_version') {
-      return jsonResponse('20260902120000');
+      return jsonResponse('20260903110000');
     }
     if (!url.pathname.startsWith('/rest/v1/')) return jsonResponse({ message: 'not found' }, 404);
 

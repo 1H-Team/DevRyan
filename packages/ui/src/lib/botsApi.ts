@@ -629,6 +629,8 @@ export type BotMessage = {
   finalizedAt: string | null;
 };
 
+export type BotRunFailurePhase = 'startup' | 'execution';
+
 export type BotRun = {
   id: string;
   botId: string;
@@ -640,6 +642,10 @@ export type BotRun = {
   state: BotRunState;
   retryable: boolean;
   interruptionKind: string | null;
+  /** Where a failed or interrupted run stopped: before ('startup') or after ('execution') the agent began answering. */
+  failurePhase?: BotRunFailurePhase | null;
+  /** Startup step that failed (for example 'container', 'readiness', 'oauth_readiness'); null once execution began. */
+  failureStage?: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   startedAt: string | null;

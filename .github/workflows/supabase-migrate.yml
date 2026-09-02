@@ -1,0 +1,53 @@
+name: Supabase migrations
+
+# Applies pending Supabase migrations to the linked bots project without cutting
+# a release. Mirrors the migration step of release.yml; the `DevRyan Secrets`
+# environment provides the Supabase credentials.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only list pending migrations, do not apply them
+        type: boolean
+        default: false
+
+concurrency:
+  group: supabase-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: DevRyan Secrets
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.115.0
+
+      - name: Apply Supabase migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "Error: required secret ${name} is not configured."
+              exit 1
+            fi
+          done
+
+          supabase link --project-ref "$SUPABASE_PROJECT_ID" --yes
+          supabase db push --linked --dry-run
+          if [ "$DRY_RUN" != "true" ]; then
+            supabase db push --linked --yes
+          fi
+          supabase migration list --linked
+          supabase db query --linked --agent=no --output json \
+            "select public.devryan_bot_schema_version() as schema_version;"

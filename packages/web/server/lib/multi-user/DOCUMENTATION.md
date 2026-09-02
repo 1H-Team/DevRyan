@@ -46,7 +46,7 @@ server layer must pass Supabase errors through
 `productionBotsMigrationFailurePayload()` before continuing: a missing Bot
 relation, column, or RPC fails closed as HTTP `503` with
 `code: "bot_schema_migration_required"` and
-`requiredMigration: "20260902120000"`. Runtime startup additionally verifies
+`requiredMigration: "20260903110000"`. Runtime startup additionally verifies
 the service-role-only `devryan_bot_schema_version()` marker, and one route
 boundary blocks every Bot read or mutation while that marker is stale.
 

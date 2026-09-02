@@ -13,7 +13,12 @@ import { botErrorLogFields } from './error-normalization.js';
 import { projectBotReasoningResponse } from './reasoning-adapter.js';
 
 const WORKSPACE_DIRECTORY = '/workspace';
-const DEFAULT_READY_TIMEOUT_MS = 30_000;
+// A cold container boot on a loaded Docker Desktop VM has been observed to take
+// 16 s before the server even listens; 30 s left no headroom for plugin init.
+const DEFAULT_READY_TIMEOUT_MS = 60_000;
+// Cold starts contend for the same VM memory and CPU. Two at a time keeps a
+// chat run, an extraction and a second Bot from booting simultaneously.
+const DEFAULT_COLD_START_CONCURRENCY = 2;
 const OAUTH_READINESS_MAX_ATTEMPTS = 3;
 const OAUTH_READINESS_RETRY_DELAYS_MS = Object.freeze([250, 1_000]);
 const ATTACHMENT_DELIVERY_MODES = new Set(['auto', 'compatibility']);
@@ -58,8 +63,55 @@ const oauthReadinessDelay = (attempt) => (
   + Math.floor(Math.random() * 250)
 );
 
-const fail = (message, code, statusCode) => {
-  throw new BotOpenCodeProviderError(message, code, statusCode);
+const fail = (message, code, statusCode, diagnostics = null) => {
+  throw new BotOpenCodeProviderError(message, code, statusCode, diagnostics);
+};
+
+// Host-side request validation failures share one code. The validator label is
+// the only way to tell them apart in a content-free audit or log line.
+const invalid = (message, validator, statusCode = 400) => (
+  fail(message, 'bot_opencode_request_invalid', statusCode, { validator })
+);
+
+// Bounded concurrency for container cold starts. Callers wait in FIFO order;
+// an aborted waiter leaves the queue without consuming a slot.
+const createStartupGate = (limit) => {
+  let active = 0;
+  const waiters = [];
+  const release = () => {
+    active = Math.max(0, active - 1);
+    const next = waiters.shift();
+    if (next) {
+      active += 1;
+      next.resolve();
+    }
+  };
+  return Object.freeze({
+    async acquire(signal) {
+      signal?.throwIfAborted();
+      if (active < limit) {
+        active += 1;
+        return release;
+      }
+      await new Promise((resolve, reject) => {
+        const waiter = { resolve, reject };
+        const onAbort = () => {
+          const index = waiters.indexOf(waiter);
+          if (index >= 0) waiters.splice(index, 1);
+          reject(signal.reason);
+        };
+        waiter.resolve = () => {
+          signal?.removeEventListener('abort', onAbort);
+          resolve();
+        };
+        waiters.push(waiter);
+        signal?.addEventListener('abort', onAbort, { once: true });
+      });
+      return release;
+    },
+    get pending() { return waiters.length; },
+    get active() { return active; },
+  });
 };
 
 const safeUpstreamErrorName = (error) => {
@@ -151,24 +203,24 @@ const normalizeStartInput = (input) => {
       optional: ['attachmentIds', 'libraryVersionIds', 'attachmentDeliveryMode', 'compiled', 'mode', 'signal'],
     });
   } catch (error) {
-    fail(error.message, 'bot_opencode_request_invalid', 400);
+    invalid(error.message, 'start_input');
   }
   if (!input.run || typeof input.run !== 'object' || Array.isArray(input.run)) {
-    fail('Bot OpenCode run is invalid', 'bot_opencode_request_invalid', 400);
+    invalid('Bot OpenCode run is invalid', 'start_run');
   }
   const attachmentDeliveryMode = input.attachmentDeliveryMode ?? 'auto';
   if (!ATTACHMENT_DELIVERY_MODES.has(attachmentDeliveryMode)) {
-    fail('Bot attachment delivery mode is invalid', 'bot_opencode_request_invalid', 400);
+    invalid('Bot attachment delivery mode is invalid', 'attachment_delivery_mode');
   }
   if (input.compiled !== undefined
     && (!input.compiled || typeof input.compiled !== 'object'
       || typeof input.compiled.compiledHash !== 'string'
       || !input.compiled.contract || typeof input.compiled.contract !== 'object')) {
-    fail('Bot prewarmed config is invalid', 'bot_opencode_request_invalid', 400);
+    invalid('Bot prewarmed config is invalid', 'prewarmed_config');
   }
   const mode = input.mode ?? 'run';
   if (!['run', 'warm'].includes(mode)) {
-    fail('Bot OpenCode start mode is invalid', 'bot_opencode_request_invalid', 400);
+    invalid('Bot OpenCode start mode is invalid', 'start_mode');
   }
   return { ...input, attachmentDeliveryMode, mode };
 };
@@ -187,18 +239,18 @@ const withRuntimeStage = (error, stage) => {
 const normalizeSessionTitle = (value) => {
   const normalized = typeof value === 'string' ? value.trim() : '';
   if (!normalized || normalized.length > 160) {
-    fail('Bot OpenCode session title is invalid', 'bot_opencode_request_invalid', 400);
+    invalid('Bot OpenCode session title is invalid', 'session_title');
   }
   return normalized;
 };
 
 const normalizeParts = (parts) => {
   if (!Array.isArray(parts) || parts.length < 1 || parts.length > 128) {
-    fail('Bot OpenCode prompt parts are invalid', 'bot_opencode_request_invalid', 400);
+    invalid('Bot OpenCode prompt parts are invalid', 'prompt_parts');
   }
   const encoded = JSON.stringify(parts);
   if (Buffer.byteLength(encoded, 'utf8') > 2 * 1024 * 1024) {
-    fail('Bot OpenCode prompt parts are too large', 'bot_opencode_request_invalid', 413);
+    invalid('Bot OpenCode prompt parts are too large', 'prompt_parts_size', 413);
   }
   return JSON.parse(encoded);
 };
@@ -218,7 +270,7 @@ const partsWithRunMarker = (parts, runId) => {
     part?.type === 'text' && typeof part.text === 'string'
   ));
   if (textIndex < 0) {
-    fail('Bot OpenCode prompt requires a text part', 'bot_opencode_request_invalid', 400);
+    invalid('Bot OpenCode prompt requires a text part', 'prompt_text_part');
   }
   normalized[textIndex] = {
     ...normalized[textIndex],
@@ -230,7 +282,7 @@ const partsWithRunMarker = (parts, runId) => {
 const normalizeSessionId = (value) => {
   const sessionId = typeof value === 'string' ? value.trim() : '';
   if (!sessionId || sessionId.length > 256) {
-    fail('Bot OpenCode session ID is invalid', 'bot_opencode_request_invalid', 400);
+    invalid('Bot OpenCode session ID is invalid', 'session_id');
   }
   return sessionId;
 };
@@ -239,7 +291,7 @@ const normalizeStructuredSchema = (value) => {
   try {
     return validateBoundedJsonObject(value, 'Bot structured-output schema', 128 * 1024, 16);
   } catch (error) {
-    fail(error.message, 'bot_opencode_request_invalid', error.statusCode || 400);
+    invalid(error.message, 'structured_schema', error.statusCode || 400);
   }
 };
 
@@ -247,6 +299,19 @@ const recordText = (record) => (Array.isArray(record?.parts) ? record.parts : []
   .filter((part) => part?.type === 'text' && typeof part.text === 'string')
   .map((part) => part.text)
   .join('');
+
+const structuredOutputText = (record) => {
+  const structured = record?.info?.structured;
+  if (structured !== undefined && structured !== null) {
+    if (typeof structured === 'string') return structured;
+    try {
+      return JSON.stringify(structured);
+    } catch {
+      // Fall through to the text parts when the value is not serializable.
+    }
+  }
+  return recordText(record);
+};
 
 const SUCCESSFUL_TOOL_STATUSES = new Set(['completed', 'complete', 'done']);
 
@@ -319,7 +384,7 @@ const exactMethodInput = (input, label, required, optional = []) => {
   try {
     return assertExactObject(input, { label, required, optional });
   } catch (error) {
-    fail(error.message, 'bot_opencode_request_invalid', 400);
+    invalid(error.message, 'method_input');
   }
 };
 
@@ -333,6 +398,8 @@ export function createBotOpenCodeProvider({
   createClient = createOpencodeClient,
   fetchImpl = fetch,
   waitForReady = defaultWaitForReady,
+  readyTimeoutMs = DEFAULT_READY_TIMEOUT_MS,
+  coldStartConcurrency = DEFAULT_COLD_START_CONCURRENCY,
   subscribeToEvents = defaultSubscribeToEvents,
   logger = console,
   recordDiagnostic = () => {},
@@ -354,12 +421,15 @@ export function createBotOpenCodeProvider({
     || !environmentSecrets || typeof environmentSecrets.prepareRun !== 'function'
     || typeof environmentSecrets.finalizeRun !== 'function'
     || typeof createClient !== 'function' || typeof fetchImpl !== 'function'
-    || typeof waitForReady !== 'function' || typeof subscribeToEvents !== 'function') {
+    || typeof waitForReady !== 'function' || typeof subscribeToEvents !== 'function'
+    || !Number.isFinite(readyTimeoutMs) || readyTimeoutMs < 1_000
+    || !Number.isSafeInteger(coldStartConcurrency) || coldStartConcurrency < 1) {
     fail('Bot OpenCode provider is misconfigured', 'bot_opencode_configuration_invalid', 500);
   }
   const activeRuns = new Map();
   const activeRunByScope = new Map();
   const scopeLocks = new Map();
+  const startupGate = createStartupGate(coldStartConcurrency);
   const recordFailure = createBotFailureRecorder(recordDiagnostic);
   const recordLifecycle = (event, run, payload = {}) => {
     try {
@@ -461,9 +531,10 @@ export function createBotOpenCodeProvider({
       input,
       'Bot no-tools structured request',
       ['runId', 'prompt', 'schema'],
-      ['title', 'system'],
+      ['title', 'system', 'signal'],
     );
     const active = requireActive(input.runId);
+    const signal = botRequestSignal(input.signal, active.requestController.signal);
     const prompt = validateBoundedString(input.prompt, 'Bot structured-output prompt', {
       maximum: 256 * 1024,
     });
@@ -476,17 +547,17 @@ export function createBotOpenCodeProvider({
       'Bot structured-output system prompt',
       { maximum: 16 * 1024 },
     );
-    const created = unwrap(await active.client.session.create({
+    const created = unwrap(await withBotAbort(active.client.session.create({
       directory: WORKSPACE_DIRECTORY,
       title,
-    }), 'Bot structured-output session creation', { logger });
+    }, { signal }), signal), 'Bot structured-output session creation', { logger });
     const sessionId = normalizeSessionId(created?.id);
     try {
       await modelCredentialBroker.assertRuntimeReady?.(active.runId);
       if (typeof active.client.session?.prompt !== 'function') {
         fail('Bot structured output is unavailable', 'bot_opencode_structured_unavailable', 502);
       }
-      const response = unwrap(await active.client.session.prompt({
+      const response = unwrap(await withBotAbort(active.client.session.prompt({
         sessionID: sessionId,
         directory: WORKSPACE_DIRECTORY,
         agent: 'bot',
@@ -499,10 +570,14 @@ export function createBotOpenCodeProvider({
         format: { type: 'json_schema', schema, retryCount: 2 },
         system,
         parts: [{ type: 'text', text: prompt }],
-      }), 'Bot structured output', { logger });
-      const output = recordText(response);
+      }, { signal }), signal), 'Bot structured output', { logger });
+      // The agent validates the JSON it returns under `structured`; the text
+      // parts may carry prose around it. Prefer the validated value.
+      const output = structuredOutputText(response);
       if (!output || Buffer.byteLength(output, 'utf8') > 128 * 1024) {
-        fail('Bot structured output returned invalid output', 'bot_opencode_response_invalid', 502);
+        fail('Bot structured output returned invalid output', 'bot_opencode_response_invalid', 502, {
+          validator: output ? 'structured_output_size' : 'structured_output_empty',
+        });
       }
       return output;
     } finally {
@@ -557,7 +632,7 @@ export function createBotOpenCodeProvider({
         if (activeRuns.has(runId)) {
           const active = activeRuns.get(runId);
           if (active.scopeKey !== scopeKey) {
-            fail('Bot run scope does not match its active runtime', 'bot_opencode_request_invalid', 409);
+            invalid('Bot run scope does not match its active runtime', 'scope_mismatch', 409);
           }
           await modelCredentialBroker.assertRuntimeReady?.(runId);
           if (normalized.mode === 'run') active.provisional = false;
@@ -633,23 +708,39 @@ export function createBotOpenCodeProvider({
         });
         normalized.signal?.throwIfAborted();
         runtimeStage = 'container';
-        ensured = await dockerProvider.ensureReasoning({
-          botId: normalized.run.botId,
-          runId,
-          channelId: normalized.run.channelId,
-          revisionId: normalized.run.revisionId,
-          runtimeToken: capability.token,
-          compiledHash: compiled.compiledHash,
-          gatewayUrl: capability.dockerGatewayUrl,
-          egressHosts: prepared.egressHosts,
-          environmentSecretCount: environment.count,
-          chatgptImageGeneration: prepared.chatgptImageGeneration === true,
-        });
-        normalized.signal?.throwIfAborted();
-        runtimeStage = 'readiness';
-        await waitForReady({ endpoint: ensured.endpoint.baseUrl, fetchImpl, signal: normalized.signal });
+        const bootStartedAt = Date.now();
+        // A cold container boot competes for VM memory and CPU with every
+        // other boot. Serialize past the configured concurrency so one slow
+        // start does not drag the others past their readiness budget.
+        const releaseStartupGate = await startupGate.acquire(normalized.signal);
+        try {
+          ensured = await dockerProvider.ensureReasoning({
+            botId: normalized.run.botId,
+            runId,
+            channelId: normalized.run.channelId,
+            revisionId: normalized.run.revisionId,
+            runtimeToken: capability.token,
+            compiledHash: compiled.compiledHash,
+            gatewayUrl: capability.dockerGatewayUrl,
+            egressHosts: prepared.egressHosts,
+            environmentSecretCount: environment.count,
+            chatgptImageGeneration: prepared.chatgptImageGeneration === true,
+          });
+          normalized.signal?.throwIfAborted();
+          runtimeStage = 'readiness';
+          await waitForReady({
+            endpoint: ensured.endpoint.baseUrl,
+            fetchImpl,
+            timeoutMs: readyTimeoutMs,
+            signal: normalized.signal,
+          });
+        } finally {
+          releaseStartupGate();
+        }
         recordLifecycle('bot.runtime.ready', normalized.run, {
           attachmentCount: Number(materialized?.attachments?.length || 0),
+          bootMs: Date.now() - bootStartedAt,
+          mode: normalized.mode,
         });
         normalized.signal?.throwIfAborted();
         client = createClient({ baseUrl: ensured.endpoint.baseUrl });
@@ -954,6 +1045,7 @@ export function createBotOpenCodeProvider({
       if (assistantRecord?.info?.error) {
         fail('Bot provider did not complete the response', 'bot_opencode_run_failed', 502);
       }
+      const providerTokenTotal = tokenTotal(assistantRecord?.info?.tokens);
       // One request can span several assistant records (one per tool-call
       // round). Project the whole request in order so the acknowledgment
       // written before the first tool call and the answer after the last one
@@ -972,9 +1064,12 @@ export function createBotOpenCodeProvider({
         assistantText: assistantProjection.resultText,
         assistantProjection,
         assistantTerminal: isTerminalAssistantRecord(assistantRecord),
+        // A null ratio means the model's context limit is unknown; the
+        // dispatcher then falls back to the absolute token total.
         providerContextRatio: contextLimit > 0
-          ? Math.min(1, tokenTotal(assistantRecord?.info?.tokens) / contextLimit)
-          : 0,
+          ? Math.min(1, providerTokenTotal / contextLimit)
+          : null,
+        providerTokenTotal,
       });
     },
 

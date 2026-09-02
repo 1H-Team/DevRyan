@@ -314,6 +314,9 @@ describe('Bot governed browser service', () => {
       expect(botBrowserOperationKind(command)).toBe('write');
     }
     expect(() => botBrowserOperationKind('evaluate')).toThrow(/not reviewed/i);
+    // Closing the persistent browser would sign the Bot out of every site.
+    expect(() => botBrowserOperationKind('close')).toThrow(/not reviewed/i);
+    expect(() => botBrowserOperationKind('CLOSE')).toThrow(/not reviewed/i);
   });
 
   it('classifies only browser transport loss as uncertain and recoverable', () => {

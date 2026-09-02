@@ -54,6 +54,60 @@ describe('Bot memory classifier', () => {
     expect(prompt).toContain('thread_only');
   });
 
+  const classifyOutput = (output) => classifyBotMemoryCandidates({
+    output,
+    botId: BOT_ID,
+    channelId: CHANNEL_ID,
+    runId: RUN_ID,
+    ownerUserId: OWNER_ID,
+    messageIds: [MESSAGE_ID],
+    transcript: 'A short completed private conversation.',
+  });
+
+  it('recovers JSON wrapped in a markdown fence, a leading sentence, or a bare array', () => {
+    const encoded = JSON.stringify({ candidates: [candidate()] });
+    expect(classifyOutput(`\`\`\`json\n${encoded}\n\`\`\``).accepted).toHaveLength(1);
+    expect(classifyOutput(`Here is what I found:\n${encoded}`).accepted).toHaveLength(1);
+    expect(classifyOutput(JSON.stringify([candidate()])).accepted).toHaveLength(1);
+    expect(classifyOutput(JSON.stringify({ candidates: [candidate()], notes: 'ignored' })).accepted)
+      .toHaveLength(1);
+  });
+
+  it('treats an empty or candidate-less answer as zero candidates rather than a failure', () => {
+    expect(classifyOutput('').accepted).toEqual([]);
+    expect(classifyOutput('{}').accepted).toEqual([]);
+    expect(classifyOutput({ candidates: [] }).accepted).toEqual([]);
+  });
+
+  it('fails prose with a content-free reason', () => {
+    let error = null;
+    try {
+      classifyOutput('I could not find anything worth remembering.');
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({ code: 'bot_memory_extraction_invalid', reason: 'not_json' });
+    error = null;
+    try {
+      classifyOutput({ candidates: 'nope' });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({ code: 'bot_memory_extraction_invalid', reason: 'shape' });
+  });
+
+  it('keeps the first candidates when the model overflows the cap and records the overflow', () => {
+    const result = classify(Array.from({ length: 26 }, (_, index) => candidate({
+      logicalKey: `deployment.region.${index}`,
+      statement: `Deployment fact number ${index}.`,
+    })));
+    expect(result.accepted).toHaveLength(24);
+    expect(result.rejected).toEqual([
+      { index: 24, code: 'too_many_candidates' },
+      { index: 25, code: 'too_many_candidates' },
+    ]);
+  });
+
   it('accepts an automatic reusable shared fact', () => {
     const result = classify([candidate()]);
     expect(result.accepted).toEqual([

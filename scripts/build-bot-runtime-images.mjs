@@ -13,6 +13,7 @@ import {
   BOT_RUNTIME_RELEASE_MANIFEST_VERSION,
   BOT_RUNTIME_RELEASE_PLATFORM_KEYS,
 } from '../packages/electron/bot-runtime-manifest.mjs';
+import { BOT_TARGET_OPENCODE_VERSION } from '../packages/web/server/lib/opencode/version-policy.js';
 import { verifyBotRuntimeImagesManifest } from './verify-bot-runtime-images.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -152,6 +153,14 @@ export async function readBotRuntimeReleaseMetadata({
   );
   if (!openCodeMatch || openCodeMatch[1] !== openCodeMatch[2] || !schemaMatch) {
     fail('Bot runtime release source metadata is inconsistent', 'bot_runtime_image_source_invalid');
+  }
+  // The Dockerfile keeps the literal pin; the shared Bot target constant is the
+  // source of truth, so a drifted image pin fails the release build here.
+  if (openCodeMatch[1] !== BOT_TARGET_OPENCODE_VERSION) {
+    fail(
+      `Bot runtime image pins OpenCode ${openCodeMatch[1]} but BOT_TARGET_OPENCODE_VERSION is ${BOT_TARGET_OPENCODE_VERSION}`,
+      'bot_runtime_image_source_invalid',
+    );
   }
   return Object.freeze({
     openCodeVersion: openCodeMatch[1],

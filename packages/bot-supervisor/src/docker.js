@@ -778,7 +778,10 @@ export function createDynamicContainerSpec({
     Env: environment,
     Labels: labels,
     ExposedPorts: { [port]: {} },
-    StopTimeout: 15,
+    // Chromium flushes its persistent profile after Browser.close; the computer
+    // service waits up to ~15 s (10 s graceful + 5 s after SIGTERM) before it
+    // SIGKILLs, so Docker must not kill the container before that completes.
+    StopTimeout: 30,
     HostConfig: {
       AutoRemove: false,
       Binds: volumeBindings(kind, names.volumes, runtimeDirectories),
@@ -1056,9 +1059,13 @@ export function createBotDockerSupervisor({
       'devryan.image',
       'devryan.capability',
       ...(kind === 'reasoning' ? ['devryan.revision', 'devryan.run', 'devryan.channel', 'devryan.config'] : []),
+      // The computer is per-Bot, long-lived, signed-in infrastructure. A revision
+      // bump alone must not recreate it (that restarts Chromium and drops session
+      // state); browser egress policy changes reach the running container through
+      // in-place capability rotation, while scope and isolation changes still
+      // rotate the container.
       ...(kind === 'computer' ? [
         'devryan.scope-mode',
-        'devryan.revision',
         'devryan.isolation',
       ] : []),
     ];

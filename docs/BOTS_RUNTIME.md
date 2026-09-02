@@ -50,15 +50,23 @@ following prerequisites must all be true:
    shows an explicit unsupported-host message, and the legacy Tauri shell does
    not own this feature.
 2. Supabase multi-user mode is configured and every repository migration,
-   through `supabase/migrations/20260902120000_bot_audit_resolution_and_read_only_retry.sql`,
+   through `supabase/migrations/20260903110000_bot_memory_extraction_inline_claim.sql`,
    is deployed. A schema-cache miss returns `migration_required` with
-   `requiredMigration: "20260902120000"`; it must never fall back to local
+   `requiredMigration: "20260903110000"`; it must never fall back to local
    plaintext state. The required marker is a minimum: newer 14-digit markers
    are accepted, and Bot migrations remain backward-compatible for at least one
    desktop release so database-first rollout does not disable older clients.
 3. Electron `safeStorage` is available so the deployment encryption key can be
    OS-sealed.
-4. Docker Desktop is installed and the Docker Engine is running.
+4. Docker Desktop is installed and the Docker Engine is running. Give the
+   Docker Desktop VM at least 6 GiB of memory (8 GiB recommended) in
+   Settings > Resources. Each Bot run can use up to 2 GiB for its reasoning
+   container and 3 GiB for its computer container, on top of the fixed
+   services (indexer 1 GiB, three 256 MiB proxies), and any other stack that
+   shares the Docker VM (for example a local Supabase project) competes for
+   the same memory. A smaller VM does not block Bots; the runtime status
+   reports a `docker_memory_low` or `docker_memory_below_limits` warning and
+   runs may be killed under memory pressure.
 5. The packaged app contains a signed, architecture-complete Bot image manifest
    and the selected image digests are available. Development builds use only
    `packages/electron/resources/bot-runtime/images.dev.json`.
@@ -363,11 +371,19 @@ previews, model context, memory summaries, notifications, and final-result
 selection. The admitted run is queued with a pending model snapshot. Event publication, Shared
 copy preparation, FIFO claim, model catalog and credential checks, config
 materialization, and runtime startup occur after the response. Opening an idle,
-active, send-capable channel requests an optional two-minute warm lease. At most
+active, send-capable channel requests an optional ten-minute warm lease. At most
 two principal/channel/revision/Library-bound leases keep the exact preallocated
 run-scoped runtime, credential, gateway capability, compiled revision, and
 Library materialization ready without creating a durable message or run. An
-eligible send atomically adopts its run ID. Provisional preparation may select
+eligible send atomically adopts its run ID. When a run completes and no message
+is queued behind it, the dispatcher begins a server-initiated warm lease for the
+same channel, revision, and Library snapshot; the next eligible send without a
+client lease adopts that runtime instead of paying a cold start. Cold container
+starts are gated to two at a time, the readiness probe allows sixty seconds, and
+a run whose runtime never started (no execution identity, no output, no
+governed action) is requeued automatically on the requester's behalf up to two
+times before its failure is shown as a runtime-startup notice rather than a
+model-connection failure. Provisional preparation may select
 and materialize credentials, but it never writes model state to the
 not-yet-admitted run. Adoption persists the selected model during the normal
 queued-to-running transition. Attachments, routines, mismatch, expiry, or warm
@@ -375,11 +391,19 @@ failure use the cold path. Release, LRU eviction, invalidation, shutdown, and
 replacement clean every provisional credential, artifact, environment file,
 capability, and container.
 
-Completed-run memory extraction is lower priority than conversation. Its
-database claim skips every channel with a non-terminal Bot run. If an
-interactive run wins the remaining admission race, extraction settles as
-`defer`, returns to the durable queue without consuming an attempt or creating
-a Bot Audit issue, and resumes after the channel becomes idle. Optimistic
+Completed-run memory extraction is lower priority than conversation. It first
+runs on the completed run's own still-active runtime, bounded to thirty seconds
+and skipped when another message is already queued, by claiming that run's job
+with `devryan_claim_bot_memory_extraction_job_by_run`; only when that pass did
+not happen does the durable worker cold-start a runtime. Its database claim
+skips every channel with a non-terminal Bot run. If an interactive run wins the
+remaining admission race, or takes the runtime away mid-extraction, extraction
+settles as `defer`, returns to the durable queue without consuming an attempt
+or creating a Bot Audit issue, and resumes after the channel becomes idle. A
+classifier answer that is not usable JSON gets one immediate repair pass, then
+up to three durable attempts (the same cap applies to a host-side request
+rejection), and the terminal audit event carries a content-free `reason` or
+`validator` label. Optimistic
 conflicts (`bot_revision_conflict`, `40001`, summary or version checkpoint
 conflicts) are retried for up to four durable attempts before the job becomes
 terminal. The Memory console shows pending and failed extraction next to

@@ -26,6 +26,58 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_COMMAND_TIMEOUT_MS = 120_000;
 export const DEFAULT_BOT_RUNTIME_READY_DEADLINE_MS = 15 * 60_000;
 const DEFAULT_SERVICE_HEALTH_TIMEOUT_MS = 90_000;
+const GIB = 1024 * 1024 * 1024;
+const MIB = 1024 * 1024;
+const ENGINE_MEMORY_PROBE_TTL_MS = 5 * 60_000;
+// Docker Desktop hands every container the memory of one shared VM. These
+// numbers mirror the per-container limits in
+// packages/bot-supervisor/src/docker.js (BOT_RESOURCE_LIMITS) and
+// docker/bots/compose.yml; the preflight below only warns, it never blocks.
+export const BOT_RUNTIME_ENGINE_MEMORY_POLICY = Object.freeze({
+  minimumBytes: 6 * GIB,
+  recommendedBytes: 8 * GIB,
+  containerLimitBytes: Object.freeze({
+    reasoning: 2 * GIB,
+    computer: 3 * GIB,
+    indexer: GIB,
+    supervisor: 256 * MIB,
+    'engine-proxy': 256 * MIB,
+    egress: 256 * MIB,
+  }),
+});
+
+const formatGib = (bytes) => {
+  const value = bytes / GIB;
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+};
+
+export const evaluateBotRuntimeEngineMemory = (
+  memTotalBytes,
+  policy = BOT_RUNTIME_ENGINE_MEMORY_POLICY,
+) => {
+  if (!Number.isSafeInteger(memTotalBytes) || memTotalBytes <= 0) return [];
+  const warnings = [];
+  const available = formatGib(memTotalBytes);
+  if (memTotalBytes < policy.minimumBytes) {
+    warnings.push({
+      code: 'docker_memory_low',
+      message: `Docker Desktop gives containers ${available} GiB of memory; Bots need at least `
+        + `${formatGib(policy.minimumBytes)} GiB (${formatGib(policy.recommendedBytes)} GiB recommended). `
+        + 'Raise the memory limit in Docker Desktop Settings > Resources.',
+    });
+  }
+  const exceeding = Object.entries(policy.containerLimitBytes)
+    .filter(([, limitBytes]) => limitBytes > memTotalBytes)
+    .map(([kind, limitBytes]) => `${kind} (${formatGib(limitBytes)} GiB)`);
+  if (exceeding.length > 0) {
+    warnings.push({
+      code: 'docker_memory_below_limits',
+      message: `Bot containers may use more memory than the ${available} GiB Docker Desktop provides: `
+        + `${exceeding.join(', ')}. Runs can be stopped under memory pressure.`,
+    });
+  }
+  return warnings;
+};
 const SERVICE_HEALTH_POLL_INTERVAL_MS = 1_000;
 const MAX_READY_TRANSITIONS = 3;
 const FIXED_DOCKER_CANDIDATES = Object.freeze([
@@ -324,11 +376,12 @@ const publicManifest = (manifest) => manifest ? ({
   fingerprint: manifest.fingerprint,
 }) : null;
 
-const baseStatus = ({ state, code, currentState, desiredManifest, issues = [] }) => ({
+const baseStatus = ({ state, code, currentState, desiredManifest, issues = [], warnings = [] }) => ({
   ok: state === 'healthy',
   state,
   code,
   issues,
+  warnings,
   manifest: publicManifest(currentState?.current || desiredManifest),
   desiredManifest: publicManifest(desiredManifest),
   updateStaged: Boolean(currentState?.staged),
@@ -343,6 +396,7 @@ const dockerNotInstalledStatus = () => ({
   state: 'docker_not_installed',
   code: 'bot_runtime_docker_not_installed',
   issues: [{ code: 'docker_not_installed', message: 'Docker is not installed' }],
+  warnings: [],
   manifest: null,
   desiredManifest: null,
   updateStaged: false,
@@ -1314,6 +1368,28 @@ export function createBotRuntimeManager({
     );
     if (version.exitCode !== 0) return { status: dockerUnavailableStatus(), dockerPath };
     return { status: null, dockerPath };
+  };
+
+  // Best-effort preflight: read the engine's total memory once per TTL and
+  // turn a too-small Docker Desktop VM into status warnings. Any probe
+  // failure other than the caller's deadline yields no warning at all.
+  let engineMemoryProbe = null;
+  const probeEngineMemoryWarnings = async (dockerPath, deadlineAt = null) => {
+    if (engineMemoryProbe && now() - engineMemoryProbe.at < ENGINE_MEMORY_PROBE_TTL_MS) {
+      return engineMemoryProbe.warnings;
+    }
+    let warnings = [];
+    try {
+      const result = await run(dockerPath, ['info', '--format', '{{.MemTotal}}'], baseEnvironment, deadlineAt);
+      const memTotalBytes = result.exitCode === 0
+        ? Number.parseInt(String(result.stdout ?? '').trim(), 10)
+        : Number.NaN;
+      warnings = evaluateBotRuntimeEngineMemory(memTotalBytes);
+    } catch (error) {
+      if (error instanceof BotRuntimeManagerError) throw error;
+    }
+    engineMemoryProbe = { at: now(), warnings };
+    return warnings;
   };
 
   const requireDocker = async (deadlineAt = null) => {
@@ -2351,6 +2427,7 @@ export function createBotRuntimeManager({
     }
     publishProgress({ phase: 'verifying_health' });
     const issues = await inspectServices(dockerPath, currentState.current, deadlineAt);
+    const warnings = await probeEngineMemoryWarnings(dockerPath, deadlineAt);
     return {
       ...baseStatus({
         state: issues.length === 0 ? 'healthy' : 'degraded',
@@ -2358,6 +2435,7 @@ export function createBotRuntimeManager({
         currentState,
         desiredManifest,
         issues,
+        warnings,
       }),
       changed,
     };

@@ -22,6 +22,8 @@ export type BotsDesktopRuntimeStatus = {
   state: string;
   code: string | null;
   issues: readonly Readonly<Record<string, unknown>>[];
+  /** Non-blocking preflight findings (for example a small Docker Desktop VM); the runtime can still be healthy. */
+  warnings?: readonly Readonly<Record<string, unknown>>[];
   manifest: Readonly<Record<string, unknown>> | null;
   desiredManifest: Readonly<Record<string, unknown>> | null;
   updateStaged: boolean;

@@ -5,7 +5,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '@/lib/i18n';
 import type { BotChannel } from '@/lib/botsApi';
 import { createBotChannelStore } from '@/stores/useBotChannelStore';
-import { resolveBotRuntimeMessageKey, shouldSubmitBotComposerKey } from '../botPresentation';
+import {
+  resolveBotRuntimeMessageKey,
+  resolveBotRuntimeWarnings,
+  shouldSubmitBotComposerKey,
+  type BotRuntimeWarning,
+} from '../botPresentation';
 import { BotComposer } from './BotComposer';
 
 const BOT_ID = 'b0000000-0000-4000-8000-000000000001';
@@ -27,7 +32,12 @@ const channel = (accessRole: BotChannel['accessRole'], canSend: boolean): BotCha
   archivedAt: null,
 });
 
-const renderComposer = (value: BotChannel, runtimeState = 'healthy', runtimeAvailable = true) => {
+const renderComposer = (
+  value: BotChannel,
+  runtimeState = 'healthy',
+  runtimeAvailable = true,
+  runtimeWarnings: readonly BotRuntimeWarning[] = [],
+) => {
   const channelStore = createBotChannelStore({ getPrincipalId: () => USER_ID });
   channelStore.getState().resetPrincipal(USER_ID);
   channelStore.getState().replaceSnapshot({ channels: [value] });
@@ -44,6 +54,7 @@ const renderComposer = (value: BotChannel, runtimeState = 'healthy', runtimeAvai
         channel={value}
         runtimeState={runtimeState}
         runtimeAvailable={runtimeAvailable}
+        runtimeWarnings={runtimeWarnings}
         channelStore={channelStore}
       />
     </I18nProvider>,
@@ -70,6 +81,41 @@ describe('BotComposer', () => {
 
   test('uses repair-specific copy for a degraded runtime', () => {
     expect(resolveBotRuntimeMessageKey('runtime_degraded')).toBe('bots.runtime.needsRepair');
+  });
+
+  test('shows Docker memory warnings on a healthy runtime without disabling sending', () => {
+    const warnings = resolveBotRuntimeWarnings({
+      available: true,
+      state: 'healthy',
+      code: null,
+      owner: 'electron',
+      canManageRuntime: true,
+      canCreateBot: true,
+      runtime: {
+        state: 'healthy',
+        warnings: [
+          { code: 'docker_memory_low', message: 'Docker Desktop gives containers 2.8 GiB of memory' },
+          { code: 'docker_memory_low', message: 'duplicate' },
+          { code: 'custom_warning', message: 'Runtime-provided fallback text' },
+          { code: 42, message: 'ignored' },
+          null,
+        ],
+      },
+    });
+    expect(warnings.map((warning) => warning.code)).toEqual(['docker_memory_low', 'custom_warning']);
+    expect(resolveBotRuntimeWarnings({
+      available: true, state: 'healthy', code: null, owner: 'electron', canManageRuntime: true, canCreateBot: true, runtime: null,
+    })).toEqual([]);
+
+    const markup = renderComposer(channel('owner', true), 'healthy', true, warnings);
+    expect(markup).toContain('data-bot-runtime-warning="docker_memory_low"');
+    expect(markup).toContain('6 GiB minimum, 8 GiB recommended');
+    expect(markup).not.toContain('2.8 GiB of memory');
+    expect(markup).toContain('Runtime-provided fallback text');
+    expect(markup).toContain('Keep this exact draft');
+    expect(markup).not.toContain('Docker Desktop isn’t running');
+
+    expect(renderComposer(channel('owner', true))).not.toContain('data-bot-runtime-warnings');
   });
 
   test('keeps Readers read-only while Collaborators retain composer access', () => {

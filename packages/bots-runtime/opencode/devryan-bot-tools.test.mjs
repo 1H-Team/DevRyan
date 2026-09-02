@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { describe, expect, test } from 'bun:test';
 
 import plugin, * as exports from './devryan-bot-tools.mjs';
+import { BOT_TARGET_OPENCODE_VERSION } from '../../web/server/lib/opencode/version-policy.js';
 
 const TOKEN = 'runtime-token-0123456789abcdef0123456789';
 const environment = () => ({
@@ -167,6 +168,9 @@ describe('scoped OpenCode Bot plugin', () => {
 
     expect(result).toBe(JSON.stringify({ accepted: true }));
     expect(loaded.tool.devryan_bot.description).toContain('persistent browser connector');
+    expect(loaded.tool.devryan_bot.description).toContain('keeps the Bot signed in across tasks');
+    expect(loaded.tool.devryan_bot.description).toContain('never close, reset, sign out of, or clear it');
+    expect(loaded.tool.devryan_bot.description.length).toBeLessThan(800);
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe('http://host.docker.internal:57123/api/bots/private/gateway');
     expect(calls[0].options.headers.authorization).toBe(`Bearer ${TOKEN}`);
@@ -313,7 +317,10 @@ describe('scoped OpenCode Bot plugin', () => {
     expect(subagents).toContain("devryan_image: 'deny'");
     expect(subagents).toContain("devryan_ask: 'deny'");
     expect(subagents).toContain("browser: 'deny'");
-    expect(dockerfile).toContain('opencode-ai@1.18.26 @opencode-ai/plugin@1.18.26 opencode-gpt-imagegen@0.1.10');
+    expect(BOT_TARGET_OPENCODE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(dockerfile).toContain(
+      `opencode-ai@${BOT_TARGET_OPENCODE_VERSION} @opencode-ai/plugin@${BOT_TARGET_OPENCODE_VERSION} opencode-gpt-imagegen@0.1.10`,
+    );
     expect(dockerfile).toContain("node_modules/opencode-gpt-imagegen/package.json");
     expect(entrypoint).toContain('launch-opencode.mjs');
     expect(dockerfile).toContain('bash=5.2.15-2+b13');

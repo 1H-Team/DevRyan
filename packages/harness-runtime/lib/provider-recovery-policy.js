@@ -3,6 +3,15 @@ export const PROVIDER_RECOVERY_POLICY_VERSION = 1;
 export const PROVIDER_PROGRESS_TIMEOUT_MS = 300_000;
 export const RECOVERY_READ_TOOLS = Object.freeze(['read', 'glob', 'grep']);
 export const RECOVERY_CONTINUATION = 'Continue from the existing progress and completed tool results. This automatic recovery is read-only. Do not repeat completed actions. Finish the response, or explain what requires explicit user continuation.';
+// OpenCode versions whose plugin hooks, request preparation, tool registry and
+// lossy `UnknownError` timeout shape were verified for automatic primary
+// recovery (docs/PROVIDER_RECOVERY.md). Extend only with transport and hook
+// conformance evidence; the host target pin lives in
+// packages/web/server/lib/opencode/version-policy.js and must stay listed here.
+export const PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['1.18.25', '1.18.26']);
+export const isProviderRecoverySupportedRuntimeVersion = (version) => (
+  typeof version === 'string' && PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS.includes(version)
+);
 
 export const recoveryError = (code, statusCode = 409) => Object.assign(
   new Error(code.replaceAll('_', ' ')), { code, statusCode },
@@ -26,8 +35,8 @@ export function classifyPrimaryTransportError(error, runtimeVersion) {
   if (name === 'ProviderResponseStreamError' && message === 'SSE read timed out') {
     return { kind: 'chunk_timeout', source: 'error_type' };
   }
-  if (runtimeVersion === '1.18.25' && name === 'UnknownError' && message === 'The operation timed out.') {
-    return { kind: 'request_timeout', source: 'opencode_1.18.25_compatibility' };
+  if (isProviderRecoverySupportedRuntimeVersion(runtimeVersion) && name === 'UnknownError' && message === 'The operation timed out.') {
+    return { kind: 'request_timeout', source: `opencode_${runtimeVersion}_compatibility` };
   }
   return null;
 }

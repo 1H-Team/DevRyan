@@ -298,7 +298,7 @@ export function createOpenCodeReasoningAdapter({
       listeners.delete(runId);
       await provider.stopReasoningRun(runId);
     },
-    async completeStructured({ runId, prompt, schema, title, system } = {}) {
+    async completeStructured({ runId, prompt, schema, title, system, signal } = {}) {
       if (typeof provider.runNoToolsStructured !== 'function') {
         throw new BotReasoningAdapterError(
           'OpenCode structured completion is unavailable',
@@ -313,6 +313,7 @@ export function createOpenCodeReasoningAdapter({
           schema,
           ...(typeof title === 'string' && title.length > 0 ? { title } : {}),
           ...(typeof system === 'string' && system.length > 0 ? { system } : {}),
+          ...(signal ? { signal } : {}),
         });
       } catch (error) {
         throw normalizeBotRunError(error);

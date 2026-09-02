@@ -686,6 +686,8 @@ describe('Production Bot FIFO run dispatcher', () => {
     recordDiagnostic = vi.fn(),
     settleRunTerminal = null,
     inspection = null,
+    runNoToolsStructured = null,
+    retryRun = null,
     logger = { warn: vi.fn() },
   } = {}) => {
     let revision = 0;
@@ -714,6 +716,7 @@ describe('Production Bot FIFO run dispatcher', () => {
     });
     const store = {
       claimRun: vi.fn(async () => null),
+      ...(retryRun ? { retryRun } : {}),
       settleRunTerminal: settleRunTerminal || vi.fn(async (input) => {
         if (['completed', 'failed', 'cancelled', 'interrupted'].includes(row.state)) return row;
         return updateIfRevision({ id: input.runId }, {
@@ -881,6 +884,7 @@ describe('Production Bot FIFO run dispatcher', () => {
       exportGeneratedImage,
       abort: vi.fn(async () => ({})),
       stopReasoningRun: vi.fn(async () => ({})),
+      ...(runNoToolsStructured ? { runNoToolsStructured } : {}),
     };
     const eventStream = { publish: vi.fn(async () => ({})) };
     const approvalService = { cancelPendingForRun: vi.fn(async () => []) };
@@ -1854,6 +1858,161 @@ describe('Production Bot FIFO run dispatcher', () => {
     });
     await failingHarness.dispatcher.resumeRun(failingHarness.getRow());
     expect(failingHarness.getRow().state).toBe('completed');
+  });
+
+  const idleAfterPrompt = (harness) => {
+    harness.setPromptHook(async () => {
+      setTimeout(() => {
+        void harness.emit({
+          type: 'session.status',
+          properties: { sessionID: 'ses_bot_1', status: { type: 'idle' } },
+        });
+      }, 0);
+    });
+  };
+  const completedInspection = {
+    promptObserved: true,
+    status: 'idle',
+    assistantTerminal: true,
+    assistantMessageId: 'msg_assistant',
+    assistantText: 'Done.',
+    assistantProjection: {
+      toolObserved: false,
+      acknowledgmentText: '',
+      resultText: 'Done.',
+      resultFallback: false,
+      generatedImages: [],
+    },
+  };
+
+  it('offers memory extraction on the still-active runtime before the runtime is released', async () => {
+    let offered = null;
+    const runNoToolsStructured = vi.fn(async () => '{"candidates":[]}');
+    const onRunCompleted = vi.fn(async (input) => {
+      offered = input;
+      await input.extract({ prompt: 'Extract.', schema: { type: 'object' }, title: 'Memory', system: 'JSON only.' });
+    });
+    const harness = createExecutionHarness({ onRunCompleted, runNoToolsStructured, inspection: completedInspection });
+    idleAfterPrompt(harness);
+
+    await harness.dispatcher.resumeRun(harness.getRow());
+
+    expect(typeof offered.extract).toBe('function');
+    expect(offered.signal).toBeInstanceOf(AbortSignal);
+    expect(runNoToolsStructured).toHaveBeenCalledWith(expect.objectContaining({
+      runId: harness.getRow().id,
+      prompt: 'Extract.',
+      title: 'Memory',
+      system: 'JSON only.',
+    }));
+    // The runtime was still active when the extraction ran.
+    expect(runNoToolsStructured.mock.invocationCallOrder[0])
+      .toBeLessThan(harness.opencodeProvider.stopReasoningRun.mock.invocationCallOrder[0]);
+    expect(harness.getRow().state).toBe('completed');
+    expect(harness.getRow().context_snapshot).toEqual(expect.objectContaining({
+      providerTokenTotal: expect.any(Number),
+    }));
+    await harness.dispatcher.shutdown();
+  });
+
+  it('leaves extraction to the durable queue when another message is already queued', async () => {
+    let offered = null;
+    const onRunCompleted = vi.fn(async (input) => { offered = input; });
+    const harness = createExecutionHarness({
+      onRunCompleted,
+      runNoToolsStructured: vi.fn(async () => '{"candidates":[]}'),
+      inspection: completedInspection,
+    });
+    harness.store.repositories.bot_runs.list.mockImplementation(async ({ filters } = {}) => ({
+      items: filters?.state === 'queued' ? [{ id: 'queued-run', state: 'queued' }] : [],
+      nextCursor: null,
+    }));
+    idleAfterPrompt(harness);
+
+    await harness.dispatcher.resumeRun(harness.getRow());
+
+    expect(offered.extract).toBeUndefined();
+    expect(harness.opencodeProvider.startReasoningRun).toHaveBeenCalledTimes(1);
+    await harness.dispatcher.shutdown();
+  });
+
+  it('warms the next runtime for the channel once a run completes and lets the next send adopt it', async () => {
+    const startReasoningRun = vi.fn(async () => ({
+      modelSnapshot: { providerId: 'openai', modelId: 'gpt-5.6-sol', contextLimit: 100 },
+    }));
+    const harness = createExecutionHarness({ startReasoningRun, inspection: completedInspection });
+    idleAfterPrompt(harness);
+
+    await harness.dispatcher.resumeRun(harness.getRow());
+    await waitFor(() => expect(startReasoningRun).toHaveBeenCalledTimes(2));
+    const warmCall = startReasoningRun.mock.calls[1][0];
+    expect(warmCall.mode).toBe('warm');
+    expect(warmCall.run.channelId).toBe(CHANNEL_ID);
+
+    const accepted = await harness.dispatcher.enqueueMessage({
+      principal: { id: USER_ID },
+      channelId: CHANNEL_ID,
+      message: {
+        messageId: 'e0000000-0000-4000-8000-000000000093',
+        idempotencyKey: 'post-run-send',
+        text: 'Follow-up without a client lease',
+        attachmentIds: [],
+      },
+    });
+    expect(accepted.run.id).toBe(warmCall.run.id);
+    expect(harness.recordDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      mark: 'bot.turn.lease_adopted',
+    }));
+    await harness.dispatcher.shutdown();
+  });
+
+  it('retries a startup failure on the requester\'s behalf a bounded number of times', async () => {
+    const startupFailure = () => Object.assign(
+      new Error('Scoped OpenCode runtime did not become ready'),
+      { code: 'bot_opencode_start_timeout', statusCode: 504, botRuntimeStage: 'readiness' },
+    );
+    const retryRun = vi.fn(async ({ runId }) => ({
+      id: runId,
+      bot_id: BOT_ID,
+      channel_id: CHANNEL_ID,
+      state: 'queued',
+      computer_scope_key: `bot:${BOT_ID}`,
+      context_snapshot: { retryCount: 1 },
+    }));
+    const harness = createExecutionHarness({
+      startReasoningRun: vi.fn(async () => { throw startupFailure(); }),
+      retryRun,
+    });
+    harness.store.repositories.bot_messages.list.mockImplementation(async ({ filters } = {}) => ({
+      items: filters?.role === 'user'
+        ? [{ id: MESSAGE_ID, run_id: harness.getRow().id, channel_id: CHANNEL_ID, role: 'user', actor_user_id: USER_ID, attachment_count: 0 }]
+        : [],
+      nextCursor: null,
+    }));
+
+    await harness.dispatcher.resumeRun(harness.getRow());
+    await waitFor(() => expect(retryRun).toHaveBeenCalledTimes(1));
+    expect(retryRun).toHaveBeenCalledWith(expect.objectContaining({
+      runId: harness.getRow().id,
+      actorUserId: USER_ID,
+    }));
+    expect(harness.getRow().context_snapshot).toEqual(expect.objectContaining({
+      failurePhase: 'startup',
+      failureStage: 'readiness',
+      retryable: true,
+    }));
+
+    const exhausted = createExecutionHarness({
+      startReasoningRun: vi.fn(async () => { throw startupFailure(); }),
+      retryRun: vi.fn(async () => { throw new Error('should not retry'); }),
+      rowOverrides: { context_snapshot: { retryCount: 2 } },
+    });
+    await exhausted.dispatcher.resumeRun(exhausted.getRow());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(exhausted.store.retryRun).not.toHaveBeenCalled();
+    expect(exhausted.getRow().state).toBe('failed');
+    await harness.dispatcher.shutdown();
+    await exhausted.dispatcher.shutdown();
   });
 
   it.each(['waiting_approval', 'needs_reconciliation'])(

@@ -358,7 +358,7 @@ const createPlugin = async ({
   };
   const tools = {
     devryan_bot: toolApi({
-      description: 'The authenticated DevRyan Bot gateway, including the persistent browser connector. For browser work use operation computer.command with payload { idempotencyKey, command, args, target, limits }; start with navigate or snapshot and use returned element refs for interactions. The browser is available whenever the Bot is Active. Image generation is a separate devryan_image tool; never guess an image.generate gateway payload.',
+      description: 'The authenticated DevRyan Bot gateway, including the persistent browser connector. For browser work use operation computer.command with payload { idempotencyKey, command, args, target, limits }; start with navigate or snapshot and use returned element refs for interactions. The browser is available whenever the Bot is Active. It is persistent shared-login infrastructure that keeps the Bot signed in across tasks: never close, reset, sign out of, or clear it (there is no close command); simply navigate to the next page. Image generation is a separate devryan_image tool; never guess an image.generate gateway payload.',
       args: {
         operation: toolApi.schema.enum(exposedOperations),
         payload: toolApi.schema.unknown(),

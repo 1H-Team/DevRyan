@@ -1,14 +1,19 @@
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 
 import { validateUuid } from './validation.js';
 import { createBotPeriodicJob } from './periodic-job.js';
 
 const DEFAULT_SWEEP_INTERVAL_MS = 30_000;
+// Domain-separated derivation label; bump the version to invalidate every derived
+// computer runtime token at once.
+const RUNTIME_TOKEN_DERIVATION_LABEL = 'computer-runtime-token:v1';
+const MINIMUM_DERIVATION_KEY_BYTES = 16;
 
 export function createBotComputerRuntimeManager({
   store,
   computerBackend,
   gatewayHost,
+  encryption = null,
   sweepIntervalMs = DEFAULT_SWEEP_INTERVAL_MS,
   randomBytesImpl = randomBytes,
   logger = console,
@@ -20,7 +25,9 @@ export function createBotComputerRuntimeManager({
     || typeof computerBackend.stop !== 'function'
     || !gatewayHost || typeof gatewayHost.getAddress !== 'function'
     || !Number.isInteger(sweepIntervalMs) || sweepIntervalMs < 1_000
-    || typeof randomBytesImpl !== 'function') {
+    || typeof randomBytesImpl !== 'function'
+    || (encryption !== null && (typeof encryption !== 'object'
+      || (encryption.getKey != null && typeof encryption.getKey !== 'function')))) {
     throw new TypeError('Bot computer runtime manager is misconfigured');
   }
 
@@ -43,6 +50,39 @@ export function createBotComputerRuntimeManager({
   const loadBot = async (botId) => store.repositories.bots.get({
     id: validateUuid(botId, 'botId'),
   });
+
+  const mintToken = () => Buffer.from(randomBytesImpl(32)).toString('base64url');
+
+  // The computer container is labelled with a hash of its runtime token, so a
+  // token minted on every DevRyan start would recreate the container (restarting
+  // Chromium and dropping session logins) at every start. Deriving the token
+  // from the sealed deployment key keeps it stable across restarts without
+  // storing it anywhere; an explicit rotation still mints a fresh random token.
+  const deriveToken = async (botId) => {
+    if (typeof encryption?.getKey !== 'function') return null;
+    let key = null;
+    try {
+      key = await encryption.getKey();
+    } catch (error) {
+      logger?.warn?.('[bots] computer runtime token derivation is unavailable; using a per-start token', {
+        code: typeof error?.code === 'string' ? error.code : 'bot_os_encryption_unavailable',
+      });
+      return null;
+    }
+    const usable = (Buffer.isBuffer(key) || key instanceof Uint8Array)
+      && key.byteLength >= MINIMUM_DERIVATION_KEY_BYTES;
+    try {
+      if (!usable) return null;
+      return createHmac('sha256', key)
+        .update(`${RUNTIME_TOKEN_DERIVATION_LABEL}:${botId}`)
+        .digest('base64url');
+    } finally {
+      // The accessor hands out a copy; zero it like every other key consumer.
+      if (Buffer.isBuffer(key) || key instanceof Uint8Array) key.fill(0);
+    }
+  };
+
+  const resolveToken = async (botId, current) => current?.token || await deriveToken(botId) || mintToken();
 
   const requireActiveBot = async (botId, botInput) => {
     const storedBot = await loadBot(botId);
@@ -143,8 +183,7 @@ export function createBotComputerRuntimeManager({
           return current;
         }
       }
-      const token = current?.token || Buffer.from(randomBytesImpl(32)).toString('base64url');
-      return provisionBot(bot, token);
+      return provisionBot(bot, await resolveToken(botId, current));
     }).catch((error) => {
       failures.set(botId, Object.freeze({
         code: typeof error?.code === 'string' ? error.code : 'bot_computer_start_failed',
@@ -154,8 +193,14 @@ export function createBotComputerRuntimeManager({
     });
   };
 
-  const restartBot = (botInput) => {
+  // Recovery restarts (the default) keep the runtime token so the supervisor sees
+  // the same capability and the persistent computer keeps its identity; only an
+  // explicit rotation mints a new token, which recreates the container.
+  const restartBot = (botInput, { rotate = false } = {}) => {
     const botId = validateUuid(botInput?.id, 'bot.id');
+    if (typeof rotate !== 'boolean') {
+      throw new TypeError('Bot computer restart options are invalid');
+    }
     return withLock(botId, async () => {
       const bot = await requireActiveBot(botId, botInput);
       const current = runtimes.get(botId);
@@ -165,7 +210,7 @@ export function createBotComputerRuntimeManager({
         ownerUserId: current?.ownerUserId || bot.created_by,
       });
       runtimes.delete(botId);
-      const token = Buffer.from(randomBytesImpl(32)).toString('base64url');
+      const token = rotate ? mintToken() : await resolveToken(botId, current);
       return provisionBot(bot, token);
     }).catch((error) => {
       failures.set(botId, Object.freeze({

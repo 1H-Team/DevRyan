@@ -303,6 +303,8 @@ const parseRun = (value: unknown): BotRun | null => {
     && hasString(value, 'computerScopeKey')
     && hasString(value, 'state')
     && (value.interruptionKind === undefined || hasNullableString(value, 'interruptionKind'))
+    && (value.failurePhase === undefined || hasNullableString(value, 'failurePhase'))
+    && (value.failureStage === undefined || hasNullableString(value, 'failureStage'))
   )) return null;
   return {
     id: String(value.id),
@@ -315,6 +317,10 @@ const parseRun = (value: unknown): BotRun | null => {
     state: value.state as BotRun['state'],
     retryable: value.retryable === true,
     interruptionKind: nullableStringOr(value.interruptionKind, null),
+    failurePhase: value.failurePhase === 'startup' || value.failurePhase === 'execution'
+      ? value.failurePhase
+      : null,
+    failureStage: nullableStringOr(value.failureStage, null),
     createdAt: nullableStringOr(value.createdAt, null),
     updatedAt: nullableStringOr(value.updatedAt, null),
     startedAt: nullableStringOr(value.startedAt, null),

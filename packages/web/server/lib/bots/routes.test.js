@@ -646,6 +646,21 @@ describe('Production Bots capabilities and routes', () => {
       runtime: { state: 'healthy' },
     });
     expect(executionHost.getStatus).toHaveBeenCalledTimes(1);
+    const warnedHost = host('healthy', {
+      warnings: [
+        { code: 'docker_memory_low', message: `low\r\n${'x'.repeat(600)}` },
+        { code: 42, message: null },
+      ],
+    });
+    const warned = await resolveBotCapabilities({ hasSupabase: true, botHost: warnedHost, encryption });
+    expect(warned).toMatchObject({ state: 'healthy', available: true, runtime: { state: 'healthy', issues: [] } });
+    expect(warned.runtime.warnings).toHaveLength(2);
+    expect(warned.runtime.warnings[0].code).toBe('docker_memory_low');
+    expect(warned.runtime.warnings[0].message.startsWith('low  x')).toBe(true);
+    expect(warned.runtime.warnings[0].message).toHaveLength(500);
+    expect(warned.runtime.warnings[1]).toEqual({ code: 'bot_runtime_issue', message: 'Bot runtime issue' });
+    expect((await resolveBotCapabilities({ hasSupabase: true, botHost: host('healthy'), encryption })).runtime.warnings)
+      .toEqual([]);
     await expect(resolveBotCapabilities({
       hasSupabase: true,
       botHost: host('docker_unavailable'),
@@ -1526,7 +1541,7 @@ describe('Production Bots capabilities and routes', () => {
     expect(response.payload).toEqual({
       error: 'Database migration required',
       code: 'bot_schema_migration_required',
-        requiredMigration: '20260902120000',
+        requiredMigration: '20260903110000',
     });
   });
 });

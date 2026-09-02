@@ -137,7 +137,7 @@ select ok(not has_function_privilege('authenticated',
 select ok(not has_function_privilege('anon',
   'public.devryan_requeue_bot_memory_extraction_job(uuid,uuid)', 'execute'),
   'anonymous clients cannot requeue extraction');
-select is(public.devryan_bot_schema_version(), '20260902120000',
+select is(public.devryan_bot_schema_version(), '20260903110000',
   'the schema marker includes the latest Bot audit and retry migration');
 
 select * from finish();

@@ -756,6 +756,41 @@ describe('restricted Bot Docker supervisor', () => {
     expect(config.Env).toContain(`DEVRYAN_BOT_RUNTIME_TOKEN=${RUNTIME_TOKEN}`);
     expect(config.Env).toContain('DEVRYAN_BOT_SCOPE_MODE=team');
     expect(config.HostConfig.Binds.some((entry) => entry.endsWith(':/data/chromium:rw'))).toBe(true);
+    // Long enough for Browser.close to flush the persistent profile before SIGKILL.
+    expect(config.StopTimeout).toBe(30);
+  });
+
+  test('keeps the running computer and its browser session across a Bot revision bump', async () => {
+    const { docker, supervisor } = createFixture();
+    const first = await supervisor.ensureComputer(computerRequest());
+    const containerId = first.name;
+    const volumes = [...docker.volumes.keys()].sort();
+
+    const bumped = await supervisor.ensureComputer({
+      ...computerRequest(),
+      revisionId: 'revision-02',
+    });
+
+    expect(bumped).toMatchObject({ name: containerId, state: 'running', replaced: false });
+    expect([...docker.volumes.keys()].sort()).toEqual(volumes);
+    expect(docker.calls.filter(([name]) => name === 'removeContainer')).toHaveLength(0);
+    expect(docker.calls.filter(([name]) => name === 'stopContainer')).toHaveLength(0);
+    expect(docker.calls.filter(([name, , candidate]) => (
+      name === 'createContainer' && candidate.ExposedPorts?.['43122/tcp']
+    ))).toHaveLength(1);
+  });
+
+  test('still recreates reasoning for a revision bump alone', async () => {
+    const { docker, supervisor } = createFixture();
+    await supervisor.ensureReasoning(reasoningRequest());
+
+    const bumped = await supervisor.ensureReasoning({
+      ...reasoningRequest(),
+      revisionId: 'revision-02',
+    });
+
+    expect(bumped.replaced).toBe(true);
+    expect([...docker.containers.values()][0].Config.Labels['devryan.revision']).toBe('revision-02');
   });
 
   test('rotates computer capabilities while preserving the scoped profile and scratch volumes', async () => {

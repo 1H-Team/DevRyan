@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.10] - 2026-09-02
+
+- Bot startup: reuse warm runtimes between turns, bound concurrent cold starts, safely retry failures before execution, and distinguish runtime startup failures from provider errors.
+- Bot memory: extract on the completed run's active runtime when available, defer to interactive conversations, repair malformed classifier responses, and report precise extraction failure reasons.
+- Bot computer: preserve shared browser sessions across recovery, prevent agent-driven browser closure, and improve managed session restoration and timeout handling.
+- Runtime diagnostics: show Docker memory warnings, preserve startup failure stages in Bot Audit, and support provider recovery on the pinned OpenCode 1.18.26 runtime.
+- Database: add terminal failure-stage auditing and service-role-only inline memory extraction claims, advancing the required Bot schema marker to `20260903110000`; add a standalone migration workflow.
+- Release: update all DevRyan package and desktop metadata to 1.1.10.
+
 ## [1.1.9] - 2026-09-02
 
 - Production Bots: repair strict OpenCode structured memory/routine requests, expose terminal extraction diagnostics, and let Managers re-run all failed extractions sequentially.

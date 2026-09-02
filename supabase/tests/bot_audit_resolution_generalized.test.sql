@@ -160,7 +160,7 @@ select ok(has_function_privilege('service_role',
 select ok(not has_function_privilege('authenticated',
   'public.devryan_retry_bot_run(uuid,uuid,timestamptz)', 'execute'),
   'authenticated clients cannot invoke retry directly');
-select is(public.devryan_bot_schema_version(), '20260902120000',
+select is(public.devryan_bot_schema_version(), '20260903110000',
   'the schema marker advances with generalized resolution and safe retry');
 
 select * from finish();

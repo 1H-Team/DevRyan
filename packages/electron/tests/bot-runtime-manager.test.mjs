@@ -10,12 +10,15 @@ import {
   validateBotRuntimeManifest,
 } from '../bot-runtime-manifest.mjs';
 import {
+  BOT_RUNTIME_ENGINE_MEMORY_POLICY,
   createBotRuntimeManager,
   createFileBotRuntimeStateStore,
   deriveBotRuntimeServiceEnvironment,
+  evaluateBotRuntimeEngineMemory,
   resolveDockerSocketSupplementalGid,
   resolveDockerExecutable,
 } from '../bot-runtime-manager.mjs';
+import { BOT_RESOURCE_LIMITS } from '../../bot-supervisor/src/docker.js';
 
 const DOCKER = '/opt/homebrew/bin/docker';
 const COMPOSE = '/Applications/DevRyan.app/Contents/Resources/bot-runtime/compose.yml';
@@ -117,6 +120,7 @@ const createFakeRunner = ({
   indexerPort = 55122,
   runscDeclared = false,
   runscSmokeExitCode = 0,
+  memTotalBytes = 16 * 1024 * 1024 * 1024,
 } = {}) => {
   const calls = [];
   const runProcess = async (file, args, options = {}) => {
@@ -125,6 +129,11 @@ const createFakeRunner = ({
       return dockerRunning
         ? { exitCode: 0, stdout: '{"Server":{"Version":"28.0.0"}}', stderr: '' }
         : { exitCode: 1, stdout: '', stderr: 'Cannot connect to the Docker daemon' };
+    }
+    if (args[0] === 'info' && args[1] === '--format' && args[2] === '{{.MemTotal}}') {
+      return memTotalBytes === null
+        ? { exitCode: 1, stdout: '', stderr: 'template parsing error' }
+        : { exitCode: 0, stdout: `${memTotalBytes}\n`, stderr: '' };
     }
     if (args[0] === 'info' && args[1] === '--format') {
       return {
@@ -759,6 +768,58 @@ describe('Electron-owned Docker Bot runtime manager', () => {
 
     const healthy = createManager({ stateStore: createMemoryStateStore(initial) });
     expect(await healthy.manager.status()).toMatchObject({ state: 'healthy', code: null });
+  });
+
+  test('warns about a small Docker Desktop VM without blocking a healthy runtime', async () => {
+    const manifest = releaseManifest();
+    const initial = { version: 1, current: manifest, previous: null, staged: null };
+    const smallRunner = createFakeRunner({ memTotalBytes: 3_054_247_936 });
+    const small = createManager({
+      manifest,
+      runner: smallRunner,
+      stateStore: createMemoryStateStore(initial),
+    });
+    const status = await small.manager.status();
+    expect(status).toMatchObject({ ok: true, state: 'healthy', code: null, issues: [] });
+    expect(status.warnings.map((warning) => warning.code)).toEqual([
+      'docker_memory_low',
+      'docker_memory_below_limits',
+    ]);
+    expect(status.warnings[0].message).toContain('2.8 GiB');
+    expect(status.warnings[0].message).toContain('at least 6 GiB (8 GiB recommended)');
+    expect(status.warnings[1].message).toContain('computer (3 GiB)');
+    expect(JSON.stringify(status.warnings)).not.toMatch(/\/Users\/|token|credential/i);
+
+    await small.manager.status();
+    expect(smallRunner.calls.filter(({ args }) => args[2] === '{{.MemTotal}}')).toHaveLength(1);
+
+    const largeRunner = createFakeRunner({ memTotalBytes: 16 * 1024 * 1024 * 1024 });
+    const large = createManager({ manifest, runner: largeRunner, stateStore: createMemoryStateStore(initial) });
+    expect((await large.manager.status()).warnings).toEqual([]);
+
+    const unknownRunner = createFakeRunner({ memTotalBytes: null });
+    const unknown = createManager({ manifest, runner: unknownRunner, stateStore: createMemoryStateStore(initial) });
+    expect(await unknown.manager.status()).toMatchObject({ state: 'healthy', warnings: [] });
+
+    const missing = createManager({ resolveDocker: async () => null });
+    expect((await missing.manager.status()).warnings).toEqual([]);
+  });
+
+  test('keeps the engine memory policy aligned with the supervisor container limits', () => {
+    const GIB = 1024 * 1024 * 1024;
+    expect(BOT_RUNTIME_ENGINE_MEMORY_POLICY.containerLimitBytes.reasoning)
+      .toBe(BOT_RESOURCE_LIMITS.reasoning.memoryBytes);
+    expect(BOT_RUNTIME_ENGINE_MEMORY_POLICY.containerLimitBytes.computer)
+      .toBe(BOT_RESOURCE_LIMITS.computer.memoryBytes);
+    expect(BOT_RUNTIME_ENGINE_MEMORY_POLICY.minimumBytes).toBe(6 * GIB);
+    expect(BOT_RUNTIME_ENGINE_MEMORY_POLICY.recommendedBytes).toBe(8 * GIB);
+    expect(evaluateBotRuntimeEngineMemory(Number.NaN)).toEqual([]);
+    expect(evaluateBotRuntimeEngineMemory(0)).toEqual([]);
+    expect(evaluateBotRuntimeEngineMemory(8 * GIB)).toEqual([]);
+    expect(evaluateBotRuntimeEngineMemory(6 * GIB)).toEqual([]);
+    expect(evaluateBotRuntimeEngineMemory(5 * GIB).map((warning) => warning.code)).toEqual(['docker_memory_low']);
+    expect(evaluateBotRuntimeEngineMemory(2 * GIB).map((warning) => warning.code))
+      .toEqual(['docker_memory_low', 'docker_memory_below_limits']);
   });
 
   test('stages an update and retains the prior manifest for rollback', async () => {

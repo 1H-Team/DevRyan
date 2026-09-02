@@ -7,7 +7,12 @@ import { botsApi, type BotChannel, type BotsApi } from '@/lib/botsApi';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { useBotChannelStore, type BotChannelStore } from '@/stores/useBotChannelStore';
-import { resolveBotRuntimeMessageKey, shouldSubmitBotComposerKey } from '../botPresentation';
+import {
+  resolveBotRuntimeMessageKey,
+  resolveBotRuntimeWarningMessageKey,
+  shouldSubmitBotComposerKey,
+  type BotRuntimeWarning,
+} from '../botPresentation';
 import {
   BOT_ATTACHMENT_ACCEPT,
   collectBotAttachmentFiles,
@@ -29,6 +34,7 @@ type BotComposerProps = {
   channel: BotChannel;
   runtimeState: string;
   runtimeAvailable: boolean;
+  runtimeWarnings?: readonly BotRuntimeWarning[];
   recoveryAction?: BotRuntimeRecoveryAction | null;
   recoveryError?: string | null;
   onRuntimeIntent?: () => void;
@@ -41,6 +47,7 @@ export const BotComposer: React.FC<BotComposerProps> = ({
   channel,
   runtimeState,
   runtimeAvailable,
+  runtimeWarnings = [],
   recoveryAction = null,
   recoveryError = null,
   onRuntimeIntent,
@@ -162,6 +169,21 @@ export const BotComposer: React.FC<BotComposerProps> = ({
   return (
     <div className="border-t border-border/60 bg-background px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 sm:px-5">
       <div className="mx-auto w-full max-w-[760px]">
+        {runtimeWarnings.length > 0 ? (
+          <ul className="mb-2 space-y-1 border-l-2 border-[var(--status-warning)] px-3 py-1.5" role="status" data-bot-runtime-warnings>
+            {runtimeWarnings.map((warning) => {
+              const warningKey = resolveBotRuntimeWarningMessageKey(warning.code);
+              return (
+                <li key={warning.code} className="flex items-start gap-2" data-bot-runtime-warning={warning.code}>
+                  <RiToolsLine className="mt-0.5 h-4 w-4 shrink-0 text-[var(--status-warning)]" aria-hidden />
+                  <span className="min-w-0 flex-1 typography-meta text-foreground">
+                    {warningKey ? t(warningKey) : warning.message}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
         {runtimeMessageKey ? (
           <div className="mb-2 flex flex-wrap items-center gap-2 border-l-2 border-[var(--status-warning)] px-3 py-1.5" role="status">
             <RiToolsLine className="h-4 w-4 shrink-0 text-[var(--status-warning)]" aria-hidden />

@@ -20,6 +20,70 @@ const binding = (overrides = {}) => ({
 });
 
 describe('Production Bot warm runtime leases', () => {
+  it('lets a message without a client lease adopt a server-initiated warm runtime for its channel', async () => {
+    const prepare = vi.fn(async () => {});
+    const stop = vi.fn(async () => {});
+    let index = 0;
+    const leases = createBotWarmRuntimeLeases({
+      prepare, stop, uuid: () => ids[index++], record: () => {},
+    });
+    const otherChannel = 'c0000000-0000-4000-8000-000000000002';
+    const clientLease = leases.begin(binding({ channelId: otherChannel }));
+    expect(clientLease.serverInitiated).toBe(false);
+    // Client leases stay bound to the principal that requested them.
+    expect(await leases.claimForChannel({
+      channelId: otherChannel,
+      revisionId: binding().revisionId,
+      librarySnapshotKey: binding().librarySnapshotKey,
+      messageId: 'e0000000-0000-4000-8000-000000000001',
+    })).toEqual({ hit: false, runId: null });
+
+    const serverLease = leases.begin(binding({
+      serverInitiated: true,
+      principalId: 'a0000000-0000-4000-8000-000000000009',
+    }));
+    expect(serverLease.serverInitiated).toBe(true);
+    await Promise.resolve();
+    expect(await leases.claimForChannel({
+      channelId: binding().channelId,
+      revisionId: binding().revisionId,
+      librarySnapshotKey: binding().librarySnapshotKey,
+      messageId: 'e0000000-0000-4000-8000-000000000002',
+    })).toEqual({ hit: true, runId: ids[3] });
+    // A claimed lease is not handed out twice.
+    expect(await leases.claimForChannel({
+      channelId: binding().channelId,
+      revisionId: binding().revisionId,
+      librarySnapshotKey: binding().librarySnapshotKey,
+      messageId: 'e0000000-0000-4000-8000-000000000003',
+    })).toEqual({ hit: false, runId: null });
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it('lets any channel member reuse a server-initiated runtime through the normal prewarm flow', async () => {
+    const prepare = vi.fn(async () => {});
+    const stop = vi.fn(async () => {});
+    let index = 0;
+    const leases = createBotWarmRuntimeLeases({
+      prepare, stop, uuid: () => ids[index++], record: () => {},
+    });
+    const serverLease = leases.begin(binding({ serverInitiated: true }));
+    const memberBinding = binding({ principalId: 'a0000000-0000-4000-8000-000000000007' });
+    const memberLease = leases.begin(memberBinding);
+    expect(memberLease.leaseId).toBe(serverLease.leaseId);
+    expect(await leases.claim({
+      leaseId: memberLease.leaseId,
+      principalId: memberBinding.principalId,
+      channelId: memberBinding.channelId,
+      revisionId: memberBinding.revisionId,
+      librarySnapshotKey: memberBinding.librarySnapshotKey,
+      messageId: 'e0000000-0000-4000-8000-000000000004',
+    })).toEqual({ hit: true, runId: ids[1] });
+    // One shared runtime was prepared; nothing was replaced or stopped.
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(stop).not.toHaveBeenCalled();
+  });
+
   it('claims an in-flight lease atomically and adopts its preallocated run id', async () => {
     let finish;
     const prepare = vi.fn(() => new Promise((resolve) => { finish = resolve; }));

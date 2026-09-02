@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createPrimaryRecoveryController } from './provider-recovery.js';
-import { classifyPrimaryTransportError } from './provider-recovery-policy.js';
+import { classifyPrimaryTransportError, PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS } from './provider-recovery-policy.js';
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -45,8 +45,19 @@ async function fixture(overrides = {}) {
 describe('failure classification', () => {
   test('version-pins the lossy current runtime error and rejects generic wording', () => {
     expect(classifyPrimaryTransportError(timeout, '1.18.25')?.source).toBe('opencode_1.18.25_compatibility');
-    expect(classifyPrimaryTransportError(timeout, '1.18.26')).toBeNull();
+    expect(classifyPrimaryTransportError(timeout, '1.18.26')?.source).toBe('opencode_1.18.26_compatibility');
+    expect(classifyPrimaryTransportError(timeout, '1.18.27')).toBeNull();
+    expect(classifyPrimaryTransportError(timeout, undefined)).toBeNull();
     expect(classifyPrimaryTransportError({ name: 'UnknownError', message: 'request timeout' }, '1.18.25')).toBeNull();
+    expect(classifyPrimaryTransportError({ name: 'UnknownError', message: 'request timeout' }, '1.18.26')).toBeNull();
+  });
+  test('allow-lists only verified OpenCode versions for enforcement', async () => {
+    expect([...PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS]).toEqual(['1.18.25', '1.18.26']);
+    const f = await fixture();
+    const hello = (version) => f.controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version });
+    expect((await hello('1.18.26')).supported).toBe(true);
+    expect((await hello('1.18.27')).supported).toBe(false);
+    expect((await hello('1.18.25')).supported).toBe(true);
   });
   test.each(['AuthenticationError', 'QuotaError', 'CertificateError', 'ModelNotFoundError', 'AbortError', 'PolicyError'])(
     'excludes %s even with a transient-looking code', (name) => {

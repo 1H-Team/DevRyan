@@ -6,6 +6,7 @@ import { withCrossProcessFileLock } from './atomic-file.js';
 import {
   classifyPrimaryTransportError, inspectRecoveryTurn, recoveryError,
   RECOVERY_READ_TOOLS, PROVIDER_PROGRESS_TIMEOUT_MS, validatePrimaryRecoveryRecord,
+  isProviderRecoverySupportedRuntimeVersion,
 } from './provider-recovery-policy.js';
 
 const TERMINAL = new Set(['completed', 'needs_attention', 'cancelled', 'superseded']);
@@ -36,7 +37,7 @@ export function createPrimaryRecoveryController(options) {
   let ownerTask;
   let ready;
   let storageHealthy = true;
-  const supported = (record) => storageHealthy && ownsRuntime && handshake?.version === '1.18.25' && options.isManaged()
+  const supported = (record) => storageHealthy && ownsRuntime && isProviderRecoverySupportedRuntimeVersion(handshake?.version) && options.isManaged()
     && (!record || (record.requestedAt !== null && record.instanceID === handshake.instanceID));
   const active = () => !draining && mode === 'enforce' && supported();
   const diagnostic = (event, record, detail = {}) => options.recordIncident?.({
