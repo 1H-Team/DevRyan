@@ -214,7 +214,7 @@ export const BotMessageList: React.FC<BotMessageListProps> = ({
   return (
     <div
       ref={scrollRef}
-      className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-6"
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-6 [container-type:inline-size]"
       style={{ overflowAnchor: 'none' }}
       onScroll={(event) => {
         const element = event.currentTarget;

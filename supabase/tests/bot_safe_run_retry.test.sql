@@ -131,9 +131,54 @@ rollback to retry_case;
 select is(:'retry_reason'::text, 'channel_unavailable', 'archived channel prevents replay');
 savepoint retry_case;
 update public.bot_runs set context_snapshot = '{"failurePhase":"execution","retryable":true}' where id = 'e3000000-0000-4000-8000-000000000001';
+select public.devryan_retry_bot_run('e3000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', now())->>'ok' as retry_ok \gset
+rollback to retry_case;
+select is(:'retry_ok'::boolean, true, 'an execution failure with no visible output can be replayed');
+savepoint retry_case;
+update public.bot_runs set context_snapshot = '{"failurePhase":"execution","retryable":true}',
+  agent_adapter = 'opencode', agent_thread_id = 'thread', opencode_session_id = 'ses_1', opencode_segment_id = 'segment',
+  agent_execution = '{"threadId":"thread","segmentId":"segment"}'::jsonb
+  where id = 'e3000000-0000-4000-8000-000000000001';
+select r->>'ok' as retry_ok, r->'run'->>'state' as retry_state, r->'run'->>'agent_thread_id' as retry_thread,
+  r->'run'->>'opencode_session_id' as retry_session, r->'run'->>'opencode_segment_id' as retry_segment,
+  r->'run'->'agent_execution' as retry_execution, r->'run'->'context_snapshot'->>'retryCount' as retry_count
+  from public.devryan_retry_bot_run('e3000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', now()) as r \gset
+rollback to retry_case;
+select is(:'retry_ok'::boolean, true, 'a dead execution identity alone no longer blocks an evidence-cleared replay');
+select is(:'retry_state'::text, 'queued', 'the evidence-cleared replay requeues the same run');
+select is(:'retry_thread'::text, null::text, 'the stale agent thread is cleared for a fresh execution');
+select is(:'retry_session'::text, null::text, 'the stale session identity is cleared for a fresh execution');
+select is(:'retry_segment'::text, null::text, 'the stale segment identity is cleared for a fresh execution');
+select is(:'retry_execution'::text, null::text, 'the stale generic execution is cleared for a fresh execution');
+select is(:'retry_count'::text, '1', 'the replay records its retry count');
+savepoint retry_case;
+update public.bot_runs set context_snapshot = '{"failurePhase":"execution","retryable":true}', agent_thread_id = 'thread' where id = 'e3000000-0000-4000-8000-000000000001';
+update public.bot_messages set assistant_phase = 'acknowledgment' where run_id = 'e3000000-0000-4000-8000-000000000001' and role = 'assistant';
 select public.devryan_retry_bot_run('e3000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', now())->>'reason' as retry_reason \gset
 rollback to retry_case;
-select is(:'retry_reason'::text, 'not_retryable', 'old execution retry advice cannot authorize replay');
+select is(:'retry_reason'::text, 'execution_started', 'a visible acknowledgment still prevents an execution-phase replay');
+savepoint retry_case;
+update public.bot_runs set context_snapshot = '{"failurePhase":"execution","retryable":true}', agent_thread_id = 'thread' where id = 'e3000000-0000-4000-8000-000000000001';
+insert into public.bot_action_attempts (id, run_id, bot_id, revision_id, computer_scope_key,
+ action_hash, idempotency_key, tool, action, target, encrypted_args, args_digest, risk,
+ approval_class, policy_effect, decision_expires_at, state, initiated_by, started_at)
+ select 'f3000000-0000-4000-8000-000000000004', id, bot_id, revision_id, computer_scope_key,
+ 'sha256:' || repeat('c',64), 'execution-action', 'browser', 'navigate', '{}'::jsonb, '{}'::jsonb,
+ repeat('d',64), 'sensitive', 'none', 'allow', now() + interval '5 minutes', 'cancelled',
+ 'a3000000-0000-4000-8000-000000000001', now() from public.bot_runs where id = 'e3000000-0000-4000-8000-000000000001';
+select public.devryan_retry_bot_run('e3000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', now())->>'reason' as retry_reason \gset
+rollback to retry_case;
+select is(:'retry_reason'::text, 'execution_started', 'a governed action still prevents an execution-phase replay');
+savepoint retry_case;
+update public.bot_runs set context_snapshot = '{"failurePhase":"execution","retryable":false}', agent_thread_id = 'thread' where id = 'e3000000-0000-4000-8000-000000000001';
+select public.devryan_retry_bot_run('e3000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', now())->>'reason' as retry_reason \gset
+rollback to retry_case;
+select is(:'retry_reason'::text, 'not_retryable', 'the dispatcher verdict is required for an execution-phase replay');
+savepoint retry_case;
+update public.bot_runs set context_snapshot = '{"failurePhase":"completion","retryable":true}' where id = 'e3000000-0000-4000-8000-000000000001';
+select public.devryan_retry_bot_run('e3000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', now())->>'reason' as retry_reason \gset
+rollback to retry_case;
+select is(:'retry_reason'::text, 'not_retryable', 'only startup and execution failures can be replayed');
 savepoint retry_case;
 insert into public.bot_runs (id, bot_id, channel_id, revision_id, idempotency_key,
  model_snapshot, context_snapshot, computer_scope_key, state) select

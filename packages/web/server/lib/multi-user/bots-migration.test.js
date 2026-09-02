@@ -9,7 +9,7 @@ import { SupabaseRequestError } from './supabase-client.js';
 
 describe('Production Bots schema compatibility', () => {
   it('pins the complete schema migration identifier', () => {
-    expect(PRODUCTION_BOTS_MIGRATION).toBe('20260901160000');
+    expect(PRODUCTION_BOTS_MIGRATION).toBe('20260902120000');
   });
 
   it('recognizes missing Bot relations from PostgREST and Postgres', () => {
@@ -54,7 +54,7 @@ describe('Production Bots schema compatibility', () => {
       status: 503,
       error: 'Database migration required',
       code: 'bot_schema_migration_required',
-      requiredMigration: '20260901160000',
+      requiredMigration: '20260902120000',
     });
   });
 

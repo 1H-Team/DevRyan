@@ -54,7 +54,7 @@ const releaseSourceManifest = ({ releaseId = '1.2.3', digestCharacter = 'a' } = 
   channel: 'release',
   releaseId,
   sourceRevision: '1'.repeat(40),
-  openCodeVersion: '1.18.25',
+  openCodeVersion: '1.18.26',
   schemaVersion: '20260823150227',
   pluginHash: `sha256:${'f'.repeat(64)}`,
   images: Object.fromEntries(BOT_RUNTIME_IMAGE_KEYS.map((key) => [key, {
@@ -225,7 +225,7 @@ describe('Bot runtime manifest', () => {
       channel: 'release',
       releaseId: '1.2.3',
       sourceRevision: '1'.repeat(40),
-      openCodeVersion: '1.18.25',
+      openCodeVersion: '1.18.26',
       schemaVersion: '20260823150227',
       pluginHash: `sha256:${'f'.repeat(64)}`,
       images: {},

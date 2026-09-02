@@ -96,7 +96,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     mark exact scopes; restart ownership remains here rather than in UI prompts.
 
 - `opencodeVersionPolicy.ts`
-  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.25 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
+  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.26 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
 
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers. Shared settings migrate the legacy wide-chat boolean to the numeric chat-width preference before returning it to the webview.

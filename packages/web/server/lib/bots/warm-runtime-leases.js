@@ -1,3 +1,5 @@
+import { botErrorLogFields } from './error-normalization.js';
+
 const DEFAULT_IDLE_TTL_MS = 2 * 60 * 1_000;
 const DEFAULT_MAX_LEASES = 2;
 const SAFE_PREPARATION_STAGES = new Set([
@@ -77,7 +79,7 @@ export function createBotWarmRuntimeLeases({
     await entry.promise?.catch(() => undefined);
     await stop(entry.runId).catch((error) => logger?.warn?.(
       '[BotsWarmLease] runtime cleanup failed',
-      { code: error?.code || 'bot_warm_cleanup_failed', runId: entry.runId },
+      { ...botErrorLogFields(error, 'bot_warm_cleanup_failed'), runId: entry.runId },
     ));
   };
 

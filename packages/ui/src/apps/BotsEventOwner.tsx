@@ -215,8 +215,19 @@ const isChannel = (value: unknown): value is BotChannel => {
     && hasNullableString(value, 'archivedAt');
 };
 
+const isQuestion = (value: unknown): boolean => (
+  isRecord(value)
+  && typeof value.prompt === 'string'
+  && Array.isArray(value.options)
+  && value.options.length > 0
+  && value.options.every((option) => isRecord(option) && typeof option.label === 'string')
+);
+
 const isMessage = (value: unknown): value is BotMessage => {
   if (!isRecord(value) || !isRecord(value.body)) return false;
+  if (value.body.question !== undefined && value.body.question !== null && !isQuestion(value.body.question)) {
+    return false;
+  }
   return hasString(value, 'id')
     && hasString(value, 'channelId')
     && hasNullableString(value, 'runId')
@@ -712,9 +723,11 @@ export const BotsEventOwner: React.FC = () => {
         },
         initialRecoveryErrorCode,
         onReconnectedSnapshot: () => {
-          const activeChannelId = useBotChannelStore.getState().activeChannelId;
+          const channelStore = useBotChannelStore.getState();
+          channelStore.invalidateInactiveChannels();
+          const activeChannelId = channelStore.activeChannelId;
           if (activeChannelId) {
-            void useBotChannelStore.getState().refreshLatestMessages(activeChannelId)
+            void channelStore.refreshLatestMessages(activeChannelId)
             .catch(() => undefined);
           }
         },

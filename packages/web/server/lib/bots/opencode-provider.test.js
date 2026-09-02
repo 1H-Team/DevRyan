@@ -747,6 +747,7 @@ describe('scoped Bot OpenCode provider', () => {
         toolObserved: false,
         acknowledgmentText: '',
         resultText: 'Recovered canonical answer',
+        resultFallback: false,
         generatedImages: [],
       },
       assistantTerminal: true,
@@ -789,7 +790,7 @@ describe('scoped Bot OpenCode provider', () => {
       ] },
     ] });
     const result = await harness.provider.inspectSegment({ runId: RUN_ID, sessionId: 'ses_bot_1' });
-    expect(result.assistantProjection).toEqual({ toolObserved: true, acknowledgmentText: '', resultText: 'Here is the image.', generatedImages: [{ toolPartId: 'image', sourcePath: 'generated/image.png' }] });
+    expect(result.assistantProjection).toEqual({ toolObserved: true, acknowledgmentText: 'I will generate it.', resultText: 'Here is the image.', resultFallback: false, generatedImages: [{ toolPartId: 'image', sourcePath: 'generated/image.png' }] });
     await harness.provider.shutdown();
   });
 
@@ -818,7 +819,7 @@ describe('scoped Bot OpenCode provider', () => {
     await harness.provider.shutdown();
   });
 
-  it('projects only pre-first-tool acknowledgment and post-last-tool result text', () => {
+  it('projects the pre-first-tool acknowledgment and post-last-tool result text', () => {
     expect(projectBotAssistantResponse([
       { type: 'text', text: 'I’ll take care of that.' },
       { type: 'tool', tool: 'devryan_bot' },
@@ -827,8 +828,9 @@ describe('scoped Bot OpenCode provider', () => {
       { type: 'text', text: 'Everything completed successfully.' },
     ])).toEqual({
       toolObserved: true,
-      acknowledgmentText: '',
+      acknowledgmentText: 'I’ll take care of that.',
       resultText: 'Everything completed successfully.',
+      resultFallback: false,
       generatedImages: [],
     });
     expect(projectBotAssistantResponse([
@@ -837,6 +839,7 @@ describe('scoped Bot OpenCode provider', () => {
       toolObserved: false,
       acknowledgmentText: '',
       resultText: 'A direct answer.',
+      resultFallback: false,
       generatedImages: [],
     });
     expect(projectBotAssistantResponse([
@@ -846,8 +849,32 @@ describe('scoped Bot OpenCode provider', () => {
       toolObserved: false,
       acknowledgmentText: '',
       resultText: 'JavaScript and cookies aren’t exposed as settings I can change here.',
+      resultFallback: false,
       generatedImages: [],
     });
+    // The model answered, then made one more tool call and stopped: the last
+    // prose segment between tool boundaries is the answer, not "no response".
+    expect(projectBotAssistantResponse([
+      { type: 'tool', tool: 'devryan_bot' },
+      { type: 'text', text: 'Here is what I found: the store opens at 9.' },
+      { type: 'tool', tool: 'devryan_bot' },
+    ])).toMatchObject({
+      toolObserved: true,
+      acknowledgmentText: '',
+      resultText: 'Here is what I found: the store opens at 9.',
+      resultFallback: true,
+    });
+    expect(projectBotAssistantResponse([
+      { type: 'tool', tool: 'devryan_bot' },
+      { type: 'tool', tool: 'devryan_bot' },
+    ])).toMatchObject({ toolObserved: true, resultText: '', resultFallback: false });
+    const longAcknowledgment = projectBotAssistantResponse([
+      { type: 'text', text: `${'Sure thing. '.repeat(60)}Then more.` },
+      { type: 'tool', tool: 'devryan_bot' },
+      { type: 'text', text: 'Done.' },
+    ]).acknowledgmentText;
+    expect(longAcknowledgment.length).toBeLessThanOrEqual(400);
+    expect(longAcknowledgment.endsWith('.')).toBe(true);
     expect(projectBotAssistantResponse([
       {
         id: 'tool_image_1',

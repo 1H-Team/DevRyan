@@ -424,7 +424,7 @@ const createHarness = async ({
       return jsonResponse(userActivityPurgeResult);
     }
     if (url.pathname === '/rest/v1/rpc/devryan_bot_schema_version') {
-      return jsonResponse('20260901160000');
+      return jsonResponse('20260902120000');
     }
     if (!url.pathname.startsWith('/rest/v1/')) return jsonResponse({ message: 'not found' }, 404);
 
@@ -4176,6 +4176,68 @@ describe('multi-user authentication runtime', () => {
     }, denied);
     expect(denied.statusCode).toBe(403);
     expect(denied.payload.error).toContain('Administrator');
+  });
+
+  it('does not collect prompt or interaction analytics for administrators', async () => {
+    const harness = await createHarness();
+    const handlers = new Map();
+    const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
+      method,
+      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+    ]));
+    harness.runtime.registerRoutes(app);
+    const principal = {
+      scope: 'managed',
+      id: USER_IDS.admin,
+      role: 'admin',
+      assignments: [{
+        projectId: '33333333-3333-4333-8333-333333333333',
+        label: 'Test',
+        branchName: 'main',
+        publicDirectory: '/repo',
+        repositoryPath: '/repo',
+        isDefault: true,
+      }],
+    };
+
+    const promptResponse = makeResponse();
+    await handlers.get('POST /api/session/:sessionID/prompt_async')({
+      body: {
+        messageID: 'msg_admin',
+        parts: [{ type: 'text', text: 'Private administrator prompt' }],
+      },
+      headers: { 'x-devryan-prompt-origin': 'human', 'x-opencode-directory': '/repo' },
+      method: 'POST',
+      params: { sessionID: 'ses_admin' },
+      path: '/session/ses_admin/prompt_async',
+      principal,
+      url: '/session/ses_admin/prompt_async',
+    }, promptResponse, () => promptResponse.status(202).json({ accepted: true }));
+
+    const interactionResponse = makeResponse();
+    await handlers.get('POST /api/analytics/events')({
+      body: { events: [{
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        type: 'clipboard.copied',
+        occurredAt: new Date().toISOString(),
+        directory: '/repo',
+        sourceSurface: 'settings',
+        copyKind: 'text',
+        characterCount: 28,
+        copiedText: 'Private administrator content',
+      }] },
+      principal,
+    }, interactionResponse, vi.fn());
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(interactionResponse.payload).toEqual({
+      results: [{ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', accepted: true }],
+    });
+    expect(harness.auditEvents.some((event) => (
+      event.action === 'prompt.sent'
+      || event.action === 'clipboard.copied'
+      || event.action === 'file.opened'
+    ))).toBe(false);
   });
 
   it('keeps earlier prompts visible and includes session deletion in a human developer analytics feed', async () => {

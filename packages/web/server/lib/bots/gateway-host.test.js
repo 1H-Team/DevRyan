@@ -192,6 +192,14 @@ describe('private Docker Bot gateway host', () => {
     }).catch((error) => ({ transportError: error }));
     if (!oversized.transportError) expect(oversized.status).toBe(413);
     const logged = JSON.stringify(warnings);
+    expect(warnings).toContainEqual([
+      '[BotsGateway] request rejected',
+      expect.objectContaining({
+        code: 'bot_gateway_body_too_large',
+        statusCode: 413,
+        operation: 'unknown',
+      }),
+    ]);
     expect(logged).not.toContain(capability.token);
     expect(logged).not.toContain('payload-secret');
     expect(logged).not.toContain('response-too-large');

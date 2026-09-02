@@ -100,3 +100,39 @@ describe('BotComputerFiles', () => {
     expect(source).not.toContain('Manage Sources');
   });
 });
+
+describe('BotComputerFiles views', () => {
+  test('offers Shared & Resources first, the whole workspace second, and the whole computer only to administrators', () => {
+    const listing: BotComputerFilesResult = {
+      available: true, state: 'ready', scope: 'workspace', rootLabel: 'Workspace', path: '', entries: [], truncated: false,
+    };
+    const member = renderToStaticMarkup(
+      <I18nProvider><BotComputerFiles botId={BOT_ID} api={apiReturning(listing)} canBrowseComputer={false} /></I18nProvider>,
+    );
+    expect(member).toContain('data-bot-computer-files-view="relevant"');
+    expect(member).toContain('aria-pressed="true"');
+    expect(member).toContain('Shared &amp; Resources');
+    expect(member).toContain('Whole Workspace');
+    expect(member).not.toContain('Whole Computer');
+
+    const admin = renderToStaticMarkup(
+      <I18nProvider><BotComputerFiles botId={BOT_ID} api={apiReturning(listing)} canBrowseComputer /></I18nProvider>,
+    );
+    expect(admin).toContain('Whole Computer');
+  });
+
+  test('keeps only the folders members use at the root of the relevant view', async () => {
+    const { visibleComputerEntries, computerFilesScopeForView } = await import('./botComputerFilesView');
+    const entry = (name: string, kind: 'directory' | 'file' = 'directory') => ({
+      path: name, name, kind, restricted: false, size: 0, modifiedAt: null,
+    });
+    const entries = [entry('.cache'), entry('Resources'), entry('Shared'), entry('projects'), entry('notes.md', 'file')];
+    expect(visibleComputerEntries(entries, { path: '', view: 'relevant' }).map((item) => item.name))
+      .toEqual(['Resources', 'Shared']);
+    expect(visibleComputerEntries(entries, { path: 'Shared', view: 'relevant' })).toBe(entries);
+    expect(visibleComputerEntries(entries, { path: '', view: 'workspace' })).toBe(entries);
+    expect(computerFilesScopeForView('relevant')).toBe('workspace');
+    expect(computerFilesScopeForView('workspace')).toBe('workspace');
+    expect(computerFilesScopeForView('computer')).toBe('container');
+  });
+});

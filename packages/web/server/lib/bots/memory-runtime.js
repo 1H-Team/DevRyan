@@ -18,6 +18,7 @@ import {
   validateBoundedString,
   validateUuid,
 } from './validation.js';
+import { botErrorLogFields } from './error-normalization.js';
 
 const DEPLOYMENT_KEY_ID = 'deployment-v1';
 const MAX_MEMORY_TEXT_BYTES = 16 * 1024;
@@ -27,6 +28,7 @@ const SUMMARY_RETRY_DELAYS_MS = Object.freeze([25, 75]);
 const EXTRACTION_JOB_CONCURRENCY = 2;
 const EXTRACTION_JOB_LEASE_MS = 10 * 60 * 1_000;
 const EXTRACTION_JOB_POLL_MS = 5_000;
+const EXTRACTION_CLAIM_MAX_BACKOFF_MS = 60_000;
 const EXTRACTION_JOB_MAX_ATTEMPTS = 8;
 const EXTRACTION_JOB_RETRY_DELAYS_MS = Object.freeze([
   1_000,
@@ -66,10 +68,21 @@ const TERMINAL_EXTRACTION_CODES = new Set([
   'bot_not_found',
   'bot_channel_not_found',
   'bot_revision_not_found',
-  'bot_revision_conflict',
 ]);
+// Optimistic-concurrency conflicts (a Manager editing a memory while a turn is
+// being extracted, two workers touching one logical key, a serialization
+// failure) are transient. They retry under a tighter cap than provider outages
+// so a genuine conflict storm still settles quickly.
+const RETRYABLE_EXTRACTION_CODES = new Set([
+  'bot_revision_conflict',
+  'bot_memory_version_conflict',
+  'bot_summary_checkpoint_conflict',
+  '40001',
+]);
+const CONFLICT_MAX_ATTEMPTS = 4;
 
 const extractionErrorRetryable = (error, fallback = false) => {
+  if (RETRYABLE_EXTRACTION_CODES.has(error?.code)) return true;
   if (typeof error?.details?.retryable === 'boolean') return error.details.retryable;
   if (typeof error?.diagnostics?.retryable === 'boolean') return error.diagnostics.retryable;
   if (TERMINAL_EXTRACTION_CODES.has(error?.code)) return false;
@@ -172,6 +185,22 @@ const publicSource = (row) => Object.freeze({
   createdAt: row.created_at,
 });
 
+const DEFAULT_CONTEXT_SEARCH_LIMIT = 12;
+const MAX_CONTEXT_SEARCH_LIMIT = 50;
+const MAX_CONTEXT_SEARCH_QUERY_BYTES = 16 * 1024;
+
+const boundedUtf8 = (text, maximumBytes) => {
+  if (Buffer.byteLength(text, 'utf8') <= maximumBytes) return text;
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (Buffer.byteLength(text.slice(0, middle), 'utf8') <= maximumBytes) low = middle;
+    else high = middle - 1;
+  }
+  return text.slice(0, low);
+};
+
 // One Bot, one retrieval namespace.
 const indexIdentity = (memory) => ({
   namespace: botSharedMemoryNamespace(memory.bot_id),
@@ -258,6 +287,8 @@ export function createBotMemoryRuntime({
   const summaryCommitTails = new Map();
   const extractionOwner = `bot-memory:${process.pid}:${randomUUID()}`;
   let extractionWakeTimer = null;
+  let claimFailureDelayMs = extractionPollMs;
+  let claimFailureCode = null;
   let extractionPumpPromise = null;
   let activeExtractionWorkers = 0;
   let workerStarted = false;
@@ -281,7 +312,7 @@ export function createBotMemoryRuntime({
       await onMemoryChanged(Object.freeze({ ...input }));
     } catch (error) {
       logger?.warn?.('[BotsMemory] memory-change notification failed', {
-        code: error?.code || 'bot_memory_notification_failed',
+        ...botErrorLogFields(error, 'bot_memory_notification_failed'),
         botId: input?.botId || null,
       });
     }
@@ -459,6 +490,61 @@ export function createBotMemoryRuntime({
     await loadActiveCreatorKind(row),
   );
 
+  const unreadablePublicMemory = (row, error) => Object.freeze({
+    id: row.id,
+    botId: row.bot_id,
+    scope: row.scope,
+    subjectUserId: row.subject_user_id || null,
+    logicalKey: row.logical_key,
+    content: Object.freeze({ text: '' }),
+    sensitivity: row.sensitivity || 'normal',
+    confidence: Number(row.confidence) || 0,
+    activeVersionId: row.active_version_id || null,
+    activeCreatorKind: null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    tombstonedAt: row.tombstoned_at || null,
+    unreadable: true,
+    unreadableCode: botErrorLogFields(error, 'bot_memory_invalid').code,
+  });
+
+  const publicExtractionJob = (row) => Object.freeze({
+    runId: row.run_id,
+    channelId: row.channel_id,
+    state: row.state,
+    phase: row.last_phase || null,
+    errorCode: row.last_error_code || null,
+    attemptCount: Number(row.attempt_count || 0),
+    nextAttemptAt: row.next_attempt_at || null,
+    completedAt: row.completed_at || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  });
+
+  // Content-free view of the extraction queue for the Memory console, so a
+  // Manager can tell "not extracted yet" and "extraction failed" apart from
+  // "nothing worth remembering". Candidate envelopes are never projected.
+  const extractionSummaryFor = async (botId) => {
+    const repository = store.repositories.bot_memory_extraction_jobs;
+    if (!repository || typeof repository.list !== 'function') return null;
+    const states = ['queued', 'leased', 'terminal'];
+    const pages = await Promise.all(states.map((state) => repository.list({
+      filters: { bot_id: botId, state },
+      limit: 100,
+    }).catch(() => ({ items: [] }))));
+    const [queued, leased, terminal] = pages.map((page) => page.items || []);
+    const recent = [...queued, ...leased, ...terminal]
+      .sort((left, right) => String(right.created_at || '').localeCompare(String(left.created_at || '')))
+      .slice(0, 20)
+      .map(publicExtractionJob);
+    return Object.freeze({
+      pending: queued.length + leased.length,
+      failed: terminal.length,
+      workerStarted,
+      recent: Object.freeze(recent),
+    });
+  };
+
   // A Bot holds one memory per logical key; there is no subject to key on.
   const findLogicalMemory = (candidate) => store.repositories.bot_memories.get({
     bot_id: candidate.botId,
@@ -558,7 +644,7 @@ export function createBotMemoryRuntime({
       } catch (error) {
         if (attempt + 1 >= MAX_SUMMARY_COMMIT_ATTEMPTS) {
           logger?.warn?.('[BotsMemory] channel summary index sync remains pending', {
-            code: error?.code || 'bot_memory_index_sync_failed',
+            ...botErrorLogFields(error, 'bot_memory_index_sync_failed'),
             channelId: channel.id,
             attemptCount: attempt + 1,
           });
@@ -822,7 +908,14 @@ export function createBotMemoryRuntime({
         );
       }
       if (result.source?._replayed === true) idempotent += 1;
-      if (!result.activated) {
+      // A replayed commit (retry after an index-sync failure) still owns the
+      // index document for the version it activated; only a version superseded
+      // by a newer edit is skipped.
+      const ownsActiveVersion = result.activated
+        || (result.source?._replayed === true
+          && result.memory?.active_version_id
+          && result.memory.active_version_id === result.version?.id);
+      if (!ownsActiveVersion) {
         superseded += 1;
         continue;
       }
@@ -947,9 +1040,12 @@ export function createBotMemoryRuntime({
         return;
       }
       const attemptCount = Number(job.attempt_count || 1);
-      const terminal = TERMINAL_EXTRACTION_CODES.has(code)
-        || error?.details?.retryable === false
-        || attemptCount >= Math.min(EXTRACTION_JOB_MAX_ATTEMPTS, extractionRetryDelaysMs.length + 1);
+      const conflict = RETRYABLE_EXTRACTION_CODES.has(code);
+      const terminal = (!conflict && (TERMINAL_EXTRACTION_CODES.has(code)
+        || error?.details?.retryable === false))
+        || attemptCount >= (conflict
+          ? CONFLICT_MAX_ATTEMPTS
+          : Math.min(EXTRACTION_JOB_MAX_ATTEMPTS, extractionRetryDelaysMs.length + 1));
       if (terminal) {
         await recordExtractionAudit(input, job, 'failure', {
           code,
@@ -964,7 +1060,21 @@ export function createBotMemoryRuntime({
           phase,
           errorCode: code,
         });
+        logger?.warn?.('[BotsMemory] extraction terminal failure', {
+          ...botErrorLogFields(error, code),
+          runId: job.run_id,
+          botId: job.bot_id,
+          phase,
+          attemptCount,
+        });
         emitExtractionDiagnostic('bot.memory.extraction.terminal_failure', job, { code, phase });
+        // The console shows failed extraction next to Remembered facts; tell it
+        // now rather than waiting for its slow recovery poll.
+        await notifyMemoryChanged({
+          botId: job.bot_id,
+          memoryIds: Object.freeze([]),
+          source: 'extraction_failed',
+        });
         return;
       }
       const delayMs = extractionRetryDelaysMs[Math.min(
@@ -1001,11 +1111,18 @@ export function createBotMemoryRuntime({
           leaseOwner: extractionOwner,
           leaseUntil: new Date(now().getTime() + extractionLeaseMs).toISOString(),
         });
+        claimFailureDelayMs = extractionPollMs;
+        claimFailureCode = null;
       } catch (error) {
-        logger?.warn?.('[BotsMemory] extraction claim failed', {
-          code: error?.code || 'bot_memory_extraction_claim_failed',
-        });
-        scheduleExtractionPump(extractionPollMs);
+        // Claim failures are transport failures (Supabase timeouts, outages).
+        // Back off instead of polling at the base interval and log once per code.
+        const fields = botErrorLogFields(error, 'bot_memory_extraction_claim_failed');
+        if (fields.code !== claimFailureCode) {
+          logger?.warn?.('[BotsMemory] extraction claim failed', fields);
+          claimFailureCode = fields.code;
+        }
+        claimFailureDelayMs = Math.min(EXTRACTION_CLAIM_MAX_BACKOFF_MS, claimFailureDelayMs * 2);
+        scheduleExtractionPump(claimFailureDelayMs);
         return;
       }
       if (!job) {
@@ -1016,7 +1133,7 @@ export function createBotMemoryRuntime({
       const task = processExtractionJob(job)
         .catch((error) => {
           logger?.warn?.('[BotsMemory] extraction settlement failed', {
-            code: error?.code || 'bot_memory_extraction_settlement_failed',
+            ...botErrorLogFields(error, 'bot_memory_extraction_settlement_failed'),
             runId: job.run_id,
           });
         })
@@ -1111,18 +1228,61 @@ export function createBotMemoryRuntime({
       return Object.freeze({ queued: true });
     },
 
-    async listForManager(principal, botId, { cursor = null, limit } = {}) {
+    async listForManager(principal, botId, { cursor = null, limit, state = null } = {}) {
       const normalizedBotId = validateUuid(botId, 'botId');
       await authorization.requireManager(principal, normalizedBotId);
+      if (state !== null && !['active', 'forgotten'].includes(state)) {
+        fail('Bot memory list state is invalid', 'bot_request_invalid', 400);
+      }
       const page = await store.repositories.bot_memories.list({
-        filters: { bot_id: normalizedBotId },
+        filters: {
+          bot_id: normalizedBotId,
+          ...(state === 'active' ? { tombstoned_at: null } : {}),
+          ...(state === 'forgotten' ? { tombstoned_at: { not: null } } : {}),
+        },
         cursor,
         limit: normalizePageLimit(limit),
       });
+      // One undecryptable row (rotated key, corrupt envelope) must not hide the
+      // whole page; it is returned as an unreadable placeholder instead.
+      const memories = await Promise.all(page.items.map(async (row) => {
+        try {
+          return await decryptPublicMemory(row);
+        } catch (error) {
+          return unreadablePublicMemory(row, error);
+        }
+      }));
       return Object.freeze({
-        memories: Object.freeze(await Promise.all(page.items.map(decryptPublicMemory))),
+        memories: Object.freeze(memories),
         nextCursor: page.nextCursor || null,
+        // Job diagnostics ride along with the first page only.
+        ...(cursor ? {} : { extraction: await extractionSummaryFor(normalizedBotId) }),
       });
+    },
+
+    // Manager action: put a terminally failed extraction back in the queue with
+    // a fresh attempt budget. The immutable audit ledger keeps the failure; a
+    // later success resolves it in the projection.
+    async requeueExtraction(principal, botId, runId) {
+      const normalizedBotId = validateUuid(botId, 'botId');
+      const normalizedRunId = validateUuid(runId, 'runId');
+      await authorization.requireManager(principal, normalizedBotId);
+      if (typeof store.requeueMemoryExtractionJob !== 'function') {
+        fail('Bot memory extraction requeue is unavailable', 'bots_unavailable', 503);
+      }
+      const job = await store.requeueMemoryExtractionJob({ runId: normalizedRunId, botId: normalizedBotId });
+      if (!job) fail('Bot memory extraction job cannot be requeued', 'bot_memory_extraction_not_requeueable', 409);
+      await audit({
+        principal,
+        botId: normalizedBotId,
+        targetType: 'bot_run',
+        targetId: normalizedRunId,
+        action: 'bot.memory.extract.requeue',
+        result: 'success',
+        metadata: { runId: normalizedRunId, attemptCount: Number(job.attempt_count || 0) },
+      });
+      if (workerStarted) scheduleExtractionPump(0);
+      return Object.freeze({ job: publicExtractionJob(job) });
     },
 
     async getForManager(principal, botId, memoryId) {
@@ -1384,6 +1544,35 @@ export function createBotMemoryRuntime({
 
     async listIndexDocuments() {
       return (await buildMemoryIndexDocuments()).documents;
+    },
+
+    // Relevance retrieval for prompt assembly: memory ids ranked by the hybrid
+    // index, deduplicated across chunks, never the decrypted text itself.
+    async searchForContext({ botId, query, limit = DEFAULT_CONTEXT_SEARCH_LIMIT } = {}) {
+      const normalizedBotId = validateUuid(botId, 'botId');
+      const normalizedQuery = typeof query === 'string' ? query.trim() : '';
+      if (!normalizedQuery) return Object.freeze([]);
+      const boundedLimit = Math.max(1, Math.min(
+        MAX_CONTEXT_SEARCH_LIMIT,
+        Math.trunc(Number(limit)) || DEFAULT_CONTEXT_SEARCH_LIMIT,
+      ));
+      const result = await indexer.search({
+        namespaces: [botSharedMemoryNamespace(normalizedBotId)],
+        query: boundedUtf8(normalizedQuery, MAX_CONTEXT_SEARCH_QUERY_BYTES),
+        limit: MAX_CONTEXT_SEARCH_LIMIT,
+      });
+      const hits = [];
+      const seen = new Set();
+      for (const entry of (Array.isArray(result?.results) ? result.results : [])) {
+        if (hits.length >= boundedLimit) break;
+        if (entry?.metadata?.kind !== 'memory') continue;
+        const memoryId = entry.metadata.memoryId;
+        if (typeof memoryId !== 'string' || !memoryId || seen.has(memoryId)) continue;
+        seen.add(memoryId);
+        const score = Number(entry.score);
+        hits.push(Object.freeze({ memoryId, score: Number.isFinite(score) ? score : null }));
+      }
+      return Object.freeze(hits);
     },
 
     async deleteChannel(principal, channelId, request) {

@@ -14,6 +14,9 @@ export class BotSharedFileError extends Error {
   }
 }
 
+const PREPARE_FILE_TIMEOUT_MS = 120_000;
+const MAX_AUTOMATIC_COPY_ATTEMPTS = 4;
+
 const fail = (message, code, statusCode) => {
   throw new BotSharedFileError(message, code, statusCode);
 };
@@ -117,8 +120,11 @@ export function createBotSharedFileService({
   eventStream,
   channels,
   onMessageReady = async () => {},
+  onMessageBlocked = async () => {},
   recordDiagnostic = () => {},
   logger = console,
+  prepareFileTimeoutMs = PREPARE_FILE_TIMEOUT_MS,
+  maxAutomaticCopyAttempts = MAX_AUTOMATIC_COPY_ATTEMPTS,
 } = {}) {
   const repository = store?.repositories?.bot_shared_files;
   if (!repository || !authorization || typeof authorization.requireChannelRead !== 'function'
@@ -129,10 +135,33 @@ export function createBotSharedFileService({
     || !computerRuntimeManager || typeof computerRuntimeManager.ensureBot !== 'function'
     || !eventStream || typeof eventStream.publish !== 'function'
     || !channels || typeof channels.audienceForChannel !== 'function'
-    || typeof onMessageReady !== 'function' || typeof recordDiagnostic !== 'function') {
+    || typeof onMessageReady !== 'function' || typeof onMessageBlocked !== 'function'
+    || typeof recordDiagnostic !== 'function'
+    || !Number.isInteger(prepareFileTimeoutMs) || prepareFileTimeoutMs < 1_000
+    || !Number.isInteger(maxAutomaticCopyAttempts) || maxAutomaticCopyAttempts < 1) {
     throw new TypeError('Bot Shared file service is misconfigured');
   }
   const locks = new Map();
+
+  // A stalled download or container import must not hold the channel head
+  // forever: the copy fails with a stable code, the run is failed visibly, and
+  // an explicit retry starts a fresh attempt.
+  const withPreparationDeadline = async (work) => {
+    let timer = null;
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new BotSharedFileError(
+        'Bot Shared copy timed out',
+        'bot_shared_file_copy_timeout',
+        504,
+      )), prepareFileTimeoutMs);
+      timer.unref?.();
+    });
+    try {
+      return await Promise.race([work(), deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 
   const publish = async (row) => eventStream.publish({
     kind: 'shared_file.updated',
@@ -148,17 +177,21 @@ export function createBotSharedFileService({
     row.updated_at,
   );
 
-  const prepareOne = async (fileId) => {
+  const prepareOne = async (fileId, { force = false } = {}) => {
     const normalizedId = validateUuid(fileId, 'sharedFileId');
     const previous = locks.get(normalizedId) || Promise.resolve();
     const operation = previous.catch(() => undefined).then(async () => {
       let row = await repository.get({ id: normalizedId });
       if (!row || row.copy_state === 'ready') return row;
+      if (!force && row.copy_state === 'failed'
+        && Number(row.copy_attempts || 0) >= maxAutomaticCopyAttempts) {
+        return row;
+      }
       try {
         try {
           row = await update(row, {
             copy_state: 'copying',
-            copy_attempts: Number(row.copy_attempts || 0) + 1,
+            copy_attempts: force ? 1 : Number(row.copy_attempts || 0) + 1,
             error_code: null,
           });
         } catch (error) {
@@ -169,37 +202,39 @@ export function createBotSharedFileService({
           throw error;
         }
         await publish(row);
-        const [bot, downloaded] = await Promise.all([
-          store.repositories.bots.get({ id: row.bot_id }),
-          blobStore.downloadAuthorized({ botId: row.bot_id, objectId: row.object_id }),
-        ]);
-        if (!bot || downloaded.object.id !== row.object_id
-          || downloaded.object.channel_id !== row.channel_id) {
-          downloaded.bytes.fill(0);
-          fail('Bot Shared source is unavailable', 'bot_object_not_found', 404);
-        }
-        try {
-          await computerRuntimeManager.ensureBot(bot);
-          const sha256 = crypto.createHash('sha256').update(downloaded.bytes).digest('hex');
-          const result = await dockerProvider.importSharedFile({
-            botId: row.bot_id,
-            channelId: row.channel_id,
-            messageId: row.message_id,
-            filename: row.safe_filename,
-            bytes: downloaded.bytes,
-          });
-          if (result.sha256 !== sha256 || result.bytes !== downloaded.bytes.byteLength) {
-            fail('Bot Shared copy verification failed', 'bot_shared_file_integrity_failed', 502);
+        row = await withPreparationDeadline(async () => {
+          const [bot, downloaded] = await Promise.all([
+            store.repositories.bots.get({ id: row.bot_id }),
+            blobStore.downloadAuthorized({ botId: row.bot_id, objectId: row.object_id }),
+          ]);
+          if (!bot || downloaded.object.id !== row.object_id
+            || downloaded.object.channel_id !== row.channel_id) {
+            downloaded.bytes.fill(0);
+            fail('Bot Shared source is unavailable', 'bot_object_not_found', 404);
           }
-          row = await update(row, {
-            plaintext_sha256: sha256,
-            plaintext_size: downloaded.bytes.byteLength,
-            copy_state: 'ready',
-            error_code: null,
-          });
-        } finally {
-          downloaded.bytes.fill(0);
-        }
+          try {
+            await computerRuntimeManager.ensureBot(bot);
+            const sha256 = crypto.createHash('sha256').update(downloaded.bytes).digest('hex');
+            const result = await dockerProvider.importSharedFile({
+              botId: row.bot_id,
+              channelId: row.channel_id,
+              messageId: row.message_id,
+              filename: row.safe_filename,
+              bytes: downloaded.bytes,
+            });
+            if (result.sha256 !== sha256 || result.bytes !== downloaded.bytes.byteLength) {
+              fail('Bot Shared copy verification failed', 'bot_shared_file_integrity_failed', 502);
+            }
+            return update(row, {
+              plaintext_sha256: sha256,
+              plaintext_size: downloaded.bytes.byteLength,
+              copy_state: 'ready',
+              error_code: null,
+            });
+          } finally {
+            downloaded.bytes.fill(0);
+          }
+        });
       } catch (error) {
         const current = await repository.get({ id: normalizedId }).catch(() => row);
         if (current && current.copy_state !== 'ready') {
@@ -222,26 +257,53 @@ export function createBotSharedFileService({
     });
   };
 
-  const notifyIfMessageReady = async (messageId) => {
+  // Every copy for the message is settled here: all ready → the queued run's
+  // scope is drained; any failed copy → the queued run is failed visibly so the
+  // FIFO head is released and the user can retry from the chat.
+  const notifyMessageOutcome = async (messageId) => {
     const page = await repository.list({ filters: { message_id: messageId }, limit: 100 });
-    if (page.items.length === 0 || page.items.some((row) => row.copy_state !== 'ready')) return false;
+    if (page.items.length === 0) return Object.freeze({ ready: false, failedFileIds: [] });
+    const failedFileIds = page.items
+      .filter((row) => row.copy_state === 'failed')
+      .map((row) => row.id);
+    const ready = page.items.every((row) => row.copy_state === 'ready');
+    if (!ready && failedFileIds.length === 0) {
+      return Object.freeze({ ready: false, failedFileIds: [] });
+    }
     const message = await store.repositories.bot_messages.get({ id: messageId });
     const run = message?.run_id
       ? await store.repositories.bot_runs.get({ id: message.run_id })
       : null;
-    if (run?.state === 'queued') await onMessageReady(run.computer_scope_key);
-    return true;
+    if (run?.state === 'queued') {
+      if (ready) {
+        await onMessageReady(run.computer_scope_key);
+      } else {
+        const firstFailed = page.items.find((row) => row.copy_state === 'failed');
+        await onMessageBlocked({
+          runId: run.id,
+          computerScopeKey: run.computer_scope_key,
+          messageId,
+          code: firstFailed?.error_code || 'bot_shared_file_copy_failed',
+          failedFileIds,
+        });
+      }
+    }
+    return Object.freeze({ ready, failedFileIds: Object.freeze(failedFileIds) });
   };
 
-  const prepareMessage = async ({ messageId, fileIds = null } = {}) => {
+  const prepareMessage = async ({ messageId, fileIds = null, force = false } = {}) => {
     const normalizedMessageId = validateUuid(messageId, 'messageId');
     const page = await repository.list({ filters: { message_id: normalizedMessageId }, limit: 100 });
     const selected = fileIds === null
       ? page.items
       : page.items.filter((row) => fileIds.includes(row.id));
-    await Promise.all(selected.map((row) => prepareOne(row.id)));
-    const ready = await notifyIfMessageReady(normalizedMessageId);
-    return Object.freeze({ ready, files: Object.freeze(selected.map((row) => row.id)) });
+    await Promise.all(selected.map((row) => prepareOne(row.id, { force })));
+    const outcome = await notifyMessageOutcome(normalizedMessageId);
+    return Object.freeze({
+      ready: outcome.ready,
+      files: Object.freeze(selected.map((row) => row.id)),
+      failedFileIds: outcome.failedFileIds,
+    });
   };
 
   const listChannel = async ({ principal, botId, channelId } = {}) => {
@@ -389,11 +451,13 @@ export function createBotSharedFileService({
       if (!row || row.bot_id !== normalizedBotId || row.channel_id !== normalizedChannelId) {
         fail('Bot Shared file not found', 'bot_shared_file_not_found', 404);
       }
-      await prepareMessage({ messageId: row.message_id, fileIds: [row.id] });
+      await prepareMessage({ messageId: row.message_id, fileIds: [row.id], force: true });
       return publicBotSharedFile(await repository.get({ id: row.id }));
     },
     async recover() {
-      for (const state of ['pending', 'copying']) {
+      // Failed copies are re-attempted under the automatic cap; rows already
+      // at the cap still settle their message so a blocked run fails visibly.
+      for (const state of ['pending', 'copying', 'failed']) {
         let cursor = null;
         do {
           const page = await repository.list({ filters: { copy_state: state }, cursor, limit: 100 });

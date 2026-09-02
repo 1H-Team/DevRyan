@@ -753,10 +753,19 @@ export function createBotLibraryRuntime({
     // What the Bot actually has on its shared computer right now. This is a
     // live read of the container, not curated Library content, so it reports an
     // offline computer rather than starting one.
-    async listComputerFiles(principal, botId, { path = null } = {}) {
+    async listComputerFiles(principal, botId, { path = null, scope: requestedScope = 'workspace' } = {}) {
       const normalizedBotId = validateUuid(botId, 'botId');
       const decision = await authorization.requireManager(principal, normalizedBotId);
-      const scope = decision.decision?.reason === 'global_admin' ? 'container' : 'workspace';
+      if (!['workspace', 'container'].includes(requestedScope)) {
+        fail('Bot computer-files scope is invalid', 'bot_request_invalid', 400);
+      }
+      // Everyone, administrators included, starts in the Bot's workspace; the
+      // whole container is an explicit, audited request that only a global
+      // administrator can make.
+      if (requestedScope === 'container' && decision.decision?.reason !== 'global_admin') {
+        fail('Bot computer scope requires a global administrator', 'bot_computer_scope_forbidden', 403);
+      }
+      const scope = requestedScope;
       const rootLabel = scope === 'container' ? 'Computer' : 'Workspace';
       const providerAvailable = scope === 'container'
         ? dockerProvider?.containerListAvailable === true

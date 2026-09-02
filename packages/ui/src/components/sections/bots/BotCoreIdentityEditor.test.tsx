@@ -150,7 +150,7 @@ describe('BotCoreIdentityEditor', () => {
     expect(botCoreIdentityChanged(unrelatedEdit, original)).toBe(false);
     expect(botCoreIdentityChanged(edited, original)).toBe(true);
     expect(botCoreIdentityChanged(modelEdited, original)).toBe(true);
-    expect(original.standingRole).toBe('You are a capable DevRyan Bot.');
+    expect(original.standingRole).toContain('keep replies short and human');
     expect(original.objectives).toEqual(['Help people complete their requests.']);
   });
 

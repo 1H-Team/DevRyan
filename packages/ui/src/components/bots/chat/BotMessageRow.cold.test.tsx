@@ -25,7 +25,7 @@ test('cold verified answers stay readable and escaped while Markdown loads; unve
   const root = createRoot(container as unknown as Element);
   useBotChannelStore.getState().resetPrincipal('member');
   useBotChannelStore.getState().upsertChannel(channel);
-  useBotChannelStore.getState().upsertMessage(message('ack', 1, { assistantPhase: 'acknowledgment', body: { text: 'HIDDEN ACK', attachmentIds: [] } }));
+  useBotChannelStore.getState().upsertMessage(message('ack', 1, { assistantPhase: 'acknowledgment', body: { text: 'On it, one sec.', attachmentIds: [] } }));
   useBotChannelStore.getState().upsertMessage(message('result', 2, { finalizedAt: null, body: { text: 'HIDDEN PARTIAL', attachmentIds: [] } }));
   const answer = 'Verified **answer**\nمرحبا 日本語 <think>literal protocol</think> <script>literal code</script>';
   try {
@@ -33,20 +33,28 @@ test('cold verified answers stay readable and escaped while Markdown loads; unve
       <BotMessageRow bot={bot} messageId="ack" /><BotMessageRow bot={bot} messageId="result" />
       <aside><MarkdownRenderer content="Default wrapper loading remains unchanged" messageId="default-wrapper" /></aside>
     </I18nProvider>));
-    expect(container.textContent).not.toContain('HIDDEN ACK');
+    // The Bot's own acknowledgment line is a real bubble; only unfinished
+    // partial output stays hidden.
+    expect(container.textContent).toContain('On it, one sec.');
     expect(container.textContent).not.toContain('HIDDEN PARTIAL');
     expect(container.textContent).not.toContain('Default wrapper loading remains unchanged');
 
     await act(async () => { useBotChannelStore.getState().upsertMessage(message('result', 2, { body: { text: answer, attachmentIds: [] } })); });
-    const fallback = container.find((node) => node.hasAttribute('data-bot-final-text-fallback'));
+    const fallback = container.find((node) => (
+      node.hasAttribute('data-bot-final-text-fallback') && node.textContent !== 'On it, one sec.'
+    ));
     expect(fallback?.textContent).toBe(answer);
     expect(container.find((node) => node.tagName === 'SCRIPT')).toBeNull();
-    expect(container.textContent).not.toContain('HIDDEN ACK');
+    // The Bot's own acknowledgment line is a real bubble; only unfinished
+    // partial output stays hidden.
+    expect(container.textContent).toContain('On it, one sec.');
     expect(container.textContent).not.toContain('HIDDEN PARTIAL');
 
     await act(async () => { finishLoading({ default: ({ content }) => <div data-loaded-markdown>{content}</div> }); });
     expect(container.find((node) => node.hasAttribute('data-bot-final-text-fallback'))).toBeNull();
-    expect(container.find((node) => node.hasAttribute('data-loaded-markdown'))?.textContent).toBe(answer);
+    expect(container.find((node) => (
+      node.hasAttribute('data-loaded-markdown') && node.textContent !== 'On it, one sec.'
+    ))?.textContent).toBe(answer);
     expect(container.textContent).toContain('Default wrapper loading remains unchanged');
   } finally {
     await act(async () => root.unmount());

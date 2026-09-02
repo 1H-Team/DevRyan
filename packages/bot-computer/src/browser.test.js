@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
@@ -14,6 +15,7 @@ import {
   createBrowserController,
   createHumanInputDispatcher,
   dispatchHumanInputEvents,
+  launchChromiumDriver,
   REVIEWED_BROWSER_COMMANDS,
   validateHumanInputArgs,
 } from './browser.js';
@@ -112,7 +114,7 @@ describe('held human input cleanup', () => {
   });
 });
 
-const fixture = () => {
+const fixture = ({ diagnostics = null } = {}) => {
   const calls = [];
   let pageHandler = () => undefined;
   let healthy = true;
@@ -162,9 +164,168 @@ const fixture = () => {
     workspace,
     profiles,
     screencast,
+    diagnostics,
   });
   return { controller, calls, refs, control, screencast, pageChanged: () => pageHandler() };
 };
+
+const createCdpHarness = async () => {
+  class FakeChild extends EventEmitter {
+    exitCode = null;
+
+    kill() {
+      if (this.exitCode !== null) return true;
+      this.exitCode = 0;
+      this.emit('exit', 0);
+      return true;
+    }
+  }
+  const child = new FakeChild();
+  const listeners = new Map();
+  const closeListeners = new Set();
+  const calls = [];
+  const sessionByTarget = new Map();
+  let closed = false;
+  const connection = {
+    ready: Promise.resolve(),
+    async send(method, params = {}, sessionId) {
+      calls.push({ method, params, sessionId });
+      if (method === 'Browser.getVersion') return { product: 'Chromium/151.0' };
+      if (method === 'Target.createTarget') return { targetId: 'root' };
+      if (method === 'Target.attachToTarget') {
+        const session = `${params.targetId}-session`;
+        sessionByTarget.set(params.targetId, session);
+        return { sessionId: session };
+      }
+      if (method === 'Page.getFrameTree') {
+        return { frameTree: { frame: { id: `${sessionId}-frame`, url: 'https://example.com/' } } };
+      }
+      if (method === 'Page.captureScreenshot') return { data: jpeg.toString('base64') };
+      if (method === 'Accessibility.getFullAXTree') {
+        return { nodes: [{ backendDOMNodeId: sessionId === 'root-session' ? 1 : 2, role: { value: 'button' }, name: { value: 'Continue' } }] };
+      }
+      return {};
+    },
+    on(method, callback) {
+      const callbacks = listeners.get(method) || new Set();
+      callbacks.add(callback);
+      listeners.set(method, callbacks);
+      return () => callbacks.delete(callback);
+    },
+    onClose(callback) { closeListeners.add(callback); return () => closeListeners.delete(callback); },
+    isClosed: () => closed,
+    close() {
+      if (closed) return;
+      closed = true;
+      for (const callback of closeListeners) callback();
+    },
+  };
+  const diagnostics = {
+    recordRequest() {}, recordResponse() {}, recordCookieBlock() {}, recordFailure() {},
+    recordDialog: (...args) => calls.push({ method: 'diagnostic.dialog', params: args[0] }),
+    recordPopupLimit: (...args) => calls.push({ method: 'diagnostic.popup_limit', params: args[0] }),
+  };
+  const driver = await launchChromiumDriver({
+    executablePath: '/usr/bin/chromium-browser',
+    profileDirectory: '/tmp/devryan-cdp-profile',
+    scratchDirectory: '/tmp/devryan-cdp-scratch',
+    proxyUrl: 'http://127.0.0.1:43123',
+    spawnImpl: () => child,
+    fsPromises: {
+      mkdir: async () => {},
+      unlink: async () => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); },
+      readFile: async () => '9222\n/devtools/browser/fixture',
+    },
+    connectionFactory: () => connection,
+    diagnostics,
+  });
+  const emit = (method, params, sessionId) => {
+    for (const callback of listeners.get(method) || []) callback(params, sessionId);
+  };
+  const waitForTargets = async (count) => {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      if (driver.status().activeTargetCount === count) return;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    throw new Error(`Timed out waiting for ${count} targets`);
+  };
+  return { driver, calls, emit, waitForTargets, sessionByTarget };
+};
+
+describe('active Chromium page targets', () => {
+  test('follows bounded popup targets and returns input and screencast to each opener', async () => {
+    const harness = await createCdpHarness();
+    let pageChanges = 0;
+    harness.driver.setPageChangeHandler(() => { pageChanges += 1; });
+    const frames = [];
+    await harness.driver.startScreencast((frame) => frames.push(frame));
+
+    harness.emit('Target.targetCreated', { targetInfo: {
+      targetId: 'popup-1', type: 'page', openerId: 'root', url: 'https://login.example/popup',
+    } });
+    await harness.waitForTargets(2);
+    expect(harness.driver.status()).toMatchObject({ activeTargetCount: 2, popupOpen: true });
+    await harness.driver.input([{ type: 'text', text: 'popup input' }]);
+    await harness.driver.screenshot({ format: 'jpeg', quality: 60 });
+    expect(harness.calls).toContainEqual(expect.objectContaining({
+      method: 'Input.insertText', params: { text: 'popup input' }, sessionId: 'popup-1-session',
+    }));
+    expect(harness.calls).toContainEqual(expect.objectContaining({
+      method: 'Page.captureScreenshot', sessionId: 'popup-1-session',
+    }));
+    expect(harness.calls).toContainEqual(expect.objectContaining({
+      method: 'Page.stopScreencast', sessionId: 'root-session',
+    }));
+
+    for (const [targetId, openerId, count] of [
+      ['popup-2', 'popup-1', 3],
+      ['popup-3', 'popup-2', 4],
+    ]) {
+      harness.emit('Target.targetCreated', { targetInfo: {
+        targetId, type: 'page', openerId, url: `https://login.example/${targetId}`,
+      } });
+      await harness.waitForTargets(count);
+    }
+    harness.emit('Target.targetCreated', { targetInfo: {
+      targetId: 'popup-4', type: 'page', openerId: 'popup-3', url: 'https://login.example/fourth',
+    } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.driver.status().activeTargetCount).toBe(4);
+    expect(harness.calls).toContainEqual(expect.objectContaining({
+      method: 'Target.closeTarget', params: { targetId: 'popup-4' }, sessionId: undefined,
+    }));
+    expect(harness.calls).toContainEqual(expect.objectContaining({ method: 'diagnostic.popup_limit' }));
+
+    harness.emit('Target.targetDestroyed', { targetId: 'popup-3' });
+    await harness.waitForTargets(3);
+    expect(harness.calls).toContainEqual(expect.objectContaining({
+      method: 'Page.startScreencast', sessionId: 'popup-2-session',
+    }));
+    expect(frames.length).toBeGreaterThan(0);
+    expect(pageChanges).toBeGreaterThanOrEqual(4);
+    await harness.driver.close({ force: true });
+  });
+
+  test('dismisses blocking dialogs while accepting beforeunload', async () => {
+    const harness = await createCdpHarness();
+    harness.emit('Page.javascriptDialogOpening', {
+      type: 'confirm', message: 'Continue?', url: 'https://example.com/login',
+    }, 'root-session');
+    harness.emit('Page.javascriptDialogOpening', {
+      type: 'beforeunload', message: 'Leave?', url: 'https://example.com/login',
+    }, 'root-session');
+    await Promise.resolve();
+
+    expect(harness.calls).toContainEqual(expect.objectContaining({
+      method: 'Page.handleJavaScriptDialog', params: { accept: false }, sessionId: 'root-session',
+    }));
+    expect(harness.calls).toContainEqual(expect.objectContaining({
+      method: 'Page.handleJavaScriptDialog', params: { accept: true }, sessionId: 'root-session',
+    }));
+    expect(harness.calls.filter((call) => call.method === 'diagnostic.dialog')).toHaveLength(2);
+    await harness.driver.close({ force: true });
+  });
+});
 
 const recoveryFixture = () => {
   const calls = [];
@@ -320,6 +481,17 @@ describe('reviewed computer browser commands', () => {
     await controller.execute('snapshot', {});
     await controller.resetProfile();
     expect(calls).toContainEqual(['close']);
+  });
+
+  test('resets navigation diagnostics on relaunch, explicit navigation, and profile reset', async () => {
+    const resets = [];
+    const { controller } = fixture({
+      diagnostics: { snapshot: () => null, reset: (reason) => resets.push(reason) },
+    });
+    await controller.execute('snapshot', {});
+    await controller.execute('navigate', { url: 'https://example.com/login' });
+    await controller.resetProfile();
+    expect(resets).toEqual(['relaunch', 'navigate', 'profile_reset']);
   });
 
   test('dispatches bounded full-fidelity input only for a human controller', async () => {
@@ -628,6 +800,22 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
       if (request.method === 'GET' && target.pathname === '/next') {
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
         response.end('<!doctype html><title>Next</title><h1>Next page</h1>');
+        return;
+      }
+      if (request.method === 'GET' && target.pathname === '/popup-parent') {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(`<!doctype html>
+          <title>Popup parent</title><h1>Popup parent</h1>
+          <button id="scripted" onclick="window.open('/popup-child?source=scripted', '_blank')">Open scripted popup</button>
+          <a href="/popup-child?source=linked" target="_blank">Open linked popup</a>`);
+        return;
+      }
+      if (request.method === 'GET' && target.pathname === '/popup-child') {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(`<!doctype html>
+          <title>Popup child</title><h1>Popup child</h1>
+          <p>${target.searchParams.get('source') || 'unknown'} target</p>
+          <button onclick="window.close()">Close popup</button>`);
         return;
       }
       if (request.method === 'GET' && target.pathname === '/hold-challenge') {
@@ -1121,6 +1309,32 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         const stale = await commandComputer(baseUrl, 'click', { ref: staleRef });
         expect(stale.response.status).toBe(409);
         expect(stale.payload.error.code).toBe('DEVRYAN_BOT_REF_STALE');
+
+        await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/popup-parent` });
+        let popupParent = await commandComputer(baseUrl, 'snapshot', {});
+        await commandComputer(baseUrl, 'click', { ref: findRef(popupParent, 'Open scripted popup') });
+        await commandComputer(baseUrl, 'wait', { milliseconds: 500 });
+        expect((await computerStatus(baseUrl)).browser).toMatchObject({
+          activeTargetCount: 2,
+          popupOpen: true,
+        });
+        let popupChild = await commandComputer(baseUrl, 'snapshot', {});
+        expect(popupChild.payload.result.nodes.some((node) => node.name === 'Popup child')).toBe(true);
+        expect(popupChild.payload.result.nodes.some((node) => node.name === 'scripted target')).toBe(true);
+        await commandComputer(baseUrl, 'click', { ref: findRef(popupChild, 'Close popup') });
+        await commandComputer(baseUrl, 'wait', { milliseconds: 500 });
+        expect((await computerStatus(baseUrl)).browser).toMatchObject({
+          activeTargetCount: 1,
+          popupOpen: false,
+        });
+        popupParent = await commandComputer(baseUrl, 'snapshot', {});
+        expect(popupParent.payload.result.nodes.some((node) => node.name === 'Popup parent')).toBe(true);
+        await commandComputer(baseUrl, 'click', { ref: findRef(popupParent, 'Open linked popup') });
+        await commandComputer(baseUrl, 'wait', { milliseconds: 500 });
+        popupChild = await commandComputer(baseUrl, 'snapshot', {});
+        expect(popupChild.payload.result.nodes.some((node) => node.name === 'linked target')).toBe(true);
+        await commandComputer(baseUrl, 'click', { ref: findRef(popupChild, 'Close popup') });
+        await commandComputer(baseUrl, 'wait', { milliseconds: 500 });
 
         await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/interactive` });
 

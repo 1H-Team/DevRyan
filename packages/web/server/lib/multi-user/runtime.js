@@ -3175,7 +3175,7 @@ export async function createMultiUserRuntime({
 
     app.post('/api/session/:sessionID/prompt_async', (req, res, next) => {
       const promptOrigin = req.get?.('x-devryan-prompt-origin') || req.headers?.['x-devryan-prompt-origin'];
-      if (req.principal?.scope !== 'managed' || promptOrigin !== 'human') return next();
+      if (req.principal?.scope !== 'managed' || req.principal.role === 'admin' || promptOrigin !== 'human') return next();
       const occurredAt = new Date().toISOString();
       const assignment = getRequestAssignment(req.principal, req);
       const prompt = extractHumanPrompt({
@@ -3233,6 +3233,11 @@ export async function createMultiUserRuntime({
       if (!events) return jsonError(res, 400, 'An events array is required');
       if (events.length === 0 || events.length > ANALYTICS_EVENT_BATCH_LIMIT) {
         return jsonError(res, 400, `Event batches must contain 1-${ANALYTICS_EVENT_BATCH_LIMIT} items`);
+      }
+      if (req.principal.role === 'admin') {
+        return res.json({
+          results: events.map((event) => ({ id: event?.id, accepted: true })),
+        });
       }
       const now = Date.now();
       const results = [];

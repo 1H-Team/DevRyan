@@ -22,14 +22,19 @@ type BotBrowserDiagnosticProps = {
 const FIRST_FRAME_TIMEOUT_MS = 5_000;
 const COMPUTER_STATUS_POLL_MS = 2_000;
 
-const browserWarning = (browser: BotComputerBrowserStatus | undefined): {
+const browserWarning = (
+  browser: BotComputerBrowserStatus | undefined,
+  siteRejectionIsInformational = false,
+): {
   kind: string;
   key: I18nKey;
   host?: string;
+  severity: 'alert' | 'info';
+  params?: Record<string, string | number>;
 } | null => {
   if (!browser) return null;
   if (browser.displayReady === false) {
-    return { kind: 'display-failure', key: 'bots.operations.computer.diagnosticDisplayFailure' };
+    return { kind: 'display-failure', key: 'bots.operations.computer.diagnosticDisplayFailure', severity: 'alert' };
   }
   const diagnostic = browser.lastNavigationDiagnostic;
   if (diagnostic?.kind === 'egress_denied' && diagnostic.blockedHost) {
@@ -37,6 +42,7 @@ const browserWarning = (browser: BotComputerBrowserStatus | undefined): {
       kind: 'egress-denied',
       key: 'bots.operations.computer.diagnosticEgressDenied',
       host: diagnostic.blockedHost,
+      severity: 'alert',
     };
   }
   if (diagnostic?.kind === 'subresource_failure') {
@@ -46,18 +52,29 @@ const browserWarning = (browser: BotComputerBrowserStatus | undefined): {
         ? 'bots.operations.computer.diagnosticSubresourceFailureHost'
         : 'bots.operations.computer.diagnosticSubresourceFailure',
       host: diagnostic.blockedHost || undefined,
+      severity: 'alert',
     };
   }
   if (browser.healthy === false && browser.lifecycleState !== 'stopped') {
-    return { kind: 'browser-failure', key: 'bots.operations.computer.diagnosticBrowserFailure' };
+    return { kind: 'browser-failure', key: 'bots.operations.computer.diagnosticBrowserFailure', severity: 'alert' };
   }
   if (diagnostic?.kind === 'site_rejection') {
-    return { kind: 'site-rejection', key: 'bots.operations.computer.diagnosticSiteRejection' };
+    const paths = [...new Set((diagnostic.trail || [])
+      .filter((entry) => entry.kind === 'navigation')
+      .map((entry) => entry.path))]
+      .slice(-3)
+      .join(' → ') || '/';
+    return {
+      kind: 'site-rejection',
+      key: 'bots.operations.computer.diagnosticSiteRejection',
+      severity: siteRejectionIsInformational ? 'info' : 'alert',
+      params: { paths, count: diagnostic.repetitionCount },
+    };
   }
   // Last on purpose: a residual cookie diagnostic must never mask a real
   // browser failure or site rejection.
   if (diagnostic?.kind === 'blocked_cookies') {
-    return { kind: 'blocked-cookies', key: 'bots.operations.computer.diagnosticCookiesBlocked' };
+    return { kind: 'blocked-cookies', key: 'bots.operations.computer.diagnosticCookiesBlocked', severity: 'alert' };
   }
   return null;
 };
@@ -172,7 +189,12 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
     streamFailed,
     errorCode: viewErrorCode,
   });
-  const diagnosticWarning = browserWarning(status?.browser);
+  const diagnosticWarning = browserWarning(status?.browser, presentation.ownedByViewer);
+  const capabilities = status?.browser.webCapabilities;
+  const lastDialog = status?.browser.lastNavigationDiagnostic?.dialogs?.at(-1)
+    || [...(status?.browser.lastNavigationDiagnostic?.trail || [])]
+      .reverse()
+      .find((entry) => entry.kind === 'dialog');
 
   const releaseView = React.useCallback(async () => {
     const state = operationsStore.getState();
@@ -429,11 +451,60 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
     );
   }
 
+  const controlLabel = canControl
+    ? presentation.active
+      ? presentation.ownedByViewer
+        ? t('bots.operations.computer.youControl')
+        : t('bots.operations.computer.humanControls', {
+          actor: presentation.actorLabel ?? t('bots.operations.computer.human'),
+        })
+      : t('bots.operations.computer.agentControls')
+    : t('bots.operations.computer.viewOnly');
+  const controlDetail = canControl && presentation.active
+    ? t('bots.operations.computer.agentPaused', { seconds: presentation.expiresInSeconds ?? 0 })
+    : t('bots.operations.computer.agentActive');
+  const controlButton = canControl && visibleView && !expiredOwnedLease ? (
+    ownedLeaseId ? (
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        disabled={pendingControl}
+        onClick={returnControl}
+      >
+        {t('bots.operations.computer.return')}
+      </Button>
+    ) : (
+      <Button
+        type="button"
+        size="xs"
+        disabled={pendingControl || presentation.active}
+        onClick={async () => {
+          setPendingControl(true);
+          setControlError(false);
+          try {
+            await operationsStore.getState().takeComputerControl(botId);
+            setNow(Date.now());
+          } catch {
+            setControlError(true);
+          } finally {
+            setPendingControl(false);
+          }
+        }}
+      >
+        {t('bots.operations.computer.take')}
+      </Button>
+    )
+  ) : null;
+
+  // The screen is the widget. Everything else is an overlay on it or one slim
+  // bar beneath it, so the desktop gets the space instead of the chrome.
   return (
-    <div className="flex h-full min-h-0 flex-col p-3" data-bot-live-computer={botId}>
+    <div className="group flex h-full min-h-0 flex-col" data-bot-live-computer={botId}>
       <div
-        className="relative min-h-[160px] flex-1 overflow-hidden rounded-[10px] border border-border/70 bg-black"
+        className="relative min-h-[160px] flex-1 overflow-hidden bg-black"
         data-bot-screen-view-state={viewState}
+        title={inputEnabled ? t('bots.operations.computer.inputHint') : undefined}
       >
         {visibleView ? (
           <div className={`absolute inset-0 transition-opacity ${
@@ -466,14 +537,23 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
             <p className="mt-1 max-w-[280px] typography-meta text-white/65">
               {t(descriptionKey)}
             </p>
+            <div className="mt-3">{viewToggle}</div>
           </div>
-        ) : null}
-      </div>
-
-      <div className="mt-3 space-y-2">
+        ) : (
+          <div
+            className="absolute right-2 top-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+            data-bot-screen-overlay="viewing"
+          >
+            {viewToggle}
+          </div>
+        )}
         {expiredOwnedLease && canControl ? (
-          <div className="flex items-start gap-2 rounded-md border border-[var(--status-warning)]/40 bg-[var(--status-warning)]/10 px-2.5 py-2" data-bot-control-release-pending="true" role="status">
-            <p className="min-w-0 flex-1 typography-micro text-foreground">{t('bots.operations.computer.releaseExpired')}</p>
+          <div
+            className="absolute inset-x-2 top-2 flex items-start gap-2 rounded-md border border-[var(--status-warning)]/50 bg-black/75 px-2.5 py-2 text-white backdrop-blur-sm"
+            data-bot-control-release-pending="true"
+            role="status"
+          >
+            <p className="min-w-0 flex-1 typography-micro">{t('bots.operations.computer.releaseExpired')}</p>
             <Button type="button" variant="outline" size="xs" disabled={pendingControl} onClick={returnControl}>
               {t('bots.operations.computer.return')}
             </Button>
@@ -481,12 +561,14 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
         ) : null}
         {waitingForControl ? (
           <div
-            className="flex items-center gap-2 rounded-md border border-[var(--status-warning)]/40 bg-[var(--status-warning)]/10 px-2.5 py-2"
+            className={`absolute inset-x-2 flex items-center gap-2 rounded-md border border-[var(--status-warning)]/50 bg-black/75 px-2.5 py-2 text-white backdrop-blur-sm ${
+              expiredOwnedLease && canControl ? 'top-16' : 'top-2'
+            }`}
             data-bot-control-wait={returnableLeaseId ? 'owned' : 'other'}
             role="status"
           >
             <RiUserSharedLine className="h-4 w-4 shrink-0 text-[var(--status-warning)]" aria-hidden />
-            <p className="min-w-0 flex-1 typography-micro text-foreground">
+            <p className="min-w-0 flex-1 typography-micro">
               {returnableLeaseId
                 ? t('bots.operations.computer.waitingControlOwned')
                 : t('bots.operations.computer.waitingControlOther')}
@@ -504,93 +586,59 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
             ) : null}
           </div>
         ) : null}
-
-        {visibleView && diagnosticWarning ? (
-          <p
-            className="rounded-md border border-[var(--status-warning)]/35 bg-[var(--status-warning)]/10 px-2.5 py-2 typography-micro text-foreground"
-            data-bot-browser-warning={diagnosticWarning.kind}
-            role="alert"
-          >
-            {t(diagnosticWarning.key, diagnosticWarning.host ? { host: diagnosticWarning.host } : undefined)}
-          </p>
-        ) : null}
-
-        {visibleView && !expiredOwnedLease ? (
-          <div className="flex items-start gap-2 border-t border-border/50 pt-2">
-            <RiUserSharedLine className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-            <div className="min-w-0 flex-1">
-              <p className="typography-ui-label text-foreground">
-                {canControl
-                  ? presentation.active
-                    ? presentation.ownedByViewer
-                      ? t('bots.operations.computer.youControl')
-                      : t('bots.operations.computer.humanControls', {
-                        actor: presentation.actorLabel ?? t('bots.operations.computer.human'),
-                      })
-                    : t('bots.operations.computer.agentControls')
-                  : t('bots.operations.computer.viewOnly')}
+        {visibleView && (diagnosticWarning || lastDialog || status?.browser.popupOpen) ? (
+          <div className="absolute inset-x-2 bottom-2 space-y-1 rounded-md border border-[var(--status-warning)]/50 bg-black/75 px-2.5 py-2 typography-micro text-white backdrop-blur-sm">
+            {diagnosticWarning ? (
+              <p
+                data-bot-browser-warning={diagnosticWarning.kind}
+                role={diagnosticWarning.severity === 'alert' ? 'alert' : 'status'}
+              >
+                {t(diagnosticWarning.key, diagnosticWarning.params
+                  || (diagnosticWarning.host ? { host: diagnosticWarning.host } : undefined))}
               </p>
-              <p className="typography-micro text-muted-foreground" aria-live="polite">
-                {canControl && presentation.active
-                  ? t('bots.operations.computer.agentPaused', {
-                    seconds: presentation.expiresInSeconds ?? 0,
-                  })
-                  : t('bots.operations.computer.agentActive')}
+            ) : null}
+            {diagnosticWarning?.kind === 'site-rejection' && capabilities ? (
+              <p data-bot-browser-capabilities="true">
+                {t('bots.operations.computer.diagnosticCapabilities', {
+                  policy: capabilities.managedPolicy ?? 'unknown',
+                  javascript: capabilities.javascript ?? 'unknown',
+                  firstPartyCookies: capabilities.firstPartyCookies ?? 'unknown',
+                  thirdPartyCookies: capabilities.thirdPartyCookies ?? 'unknown',
+                })}
               </p>
-              {inputEnabled ? (
-                <p className="typography-micro text-muted-foreground">
-                  {t('bots.operations.computer.inputHint')}
-                </p>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {viewToggle}
-              {canControl ? (
-                ownedLeaseId ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="xs"
-                    disabled={pendingControl}
-                    onClick={returnControl}
-                  >
-                    {t('bots.operations.computer.return')}
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    size="xs"
-                    disabled={pendingControl || presentation.active}
-                    onClick={async () => {
-                      setPendingControl(true);
-                      setControlError(false);
-                      try {
-                        await operationsStore.getState().takeComputerControl(botId);
-                        setNow(Date.now());
-                      } catch {
-                        setControlError(true);
-                      } finally {
-                        setPendingControl(false);
-                      }
-                    }}
-                  >
-                    {t('bots.operations.computer.take')}
-                  </Button>
-                )
-              ) : null}
-            </div>
+            ) : null}
+            {lastDialog ? (
+              <p data-bot-browser-dialog={lastDialog.type ?? 'unknown'} role="status">
+                {t('bots.operations.computer.diagnosticDialog', {
+                  type: lastDialog.type ?? 'unknown',
+                  message: lastDialog.message || '—',
+                })}
+              </p>
+            ) : null}
+            {status?.browser.popupOpen ? (
+              <p data-bot-browser-popup="open" role="status">
+                {t('bots.operations.computer.popupOpen')}
+              </p>
+            ) : null}
           </div>
-        ) : (
-          <div className="flex items-center justify-end">
-            {viewToggle}
-          </div>
-        )}
-        {controlError || (releaseErrorLeaseId && releaseErrorLeaseId === status?.control?.leaseId) ? (
-          <p className="typography-micro text-[var(--status-error)]" role="alert">
-            {t('bots.operations.computer.controlFailed')}
-          </p>
         ) : null}
       </div>
+
+      {visibleView && !expiredOwnedLease ? (
+        <div className="flex min-h-8 items-center gap-2 border-t border-border/60 px-2.5 py-1" data-bot-computer-bar="true">
+          <RiUserSharedLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="min-w-0 flex-1 truncate typography-micro" title={inputEnabled ? t('bots.operations.computer.inputHint') : controlDetail}>
+            <span className="font-medium text-foreground">{controlLabel}</span>
+            <span className="text-muted-foreground" aria-live="polite"> · {controlDetail}</span>
+          </span>
+          {controlButton}
+        </div>
+      ) : null}
+      {controlError || (releaseErrorLeaseId && releaseErrorLeaseId === status?.control?.leaseId) ? (
+        <p className="px-2.5 py-1 typography-micro text-[var(--status-error)]" role="alert">
+          {t('bots.operations.computer.controlFailed')}
+        </p>
+      ) : null}
     </div>
   );
 };

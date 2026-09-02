@@ -52,10 +52,12 @@ export type BotChannelState = {
   loadInitialMessages(channelId: string): Promise<void>;
   loadOlderMessages(channelId: string): Promise<void>;
   refreshLatestMessages(channelId: string): Promise<void>;
+  invalidateInactiveChannels(): void;
   ensureOwnerChannel(botId: string): Promise<BotChannel>;
   setDraft(channelId: string, draft: BotComposerDraft): void;
   clearDraft(channelId: string): void;
   sendDraft(channelId: string): Promise<BotSendMessageResponse | null>;
+  sendQuickReply(channelId: string, text: string): Promise<BotSendMessageResponse | null>;
   retryRun(runId: string): Promise<{ run: BotSendMessageResponse['run'] } | null>;
 };
 
@@ -161,9 +163,12 @@ const stableErrorCode = (error: unknown): string => (
   error instanceof BotsApiError ? error.code : 'bot_request_failed'
 );
 
+// A deadline or transport failure does not prove the server rejected the
+// message; the idempotent identity lets the send path check and retry once.
 const isAmbiguousAcceptanceError = (error: unknown): boolean => (
   error instanceof BotsApiError
-  && (error.status === 0 || error.code === 'network_error' || error.code === 'bot_invalid_response')
+  && (error.status === 0 || error.code === 'network_error'
+    || error.code === 'bot_invalid_response' || error.code === 'bot_request_timeout')
 );
 
 const markBotPerformance = (name: string): void => {
@@ -951,6 +956,15 @@ export const createBotChannelStore = ({
 
     loadInitialMessages: (channelId) => loadPage(channelId, true),
     loadOlderMessages: (channelId) => loadPage(channelId, false),
+    // Events published while the SSE stream was down are gone for good; after
+    // a reconnect the active channel refetches immediately and every other
+    // loaded channel is marked stale so it refetches the next time it opens.
+    invalidateInactiveChannels() {
+      const { activeChannelId, messageIdsByChannelId } = get();
+      for (const channelId of Object.keys(messageIdsByChannelId)) {
+        if (channelId !== activeChannelId) invalidateChannel(channelId);
+      }
+    },
     refreshLatestMessages(channelId) {
       const existing = latestMessageRefreshes.get(channelId);
       if (existing) return existing;
@@ -1030,6 +1044,19 @@ export const createBotChannelStore = ({
         text: draft.text,
         attachmentIds: draft.attachmentIds,
       });
+    },
+
+    // Tapping a quick-reply option is a normal message send, but it must not
+    // throw away whatever the member was typing in the composer.
+    async sendQuickReply(channelId, text) {
+      const reply = text.trim();
+      if (!reply) return null;
+      const draft = draftStore.getState().draftsByChannelId[channelId];
+      const pending = sendMessageContent({ channelId, text: reply, attachmentIds: [] });
+      if (draft && (draft.text.trim() || draft.attachmentIds.length > 0)) {
+        draftStore.getState().setDraft(channelId, draft);
+      }
+      return pending;
     },
 
     async retryRun(runId) {

@@ -157,7 +157,7 @@ describe('BotChatView', () => {
     }
   });
 
-  test('hides historical contextual acknowledgments without deleting their canonical record', () => {
+  test('renders the Bot\'s acknowledgment line as its own bubble without any separate acknowledgment copy', () => {
     const acknowledgment = {
       ...message('contextual-acknowledgment', 2, 'tool-run'),
       assistantPhase: 'acknowledgment' as const,
@@ -181,7 +181,8 @@ describe('BotChatView', () => {
       );
 
       const rowSource = readFileSync(resolve(testDir, 'BotMessageRow.tsx'), 'utf8');
-      expect(markup).toBe('');
+      expect(markup).toContain('data-bot-message-phase="acknowledgment"');
+      expect(markup).toContain('open Buffer and check which account is connected');
       expect(useBotChannelStore.getState().messagesById[acknowledgment.id]).toBe(acknowledgment);
       expect(rowSource).not.toContain('bots.chat.message.acknowledgment');
       expect(markup).not.toContain('Got it — I’m on it.');
@@ -543,7 +544,7 @@ describe('BotChatView', () => {
           <BotRunFailureNotice runId={runId} channelId="channel" sourceHasAttachments />
         </I18nProvider>,
       );
-      expect(renderFailure('oauth')).toContain('stopped before it could finish');
+      expect(renderFailure('oauth')).toContain('model connection failed before it could answer');
       expect(renderFailure('oauth')).not.toContain('processing the attached files');
       expect(renderFailure('timeout')).toContain('response time limit');
       expect(renderFailure('timeout')).not.toContain('processing the attached files');

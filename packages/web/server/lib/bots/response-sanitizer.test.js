@@ -36,6 +36,12 @@ describe('Bot typed response boundary', () => {
       { type: 'tool' },
       { type: 'reasoning', text: 'Analyzing internal response' },
       { type: 'text', text: 'The requested result.' },
-    ])).toEqual({ toolObserved: true, acknowledgmentText: '', resultText: 'The requested result.', generatedImages: [] });
+    ])).toEqual({
+      toolObserved: true,
+      acknowledgmentText: 'I will check.',
+      resultText: 'The requested result.',
+      resultFallback: false,
+      generatedImages: [],
+    });
   });
 });

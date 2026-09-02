@@ -14,23 +14,38 @@ unsupported VS Code presentation. Bot configuration lives separately in
   canonical chat, and Bot settings. It renders the authenticated avatar
   URL, then the configured fallback, then generated initials.
 - `sidebar/` owns recency-ranked assigned-Bot conversation rows driven by
-  finalized channel previews. The audience boundary is shared with
+  finalized channel previews. `botSidebarStatus.ts` projects each row's current
+  run (from `useBotOperationsStore`, so a Bot working in another channel still
+  shows it) to `typing` dots or a "needs you" line for approval, control, or
+  reconciliation waits. The audience boundary is shared with
   `components/shared/ProductAudienceTabs.tsx` and the narrow session-only
   `stores/useMainSidebarAudienceStore.ts`.
 - `chat/` owns conventional left/right grouped message presentation, the
   retained composer, and the avatar-free typing indicator shown while the
-  assistant response is still empty. The composer atomically paints the
+  assistant response is still empty (`BotTypingDots.tsx` is the one animated
+  glyph shared with the sidebar). The composer atomically paints the
   optimistic user row plus an empty pending assistant row, reconciles both
   canonical IDs after acceptance, and rolls both back on a definitive rejection.
-  Both tool and no-tool turns promote that row to one verified final result.
-  Ambiguous streaming text and historical acknowledgments are hidden without
-  rewriting history. Older messages are virtualized above 100 rows; the trailing
+  A tool turn first finalizes the Bot's short acknowledgment line as its own
+  bubble, then a fresh pending row becomes the verified final result; a no-tool
+  turn promotes the pending row directly. Ambiguous streaming text stays hidden
+  without rewriting history. `chat/BotQuestionBlock.tsx` renders a quick-reply
+  question carried in a finalized result's body: tapping an option sends an
+  ordinary reply through `sendQuickReply` (the typed draft survives), the
+  member's next message marks it answered, and options lock while a run is
+  active. Older messages are virtualized above 100 rows; the trailing
   20 remain mounted. Initial history failure has a direct Retry action.
   `chat/botAttachmentUpload.ts` owns the
-  supported private-file catalog, browser MIME normalization, limits, and
-  sequential partial-success handling for multi-file selections.
+  supported private-file catalog, browser MIME normalization, limits,
+  HEIC→JPEG conversion and >4 MP downscaling before upload, native FileReader
+  encoding, a two-wide upload pool that still reports in selection order, and
+  partial-success handling for multi-file selections; every Bot request has a
+  deadline (`bot_request_timeout`, treated as an ambiguous send).
   `chat/BotInlineComputer.tsx` owns the single inline/expanded shared computer
-  viewer, driven by channel-authorized activity and narrow `useBotComputerActivityStore`.
+  viewer, driven by channel-authorized activity and narrow `useBotComputerActivityStore`;
+  it is sized by the desktop's 16:9 aspect (never a fixed height), may grow past
+  the 760px message column via the transcript's inline-size container, and
+  expands to the viewport at the same aspect.
   `chat/BotResultAttachments.tsx`
   maps message-indexed Shared images and safe Markdown image references into
   viewport-gated placeholders; `chat/botImagePreviewCache.ts` owns abort,
@@ -56,12 +71,16 @@ unsupported VS Code presentation. Bot configuration lives separately in
   the stream immediately while server control return proceeds independently.
   Retained expired leases keep an owner-only Return Control recovery action,
   scoped status polling, and disabled input without renewing the old lease.
+  `BotBrowserDiagnostic.tsx` is screen-first: the canvas fills the widget,
+  start/stop viewing, control waits, and browser warnings are overlays on it,
+  and one slim bar beneath carries control state plus Take/Return Control.
   `BotBrowserDiagnostic.mounted.test.tsx` exercises hung-input teardown through
   real mounted Stop, hidden-surface, and Return Control interactions;
   `botHumanInputBuffer.ts` coalesces hover/wheel traffic while preserving held
   movement and never discarding down/up events; `BotBrowserDiagnostic.tsx`
   polls typed computer diagnostics only during visible owned control, shows
-  actionable cookie/dependency/display/site warnings, and renders durable
+  actionable cookie/dependency/display/site warnings with masked path/count and
+  prerequisite facts, reports handled dialogs/open popups, and renders durable
   control waits with an owner-only Return Control action and no controller IDs;
   `mjpegStream.ts` and `botComputerCoordinates.ts` keep binary parsing and
   object-contain coordinate mapping outside React/store hot paths.
@@ -128,7 +147,9 @@ unsupported VS Code presentation. Bot configuration lives separately in
 - Overview, Resources, Memory, membership, routines, lifecycle, or deletion UI:
   `components/sections/bots/`
 - Computer resource import, Finder reveal, and filesystem browsing:
-  `components/sections/bots/BotComputerFiles.tsx`
+  `components/sections/bots/BotComputerFiles.tsx` (views: Shared & Resources
+  by default, Whole Workspace, and Whole Computer for global administrators via
+  `botComputerFilesView.ts`)
 - Write-only Bot environment names and add/rotate/delete controls:
   `components/sections/bots/BotEnvironmentSecrets.tsx`
 - Optional per-Bot Skills/SOPs: `components/sections/bots/BotSkills.tsx`

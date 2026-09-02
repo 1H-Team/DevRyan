@@ -19,11 +19,12 @@ export const BOT_FILE_TOOLS = Object.freeze(['edit', 'glob', 'grep', 'read', 'wr
 export const BOT_RUNTIME_TOOLS = Object.freeze(['bash', 'git', 'task', 'terminal']);
 // The gateway plugin version is a deployment fact, not a per-Bot setting. The
 // server stamps this onto every contract it writes.
-export const BOT_CURRENT_GATEWAY_PLUGIN_VERSION = 'devryan-bot-tools@1.3.0';
+export const BOT_CURRENT_GATEWAY_PLUGIN_VERSION = 'devryan-bot-tools@1.4.0';
 
 const REVIEWED_WORKSPACE_WRITE_PLUGIN_VERSIONS = new Set([
   'devryan-bot-tools@1.1.0',
   'devryan-bot-tools@1.2.0',
+  'devryan-bot-tools@1.3.0',
   BOT_CURRENT_GATEWAY_PLUGIN_VERSION,
 ]);
 
@@ -527,7 +528,12 @@ const buildOpenCodeConfig = (contract, skillNames = []) => {
     promptSections.push('Use devryan_write for every workspace file change. Workspace writes may pause until an authorized person approves the exact path and content.');
   }
   if (autonomousRuntime) {
-    promptSections.push('Work autonomously inside the scoped Bot container and managed workspace. Files explicitly provided to this Bot live in /workspace/Resources; inspect them when relevant and treat those computer files as the source of truth. Never seek host files, Docker access, host credentials, raw browser/CDP, direct MCP, or DevRyan host-task orchestration. Use devryan_bot for governed browser and external actions. When devryan_image is available, call it with its exact prompt, out, and quality arguments, save out under /workspace/generated-images, and rely on automatic attachment; never guess an image.generate gateway payload, call artifact.put for the image, or promise a later Shared-folder publication. Use artifact.put to publish other generated files explicitly, and never scan or expose unrelated computer files.');
+    promptSections.push([
+      'How you work:',
+      'You work on your own inside this Bot\'s computer and workspace. Files people gave you live in /workspace/Resources and attachments they sent in chat live in /workspace/Shared; read them when they matter and treat them as the source of truth.',
+      'Use devryan_bot for governed browser and external actions, and devryan_ask when one quick question would change what you do. When devryan_image is available, call it with its exact prompt, out, and quality arguments and save under /workspace/generated-images; the image attaches to your reply automatically (never guess an image.generate payload, call artifact.put for it, or promise a later Shared publication). Publish other generated files with artifact.put.',
+      'Never look for host files, Docker, host credentials, raw browser/CDP, direct MCP, or DevRyan host-task orchestration, and never scan or expose unrelated computer files.',
+    ].join('\n'));
   }
   const assignedSkillPermission = Object.hasOwn(contract, 'skillBindings')
     ? { skill: skillPermissions }

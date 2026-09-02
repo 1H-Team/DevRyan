@@ -20,6 +20,18 @@ primary Provider/Model/Thinking controls. There is
 no user-facing MCP, AG-UI, policy/access matrix, Library/source workflow,
 revision/bundle, recovery, or advanced-instruction configuration.
 
+The conversation is shaped like a messaging thread. The sidebar row shows
+typing dots while a Bot is preparing or writing (in any channel) and "Needs
+you" while a run waits on a confirmation, browser control, or reconciliation.
+A tool turn begins with one short line in the Bot's own voice as its own
+bubble; the answer follows in a second bubble. A Bot can ask one quick-reply
+question inside its bubble (`devryan_ask`): tapping an option sends an ordinary
+reply, the typed draft survives, and the next message marks it answered. The
+inline computer is screen-first, sized by the desktop's aspect and free to grow
+past the message column, with controls as overlays and one slim bar. Resources
+→ Computer files opens on Shared and Resources; the whole workspace is one
+click away and the whole container only for a global administrator.
+
 Some sections below document retained persistence and adapters. Those paths are
 compatibility/security machinery only: immutable revisions still pin admitted
 runs; old AG-UI deployments remain readable/executable during migration; old
@@ -38,9 +50,9 @@ following prerequisites must all be true:
    shows an explicit unsupported-host message, and the legacy Tauri shell does
    not own this feature.
 2. Supabase multi-user mode is configured and every repository migration,
-   through `supabase/migrations/20260901160000_bot_runtime_scope_and_audit_repair.sql`,
+   through `supabase/migrations/20260902120000_bot_audit_resolution_and_read_only_retry.sql`,
    is deployed. A schema-cache miss returns `migration_required` with
-   `requiredMigration: "20260901160000"`; it must never fall back to local
+   `requiredMigration: "20260902120000"`; it must never fall back to local
    plaintext state. The required marker is a minimum: newer 14-digit markers
    are accepted, and Bot migrations remain backward-compatible for at least one
    desktop release so database-first rollout does not disable older clients.
@@ -223,6 +235,17 @@ the logical key (`<key>:u:<uuid>`) so two members who taught the Bot the same
 key both survive. A memory-index rebuild is what clears the legacy
 `bot:<botId>:user:<uuid>` retrieval namespaces.
 
+Prompt memory is selected, not dumped. Facts whose logical key starts with
+`user.`, `owner.`, `preference.`, `identity.`, or `profile.` are pinned (newest
+eight), so the Bot always knows who it is talking to and how they like things
+done. The rest of the memory budget (twelve facts by default) is filled first by
+hybrid-index relevance to the current request plus the last two user turns,
+then by recency, within a 96 KiB block; a small memory is therefore fully
+present while a large one stays focused. The extraction prompt asks the model
+for those key prefixes. If the retrieval index is unavailable the turn degrades
+to the newest fifty facts, and the run's context snapshot records only counts
+(`memoryRetrieval`), never memory text.
+
 Channels themselves remain private. Active membership permits Bot discovery,
 while transcript access still requires ownership or a Reader / Collaborator
 channel ACL. A Manager without a channel ACL cannot read that channel. A global
@@ -356,7 +379,25 @@ Completed-run memory extraction is lower priority than conversation. Its
 database claim skips every channel with a non-terminal Bot run. If an
 interactive run wins the remaining admission race, extraction settles as
 `defer`, returns to the durable queue without consuming an attempt or creating
-a Bot Audit issue, and resumes after the channel becomes idle.
+a Bot Audit issue, and resumes after the channel becomes idle. Optimistic
+conflicts (`bot_revision_conflict`, `40001`, summary or version checkpoint
+conflicts) are retried for up to four durable attempts before the job becomes
+terminal. The Memory console shows pending and failed extraction next to
+Remembered facts, and a Manager can **Re-run extraction** for a terminal job,
+which resets its attempt budget without touching queued, leased, or succeeded
+work.
+
+A message admitted while its channel is already being drained is never lost:
+the drain re-claims when a wake arrived during its claim, and a claim that
+fails against the database re-arms with bounded backoff instead of leaving the
+run queued behind typing dots. A periodic sweep re-drains channels holding
+queued runs older than thirty seconds and settles expired leases that no live
+process owns. A Shared copy that fails or exceeds its two-minute deadline fails
+the queued run visibly as a retryable attachment failure instead of blocking
+the channel head; Retry re-copies the attachments first. If the reasoning
+session disappears before the model produced any visible output or tool
+activity, the dispatcher recreates the execution once and resubmits the prompt;
+otherwise the run fails visibly.
 
 The initiating user receives `message.streaming` full-text snapshots through a
 short-lived, revalidated channel-access lease. The first provider text is sent
@@ -374,15 +415,24 @@ configured Soul voice; the dispatcher promotes that sentence to the durable
 private. Generic receipts and additional progress narration are forbidden. The
 streaming sanitizer buffers and removes structural agent-work headings—including
 Clarifying, Assessing, Investigating, and Requesting forms—before even a partial
-heading can flash. An empty sanitized result fails visibly as
+heading can flash. When the model writes its answer and then ends the turn on
+one more tool call, the last complete prose segment between tool boundaries is
+the result. Only a turn with no usable prose at all fails visibly as
 `bot_response_missing`. Ordinary typing dots stop once visible response content
 is present; only approvals, reconciliation, cancellation, and failure state may
 appear before the final result.
 
-Only a failed run with no generic agent execution handle, assistant output, or
-action attempt can be retryable. Retry atomically requeues that same run for its
-initiating user while its pinned revision and channel remain valid. It never
-creates a duplicate message or silently retries. `Server-Timing`, content-free
+Retry is evidence-based. A failed startup or execution run that produced no
+visible text or possibly mutating action is marked retryable when it settles.
+A settled succeeded/failed/denied read with a known outcome and an absent or
+`safe_to_retry` write guarantee does not count as a side effect; pending,
+unknown, paginated, or write evidence fails closed. The retry RPC re-checks the
+same durable predicate inside its transaction, clears the stale execution
+identity, and atomically requeues the same run for its initiating user while its
+pinned revision and channel remain valid. A run that showed any output is never
+replayed. A Stop request is marked before active execution registration, so an
+abort in that startup race settles as `cancelled`. Retry never creates a
+duplicate message or silently retries. `Server-Timing`, content-free
 journal milestones, and browser performance marks separate acceptance, queue,
 startup, provider, delivery, checkpoint, and terminal latency without recording
 message text, credentials, tokens, or decrypted configuration.
@@ -633,7 +683,9 @@ object, memory, and purge lifetimes are separate from this audit policy.
 Every distinct database transition of a run into `failed` or `interrupted`
 also appends a content-free run diagnostic to this ledger. The administrator
 Bot Audit viewer is issues-first, supports immutable list/detail inspection and
-audited context copy, and remains readable when Bot execution is degraded. It
+audited context copy, displays generalized resolution time/event identity, and
+uses a stable upper timestamp while paging. It remains readable when Bot
+execution is degraded. It
 may clear entries from the shared review projection without deleting immutable
 ledger rows; retention is the only ledger deletion path. Runtime failure
 settlement uses one idempotent, row-locking service transaction, so the terminal
@@ -642,6 +694,13 @@ from the returned persisted row. Bounded write retries tolerate uncertain
 commits; startup recovery terminalizes an orphan it cannot safely resume, and
 the schema migration backfills terminal rows missing ledger evidence without
 duplicating existing or cleared records.
+
+`20260902120000_bot_audit_resolution_and_read_only_retry.sql` keeps the ledger
+immutable but resolves any failed/partial/unknown projection after a later
+matching success, `.retry` success, or `.requeue` success for the same Bot and
+target. A `bot_run` issue also resolves when the run durably completes. The
+administrator clear menu mirrors review ranges at 24 hours, 7 days, 30 days,
+and all time; the server retains legacy 14-day compatibility.
 
 Deleting a channel requires the owner to acknowledge that reviewed shared
 learning survives. Private channel objects, channel summaries/index data, and
@@ -756,11 +815,19 @@ patches, fingerprint spoofing, CAPTCHA solving, or synthetic human motion.
 Startup verifies the exact root-owned JavaScript/first-party/third-party cookie
 policy and the X11 socket before health succeeds. Xvfb loss fails health and
 closes Chromium, while normal shutdown closes Chromium before Xvfb. The status
-diagnostic is memory-only and exposes only origin, status, redirect/repetition
-counts, standardized failure reasons, normalized blocked host, browser
-mode/version, display readiness, and managed-policy states. Paths, queries,
-headers, cookies, page/console content, screenshots, credentials, challenge
-payloads, coordinates, and typed input are forbidden.
+diagnostic is memory-only and exposes only origin, masked pathname, status,
+redirect/repetition counts, standardized failure reasons, bounded navigation/
+failure/dialog trails and cookie-block reason data, normalized blocked host,
+active-target/popup state, browser mode/version, display readiness, and
+managed-policy states. Query/hash/userinfo, headers, cookie names/values,
+page/console content, screenshots, credentials, challenge payloads, coordinates,
+and typed input are forbidden. UUID, opaque-token, and long-numeric path
+segments become `*`. Main-frame identity cannot be evicted by subresource
+traffic. Same-path/redirect loops are sticky but decay after a newer healthy
+navigation remains stable for one minute; lifecycle/control resets clear stale
+diagnostics. Dialogs are handled automatically. The managed root plus at most
+three popups form a stack, and viewing/input follow the active popup until it
+closes and returns to its opener.
 
 Take Control remains a human-only, Operator-authorized lease. The canvas maps
 coordinates through its actual contain rectangle and rejects letterbox input.
@@ -768,8 +835,12 @@ Pointer hover/click/right-click/double-click/drag, bounded wheel input, ordered
 keyboard events, text/IME/paste, navigation keys, and modifier shortcuts are
 sent only for the currently attached `viewId` and owned lease. Disconnect,
 return, expiry, role/channel changes, and conflicts disable input immediately;
-`Ctrl+Alt+Escape` leaves remote keyboard focus. Audit records only batch event
-types, count, and duration—never text, keys, modifiers, or coordinates.
+`Ctrl+Alt+Escape` leaves remote keyboard focus. Audit aggregates successful
+input into one row per control lease with command/event counts by type and
+timings; return, cleanup, expiry, idle timeout, or shutdown flushes it. A failed
+batch gets one content-free failure row. Heartbeats stay in the live event
+stream but do not enter the ledger. Audit never records text, keys, modifiers,
+or coordinates.
 Hover movement may coalesce, but held-button movement remains ordered and
 pointer down/up events are never discarded by backlog pressure. A queued real
 release is drained before Return Control or view teardown; no movement is
@@ -793,6 +864,12 @@ or running Docker process:
 ```text
 GET /api/bots/capabilities
 ```
+
+Known cosmetic boot noise remains deferred: a fresh reasoning container may log
+two blocked `models.dev` requests and one failed `@opencode-ai/plugin` install
+attempt because normal egress correctly denies them. This adds roughly one
+second but does not change readiness or run results. A future image update may
+pre-populate both caches; do not widen the provider allowlist for this noise.
 
 For runtime anomalies, inspect the diagnostic journal before theorizing:
 

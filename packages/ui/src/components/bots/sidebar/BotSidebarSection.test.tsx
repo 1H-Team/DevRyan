@@ -6,8 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { I18nProvider } from '@/lib/i18n';
-import type { BotMembershipSummary, BotSummary } from '@/lib/botsApi';
+import type { BotMembershipSummary, BotRun, BotSummary } from '@/lib/botsApi';
 import { createBotChannelStore } from '@/stores/useBotChannelStore';
+import { createBotOperationsStore } from '@/stores/useBotOperationsStore';
 import { createBotsStore } from '@/stores/useBotsStore';
 import { BotSidebarSection } from './BotSidebarSection';
 
@@ -145,6 +146,60 @@ describe('BotSidebarSection', () => {
     expect(markup).toContain('border-border bg-interactive-selection');
     expect(markup).toContain('focus-visible:ring-2');
     expect(markup).toContain('aria-label="Open Conversation with Release Steward. Deploy completed without errors. Aug 23"');
+  });
+
+  const renderWithRun = (state: BotRun['state'] | null) => {
+    const stores = makeStores();
+    const operationsStore = createBotOperationsStore();
+    if (state) {
+      operationsStore.getState().upsertRun({
+        id: 'f0000000-0000-4000-8000-000000000001',
+        botId: BOT_ID,
+        channelId: CHANNEL_ID,
+        revisionId: 'c0000000-0000-4000-8000-000000000001',
+        modelSnapshot: null,
+        computerScopeKey: `bot:${BOT_ID}`,
+        queueSequence: 1,
+        state,
+        retryable: false,
+        interruptionKind: null,
+        createdAt: '2026-08-23T00:00:00.000Z',
+        updatedAt: '2026-08-23T00:00:00.000Z',
+        startedAt: null,
+        finishedAt: null,
+      });
+    }
+    Object.assign(operationsStore.getInitialState(), operationsStore.getState());
+    return renderToStaticMarkup(
+      <I18nProvider>
+        <BotSidebarSection vscodeRuntime={false} {...stores} operationsStore={operationsStore} />
+      </I18nProvider>,
+    );
+  };
+
+  test('shows typing dots while the Bot is preparing or writing, even from another channel', () => {
+    for (const state of ['queued', 'starting', 'running'] as const) {
+      const markup = renderWithRun(state);
+      expect(markup).toContain('data-bot-sidebar-status="typing"');
+      expect(markup).toContain('animate-bot-typing-dot');
+      expect(markup).toContain('Typing…');
+      expect(markup).not.toContain('Deploy completed without errors.');
+      expect(markup).toContain('aria-label="Open Conversation with Release Steward. Typing. Aug 23"');
+    }
+  });
+
+  test('says the Bot needs the member while a run waits on them, and shows the preview otherwise', () => {
+    for (const state of ['waiting_approval', 'waiting_control', 'needs_reconciliation'] as const) {
+      const markup = renderWithRun(state);
+      expect(markup).toContain('data-bot-sidebar-status="waiting"');
+      expect(markup).toContain('Needs you');
+      expect(markup).not.toContain('animate-bot-typing-dot');
+    }
+    for (const state of ['completed', 'failed', null] as const) {
+      const markup = renderWithRun(state);
+      expect(markup).not.toContain('data-bot-sidebar-status');
+      expect(markup).toContain('Deploy completed without errors.');
+    }
   });
 
   test('offers one deliberate VS Code entry without contacting the desktop runtime', () => {

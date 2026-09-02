@@ -1780,6 +1780,18 @@ export const resetDirectorySessionLifecycleOverlaysForTest = (): void => {
   directorySessionLifecycleOverlays.clear()
 }
 
+export const resetSessionMaterializationStateForTest = (): void => {
+  for (const pending of pendingSessionMaterializations.values()) {
+    if (pending.retryTimer) clearTimeout(pending.retryTimer)
+  }
+  pendingSessionMaterializations.clear()
+  for (const restoration of lifecycleRestorationsBySession.values()) {
+    restoration.cancelled = true
+  }
+  lifecycleRestorationsBySession.clear()
+  indicatorRestorationsByDirectory.clear()
+}
+
 const getSessionIdFromPayload = (event: Event): string | null => {
   const properties = (event as { properties?: unknown }).properties
   if (!properties || typeof properties !== "object") {

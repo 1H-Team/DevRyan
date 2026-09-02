@@ -112,6 +112,10 @@ cancel/close, structured completion, and optional warm/release capabilities.
 intent, artifact, checkpoint, usage, completion, and error events. OpenCode
 sessions, segments, native events, warm leases, image export, and provider error
 translation live in `opencode-reasoning-adapter.js`.
+Its structured-completion translation forwards only `runId`, `prompt`,
+`schema`, and non-empty `title`/`system` fields to the provider. Dispatcher
+binding/preparation internals therefore cannot cross the strict no-tools
+provider request boundary.
 `reasoning-adapter.conformance.test.js` runs OpenCode and AG-UI through the same
 health, preparation, continuation, inspection, cancellation, close, structured
 completion, and normalized-event contract; it also rejects provider semantics in
@@ -225,7 +229,7 @@ HTTP server are torn down.
 ## Supabase repositories
 
 `store.js` defines every relation and fixed RPC through migration
-`20260901160000`. Each
+`20260902120000`. Each
 repository has a literal select list and literal writable fields. Request JSON
 is never spread into a PostgREST body. Unsupported filters or fields fail before
 network I/O, and diagnostic logging contains only operation, table, and field
@@ -277,7 +281,7 @@ while missing, malformed, or older markers fail closed. Bot migrations must
 therefore remain backward-compatible for at least one desktop release. A stale
 marker or a schema-cache miss for any Bot table/function produces HTTP 503 with
 `code: "bot_schema_migration_required"` and
-`requiredMigration: "20260901160000"`.
+`requiredMigration: "20260902120000"`.
 
 The migration adds nullable `agent_adapter`, `agent_thread_id`, and bounded
 `agent_execution` fields to durable runs and backfills the projection from
@@ -601,11 +605,13 @@ record. This host-wide warmup never requests a model credential, creates a
 reasoning container, creates a computer container, or compiles every Bot
 revision. The authenticated selected-channel prewarm above remains lazy.
 
-Only an explicitly classified startup failure before any generic or legacy
-execution identifier, submitted prompt, assistant output, or action attempt can
-expose `retryable: true`. Provider retry advice cannot authorize replay of an
-executed Bot run. `retry-policy.js` also applies this conservative projection to
-historical failure flags.
+Only an explicitly classified startup/execution failure without visible output
+or possibly mutating action evidence can expose `retryable: true`. Provider
+retry advice alone cannot authorize replay of an executed Bot run.
+`retry-policy.js` treats a governed attempt as non-mutating evidence only when
+it is classified as a read, settled as succeeded/failed/denied, has no unknown
+outcome, and its receipt is absent or says `safe_to_retry`; pending, unknown,
+paginated, or write evidence fails closed.
 `POST /api/bot-runs/:runId/retry` uses `devryan_retry_bot_run` to acquire the
 computer-scope lock before locking and requeueing that same run. It checks the
 initiating actor, current access, active pinned revision, attachments, execution
@@ -613,7 +619,10 @@ identifiers (including AG-UI invocation IDs), and active scope ownership. Only
 an unfinalized, attachment-free pending admission placeholder is exempt from
 assistant-output evidence. Prompt execution persists its identity before that
 placeholder can acquire response text. Acknowledgments, results, finalized
-rows, and every action attempt block replay.
+rows, and every action attempt except the settled read-only case above block
+replay. Migration
+`20260902120000_bot_audit_resolution_and_read_only_retry.sql` enforces the same
+predicate transactionally in the retry RPC.
 Retry preserves the original user message, placeholder, idempotency identity,
 Library snapshot, attachments, and FIFO sequence. Existing HTTP status codes
 remain unchanged; an allowlisted `details.retryReason` explains permanent
@@ -786,8 +795,11 @@ Successful authorized checkpoints publish `message.updated` projections to the
 channel audience. Unverified response text is never checkpointed; the UI shows
 pending work separately and paints answer text only after finality. Events never
 contain the encrypted envelope or hidden adapter identifiers.
-Cancellation calls the active adapter, queued cancellation is durable,
-and run timeout records a terminal failure before scoped-runtime cleanup.
+Cancellation calls the active adapter, queued cancellation is durable, and a
+run-scoped cancellation marker covers the startup interval before active
+execution registration so an abort in that race still settles as `cancelled`
+instead of a failed request. Run timeout records a terminal failure before
+scoped-runtime cleanup.
 Adapter errors retain a safe subtype-specific
 `interruption_kind` for authentication, API rejection/retry, output length,
 abort, structured output, context overflow, content filter, and unknown errors.
@@ -866,7 +878,9 @@ persisted on the job before any summary, version, or index commit. Lease expiry,
 process crashes, and restarts therefore resume the commit phase without another
 model request. Transient provider, checkpoint, storage, and index failures use
 bounded durable backoff; malformed, missing, deleted, or undecryptable inputs
-settle terminally. Underlying non-retryable classifications are preserved, and
+settle terminally. The terminal branch logs only the normalized code/name/status,
+run/Bot IDs, phase, and attempt count before its audit diagnostic; provider
+payloads and extracted content never enter the log. Underlying non-retryable classifications are preserved, and
 revision conflicts settle after one attempt instead of exhausting the retry
 schedule. Migration `20260901130000_bot_memory_extraction_conflict_recovery.sql`
 requeues only the historical terminal `classification` plus
@@ -1064,10 +1078,13 @@ frames are proxied ephemerally and never enter Supabase or the object store.
 Status, take/heartbeat/return, and reviewed human commands use the Bot-scoped
 `/api/bots/:botId/computer/*` contract, so they remain available between runs.
 The status projection allowlists the typed browser lifecycle, headed-mode,
-engine/display, managed web-capability, and sanitized navigation-diagnostic
-fields. Unknown container fields are discarded, and diagnostic origins are
-renormalized so paths, queries, headers, cookies, page content, and input data
-cannot cross into the renderer.
+engine/display, active-target/popup state, managed web-capability, and sanitized
+navigation-diagnostic fields. It projects at most ten trail entries, five
+non-actionable cookie blocks, and five dialogs. Origins are renormalized and
+pathnames are revalidated/masked; query/hash/userinfo, headers, cookie values,
+page content, and input data cannot cross into the renderer. A genuine
+same-path/redirect loop writes one content-free partial audit row per browser
+generation/diagnostic revision and a matching journal lifecycle record.
 An agent command encounters human control as the explicit pre-execution
 `DEVRYAN_BOT_CONTROL_HELD` fence. The gateway persists both the run and the same
 action attempt as `waiting_control`, polls the authoritative renewable lease,
@@ -1103,14 +1120,18 @@ The host revalidates principal, Bot membership, Operator role, channel read,
 CSRF, view attachment, and lease ownership immediately before dispatch. Input
 is disabled on disconnect, return, expiry, role/channel change, or conflict.
 The computer service dispatches ordered CDP input without exposing `input` to
-the Bot agent's reviewed command inventory. One batch audit records event types,
-count, and duration only; text, keys, modifiers, and coordinates are forbidden.
+the Bot agent's reviewed command inventory. Successful batches accumulate into
+one `bot.computer.human_session` row per control lease with counts by event type,
+aggregate timings, and an end reason. Return, view cleanup, expiry, five minutes
+of inactivity, and shutdown flush it; heartbeats remain in the event stream but
+do not enter the ledger. A failed batch keeps one individual content-free
+failure row. Text, keys, modifiers, and coordinates are forbidden.
 An already-authorized active runtime does not repeat Docker inspection for each
 input batch; the periodic sweep remains the health authority. Continuous hover
 and wheel events are coalesced behind at most one in-flight request. Held-button
 movement remains ordered, discrete down/up events survive backlog pressure, a
-queued real release drains before control/view teardown, and audit delivery is scheduled after CDP
-dispatch so neither container inspection nor audit storage delays click effects.
+queued real release drains before control/view teardown, and lease aggregation
+means audit storage is not on the per-click success path.
 
 `evidence-service.js` captures only when the selected write policy requests it.
 The browser supplies a PNG, then the server crops to policy-bound target bounds,
@@ -1304,17 +1325,20 @@ explicit filter. Reads use `(created_at, id)` keyset cursors, hydrate Bots and
 actors in batches, and replace invalid legacy metadata with a redaction marker
 per row. These routes assert the schema marker but intentionally bypass Bot
 execution-health middleware so Docker or adapter degradation cannot hide prior
-evidence. `DELETE /api/bot-audit?range=24h|7d|14d|all` clears the review list for
+evidence. `DELETE /api/bot-audit?range=24h|7d|14d|30d|all` clears the review list for
 all administrators, independently of list filters. Migration
 `20260830180651_bot_audit_clear.sql` adds the service-only
 `devryan_clear_bot_audit` RPC, which atomically inserts per-event dismissal
 records with administrator attribution and a bounded server timestamp. It
 requires an active administrator and preserves every immutable ledger row.
-Listings use the security-invoker `bot_audit_review_events` view. A later
-successful memory extraction annotates earlier failed/partial events for the
-same run with `resolvedAt` and `resolvedByEventId`; the default Issues query
-hides those resolved projections, while All and UUID detail keep the immutable
-history visible. Repeated clears count only newly cleared
+Listings use the security-invoker `bot_audit_review_events` view. Migration
+`20260902120000_bot_audit_resolution_and_read_only_retry.sql` annotates any
+failed/partial/unknown event when the same Bot target later has a matching
+success, `.requeue` success, or `.retry` success. A `bot_run` issue also resolves
+when its durable run later completes. List/detail responses expose
+`resolvedAt` and the resolving event ID when one exists; the default Issues
+query hides those resolved projections, while All and UUID detail keep the
+immutable history visible. Repeated clears count only newly cleared
 events; events inserted after the snapshot remain visible. Dismissals cascade
 away only when retention removes their corresponding ledger events. Missing
 clear schema returns an explicit migration-required error without falling back

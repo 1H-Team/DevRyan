@@ -181,6 +181,8 @@ const browserDiagnosticFingerprint = (status: BotComputerStatus | undefined): st
     mode: browser?.mode,
     engineVersion: browser?.engineVersion,
     displayReady: browser?.displayReady,
+    activeTargetCount: browser?.activeTargetCount,
+    popupOpen: browser?.popupOpen,
     webCapabilities: browser?.webCapabilities,
     diagnosticRevision: browser?.lastNavigationDiagnostic?.revision,
   });

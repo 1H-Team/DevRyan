@@ -33,6 +33,7 @@ import {
   handleUserNotificationEvent,
   reconcileDirectorySessionListSnapshot,
   resetDirectorySessionLifecycleOverlaysForTest,
+  resetSessionMaterializationStateForTest,
   restorePersistedSessionIndicatorsForDirectory,
   setActiveSession,
   setExternallyViewedSession,
@@ -232,6 +233,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     registerRuntimeAPIs(null)
     resetGlobalSessionLifecycleOverlayForTest()
     resetDirectorySessionLifecycleOverlaysForTest()
+    resetSessionMaterializationStateForTest()
     useGlobalSessionsStore.setState({
       activeSessions: [],
       archivedSessions: [],

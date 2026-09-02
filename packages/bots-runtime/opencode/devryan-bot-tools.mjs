@@ -18,11 +18,16 @@ const OPERATIONS = Object.freeze([
   'artifact.get',
   'artifact.put',
   'computer.command',
+  'conversation.ask',
   'image.generate',
   'library.search',
   'memory.search',
   'workspace.write',
 ]);
+const MAX_QUESTION_CHARS = 500;
+const MAX_QUESTION_OPTIONS = 6;
+const MAX_QUESTION_LABEL_CHARS = 80;
+const MAX_QUESTION_DESCRIPTION_CHARS = 200;
 const ERROR_CODES = Object.freeze({
   inputInvalid: 'DEVRYAN_BOT_INPUT_INVALID',
   configInvalid: 'DEVRYAN_BOT_CONFIG_INVALID',
@@ -120,6 +125,58 @@ const validateInput = (input) => {
     fail(ERROR_CODES.inputInvalid, 'tool payload is too large');
   }
   return { operation: input.operation, payload: input.payload };
+};
+
+// devryan_ask: one short clarifying question with tappable options. The user
+// answers with an ordinary reply, so the Bot must end its turn after asking.
+const validateQuestionInput = (input) => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    fail(ERROR_CODES.inputInvalid, 'question input must be an object');
+  }
+  const keys = Object.keys(input);
+  if (keys.some((key) => !['question', 'options', 'multiple', 'allowFreeText'].includes(key))) {
+    fail(ERROR_CODES.inputInvalid, 'question input has unsupported fields');
+  }
+  const question = typeof input.question === 'string' ? input.question.replace(/\s+/gu, ' ').trim() : '';
+  if (!question || question.length > MAX_QUESTION_CHARS) {
+    fail(ERROR_CODES.inputInvalid, `question must be 1-${MAX_QUESTION_CHARS} characters`);
+  }
+  if (!Array.isArray(input.options) || input.options.length < 1 || input.options.length > MAX_QUESTION_OPTIONS) {
+    fail(ERROR_CODES.inputInvalid, `options must list 1-${MAX_QUESTION_OPTIONS} choices`);
+  }
+  const seen = new Set();
+  const options = input.options.map((option) => {
+    const raw = typeof option === 'string' ? { label: option } : option;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)
+      || Object.keys(raw).some((key) => !['label', 'description'].includes(key))) {
+      fail(ERROR_CODES.inputInvalid, 'each option needs a label and optional description');
+    }
+    const label = typeof raw.label === 'string' ? raw.label.replace(/\s+/gu, ' ').trim() : '';
+    if (!label || label.length > MAX_QUESTION_LABEL_CHARS) {
+      fail(ERROR_CODES.inputInvalid, `option labels must be 1-${MAX_QUESTION_LABEL_CHARS} characters`);
+    }
+    if (seen.has(label.toLowerCase())) fail(ERROR_CODES.inputInvalid, 'option labels must be distinct');
+    seen.add(label.toLowerCase());
+    const description = raw.description === undefined || raw.description === null
+      ? null
+      : (typeof raw.description === 'string' ? raw.description.replace(/\s+/gu, ' ').trim() : null);
+    if (raw.description !== undefined && raw.description !== null
+      && (description === null || description.length > MAX_QUESTION_DESCRIPTION_CHARS)) {
+      fail(ERROR_CODES.inputInvalid, `option descriptions must be text up to ${MAX_QUESTION_DESCRIPTION_CHARS} characters`);
+    }
+    return description ? { label, description } : { label };
+  });
+  for (const flag of ['multiple', 'allowFreeText']) {
+    if (input[flag] !== undefined && typeof input[flag] !== 'boolean') {
+      fail(ERROR_CODES.inputInvalid, `${flag} must be true or false`);
+    }
+  }
+  return {
+    prompt: question,
+    options,
+    multiple: input.multiple === true,
+    allowFreeText: input.allowFreeText !== false,
+  };
 };
 
 const validateImageInput = (payload) => {
@@ -316,6 +373,25 @@ const createPlugin = async ({
           return executeImage(validated.payload, context);
         }
         return executeGatewayOperation({ input, context, capability, fetchImpl });
+      },
+    }),
+    devryan_ask: toolApi({
+      description: 'Ask the user one short clarifying question with tappable quick-reply options, shown inside your message. Use it only when the request is genuinely ambiguous and the answer changes what you would do. Give 2-4 concise options (max 6), one question at a time. After calling it, end your turn immediately and wait; the user answers with a normal message.',
+      args: {
+        question: toolApi.schema.string(),
+        options: toolApi.schema.unknown(),
+        multiple: toolApi.schema.unknown(),
+        allowFreeText: toolApi.schema.unknown(),
+      },
+      execute: async (input, context) => {
+        const payload = validateQuestionInput(input);
+        await executeGatewayOperation({
+          input: { operation: 'conversation.ask', payload },
+          context,
+          capability,
+          fetchImpl,
+        });
+        return `Question shown to the user with ${payload.options.length} quick-reply option${payload.options.length === 1 ? '' : 's'}. End your turn now without calling more tools; the user's tap arrives as their next message.`;
       },
     }),
     devryan_write: toolApi({

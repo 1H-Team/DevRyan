@@ -133,10 +133,11 @@ export const BotComposer: React.FC<BotComposerProps> = ({
         setUploadFailures(result.failures);
       }
     } finally {
-      if (stillCurrent()) {
-        uploadingRef.current = false;
-        setUploading(false);
-      }
+      // Re-entry is blocked by uploadingRef while this runs, so no newer upload
+      // can be in flight; always release the composer, even after a channel or
+      // draft switch, or it stays stuck on the spinner.
+      uploadingRef.current = false;
+      setUploading(false);
     }
   }, [accepting, api, botId, channel.id, channelStore, hasWriteAccess, updateDraft]);
 

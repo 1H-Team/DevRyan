@@ -59,19 +59,29 @@ export const BotInlineComputer = React.memo(function BotInlineComputer({ botId, 
   }, [expanded]);
 
   if (!shown) return null;
+  // The desktop is a fixed 16:9 surface, so the widget is sized by that aspect
+  // (never a fixed pixel height) and is allowed to grow past the 760px message
+  // column into the transcript's full width; expanded, it fills the viewport
+  // while keeping the same aspect so there are no black bars.
   return (
-    <div ref={markerRef} className="my-3 min-w-0" data-bot-inline-computer={botId}>
+    <div
+      ref={markerRef}
+      className="my-3 w-[max(100%,min(100cqw-24px,1100px))] min-w-0 ml-[calc((100%-max(100%,min(100cqw-24px,1100px)))/2)]"
+      data-bot-inline-computer={botId}
+    >
       <dialog
         ref={dialogRef} open aria-label="Shared Bot Computer"
         onCancel={(event) => { event.preventDefault(); setExpanded(false); }}
         className={cn(
-          'm-0 flex flex-col overflow-hidden rounded-xl border border-border bg-background p-0 text-foreground shadow-sm backdrop:bg-black/60',
-          expanded ? 'fixed inset-4 m-auto h-[min(90dvh,900px)] w-[min(94vw,1400px)] max-w-none' : 'relative w-full max-w-none',
+          'm-0 flex flex-col overflow-hidden rounded-xl border border-border bg-background p-0 text-foreground shadow-sm backdrop:bg-black/70',
+          expanded
+            ? 'fixed inset-0 m-auto h-auto max-h-[94dvh] w-[min(96vw,calc((94dvh-72px)*16/9))] max-w-none'
+            : 'relative w-full max-w-none',
         )}
       >
-        <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 px-2.5">
           <RiComputerLine className="h-4 w-4 text-muted-foreground" aria-hidden />
-          <span className="min-w-0 flex-1 typography-ui-label font-medium">Shared Bot Computer</span>
+          <span className="min-w-0 flex-1 truncate typography-ui-label font-medium">Shared Bot Computer</span>
           <Button variant="ghost" size="xs" aria-label={expanded ? 'Collapse Computer' : 'Expand Computer'} onClick={() => setExpanded((value) => !value)}>
             {expanded ? <RiFullscreenExitLine /> : <RiFullscreenLine />}
           </Button>
@@ -80,10 +90,12 @@ export const BotInlineComputer = React.memo(function BotInlineComputer({ botId, 
             useBotComputerActivityStore.getState().hide(botId);
           }}><RiArrowDownSLine /> Hide</Button>
         </div>
-        <div className={expanded ? 'min-h-0 flex-1' : 'h-[360px] max-h-[60dvh] min-h-[220px]'}>
-          <BotBrowserDiagnostic botId={botId} channelId={channelId} botActive={botActive}
-            principalId={principal.id} canControl={Boolean(membership)} runId={requested ? undefined : runId}
-            active={documentVisible && (expanded || onScreen)} />
+        <div className={expanded ? 'min-h-0 w-full' : 'w-full'} data-bot-inline-computer-screen="true">
+          <div className={cn('flex w-full flex-col', expanded ? 'max-h-[calc(94dvh-36px)]' : 'max-h-[70dvh] min-h-[220px]')} style={{ aspectRatio: '16 / 8.6' }}>
+            <BotBrowserDiagnostic botId={botId} channelId={channelId} botActive={botActive}
+              principalId={principal.id} canControl={Boolean(membership)} runId={requested ? undefined : runId}
+              active={documentVisible && (expanded || onScreen)} />
+          </div>
         </div>
       </dialog>
     </div>

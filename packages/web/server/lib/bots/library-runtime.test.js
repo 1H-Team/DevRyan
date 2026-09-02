@@ -225,7 +225,7 @@ describe('Production Bot curated Library runtime', () => {
     });
   });
 
-  it('uses the container root only for a global administrator', async () => {
+  it('starts every listing in the workspace and opens the whole computer only to a global administrator who asks', async () => {
     const listContainerFilesystem = vi.fn(async () => ({
       state: 'running',
       path: '',
@@ -239,14 +239,38 @@ describe('Production Bot curated Library runtime', () => {
       }],
       truncated: false,
     }));
-    const harness = createHarness({
+    const listWorkspace = vi.fn(async () => ({
+      state: 'running',
+      path: '',
+      entries: [{ path: 'Shared', name: 'Shared', type: 'dir', size: 0, modifiedAt: null }],
+      truncated: false,
+    }));
+    const dockerProvider = {
+      containerListAvailable: true,
+      workspaceListAvailable: true,
+      listContainerFilesystem,
+      listWorkspace,
+    };
+    const admin = createHarness({
       authorizationDecision: { reason: 'global_admin' },
-      dockerProvider: { containerListAvailable: true, listContainerFilesystem },
+      dockerProvider,
     });
 
-    await expect(harness.runtime.listComputerFiles(
+    await expect(admin.runtime.listComputerFiles(
       { ...principal, role: 'admin' },
       BOT_ID,
+    )).resolves.toMatchObject({
+      available: true,
+      scope: 'workspace',
+      rootLabel: 'Workspace',
+      entries: [expect.objectContaining({ name: 'Shared', kind: 'directory' })],
+    });
+    expect(listContainerFilesystem).not.toHaveBeenCalled();
+
+    await expect(admin.runtime.listComputerFiles(
+      { ...principal, role: 'admin' },
+      BOT_ID,
+      { scope: 'container' },
     )).resolves.toMatchObject({
       available: true,
       scope: 'container',
@@ -254,6 +278,12 @@ describe('Production Bot curated Library runtime', () => {
       path: '',
     });
     expect(listContainerFilesystem).toHaveBeenCalledWith(expect.objectContaining({ path: null }));
+
+    const member = createHarness({ dockerProvider });
+    await expect(member.runtime.listComputerFiles(principal, BOT_ID, { scope: 'container' }))
+      .rejects.toMatchObject({ code: 'bot_computer_scope_forbidden', statusCode: 403 });
+    await expect(member.runtime.listComputerFiles(principal, BOT_ID, { scope: 'everything' }))
+      .rejects.toMatchObject({ code: 'bot_request_invalid', statusCode: 400 });
   });
 
   it('encrypts host provenance, requires review, and publishes immutable diffed versions', async () => {

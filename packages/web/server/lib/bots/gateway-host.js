@@ -5,6 +5,7 @@ import net from 'node:net';
 import { assertBotJsonValue } from '@openchamber/bots-runtime';
 
 import { validateUuid } from './validation.js';
+import { botErrorLogFields } from './error-normalization.js';
 
 export const BOT_PRIVATE_GATEWAY_PATH = '/api/bots/private/gateway';
 export const BOT_PRIVATE_OAUTH_PATH = '/api/bots/private/oauth';
@@ -13,6 +14,7 @@ export const BOT_GATEWAY_OPERATIONS = Object.freeze([
   'artifact.get',
   'artifact.put',
   'computer.command',
+  'conversation.ask',
   'library.search',
   'memory.search',
   'workspace.write',
@@ -256,6 +258,7 @@ export function createBotGatewayHost({
   let shutdownPromise = null;
 
   const server = http.createServer(async (request, response) => {
+    let operation = 'unknown';
     try {
       if (request.method !== 'POST' || ![BOT_PRIVATE_GATEWAY_PATH, BOT_PRIVATE_OAUTH_PATH].includes(request.url)) {
         fail('Bot gateway route was not found', 'bot_gateway_not_found', 404);
@@ -280,6 +283,7 @@ export function createBotGatewayHost({
           || Object.keys(body).sort().join(',') !== 'operation,protocol') {
           fail('Bot OAuth request is invalid', 'bot_oauth_access_denied', 403);
         }
+        operation = body.operation;
         try {
           const result = await handleOAuth(claims, body.operation);
           if (capabilities.get(digest) !== claims || claims.expiresAt <= now()) {
@@ -291,20 +295,25 @@ export function createBotGatewayHost({
         }
         return;
       }
-      const operation = validateRequestBody(body, claims);
+      const validatedOperation = validateRequestBody(body, claims);
+      operation = validatedOperation.operation;
       const controller = new AbortController();
       request.once('aborted', () => controller.abort());
       const result = await handleOperation({
         claims,
-        operation: operation.operation,
-        payload: operation.payload,
+        operation: validatedOperation.operation,
+        payload: validatedOperation.payload,
         signal: controller.signal,
       });
       sendJson(response, 200, { ok: true, result }, responseLimit);
     } catch (error) {
       if (response.destroyed) return;
       const failure = failurePayload(error);
-      logger?.warn?.('[BotsGateway] request rejected', { code: failure.code });
+      logger?.warn?.('[BotsGateway] request rejected', {
+        ...botErrorLogFields(error, 'bot_gateway_internal_error'),
+        statusCode: failure.statusCode,
+        operation,
+      });
       sendJson(response, failure.statusCode, failure.payload, responseLimit);
     }
   });

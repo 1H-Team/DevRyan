@@ -32,12 +32,12 @@ import { clearBotAudit, getBotAudit, listBotAudit, listBotAuditOptions, listErro
 import {
   botAuditResultLabelKey,
   type BotAuditBotOption,
+  type BotAuditClearRange,
   type BotAuditDetail,
   type BotAuditResult,
   type BotAuditResultFilter,
   type BotAuditSummary,
   type ErrorLogActorOption,
-  type ErrorLogClearRange,
 } from './types';
 
 type DateFilter = '24h' | '7d' | '30d' | 'all';
@@ -45,10 +45,10 @@ type DateFilter = '24h' | '7d' | '30d' | 'all';
 const SEARCH_DEBOUNCE_MS = 300;
 const PAGE_SIZES = [50, 100, 200] as const;
 const CLEAR_RANGES = [
-  { value: '24h', labelKey: 'settings.bugReports.errors.clear.range24h' },
-  { value: '7d', labelKey: 'settings.bugReports.errors.clear.range7d' },
-  { value: '14d', labelKey: 'settings.bugReports.errors.clear.range14d' },
-  { value: 'all', labelKey: 'settings.bugReports.errors.clear.rangeAll' },
+  { value: '24h', labelKey: 'settings.bugReports.botAudit.clear.range24h' },
+  { value: '7d', labelKey: 'settings.bugReports.botAudit.clear.range7d' },
+  { value: '30d', labelKey: 'settings.bugReports.botAudit.clear.range30d' },
+  { value: 'all', labelKey: 'settings.bugReports.botAudit.clear.rangeAll' },
 ] as const;
 const RESULT_FILTERS: readonly BotAuditResultFilter[] = [
   'issues', 'failure', 'partial', 'unknown', 'denied', 'success', 'all',
@@ -128,7 +128,7 @@ export const BotAuditPanel: React.FC = () => {
   const [nextCursor, setNextCursor] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
-  const [clearing, setClearing] = React.useState<ErrorLogClearRange | null>(null);
+  const [clearing, setClearing] = React.useState<BotAuditClearRange | null>(null);
   const clearInProgress = React.useRef(false);
   const listRequestId = React.useRef(0);
   const [error, setError] = React.useState<string | null>(null);
@@ -161,6 +161,7 @@ export const BotAuditPanel: React.FC = () => {
     actor: actorFilter,
     search,
     from: dateFilterBound(dateFilter),
+    to: new Date().toISOString(),
     limit: pageSize,
   }), [actorFilter, botFilter, dateFilter, pageSize, resultFilter, search]);
 
@@ -349,6 +350,8 @@ export const BotAuditPanel: React.FC = () => {
                 [t('settings.bugReports.botAudit.target'), `${detail.target.type}${detail.target.id ? ` · ${detail.target.id}` : ''}`, true],
                 [t('settings.bugReports.botAudit.occurred'), formatDateTime(detail.timestamp), false],
                 [t('settings.bugReports.botAudit.diagnosticCode'), detail.diagnosticCode || '—', true],
+                [t('settings.bugReports.botAudit.resolvedAt'), detail.resolvedAt ? formatDateTime(detail.resolvedAt) : '—', false],
+                [t('settings.bugReports.botAudit.resolvedBy'), detail.resolvedByEventId || '—', true],
               ].map(([label, value, mono]) => (
                 <div key={String(label)} className="min-w-0 space-y-1">
                   <dt className="typography-micro uppercase tracking-wide text-muted-foreground">{label}</dt>
@@ -550,6 +553,11 @@ export const BotAuditPanel: React.FC = () => {
                     </span>
                   </span>
                   <span className="flex w-fit shrink-0 flex-wrap items-center justify-end gap-1.5">
+                    {log.resolvedAt ? (
+                      <span className="rounded-full bg-status-success/10 px-2 py-1 typography-micro font-semibold text-status-success" data-bot-audit-resolved="true">
+                        {t('settings.bugReports.botAudit.resolved')}
+                      </span>
+                    ) : null}
                     {log.diagnosticCode ? (
                       <span className="max-w-52 truncate rounded-full border border-border/60 px-2 py-1 font-mono text-[10px] text-muted-foreground">{log.diagnosticCode}</span>
                     ) : null}

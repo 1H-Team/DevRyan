@@ -210,8 +210,12 @@ describe('Production Bot context assembly', () => {
     expect(result.parts[1].text).toContain('natural conversation');
     expect(result.parts[1].text).toContain('Do not use progress or status headings');
     expect(result.parts[1].text).toContain("configured personality");
-    expect(result.parts[1].text).toContain('without acknowledgment or progress prose');
+    expect(result.parts[1].text).toContain('exactly one short line in your own voice');
     expect(result.parts[1].text).toContain('interface shows that you are working');
+    expect(result.parts[1].text).toContain('devryan_ask');
+    expect(result.parts[0].text).toContain('"turn":');
+    expect(result.parts[0].text).toContain('"timeZone":');
+    expect(result.contextSnapshot).not.toHaveProperty('turn');
     expect(result.parts[1].text).toContain('needs no tool, reply directly');
     expect(result.parts[1].text).toContain('Do not narrate progress between tools');
     expect(result.parts[1].text).toContain('send one useful, natural response');
@@ -261,4 +265,141 @@ describe('Production Bot context assembly', () => {
     expect((await assembler.assemble(input)).parts[0].text).not.toContain('version-2');
   });
 
+  const memoryRow = (id, logicalKey, extra = {}) => ({
+    id, bot_id: BOT_ID, logical_key: logicalKey, active_version_id: `${id}-v1`,
+    updated_at: '2026-09-01T00:00:00Z', encrypted_content: {}, tombstoned_at: null, ...extra,
+  });
+  const retrievalHarness = ({ rows, hits, older = {} }) => {
+    const store = {
+      getPreviousChannelRun: vi.fn(async () => null),
+      repositories: {
+        bot_runs: {},
+        bot_memories: {
+          list: vi.fn(async () => ({ items: rows, nextCursor: null })),
+          get: vi.fn(async ({ id }) => older[id] || null),
+        },
+      },
+    };
+    const channels = {
+      loadRecentMessages: vi.fn(async () => [
+        { id: 'u1', role: 'user', sequence: 1, body: { text: 'Oldest question' } },
+        { id: 'a1', role: 'assistant', sequence: 2, body: { text: 'Earlier answer' } },
+        { id: 'u2', role: 'user', sequence: 3, body: { text: 'Which plan did we pick?' } },
+        { id: 'a2', role: 'assistant', sequence: 4, body: { text: 'The annual one' } },
+        { id: 'u3', role: 'user', sequence: 5, body: { text: 'And the price?' } },
+      ]),
+      decryptMemory: vi.fn(async (row) => ({ text: `${row.logical_key} memory` })),
+    };
+    const memoryRetrieval = { search: vi.fn(hits) };
+    const input = {
+      run: { channel_id: CHANNEL_ID }, bot: { id: BOT_ID },
+      channel: { id: CHANNEL_ID, summary: null }, revision: { id: REVISION_ID, contract: {} },
+      queryText: 'What changed?',
+    };
+    return { store, channels, memoryRetrieval, input };
+  };
+
+  it('pins durable people-facts, then fills one budget by relevance and recency', async () => {
+    const rows = [
+      memoryRow('m1', 'project.deploy_day'),
+      memoryRow('m2', 'user.name'),
+      memoryRow('m3', 'topic.pricing'),
+      memoryRow('m4', 'preference.tone'),
+      memoryRow('m5', 'project.stack'),
+    ];
+    const { store, channels, memoryRetrieval, input } = retrievalHarness({
+      rows,
+      hits: async () => [
+        { memoryId: 'm5', score: 0.9 },
+        { memoryId: 'm2', score: 0.8 },
+        { memoryId: 'm-old', score: 0.5 },
+        { memoryId: 'm-gone', score: 0.4 },
+        { memoryId: 'm-tombstoned', score: 0.3 },
+      ],
+      older: {
+        'm-old': memoryRow('m-old', 'project.launch'),
+        'm-tombstoned': memoryRow('m-tombstoned', 'project.retired', { tombstoned_at: '2026-08-01T00:00:00Z' }),
+      },
+    });
+    const assembler = createBotContextAssembler({
+      store, channels, memoryRetrieval, memoryRetrievalLimit: 3,
+    });
+    const result = await assembler.assemble(input);
+    expect(memoryRetrieval.search).toHaveBeenCalledWith({
+      botId: BOT_ID,
+      query: 'What changed?\nWhich plan did we pick?\nAnd the price?',
+      limit: 11,
+    });
+    expect(store.repositories.bot_memories.list).toHaveBeenCalledWith({
+      filters: { bot_id: BOT_ID, tombstoned_at: null },
+      limit: 100,
+    });
+    expect(store.repositories.bot_memories.get).toHaveBeenCalledWith({ id: 'm-old', bot_id: BOT_ID });
+    expect(result.contextSnapshot.memoryIds).toEqual(['m2', 'm4', 'm5', 'm-old', 'm1']);
+    expect(result.contextSnapshot.memoryRetrieval).toEqual({
+      mode: 'relevance', pinned: 2, relevant: 2, recent: 1, candidates: 5,
+    });
+    expect(result.parts[0].text).toContain('user.name memory');
+    expect(result.parts[0].text).toContain('project.launch memory');
+    expect(result.parts[0].text).not.toContain('topic.pricing memory');
+    expect(result.parts[0].text).not.toContain('project.retired');
+    const snapshotJson = JSON.stringify(result.contextSnapshot);
+    expect(snapshotJson).not.toContain('user.name memory');
+    expect(snapshotJson).not.toContain('project.launch memory');
+  });
+
+  it('falls back to the newest facts when relevance retrieval is unavailable or empty', async () => {
+    const rows = [memoryRow('m1', 'project.deploy_day'), memoryRow('m2', 'user.name')];
+    const failing = retrievalHarness({ rows, hits: async () => { throw new Error('index down'); } });
+    let result = await createBotContextAssembler({
+      store: failing.store, channels: failing.channels, memoryRetrieval: failing.memoryRetrieval,
+    }).assemble(failing.input);
+    expect(result.contextSnapshot.memoryIds).toEqual(['m1', 'm2']);
+    expect(result.contextSnapshot.memoryRetrieval).toEqual({
+      mode: 'recent', pinned: 0, relevant: 0, recent: 2, candidates: 2,
+    });
+
+    const unavailable = retrievalHarness({ rows, hits: async () => null });
+    result = await createBotContextAssembler({
+      store: unavailable.store, channels: unavailable.channels, memoryRetrieval: unavailable.memoryRetrieval,
+    }).assemble(unavailable.input);
+    expect(result.contextSnapshot.memoryRetrieval.mode).toBe('recent');
+
+    const blank = retrievalHarness({ rows, hits: async () => [] });
+    blank.channels.loadRecentMessages.mockResolvedValue([]);
+    result = await createBotContextAssembler({
+      store: blank.store, channels: blank.channels, memoryRetrieval: blank.memoryRetrieval,
+    }).assemble({ ...blank.input, queryText: '   ' });
+    expect(blank.memoryRetrieval.search).not.toHaveBeenCalled();
+    expect(result.contextSnapshot.memoryRetrieval.mode).toBe('recent');
+
+    const noIndex = retrievalHarness({ rows, hits: async () => [] });
+    result = await createBotContextAssembler({ store: noIndex.store, channels: noIndex.channels })
+      .assemble(noIndex.input);
+    expect(noIndex.store.repositories.bot_memories.list).toHaveBeenCalledWith(expect.objectContaining({ limit: 50 }));
+    expect(result.contextSnapshot.memoryRetrieval.mode).toBe('recent');
+  });
+
+  it('bounds the memory block by bytes while keeping pinned facts first', async () => {
+    const rows = [memoryRow('m1', 'project.notes'), memoryRow('m2', 'user.name'), memoryRow('m3', 'project.more')];
+    const { store, channels, memoryRetrieval, input } = retrievalHarness({
+      rows, hits: async () => [{ memoryId: 'm1' }, { memoryId: 'm3' }],
+    });
+    channels.decryptMemory.mockImplementation(async (row) => ({
+      text: row.logical_key === 'user.name' ? 'Zoubair' : 'x'.repeat(60 * 1024),
+    }));
+    const result = await createBotContextAssembler({ store, channels, memoryRetrieval }).assemble(input);
+    expect(result.contextSnapshot.memoryIds).toEqual(['m2', 'm1']);
+    expect(result.contextSnapshot.memoryRetrieval).toEqual({
+      mode: 'relevance', pinned: 1, relevant: 1, recent: 0, candidates: 3,
+    });
+  });
+
+  it('rejects a memory retrieval boundary without a search function', () => {
+    expect(() => createBotContextAssembler({
+      store: { getPreviousChannelRun: async () => null, repositories: { bot_runs: {}, bot_memories: {} } },
+      channels: { loadRecentMessages: async () => [], decryptMemory: async () => ({ text: '' }) },
+      memoryRetrieval: {},
+    })).toThrow('misconfigured');
+  });
 });

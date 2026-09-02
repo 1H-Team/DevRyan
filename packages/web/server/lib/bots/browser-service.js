@@ -12,6 +12,7 @@ import {
   validateBoundedString,
   validateUuid,
 } from './validation.js';
+import { botErrorLogFields } from './error-normalization.js';
 
 const COMPUTER_RESPONSE_LIMIT = 5 * 1024 * 1024;
 const COMPUTER_REQUEST_TIMEOUT_MS = 35_000;
@@ -47,6 +48,7 @@ const SAFE_AUDIT_REMOTE_CODES = new Set([
   'DEVRYAN_BOT_CONTROL_CONFLICT',
 ]);
 const MAX_HUMAN_INPUT_EVENTS = 32;
+const HUMAN_SESSION_IDLE_MS = 5 * 60 * 1_000;
 const HUMAN_POINTER_PHASES = new Set(['move', 'down', 'up']);
 const HUMAN_POINTER_BUTTONS = new Set(['none', 'left', 'middle', 'right']);
 const HUMAN_KEY_PHASES = new Set(['down', 'up']);
@@ -393,6 +395,62 @@ const statusOrigin = (value) => {
   }
 };
 
+const statusPath = (value) => {
+  if (typeof value !== 'string' || value.length > 200
+    || !/^\/[\x21-\x7e]{0,199}$/u.test(value) || /[?#]/u.test(value)) return null;
+  const masked = value.split('/').map((segment) => {
+    let decoded = segment;
+    try { decoded = decodeURIComponent(segment); } catch { /* Keep the encoded segment. */ }
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(decoded)
+      || /^[A-Za-z0-9_+=-]{16,}$/u.test(decoded)
+      || /\d{6,}/u.test(decoded)
+      ? '*'
+      : segment;
+  }).join('/');
+  return masked || '/';
+};
+
+const projectBrowserTrailEntry = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const kind = statusString(value.kind, /^(navigation|failure|dialog)$/u);
+  const path = statusPath(value.path);
+  const origin = statusOrigin(value.origin);
+  const observedAt = statusInteger(value.observedAt);
+  if (!kind || !path || observedAt === undefined) return null;
+  const entry = {
+    kind,
+    origin,
+    path,
+    observedAt,
+  };
+  if (kind === 'navigation') {
+    entry.statusCode = Number.isInteger(value.statusCode)
+      && value.statusCode >= 100 && value.statusCode <= 599 ? value.statusCode : null;
+    entry.redirectCount = statusInteger(value.redirectCount, 1_000_000) ?? 0;
+  } else if (kind === 'failure') {
+    entry.reason = statusString(value.reason, /^[A-Za-z0-9_.:-]+$/u) || 'unknown';
+  } else {
+    entry.type = statusString(value.type, /^(alert|beforeunload|confirm|prompt|unknown)$/u)
+      || 'unknown';
+    entry.message = statusString(value.message, /^[\x20-\x7e]*$/u, 160) || '';
+  }
+  return Object.freeze(entry);
+};
+
+const projectCookieBlock = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const path = statusPath(value.path);
+  const observedAt = statusInteger(value.observedAt);
+  const reason = statusString(value.reason, /^[A-Za-z0-9_.:-]+$/u);
+  if (!path || observedAt === undefined || !reason) return null;
+  return Object.freeze({
+    origin: statusOrigin(value.origin),
+    path,
+    reason,
+    observedAt,
+  });
+};
+
 export const publicBotComputerBrowserStatus = (value) => {
   const browser = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const capabilities = browser.webCapabilities && typeof browser.webCapabilities === 'object'
@@ -425,6 +483,19 @@ export const publicBotComputerBrowserStatus = (value) => {
           /^(?=.{1,253}$)[A-Za-z0-9.-]+$/u,
           253,
         )?.toLowerCase() || null,
+        trail: Object.freeze((Array.isArray(rawDiagnostic.trail) ? rawDiagnostic.trail : [])
+          .slice(-10)
+          .map(projectBrowserTrailEntry)
+          .filter(Boolean)),
+        cookieBlocks: Object.freeze((Array.isArray(rawDiagnostic.cookieBlocks)
+          ? rawDiagnostic.cookieBlocks : [])
+          .slice(-5)
+          .map(projectCookieBlock)
+          .filter(Boolean)),
+        dialogs: Object.freeze((Array.isArray(rawDiagnostic.dialogs) ? rawDiagnostic.dialogs : [])
+          .slice(-5)
+          .map(projectBrowserTrailEntry)
+          .filter((entry) => entry?.kind === 'dialog')),
       })
     : null;
   const capabilityState = (entry) => (
@@ -437,6 +508,7 @@ export const publicBotComputerBrowserStatus = (value) => {
   const mode = statusString(browser.mode, /^(headed_virtual|headless_legacy)$/u);
   const generation = statusInteger(browser.generation);
   const screencastSubscribers = statusInteger(browser.screencastSubscribers, 10_000);
+  const activeTargetCount = statusInteger(browser.activeTargetCount, 8);
   return Object.freeze({
     ...(typeof browser.running === 'boolean' ? { running: browser.running } : {}),
     ...(typeof browser.healthy === 'boolean' ? { healthy: browser.healthy } : {}),
@@ -445,6 +517,8 @@ export const publicBotComputerBrowserStatus = (value) => {
     ...(generation !== undefined ? { generation } : {}),
     lastFailureCode: statusString(browser.lastFailureCode, /^DEVRYAN_BOT_[A-Z0-9_]+$/u) || null,
     ...(screencastSubscribers !== undefined ? { screencastSubscribers } : {}),
+    ...(activeTargetCount !== undefined ? { activeTargetCount } : {}),
+    ...(typeof browser.popupOpen === 'boolean' ? { popupOpen: browser.popupOpen } : {}),
     ...(mode ? { mode } : {}),
     engineVersion: statusString(browser.engineVersion, /^[\x20-\x7e]+$/u) || null,
     ...(typeof browser.displayReady === 'boolean' ? { displayReady: browser.displayReady } : {}),
@@ -496,6 +570,81 @@ export function createBotBrowserService({
   const runtimes = new Map();
   const scopeLocks = new Map();
   const viewSessions = new Map();
+  const humanSessions = new Map();
+  const auditedLoops = new Map();
+
+  const flushHumanSession = async (leaseId, endedBy) => {
+    const session = humanSessions.get(leaseId);
+    if (!session) return false;
+    humanSessions.delete(leaseId);
+    if (session.idleTimer) clearTimeout(session.idleTimer);
+    const endedAt = now();
+    await audit({
+      principal: session.principal,
+      botId: session.botId,
+      targetType: 'bot_computer',
+      targetId: `bot:${session.botId}`,
+      action: 'bot.computer.human_session',
+      result: 'success',
+      metadata: {
+        computerScopeKey: `bot:${session.botId}`,
+        controllerUserId: session.principal.id,
+        controlLeaseId: leaseId,
+        viewId: session.viewId,
+        endedBy,
+        commandCount: session.commandCount,
+        eventCount: session.eventCount,
+        eventCountByType: session.eventCountByType,
+        durationMs: Math.round(session.durationMsTotal * 100) / 100,
+        firstCommandAt: new Date(session.firstCommandAt).toISOString(),
+        lastCommandAt: new Date(session.lastCommandAt).toISOString(),
+        sessionDurationMs: Math.max(0, endedAt - session.startedAt),
+      },
+    });
+    return true;
+  };
+
+  const scheduleHumanSessionFlush = (session) => {
+    if (session.idleTimer) clearTimeout(session.idleTimer);
+    session.idleTimer = setTimeout(() => {
+      void flushHumanSession(session.leaseId, 'idle').catch((error) => logger?.warn?.(
+        '[BotsComputer] human-session audit failed',
+        { ...botErrorLogFields(error, 'bot_computer_audit_failed'), botId: session.botId },
+      ));
+    }, HUMAN_SESSION_IDLE_MS);
+    session.idleTimer.unref?.();
+  };
+
+  const recordHumanInput = ({ botId, principal, viewId, leaseId, inputMetadata, durationMs }) => {
+    const timestamp = now();
+    let session = humanSessions.get(leaseId);
+    if (!session) {
+      session = {
+        leaseId,
+        botId,
+        principal,
+        viewId,
+        startedAt: timestamp,
+        firstCommandAt: timestamp,
+        lastCommandAt: timestamp,
+        commandCount: 0,
+        eventCount: 0,
+        eventCountByType: {},
+        durationMsTotal: 0,
+        idleTimer: null,
+      };
+      humanSessions.set(leaseId, session);
+    }
+    session.lastCommandAt = timestamp;
+    session.commandCount += 1;
+    session.eventCount += inputMetadata.eventCount;
+    session.durationMsTotal += durationMs;
+    for (const eventType of inputMetadata.eventTypes) {
+      const count = inputMetadata.eventCountByType[eventType] || 0;
+      session.eventCountByType[eventType] = (session.eventCountByType[eventType] || 0) + count;
+    }
+    scheduleHumanSessionFlush(session);
+  };
 
   const withScopeLock = (scopeKey, operation) => {
     const previous = scopeLocks.get(scopeKey) || Promise.resolve();
@@ -683,6 +832,10 @@ export function createBotBrowserService({
   const releaseViewControl = async (view) => {
     const owned = view.controlLease;
     if (!owned) return;
+    await flushHumanSession(owned.leaseId, 'cleanup').catch((error) => logger?.warn?.(
+      '[BotsComputer] human-session audit failed',
+      { ...botErrorLogFields(error, 'bot_computer_audit_failed'), botId: view.botId },
+    ));
     view.controlLease = null;
     try {
       await transport.request({
@@ -746,7 +899,19 @@ export function createBotBrowserService({
       const body = operation === 'take'
         ? actor
         : { ...actor, leaseId: validateBoundedString(leaseId, 'leaseId', { maximum: 160 }) };
-      const control = publicControl(await transport.request({ runtime, path, body }));
+      let control;
+      try {
+        control = publicControl(await transport.request({ runtime, path, body }));
+      } catch (error) {
+        if (operation !== 'take' && body.leaseId
+          && error?.remoteCode === 'DEVRYAN_BOT_CONTROL_NOT_OWNER') {
+          await flushHumanSession(body.leaseId, 'expired').catch((auditError) => logger?.warn?.(
+            '[BotsComputer] human-session audit failed',
+            { ...botErrorLogFields(auditError, 'bot_computer_audit_failed'), botId: bot.id },
+          ));
+        }
+        throw error;
+      }
       if (operation === 'take' && requestedView && control?.leaseId) {
         requestedView.controlLease = { runtime, actor, leaseId: control.leaseId };
         if (viewSessions.get(requestedView.id) !== requestedView) {
@@ -756,26 +921,32 @@ export function createBotBrowserService({
         }
       }
       if (operation === 'return') {
+        await flushHumanSession(body.leaseId, 'return').catch((error) => logger?.warn?.(
+          '[BotsComputer] human-session audit failed',
+          { ...botErrorLogFields(error, 'bot_computer_audit_failed'), botId: bot.id },
+        ));
         for (const view of viewSessions.values()) {
           if (view.botId === bot.id && view.principalId === principal?.id
             && view.controlLease?.leaseId === leaseId) view.controlLease = null;
         }
       }
       await publishControl(`computer.control.${operation}`, bot, { botId: bot.id, control }, principal);
-      await audit({
-        principal,
-        botId: bot.id,
-        targetType: 'bot_computer',
-        targetId: `bot:${bot.id}`,
-        action: `bot.computer.control.${operation}`,
-        result: 'success',
-        metadata: {
-          computerScopeKey: `bot:${bot.id}`,
-          controllerUserId: principal.id,
-          controlLeaseId: control?.leaseId || leaseId,
-          expiresAt: control?.expiresAt || null,
-        },
-      });
+      if (operation !== 'heartbeat') {
+        await audit({
+          principal,
+          botId: bot.id,
+          targetType: 'bot_computer',
+          targetId: `bot:${bot.id}`,
+          action: `bot.computer.control.${operation}`,
+          result: 'success',
+          metadata: {
+            computerScopeKey: `bot:${bot.id}`,
+            controllerUserId: principal.id,
+            controlLeaseId: control?.leaseId || leaseId,
+            expiresAt: control?.expiresAt || null,
+          },
+        });
+      }
       return Object.freeze({ botId: bot.id, control });
     });
   };
@@ -954,10 +1125,52 @@ export function createBotBrowserService({
       const { bot } = await authorizedBotContext(principal, botId);
       const runtime = await runtimeForBot(bot);
       const status = await transport.request({ runtime, path: '/v1/status', method: 'GET' });
+      const browser = publicBotComputerBrowserStatus(status.browser);
+      const control = publicControl(status.control);
+      const diagnostic = browser.lastNavigationDiagnostic;
+      if (diagnostic?.kind === 'site_rejection' && diagnostic.reason === 'navigation_loop') {
+        const auditKey = `${browser.generation ?? 0}:${diagnostic.revision}`;
+        if (auditedLoops.get(bot.id) !== auditKey) {
+          auditedLoops.set(bot.id, auditKey);
+          const metadata = {
+            computerScopeKey: `bot:${bot.id}`,
+            controllerUserId: control?.actorId || null,
+            controlLeaseId: control?.leaseId || null,
+            origin: diagnostic.origin,
+            repetitionCount: diagnostic.repetitionCount,
+            statusCode: diagnostic.statusCode,
+            trail: diagnostic.trail.map((entry) => ({
+              kind: entry.kind,
+              path: entry.path,
+              ...(entry.kind === 'navigation' ? {
+                statusCode: entry.statusCode,
+                redirectCount: entry.redirectCount,
+              } : {}),
+            })),
+          };
+          recordDiagnostic({
+            type: 'lifecycle',
+            event: 'bot.computer.navigation_loop',
+            payload: { botId: bot.id, ...metadata },
+          });
+          void Promise.resolve().then(() => audit({
+            principal,
+            botId: bot.id,
+            targetType: 'bot_computer',
+            targetId: `bot:${bot.id}`,
+            action: 'bot.computer.navigation_loop',
+            result: 'partial',
+            metadata,
+          })).catch((error) => logger?.warn?.(
+            '[BotsComputer] navigation-loop audit failed',
+            { ...botErrorLogFields(error, 'bot_computer_audit_failed'), botId: bot.id },
+          ));
+        }
+      }
       return Object.freeze({
         botId: bot.id,
-        browser: publicBotComputerBrowserStatus(status.browser),
-        control: publicControl(status.control),
+        browser,
+        control,
         screencast: {
           subscribers: Number(status.screencast?.subscribers || 0),
           lastFrameAt: status.screencast?.lastFrameAt ?? null,
@@ -1145,6 +1358,10 @@ export function createBotBrowserService({
           viewId: normalizedViewId,
           eventTypes: [...new Set(normalizedArgs.events.map((event) => event.type))].sort(),
           eventCount: normalizedArgs.events.length,
+          eventCountByType: Object.freeze(normalizedArgs.events.reduce((counts, event) => ({
+            ...counts,
+            [event.type]: (counts[event.type] || 0) + 1,
+          }), {})),
         });
       } else {
         botBrowserOperationKind(normalizedCommand);
@@ -1158,16 +1375,50 @@ export function createBotBrowserService({
         inputView.controlLease = { runtime, actor, leaseId: normalizedLeaseId };
       }
       const startedAt = performance.now();
-      const result = await transport.request({
-        runtime,
-        path: '/v1/control/command',
-        body: {
-          ...actor,
-          leaseId: normalizedLeaseId,
-          command: normalizedCommand,
-          args: normalizedArgs,
-        },
-      });
+      let result;
+      try {
+        result = await transport.request({
+          runtime,
+          path: '/v1/control/command',
+          body: {
+            ...actor,
+            leaseId: normalizedLeaseId,
+            command: normalizedCommand,
+            args: normalizedArgs,
+          },
+        });
+      } catch (error) {
+        if (normalizedCommand === 'input') {
+          if (error?.remoteCode === 'DEVRYAN_BOT_CONTROL_NOT_OWNER') {
+            await flushHumanSession(normalizedLeaseId, 'expired').catch((auditError) => logger?.warn?.(
+              '[BotsComputer] human-session audit failed',
+              { ...botErrorLogFields(auditError, 'bot_computer_audit_failed'), botId: bot.id },
+            ));
+          }
+          await audit({
+            principal,
+            botId: bot.id,
+            targetType: 'bot_computer',
+            targetId: `bot:${bot.id}`,
+            action: 'bot.computer.human_command',
+            result: 'failure',
+            metadata: {
+              computerScopeKey: `bot:${bot.id}`,
+              controllerUserId: principal.id,
+              controlLeaseId: normalizedLeaseId,
+              commandType: normalizedCommand,
+              viewId: inputMetadata.viewId,
+              eventTypes: inputMetadata.eventTypes,
+              eventCount: inputMetadata.eventCount,
+              ...botErrorLogFields(error, 'bot_computer_command_failed'),
+            },
+          }).catch((auditError) => logger?.warn?.(
+            '[BotsComputer] human-command failure audit failed',
+            { ...botErrorLogFields(auditError, 'bot_computer_audit_failed'), botId: bot.id },
+          ));
+        }
+        throw error;
+      }
       const durationMs = Math.round((performance.now() - startedAt) * 100) / 100;
       const auditInput = {
         principal,
@@ -1189,12 +1440,14 @@ export function createBotBrowserService({
         },
       };
       if (normalizedCommand === 'input') {
-        void Promise.resolve()
-          .then(() => audit(auditInput))
-          .catch((error) => logger?.warn?.(
-            '[BotsComputer] human-input audit failed',
-            { code: error?.code || 'bot_computer_audit_failed', botId: bot.id },
-          ));
+        recordHumanInput({
+          botId: bot.id,
+          principal,
+          viewId: inputMetadata.viewId,
+          leaseId: normalizedLeaseId,
+          inputMetadata,
+          durationMs,
+        });
       } else {
         await audit(auditInput);
       }
@@ -1203,7 +1456,14 @@ export function createBotBrowserService({
 
     async shutdown() {
       computerActivity.clear();
+      await Promise.all([...humanSessions.keys()].map((leaseId) => (
+        flushHumanSession(leaseId, 'shutdown').catch((error) => logger?.warn?.(
+          '[BotsComputer] human-session audit failed',
+          { ...botErrorLogFields(error, 'bot_computer_audit_failed') },
+        ))
+      )));
       for (const view of viewSessions.values()) deleteViewSession(view);
+      auditedLoops.clear();
       const entries = [...runtimes.values()];
       runtimes.clear();
       for (const runtime of entries) {

@@ -88,7 +88,7 @@ bun run --cwd packages/bots-runtime test
 ## Scoped OpenCode runtime
 
 `docker/opencode/Dockerfile` pins both `opencode-ai` and its plugin API to
-1.18.25, pins the reviewed `opencode-gpt-imagegen@0.1.10`, and runs as UID/GID
+1.18.26, pins the reviewed `opencode-gpt-imagegen@0.1.10`, and runs as UID/GID
 10001. The server compiles the single-agent config
 into an immutable host channel/hash directory; Electron verifies it and the
 supervisor mounts it read-only at `/runtime-config`. The reviewed gateway
@@ -118,7 +118,7 @@ returns the gateway result as the text contract required by OpenCode tools.
 publication path;
 it carries bounded bytes through the governed gateway and never accepts a host
 or existing computer path. The gateway contract at
-`devryan-bot-tools@1.3.0` exposes the dedicated primary-agent `devryan_image`
+`devryan-bot-tools@1.4.0` exposes the dedicated primary-agent `devryan_ask` quick-reply question tool and the `devryan_image`
 tool, reusing the pinned `gpt_imagegen` schema: required `prompt`, `out`, and
 `quality`, optional `size` and `images`. For example:
 `devryan_image({prompt: "A small blue bird", out: "/workspace/generated-images/bird.png", quality: "low"})`.

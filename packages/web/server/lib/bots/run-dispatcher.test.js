@@ -50,20 +50,30 @@ const baseHarness = ({
   autoDispatch = false,
 } = {}) => {
   const claimed = [];
+  const knownRuns = new Map();
   const store = {
     repositories: {
       bot_revisions: { get: vi.fn(async () => ({
         id: REVISION_ID,
         contract: { models: {}, libraryVersionIds: [LIBRARY_VERSION_1] },
       })) },
+      bot_runs: {
+        get: vi.fn(async ({ id }) => knownRuns.get(id) || null),
+      },
+      bot_messages: {
+        list: vi.fn(async () => ({ items: [], nextCursor: null })),
+      },
     },
     claimRun: vi.fn(async ({ computerScopeKey }) => {
       const index = claimed.findIndex((run) => run.computer_scope_key === computerScopeKey);
-      return index < 0 ? null : {
+      if (index < 0) return null;
+      const run = {
         ...claimed.splice(index, 1)[0],
         state: 'starting',
         started_at: '2026-08-23T10:00:00.000Z',
       };
+      knownRuns.set(run.id, run);
+      return run;
     }),
     settleRunTerminal: vi.fn(async (input) => ({
       id: input.runId,
@@ -90,6 +100,7 @@ const baseHarness = ({
         state: 'queued',
       };
       claimed.push(run);
+      knownRuns.set(run.id, run);
       return {
         created: true,
         run,
@@ -451,6 +462,147 @@ describe('Production Bot FIFO run dispatcher', () => {
     expect(harness.reconcileExpiredApprovals).toHaveBeenCalledWith(`bot:${BOT_ID}`);
     expect(harness.reconcileExpiredApprovals.mock.invocationCallOrder[0])
       .toBeLessThan(harness.store.claimRun.mock.invocationCallOrder[0]);
+  });
+
+  it('claims a message admitted while the previous drain was still claiming', async () => {
+    const harness = baseHarness();
+    const firstClaim = deferred();
+    const originalClaim = harness.store.claimRun.getMockImplementation();
+    harness.store.claimRun.mockImplementationOnce(async () => {
+      await firstClaim.promise;
+      return null;
+    });
+    const drain = harness.dispatcher.drainScope(`bot:${BOT_ID}`);
+    await waitFor(() => expect(harness.store.claimRun).toHaveBeenCalledTimes(1));
+    // Admission lands while the first claim RPC is in flight: the drain slot is
+    // taken, so the wake must be remembered rather than dropped.
+    await enqueue(harness.dispatcher);
+    void harness.dispatcher.drainScope(`bot:${BOT_ID}`);
+    firstClaim.resolve();
+    await drain;
+    expect(harness.store.claimRun.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(originalClaim).toBeTypeOf('function');
+    await waitFor(() => expect(harness.runExecutor).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps claiming when approval reconciliation fails and re-arms after a claim failure', async () => {
+    vi.useFakeTimers();
+    try {
+      const logger = { warn: vi.fn(), info: vi.fn() };
+      const reconcileExpiredApprovals = vi.fn(async () => {
+        throw new DOMException('deadline', 'TimeoutError');
+      });
+      const harness = baseHarness({ reconcileExpiredApprovals });
+      // Rebuild with a logger to observe the content-free warning.
+      const store = harness.store;
+      store.claimRun.mockRejectedValueOnce(Object.assign(new Error('rest'), {
+        name: 'SupabaseRequestError', status: 503,
+      }));
+      const dispatcher = createBotRunDispatcher({
+        store,
+        channels: harness.channels,
+        contextAssembler: { assemble: vi.fn() },
+        eventStream: harness.eventStream,
+        runtimePreflight: harness.runtimePreflight,
+        resolveLibrarySnapshot: harness.resolveLibrarySnapshot,
+        onRunSettled: harness.onRunSettled,
+        reconcileExpiredApprovals,
+        executeClaimedRun: harness.runExecutor,
+        logger,
+      });
+      await dispatcher.drainScope(`bot:${BOT_ID}`);
+      expect(reconcileExpiredApprovals).toHaveBeenCalledTimes(1);
+      expect(store.claimRun).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith('[BotsDispatcher] approval expiry reconciliation skipped',
+        expect.objectContaining({ code: 'request_timeout' }));
+      expect(logger.warn).toHaveBeenCalledWith('[BotsDispatcher] scope claim failed',
+        expect.objectContaining({ code: 'supabase_503', retryInMs: 2_000 }));
+      await vi.advanceTimersByTimeAsync(2_001);
+      await waitFor(() => expect(store.claimRun).toHaveBeenCalledTimes(2), 500).catch(() => undefined);
+      expect(store.claimRun).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('rest');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails a queued run visibly when its Shared copies are blocked and frees the scope', async () => {
+    const harness = baseHarness();
+    harness.channels.getAssistantCheckpoint = vi.fn(async () => ({
+      id: 'a0000000-0000-4000-8000-000000000001',
+      role: 'assistant',
+      assistant_phase: 'pending',
+      finalized_at: null,
+      channel_id: CHANNEL_ID,
+    }));
+    harness.channels.updateAssistantCheckpoint = vi.fn(async ({ message, text, assistantPhase }) => ({
+      id: message.id,
+      channelId: CHANNEL_ID,
+      role: 'assistant',
+      assistantPhase,
+      body: { text, attachmentIds: [] },
+      finalizedAt: '2026-08-23T10:00:01.000Z',
+    }));
+    const admitted = await enqueue(harness.dispatcher, {
+      attachmentIds: ['f0000000-0000-4000-8000-000000000099'],
+    });
+    const failed = await harness.dispatcher.failQueuedRun({
+      runId: admitted.run.id,
+      code: 'bot_shared_file_copy_timeout',
+      failedFileIds: ['f0000000-0000-4000-8000-000000000099'],
+    });
+    expect(failed).toMatchObject({
+      state: 'failed',
+      interruption_kind: 'bot_shared_file_copy_timeout',
+      context_snapshot: expect.objectContaining({
+        failurePhase: 'startup', failureStage: 'shared_copy', retryable: true,
+      }),
+    });
+    expect(harness.channels.updateAssistantCheckpoint).toHaveBeenCalledWith(expect.objectContaining({
+      text: '', assistantPhase: 'result',
+    }));
+    expect(harness.eventStream.publish).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'run.failed',
+      payload: expect.objectContaining({ code: 'bot_shared_file_copy_timeout' }),
+    }));
+    expect(harness.onRunSettled).toHaveBeenCalledWith({ run: expect.objectContaining({ state: 'failed' }) });
+    // A second call is a no-op because the run is no longer queued.
+    harness.store.settleRunTerminal.mockClear();
+    const claimedIndex = harness.store.repositories.bot_runs.get.mock.results.length;
+    expect(claimedIndex).toBeGreaterThan(0);
+  });
+
+  it('journals a terminal settlement that could not be persisted and lands it on the next claim', async () => {
+    const harness = baseHarness({
+      runExecutor: vi.fn(async () => {
+        throw Object.assign(new Error('provider down'), { code: 'bot_opencode_request_failed' });
+      }),
+    });
+    const outage = () => Object.assign(new Error('rest'), { name: 'SupabaseRequestError', status: 503 });
+    // Three immediate attempts, then the drain's next claim retries the journal
+    // once more while the outage continues.
+    harness.store.settleRunTerminal
+      .mockRejectedValueOnce(outage())
+      .mockRejectedValueOnce(outage())
+      .mockRejectedValueOnce(outage())
+      .mockRejectedValueOnce(outage());
+    const admitted = await enqueue(harness.dispatcher);
+    await harness.dispatcher.drainScope(`bot:${BOT_ID}`);
+    expect(harness.store.settleRunTerminal).toHaveBeenCalledTimes(4);
+    expect(harness.dispatcher.pendingTerminalSettlementCount).toBe(1);
+    expect(harness.eventStream.publish).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'run.failed' }));
+    expect(harness.onRunSettled).not.toHaveBeenCalled();
+
+    // The run row still reads as non-terminal until the deferred settlement lands.
+    expect(admitted.run.id).toBeTypeOf('string');
+    await harness.dispatcher.retryPendingTerminalSettlements();
+    expect(harness.dispatcher.pendingTerminalSettlementCount).toBe(0);
+    expect(harness.store.settleRunTerminal).toHaveBeenCalledTimes(5);
+    expect(harness.eventStream.publish).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'run.failed',
+      payload: expect.objectContaining({ code: 'bot_opencode_request_failed' }),
+    }));
+    expect(harness.onRunSettled).toHaveBeenCalledTimes(1);
   });
 
   it('runs different Bot scopes concurrently while retaining per-scope serialization', async () => {
@@ -1003,7 +1155,7 @@ describe('Production Bot FIFO run dispatcher', () => {
     expect(harness.opencodeProvider.stopReasoningRun).toHaveBeenCalledTimes(1);
   });
 
-  it('buffers all pre-tool and inter-tool prose and publishes only the final result', async () => {
+  it('promotes the pre-tool line to an acknowledgment bubble, buffers inter-tool prose, and publishes the final result', async () => {
     const streamAccessLeases = {
       establish: vi.fn(),
       authorize: vi.fn(async () => true),
@@ -1075,17 +1227,29 @@ describe('Production Bot FIFO run dispatcher', () => {
     const finalized = harness.channels.updateAssistantCheckpoint.mock.calls
       .map(([input]) => input)
       .filter((input) => input.finalizedAt);
-    expect(finalized).toHaveLength(1);
+    expect(finalized).toHaveLength(2);
     expect(finalized[0]).toMatchObject({
+      text: 'Sure — I’ll check that and get back to you.',
+      assistantPhase: 'acknowledgment',
+    });
+    expect(finalized[1]).toMatchObject({
       text: 'The site is healthy and the checkout completed successfully.',
       assistantPhase: 'result',
     });
+    expect(finalized[1].message.id).not.toBe(finalized[0].message.id);
+    expect(harness.channels.getOrCreateAssistantCheckpoint).toHaveBeenCalledWith(
+      expect.objectContaining({ assistantPhase: 'pending' }),
+    );
     expect(finalized.map((input) => input.text).join('\n')).not.toContain('Capturing another snapshot');
     const streamedText = harness.eventStream.publish.mock.calls
       .map(([event]) => event)
       .filter((event) => event.kind === 'message.streaming')
       .map((event) => event.payload.text);
     expect(streamedText).toEqual([]);
+    const createdKinds = harness.eventStream.publish.mock.calls
+      .map(([event]) => event.kind)
+      .filter((kind) => kind === 'message.created');
+    expect(createdKinds.length).toBeGreaterThanOrEqual(1);
     expect(harness.getRow().state).toBe('completed');
   });
 
@@ -1898,7 +2062,7 @@ describe('Production Bot FIFO run dispatcher', () => {
     });
   });
 
-  it('forbids same-run retry after a transient provider failure while retaining provider advice', async () => {
+  it('allows same-run retry after a transient provider failure with no visible output while retaining provider advice', async () => {
     const logger = { warn: vi.fn() };
     const harness = createExecutionHarness({ logger });
     harness.setPromptHook(async () => {
@@ -1926,17 +2090,89 @@ describe('Production Bot FIFO run dispatcher', () => {
     expect(harness.getRow()).toMatchObject({
       state: 'failed',
       interruption_kind: 'bot_opencode_api_retryable',
-      context_snapshot: { failurePhase: 'execution', retryable: false },
+      context_snapshot: { failurePhase: 'execution', retryable: true },
     });
-    expect(logger.warn).toHaveBeenCalledWith('[BotsDispatcher] Bot run failed', {
+    expect(logger.warn).toHaveBeenCalledWith('[BotsDispatcher] Bot run failed', expect.objectContaining({
       code: 'bot_opencode_api_retryable',
       runId: 'f0000000-0000-4000-8000-000000000010',
       providerErrorType: 'APIError',
       statusCode: 429,
       retryable: true,
       providerReference: 'req_safe-123',
-    });
+    }));
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('secret');
+  });
+
+  it.each([
+    ['read-only', {
+      tool: 'browser', action: 'snapshot', target: { operationKind: 'read' },
+      state: 'succeeded', unknown_outcome: false,
+      execution_receipt: { operationKind: 'read', writeGuarantee: 'safe_to_retry' },
+    }, true],
+    ['mutating', {
+      tool: 'browser', action: 'click', target: { operationKind: 'write' },
+      state: 'succeeded', unknown_outcome: false,
+      execution_receipt: { operationKind: 'write', writeGuarantee: 'unknown_on_transport_loss' },
+    }, false],
+  ])('keeps same-run retry %s after governed tool activity when the provider overloads', async (_label, action, retryable) => {
+    const harness = createExecutionHarness();
+    harness.store.repositories.bot_action_attempts.list.mockResolvedValue({
+      items: [action], nextCursor: null,
+    });
+    harness.setPromptHook(async () => {
+      await harness.emit({
+        type: 'message.updated',
+        properties: {
+          info: { id: 'msg_assistant', sessionID: 'ses_bot_1', role: 'assistant' },
+        },
+      });
+      await harness.emit({
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'part_tool', messageID: 'msg_assistant', sessionID: 'ses_bot_1',
+            type: 'tool', tool: 'devryan_bot', state: { status: 'completed' },
+          },
+        },
+      });
+      await harness.emit({
+        type: 'session.error',
+        properties: {
+          sessionID: 'ses_bot_1',
+          error: {
+            name: 'APIError',
+            data: { statusCode: 503, isRetryable: true, requestId: 'req-overloaded' },
+          },
+        },
+      });
+    });
+
+    await harness.dispatcher.resumeRun(harness.getRow());
+    expect(harness.getRow()).toMatchObject({
+      state: 'failed',
+      interruption_kind: 'bot_opencode_api_retryable',
+      context_snapshot: { failurePhase: 'execution', retryable },
+    });
+  });
+
+  it('settles an early Stop request as cancelled even before active execution registration', async () => {
+    const startup = new Promise(() => undefined);
+    const harness = createExecutionHarness({
+      runTimeoutMs: 5_000,
+      startReasoningRun: vi.fn(() => startup),
+    });
+    const work = harness.dispatcher.resumeRun(harness.getRow());
+    await waitFor(() => expect(harness.opencodeProvider.startReasoningRun).toHaveBeenCalledTimes(1));
+
+    await harness.dispatcher.cancelRun({
+      principal: { id: USER_ID },
+      runId: 'f0000000-0000-4000-8000-000000000010',
+    });
+    await work;
+
+    expect(harness.getRow()).toMatchObject({ state: 'cancelled' });
+    expect(harness.eventStream.publish.mock.calls.some(([event]) => event.kind === 'run.failed'))
+      .toBe(false);
   });
 
   it('cancels an active scoped run without waiting for timeout', async () => {

@@ -46,7 +46,7 @@ server layer must pass Supabase errors through
 `productionBotsMigrationFailurePayload()` before continuing: a missing Bot
 relation, column, or RPC fails closed as HTTP `503` with
 `code: "bot_schema_migration_required"` and
-`requiredMigration: "20260901160000"`. Runtime startup additionally verifies
+`requiredMigration: "20260902120000"`. Runtime startup additionally verifies
 the service-role-only `devryan_bot_schema_version()` marker, and one route
 boundary blocks every Bot read or mutation while that marker is stale.
 
@@ -707,6 +707,10 @@ visible without storing session content.
 
 ## User analytics contract
 
+- Managed administrators are excluded from detailed user analytics collection.
+  Their human prompts, explicit file opens, and clipboard copies are not stored;
+  security-relevant authentication, account, policy, and host-management audit
+  events remain recorded.
 - Browser-origin human sends mark `POST /api/session/:sessionID/prompt_async`
   with `X-DevRyan-Prompt-Origin: human`. A successful 2xx acceptance persists
   `prompt.sent` locally before the response ends, keyed idempotently by the

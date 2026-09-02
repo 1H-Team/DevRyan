@@ -27,6 +27,45 @@ describe('scoped OpenCode Bot plugin', () => {
     expect(Object.values(exports).every((value) => typeof value === 'function')).toBe(true);
   });
 
+  test('publishes a quick-reply question tool that records the question and tells the model to stop', async () => {
+    const calls = [];
+    const loaded = await exports.__test.createPlugin({
+      toolApi,
+      environment: environment(),
+      fetchImpl: async (_url, options) => {
+        calls.push(JSON.parse(options.body));
+        return new Response(JSON.stringify({ ok: true, result: { asked: true, optionCount: 2, multiple: false } }));
+      },
+    });
+
+    expect(loaded.tool.devryan_ask.description).toContain('end your turn');
+    await expect(loaded.tool.devryan_ask.execute({
+      question: '  Which plan  do you mean? ',
+      options: ['Monthly', { label: 'Annual', description: 'Two months free' }],
+    }, { callID: 'call_ask_1' })).resolves.toContain('End your turn now');
+    expect(calls).toEqual([expect.objectContaining({
+      operation: 'conversation.ask',
+      payload: {
+        prompt: 'Which plan do you mean?',
+        options: [{ label: 'Monthly' }, { label: 'Annual', description: 'Two months free' }],
+        multiple: false,
+        allowFreeText: true,
+      },
+    })]);
+
+    for (const invalid of [
+      { question: '', options: ['A'] },
+      { question: 'Pick', options: [] },
+      { question: 'Pick', options: ['A', 'A'] },
+      { question: 'Pick', options: ['A'], multiple: 'yes' },
+      { question: 'Pick', options: ['A'], botId: 'x' },
+    ]) {
+      await expect(loaded.tool.devryan_ask.execute(invalid, { callID: 'call_ask_bad' }))
+        .rejects.toMatchObject({ code: 'DEVRYAN_BOT_INPUT_INVALID' });
+    }
+    expect(calls).toHaveLength(1);
+  });
+
   test('publishes an explicit approval-gated workspace write tool with call-bound idempotency', async () => {
     const calls = [];
     const loaded = await exports.__test.createPlugin({
@@ -182,6 +221,7 @@ describe('scoped OpenCode Bot plugin', () => {
       'artifact.get',
       'artifact.put',
       'computer.command',
+      'conversation.ask',
       'image.generate',
       'library.search',
       'memory.search',
@@ -258,7 +298,7 @@ describe('scoped OpenCode Bot plugin', () => {
     const primary = entrypoint.slice(entrypoint.indexOf('bot: {'), entrypoint.indexOf('explore: {'));
     for (const tool of [
       'read', 'write', 'edit', 'glob', 'grep', 'bash', 'terminal', 'git', 'task',
-      'devryan_bot', 'devryan_image', 'devryan_write',
+      'devryan_bot', 'devryan_image', 'devryan_write', 'devryan_ask',
     ]) {
       expect(primary).toContain(`${tool}: 'allow'`);
     }
@@ -271,8 +311,9 @@ describe('scoped OpenCode Bot plugin', () => {
     expect(subagents).toContain("task: 'deny'");
     expect(subagents).toContain("devryan_bot: 'deny'");
     expect(subagents).toContain("devryan_image: 'deny'");
+    expect(subagents).toContain("devryan_ask: 'deny'");
     expect(subagents).toContain("browser: 'deny'");
-    expect(dockerfile).toContain('opencode-ai@1.18.25 @opencode-ai/plugin@1.18.25 opencode-gpt-imagegen@0.1.10');
+    expect(dockerfile).toContain('opencode-ai@1.18.26 @opencode-ai/plugin@1.18.26 opencode-gpt-imagegen@0.1.10');
     expect(dockerfile).toContain("node_modules/opencode-gpt-imagegen/package.json");
     expect(entrypoint).toContain('launch-opencode.mjs');
     expect(dockerfile).toContain('bash=5.2.15-2+b13');

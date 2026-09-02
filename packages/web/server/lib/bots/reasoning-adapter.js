@@ -140,6 +140,20 @@ export const createBotReasoningEvent = (kind, payload = {}) => {
   return Object.freeze({ kind, payload: Object.freeze(structuredClone(payload)) });
 };
 
+const MAX_ACKNOWLEDGMENT_CHARS = 400;
+
+// The first short thing a Bot says before it starts tool work is its
+// acknowledgment ("on it, give me a sec"). It is bounded so a long pre-tool
+// essay never becomes a durable acknowledgment row.
+const boundedAcknowledgment = (text) => {
+  const trimmed = typeof text === 'string' ? text.trim() : '';
+  if (!trimmed) return '';
+  if (trimmed.length <= MAX_ACKNOWLEDGMENT_CHARS) return trimmed;
+  const cut = trimmed.slice(0, MAX_ACKNOWLEDGMENT_CHARS);
+  const sentenceEnd = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+  return sentenceEnd > 40 ? cut.slice(0, sentenceEnd + 1) : cut;
+};
+
 export const projectBotReasoningResponse = (parts) => {
   const ordered = Array.isArray(parts) ? parts : [];
   const firstToolIndex = ordered.findIndex((part) => part?.type === 'tool');
@@ -149,16 +163,34 @@ export const projectBotReasoningResponse = (parts) => {
       toolObserved: false,
       acknowledgmentText: '',
       resultText: publicText(ordered),
+      resultFallback: false,
     });
   }
   let lastToolIndex = firstToolIndex;
   for (let index = firstToolIndex + 1; index < ordered.length; index += 1) {
     if (ordered[index]?.type === 'tool') lastToolIndex = index;
   }
+  let resultText = publicText(ordered.slice(lastToolIndex + 1));
+  let resultFallback = false;
+  if (!resultText.trim()) {
+    // The model answered and then made one more tool call without a closing
+    // message. The last complete prose segment between tool boundaries is the
+    // answer it wrote; use it rather than reporting no response at all.
+    let end = lastToolIndex;
+    while (end > firstToolIndex && !resultText.trim()) {
+      let start = end - 1;
+      while (start > firstToolIndex && ordered[start]?.type !== 'tool') start -= 1;
+      resultText = publicText(ordered.slice(start + 1, end));
+      end = start;
+    }
+    resultFallback = Boolean(resultText.trim());
+    if (!resultFallback) resultText = '';
+  }
   return Object.freeze({
     toolObserved: true,
-    acknowledgmentText: '',
-    resultText: publicText(ordered.slice(lastToolIndex + 1)),
+    acknowledgmentText: boundedAcknowledgment(publicText(ordered.slice(0, firstToolIndex))),
+    resultText,
+    resultFallback,
   });
 };
 

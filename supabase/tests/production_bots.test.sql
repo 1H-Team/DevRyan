@@ -305,6 +305,10 @@ select ok(
   to_regprocedure('public.devryan_retry_bot_run(uuid,uuid,timestamp with time zone)') is not null,
   'atomic safe Bot run retry RPC exists'
 );
+select ok(
+  to_regprocedure('public.devryan_requeue_bot_memory_extraction_job(uuid,uuid)') is not null,
+  'memory extraction requeue RPC exists'
+);
 
 with bot_functions(signature) as (
   values
@@ -329,6 +333,7 @@ with bot_functions(signature) as (
     ('public.devryan_bot_send_context(uuid,uuid)'),
     ('public.devryan_bot_channel_audience(uuid)'),
     ('public.devryan_retry_bot_run(uuid,uuid,timestamp with time zone)'),
+    ('public.devryan_requeue_bot_memory_extraction_job(uuid,uuid)'),
     ('public.devryan_bot_schema_version()')
 )
 select ok(
@@ -363,6 +368,7 @@ with bot_functions(signature) as (
     ('public.devryan_bot_send_context(uuid,uuid)'),
     ('public.devryan_bot_channel_audience(uuid)'),
     ('public.devryan_retry_bot_run(uuid,uuid,timestamp with time zone)'),
+    ('public.devryan_requeue_bot_memory_extraction_job(uuid,uuid)'),
     ('public.devryan_bot_schema_version()')
 )
 select ok(

@@ -514,16 +514,32 @@ describe('Production Bots capabilities and routes', () => {
     expect(removed.payload).toEqual({ deleted: true, name: 'SERVICE_TOKEN' });
   });
 
-  it('rejects client attempts to select or widen the computer-files scope', async () => {
+  it('defaults the computer-files scope to the workspace and passes an explicit container request to the runtime', async () => {
     const harness = createHarness();
-    const response = await harness.invoke('GET', '/api/bots/:botId/computer-files', {
+    const invalid = await harness.invoke('GET', '/api/bots/:botId/computer-files', {
+      params: { botId: BOT_ID },
+      query: { scope: 'everything' },
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.payload).toMatchObject({ code: 'bot_request_invalid' });
+    expect(harness.libraryRuntime.listComputerFiles).not.toHaveBeenCalled();
+
+    await harness.invoke('GET', '/api/bots/:botId/computer-files', { params: { botId: BOT_ID } });
+    expect(harness.libraryRuntime.listComputerFiles).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: USER_ID }),
+      BOT_ID,
+      { path: null, scope: 'workspace' },
+    );
+
+    await harness.invoke('GET', '/api/bots/:botId/computer-files', {
       params: { botId: BOT_ID },
       query: { scope: 'container' },
     });
-
-    expect(response.statusCode).toBe(400);
-    expect(response.payload).toMatchObject({ code: 'bot_request_invalid' });
-    expect(harness.libraryRuntime.listComputerFiles).not.toHaveBeenCalled();
+    expect(harness.libraryRuntime.listComputerFiles).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: USER_ID }),
+      BOT_ID,
+      { path: null, scope: 'container' },
+    );
   });
 
   it('rejects unsafe computer-files paths before consulting runtime availability', async () => {
@@ -1244,7 +1260,7 @@ describe('Production Bots capabilities and routes', () => {
     expect(harness.memoryRuntime.listForManager).toHaveBeenCalledWith(
       expect.objectContaining({ id: USER_ID }),
       BOT_ID,
-      { cursor: null, limit: '25' },
+      { cursor: null, limit: '25', state: null },
     );
 
     const edited = await harness.invoke('PATCH', '/api/bots/:botId/memories/:memoryId', {
@@ -1510,7 +1526,7 @@ describe('Production Bots capabilities and routes', () => {
     expect(response.payload).toEqual({
       error: 'Database migration required',
       code: 'bot_schema_migration_required',
-        requiredMigration: '20260901160000',
+        requiredMigration: '20260902120000',
     });
   });
 });

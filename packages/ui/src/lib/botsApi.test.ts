@@ -5,10 +5,11 @@ import { BotsApiError, createBotsApi, getBotRetryReason, type BotRoutineContract
 describe('Production Bots HTTP client', () => {
   test('aborts pending computer input HTTP without resending the command', async () => {
     let requests = 0;
+    let requestSignal: AbortSignal | null = null;
     const controller = new AbortController();
     const api = createBotsApi({ fetchImpl: async (_input, init) => {
       requests += 1;
-      expect(init?.signal).toBe(controller.signal);
+      requestSignal = init?.signal ?? null;
       return new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true });
       });
@@ -17,9 +18,41 @@ describe('Production Bots HTTP client', () => {
       viewId: 'view', leaseId: 'lease', command: 'input', args: { events: [] },
     }, controller.signal);
     const failure = command.catch((error: unknown) => error);
+    expect(requestSignal).not.toBeNull();
+    expect((requestSignal as unknown as AbortSignal).aborted).toBe(false);
     controller.abort();
-    expect(await failure).toBeInstanceOf(BotsApiError);
+    const error = await failure;
+    expect(error).toBeInstanceOf(BotsApiError);
+    expect((error as BotsApiError).code).toBe('network_error');
+    expect((requestSignal as unknown as AbortSignal).aborted).toBe(true);
     expect(requests).toBe(1);
+  });
+
+  test('fails a hung request at its deadline as a distinct timeout code', async () => {
+    const hang = async (_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true });
+    });
+    const api = createBotsApi({ fetchImpl: hang, defaultTimeoutMs: 20 });
+    const error = await api.sendMessage('channel', {
+      messageId: 'm', acknowledgmentId: 'a', idempotencyKey: 'k', text: 'hi', attachmentIds: [],
+    }).catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(BotsApiError);
+    expect((error as BotsApiError).code).toBe('bot_request_timeout');
+    expect((error as BotsApiError).status).toBe(504);
+  });
+
+  test('gives uploads their own longer deadline', async () => {
+    const api = createBotsApi({
+      fetchImpl: async (_input, init) => new Promise<Response>((resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true });
+        setTimeout(() => resolve(new Response(JSON.stringify({ object: { id: 'object-1' } }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        })), 40);
+      }),
+      defaultTimeoutMs: 15,
+    });
+    const result = await api.uploadObject('bot', 'channel', { contentType: 'text/plain', dataBase64: 'aGk=' });
+    expect(result).toEqual({ object: { id: 'object-1' } });
   });
 
   test('adds same-origin credentials and CSRF to mutations without changing the payload', async () => {

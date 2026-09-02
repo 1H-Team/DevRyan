@@ -57,7 +57,12 @@ const versionRow = (overrides = {}) => ({
   ...overrides,
 });
 
-const createHarness = ({ extractCandidates, commitResult, loadAdditionalIndexDocuments } = {}) => {
+const createHarness = ({
+  extractCandidates,
+  commitResult,
+  loadAdditionalIndexDocuments,
+  logger = { warn: vi.fn() },
+} = {}) => {
   const memory = memoryRow();
   const repositories = {
     bot_memories: {
@@ -228,6 +233,7 @@ const createHarness = ({ extractCandidates, commitResult, loadAdditionalIndexDoc
     uuid: () => uuids[uuidIndex++ % uuids.length],
     now: () => new Date('2026-08-23T12:02:00.000Z'),
     extractionRetryDelaysMs: [1],
+    logger,
   });
   repositories.bot_runs.get.mockImplementation(async ({ id }) => ({
     id,
@@ -244,6 +250,7 @@ const createHarness = ({ extractCandidates, commitResult, loadAdditionalIndexDoc
     channels,
     indexer,
     audit,
+    logger,
     onMemoryChanged,
     memory,
   };
@@ -322,30 +329,44 @@ describe('Bot layered memory runtime', () => {
         attemptCount: 1,
       }),
     }));
+    expect(harness.logger.warn).toHaveBeenCalledWith(
+      '[BotsMemory] extraction terminal failure',
+      expect.objectContaining({
+        code: 'bot_opencode_request_invalid',
+        runId: RUN_ID,
+        botId: BOT_ID,
+        phase: 'classification',
+        attemptCount: 1,
+      }),
+    );
   });
 
-  it('settles a synthetic revision conflict without retrying it', async () => {
-    const extractCandidates = vi.fn(async () => {
-      throw Object.assign(new Error('synthetic run cannot persist a model snapshot'), {
+  it('retries an optimistic conflict after a bounded delay and succeeds', async () => {
+    const extractCandidates = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('memory row changed under the extractor'), {
         code: 'bot_revision_conflict',
         statusCode: 409,
-      });
-    });
+      }))
+      .mockResolvedValueOnce({ candidates: [] });
     const harness = createHarness({ extractCandidates });
 
     await harness.runtime.enqueueCompletedRun(completedRun());
+    await waitUntil(() => harness.store.settleMemoryExtractionJob.mock.calls.some(
+      ([input]) => input.disposition === 'retry' && input.errorCode === 'bot_revision_conflict',
+    ));
+    await harness.runtime.waitForPendingExtractions();
+    if (extractCandidates.mock.calls.length < 2) await harness.runtime.start();
+    await waitUntil(() => extractCandidates.mock.calls.length === 2);
     await harness.runtime.waitForPendingExtractions();
 
-    expect(extractCandidates).toHaveBeenCalledTimes(1);
-    expect(harness.audit).toHaveBeenCalledWith(expect.objectContaining({
+    expect(harness.audit).not.toHaveBeenCalledWith(expect.objectContaining({
       action: 'bot.memory.extract',
       result: 'failure',
-      metadata: expect.objectContaining({
-        code: 'bot_revision_conflict',
-        phase: 'classification',
-        retryable: false,
-        attemptCount: 1,
-      }),
+      metadata: expect.objectContaining({ code: 'bot_revision_conflict' }),
+    }));
+    expect(harness.audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'bot.memory.extract',
+      result: 'success',
     }));
   });
 
@@ -530,14 +551,16 @@ describe('Bot layered memory runtime', () => {
     );
     await expect(harness.runtime.enqueueCompletedRun(completedRun())).resolves.toEqual({ queued: true });
     await harness.runtime.waitForPendingExtractions();
-    expect(harness.store.commitChannelSummary).toHaveBeenCalledTimes(6);
+    // Optimistic conflicts get four durable attempts, each with the bounded
+    // in-process summary retry, before the job is marked terminal.
+    expect(harness.store.commitChannelSummary).toHaveBeenCalledTimes(12);
     expect(harness.indexer.upsert).not.toHaveBeenCalled();
     expect(harness.audit).toHaveBeenCalledWith(expect.objectContaining({
       result: 'failure',
       metadata: expect.objectContaining({
         code: 'bot_summary_checkpoint_conflict',
         phase: 'summary_commit',
-        attemptCount: 2,
+        attemptCount: 4,
       }),
     }));
   });
@@ -1012,5 +1035,125 @@ describe('Bot layered memory runtime', () => {
     expect(harness.indexer.rebuild).not.toHaveBeenCalled();
 
     await harness.runtime.shutdown();
+  });
+});
+
+describe('Bot memory relevance retrieval', () => {
+  const FIRST_ID = 'a0000000-0000-4000-8000-000000000031';
+  const SECOND_ID = 'a0000000-0000-4000-8000-000000000032';
+  const THIRD_ID = 'a0000000-0000-4000-8000-000000000033';
+  const hit = (memoryId, ordinal, score, metadata = {}) => ({
+    namespace: `bot:${BOT_ID}`,
+    documentId: `memory:${memoryId}`,
+    ordinal,
+    text: 'indexed chunk',
+    score,
+    metadata: { kind: 'memory', memoryId, ...metadata },
+  });
+
+  it('searches the shared memory namespace and returns ranked, deduplicated memory ids only', async () => {
+    const harness = createHarness();
+    harness.indexer.search = vi.fn(async () => ({ results: [
+      hit(FIRST_ID, 0, 0.9),
+      hit(FIRST_ID, 1, 0.8),
+      { ...hit(SECOND_ID, 0, 0.7), metadata: { kind: 'library', libraryVersionId: 'version' } },
+      hit(SECOND_ID, 0, 'not-a-number'),
+      hit(THIRD_ID, 0, 0.1),
+    ] }));
+
+    const hits = await harness.runtime.searchForContext({
+      botId: BOT_ID, query: '  deploy cadence  ', limit: 2,
+    });
+
+    expect(harness.indexer.search).toHaveBeenCalledWith({
+      namespaces: [`bot:${BOT_ID}`], query: 'deploy cadence', limit: 50,
+    });
+    expect(hits).toEqual([
+      { memoryId: FIRST_ID, score: 0.9 },
+      { memoryId: SECOND_ID, score: null },
+    ]);
+    expect(JSON.stringify(hits)).not.toContain('indexed chunk');
+    expect(await harness.runtime.searchForContext({ botId: BOT_ID, query: '   ' })).toEqual([]);
+    expect(harness.indexer.search).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates index unavailability so the assembler can fall back to recent facts', async () => {
+    const harness = createHarness();
+    harness.indexer.search = vi.fn(async () => {
+      throw Object.assign(new Error('index down'), { code: 'bot_indexer_unavailable' });
+    });
+    await expect(harness.runtime.searchForContext({ botId: BOT_ID, query: 'anything' }))
+      .rejects.toMatchObject({ code: 'bot_indexer_unavailable' });
+  });
+});
+
+describe('Bot memory console diagnostics', () => {
+  it('isolates one undecryptable row and reports extraction jobs without candidate content', async () => {
+    const harness = createHarness();
+    const readable = memoryRow();
+    const broken = memoryRow({
+      id: 'a0000000-0000-4000-8000-000000000041',
+      active_version_id: 'a0000000-0000-4000-8000-000000000042',
+      logical_key: 'broken.row',
+    });
+    harness.repositories.bot_memories.list.mockResolvedValue(page([readable, broken]));
+    harness.channels.decryptMemory.mockImplementation(async (row) => {
+      if (row.id === broken.id) {
+        throw Object.assign(new Error('bad envelope'), { code: 'bot_memory_envelope_invalid' });
+      }
+      return { text: 'Version text.' };
+    });
+    const job = (state, overrides = {}) => ({
+      run_id: overrides.run_id || RUN_ID,
+      bot_id: BOT_ID,
+      channel_id: CHANNEL_ID,
+      state,
+      attempt_count: 2,
+      candidate_envelope: { ciphertext: 'never-shown' },
+      last_phase: state === 'terminal' ? 'summary_commit' : null,
+      last_error_code: state === 'terminal' ? 'bot_summary_checkpoint_conflict' : null,
+      created_at: state === 'terminal' ? '2026-09-01T10:00:00.000Z' : '2026-09-01T11:00:00.000Z',
+      updated_at: '2026-09-01T11:00:00.000Z',
+      ...overrides,
+    });
+    harness.repositories.bot_memory_extraction_jobs = {
+      list: vi.fn(async ({ filters }) => page(
+        filters.state === 'terminal'
+          ? [job('terminal')]
+          : filters.state === 'queued'
+            ? [job('queued', { run_id: SECOND_RUN_ID })]
+            : [],
+      )),
+    };
+
+    const result = await harness.runtime.listForManager({ id: USER_ID }, BOT_ID, { state: 'active' });
+
+    expect(harness.repositories.bot_memories.list).toHaveBeenCalledWith(expect.objectContaining({
+      filters: { bot_id: BOT_ID, tombstoned_at: null },
+    }));
+    expect(result.memories).toHaveLength(2);
+    expect(result.memories[0]).toMatchObject({ id: readable.id, content: { text: 'Version text.' } });
+    expect(result.memories[1]).toMatchObject({
+      id: broken.id, logicalKey: 'broken.row', unreadable: true, content: { text: '' },
+    });
+    expect(result.extraction).toMatchObject({ pending: 1, failed: 1 });
+    expect(result.extraction.recent).toHaveLength(2);
+    expect(result.extraction.recent[0]).toMatchObject({ runId: SECOND_RUN_ID, state: 'queued' });
+    expect(result.extraction.recent[1]).toMatchObject({
+      runId: RUN_ID, state: 'terminal', errorCode: 'bot_summary_checkpoint_conflict', phase: 'summary_commit',
+    });
+    expect(JSON.stringify(result)).not.toContain('never-shown');
+
+    const forgotten = await harness.runtime.listForManager(
+      { id: USER_ID }, BOT_ID, { state: 'forgotten', cursor: 'page-2' },
+    );
+    expect(harness.repositories.bot_memories.list).toHaveBeenLastCalledWith(expect.objectContaining({
+      filters: { bot_id: BOT_ID, tombstoned_at: { not: null } },
+      cursor: 'page-2',
+    }));
+    expect(forgotten).not.toHaveProperty('extraction');
+
+    await expect(harness.runtime.listForManager({ id: USER_ID }, BOT_ID, { state: 'bogus' }))
+      .rejects.toMatchObject({ code: 'bot_request_invalid', statusCode: 400 });
   });
 });

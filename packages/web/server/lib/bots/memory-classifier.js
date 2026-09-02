@@ -107,6 +107,57 @@ const containsTranscriptQuote = (statement, transcript) => {
 
 const rejection = (index, code) => Object.freeze({ index, code });
 
+const normalizeLogicalKey = (value) => {
+  if (typeof value !== 'string') return null;
+  const key = value
+    .normalize('NFKC')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9._:-]+/g, '-')
+    .replace(/^[^a-z0-9]+/, '')
+    .replace(/-{2,}/g, '-')
+    .slice(0, 128);
+  return LOGICAL_KEY_PATTERN.test(key) ? key : null;
+};
+
+const normalizeCandidateShape = (candidate, provenanceDefaults) => {
+  if (!isRecord(candidate)) return null;
+  const statement = typeof candidate.statement === 'string' ? candidate.statement : null;
+  const logicalKey = normalizeLogicalKey(candidate.logicalKey ?? candidate.logical_key ?? candidate.key);
+  if (statement === null || logicalKey === null) return null;
+  const rawProvenance = isRecord(candidate.provenance) ? candidate.provenance : {};
+  const messageIds = Array.isArray(rawProvenance.messageIds)
+    ? rawProvenance.messageIds
+    : (Array.isArray(candidate.messageIds) ? candidate.messageIds : provenanceDefaults.messageIds);
+  // Missing optional fields take their defaults. A field that is present but
+  // unsupported is kept as written so the strict schema check still rejects it.
+  const rawConfidence = typeof candidate.confidence === 'string' && candidate.confidence.trim()
+    ? Number(candidate.confidence)
+    : candidate.confidence;
+  const confidence = rawConfidence === undefined || rawConfidence === null
+    ? 0.6
+    : (typeof rawConfidence === 'number' && Number.isFinite(rawConfidence)
+      ? Math.max(0, Math.min(1, rawConfidence))
+      : rawConfidence);
+  return Object.freeze({
+    statement,
+    logicalKey,
+    scope: candidate.scope === undefined || candidate.scope === null ? 'shared' : candidate.scope,
+    subjectUserId: typeof candidate.subjectUserId === 'string' ? candidate.subjectUserId : null,
+    sensitivity: candidate.sensitivity === undefined || candidate.sensitivity === null
+      ? 'normal'
+      : candidate.sensitivity,
+    confidence,
+    transcriptQuote: candidate.transcriptQuote === true,
+    provenance: Object.freeze({
+      channelId: typeof rawProvenance.channelId === 'string' ? rawProvenance.channelId : provenanceDefaults.channelId,
+      runId: typeof rawProvenance.runId === 'string' ? rawProvenance.runId : provenanceDefaults.runId,
+      messageIds: Object.freeze(Array.isArray(messageIds) ? [...messageIds] : []),
+    }),
+  });
+};
+
 export const buildBotMemoryExtractionPrompt = ({
   botId,
   channelId,
@@ -135,6 +186,7 @@ export const buildBotMemoryExtractionPrompt = ({
     'Mark a fact confidential or restricted when it is personal or sensitive; it is still shared, so prefer thread_only when it should not outlive the channel.',
     'Never copy raw transcript passages, credentials, tokens, passwords, or unsupported claims.',
     'Every provenance ID must come from the supplied context.',
+    'Logical keys are lowercase dotted paths. Use the prefix user. for durable facts about the person you talk to (user.name, user.timezone, user.role), preference. for how they like things done, identity. for facts about the Bot itself, and project. or topic. for everything else, so the most personal facts stay retrievable.',
     `Context JSON:\n${encoded}`,
   ].join('\n\n');
 };
@@ -169,16 +221,38 @@ export function classifyBotMemoryCandidates({
 
   const accepted = [];
   const rejected = [];
-  parsed.candidates.forEach((candidate, index) => {
+  parsed.candidates.forEach((rawCandidate, index) => {
+    // Structured-output models routinely omit null-valued keys, capitalise
+    // logical keys, or add an extra field. Those are shape problems, not
+    // trust problems: normalise them and keep the trust checks below strict.
+    const candidate = normalizeCandidateShape(rawCandidate, {
+      channelId: normalizedChannelId,
+      runId: normalizedRunId,
+      messageIds: [...allowedMessageIds],
+    });
+    if (!candidate) {
+      rejected.push(rejection(index, !isRecord(rawCandidate)
+        ? 'schema_invalid'
+        : (typeof rawCandidate.statement !== 'string'
+          ? 'schema_statement_invalid'
+          : 'schema_key_invalid')));
+      return;
+    }
     if (!exactFields(candidate, CANDIDATE_FIELDS)
       || !exactFields(candidate.provenance, PROVENANCE_FIELDS)) {
       rejected.push(rejection(index, 'schema_invalid'));
       return;
     }
     const statement = typeof candidate.statement === 'string' ? candidate.statement.trim() : '';
-    if (!statement || Buffer.byteLength(statement, 'utf8') > MAX_STATEMENT_BYTES
-      || typeof candidate.logicalKey !== 'string' || !LOGICAL_KEY_PATTERN.test(candidate.logicalKey)
-      || !['shared', 'user_private', 'thread_only'].includes(candidate.scope)
+    if (!statement || Buffer.byteLength(statement, 'utf8') > MAX_STATEMENT_BYTES) {
+      rejected.push(rejection(index, 'schema_statement_invalid'));
+      return;
+    }
+    if (typeof candidate.logicalKey !== 'string' || !LOGICAL_KEY_PATTERN.test(candidate.logicalKey)) {
+      rejected.push(rejection(index, 'schema_key_invalid'));
+      return;
+    }
+    if (!['shared', 'user_private', 'thread_only'].includes(candidate.scope)
       || !['normal', 'confidential', 'restricted'].includes(candidate.sensitivity)
       || typeof candidate.confidence !== 'number' || !Number.isFinite(candidate.confidence)
       || candidate.confidence < 0 || candidate.confidence > 1

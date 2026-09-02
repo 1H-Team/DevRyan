@@ -229,6 +229,91 @@ describe('BotBrowserDiagnostic', () => {
     expect(markup).not.toContain('data-bot-browser-warning="blocked-cookies"');
   });
 
+  test('shows loop paths, browser prerequisites, handled dialogs, and popup state at the right severity', async () => {
+    const diagnostic = {
+      revision: 9,
+      observedAt: Date.now(),
+      origin: 'https://example.com',
+      statusCode: 200,
+      redirectCount: 1,
+      repetitionCount: 3,
+      kind: 'site_rejection' as const,
+      reason: 'navigation_loop',
+      blockedHost: null,
+      trail: [
+        { kind: 'navigation' as const, origin: 'https://example.com', path: '/login', observedAt: 1, statusCode: 200, redirectCount: 0 },
+        { kind: 'navigation' as const, origin: 'https://example.com', path: '/app', observedAt: 2, statusCode: 302, redirectCount: 1 },
+        { kind: 'navigation' as const, origin: 'https://example.com', path: '/login', observedAt: 3, statusCode: 200, redirectCount: 1 },
+      ],
+      dialogs: [{ kind: 'dialog' as const, origin: 'https://example.com', path: '/login', observedAt: 4, type: 'confirm' as const, message: 'Continue?' }],
+    };
+    const baseStatus: BotComputerStatus = {
+      botId: BOT_ID,
+      browser: {
+        running: true,
+        healthy: true,
+        lifecycleState: 'running',
+        popupOpen: true,
+        webCapabilities: {
+          managedPolicy: 'enforced',
+          javascript: 'enabled',
+          firstPartyCookies: 'enabled',
+          thirdPartyCookies: 'enabled',
+        },
+        lastNavigationDiagnostic: diagnostic,
+      },
+      control: null,
+      screencast: { subscribers: 1, lastFrameAt: 1, retainedFrames: 0 },
+      framesRecorded: false,
+      arbitraryWebsiteExactlyOnce: false,
+    };
+    const renderStatus = async (status: BotComputerStatus) => {
+      const api = {
+        startComputerView: async () => ({ view: {
+          id: 'view_loop', botId: BOT_ID, channelId: CHANNEL_ID,
+          streamUrl: `/api/bots/${BOT_ID}/computer/view/view_loop/stream`, startedAt: '',
+        } }),
+        stopComputerView: async () => ({ stopped: true }),
+      } as unknown as BotsApi;
+      const operationsStore = createBotOperationsStore({ api });
+      operationsStore.getState().resetPrincipal(VIEWER_ID);
+      operationsStore.getState().replaceSnapshot({ runs: [], pendingApprovals: [], computers: [status] });
+      await operationsStore.getState().startComputerView(BOT_ID, CHANNEL_ID);
+      Object.assign(operationsStore.getInitialState(), operationsStore.getState());
+      return renderToStaticMarkup(
+        <I18nProvider>
+          <BotBrowserDiagnostic
+            botId={BOT_ID}
+            channelId={CHANNEL_ID}
+            botActive
+            principalId={VIEWER_ID}
+            canControl
+            active
+            operationsStore={operationsStore}
+          />
+        </I18nProvider>,
+      );
+    };
+
+    const agentMarkup = await renderStatus(baseStatus);
+    expect(agentMarkup).toContain('data-bot-browser-warning="site-rejection" role="alert"');
+    expect(agentMarkup).toContain('/login → /app');
+    expect(agentMarkup).toContain('3 times in a row');
+    expect(agentMarkup).toContain('Browser prerequisites: managed policy enforced');
+    expect(agentMarkup).toContain('data-bot-browser-dialog="confirm"');
+    expect(agentMarkup).toContain('Continue?');
+    expect(agentMarkup).toContain('data-bot-browser-popup="open"');
+
+    const viewerMarkup = await renderStatus({
+      ...baseStatus,
+      control: {
+        leaseId: 'lease', actorId: VIEWER_ID, actorType: 'user',
+        takenAt: Date.now(), expiresAt: Date.now() + 60_000,
+      },
+    });
+    expect(viewerMarkup).toContain('data-bot-browser-warning="site-rejection" role="status"');
+  });
+
   test('keeps screen pixels out of every Zustand store', () => {
     const source = readFileSync(resolve(testDir, 'BotBrowserDiagnostic.tsx'), 'utf8');
     const canvas = readFileSync(resolve(testDir, 'BotComputerCanvas.tsx'), 'utf8');

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
 import { validateUuid } from './validation.js';
+import { createBotPeriodicJob } from './periodic-job.js';
 
 const DEFAULT_SWEEP_INTERVAL_MS = 30_000;
 
@@ -224,12 +225,14 @@ export function createBotComputerRuntimeManager({
       if (started) return;
       started = true;
       await sweep();
-      timer = setInterval(() => {
-        void sweep().catch((error) => logger?.warn?.('[BotsComputer] health sweep failed', {
-          code: error?.code || 'bot_computer_sweep_failed',
-        }));
-      }, sweepIntervalMs);
-      timer.unref?.();
+      timer = createBotPeriodicJob({
+        name: 'computer_health_sweep',
+        intervalMs: sweepIntervalMs,
+        maxBackoffMs: sweepIntervalMs * 5,
+        logger,
+        run: sweep,
+      });
+      timer.start({ immediate: false });
     },
     ensureBot,
     restartBot,
@@ -239,7 +242,7 @@ export function createBotComputerRuntimeManager({
     sweep,
     async shutdown() {
       started = false;
-      if (timer) clearInterval(timer);
+      if (timer) await timer.stop();
       timer = null;
       await Promise.allSettled([...runtimes.keys()].map(stopBot));
       runtimes.clear();

@@ -20,10 +20,12 @@ describe('isIsolatedUiTestSource', () => {
     assert.equal(isIsolatedUiTestSource("Object.defineProperty(globalThis, 'window', { value: {} })"), true);
   });
 
-  test('isolates module mocks and global sessionStorage mutations', () => {
+  test('isolates module mocks and mutable browser globals', () => {
     assert.equal(isIsolatedUiTestSource("mock.module('@/lib/opencode/client', () => ({}))"), true);
     assert.equal(isIsolatedUiTestSource('globalThis.sessionStorage = storage'), true);
     assert.equal(isIsolatedUiTestSource('Object.defineProperty(globalThis, "sessionStorage", { value: storage })'), true);
+    assert.equal(isIsolatedUiTestSource('globalThis.FileReader = MockFileReader'), true);
+    assert.equal(isIsolatedUiTestSource('Object.defineProperty(globalThis, "FileReader", { value: MockFileReader })'), true);
   });
 
   test('does not isolate plain window reads', () => {

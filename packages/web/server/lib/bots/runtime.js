@@ -64,6 +64,8 @@ import { createBotSourceScanner } from './source-scanner.js';
 import { createBotSpecService } from './bot-spec.js';
 import { createBotSpecSigner } from './bot-spec-signer.js';
 import { runBotStructuredTask } from './structured-task.js';
+import { botErrorLogFields } from './error-normalization.js';
+import { createBotPeriodicJob } from './periodic-job.js';
 
 const defaultPrincipalPolicy = Object.freeze({
   isGlobalAdmin: (principal) => (
@@ -71,6 +73,9 @@ const defaultPrincipalPolicy = Object.freeze({
     && (principal?.scope === 'managed' || principal?.scope === 'local-admin')
   ),
 });
+
+const MEMORY_START_RETRY_MIN_MS = 15_000;
+const MEMORY_START_RETRY_MAX_MS = 5 * 60 * 1000;
 
 const BOT_STARTUP_FAILURE_MESSAGES = Object.freeze({
   bot_runtime_docker_not_installed: 'Docker is not installed. Install Docker, then retry Bot preparation.',
@@ -241,6 +246,14 @@ export function createBotsRuntime({
     audit: botAudit,
     recordDiagnostic,
     onRunSettled: (input) => routineSettlementHandler?.(input),
+    onQuestion: async (input) => {
+      if (!dispatcher || typeof dispatcher.recordRunQuestion !== 'function') {
+        throw Object.assign(new Error('Bot questions are unavailable'), {
+          code: 'bot_question_unavailable', statusCode: 503,
+        });
+      }
+      return dispatcher.recordRunQuestion(input);
+    },
   });
   gatewayOperationHandler = actionGateway.handleGatewayOperation;
   eventStream.addSnapshotSource('operations', async (principal) => ({
@@ -371,6 +384,7 @@ export function createBotsRuntime({
     channels,
     recordDiagnostic,
     onMessageReady: (computerScopeKey) => dispatcher?.drainScope(computerScopeKey),
+    onMessageBlocked: (input) => dispatcher?.failQueuedRun(input),
   });
   connectorRegistry.register(createBotSharedConnector({ sharedFileService }));
   let runRecovery = null;
@@ -387,8 +401,51 @@ export function createBotsRuntime({
   let executionStartPromise = null;
   let executionRetryTimer = null;
   let executionRetryAttempt = 0;
-  let approvalExpiryTimer = null;
-  let approvalExpirySweep = null;
+  let approvalExpiryJob = null;
+  let runSweepJob = null;
+  let memoryStartRetryTimer = null;
+  let memoryStartDelayMs = MEMORY_START_RETRY_MIN_MS;
+  let memoryStartFailure = null;
+
+  // Memory extraction depends on the loopback retrieval index. An index that is
+  // slow or down must not take Bot chat down with it: the runtime keeps
+  // executing runs, extraction jobs stay durable in the database, and the
+  // memory worker keeps retrying its start with backoff until the index answers.
+  const clearMemoryStartRetry = () => {
+    if (memoryStartRetryTimer) clearTimeout(memoryStartRetryTimer);
+    memoryStartRetryTimer = null;
+  };
+  const startMemoryRuntimeResiliently = async () => {
+    clearMemoryStartRetry();
+    if (!memoryRuntime || backgroundStopped) return false;
+    try {
+      await memoryRuntime.start();
+      if (memoryStartFailure) {
+        console.info('[BotsMemory] memory runtime started after earlier failures', {
+          code: memoryStartFailure.code,
+        });
+      }
+      memoryStartFailure = null;
+      memoryStartDelayMs = MEMORY_START_RETRY_MIN_MS;
+      return true;
+    } catch (error) {
+      const fields = botErrorLogFields(error, 'bot_memory_runtime_unavailable');
+      // The runtime itself being down (Docker stopped, setup/update required)
+      // is an execution failure for every service, not an index outage.
+      if (/^bot_runtime_/.test(fields.code)) throw error;
+      if (memoryStartFailure?.code !== fields.code) {
+        console.warn('[BotsMemory] memory runtime start failed; Bots stay available and extraction resumes when the index is reachable', fields);
+      }
+      memoryStartFailure = { code: fields.code, since: memoryStartFailure?.since || new Date().toISOString() };
+      memoryStartRetryTimer = setTimeout(() => {
+        memoryStartRetryTimer = null;
+        void startMemoryRuntimeResiliently();
+      }, memoryStartDelayMs);
+      memoryStartRetryTimer.unref?.();
+      memoryStartDelayMs = Math.min(MEMORY_START_RETRY_MAX_MS, memoryStartDelayMs * 2);
+      return false;
+    }
+  };
   let shutdownPromise = null;
   let backgroundStopped = false;
   let telegramService = null;
@@ -771,9 +828,14 @@ export function createBotsRuntime({
         store,
         channels,
         retrieval: { search: (input) => libraryRuntime.search(input) },
+        // Memory starts (and may be retried) after the assembler exists; until
+        // it is up the assembler falls back to the newest facts.
+        memoryRetrieval: {
+          search: async (input) => (memoryRuntime ? memoryRuntime.searchForContext(input) : null),
+        },
         capabilities: { runtimeCatalog: (input) => capabilityBindings.runtimeCatalog(input) },
       });
-      await memoryRuntime.start();
+      await startMemoryRuntimeResiliently();
       routineDrafter ||= createBotRoutineDrafter({
         generateNoTools: async ({ principal, botId, prompt, schema, title, system }) => {
           await authorization.requireManager(principal, botId);
@@ -885,27 +947,44 @@ export function createBotsRuntime({
       for (const computerScopeKey of expired.scopeKeys) {
         queueMicrotask(() => void dispatcher?.drainScope(computerScopeKey));
       }
-      if (!approvalExpiryTimer) {
-        approvalExpiryTimer = setInterval(() => {
-          if (approvalExpirySweep || !dispatcher) return;
-          approvalExpirySweep = approvalService.expirePending()
-            .then((result) => {
-              for (const computerScopeKey of result.scopeKeys) {
-                void dispatcher?.drainScope(computerScopeKey);
-              }
-            })
-            .catch((error) => {
-              console.warn('[BotsRuntime] approval expiry reconciliation failed', {
-                code: error?.code || 'bot_approval_expiry_failed',
-              });
-            })
-            .finally(() => {
-              approvalExpirySweep = null;
-            });
-        }, 5_000);
-        approvalExpiryTimer.unref?.();
+      if (!approvalExpiryJob) {
+        approvalExpiryJob = createBotPeriodicJob({
+          name: 'approval_expiry',
+          intervalMs: 5_000,
+          maxBackoffMs: 60_000,
+          logger: console,
+          run: async () => {
+            if (!dispatcher) return;
+            const result = await approvalService.expirePending();
+            for (const computerScopeKey of result.scopeKeys) {
+              void dispatcher?.drainScope(computerScopeKey);
+            }
+          },
+        });
+        approvalExpiryJob.start({ immediate: false });
       }
-      await runRecovery.recover();
+      const recovered = await runRecovery.recover();
+      for (const computerScopeKey of recovered.queuedScopeKeys || []) {
+        queueMicrotask(() => void dispatcher?.drainScope(computerScopeKey));
+      }
+      if (!runSweepJob) {
+        runSweepJob = createBotPeriodicJob({
+          name: 'run_sweep',
+          intervalMs: 30_000,
+          maxBackoffMs: 300_000,
+          logger: console,
+          run: async () => {
+            if (!dispatcher || !runRecovery) return;
+            const sweep = await runRecovery.sweep({
+              isExecuting: (runId) => dispatcher?.isExecuting(runId) === true,
+            });
+            for (const computerScopeKey of sweep.queuedScopeKeys) {
+              void dispatcher?.drainScope(computerScopeKey);
+            }
+          },
+        });
+        runSweepJob.start({ immediate: false });
+      }
       executionFailure = null;
       prewarmCache?.invalidateAll();
       executionRetryAttempt = 0;
@@ -918,11 +997,13 @@ export function createBotsRuntime({
       };
       await routineRuntime?.shutdown().catch(() => undefined);
       await dispatcher?.shutdown().catch(() => undefined);
+      clearMemoryStartRetry();
       await memoryRuntime?.shutdown().catch(() => undefined);
       await artifactService?.shutdown().catch(() => undefined);
-      if (approvalExpiryTimer) clearInterval(approvalExpiryTimer);
-      approvalExpiryTimer = null;
-      approvalExpirySweep = null;
+      if (approvalExpiryJob) await approvalExpiryJob.stop();
+      approvalExpiryJob = null;
+      if (runSweepJob) await runSweepJob.stop();
+      runSweepJob = null;
       runRecovery = null;
       dispatcher = null;
       contextAssembler = null;
@@ -1216,8 +1297,10 @@ export function createBotsRuntime({
         retryTimer = null;
         if (executionRetryTimer) clearTimeout(executionRetryTimer);
         executionRetryTimer = null;
-        if (approvalExpiryTimer) clearInterval(approvalExpiryTimer);
-        approvalExpiryTimer = null;
+        if (approvalExpiryJob) await approvalExpiryJob.stop();
+        approvalExpiryJob = null;
+        if (runSweepJob) await runSweepJob.stop();
+        runSweepJob = null;
         try {
           backgroundStopped = true;
           await integrationStartPromise?.catch(() => undefined);
@@ -1225,6 +1308,7 @@ export function createBotsRuntime({
           await voiceService?.shutdown();
           if (routineRuntime) await routineRuntime.shutdown();
           if (dispatcher) await dispatcher.shutdown();
+          clearMemoryStartRetry();
           if (memoryRuntime) await memoryRuntime.shutdown();
           if (libraryRuntime) await libraryRuntime.shutdown();
           await browserService.shutdown();

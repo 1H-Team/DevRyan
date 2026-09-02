@@ -115,3 +115,68 @@ describe('Bot memory classifier', () => {
     expect(result.rejected).toEqual([{ index: 0, code: 'schema_invalid' }]);
   });
 });
+
+describe('Bot memory classifier leniency', () => {
+  it('fills optional fields for a sparse candidate and defaults provenance to the run', () => {
+    const result = classify([{
+      statement: 'Production deployments use the reviewed European region.',
+      logicalKey: 'deployment.region',
+    }]);
+    expect(result.rejected).toEqual([]);
+    expect(result.accepted[0]).toMatchObject({
+      scope: 'shared',
+      subjectUserId: null,
+      sensitivity: 'normal',
+      confidence: 0.6,
+      provenance: { channelId: CHANNEL_ID, runId: RUN_ID, messageIds: [MESSAGE_ID] },
+    });
+  });
+
+  it('normalizes loosely written logical keys and accepts the snake-case alias', () => {
+    const result = classify([
+      candidate({ logicalKey: '  User.Timezone ' }),
+      { ...candidate(), logicalKey: undefined, logical_key: 'Deployment Region' },
+    ]);
+    expect(result.rejected).toEqual([]);
+    expect(result.accepted.map((entry) => entry.logicalKey)).toEqual([
+      'user.timezone',
+      'deployment-region',
+    ]);
+  });
+
+  it('parses numeric-string confidence, clamps out-of-range values, and rejects nonsense', () => {
+    const result = classify([
+      candidate({ confidence: '0.8' }),
+      candidate({ logicalKey: 'deployment.window', confidence: 1.5 }),
+      candidate({ logicalKey: 'deployment.owner', confidence: 'high' }),
+    ]);
+    expect(result.accepted.map((entry) => entry.confidence)).toEqual([0.8, 1]);
+    expect(result.rejected).toEqual([{ index: 2, code: 'schema_invalid' }]);
+  });
+
+  it('reports why a statement or key was unusable', () => {
+    const result = classify([
+      candidate({ statement: '   ' }),
+      candidate({ logicalKey: '!!!' }),
+    ]);
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected.map((entry) => entry.code)).toEqual([
+      'schema_statement_invalid',
+      'schema_key_invalid',
+    ]);
+  });
+
+  it('asks the model for people-fact key prefixes so pinning works', () => {
+    const prompt = buildBotMemoryExtractionPrompt({
+      botId: BOT_ID,
+      channelId: CHANNEL_ID,
+      runId: RUN_ID,
+      ownerUserId: OWNER_ID,
+      userText: 'Call me Zed.',
+      assistantText: 'Will do, Zed.',
+    });
+    expect(prompt).toContain('user.name');
+    expect(prompt).toContain('preference.');
+    expect(prompt).toContain('identity.');
+  });
+});

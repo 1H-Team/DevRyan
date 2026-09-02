@@ -1,4 +1,5 @@
 import { validateUuid } from './validation.js';
+import { botErrorLogFields } from './error-normalization.js';
 
 const DEFAULT_MAX_ENTRIES = 4;
 const DEFAULT_IDLE_TTL_MS = 5 * 60 * 1_000;
@@ -118,7 +119,7 @@ export function createBotPrewarmCache({
     }).catch((error) => {
       if (entries.get(key) === entry) entries.delete(key);
       logger?.warn?.('[BotsPrewarm] channel prewarm failed', {
-        code: error?.code || 'bot_prewarm_failed',
+        ...botErrorLogFields(error, 'bot_prewarm_failed'),
         channelId,
         revisionId,
       });

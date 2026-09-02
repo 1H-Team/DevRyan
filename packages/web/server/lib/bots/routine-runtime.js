@@ -10,6 +10,7 @@ import {
   validateBoundedString,
   validateUuid,
 } from './validation.js';
+import { botErrorLogFields } from './error-normalization.js';
 
 const MAX_ROUTINES = 10_000;
 const MAX_LIST_ITEMS = 64;
@@ -769,7 +770,7 @@ export function createBotRoutineRuntime({
       } catch (error) {
         retry = true;
         logger?.warn?.('[BotsRoutines] routine dispatch deferred', {
-          code: error?.code || 'bot_routine_dispatch_deferred',
+          ...botErrorLogFields(error, 'bot_routine_dispatch_deferred'),
           routineId: routine.id,
         });
       }
@@ -782,7 +783,7 @@ export function createBotRoutineRuntime({
     if (sweepPromise) return sweepPromise;
     sweepPromise = runSweep({ startup }).catch(async (error) => {
       logger?.warn?.('[BotsRoutines] scheduler sweep deferred', {
-        code: error?.code || 'bot_routine_scheduler_deferred',
+        ...botErrorLogFields(error, 'bot_routine_scheduler_deferred'),
       });
       await scheduleNextWake(true);
     }).finally(() => { sweepPromise = null; });

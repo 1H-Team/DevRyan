@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { useBotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotSharedFilesStore } from '@/stores/useBotSharedFilesStore';
 import { stripAssistantImageMarkdown } from '../../../../../shared-runtime/lib/assistant-image-sources.js';
+import { BotQuestionBlock } from './BotQuestionBlock';
 import { BotResultAttachments } from './BotResultAttachments';
 
 type BotMessageRowProps = {
@@ -64,12 +65,15 @@ export const BotMessageRow = React.memo<BotMessageRowProps>(({ bot, messageId })
   const isUser = role === 'user';
   const isAssistant = role === 'assistant';
   if (!isUser && !isAssistant) return null;
-  if (isAssistant && (message.assistantPhase === 'acknowledgment' || message.finalizedAt === null)) return null;
+  // A finalized acknowledgment is the Bot's own short "on it" line before tool
+  // work; it renders as a normal bubble. Only unfinished rows stay hidden.
+  if (isAssistant && message.finalizedAt === null) return null;
   const text = message.body.text;
   const attachmentIds = message?.body.attachmentIds ?? [];
   const attachmentCount = message?.attachmentCount ?? 0;
+  const question = isAssistant ? message.body.question ?? null : null;
   if (isAssistant && text.trim().length === 0
-    && attachmentCount === 0 && sharedFileCount === 0) return null;
+    && attachmentCount === 0 && sharedFileCount === 0 && !question) return null;
   const actorLabel = isUser ? t('bots.chat.message.you') : bot.name;
   const createdAt = message.createdAt;
   const displayedText = isAssistant ? stripAssistantImageMarkdown(text) : text;
@@ -78,6 +82,7 @@ export const BotMessageRow = React.memo<BotMessageRowProps>(({ bot, messageId })
     <article
       data-bot-message-id={messageId}
       data-bot-message-role={role}
+      data-bot-message-phase={isAssistant ? message.assistantPhase ?? undefined : undefined}
       className={cn('group flex min-w-0', isUser ? 'justify-end' : 'justify-start')}
       aria-label={t('bots.chat.message.aria', { actor: actorLabel })}
     >
@@ -106,6 +111,14 @@ export const BotMessageRow = React.memo<BotMessageRowProps>(({ bot, messageId })
             )}
             {isAssistant ? (
               <BotResultAttachments botId={bot.id} messageId={messageId} text={text} />
+            ) : null}
+            {question ? (
+              <BotQuestionBlock
+                channelId={message.channelId}
+                messageId={messageId}
+                sequence={message.sequence}
+                question={question}
+              />
             ) : null}
             {attachmentIds.length > 0 ? (
               <ul className="mt-2 flex flex-wrap gap-1.5" aria-label={t('bots.chat.attachments.label')}>

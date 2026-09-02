@@ -714,3 +714,78 @@ test('a fetched final answer outranks a partial event delivered during the read'
   await request;
   expect(store.getState().messagesById[final.id]).toBe(final);
 });
+
+test('treats an acceptance deadline as ambiguous and retries once with the same identity', async () => {
+  const requests: BotSendMessageRequest[] = [];
+  const acceptedMessage = message(CHANNEL_A, 1, {
+    id: CLIENT_MESSAGE_ID,
+    runId: RUN_ID,
+    body: { text: 'Slow network', attachmentIds: [] },
+  });
+  const api = {
+    listMessages: async () => ({ messages: [], nextCursor: null }),
+    sendMessage: async (_channelId: string, request: BotSendMessageRequest) => {
+      requests.push({ ...request });
+      if (requests.length === 1) {
+        throw new BotsApiError('timed out', { status: 504, code: 'bot_request_timeout' });
+      }
+      return {
+        created: true,
+        message: acceptedMessage,
+        acknowledgment: pendingResponse(),
+        run: run(),
+      };
+    },
+  } as unknown as BotsApi;
+  const store = createBotChannelStore({
+    api,
+    uuid: sequentialUuid(CLIENT_MESSAGE_ID, ACKNOWLEDGMENT_ID),
+    now: () => new Date(NOW),
+    getPrincipalId: () => USER_ID,
+  });
+  store.getState().replaceSnapshot({ channels: [channel(CHANNEL_A)] });
+  store.getState().setDraft(CHANNEL_A, { text: 'Slow network', attachmentIds: [] });
+
+  const response = await store.getState().sendDraft(CHANNEL_A);
+
+  expect(response?.message.id).toBe(CLIENT_MESSAGE_ID);
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toEqual(requests[0]);
+  expect(store.getState().pendingMessageIdByChannelId[CHANNEL_A]).toBe(undefined);
+  expect(store.getState().sendErrorCodeByChannelId[CHANNEL_A]).toBe(undefined);
+});
+
+test('a quick reply sends a normal message without discarding the typed draft', async () => {
+  const requests: BotSendMessageRequest[] = [];
+  const api = {
+    listMessages: async () => ({ messages: [], nextCursor: null }),
+    sendMessage: async (_channelId: string, request: BotSendMessageRequest) => {
+      requests.push({ ...request });
+      return {
+        created: true,
+        message: message(CHANNEL_A, 1, { id: CLIENT_MESSAGE_ID, runId: RUN_ID, body: { text: 'Annual', attachmentIds: [] } }),
+        acknowledgment: pendingResponse(),
+        run: run(),
+      };
+    },
+  } as unknown as BotsApi;
+  const store = createBotChannelStore({
+    api,
+    uuid: sequentialUuid(CLIENT_MESSAGE_ID, ACKNOWLEDGMENT_ID),
+    now: () => new Date(NOW),
+    getPrincipalId: () => USER_ID,
+  });
+  store.getState().replaceSnapshot({ channels: [channel(CHANNEL_A)] });
+  store.getState().setDraft(CHANNEL_A, { text: 'half-typed thought', attachmentIds: [] });
+
+  const response = await store.getState().sendQuickReply(CHANNEL_A, '  Annual ');
+
+  expect(response?.message.id).toBe(CLIENT_MESSAGE_ID);
+  expect(requests).toHaveLength(1);
+  expect(requests[0]?.text).toBe('Annual');
+  expect(requests[0]?.attachmentIds).toEqual([]);
+  expect(store.draftStore.getState().draftsByChannelId[CHANNEL_A]).toEqual({
+    text: 'half-typed thought', attachmentIds: [],
+  });
+  expect(await store.getState().sendQuickReply(CHANNEL_A, '   ')).toBeNull();
+});

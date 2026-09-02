@@ -46,7 +46,7 @@ export const createDefaultBotRevisionContract = (
   advancedPrompt: '',
   // Every Bot runs one shared computer.
   tenancy: 'team',
-  standingRole: 'You are a capable DevRyan Bot.',
+  standingRole: 'You\'re a teammate the people on this Bot message like a colleague: you get things done, keep replies short and human, and say plainly when something isn\'t possible.',
   models: {
     primary: {
       providerId: 'openai',

@@ -65,6 +65,7 @@ const createHarness = ({
   browserService: browserOverride,
   runContextSnapshot = null,
   onRunSettled = vi.fn(async () => {}),
+  onQuestion = vi.fn(async () => ({ recorded: true })),
   policy = { defaultEffect: 'allow', defaultRisk: 'low', rules: [] },
   quotaServices = {},
 } = {}) => {
@@ -217,6 +218,7 @@ const createHarness = ({
     encryption: { getKey: async () => Buffer.from(KEY) },
     audit,
     onRunSettled,
+    onQuestion,
     now: () => new Date(NOW),
     uuid: () => `f0000000-0000-4000-8000-${String(nextActionId++).padStart(12, '0')}`,
   };
@@ -233,6 +235,7 @@ const createHarness = ({
     eventStream,
     audit,
     onRunSettled,
+    onQuestion,
     getRun: () => currentRun,
     setRun: (changes) => { currentRun = { ...currentRun, ...changes }; },
   };
@@ -842,5 +845,35 @@ describe('Bot fail-closed action gateway', () => {
       },
     })).rejects.toMatchObject({ code: 'bot_connector_unregistered' });
     expect(harness.actions).toHaveLength(0);
+  });
+});
+
+describe('Bot quick-reply questions through the gateway', () => {
+  it('records a normalized question on the active run without an action attempt, policy decision, or receipt', async () => {
+    const harness = createHarness();
+    const result = await harness.gateway.handleGatewayOperation({
+      claims: claims(),
+      operation: 'conversation.ask',
+      payload: { prompt: '  Which plan? ', options: ['Monthly', { label: 'Annual', description: 'Two months free' }] },
+      signal: new AbortController().signal,
+    });
+    expect(result).toEqual({ asked: true, optionCount: 2, multiple: false });
+    expect(harness.onQuestion).toHaveBeenCalledWith(expect.objectContaining({
+      run: expect.objectContaining({ id: RUN_ID }),
+      question: {
+        version: 1,
+        prompt: 'Which plan?',
+        options: [{ label: 'Monthly', description: null }, { label: 'Annual', description: 'Two months free' }],
+        multiple: false,
+        allowFreeText: true,
+      },
+    }));
+    expect(harness.store.repositories.bot_action_attempts.insert).not.toHaveBeenCalled();
+    await expect(harness.gateway.handleGatewayOperation({
+      claims: claims(),
+      operation: 'conversation.ask',
+      payload: { prompt: 'Pick', options: [] },
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'bot_question_invalid', statusCode: 400 });
   });
 });

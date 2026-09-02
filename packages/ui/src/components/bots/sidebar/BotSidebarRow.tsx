@@ -2,6 +2,8 @@ import React from 'react';
 import { RiLoader4Line } from '@remixicon/react';
 
 import { BotAvatar } from '@/components/bots/BotAvatar';
+import { BotTypingDots } from '@/components/bots/chat/BotTypingDots';
+import type { BotSidebarStatus } from './botSidebarStatus';
 import type { BotSummary } from '@/lib/botsApi';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -13,6 +15,7 @@ type BotSidebarRowProps = {
   opening: boolean;
   channelId: string | null;
   channelStore?: BotChannelStore;
+  status?: BotSidebarStatus | null;
   onSelect: (botId: string) => void;
 };
 
@@ -55,6 +58,7 @@ export const BotSidebarRow = React.memo<BotSidebarRowProps>(({
   opening,
   channelId,
   channelStore = useBotChannelStore,
+  status = null,
   onSelect,
 }) => {
   const { t } = useI18n();
@@ -62,8 +66,13 @@ export const BotSidebarRow = React.memo<BotSidebarRowProps>(({
   const previewText = preview
     ? conversationPreview(preview.text) || (preview.attachmentCount > 0 ? t('bots.sidebar.attachmentPreview') : '')
     : t('bots.sidebar.startConversation');
+  const statusText = status === 'typing'
+    ? t('bots.sidebar.typing')
+    : status === 'waiting'
+      ? t('bots.sidebar.waiting')
+      : null;
   const timestamp = formatConversationTime(preview?.createdAt ?? null);
-  const accessiblePreview = previewText.replace(/[.!?]+$/u, '');
+  const accessiblePreview = (statusText ?? previewText).replace(/[.!?…]+$/u, '');
 
   return (
     <button
@@ -98,9 +107,26 @@ export const BotSidebarRow = React.memo<BotSidebarRowProps>(({
             </time>
           ) : null}
         </span>
-        <span className="mt-0.5 block truncate typography-meta text-muted-foreground">
-          {previewText}
-        </span>
+        {status === 'typing' ? (
+          <span
+            className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate typography-meta text-foreground/80"
+            data-bot-sidebar-status="typing"
+          >
+            <BotTypingDots dotClassName="h-1 w-1 bg-foreground/60" />
+            <span className="truncate">{statusText}</span>
+          </span>
+        ) : status === 'waiting' ? (
+          <span
+            className="mt-0.5 block truncate typography-meta font-medium text-[var(--status-warning)]"
+            data-bot-sidebar-status="waiting"
+          >
+            {statusText}
+          </span>
+        ) : (
+          <span className="mt-0.5 block truncate typography-meta text-muted-foreground">
+            {previewText}
+          </span>
+        )}
       </span>
       {opening ? (
         <RiLoader4Line

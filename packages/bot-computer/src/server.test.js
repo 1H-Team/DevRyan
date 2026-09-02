@@ -1,6 +1,9 @@
 import http from 'node:http';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, test } from 'bun:test';
-import { closeComputerHttpServer, createComputerHttpServer } from './server.js';
+import { closeComputerHttpServer, createComputerHttpServer, startComputerService } from './server.js';
 import { createControlLeaseManager } from './control.js';
 import { createScreencastBroker } from './screencast.js';
 
@@ -282,5 +285,48 @@ describe('authenticated computer HTTP API', () => {
       pathname: '/v1/profile/reset',
       body: { confirm: true },
     })).statusCode).toBe(200);
+  });
+
+  test('resets navigation diagnostics whenever a human takes control', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-computer-service-'));
+    const resets = [];
+    const diagnostics = {
+      recordRequest() {},
+      recordEgressDenied() {},
+      reset: (reason) => resets.push(reason),
+      snapshot: () => null,
+    };
+    const virtualDisplay = {
+      display: ':99',
+      status: () => ({ ready: true }),
+      onTerminated: () => () => undefined,
+      close: async () => {},
+    };
+    let runtime;
+    try {
+      runtime = await startComputerService({
+        token: TOKEN,
+        runId: 'fixture-run',
+        scopeMode: 'team',
+        gatewayUrl: 'http://host.docker.internal:43120',
+        profileDirectory: path.join(directory, 'profile'),
+        scratchDirectory: path.join(directory, 'scratch'),
+        egressProxyUrl: 'http://egress:43121',
+        egressToken: 'drb1.fixture.signature',
+        port: 0,
+        host: '127.0.0.1',
+        diagnostics,
+        startDisplay: async () => virtualDisplay,
+        verifyPolicy: async () => ({
+          managedPolicy: 'enforced', javascript: 'enabled',
+          firstPartyCookies: 'enabled', thirdPartyCookies: 'enabled',
+        }),
+      });
+      runtime.control.take({ actorId: 'user-01', actorType: 'user' });
+      expect(resets).toEqual(['control_taken']);
+    } finally {
+      await runtime?.close();
+      await fs.rm(directory, { recursive: true, force: true });
+    }
   });
 });

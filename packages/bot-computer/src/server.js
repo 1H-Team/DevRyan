@@ -357,7 +357,12 @@ export async function startComputerService({
     throw error;
   }
   const refs = createAccessibilityRefStore();
-  const control = createControlLeaseManager({ onEvent: onControlEvent || (() => undefined) });
+  const control = createControlLeaseManager({
+    onEvent: (event) => {
+      if (event?.type === 'taken') diagnostics.reset?.('control_taken');
+      onControlEvent?.(event);
+    },
+  });
   const screencast = createScreencastBroker();
   const workspace = createWorkspaceGateway({
     scratchDirectory,

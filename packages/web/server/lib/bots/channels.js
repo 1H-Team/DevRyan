@@ -11,6 +11,16 @@ import {
 import { createBotSharedFileAdmissions } from './shared-files.js';
 import { publicBotActionAttempt } from './approval-service.js';
 import { isBotRunRetryable } from './retry-policy.js';
+import { normalizeBotQuestion } from './bot-question.js';
+
+const isValidStoredQuestion = (value) => {
+  try {
+    normalizeBotQuestion(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const DEPLOYMENT_KEY_ID = 'deployment-v1';
 const MAX_MESSAGE_BYTES = 1024 * 1024;
@@ -197,13 +207,16 @@ export function createBotChannels({
       expectedKeyId: DEPLOYMENT_KEY_ID,
       associatedData: messageAssociatedData(row.channel_id, row.id),
     });
-    if (!body || body.version !== 1 || typeof body.text !== 'string'
-      || !Array.isArray(body.attachmentIds)) {
+    if (!body || ![1, 2].includes(body.version) || typeof body.text !== 'string'
+      || !Array.isArray(body.attachmentIds)
+      || (body.version === 2 && body.question !== undefined && body.question !== null
+        && !isValidStoredQuestion(body.question))) {
       fail('Bot message envelope is invalid', 'bot_message_envelope_invalid', 500);
     }
     const text = row.role === 'assistant'
       ? sanitizeBotConversationalText(body.text)
       : body.text;
+    const question = body.version === 2 && body.question ? normalizeBotQuestion(body.question) : null;
     return Object.freeze({
       id: row.id,
       channelId: row.channel_id,
@@ -215,6 +228,7 @@ export function createBotChannels({
       body: Object.freeze({
         text,
         attachmentIds: Object.freeze([...body.attachmentIds]),
+        ...(question ? { question } : {}),
       }),
       attachmentCount: Number(row.attachment_count || 0),
       createdAt: row.created_at,
@@ -222,10 +236,14 @@ export function createBotChannels({
     });
   };
 
-  const encryptMessage = (key, { channelId, messageId, text, attachmentIds }) => encryptBotJson({
+  // Body version 2 exists only to carry a quick-reply question; everything
+  // else keeps writing version 1 so older readers stay compatible.
+  const encryptMessage = (key, { channelId, messageId, text, attachmentIds, question = null }) => encryptBotJson({
     key,
     keyId: DEPLOYMENT_KEY_ID,
-    value: { version: 1, text, attachmentIds },
+    value: question
+      ? { version: 2, text, attachmentIds, question: normalizeBotQuestion(question) }
+      : { version: 1, text, attachmentIds },
     associatedData: messageAssociatedData(channelId, messageId),
   });
 
@@ -633,6 +651,7 @@ export function createBotChannels({
       text,
       finalizedAt = null,
       assistantPhase = null,
+      question = null,
     } = {}) {
       if (!message || message.role !== 'assistant') {
         fail('Bot assistant checkpoint is invalid', 'bot_message_invalid', 500);
@@ -642,6 +661,9 @@ export function createBotChannels({
           || message.assistant_phase !== 'pending' || finalizedAt === null)) {
         fail('Bot assistant checkpoint phase promotion is invalid', 'bot_message_invalid', 500);
       }
+      // A question is final-only: it rides on the finalized result, never on a
+      // streaming checkpoint.
+      const normalizedQuestion = question && finalizedAt !== null ? normalizeBotQuestion(question) : null;
       const normalizedText = sanitizeBotConversationalText(
         typeof text === 'string' ? text : '',
       );
@@ -650,6 +672,7 @@ export function createBotChannels({
         messageId: message.id,
         text: normalizedText,
         attachmentIds: [],
+        question: normalizedQuestion,
       }));
       const updated = await store.updateMessageCheckpoint({
         messageId: message.id,
@@ -665,7 +688,11 @@ export function createBotChannels({
         role: updated.role,
         assistantPhase: updated.assistant_phase || null,
         sequence: Number(updated.sequence),
-        body: Object.freeze({ text: normalizedText, attachmentIds: Object.freeze([]) }),
+        body: Object.freeze({
+          text: normalizedText,
+          attachmentIds: Object.freeze([]),
+          ...(normalizedQuestion ? { question: normalizedQuestion } : {}),
+        }),
         attachmentCount: Number(updated.attachment_count || 0),
         createdAt: updated.created_at,
         finalizedAt: updated.finalized_at || null,

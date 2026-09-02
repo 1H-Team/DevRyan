@@ -19,7 +19,7 @@ const releaseManifest = () => ({
   channel: 'release',
   releaseId: '1.1.9',
   sourceRevision: '1'.repeat(40),
-  openCodeVersion: '1.18.25',
+  openCodeVersion: '1.18.26',
   schemaVersion: '20260827100000',
   pluginHash: `sha256:${'2'.repeat(64)}`,
   images: Object.fromEntries(IMAGE_KEYS.map((key, index) => [key, {

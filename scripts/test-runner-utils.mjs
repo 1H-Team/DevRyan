@@ -6,11 +6,13 @@ export const testFilePattern = /(?:^|[./-])test\.[cm]?[jt]sx?$/;
 const mockModulePattern = /\bmock\.module\s*\(/;
 const globalWindowMutationPattern = /(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.window\s*=|Object\.defineProperty\s*\(\s*globalThis\s*,\s*['"]window['"]|delete\s+(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.window/;
 const globalSessionStorageMutationPattern = /(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.sessionStorage\s*=|Object\.defineProperty\s*\(\s*globalThis\s*,\s*['"]sessionStorage['"]|delete\s+(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.sessionStorage/;
+const globalFileReaderMutationPattern = /(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.FileReader\s*=|Object\.defineProperty\s*\(\s*globalThis\s*,\s*['"]FileReader['"]|delete\s+(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.FileReader/;
 
 export function isIsolatedUiTestSource(source) {
   return mockModulePattern.test(source)
     || globalWindowMutationPattern.test(source)
-    || globalSessionStorageMutationPattern.test(source);
+    || globalSessionStorageMutationPattern.test(source)
+    || globalFileReaderMutationPattern.test(source);
 }
 
 export function discoverTestFiles(directory, rootDirectory, options = {}) {

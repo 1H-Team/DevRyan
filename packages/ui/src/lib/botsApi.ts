@@ -596,6 +596,21 @@ export type BotChannelPreview = {
   finalizedAt: string | null;
 };
 
+export type BotQuestionOption = {
+  label: string;
+  description: string | null;
+};
+
+// A quick-reply question the Bot asked inside its message. Tapping an option
+// sends an ordinary reply; the run is already finished when it is shown.
+export type BotQuestion = {
+  version: 1;
+  prompt: string;
+  options: readonly BotQuestionOption[];
+  multiple: boolean;
+  allowFreeText: boolean;
+};
+
 export type BotMessage = {
   id: string;
   channelId: string;
@@ -607,6 +622,7 @@ export type BotMessage = {
   body: {
     text: string;
     attachmentIds: readonly string[];
+    question?: BotQuestion | null;
   };
   attachmentCount: number;
   createdAt: string;
@@ -691,6 +707,25 @@ export type BotComputerControl = {
 
 export type BotComputerWebCapabilityState = 'enabled' | 'disabled' | 'unknown';
 
+export type BotComputerBrowserTrailEntry = {
+  kind: 'navigation' | 'failure' | 'dialog';
+  origin: string | null;
+  path: string;
+  observedAt: number;
+  statusCode?: number | null;
+  redirectCount?: number;
+  reason?: string;
+  type?: 'alert' | 'beforeunload' | 'confirm' | 'prompt' | 'unknown';
+  message?: string;
+};
+
+export type BotComputerCookieBlock = {
+  origin: string | null;
+  path: string;
+  reason: string;
+  observedAt: number;
+};
+
 export type BotComputerNavigationDiagnostic = {
   revision: number;
   observedAt: number;
@@ -706,6 +741,9 @@ export type BotComputerNavigationDiagnostic = {
     | 'site_rejection';
   reason: string;
   blockedHost: string | null;
+  trail?: readonly BotComputerBrowserTrailEntry[];
+  cookieBlocks?: readonly BotComputerCookieBlock[];
+  dialogs?: readonly BotComputerBrowserTrailEntry[];
 };
 
 export type BotComputerBrowserStatus = {
@@ -716,6 +754,8 @@ export type BotComputerBrowserStatus = {
   generation?: number;
   lastFailureCode?: string | null;
   screencastSubscribers?: number;
+  activeTargetCount?: number;
+  popupOpen?: boolean;
   mode?: 'headed_virtual' | 'headless_legacy';
   engineVersion?: string | null;
   displayReady?: boolean;
@@ -837,6 +877,36 @@ export type BotMemory = {
   createdAt: string;
   updatedAt: string;
   tombstonedAt: string | null;
+  /** Present when the row could not be decrypted; `content.text` is empty. */
+  unreadable?: boolean;
+  unreadableCode?: string;
+};
+
+export type BotMemoryExtractionJob = {
+  runId: string;
+  channelId: string;
+  state: 'queued' | 'leased' | 'succeeded' | 'terminal';
+  phase: string | null;
+  errorCode: string | null;
+  attemptCount: number;
+  nextAttemptAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BotMemoryExtractionSummary = {
+  pending: number;
+  failed: number;
+  workerStarted: boolean;
+  recent: readonly BotMemoryExtractionJob[];
+};
+
+export type BotMemoryPage = {
+  memories: BotMemory[];
+  nextCursor: string | null;
+  /** Only present on the first page. */
+  extraction?: BotMemoryExtractionSummary | null;
 };
 
 export type BotMemoryVersion = {
@@ -1337,6 +1407,7 @@ export type BotsApi = {
   }): Promise<BotLibrarySourcePage>;
   listBotComputerFiles(botId: string, options?: {
     path?: string | null;
+    scope?: 'workspace' | 'container';
   }): Promise<BotComputerFiles>;
   listBotComputerResources(botId: string): Promise<{
     resources: readonly BotComputerResource[];
@@ -1376,7 +1447,9 @@ export type BotsApi = {
   listBotMemories(botId: string, options?: {
     cursor?: string | null;
     limit?: number;
-  }): Promise<{ memories: BotMemory[]; nextCursor: string | null }>;
+    state?: 'active' | 'forgotten' | null;
+  }): Promise<BotMemoryPage>;
+  requeueBotMemoryExtraction(botId: string, runId: string): Promise<{ job: BotMemoryExtractionJob }>;
   getBotMemory(botId: string, memoryId: string): Promise<BotMemoryDetail>;
   editBotMemory(botId: string, memoryId: string, request: {
     text: string;
@@ -1519,20 +1592,65 @@ const errorFromPayload = (status: number, payload: unknown): BotsApiError => {
 
 const encoded = (value: string): string => encodeURIComponent(value);
 
-export const createBotsApi = ({ fetchImpl = fetch }: { fetchImpl?: typeof fetch } = {}): BotsApi => {
-  const request = async (input: string, init: RequestInit = {}): Promise<Response> => {
+// Every Bot request has a deadline. A hung acceptance or upload used to leave
+// the composer frozen forever; now it fails as `bot_request_timeout`, which the
+// send path treats as ambiguous (refresh, then one idempotent retry).
+export const BOT_REQUEST_TIMEOUT_MS = 30_000;
+export const BOT_UPLOAD_TIMEOUT_MS = 120_000;
+
+type BotRequestInit = RequestInit & { timeoutMs?: number };
+
+const deadlineSignal = (
+  outer: AbortSignal | null | undefined,
+  timeoutMs: number,
+): { signal: AbortSignal; timedOut: () => boolean; release: () => void } => {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const forward = () => controller.abort();
+  if (outer?.aborted) forward();
+  else outer?.addEventListener('abort', forward, { once: true });
+  return {
+    signal: controller.signal,
+    timedOut: () => timedOut,
+    release: () => {
+      clearTimeout(timer);
+      outer?.removeEventListener('abort', forward);
+    },
+  };
+};
+
+export const createBotsApi = ({
+  fetchImpl = fetch,
+  defaultTimeoutMs = BOT_REQUEST_TIMEOUT_MS,
+}: { fetchImpl?: typeof fetch; defaultTimeoutMs?: number } = {}): BotsApi => {
+  const request = async (input: string, init: BotRequestInit = {}): Promise<Response> => {
+    const { timeoutMs = defaultTimeoutMs, signal: outerSignal, ...rest } = init;
+    const deadline = deadlineSignal(outerSignal, timeoutMs);
     let response: Response;
     try {
       response = await fetchImpl(input, {
         credentials: 'same-origin',
-        cache: init.method && init.method !== 'GET' ? init.cache : 'no-store',
-        ...init,
+        cache: rest.method && rest.method !== 'GET' ? rest.cache : 'no-store',
+        ...rest,
+        signal: deadline.signal,
       });
     } catch (error) {
+      if (deadline.timedOut()) {
+        throw new BotsApiError('Production Bots request timed out', {
+          status: 504,
+          code: 'bot_request_timeout',
+        });
+      }
       throw new BotsApiError(
         error instanceof Error ? error.message : 'Production Bots request failed',
         { status: 0, code: 'network_error' },
       );
+    } finally {
+      deadline.release();
     }
     if (response.ok) return response;
     let payload: unknown = null;
@@ -1544,7 +1662,7 @@ export const createBotsApi = ({ fetchImpl = fetch }: { fetchImpl?: typeof fetch 
     throw errorFromPayload(response.status, payload);
   };
 
-  const requestJson = async <T>(input: string, init: RequestInit = {}): Promise<T> => {
+  const requestJson = async <T>(input: string, init: BotRequestInit = {}): Promise<T> => {
     const headers = new Headers(init.headers);
     headers.set('Accept', 'application/json');
     const response = await request(input, {
@@ -1566,6 +1684,7 @@ export const createBotsApi = ({ fetchImpl = fetch }: { fetchImpl?: typeof fetch 
     method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     body?: unknown,
     signal?: AbortSignal,
+    timeoutMs?: number,
   ): Promise<T> => (
     (() => {
       const headers = new Headers();
@@ -1575,6 +1694,7 @@ export const createBotsApi = ({ fetchImpl = fetch }: { fetchImpl?: typeof fetch 
         method,
         headers,
         ...(signal ? { signal } : {}),
+        ...(timeoutMs ? { timeoutMs } : {}),
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     })()
@@ -1813,6 +1933,7 @@ export const createBotsApi = ({ fetchImpl = fetch }: { fetchImpl?: typeof fetch 
     listBotComputerFiles(botId, options = {}) {
       const query = new URLSearchParams();
       if (options.path) query.set('path', options.path);
+      if (options.scope) query.set('scope', options.scope);
       const suffix = query.size > 0 ? `?${query.toString()}` : '';
       return requestJson(`/api/bots/${encoded(botId)}/computer-files${suffix}`);
     },
@@ -1871,9 +1992,15 @@ export const createBotsApi = ({ fetchImpl = fetch }: { fetchImpl?: typeof fetch 
       const query = new URLSearchParams();
       if (options.cursor) query.set('cursor', options.cursor);
       if (options.limit !== undefined) query.set('limit', String(options.limit));
+      if (options.state) query.set('state', options.state);
       const suffix = query.size > 0 ? `?${query.toString()}` : '';
       return requestJson(`/api/bots/${encoded(botId)}/memories${suffix}`);
     },
+    requeueBotMemoryExtraction: (botId, runId) => mutateJson(
+      `/api/bots/${encoded(botId)}/memories/extraction/${encoded(runId)}/requeue`,
+      'POST',
+      {},
+    ),
     getBotMemory: (botId, memoryId) => requestJson(
       `/api/bots/${encoded(botId)}/memories/${encoded(memoryId)}`,
     ),
@@ -1985,6 +2112,8 @@ export const createBotsApi = ({ fetchImpl = fetch }: { fetchImpl?: typeof fetch 
       `/api/bots/${encoded(botId)}/channels/${encoded(channelId)}/objects`,
       'POST',
       body,
+      undefined,
+      BOT_UPLOAD_TIMEOUT_MS,
     ),
     listSharedFiles: (botId, channelId) => requestJson(
       `/api/bots/${encoded(botId)}/channels/${encoded(channelId)}/shared-files`,

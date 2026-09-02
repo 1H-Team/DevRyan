@@ -45,7 +45,7 @@ const validManifest = () => ({
   channel: 'release',
   releaseId: currentVersion,
   sourceRevision,
-  openCodeVersion: '1.18.25',
+  openCodeVersion: '1.18.26',
   schemaVersion: '20260824120000',
   pluginHash: digest('f'),
   images: Object.fromEntries(Object.entries(BOT_RUNTIME_IMAGE_DEFINITIONS).map(
@@ -292,8 +292,8 @@ describe('Bot runtime image build metadata', () => {
       root: repositoryRoot,
       version: currentVersion,
     });
-    assert.equal(metadata.openCodeVersion, '1.18.25');
-    assert.equal(metadata.schemaVersion, '20260901130000');
+    assert.equal(metadata.openCodeVersion, '1.18.26');
+    assert.equal(metadata.schemaVersion, '20260902120000');
     assert.match(metadata.pluginHash, /^sha256:[0-9a-f]{64}$/);
     assert.deepEqual(new Set(Object.values(metadata.packageVersions)), new Set([currentVersion]));
   });

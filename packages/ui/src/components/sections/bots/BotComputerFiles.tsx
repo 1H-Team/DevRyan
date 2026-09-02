@@ -19,10 +19,17 @@ import {
   type BotComputerResource,
   type BotsApi,
 } from '@/lib/botsApi';
+import { useAuthPrincipal } from '@/lib/authSession';
 import { revealDesktopPath } from '@/lib/desktop';
 import { formatBytes } from '@/lib/formatBytes';
 import { cn } from '@/lib/utils';
 import { botComputerFilesUnavailableCopy } from './BotComputerFiles.copy';
+import {
+  BOT_COMPUTER_FILES_VIEW_LABELS,
+  computerFilesScopeForView,
+  visibleComputerEntries,
+  type BotComputerFilesView,
+} from './botComputerFilesView';
 
 type ComputerFilesApi = Pick<BotsApi, 'listBotComputerFiles'> & Partial<Pick<
   BotsApi,
@@ -41,6 +48,7 @@ const nativeDialog = (): NativeDialog | null => {
 export type BotComputerFilesProps = {
   botId: string;
   api?: ComputerFilesApi;
+  canBrowseComputer?: boolean;
 };
 
 const parentOf = (path: string): string => {
@@ -58,10 +66,14 @@ const formatModified = (value: string | null): string => {
 };
 
 /**
- * What the Bot actually has on its computer right now. Global administrators
- * see the container root; other settings users remain scoped to the workspace.
+ * What the Bot actually has on its computer right now. Everyone starts in the
+ * folders they actually use (Shared and Resources); the whole workspace is one
+ * click away, and only a global administrator can open the whole container.
  */
-export const BotComputerFiles: React.FC<BotComputerFilesProps> = ({ botId, api = botsApi }) => {
+export const BotComputerFiles: React.FC<BotComputerFilesProps> = ({ botId, api = botsApi, canBrowseComputer }) => {
+  const principal = useAuthPrincipal();
+  const computerAllowed = canBrowseComputer ?? principal.role === 'admin';
+  const [view, setView] = React.useState<BotComputerFilesView>('relevant');
   const [path, setPath] = React.useState('');
   const [listing, setListing] = React.useState<BotComputerFilesResult | null>(null);
   const [resources, setResources] = React.useState<readonly BotComputerResource[]>([]);
@@ -74,7 +86,7 @@ export const BotComputerFiles: React.FC<BotComputerFilesProps> = ({ botId, api =
     setLoading(true);
     try {
       const [result, resourceResult] = await Promise.all([
-        api.listBotComputerFiles(botId, { path: target || null }),
+        api.listBotComputerFiles(botId, { path: target || null, scope: computerFilesScopeForView(view) }),
         api.listBotComputerResources
           ? api.listBotComputerResources(botId)
           : Promise.resolve({ resources: [] }),
@@ -88,9 +100,18 @@ export const BotComputerFiles: React.FC<BotComputerFilesProps> = ({ botId, api =
     } finally {
       setLoading(false);
     }
-  }, [api, botId]);
+  }, [api, botId, view]);
 
   React.useEffect(() => { void load(path); }, [load, path]);
+
+  const changeView = (next: BotComputerFilesView) => {
+    if (next === view) return;
+    setView(next);
+    setPath('');
+  };
+  const viewOptions: readonly BotComputerFilesView[] = computerAllowed
+    ? ['relevant', 'workspace', 'computer']
+    : ['relevant', 'workspace'];
 
   const chooseAndImport = async (directory: boolean) => {
     const open = nativeDialog()?.open;
@@ -135,6 +156,8 @@ export const BotComputerFiles: React.FC<BotComputerFilesProps> = ({ botId, api =
     ? botComputerFilesUnavailableCopy(listing.state)
     : null;
   const stopped = listing?.available === true && listing.state === 'offline';
+  const entries = listing ? visibleComputerEntries(listing.entries, { path, view }) : [];
+  const filteredRoot = view === 'relevant' && !path;
 
   return (
     <section className="space-y-3" aria-labelledby="bot-computer-files-heading">
@@ -167,6 +190,23 @@ export const BotComputerFiles: React.FC<BotComputerFilesProps> = ({ botId, api =
       </div>
 
       {feedback ? <p role="status" className="rounded-lg border border-border/70 px-3 py-2 typography-ui text-foreground">{feedback}</p> : null}
+
+      <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Computer Files View">
+        {viewOptions.map((option) => (
+          <Button
+            key={option}
+            type="button"
+            size="xs"
+            variant={view === option ? 'secondary' : 'ghost'}
+            aria-pressed={view === option}
+            data-bot-computer-files-view={option}
+            disabled={importing}
+            onClick={() => changeView(option)}
+          >
+            {BOT_COMPUTER_FILES_VIEW_LABELS[option]}
+          </Button>
+        ))}
+      </div>
 
       <div className="overflow-hidden rounded-lg border border-border/70">
         {stopped ? (
@@ -221,16 +261,20 @@ export const BotComputerFiles: React.FC<BotComputerFilesProps> = ({ botId, api =
               {unavailable.detail}
             </p>
           </div>
-        ) : !listing || listing.entries.length === 0 ? (
+        ) : !listing || entries.length === 0 ? (
           <div className="px-3 py-6 text-center">
-            <p className="typography-ui text-foreground">Nothing here yet.</p>
+            <p className="typography-ui text-foreground">
+              {filteredRoot ? 'Nothing shared yet.' : 'Nothing here yet.'}
+            </p>
             <p className="mt-1 typography-micro text-muted-foreground">
-              Files the Bot creates while it works will show up here.
+              {filteredRoot
+                ? 'Files you attach in chat land in Shared; files you add here land in Resources.'
+                : 'Files the Bot creates while it works will show up here.'}
             </p>
           </div>
         ) : (
           <ul aria-label="Computer Files">
-            {listing.entries.map((entry) => {
+            {entries.map((entry) => {
               const Icon = entry.restricted
                 ? RiShieldKeyholeLine
                 : entry.kind === 'directory'

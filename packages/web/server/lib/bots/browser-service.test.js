@@ -63,7 +63,33 @@ it('projects only the typed privacy-safe Bot browser status contract', () => {
       blockedHost: null,
       headers: { cookie: 'secret' },
       pageText: 'private challenge',
+      trail: [
+        {
+          kind: 'navigation',
+          origin: 'https://airtable.com',
+          path: '/private/path?token=secret',
+          statusCode: 302,
+          redirectCount: 1,
+          observedAt: 1230,
+        },
+        {
+          kind: 'navigation',
+          origin: 'https://airtable.com',
+          path: '/login/abcdefghijklmnop',
+          statusCode: 200,
+          redirectCount: 2,
+          observedAt: 1234,
+        },
+      ],
+      cookieBlocks: [{
+        origin: 'https://airtable.com', path: '/login', reason: 'SameSiteUnspecifiedTreatedAsLax', observedAt: 1233,
+      }],
+      dialogs: [{
+        kind: 'dialog', origin: 'https://airtable.com', path: '/login', type: 'confirm', message: 'Continue?', observedAt: 1234,
+      }],
     },
+    activeTargetCount: 2,
+    popupOpen: true,
     rawNetworkEvents: [{ url: 'https://secret.example/private' }],
   });
 
@@ -81,13 +107,19 @@ it('projects only the typed privacy-safe Bot browser status contract', () => {
       revision: 7,
       origin: 'https://airtable.com',
       kind: 'site_rejection',
+      trail: [expect.objectContaining({ path: '/login/*' })],
+      cookieBlocks: [expect.objectContaining({ path: '/login' })],
+      dialogs: [expect.objectContaining({ type: 'confirm', message: 'Continue?' })],
     },
+    activeTargetCount: 2,
+    popupOpen: true,
   });
   const serialized = JSON.stringify(projected);
   expect(serialized).not.toContain('/private');
   expect(serialized).not.toContain('secret');
   expect(serialized).not.toContain('cookieValue');
   expect(serialized).not.toContain('pageText');
+  expect(serialized).not.toContain('abcdefghijklmnop');
 });
 
 const createHarness = ({
@@ -158,6 +190,7 @@ const createHarness = ({
   };
   const eventStream = { publish: vi.fn(async () => ({ delivered: 1 })) };
   const audit = vi.fn(async () => {});
+  const logger = { warn: vi.fn() };
   const service = createBotBrowserService({
     store,
     authorization,
@@ -167,6 +200,7 @@ const createHarness = ({
     audit,
     recordDiagnostic,
     transport,
+    logger,
     ...(now ? { now } : {}),
     ...(viewAttachTtlMs ? { viewAttachTtlMs } : {}),
   });
@@ -178,6 +212,8 @@ const createHarness = ({
     gatewayHost,
     eventStream,
     audit,
+    logger,
+    recordDiagnostic,
     authorization,
     responses,
   };
@@ -387,7 +423,7 @@ describe('Bot governed browser service', () => {
     })).toMatchObject({ operationKind: 'write', target: { origin: 'https://example.com' } });
   });
 
-  it('binds human input to an attached view and audits only batch metadata', async () => {
+  it('aggregates private human input into one content-free row per control lease', async () => {
     const harness = createHarness();
     const principal = { id: USER_ID, role: 'admin', scope: 'managed' };
     const events = [
@@ -410,11 +446,20 @@ describe('Bot governed browser service', () => {
     })).rejects.toMatchObject({ code: 'bot_browser_view_not_found' });
 
     await harness.service.openComputerView({ principal, botId: BOT_ID, viewId: view.id });
+    const taken = await harness.service.takeControl({ principal, botId: BOT_ID });
     await harness.service.humanCommand({
       principal,
       botId: BOT_ID,
       viewId: view.id,
-      leaseId: 'control-1',
+      leaseId: taken.control.leaseId,
+      command: 'input',
+      args: { events },
+    });
+    await harness.service.humanCommand({
+      principal,
+      botId: BOT_ID,
+      viewId: view.id,
+      leaseId: taken.control.leaseId,
       command: 'input',
       args: { events },
     });
@@ -423,11 +468,26 @@ describe('Bot governed browser service', () => {
       path: '/v1/control/command',
       body: expect.objectContaining({ command: 'input', args: { events } }),
     }));
-    const metadata = harness.audit.mock.calls.at(-1)?.[0]?.metadata;
+    expect(harness.audit.mock.calls.some(([entry]) => (
+      entry.action === 'bot.computer.human_command' && entry.result === 'success'
+    ))).toBe(false);
+    expect(harness.audit.mock.calls.some(([entry]) => entry.action === 'bot.computer.human_session'))
+      .toBe(false);
+    await harness.service.returnControl({
+      principal,
+      botId: BOT_ID,
+      leaseId: taken.control.leaseId,
+    });
+    const sessionAudit = harness.audit.mock.calls.find(([entry]) => (
+      entry.action === 'bot.computer.human_session'
+    ))?.[0];
+    const metadata = sessionAudit?.metadata;
     expect(metadata).toMatchObject({
       viewId: view.id,
-      eventTypes: ['pointer', 'text'],
-      eventCount: 2,
+      endedBy: 'return',
+      commandCount: 2,
+      eventCount: 4,
+      eventCountByType: { pointer: 2, text: 2 },
     });
     expect(JSON.stringify(metadata)).not.toContain('private input');
     expect(JSON.stringify(metadata)).not.toContain('"x"');
@@ -435,7 +495,7 @@ describe('Bot governed browser service', () => {
       .toThrow(/batch/i);
   });
 
-  it('returns human input after CDP dispatch without waiting for the audit write', async () => {
+  it('returns human input after CDP dispatch without writing a per-batch success audit', async () => {
     const harness = createHarness();
     const principal = { id: USER_ID, role: 'admin', scope: 'managed' };
     const { view } = await harness.service.startComputerView({
@@ -444,10 +504,7 @@ describe('Bot governed browser service', () => {
       channelId: CHANNEL_ID,
     });
     await harness.service.openComputerView({ principal, botId: BOT_ID, viewId: view.id });
-    let finishAudit;
-    harness.audit.mockImplementation(() => new Promise((resolve) => {
-      finishAudit = resolve;
-    }));
+    const auditCount = harness.audit.mock.calls.length;
 
     await expect(harness.service.humanCommand({
       principal,
@@ -462,8 +519,121 @@ describe('Bot governed browser service', () => {
         }],
       },
     })).resolves.toEqual({ clicked: true });
-    expect(harness.audit).toHaveBeenCalledTimes(2);
-    finishAudit?.();
+    expect(harness.audit).toHaveBeenCalledTimes(auditCount);
+  });
+
+  it('audits a failed human input batch individually without retaining input content', async () => {
+    const harness = createHarness();
+    const principal = { id: USER_ID, role: 'admin', scope: 'managed' };
+    const { view } = await harness.service.startComputerView({ principal, botId: BOT_ID, channelId: CHANNEL_ID });
+    await harness.service.openComputerView({ principal, botId: BOT_ID, viewId: view.id });
+    harness.transport.request.mockRejectedValueOnce(new BotBrowserServiceError(
+      'private failure text',
+      'bot_browser_conflict',
+      409,
+      { remoteCode: 'DEVRYAN_BOT_CONTROL_NOT_OWNER' },
+    ));
+
+    await expect(harness.service.humanCommand({
+      principal,
+      botId: BOT_ID,
+      viewId: view.id,
+      leaseId: 'expired-control',
+      command: 'input',
+      args: { events: [{ type: 'text', text: 'private input' }] },
+    })).rejects.toMatchObject({ code: 'bot_browser_conflict' });
+
+    const failure = harness.audit.mock.calls.find(([entry]) => (
+      entry.action === 'bot.computer.human_command' && entry.result === 'failure'
+    ))?.[0];
+    expect(failure?.metadata).toMatchObject({
+      controlLeaseId: 'expired-control',
+      eventTypes: ['text'],
+      eventCount: 1,
+      code: 'bot_browser_conflict',
+      status: 409,
+    });
+    expect(JSON.stringify(failure)).not.toContain('private input');
+    expect(JSON.stringify(failure)).not.toContain('private failure');
+  });
+
+  it('flushes aggregate input when an expired heartbeat loses control ownership', async () => {
+    const harness = createHarness();
+    const principal = { id: USER_ID, role: 'admin', scope: 'managed' };
+    const { view } = await harness.service.startComputerView({ principal, botId: BOT_ID, channelId: CHANNEL_ID });
+    await harness.service.openComputerView({ principal, botId: BOT_ID, viewId: view.id });
+    const taken = await harness.service.takeControl({ principal, botId: BOT_ID });
+    await harness.service.humanCommand({
+      principal, botId: BOT_ID, viewId: view.id, leaseId: taken.control.leaseId,
+      command: 'input', args: { events: [{ type: 'text', text: 'private input' }] },
+    });
+    harness.transport.request.mockRejectedValueOnce(new BotBrowserServiceError(
+      'expired control',
+      'bot_browser_conflict',
+      409,
+      { remoteCode: 'DEVRYAN_BOT_CONTROL_NOT_OWNER' },
+    ));
+
+    await expect(harness.service.heartbeatControl({
+      principal,
+      botId: BOT_ID,
+      leaseId: taken.control.leaseId,
+    })).rejects.toMatchObject({ code: 'bot_browser_conflict' });
+    expect(harness.audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'bot.computer.human_session',
+      result: 'success',
+      metadata: expect.objectContaining({ endedBy: 'expired', commandCount: 1, eventCount: 1 }),
+    }));
+  });
+
+  it('preserves the browser error when the failed-input audit cannot be written', async () => {
+    const harness = createHarness();
+    const principal = { id: USER_ID, role: 'admin', scope: 'managed' };
+    const { view } = await harness.service.startComputerView({ principal, botId: BOT_ID, channelId: CHANNEL_ID });
+    await harness.service.openComputerView({ principal, botId: BOT_ID, viewId: view.id });
+    harness.transport.request.mockRejectedValueOnce(new BotBrowserServiceError(
+      'private browser failure',
+      'bot_browser_conflict',
+      409,
+    ));
+    harness.audit.mockRejectedValueOnce(new Error('private audit failure'));
+
+    await expect(harness.service.humanCommand({
+      principal,
+      botId: BOT_ID,
+      viewId: view.id,
+      leaseId: 'control-1',
+      command: 'input',
+      args: { events: [{ type: 'text', text: 'private input' }] },
+    })).rejects.toMatchObject({ code: 'bot_browser_conflict' });
+    expect(harness.logger.warn).toHaveBeenCalledWith(
+      '[BotsComputer] human-command failure audit failed',
+      expect.objectContaining({ code: 'bot_computer_audit_failed', botId: BOT_ID }),
+    );
+    expect(JSON.stringify(harness.logger.warn.mock.calls)).not.toContain('private');
+  });
+
+  it('flushes an aggregate human session when its viewer closes and at shutdown', async () => {
+    const principal = { id: USER_ID, role: 'admin', scope: 'managed' };
+    for (const endedBy of ['cleanup', 'shutdown']) {
+      const harness = createHarness();
+      const { view } = await harness.service.startComputerView({ principal, botId: BOT_ID, channelId: CHANNEL_ID });
+      await harness.service.openComputerView({ principal, botId: BOT_ID, viewId: view.id });
+      const taken = await harness.service.takeControl({ principal, botId: BOT_ID });
+      await harness.service.humanCommand({
+        principal, botId: BOT_ID, viewId: view.id, leaseId: taken.control.leaseId,
+        command: 'input', args: { events: [{ type: 'key', phase: 'down', key: 'Tab', code: 'Tab', location: 0, repeat: false, modifiers: [] }] },
+      });
+      if (endedBy === 'cleanup') {
+        await harness.service.stopComputerView({ principal, botId: BOT_ID, viewId: view.id });
+      } else {
+        await harness.service.shutdown();
+      }
+      expect(harness.audit).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'bot.computer.human_session',
+        metadata: expect.objectContaining({ endedBy, commandCount: 1, eventCount: 1 }),
+      }));
+    }
   });
 
   it('executes only under an exact per-operation policy capability', async () => {
@@ -634,6 +804,11 @@ describe('Bot governed browser service', () => {
     const harness = createHarness();
     const principal = { id: USER_ID, role: 'developer', scope: 'managed' };
     const taken = await harness.service.takeControl({ principal, botId: BOT_ID });
+    await harness.service.heartbeatControl({
+      principal,
+      botId: BOT_ID,
+      leaseId: taken.control.leaseId,
+    });
     await harness.service.returnControl({
       principal,
       botId: BOT_ID,
@@ -653,6 +828,54 @@ describe('Bot governed browser service', () => {
     expect(harness.audit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'bot.computer.control.return',
     }));
+    expect(harness.audit.mock.calls.some(([entry]) => (
+      entry.action === 'bot.computer.control.heartbeat'
+    ))).toBe(false);
+  });
+
+  it('audits each navigation-loop diagnostic revision once with a privacy-safe trail', async () => {
+    const recordDiagnostic = vi.fn();
+    const harness = createHarness({ recordDiagnostic });
+    const principal = { id: USER_ID, role: 'admin', scope: 'managed' };
+    let revision = 4;
+    harness.transport.request.mockImplementation(async ({ path }) => {
+      if (path !== '/v1/status') return { clicked: true };
+      return {
+        browser: {
+          running: true,
+          generation: 2,
+          lastNavigationDiagnostic: {
+            revision,
+            observedAt: 100,
+            origin: 'https://example.com',
+            statusCode: 200,
+            redirectCount: 1,
+            repetitionCount: 3,
+            kind: 'site_rejection',
+            reason: 'navigation_loop',
+            trail: [{
+              kind: 'navigation', origin: 'https://example.com', path: '/login',
+              statusCode: 200, redirectCount: 1, observedAt: 100,
+            }],
+          },
+        },
+        control: { leaseId: 'lease-1', actorId: USER_ID, actorType: 'admin', takenAt: 1, expiresAt: 1000 },
+        screencast: {},
+      };
+    });
+
+    await harness.service.status({ principal, botId: BOT_ID });
+    await harness.service.status({ principal, botId: BOT_ID });
+    await vi.waitFor(() => expect(harness.audit.mock.calls.filter(([entry]) => (
+      entry.action === 'bot.computer.navigation_loop'
+    ))).toHaveLength(1));
+    revision += 1;
+    await harness.service.status({ principal, botId: BOT_ID });
+    await vi.waitFor(() => expect(harness.audit.mock.calls.filter(([entry]) => (
+      entry.action === 'bot.computer.navigation_loop'
+    ))).toHaveLength(2));
+    expect(recordDiagnostic).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(harness.audit.mock.calls)).not.toContain('?');
   });
 
   it('ensures the persistent Active Bot computer when creating a viewer without a run', async () => {

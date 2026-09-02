@@ -29,6 +29,15 @@ describe('Bot structured task lifecycle', () => {
       libraryVersionIds: [],
       run: expect.objectContaining({ id: RUN_ID }),
     }));
+    expect(adapter.completeStructured).toHaveBeenCalledWith({
+      runId: RUN_ID,
+      binding: { kind: 'opencode' },
+      prepared: { prepared: true },
+      prompt: 'Return JSON',
+      schema: { type: 'object' },
+      title: 'Memory extraction',
+      system: '',
+    });
     expect(adapter.closeRun).toHaveBeenCalledWith({
       runId: RUN_ID,
       binding: { kind: 'opencode' },

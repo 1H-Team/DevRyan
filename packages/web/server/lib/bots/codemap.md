@@ -55,7 +55,9 @@ Electron shell.
   reasoning workspace through Electron's typed supervisor callback; it exposes
   no host path, volume, Docker, or generic filesystem surface.
 - `shared-files.js`: authorized conversation file mappings, deterministic safe
-  Shared paths, verified import/retry/recovery, queue readiness, and projections.
+  Shared paths, verified import/retry/recovery under a per-file copy deadline
+  and a capped automatic attempt budget, queue readiness, blocked-message
+  signalling so a failed copy fails its queued run instead of the channel, and projections.
 - `shared-connector.js`: explicit bounded Bot publication into Shared; it
   accepts bytes, never a host/computer path or directory scan.
 - `authorization.js`: active membership, Member/Operator/Manager, channel
@@ -68,15 +70,18 @@ Electron shell.
   review projections.
 - `library-runtime.js`: encrypted source/provenance records, transient reviewed
   scans, immutable publication/diffs, exact-version retrieval, run snapshots,
-  and the memory-plus-Library local-index rebuild boundary.
+  the memory-plus-Library local-index rebuild boundary, and computer-file
+  listing that starts in the workspace for everyone and opens the whole
+  container only to a global administrator who explicitly asks (audited).
 - `artifact-service.js`: authorized private-object and pinned-Library plaintext
   staging under one fixed per-run root, bounded UTF-8/native/mounted attachment
   classification, explicit copy publication, and deterministic cleanup.
 - `audit-retention.js`: content-free Bot audit events and the one-year/default,
   30-day-minimum retention job.
-- `audit-query.js`: exact-managed-admin Bot audit validation, resolution-aware issues-first
-  keyset queries, batch Bot/user hydration, deleted/former fallbacks, and
-  per-row metadata safety revalidation/redaction. Range-based review clearing
+- `audit-query.js`: exact-managed-admin Bot audit validation, generalized
+  resolution-aware issues-first keyset queries with stable time bounds, batch
+  Bot/user hydration, deleted/former fallbacks, and per-row metadata safety
+  revalidation/redaction. Range-based review clearing
   records separate service-only dismissal rows; retained ledger/UUID detail
   reads and the retention policy remain unchanged.
 - `validation.js`: strict JSON/UUID/base64/page request boundaries.
@@ -101,10 +106,13 @@ Electron shell.
 - `config-compiler.js`: deterministic legacy/v3 compiler branches, immutable
   OpenCode/AG-UI bindings, structured matcher precompilation, browser/computer
   policy, scoped tools/subagents, private per-channel OpenCode configuration,
-  and exact read-only assigned Skill materialization. Legacy active JSON and
-  compiled hashes are never rewritten.
+  the short "How you work" runtime block after the Soul, the current gateway
+  plugin version stamp, and exact read-only assigned Skill materialization.
+  Legacy active JSON and compiled hashes are never rewritten.
 - `reasoning-adapter.js`: provider-neutral lifecycle and normalized ordered
-  run/text/tool-intent/artifact/checkpoint/usage event contract.
+  run/text/tool-intent/artifact/checkpoint/usage event contract, plus the
+  acknowledgment/result projection that keeps the bounded pre-tool sentence and
+  falls back to the last complete prose segment when a turn ends on a tool call.
 - `opencode-reasoning-adapter.js`: OpenCode session/segment/event translation,
   recovery, cancellation, warm leases, image export, and structured completion.
 - `ag-ui-reasoning-adapter.js`: pinned `@ag-ui/core@0.0.58` reviewed SSE subset,
@@ -124,11 +132,17 @@ Electron shell.
   loading plus secret-free Bot projection of the host OpenCode provider/model
   catalog, safe auth kind, and opaque existing OAuth-connection selectors.
 - `gateway-host.js`: random-token, loopback-only, Docker-origin private tool
-  gateway with exact claims and bounded bodies/responses.
+  gateway with exact claims and bounded bodies/responses; `conversation.ask`
+  is part of the reviewed operation inventory.
+- `bot-question.js`: the quick-reply question shape (prompt, one to six
+  distinct options, multiple/free-text flags) shared by the gateway and the
+  encrypted message body, plus its content-free context read-back.
 - `docker-provider.js`: strict adapter over Electron's fixed scoped-resource
   callbacks; it has no raw Docker command surface.
 - `opencode-provider.js`: scoped OpenCode lifecycle used behind the OpenCode
-  reasoning adapter, pinned-model prompts,
+  reasoning adapter, pinned-model prompts, jittered OAuth readiness retries,
+  whole-request response projection across tool rounds, lost-session detection
+  (`bot_agent_execution_lost`),
   disposable purpose-bound strict-JSON/no-tools runs for memory extraction and
   routine drafting, canonical event forwarding, capability rollback,
   credential finalization, exclusive Bot/channel runtime ownership, fenced
@@ -139,7 +153,11 @@ Electron shell.
   hidden/synthetic/reasoning/unclassified parts without heuristic word deletion.
 - `request-lifetime.js`: abort/deadline helpers spanning preparation, submission and recovery.
 - `error-normalization.js`: stable string-code boundary for foreign SDK, DOM timeout, and abort
-  failures before run persistence, publication, and diagnostics.
+  failures before run persistence, publication, and diagnostics, plus the
+  content-free log-field projection every Bot log site uses.
+- `periodic-job.js`: non-overlapping periodic work with exponential jittered
+  backoff, once-per-code failure logging, and awaited stop; used by the approval
+  expiry sweep, the queued-run sweep, and the computer health sweep.
 - `computer-activity.js`: ephemeral run/channel ownership events and viewer fencing; no frames.
 - `telegram/`: native DM transport, fenced durable inbox/outbox, member pairing,
   encrypted credentials, media, voice and routine delivery; see `telegram/DOCUMENTATION.md`.
@@ -150,12 +168,16 @@ Electron shell.
 - `indexer-client.js`: bounded exact-namespace client for the Electron-owned
   loopback retrieval index.
 - `memory-classifier.js`: strict extraction schema plus leakage, secret, scope,
-  subject, and provenance classification boundary.
+  subject, and provenance classification boundary; shape-lenient (missing
+  optional fields, loosely written keys) but trust-strict, with people-fact key
+  prefixes requested from the model.
 - `memory-runtime.js`: asynchronous completed-run extraction, encrypted
   per-channel serialized/rebased/idempotent summary and immutable version
-  commits, Remembered/Forgotten administration, `memory.changed` publication,
-  non-attempt-consuming channel-busy deferral, index repair/rebuild, and tracked
-  shutdown.
+  commits, retryable optimistic-conflict attempts, Remembered/Forgotten
+  administration with per-row decrypt isolation and content-free extraction
+  diagnostics, Manager requeue of terminal jobs, `memory.changed` publication,
+  non-attempt-consuming channel-busy deferral, relevance search for prompt
+  assembly, index repair/rebuild, and tracked shutdown.
 - `memory-consolidation.js`: bounded runtime-owned exact-duplicate planning and
   conflict-safe coalesced sweeps.
 - `routine-drafter.js`: exact JSON schema and no-tools conversational drafting
@@ -166,22 +188,36 @@ Electron shell.
   recovery, active-revision admission, lifecycle/checkpoint control, and the
   action-gateway routine guard.
 - `channels.js`: idempotent owner channels, current-ACL reads/sends, encrypted
-  canonical messages/checkpoints, atomic message/run/Shared admission, and authorized
+  canonical messages/checkpoints (body version 2 only when a finalized result
+  carries a quick-reply question), atomic message/run/Shared admission, and authorized
   safe catalog/channel/run/finalized-preview snapshot plus audience projection. Public runs omit
   adapter-specific execution identity.
 - `context-assembler.js`: bounded revision/checkpoint/message/memory and retained
   legacy-Library context (excluding acknowledgments), plus the runtime-owned
-  Soul-aware answer-only instruction, revision-aware bounded memory cache and deterministic
-  continuation decisions. Legacy MCP assignments do not contribute executable tools.
-- `retry-policy.js`: conservative same-run retry eligibility and durable output/action evidence checks.
+  register guide (talk like a person, one Soul-voice line before tool work,
+  when to ask a quick-reply question), a prompt-only `turn` block (local time
+  and zone, the member's display name, time since the last message; never in
+  the snapshot), revision-aware bounded memory cache and deterministic
+  continuation decisions. Memory selection pins people-facts, then fills one
+  budget by relevance to the request and recency, degrading to the newest facts
+  when the index is unavailable. Legacy MCP assignments do not contribute executable tools.
+- `retry-policy.js`: evidence-based same-run retry eligibility (a startup or
+  execution failure with no visible output or possibly mutating action), shared
+  action-operation classification, and fail-closed durable evidence checks that
+  ignore only settled, known-outcome, safe-to-retry reads.
 - `failure-diagnostics.js`: bounded sanitized provider/browser failure journal projections, separate from content-free Bot Audit.
 - `run-dispatcher.js`: agent-neutral fast atomic user/pending-response/run
   acceptance with pending adapter/model snapshots,
-  post-response scoped FIFO claims, concurrent startup, verified final-only
+  post-response scoped FIFO claims that never lose a wakeup and re-arm with
+  bounded backoff after claim failures, concurrent startup, verified final-only
   delivery, safe same-run retry, content-free timing milestones, attachment
-  delivery, normalized adapter error classification, generic execution-handle recovery, checkpoint finalization,
-  cancellation, timeout, and finalized generated-image secure export/publication
-  before reasoning teardown, plus bounded idempotent terminal persistence before
+  delivery with visible failure when a Shared copy blocks the queue, normalized
+  adapter error classification, generic execution-handle recovery, one-time
+  recreation of a lost execution before any visible output, checkpoint finalization,
+  startup-race-safe cancellation, timeout, read-only-aware retry verdicts, and
+  finalized generated-image secure export/publication
+  before reasoning teardown, plus bounded idempotent terminal persistence—journaled
+  and retried in-process when the database is unreachable—before
   failure/interruption publication.
 - `prewarm-cache.js`: four-entry/five-minute non-secret channel/revision LRU,
   30-second model-catalog singleflight, health/config warming, and invalidation.
@@ -192,7 +228,9 @@ Electron shell.
   fail-closed revalidation and synchronous revocation invalidation.
 - `run-recovery.js`: restart inspection of durable runs/action attempts and
   fail-closed reconciliation for interrupted writes, including transactional
-  settlement of non-resumable orphan runs.
+  settlement of non-resumable orphan runs, plus the periodic sweep that
+  re-drains scopes holding aged queued runs and settles expired leases no live
+  process owns.
 - `event-stream.js`: snapshot-first, monotonic, principal-filtered Bot SSE kept
   separate from ordinary OpenCode event state.
 - `connector-registry.js`: complete connector interface with isolated-workspace
@@ -210,12 +248,14 @@ Electron shell.
   execution-time policy-fact revalidation,
   idempotent read/write dispatch, revision-plus-routine policy narrowing, result receipts,
   unknown-write quarantine, and explicit Operator reconciliation without replay.
+  `conversation.ask` bypasses all of that: it is conversation, recorded on the
+  active run through the dispatcher and carried in the final message.
 - `browser-service.js`: scoped computer lifecycle, reviewed agent commands,
   transient screencast proxy, view-bound full human input, and attributed
   human-control leases, plus the allowlisted privacy-safe browser-status
   projection used by diagnostic polling.
 - `computer-runtime-manager.js`: one continuously supervised computer per
-  Active Bot, isolated health recovery, and lifecycle/shutdown stops.
+  Active Bot, isolated health recovery with backoff, and lifecycle/shutdown stops.
 - `evidence-service.js`: policy-selected PNG crop/redaction, expiring encrypted
   evidence, and exact Manager-only retrieval.
 
@@ -374,9 +414,28 @@ Electron shell.
   Bot-wide, and the database claim RPC—not the process-local drain—is the lease authority.
   OpenCode additionally fences one reasoning owner per Bot/channel: interactive
   turns outrank provisional extraction, and stale cleanup cannot stop a newer owner.
+- A message admitted while its scope is already draining is never lost: the
+  drain re-claims on a pending wake, a claim failure re-arms with bounded
+  backoff instead of dropping the scope, and a periodic sweep re-drains scopes
+  holding aged queued runs and settles expired leases that no live process owns.
 - Terminal failure/interruption events are published only after the idempotent
   terminal RPC returns the persisted row and its trigger-owned audit evidence is
-  durable. Audit repair never deletes ledger or clearing records.
+  durable. A settlement the database cannot accept is journaled in-process and
+  retried with backoff before the next claim on that scope and at shutdown;
+  publication never precedes persistence. Audit repair never deletes ledger or clearing records.
+- A Shared copy that fails or exceeds its deadline fails its queued run visibly
+  as a retryable `shared_copy` startup failure instead of holding the channel
+  head; retry re-prepares the copies before draining.
+- Same-run retry is evidence-based: a failed startup or execution run with no
+  visible text, no tool activity, and no governed action may be replayed. The
+  retry RPC re-checks that durable evidence inside its transaction and clears
+  the stale execution identity so the replay starts a fresh execution.
+- Optimistic memory conflicts are retryable extraction failures with a bounded
+  attempt budget, never terminal on first sight; a terminal job can be requeued
+  by a Manager, and one undecryptable memory row never hides its page.
+- Prompt memory is pinned people-facts plus relevance hits, then recency, within
+  one byte budget. Index outage degrades to the newest facts, and the selection
+  is recorded content-free in the run's context snapshot.
 - Context never includes messages newer than the run's admitted message
   sequence. Clients resume from Supabase sequence, never OpenCode history.
 - Every run promotes its admitted pending row to one verified result. Historical
@@ -419,10 +478,14 @@ Electron shell.
 `*.test.js` files colocated here cover validation, repository boundaries,
 authorization, object encryption/integrity/publication, capability states,
 routes, retention, channel idempotency/ACLs, context/segment boundaries,
-controlled FIFO and cancellation interleavings, restart reconciliation,
+controlled FIFO and cancellation interleavings, lost-wakeup drains, claim
+backoff, journaled terminal settlement, blocked Shared copies, queued-run and
+expired-lease sweeps, periodic-job backoff, restart reconciliation,
 snapshot-before-live event ordering, policy precedence, approval separation,
 idempotent action execution, unknown outcomes, human control, and selective
-evidence, plus extraction leakage/classification, immutable version conflicts,
+evidence, plus extraction leakage/classification and shape leniency, retryable
+optimistic conflicts, console decrypt isolation and extraction diagnostics,
+relevance/pinned/recent memory selection, immutable version conflicts,
 Manager edits, channel-source deletion, consolidation, and deterministic full
 index rebuild. Routine tests cover IANA/DST calculation, duplicate process
 claims, bounded missed policies, restart/idempotency recovery, lifecycle and
@@ -442,4 +505,6 @@ Supabase client Storage transport tests
 remain under `../multi-user/supabase-client.test.js`; composition coverage
 remains in `../multi-user/runtime.auth.test.js`. The pgTAP suite in
 `supabase/tests/production_bots.test.sql` proves service-only atomic admission,
-identity conflict handling, and one-scope claim semantics.
+identity conflict handling, and one-scope claim semantics;
+`bot_safe_run_retry.test.sql` proves evidence-based replay, and
+`bot_memory_extraction_requeue.test.sql` proves terminal-only extraction requeue.

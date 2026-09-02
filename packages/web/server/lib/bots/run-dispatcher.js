@@ -5,7 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { resolveComputerScopeKey } from '@openchamber/bots-runtime';
 
 import { publicBotChannelPreview } from './channels.js';
-import { normalizeBotRunError } from './error-normalization.js';
+import { normalizeBotRunError, botErrorLogFields } from './error-normalization.js';
 import { withBotAbort } from './request-lifetime.js';
 import {
   BotReasoningAdapterError,
@@ -23,6 +23,10 @@ const DEFAULT_RUN_TIMEOUT_MS = 15 * 60 * 1000;
 const CHECKPOINT_INTERVAL_MS = 500;
 const REQUESTER_STREAM_INTERVAL_MS = 50;
 const TERMINAL_SETTLEMENT_RETRY_DELAYS_MS = Object.freeze([0, 100, 500]);
+const DEFERRED_SETTLEMENT_DELAYS_MS = Object.freeze([1_000, 5_000, 30_000, 120_000, 300_000]);
+const DEFERRED_SETTLEMENT_MAX_AGE_MS = 30 * 60 * 1000;
+const DRAIN_RETRY_MIN_MS = 2_000;
+const DRAIN_RETRY_MAX_MS = 60_000;
 const MAX_REQUESTER_STREAM_TEXT_BYTES = 192 * 1024;
 const MAX_PENDING_MESSAGE_COUNT = 8;
 const MAX_PENDING_PART_COUNT = 128;
@@ -218,6 +222,7 @@ export function createBotRunDispatcher({
   const drains = new Map();
   const activeExecutions = new Map();
   const executionControllers = new Map();
+  const cancelRequests = new Set();
   let executionOrdinal = 0;
   let shuttingDown = false;
   const warmAdaptersByRun = new Map();
@@ -304,7 +309,7 @@ export function createBotRunDispatcher({
       return await publish(kind, run, payload, fallbackUserId);
     } catch (error) {
       logger?.warn?.('[BotsDispatcher] canonical event publication failed', {
-        code: error?.code || 'bot_event_publish_failed',
+        ...botErrorLogFields(error, 'bot_event_publish_failed'),
         kind,
         runId: run?.id || null,
       });
@@ -316,9 +321,18 @@ export function createBotRunDispatcher({
     try {
       await onRunCompleted(input);
     } catch (error) {
+      // The follow-up is memory extraction enqueue; the database trigger is the
+      // backstop, but a failure here must leave a content-free trace.
+      const fields = botErrorLogFields(error, 'bot_run_follow_up_failed');
       logger?.warn?.('[BotsDispatcher] completed-run follow-up failed', {
-        code: error?.code || 'bot_run_follow_up_failed',
+        ...fields,
         runId: input?.run?.id || null,
+      });
+      markDiagnostic('memory_enqueue_failed', {
+        botId: input?.run?.bot_id || null,
+        channelId: input?.run?.channel_id || null,
+        runId: input?.run?.id || null,
+        code: fields.code,
       });
     }
   };
@@ -328,7 +342,7 @@ export function createBotRunDispatcher({
       await onRunSettled(input);
     } catch (error) {
       logger?.warn?.('[BotsDispatcher] settled-run follow-up failed', {
-        code: error?.code || 'bot_run_settled_follow_up_failed',
+        ...botErrorLogFields(error, 'bot_run_settled_follow_up_failed'),
         runId: input?.run?.id || null,
       });
     }
@@ -340,7 +354,7 @@ export function createBotRunDispatcher({
       await approvalService.cancelPendingForRun({ run });
     } catch (error) {
       logger?.warn?.('[BotsDispatcher] pending-action cancellation failed', {
-        code: error?.code || 'bot_action_cancel_failed',
+        ...botErrorLogFields(error, 'bot_action_cancel_failed'),
         runId: run?.id || null,
       });
     }
@@ -386,7 +400,7 @@ export function createBotRunDispatcher({
         lastError = error;
       }
     }
-    const persistenceCode = lastError?.code || 'bot_run_terminal_persistence_failed';
+    const persistenceCode = botErrorLogFields(lastError, 'bot_run_terminal_persistence_failed').code;
     markDiagnostic('terminal_persistence_failed', {
       botId: run.bot_id,
       channelId: run.channel_id,
@@ -400,7 +414,132 @@ export function createBotRunDispatcher({
       runId: run.id,
       intendedState: state,
     });
+    deferTerminalSettlement(run, { state, interruptionKind, contextSnapshot, finishedAt });
     throw lastError;
+  };
+
+  // A terminal transition that could not be persisted during a database blip
+  // is journaled here and retried with backoff. Until it lands, the run stays
+  // non-terminal and blocks its scope's claim, so every scope claim retries its
+  // own pending settlements first. Publication still happens only after the
+  // idempotent terminal RPC returns the persisted row.
+  const pendingTerminalSettlements = new Map();
+
+  const publishTerminalOutcome = async (persisted, interruptionKind) => {
+    if (persisted.state === 'failed' || persisted.state === 'interrupted') {
+      await publish(`run.${persisted.state}`, persisted, {
+        run: channels.publicRun(persisted),
+        code: interruptionKind,
+      }).catch(() => undefined);
+    }
+    await notifyRunSettled({ run: persisted });
+  };
+
+  const scheduleDeferredSettlement = (entry) => {
+    if (shuttingDown || entry.timer) return;
+    const delayMs = DEFERRED_SETTLEMENT_DELAYS_MS[
+      Math.min(entry.attempts, DEFERRED_SETTLEMENT_DELAYS_MS.length - 1)
+    ];
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      void retryDeferredSettlement(entry.run.id);
+    }, delayMs);
+    entry.timer.unref?.();
+  };
+
+  const deferTerminalSettlement = (run, input) => {
+    if (!run?.id || pendingTerminalSettlements.has(run.id)) return;
+    const entry = {
+      run,
+      input,
+      attempts: 0,
+      firstFailedAt: now().getTime(),
+      timer: null,
+      inFlight: false,
+    };
+    pendingTerminalSettlements.set(run.id, entry);
+    scheduleDeferredSettlement(entry);
+  };
+
+  const retryDeferredSettlement = async (runId) => {
+    const entry = pendingTerminalSettlements.get(runId);
+    if (!entry || entry.inFlight) return null;
+    entry.inFlight = true;
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
+    try {
+      const current = await currentRun(runId);
+      if (!current || TERMINAL_RUN_STATES.has(current.state)) {
+        pendingTerminalSettlements.delete(runId);
+        return current;
+      }
+      const persisted = await store.settleRunTerminal({ runId, ...entry.input });
+      if (!persisted?.id) {
+        throw new BotRunDispatcherError(
+          'Bot terminal settlement returned no run',
+          'bot_run_terminal_settlement_missing',
+          503,
+        );
+      }
+      pendingTerminalSettlements.delete(runId);
+      markDiagnostic('terminal_persistence_recovered', {
+        botId: persisted.bot_id,
+        channelId: persisted.channel_id,
+        runId,
+        outcome: persisted.state,
+        attempts: entry.attempts + 1,
+      });
+      await publishTerminalOutcome(persisted, entry.input.interruptionKind);
+      return persisted;
+    } catch (error) {
+      entry.attempts += 1;
+      if (now().getTime() - entry.firstFailedAt > DEFERRED_SETTLEMENT_MAX_AGE_MS) {
+        pendingTerminalSettlements.delete(runId);
+        logger?.warn?.('[BotsDispatcher] deferred terminal settlement abandoned', {
+          ...botErrorLogFields(error, 'bot_run_terminal_persistence_failed'),
+          runId,
+          attempts: entry.attempts,
+        });
+        return null;
+      }
+      scheduleDeferredSettlement(entry);
+      return null;
+    } finally {
+      entry.inFlight = false;
+    }
+  };
+
+  // Promote the admitted pending assistant row of a run that ends without any
+  // model output to an empty finalized result, so the bubble stops "typing".
+  const finalizeEmptyPendingResponse = async (run) => {
+    if (typeof channels.getAssistantCheckpoint !== 'function'
+      || typeof channels.updateAssistantCheckpoint !== 'function') return null;
+    const pending = await channels.getAssistantCheckpoint({ run, assistantPhase: 'pending' });
+    if (!pending || pending.finalized_at) return null;
+    const finalized = await channels.updateAssistantCheckpoint({
+      message: pending,
+      text: '',
+      finalizedAt: nowIso(now),
+      assistantPhase: 'result',
+    });
+    if (finalized) {
+      await publish('message.updated', run, {
+        message: finalized,
+        ...channelPreviewPayload(finalized),
+      }).catch(() => undefined);
+    }
+    return finalized;
+  };
+
+  const retryPendingTerminalSettlements = async (computerScopeKey = null) => {
+    const results = [];
+    for (const entry of [...pendingTerminalSettlements.values()]) {
+      if (computerScopeKey && entry.run.computer_scope_key !== computerScopeKey) continue;
+      results.push(await retryDeferredSettlement(entry.run.id));
+    }
+    return results;
   };
 
   const assistantResponseProjection = (active) => {
@@ -521,7 +660,7 @@ export function createBotRunDispatcher({
           }
         })
         .catch((error) => logger?.warn?.('[BotsDispatcher] requester stream failed', {
-          code: error?.code || 'bot_stream_delivery_failed',
+          ...botErrorLogFields(error, 'bot_stream_delivery_failed'),
           runId: active.run.id,
         }))
         .finally(() => {
@@ -581,11 +720,16 @@ export function createBotRunDispatcher({
     return true;
   };
 
+  // Quick-reply questions asked through the gateway during a run, keyed by run
+  // id, until the final result carries them into the Bot's message.
+  const questionsByRunId = new Map();
+
   const checkpointWrite = (active, {
     final = false,
     message = active.assistantMessage,
     text = renderedAssistantText(active),
     assistantPhase = null,
+    question = null,
   } = {}) => {
     if (!message || (!final && !active.finalVerified)) return Promise.resolve(null);
     const streamRevision = active.streamRevision;
@@ -598,6 +742,7 @@ export function createBotRunDispatcher({
           text,
           finalizedAt: final ? nowIso(now) : null,
           assistantPhase,
+          ...(final && question ? { question } : {}),
         });
         if (updatedMessage) {
           await publish('message.updated', active.run, {
@@ -605,7 +750,7 @@ export function createBotRunDispatcher({
             streamRevision,
             ...channelPreviewPayload(updatedMessage),
           }).catch((error) => logger?.warn?.('[BotsDispatcher] checkpoint publication failed', {
-            code: error?.code || 'bot_event_publish_failed',
+            ...botErrorLogFields(error, 'bot_event_publish_failed'),
             runId: active.run.id,
             messageId: updatedMessage.id,
           }));
@@ -639,10 +784,74 @@ export function createBotRunDispatcher({
     active.checkpointTimer.unref?.();
   };
 
+  // The first short line the Bot wrote before its first tool call is its
+  // acknowledgment ("on it, give me a sec"). It becomes its own finalized bubble
+  // and a fresh pending row takes the final answer, so the member sees the Bot
+  // respond in its own voice before the work starts. Progress prose between
+  // tools is still never persisted.
+  const promoteAcknowledgment = (active) => {
+    if (active.acknowledgmentPromoted || active.streamPaused) return;
+    const message = active.assistantMessage;
+    if (!message || message.assistant_phase !== 'pending' || message.finalized_at) return;
+    if (typeof channels.getOrCreateAssistantCheckpoint !== 'function') return;
+    const acknowledgmentText = assistantResponseProjection(active).acknowledgmentText;
+    if (!acknowledgmentText.trim()) return;
+    active.acknowledgmentPromoted = true;
+    active.phaseTransition = active.phaseTransition
+      .catch(() => undefined)
+      .then(async () => {
+        const acknowledgment = await channels.updateAssistantCheckpoint({
+          message,
+          text: acknowledgmentText,
+          finalizedAt: nowIso(now),
+          assistantPhase: 'acknowledgment',
+        });
+        const pending = await channels.getOrCreateAssistantCheckpoint({
+          run: active.run,
+          assistantPhase: 'pending',
+        });
+        if (active.assistantMessage === message) active.assistantMessage = pending;
+        if (acknowledgment) {
+          await publish('message.updated', active.run, {
+            message: acknowledgment,
+            ...channelPreviewPayload(acknowledgment),
+          }).catch(() => undefined);
+        }
+        if (pending) {
+          await publish('message.created', active.run, {
+            message: pendingMessageProjection(pending),
+            run: channels.publicRun(active.run),
+          }).catch(() => undefined);
+        }
+      })
+      .catch((error) => {
+        active.acknowledgmentPromoted = false;
+        logger?.warn?.('[BotsDispatcher] acknowledgment promotion failed', {
+          ...botErrorLogFields(error, 'bot_acknowledgment_failed'),
+          runId: active.run.id,
+        });
+      });
+  };
+
+  // The fresh pending row has no body yet; project it the way admission does.
+  const pendingMessageProjection = (row) => Object.freeze({
+    id: row.id,
+    channelId: row.channel_id,
+    runId: row.run_id || null,
+    actorUserId: null,
+    role: 'assistant',
+    assistantPhase: row.assistant_phase || 'pending',
+    sequence: Number(row.sequence),
+    body: Object.freeze({ text: '', attachmentIds: Object.freeze([]) }),
+    attachmentCount: 0,
+    createdAt: row.created_at,
+    finalizedAt: null,
+  });
+
   const beginToolPhase = (active) => {
+    const first = !active.toolObserved;
     active.toolObserved = true;
-    // Keep the one pending result. Acknowledgment and progress prose are never
-    // persisted; the UI represents activity using the authoritative run state.
+    if (first) promoteAcknowledgment(active);
   };
 
   const pendingPartTool = (active, messageId, partId) => {
@@ -801,7 +1010,8 @@ export function createBotRunDispatcher({
         inspectionFailures = 0;
       } catch (error) {
         if (!active.controller.signal.aborted && [502, 503, 504].includes(error?.statusCode)
-          && error?.code !== 'bot_opencode_run_failed' && ++inspectionFailures < 3) {
+          && error?.code !== 'bot_opencode_run_failed'
+          && error?.code !== 'bot_agent_execution_lost' && ++inspectionFailures < 3) {
           await delay(200, undefined, { signal: active.controller.signal });
           continue;
         }
@@ -894,6 +1104,7 @@ export function createBotRunDispatcher({
         queryText: userMessage.body.text,
         currentMessageId: userMessage.id,
         currentMessageSequence: userMessage.sequence,
+        actorUserId: userMessage.actor_user_id || null,
       });
       const runtimePromise = activeAdapter.prepareRevision({
         signal: controller.signal,
@@ -1059,6 +1270,8 @@ export function createBotRunDispatcher({
         streamSuppressed: false,
         streamPaused: Boolean(recoveredAcknowledgment),
         toolObserved: Boolean(recoveredAcknowledgment),
+        mutatingToolObserved: false,
+        acknowledgmentPromoted: Boolean(recoveredAcknowledgment),
         phaseTransition: Promise.resolve(),
         firstProviderText: false,
         firstRequesterDelivery: false,
@@ -1123,6 +1336,16 @@ export function createBotRunDispatcher({
           }
           let content;
           let toolError = null;
+          const readOnlyIntent = (
+            ['artifact.get', 'library.search', 'memory.search'].includes(
+              continuation.toolIntent.operation,
+            )
+            || (continuation.toolIntent.operation === 'computer.command'
+              && ['download', 'navigate', 'screenshot', 'scroll', 'snapshot', 'status', 'wait']
+                .includes(continuation.toolIntent.payload?.command))
+            || (continuation.toolIntent.operation === 'action.request'
+              && continuation.toolIntent.payload?.target?.operationKind === 'read')
+          );
           try {
             const gatewayResult = await executeGovernedToolIntent({
               claims: {
@@ -1134,12 +1357,18 @@ export function createBotRunDispatcher({
               operation: continuation.toolIntent.operation,
               payload: continuation.toolIntent.payload,
             });
+            const receipt = gatewayResult?.receipt;
+            const safeRead = receipt?.operationKind === 'read'
+              && (receipt.writeGuarantee === undefined || receipt.writeGuarantee === null
+                || receipt.writeGuarantee === 'safe_to_retry');
+            if (!safeRead) active.mutatingToolObserved = true;
             content = {
               ok: true,
               result: gatewayResult?.result ?? {},
               receipt: gatewayResult?.receipt ?? null,
             };
           } catch (error) {
+            if (!readOnlyIntent) active.mutatingToolObserved = true;
             toolError = typeof error?.code === 'string' ? error.code : 'bot_gateway_operation_failed';
             content = {
               ok: false,
@@ -1197,7 +1426,10 @@ export function createBotRunDispatcher({
                   type: 'text', text: projection.resultText || '',
                 })],
               ]));
-              if (!active.toolObserved) beginToolPhase(active);
+              // A recovered turn is reconciled, not replayed: its acknowledgment
+              // is historical and is not promoted into a new bubble now.
+              active.toolObserved = true;
+              active.acknowledgmentPromoted = true;
             } else {
               active.partsByMessage.set(active.providerMessageId, new Map([
                 ['recovered-text', Object.freeze({
@@ -1218,7 +1450,77 @@ export function createBotRunDispatcher({
       } else {
         await submitPrompt();
       }
-      const finalizedInspection = await waitForCompletion(active);
+      // A scoped agent execution that vanishes (container restart, evicted
+      // thread) before the model produced anything visible and before any
+      // governed action ran is recreated exactly once; the prompt is then
+      // resubmitted into the fresh execution. Anything later fails visibly.
+      const recreateLostExecution = async (error) => {
+        if (error?.code !== 'bot_agent_execution_lost' || active.executionRecreated
+          || recoveredHandle || active.cancelled || controller.signal.aborted
+          || active.firstProviderText || active.toolObserved) return false;
+        const attempts = await Promise.resolve()
+          .then(() => store.repositories.bot_action_attempts.list({
+            filters: { run_id: current.id },
+            limit: 1,
+          }))
+          .catch(() => ({ items: [null] }));
+        if (attempts.items.length > 0) return false;
+        active.executionRecreated = true;
+        markDiagnostic('execution_lost_recreated', {
+          botId: current.bot_id,
+          channelId: current.channel_id,
+          runId: current.id,
+        });
+        logger?.warn?.('[BotsDispatcher] agent execution lost before any output; recreating once', {
+          runId: current.id,
+        });
+        adapterHandle = await bounded(activeAdapter.startRun({
+          signal: controller.signal,
+          runId: current.id,
+          title: `Bot channel ${channel.id.slice(0, 8)}`,
+          execution: null,
+          continuation: assembled.continuation,
+        }));
+        active.handle = adapterHandle;
+        current = await updateRun(current.id, {
+          agent_thread_id: adapterHandle.threadId,
+          agent_execution: adapterHandle.execution,
+          ...(adapterHandle.legacyProjection || {}),
+          context_snapshot: { ...(current.context_snapshot || {}), executionRecreatedCount: 1 },
+        });
+        active.run = current;
+        let resolveNext;
+        let rejectNext;
+        const nextCompletion = new Promise((resolve, reject) => {
+          resolveNext = resolve;
+          rejectNext = reject;
+        });
+        void nextCompletion.catch(() => undefined);
+        Object.assign(active, {
+          completion: nextCompletion,
+          resolve: resolveNext,
+          reject: rejectNext,
+          settled: false,
+          promptAccepted: false,
+          promptStarted: false,
+          idleObservedDuringAcceptance: false,
+          providerMessageId: null,
+          pendingPartCount: 0,
+          pendingTextBytes: 0,
+        });
+        active.messageRolesById.clear();
+        active.partsByMessage.clear();
+        active.pendingPartsByMessage.clear();
+        await submitPrompt();
+        return true;
+      };
+      let finalizedInspection;
+      try {
+        finalizedInspection = await waitForCompletion(active);
+      } catch (error) {
+        if (!(await recreateLostExecution(error))) throw error;
+        finalizedInspection = await waitForCompletion(active);
+      }
       await active.phaseTransition;
       if (active.streamTimer) clearTimeout(active.streamTimer);
       await active.streamDelivery.catch(() => undefined);
@@ -1237,7 +1539,11 @@ export function createBotRunDispatcher({
         : null;
       if (persistedResponse) active.assistantMessage = persistedResponse;
       const hasPublishedAttachment = Number(persistedResponse?.attachment_count) > 0;
-      if (!responseProjection.resultText.trim() && generatedImages.length === 0 && !hasPublishedAttachment) {
+      // A turn that ends by asking a quick-reply question is a complete turn
+      // even when the model wrote no prose around it.
+      const question = questionsByRunId.get(current.id) || null;
+      if (!responseProjection.resultText.trim() && generatedImages.length === 0
+        && !hasPublishedAttachment && !question) {
         throw new BotRunDispatcherError('Bot completed without a final response', 'bot_response_missing', 502);
       }
       active.finalVerified = true;
@@ -1289,6 +1595,7 @@ export function createBotRunDispatcher({
         final: true,
         text: responseProjection.resultText,
         assistantPhase: active.assistantMessage?.assistant_phase === 'pending' ? 'result' : null,
+        question,
       });
       current = await updateRun(current.id, {
         state: 'completed',
@@ -1318,9 +1625,10 @@ export function createBotRunDispatcher({
       return current;
     } catch (error) {
       if (controller.signal.aborted) error = controller.signal.reason;
-      error = normalizeBotRunError(error, { cancellationConfirmed: active?.cancelled === true });
+      const cancellationRequested = active?.cancelled === true || cancelRequests.has(claimed.id);
+      error = normalizeBotRunError(error, { cancellationConfirmed: cancellationRequested });
       terminalError = error;
-      terminalState = active?.cancelled || error?.code === 'bot_run_cancelled'
+      terminalState = cancellationRequested || error?.code === 'bot_run_cancelled'
         ? 'cancelled'
         : (reconcilingPersistedExecution ? 'interrupted' : 'failed');
       if (active?.checkpointTimer) clearTimeout(active.checkpointTimer);
@@ -1331,7 +1639,7 @@ export function createBotRunDispatcher({
       // A gateway pause remains resumable only while the run is still live.
       // User cancellation must finalize any visible assistant checkpoint and
       // persist the terminal run instead of leaving the bubble "Updating…".
-      const gatewayPaused = !active?.cancelled && GATEWAY_PAUSED_RUN_STATES.has(durable?.state);
+      const gatewayPaused = !cancellationRequested && GATEWAY_PAUSED_RUN_STATES.has(durable?.state);
       if (active?.assistantMessage) {
         await active.checkpointWrite.catch(() => undefined);
         if (!gatewayPaused) {
@@ -1364,9 +1672,13 @@ export function createBotRunDispatcher({
         || active?.promptStarted
         || active?.firstProviderText || active?.toolObserved,
       );
-      const sideEffects = !executionStarted && durable
+      // Evidence, not phase, decides whether a same-run retry is safe: a run
+      // that started executing but produced no visible text, no finalized
+      // output, and no governed action can be replayed into a fresh execution.
+      const sideEffects = durable
         ? await hasBotRetrySideEffects(store, durable).catch(() => true)
         : true;
+      const visibleOutput = Boolean(active?.firstProviderText || active?.mutatingToolObserved);
       const classifiedRetryable = typeof error?.diagnostics?.retryable === 'boolean'
         ? error.diagnostics.retryable
         : null;
@@ -1382,7 +1694,7 @@ export function createBotRunDispatcher({
         failurePhase: executionStarted ? 'execution' : 'startup',
         failureStage,
         retryable: terminalState === 'failed'
-          && !executionStarted && !sideEffects && classifiedRetryable !== false,
+          && !sideEffects && !visibleOutput && classifiedRetryable !== false,
       };
       if (terminalState === 'cancelled') {
         current = await updateRun(claimed.id, {
@@ -1410,13 +1722,15 @@ export function createBotRunDispatcher({
         channelId: current?.channel_id || claimed.channel_id,
         runId: claimed.id,
         outcome: terminalState,
-        code: error?.code || 'bot_run_failed',
+        ...botErrorLogFields(error, 'bot_run_failed'),
         failureStage,
       });
       return current;
     } finally {
       clearTimeout(deadline);
       executionControllers.delete(claimed.id);
+      cancelRequests.delete(claimed.id);
+      questionsByRunId.delete(claimed.id);
       if (active) activeExecutions.delete(claimed.id);
       if (runtimeStarted && activeAdapter) await activeAdapter.closeRun({
         runId: claimed.id,
@@ -1424,14 +1738,14 @@ export function createBotRunDispatcher({
         binding: adapterBinding,
       }).catch((error) => {
         logger?.warn?.('[BotsDispatcher] scoped runtime stop failed', {
-          code: error?.code || 'bot_agent_close_failed',
+          ...botErrorLogFields(error, 'bot_agent_close_failed'),
           runId: claimed.id,
         });
       });
       warmRuntimeLeases?.settle(claimed.id);
       if (terminalError && (terminalState === 'failed' || terminalState === 'interrupted')) {
         logger?.warn?.('[BotsDispatcher] Bot run failed', {
-          code: terminalError?.code || 'bot_run_failed',
+          ...botErrorLogFields(terminalError, 'bot_run_failed'),
           runId: claimed.id,
           ...(terminalError?.diagnostics ? {
             providerErrorType: terminalError.diagnostics.providerErrorType,
@@ -1455,7 +1769,19 @@ export function createBotRunDispatcher({
   };
 
   const claimScopeRun = async (computerScopeKey) => {
-    await reconcileExpiredApprovals(computerScopeKey);
+    if (pendingTerminalSettlements.size > 0) {
+      await retryPendingTerminalSettlements(computerScopeKey);
+    }
+    try {
+      await reconcileExpiredApprovals(computerScopeKey);
+    } catch (error) {
+      // Expiry reconciliation is best-effort here: the claim RPC stays the
+      // lease authority and the periodic sweep retries expiry with backoff.
+      logger?.warn?.('[BotsDispatcher] approval expiry reconciliation skipped', {
+        ...botErrorLogFields(error, 'bot_approval_expiry_failed'),
+        computerScopeKey,
+      });
+    }
     const claimed = await store.claimRun({
       computerScopeKey,
       runtimeOwner,
@@ -1471,15 +1797,57 @@ export function createBotRunDispatcher({
     return claimed;
   };
 
+  // A drain that is inside its claim RPC cannot see a message admitted after
+  // the RPC's snapshot. Callers therefore leave a wake mark instead of skipping
+  // the drain; the loop re-claims once more whenever a mark arrived, and the
+  // teardown re-arms the drain when a mark arrived during the last claim.
+  const pendingWakes = new Set();
+  const drainRetryTimers = new Map();
+  const drainRetryDelays = new Map();
+
+  const scheduleDrainRetry = (computerScopeKey) => {
+    if (shuttingDown || drainRetryTimers.has(computerScopeKey)) return 0;
+    const previous = drainRetryDelays.get(computerScopeKey) || 0;
+    const delayMs = Math.min(DRAIN_RETRY_MAX_MS, Math.max(DRAIN_RETRY_MIN_MS, previous * 2));
+    drainRetryDelays.set(computerScopeKey, delayMs);
+    const timer = setTimeout(() => {
+      drainRetryTimers.delete(computerScopeKey);
+      void startScopeDrain(computerScopeKey);
+    }, delayMs);
+    timer.unref?.();
+    drainRetryTimers.set(computerScopeKey, timer);
+    return delayMs;
+  };
+
   const startScopeDrain = (computerScopeKey, initialClaim = null) => {
     if (shuttingDown) return Promise.resolve();
     const existing = drains.get(computerScopeKey);
-    if (existing) return existing;
+    if (existing) {
+      pendingWakes.add(computerScopeKey);
+      return existing;
+    }
     const promise = (async () => {
       let claimed = initialClaim;
       while (!shuttingDown) {
-        if (!claimed) claimed = await claimScopeRun(computerScopeKey);
-        if (!claimed) break;
+        if (!claimed) {
+          pendingWakes.delete(computerScopeKey);
+          try {
+            claimed = await claimScopeRun(computerScopeKey);
+          } catch (error) {
+            const retryInMs = scheduleDrainRetry(computerScopeKey);
+            logger?.warn?.('[BotsDispatcher] scope claim failed', {
+              ...botErrorLogFields(error, 'bot_run_claim_failed'),
+              computerScopeKey,
+              retryInMs,
+            });
+            break;
+          }
+          drainRetryDelays.delete(computerScopeKey);
+        }
+        if (!claimed) {
+          if (pendingWakes.delete(computerScopeKey)) continue;
+          break;
+        }
         const drainIndex = executionOrdinal;
         executionOrdinal += 1;
         try {
@@ -1487,7 +1855,7 @@ export function createBotRunDispatcher({
         } catch (error) {
           error = normalizeBotRunError(error);
           logger?.warn?.('[BotsDispatcher] claimed run execution failed', {
-            code: error?.code || 'bot_run_failed',
+            ...botErrorLogFields(error, 'bot_run_failed'),
             runId: claimed.id,
           });
           const interruptionKind = error?.code || 'bot_run_failed';
@@ -1515,7 +1883,12 @@ export function createBotRunDispatcher({
         }
         claimed = null;
       }
-    })().finally(() => drains.delete(computerScopeKey));
+    })().finally(() => {
+      drains.delete(computerScopeKey);
+      if (!shuttingDown && pendingWakes.delete(computerScopeKey)) {
+        void startScopeDrain(computerScopeKey);
+      }
+    });
     drains.set(computerScopeKey, promise);
     return promise;
   };
@@ -1649,7 +2022,7 @@ export function createBotRunDispatcher({
           }, principal?.id).catch((error) => logger?.warn?.(
             '[BotsDispatcher] accepted-message publication failed',
             {
-              code: error?.code || 'bot_event_publish_failed',
+              ...botErrorLogFields(error, 'bot_event_publish_failed'),
               messageId: admitted.message?.id || normalizedMessage.messageId,
             },
           ));
@@ -1667,7 +2040,7 @@ export function createBotRunDispatcher({
             }).catch((error) => logger?.warn?.(
               '[BotsDispatcher] acknowledgment publication failed',
               {
-                code: error?.code || 'bot_event_publish_failed',
+                ...botErrorLogFields(error, 'bot_event_publish_failed'),
                 messageId: admitted.acknowledgment.id,
               },
             ));
@@ -1676,15 +2049,13 @@ export function createBotRunDispatcher({
         if (requiresSharedPreparation) {
           void sharedFileService.prepareMessage({ messageId: normalizedMessage.messageId })
             .catch((error) => logger?.warn?.('[BotsShared] message preparation failed', {
-              code: error?.code || 'bot_shared_file_copy_failed',
+              ...botErrorLogFields(error, 'bot_shared_file_copy_failed'),
               messageId: normalizedMessage.messageId,
             }))
             .finally(() => {
-              if (autoDispatch && run?.state === 'queued' && !drains.has(computerScopeKey)) {
-                void drainScope(computerScopeKey);
-              }
+              if (autoDispatch && run?.state === 'queued') void drainScope(computerScopeKey);
             });
-        } else if (autoDispatch && run?.state === 'queued' && !drains.has(computerScopeKey)) {
+        } else if (autoDispatch && run?.state === 'queued') {
           void drainScope(computerScopeKey);
         }
       });
@@ -1698,6 +2069,76 @@ export function createBotRunDispatcher({
 
     drainScope,
     observeReasoningEvent,
+
+    // A queued run whose Shared copies cannot be prepared would otherwise hold
+    // the channel head forever with typing dots. Fail it visibly instead: the
+    // pending assistant row is finalized empty, the terminal RPC frees the
+    // scope, and the failure is startup-phase retryable (no execution identity,
+    // no output, no action attempt), so Retry re-copies and requeues the run.
+    async failQueuedRun({ runId, code = 'bot_shared_file_copy_failed', failedFileIds = [] } = {}) {
+      if (shuttingDown) return null;
+      const run = await currentRun(validateUuid(runId, 'runId'));
+      if (!run || run.state !== 'queued') return run;
+      const interruptionKind = botErrorLogFields({ code }, 'bot_shared_file_copy_failed').code;
+      const persisted = await settleTerminalRun(run, {
+        state: 'failed',
+        interruptionKind,
+        contextSnapshot: {
+          ...(run.context_snapshot || {}),
+          state: 'failed',
+          failurePhase: 'startup',
+          failureStage: 'shared_copy',
+          retryable: true,
+          failedSharedFileCount: Array.isArray(failedFileIds) ? failedFileIds.length : 0,
+        },
+        finishedAt: nowIso(now),
+      });
+      if (persisted?.state !== 'failed') return persisted;
+      await finalizeEmptyPendingResponse(persisted).catch((error) => {
+        logger?.warn?.('[BotsDispatcher] blocked-run checkpoint finalization failed', {
+          ...botErrorLogFields(error, 'bot_message_invalid'),
+          runId: persisted.id,
+        });
+      });
+      await publish('run.failed', persisted, {
+        run: channels.publicRun(persisted),
+        code: interruptionKind,
+      }).catch(() => undefined);
+      markDiagnostic('terminal', {
+        botId: persisted.bot_id,
+        channelId: persisted.channel_id,
+        runId: persisted.id,
+        outcome: 'failed',
+        code: interruptionKind,
+        failureStage: 'shared_copy',
+      });
+      logger?.warn?.('[BotsDispatcher] queued run failed before execution', {
+        code: interruptionKind,
+        runId: persisted.id,
+        failedSharedFileCount: Array.isArray(failedFileIds) ? failedFileIds.length : 0,
+      });
+      await notifyRunSettled({ run: persisted });
+      return persisted;
+    },
+
+    // True while this process owns the run: it is executing here, or its
+    // terminal outcome is journaled and awaiting persistence. Sweeps must not
+    // resume such a run.
+    // Gateway callback: the Bot asked the member a quick-reply question during
+    // this run. It replaces any earlier question (one question per turn).
+    recordRunQuestion({ run, question }) {
+      const runId = validateUuid(run?.id, 'run.id');
+      if (!activeExecutions.has(runId) && !executionControllers.has(runId)) {
+        throw new BotRunDispatcherError('Bot run is not accepting questions', 'bot_question_run_inactive', 409);
+      }
+      questionsByRunId.set(runId, question);
+      return Object.freeze({ recorded: true });
+    },
+
+    isExecuting(runId) {
+      return activeExecutions.has(runId) || executionControllers.has(runId)
+        || pendingTerminalSettlements.has(runId);
+    },
 
     async resumeRun(run) {
       if (shuttingDown) return { resumed: false };
@@ -1771,12 +2212,32 @@ export function createBotRunDispatcher({
       setImmediate(() => {
         void publish('run.queued', retried, { run: publicRun }, principal?.id)
           .catch((error) => logger?.warn?.('[BotsDispatcher] retried-run publication failed', {
-            code: error?.code || 'bot_event_publish_failed',
+            ...botErrorLogFields(error, 'bot_event_publish_failed'),
             runId: retried.id,
           }));
-        if (autoDispatch && !drains.has(retried.computer_scope_key)) {
-          void drainScope(retried.computer_scope_key);
-        }
+        // A retried message with attachments re-copies its Shared files first;
+        // the claim proceeds through onMessageReady, and a copy that fails
+        // again fails the run visibly through onMessageBlocked.
+        const sharedRetry = sharedFileService && typeof sharedFileService.prepareMessage === 'function'
+          ? store.repositories.bot_messages.list({
+            filters: { run_id: retried.id, channel_id: retried.channel_id, role: 'user' },
+            limit: 1,
+          }).then(({ items }) => {
+            const userMessage = items[0];
+            if (!userMessage || Number(userMessage.attachment_count || 0) === 0) return false;
+            return sharedFileService.prepareMessage({ messageId: userMessage.id, force: true })
+              .then(() => true);
+          }).catch((error) => {
+            logger?.warn?.('[BotsDispatcher] retried-run Shared preparation failed', {
+              ...botErrorLogFields(error, 'bot_shared_file_copy_failed'),
+              runId: retried.id,
+            });
+            return false;
+          })
+          : Promise.resolve(false);
+        void sharedRetry.then(() => {
+          if (autoDispatch) void drainScope(retried.computer_scope_key);
+        });
       });
       return publicRun;
     },
@@ -1854,7 +2315,9 @@ export function createBotRunDispatcher({
         await cancelPendingActions(run);
         return channels.publicRun(run);
       }
-      executionControllers.get(run.id)?.abort(new BotRunDispatcherError('Bot run was cancelled', 'bot_run_cancelled', 409));
+      cancelRequests.add(run.id);
+      const executionController = executionControllers.get(run.id);
+      executionController?.abort(new BotRunDispatcherError('Bot run was cancelled', 'bot_run_cancelled', 409));
       const active = activeExecutions.get(run.id);
       if (active) {
         active.cancelled = true;
@@ -1871,30 +2334,39 @@ export function createBotRunDispatcher({
         ));
         return channels.publicRun(run);
       }
-      const cancelled = await updateRun(run.id, {
-        state: 'cancelled',
-        interruption_kind: 'cancelled_by_user',
-        finished_at: nowIso(now),
-      });
-      await cancelPendingActions(cancelled);
-      await publishCanonical(
-        'run.cancelled',
-        cancelled,
-        { run: channels.publicRun(cancelled) },
-        principal?.id,
-      );
-      await notifyRunSettled({ run: cancelled });
-      markDiagnostic('terminal', {
-        botId: cancelled.bot_id,
-        channelId: cancelled.channel_id,
-        runId: cancelled.id,
-        outcome: 'cancelled',
-      });
-      return channels.publicRun(cancelled);
+      try {
+        const cancelled = await updateRun(run.id, {
+          state: 'cancelled',
+          interruption_kind: 'cancelled_by_user',
+          finished_at: nowIso(now),
+        });
+        await cancelPendingActions(cancelled);
+        await publishCanonical(
+          'run.cancelled',
+          cancelled,
+          { run: channels.publicRun(cancelled) },
+          principal?.id,
+        );
+        await notifyRunSettled({ run: cancelled });
+        markDiagnostic('terminal', {
+          botId: cancelled.bot_id,
+          channelId: cancelled.channel_id,
+          runId: cancelled.id,
+          outcome: 'cancelled',
+        });
+        return channels.publicRun(cancelled);
+      } finally {
+        // An in-flight execution owns cleanup in its finally block. A queued
+        // run has no such owner, so never retain its marker after this path.
+        if (!executionController) cancelRequests.delete(run.id);
+      }
     },
 
     async shutdown() {
       shuttingDown = true;
+      for (const timer of drainRetryTimers.values()) clearTimeout(timer);
+      drainRetryTimers.clear();
+      pendingWakes.clear();
       for (const controller of executionControllers.values()) {
         controller.abort(new BotRunDispatcherError('Bot runtime shut down', 'bot_run_interrupted', 503));
       }
@@ -1908,6 +2380,16 @@ export function createBotRunDispatcher({
         ));
       }
       await Promise.allSettled([...drains.values()]);
+      for (const entry of pendingTerminalSettlements.values()) {
+        if (entry.timer) clearTimeout(entry.timer);
+        entry.timer = null;
+      }
+      await retryPendingTerminalSettlements().catch(() => undefined);
+      cancelRequests.clear();
+    },
+    retryPendingTerminalSettlements,
+    get pendingTerminalSettlementCount() {
+      return pendingTerminalSettlements.size;
     },
   });
 }

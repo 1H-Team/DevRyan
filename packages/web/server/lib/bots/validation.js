@@ -66,8 +66,8 @@ export const validateBoundedString = (value, field, {
   return normalized;
 };
 
-const validateJsonValue = (value, path, ancestors, depth) => {
-  if (depth > 8) fail(`${path} is nested too deeply`);
+const validateJsonValue = (value, path, ancestors, depth, maximumDepth) => {
+  if (depth > maximumDepth) fail(`${path} is nested too deeply`);
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
   if (typeof value === 'number' && Number.isFinite(value)) return;
   if (typeof value !== 'object' || ancestors.has(value)) fail(`${path} is not JSON-compatible`);
@@ -76,7 +76,7 @@ const validateJsonValue = (value, path, ancestors, depth) => {
     if (Array.isArray(value)) {
       for (let index = 0; index < value.length; index += 1) {
         if (!Object.hasOwn(value, index)) fail(`${path} is not JSON-compatible`);
-        validateJsonValue(value[index], `${path}[${index}]`, ancestors, depth + 1);
+        validateJsonValue(value[index], `${path}[${index}]`, ancestors, depth + 1, maximumDepth);
       }
       return;
     }
@@ -89,16 +89,21 @@ const validateJsonValue = (value, path, ancestors, depth) => {
       if (!descriptor || !Object.hasOwn(descriptor, 'value')) {
         fail(`${path}.${key} must be a JSON data property`);
       }
-      validateJsonValue(descriptor.value, `${path}.${key}`, ancestors, depth + 1);
+      validateJsonValue(descriptor.value, `${path}.${key}`, ancestors, depth + 1, maximumDepth);
     }
   } finally {
     ancestors.delete(value);
   }
 };
 
-export const validateBoundedJsonObject = (value, field, maximumBytes = MAX_JSON_BYTES) => {
+export const validateBoundedJsonObject = (
+  value,
+  field,
+  maximumBytes = MAX_JSON_BYTES,
+  maximumDepth = 8,
+) => {
   if (!isPlainObject(value)) fail(`${field} must be a JSON object`);
-  validateJsonValue(value, field, new Set(), 0);
+  validateJsonValue(value, field, new Set(), 0, maximumDepth);
   if (Buffer.byteLength(JSON.stringify(value), 'utf8') > maximumBytes) {
     fail(`${field} is too large`, 'bot_request_too_large', 413);
   }

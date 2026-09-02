@@ -160,3 +160,58 @@ describe('Production Bot restart recovery', () => {
     }));
   });
 });
+
+describe('Production Bot run sweep', () => {
+  const NOW = Date.parse('2026-09-01T12:00:00.000Z');
+  const sweepHarness = (runs) => {
+    const store = {
+      settleRunTerminal: vi.fn(async (input) => ({ ...runs[0], state: input.state })),
+      repositories: {
+        bot_runs: {
+          list: vi.fn(async ({ filters }) => ({ items: runs.filter((item) => item.state === filters.state) })),
+          updateIfRevision: vi.fn(async (_keys, changes) => ({ ...runs[0], ...changes })),
+        },
+        bot_action_attempts: {
+          list: vi.fn(async () => ({ items: [] })),
+          updateIfRevision: vi.fn(),
+        },
+      },
+    };
+    const dispatcher = { resumeRun: vi.fn(async () => ({ resumed: true })) };
+    return {
+      recovery: createBotRunRecovery({ store, dispatcher, now: () => new Date(NOW) }),
+      store,
+      dispatcher,
+    };
+  };
+
+  it('reports queued scopes after restart recovery', async () => {
+    const harness = sweepHarness([
+      { id: 'q1', state: 'queued', computer_scope_key: 'bot:one', created_at: '2026-09-01T11:59:59.000Z' },
+      { id: 'q2', state: 'queued', computer_scope_key: 'bot:two', created_at: '2026-09-01T11:00:00.000Z' },
+      { id: 'q3', state: 'queued', computer_scope_key: 'bot:one', created_at: '2026-09-01T11:00:00.000Z' },
+    ]);
+    const result = await harness.recovery.recover();
+    expect(result.queuedScopeKeys).toEqual(['bot:one', 'bot:two']);
+    expect(harness.dispatcher.resumeRun).not.toHaveBeenCalled();
+  });
+
+  it('sweeps only aged queued runs and lease-expired runs nobody in this process owns', async () => {
+    const runs = [
+      { id: 'fresh', state: 'queued', computer_scope_key: 'bot:fresh', created_at: '2026-09-01T11:59:50.000Z' },
+      { id: 'stale', state: 'queued', computer_scope_key: 'bot:stale', created_at: '2026-09-01T11:58:00.000Z' },
+      { id: 'live', state: 'running', computer_scope_key: 'bot:live', lease_until: '2026-09-01T12:04:00.000Z', updated_at: 'u' },
+      { id: 'orphan', state: 'running', computer_scope_key: 'bot:orphan', lease_until: '2026-09-01T11:50:00.000Z', updated_at: 'u' },
+      { id: 'mine', state: 'starting', computer_scope_key: 'bot:mine', lease_until: '2026-09-01T11:50:00.000Z', updated_at: 'u' },
+    ];
+    const harness = sweepHarness(runs);
+    const result = await harness.recovery.sweep({
+      minQueuedAgeMs: 30_000,
+      isExecuting: (runId) => runId === 'mine',
+    });
+    expect(result.queuedScopeKeys).toEqual(['bot:stale']);
+    expect(harness.dispatcher.resumeRun).toHaveBeenCalledTimes(1);
+    expect(harness.dispatcher.resumeRun).toHaveBeenCalledWith(expect.objectContaining({ id: 'orphan' }));
+    expect(result.resumed).toBe(1);
+  });
+});

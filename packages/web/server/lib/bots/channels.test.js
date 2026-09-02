@@ -269,6 +269,70 @@ describe('Production Bot continuous channels', () => {
     });
   });
 
+  it('carries a quick-reply question only on the finalized result, as body version 2', async () => {
+    const harness = createHarness();
+    const assistant = {
+      id: MESSAGE_ID,
+      channel_id: CHANNEL_ID,
+      run_id: RUN_ID,
+      actor_user_id: null,
+      role: 'assistant',
+      assistant_phase: 'pending',
+      sequence: 2,
+      attachment_count: 0,
+      created_at: NOW,
+      finalized_at: null,
+    };
+    const question = { prompt: '  Which plan? ', options: ['Monthly', { label: 'Annual', description: 'Two months free' }] };
+    harness.store.updateMessageCheckpoint.mockResolvedValueOnce({ ...assistant });
+    const streaming = await harness.channels.updateAssistantCheckpoint({
+      message: assistant,
+      text: 'Thinking about it.',
+      question,
+    });
+    expect(streaming.body).toEqual({ text: 'Thinking about it.', attachmentIds: [] });
+    expect(decryptBotJson({
+      key: KEY,
+      envelope: harness.store.updateMessageCheckpoint.mock.calls[0][0].bodyEnvelope,
+      expectedKeyId: 'deployment-v1',
+      associatedData: messageAssociatedData(CHANNEL_ID, MESSAGE_ID),
+    })).toEqual({ version: 1, text: 'Thinking about it.', attachmentIds: [] });
+
+    harness.store.updateMessageCheckpoint.mockResolvedValueOnce({
+      ...assistant, assistant_phase: 'result', finalized_at: NOW,
+    });
+    const finalized = await harness.channels.updateAssistantCheckpoint({
+      message: assistant,
+      text: '',
+      finalizedAt: NOW,
+      assistantPhase: 'result',
+      question,
+    });
+    const expectedQuestion = {
+      version: 1,
+      prompt: 'Which plan?',
+      options: [{ label: 'Monthly', description: null }, { label: 'Annual', description: 'Two months free' }],
+      multiple: false,
+      allowFreeText: true,
+    };
+    expect(finalized.body).toEqual({ text: '', attachmentIds: [], question: expectedQuestion });
+    const persisted = harness.store.updateMessageCheckpoint.mock.calls[1][0];
+    expect(decryptBotJson({
+      key: KEY,
+      envelope: persisted.bodyEnvelope,
+      expectedKeyId: 'deployment-v1',
+      associatedData: messageAssociatedData(CHANNEL_ID, MESSAGE_ID),
+    })).toEqual({ version: 2, text: '', attachmentIds: [], question: expectedQuestion });
+
+    await expect(harness.channels.updateAssistantCheckpoint({
+      message: assistant,
+      text: '',
+      finalizedAt: NOW,
+      assistantPhase: 'result',
+      question: { prompt: 'Pick', options: [] },
+    })).rejects.toMatchObject({ code: 'bot_question_invalid' });
+  });
+
   it('encrypts the client-stable message and delegates one atomic message/run write', async () => {
     const harness = createHarness();
     const result = await harness.channels.enqueueUserMessage({

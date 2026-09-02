@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.9] - 2026-09-02
+
+- Production Bots: repair strict OpenCode structured memory/routine requests, expose terminal extraction diagnostics, and let Managers re-run all failed extractions sequentially.
+- Bot computer: replace origin-only sign-in heuristics with privacy-masked navigation trails, sticky/decaying loop detection, handled dialogs, and a bounded popup target stack followed by screen viewing and input.
+- Bot audit: aggregate successful human input once per control lease, omit heartbeat noise, log rejected gateway requests safely, align 30-day review controls, and display generalized resolution evidence.
+- Retry safety: settle startup-race Stop requests as cancelled and preserve same-run retry after only settled, known-outcome read actions; add migration `20260902120000` for the matching transactional retry and audit-resolution rules.
+
+- OpenCode: update the managed runtime, bundled SDK, packaged plugin, VS Code recommendation, and Production Bots image to 1.18.26.
+- Production Bots chat: add Bot-authored quick-reply questions, split tool acknowledgments from final answers, keep member drafts intact, and expose typing or “Needs you” status across channels.
+- Bot reliability: recover lost pre-output reasoning sessions once, preserve queued-run wakeups, retry transient claims and terminal persistence, and periodically repair aged queues and expired leases.
+- Attachments and computer: add bounded parallel uploads with HEIC conversion and image downscaling, fail blocked Shared copies visibly, simplify screen-first controls, and expose scoped Shared, workspace, or administrator container file views.
+- Memory: select pinned people facts plus request-relevant context, retry optimistic extraction conflicts, isolate undecryptable rows, and let Managers re-run terminal extraction jobs.
+- Retry safety: allow same-run retry only when durable evidence confirms no visible output, tool activity, or governed action, clearing stale execution identity before replay.
+- Database: add service-role-only memory extraction requeue and evidence-based retry contracts, advancing the required Production Bots schema marker to `20260901230000`.
+- Release: bump the DevRyan workspace, Electron, VS Code, web, runtime packages, and legacy desktop metadata to 1.1.9.
+
+
 ## [1.1.8] - 2026-08-31
 
 - Sessions: keep draft creation in one cancellable, bounded attempt, preserve captured input through delayed acknowledgements, and show immediate progress without automatically replaying ambiguous failures.

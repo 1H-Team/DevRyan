@@ -30,3 +30,23 @@ describe('Bot run error normalization', () => {
       .toMatchObject({ code: 'bot_agent_run_failed' });
   });
 });
+
+describe('Bot error log fields', () => {
+  it('projects DOM timeouts, Supabase statuses, and fetch causes into stable codes', async () => {
+    const { botErrorLogFields } = await import('./error-normalization.js');
+    expect(botErrorLogFields(new DOMException('deadline', 'TimeoutError'), 'x')).toEqual({
+      code: 'request_timeout', name: 'TimeoutError',
+    });
+    const supabase = Object.assign(new Error('rest'), { name: 'SupabaseRequestError', status: 503 });
+    expect(botErrorLogFields(supabase, 'fallback')).toEqual({
+      code: 'supabase_503', name: 'SupabaseRequestError', status: 503,
+    });
+    const fetchFailure = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+    expect(botErrorLogFields(fetchFailure, 'fallback')).toEqual({ code: 'econnrefused', name: 'TypeError' });
+    expect(botErrorLogFields(Object.assign(new Error('domain'), { code: 'bot_revision_conflict', statusCode: 409 }), 'fallback'))
+      .toEqual({ code: 'bot_revision_conflict', name: 'Error', status: 409 });
+    expect(botErrorLogFields(Object.assign(new Error('foreign'), { code: 99 }), 'fallback_code'))
+      .toEqual({ code: 'fallback_code', name: 'Error' });
+    expect(botErrorLogFields(null, 'fallback_code')).toEqual({ code: 'fallback_code' });
+  });
+});

@@ -7,6 +7,7 @@ import {
   botsApi,
   type BotMemory,
   type BotMemoryDetail,
+  type BotMemoryExtractionSummary,
   type BotsApi,
 } from '@/lib/botsApi';
 import { cn } from '@/lib/utils';
@@ -18,7 +19,39 @@ type MemoryApi = Pick<BotsApi,
   | 'editBotMemory'
   | 'tombstoneBotMemory'
   | 'restoreBotMemory'
->;
+> & Partial<Pick<BotsApi, 'requeueBotMemoryExtraction'>>;
+
+// A refresh replaces the first page but keeps every page the user already
+// scrolled to, so a memory reached through "Load More" never vanishes from the
+// list when an event or the recovery poll refetches page one.
+const mergeMemoryPages = (
+  current: readonly BotMemory[],
+  page: readonly BotMemory[],
+  firstPage: boolean,
+): BotMemory[] => {
+  if (!firstPage) {
+    const known = new Set(current.map((memory) => memory.id));
+    return [...current, ...page.filter((memory) => !known.has(memory.id))];
+  }
+  const incoming = new Map(page.map((memory) => [memory.id, memory]));
+  const retained = current.filter((memory) => !incoming.has(memory.id));
+  return [...page, ...retained].sort((left, right) => (
+    right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id)
+  ));
+};
+
+const extractionStatusText = (summary: BotMemoryExtractionSummary | null | undefined) => {
+  if (!summary) return null;
+  const parts: string[] = [];
+  if (!summary.workerStarted) parts.push('Memory extraction is paused until the retrieval index is reachable.');
+  if (summary.pending > 0) {
+    parts.push(`Extraction pending for ${summary.pending} recent ${summary.pending === 1 ? 'turn' : 'turns'}.`);
+  }
+  if (summary.failed > 0) {
+    parts.push(`${summary.failed} recent ${summary.failed === 1 ? 'turn' : 'turns'} failed extraction.`);
+  }
+  return parts.length > 0 ? parts.join(' ') : null;
+};
 
 export type BotMemoryConsoleProps = {
   botId: string;
@@ -39,13 +72,22 @@ export const BotMemoryConsole: React.FC<BotMemoryConsoleProps> = ({
   const [query, setQuery] = React.useState('');
   const [busy, setBusy] = React.useState<string | null>('load');
   const [feedback, setFeedback] = React.useState<string | null>(null);
+  const [extraction, setExtraction] = React.useState<BotMemoryExtractionSummary | null>(null);
+  const filterRef = React.useRef<Filter>(filter);
+  filterRef.current = filter;
 
-  const load = React.useCallback(async (cursor: string | null = null) => {
+  const load = React.useCallback(async (cursor: string | null = null, options: { reset?: boolean } = {}) => {
     setBusy('load');
+    const state = filterRef.current;
     try {
-      const page = await api.listBotMemories(botId, { cursor, limit: 100 });
-      setMemories((current) => cursor ? [...current, ...page.memories] : page.memories);
-      setNextCursor(page.nextCursor);
+      const page = await api.listBotMemories(botId, { cursor, limit: 100, state });
+      if (filterRef.current !== state) return;
+      setMemories((current) => (options.reset
+        ? [...page.memories]
+        : mergeMemoryPages(current, page.memories, cursor === null)));
+      if (cursor === null || options.reset) setNextCursor(page.nextCursor);
+      else setNextCursor(page.nextCursor);
+      if (page.extraction !== undefined) setExtraction(page.extraction ?? null);
       setSelectedId((current) => current || page.memories[0]?.id || null);
       setFeedback(null);
     } catch (error) {
@@ -54,6 +96,28 @@ export const BotMemoryConsole: React.FC<BotMemoryConsoleProps> = ({
       setBusy(null);
     }
   }, [api, botId]);
+
+  const requeueExtractions = async (runIds: readonly string[]) => {
+    if (typeof api.requeueBotMemoryExtraction !== 'function') return;
+    setBusy('requeue-all');
+    let queued = 0;
+    const failures: string[] = [];
+    for (const runId of runIds) {
+      try {
+        await api.requeueBotMemoryExtraction(botId, runId);
+        queued += 1;
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : 'Extraction could not be queued again.');
+      }
+    }
+    await load();
+    if (failures.length === 0) {
+      setFeedback(`${queued} failed ${queued === 1 ? 'extraction' : 'extractions'} queued again.`);
+    } else {
+      setFeedback(`${queued} queued again; ${failures.length} could not be queued. ${failures[0]}`);
+    }
+    setBusy(null);
+  };
 
   const loadDetail = React.useCallback(async (memoryId: string) => {
     setBusy('detail');
@@ -71,7 +135,11 @@ export const BotMemoryConsole: React.FC<BotMemoryConsoleProps> = ({
     }
   }, [api, botId]);
 
-  React.useEffect(() => { void load(); }, [load]);
+  React.useEffect(() => {
+    setMemories([]);
+    setNextCursor(null);
+    void load(null, { reset: true });
+  }, [load, filter]);
   React.useEffect(() => {
     if (!selectedId) {
       setDetail(null);
@@ -126,6 +194,8 @@ export const BotMemoryConsole: React.FC<BotMemoryConsoleProps> = ({
       || memory.logicalKey.toLocaleLowerCase().includes(normalizedQuery)
       || memory.content.text.toLocaleLowerCase().includes(normalizedQuery);
   });
+  const extractionStatus = extractionStatusText(extraction);
+  const failedExtractions = (extraction?.recent ?? []).filter((job) => job.state === 'terminal');
 
   const save = (request: BotMemoryEditRequest) => {
     if (!detail) return;
@@ -184,6 +254,27 @@ export const BotMemoryConsole: React.FC<BotMemoryConsoleProps> = ({
         </p>
       ) : null}
 
+      {extractionStatus ? (
+        <div
+          role="status"
+          data-bot-memory-extraction-status
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-[var(--surface-subtle)]/45 px-3 py-2 typography-ui text-foreground"
+        >
+          <span className="min-w-0 flex-1">{extractionStatus}</span>
+          {failedExtractions.length > 0 && typeof api.requeueBotMemoryExtraction === 'function' ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={busy !== null}
+              onClick={() => void requeueExtractions(failedExtractions.map((job) => job.runId))}
+            >
+              Re-Run All Failed Extractions
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="grid min-h-[32rem] overflow-hidden rounded-xl border border-border/70 lg:grid-cols-[minmax(14rem,0.8fr)_minmax(0,2fr)]">
         <div className="border-b border-border/70 bg-[var(--surface-subtle)]/25 lg:border-b-0 lg:border-r">
           <div className="max-h-[32rem] overflow-y-auto p-2">
@@ -202,9 +293,13 @@ export const BotMemoryConsole: React.FC<BotMemoryConsoleProps> = ({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate typography-ui-label font-medium text-foreground">{memory.logicalKey}</span>
-                  {memory.tombstonedAt ? <span className="typography-micro text-muted-foreground">Forgotten</span> : null}
+                  {memory.unreadable
+                    ? <span className="typography-micro text-[var(--status-error)]">Unreadable</span>
+                    : memory.tombstonedAt ? <span className="typography-micro text-muted-foreground">Forgotten</span> : null}
                 </div>
-                <p className="mt-1 line-clamp-2 typography-micro text-muted-foreground">{memory.content.text}</p>
+                <p className="mt-1 line-clamp-2 typography-micro text-muted-foreground">
+                  {memory.unreadable ? 'This Memory Could Not Be Decrypted with the Current Key.' : memory.content.text}
+                </p>
               </button>
             ))}
           </div>

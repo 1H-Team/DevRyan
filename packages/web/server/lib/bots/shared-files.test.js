@@ -15,7 +15,13 @@ const OBJECT_ID = 'f0000000-0000-4000-8000-000000000001';
 const USER_ID = 'a0000000-0000-4000-8000-000000000001';
 const RUN_ID = '10000000-0000-4000-8000-000000000001';
 
-const createHarness = ({ claimConflict = false, importFailure = false, runAvailable = true } = {}) => {
+const createHarness = ({
+  claimConflict = false,
+  importFailure = false,
+  runAvailable = true,
+  importNeverSettles = false,
+  serviceOptions = {},
+} = {}) => {
   let revision = 0;
   let pendingClaimConflict = claimConflict;
   const importedBytes = [];
@@ -83,6 +89,7 @@ const createHarness = ({ claimConflict = false, importFailure = false, runAvaila
   const dockerProvider = {
     importSharedFile: vi.fn(async (input) => {
       importedBytes.push(Buffer.from(input.bytes));
+      if (importNeverSettles) return new Promise(() => {});
       if (importFailure) throw Object.assign(new Error('offline'), { code: 'bot_runtime_unavailable' });
       return {
         written: true,
@@ -97,6 +104,7 @@ const createHarness = ({ claimConflict = false, importFailure = false, runAvaila
     requireChannelSend: vi.fn(async () => ({})),
   };
   const onMessageReady = vi.fn(async () => {});
+  const onMessageBlocked = vi.fn(async () => {});
   const recordDiagnostic = vi.fn();
   const service = createBotSharedFileService({
     store: {
@@ -133,14 +141,17 @@ const createHarness = ({ claimConflict = false, importFailure = false, runAvaila
     eventStream: { publish: vi.fn(async () => ({ delivered: 1 })) },
     channels: { audienceForChannel: vi.fn(async () => [USER_ID]) },
     onMessageReady,
+    onMessageBlocked,
     recordDiagnostic,
     logger: { warn: vi.fn() },
+    ...serviceOptions,
   });
   return {
     authorization,
     dockerProvider,
     importedBytes,
     onMessageReady,
+    onMessageBlocked,
     recordDiagnostic,
     repository,
     rows,
@@ -213,6 +224,68 @@ describe('Bot Shared files', () => {
     expect(harness.authorization.requireChannelSend).toHaveBeenCalledWith(
       { id: USER_ID }, BOT_ID, CHANNEL_ID,
     );
+  });
+
+  it('fails the queued run visibly when a copy fails, and again only under the automatic cap', async () => {
+    const harness = createHarness({ importFailure: true, serviceOptions: { maxAutomaticCopyAttempts: 2 } });
+    const first = await harness.service.prepareMessage({ messageId: MESSAGE_ID });
+    expect(first).toMatchObject({ ready: false, failedFileIds: [FILE_ID] });
+    expect(harness.onMessageReady).not.toHaveBeenCalled();
+    expect(harness.onMessageBlocked).toHaveBeenCalledWith({
+      runId: RUN_ID,
+      computerScopeKey: `bot:${BOT_ID}`,
+      messageId: MESSAGE_ID,
+      code: 'bot_runtime_unavailable',
+      failedFileIds: [FILE_ID],
+    });
+    expect(harness.rows.get(FILE_ID).copy_attempts).toBe(1);
+
+    // Recovery re-attempts a failed row below the cap, then stops attempting
+    // but still settles the blocked message.
+    await harness.service.recover();
+    expect(harness.rows.get(FILE_ID).copy_attempts).toBe(2);
+    await harness.service.recover();
+    expect(harness.rows.get(FILE_ID).copy_attempts).toBe(2);
+    expect(harness.onMessageBlocked).toHaveBeenCalledTimes(3);
+
+    // An explicit retry always starts a fresh attempt.
+    harness.dockerProvider.importSharedFile.mockImplementation(async (input) => ({
+      written: true,
+      path: `/workspace/Shared/${input.channelId}/${input.messageId}/${input.filename}`,
+      bytes: input.bytes.byteLength,
+      sha256: crypto.createHash('sha256').update(input.bytes).digest('hex'),
+    }));
+    await expect(harness.service.retry({
+      principal: { id: USER_ID },
+      botId: BOT_ID,
+      channelId: CHANNEL_ID,
+      sharedFileId: FILE_ID,
+    })).resolves.toMatchObject({ id: FILE_ID, copyState: 'ready' });
+    expect(harness.rows.get(FILE_ID).copy_attempts).toBe(1);
+    expect(harness.onMessageReady).toHaveBeenCalledWith(`bot:${BOT_ID}`);
+  });
+
+  it('times out a stalled import with a stable code instead of holding the channel head', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        importNeverSettles: true,
+        serviceOptions: { prepareFileTimeoutMs: 1_000 },
+      });
+      const preparation = harness.service.prepareMessage({ messageId: MESSAGE_ID });
+      await vi.advanceTimersByTimeAsync(1_001);
+      await expect(preparation).resolves.toMatchObject({ ready: false, failedFileIds: [FILE_ID] });
+      expect(harness.rows.get(FILE_ID)).toMatchObject({
+        copy_state: 'failed',
+        error_code: 'bot_shared_file_copy_timeout',
+      });
+      expect(harness.onMessageBlocked).toHaveBeenCalledWith(expect.objectContaining({
+        runId: RUN_ID,
+        code: 'bot_shared_file_copy_timeout',
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not mark a Shared copy failed when another runtime owns the optimistic claim', async () => {

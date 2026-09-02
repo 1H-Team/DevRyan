@@ -1,6 +1,7 @@
 export type BugReportStatus = 'submitted' | 'in_progress' | 'resolved';
 export type ErrorLogKind = 'session' | 'tool' | 'managed_task' | 'client';
 export type ErrorLogClearRange = '24h' | '7d' | '14d' | 'all';
+export type BotAuditClearRange = '24h' | '7d' | '30d' | 'all';
 export type DiagnosticImpact = 'low' | 'medium' | 'high' | 'critical';
 export type DiagnosticDisposition = 'actionable' | 'expected';
 export type DiagnosticClassificationSource = 'observed' | 'inferred';

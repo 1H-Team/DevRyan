@@ -17,13 +17,16 @@ browser panel or OpenCode browser tools.
 - `auth.js` — timing-safe bearer authentication.
 - `browser.js` — the reviewed agent command inventory, fixed 1280×720/DSF1
   headed Chromium viewport, strict human-only input-event validator, narrow
-  ordered CDP driver, and sanitized lifecycle/network event hooks. Its
+  ordered CDP driver, bounded active-page/popup stack, and sanitized
+  target/lifecycle/network/dialog event hooks. Its
   `createHumanInputDispatcher` owns bounded held-key/button state, old-batch
   generation fencing, per-event authority checks, and bounded input release.
 - `display.js` — local-only 24-bit Xvfb startup, readiness, supervision, and
   bounded shutdown.
-- `browser-diagnostics.js` — memory-only origin/status/failure aggregation with
-  no paths, queries, headers, cookies, page content, or input data.
+- `browser-diagnostics.js` — memory-only navigation trail and sticky verdict
+  aggregation with masked pathnames, separate main-frame identity, bounded
+  cookie/dialog data, reset/decay behavior, and no queries, headers, cookie
+  values, page content, or input data.
 - `managed-policy.js` — startup verification for the exact root-owned mandatory
   JavaScript/cookie policy.
 - `chromium-policies/managed/devryan-browser.json` — root-owned image policy

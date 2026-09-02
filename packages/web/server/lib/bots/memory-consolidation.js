@@ -1,3 +1,5 @@
+import { botErrorLogFields } from './error-normalization.js';
+
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1_000;
 const DEFAULT_MAX_GROUPS = 10;
 
@@ -117,7 +119,7 @@ export function createBotMemoryConsolidation({
       if (stopped || timer) return;
       timer = setInterval(() => {
         void sweep().catch((error) => logger?.warn?.('[BotsMemory] consolidation failed', {
-          code: error?.code || 'bot_memory_consolidation_failed',
+          ...botErrorLogFields(error, 'bot_memory_consolidation_failed'),
         }));
       }, intervalMs);
       timer.unref?.();

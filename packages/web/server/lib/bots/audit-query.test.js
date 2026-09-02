@@ -37,7 +37,7 @@ const createHarness = ({ rows = [auditRow()], detailRow, bots, actors } = {}) =>
       : actors;
     throw new Error(`Unexpected table ${table}`);
   });
-  const assertSchemaVersion = vi.fn(async () => '20260901160000');
+  const assertSchemaVersion = vi.fn(async () => '20260902120000');
   const rpc = vi.fn(async () => ({ clearedCount: 2 }));
   return {
     rest,
@@ -81,7 +81,7 @@ describe('Bot audit query service', () => {
       actor: { displayName: 'Administrator', former: false },
     });
     expect(page.nextCursor).toEqual(expect.any(String));
-    expect(harness.assertSchemaVersion).toHaveBeenCalledWith('20260901160000');
+    expect(harness.assertSchemaVersion).toHaveBeenCalledWith('20260902120000');
     const request = harness.rest.mock.calls.find(([table]) => table === 'bot_audit_review_events')[1];
     expect(request.query).toMatchObject({
       result: 'in.(failure,partial,unknown)',
@@ -189,6 +189,7 @@ describe('Bot audit query service', () => {
       ['24h', '2026-08-29T12:00:00.000Z'],
       ['7d', '2026-08-23T12:00:00.000Z'],
       ['14d', '2026-08-16T12:00:00.000Z'],
+      ['30d', '2026-07-31T12:00:00.000Z'],
       ['all', null],
     ]) {
       await expect(harness.query.clear(admin, { range })).resolves.toEqual({ clearedCount: 2 });
@@ -204,7 +205,7 @@ describe('Bot audit query service', () => {
     for (const principal of [{ ...admin, role: 'developer' }, { ...admin, scope: 'local-admin' }, null]) {
       await expect(harness.query.clear(principal, { range: 'all' })).rejects.toMatchObject({ statusCode: 403 });
     }
-    for (const query of [{}, { range: '30d' }, { range: ['all'] }, { range: 'all', actor: ADMIN_ID }]) {
+    for (const query of [{}, { range: '31d' }, { range: ['all'] }, { range: 'all', actor: ADMIN_ID }]) {
       await expect(harness.query.clear(admin, query)).rejects.toMatchObject({ statusCode: 400 });
     }
     expect(harness.rpc).not.toHaveBeenCalled();
@@ -219,6 +220,9 @@ describe('Bot audit query service', () => {
     harness.rpc.mockResolvedValueOnce({ clearedCount: '2' });
     await expect(harness.query.clear(admin, { range: 'all' })).rejects.toMatchObject({ statusCode: 502 });
     harness.rest.mockRejectedValueOnce({ payload: { code: 'PGRST205' } });
-    await expect(harness.query.list(admin)).rejects.toMatchObject({ code: 'bot_audit_clear_migration_required' });
+    await expect(harness.query.list(admin)).rejects.toMatchObject({
+      code: 'bot_audit_clear_migration_required',
+      message: expect.stringContaining('20260902120000'),
+    });
   });
 });

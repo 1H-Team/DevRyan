@@ -1,3 +1,5 @@
+import { botErrorLogFields } from './error-normalization.js';
+
 const RECOVERABLE_STATES = Object.freeze(['starting', 'running', 'waiting_control']);
 const DURABLE_WAIT_STATES = Object.freeze(['waiting_approval', 'needs_reconciliation']);
 const READ_ACTION_PATTERN = /^(?:read|get|list|search|inspect|status|download|navigate_read)(?:[_.:-]|$)/i;
@@ -46,20 +48,26 @@ export function createBotRunRecovery({
     return rows;
   };
 
-  return Object.freeze({
-    async recover() {
-      const result = {
-        inspected: 0,
-        resumed: 0,
-        deferred: 0,
-        needsReconciliation: 0,
-        interrupted: 0,
-        waiting: 0,
-      };
-      const waitingPages = await Promise.all(DURABLE_WAIT_STATES.map(listState));
-      result.waiting = waitingPages.reduce((count, rows) => count + rows.length, 0);
-      const recoverablePages = await Promise.all(RECOVERABLE_STATES.map(listState));
-      for (const run of recoverablePages.flat()) {
+  const queuedScopeKeys = async ({ minAgeMs = 0 } = {}) => {
+    const cutoff = now().getTime() - minAgeMs;
+    const keys = new Set();
+    for (const run of await listState('queued')) {
+      const createdAt = Date.parse(run.created_at || '');
+      if (Number.isFinite(createdAt) && createdAt > cutoff) continue;
+      if (typeof run.computer_scope_key === 'string' && run.computer_scope_key) {
+        keys.add(run.computer_scope_key);
+      }
+    }
+    return Object.freeze([...keys]);
+  };
+
+  const leaseExpired = (run) => {
+    const leaseUntil = Date.parse(run?.lease_until || '');
+    return !Number.isFinite(leaseUntil) || leaseUntil < now().getTime();
+  };
+
+  const recoverRuns = async (runs, result) => {
+      for (const run of runs) {
         result.inspected += 1;
         const [executing, unknown] = await Promise.all([
           store.repositories.bot_action_attempts.list({
@@ -134,10 +142,51 @@ export function createBotRunRecovery({
           result.interrupted += 1;
           logger?.warn?.('[BotsRecovery] run resume failed', {
             runId: run.id,
-            code: error?.code || 'runtime_recovery_failed',
+            ...botErrorLogFields(error, 'runtime_recovery_failed'),
           });
         }
       }
+  };
+
+  return Object.freeze({
+    async recover() {
+      const result = {
+        inspected: 0,
+        resumed: 0,
+        deferred: 0,
+        needsReconciliation: 0,
+        interrupted: 0,
+        waiting: 0,
+        queuedScopeKeys: [],
+      };
+      const waitingPages = await Promise.all(DURABLE_WAIT_STATES.map(listState));
+      result.waiting = waitingPages.reduce((count, rows) => count + rows.length, 0);
+      const recoverablePages = await Promise.all(RECOVERABLE_STATES.map(listState));
+      await recoverRuns(recoverablePages.flat(), result);
+      // Queued runs are never resumed here; they simply need a drain so the
+      // claim RPC (the lease authority) can pick them up after a restart.
+      result.queuedScopeKeys = await queuedScopeKeys();
+      return Object.freeze(result);
+    },
+
+    // Periodic safety net for a live process: re-drain scopes that still hold
+    // queued runs older than `minQueuedAgeMs` (a lost wake, a drain that died
+    // with its process, a sibling runtime that stopped) and inspect executing
+    // runs whose lease expired while nobody in this process owns them.
+    async sweep({ minQueuedAgeMs = 30_000, isExecuting = () => false } = {}) {
+      const result = {
+        inspected: 0,
+        resumed: 0,
+        deferred: 0,
+        needsReconciliation: 0,
+        interrupted: 0,
+        waiting: 0,
+        queuedScopeKeys: await queuedScopeKeys({ minAgeMs: minQueuedAgeMs }),
+      };
+      const recoverablePages = await Promise.all(RECOVERABLE_STATES.map(listState));
+      const orphaned = recoverablePages.flat()
+        .filter((run) => leaseExpired(run) && !isExecuting(run.id));
+      await recoverRuns(orphaned, result);
       return Object.freeze(result);
     },
   });

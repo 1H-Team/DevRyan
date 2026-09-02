@@ -9,7 +9,7 @@ import { createOpenAiOAuthBridge } from '/src/opencode/openai-oauth-bridge.js';
 import { createBotGatewayHost } from '/src/bots/gateway-host.js';
 import botPlugin from './devryan-bot-tools.mjs';
 
-assert.equal(JSON.parse(await fs.readFile('/opt/devryan/node_modules/opencode-ai/package.json', 'utf8')).version, '1.18.25');
+assert.equal(JSON.parse(await fs.readFile('/opt/devryan/node_modules/opencode-ai/package.json', 'utf8')).version, '1.18.26');
 assert.equal(JSON.parse(await fs.readFile('/opt/devryan/node_modules/opencode-gpt-imagegen/package.json', 'utf8')).version, '0.1.10');
 
 let rotation = 0;
@@ -80,7 +80,7 @@ async function launch(name, port, environment, plugin) {
   await fs.mkdir(`${base}/home`, { recursive: true });
   await fs.mkdir(`${base}/config/opencode`, { recursive: true });
   await fs.symlink('/opt/devryan/node_modules', `${base}/config/opencode/node_modules`);
-  await fs.writeFile(`${base}/config/opencode/package.json`, JSON.stringify({ dependencies: { '@opencode-ai/plugin': '1.18.25' } }));
+  await fs.writeFile(`${base}/config/opencode/package.json`, JSON.stringify({ dependencies: { '@opencode-ai/plugin': '1.18.26' } }));
   await fs.copyFile('/opt/devryan/package-lock.json', `${base}/config/opencode/package-lock.json`);
   await fs.writeFile(`${base}/data/opencode/auth.json`, JSON.stringify({ openai: { type: 'oauth', accountId: 'fixture-account', access: '', refresh: '', expires: 0 } }));
   const config = { plugin: [plugin], model: 'openai/gpt-5.4', default_agent: 'fixture',
@@ -150,7 +150,7 @@ try {
   assert.ok(providerCalls.some((call) => call.image));
   assert.ok(providerCalls.filter((call) => !call.image).every((call) => call.model === 'gpt-5.4'));
   assert.ok(!JSON.stringify(diagnostics).match(/fixture-access|fixture-refresh|fixture-account/));
-  console.log(JSON.stringify({ passed: true, runtime: 'OpenCode 1.18.25', chatRequests: providerCalls.filter((c) => !c.image).length,
+  console.log(JSON.stringify({ passed: true, runtime: 'OpenCode 1.18.26', chatRequests: providerCalls.filter((c) => !c.image).length,
     imageRequests: providerCalls.filter((c) => c.image).length, coordinatedRefreshes: rotation, internet: 'disabled' }));
 } catch (error) {
   console.error(childLogs);

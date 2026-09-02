@@ -36,6 +36,7 @@ const config = {
         devryan_bot: 'allow',
         devryan_image: 'allow',
         devryan_write: 'allow',
+        devryan_ask: 'allow',
         bash: 'allow',
         terminal: 'allow',
         git: 'allow',
@@ -49,11 +50,11 @@ const config = {
     },
     explore: {
       mode: 'subagent',
-      permission: { '*': 'deny', read: 'allow', write: 'allow', edit: 'allow', glob: 'allow', grep: 'allow', bash: 'allow', terminal: 'allow', git: 'allow', task: 'deny', devryan_task: 'deny', devryan_bot: 'deny', devryan_image: 'deny', devryan_write: 'deny', browser: 'deny', devryan_browser: 'deny', mcp: 'deny', external_directory: 'deny' },
+      permission: { '*': 'deny', read: 'allow', write: 'allow', edit: 'allow', glob: 'allow', grep: 'allow', bash: 'allow', terminal: 'allow', git: 'allow', task: 'deny', devryan_task: 'deny', devryan_bot: 'deny', devryan_image: 'deny', devryan_write: 'deny', devryan_ask: 'deny', browser: 'deny', devryan_browser: 'deny', mcp: 'deny', external_directory: 'deny' },
     },
     general: {
       mode: 'subagent',
-      permission: { '*': 'deny', read: 'allow', write: 'allow', edit: 'allow', glob: 'allow', grep: 'allow', bash: 'allow', terminal: 'allow', git: 'allow', task: 'deny', devryan_task: 'deny', devryan_bot: 'deny', devryan_image: 'deny', devryan_write: 'deny', browser: 'deny', devryan_browser: 'deny', mcp: 'deny', external_directory: 'deny' },
+      permission: { '*': 'deny', read: 'allow', write: 'allow', edit: 'allow', glob: 'allow', grep: 'allow', bash: 'allow', terminal: 'allow', git: 'allow', task: 'deny', devryan_task: 'deny', devryan_bot: 'deny', devryan_image: 'deny', devryan_write: 'deny', devryan_ask: 'deny', browser: 'deny', devryan_browser: 'deny', mcp: 'deny', external_directory: 'deny' },
     },
   },
 };

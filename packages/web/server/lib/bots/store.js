@@ -227,6 +227,7 @@ const RPC_NAMES = Object.freeze({
   claimMemoryExtractionJob: 'devryan_claim_bot_memory_extraction_job',
   persistMemoryExtractionCandidates: 'devryan_persist_bot_memory_extraction_candidates',
   settleMemoryExtractionJob: 'devryan_settle_bot_memory_extraction_job',
+  requeueMemoryExtractionJob: 'devryan_requeue_bot_memory_extraction_job',
   deleteChannel: 'devryan_delete_bot_channel',
   pruneAudit: 'devryan_prune_bot_audit',
   purgeResource: 'devryan_purge_bot_resource',
@@ -298,6 +299,11 @@ const filterQuery = (config, filters = {}) => {
   for (const [key, value] of Object.entries(filters)) {
     if (!config.columns.includes(key) || value === undefined) {
       throw new BotStoreError('Bot repository filter is invalid', 'bot_request_invalid', 400);
+    }
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)
+      && Object.keys(value).length === 1 && Object.hasOwn(value, 'not') && value.not === null) {
+      query[key] = 'not.is.null';
+      continue;
     }
     query[key] = value === null ? 'is.null' : `eq.${postgrestLiteral(value)}`;
   }
@@ -884,6 +890,9 @@ export function createBotStore({ supabase, logger = null } = {}) {
         p_lease_owner: leaseOwner,
         p_candidate_envelope: cloneValue(candidateEnvelope),
       }),
+    ),
+    requeueMemoryExtractionJob: async ({ runId, botId }) => firstRow(
+      await callRpc('requeueMemoryExtractionJob', { p_run_id: runId, p_bot_id: botId }),
     ),
     settleMemoryExtractionJob: async ({
       runId,

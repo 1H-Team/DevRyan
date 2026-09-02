@@ -190,3 +190,108 @@ describe('Bot attachment uploads', () => {
     expect(second.successes[0]?.objectId).toBe('object-2');
   });
 });
+
+describe('Bot attachment preparation and concurrency', () => {
+  const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => { resolve = r; });
+    return { promise, resolve };
+  };
+
+  test('converts HEIC photos to JPEG through the injected converter and keeps the original name in reports', async () => {
+    const uploads: Array<{ name: string; contentType: string }> = [];
+    const result = await uploadBotAttachmentFiles({
+      files: [file('IMG_0001.HEIC', 'image/heic', 'raw-heic')],
+      getAttachmentCount: () => 0,
+      upload: async ({ file: uploaded, contentType }) => {
+        uploads.push({ name: uploaded.name, contentType });
+        return 'object-1';
+      },
+      onUploaded: () => {},
+      converters: {
+        convertHeic: async (source) => new File(['jpeg-bytes'], source.name.replace(/\.heic$/iu, '.jpg'), { type: 'image/jpeg' }),
+      },
+    });
+    expect(uploads).toEqual([{ name: 'IMG_0001.jpg', contentType: 'image/jpeg' }]);
+    expect(result.successes).toEqual([{ filename: 'IMG_0001.HEIC', objectId: 'object-1' }]);
+    expect(result.failures).toEqual([]);
+  });
+
+  test('reports a HEIC photo as unsupported when no converter is available', async () => {
+    const result = await uploadBotAttachmentFiles({
+      files: [file('IMG_0002.heic', 'image/heic')],
+      getAttachmentCount: () => 0,
+      upload: async () => { throw new Error('must not upload'); },
+      onUploaded: () => {},
+      converters: { convertHeic: async () => null },
+    });
+    expect(result.failures).toEqual([{ filename: 'IMG_0002.heic', reason: 'unsupported_type' }]);
+  });
+
+  test('downscales oversized rasters before the byte limit so a huge photo is accepted smaller', async () => {
+    const huge = file('photo.png', 'image/png', 'x'.repeat(64));
+    Object.defineProperty(huge, 'size', { value: BOT_ATTACHMENT_MAX_BYTES + 1 });
+    const uploads: Array<{ name: string; contentType: string; size: number }> = [];
+    const result = await uploadBotAttachmentFiles({
+      files: [huge, file('notes.txt')],
+      getAttachmentCount: () => 0,
+      upload: async ({ file: uploaded, contentType }) => {
+        uploads.push({ name: uploaded.name, contentType, size: uploaded.size });
+        return `object-${uploads.length}`;
+      },
+      onUploaded: () => {},
+      converters: {
+        downscaleImage: async (source, contentType) => (
+          contentType === 'image/png' ? new File(['small'], source.name, { type: 'image/png' }) : null
+        ),
+      },
+    });
+    expect(uploads.find((entry) => entry.name === 'photo.png')).toEqual({ name: 'photo.png', contentType: 'image/png', size: 5 });
+    expect(result.successes.map((entry) => entry.filename)).toEqual(['photo.png', 'notes.txt']);
+    expect(result.failures).toEqual([]);
+  });
+
+  test('overlaps uploads but reports attachments in selection order', async () => {
+    const first = deferred<string>();
+    const second = deferred<string>();
+    const order: string[] = [];
+    const started: string[] = [];
+    const run = uploadBotAttachmentFiles({
+      files: [file('a.txt'), file('b.txt'), file('c.txt')],
+      getAttachmentCount: () => order.length,
+      upload: async ({ file: uploaded }) => {
+        started.push(uploaded.name);
+        if (uploaded.name === 'a.txt') return first.promise;
+        if (uploaded.name === 'b.txt') return second.promise;
+        return 'object-c';
+      },
+      onUploaded: ({ objectId }) => { order.push(objectId); },
+      concurrency: 2,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(started).toEqual(['a.txt', 'b.txt']);
+    second.resolve('object-b');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(order).toEqual([]);
+    first.resolve('object-a');
+    const result = await run;
+    expect(order).toEqual(['object-a', 'object-b', 'object-c']);
+    expect(result.successes.map((entry) => entry.objectId)).toEqual(['object-a', 'object-b', 'object-c']);
+  });
+
+  test('reserves count slots exactly while uploads overlap', async () => {
+    const files = Array.from({ length: 4 }, (_, index) => file(`f${index}.txt`));
+    const result = await uploadBotAttachmentFiles({
+      files,
+      getAttachmentCount: () => BOT_ATTACHMENT_MAX_COUNT - 2,
+      upload: async ({ file: uploaded }) => `object-${uploaded.name}`,
+      onUploaded: () => {},
+      concurrency: 2,
+    });
+    expect(result.successes.map((entry) => entry.objectId)).toEqual(['object-f0.txt', 'object-f1.txt']);
+    expect(result.failures).toEqual([
+      { filename: 'f2.txt', reason: 'attachment_limit' },
+      { filename: 'f3.txt', reason: 'attachment_limit' },
+    ]);
+  });
+});

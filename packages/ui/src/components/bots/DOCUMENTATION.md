@@ -298,7 +298,12 @@ owned Take Control lease is visible, the component polls the
 narrow status route every two seconds and changes the Bot store only for a new
 diagnostic revision or browser prerequisite/health change. Sanitized warnings
 distinguish blocked JavaScript/cookies, failed or allowlist-denied dependency
-hosts, browser/display failure, and site rejection with healthy prerequisites.
+hosts, browser/display failure, and site rejection with its last three unique
+masked paths plus repetition count. A site-rejection warning becomes an
+informational status while the viewer owns control. The overlay renders managed
+policy/JavaScript/cookie prerequisites as facts, reports handled dialogs, and
+states when screen/input are following an open popup. Popup target changes
+invalidate stale refs without replacing the viewer.
 The no-recording guarantee is architectural, not copy: `framesRecorded: false`
 in status, and pixels never enter stores or persistence (above).
 

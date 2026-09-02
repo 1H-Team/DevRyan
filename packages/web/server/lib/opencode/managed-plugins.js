@@ -135,7 +135,7 @@ const definitions = [
     sourcePath: 'default-config/plugins/devryan-document-reader.mjs',
     profileRegistration: true,
     runtimeDependencies: [
-      { packageName: '@opencode-ai/plugin', version: '1.18.25', entrypoint: 'dist/index.js' },
+      { packageName: '@opencode-ai/plugin', version: '1.18.26', entrypoint: 'dist/index.js' },
       { packageName: 'adm-zip', version: '0.6.0', entrypoint: 'adm-zip.js' },
       { packageName: 'mammoth', version: '1.12.1', entrypoint: 'lib/index.js' },
       { packageName: 'unpdf', version: '1.8.0', entrypoint: 'dist/index.mjs' },

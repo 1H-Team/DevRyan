@@ -200,7 +200,7 @@ describe('Bot management control plane', () => {
         contract: expect.objectContaining({
           ...contract,
           // Server-derived: the client cannot set these.
-          gatewayPluginVersion: 'devryan-bot-tools@1.3.0',
+          gatewayPluginVersion: 'devryan-bot-tools@1.4.0',
           operatingInstructions: '',
           prohibitedInstructions: '',
           advancedPrompt: '',
@@ -909,7 +909,7 @@ describe('Bot management control plane', () => {
       expectedUpdatedAt: NOW,
     });
     const saved = updateIfRevision.mock.calls[0][2].contract;
-    expect(saved.gatewayPluginVersion).toBe('devryan-bot-tools@1.3.0');
+    expect(saved.gatewayPluginVersion).toBe('devryan-bot-tools@1.4.0');
     expect(saved.libraryVersionIds).toEqual(['f0000000-0000-4000-8000-00000000000b']);
   });
 

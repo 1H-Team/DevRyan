@@ -1108,7 +1108,11 @@ export function registerBotRoutes(app, {
       return res.json(await runtime.listForManager(
         req.principal,
         validateUuid(req.params.botId, 'botId'),
-        { cursor: req.query?.cursor || null, limit: req.query?.limit },
+        {
+          cursor: req.query?.cursor || null,
+          limit: req.query?.limit,
+          state: typeof req.query?.state === 'string' ? req.query.state : null,
+        },
       ));
     } catch (error) {
       return botRouteError(res, error);
@@ -1190,7 +1194,29 @@ export function registerBotRoutes(app, {
       return res.json(await runtime.listForManager(
         req.principal,
         validateUuid(req.params.botId, 'botId'),
-        { cursor: req.query?.cursor || null, limit: req.query?.limit },
+        {
+          cursor: req.query?.cursor || null,
+          limit: req.query?.limit,
+          state: typeof req.query?.state === 'string' ? req.query.state : null,
+        },
+      ));
+    } catch (error) {
+      return botRouteError(res, error);
+    }
+  });
+
+  app.post('/api/bots/:botId/memories/extraction/:runId/requeue', async (req, res) => {
+    try {
+      const runtime = runtimeService('memoryRuntime', memoryRuntime);
+      if (!runtime || typeof runtime.requeueExtraction !== 'function') {
+        throw Object.assign(new Error('Bot memory is unavailable'), {
+          code: 'bots_unavailable', statusCode: 503,
+        });
+      }
+      return res.json(await runtime.requeueExtraction(
+        req.principal,
+        validateUuid(req.params.botId, 'botId'),
+        validateUuid(req.params.runId, 'runId'),
       ));
     } catch (error) {
       return botRouteError(res, error);
@@ -1310,9 +1336,13 @@ export function registerBotRoutes(app, {
     try {
       assertExactObject(req.query || {}, {
         label: 'Bot computer-files query',
-        optional: ['path'],
+        optional: ['path', 'scope'],
       });
       const requestedPath = validateComputerFilesPath(req.query?.path);
+      const requestedScope = req.query?.scope === undefined ? 'workspace' : req.query.scope;
+      if (!['workspace', 'container'].includes(requestedScope)) {
+        throw new BotValidationError('Bot computer-files scope is invalid');
+      }
       const botId = validateUuid(req.params.botId, 'botId');
       const runtime = runtimeService('libraryRuntime', libraryRuntime);
       if (!runtime) {
@@ -1325,8 +1355,8 @@ export function registerBotRoutes(app, {
           available: false,
           state: 'runtime_unavailable',
           code: getExecutionFailure()?.code || 'bot_runtime_execution_unavailable',
-          scope: req.principal?.role === 'admin' ? 'container' : 'workspace',
-          rootLabel: req.principal?.role === 'admin' ? 'Computer' : 'Workspace',
+          scope: 'workspace',
+          rootLabel: 'Workspace',
           path: '',
           entries: [],
           truncated: false,
@@ -1335,7 +1365,7 @@ export function registerBotRoutes(app, {
       return res.json(await runtime.listComputerFiles(
         req.principal,
         botId,
-        { path: requestedPath },
+        { path: requestedPath, scope: requestedScope },
       ));
     } catch (error) {
       return botRouteError(res, error);

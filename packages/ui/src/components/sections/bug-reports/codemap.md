@@ -20,9 +20,11 @@ Bot Audit ledger.
   copy, and task-scoped diagnostics export when a session ID exists.
 - `BotAuditPanel.tsx`: issues-first Bot audit review list with debounced
   search, result/Bot/user/date/page filters, cursor paging, direct UUID detail,
-  validated metadata, audited Bot-context copy, and confirmed range-based clear
-  controls. Clearing hides reviewed events for all administrators while retaining
-  immutable audit records and UUID detail access. It has no task-export control.
+  stable upper time bounds, validated metadata, audited Bot-context copy,
+  generalized resolution chips/detail fields, and confirmed 24-hour/7-day/
+  30-day/all clear controls. Clearing hides reviewed events for all
+  administrators while retaining immutable audit records and UUID detail
+  access. It has no task-export control.
 - `api.ts`, `types.ts`: browser HTTP client and local response contracts.
 
 ## Flow

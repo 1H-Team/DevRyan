@@ -9,9 +9,13 @@ import {
   sanitizeBotConversationalTextParts,
 } from './response-sanitizer.js';
 import { assertExactObject, validateBoundedJsonObject, validateBoundedString, validateUuid } from './validation.js';
+import { botErrorLogFields } from './error-normalization.js';
+import { projectBotReasoningResponse } from './reasoning-adapter.js';
 
 const WORKSPACE_DIRECTORY = '/workspace';
-const DEFAULT_READY_TIMEOUT_MS = 15_000;
+const DEFAULT_READY_TIMEOUT_MS = 30_000;
+const OAUTH_READINESS_MAX_ATTEMPTS = 3;
+const OAUTH_READINESS_RETRY_DELAYS_MS = Object.freeze([250, 1_000]);
 const ATTACHMENT_DELIVERY_MODES = new Set(['auto', 'compatibility']);
 const TRANSIENT_OAUTH_READINESS_FAILURES = new Set([
   'request_timeout',
@@ -38,13 +42,21 @@ const defaultSubscribeToEvents = async ({ client, signal, onEvent }) => {
 };
 
 export class BotOpenCodeProviderError extends Error {
-  constructor(message, code = 'bot_opencode_unavailable', statusCode = 503) {
+  constructor(message, code = 'bot_opencode_unavailable', statusCode = 503, diagnostics = null) {
     super(message);
     this.name = 'BotOpenCodeProviderError';
     this.code = code;
     this.statusCode = statusCode;
+    if (diagnostics && typeof diagnostics === 'object') {
+      this.diagnostics = Object.freeze({ ...diagnostics });
+    }
   }
 }
+
+const oauthReadinessDelay = (attempt) => (
+  OAUTH_READINESS_RETRY_DELAYS_MS[Math.min(Math.max(attempt, 1) - 1, OAUTH_READINESS_RETRY_DELAYS_MS.length - 1)]
+  + Math.floor(Math.random() * 250)
+);
 
 const fail = (message, code, statusCode) => {
   throw new BotOpenCodeProviderError(message, code, statusCode);
@@ -77,17 +89,33 @@ const safeUpstreamFailureClass = (error) => {
   return null;
 };
 
-const unwrap = (result, operation, { allowEmpty = false, logger = null } = {}) => {
+const unwrap = (result, operation, {
+  allowEmpty = false,
+  logger = null,
+  notFoundCode = null,
+  ignoreNotFound = false,
+} = {}) => {
   if (result?.error) {
     const failureClass = safeUpstreamFailureClass(result.error);
+    const statusCode = Number.isInteger(result.response?.status) ? result.response.status : null;
+    if (statusCode === 404 && ignoreNotFound) return null;
     logger?.warn?.('[BotsOpenCode] scoped request rejected', {
       operation,
-      statusCode: Number.isInteger(result.response?.status) ? result.response.status : null,
+      statusCode,
       upstreamError: safeUpstreamErrorName(result.error),
       failureClass,
     });
     if (failureClass === 'provider_authentication') {
       fail(`${operation} failed`, 'bot_opencode_provider_authentication', 401);
+    }
+    // A vanished session (container restarted, segment evicted) is a distinct
+    // outcome: the run cannot continue in place and must not be polled again.
+    if (statusCode === 404 && notFoundCode) {
+      throw new BotOpenCodeProviderError(`${operation} lost its session`, notFoundCode, 502, {
+        retryable: false,
+        stage: 'session',
+        statusCode,
+      });
     }
     fail(`${operation} failed`, 'bot_opencode_request_failed', 502);
   }
@@ -209,7 +237,7 @@ const normalizeSessionId = (value) => {
 
 const normalizeStructuredSchema = (value) => {
   try {
-    return validateBoundedJsonObject(value, 'Bot structured-output schema', 128 * 1024);
+    return validateBoundedJsonObject(value, 'Bot structured-output schema', 128 * 1024, 16);
   } catch (error) {
     fail(error.message, 'bot_opencode_request_invalid', error.statusCode || 400);
   }
@@ -255,26 +283,10 @@ const generatedImageDescriptors = (parts) => {
 };
 
 export const projectBotAssistantResponse = (parts) => {
-  const ordered = Array.isArray(parts) ? parts : [];
-  const firstToolIndex = ordered.findIndex((part) => part?.type === 'tool');
-  const joinPublicText = (values) => sanitizeBotConversationalTextParts(values);
-  if (firstToolIndex < 0) {
-    return Object.freeze({
-      toolObserved: false,
-      acknowledgmentText: '',
-      resultText: joinPublicText(ordered),
-      generatedImages: generatedImageDescriptors(ordered),
-    });
-  }
-  let lastToolIndex = firstToolIndex;
-  for (let index = firstToolIndex + 1; index < ordered.length; index += 1) {
-    if (ordered[index]?.type === 'tool') lastToolIndex = index;
-  }
+  const projection = projectBotReasoningResponse(parts);
   return Object.freeze({
-    toolObserved: true,
-    acknowledgmentText: '',
-    resultText: joinPublicText(ordered.slice(lastToolIndex + 1)),
-    generatedImages: generatedImageDescriptors(ordered),
+    ...projection,
+    generatedImages: generatedImageDescriptors(Array.isArray(parts) ? parts : []),
   });
 };
 
@@ -294,11 +306,13 @@ const tokenTotal = (tokens) => {
     + Math.max(0, Number(tokens.cache?.write) || 0);
 };
 
+const recordCreatedAt = (record) => Number(
+  record?.info?.time?.created || record?.info?.time?.completed || 0,
+);
+
 const latestRecord = (records) => records.reduce((latest, record) => {
   if (!latest) return record;
-  const latestTime = Number(latest.info?.time?.created || latest.info?.time?.completed || 0);
-  const recordTime = Number(record.info?.time?.created || record.info?.time?.completed || 0);
-  return recordTime >= latestTime ? record : latest;
+  return recordCreatedAt(record) >= recordCreatedAt(latest) ? record : latest;
 }, null);
 
 const exactMethodInput = (input, label, required, optional = []) => {
@@ -653,14 +667,16 @@ export function createBotOpenCodeProvider({
               });
             } catch (error) {
               const failureClass = safeUpstreamFailureClass(error);
-              const transient = error?.name === 'TimeoutError'
+              const transient = error?.name === 'TimeoutError' || error?.code === 23
+                || error?.name === 'AbortError'
                 || TRANSIENT_OAUTH_READINESS_FAILURES.has(failureClass);
-              if (oauthReadinessAttempt < 2 && transient) {
+              normalized.signal?.throwIfAborted();
+              if (oauthReadinessAttempt < OAUTH_READINESS_MAX_ATTEMPTS && transient) {
                 recordLifecycle('bot.provider.oauth_readiness_retry', normalized.run, {
                   attemptCount: oauthReadinessAttempt,
                   failureClass,
                 });
-                await delay(250, undefined, { signal: normalized.signal });
+                await delay(oauthReadinessDelay(oauthReadinessAttempt), undefined, { signal: normalized.signal });
                 continue;
               }
               throw error;
@@ -670,13 +686,13 @@ export function createBotOpenCodeProvider({
             const transient = response?.error && failureClass !== 'provider_authentication'
               && (TRANSIENT_OAUTH_READINESS_FAILURES.has(failureClass)
                 || (statusCode >= 500 && statusCode <= 599));
-            if (oauthReadinessAttempt < 2 && transient) {
+            if (oauthReadinessAttempt < OAUTH_READINESS_MAX_ATTEMPTS && transient) {
               recordLifecycle('bot.provider.oauth_readiness_retry', normalized.run, {
                 attemptCount: oauthReadinessAttempt,
                 failureClass,
                 statusCode: Number.isInteger(statusCode) ? statusCode : null,
               });
-              await delay(250, undefined, { signal: normalized.signal });
+              await delay(oauthReadinessDelay(oauthReadinessAttempt), undefined, { signal: normalized.signal });
               continue;
             }
             unwrap(response, 'Bot authentication capability', { logger });
@@ -784,7 +800,7 @@ export function createBotOpenCodeProvider({
           if (!eventHandler) return;
           void Promise.resolve(eventHandler({ runId, event })).catch((error) => {
             logger?.warn?.('[BotsOpenCode] event handler rejected an event', {
-              code: error?.code || 'bot_opencode_event_handler_failed',
+              ...botErrorLogFields(error, 'bot_opencode_event_handler_failed'),
               runId,
             });
           });
@@ -805,7 +821,7 @@ export function createBotOpenCodeProvider({
           stage: 'event_stream', error,
         });
         logger?.warn?.('[BotsOpenCode] scoped event stream disconnected', {
-          code: error?.code || 'bot_opencode_event_stream_failed',
+          ...botErrorLogFields(error, 'bot_opencode_event_stream_failed'),
           runId,
         });
       });
@@ -908,7 +924,9 @@ export function createBotOpenCodeProvider({
         }, { signal }),
         active.client.session.status({ directory: WORKSPACE_DIRECTORY }, { signal }),
       ]), signal);
-      const records = unwrap(messageResponse, 'Bot segment messages', { logger });
+      const records = unwrap(messageResponse, 'Bot segment messages', {
+        logger, notFoundCode: 'bot_agent_execution_lost',
+      });
       const statuses = unwrap(statusResponse, 'Bot segment status', { logger });
       if (!Array.isArray(records) || !statuses || typeof statuses !== 'object') {
         fail('Bot segment inspection returned invalid data', 'bot_opencode_response_invalid', 502);
@@ -936,13 +954,14 @@ export function createBotOpenCodeProvider({
       if (assistantRecord?.info?.error) {
         fail('Bot provider did not complete the response', 'bot_opencode_run_failed', 502);
       }
-      const finalProjection = projectBotAssistantResponse(assistantRecord?.parts);
-      const requestParts = requestAssistantRecords.flatMap((record) => record.parts || []);
-      const assistantProjection = Object.freeze({
-        ...finalProjection,
-        toolObserved: finalProjection.toolObserved || requestParts.some((part) => part?.type === 'tool'),
-        generatedImages: generatedImageDescriptors(requestParts),
-      });
+      // One request can span several assistant records (one per tool-call
+      // round). Project the whole request in order so the acknowledgment
+      // written before the first tool call and the answer after the last one
+      // both survive, and generated images from every round are collected.
+      const requestParts = [...requestAssistantRecords]
+        .sort((left, right) => recordCreatedAt(left) - recordCreatedAt(right))
+        .flatMap((record) => record.parts || []);
+      const assistantProjection = projectBotAssistantResponse(requestParts);
       return Object.freeze({
         requestId: active.runId,
         promptObserved: Boolean(promptRecord),
@@ -950,7 +969,7 @@ export function createBotOpenCodeProvider({
         assistantMessageId: typeof assistantRecord?.info?.id === 'string'
           ? assistantRecord.info.id
           : null,
-        assistantText: projectBotAssistantResponse(assistantRecord?.parts).resultText,
+        assistantText: assistantProjection.resultText,
         assistantProjection,
         assistantTerminal: isTerminalAssistantRecord(assistantRecord),
         providerContextRatio: contextLimit > 0
@@ -982,7 +1001,7 @@ export function createBotOpenCodeProvider({
         sessionID: normalizedSessionId,
         directory: WORKSPACE_DIRECTORY,
       }, { signal }), signal);
-      return unwrap(result, 'Bot abort', { allowEmpty: true, logger });
+      return unwrap(result, 'Bot abort', { allowEmpty: true, ignoreNotFound: true, logger });
     },
 
     async stopReasoningRun(runId) {

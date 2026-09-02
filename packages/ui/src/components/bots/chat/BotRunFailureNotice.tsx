@@ -23,6 +23,27 @@ const isAttachmentFailure = (code: string | null) => Boolean(code && (
 const failureMessageKey = (code: string | null) => {
   switch (code) {
     case 'bot_object_expired': return 'bots.chat.failure.reattach';
+    case 'bot_shared_file_copy_failed':
+    case 'bot_shared_file_copy_timeout':
+    case 'bot_shared_file_integrity_failed':
+    case 'bot_object_not_found': return 'bots.chat.failure.attachmentCopy';
+    case 'bot_response_missing':
+    case 'bot_response_incomplete':
+    case 'bot_response_unverified': return 'bots.chat.failure.noAnswer';
+    case 'bot_opencode_request_failed':
+    case 'bot_opencode_request_aborted':
+    case 'bot_agent_execution_lost':
+    case 'bot_opencode_provider_unknown':
+    case 'bot_opencode_api_retryable':
+    case 'bot_opencode_message_aborted':
+    case 'bot_agent_run_failed': return 'bots.chat.failure.providerTransient';
+    case 'bot_action_invalid':
+    case 'bot_gateway_operation_unavailable': return 'bots.chat.failure.actionInvalid';
+    case 'bot_approval_expired':
+    case 'bot_action_denied': return 'bots.chat.failure.approvalExpired';
+    case 'bot_run_context_missing':
+    case 'bot_message_not_found': return 'bots.chat.failure.retryMissing';
+    case 'bot_runtime_scope_busy': return 'bots.chat.failure.retryBusy';
     case 'bot_opencode_provider_authentication': return 'bots.chat.failure.authentication';
     case 'bot_oauth_coordinator_unavailable':
     case 'bot_oauth_runtime_update_required':

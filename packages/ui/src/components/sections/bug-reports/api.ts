@@ -4,6 +4,7 @@ import type {
   BotAuditDetail,
   BotAuditResultFilter,
   BotAuditSummary,
+  BotAuditClearRange,
   BugReportStatus,
   CursorPage,
   ErrorLogActorOption,
@@ -207,7 +208,7 @@ export const clearErrorLogs = async (range: ErrorLogClearRange): Promise<number>
   return payload.clearedCount;
 };
 
-export const clearBotAudit = async (range: ErrorLogClearRange): Promise<number> => {
+export const clearBotAudit = async (range: BotAuditClearRange): Promise<number> => {
   const query = new URLSearchParams({ range });
   const payload = await requestJson<{ clearedCount: number }>(`/api/bot-audit?${query}`, {
     method: 'DELETE',

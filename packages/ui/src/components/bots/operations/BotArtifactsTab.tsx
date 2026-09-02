@@ -19,6 +19,7 @@ import {
   useBotSharedFilesStore,
 } from '@/stores/useBotSharedFilesStore';
 import type { BotsStore } from '@/stores/useBotsStore';
+import { friendlyComputerPath } from './botSharedFilePresentation';
 
 type BotArtifactsTabProps = {
   botId: string;
@@ -86,8 +87,8 @@ export const BotSharedFileRow: React.FC<BotSharedFileRowProps> = ({
             {relativeTime(file.createdAt) ? ` · ${relativeTime(file.createdAt)}` : ''}
             {file.size !== null ? ` · ${Math.max(1, Math.ceil(file.size / 1024))} KB` : ''}
           </p>
-          <p className="mt-1 break-all font-mono text-[10px] leading-4 text-muted-foreground" title={file.computerPath}>
-            {file.computerPath}
+          <p className="mt-1 truncate typography-micro text-muted-foreground" title={file.computerPath}>
+            {friendlyComputerPath(file.computerPath)}
           </p>
           {file.copyState === 'failed' ? (
             <p className="mt-1 typography-micro text-[var(--status-error)]" role="status">

@@ -21,6 +21,7 @@ import {
   validateOptionalUuid,
   validateUuid,
 } from './validation.js';
+import { botErrorLogFields } from './error-normalization.js';
 
 const DEPLOYMENT_KEY_ID = 'deployment-v1';
 const BOT_ROLES = Object.freeze(['member', 'operator', 'manager']);
@@ -1076,7 +1077,7 @@ export function createBotManagement({
     const capabilities = await resolveCapabilities().catch((error) => ({
       available: false,
       state: 'runtime_unavailable',
-      code: error?.code || 'bot_runtime_unavailable',
+      code: botErrorLogFields(error, 'bot_runtime_unavailable').code,
     }));
     let modelResult = null;
     let modelError = null;

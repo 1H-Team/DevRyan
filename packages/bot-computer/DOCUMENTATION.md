@@ -100,16 +100,18 @@ carry ordered phase/key/code/modifier/location/repeat data; text events carry
 bounded Unicode insertion for paste and IME. Events are dispatched to CDP in
 batch order, while pointer moves and wheel updates may be coalesced by the UI.
 This command is not part of the reasoning agent's reviewed inventory. Audit
-metadata records only event types, count, and duration—never text, keys,
-modifiers, or coordinates.
+metadata is aggregated once per control lease and records only command/event
+counts by type plus timings—never text, keys, modifiers, or coordinates. A
+failed input batch gets its own content-free failure row so loss is explicit.
 
 The web runtime reuses an already-authorized active browser runtime without a
 Docker inspection on every input batch; the periodic health sweep still performs
 authoritative inspection and cleanup. The UI allows only one batch request in
 flight, coalesces continuous hover/wheel backlog, and preserves pointer-down/up
-and keyboard ordering. CDP dispatch completes before the route responds, while
-content-free audit delivery is scheduled afterward so audit storage latency does
-not delay the visible click or keystroke.
+and keyboard ordering. CDP dispatch completes before the route responds. The
+lease summary flushes on Return Control, view cleanup, expiry, five minutes of
+input inactivity, or shutdown; heartbeats remain live events but do not create
+audit rows.
 
 Pointer movement is coalesced only while no button is held. Real held-pointer
 movement remains ordered, down/up events are never discarded under backlog
@@ -122,14 +124,27 @@ ownership is rechecked before every event, so a late response cannot re-press a
 released key. At most eight batches may queue at the driver boundary. No pointer
 movement is synthesized and held-input details never enter status or diagnostics.
 
-The driver enables only the CDP page/network lifecycle events needed for the
-computer status diagnostic. Raw events are reduced immediately into a bounded,
-memory-only record containing public origin, status, redirect/repetition
-counts, standardized failure reason, and an optional normalized blocked host.
-Paths, queries, headers, cookie names/values, page/console text, screenshots,
+The driver enables only the CDP target/page/network lifecycle events needed for
+the computer status diagnostic. Raw events are reduced immediately into a
+bounded, memory-only trail containing public origin, masked pathname, status,
+redirect/repetition counts, standardized failure reason, dialog type plus a
+short printable message, and an optional normalized blocked host. Query/hash,
+userinfo, headers, cookie names/values, page/console content, screenshots,
 credentials, challenge payloads, coordinates, and typed input are never kept or
-returned. Status also reports headed/headless-legacy mode, engine version,
-display readiness, and managed JavaScript/cookie capability states.
+returned. UUID, opaque-token, and long-numeric path segments are replaced with
+`*`. Main-frame request identity has a dedicated bounded FIFO so subresource
+traffic cannot evict it. Routine aborted navigations and non-actionable cookie
+engine reasons do not publish warnings; a real same-path/redirect loop stays
+sticky until a newer healthy navigation remains stable for one minute. Taking
+control, explicit navigation, relaunch, and profile reset clear prior diagnostic
+state. JavaScript dialogs are dismissed (beforeunload is accepted) and recorded
+without blocking the shared browser.
+
+Page targets form a bounded stack: the root plus at most three popups opened by
+one of its managed pages. Accessibility commands, human input, diagnostics, and
+screencast follow the top target. Closing it invalidates its refs and returns to
+its opener; a fourth popup is closed and recorded as a bounded diagnostic trail
+failure. Status exposes only `activeTargetCount` and `popupOpen` for this state.
 
 Screencasting is subscriber-driven. Creating a viewer descriptor transmits no
 pixels; attaching its one-use stream idempotently launches Chromium when an
@@ -158,6 +173,7 @@ Run unit tests with `bun test packages/bot-computer`. Set
 The Docker group kills Chromium while leaving this service alive, confirms
 bounded concurrent recovery and one browser generation, and verifies that an
 established persistent login survives relaunch and container replacement. Its
-isolated fixture egress also exercises real Chromium click, right/middle/double
-click, hover, drag, wheel, printable keys, text insertion, navigation keys, and
-modifier shortcuts through the human-only lease path.
+isolated fixture egress also exercises real `window.open`/`target="_blank"`
+popup handoff and return, Chromium click, right/middle/double click, hover,
+drag, wheel, printable keys, text insertion, navigation keys, and modifier
+shortcuts through the human-only lease path.

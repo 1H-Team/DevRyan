@@ -1,9 +1,8 @@
 import React from 'react';
 
+import { BotTypingDots } from './BotTypingDots';
 import type { BotSummary } from '@/lib/botsApi';
 import { useI18n } from '@/lib/i18n';
-
-const DOT_DELAYS = ['0ms', '160ms', '320ms'] as const;
 
 export const BotTypingIndicator: React.FC<{ bot: BotSummary }> = ({ bot }) => {
   const { t } = useI18n();
@@ -17,16 +16,10 @@ export const BotTypingIndicator: React.FC<{ bot: BotSummary }> = ({ bot }) => {
     >
       <div className="min-w-0 max-w-[78%]">
         <div
-          className="flex h-10 items-center gap-1.5 rounded-2xl rounded-bl-md border border-border/60 bg-[var(--surface-subtle)]/55 px-4"
+          className="flex h-10 items-center rounded-2xl rounded-bl-md border border-border/60 bg-[var(--surface-subtle)]/55 px-4"
           aria-hidden="true"
         >
-          {DOT_DELAYS.map((animationDelay) => (
-            <span
-              key={animationDelay}
-              className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bot-typing-dot motion-reduce:animate-none"
-              style={{ animationDelay }}
-            />
-          ))}
+          <BotTypingDots className="gap-1.5" />
         </div>
       </div>
     </div>

@@ -25,15 +25,15 @@ describe('OpenCode resolution runtime', () => {
       setResolvedOpencodeBinarySource: vi.fn((source) => {
         state.resolvedOpencodeBinarySource = source;
       }),
-      getDetectedOpenCodeVersion: vi.fn(() => '1.18.25'),
+      getDetectedOpenCodeVersion: vi.fn(() => '1.18.26'),
     });
 
     const snapshot = await runtime.getOpenCodeResolutionSnapshot({});
 
     expect(snapshot).toMatchObject({
-      targetVersion: '1.18.25',
-      detectedVersion: '1.18.25',
-      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.25 --no-modify-path',
+      targetVersion: '1.18.26',
+      detectedVersion: '1.18.26',
+      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.26 --no-modify-path',
     });
   });
 });

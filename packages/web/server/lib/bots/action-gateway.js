@@ -6,6 +6,7 @@ import {
 } from '@openchamber/bots-runtime';
 
 import { publicBotActionAttempt } from './approval-service.js';
+import { normalizeBotQuestion } from './bot-question.js';
 import {
   safeBotBrowserAuditRemoteCode,
   validateBotBrowserAction,
@@ -13,6 +14,7 @@ import {
 import { decryptBotJson, encryptBotJson } from './encryption.js';
 import { guardBotRoutineAction } from './routine-runtime.js';
 import { createBotFailureRecorder } from './failure-diagnostics.js';
+import { operationKindFromRow } from './retry-policy.js';
 import {
   assertExactObject,
   validateBoundedJsonObject,
@@ -207,17 +209,6 @@ const connectorIdForTool = (tool) => {
   return match?.[1] || null;
 };
 
-const operationKindFromRow = (row) => {
-  if (row.target?.operationKind === 'read' || row.target?.operationKind === 'write') {
-    return row.target.operationKind;
-  }
-  return row.tool === 'browser'
-    && ['download', 'navigate', 'screenshot', 'scroll', 'snapshot', 'status', 'wait']
-      .includes(row.action)
-    ? 'read'
-    : 'write';
-};
-
 const publicReceipt = (row) => {
   const receipt = row.execution_receipt;
   if (!receipt || typeof receipt !== 'object') return null;
@@ -246,6 +237,7 @@ export function createBotActionGateway({
   audit = async () => {},
   recordDiagnostic = () => {},
   onRunSettled = async () => {},
+  onQuestion = async () => {},
   now = () => new Date(),
   uuid = randomUUID,
 } = {}) {
@@ -1124,7 +1116,32 @@ export function createBotActionGateway({
     });
   };
 
+  // A quick-reply question is conversation, not an action: it needs no policy
+  // decision, approval, or receipt. It is recorded on the active run so the
+  // final message carries it inside the Bot's bubble.
+  const handleQuestion = async ({ claims, payload }) => {
+    let question;
+    try {
+      question = normalizeBotQuestion(payload);
+    } catch (error) {
+      fail(error.message, 'bot_question_invalid', 400);
+    }
+    const context = await loadContext(claims);
+    await onQuestion({
+      run: context.run,
+      bot: context.bot,
+      channel: context.channel,
+      question,
+    });
+    return Object.freeze({
+      asked: true,
+      optionCount: question.options.length,
+      multiple: question.multiple,
+    });
+  };
+
   const handleAction = async ({ claims, operation, payload, signal }) => {
+    if (operation === 'conversation.ask') return handleQuestion({ claims, payload });
     let request = normalizeGatewayRequest(operation, payload);
     const context = await loadContext(claims);
     request = await normalizeConnectorAction(request, context);

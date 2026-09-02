@@ -3,9 +3,12 @@ import { RiRobot2Line } from '@remixicon/react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { BotSidebarRow } from './BotSidebarRow';
+import { resolveBotSidebarStatus, type BotSidebarStatus } from './botSidebarStatus';
+import { selectBotCurrentRunId } from '../operations/selectBotCurrentRun';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import { useBotChannelStore, type BotChannelStore } from '@/stores/useBotChannelStore';
+import { useBotOperationsStore, type BotOperationsStore } from '@/stores/useBotOperationsStore';
 import { useBotsStore, type BotsStore } from '@/stores/useBotsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
@@ -17,6 +20,7 @@ type BotSidebarSectionProps = {
   vscodeRuntime?: boolean;
   botsStore?: BotsStore;
   channelStore?: BotChannelStore;
+  operationsStore?: BotOperationsStore;
   standalone?: boolean;
 };
 
@@ -25,6 +29,7 @@ export const BotSidebarSection: React.FC<BotSidebarSectionProps> = ({
   vscodeRuntime = isVSCodeRuntime(),
   botsStore = useBotsStore,
   channelStore = useBotChannelStore,
+  operationsStore = useBotOperationsStore,
   standalone = false,
 }) => {
   const { t } = useI18n();
@@ -51,6 +56,18 @@ export const BotSidebarSection: React.FC<BotSidebarSectionProps> = ({
       if (channel.ownerUserId === principalId && channel.lifecycle === 'active') {
         values[channel.botId] = state.previewsByChannelId[channel.id]?.createdAt ?? null;
       }
+    }
+    return values;
+  }));
+  // Run state for every visible Bot already streams into the operations store;
+  // project it to one primitive per row so a Bot working in another channel
+  // shows dots here without re-rendering the whole list on every event.
+  const statusByBotId = operationsStore(useShallow((state) => {
+    const values: Record<string, BotSidebarStatus> = {};
+    for (const [botId, channelId] of Object.entries(ownerChannelIdByBotId)) {
+      const runId = selectBotCurrentRunId(state, channelId);
+      const status = resolveBotSidebarStatus(runId ? state.runsById[runId] ?? null : null);
+      if (status) values[botId] = status;
     }
     return values;
   }));
@@ -111,6 +128,7 @@ export const BotSidebarSection: React.FC<BotSidebarSectionProps> = ({
                   opening={openingByBotId[botId] === true}
                   channelId={ownerChannelIdByBotId[botId] ?? null}
                   channelStore={channelStore}
+                  status={statusByBotId[botId] ?? null}
                   onSelect={selectBot}
                 />
                 {errorsByBotId[botId] ? (

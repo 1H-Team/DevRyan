@@ -11,11 +11,11 @@ const RESULTS = new Set(['issues', 'failure', 'partial', 'unknown', 'denied', 's
 const ISSUE_RESULTS = Object.freeze(['failure', 'partial', 'unknown']);
 const LIST_QUERY_KEYS = new Set(['result', 'bot', 'actor', 'q', 'from', 'to', 'limit', 'cursor']);
 const ROW_SELECT = 'id,event_id,bot_id,actor_user_id,target_type,target_id,action,result,metadata,created_at,resolved_at,resolved_by_event_id';
-const CLEAR_RANGE_DAYS = new Map([['24h', 1], ['7d', 7], ['14d', 14], ['all', null]]);
+const CLEAR_RANGE_DAYS = new Map([['24h', 1], ['7d', 7], ['14d', 14], ['30d', 30], ['all', null]]);
 
 const rethrowStorageError = (error) => {
   if (['42P01', '42883', 'PGRST202', 'PGRST205'].includes(error?.payload?.code || error?.code)) {
-    fail('Bot Audit requires database migration 20260901160000_bot_runtime_scope_and_audit_repair.sql',
+    fail(`Bot Audit requires database migration ${PRODUCTION_BOTS_MIGRATION}`,
       'bot_audit_clear_migration_required', 503);
   }
   throw error;
@@ -396,7 +396,7 @@ export function createBotAuditQuery({
     await ensureAvailable(principal);
     if (!isPlainObject(query) || Object.keys(query).some((key) => key !== 'range')
       || !CLEAR_RANGE_DAYS.has(query.range)) {
-      fail('range must be one of: 24h, 7d, 14d, all');
+      fail('range must be one of: 24h, 7d, 14d, 30d, all');
     }
     const until = now();
     const days = CLEAR_RANGE_DAYS.get(query.range);

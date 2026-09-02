@@ -324,6 +324,15 @@ describe('Production Bot operations store', () => {
     await store.getState().refreshComputerDiagnostic(BOT_ID);
     expect(store.getState().computersByBotId).not.toBe(initialMap);
     expect(store.getState().computersByBotId[BOT_ID].browser.lastNavigationDiagnostic?.revision).toBe(2);
+
+    const diagnosticMap = store.getState().computersByBotId;
+    response = {
+      ...response,
+      browser: { ...response.browser, lastNavigationDiagnostic: null },
+    };
+    await store.getState().refreshComputerDiagnostic(BOT_ID);
+    expect(store.getState().computersByBotId).not.toBe(diagnosticMap);
+    expect(store.getState().computersByBotId[BOT_ID].browser.lastNavigationDiagnostic).toBeNull();
   });
 
   test('coalesces automatic computer viewer startup and stops it by Bot', async () => {

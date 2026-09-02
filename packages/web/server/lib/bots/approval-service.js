@@ -7,6 +7,7 @@ import {
   validateBoundedString,
   validateUuid,
 } from './validation.js';
+import { botErrorLogFields } from './error-normalization.js';
 
 const DECISIONS = new Set(['approved', 'denied']);
 const TERMINAL_RUN_STATES = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
@@ -255,7 +256,7 @@ export function createBotApprovalService({
           now: now().toISOString(),
         }).catch((error) => logger.warn?.('[bots] Action quota release failed', {
           actionAttemptId: action.id,
-          code: error?.code || 'bot_quota_release_failed',
+          ...botErrorLogFields(error, 'bot_quota_release_failed'),
         }));
         notify(action);
         await eventStream.publish({
@@ -423,7 +424,7 @@ export function createBotApprovalService({
           now: now().toISOString(),
         }).catch((error) => logger.warn?.('[bots] Action quota release failed', {
           actionAttemptId: action.id,
-          code: error?.code || 'bot_quota_release_failed',
+          ...botErrorLogFields(error, 'bot_quota_release_failed'),
         }));
       }
       await updateRunAfterDecision(action, normalized.decision).catch(() => undefined);
