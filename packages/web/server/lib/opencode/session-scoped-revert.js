@@ -1,9 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
 import express from 'express';
+
+import { isActiveSessionStatus, listSessionStatuses, listSessionTree } from './session-tree.js';
 
 const execFileAsync = promisify(execFile);
 const SESSION_MESSAGE_LIMIT = 1000;
@@ -11,7 +14,34 @@ const SCOPED_REVERT_TIMEOUT_MS = 30_000;
 const SCOPED_REVERT_CLEANUP_TIMEOUT_MS = 4_000;
 const SCOPED_REVERT_SLOW_OPERATION_MS = 2_000;
 const SNAPSHOT_CONCURRENCY = 16;
+const SESSION_FETCH_CONCURRENCY = 4;
+const REVERT_JOURNAL_MAX_BYTES = 8 * 1024 * 1024;
+const REVERT_SCOPES = new Set(['tree', 'session']);
+// Mirror of packages/ui/src/lib/sessionChangeAttribution.ts: successful shell
+// tools can mutate files without naming them in their input.
+const UNATTRIBUTED_MUTATION_TOOLS = new Set(['bash', 'shell', 'cmd', 'powershell', 'terminal']);
+const SUCCESS_TOOL_STATUSES = new Set(['complete', 'completed', 'done']);
+const TOOL_NAME_ALIASES = new Map([
+  ['oc_bash', 'bash'],
+  ['shell_command', 'bash'],
+  ['terminal_command', 'bash'],
+  ['run_command', 'bash'],
+  ['execute_command', 'bash'],
+  ['exec_command', 'bash'],
+  ['command', 'bash'],
+  ['sh', 'bash'],
+]);
 const scopedRevertLocks = new Map();
+
+class ScopedRevertConflictError extends Error {
+  constructor(code, message, details = {}) {
+    super(message);
+    this.name = 'ScopedRevertConflictError';
+    this.code = code;
+    this.status = 409;
+    Object.assign(this, details);
+  }
+}
 
 class ScopedRevertTimeoutError extends Error {
   constructor() {
@@ -338,9 +368,9 @@ const hunkReplacementLines = (hunk) => hunk.lines
   .filter((line) => line.startsWith(' ') || line.startsWith('-'))
   .map((line) => line.slice(1));
 
-const findSequence = (lines, sequence, preferredIndex) => {
+const findSequence = (lines, sequence, expectedIndex, { filePath = '' } = {}) => {
   if (sequence.length === 0) {
-    return Math.max(0, Math.min(preferredIndex, lines.length));
+    return Math.max(0, Math.min(expectedIndex, lines.length));
   }
 
   const matches = [];
@@ -357,12 +387,22 @@ const findSequence = (lines, sequence, preferredIndex) => {
   }
 
   if (matches.length === 0) return -1;
-  return matches.reduce((best, candidate) => (
-    Math.abs(candidate - preferredIndex) < Math.abs(best - preferredIndex) ? candidate : best
-  ), matches[0]);
+  if (matches.length === 1) return matches[0];
+  // Repeated blocks: only the candidate sitting exactly where the hunk says it
+  // is can be reverted safely. Picking the "nearest" one silently rewrote the
+  // wrong copy when another change shifted the file.
+  if (matches.includes(expectedIndex)) return expectedIndex;
+  throw new ScopedRevertConflictError(
+    'ambiguous_hunk',
+    `Cannot safely revert ${filePath}; the changed hunk at line ${expectedIndex + 1} matches ${matches.length} places in the file`,
+    { file: filePath, candidates: matches.map((index) => index + 1) },
+  );
 };
 
 export const reverseApplyUnifiedPatch = (currentText, patch, filePath) => {
+  // Hunks are reversed bottom-up (descending new-side start), so the lines
+  // above a hunk are untouched when it is located: the expected offset is the
+  // hunk's stated new-side position and needs no prior-hunk adjustment.
   const hunks = parseUnifiedPatch(patch).sort((a, b) => b.newStart - a.newStart);
   let lines = splitLines(currentText);
   const finalNewline = normalizeText(currentText).endsWith('\n');
@@ -370,7 +410,7 @@ export const reverseApplyUnifiedPatch = (currentText, patch, filePath) => {
   for (const hunk of hunks) {
     const target = hunkTargetLines(hunk);
     const replacement = hunkReplacementLines(hunk);
-    const index = findSequence(lines, target, Math.max(0, hunk.newStart - 1));
+    const index = findSequence(lines, target, Math.max(0, hunk.newStart - 1), { filePath });
     if (index < 0) {
       throw new Error(`Cannot safely revert ${filePath}; the changed hunk was modified by another change`);
     }
@@ -428,8 +468,12 @@ const reverseApplyDiffToSnapshot = (snapshot, diff) => {
     throw new Error(`Cannot safely revert ${filePath}; unsupported diff status ${status}`);
   }
 
-  if (hunks.length === 0) {
-    throw new Error(`Cannot safely revert ${filePath}; the session diff has no text patch`);
+  if (diff.binary === true || hunks.length === 0) {
+    throw new ScopedRevertConflictError(
+      'binary_diff_unsupported',
+      `Cannot safely revert ${filePath}; the session diff has no text patch`,
+      { file: filePath },
+    );
   }
 
   if (status === 'added') {
@@ -486,59 +530,157 @@ const collectGitStatusFiles = async (directory, signal) => {
   }
 };
 
-const fetchJson = async (url, options) => {
-  const response = await fetch(url, options);
+const fetchJson = async (url, options, fetchImpl = fetch) => {
+  const response = await fetchImpl(url, options);
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const message = isObject(payload) && typeof payload.error === 'string' ? payload.error : response.statusText;
-    throw new Error(message || `Request failed with status ${response.status}`);
+    const error = new Error(message || `Request failed with status ${response.status}`);
+    error.upstreamStatus = response.status;
+    throw error;
   }
   return payload;
 };
 
-const fetchSessionMessages = async ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, sessionID, signal }) => {
+const fetchSessionMessages = async ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl, directory, sessionID, signal }) => {
   const query = new URLSearchParams({ directory, limit: String(SESSION_MESSAGE_LIMIT) });
   return abortable(
     fetchJson(buildOpenCodeUrl(`/session/${encodeURIComponent(sessionID)}/message?${query}`, ''), {
       method: 'GET',
       headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
       signal,
-    }),
+    }, fetchImpl),
     signal,
   );
 };
 
-const fetchSession = async ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, sessionID, signal }) => {
+const fetchSession = async ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl, directory, sessionID, signal }) => {
   const query = new URLSearchParams({ directory });
   return abortable(
     fetchJson(buildOpenCodeUrl(`/session/${encodeURIComponent(sessionID)}?${query}`, ''), {
       method: 'GET',
       headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
       signal,
-    }),
+    }, fetchImpl),
     signal,
   );
 };
 
-const startUpstreamRevert = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, sessionID, messageID }) => {
-  const controller = new AbortController();
-  const promise = fetchJson(
-    buildOpenCodeUrl(`/session/${encodeURIComponent(sessionID)}/revert?${encodeDirectoryQuery(directory)}`, ''),
-    {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        ...getOpenCodeAuthHeaders(),
-      },
-      body: JSON.stringify({ messageID }),
-      signal: controller.signal,
+// Loads the message transcripts of every session in the tree. Descendants
+// that no longer exist (404) contribute no messages; the root must load.
+const fetchTreeMessages = async ({ client, directory, sessions, signal }) => {
+  const recordsBySession = new Map();
+  const records = await mapWithConcurrency(
+    sessions,
+    SESSION_FETCH_CONCURRENCY,
+    async (session) => {
+      try {
+        const payload = await fetchSessionMessages({ ...client, directory, sessionID: session.id, signal });
+        return Array.isArray(payload) ? payload : [];
+      } catch (error) {
+        if (signal?.aborted) throwIfAborted(signal);
+        if (session.depth > 0 && error?.upstreamStatus === 404) return [];
+        throw error;
+      }
     },
+    signal,
   );
-  return {
-    promise,
-    abort: (reason) => controller.abort(reason),
+  sessions.forEach((session, index) => {
+    recordsBySession.set(session.id, records[index]);
+  });
+  return recordsBySession;
+};
+
+// Runs the native OpenCode reverts (or unreverts) for every step in order,
+// sharing one abort controller so an interruption stops the whole sequence.
+// The promise resolves with the last step's Session payload.
+const startUpstreamSequence = ({ client, directory, steps, kind }) => {
+  const controller = new AbortController();
+  const completed = [];
+  const run = async () => {
+    let last = null;
+    for (const step of steps) {
+      if (controller.signal.aborted) {
+        throw controller.signal.reason instanceof Error ? controller.signal.reason : new ScopedRevertCancelledError();
+      }
+      const action = kind === 'unrevert' ? 'unrevert' : 'revert';
+      try {
+        last = await fetchJson(
+          client.buildOpenCodeUrl(`/session/${encodeURIComponent(step.sessionID)}/${action}?${encodeDirectoryQuery(directory)}`, ''),
+          {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+              ...client.getOpenCodeAuthHeaders(),
+            },
+            body: JSON.stringify(kind === 'unrevert' ? {} : { messageID: step.messageID }),
+            signal: controller.signal,
+          },
+          client.fetchImpl,
+        );
+      } catch (error) {
+        if (kind === 'unrevert' && error?.upstreamStatus === 404 && step.optional) {
+          continue;
+        }
+        throw error;
+      }
+      completed.push(step);
+    }
+    return last;
   };
+  return {
+    promise: run(),
+    abort: (reason) => controller.abort(reason),
+    completed: () => completed.slice(),
+  };
+};
+
+// Best-effort native unrevert for sessions whose native revert already
+// succeeded before a later step failed. File contents are restored separately.
+const rollbackUpstreamReverts = async ({ client, directory, steps, signal }) => {
+  // Never throws: the file restore that follows must run even when this
+  // request is already aborted (the fetch then rejects and is logged).
+  for (const step of [...steps].reverse()) {
+    try {
+      await fetchJson(
+        client.buildOpenCodeUrl(`/session/${encodeURIComponent(step.sessionID)}/unrevert?${encodeDirectoryQuery(directory)}`, ''),
+        {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...client.getOpenCodeAuthHeaders() },
+          body: '{}',
+          signal,
+        },
+        client.fetchImpl,
+      );
+    } catch (error) {
+      console.warn('[scoped-revert] Could not roll back native revert', { sessionID: step.sessionID, error: error?.message });
+    }
+  }
+};
+
+const assertSessionsIdle = async ({ client, directory, treeSessionIDs, signal }) => {
+  const statuses = await abortable(listSessionStatuses({ ...client, directory, signal }), signal);
+  const busyInside = [];
+  const busyOutside = [];
+  for (const [id, status] of Object.entries(statuses)) {
+    if (!isActiveSessionStatus(status)) continue;
+    (treeSessionIDs.has(id) ? busyInside : busyOutside).push(id);
+  }
+  if (busyInside.length > 0) {
+    throw new ScopedRevertConflictError(
+      'session_busy',
+      `Cannot revert while a session in this prompt is still running: ${busyInside.join(', ')}`,
+      { sessions: busyInside },
+    );
+  }
+  if (busyOutside.length > 0) {
+    throw new ScopedRevertConflictError(
+      'directory_busy',
+      `Cannot revert while another session is working in this directory: ${busyOutside.join(', ')}`,
+      { sessions: busyOutside },
+    );
+  }
 };
 
 const sortMessageRecords = (records) => [...records].sort((a, b) => {
@@ -550,15 +692,51 @@ const sortMessageRecords = (records) => [...records].sort((a, b) => {
   return String(aInfo.id ?? '').localeCompare(String(bInfo.id ?? ''));
 });
 
-const collectRevertDiffs = (records, messageID, currentRevertMessageID) => {
+const messageTime = (record) => (typeof record?.info?.time?.created === 'number' ? record.info.time.created : 0);
+
+const nextUserMessageTime = (ordered, fromIndex) => {
+  for (let index = fromIndex + 1; index < ordered.length; index += 1) {
+    if (ordered[index]?.info?.role === 'user') return messageTime(ordered[index]);
+  }
+  return Number.POSITIVE_INFINITY;
+};
+
+// OpenCode attaches `summary.diffs` to a user message: the worktree diff
+// between the turn's first and last snapshot. Each diff becomes a "diff op"
+// whose window is the turn [user message, next user message).
+const collectSessionDiffOps = ({ sessionID, depth, ordered, targetIndex, endIndex }) => {
+  const ops = [];
+  for (let index = targetIndex; index < endIndex; index += 1) {
+    const record = ordered[index];
+    const info = record?.info;
+    if (info?.role !== 'user' || !Array.isArray(info.summary?.diffs)) continue;
+    const start = messageTime(record);
+    const end = nextUserMessageTime(ordered, index);
+    for (const diff of info.summary.diffs) {
+      if (!isObject(diff) || typeof diff.file !== 'string' || diff.file.trim().length === 0) continue;
+      ops.push({ kind: 'diff', file: diff.file, diff, sessionID, depth, messageID: info.id, start, end });
+    }
+  }
+  return ops;
+};
+
+// Resolves one session's participation in a tree revert. The root reverts
+// from the clicked message; a descendant reverts from its first message
+// created at or after the root target (none → the descendant is untouched).
+const buildSessionPlanEntry = ({ session, records, targetMessageID, rootTargetTime }) => {
   const ordered = sortMessageRecords(Array.isArray(records) ? records : []);
-  const targetIndex = ordered.findIndex((record) => record?.info?.id === messageID);
+  const isRoot = session.depth === 0;
+  const targetIndex = isRoot
+    ? ordered.findIndex((record) => record?.info?.id === targetMessageID)
+    : ordered.findIndex((record) => messageTime(record) >= rootTargetTime);
   if (targetIndex < 0) {
-    throw new Error('Target message was not found in the session');
+    if (isRoot) throw new Error('Target message was not found in the session');
+    return null;
   }
 
   let endIndex = ordered.length;
-  if (typeof currentRevertMessageID === 'string' && currentRevertMessageID.length > 0) {
+  const currentRevertMessageID = typeof session.revert?.messageID === 'string' ? session.revert.messageID : '';
+  if (currentRevertMessageID.length > 0) {
     const currentRevertIndex = ordered.findIndex((record) => record?.info?.id === currentRevertMessageID);
     if (currentRevertIndex < 0) {
       throw new Error('Current session revert boundary was not found in the session');
@@ -567,33 +745,98 @@ const collectRevertDiffs = (records, messageID, currentRevertMessageID) => {
       // Messages at and after the current boundary are already absent from the
       // worktree. Moving farther back reverses only the newly hidden interval.
       endIndex = currentRevertIndex;
+    } else if (!isRoot) {
+      // The descendant is already reverted at or before this point.
+      return null;
     }
   }
 
-  const diffs = [];
-  for (const record of ordered.slice(targetIndex, endIndex)) {
-    const info = record?.info;
-    if (info?.role !== 'user' || !Array.isArray(info.summary?.diffs)) continue;
-    for (const diff of info.summary.diffs) {
-      if (typeof diff?.file === 'string' && typeof diff.patch === 'string') {
-        diffs.push(diff);
-      }
-    }
-  }
-
-  return diffs;
+  const target = ordered[targetIndex];
+  return {
+    session,
+    sessionID: session.id,
+    depth: session.depth,
+    ordered,
+    targetIndex,
+    endIndex,
+    targetMessageID: target.info.id,
+    targetTime: messageTime(target),
+    currentRevertMessageID,
+    diffOps: collectSessionDiffOps({ sessionID: session.id, depth: session.depth, ordered, targetIndex, endIndex }),
+    snapshotOps: [],
+  };
 };
 
-const collectPatchSnapshotTargets = (records, messageID) => {
-  const ordered = sortMessageRecords(Array.isArray(records) ? records : []);
-  const targetIndex = ordered.findIndex((record) => record?.info?.id === messageID);
-  if (targetIndex < 0) {
-    throw new Error('Target message was not found in the session');
+/**
+ * Builds the tree revert plan: which sessions participate, from which
+ * message, and the diff ops harvested from their transcripts. Pure; snapshot
+ * ops (patch-part fallbacks) are attached separately because they need disk.
+ */
+export const collectTreeRevertPlan = ({ sessions, recordsBySession, targetMessageID }) => {
+  const root = sessions.find((session) => session.depth === 0) ?? sessions[0];
+  if (!root) throw new Error('Session tree is empty');
+  const rootEntry = buildSessionPlanEntry({
+    session: root,
+    records: recordsBySession.get(root.id),
+    targetMessageID,
+    rootTargetTime: 0,
+  });
+  const entries = [rootEntry];
+  for (const session of sessions) {
+    if (session === root || session.depth === 0) continue;
+    const entry = buildSessionPlanEntry({
+      session,
+      records: recordsBySession.get(session.id),
+      targetMessageID,
+      rootTargetTime: rootEntry.targetTime,
+    });
+    if (entry) entries.push(entry);
   }
+  return {
+    rootSessionID: root.id,
+    rootTarget: { messageID: rootEntry.targetMessageID, time: rootEntry.targetTime },
+    entries,
+  };
+};
 
+const planOps = (plan) => plan.entries.flatMap((entry) => [...entry.diffOps, ...entry.snapshotOps]);
+
+/**
+ * Merges ops across sessions per file. Every summary diff is worktree-wide for
+ * its turn window, so an op whose window lies inside another diff op's window
+ * on the same file is already covered by it (a sub-agent editing inside its
+ * parent's turn) and is dropped; keeping both would reverse the same hunk
+ * twice. Kept ops are returned in reverse chronological order, ready to be
+ * reverse-applied one after the other.
+ */
+export const mergeTreeOps = (ops, directory) => {
+  const byFile = new Map();
+  for (const op of ops) {
+    const { relative } = ensureInsideDirectory(directory, op.file);
+    if (!byFile.has(relative)) byFile.set(relative, { all: [], kept: [] });
+    byFile.get(relative).all.push({ ...op, relative });
+  }
+  for (const group of byFile.values()) {
+    const sorted = [...group.all].sort((a, b) => (
+      a.start - b.start || b.end - a.end || a.depth - b.depth || String(a.sessionID).localeCompare(String(b.sessionID))
+    ));
+    for (const op of sorted) {
+      const covered = group.kept.some((kept) => (
+        kept.kind === 'diff' && kept !== op && kept.start <= op.start && kept.end >= op.end
+      ));
+      if (!covered) group.kept.push(op);
+    }
+    group.kept.sort((a, b) => (
+      b.start - a.start || b.depth - a.depth || String(b.sessionID).localeCompare(String(a.sessionID))
+    ));
+  }
+  return byFile;
+};
+
+const collectPatchSnapshotTargets = (ordered, targetIndex, endIndex = ordered.length) => {
   const targets = [];
   const seen = new Set();
-  for (const record of ordered.slice(targetIndex)) {
+  for (const record of ordered.slice(targetIndex, endIndex)) {
     for (const part of Array.isArray(record?.parts) ? record.parts : []) {
       if (part?.type !== 'patch' || typeof part.hash !== 'string' || !Array.isArray(part.files)) {
         continue;
@@ -603,7 +846,7 @@ const collectPatchSnapshotTargets = (records, messageID) => {
         const key = `${part.hash}\0${file}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        targets.push({ file, snapshot: part.hash });
+        targets.push({ file, snapshot: part.hash, messageID: record?.info?.id, time: messageTime(record) });
       }
     }
   }
@@ -685,25 +928,27 @@ const readSnapshotGitFile = async ({ snapshotRoot, projectID, snapshotHash, dire
   }
 };
 
-const collectSnapshotTargetSnapshots = async ({
+// Patch-part fallback: when a turn has no finalized summary diff (aborted
+// turn), restore each touched file to the OpenCode snapshot taken right
+// before the first tool call that changed it. These are point-in-time
+// "snapshot ops" for the merge.
+const collectSnapshotOps = async ({
   directory,
-  records,
-  messageID,
-  session,
+  entry,
+  projectID,
   snapshotRoot = defaultOpenCodeSnapshotRoot(),
   signal,
 }) => {
-  const projectID = typeof session?.projectID === 'string' ? session.projectID : '';
   if (!projectID) {
     return [];
   }
 
-  const snapshotsByFile = new Map();
   const uniqueTargets = [];
-  for (const target of collectPatchSnapshotTargets(records, messageID)) {
+  const seen = new Set();
+  for (const target of collectPatchSnapshotTargets(entry.ordered, entry.targetIndex, entry.endIndex)) {
     const { relative } = ensureInsideDirectory(directory, target.file);
-    if (snapshotsByFile.has(relative)) continue;
-    snapshotsByFile.set(relative, null);
+    if (seen.has(relative)) continue;
+    seen.add(relative);
     uniqueTargets.push({ ...target, relative });
   }
   const snapshots = await mapWithConcurrency(
@@ -719,11 +964,27 @@ const collectSnapshotTargetSnapshots = async ({
       }),
     signal,
   );
-  for (let index = 0; index < uniqueTargets.length; index += 1) {
-    snapshotsByFile.set(uniqueTargets[index].relative, snapshots[index]);
-  }
 
-  return Array.from(snapshotsByFile.values());
+  return uniqueTargets.map((target, index) => ({
+    kind: 'snapshot',
+    file: target.file,
+    snapshot: snapshots[index],
+    sessionID: entry.sessionID,
+    depth: entry.depth,
+    messageID: target.messageID,
+    start: target.time,
+    end: target.time,
+  }));
+};
+
+const attachSnapshotOps = async ({ plan, directory, snapshotRoot, signal }) => {
+  const projectID = plan.entries
+    .map((entry) => entry.session.projectID)
+    .find((id) => typeof id === 'string' && id.length > 0) ?? '';
+  for (const entry of plan.entries) {
+    if (entry.diffOps.length > 0) continue;
+    entry.snapshotOps = await collectSnapshotOps({ directory, entry, projectID, snapshotRoot, signal });
+  }
 };
 
 const collectGitTrackedFiles = async (directory, signal) => {
@@ -768,33 +1029,20 @@ const listSnapshotTreeFiles = async ({ snapshotRoot, projectID, snapshotHash, si
   }
 };
 
-const collectSnapshotProtectionPaths = async ({
+const collectSnapshotTreeProtectionPaths = async ({
   directory,
-  records,
-  messageID,
-  session,
+  projectID,
+  snapshotHashes,
   snapshotRoot = defaultOpenCodeSnapshotRoot(),
   signal,
 }) => {
   // Git status cannot represent an absent untracked path. OpenCode's broad
-  // revert can still rehydrate that path from either the current unrevert
-  // snapshot or the target turn's initial patch snapshot, so protect those
+  // revert/unrevert can still rehydrate that path from either the current
+  // unrevert snapshot or a turn's initial patch snapshot, so protect those
   // non-Git paths explicitly (including an "absent" snapshot tombstone).
-  const snapshotHashes = new Set();
-  const existingRevertSnapshot = session?.revert?.snapshot;
-  if (typeof existingRevertSnapshot === 'string' && existingRevertSnapshot.length > 0) {
-    snapshotHashes.add(existingRevertSnapshot);
-  }
-
-  const firstPatchSnapshot = collectPatchSnapshotTargets(records, messageID)[0]?.snapshot;
-  if (firstPatchSnapshot) {
-    snapshotHashes.add(firstPatchSnapshot);
-  }
   if (snapshotHashes.size === 0) {
     return [];
   }
-
-  const projectID = typeof session?.projectID === 'string' ? session.projectID : '';
   if (!projectID) {
     throw new Error('Cannot safely inspect OpenCode snapshots without a session project ID');
   }
@@ -815,21 +1063,31 @@ const collectSnapshotProtectionPaths = async ({
   return Array.from(protectedPaths);
 };
 
-const prepareScopedRevert = async (
-  directory,
-  diffs,
-  snapshotTargetSnapshots = [],
-  snapshotProtectionPaths = [],
-  { signal, diagnostics } = {},
-) => {
-  const targetFiles = new Set();
-  for (const diff of diffs) {
-    targetFiles.add(ensureInsideDirectory(directory, diff.file).relative);
+const collectTreeSnapshotProtectionPaths = async ({ directory, plan, snapshotRoot, signal }) => {
+  const snapshotHashes = new Set();
+  let projectID = '';
+  for (const entry of plan.entries) {
+    const existingRevertSnapshot = entry.session.revert?.snapshot;
+    if (typeof existingRevertSnapshot === 'string' && existingRevertSnapshot.length > 0) {
+      snapshotHashes.add(existingRevertSnapshot);
+    }
+    // The native revert replays every patch part after the target, so the
+    // first one bounds what it can rehydrate (unclamped on purpose).
+    const firstPatchSnapshot = collectPatchSnapshotTargets(entry.ordered, entry.targetIndex)[0]?.snapshot;
+    if (firstPatchSnapshot) {
+      snapshotHashes.add(firstPatchSnapshot);
+    }
+    if (!projectID && typeof entry.session.projectID === 'string') {
+      projectID = entry.session.projectID;
+    }
   }
-  for (const snapshot of snapshotTargetSnapshots) {
-    targetFiles.add(snapshot.path);
-  }
+  return collectSnapshotTreeProtectionPaths({ directory, projectID, snapshotHashes, snapshotRoot, signal });
+};
 
+const captureProtectedSnapshots = async (
+  directory,
+  { targetFiles, snapshotProtectionPaths = [], signal, diagnostics } = {},
+) => {
   // Decision: use Git status as the protection boundary before calling OpenCode's
   // broad revert. Without a worktree status snapshot we cannot know which
   // unrelated files another chat changed, so the endpoint fails instead of
@@ -841,9 +1099,8 @@ const prepareScopedRevert = async (
   for (const file of targetFiles) protectedFiles.add(file);
 
   const snapshots = new Map();
-  const protectedFileList = Array.from(protectedFiles);
   const protectedSnapshots = await mapWithConcurrency(
-    protectedFileList,
+    Array.from(protectedFiles),
     SNAPSHOT_CONCURRENCY,
     (file) => readSnapshot(directory, file, signal),
     signal,
@@ -852,21 +1109,40 @@ const prepareScopedRevert = async (
     snapshots.set(snapshot.path, snapshot);
   }
   diagnostics?.recordSnapshots(snapshots);
+  return snapshots;
+};
+
+// Dry run: derives the desired post-revert content of every target file from
+// the captured snapshots by replaying the merged ops (newest first). Nothing is
+// written here, so an ambiguous hunk, a binary diff or a drifted hunk aborts
+// before the worktree is touched.
+const prepareScopedRevert = async (
+  directory,
+  mergedOps,
+  snapshotProtectionPaths = [],
+  { signal, diagnostics } = {},
+) => {
+  const targetFiles = new Set(mergedOps.keys());
+  const snapshots = await captureProtectedSnapshots(directory, {
+    targetFiles,
+    snapshotProtectionPaths,
+    signal,
+    diagnostics,
+  });
 
   const desiredTargetSnapshots = new Map();
-  for (const file of targetFiles) {
-    desiredTargetSnapshots.set(file, snapshots.get(file) ?? await readSnapshot(directory, file, signal));
+  for (const [file, group] of mergedOps) {
+    let desired = snapshots.get(file);
+    for (const op of group.kept) {
+      throwIfAborted(signal);
+      desired = op.kind === 'snapshot'
+        ? { ...op.snapshot }
+        : reverseApplyDiffToSnapshot(desired, op.diff);
+    }
+    desiredTargetSnapshots.set(file, desired);
   }
 
-  for (const diff of [...diffs].reverse()) {
-    const { relative } = ensureInsideDirectory(directory, diff.file);
-    desiredTargetSnapshots.set(relative, reverseApplyDiffToSnapshot(desiredTargetSnapshots.get(relative), diff));
-  }
-  for (const snapshot of snapshotTargetSnapshots) {
-    desiredTargetSnapshots.set(snapshot.path, snapshot);
-  }
-
-  return { snapshots, desiredTargetSnapshots };
+  return { snapshots, desiredTargetSnapshots, targetFiles };
 };
 
 const restoreProtectedSnapshots = async (
@@ -970,70 +1246,454 @@ const attemptInterruptionCleanup = async (prepared, options, context) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Captured-vs-current guard and post-restore verification
+// ---------------------------------------------------------------------------
+
+const assertSnapshotsUnchanged = async (snapshots, signal) => {
+  const changed = [];
+  await mapWithConcurrency(
+    snapshots,
+    SNAPSHOT_CONCURRENCY,
+    async ([file, snapshot]) => {
+      if (!(await snapshotMatchesCurrentFile(snapshot, signal))) changed.push(file);
+    },
+    signal,
+  );
+  if (changed.length > 0) {
+    changed.sort();
+    throw new ScopedRevertConflictError(
+      'working_tree_changed',
+      `The working tree changed while the revert was being prepared: ${changed.join(', ')}`,
+      { files: changed },
+    );
+  }
+};
+
+const verifyRestoredSnapshots = async ({ snapshots, desiredTargetSnapshots }, signal) => {
+  const files = [];
+  await mapWithConcurrency(
+    snapshots,
+    SNAPSHOT_CONCURRENCY,
+    async ([file, snapshot]) => {
+      const expected = desiredTargetSnapshots.get(file) ?? snapshot;
+      if (!(await snapshotMatchesCurrentFile(expected, signal))) files.push(file);
+    },
+    signal,
+  );
+  files.sort();
+  if (files.length > 0) {
+    console.warn('[scoped-revert] Post-restore verification found unexpected file contents', { files });
+  }
+  return { ok: files.length === 0, files };
+};
+
+const snapshotsEqual = (a, b) => a.exists === b.exists && (!a.exists || a.content.equals(b.content));
+
+const describeChangedFiles = ({ snapshots, desiredTargetSnapshots }) => {
+  const files = [];
+  for (const [file, desired] of desiredTargetSnapshots) {
+    const original = snapshots.get(file);
+    if (!original || snapshotsEqual(original, desired)) continue;
+    const status = !desired.exists ? 'deleted' : (!original.exists ? 'recreated' : 'restored');
+    files.push({ path: file, status });
+  }
+  return files.sort((a, b) => a.path.localeCompare(b.path));
+};
+
+// ---------------------------------------------------------------------------
+// Redo journal: <dataDir>/revert-journal/<sha1(directory)>/<rootSessionID>.json
+// ---------------------------------------------------------------------------
+
+const hashBytes = (buffer) => crypto.createHash('sha1').update(buffer).digest('hex');
+
+const resolveOpenChamberDataDir = (explicit) => {
+  if (typeof explicit === 'string' && explicit.trim().length > 0) return path.resolve(explicit);
+  if (process.env.OPENCHAMBER_DATA_DIR) return path.resolve(process.env.OPENCHAMBER_DATA_DIR);
+  return path.join(os.homedir(), '.config', 'openchamber');
+};
+
+export const resolveRevertJournalPath = ({ openchamberDataDir, directory, rootSessionID }) => path.join(
+  resolveOpenChamberDataDir(openchamberDataDir),
+  'revert-journal',
+  hashBytes(Buffer.from(path.resolve(directory), 'utf8')),
+  `${String(rootSessionID).replace(/[^A-Za-z0-9._-]/g, '_')}.json`,
+);
+
+const journalContent = (snapshot) => (snapshot?.exists
+  ? { hash: hashBytes(snapshot.content), content: snapshot.content.toString('base64') }
+  : { hash: null, content: null });
+
+const isJournalFile = (entry) => isObject(entry)
+  && typeof entry.path === 'string'
+  && (entry.beforeHash === null || typeof entry.beforeHash === 'string')
+  && (entry.afterHash === null || typeof entry.afterHash === 'string')
+  && (entry.before === null || typeof entry.before === 'string')
+  && (entry.after === null || typeof entry.after === 'string');
+
+const readRevertJournal = async (journalPath) => {
+  let raw;
+  try {
+    raw = await fs.readFile(journalPath, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!isObject(parsed) || !Array.isArray(parsed.files) || !Array.isArray(parsed.sessions)) return null;
+    if (!parsed.files.every(isJournalFile)) return null;
+    return {
+      ...parsed,
+      sessions: parsed.sessions.filter((entry) => isObject(entry) && typeof entry.id === 'string' && entry.id.length > 0),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const mergeRevertJournal = (existing, next) => {
+  if (!existing) return next;
+  const files = new Map(existing.files.map((file) => [file.path, file]));
+  for (const file of next.files) {
+    const previous = files.get(file.path);
+    // A file already journaled keeps its earliest "before"; only the redo
+    // target ("after") moves with the newest revert.
+    files.set(file.path, previous
+      ? { ...previous, afterHash: file.afterHash, after: file.after }
+      : file);
+  }
+  const sessions = new Map(existing.sessions.map((session) => [session.id, session]));
+  for (const session of next.sessions) sessions.set(session.id, session);
+  return {
+    ...next,
+    createdAt: existing.createdAt ?? next.createdAt,
+    updatedAt: next.createdAt,
+    sessions: Array.from(sessions.values()),
+    files: Array.from(files.values()),
+  };
+};
+
+const recordRevertJournal = async ({ openchamberDataDir, directory, rootSessionID, steps, prepared, changedFiles }) => {
+  const journalPath = resolveRevertJournalPath({ openchamberDataDir, directory, rootSessionID });
+  const next = {
+    createdAt: new Date().toISOString(),
+    directory: path.resolve(directory),
+    rootSessionID,
+    sessions: steps.map((step) => ({ id: step.sessionID, targetMessageID: step.messageID })),
+    files: changedFiles.map(({ path: file }) => {
+      const before = journalContent(prepared.snapshots.get(file));
+      const after = journalContent(prepared.desiredTargetSnapshots.get(file));
+      return { path: file, beforeHash: before.hash, afterHash: after.hash, before: before.content, after: after.content };
+    }),
+  };
+  const merged = mergeRevertJournal(await readRevertJournal(journalPath), next);
+  const serialized = JSON.stringify(merged);
+  if (Buffer.byteLength(serialized, 'utf8') > REVERT_JOURNAL_MAX_BYTES) {
+    // Too large to keep. A stale journal must not offer a redo that no longer
+    // matches the worktree, so drop it.
+    await fs.rm(journalPath, { force: true });
+    return { redoAvailable: false, journalPath };
+  }
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  const tempPath = `${journalPath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(tempPath, serialized, 'utf8');
+  await fs.rename(tempPath, journalPath);
+  return { redoAvailable: true, journalPath };
+};
+
+const journalFileToSnapshot = (directory, entry, side) => {
+  const { absolute, relative } = ensureInsideDirectory(directory, entry.path);
+  const content = entry[side];
+  return content === null
+    ? { path: relative, absolute, exists: false, content: Buffer.alloc(0) }
+    : { path: relative, absolute, exists: true, content: Buffer.from(content, 'base64') };
+};
+
+// ---------------------------------------------------------------------------
+// Runners
+// ---------------------------------------------------------------------------
+
+const createClient = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl }) => ({
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders: typeof getOpenCodeAuthHeaders === 'function' ? getOpenCodeAuthHeaders : () => ({}),
+  fetchImpl: typeof fetchImpl === 'function' ? fetchImpl : fetch,
+});
+
+const normalizeScope = (scope) => {
+  if (scope === undefined || scope === null || scope === '') return 'tree';
+  if (!REVERT_SCOPES.has(scope)) {
+    throw new Error(`Unsupported revert scope: ${String(scope)}`);
+  }
+  return scope;
+};
+
+// Descendants first (deepest first), the root last so its native response is
+// the Session the caller sees.
+const orderRevertSteps = (entries) => [...entries]
+  .sort((a, b) => b.depth - a.depth || String(a.sessionID).localeCompare(String(b.sessionID)))
+  .map((entry) => ({ sessionID: entry.sessionID, messageID: entry.targetMessageID }));
+
+const toSessionSummary = (steps) => steps.map((step) => ({ id: step.sessionID, targetMessageID: step.messageID }));
+
+/**
+ * Reverts a prompt's session tree back to `messageID` (root) and, for every
+ * descendant, to its first message created at or after that root message.
+ * One protected snapshot/restore brackets all native reverts under the
+ * directory lock. Returns `{ ...session, session, reverted: { files, sessions },
+ * verification, redoAvailable }`.
+ */
 export const runScopedSessionRevert = async ({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
+  fetchImpl,
   directory,
   sessionID,
   messageID,
+  scope,
   openCodeSnapshotRoot,
+  openchamberDataDir,
   timeoutMs = SCOPED_REVERT_TIMEOUT_MS,
   slowOperationMs = SCOPED_REVERT_SLOW_OPERATION_MS,
   signal: parentSignal,
+  onBeforeUpstreamRevert,
 }) => {
+  const revertScope = normalizeScope(scope);
+  const client = createClient({ buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl });
   const abortContext = createAbortContext({ timeoutMs, signal: parentSignal });
   const signal = abortContext.signal;
   const diagnostics = createSlowOperationDiagnostics(slowOperationMs);
 
   try {
+    const sessions = await diagnostics.runPhase('list-tree', () => abortable(listSessionTree({
+      ...client,
+      sessionID,
+      directory,
+      signal,
+      maxDepth: revertScope === 'session' ? 0 : undefined,
+    }), signal));
+    const treeSessionIDs = new Set(sessions.map((session) => session.id));
+    await diagnostics.runPhase('busy-guard', () => assertSessionsIdle({ client, directory, treeSessionIDs, signal }));
+
     return await withDirectoryScopedRevertLock(directory, async () => {
-      const [records, sessionSnapshot] = await diagnostics.runPhase('load-session', () => Promise.all([
-        fetchSessionMessages({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, sessionID, signal }),
-        fetchSession({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, sessionID, signal }).catch((error) => {
-          if (signal.aborted) throwIfAborted(signal);
-          return null;
-        }),
-      ]));
-      const currentRevertMessageID = typeof sessionSnapshot?.revert?.messageID === 'string'
-        ? sessionSnapshot.revert.messageID
-        : '';
-      const diffs = collectRevertDiffs(records, messageID, currentRevertMessageID);
-      const snapshotTargetSnapshots = diffs.length === 0
-        ? await diagnostics.runPhase('read-target-snapshots', () => collectSnapshotTargetSnapshots({
-          directory,
-          records,
-          messageID,
-          session: sessionSnapshot,
-          snapshotRoot: openCodeSnapshotRoot,
-          signal,
-        }))
-        : [];
-      const snapshotProtectionPaths = await diagnostics.runPhase('inspect-protection', () => collectSnapshotProtectionPaths({
+      const recordsBySession = await diagnostics.runPhase('load-session', () => fetchTreeMessages({
+        client,
         directory,
-        records,
-        messageID,
-        session: sessionSnapshot,
+        sessions,
+        signal,
+      }));
+      const plan = collectTreeRevertPlan({ sessions, recordsBySession, targetMessageID: messageID });
+      await diagnostics.runPhase('read-target-snapshots', () => attachSnapshotOps({
+        plan,
+        directory,
+        snapshotRoot: openCodeSnapshotRoot,
+        signal,
+      }));
+      const mergedOps = mergeTreeOps(planOps(plan), directory);
+      const snapshotProtectionPaths = await diagnostics.runPhase('inspect-protection', () => collectTreeSnapshotProtectionPaths({
+        directory,
+        plan,
         snapshotRoot: openCodeSnapshotRoot,
         signal,
       }));
       const prepared = await diagnostics.runPhase('snapshot-files', () => prepareScopedRevert(
         directory,
-        diffs,
-        snapshotTargetSnapshots,
+        mergedOps,
         snapshotProtectionPaths,
         { signal, diagnostics },
       ));
+      if (typeof onBeforeUpstreamRevert === 'function') {
+        await onBeforeUpstreamRevert({ prepared, plan });
+      }
+      // Anything that changed a protected file since it was captured would be
+      // silently overwritten by the restore pass, so refuse instead.
+      await diagnostics.runPhase('verify-unchanged', () => assertSnapshotsUnchanged(prepared.snapshots, signal));
 
-      const upstreamOperation = startUpstreamRevert({
-        buildOpenCodeUrl,
-        getOpenCodeAuthHeaders,
-        directory,
-        sessionID,
-        messageID,
-      });
+      const steps = orderRevertSteps(plan.entries);
+      const upstreamOperation = startUpstreamSequence({ client, directory, steps, kind: 'revert' });
       let revertedSession;
       try {
         revertedSession = await diagnostics.runPhase('upstream-revert', () => abortable(upstreamOperation.promise, signal));
+      } catch (error) {
+        if (isScopedRevertInterruption(error)) {
+          await diagnostics.runPhase('restore-original', () => attemptInterruptionCleanup(
+            prepared,
+            { restoreOriginal: true },
+            { timeoutMs, diagnostics, upstreamOperation },
+          ));
+        } else {
+          await diagnostics.runPhase('rollback-upstream', () => rollbackUpstreamReverts({
+            client,
+            directory,
+            steps: upstreamOperation.completed(),
+            signal,
+          }));
+          await diagnostics.runPhase('restore-original', () => restoreProtectedSnapshots(prepared, {
+            restoreOriginal: true,
+            signal,
+            diagnostics,
+          }));
+        }
+        throw error;
+      }
+
+      try {
+        await diagnostics.runPhase('restore-files', () => restoreProtectedSnapshots(prepared, { signal, diagnostics }));
+      } catch (error) {
+        if (isScopedRevertInterruption(error)) {
+          await diagnostics.runPhase('restore-files-cleanup', () => attemptInterruptionCleanup(
+            prepared,
+            {},
+            { timeoutMs, diagnostics, upstreamOperation },
+          ));
+        }
+        throw error;
+      }
+
+      const verification = await diagnostics.runPhase('verify-files', () => verifyRestoredSnapshots(prepared, signal));
+      const changedFiles = describeChangedFiles(prepared);
+      let redoAvailable = false;
+      try {
+        ({ redoAvailable } = await diagnostics.runPhase('journal', () => recordRevertJournal({
+          openchamberDataDir,
+          directory,
+          rootSessionID: plan.rootSessionID,
+          steps,
+          prepared,
+          changedFiles,
+        })));
+      } catch (error) {
+        console.warn('[scoped-revert] Could not record the redo journal:', error);
+      }
+
+      const session = isObject(revertedSession) ? revertedSession : { id: sessionID };
+      return {
+        ...session,
+        session,
+        reverted: { files: changedFiles, sessions: toSessionSummary(steps) },
+        verification,
+        redoAvailable,
+      };
+    }, signal);
+  } finally {
+    abortContext.dispose();
+    diagnostics.dispose();
+  }
+};
+
+/**
+ * Redoes the most recent scoped revert(s) recorded for a root session: puts the
+ * journaled files back to their pre-revert bytes and clears the native revert
+ * markers of every journaled session. Returns
+ * `{ ...session, session, restored: [{ path, status }], sessions, verification }`.
+ */
+export const runScopedSessionUnrevert = async ({
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+  fetchImpl,
+  directory,
+  sessionID,
+  openCodeSnapshotRoot,
+  openchamberDataDir,
+  timeoutMs = SCOPED_REVERT_TIMEOUT_MS,
+  slowOperationMs = SCOPED_REVERT_SLOW_OPERATION_MS,
+  signal: parentSignal,
+}) => {
+  const client = createClient({ buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl });
+  const abortContext = createAbortContext({ timeoutMs, signal: parentSignal });
+  const signal = abortContext.signal;
+  const diagnostics = createSlowOperationDiagnostics(slowOperationMs);
+  const journalPath = resolveRevertJournalPath({ openchamberDataDir, directory, rootSessionID: sessionID });
+  const redoUnavailable = () => new ScopedRevertConflictError(
+    'redo_unavailable',
+    'There is no scoped revert to redo for this session',
+  );
+
+  try {
+    const preview = await readRevertJournal(journalPath);
+    if (!preview) throw redoUnavailable();
+    const journalSessionIDs = new Set([sessionID, ...preview.sessions.map((session) => session.id)]);
+    await diagnostics.runPhase('busy-guard', () => assertSessionsIdle({
+      client,
+      directory,
+      treeSessionIDs: journalSessionIDs,
+      signal,
+    }));
+
+    return await withDirectoryScopedRevertLock(directory, async () => {
+      const journal = await readRevertJournal(journalPath);
+      if (!journal) throw redoUnavailable();
+
+      const targets = new Map();
+      const changed = [];
+      for (const entry of journal.files) {
+        const snapshot = await readSnapshot(directory, entry.path, signal);
+        const hash = snapshot.exists ? hashBytes(snapshot.content) : null;
+        if (hash !== entry.afterHash) changed.push(snapshot.path);
+        targets.set(snapshot.path, entry);
+      }
+      if (changed.length > 0) {
+        changed.sort();
+        throw new ScopedRevertConflictError(
+          'working_tree_changed',
+          `The working tree changed since the revert; redo would overwrite: ${changed.join(', ')}`,
+          { files: changed },
+        );
+      }
+
+      // Descendants first, the root last (its native response is returned).
+      const journaledSessions = [
+        ...journal.sessions.filter((session) => session.id !== sessionID),
+        ...journal.sessions.filter((session) => session.id === sessionID),
+      ];
+      if (!journaledSessions.some((session) => session.id === sessionID)) {
+        journaledSessions.push({ id: sessionID });
+      }
+      const steps = [];
+      const snapshotHashes = new Set();
+      let projectID = '';
+      for (const entry of journaledSessions) {
+        let session = null;
+        try {
+          session = await fetchSession({ ...client, directory, sessionID: entry.id, signal });
+        } catch (error) {
+          if (signal.aborted) throwIfAborted(signal);
+          if (error?.upstreamStatus !== 404) throw error;
+        }
+        if (!session && entry.id !== sessionID) continue;
+        const revertSnapshot = session?.revert?.snapshot;
+        if (typeof revertSnapshot === 'string' && revertSnapshot.length > 0) snapshotHashes.add(revertSnapshot);
+        if (!projectID && typeof session?.projectID === 'string') projectID = session.projectID;
+        steps.push({ sessionID: entry.id, optional: entry.id !== sessionID });
+      }
+
+      // The native unrevert restores the whole worktree snapshot taken at
+      // revert time, so every protected file is captured first and written
+      // back afterwards; only journaled files receive their "before" bytes.
+      const snapshotProtectionPaths = await diagnostics.runPhase('inspect-protection', () => collectSnapshotTreeProtectionPaths({
+        directory,
+        projectID,
+        snapshotHashes,
+        snapshotRoot: openCodeSnapshotRoot,
+        signal,
+      }));
+      const targetFiles = new Set(targets.keys());
+      const snapshots = await diagnostics.runPhase('snapshot-files', () => captureProtectedSnapshots(directory, {
+        targetFiles,
+        snapshotProtectionPaths,
+        signal,
+        diagnostics,
+      }));
+      const desiredTargetSnapshots = new Map();
+      for (const [file, entry] of targets) {
+        desiredTargetSnapshots.set(file, journalFileToSnapshot(directory, entry, 'before'));
+      }
+      const prepared = { snapshots, desiredTargetSnapshots, targetFiles };
+
+      const upstreamOperation = startUpstreamSequence({ client, directory, steps, kind: 'unrevert' });
+      let restoredSession;
+      try {
+        restoredSession = await diagnostics.runPhase('upstream-unrevert', () => abortable(upstreamOperation.promise, signal));
       } catch (error) {
         if (isScopedRevertInterruption(error)) {
           await diagnostics.runPhase('restore-original', () => attemptInterruptionCleanup(
@@ -1063,7 +1723,19 @@ export const runScopedSessionRevert = async ({
         }
         throw error;
       }
-      return revertedSession;
+
+      const verification = await diagnostics.runPhase('verify-files', () => verifyRestoredSnapshots(prepared, signal));
+      const restoredFiles = describeChangedFiles(prepared);
+      await fs.rm(journalPath, { force: true });
+
+      const session = isObject(restoredSession) ? restoredSession : { id: sessionID };
+      return {
+        ...session,
+        session,
+        restored: restoredFiles,
+        sessions: steps.map((step) => ({ id: step.sessionID })),
+        verification,
+      };
     }, signal);
   } finally {
     abortContext.dispose();
@@ -1071,7 +1743,172 @@ export const runScopedSessionRevert = async ({
   }
 };
 
+// ---------------------------------------------------------------------------
+// Change summary (read-only)
+// ---------------------------------------------------------------------------
+
+const normalizeToolName = (value) => {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  let normalized = trimmed.replace(/:\d+$/, '');
+  if (normalized.includes('.')) {
+    const parts = normalized.split('.').filter(Boolean);
+    normalized = parts[parts.length - 1] ?? normalized;
+  }
+  normalized = normalized
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[-\s]+/g, '_')
+    .toLowerCase()
+    .replace(/_?tool_?call$/, '');
+  return TOOL_NAME_ALIASES.get(normalized) ?? normalized;
+};
+
+const isSuccessfulToolPart = (part) => {
+  if (part?.type !== 'tool') return false;
+  const status = typeof part.state?.status === 'string' ? part.state.status.trim().toLowerCase() : '';
+  return SUCCESS_TOOL_STATUSES.has(status);
+};
+
+const planHasUnattributedMutations = (plan) => plan.entries.some((entry) => (
+  entry.ordered.slice(entry.targetIndex, entry.endIndex).some((record) => (
+    record?.info?.role === 'assistant'
+      && (Array.isArray(record.parts) ? record.parts : []).some((part) => (
+        isSuccessfulToolPart(part) && UNATTRIBUTED_MUTATION_TOOLS.has(normalizeToolName(part.tool))
+      ))
+  ))
+));
+
+const DIFF_STATUSES = new Set(['added', 'deleted', 'modified']);
+
+const opExistence = async (op) => {
+  if (op.kind === 'diff') {
+    const status = DIFF_STATUSES.has(op.diff?.status) ? op.diff.status : 'modified';
+    return { before: status !== 'added', after: status !== 'deleted' };
+  }
+  return { before: op.snapshot.exists, after: await fileExists(op.snapshot.absolute) };
+};
+
+/**
+ * Summarizes what the prompt's session tree changed since the root's first
+ * user message, using the same tree plan as the revert (no lock, no writes).
+ */
+export const computeScopedSessionChanges = async ({
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+  fetchImpl,
+  directory,
+  sessionID,
+  openCodeSnapshotRoot,
+  timeoutMs = SCOPED_REVERT_TIMEOUT_MS,
+  signal: parentSignal,
+}) => {
+  const client = createClient({ buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl });
+  const abortContext = createAbortContext({ timeoutMs, signal: parentSignal });
+  const signal = abortContext.signal;
+
+  try {
+    const sessions = await abortable(listSessionTree({ ...client, sessionID, directory, signal }), signal);
+    const rootSessionID = sessions[0].id;
+    const recordsBySession = await fetchTreeMessages({ client, directory, sessions, signal });
+    const rootRecords = sortMessageRecords(recordsBySession.get(rootSessionID) ?? []);
+    const firstUser = rootRecords.find((record) => record?.info?.role === 'user' && typeof record.info.id === 'string');
+    if (!firstUser) {
+      return {
+        files: [],
+        sessionCount: 0,
+        sessions: [],
+        hasUnattributedMutations: false,
+        firstUserMessageID: null,
+        rootSessionID,
+      };
+    }
+
+    const plan = collectTreeRevertPlan({ sessions, recordsBySession, targetMessageID: firstUser.info.id });
+    try {
+      await attachSnapshotOps({ plan, directory, snapshotRoot: openCodeSnapshotRoot, signal });
+    } catch (error) {
+      if (signal.aborted) throwIfAborted(signal);
+      console.warn('[scoped-revert] Could not read snapshot fallbacks for the change summary:', error?.message || error);
+    }
+
+    const files = [];
+    for (const [file, group] of mergeTreeOps(planOps(plan), directory)) {
+      throwIfAborted(signal);
+      const chronological = [...group.kept].reverse();
+      const first = await opExistence(chronological[0]);
+      const last = await opExistence(chronological[chronological.length - 1]);
+      let status = 'modified';
+      if (!first.before && last.after) status = 'added';
+      else if (!last.after) status = 'deleted';
+      let additions = 0;
+      let deletions = 0;
+      for (const op of group.kept) {
+        if (op.kind !== 'diff') continue;
+        additions += Number.isFinite(op.diff?.additions) ? op.diff.additions : 0;
+        deletions += Number.isFinite(op.diff?.deletions) ? op.diff.deletions : 0;
+      }
+      files.push({
+        path: file,
+        status,
+        additions,
+        deletions,
+        sessions: Array.from(new Set(group.all.map((op) => op.sessionID))),
+      });
+    }
+    files.sort((a, b) => a.path.localeCompare(b.path));
+
+    return {
+      files,
+      sessionCount: plan.entries.length,
+      sessions: plan.entries.map((entry) => ({ id: entry.sessionID, targetMessageID: entry.targetMessageID })),
+      hasUnattributedMutations: planHasUnattributedMutations(plan),
+      firstUserMessageID: firstUser.info.id,
+      rootSessionID,
+    };
+  } finally {
+    abortContext.dispose();
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
+
+const sendScopedRevertError = (res, error, fallbackMessage) => {
+  if (error?.code === 'SCOPED_REVERT_TIMEOUT') {
+    return res.status(504).json({
+      error: 'Scoped session revert timed out',
+      code: 'SCOPED_REVERT_TIMEOUT',
+    });
+  }
+  if (error?.code === 'SCOPED_REVERT_ROLLBACK_FAILED') {
+    return res.status(500).json({
+      error: 'Scoped session revert rollback could not be confirmed',
+      code: 'SCOPED_REVERT_ROLLBACK_FAILED',
+    });
+  }
+  if (error instanceof ScopedRevertConflictError) {
+    const payload = { error: error.message, code: error.code };
+    if (Array.isArray(error.files)) payload.files = error.files;
+    if (typeof error.file === 'string') payload.file = error.file;
+    if (Array.isArray(error.sessions)) payload.sessions = error.sessions;
+    return res.status(409).json(payload);
+  }
+  return res.status(409).json({ error: error?.message || fallbackMessage });
+};
+
 export const registerScopedSessionRevertRoute = (app, deps) => {
+  const runnerOptions = () => ({
+    buildOpenCodeUrl: deps.buildOpenCodeUrl,
+    getOpenCodeAuthHeaders: deps.getOpenCodeAuthHeaders,
+    fetchImpl: deps.fetchImpl,
+    openCodeSnapshotRoot: deps.openCodeSnapshotRoot,
+    openchamberDataDir: deps.openchamberDataDir,
+    timeoutMs: deps.scopedRevertTimeoutMs,
+    slowOperationMs: deps.scopedRevertSlowOperationMs,
+  });
+
   // Keep JSON parsing route-local because /api/openchamber/* is intentionally
   // registered before the generic /api proxy and is not covered by common API
   // middleware in all runtimes/test harnesses.
@@ -1083,6 +1920,7 @@ export const registerScopedSessionRevertRoute = (app, deps) => {
       const directory = typeof req.query.directory === 'string' ? req.query.directory : '';
       const body = isObject(req.body) ? req.body : {};
       const messageID = typeof body.messageID === 'string' ? body.messageID : '';
+      const scope = body.scope === undefined ? 'tree' : body.scope;
 
       if (!sessionID) {
         return res.status(400).json({ error: 'sessionID parameter is required' });
@@ -1093,34 +1931,86 @@ export const registerScopedSessionRevertRoute = (app, deps) => {
       if (!messageID) {
         return res.status(400).json({ error: 'messageID is required' });
       }
+      if (!REVERT_SCOPES.has(scope)) {
+        return res.status(400).json({ error: "scope must be 'tree' or 'session'" });
+      }
 
-      const session = await runScopedSessionRevert({
-        buildOpenCodeUrl: deps.buildOpenCodeUrl,
-        getOpenCodeAuthHeaders: deps.getOpenCodeAuthHeaders,
+      const result = await runScopedSessionRevert({
+        ...runnerOptions(),
         directory,
         sessionID,
         messageID,
-        openCodeSnapshotRoot: deps.openCodeSnapshotRoot,
-        timeoutMs: deps.scopedRevertTimeoutMs,
-        slowOperationMs: deps.scopedRevertSlowOperationMs,
+        scope,
         signal: requestAbort.signal,
       });
-      return res.json(session);
+      return res.json(result);
     } catch (error) {
       console.error('[scoped-revert] Failed to revert session safely:', error);
+      return sendScopedRevertError(res, error, 'Failed to revert session safely');
+    } finally {
+      requestAbort.dispose();
+    }
+  });
+
+  app.post('/api/openchamber/session/:sessionID/scoped-unrevert', parseScopedRevertJson, async (req, res) => {
+    const requestAbort = bindScopedRevertRequestAbort(req, res);
+
+    try {
+      const sessionID = req.params.sessionID;
+      const directory = typeof req.query.directory === 'string' ? req.query.directory : '';
+
+      if (!sessionID) {
+        return res.status(400).json({ error: 'sessionID parameter is required' });
+      }
+      if (!directory) {
+        return res.status(400).json({ error: 'directory query parameter is required' });
+      }
+
+      const result = await runScopedSessionUnrevert({
+        ...runnerOptions(),
+        directory,
+        sessionID,
+        signal: requestAbort.signal,
+      });
+      return res.json(result);
+    } catch (error) {
+      console.error('[scoped-revert] Failed to redo session revert safely:', error);
+      return sendScopedRevertError(res, error, 'Failed to redo session revert safely');
+    } finally {
+      requestAbort.dispose();
+    }
+  });
+
+  app.get('/api/openchamber/session/:sessionID/changes', async (req, res) => {
+    const requestAbort = bindScopedRevertRequestAbort(req, res);
+
+    try {
+      const sessionID = req.params.sessionID;
+      const directory = typeof req.query.directory === 'string' ? req.query.directory : '';
+
+      if (!sessionID) {
+        return res.status(400).json({ error: 'sessionID parameter is required' });
+      }
+      if (!directory) {
+        return res.status(400).json({ error: 'directory query parameter is required' });
+      }
+
+      const result = await computeScopedSessionChanges({
+        ...runnerOptions(),
+        directory,
+        sessionID,
+        signal: requestAbort.signal,
+      });
+      return res.json(result);
+    } catch (error) {
+      console.error('[scoped-revert] Failed to summarize session changes:', error);
       if (error?.code === 'SCOPED_REVERT_TIMEOUT') {
-        return res.status(504).json({
-          error: 'Scoped session revert timed out',
-          code: 'SCOPED_REVERT_TIMEOUT',
-        });
+        return res.status(504).json({ error: 'Session change summary timed out', code: 'SCOPED_REVERT_TIMEOUT' });
       }
-      if (error?.code === 'SCOPED_REVERT_ROLLBACK_FAILED') {
-        return res.status(500).json({
-          error: 'Scoped session revert rollback could not be confirmed',
-          code: 'SCOPED_REVERT_ROLLBACK_FAILED',
-        });
+      if (error instanceof ScopedRevertConflictError) {
+        return sendScopedRevertError(res, error, 'Failed to summarize session changes');
       }
-      return res.status(409).json({ error: error?.message || 'Failed to revert session safely' });
+      return res.status(500).json({ error: error?.message || 'Failed to summarize session changes' });
     } finally {
       requestAbort.dispose();
     }

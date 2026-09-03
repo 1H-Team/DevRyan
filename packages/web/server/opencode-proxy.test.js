@@ -10,7 +10,12 @@ import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 
 import { createSseBoundaryTracker, registerOpenCodeProxy, writeSseChunkWithBackpressure } from './lib/opencode/proxy.js';
 import { registerQuestionRoutes } from './lib/opencode/question-routes.js';
-import { bindScopedRevertRequestAbort, runScopedSessionRevert } from './lib/opencode/session-scoped-revert.js';
+import {
+  bindScopedRevertRequestAbort,
+  resolveRevertJournalPath,
+  reverseApplyUnifiedPatch,
+  runScopedSessionRevert,
+} from './lib/opencode/session-scoped-revert.js';
 import { createTurnTimingRuntime } from './lib/opencode/turn-timing.js';
 import { translateDirectoryHeaderValue } from './lib/multi-user/path-translation.js';
 
@@ -48,6 +53,10 @@ const commitAll = async (directory, message = 'baseline') => {
   await execFileAsync('git', ['commit', '-m', message], { cwd: directory });
 };
 
+// Scoped reverts record a redo journal under the data dir; keep test runs out
+// of the real ~/.config/openchamber.
+const TEST_DATA_DIR = path.join(os.tmpdir(), `openchamber-proxy-test-data-${process.pid}`);
+
 const createProxyApp = (upstreamPort, options = {}) => {
   const app = express();
   registerOpenCodeProxy(app, {
@@ -66,6 +75,7 @@ const createProxyApp = (upstreamPort, options = {}) => {
     ensureOpenCodeApiPrefix: () => {},
     turnTimingRuntime: options.turnTimingRuntime,
     openCodeSnapshotRoot: options.openCodeSnapshotRoot,
+    openchamberDataDir: options.openchamberDataDir ?? TEST_DATA_DIR,
     scopedRevertTimeoutMs: options.scopedRevertTimeoutMs,
     ensureOAuthLoopbackPortAvailable: options.ensureOAuthLoopbackPortAvailable,
   });
@@ -713,6 +723,7 @@ describe('OpenCode scoped session revert', () => {
     if (snapshotRoot) {
       await fs.rm(snapshotRoot, { recursive: true, force: true });
     }
+    await fs.rm(TEST_DATA_DIR, { recursive: true, force: true });
     proxyServer = undefined;
     upstreamServer = undefined;
     repoDirectory = undefined;
@@ -875,6 +886,7 @@ describe('OpenCode scoped session revert', () => {
       directory: repoDirectory,
       sessionID: 'session-a',
       messageID: 'msg-target',
+      openchamberDataDir: TEST_DATA_DIR,
       timeoutMs: 300,
       signal: cancellation.signal,
     });
@@ -895,6 +907,7 @@ describe('OpenCode scoped session revert', () => {
       directory: repoDirectory,
       sessionID: 'session-a',
       messageID: 'msg-target',
+      openchamberDataDir: TEST_DATA_DIR,
       timeoutMs: 300,
     });
 
@@ -1488,5 +1501,687 @@ describe('OpenCode scoped session revert', () => {
 
     expect(response.status).toBe(400);
     expect(payload).toEqual({ error: 'Invalid JSON body' });
+  });
+});
+
+describe('OpenCode tree-scoped revert, redo and change summary', () => {
+  let upstreamServer;
+  let proxyServer;
+  let repoDirectory;
+  let dataDir;
+  let snapshotRoot;
+
+  afterEach(async () => {
+    await closeServer(proxyServer);
+    await closeServer(upstreamServer);
+    if (repoDirectory) await fs.rm(repoDirectory, { recursive: true, force: true });
+    if (dataDir) await fs.rm(dataDir, { recursive: true, force: true });
+    if (snapshotRoot) await fs.rm(snapshotRoot, { recursive: true, force: true });
+    proxyServer = undefined;
+    upstreamServer = undefined;
+    repoDirectory = undefined;
+    dataDir = undefined;
+    snapshotRoot = undefined;
+  });
+
+  // Fake OpenCode: sessions keyed by id (children resolved through parentID),
+  // transcripts keyed by session id, a status map, and native revert/unrevert
+  // handlers that update the session's revert marker like OpenCode does.
+  const createOpenCodeStub = ({ sessions = {}, messages = {}, statuses = {}, onRevert, onUnrevert } = {}) => {
+    const app = express();
+    app.use(express.json());
+    const calls = { revert: [], unrevert: [] };
+    app.get('/session/status', (_req, res) => res.json(statuses));
+    app.get('/session/:sessionID', (req, res) => {
+      const session = sessions[req.params.sessionID];
+      if (!session) return res.status(404).json({ error: 'Session not found' });
+      return res.json(session);
+    });
+    app.get('/session/:sessionID/children', (req, res) => {
+      if (!sessions[req.params.sessionID]) return res.status(404).json({ error: 'Session not found' });
+      return res.json(Object.values(sessions).filter((session) => session.parentID === req.params.sessionID));
+    });
+    app.get('/session/:sessionID/message', (req, res) => {
+      const records = messages[req.params.sessionID];
+      if (!records) return res.status(404).json({ error: 'Session not found' });
+      return res.json(records);
+    });
+    app.post('/session/:sessionID/revert', async (req, res) => {
+      const sessionID = req.params.sessionID;
+      const messageID = req.body?.messageID;
+      calls.revert.push({ sessionID, messageID });
+      try {
+        if (onRevert) await onRevert(sessionID, messageID);
+      } catch (error) {
+        return res.status(500).json({ error: error.message });
+      }
+      const session = sessions[sessionID] ?? { id: sessionID };
+      session.revert = { messageID };
+      return res.json(session);
+    });
+    app.post('/session/:sessionID/unrevert', async (req, res) => {
+      const sessionID = req.params.sessionID;
+      calls.unrevert.push(sessionID);
+      try {
+        if (onUnrevert) await onUnrevert(sessionID);
+      } catch (error) {
+        return res.status(500).json({ error: error.message });
+      }
+      const session = sessions[sessionID];
+      if (!session) return res.status(404).json({ error: 'Session not found' });
+      delete session.revert;
+      return res.json(session);
+    });
+    return { app, calls };
+  };
+
+  const stubSession = (id, extra = {}) => ({ id, title: id, time: { created: 1, updated: 1 }, ...extra });
+  const userMessage = ({ id, sessionID, created, diffs = [] }) => ({
+    info: {
+      id,
+      sessionID,
+      role: 'user',
+      time: { created },
+      agent: 'build',
+      model: { providerID: 'test', modelID: 'test' },
+      summary: { diffs },
+    },
+    parts: [],
+  });
+  const assistantMessage = ({ id, sessionID, created, parts = [] }) => ({
+    info: { id, sessionID, role: 'assistant', time: { created, completed: created + 1 } },
+    parts,
+  });
+  const modifiedDiff = (file, beforeLine, addedLine) => ({
+    file,
+    status: 'modified',
+    patch: addedLinePatch(file, beforeLine, addedLine),
+    additions: 1,
+    deletions: 0,
+  });
+  const postJson = (url, body) => fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const readRepoFile = (file) => fs.readFile(path.join(repoDirectory, file), 'utf8');
+  const writeRepoFile = (file, content) => fs.writeFile(path.join(repoDirectory, file), content);
+
+  const startStack = async (stub, options = {}) => {
+    upstreamServer = await listen(stub.app);
+    proxyServer = await listen(createProxyApp(upstreamServer.address().port, { openchamberDataDir: dataDir, ...options }));
+    const base = `http://127.0.0.1:${proxyServer.address().port}/api/openchamber/session`;
+    const query = `directory=${encodeURIComponent(repoDirectory)}`;
+    return {
+      revertUrl: (sessionID) => `${base}/${sessionID}/scoped-revert?${query}`,
+      unrevertUrl: (sessionID) => `${base}/${sessionID}/scoped-unrevert?${query}`,
+      changesUrl: (sessionID) => `${base}/${sessionID}/changes?${query}`,
+    };
+  };
+
+  const setupRepo = async (files) => {
+    repoDirectory = await createTestRepo();
+    dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-revert-journal-'));
+    for (const [file, content] of Object.entries(files)) await writeRepoFile(file, content);
+    await commitAll(repoDirectory);
+  };
+
+  // Root turn aborted (no summary), child finished its own turn: only the
+  // child's transcript knows about child.txt.
+  const childOnlyScenario = () => ({
+    sessions: {
+      root: stubSession('root'),
+      child: stubSession('child', { parentID: 'root' }),
+    },
+    messages: {
+      root: [userMessage({ id: 'msg-root', sessionID: 'root', created: 10 })],
+      child: [userMessage({ id: 'msg-child', sessionID: 'child', created: 20, diffs: [modifiedDiff('child.txt', 'base', 'child')] })],
+    },
+  });
+
+  it('reverts edits made only by a descendant sub-agent session', async () => {
+    await setupRepo({ 'child.txt': 'base\n', 'other.txt': 'base\n' });
+    await writeRepoFile('child.txt', 'base\nchild\n');
+    await writeRepoFile('other.txt', 'base\nother\n');
+    const stub = createOpenCodeStub(childOnlyScenario());
+    const urls = await startStack(stub);
+
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-root' });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(stub.calls.revert).toEqual([
+      { sessionID: 'child', messageID: 'msg-child' },
+      { sessionID: 'root', messageID: 'msg-root' },
+    ]);
+    expect(payload.id).toBe('root');
+    expect(payload.session).toEqual(expect.objectContaining({ id: 'root', revert: { messageID: 'msg-root' } }));
+    expect(payload.reverted).toEqual({
+      files: [{ path: 'child.txt', status: 'restored' }],
+      sessions: [
+        { id: 'child', targetMessageID: 'msg-child' },
+        { id: 'root', targetMessageID: 'msg-root' },
+      ],
+    });
+    expect(payload.verification).toEqual({ ok: true, files: [] });
+    expect(payload.redoAvailable).toBe(true);
+    expect(await readRepoFile('child.txt')).toBe('base\n');
+    expect(await readRepoFile('other.txt')).toBe('base\nother\n');
+  });
+
+  it('reverts each descendant from its first message at or after the root target', async () => {
+    await setupRepo({ 'a.txt': 'base\n', 'b.txt': 'base\n', 'c.txt': 'base\n', 'd.txt': 'base\n', 'e.txt': 'base\n' });
+    await writeRepoFile('a.txt', 'base\nfirst\n');
+    await writeRepoFile('b.txt', 'base\nafter\n');
+    await writeRepoFile('c.txt', 'base\nbefore\n');
+    await writeRepoFile('d.txt', 'base\nstraddle-1\n');
+    await writeRepoFile('e.txt', 'base\nstraddle-2\n');
+    const stub = createOpenCodeStub({
+      sessions: {
+        root: stubSession('root'),
+        'child-after': stubSession('child-after', { parentID: 'root' }),
+        'child-before': stubSession('child-before', { parentID: 'root' }),
+        'child-straddle': stubSession('child-straddle', { parentID: 'root' }),
+      },
+      messages: {
+        root: [
+          userMessage({ id: 'msg-1', sessionID: 'root', created: 10, diffs: [modifiedDiff('a.txt', 'base', 'first')] }),
+          userMessage({ id: 'msg-target', sessionID: 'root', created: 20 }),
+        ],
+        'child-after': [
+          userMessage({ id: 'msg-ca', sessionID: 'child-after', created: 30, diffs: [modifiedDiff('b.txt', 'base', 'after')] }),
+        ],
+        'child-before': [
+          userMessage({ id: 'msg-cb', sessionID: 'child-before', created: 5, diffs: [modifiedDiff('c.txt', 'base', 'before')] }),
+        ],
+        'child-straddle': [
+          userMessage({ id: 'msg-cs1', sessionID: 'child-straddle', created: 15, diffs: [modifiedDiff('d.txt', 'base', 'straddle-1')] }),
+          userMessage({ id: 'msg-cs2', sessionID: 'child-straddle', created: 25, diffs: [modifiedDiff('e.txt', 'base', 'straddle-2')] }),
+        ],
+      },
+    });
+    const urls = await startStack(stub);
+
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-target' });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(stub.calls.revert).toEqual([
+      { sessionID: 'child-after', messageID: 'msg-ca' },
+      { sessionID: 'child-straddle', messageID: 'msg-cs2' },
+      { sessionID: 'root', messageID: 'msg-target' },
+    ]);
+    expect(payload.reverted.files).toEqual([
+      { path: 'b.txt', status: 'restored' },
+      { path: 'e.txt', status: 'restored' },
+    ]);
+    expect(await readRepoFile('a.txt')).toBe('base\nfirst\n');
+    expect(await readRepoFile('b.txt')).toBe('base\n');
+    expect(await readRepoFile('c.txt')).toBe('base\nbefore\n');
+    expect(await readRepoFile('d.txt')).toBe('base\nstraddle-1\n');
+    expect(await readRepoFile('e.txt')).toBe('base\n');
+  });
+
+  it('rolls back completed native reverts and restores files when a later native revert fails', async () => {
+    await setupRepo({ 'child.txt': 'base\n', 'other.txt': 'base\n' });
+    await writeRepoFile('child.txt', 'base\nchild\n');
+    await writeRepoFile('other.txt', 'base\nother\n');
+    const stub = createOpenCodeStub({
+      ...childOnlyScenario(),
+      onRevert: async (sessionID) => {
+        if (sessionID === 'child') {
+          await writeRepoFile('child.txt', 'base\n');
+          return;
+        }
+        await writeRepoFile('other.txt', 'base\n');
+        throw new Error('root revert exploded');
+      },
+    });
+    const urls = await startStack(stub);
+
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-root' });
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload).toEqual({ error: 'root revert exploded' });
+    expect(stub.calls.revert).toEqual([
+      { sessionID: 'child', messageID: 'msg-child' },
+      { sessionID: 'root', messageID: 'msg-root' },
+    ]);
+    expect(stub.calls.unrevert).toEqual(['child']);
+    expect(await readRepoFile('child.txt')).toBe('base\nchild\n');
+    expect(await readRepoFile('other.txt')).toBe('base\nother\n');
+    await expect(fs.access(resolveRevertJournalPath({ openchamberDataDir: dataDir, directory: repoDirectory, rootSessionID: 'root' })))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it("restores a descendant's aborted tool edits from OpenCode patch snapshots", async () => {
+    await setupRepo({ 'target.txt': 'base\n', 'unrelated.txt': 'base\n' });
+    snapshotRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-snapshot-root-'));
+    const projectID = 'project-a';
+    const snapshotHash = await createOpenCodeSnapshotRepo(repoDirectory, snapshotRoot, projectID);
+    await writeRepoFile('target.txt', 'base\naborted-tool\n');
+    await writeRepoFile('unrelated.txt', 'base\nunrelated\n');
+    const stub = createOpenCodeStub({
+      // Only the root carries the project id; the descendant inherits it.
+      sessions: { root: stubSession('root', { projectID }), child: stubSession('child', { parentID: 'root' }) },
+      messages: {
+        root: [userMessage({ id: 'msg-root', sessionID: 'root', created: 10 })],
+        child: [
+          userMessage({ id: 'msg-child', sessionID: 'child', created: 20 }),
+          assistantMessage({ id: 'msg-child-assistant', sessionID: 'child', created: 21, parts: [
+            { id: 'part-patch', sessionID: 'child', messageID: 'msg-child-assistant', type: 'patch', hash: snapshotHash, files: [path.join(repoDirectory, 'target.txt')] },
+          ] }),
+        ],
+      },
+    });
+    const urls = await startStack(stub, { openCodeSnapshotRoot: snapshotRoot });
+
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-root' });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.reverted.files).toEqual([{ path: 'target.txt', status: 'restored' }]);
+    expect(await readRepoFile('target.txt')).toBe('base\n');
+    expect(await readRepoFile('unrelated.txt')).toBe('base\nunrelated\n');
+  });
+
+  it('skips the redo journal above 8 MB and reports redoAvailable false', async () => {
+    const line = 'x'.repeat(63);
+    const big = `${line}\n`.repeat(120_000);
+    await setupRepo({ 'big.txt': big });
+    await writeRepoFile('big.txt', `${big}session-line\n`);
+    const stub = createOpenCodeStub({
+      sessions: { root: stubSession('root') },
+      messages: {
+        root: [userMessage({ id: 'msg-target', sessionID: 'root', created: 1, diffs: [{
+          file: 'big.txt',
+          status: 'modified',
+          patch: `diff --git a/big.txt b/big.txt\n--- a/big.txt\n+++ b/big.txt\n@@ -120000 +120000,2 @@\n ${line}\n+session-line\n`,
+          additions: 1,
+          deletions: 0,
+        }] })],
+      },
+    });
+    const urls = await startStack(stub);
+
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-target' });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.reverted.files).toEqual([{ path: 'big.txt', status: 'restored' }]);
+    expect(payload.redoAvailable).toBe(false);
+    expect(await readRepoFile('big.txt')).toBe(big);
+    await expect(fs.access(resolveRevertJournalPath({ openchamberDataDir: dataDir, directory: repoDirectory, rootSessionID: 'root' })))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('does not reverse a hunk twice when the parent turn diff already covers the child edit', async () => {
+    await setupRepo({ 'b.txt': 'base\n' });
+    await writeRepoFile('b.txt', 'base\nchild-line\n');
+    const stub = createOpenCodeStub({
+      sessions: { root: stubSession('root'), child: stubSession('child', { parentID: 'root' }) },
+      messages: {
+        // OpenCode summary diffs are worktree-wide for the turn window, so the
+        // parent's diff already contains the synchronous sub-agent's hunk.
+        root: [userMessage({ id: 'msg-target', sessionID: 'root', created: 20, diffs: [modifiedDiff('b.txt', 'base', 'child-line')] })],
+        child: [userMessage({ id: 'msg-c', sessionID: 'child', created: 30, diffs: [modifiedDiff('b.txt', 'base', 'child-line')] })],
+      },
+    });
+    const urls = await startStack(stub);
+
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-target' });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.reverted.files).toEqual([{ path: 'b.txt', status: 'restored' }]);
+    expect(await readRepoFile('b.txt')).toBe('base\n');
+  });
+
+  it('refuses with working_tree_changed when a protected file changes between snapshot and revert', async () => {
+    await setupRepo({ 'file-a.txt': 'base\n', 'other.txt': 'base\n' });
+    await writeRepoFile('file-a.txt', 'base\nsession-a\n');
+    await writeRepoFile('other.txt', 'base\nother\n');
+    const stub = createOpenCodeStub({
+      sessions: { root: stubSession('root') },
+      messages: { root: [userMessage({ id: 'msg-target', sessionID: 'root', created: 1, diffs: [modifiedDiff('file-a.txt', 'base', 'session-a')] })] },
+    });
+    upstreamServer = await listen(stub.app);
+
+    await expect(runScopedSessionRevert({
+      buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:${upstreamServer.address().port}${requestPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      directory: repoDirectory,
+      sessionID: 'root',
+      messageID: 'msg-target',
+      openchamberDataDir: dataDir,
+      onBeforeUpstreamRevert: () => writeRepoFile('other.txt', 'base\nother\nforeign\n'),
+    })).rejects.toMatchObject({ code: 'working_tree_changed', status: 409, files: ['other.txt'] });
+
+    expect(stub.calls.revert).toEqual([]);
+    expect(await readRepoFile('file-a.txt')).toBe('base\nsession-a\n');
+    expect(await readRepoFile('other.txt')).toBe('base\nother\nforeign\n');
+    await expect(fs.access(resolveRevertJournalPath({ openchamberDataDir: dataDir, directory: repoDirectory, rootSessionID: 'root' })))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('refuses with ambiguous_hunk when a shifted hunk matches repeated blocks', async () => {
+    const patch = `diff --git a/same.txt b/same.txt
+--- a/same.txt
++++ b/same.txt
+@@ -1 +1,2 @@
+ x
++added
+`;
+    // Without drift the stated position disambiguates the repeated block.
+    expect(reverseApplyUnifiedPatch('x\nadded\nx\nadded\n', patch, 'same.txt')).toBe('x\nx\nadded\n');
+
+    await setupRepo({ 'same.txt': 'x\nx\n' });
+    await writeRepoFile('same.txt', 'intro\nx\nadded\nx\nadded\n');
+    const stub = createOpenCodeStub({
+      sessions: { root: stubSession('root') },
+      messages: {
+        root: [userMessage({ id: 'msg-target', sessionID: 'root', created: 1, diffs: [{ file: 'same.txt', status: 'modified', patch, additions: 1, deletions: 0 }] })],
+      },
+    });
+    const urls = await startStack(stub);
+
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-target' });
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload).toEqual(expect.objectContaining({ code: 'ambiguous_hunk', file: 'same.txt' }));
+    expect(stub.calls.revert).toEqual([]);
+    expect(await readRepoFile('same.txt')).toBe('intro\nx\nadded\nx\nadded\n');
+  });
+
+  it('undoes session A without touching hunks written by an unrelated session B', async () => {
+    await setupRepo({ 'same.txt': 'one\ntwo\nthree\nfour\n' });
+    await writeRepoFile('same.txt', 'one\nsession-a\ntwo\nthree\nsession-b\nfour\n');
+    const stub = createOpenCodeStub({
+      sessions: { 'session-a': stubSession('session-a'), 'session-b': stubSession('session-b') },
+      statuses: { 'session-a': { type: 'idle' }, 'session-b': { type: 'idle' } },
+      messages: {
+        'session-a': [userMessage({ id: 'msg-a', sessionID: 'session-a', created: 1, diffs: [{
+          file: 'same.txt',
+          status: 'modified',
+          patch: 'diff --git a/same.txt b/same.txt\n--- a/same.txt\n+++ b/same.txt\n@@ -1,2 +1,3 @@\n one\n+session-a\n two\n',
+          additions: 1,
+          deletions: 0,
+        }] })],
+        'session-b': [userMessage({ id: 'msg-b', sessionID: 'session-b', created: 2, diffs: [{
+          file: 'same.txt',
+          status: 'modified',
+          patch: 'diff --git a/same.txt b/same.txt\n--- a/same.txt\n+++ b/same.txt\n@@ -3,2 +4,3 @@\n three\n+session-b\n four\n',
+          additions: 1,
+          deletions: 0,
+        }] })],
+      },
+    });
+    const urls = await startStack(stub);
+
+    const response = await postJson(urls.revertUrl('session-a'), { messageID: 'msg-a' });
+
+    expect(response.status).toBe(200);
+    expect(stub.calls.revert).toEqual([{ sessionID: 'session-a', messageID: 'msg-a' }]);
+    expect(await readRepoFile('same.txt')).toBe('one\ntwo\nthree\nsession-b\nfour\n');
+  });
+
+  it('refuses with directory_busy when another session is working in the directory', async () => {
+    await setupRepo({ 'child.txt': 'base\n' });
+    await writeRepoFile('child.txt', 'base\nchild\n');
+    const stub = createOpenCodeStub({ ...childOnlyScenario(), statuses: { root: { type: 'idle' }, elsewhere: { type: 'busy' } } });
+    const urls = await startStack(stub);
+
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-root' });
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload).toEqual(expect.objectContaining({ code: 'directory_busy', sessions: ['elsewhere'] }));
+    expect(stub.calls.revert).toEqual([]);
+    expect(await readRepoFile('child.txt')).toBe('base\nchild\n');
+  });
+
+  it('refuses with session_busy when a session inside the tree is still running', async () => {
+    await setupRepo({ 'child.txt': 'base\n' });
+    const stub = createOpenCodeStub({ ...childOnlyScenario(), statuses: { child: { type: 'retry', attempt: 1, message: 'rate limited' } } });
+    const urls = await startStack(stub);
+
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-root' });
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload).toEqual(expect.objectContaining({ code: 'session_busy', sessions: ['child'] }));
+    expect(stub.calls.revert).toEqual([]);
+  });
+
+  it('refuses with binary_diff_unsupported before writing when a diff has no text patch', async () => {
+    await setupRepo({ 'image.png': 'PNG', 'file-a.txt': 'base\n' });
+    await writeRepoFile('image.png', 'PNG2');
+    await writeRepoFile('file-a.txt', 'base\nsession-a\n');
+    const stub = createOpenCodeStub({
+      sessions: { root: stubSession('root') },
+      messages: {
+        root: [userMessage({ id: 'msg-target', sessionID: 'root', created: 1, diffs: [
+          modifiedDiff('file-a.txt', 'base', 'session-a'),
+          { file: 'image.png', status: 'modified', additions: 0, deletions: 0 },
+        ] })],
+      },
+    });
+    const urls = await startStack(stub);
+
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-target' });
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload).toEqual(expect.objectContaining({ code: 'binary_diff_unsupported', file: 'image.png' }));
+    expect(stub.calls.revert).toEqual([]);
+    expect(await readRepoFile('file-a.txt')).toBe('base\nsession-a\n');
+    expect(await readRepoFile('image.png')).toBe('PNG2');
+  });
+
+  it('merges consecutive reverts into one journal keeping the earliest before', async () => {
+    await setupRepo({ 'a.txt': 'base\n' });
+    await writeRepoFile('a.txt', 'base\none\ntwo\n');
+    const stub = createOpenCodeStub({
+      sessions: { root: stubSession('root') },
+      messages: {
+        root: [
+          userMessage({ id: 'msg-1', sessionID: 'root', created: 1, diffs: [modifiedDiff('a.txt', 'base', 'one')] }),
+          userMessage({ id: 'msg-2', sessionID: 'root', created: 2, diffs: [{
+            file: 'a.txt',
+            status: 'modified',
+            patch: 'diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1,2 +1,3 @@\n base\n one\n+two\n',
+            additions: 1,
+            deletions: 0,
+          }] }),
+        ],
+      },
+    });
+    const urls = await startStack(stub);
+    const journalPath = resolveRevertJournalPath({ openchamberDataDir: dataDir, directory: repoDirectory, rootSessionID: 'root' });
+
+    const first = await postJson(urls.revertUrl('root'), { messageID: 'msg-2' });
+    expect(first.status).toBe(200);
+    expect(await readRepoFile('a.txt')).toBe('base\none\n');
+    const firstJournal = JSON.parse(await fs.readFile(journalPath, 'utf8'));
+    expect(firstJournal.sessions).toEqual([{ id: 'root', targetMessageID: 'msg-2' }]);
+    expect(firstJournal.files).toEqual([expect.objectContaining({
+      path: 'a.txt',
+      before: Buffer.from('base\none\ntwo\n').toString('base64'),
+      after: Buffer.from('base\none\n').toString('base64'),
+    })]);
+
+    const second = await postJson(urls.revertUrl('root'), { messageID: 'msg-1' });
+    expect(second.status).toBe(200);
+    expect(await readRepoFile('a.txt')).toBe('base\n');
+    const secondJournal = JSON.parse(await fs.readFile(journalPath, 'utf8'));
+    expect(secondJournal.createdAt).toBe(firstJournal.createdAt);
+    expect(secondJournal.sessions).toEqual([{ id: 'root', targetMessageID: 'msg-1' }]);
+    expect(secondJournal.files).toEqual([expect.objectContaining({
+      path: 'a.txt',
+      before: Buffer.from('base\none\ntwo\n').toString('base64'),
+      after: Buffer.from('base\n').toString('base64'),
+    })]);
+    expect(secondJournal.files[0].beforeHash).toBe(firstJournal.files[0].beforeHash);
+    expect(secondJournal.files[0].afterHash).not.toBe(firstJournal.files[0].afterHash);
+    expect(stub.calls.revert).toEqual([
+      { sessionID: 'root', messageID: 'msg-2' },
+      { sessionID: 'root', messageID: 'msg-1' },
+    ]);
+  });
+
+  it('redoes a tree revert from the journal and protects unrelated files from the native unrevert', async () => {
+    await setupRepo({ 'child.txt': 'base\n', 'other.txt': 'base\n' });
+    await writeRepoFile('child.txt', 'base\nchild\n');
+    await writeRepoFile('other.txt', 'base\nother\n');
+    const stub = createOpenCodeStub({
+      ...childOnlyScenario(),
+      onUnrevert: async (sessionID) => {
+        if (sessionID !== 'root') return;
+        // OpenCode's unrevert restores the whole worktree snapshot.
+        await writeRepoFile('child.txt', 'base\nchild\n');
+        await writeRepoFile('other.txt', 'clobbered\n');
+      },
+    });
+    const urls = await startStack(stub);
+    const journalPath = resolveRevertJournalPath({ openchamberDataDir: dataDir, directory: repoDirectory, rootSessionID: 'root' });
+
+    const revert = await postJson(urls.revertUrl('root'), { messageID: 'msg-root' });
+    expect(revert.status).toBe(200);
+    expect(await readRepoFile('child.txt')).toBe('base\n');
+    await fs.access(journalPath);
+
+    const response = await postJson(urls.unrevertUrl('root'), {});
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(stub.calls.unrevert).toEqual(['child', 'root']);
+    expect(payload.id).toBe('root');
+    expect(payload.session.revert).toBeUndefined();
+    expect(payload.restored).toEqual([{ path: 'child.txt', status: 'restored' }]);
+    expect(payload.sessions).toEqual([{ id: 'child' }, { id: 'root' }]);
+    expect(payload.verification).toEqual({ ok: true, files: [] });
+    expect(await readRepoFile('child.txt')).toBe('base\nchild\n');
+    expect(await readRepoFile('other.txt')).toBe('base\nother\n');
+    await expect(fs.access(journalPath)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const again = await postJson(urls.unrevertUrl('root'), {});
+    expect(again.status).toBe(409);
+    expect(await again.json()).toEqual(expect.objectContaining({ code: 'redo_unavailable' }));
+  });
+
+  it('refuses to redo when a journaled file changed since the revert', async () => {
+    await setupRepo({ 'child.txt': 'base\n' });
+    await writeRepoFile('child.txt', 'base\nchild\n');
+    const stub = createOpenCodeStub(childOnlyScenario());
+    const urls = await startStack(stub);
+    const journalPath = resolveRevertJournalPath({ openchamberDataDir: dataDir, directory: repoDirectory, rootSessionID: 'root' });
+
+    expect((await postJson(urls.revertUrl('root'), { messageID: 'msg-root' })).status).toBe(200);
+    await writeRepoFile('child.txt', 'base\nedited after revert\n');
+
+    const response = await postJson(urls.unrevertUrl('root'), {});
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload).toEqual(expect.objectContaining({ code: 'working_tree_changed', files: ['child.txt'] }));
+    expect(stub.calls.unrevert).toEqual([]);
+    expect(await readRepoFile('child.txt')).toBe('base\nedited after revert\n');
+    await fs.access(journalPath);
+  });
+
+  it('summarizes tree changes since the first user message without writing', async () => {
+    await setupRepo({ 'a.txt': 'base\n', 'c.txt': 'gone\n' });
+    await writeRepoFile('a.txt', 'base\nroot-line\nchild-line\n');
+    await writeRepoFile('b.txt', 'new\nfile\nhere\n');
+    await fs.rm(path.join(repoDirectory, 'c.txt'));
+    const stub = createOpenCodeStub({
+      sessions: { root: stubSession('root'), child: stubSession('child', { parentID: 'root' }) },
+      messages: {
+        root: [
+          userMessage({ id: 'msg-1', sessionID: 'root', created: 1, diffs: [
+            modifiedDiff('a.txt', 'base', 'root-line'),
+            { file: 'b.txt', status: 'added', patch: 'diff --git a/b.txt b/b.txt\n--- /dev/null\n+++ b/b.txt\n@@ -0,0 +1,3 @@\n+new\n+file\n+here\n', additions: 3, deletions: 0 },
+          ] }),
+          userMessage({ id: 'msg-2', sessionID: 'root', created: 5 }),
+        ],
+        child: [
+          userMessage({ id: 'msg-c', sessionID: 'child', created: 10, diffs: [
+            { file: 'a.txt', status: 'modified', patch: 'diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1,2 +1,3 @@\n base\n root-line\n+child-line\n', additions: 1, deletions: 0 },
+            { file: 'c.txt', status: 'deleted', patch: 'diff --git a/c.txt b/c.txt\n--- a/c.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-gone\n', additions: 0, deletions: 1 },
+          ] }),
+          assistantMessage({ id: 'msg-c-assistant', sessionID: 'child', created: 11, parts: [
+            { id: 'part-bash', sessionID: 'child', messageID: 'msg-c-assistant', type: 'tool', tool: 'bash', state: { status: 'completed', input: { command: 'sed -i s/a/b/ a.txt' } } },
+          ] }),
+        ],
+      },
+    });
+    const urls = await startStack(stub);
+
+    const response = await fetch(urls.changesUrl('root'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      files: [
+        { path: 'a.txt', status: 'modified', additions: 2, deletions: 0, sessions: ['root', 'child'] },
+        { path: 'b.txt', status: 'added', additions: 3, deletions: 0, sessions: ['root'] },
+        { path: 'c.txt', status: 'deleted', additions: 0, deletions: 1, sessions: ['child'] },
+      ],
+      sessionCount: 2,
+      sessions: [
+        { id: 'root', targetMessageID: 'msg-1' },
+        { id: 'child', targetMessageID: 'msg-c' },
+      ],
+      hasUnattributedMutations: true,
+      firstUserMessageID: 'msg-1',
+      rootSessionID: 'root',
+    });
+    expect(stub.calls.revert).toEqual([]);
+    expect(await readRepoFile('a.txt')).toBe('base\nroot-line\nchild-line\n');
+    await expect(fs.access(resolveRevertJournalPath({ openchamberDataDir: dataDir, directory: repoDirectory, rootSessionID: 'root' })))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('reports no unattributed mutations when only file tools ran', async () => {
+    await setupRepo({ 'a.txt': 'base\n' });
+    await writeRepoFile('a.txt', 'base\nroot-line\n');
+    const stub = createOpenCodeStub({
+      sessions: { root: stubSession('root') },
+      messages: {
+        root: [
+          userMessage({ id: 'msg-1', sessionID: 'root', created: 1, diffs: [modifiedDiff('a.txt', 'base', 'root-line')] }),
+          assistantMessage({ id: 'msg-1-assistant', sessionID: 'root', created: 2, parts: [
+            { id: 'part-edit', sessionID: 'root', messageID: 'msg-1-assistant', type: 'tool', tool: 'edit', state: { status: 'completed', input: { filePath: 'a.txt' } } },
+            { id: 'part-bash-failed', sessionID: 'root', messageID: 'msg-1-assistant', type: 'tool', tool: 'bash', state: { status: 'error', input: { command: 'false' } } },
+          ] }),
+        ],
+      },
+    });
+    const urls = await startStack(stub);
+
+    const payload = await (await fetch(urls.changesUrl('root'))).json();
+
+    expect(payload.hasUnattributedMutations).toBe(false);
+    expect(payload.files).toEqual([{ path: 'a.txt', status: 'modified', additions: 1, deletions: 0, sessions: ['root'] }]);
+  });
+
+  it("keeps single-session behaviour with scope 'session'", async () => {
+    await setupRepo({ 'child.txt': 'base\n' });
+    await writeRepoFile('child.txt', 'base\nchild\n');
+    const stub = createOpenCodeStub(childOnlyScenario());
+    const urls = await startStack(stub);
+
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-root', scope: 'session' });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(stub.calls.revert).toEqual([{ sessionID: 'root', messageID: 'msg-root' }]);
+    expect(payload.reverted).toEqual({ files: [], sessions: [{ id: 'root', targetMessageID: 'msg-root' }] });
+    expect(await readRepoFile('child.txt')).toBe('base\nchild\n');
+
+    const invalid = await postJson(urls.revertUrl('root'), { messageID: 'msg-root', scope: 'everything' });
+    expect(invalid.status).toBe(400);
   });
 });

@@ -649,10 +649,13 @@ export const registerOpenCodeProxy = (app, deps) => {
   app.get('/api/global/event', forwardSseRequest);
   app.get('/api/event', forwardSseRequest);
 
+  // Registers scoped-revert, scoped-unrevert (redo) and the change summary
+  // ahead of the generic proxy.
   registerScopedSessionRevertRoute(app, {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     openCodeSnapshotRoot: deps.openCodeSnapshotRoot,
+    openchamberDataDir: deps.openchamberDataDir,
     scopedRevertTimeoutMs: deps.scopedRevertTimeoutMs,
     scopedRevertSlowOperationMs: deps.scopedRevertSlowOperationMs,
   });
