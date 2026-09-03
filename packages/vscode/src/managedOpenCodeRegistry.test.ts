@@ -123,6 +123,31 @@ describe('VS Code managed OpenCode process registry', () => {
     )).toBe(false);
   });
 
+  it('persists the working directory (registry v2) and reads v1 files without one', () => {
+    const registryPath = createRegistryPath();
+    registerManagedOpenCodeProcess({
+      childPid: 300,
+      ownerPid: 100,
+      port: 45678,
+      binary: 'opencode',
+      hostRuntime: 'vscode',
+      workingDirectory: '/tmp/workspace',
+    }, { registryPath });
+
+    expect(JSON.parse(fs.readFileSync(registryPath, 'utf8')).version).toBe(2);
+    expect(readManagedOpenCodeRegistry({ registryPath })).toEqual([
+      expect.objectContaining({ childPid: 300, workingDirectory: '/tmp/workspace' }),
+    ]);
+
+    fs.writeFileSync(registryPath, JSON.stringify({
+      version: 1,
+      processes: [{ childPid: 301, ownerPid: 100, port: 45679, binary: 'opencode', hostRuntime: 'vscode', startedAt: 5 }],
+    }));
+    expect(readManagedOpenCodeRegistry({ registryPath })).toEqual([
+      expect.objectContaining({ childPid: 301, port: 45679, workingDirectory: null }),
+    ]);
+  });
+
   it('aligns context-mode storage under the OpenChamber data dir', () => {
     const dataDir = path.join(os.tmpdir(), 'openchamber-verify-data');
     expect(buildContextModeStorageEnv({ OPENCHAMBER_DATA_DIR: dataDir })).toEqual({

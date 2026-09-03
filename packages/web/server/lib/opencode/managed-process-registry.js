@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const REGISTRY_VERSION = 1;
+// v2 adds `workingDirectory`; v1 files (no such field) still read as null.
+const REGISTRY_VERSION = 2;
 const REGISTRY_FILE_NAME = 'managed-opencode-processes.json';
 
 function getOpenChamberDataDir(env = process.env) {
@@ -46,6 +47,9 @@ function normalizeRegistryRecord(record) {
     hostRuntime: typeof record.hostRuntime === 'string' && record.hostRuntime.trim() ? record.hostRuntime.trim() : 'web',
     hostname: typeof record.hostname === 'string' && record.hostname.trim() ? record.hostname.trim() : null,
     startedAt: Number.isFinite(record.startedAt) ? Math.trunc(record.startedAt) : Date.now(),
+    workingDirectory: typeof record.workingDirectory === 'string' && record.workingDirectory.trim()
+      ? record.workingDirectory.trim()
+      : null,
   };
 }
 
@@ -268,12 +272,25 @@ async function terminateManagedOpenCodePid(pid, options = {}) {
     return waitForProcessExit(normalizedPid, 3000, processKill);
   }
 
+  // Signal the group led by the target (falls back to the pid alone when it is
+  // not a group leader) plus any explicitly listed descendants. Agent-spawned
+  // children usually share the server's process group, so callers must pass
+  // descendants instead of relying on a group kill reaching them.
+  const descendantPids = Array.isArray(options.descendantPids)
+    ? options.descendantPids.map(normalizePositiveInteger).filter((value) => value && value !== normalizedPid)
+    : [];
   const signal = (targetPid, signalName) => {
     try {
       processKill(-targetPid, signalName);
     } catch {
       try {
         processKill(targetPid, signalName);
+      } catch {
+      }
+    }
+    for (const descendantPid of descendantPids) {
+      try {
+        processKill(descendantPid, signalName);
       } catch {
       }
     }

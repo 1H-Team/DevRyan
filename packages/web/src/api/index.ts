@@ -10,6 +10,7 @@ import { createWebPushAPI } from './push';
 import { createWebGitHubAPI } from './github';
 import { createWebDiagnosticsAPI } from './diagnostics';
 import { createWebEvidenceAPI } from './evidence';
+import { createWebProcessesAPI } from './processes';
 import { createWebSessionPlansAPI } from './sessionPlans';
 import { createWebContextUsageAPI } from './contextUsage';
 
@@ -26,6 +27,7 @@ export const createWebAPIs = (): RuntimeAPIs => ({
   push: createWebPushAPI(),
   diagnostics: createWebDiagnosticsAPI(),
   evidence: createWebEvidenceAPI(),
+  processes: createWebProcessesAPI(),
   contextUsage: createWebContextUsageAPI(),
   tools: createWebToolsAPI(),
 });

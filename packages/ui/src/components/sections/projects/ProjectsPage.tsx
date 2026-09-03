@@ -13,6 +13,7 @@ import { ProjectActionsSection } from '@/components/sections/projects/ProjectAct
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useI18n } from '@/lib/i18n';
 import { TurnEvidenceSettingsSection } from './TurnEvidenceSettingsSection';
+import { ProcessTrackingSettingsSection } from './ProcessTrackingSettingsSection';
 import { resolveProjectDisplayName } from '@/lib/projectDisplayName';
 
 export const ProjectsPage: React.FC = () => {
@@ -480,6 +481,8 @@ export const ProjectsPage: React.FC = () => {
         </div>
 
         <TurnEvidenceSettingsSection directory={selectedProject.path} />
+
+        <ProcessTrackingSettingsSection directory={selectedProject.path} />
 
         {/* Worktree Group */}
         <div className="mb-8">

@@ -112,6 +112,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     setOpenCodeWorkingDirectory = () => {},
     isExternalOpenCode = () => false,
     cursorSdkRuntime = null,
+    processesRuntime = null,
     cursorSessionTitleRuntime: injectedCursorSessionTitleRuntime = null,
     standardSessionTitleRuntime: injectedStandardSessionTitleRuntime = null,
     xaiToolCatalogRuntime = null,
@@ -1010,14 +1011,25 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   });
 
   app.delete('/api/session/:sessionID', (req, res, next) => {
-    if (cursorSdkRuntime && typeof cursorSdkRuntime.deleteSessionState === 'function') {
-      const { sessionID } = req.params;
+    const { sessionID } = req.params;
+    const cleanupCursorState = Boolean(cursorSdkRuntime && typeof cursorSdkRuntime.deleteSessionState === 'function');
+    const stopTrackedDevServers = Boolean(processesRuntime && typeof processesRuntime.stopSessionDevServers === 'function');
+    if (cleanupCursorState || stopTrackedDevServers) {
+      const directory = typeof req.query?.directory === 'string' ? req.query.directory : undefined;
       // Clean up only after the proxied OpenCode deletion succeeded, so a
       // failed delete does not orphan the session from its Cursor agent.
       res.once('finish', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
+        if (res.statusCode < 200 || res.statusCode >= 300) return;
+        if (cleanupCursorState) {
           cursorSdkRuntime.deleteSessionState(sessionID).catch((error) => {
             console.warn('[CursorSDK] Failed to clean up deleted session state:', error);
+          });
+        }
+        if (stopTrackedDevServers) {
+          // Only dev servers carrying this session's marker, and only while the
+          // project opts into tracking; the runtime enforces both.
+          processesRuntime.stopSessionDevServers(sessionID, { directory }).catch((error) => {
+            console.warn('[processes] Failed to stop dev servers of deleted session:', error);
           });
         }
       });

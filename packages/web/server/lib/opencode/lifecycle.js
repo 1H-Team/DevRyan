@@ -500,6 +500,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         hostRuntime: 'web',
         hostname,
         startedAt: Date.now(),
+        workingDirectory: cwd,
       });
     }
 

@@ -1,6 +1,8 @@
 import { registerFsRoutes } from '../fs/routes.js';
 import { registerQuotaRoutes } from '../quota/routes.js';
 import { registerGitHubRoutes } from '../github/routes.js';
+import { createProcessesRuntime } from '../processes/runtime.js';
+import { registerProcessesRoutes } from '../processes/routes.js';
 import { registerGitRoutes } from '../git/routes.js';
 import { registerMagicPromptRoutes } from '../magic-prompts/routes.js';
 import { registerSessionFoldersRoutes } from '../session-folders/routes.js';
@@ -108,6 +110,9 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       auditForceRestart: auditForceConfigRestart,
     });
 
+    // Host process inspection (bottom-dock Processes tab, session-delete auto-stop).
+    const processesRuntime = createProcessesRuntime({ dataDir: openchamberDataDir });
+
     registerOpenCodeRoutes(app, {
       crypto,
       clientReloadDelayMs,
@@ -134,6 +139,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       waitForOpenCodeReady,
       isExternalOpenCode,
       cursorSdkRuntime,
+      processesRuntime,
       standardSessionTitleRuntime,
       emitSyntheticOpenCodeEvent,
       resolveZenModel,
@@ -308,6 +314,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       ownsSession,
     });
     registerGitHubRoutes(app);
+    registerProcessesRoutes(app, { runtime: processesRuntime });
     registerGitRoutes(app, {
       resolveZenModel,
       resolveCommitZenModel: resolveZenModelNonBlocking,

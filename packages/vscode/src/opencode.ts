@@ -685,7 +685,7 @@ async function waitForReady(
   return { ok: false, elapsedMs: Date.now() - start, attempts, version: null };
 }
 
-async function spawnManagedOpenCodeServer(
+export async function spawnManagedOpenCodeServer(
   workingDirectory: string,
   port: number,
   timeoutMs: number,
@@ -701,6 +701,22 @@ async function spawnManagedOpenCodeServer(
     shell: shouldUseWindowsShell(binary),
     detached: process.platform !== 'win32',
   });
+
+  // Register before the ready-wait (mirrors the web lifecycle): a crash or
+  // timeout inside the readiness window must not leave an untracked orphan.
+  // A failed start closes the child, which unregisters it once it has exited.
+  if (typeof child.pid === 'number' && child.pid > 0) {
+    registerManagedOpenCodeProcess({
+      childPid: child.pid,
+      ownerPid: process.pid,
+      port,
+      binary,
+      hostRuntime: 'vscode',
+      hostname: '127.0.0.1',
+      startedAt: Date.now(),
+      workingDirectory,
+    });
+  }
 
   const waitForClose = (timeoutMs: number): Promise<boolean> => new Promise((resolve) => {
     if (child.exitCode !== null || child.signalCode !== null) {
@@ -828,18 +844,6 @@ async function spawnManagedOpenCodeServer(
   } catch (error) {
     await closeChild();
     throw error;
-  }
-
-  if (typeof child.pid === 'number' && child.pid > 0) {
-    registerManagedOpenCodeProcess({
-      childPid: child.pid,
-      ownerPid: process.pid,
-      port,
-      binary,
-      hostRuntime: 'vscode',
-      hostname: '127.0.0.1',
-      startedAt: Date.now(),
-    });
   }
 
   return {

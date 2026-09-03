@@ -1,4 +1,7 @@
 import { DevRyanToolInputGuardPlugin, __test } from './devryan-tool-input-guard.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 // Constants live on `__test` because OpenCode's plugin loader rejects any module
 // with a non-function named export.
@@ -269,5 +272,211 @@ describe('DevRyan tool input guard plugin', () => {
     const args = { command: 'pwd' };
     await expect(beforeTool('custom_tool', args)).resolves.toBeUndefined();
     expect(args).not.toHaveProperty('timeout');
+  });
+});
+
+const tempDirs = [];
+const createDataDir = () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-guard-'));
+  tempDirs.push(dir);
+  return dir;
+};
+
+const writeTracking = (dataDir, projects) => {
+  fs.mkdirSync(path.join(dataDir, 'processes'), { recursive: true });
+  fs.writeFileSync(path.join(dataDir, 'processes', 'tracking.json'), JSON.stringify({ version: 1, projects }));
+};
+
+const createHooks = (dataDir, directory = '/tmp/project', options = {}) => DevRyanToolInputGuardPlugin(
+  { directory },
+  { dataDir, trackingRefreshMs: 0, slotPollMs: 5, slotMaxWaitMs: 40, ...options },
+);
+
+const runBefore = async (hooks, args, callID = 'call-1') => {
+  const output = { args };
+  await hooks['tool.execute.before']({ tool: 'bash', sessionID: 'session-1', callID }, output);
+  return output.args;
+};
+
+const runAfter = async (hooks, callID = 'call-1') => {
+  const result = { title: '', output: '', metadata: { source: 'native' } };
+  await hooks['tool.execute.after']({ tool: 'bash', sessionID: 'session-1', callID, args: {} }, result);
+  return result;
+};
+
+const slotDirs = (dataDir) => {
+  const root = path.join(dataDir, 'locks', 'heavy-checks');
+  return fs.existsSync(root) ? fs.readdirSync(root).sort() : [];
+};
+
+const holdSlot = (dataDir, index, owner) => {
+  const slotDir = path.join(dataDir, 'locks', 'heavy-checks', `slot-${index}`);
+  fs.mkdirSync(slotDir, { recursive: true });
+  fs.writeFileSync(path.join(slotDir, 'owner.json'), JSON.stringify(owner));
+  return slotDir;
+};
+
+afterEach(() => {
+  while (tempDirs.length > 0) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+
+describe('DevRyan tool input guard shell policies', () => {
+  test('prefixes the session marker only when the project opts into tracking', async () => {
+    const dataDir = createDataDir();
+    writeTracking(dataDir, { '/tmp/project': { trackAgentProcesses: true } });
+
+    const tracked = await runBefore(await createHooks(dataDir), { command: 'npm run dev &' });
+    expect(tracked.command).toBe('export DEVRYAN_SESSION_ID=session-1; npm run dev &');
+    expect(tracked.timeout).toBe(DEFAULT_SHELL_TIMEOUT_MS);
+
+    const nested = await runBefore(await createHooks(dataDir, '/tmp/project/packages/ui'), { command: 'ls' });
+    expect(nested.command).toBe('export DEVRYAN_SESSION_ID=session-1; ls');
+
+    const otherProject = await runBefore(await createHooks(dataDir, '/tmp/other'), { command: 'npm run dev &' });
+    expect(otherProject.command).toBe('npm run dev &');
+
+    writeTracking(dataDir, { '/tmp/project': { trackAgentProcesses: false } });
+    const disabled = await runBefore(await createHooks(dataDir), { command: 'npm run dev &' });
+    expect(disabled.command).toBe('npm run dev &');
+
+    const missingFile = await runBefore(await createHooks(createDataDir()), { command: 'npm run dev &' });
+    expect(missingFile.command).toBe('npm run dev &');
+  });
+
+  test('does not double-prefix and rejects unsafe session ids', () => {
+    expect(__test.prefixSessionMarker('export DEVRYAN_SESSION_ID=ses_1; ls', 'ses_1')).toBe('export DEVRYAN_SESSION_ID=ses_1; ls');
+    expect(__test.prefixSessionMarker('ls', 'bad id; rm -rf /')).toBe('ls');
+    expect(__test.prefixSessionMarker('ls', '')).toBe('ls');
+  });
+
+  test('detects heavy validation commands', () => {
+    const heavy = [
+      'tsc --noEmit',
+      'npx tsc -p tsconfig.json',
+      'bunx vitest run src',
+      'node_modules/.bin/vitest run server/lib',
+      'jest --ci',
+      'eslint src',
+      'eslint --ext .ts --fix src/',
+      'eslint .',
+      'playwright test',
+      'npx playwright test e2e',
+      'next build',
+      'vite build',
+      'bun run build',
+      'bun run --shell=bun build',
+      'bun test src/stores/useProcessesStore.test.ts',
+      'bun run type-check',
+      'npm run build',
+      'npm test',
+      'npm run lint',
+      'pnpm run type-check',
+      'yarn build',
+      'yarn test',
+      'cd packages/ui && bun test src/x.test.ts && bun run type-check',
+      'npm run build:watch',
+    ];
+    const light = [
+      'ls -la',
+      'git status',
+      'npm run dev',
+      'bun run dev',
+      'eslint --version',
+      'eslint --help',
+      'eslint',
+      'cat tsconfig.json',
+      'echo "tsc is great"',
+      'vite',
+      'next dev',
+      'npm install',
+      'bun install',
+      'bun run start',
+      'grep -rn tsc src',
+      '',
+    ];
+    for (const command of heavy) expect(__test.isHeavyCheckCommand(command), command).toBe(true);
+    for (const command of light) expect(__test.isHeavyCheckCommand(command), command).toBe(false);
+  });
+
+  test('acquires a slot for heavy commands, leaves the command untouched, and releases it after the call', async () => {
+    const dataDir = createDataDir();
+    const hooks = await createHooks(dataDir);
+
+    const args = await runBefore(hooks, { command: 'bun run type-check' });
+    expect(args.command).toBe('bun run type-check');
+    expect(slotDirs(dataDir)).toEqual(['slot-1']);
+    const owner = JSON.parse(fs.readFileSync(path.join(dataDir, 'locks', 'heavy-checks', 'slot-1', 'owner.json'), 'utf8'));
+    expect(owner).toMatchObject({ pid: process.pid, callID: 'call-1' });
+
+    const second = await createHooks(dataDir);
+    await runBefore(second, { command: 'npx vitest run' }, 'call-2');
+    expect(slotDirs(dataDir)).toEqual(['slot-1', 'slot-2']);
+
+    const result = await runAfter(hooks);
+    expect(result.metadata).toEqual({ source: 'native' });
+    expect(slotDirs(dataDir)).toEqual(['slot-2']);
+    await runAfter(second, 'call-2');
+    expect(slotDirs(dataDir)).toEqual([]);
+  });
+
+  test('leaves non-heavy commands alone without creating lock directories', async () => {
+    const dataDir = createDataDir();
+    const hooks = await createHooks(dataDir);
+    const args = await runBefore(hooks, { command: 'git status' });
+    expect(args.command).toBe('git status');
+    expect(fs.existsSync(path.join(dataDir, 'locks'))).toBe(false);
+    const result = await runAfter(hooks);
+    expect(result.metadata).toEqual({ source: 'native' });
+  });
+
+  test('reclaims stale slots held by dead processes or older than the stale window', async () => {
+    const dataDir = createDataDir();
+    holdSlot(dataDir, 1, { pid: 2 ** 22 - 1, since: Date.now() });
+    holdSlot(dataDir, 2, { pid: process.pid, since: Date.now() - 16 * 60_000 });
+    const hooks = await createHooks(dataDir, '/tmp/project', { isProcessAlive: (pid) => pid === process.pid });
+
+    const started = Date.now();
+    await runBefore(hooks, { command: 'tsc --noEmit' });
+    expect(Date.now() - started).toBeLessThan(40);
+    const owner = JSON.parse(fs.readFileSync(path.join(dataDir, 'locks', 'heavy-checks', 'slot-1', 'owner.json'), 'utf8'));
+    expect(owner.pid).toBe(process.pid);
+    expect(owner.callID).toBe('call-1');
+
+    const result = await runAfter(hooks);
+    expect(result.metadata.waitedForSlotMs).toBeUndefined();
+  });
+
+  test('waits a bounded time for a slot and then proceeds, reporting the wait', async () => {
+    const dataDir = createDataDir();
+    holdSlot(dataDir, 1, { pid: process.pid, since: Date.now() });
+    holdSlot(dataDir, 2, { pid: process.pid, since: Date.now() });
+    const hooks = await createHooks(dataDir, '/tmp/project', { slotMaxWaitMs: 30, slotPollMs: 5 });
+
+    const started = Date.now();
+    const args = await runBefore(hooks, { command: 'npm run build' });
+    const elapsed = Date.now() - started;
+    expect(args.command).toBe('npm run build');
+    expect(elapsed).toBeGreaterThanOrEqual(25);
+    expect(slotDirs(dataDir)).toEqual(['slot-1', 'slot-2']);
+
+    const result = await runAfter(hooks);
+    expect(result.metadata.source).toBe('native');
+    expect(result.metadata.waitedForSlotMs).toBeGreaterThanOrEqual(25);
+    // Foreign slots are never released by a waiter that did not own them.
+    expect(slotDirs(dataDir)).toEqual(['slot-1', 'slot-2']);
+  });
+
+  test('skips the slot limiter when the project sets heavyCheckSlots to 0', async () => {
+    const dataDir = createDataDir();
+    writeTracking(dataDir, { '/tmp/project': { heavyCheckSlots: 0 } });
+    const hooks = await createHooks(dataDir);
+    await runBefore(hooks, { command: 'bun run build' });
+    expect(fs.existsSync(path.join(dataDir, 'locks'))).toBe(false);
+  });
+
+  test('resolves the data dir from OPENCHAMBER_DATA_DIR, then CONTEXT_MODE_DATA_DIR', () => {
+    expect(__test.resolveDataDir({ OPENCHAMBER_DATA_DIR: '/tmp/a', CONTEXT_MODE_DATA_DIR: '/tmp/b' })).toBe(path.resolve('/tmp/a'));
+    expect(__test.resolveDataDir({ CONTEXT_MODE_DATA_DIR: '/tmp/b' })).toBe(path.resolve('/tmp/b'));
+    expect(__test.resolveDataDir({})).toBe(path.join(os.homedir(), '.config', 'openchamber'));
   });
 });

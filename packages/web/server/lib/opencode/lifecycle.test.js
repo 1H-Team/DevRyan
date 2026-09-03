@@ -417,6 +417,7 @@ describe('OpenCode lifecycle', () => {
     const runtime = createRuntime();
     const server = await runtime.startOpenCode();
 
+    const [, , spawnOptions] = spawnMock.mock.calls.at(-1);
     expect(readManagedOpenCodeRegistry()).toEqual([
       expect.objectContaining({
         childPid: 23456,
@@ -424,6 +425,7 @@ describe('OpenCode lifecycle', () => {
         port: 45678,
         binary: 'opencode',
         hostRuntime: 'web',
+        workingDirectory: spawnOptions.cwd,
       }),
     ]);
 

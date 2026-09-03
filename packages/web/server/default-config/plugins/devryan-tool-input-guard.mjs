@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 const CONTEXT_EXECUTE_TOOLS = new Set([
   'ctx_execute',
   'mcp__context_mode__ctx_execute',
@@ -25,6 +29,41 @@ const BINARY_READ_BLOCKED_CODE = 'DEVRYAN_BINARY_READ_BLOCKED';
 const DEFAULT_SHELL_TIMEOUT_MS = 240_000;
 const MIN_SHELL_TIMEOUT_MS = 1_000;
 const MAX_SHELL_TIMEOUT_MS = 3_600_000;
+
+// Process tracking: when a project opts in (server-written tracking.json), agent
+// shell commands are prefixed with an exported session marker so the server can
+// group their processes by session and stop matched dev servers on delete.
+const SESSION_MARKER_ENV = 'DEVRYAN_SESSION_ID';
+const SESSION_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,128}$/;
+const TRACKING_FILE_RELATIVE_PATH = ['processes', 'tracking.json'];
+const TRACKING_REFRESH_MS = 5_000;
+
+// Heavy validation slots: machine-wide lock directories so concurrent agent
+// sessions do not all run tsc/vitest/playwright at once. The command text is
+// never modified; the hook only delays the call until a slot frees up.
+const HEAVY_CHECK_SLOT_COUNT = 2;
+const HEAVY_CHECK_SLOT_STALE_MS = 15 * 60_000;
+const HEAVY_CHECK_MAX_WAIT_MS = 10 * 60_000;
+const HEAVY_CHECK_POLL_MS = 500;
+const HEAVY_CHECK_LOCK_RELATIVE_PATH = ['locks', 'heavy-checks'];
+const HEAVY_CHECK_OWNER_FILE = 'owner.json';
+// Heavy binaries only count in command position (start of the line, after a
+// `;`/`&&`/`|`/`(` separator, or as a path such as node_modules/.bin/tsc), so
+// `grep -rn tsc src` or `echo "tsc"` never wait for a slot.
+const COMMAND_START = String.raw`(?:^|[;&|(]\s*|\S*/)`;
+const RUNNER_PREFIX = String.raw`(?:npx\s+(?:-y\s+)?|bunx\s+|pnpm\s+(?:exec|dlx)\s+|yarn\s+(?:exec\s+)?)?`;
+const HEAVY_CHECK_PATTERNS = [
+  new RegExp(String.raw`${COMMAND_START}${RUNNER_PREFIX}tsc(?:\s|$)`),
+  new RegExp(String.raw`${COMMAND_START}${RUNNER_PREFIX}vitest(?:\s|$)`),
+  new RegExp(String.raw`${COMMAND_START}${RUNNER_PREFIX}jest(?:\s|$)`),
+  // eslint only counts when it is pointed at something (a directory or file
+  // argument after any flags); `eslint --version` / `--help` stay light.
+  new RegExp(String.raw`${COMMAND_START}${RUNNER_PREFIX}eslint\s+(?:-{1,2}[\w-]+(?:[= ]\S+)?\s+)*(?!-)\S`),
+  new RegExp(String.raw`${COMMAND_START}${RUNNER_PREFIX}playwright(?:\s|$)`),
+  new RegExp(String.raw`${COMMAND_START}${RUNNER_PREFIX}next\s+build(?:\s|$)`),
+  new RegExp(String.raw`${COMMAND_START}${RUNNER_PREFIX}vite\s+build(?:\s|$)`),
+  new RegExp(String.raw`${COMMAND_START}(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?(?:-{1,2}[\w=./-]+\s+)*(?:build|test|lint|type-check)(?::[\w.-]+)?(?:\s|$)`),
+];
 
 const JAVASCRIPT_LANGUAGES = new Set(['javascript', 'js']);
 const ABSOLUTE_PATH_START_PATTERN = /(?:^|\s)["']?(?:\/(?!\/)|[a-z]:[\\/]|\\\\)/gi;
@@ -186,38 +225,303 @@ const enforceShellTimeout = (args) => {
   }
 };
 
-export const DevRyanToolInputGuardPlugin = async () => ({
-  'tool.execute.before': async (input, output) => {
-    if (READ_TOOLS.has(input?.tool)) {
-      validateReadInput(output?.args);
-      return;
+// ---------------------------------------------------------------------------
+// Process tracking + heavy-check slots
+// ---------------------------------------------------------------------------
+
+const resolveDataDir = (env = process.env) => {
+  for (const key of ['OPENCHAMBER_DATA_DIR', 'CONTEXT_MODE_DATA_DIR']) {
+    const value = typeof env[key] === 'string' ? env[key].trim() : '';
+    if (value) return path.resolve(value);
+  }
+  return path.join(os.homedir(), '.config', 'openchamber');
+};
+
+const normalizeDirectory = (value) => {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const resolved = path.resolve(value.trim());
+  return resolved.length > 1 ? resolved.replace(/[\\/]+$/, '') : resolved;
+};
+
+const directoryCovers = (key, directory) => (
+  key === directory || directory.startsWith(key.endsWith(path.sep) ? key : `${key}${path.sep}`)
+);
+
+const isHeavyCheckCommand = (command) => {
+  if (typeof command !== 'string') return false;
+  const text = command.replace(/\s+/g, ' ').trim();
+  return Boolean(text) && HEAVY_CHECK_PATTERNS.some((pattern) => pattern.test(text));
+};
+
+const createTrackingReader = ({ dataDir, refreshMs = TRACKING_REFRESH_MS, now = Date.now } = {}) => {
+  const filePath = path.join(dataDir, ...TRACKING_FILE_RELATIVE_PATH);
+  let cachedAt = -Infinity;
+  let cachedProjects = {};
+
+  const read = () => {
+    const timestamp = now();
+    if (timestamp - cachedAt < refreshMs) return cachedProjects;
+    cachedAt = timestamp;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      cachedProjects = isRecord(parsed?.projects) ? parsed.projects : {};
+    } catch {
+      cachedProjects = {};
     }
-    if (input?.tool === 'grep') {
-      validateGrepInput(output?.args);
-      return;
+    return cachedProjects;
+  };
+
+  const lookup = (directory) => {
+    const normalized = normalizeDirectory(directory);
+    const defaults = { trackAgentProcesses: false, heavyCheckSlots: HEAVY_CHECK_SLOT_COUNT };
+    if (!normalized) return defaults;
+    const projects = read();
+    let bestKey = null;
+    for (const key of Object.keys(projects)) {
+      if (!directoryCovers(key, normalized)) continue;
+      if (!bestKey || key.length > bestKey.length) bestKey = key;
     }
-    if (CONTEXT_EXECUTE_TOOLS.has(input?.tool)) {
-      validateContextExecuteInput(output?.args);
-      return;
+    const entry = bestKey ? projects[bestKey] : null;
+    if (!isRecord(entry)) return defaults;
+    return {
+      trackAgentProcesses: entry.trackAgentProcesses === true,
+      heavyCheckSlots: entry.heavyCheckSlots === 0 ? 0 : HEAVY_CHECK_SLOT_COUNT,
+    };
+  };
+
+  return { lookup, filePath };
+};
+
+const isProcessAlive = (pid) => {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const slotManagers = new Set();
+let exitHookInstalled = false;
+const installExitHook = () => {
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.once('exit', () => {
+    for (const manager of slotManagers) manager.releaseAll();
+  });
+};
+
+const createHeavyCheckSlots = ({
+  dataDir,
+  slotCount = HEAVY_CHECK_SLOT_COUNT,
+  staleMs = HEAVY_CHECK_SLOT_STALE_MS,
+  maxWaitMs = HEAVY_CHECK_MAX_WAIT_MS,
+  pollMs = HEAVY_CHECK_POLL_MS,
+  now = Date.now,
+  isAlive = isProcessAlive,
+  ownerPid = process.pid,
+} = {}) => {
+  const root = path.join(dataDir, ...HEAVY_CHECK_LOCK_RELATIVE_PATH);
+  const held = new Map();
+
+  const readOwner = (slotDir) => {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(slotDir, HEAVY_CHECK_OWNER_FILE), 'utf8'));
+    } catch {
+      return null;
     }
-    if (SHELL_TOOLS.has(input?.tool)) {
-      enforceShellTimeout(output?.args);
+  };
+
+  const isStale = (slotDir) => {
+    const owner = readOwner(slotDir);
+    if (!isRecord(owner)) {
+      // No readable owner: treat as stale once past the stale window (the
+      // directory may be mid-creation by another process right now).
+      try {
+        return now() - fs.statSync(slotDir).mtimeMs > Math.min(staleMs, 5_000);
+      } catch {
+        return true;
+      }
     }
-  },
-  'tool.execute.after': async (input, output) => {
-    if (!READ_TOOLS.has(input?.tool) || !isRecord(output) || typeof output.output !== 'string') return;
-    const readPath = getReadPath(input?.args);
-    if (!shouldBlockReadResult(output.output)) return;
-    output.output = renderBlockedBinaryRead(readPath);
-  },
-  'experimental.chat.messages.transform': async (_input, output) => {
-    if (!Array.isArray(output?.messages)) return;
-    for (const message of output.messages) {
-      if (!Array.isArray(message?.parts)) continue;
-      for (const part of message.parts) sanitizeReadToolPart(part);
+    if (!Number.isFinite(owner.since) || now() - owner.since > staleMs) return true;
+    return !isAlive(owner.pid);
+  };
+
+  const tryClaim = (slotDir, callID) => {
+    try {
+      fs.mkdirSync(slotDir);
+    } catch (error) {
+      if (error?.code !== 'EEXIST') return false;
+      if (!isStale(slotDir)) return false;
+      try {
+        fs.rmSync(slotDir, { recursive: true, force: true });
+        fs.mkdirSync(slotDir);
+      } catch {
+        return false;
+      }
     }
-  },
-});
+    try {
+      fs.writeFileSync(
+        path.join(slotDir, HEAVY_CHECK_OWNER_FILE),
+        JSON.stringify({ pid: ownerPid, since: now(), callID: callID ?? null }),
+        { mode: 0o600 },
+      );
+    } catch {
+      fs.rmSync(slotDir, { recursive: true, force: true });
+      return false;
+    }
+    return true;
+  };
+
+  const tryAcquire = (callID) => {
+    fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+    for (let index = 1; index <= slotCount; index += 1) {
+      const slotDir = path.join(root, `slot-${index}`);
+      if (tryClaim(slotDir, callID)) {
+        held.set(callID, slotDir);
+        return slotDir;
+      }
+    }
+    return null;
+  };
+
+  // Bounded wait: never block a validation run forever because of a stuck
+  // sibling; after maxWaitMs the command proceeds without a slot.
+  const acquire = async (callID) => {
+    const startedAt = now();
+    if (held.has(callID)) return { slot: held.get(callID), waitedMs: 0 };
+    let slot = tryAcquire(callID);
+    let polled = false;
+    while (!slot && now() - startedAt < maxWaitMs) {
+      polled = true;
+      await sleep(pollMs);
+      slot = tryAcquire(callID);
+    }
+    // Only a real wait is reported; an instant claim (or stale reclaim) is 0.
+    return { slot, waitedMs: polled ? Math.max(0, now() - startedAt) : 0 };
+  };
+
+  const release = (callID) => {
+    const slotDir = held.get(callID);
+    if (!slotDir) return false;
+    held.delete(callID);
+    fs.rmSync(slotDir, { recursive: true, force: true });
+    return true;
+  };
+
+  const releaseAll = () => {
+    for (const callID of [...held.keys()]) release(callID);
+  };
+
+  const manager = { root, acquire, release, releaseAll, heldSlots: () => [...held.values()] };
+  slotManagers.add(manager);
+  installExitHook();
+  return manager;
+};
+
+const prefixSessionMarker = (command, sessionID) => {
+  if (typeof command !== 'string' || !command.trim()) return command;
+  if (typeof sessionID !== 'string' || !SESSION_ID_PATTERN.test(sessionID)) return command;
+  const prefix = `export ${SESSION_MARKER_ENV}=${sessionID}; `;
+  if (command.startsWith(prefix)) return command;
+  return `${prefix}${command}`;
+};
+
+const createShellPolicies = (pluginInput = {}, testOptions = {}) => {
+  const dataDir = typeof testOptions.dataDir === 'string' && testOptions.dataDir
+    ? path.resolve(testOptions.dataDir)
+    : resolveDataDir(testOptions.env);
+  const directory = typeof pluginInput?.directory === 'string' && pluginInput.directory
+    ? pluginInput.directory
+    : (typeof pluginInput?.worktree === 'string' && pluginInput.worktree ? pluginInput.worktree : process.cwd());
+  const tracking = createTrackingReader({
+    dataDir,
+    refreshMs: testOptions.trackingRefreshMs,
+    now: testOptions.now,
+  });
+  const slots = createHeavyCheckSlots({
+    dataDir,
+    slotCount: testOptions.slotCount,
+    staleMs: testOptions.slotStaleMs,
+    maxWaitMs: testOptions.slotMaxWaitMs,
+    pollMs: testOptions.slotPollMs,
+    now: testOptions.now,
+    isAlive: testOptions.isProcessAlive,
+    ownerPid: testOptions.ownerPid,
+  });
+  const waits = new Map();
+
+  const before = async (input, args) => {
+    if (!isRecord(args) || typeof args.command !== 'string') return;
+    const settings = tracking.lookup(directory);
+    if (settings.trackAgentProcesses) {
+      args.command = prefixSessionMarker(args.command, input?.sessionID);
+    }
+    if (settings.heavyCheckSlots !== 0 && isHeavyCheckCommand(args.command)) {
+      const callID = typeof input?.callID === 'string' && input.callID ? input.callID : `anonymous-${Date.now()}`;
+      const { waitedMs } = await slots.acquire(callID);
+      if (waitedMs > 0) waits.set(callID, waitedMs);
+    }
+  };
+
+  const after = (input, output) => {
+    const callID = input?.callID;
+    if (typeof callID !== 'string' || !callID) return;
+    slots.release(callID);
+    const waitedMs = waits.get(callID);
+    if (waitedMs === undefined) return;
+    waits.delete(callID);
+    if (!isRecord(output)) return;
+    output.metadata = { ...(isRecord(output.metadata) ? output.metadata : {}), waitedForSlotMs: waitedMs };
+  };
+
+  return { before, after, slots, tracking, directory, dataDir };
+};
+
+export const DevRyanToolInputGuardPlugin = async (pluginInput = {}, testOptions = {}) => {
+  const shellPolicies = createShellPolicies(pluginInput, testOptions);
+
+  return {
+    'tool.execute.before': async (input, output) => {
+      if (READ_TOOLS.has(input?.tool)) {
+        validateReadInput(output?.args);
+        return;
+      }
+      if (input?.tool === 'grep') {
+        validateGrepInput(output?.args);
+        return;
+      }
+      if (CONTEXT_EXECUTE_TOOLS.has(input?.tool)) {
+        validateContextExecuteInput(output?.args);
+        return;
+      }
+      if (SHELL_TOOLS.has(input?.tool)) {
+        enforceShellTimeout(output?.args);
+        await shellPolicies.before(input, output?.args);
+      }
+    },
+    'tool.execute.after': async (input, output) => {
+      if (SHELL_TOOLS.has(input?.tool)) {
+        shellPolicies.after(input, output);
+        return;
+      }
+      if (!READ_TOOLS.has(input?.tool) || !isRecord(output) || typeof output.output !== 'string') return;
+      const readPath = getReadPath(input?.args);
+      if (!shouldBlockReadResult(output.output)) return;
+      output.output = renderBlockedBinaryRead(readPath);
+    },
+    'experimental.chat.messages.transform': async (_input, output) => {
+      if (!Array.isArray(output?.messages)) return;
+      for (const message of output.messages) {
+        if (!Array.isArray(message?.parts)) continue;
+        for (const part of message.parts) sanitizeReadToolPart(part);
+      }
+    },
+  };
+};
 
 // Callable so the plugin loader accepts it; constants ride along as properties.
 export const __test = Object.assign(() => ({}), {
@@ -225,9 +529,18 @@ export const __test = Object.assign(() => ({}), {
   isKnownBinaryReadPath,
   looksLikeBinaryReadOutput,
   renderBlockedBinaryRead,
+  isHeavyCheckCommand,
+  prefixSessionMarker,
+  createHeavyCheckSlots,
+  createTrackingReader,
+  resolveDataDir,
   DEFAULT_SHELL_TIMEOUT_MS,
   MIN_SHELL_TIMEOUT_MS,
   MAX_SHELL_TIMEOUT_MS,
+  SESSION_MARKER_ENV,
+  HEAVY_CHECK_SLOT_COUNT,
+  HEAVY_CHECK_SLOT_STALE_MS,
+  HEAVY_CHECK_MAX_WAIT_MS,
 });
 
 export default DevRyanToolInputGuardPlugin;
