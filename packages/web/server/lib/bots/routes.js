@@ -62,6 +62,62 @@ const capability = ({
   } : null,
 });
 
+export const BOT_STATUS_CACHE_TTL_MS = 60_000;
+
+const queryFlag = (value) => {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw === '1' || raw === 'true';
+};
+
+// `botHost.getStatus()` is a Docker probe (several `docker` spawns) and the UI
+// polls the capabilities route, so one probe result serves every read for a
+// short window: concurrent misses share a single probe, a rejected probe is
+// never cached, `refresh` forces a new probe, and the runtime invalidates the
+// entry whenever its execution state changes. One host per cache.
+export function createBotHostStatusCache({ ttlMs = BOT_STATUS_CACHE_TTL_MS, now = Date.now } = {}) {
+  if (!Number.isFinite(ttlMs) || ttlMs < 0 || typeof now !== 'function') {
+    throw new TypeError('Bot host status cache configuration is invalid');
+  }
+  let entry = null;
+  let inflight = null;
+  return Object.freeze({
+    async getStatus(botHost, { refresh = false } = {}) {
+      if (typeof botHost?.getStatus !== 'function') throw new TypeError('Bot host status is unavailable');
+      if (!refresh) {
+        if (entry && entry.host === botHost && entry.expiresAt > now()) return entry.status;
+        if (inflight && inflight.host === botHost) return inflight.promise;
+      }
+      const probe = { host: botHost, promise: null };
+      inflight = probe;
+      let started;
+      try {
+        started = Promise.resolve(botHost.getStatus());
+      } catch (error) {
+        started = Promise.reject(error);
+      }
+      probe.promise = started
+        .then((status) => {
+          if (inflight === probe) {
+            entry = { host: botHost, status, expiresAt: now() + ttlMs };
+            inflight = null;
+          }
+          return status;
+        }, (error) => {
+          if (inflight === probe) inflight = null;
+          throw error;
+        });
+      return probe.promise;
+    },
+    invalidate() {
+      entry = null;
+      inflight = null;
+    },
+    get fresh() {
+      return entry !== null && entry.expiresAt > now();
+    },
+  });
+}
+
 export const resolveBotCapabilities = async ({
   hasSupabase,
   botHost,
@@ -70,6 +126,8 @@ export const resolveBotCapabilities = async ({
   controlPlaneFailure = null,
   executionFailure = null,
   startupState = 'ready',
+  statusCache = null,
+  refreshStatus = false,
 } = {}) => {
   const owner = typeof botHost?.owner === 'string' ? botHost.owner : 'unsupported';
   if (!hasSupabase) {
@@ -141,7 +199,9 @@ export const resolveBotCapabilities = async ({
 
   let runtime;
   try {
-    runtime = await botHost.getStatus();
+    runtime = statusCache
+      ? await statusCache.getStatus(botHost, { refresh: refreshStatus === true })
+      : await botHost.getStatus();
   } catch (error) {
     return capability({
       state: 'runtime_unavailable',
@@ -219,7 +279,9 @@ export function registerBotRoutes(app, {
   resolveCapabilities = null,
   getRuntimeServices = null,
   recordDiagnostic = () => {},
+  botHostStatusCache = null,
 } = {}) {
+  const statusCache = botHostStatusCache || createBotHostStatusCache();
   const markComputerView = (stage, payload) => {
     try {
       recordDiagnostic({
@@ -299,8 +361,11 @@ export function registerBotRoutes(app, {
 
   app.get('/api/bots/capabilities', async (req, res) => {
     try {
+      // `?refresh=1` bypasses the Docker status cache (the Bots settings page
+      // uses it on open); ordinary polls reuse the last probe for a minute.
+      const refresh = queryFlag(req.query?.refresh);
       const resolved = typeof resolveCapabilities === 'function'
-        ? await resolveCapabilities()
+        ? await resolveCapabilities({ refresh })
         : await resolveBotCapabilities({
             hasSupabase: store?.available === true,
             botHost,
@@ -309,6 +374,8 @@ export function registerBotRoutes(app, {
             controlPlaneFailure: getControlPlaneFailure(),
             executionFailure: getExecutionFailure(),
             startupState: getStartupState(),
+            statusCache,
+            refreshStatus: refresh,
           });
       return res.json({
         ...resolved,

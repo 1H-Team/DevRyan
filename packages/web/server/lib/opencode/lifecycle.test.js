@@ -11,7 +11,7 @@ vi.mock('node:child_process', () => ({
   spawnSync: vi.fn(),
 }));
 
-const { createOpenCodeLifecycleRuntime } = await import('./lifecycle.js');
+const { createOpenCodeLifecycleRuntime, resolveManagedOpenCodeLogLevel } = await import('./lifecycle.js');
 const { readManagedOpenCodeRegistry } = await import('./managed-process-registry.js');
 
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
@@ -25,6 +25,7 @@ const originalBrowserDiscoveryUrl = process.env.DEVRYAN_BROWSER_CDP_DISCOVERY_UR
 const originalBrowserToken = process.env.DEVRYAN_BROWSER_CDP_TOKEN;
 const originalAgentBrowserBinary = process.env.DEVRYAN_AGENT_BROWSER_BIN;
 const originalAgentBrowserConfig = process.env.AGENT_BROWSER_CONFIG;
+const originalOpencodeLogLevel = process.env.DEVRYAN_OPENCODE_LOG_LEVEL;
 const originalFetch = globalThis.fetch;
 const tempDirs = [];
 
@@ -39,6 +40,7 @@ beforeEach(() => {
   tempDirs.push(dataDir);
   process.env.OPENCHAMBER_DATA_DIR = dataDir;
   delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
+  delete process.env.DEVRYAN_OPENCODE_LOG_LEVEL;
 });
 
 afterEach(() => {
@@ -89,6 +91,7 @@ afterEach(() => {
     DEVRYAN_BROWSER_CDP_TOKEN: originalBrowserToken,
     DEVRYAN_AGENT_BROWSER_BIN: originalAgentBrowserBinary,
     AGENT_BROWSER_CONFIG: originalAgentBrowserConfig,
+    DEVRYAN_OPENCODE_LOG_LEVEL: originalOpencodeLogLevel,
   })) {
     if (typeof value === 'string') process.env[key] = value;
     else delete process.env[key];
@@ -261,7 +264,7 @@ describe('OpenCode lifecycle', () => {
     const [binary, args, options] = spawnMock.mock.calls[0];
 
     expect(binary).toBe('opencode');
-    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678']);
+    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678', '--log-level', 'WARN']);
     expect(options.env.PATH).toBe('/home/user/.bun/bin:/usr/local/bin:/usr/bin');
     expect(options.env.SHELL_ONLY).toBe('yes');
     expect(options.env.OPENCODE_SERVER_PASSWORD).toBe('password');
@@ -274,6 +277,55 @@ describe('OpenCode lifecycle', () => {
     expect(options.env.CONTEXT_MODE_DIR).toBe(join(process.env.OPENCHAMBER_DATA_DIR, 'context-mode'));
 
     await server.close();
+  });
+
+  it('honours DEVRYAN_OPENCODE_LOG_LEVEL for the managed OpenCode log level', async () => {
+    delete process.env.OPENCODE_BINARY;
+    process.env.DEVRYAN_OPENCODE_LOG_LEVEL = 'debug';
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+
+    const runtime = createRuntime();
+    const server = await runtime.startOpenCode();
+    const [, args] = spawnMock.mock.calls[0];
+
+    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678', '--log-level', 'DEBUG']);
+
+    await server.close();
+  });
+
+  it('falls back to WARN when DEVRYAN_OPENCODE_LOG_LEVEL is not an OpenCode log level', async () => {
+    delete process.env.OPENCODE_BINARY;
+    process.env.DEVRYAN_OPENCODE_LOG_LEVEL = 'verbose';
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+
+    const runtime = createRuntime();
+    const server = await runtime.startOpenCode();
+    const [, args] = spawnMock.mock.calls[0];
+
+    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678', '--log-level', 'WARN']);
+
+    await server.close();
+  });
+
+  it('normalises managed OpenCode log levels case-insensitively', () => {
+    expect(resolveManagedOpenCodeLogLevel(undefined)).toBe('WARN');
+    expect(resolveManagedOpenCodeLogLevel('')).toBe('WARN');
+    expect(resolveManagedOpenCodeLogLevel(' info ')).toBe('INFO');
+    expect(resolveManagedOpenCodeLogLevel('Error')).toBe('ERROR');
+    expect(resolveManagedOpenCodeLogLevel('trace')).toBe('WARN');
+    expect(resolveManagedOpenCodeLogLevel(42)).toBe('WARN');
   });
 
   it('removes an ambient default-plugin disable flag from managed OpenCode', async () => {
@@ -963,7 +1015,7 @@ describe('OpenCode lifecycle', () => {
       workingDirectory: '/tmp/project',
       skillPolicy: expect.any(Object),
     });
-    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678']);
+    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678', '--log-level', 'WARN']);
     expect(options.env.OPENCODE_CONFIG_DIR).toBe('/tmp/openchamber-runtime-overlays/project-hash');
     // v1.0.6 set this to 'true', which disabled the opencode default plugin that
     // surfaces the OpenAI (ChatGPT/Codex OAuth) provider. openchamber must NOT force it.

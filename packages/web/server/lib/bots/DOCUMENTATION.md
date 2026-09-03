@@ -1310,7 +1310,11 @@ Expired evidence objects fail closed before decryption.
 Only `healthy` is runnable. The payload advertises Electron runtime-management
 availability but never exposes a mutation route. Capability resolution always
 inspects the current Electron status before projecting a prior server-execution
-failure. When the host is healthy, the server retries its execution composition
+failure; route reads reuse one Electron status probe for sixty seconds
+(`?refresh=1` forces a new probe, failed probes are never cached, and any
+execution-state change drops the entry), while per-run preflight and
+host-driven reconciliation always probe live. When the host is healthy, the
+server retries its execution composition
 through a bounded single-flight reconciliation and clears the prior failure only
 after durable run recovery succeeds. Routes resolve execution services dynamically
 so a successful reconciliation does not require restarting DevRyan.

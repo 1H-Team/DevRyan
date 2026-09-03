@@ -418,7 +418,12 @@ the drain re-claims when a wake arrived during its claim, and a claim that
 fails against the database re-arms with bounded backoff instead of leaving the
 run queued behind typing dots. A periodic sweep re-drains channels holding
 queued runs older than thirty seconds and settles expired leases that no live
-process owns. A Shared copy that fails or exceeds its two-minute deadline fails
+process owns. That sweep pauses once the runtime has been idle for six hours
+(no live run and no enqueue, drain, start, or settlement) and resumes on the
+next activity; the first sweep after start always runs. `GET
+/api/bots/capabilities` reuses one Docker status probe for sixty seconds unless
+called with `?refresh=1`, and the cached probe is dropped whenever execution
+state changes. A Shared copy that fails or exceeds its two-minute deadline fails
 the queued run visibly as a retryable attachment failure instead of blocking
 the channel head; Retry re-copies the attachments first. If the reasoning
 session disappears before the model produced any visible output or tool

@@ -21,6 +21,18 @@ const isManagedOrchestrationOwnershipError = (error) => (
   || error?.code === 'managed_orchestration_ownership_lost'
 );
 
+// `opencode serve --log-level` accepts DEBUG | INFO | WARN | ERROR (verified
+// against opencode 1.18.27). Without the flag the managed server logs at INFO
+// and its opencode.log grows by tens of megabytes per session; WARN keeps
+// failures visible while staying small. DEVRYAN_OPENCODE_LOG_LEVEL overrides it.
+export const OPENCODE_LOG_LEVELS = Object.freeze(['DEBUG', 'INFO', 'WARN', 'ERROR']);
+export const DEFAULT_OPENCODE_LOG_LEVEL = 'WARN';
+
+export const resolveManagedOpenCodeLogLevel = (value = process.env.DEVRYAN_OPENCODE_LOG_LEVEL) => {
+  const normalized = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  return OPENCODE_LOG_LEVELS.includes(normalized) ? normalized : DEFAULT_OPENCODE_LOG_LEVEL;
+};
+
 /**
  * OpenCode 1.15+ rejects unknown top-level config keys, but DevRyan historically
  * stored its own per-agent overrides under a top-level `openchamber` key in the
@@ -422,7 +434,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
   const createManagedOpenCodeServerProcess = async ({ hostname, port, timeout, cwd, env: processEnv, shellEnvKeysCount = 0 }) => {
     let binary = (process.env.OPENCODE_BINARY || 'opencode').trim() || 'opencode';
-    let args = ['serve', '--hostname', hostname, '--port', String(port)];
+    const logLevel = resolveManagedOpenCodeLogLevel();
+    let args = ['serve', '--hostname', hostname, '--port', String(port), '--log-level', logLevel];
     let launchWrapperType = null;
 
     if (process.platform === 'win32' && state.useWslForOpencode) {
@@ -444,6 +457,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         serveHost,
         '--port',
         String(port),
+        '--log-level',
+        logLevel,
       ], state.resolvedWslDistro);
     }
 

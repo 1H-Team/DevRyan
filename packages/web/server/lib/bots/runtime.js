@@ -59,7 +59,7 @@ import { createBotStreamAccessLeases } from './stream-access-lease.js';
 import { createBotRecoveryBundleRuntime } from './recovery-bundle.js';
 import { createBotPurgeRuntime } from './purge-runtime.js';
 import { createBotPurgeAdapter, createBotRecoveryAdapter } from './recovery-adapter.js';
-import { registerBotRoutes, resolveBotCapabilities } from './routes.js';
+import { createBotHostStatusCache, registerBotRoutes, resolveBotCapabilities } from './routes.js';
 import { createBotStore } from './store.js';
 import { createBotSourceScanner } from './source-scanner.js';
 import { createBotSpecService } from './bot-spec.js';
@@ -106,6 +106,148 @@ const botStartupFailure = (error) => {
     message: BOT_STARTUP_FAILURE_MESSAGES[code] || 'Shared Bot services could not be prepared.',
   });
 };
+
+export const BOT_SWEEP_IDLE_WINDOW_MS = 6 * 60 * 60 * 1000;
+// Mirrors the dispatcher's run timeout: a run this process started stays live
+// for the sweep gate at most this long once the dispatcher stops reporting it.
+export const BOT_SWEEP_LIVE_RUN_GRACE_MS = 15 * 60 * 1000;
+
+const BOT_ACTIVITY_METHODS = Object.freeze([
+  'enqueueMessage',
+  'drainScope',
+  'resumeRun',
+  'retryRun',
+  'cancelRun',
+  'failQueuedRun',
+  'prewarmChannel',
+]);
+
+const isoOrNull = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString() : null);
+
+const INACTIVE_BOT_SWEEP_DIAGNOSTICS = Object.freeze({
+  idle: false,
+  liveRunCount: 0,
+  lastActivityAt: null,
+  lastSweepAt: null,
+  lastSweepSkipped: false,
+  idleWindowMs: BOT_SWEEP_IDLE_WINDOW_MS,
+});
+
+// The queued-run sweep only has work while runs exist, yet on its own it pages
+// the run store every 30 s and probes Docker for anything it decides to resume.
+// With nobody using a Bot that is pure load, so the sweep is skipped once the
+// runtime is idle: no run this process knows about is live and nothing was
+// enqueued, drained, started or settled within the idle window. The first
+// sweep after start always runs so restart recovery keeps its safety net, and
+// the periodic job keeps ticking so the next activity re-enables sweeping.
+export function createBotRunSweepGate({
+  now = Date.now,
+  idleWindowMs = BOT_SWEEP_IDLE_WINDOW_MS,
+  liveRunGraceMs = BOT_SWEEP_LIVE_RUN_GRACE_MS,
+  isExecuting = () => false,
+  logger = null,
+} = {}) {
+  if (typeof now !== 'function' || typeof isExecuting !== 'function'
+    || !Number.isFinite(idleWindowMs) || idleWindowMs < 0
+    || !Number.isFinite(liveRunGraceMs) || liveRunGraceMs < 0) {
+    throw new TypeError('Bot run sweep gate configuration is invalid');
+  }
+  const liveRuns = new Map();
+  let lastActivityAt = now();
+  let lastSweepAt = null;
+  let lastSweepSkipped = false;
+  let idle = false;
+
+  const noteActivity = () => {
+    lastActivityAt = now();
+  };
+  const liveRunCount = () => {
+    const at = now();
+    for (const [runId, startedAt] of liveRuns) {
+      if (!isExecuting(runId) && at - startedAt >= liveRunGraceMs) liveRuns.delete(runId);
+    }
+    return liveRuns.size;
+  };
+  const shouldSweep = () => (
+    lastSweepAt === null
+    || liveRunCount() > 0
+    || now() - lastActivityAt < idleWindowMs
+  );
+  const setIdle = (next) => {
+    if (next === idle) return;
+    idle = next;
+    logger?.debug?.(next ? '[Bots] run sweep paused while idle' : '[Bots] run sweep resumed', {
+      job: 'run_sweep',
+      lastActivityAt: isoOrNull(lastActivityAt),
+      idleWindowMs,
+    });
+  };
+
+  return Object.freeze({
+    noteActivity,
+    noteRunStarted(runId) {
+      noteActivity();
+      if (typeof runId === 'string' && runId) liveRuns.set(runId, now());
+    },
+    noteRunSettled(runId) {
+      noteActivity();
+      if (typeof runId === 'string') liveRuns.delete(runId);
+    },
+    shouldSweep,
+    // Runs `sweep` unless the runtime is idle, in which case it resolves null
+    // without touching the store or Docker.
+    async sweep(sweep) {
+      if (typeof sweep !== 'function') throw new TypeError('Bot run sweep requires a sweep function');
+      if (!shouldSweep()) {
+        lastSweepSkipped = true;
+        setIdle(true);
+        return null;
+      }
+      setIdle(false);
+      lastSweepSkipped = false;
+      lastSweepAt = now();
+      return sweep();
+    },
+    diagnostics() {
+      return Object.freeze({
+        idle,
+        liveRunCount: liveRunCount(),
+        lastActivityAt: isoOrNull(lastActivityAt),
+        lastSweepAt: isoOrNull(lastSweepAt),
+        lastSweepSkipped,
+        idleWindowMs,
+      });
+    },
+  });
+}
+
+// The dispatcher is a frozen object of closures (no `this`), so a delegating
+// facade can count every externally initiated enqueue/drain/resume/retry/cancel
+// as Bot activity without the dispatcher knowing about the sweep gate.
+// Accessors are forwarded live; everything else is copied as-is.
+export function trackBotDispatcherActivity(dispatcher, noteActivity) {
+  if (!dispatcher || typeof dispatcher !== 'object' || typeof noteActivity !== 'function') {
+    throw new TypeError('Bot dispatcher activity tracking is misconfigured');
+  }
+  const tracked = {};
+  for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(dispatcher))) {
+    if (typeof descriptor.get === 'function') {
+      Object.defineProperty(tracked, name, {
+        enumerable: descriptor.enumerable,
+        get: () => descriptor.get.call(dispatcher),
+      });
+      continue;
+    }
+    const value = descriptor.value;
+    tracked[name] = typeof value === 'function' && BOT_ACTIVITY_METHODS.includes(name)
+      ? (...args) => {
+        noteActivity();
+        return value(...args);
+      }
+      : value;
+  }
+  return Object.freeze(tracked);
+}
 
 export function createBotsRuntime({
   supabase = null,
@@ -410,6 +552,8 @@ export function createBotsRuntime({
     onMessageBlocked: (input) => dispatcher?.failQueuedRun(input),
   });
   connectorRegistry.register(createBotSharedConnector({ sharedFileService }));
+  // One Docker status probe per minute serves every capabilities read (routes.js).
+  const botHostStatusCache = createBotHostStatusCache();
   let runRecovery = null;
   let schemaFailure = null;
   let controlPlaneFailure = null;
@@ -426,6 +570,7 @@ export function createBotsRuntime({
   let executionRetryAttempt = 0;
   let approvalExpiryJob = null;
   let runSweepJob = null;
+  let runSweepGate = null;
   let memoryStartRetryTimer = null;
   let memoryStartDelayMs = MEMORY_START_RETRY_MIN_MS;
   let memoryStartFailure = null;
@@ -928,7 +1073,12 @@ export function createBotsRuntime({
         // Durable transport reconciliation also runs periodically after a restart.
         await telegramService?.notifyRoutineCompleted(input).catch(() => undefined);
       };
-      dispatcher ||= createBotRunDispatcher({
+      runSweepGate ||= createBotRunSweepGate({
+        isExecuting: (runId) => dispatcher?.isExecuting(runId) === true,
+        logger: console,
+      });
+      const sweepGate = runSweepGate;
+      dispatcher ||= trackBotDispatcherActivity(createBotRunDispatcher({
         store,
         channels,
         contextAssembler,
@@ -936,10 +1086,17 @@ export function createBotsRuntime({
         executeGovernedToolIntent: actionGateway.handleGatewayOperation,
         eventStream,
         resolveLibrarySnapshot: (input) => libraryRuntime.snapshotForRun(input),
-        onRunCompleted: (input) => memoryRuntime?.enqueueCompletedRun(input),
-        onRunSettled: (input) => routineSettlementHandler?.(input),
+        onRunCompleted: (input) => {
+          sweepGate.noteActivity();
+          return memoryRuntime?.enqueueCompletedRun(input);
+        },
+        onRunSettled: (input) => {
+          sweepGate.noteRunSettled(input?.run?.id);
+          return routineSettlementHandler?.(input);
+        },
         streamAccessLeases,
-        runtimePreflight: async () => {
+        runtimePreflight: async ({ run } = {}) => {
+          sweepGate.noteRunStarted(run?.id);
           const capability = await resolveBotCapabilities({
             hasSupabase: store.available,
             botHost,
@@ -962,7 +1119,7 @@ export function createBotsRuntime({
         }),
         sharedFileService,
         recordDiagnostic,
-      });
+      }), () => sweepGate.noteActivity());
       runRecovery ||= createBotRunRecovery({ store, dispatcher });
       await sharedFileService.recover();
       await routineRuntime.start();
@@ -997,10 +1154,12 @@ export function createBotsRuntime({
           maxBackoffMs: 300_000,
           logger: console,
           run: async () => {
-            if (!dispatcher || !runRecovery) return;
-            const sweep = await runRecovery.sweep({
+            if (!dispatcher || !runRecovery || !runSweepGate) return;
+            // Resolves null while the runtime is idle; see createBotRunSweepGate.
+            const sweep = await runSweepGate.sweep(() => runRecovery.sweep({
               isExecuting: (runId) => dispatcher?.isExecuting(runId) === true,
-            });
+            }));
+            if (!sweep) return;
             for (const computerScopeKey of sweep.queuedScopeKeys) {
               void dispatcher?.drainScope(computerScopeKey);
             }
@@ -1009,6 +1168,7 @@ export function createBotsRuntime({
         runSweepJob.start({ immediate: false });
       }
       executionFailure = null;
+      botHostStatusCache.invalidate();
       prewarmCache?.invalidateAll();
       executionRetryAttempt = 0;
       if (executionRetryTimer) clearTimeout(executionRetryTimer);
@@ -1018,6 +1178,7 @@ export function createBotsRuntime({
       executionFailure = {
         code: typeof error?.code === 'string' ? error.code : 'bot_runtime_execution_unavailable',
       };
+      botHostStatusCache.invalidate();
       await routineRuntime?.shutdown().catch(() => undefined);
       await dispatcher?.shutdown().catch(() => undefined);
       clearMemoryStartRetry();
@@ -1027,6 +1188,7 @@ export function createBotsRuntime({
       approvalExpiryJob = null;
       if (runSweepJob) await runSweepJob.stop();
       runSweepJob = null;
+      runSweepGate = null;
       runRecovery = null;
       dispatcher = null;
       contextAssembler = null;
@@ -1058,7 +1220,7 @@ export function createBotsRuntime({
     executionRetryTimer.unref?.();
   }
 
-  async function resolveCurrentCapabilities() {
+  async function resolveCurrentCapabilities({ refresh = false } = {}) {
     const input = {
       hasSupabase: store.available,
       botHost,
@@ -1066,9 +1228,12 @@ export function createBotsRuntime({
       schemaFailure,
       controlPlaneFailure,
       startupState,
+      statusCache: botHostStatusCache,
+      refreshStatus: refresh === true,
     };
     if (executionEnabled && started && executionFailure && !schemaFailure && !controlPlaneFailure) {
-      const live = await resolveBotCapabilities(input);
+      // A recovery probe must see the live host, never a cached failure.
+      const live = await resolveBotCapabilities({ ...input, refreshStatus: true });
       if (live.available) await startExecution();
     }
     return resolveBotCapabilities({ ...input, executionFailure });
@@ -1177,7 +1342,9 @@ export function createBotsRuntime({
     getControlPlaneFailure: () => controlPlaneFailure,
     getExecutionFailure: () => executionFailure,
     getStartupState: () => startupState,
-    reconcileExecution: () => resolveCurrentCapabilities(),
+    getSweepDiagnostics: () => runSweepGate?.diagnostics() ?? INACTIVE_BOT_SWEEP_DIAGNOSTICS,
+    // Called by the host after setup/repair/update, so it must bypass the status cache.
+    reconcileExecution: () => resolveCurrentCapabilities({ refresh: true }),
     async prepareStartup({ ensureRuntime, onStatus = () => {} } = {}) {
       if (!store.available) {
         return Object.freeze({ state: 'skipped', reason: 'bots_unavailable' });
@@ -1188,7 +1355,7 @@ export function createBotsRuntime({
       try {
         await ensureRuntime();
         try { onStatus('Warming Bot services…'); } catch {}
-        const capabilities = await resolveCurrentCapabilities();
+        const capabilities = await resolveCurrentCapabilities({ refresh: true });
         if (!capabilities.available) {
           throw Object.assign(new Error('The private Bot runtime did not become ready'), {
             code: capabilities.code || 'bot_runtime_unavailable',
@@ -1233,6 +1400,7 @@ export function createBotsRuntime({
                 ? error.code
                 : 'bot_credential_vault_unavailable',
             };
+            botHostStatusCache.invalidate();
           }
         }
         if (executionEnabled && !schemaFailure && !controlPlaneFailure) await startExecution();
@@ -1284,7 +1452,7 @@ export function createBotsRuntime({
         getControlPlaneFailure: () => controlPlaneFailure,
         getExecutionFailure: () => executionFailure,
         getStartupState: () => startupState,
-        resolveCapabilities: () => resolveCurrentCapabilities(),
+        resolveCapabilities: (options) => resolveCurrentCapabilities(options),
         getRuntimeServices: () => ({
           memoryRuntime,
           computerResources,
@@ -1324,6 +1492,7 @@ export function createBotsRuntime({
         approvalExpiryJob = null;
         if (runSweepJob) await runSweepJob.stop();
         runSweepJob = null;
+        runSweepGate = null;
         try {
           backgroundStopped = true;
           await integrationStartPromise?.catch(() => undefined);

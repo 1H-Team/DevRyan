@@ -25,12 +25,17 @@ Electron shell.
 
 - `index.js`: public module exports.
 - `runtime.js`: focused composition root receiving only Supabase, platform
-  audit, principal policy, data directory, Bot host, and encryption callbacks.
+  audit, principal policy, data directory, Bot host, and encryption callbacks;
+  also owns the run-sweep idle gate (`createBotRunSweepGate`: six-hour idle
+  window, boot sweep always runs, `getSweepDiagnostics()`) and the dispatcher
+  activity facade that feeds it.
 - `routes.js`: authenticated `/api/bots/*` capability, management/routine,
   channel/message/run, Bot-SSE, and encrypted-object routes plus stable
   migration/error envelopes, including profile/avatar/model-option/publish
   contracts. Administrator-only `/api/bot-audit*` reads and review clearing are registered outside
   execution-health middleware so historical diagnostics survive degradation.
+  `createBotHostStatusCache` reuses one `botHost.getStatus()` Docker probe for
+  sixty seconds (`?refresh=1` bypasses it; failed probes are never cached).
 - `store.js`: one explicit-select repository per Bot table, cursor paging,
   optimistic `updated_at` writes, fixed exact-version publish RPCs, durable
   extraction-job lease/deferral transactions, idempotent terminal-run
@@ -418,6 +423,9 @@ Electron shell.
   drain re-claims on a pending wake, a claim failure re-arms with bounded
   backoff instead of dropping the scope, and a periodic sweep re-drains scopes
   holding aged queued runs and settles expired leases that no live process owns.
+  The sweep is skipped, without touching the store or Docker, once the runtime
+  has been idle for six hours; any enqueue, drain, run start, or settlement
+  re-enables it.
 - Terminal failure/interruption events are published only after the idempotent
   terminal RPC returns the persisted row and its trigger-owned audit evidence is
   durable. A settlement the database cannot accept is journaled in-process and
