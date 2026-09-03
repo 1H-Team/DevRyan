@@ -81,36 +81,52 @@ describe("plan task tracking prompts", () => {
     expect(def.template).toContain("revised counter reaches N/N")
   })
 
-  test("saved-plan implementation classifies gaps before changing scope", () => {
+  test("saved-plan implementation classifies deviations before changing scope", () => {
     const def = MAGIC_PROMPT_DEFINITIONS.find((entry) => entry.id === "plan.implement.instructions")
     if (!def) throw new Error("plan.implement.instructions definition missing")
 
-    expect(def.template).toContain("a low-risk related adjustment, a material related adjustment, or an unrelated finding")
-    expect(def.template).toContain("public contract")
-    expect(def.template).toContain("persisted data or schema")
-    expect(def.template).toContain("production deployment")
-    expect(def.template).toContain("If any of these boundaries are involved or the classification is uncertain, treat the adjustment as material")
+    expect(def.template).toContain("Class 1 (continue without asking)")
+    expect(def.template).toContain("Class 2 (ask first)")
+    expect(def.template).toContain("security-definer functions")
+    expect(def.template).toContain("RLS policies or grants")
+    expect(def.template).toContain("destructive data statements")
+    expect(def.template).toContain("external calls (email, webhooks, payments)")
+    expect(def.template).toContain("Migrations in general are not a tripwire")
+    expect(def.template).toContain("If the classification is uncertain, treat it as Class 2")
+    expect(def.template).toContain("`Deviation: <step> → <change>. Why: … Still delivers: <approved outcome>`")
+    expect(def.template).toContain("is a deviation to classify, not a blocker")
+    expect(def.template).not.toContain("low-risk related adjustment")
+    expect(def.template).not.toContain("plan-gap rules")
   })
 
-  test("material saved-plan gaps route through a resumable structured question", () => {
+  test("Class 2 deviations route through a resumable, explained structured question", () => {
     const def = MAGIC_PROMPT_DEFINITIONS.find((entry) => entry.id === "plan.implement.instructions")
     if (!def) throw new Error("plan.implement.instructions definition missing")
 
     expect(def.template).toContain("Ask exactly one question through the structured question tool")
-    expect(def.template).toContain("Use the header `Plan gap`")
-    expect(def.template).toContain("`Apply adjustment and continue (Recommended)`")
-    expect(def.template).toContain("`Pause for plan revision`")
+    expect(def.template).toContain("Use the header `Plan deviation`")
+    expect(def.template).toContain("line 1 is the question itself")
+    for (const line of ["What changes:", "Why:", "For end users:", "Security & data:", "Reversibility:", "If we keep the original plan:"]) {
+      expect(def.template).toContain("`" + line + "`")
+    }
+    expect(def.template).toContain("`Approve deviation (Recommended)`")
+    expect(def.template).toContain("`Keep original plan`")
+    expect(def.template).toContain("`Something else` (a custom answer is allowed)")
     expect(def.template).toContain("While the question is pending, do not emit a completion or blocked response")
     expect(def.template).toContain("skip the question, or give an ambiguous answer")
+    expect(def.template).not.toContain("Use the header `Plan gap`")
+    expect(def.template).not.toContain("`Apply adjustment and continue (Recommended)`")
     expect(def.template).not.toContain("stop, state exactly what is broken and why")
   })
 
-  test("approved and automatic plan revisions reconcile todos before resuming", () => {
+  test("recorded and approved deviations are appended to the plan and reconcile todos before resuming", () => {
     const def = MAGIC_PROMPT_DEFINITIONS.find((entry) => entry.id === "plan.implement.instructions")
     if (!def) throw new Error("plan.implement.instructions definition missing")
 
-    expect(def.template).toContain("For a low-risk related adjustment, update this same plan file")
-    expect(def.template).toContain("update this same plan file first, reconcile the todos, and resume in the same session")
+    expect(def.template).toContain("under `## Deviations`")
+    expect(def.template).toContain("`N. [Class 1 | Class 2 approved] <step> → <change>. Why: … Still delivers: …`")
+    expect(def.template).toContain("record the deviation in this same plan file first, reconcile the todos, implement it, and resume in the same session")
+    expect(def.template).toContain("Todo reconciliation after a recorded Class 1 or approved Class 2 deviation")
     expect(def.template).toContain("Preserve the wording, identity, and status of unchanged tasks")
     expect(def.template).toContain("add newly approved tasks in plan order")
     expect(def.template).toContain("reopen any completed task whose work or verification is affected")

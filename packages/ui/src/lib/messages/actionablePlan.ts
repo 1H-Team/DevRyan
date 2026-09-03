@@ -22,6 +22,10 @@ const PLAN_MODE_SECTION_HEADINGS = new Set([
   'implementation',
   'visual details',
   'verification',
+  // Optional section between Context and Critical files (plan.md template).
+  'constraints & assumptions',
+  'constraints',
+  'assumptions',
   // Synonyms models reach for when they are not echoing the plan template
   // verbatim. Only consulted for plan-mode turns, and two of them are still
   // required, so the false-positive surface stays small.

@@ -25,6 +25,7 @@ import {
 } from './questionCardNavigation';
 import { deriveCustomModeFromText, getQuestionOptionPresentation } from './questionCardOptions';
 import { QuestionOptionRow } from './QuestionOptionRow';
+import { QuestionExplanation, splitQuestionPrompt } from './QuestionPromptText';
 import {
   acknowledgeQuestionRequests,
   claimQuestionSubmissions,
@@ -471,6 +472,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
 
   const renderQuestionBody = (entry: QuestionEntry, opts: { withHeader: boolean }) => {
     const selected = selectedOptions[entry.entryKey] ?? [];
+    const prompt = splitQuestionPrompt(entry.question.question);
     return (
       <div key={entry.entryKey}>
         {opts.withHeader && entry.question.header?.trim() ? (
@@ -478,7 +480,8 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
             {entry.question.header}
           </div>
         ) : null}
-        <div className="typography-ui-label font-medium text-foreground mb-2">{entry.question.question}</div>
+        <div className={cn('typography-ui-label font-medium text-foreground', prompt.explanation.length > 0 ? 'mb-1' : 'mb-2')}>{prompt.title}</div>
+        <QuestionExplanation lines={prompt.explanation} className="mb-2" />
         {entry.question.multiple ? (
           <div className="typography-micro text-muted-foreground mb-1.5">{t('chat.questionCard.selectMultiple')}</div>
         ) : null}
@@ -486,7 +489,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
         <div
           className="space-y-0.5"
           role={entry.question.multiple ? 'group' : 'radiogroup'}
-          aria-label={entry.question.question}
+          aria-label={prompt.title}
         >
           {entry.question.options.map((option, index) => {
             const isSelected = selected.includes(option.label);

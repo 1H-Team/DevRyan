@@ -14,7 +14,7 @@ const ACTIONS = [
   'abandon',
 ];
 const RESULT_ACTIONS = new Set(['continue', 'retry', 'resume', 'abandon']);
-const BARRIER_CONTROL_TOOLS = new Set(['devryan_task', 'skill', 'todowrite', 'todoread']);
+const BARRIER_CONTROL_TOOLS = new Set(['devryan_task', 'skill', 'todowrite', 'todoread', 'question']);
 const AGENT_OWNERSHIP_CACHE_MAX_ENTRIES = 128;
 const AGENT_OWNERSHIP_CACHE_TTL_MS = 30_000;
 const AGENT_OWNERSHIP_MESSAGE_LIMIT = 20;
@@ -51,6 +51,13 @@ const PROVIDER_RECOVERY_MARKER_VERSION = 'v1';
 const PROVIDER_RECOVERY_SENT_MAX_ENTRIES = 512;
 // How long a trailing marker is treated as a wake that may still be starting.
 const RECOVERY_CONTINUATION_STALE_MS = 60_000;
+// Open-todo safety net: an idle orchestrator root turn that still has
+// pending/in_progress todos is nudged to continue, capped per user message.
+const OPEN_TODO_CONTINUATION_MAX_PER_TURN = 3;
+const OPEN_TODO_CONTINUATION_DEDUPE_MS = 60_000;
+const OPEN_TODO_CONTINUATION_MAP_MAX_ENTRIES = 256;
+const OPEN_TODO_STATUSES = new Set(['pending', 'in_progress']);
+const OPEN_TODO_CONTINUATION_PROMPT = 'Your turn ended with open todos. If a plan deviation stopped you, classify it (Class 1: note it and continue; Class 2: ask with the question tool) and continue from the first open todo. If everything is done, mark the todos complete and give the final summary.';
 
 const resolveMinimumTimeoutSeconds = (agent) => {
   const normalizedAgent = typeof agent === 'string' ? agent.trim().toLowerCase() : '';
@@ -884,6 +891,7 @@ const executeAction = async (args, context, client, dispatchCallId = null, resul
 
 export const DevRyanManagedOrchestrationPlugin = async ({
   client,
+  directory: pluginDirectory = null,
   scheduleTimeout = globalThis.setTimeout,
 } = {}) => {
   const sessionStates = new Map();
@@ -892,6 +900,8 @@ export const DevRyanManagedOrchestrationPlugin = async ({
   const agentOwnershipCache = new Map();
   const recoveryContinuationsInFlight = new Set();
   const recoveryContinuationsSent = new Set();
+  const openTodoContinuations = new Map();
+  const pendingOpenTodoChecks = new Set();
   const recoveryContinuationClaimantId = `plugin:${crypto.randomUUID()}`;
   let recoveryScanPromise = null;
   let recoveryScanTimer = null;
@@ -1186,6 +1196,42 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     return true;
   };
 
+  // Shared by provider-recovery wakes and the open-todo continuation so both
+  // use the same identity and primary-host pre-registration.
+  const promptSessionSynthetic = async ({ rootSessionId, directory, execution, text }) => {
+    // Use a fresh sortable ID, never a content-derived hash. OpenCode ignores
+    // a wake whose identity sorts before the session's current tail, and a
+    // time-sortable identity lets the primary host serialize this managed
+    // continuation with recovery and user input before OpenCode sees it.
+    const wakeMessageID = `msg_${(BigInt(Date.now()) * 4096n).toString(16).slice(-12).padStart(12, '0')}${crypto.randomBytes(7).toString('hex')}`;
+    const primaryInstance = globalThis[Symbol.for('devryan.primary-recovery.instance.v1')];
+    if (typeof primaryInstance === 'string') {
+      await callRpc('primary_recovery', { action: 'continuation', sessionID: rootSessionId,
+        userMessageID: wakeMessageID, instanceID: primaryInstance });
+    }
+    const response = await client.session.promptAsync({
+      path: { id: rootSessionId },
+      query: { directory },
+      body: {
+        messageID: wakeMessageID,
+        agent: execution.agent,
+        model: {
+          providerID: execution.providerId,
+          modelID: execution.modelId,
+        },
+        ...(execution.variant ? { variant: execution.variant } : {}),
+        parts: [{ type: 'text', text, synthetic: true }],
+      },
+    }, { throwOnError: false });
+    if (response?.error) {
+      const message = typeof response.error?.message === 'string' && response.error.message.trim()
+        ? response.error.message.trim()
+        : 'promptAsync returned an error';
+      throw new Error(message);
+    }
+    return wakeMessageID;
+  };
+
   const requestRecoveredParentContinuation = async (continuation) => {
     if (!isRecord(continuation)) return false;
     // Parked Model Recovery results are never collectable. Ignore a leftover
@@ -1249,8 +1295,6 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         return false;
       }
 
-      // Use a fresh sortable ID, never a content-derived hash. OpenCode ignores
-      // a wake whose identity sorts before the session's current tail.
       const prompt = [
         marker,
         `A DevRyan-managed sub-agent reached a terminal result that this turn never collected,`,
@@ -1261,34 +1305,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       ].join(' ');
       let promptDelivered = false;
       try {
-        // A time-sortable identity lets the primary host serialize this managed
-        // continuation with recovery and user input before OpenCode sees it.
-        const wakeMessageID = `msg_${(BigInt(Date.now()) * 4096n).toString(16).slice(-12).padStart(12, '0')}${crypto.randomBytes(7).toString('hex')}`;
-        const primaryInstance = globalThis[Symbol.for('devryan.primary-recovery.instance.v1')];
-        if (typeof primaryInstance === 'string') {
-          await callRpc('primary_recovery', { action: 'continuation', sessionID: rootSessionId,
-            userMessageID: wakeMessageID, instanceID: primaryInstance });
-        }
-        const response = await client.session.promptAsync({
-          path: { id: rootSessionId },
-          query: { directory },
-          body: {
-            messageID: wakeMessageID,
-            agent: execution.agent,
-            model: {
-              providerID: execution.providerId,
-              modelID: execution.modelId,
-            },
-            ...(execution.variant ? { variant: execution.variant } : {}),
-            parts: [{ type: 'text', text: prompt, synthetic: true }],
-          },
-        }, { throwOnError: false });
-        if (response?.error) {
-          const message = typeof response.error?.message === 'string' && response.error.message.trim()
-            ? response.error.message.trim()
-            : 'promptAsync returned an error';
-          throw new Error(message);
-        }
+        await promptSessionSynthetic({ rootSessionId, directory, execution, text: prompt });
         promptDelivered = true;
         rememberRecoveryContinuationSent(taskId);
         logRecovery('recovered-parent-continued', { rootSessionId, taskId });
@@ -1311,6 +1328,179 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     }
   };
 
+  const isOpenTodoContinuationRecord = (record) => (
+    record?.info?.role === 'user'
+    && Array.isArray(record.parts)
+    && record.parts.some((part) => (
+      part?.type === 'text'
+      && typeof part.text === 'string'
+      && part.text.startsWith(OPEN_TODO_CONTINUATION_PROMPT)
+    ))
+  );
+
+  const readRecordText = (record) => (
+    Array.isArray(record?.parts)
+      ? record.parts
+        .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+        .map((part) => part.text)
+        .join('\n')
+      : ''
+  );
+
+  const rememberOpenTodoContinuation = (key, count) => {
+    openTodoContinuations.delete(key);
+    openTodoContinuations.set(key, { count, lastSentAt: Date.now() });
+    while (openTodoContinuations.size > OPEN_TODO_CONTINUATION_MAP_MAX_ENTRIES) {
+      openTodoContinuations.delete(openTodoContinuations.keys().next().value);
+    }
+  };
+
+  /**
+   * Safety net for an orchestrator root turn that ended with open todos: a
+   * plan deviation, a prose question, or a premature summary can all leave the
+   * session idle with work remaining. Every gate below is a reason NOT to
+   * nudge; the nudge itself is capped per user message and deduplicated.
+   */
+  const requestOpenTodoContinuation = async (rootSessionId) => {
+    if (typeof client.session.todo !== 'function') return false;
+
+    let directory = typeof pluginDirectory === 'string' && pluginDirectory.trim()
+      ? pluginDirectory.trim()
+      : undefined;
+    if (typeof client.session.get === 'function') {
+      const sessionResponse = await client.session.get({
+        path: { id: rootSessionId },
+        ...(directory ? { query: { directory } } : {}),
+      });
+      if (sessionResponse?.error) return false;
+      const session = unwrapResponseData(sessionResponse);
+      if (!isRecord(session)) return false;
+      // Child sessions are driven by their parent's wait; only a root turn ends
+      // with nobody left to continue it.
+      if (typeof session.parentID === 'string' && session.parentID.trim()) return false;
+      if (typeof session.directory === 'string' && session.directory.trim()) {
+        directory = session.directory.trim();
+      }
+    }
+
+    if (!await isSessionIdle(rootSessionId, directory)) return false;
+
+    const records = await readSessionMessages(rootSessionId, directory);
+    const last = records[records.length - 1];
+    if (last?.info?.role !== 'assistant') return false;
+    const lastAgent = typeof last.info.agent === 'string' && last.info.agent.trim()
+      ? last.info.agent.trim().toLowerCase()
+      : typeof last.info.mode === 'string'
+        ? last.info.mode.trim().toLowerCase()
+        : '';
+    if (lastAgent !== 'orchestrator') return false;
+    const lastText = readRecordText(last);
+    if (lastText.includes('manualRecoveryRequired') || lastText.includes('[devryan-provider-recovery:')) {
+      return false;
+    }
+
+    // The cap is keyed by the user message that started this turn; our own
+    // continuations are skipped so they cannot reset it, and the transcript
+    // count keeps the cap honest across plugin restarts.
+    let anchorUserMessageId = '';
+    let transcriptContinuations = 0;
+    for (let index = records.length - 1; index >= 0; index -= 1) {
+      const record = records[index];
+      if (record?.info?.role !== 'user') continue;
+      if (isOpenTodoContinuationRecord(record)) {
+        transcriptContinuations += 1;
+        continue;
+      }
+      anchorUserMessageId = typeof record.info.id === 'string' ? record.info.id.trim() : '';
+      break;
+    }
+    if (!anchorUserMessageId) return false;
+    const continuationKey = `${rootSessionId}\u0000${anchorUserMessageId}`;
+    const sent = openTodoContinuations.get(continuationKey) ?? { count: 0, lastSentAt: 0 };
+    const count = Math.max(sent.count, transcriptContinuations);
+    if (count >= OPEN_TODO_CONTINUATION_MAX_PER_TURN) return false;
+    if (sent.lastSentAt && Date.now() - sent.lastSentAt < OPEN_TODO_CONTINUATION_DEDUPE_MS) return false;
+
+    const todoResponse = await client.session.todo({
+      path: { id: rootSessionId },
+      query: { directory },
+    });
+    if (todoResponse?.error) return false;
+    const todos = unwrapResponseData(todoResponse);
+    const hasOpenTodo = Array.isArray(todos) && todos.some((todo) => (
+      isRecord(todo)
+      && typeof todo.status === 'string'
+      && OPEN_TODO_STATUSES.has(todo.status.trim().toLowerCase())
+    ));
+    if (!hasOpenTodo) return false;
+
+    let barrier;
+    try {
+      barrier = await callRpc('barrier_status', { rootSessionId });
+    } catch {
+      return false;
+    }
+    if (barrier?.state !== 'clear') return false;
+
+    if (client.question && typeof client.question.list === 'function') {
+      const questionResponse = await client.question.list({ query: { directory } });
+      if (questionResponse?.error) return false;
+      const questions = unwrapResponseData(questionResponse);
+      if (Array.isArray(questions) && questions.some((request) => (
+        isRecord(request) && request.sessionID === rootSessionId
+      ))) {
+        return false;
+      }
+    }
+
+    const execution = await resolveParentContinuationExecution(records, directory);
+    if (!execution) return false;
+    if (!await isSessionIdle(rootSessionId, directory)) return false;
+
+    rememberOpenTodoContinuation(continuationKey, count + 1);
+    try {
+      await promptSessionSynthetic({
+        rootSessionId,
+        directory,
+        execution,
+        text: OPEN_TODO_CONTINUATION_PROMPT,
+      });
+    } catch (error) {
+      // Keep the dedupe timestamp so a failing host cannot be hammered, but do
+      // not spend one of the capped attempts on a prompt that never landed.
+      rememberOpenTodoContinuation(continuationKey, count);
+      throw error;
+    }
+    logRecovery('open-todo-continuation-sent', {
+      rootSessionId,
+      anchorUserMessageId,
+      count: count + 1,
+    });
+    return true;
+  };
+
+  const runOpenTodoContinuationChecks = async (continuations) => {
+    const sessionIds = [...pendingOpenTodoChecks];
+    pendingOpenTodoChecks.clear();
+    for (const rootSessionId of sessionIds) {
+      // A listed recovery continuation owns its parent; never race it.
+      const recoveryOwned = continuations.some((continuation) => (
+        isRecord(continuation)
+        && typeof continuation.rootSessionId === 'string'
+        && continuation.rootSessionId.trim() === rootSessionId
+      ));
+      if (recoveryOwned) continue;
+      try {
+        await requestOpenTodoContinuation(rootSessionId);
+      } catch (error) {
+        logRecovery('open-todo-continuation-failed', {
+          rootSessionId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  };
+
   const scheduleRecoveryScan = ({
     delayMs = PROVIDER_RECOVERY_SCAN_DELAY_MS,
     settleRetries = 0,
@@ -1329,9 +1519,10 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       recoveryScanRequested = false;
       recoveryScanPromise = (async () => {
         let retryNeeded = false;
+        let continuations = [];
         try {
           const result = await callRpc('list_provider_recovery_continuations', {});
-          const continuations = Array.isArray(result?.continuations) ? result.continuations : [];
+          continuations = Array.isArray(result?.continuations) ? result.continuations : [];
           for (const continuation of continuations) {
             try {
               await requestRecoveredParentContinuation(continuation);
@@ -1356,6 +1547,10 @@ export const DevRyanManagedOrchestrationPlugin = async ({
           if (settleRetryNeeded) recoverySettleRetriesRemaining -= 1;
           if (retryNeeded || trailingScanRequested || settleRetryNeeded) {
             scheduleRecoveryScan({ delayMs: PROVIDER_RECOVERY_RETRY_DELAY_MS });
+          } else if (pendingOpenTodoChecks.size > 0) {
+            // Only once recovery has settled with nothing left to send does the
+            // open-todo safety net get to nudge an idle orchestrator turn.
+            void runOpenTodoContinuationChecks(continuations);
           }
         }
       })();
@@ -1510,6 +1705,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       if (state) {
         for (const entry of [...state.pendingStarts]) entry.settle();
       }
+      if (rootSessionId && canResumeRecoveredParents) pendingOpenTodoChecks.add(rootSessionId);
       scheduleRecoveryScan({
         settleRetries: PROVIDER_RECOVERY_SETTLE_RETRY_COUNT,
       });
