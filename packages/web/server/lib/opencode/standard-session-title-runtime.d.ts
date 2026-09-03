@@ -1,8 +1,5 @@
-export const SESSION_TITLE_PRIMARY_ZEN_MODEL: string;
 export const SESSION_TITLE_HELPER_AGENT: string;
 export const SESSION_TITLE_HELPER_SESSION_TITLE: string;
-export const DEFAULT_TITLE_FALLBACK_ZEN_MODEL: string;
-export const TITLE_ZEN_MODEL_ROTATION: readonly string[];
 
 export type StandardSessionTitleScheduleInput = {
   sessionID: string;
@@ -25,7 +22,7 @@ export type StandardSessionTitleGeneratedInput = {
   session: Record<string, unknown>;
   title: string;
   directory?: string;
-  source: 'free_zen' | 'session_model' | 'local_fallback';
+  source: 'derived' | 'session_model';
 };
 
 export function normalizeGeneratedSessionTitle(

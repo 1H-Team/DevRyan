@@ -1,6 +1,6 @@
 import type { OpenCodeManager } from './opencode';
 import { getVsCodeHarnessRuntime } from './harness-runtime-access';
-import { fetchFreeZenModels, getFreeZenModelCatalogSnapshot, prewarmFreeZenModels } from './zenModelCatalogRuntime';
+import { prewarmFreeZenModels } from './zenModelCatalogRuntime';
 import { createStandardSessionTitleRuntime } from '../../web/server/lib/opencode/standard-session-title-runtime.js';
 
 export type StandardSessionTitleScheduleInput = {
@@ -39,8 +39,6 @@ export const initializeSessionTitleRuntime = (
     fetchImpl: fetch,
     buildOpenCodeUrl: (requestPath: string, fallback: string) => buildOpenCodeUrl(manager, requestPath, fallback),
     getOpenCodeAuthHeaders: () => manager.getOpenCodeAuthHeaders(),
-    fetchFreeZenModels,
-    getCachedZenModels: getFreeZenModelCatalogSnapshot,
     onTitleGenerated: ({ session, title }: { session: Record<string, unknown>; title: string }) => (
       options.publishEvent?.({
         type: 'session.updated',

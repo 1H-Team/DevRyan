@@ -1093,8 +1093,6 @@ const standardSessionTitleRuntime = createStandardSessionTitleRuntime({
   fetchImpl: fetch,
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
-  fetchFreeZenModels,
-  getCachedZenModels,
   outboxFilePath: path.join(OPENCHAMBER_DATA_DIR, 'session-title-outbox.json'),
   onTitleGenerated: ({ session, title, directory }) => {
     emitSyntheticOpenCodeEvent({

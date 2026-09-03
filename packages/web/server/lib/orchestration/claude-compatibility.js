@@ -1,16 +1,11 @@
 import { buildManagedAgentContract } from '@openchamber/orchestration-runtime';
 
+import { ANTHROPIC_PROVIDER_IDS } from '../opencode/anthropic-provider-ids.js';
 import { readMeridianPromptMode } from '../opencode/meridian-sdk-features.js';
 
-// Provider ids that route through Meridian to Anthropic. A shared alias module
-// (`../opencode/anthropic-provider-ids.js`) is being introduced separately;
-// switch to it once it lands so quota and orchestration share one set.
-export const ANTHROPIC_PROVIDER_IDS = Object.freeze(new Set([
-  'anthropic',
-  'claude',
-  'anthropic-oauth',
-  'opencode-with-claude',
-]));
+// Provider ids that route through Meridian to Anthropic; shared with the
+// quota and title runtimes so every consumer agrees on the alias set.
+export { ANTHROPIC_PROVIDER_IDS } from '../opencode/anthropic-provider-ids.js';
 // Meridian prompt mode in which opencode's system prompt (and with it the
 // designer/fixer agent instructions) is dropped for Anthropic-routed sessions.
 export const CLAUDE_COMPATIBILITY_PROMPT_MODE = 'claude-only';

@@ -29,7 +29,7 @@ import {
   setMeridianPromptCompatibilityMode,
 } from './meridian-sdk-features.js';
 
-const ANTHROPIC_PROVIDER_IDS = new Set(['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude']);
+import { ANTHROPIC_PROVIDER_IDS } from './anthropic-provider-ids.js';
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
 const CURSOR_ACP_PROVIDER_ID = 'cursor-acp';
 const CURSOR_USAGE_TOKEN_MAX_LENGTH = 16_384;
