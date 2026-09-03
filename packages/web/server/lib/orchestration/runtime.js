@@ -16,6 +16,10 @@ import {
 } from '@openchamber/orchestration-runtime';
 
 import { createAtomicManagedOrchestrationLedger } from './atomic-ledger.js';
+import {
+  createClaudeCompatibilityPreambleResolver,
+  resolveManagedTaskTurnBudget,
+} from './claude-compatibility.js';
 import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
 import { createManagedOrchestrationPrivateHost } from './private-host.js';
 
@@ -218,6 +222,13 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     cursorSdkRuntime: options.cursorSdkRuntime,
     fetchImpl: options.fetchImpl,
     readTerminalError: (input) => terminalErrors.read(input),
+    // Claude compatibility mode drops opencode's system prompt for Anthropic-routed
+    // children, so their agent rules travel inside the first task prompt instead.
+    resolveTaskPromptPreamble: options.resolveTaskPromptPreamble
+      ?? createClaudeCompatibilityPreambleResolver({ now }),
+    // Designer/fixer tool loops get an assistant-turn backstop (wrap-up prompt,
+    // then abort) so a runaway child cannot burn the whole task timeout.
+    resolveTaskTurnBudget: options.resolveTaskTurnBudget ?? resolveManagedTaskTurnBudget,
   });
   const scheduler = options.scheduler ?? createManagedTaskScheduler({
     executor,

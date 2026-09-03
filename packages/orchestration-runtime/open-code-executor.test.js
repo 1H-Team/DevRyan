@@ -12,6 +12,8 @@ import {
   MANAGED_RETRY_IN_PLACE_PROMPT,
   MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT,
   MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
+  MANAGED_TURN_BUDGET_ABORT_GRACE_TURNS,
+  MANAGED_TURN_BUDGET_PROMPT,
 } from './open-code-executor.js';
 
 const WRITABLE_CONTEXT_MODE_TOOLS = Object.freeze({
@@ -2663,5 +2665,311 @@ describe('managed OpenCode executor', () => {
     resolveSleep?.();
 
     await expect(observation).rejects.toThrow('Managed OpenCode executor shut down');
+  });
+});
+
+describe('managed task prompt preamble', () => {
+  const control = {
+    async setChildSessionId() { return true; },
+    async markAccepted() { return true; },
+  };
+  const createStartTransport = (prompts) => ({
+    async createSession() { return { id: 'ses_child' }; },
+    async promptSession(input) { prompts.push(input); },
+    async readSession() { return { id: 'ses_child' }; },
+    async readStatus() { return { type: 'idle' }; },
+    async readMessages() { return [assistant()]; },
+    async abortSession() { return true; },
+    deleteSession,
+  });
+
+  test('prepends a host preamble ahead of the routing prefix only when the hook returns text', async () => {
+    const prompts = [];
+    const seen = [];
+    const executor = createManagedOpenCodeExecutor({
+      transport: createStartTransport(prompts),
+      sleep: async () => undefined,
+      idleStablePolls: 1,
+      resolveTaskPromptPreamble: async (candidate) => {
+        seen.push(candidate.agent);
+        return candidate.agent === 'designer' ? '  Contract for designer.\n' : null;
+      },
+    });
+
+    expect((await executor.start(task({ agent: 'designer' }), control)).status).toBe('completed');
+    expect(prompts[0].prompt).toBe([
+      'Contract for designer.',
+      MANAGED_CONTEXT_MODE_WRITABLE_PROMPT,
+      'Inspect the authentication flow.',
+    ].join('\n\n'));
+
+    expect((await executor.start(task({ taskId: 'dvr_task_2', agent: 'explorer' }), control)).status)
+      .toBe('completed');
+    expect(prompts[1].prompt).toBe(
+      `${MANAGED_CONTEXT_MODE_WRITABLE_PROMPT}\n\nInspect the authentication flow.`,
+    );
+    expect(seen).toEqual(['designer', 'explorer']);
+  });
+
+  test('keeps the preamble ahead of the read-only routing and policy prefixes', async () => {
+    const prompts = [];
+    const executor = createManagedOpenCodeExecutor({
+      transport: createStartTransport(prompts),
+      sleep: async () => undefined,
+      idleStablePolls: 1,
+      resolveTaskPromptPreamble: () => 'Contract.',
+    });
+
+    expect((await executor.start(task({ readOnly: true }), control)).status).toBe('completed');
+    expect(prompts[0].prompt).toBe([
+      'Contract.',
+      MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT,
+      MANAGED_READ_ONLY_PROMPT,
+      'Inspect the authentication flow.',
+    ].join('\n\n'));
+  });
+
+  test('resolves the preamble before the child exists so a failing hook cannot orphan a session', async () => {
+    let created = 0;
+    const transport = {
+      ...createStartTransport([]),
+      async createSession() { created += 1; return { id: 'ses_child' }; },
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      sleep: async () => undefined,
+      resolveTaskPromptPreamble: () => { throw new Error('settings unreadable'); },
+    });
+
+    await expect(executor.start(task(), control)).rejects.toThrow('settings unreadable');
+    expect(created).toBe(0);
+  });
+
+  test('never carries the preamble on resume or retry-in-place continuations', async () => {
+    const prompts = [];
+    let hookCalls = 0;
+    const statuses = [{ type: 'idle' }, { type: 'busy' }, { type: 'idle' }];
+    const aborted = assistant({
+      info: {
+        id: 'msg_aborted',
+        finish: 'error',
+        error: { name: 'MessageAbortedError', data: { message: 'Aborted' } },
+      },
+      parts: [{ type: 'text', text: 'Useful work before the deadline' }],
+    });
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession(input) { prompts.push(input); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      async readMessages() {
+        if (prompts.length === 0) return [aborted];
+        return [
+          aborted,
+          {
+            info: { id: 'msg_continuation', role: 'user' },
+            parts: [{ type: 'text', text: prompts.at(-1).prompt }],
+          },
+          assistant({
+            info: { id: `msg_done_${prompts.length}` },
+            parts: [{ type: 'text', text: 'Completed' }],
+          }),
+        ];
+      },
+      async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      sleep: async () => undefined,
+      resolveTaskPromptPreamble: () => { hookCalls += 1; return 'Contract.'; },
+    });
+    const acceptOnly = { async markAccepted() { return true; } };
+
+    const resumed = await executor.resume(
+      task({ childSessionId: 'ses_child', executionKind: 'resume' }),
+      acceptOnly,
+    );
+    expect(resumed.status).toBe('completed');
+    expect(prompts.map((entry) => entry.prompt)).toEqual([MANAGED_RESUME_CONTINUATION_PROMPT]);
+
+    const retried = await executor.retryInPlace(
+      task({ childSessionId: 'ses_child', executionKind: 'retry_in_place', attempt: 2 }),
+      acceptOnly,
+    );
+    expect(retried.status).toBe('completed');
+    expect(prompts.map((entry) => entry.prompt)).toEqual([
+      MANAGED_RESUME_CONTINUATION_PROMPT,
+      MANAGED_RETRY_IN_PLACE_PROMPT,
+    ]);
+    expect(hookCalls).toBe(0);
+  });
+});
+
+describe('managed task turn budget', () => {
+  const control = {
+    async setChildSessionId() { return true; },
+    async markAccepted() { return true; },
+  };
+  const turns = (count) => Array.from({ length: count }, (_, index) => assistant({
+    info: { id: `msg_${index + 1}`, finish: 'tool-calls', time: { completed: 1_500 + index } },
+    parts: [{ type: 'text', text: `Step ${index + 1}` }],
+  }));
+  // A busy child whose transcript grows by one assistant turn per read. It only
+  // goes idle when aborted or, when `finishAfterReads` is set, on that read.
+  const createBusyChild = ({ finishAfterReads = Infinity } = {}) => {
+    const state = { prompts: [], reads: 0, abortCount: 0, idle: false };
+    const transport = {
+      async createSession() { return { id: 'ses_child' }; },
+      async promptSession(input) { state.prompts.push({ ...input, atRead: state.reads }); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: state.idle ? 'idle' : 'busy' }; },
+      async readMessages() {
+        state.reads += 1;
+        if (state.reads >= finishAfterReads) {
+          state.idle = true;
+          return [
+            ...turns(finishAfterReads - 1),
+            assistant({ info: { id: 'msg_final' }, parts: [{ type: 'text', text: 'Wrapped up' }] }),
+          ];
+        }
+        return turns(state.reads);
+      },
+      async abortSession() { state.abortCount += 1; state.idle = true; return true; },
+      deleteSession,
+    };
+    return { state, transport };
+  };
+  const createExecutor = (transport, options = {}) => {
+    let clock = 0;
+    return createManagedOpenCodeExecutor({
+      transport,
+      now: () => clock,
+      sleep: async () => { clock += 100; },
+      pollIntervalMs: 0,
+      liveTranscriptRefreshMs: 0,
+      idleStablePolls: 1,
+      ...options,
+    });
+  };
+
+  test('prompts the child to finish exactly once when its budget is used, then keeps observing', async () => {
+    const { state, transport } = createBusyChild({ finishAfterReads: 6 });
+    const executor = createExecutor(transport, {
+      resolveTaskTurnBudget: (candidate) => (candidate.agent === 'designer' ? 3 : null),
+    });
+
+    const result = await executor.start(task({ agent: 'designer' }), control);
+
+    expect(result).toMatchObject({ status: 'completed', recoverablePreview: 'Wrapped up' });
+    expect(state.abortCount).toBe(0);
+    expect(state.prompts).toHaveLength(2);
+    const budgetPrompts = state.prompts.filter((entry) => entry.prompt === MANAGED_TURN_BUDGET_PROMPT);
+    expect(budgetPrompts).toHaveLength(1);
+    // Sent on the read that reached the budget (3 assistant turns), and never again
+    // even though the child produced further turns before wrapping up.
+    expect(budgetPrompts[0]).toMatchObject({
+      sessionId: 'ses_child',
+      agent: 'designer',
+      atRead: 3,
+      tools: { task: false },
+    });
+    expect(state.reads).toBeGreaterThan(5);
+  });
+
+  test('aborts a child that runs 20 turns past its budget and fails resumably with partial work', async () => {
+    const { state, transport } = createBusyChild();
+    const executor = createExecutor(transport, { maxAssistantTurns: 2 });
+
+    const result = await executor.start(task(), control);
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      failureReason: 'turn budget (2) exceeded; partial results reported',
+      partial: true,
+      resumable: true,
+    });
+    expect(result.recoverablePreview).toContain('Step 22');
+    expect(state.abortCount).toBe(1);
+    expect(state.reads).toBe(2 + MANAGED_TURN_BUDGET_ABORT_GRACE_TURNS);
+    const budgetPrompts = state.prompts.filter((entry) => entry.prompt === MANAGED_TURN_BUDGET_PROMPT);
+    expect(budgetPrompts).toHaveLength(1);
+    expect(budgetPrompts[0].atRead).toBe(2);
+  });
+
+  test('applies no budget when none is configured or the resolver answers null', async () => {
+    for (const options of [{}, { maxAssistantTurns: 2, resolveTaskTurnBudget: () => null }]) {
+      const { state, transport } = createBusyChild({ finishAfterReads: 30 });
+      const executor = createExecutor(transport, options);
+
+      const result = await executor.start(task({ agent: 'designer' }), control);
+
+      expect(result).toMatchObject({ status: 'completed', recoverablePreview: 'Wrapped up' });
+      expect(state.prompts).toHaveLength(1);
+      expect(state.abortCount).toBe(0);
+    }
+  });
+
+  test('gives a resumed attempt a fresh budget instead of counting the inherited tail', async () => {
+    const prompts = [];
+    const statuses = [{ type: 'idle' }, { type: 'busy' }, { type: 'idle' }];
+    const tail = [
+      ...turns(4).map((record) => ({ ...record, info: { ...record.info, finish: 'stop' } })),
+      assistant({
+        info: {
+          id: 'msg_aborted',
+          finish: 'error',
+          error: { name: 'MessageAbortedError', data: { message: 'Aborted' } },
+        },
+        parts: [{ type: 'text', text: 'Useful work before the deadline' }],
+      }),
+    ];
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession(input) { prompts.push(input); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      async readMessages() {
+        if (prompts.length === 0) return tail;
+        return [
+          ...tail,
+          {
+            info: { id: 'msg_resume_prompt', role: 'user' },
+            parts: [{ type: 'text', text: MANAGED_RESUME_CONTINUATION_PROMPT }],
+          },
+          assistant({
+            info: { id: 'msg_completed' },
+            parts: [{ type: 'text', text: 'Completed after managed resume' }],
+          }),
+        ];
+      },
+      async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      sleep: async () => undefined,
+      maxAssistantTurns: 3,
+    });
+
+    const result = await executor.resume(
+      task({ childSessionId: 'ses_child', executionKind: 'resume' }),
+      { async markAccepted() { return true; } },
+    );
+
+    // Five inherited turns exceed the budget of three, but they belong to the
+    // previous attempt: only the one new turn counts, so no wrap-up prompt goes out.
+    expect(result).toMatchObject({
+      status: 'completed',
+      recoverablePreview: 'Completed after managed resume',
+    });
+    expect(prompts.map((entry) => entry.prompt)).toEqual([MANAGED_RESUME_CONTINUATION_PROMPT]);
+  });
+
+  test('rejects an invalid executor-wide budget up front', () => {
+    const { transport } = createBusyChild();
+    expect(() => createManagedOpenCodeExecutor({ transport, maxAssistantTurns: 0 })).toThrow(RangeError);
+    expect(() => createManagedOpenCodeExecutor({ transport, maxAssistantTurns: 1.5 })).toThrow(RangeError);
+    expect(() => createManagedOpenCodeExecutor({ transport, maxAssistantTurns: null })).not.toThrow();
   });
 });

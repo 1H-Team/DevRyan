@@ -1449,7 +1449,7 @@ export const settingsDict = {
   'settings.providers.page.auth.useReconnectHint': '· Use Reconnect to update credentials',
   'settings.providers.page.claudeCompatibility.sectionTitle': 'Claude Request Compatibility',
   'settings.providers.page.claudeCompatibility.title': 'Claude compatibility mode',
-  'settings.providers.page.claudeCompatibility.description': 'Uses Claude Code’s native system prompt and omits DevRyan’s specialized agent instructions. Enable only when Anthropic rejects turns as third-party usage.',
+  'settings.providers.page.claudeCompatibility.description': 'Uses Claude Code’s native system prompt and omits DevRyan’s specialized agent instructions. Enable only when Anthropic rejects turns as third-party usage. Managed sub-agents on Anthropic receive a compact copy of their rules inside the task prompt; root sessions run with Claude Code’s prompt only.',
   'settings.providers.page.claudeCompatibility.externalReadOnly': 'This setting is controlled by the configured external OpenCode runtime.',
   'settings.providers.page.claudeCompatibility.loadFailed': 'Failed to load Claude compatibility mode',
   'settings.providers.page.claudeCompatibility.updateFailed': 'Failed to update Claude compatibility mode',

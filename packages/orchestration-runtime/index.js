@@ -1,3 +1,4 @@
+export * from './agent-contracts.js';
 export * from './contract.js';
 export * from './managed-result-projection.js';
 export * from './model-availability.js';

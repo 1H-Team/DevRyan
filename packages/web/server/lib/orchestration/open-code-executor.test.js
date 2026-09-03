@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   MANAGED_CONTEXT_MODE_WRITABLE_PROMPT,
   MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
+  MANAGED_TURN_BUDGET_PROMPT,
 } from '@openchamber/orchestration-runtime';
 
 import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
@@ -545,5 +546,71 @@ describe('web managed OpenCode executor transport', () => {
       code: 'opencode_http_error',
       statusCode: 503,
     });
+  });
+});
+
+describe('web managed OpenCode executor host hooks', () => {
+  it('forwards the prompt preamble and turn budget hooks into the child prompts', async () => {
+    const prompts = [];
+    let messageReads = 0;
+    const handoff = {
+      info: { id: 'msg_1', role: 'assistant', finish: 'tool-calls', time: { completed: 2_000 } },
+      parts: [{ type: 'text', text: 'working' }],
+    };
+    const fetchImpl = vi.fn(async (url, init = {}) => {
+      const pathname = new URL(url).pathname;
+      if (pathname === '/session' && init.method === 'POST') return jsonResponse({ id: 'ses_child' });
+      if (pathname.endsWith('/prompt_async')) {
+        prompts.push(JSON.parse(init.body));
+        return new Response(null, { status: 204 });
+      }
+      if (pathname === '/session/status') return jsonResponse({ ses_child: { type: 'idle' } });
+      if (pathname.endsWith('/message')) {
+        messageReads += 1;
+        // Idle between steps first (a tool-call handoff), then the final answer.
+        if (messageReads === 1) return jsonResponse([handoff]);
+        return jsonResponse([
+          handoff,
+          {
+            info: { id: 'msg_2', role: 'assistant', finish: 'stop', time: { completed: 2_100 } },
+            parts: [{ type: 'text', text: 'done' }],
+          },
+        ]);
+      }
+      if (pathname === '/session/ses_child' && init.method === 'GET') return jsonResponse({ id: 'ses_child' });
+      if (pathname.endsWith('/abort')) return jsonResponse({ success: true });
+      throw new Error(`Unexpected request ${init.method} ${pathname}`);
+    });
+    const executor = createWebManagedOpenCodeExecutor({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      fetchImpl,
+      pollIntervalMs: 0,
+      idleStablePolls: 1,
+      resolveTaskPromptPreamble: (task) => (task.agent === 'explorer' ? 'Contract.' : null),
+      resolveTaskTurnBudget: (task) => (task.agent === 'explorer' ? 1 : null),
+    });
+
+    const result = await executor.start({
+      taskId: 'dvr_task_hooks',
+      rootSessionId: 'ses_root',
+      childSessionId: null,
+      directory: '/workspace',
+      providerId: 'anthropic',
+      modelId: 'claude-sonnet-4-5',
+      agent: 'explorer',
+      variant: null,
+      label: 'Hooked child',
+      prompt: 'Inspect the project.',
+    }, {
+      setChildSessionId: vi.fn(async () => true),
+      markAccepted: vi.fn(async () => true),
+    });
+
+    expect(result.status).toBe('completed');
+    expect(prompts.map((body) => body.parts[0].text)).toEqual([
+      `Contract.\n\n${MANAGED_CONTEXT_MODE_WRITABLE_PROMPT}\n\nInspect the project.`,
+      MANAGED_TURN_BUDGET_PROMPT,
+    ]);
   });
 });

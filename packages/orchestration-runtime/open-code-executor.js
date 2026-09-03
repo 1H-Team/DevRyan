@@ -38,6 +38,11 @@ const DEFAULT_RESUME_TEARDOWN_SETTLE_MS = 30 * 1_000;
 // assumed lost and re-posted once.
 const DEFAULT_CONTINUATION_START_GRACE_MS = 2 * 60 * 1_000;
 const MAX_STALE_TAIL_REPROMPTS = 1;
+// Turn-budget backstop: once a task has used its assistant-turn budget it is told
+// once to wrap up; a child that keeps going this many turns past that is aborted
+// and reported as a resumable failure carrying whatever partial work it produced.
+export const MANAGED_TURN_BUDGET_ABORT_GRACE_TURNS = 20;
+export const MANAGED_TURN_BUDGET_PROMPT = 'You have used the turn budget for this task. Finish with the current state now: report what changed and what remains, then end with **Status:** complete or **Status:** blocked.';
 export const MANAGED_RETRY_IN_PLACE_PROMPT = 'Continue the task from the existing progress. The previous provider could not continue. Do not repeat completed work.';
 export const MANAGED_RESUME_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous managed turn stopped before completion. Do not repeat completed work.';
 export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous model request timed out. Do not repeat completed work.';
@@ -134,14 +139,20 @@ const taskHasContextMode = (task) => (
   trimString(task.providerId).toLowerCase() !== 'cursor-acp'
 );
 
-const resolveInitialTaskPrompt = (task) => {
-  if (!taskHasContextMode(task)) {
-    return resolveTaskPrompt(task, task.prompt);
+const resolveInitialTaskPrompt = (task, preamble = null) => {
+  let prompt = resolveTaskPrompt(task, task.prompt);
+  if (taskHasContextMode(task)) {
+    const routingPrompt = task.readOnly
+      ? MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT
+      : MANAGED_CONTEXT_MODE_WRITABLE_PROMPT;
+    prompt = `${routingPrompt}\n\n${prompt}`;
   }
-  const routingPrompt = task.readOnly
-    ? MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT
-    : MANAGED_CONTEXT_MODE_WRITABLE_PROMPT;
-  return `${routingPrompt}\n\n${resolveTaskPrompt(task, task.prompt)}`;
+  // A host-supplied preamble (e.g. the compact agent contract for Claude
+  // compatibility mode) sits ahead of the routing prefix so it reads as the
+  // child's standing rules. It belongs to the first prompt of a fresh child only;
+  // resume and retry continuations never repeat it.
+  const trimmedPreamble = typeof preamble === 'string' ? preamble.trim() : '';
+  return trimmedPreamble ? `${trimmedPreamble}\n\n${prompt}` : prompt;
 };
 
 const resolveTaskPromptTools = (task) => ({
@@ -445,6 +456,7 @@ const analyzeMessages = (inputRecords, childSessionId) => {
   const latestAssistantMessageId = trimString(latest?.info?.id) || null;
   if (!latest) {
     return {
+      assistantCount: assistants.length,
       canonicalRefs: [],
       childSessionId,
       continuationPending,
@@ -505,6 +517,7 @@ const analyzeMessages = (inputRecords, childSessionId) => {
   const failureReason = extractFailureReason(latest.info?.error);
   const isToolCallHandoff = finish === 'tool-calls';
   return {
+    assistantCount: assistants.length,
     canonicalRefs,
     childSessionId,
     continuationPending,
@@ -624,6 +637,13 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     ?? DEFAULT_CONTINUATION_START_GRACE_MS;
   const retryStopMaxAborts = options.retryStopMaxAborts ?? 3;
   const retryStopPollLimit = options.retryStopPollLimit ?? 80;
+  const resolveTaskPromptPreamble = typeof options.resolveTaskPromptPreamble === 'function'
+    ? options.resolveTaskPromptPreamble
+    : null;
+  const maxAssistantTurns = options.maxAssistantTurns ?? null;
+  const resolveTaskTurnBudget = typeof options.resolveTaskTurnBudget === 'function'
+    ? options.resolveTaskTurnBudget
+    : null;
   if (!Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 0) {
     throw new RangeError('pollIntervalMs must be a non-negative safe integer');
   }
@@ -639,6 +659,12 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   if (!Number.isSafeInteger(liveProgressTimeoutMs) || liveProgressTimeoutMs < 1) {
     throw new RangeError('liveProgressTimeoutMs must be a positive safe integer');
   }
+  if (
+    maxAssistantTurns !== null
+    && (!Number.isSafeInteger(maxAssistantTurns) || maxAssistantTurns < 1)
+  ) {
+    throw new RangeError('maxAssistantTurns must be null or a positive safe integer');
+  }
   const sleep = options.sleep ?? defaultSleep;
   const shutdownController = new AbortController();
   const retryStops = new Map();
@@ -647,6 +673,20 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     if (shutdownController.signal.aborted) {
       throw shutdownController.signal.reason ?? new Error('Managed OpenCode executor shut down');
     }
+  };
+
+  // A task-specific budget wins over the executor-wide one; `null` from either
+  // disables the backstop, and an absent per-task answer falls through.
+  const resolveTurnBudget = (task) => {
+    const taskBudget = resolveTaskTurnBudget ? resolveTaskTurnBudget(task) : undefined;
+    const budget = taskBudget === undefined ? maxAssistantTurns : taskBudget;
+    if (budget === null || budget === undefined) return null;
+    if (!Number.isSafeInteger(budget) || budget < 1) {
+      throw new RangeError(
+        `Turn budget for managed task ${task.taskId} must be null or a positive safe integer`,
+      );
+    }
+    return budget;
   };
 
   const normalizeStatusFields = (status) => ({
@@ -899,6 +939,51 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     const staleTailPrompt = trimString(waitOptions.staleTailAnchor?.prompt) || '';
     let staleTailReprompts = 0;
     let staleTailGraceExhausted = false;
+    // Turn-budget backstop. Turns are counted from this wait's baseline: 0 for a
+    // fresh child, the inherited tail for resume/retry (a deliberately resumed
+    // attempt gets a fresh budget instead of an instant re-abort), and the first
+    // transcript read for a bare observe.
+    const turnBudget = resolveTurnBudget(task);
+    let turnBudgetBaseline = Number.isSafeInteger(waitOptions.turnBudgetBaseline)
+      && waitOptions.turnBudgetBaseline >= 0
+      ? waitOptions.turnBudgetBaseline
+      : null;
+    let turnBudgetPromptSent = false;
+    const enforceTurnBudget = async (observation) => {
+      if (turnBudget === null) return null;
+      if (turnBudgetBaseline === null) turnBudgetBaseline = observation.assistantCount;
+      const usedTurns = observation.assistantCount - turnBudgetBaseline;
+      if (usedTurns >= turnBudget + MANAGED_TURN_BUDGET_ABORT_GRACE_TURNS) {
+        const failureReason = `turn budget (${turnBudget}) exceeded; partial results reported`;
+        const stopError = await ensureRetryStopped(task);
+        return {
+          status: stopError ? 'interrupted' : 'failed',
+          failureReason: stopError
+            ? `${failureReason}; failed to stop the managed child: ${extractFailureReason(stopError) || 'unknown abort failure'}`
+            : failureReason,
+          partial: observation.hasUsefulWork,
+          recoverablePreview: observation.recoverablePreview,
+          canonicalRefs: observation.canonicalRefs,
+          resumable: true,
+        };
+      }
+      if (usedTurns >= turnBudget && !turnBudgetPromptSent) {
+        // Posted exactly once per wait, the way the other continuations are. OpenCode
+        // queues it behind the running turn, so the child is not aborted here.
+        turnBudgetPromptSent = true;
+        await transport.promptSession({
+          sessionId: task.childSessionId,
+          directory: task.directory,
+          providerId: task.providerId,
+          modelId: task.modelId,
+          agent: task.agent,
+          variant: task.variant,
+          prompt: resolveTaskPrompt(task, MANAGED_TURN_BUDGET_PROMPT),
+          tools: resolveTaskPromptTools(task),
+        });
+      }
+      return null;
+    };
     const terminalErrorAfter = Number.isFinite(waitOptions.terminalErrorAfter)
       ? waitOptions.terminalErrorAfter
       : Number.isFinite(task.startedAt) ? task.startedAt : 0;
@@ -940,6 +1025,8 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
             const liveObservation = await readObservation(task, status);
             lastSuccessfulObservation = liveObservation;
             lastTranscriptReadAt = observedAt;
+            const turnBudgetResult = await enforceTurnBudget(liveObservation);
+            if (turnBudgetResult) return turnBudgetResult;
             if (liveObservation.progressSignature !== lastLiveProgressSignature) {
               lastLiveProgressSignature = liveObservation.progressSignature;
               lastLiveProgressAt = observedAt;
@@ -1132,6 +1219,12 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         assertRunning();
         continue;
       }
+      if (!observation.terminal) {
+        // Idle between steps (a tool-call handoff) still counts toward the budget;
+        // a child that has already stopped is reported as-is below.
+        const turnBudgetResult = await enforceTurnBudget(observation);
+        if (turnBudgetResult) return turnBudgetResult;
+      }
       const terminal = toTerminalResult(observation);
       if (terminal) {
         const isEmptyTerminal = terminal.status === 'failed'
@@ -1155,6 +1248,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     assertRunning();
     assertReadOnlyAgentSupport(task);
     assertReadOnlyProviderSupport(task);
+    // Resolved before the child exists so a failing host hook cannot orphan a session.
+    const promptPreamble = resolveTaskPromptPreamble
+      ? await resolveTaskPromptPreamble(task)
+      : null;
     const child = await transport.createSession({
       directory: task.directory,
       parentSessionId: task.rootSessionId,
@@ -1180,7 +1277,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       modelId: task.modelId,
       agent: task.agent,
       variant: task.variant,
-      prompt: resolveInitialTaskPrompt(task),
+      prompt: resolveInitialTaskPrompt(task, promptPreamble),
       tools: resolveTaskPromptTools(task),
     });
     await retainCheckpoint({
@@ -1190,7 +1287,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       stage: 'after provider prompt',
       deleteSession: true,
     });
-    return await waitForTerminal(runningTask, { terminalErrorAfter });
+    return await waitForTerminal(runningTask, { terminalErrorAfter, turnBudgetBaseline: 0 });
   };
 
   const observe = async (task) => await waitForTerminal(task);
@@ -1289,11 +1386,12 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         deferEmptyTerminal: true,
         staleTailAnchor,
         terminalErrorAfter,
+        turnBudgetBaseline: observation.assistantCount,
       });
     }
 
     await retainInPlaceAcceptance(task, control, 'before resumed observation');
-    return await waitForTerminal(task);
+    return await waitForTerminal(task, { turnBudgetBaseline: observation.assistantCount });
   };
 
   const retryInPlace = async (task, control) => {
@@ -1335,6 +1433,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       deferEmptyTerminal: true,
       staleTailAnchor,
       terminalErrorAfter,
+      turnBudgetBaseline: priorObservation.assistantCount,
     });
   };
 

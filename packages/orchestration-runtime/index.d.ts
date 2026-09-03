@@ -300,6 +300,20 @@ export interface ManagedOpenCodeExecutorOptions {
   /** How long a busy child with no running tool may make no transcript progress
    * before one bounded same-child timeout recovery is attempted. */
   liveProgressTimeoutMs?: number;
+  /** Host-supplied text prepended (ahead of the Context Mode routing prefix) to a
+   * task's first child prompt on `start` only; resume and retry-in-place
+   * continuations never carry it. Return `null` for no preamble. */
+  resolveTaskPromptPreamble?: (
+    task: ManagedTaskRecord,
+  ) => string | null | Promise<string | null>;
+  /** Assistant-turn budget applied to every task unless `resolveTaskTurnBudget`
+   * answers for it. At the budget the child is told once to wrap up; at budget +
+   * `MANAGED_TURN_BUDGET_ABORT_GRACE_TURNS` it is aborted and reported as a
+   * resumable failure. `null` (default) disables the backstop. */
+  maxAssistantTurns?: number | null;
+  /** Per-task turn budget. `null` disables the backstop for that task; `undefined`
+   * falls back to `maxAssistantTurns`. */
+  resolveTaskTurnBudget?: (task: ManagedTaskRecord) => number | null | undefined;
   now?: () => number;
   sleep?: (delayMs: number, options: { signal: AbortSignal }) => Promise<void>;
 }
@@ -464,6 +478,8 @@ export const MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT: string;
 export const MANAGED_READ_ONLY_PROMPT: string;
 export const MANAGED_CONTEXT_MODE_WRITABLE_PROMPT: string;
 export const MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT: string;
+export const MANAGED_TURN_BUDGET_PROMPT: string;
+export const MANAGED_TURN_BUDGET_ABORT_GRACE_TURNS: number;
 export function isManagedTransientTransportContinuationPrompt(value: unknown): boolean;
 export function isManagedResumeContinuationPrompt(value: unknown): boolean;
 export function isManagedRetryInPlacePrompt(value: unknown): boolean;
@@ -602,4 +618,15 @@ export const MANAGED_READ_ONLY_AGENT_UNSUPPORTED: 'MANAGED_READ_ONLY_AGENT_UNSUP
 export const MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE: string;
 export function supportsManagedReadOnlyAgent(agent: unknown): boolean;
 export function createManagedOpenCodeExecutor(options: ManagedOpenCodeExecutorOptions): ManagedTaskExecutor;
+export type ManagedAgentContractRole = 'designer' | 'fixer' | 'explorer' | 'librarian' | 'oracle';
+export const MANAGED_AGENT_CONTRACT_TAG: '[devryan-agent-contract:v1]';
+export const MANAGED_AGENT_CONTRACT_MAX_LINES: number;
+export const MANAGED_AGENT_CONTRACT_DEFAULT_ROLE: 'default';
+export const MANAGED_AGENT_CONTRACT_ROLES: readonly ManagedAgentContractRole[];
+export function normalizeManagedAgentContractRole(agent: unknown): ManagedAgentContractRole | 'default';
+/** Compact per-role rules (terminal marker, owned target set, git boundary,
+ * validation budget, foreign-changes scope) for a managed child whose agent
+ * instructions are not loaded, e.g. Anthropic-routed tasks in Claude
+ * compatibility mode. Always at most `MANAGED_AGENT_CONTRACT_MAX_LINES` lines. */
+export function buildManagedAgentContract(input?: { agent?: string | null }): string;
 export function createManagedTaskScheduler(options: ManagedTaskSchedulerOptions): ManagedTaskScheduler;
