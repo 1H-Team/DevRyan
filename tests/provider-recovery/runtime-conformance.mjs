@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { createPrimaryRecoveryHost } from '../../packages/harness-runtime/index.js';
 
 const binary = process.env.DEVRYAN_TEST_OPENCODE_BIN;
-if (!binary || !path.isAbsolute(binary)) throw new Error('Set DEVRYAN_TEST_OPENCODE_BIN to the OpenCode 1.18.25 binary');
+if (!binary || !path.isAbsolute(binary)) throw new Error('Set DEVRYAN_TEST_OPENCODE_BIN to the OpenCode binary under test');
 const fault = process.env.DEVRYAN_RECOVERY_FAULT ?? 'heartbeat';
 if (!['heartbeat', 'silent-sse', 'non-sse', 'missing-headers', 'semantic'].includes(fault)) throw new Error('Unsupported fixture fault');
 await fs.mkdir(path.resolve('.tmp'), { recursive: true });
@@ -20,7 +20,7 @@ await fs.mkdir(configRoot, { recursive: true });
 const config = { model: 'openai/gpt-fixture', default_agent: 'orchestrator', enabled_providers: ['openai'],
   plugin: [pathToFileURL(path.resolve('packages/web/server/default-config/plugins/devryan-primary-recovery.mjs')).href],
   agent: { orchestrator: { mode: 'primary', model: 'openai/gpt-fixture', prompt: 'Respond to the user.' } },
-  provider: { openai: { options: { apiKey: 'fixture', timeout: 900, headersTimeout: 300, chunkTimeout: 300 },
+  provider: { openai: { options: { apiKey: 'fixture', timeout: 900, headerTimeout: 300, chunkTimeout: 300 },
     models: { 'gpt-fixture': { name: 'Fixture', limit: { context: 100000, output: 1000 } } } } } };
 if (fault === 'semantic') config.provider.openai.options.timeout = 10000;
 let requests = 0;
@@ -141,6 +141,14 @@ try {
   console.log(JSON.stringify({ fault, root, requests, state: snapshot.record.state, reason: snapshot.record.reason, attemptCount: snapshot.record.attemptCount, errors }));
   if (fault === 'semantic') {
     if (requests !== 1 || snapshot.record.attemptCount !== 0 || snapshot.record.reason !== 'provider_progress_timeout') throw new Error('Semantic cutoff conformance failed');
+  } else if (snapshot.record.reason === 'native_retry_fenced') {
+    // Retryable transport failures reach the existing native-retry fence before
+    // finalization. That path must stop without replaying the provider request.
+    if (requests !== 1 || snapshot.record.attemptCount !== 0 || snapshot.record.state !== 'needs_attention'
+      || !errors.includes('provider_retry_requires_reconciliation')
+      || errors.some((error) => error !== 'provider_retry_requires_reconciliation')) {
+      throw new Error('Native retry fencing conformance failed');
+    }
   } else if (requests !== 2 || snapshot.record.attemptCount !== 1 || snapshot.record.state !== 'completed') {
     throw new Error('Transient recovery conformance failed; inspect the isolated report');
   }

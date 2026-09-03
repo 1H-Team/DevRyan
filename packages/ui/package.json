@@ -41,7 +41,7 @@
     "@fontsource/ibm-plex-sans": "^5.1.1",
     "@lezer/highlight": "^1.2.3",
     "@openchamber/orchestration-runtime": "workspace:*",
-    "@opencode-ai/sdk": "^1.18.26",
+    "@opencode-ai/sdk": "^1.18.27",
     "@pierre/diffs": "1.1.0-beta.13",
     "@remixicon/react": "^4.7.0",
     "@simplewebauthn/browser": "13.3.0",

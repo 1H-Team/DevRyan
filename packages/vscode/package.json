@@ -250,7 +250,7 @@
     "@openchamber/harness-runtime": "workspace:*",
     "@openchamber/orchestration-runtime": "workspace:*",
     "@openchamber/ui": "workspace:*",
-    "@opencode-ai/sdk": "^1.18.26",
+    "@opencode-ai/sdk": "^1.18.27",
     "adm-zip": "^0.6.0",
     "jsonc-parser": "^3.3.1",
     "react": "^19.1.1",
