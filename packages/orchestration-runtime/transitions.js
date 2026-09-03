@@ -36,6 +36,7 @@ const IMMUTABLE_FIELDS = Object.freeze([
   'executionKind',
   'createdAt',
   'timeoutAt',
+  'recoveryLineageId',
 ]);
 
 const terminalRecordChanged = (previous, next) => {

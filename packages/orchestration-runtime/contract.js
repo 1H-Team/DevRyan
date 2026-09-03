@@ -3,6 +3,9 @@ import {
   PROVIDER_USAGE_LIMIT_FAILURE_KIND,
   classifyManagedTaskFailure,
   classifyProviderRetryFailure,
+  isDefiniteProviderUsageLimit,
+  isManagedTaskModelUnavailable,
+  isProviderPromptRejected,
 } from './provider-retry-policy.js';
 
 export const MANAGED_TASK_OWNER = 'devryan';
@@ -199,6 +202,9 @@ export const validateManagedTaskRecord = (task) => {
   assertNullableTimestamp(task.startedAt, 'startedAt');
   assertNullableTimestamp(task.finishedAt, 'finishedAt');
   assertNullableTimestamp(task.timeoutAt, 'timeoutAt');
+  assertNullableString(task.recoveryLineageId, 'recoveryLineageId', { prefix: 'dvr_lineage_' });
+  assertNullableTimestamp(task.childPromptedAt, 'childPromptedAt');
+  assertNullableTimestamp(task.firstAssistantPartAt, 'firstAssistantPartAt');
   assertJsonCompatible(task, 'task');
   return task;
 };
@@ -215,9 +221,12 @@ export const createManagedTaskRecord = (input) => {
     dispatchCallId: input.dispatchCallId ?? null,
     readOnly: input.readOnly ?? false,
     childSessionId: input.childSessionId ?? null,
+    recoveryLineageId: input.recoveryLineageId ?? null,
     leaseToken: null,
     startedAt: null,
     finishedAt: null,
+    childPromptedAt: null,
+    firstAssistantPartAt: null,
     failureReason: null,
     partial: false,
     recoverablePreview: '',
@@ -241,6 +250,24 @@ export const isManagedTaskAgentRetryAvailable = (task) => {
     classifyProviderRetryFailure(task.failureReason),
   );
 };
+
+/**
+ * A terminal result the agent must not dispose of on its own: the user picks a
+ * model and thinking level (Model Recovery) before work continues in place.
+ * Shared by the scheduler's acknowledgement gate and the auto-resume policy.
+ */
+export const requiresManualModelRecovery = (task, resultEnvelope) => Boolean(
+  task.childSessionId
+  && !isManagedTaskAgentRetryAvailable(task)
+  && (task.status === 'failed' || task.status === 'interrupted')
+  && resultEnvelope?.resumable
+  && !isProviderPromptRejected(task.failureReason)
+  && (
+    isDefiniteProviderUsageLimit(task.failureReason)
+    || isManagedTaskModelUnavailable(task.failureReason)
+    || (task.mode === 'orchestrator' && task.dispatchGroupId !== null && task.attempt >= 2)
+  )
+);
 
 const projectTaskForEvent = (task) => {
   const failureKind = classifyManagedTaskFailure(task.failureReason);
@@ -270,6 +297,9 @@ const projectTaskForEvent = (task) => {
     startedAt: task.startedAt,
     finishedAt: task.finishedAt,
     timeoutAt: task.timeoutAt,
+    recoveryLineageId: task.recoveryLineageId,
+    childPromptedAt: task.childPromptedAt,
+    firstAssistantPartAt: task.firstAssistantPartAt,
     failureReason: task.failureReason,
     failureKind,
     partial: task.partial,

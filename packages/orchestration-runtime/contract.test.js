@@ -85,9 +85,12 @@ describe('managed orchestration contract', () => {
       status: 'queued',
       readOnly: false,
       childSessionId: null,
+      recoveryLineageId: null,
       leaseToken: null,
       startedAt: null,
       finishedAt: null,
+      childPromptedAt: null,
+      firstAssistantPartAt: null,
       failureReason: null,
       partial: false,
       recoverablePreview: '',
@@ -95,6 +98,53 @@ describe('managed orchestration contract', () => {
     });
     expect(JSON.parse(JSON.stringify(task))).toEqual(task);
     expect(validateManagedTaskRecord(task)).toBe(task);
+  });
+
+  test('carries recovery lineage and child progress stamps as nullable durable fields', () => {
+    const root = createManagedTaskRecord(validInput());
+    const followUp = createManagedTaskRecord(validInput({
+      taskId: 'dvr_task_02',
+      idempotencyKey: 'follow-up-02',
+      priorTaskId: root.taskId,
+      attempt: 2,
+      executionKind: 'retry_in_place',
+      recoveryLineageId: 'dvr_lineage_01',
+    }));
+
+    expect(root.recoveryLineageId).toBeNull();
+    expect(followUp.recoveryLineageId).toBe('dvr_lineage_01');
+    expect(validateManagedTaskRecord({ ...root, childPromptedAt: 1_500, firstAssistantPartAt: 1_600 }))
+      .toMatchObject({ childPromptedAt: 1_500, firstAssistantPartAt: 1_600 });
+    expect(() => validateManagedTaskRecord({ ...root, recoveryLineageId: 'lineage_01' }))
+      .toThrow('recoveryLineageId must start with dvr_lineage_');
+    expect(() => validateManagedTaskRecord({ ...root, childPromptedAt: -1 }))
+      .toThrow('childPromptedAt must be a non-negative finite timestamp or null');
+    expect(() => validateManagedTaskRecord({ ...root, firstAssistantPartAt: 'soon' }))
+      .toThrow('firstAssistantPartAt must be a non-negative finite timestamp or null');
+
+    const projected = toManagedTaskEvent({ ...followUp, childPromptedAt: 1_500 }).properties.task;
+    expect(projected).toMatchObject({
+      recoveryLineageId: 'dvr_lineage_01',
+      childPromptedAt: 1_500,
+      firstAssistantPartAt: null,
+    });
+  });
+
+  test('exports the shared manual Model Recovery gate', () => {
+    const parked = {
+      ...createManagedTaskRecord(validInput()),
+      childSessionId: 'ses_child',
+      status: 'failed',
+      startedAt: 1_100,
+      finishedAt: 1_200,
+      failureReason: 'out of usage',
+    };
+    expect(contract.requiresManualModelRecovery(parked, { resumable: true })).toBe(true);
+    expect(contract.requiresManualModelRecovery(parked, { resumable: false })).toBe(false);
+    expect(contract.requiresManualModelRecovery(
+      { ...parked, failureReason: 'provider disconnected' },
+      { resumable: true },
+    )).toBe(false);
   });
 
   test('defaults legacy work to no private dispatch identity', () => {

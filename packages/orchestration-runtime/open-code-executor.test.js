@@ -3,8 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   createManagedOpenCodeExecutor,
   isManagedResumeContinuationPrompt,
+  isManagedRetryInPlacePrompt,
   isManagedTransientTransportContinuationPrompt,
   MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT,
+  MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX,
   MANAGED_CONTEXT_MODE_WRITABLE_PROMPT,
   MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT,
   MANAGED_READ_ONLY_PROMPT,
@@ -68,6 +70,19 @@ describe('managed continuation prompt recognition', () => {
     )).toBe(true);
     expect(isManagedResumeContinuationPrompt(`${MANAGED_RESUME_CONTINUATION_PROMPT} extra`)).toBe(false);
     expect(isManagedResumeContinuationPrompt(null)).toBe(false);
+  });
+
+  test('recognizes the retry-in-place prompt with and without its model continuation notice', () => {
+    expect(MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX).toBe('Continuing on ');
+    const notice = `${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}openai/gpt-5.6 · high after a provider usage limit.`;
+    expect(isManagedRetryInPlacePrompt(MANAGED_RETRY_IN_PLACE_PROMPT)).toBe(true);
+    expect(isManagedRetryInPlacePrompt(`${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${notice}`)).toBe(true);
+    expect(isManagedRetryInPlacePrompt(
+      `${MANAGED_READ_ONLY_PROMPT}\n\n${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${notice}`,
+    )).toBe(true);
+    expect(isManagedRetryInPlacePrompt(`${MANAGED_RETRY_IN_PLACE_PROMPT} extra`)).toBe(false);
+    expect(isManagedRetryInPlacePrompt(`${MANAGED_RETRY_IN_PLACE_PROMPT}\n\nSomething else.`)).toBe(false);
+    expect(isManagedResumeContinuationPrompt(`${MANAGED_RESUME_CONTINUATION_PROMPT}\n\n${notice}`)).toBe(true);
   });
 });
 
@@ -374,6 +389,7 @@ describe('managed OpenCode executor', () => {
       recoverablePreview: 'Useful partial analysis',
       canonicalRefs: [{ type: 'message', id: 'msg_assistant' }],
       resumable: true,
+      providerResetAt: 5_000,
     });
     expect(reads).toBe(1);
     expect(calls.filter(([name]) => name === 'abort')).toHaveLength(1);
@@ -381,12 +397,13 @@ describe('managed OpenCode executor', () => {
 
   test('settles the exact Zen free-tier retry without waiting for its multi-hour next attempt', async () => {
     const calls = [];
+    const resetAt = Date.now() + (4 * 60 * 60 * 1_000);
     const statuses = [
       {
         type: 'retry',
         message: 'Free usage exceeded, subscribe to Go',
         attempt: 1,
-        next: Date.now() + (4 * 60 * 60 * 1_000),
+        next: resetAt,
         action: { reason: 'free_tier_limit' },
       },
       { type: 'idle' },
@@ -423,6 +440,9 @@ describe('managed OpenCode executor', () => {
       recoverablePreview: 'Partial Zen analysis',
       canonicalRefs: [{ type: 'message', id: 'msg_assistant' }],
       resumable: true,
+      // The provider's own reset hint rides along so the scheduler can plan an
+      // automatic resume instead of parking blindly.
+      providerResetAt: resetAt,
     });
     expect(reads).toBe(1);
     expect(calls.filter(([name]) => name === 'abort')).toHaveLength(1);
@@ -2800,9 +2820,161 @@ describe('managed task prompt preamble', () => {
     expect(retried.status).toBe('completed');
     expect(prompts.map((entry) => entry.prompt)).toEqual([
       MANAGED_RESUME_CONTINUATION_PROMPT,
-      MANAGED_RETRY_IN_PLACE_PROMPT,
+      `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}github-copilot/gpt-4.1 · fast after a provider usage limit.`,
     ]);
     expect(hookCalls).toBe(0);
+  });
+});
+
+describe('managed task progress stamps', () => {
+  const progressControl = () => {
+    const stamps = [];
+    return {
+      stamps,
+      control: {
+        async setChildSessionId() { return true; },
+        async markAccepted() { return true; },
+        async recordProgress(progress) { stamps.push(progress); return true; },
+      },
+    };
+  };
+
+  test('stamps the child prompt and the first assistant output on start', async () => {
+    let clock = 5_000;
+    let prompted = false;
+    const transport = {
+      async createSession() { return { id: 'ses_child' }; },
+      async promptSession() { prompted = true; },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() { return prompted ? [assistant()] : []; },
+      async abortSession() { return true; },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      now: () => clock,
+      sleep: async () => { clock += 100; },
+      idleStablePolls: 1,
+    });
+    const { control, stamps } = progressControl();
+
+    const result = await executor.start(task(), control);
+
+    expect(result.status).toBe('completed');
+    expect(stamps).toEqual([
+      { childPromptedAt: 5_000 },
+      { firstAssistantPartAt: expect.any(Number) },
+    ]);
+  });
+
+  test('tolerates a control without recordProgress', async () => {
+    let prompted = false;
+    const transport = {
+      async createSession() { return { id: 'ses_child' }; },
+      async promptSession() { prompted = true; },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() { return prompted ? [assistant()] : []; },
+      async abortSession() { return true; },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined, idleStablePolls: 1 });
+
+    await expect(executor.start(task(), {
+      async setChildSessionId() { return true; },
+      async markAccepted() { return true; },
+    })).resolves.toMatchObject({ status: 'completed' });
+  });
+
+  test('retry in place appends the model continuation notice and stamps only new assistant output', async () => {
+    let clock = 0;
+    let reads = 0;
+    const prompts = [];
+    const prior = assistant({
+      info: { id: 'msg_prior', finish: 'error', error: { message: 'out of usage' } },
+      parts: [{ type: 'text', text: 'partial before the limit' }],
+    });
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession(input) { prompts.push(input); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() {
+        reads += 1;
+        if (prompts.length === 0 || reads <= 2) return [prior];
+        return [
+          prior,
+          { info: { id: 'msg_user', role: 'user' }, parts: [{ type: 'text', text: prompts[0].prompt }] },
+          assistant({ info: { id: 'msg_new' }, parts: [{ type: 'text', text: 'continued on the new model' }] }),
+        ];
+      },
+      async abortSession() { return true; },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      now: () => clock,
+      sleep: async () => { clock += 1; },
+      idleStablePolls: 1,
+    });
+    const { control, stamps } = progressControl();
+
+    const result = await executor.retryInPlace(task({
+      childSessionId: 'ses_child',
+      executionKind: 'retry_in_place',
+      attempt: 2,
+      priorTaskId: 'dvr_task_original',
+      providerId: 'openai',
+      modelId: 'gpt-5.6',
+      variant: null,
+    }), control);
+
+    expect(result).toMatchObject({ status: 'completed', recoverablePreview: 'continued on the new model' });
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0].prompt).toBe(
+      `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}openai/gpt-5.6 after a provider usage limit.`,
+    );
+    expect(isManagedRetryInPlacePrompt(prompts[0].prompt)).toBe(true);
+    // The inherited tail (msg_prior) never counts as this attempt's output.
+    expect(stamps).toEqual([
+      { childPromptedAt: 0 },
+      { firstAssistantPartAt: expect.any(Number) },
+    ]);
+    expect(reads).toBe(3);
+  });
+
+  test('stamps the child prompt when resume posts its continuation', async () => {
+    const prompts = [];
+    const aborted = assistant({
+      info: { id: 'msg_aborted', finish: 'abort' },
+      parts: [{ type: 'text', text: 'stopped' }],
+    });
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession(input) { prompts.push(input); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() {
+        if (prompts.length === 0) return [aborted];
+        return [
+          aborted,
+          { info: { id: 'msg_continuation', role: 'user' }, parts: [{ type: 'text', text: prompts[0].prompt }] },
+          assistant({ info: { id: 'msg_done' }, parts: [{ type: 'text', text: 'Completed' }] }),
+        ];
+      },
+      async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, now: () => 7_000, sleep: async () => undefined });
+    const { control, stamps } = progressControl();
+
+    const result = await executor.resume(task({ childSessionId: 'ses_child', executionKind: 'resume' }), control);
+
+    expect(result.status).toBe('completed');
+    expect(prompts.map((entry) => entry.prompt)).toEqual([MANAGED_RESUME_CONTINUATION_PROMPT]);
+    expect(stamps[0]).toEqual({ childPromptedAt: 7_000 });
+    expect(stamps.filter((stamp) => 'firstAssistantPartAt' in stamp)).toHaveLength(1);
   });
 });
 

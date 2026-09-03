@@ -69,6 +69,64 @@ export interface ManagedTaskCanonicalRef {
   [key: string]: JsonValue;
 }
 
+export type ManagedTaskAutoResumeState =
+  | 'planning'
+  | 'scheduled'
+  | 'attempting'
+  | 'superseded'
+  | 'succeeded'
+  | 'ended'
+  | 'cancelled'
+  | 'exhausted'
+  | 'acknowledged';
+export type ManagedTaskAutoResumeResetSource = 'opencode_status' | 'meridian_quota' | 'backoff';
+export type ManagedTaskAutoResumeTargetKind = 'backup' | 'original';
+export type ManagedTaskAutoResumeReason =
+  | 'user'
+  | 'manual_retry'
+  | 'session_deleted'
+  | 'cancelled'
+  | 'attempt_cap'
+  | 'time_cap'
+  | 'host_failures'
+  | 'window_rejections';
+
+export interface ManagedTaskAutoResumeTarget {
+  kind: ManagedTaskAutoResumeTargetKind;
+  providerId: string;
+  modelId: string;
+  variant: string | null;
+}
+
+export interface ManagedTaskAutoResumeError {
+  code: string;
+  message: string;
+  at: number;
+}
+
+/** Durable auto-resume state carried on a parked provider-limit result envelope. */
+export interface ManagedTaskAutoResume {
+  revision: number;
+  enabled: boolean;
+  state: ManagedTaskAutoResumeState;
+  cancelGeneration: number;
+  lineageStartedAt: number;
+  expiresAt: number;
+  attemptCount: number;
+  noSignalProbes: number;
+  rejectionsInWindow: number;
+  windowResetAt: number | null;
+  nextAttemptAt: number | null;
+  resetAt: number | null;
+  resetSource: ManagedTaskAutoResumeResetSource | null;
+  target: ManagedTaskAutoResumeTarget | null;
+  lastAttemptTaskId: string | null;
+  lastAttemptAt: number | null;
+  lastError: ManagedTaskAutoResumeError | null;
+  hostFailures: number;
+  reason: ManagedTaskAutoResumeReason | null;
+}
+
 export interface ManagedTaskRecord {
   owner: 'devryan';
   taskId: string;
@@ -97,6 +155,12 @@ export interface ManagedTaskRecord {
   startedAt: number | null;
   finishedAt: number | null;
   timeoutAt: number | null;
+  /** Shared by every follow-up of one root task; the root itself keeps null. */
+  recoveryLineageId: string | null;
+  /** When the executor posted this attempt's prompt to the child. */
+  childPromptedAt: number | null;
+  /** When this attempt's first own assistant output was observed. */
+  firstAssistantPartAt: number | null;
   failureReason: string | null;
   partial: boolean;
   recoverablePreview: string;
@@ -104,6 +168,10 @@ export interface ManagedTaskRecord {
 }
 
 export function isManagedTaskAgentRetryAvailable(task: ManagedTaskRecord): boolean;
+export function requiresManualModelRecovery(
+  task: ManagedTaskRecord,
+  resultEnvelope: Pick<ManagedTaskResultEnvelope, 'resumable'> | null | undefined,
+): boolean;
 
 export type ManagedTaskEventRecord = Omit<ManagedTaskRecord,
   'prompt' | 'idempotencyKey' | 'dispatchGroupId' | 'readOnly' | 'leaseToken'> & {
@@ -134,6 +202,9 @@ export interface ManagedTaskResultEnvelope {
   acknowledgedAt: number | null;
   action: ManagedTaskResultAction | null;
   followUpTaskId: string | null;
+  /** Provider reset hint (epoch ms) reported with a usage-limit failure. */
+  providerResetAt: number | null;
+  autoResume: ManagedTaskAutoResume | null;
 }
 
 export type ManagedResultMode = 'eager' | 'reference';
@@ -196,6 +267,7 @@ export interface ManagedTaskSubmitInput {
   priorTaskId?: string | null;
   executionKind?: ManagedTaskExecutionKind;
   timeoutAt?: number | null;
+  recoveryLineageId?: string | null;
 }
 
 export interface ManagedTaskExecutorResult {
@@ -205,11 +277,17 @@ export interface ManagedTaskExecutorResult {
   recoverablePreview?: string;
   canonicalRefs?: ManagedTaskCanonicalRef[];
   resumable?: boolean;
+  providerResetAt?: number | null;
 }
 
 export interface ManagedTaskControl {
   setChildSessionId(childSessionId: string): Promise<boolean>;
   markAccepted(): Promise<boolean>;
+  /** Lease-checked; fills only fields that are still null. */
+  recordProgress(progress: {
+    childPromptedAt?: number;
+    firstAssistantPartAt?: number;
+  }): Promise<boolean>;
 }
 
 export type ManagedTaskReconciliation =
@@ -329,6 +407,58 @@ export interface ManagedOrchestrationPersistence {
   save(state: ManagedOrchestrationState): Promise<void>;
 }
 
+export interface ManagedTaskAutoResumeAttemptParams {
+  taskId: string;
+  rootSessionId: string;
+  directory: string;
+  action: 'retry_in_place';
+  /** `auto-resume:<taskId>:<cancelGeneration>:<attemptCount>` */
+  idempotencyKey: string;
+  providerId: string;
+  modelId: string;
+  variant: string | null;
+  autoResumeGeneration: number;
+}
+
+export type ManagedTaskAutoResumeAttemptOutcome =
+  | { outcome: 'started'; followUpTaskId: string | null }
+  | { outcome: 'deferred'; retryAfterMs: number; reason: string }
+  | { outcome: 'rejected'; code: string; message: string };
+
+export interface ManagedTaskAutoResumeBackupExecution {
+  providerId: string;
+  modelId: string;
+  variant: string | null;
+}
+
+export interface ManagedTaskAutoResumeProviderReset {
+  resetAt: number | null;
+  limited: boolean;
+}
+
+export interface ManagedTaskAutoResumeOptions {
+  resolveOwnerKey?(input: { rootSessionId: string }): string | Promise<string>;
+  resolveBackupExecution?(input: {
+    rootSessionId: string;
+    directory: string;
+    agent: string;
+    providerId: string;
+    modelId: string;
+  }): ManagedTaskAutoResumeBackupExecution | null | Promise<ManagedTaskAutoResumeBackupExecution | null>;
+  resolveProviderReset?(input: {
+    providerId: string;
+    ownerKey: string;
+    directory: string;
+    rootSessionId: string;
+  }): ManagedTaskAutoResumeProviderReset | null | Promise<ManagedTaskAutoResumeProviderReset | null>;
+  /** Performs one attempt, normally by calling `acknowledgeResult` with the
+   * params as given. Absent → auto-resume is inert. */
+  attempt?(params: ManagedTaskAutoResumeAttemptParams): Promise<ManagedTaskAutoResumeAttemptOutcome>;
+  startupGraceMs?: number;
+  probeStaggerMs?: number;
+  defaultEnabled?: boolean;
+}
+
 export interface ManagedTaskSchedulerOptions {
   executor: ManagedTaskExecutor;
   persistence?: ManagedOrchestrationPersistence;
@@ -346,6 +476,7 @@ export interface ManagedTaskSchedulerOptions {
   maxTerminalRecords?: number;
   maxHistoryAgeMs?: number;
   maxPersistedBytes?: number;
+  autoResume?: ManagedTaskAutoResumeOptions;
 }
 
 export interface ManagedTaskSchedulerDiagnostics {
@@ -359,6 +490,9 @@ export interface ManagedTaskSchedulerDiagnostics {
   pendingLeaseCount: number;
   pendingReconciliationRetryCount: number;
   activeProviderRecoveryContinuationClaimCount: number;
+  /** Envelopes whose auto-resume is enabled and still planning/scheduled/attempting. */
+  pendingAutoResumeCount: number;
+  providerBreakerCount: number;
   compactedTaskCount: number;
   serializedBytes: number;
   shutDown: boolean;
@@ -443,7 +577,17 @@ export interface ManagedTaskScheduler {
     label?: string;
     prompt?: string;
     timeoutAt?: number | null;
+    /** Internal: passed through by the auto-resume `attempt` hook. Throws
+     * `auto_resume_stale` when the parked result's generation moved on. */
+    autoResumeGeneration?: number;
   }): Promise<{ envelope: ManagedTaskResultEnvelope; followUpTask: ManagedTaskRecord | null }>;
+  setResultAutoResume(taskId: string, options: { enabled: boolean }): Promise<{
+    envelope: ManagedTaskResultEnvelope;
+  }>;
+  cancelAutoResumeForSession(
+    sessionId: string,
+    reason: 'session_deleted' | 'cancelled',
+  ): Promise<{ cancelledTaskIds: string[] }>;
   releaseModeLease(rootSessionId: string, mode: ManagedTaskMode): Promise<boolean>;
   flush(): Promise<void>;
   shutdown(): Promise<void>;
@@ -471,6 +615,7 @@ export const PROVIDER_PROMPT_REJECTED_FAILURE_KIND: 'provider_prompt_rejected';
 export const MODEL_UNAVAILABLE_FAILURE_KIND: 'model_unavailable';
 export const PROVIDER_TRANSPORT_FAILURE_KINDS: readonly ProviderTransportFailureKind[];
 export const MANAGED_RETRY_IN_PLACE_PROMPT: string;
+export const MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX: 'Continuing on ';
 export const MANAGED_RESUME_CONTINUATION_PROMPT: string;
 export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT: string;
 export const MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT: string;
@@ -486,6 +631,65 @@ export function isManagedRetryInPlacePrompt(value: unknown): boolean;
 export const DEFAULT_MANAGED_TERMINAL_MAX_RECORDS: number;
 export const DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS: number;
 export const DEFAULT_MANAGED_LEDGER_MAX_BYTES: number;
+export const MAX_RETAINED_LINEAGE_RECORDS: number;
+export const AUTO_RESUME_MAX_ATTEMPTS: number;
+export const AUTO_RESUME_MAX_LINEAGE_MS: number;
+export const AUTO_RESUME_BACKOFF_MS: readonly number[];
+export const AUTO_RESUME_MAX_REJECTIONS_PER_WINDOW: number;
+export const AUTO_RESUME_MAX_HOST_FAILURES: number;
+export const AUTO_RESUME_RESET_JITTER_MS: number;
+export const AUTO_RESUME_MIN_DELAY_MS: number;
+export const AUTO_RESUME_HOST_RETRY_MS: number;
+export const AUTO_RESUME_ACTIVE_STATES: readonly ManagedTaskAutoResumeState[];
+export const MANAGED_LINEAGE_ID_PREFIX: 'dvr_lineage_';
+export type ManagedTaskAutoResumePlan =
+  | {
+      state: 'scheduled';
+      nextAttemptAt: number;
+      target: ManagedTaskAutoResumeTarget;
+      resetAt: number | null;
+      resetSource: ManagedTaskAutoResumeResetSource | null;
+    }
+  | { state: 'exhausted'; reason: ManagedTaskAutoResumeReason };
+export function createLineageId(rootTaskId: string): string;
+export function isAutoResumeEligible(
+  task: ManagedTaskRecord,
+  envelope: ManagedTaskResultEnvelope | null | undefined,
+): boolean;
+export function isAutoResumeActive(
+  envelope: Pick<ManagedTaskResultEnvelope, 'autoResume'> | null | undefined,
+): boolean;
+export function initialAutoResumeState(input: {
+  now: number;
+  enabled: boolean;
+  providerResetAt: number | null;
+  prior?: ManagedTaskAutoResume | null;
+  /** When given, `prior` is inherited only if it was attempting this task. */
+  taskId?: string | null;
+}): ManagedTaskAutoResume;
+export function recordProviderRejection(
+  state: ManagedTaskAutoResume,
+  input: { now: number; providerResetAt: number | null },
+): ManagedTaskAutoResume;
+export function planAutoResumeAttempt(input: {
+  now: number;
+  task: Pick<ManagedTaskRecord, 'providerId' | 'modelId' | 'variant' | 'readOnly'>;
+  state: ManagedTaskAutoResume;
+  backup?: ManagedTaskAutoResumeBackupExecution | null;
+  breakerUntil?: ((providerId: string) =>
+    | number
+    | { until: number; source?: ManagedTaskAutoResumeResetSource | null }
+    | null
+    | undefined) | null;
+  providerReset?: ManagedTaskAutoResumeProviderReset | null;
+  /** The execution the lineage started on; defaults to the task's own. */
+  origin?: { providerId: string; modelId: string; variant: string | null } | null;
+}): ManagedTaskAutoResumePlan;
+export function buildAutoResumeAcknowledgeParams(input: {
+  task: Pick<ManagedTaskRecord, 'taskId' | 'rootSessionId' | 'directory'>;
+  envelope: Pick<ManagedTaskResultEnvelope, 'autoResume'>;
+}): ManagedTaskAutoResumeAttemptParams;
+export function validateManagedTaskAutoResume(value: unknown): ManagedTaskAutoResume | null;
 export const MANAGED_RESULT_PAGE_MAX_BYTES: number;
 export const MANAGED_RESULT_MODES: readonly ManagedResultMode[];
 
@@ -563,9 +767,12 @@ export function createManagedTaskRecord(input: Omit<ManagedTaskRecord,
   | 'dispatchCallId'
   | 'readOnly'
   | 'childSessionId'
+  | 'recoveryLineageId'
   | 'leaseToken'
   | 'startedAt'
   | 'finishedAt'
+  | 'childPromptedAt'
+  | 'firstAssistantPartAt'
   | 'failureReason'
   | 'partial'
   | 'recoverablePreview'
@@ -575,6 +782,7 @@ export function createManagedTaskRecord(input: Omit<ManagedTaskRecord,
   dispatchGroupId?: string | null;
   dispatchCallId?: string | null;
   readOnly?: boolean;
+  recoveryLineageId?: string | null;
 }): ManagedTaskRecord;
 export function toManagedTaskEvent(task: ManagedTaskRecord, resultEnvelope?: ManagedTaskResultEnvelope | null): ManagedTaskEvent;
 export function toManagedTaskRemovalEvent(task: ManagedTaskRecord): ManagedTaskRemovalEvent;
@@ -582,6 +790,7 @@ export function createManagedTaskResultEnvelope(task: ManagedTaskRecord, options
   sequence: number;
   createdAt: number;
   resumable: boolean;
+  providerResetAt?: number | null;
 }): ManagedTaskResultEnvelope;
 export function validateManagedTaskResultEnvelope(envelope: unknown): ManagedTaskResultEnvelope;
 export function assertManagedTaskResultEnvelopeMatchesTask(task: ManagedTaskRecord, envelope: ManagedTaskResultEnvelope): ManagedTaskResultEnvelope;

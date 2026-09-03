@@ -2,8 +2,8 @@ import {
   MAX_MANAGED_TASK_FAILURE_BYTES,
   MAX_MANAGED_TASK_PREVIEW_BYTES,
   createManagedTaskRecord,
-  isManagedTaskAgentRetryAvailable,
   isTerminalManagedTaskStatus,
+  requiresManualModelRecovery,
   toManagedTaskEvent,
   toManagedTaskRemovalEvent,
   truncateManagedText,
@@ -24,9 +24,20 @@ import {
 import {
   MANAGED_TASK_TIMEOUT_REASON_PREFIX,
   isDefiniteProviderUsageLimit,
-  isManagedTaskModelUnavailable,
   isProviderPromptRejected,
 } from './provider-retry-policy.js';
+import {
+  AUTO_RESUME_HOST_RETRY_MS,
+  AUTO_RESUME_MAX_ATTEMPTS,
+  AUTO_RESUME_MAX_HOST_FAILURES,
+  buildAutoResumeAcknowledgeParams,
+  createLineageId,
+  initialAutoResumeState,
+  isAutoResumeActive,
+  isAutoResumeEligible,
+  planAutoResumeAttempt,
+  recordProviderRejection,
+} from './auto-resume-policy.js';
 import {
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
@@ -36,19 +47,6 @@ import {
 const ACTIVE_STATUSES = new Set(['starting', 'running']);
 const TERMINAL_RESULT_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
 const AGENT_HANDOFF_MANUAL_RECOVERY_ABANDON = Symbol('agent-handoff-manual-recovery-abandon');
-
-const requiresManualModelRecovery = (task, resultEnvelope) => Boolean(
-  task.childSessionId
-  && !isManagedTaskAgentRetryAvailable(task)
-  && (task.status === 'failed' || task.status === 'interrupted')
-  && resultEnvelope?.resumable
-  && !isProviderPromptRejected(task.failureReason)
-  && (
-    isDefiniteProviderUsageLimit(task.failureReason)
-    || isManagedTaskModelUnavailable(task.failureReason)
-    || (task.mode === 'orchestrator' && task.dispatchGroupId !== null && task.attempt >= 2)
-  )
-);
 
 // A recovery attempt continues work that was sized for the source task's window, so it
 // inherits that window instead of silently dropping to the caller's default. Without this a
@@ -178,6 +176,23 @@ export const createManagedTaskScheduler = (options = {}) => {
   if (!Number.isFinite(providerRecoveryContinuationLeaseMs) || providerRecoveryContinuationLeaseMs < 1) {
     throw new RangeError('providerRecoveryContinuationLeaseMs must be a positive finite number');
   }
+  // Auto-resume is inert unless the host supplies `attempt`: parked envelopes then
+  // keep `autoResume: null` and nothing is ever armed.
+  const autoResumeOptions = options.autoResume && typeof options.autoResume === 'object'
+    ? options.autoResume
+    : null;
+  const autoResumeAttempt = typeof autoResumeOptions?.attempt === 'function'
+    ? autoResumeOptions.attempt
+    : null;
+  const autoResumeStartupGraceMs = autoResumeOptions?.startupGraceMs ?? 15_000;
+  const autoResumeProbeStaggerMs = autoResumeOptions?.probeStaggerMs ?? 60_000;
+  const autoResumeDefaultEnabled = autoResumeOptions?.defaultEnabled ?? true;
+  if (!Number.isFinite(autoResumeStartupGraceMs) || autoResumeStartupGraceMs < 0) {
+    throw new RangeError('autoResume.startupGraceMs must be a non-negative finite number');
+  }
+  if (!Number.isFinite(autoResumeProbeStaggerMs) || autoResumeProbeStaggerMs < 0) {
+    throw new RangeError('autoResume.probeStaggerMs must be a non-negative finite number');
+  }
 
   const tasks = new Map();
   const resultEnvelopes = new Map();
@@ -192,6 +207,10 @@ export const createManagedTaskScheduler = (options = {}) => {
   const startingLeaseTimers = new Map();
   const reconciliationRetryTimers = new Map();
   const providerRecoveryContinuationClaims = new Map();
+  const autoResumeTimers = new Map();
+  // breakerKey(providerId, ownerKey) → { until, source, probing: { taskId, since } | null }
+  const providerBreakers = new Map();
+  const autoResumeOwnerKeys = new Map();
   let initialized = false;
   let initializePromise = null;
   let mutationTail = Promise.resolve();
@@ -278,6 +297,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       providerRecoveryContinuationClaims.delete(taskId);
       clearTaskTimeout(taskId);
       clearReconciliationRetry(taskId);
+      clearAutoResumeTimer(taskId);
       compactedTaskCount += 1;
     }
   };
@@ -351,13 +371,142 @@ export const createManagedTaskScheduler = (options = {}) => {
     cancelTimeout(timer);
   };
 
-  const commitTerminalTaskLocked = async (previous, next, { resumable = false } = {}) => {
+  const clearAutoResumeTimer = (taskId) => {
+    const timer = autoResumeTimers.get(taskId);
+    if (timer === undefined) return;
+    autoResumeTimers.delete(taskId);
+    cancelTimeout(timer);
+  };
+
+  const armAutoResumeTimer = (taskId, delayMs, step) => {
+    clearAutoResumeTimer(taskId);
+    if (shutDown) return;
+    const timer = unrefTimer(scheduleTimeout(() => {
+      autoResumeTimers.delete(taskId);
+      if (shutDown) return;
+      void step().catch((error) => {
+        logger.warn?.('[ManagedOrchestration] Auto-resume step failed', {
+          taskId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }, Math.max(0, delayMs)));
+    autoResumeTimers.set(taskId, timer);
+  };
+
+  const scheduleAutoResumePlanning = (taskId, generation, delayMs) => {
+    armAutoResumeTimer(taskId, delayMs, () => planAutoResume(taskId, generation));
+  };
+
+  const scheduleAutoResumeAttempt = (taskId, generation, at) => {
+    armAutoResumeTimer(taskId, at - now(), () => runAutoResumeAttempt(taskId, generation));
+  };
+
+  // Provider breakers are keyed by provider AND owner (the host's account/quota
+  // identity) so one user's exhausted quota never parks another user's work.
+  const ownerKeyFor = (rootSessionId) => autoResumeOwnerKeys.get(rootSessionId) ?? '';
+
+  const resolveAutoResumeOwnerKey = async (rootSessionId) => {
+    if (autoResumeOwnerKeys.has(rootSessionId)) return autoResumeOwnerKeys.get(rootSessionId);
+    let ownerKey = '';
+    try {
+      const resolved = typeof autoResumeOptions?.resolveOwnerKey === 'function'
+        ? await autoResumeOptions.resolveOwnerKey({ rootSessionId })
+        : '';
+      ownerKey = typeof resolved === 'string' ? resolved : '';
+    } catch (error) {
+      logger.warn?.('[ManagedOrchestration] Failed to resolve auto-resume owner key', {
+        rootSessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return '';
+    }
+    autoResumeOwnerKeys.set(rootSessionId, ownerKey);
+    return ownerKey;
+  };
+
+  const resolveAutoResumeHook = async (name, input) => {
+    const hook = autoResumeOptions?.[name];
+    if (typeof hook !== 'function') return null;
+    try {
+      return await hook(input) ?? null;
+    } catch (error) {
+      logger.warn?.(`[ManagedOrchestration] Auto-resume ${name} failed`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  };
+
+  const BREAKER_KEY_SEPARATOR = String.fromCharCode(0);
+  const breakerKey = (providerId, ownerKey) => `${providerId}${BREAKER_KEY_SEPARATOR}${ownerKey}`;
+
+  const getProviderBreakerLocked = (providerId, ownerKey) => (
+    providerBreakers.get(breakerKey(providerId, ownerKey)) ?? null
+  );
+
+  const pruneProviderBreakerLocked = (providerId, ownerKey) => {
+    const key = breakerKey(providerId, ownerKey);
+    const breaker = providerBreakers.get(key);
+    if (breaker && !breaker.probing && (breaker.until === null || breaker.until <= now())) {
+      providerBreakers.delete(key);
+    }
+  };
+
+  const breakerUntilLocked = (providerId, ownerKey) => {
+    const breaker = getProviderBreakerLocked(providerId, ownerKey);
+    if (!breaker || breaker.until === null || breaker.until <= now()) return null;
+    return { until: breaker.until, source: breaker.source };
+  };
+
+  // Conservative: a later reported reset extends the breaker, an earlier one never
+  // shortens it. The plan may still probe at the earliest known reset; the
+  // breaker then simply re-arms that probe at its own `until`.
+  const markProviderLimitedLocked = (providerId, ownerKey, { until = null, source = null } = {}) => {
+    const key = breakerKey(providerId, ownerKey);
+    const nextUntil = Number.isFinite(until) && until > now() ? until : null;
+    const existing = providerBreakers.get(key);
+    if (!existing) {
+      // Without a reset there is nothing to enforce; probes stagger through the
+      // entry created when an attempt actually starts.
+      if (nextUntil === null) return;
+      providerBreakers.set(key, { until: nextUntil, source, probing: null });
+      return;
+    }
+    if (nextUntil !== null && (existing.until === null || nextUntil > existing.until)) {
+      existing.until = nextUntil;
+      existing.source = source;
+    }
+  };
+
+  const clearProviderBreakerLocked = (providerId, ownerKey) => {
+    providerBreakers.delete(breakerKey(providerId, ownerKey));
+  };
+
+  const setProviderProbeLocked = (providerId, ownerKey, probe) => {
+    const key = breakerKey(providerId, ownerKey);
+    const existing = providerBreakers.get(key);
+    if (existing) {
+      existing.probing = probe;
+      return;
+    }
+    providerBreakers.set(key, { until: null, source: null, probing: probe });
+  };
+
+  const clearProviderProbeLocked = (providerId, ownerKey, taskId) => {
+    const breaker = getProviderBreakerLocked(providerId, ownerKey);
+    if (breaker?.probing?.taskId === taskId) breaker.probing = null;
+    pruneProviderBreakerLocked(providerId, ownerKey);
+  };
+
+  const commitTerminalTaskLocked = async (previous, next, { resumable = false, providerResetAt = null } = {}) => {
     assertManagedTaskTransition(previous, next);
     const existingEnvelope = resultEnvelopes.get(next.taskId);
     const envelope = existingEnvelope ?? createManagedTaskResultEnvelope(next, {
       sequence: nextResultSequenceLocked(),
       createdAt: next.finishedAt ?? now(),
       resumable,
+      providerResetAt,
     });
     tasks.set(next.taskId, next);
     resultEnvelopes.set(next.taskId, envelope);
@@ -524,8 +673,17 @@ export const createManagedTaskScheduler = (options = {}) => {
       };
       await commitTerminalTaskLocked(previous, next, {
         resumable: Boolean(result?.resumable),
+        providerResetAt: Number.isFinite(result?.providerResetAt) ? result.providerResetAt : null,
       });
       changed = true;
+      try {
+        await parkAutoResumeLocked(next);
+      } catch (error) {
+        logger.warn?.('[ManagedOrchestration] Failed to record auto-resume state', {
+          taskId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     });
     if (changed && !recovering) await pump();
   };
@@ -568,7 +726,360 @@ export const createManagedTaskScheduler = (options = {}) => {
         return true;
       });
     },
+    async recordProgress(progress = {}) {
+      if (shutDown) return false;
+      return await runExclusive(async () => {
+        const previous = tasks.get(taskId);
+        if (!previous || isTerminalManagedTaskStatus(previous.status)) return false;
+        if (previous.leaseToken !== leaseToken) return false;
+        const next = { ...previous };
+        let changed = false;
+        for (const field of ['childPromptedAt', 'firstAssistantPartAt']) {
+          const value = progress?.[field];
+          if (previous[field] !== null || !Number.isFinite(value) || value < 0) continue;
+          next[field] = value;
+          changed = true;
+        }
+        if (changed) await commitTaskUpdateLocked(previous, next);
+        return true;
+      });
+    },
   });
+
+  // The execution the auto-resume lineage started on: walk back through the
+  // auto follow-ups only, so a manual retry (which restarts the budget) becomes
+  // the new origin for the attempts that follow it.
+  const resolveAutoResumeOriginLocked = (task) => {
+    let current = task;
+    const seen = new Set([task.taskId]);
+    while (current.priorTaskId && !seen.has(current.priorTaskId)) {
+      const prior = tasks.get(current.priorTaskId);
+      const priorState = resultEnvelopes.get(current.priorTaskId)?.autoResume ?? null;
+      if (!prior || !priorState || priorState.lastAttemptTaskId !== current.taskId) break;
+      seen.add(prior.taskId);
+      current = prior;
+    }
+    return { providerId: current.providerId, modelId: current.modelId, variant: current.variant };
+  };
+
+  const autoResumeAttemptKey = (taskId, state) => (
+    `auto-resume:${taskId}:${state.cancelGeneration}:${state.attemptCount}`
+  );
+
+  const commitAutoResumeStateLocked = async (envelope, patch) => {
+    const state = envelope.autoResume;
+    const next = { ...state, ...patch, revision: state.revision + 1 };
+    await commitEnvelopeUpdateLocked(envelope, { ...envelope, autoResume: next });
+    return next;
+  };
+
+  const commitAutoResumeExhaustedLocked = async (envelope, reason) => {
+    clearAutoResumeTimer(envelope.taskId);
+    return await commitAutoResumeStateLocked(envelope, {
+      state: 'exhausted',
+      reason,
+      nextAttemptAt: null,
+      target: null,
+    });
+  };
+
+  const disableAutoResumeLocked = async (task, envelope, reason) => {
+    const state = envelope.autoResume;
+    if (state?.target) {
+      clearProviderProbeLocked(state.target.providerId, ownerKeyFor(task.rootSessionId), task.taskId);
+    }
+    clearAutoResumeTimer(task.taskId);
+    const base = state ?? initialAutoResumeState({
+      now: now(),
+      enabled: false,
+      providerResetAt: envelope.providerResetAt,
+    });
+    const next = {
+      ...base,
+      enabled: false,
+      state: 'cancelled',
+      reason,
+      cancelGeneration: base.cancelGeneration + (state ? 1 : 0),
+      nextAttemptAt: null,
+      revision: state ? state.revision + 1 : 1,
+    };
+    await commitEnvelopeUpdateLocked(envelope, { ...envelope, autoResume: next });
+    return next;
+  };
+
+  // Called under the lock right after a task settles. Settles the prior attempt's
+  // state when this task was an automatic follow-up, keeps the provider breaker
+  // honest, and parks the task itself when it is eligible.
+  const parkAutoResumeLocked = async (task, { planningDelayMs = 0 } = {}) => {
+    if (!autoResumeAttempt) return;
+    const envelope = resultEnvelopes.get(task.taskId);
+    if (!envelope || envelope.autoResume !== null) return;
+    const ownerKey = ownerKeyFor(task.rootSessionId);
+    const priorEnvelope = task.priorTaskId ? resultEnvelopes.get(task.priorTaskId) ?? null : null;
+    const priorState = priorEnvelope?.autoResume ?? null;
+    // `superseded` covers a restart between the prior's settlement and this park.
+    const continuesAutoAttempt = Boolean(
+      priorState
+      && (priorState.state === 'attempting' || priorState.state === 'superseded')
+      && (
+        priorState.lastAttemptTaskId === task.taskId
+        || (
+          priorState.lastAttemptTaskId === null
+          && task.idempotencyKey === autoResumeAttemptKey(priorEnvelope.taskId, priorState)
+        )
+      ),
+    );
+    const eligible = isAutoResumeEligible(task, envelope);
+    if (continuesAutoAttempt) {
+      if (task.status === 'completed' || task.firstAssistantPartAt !== null) {
+        clearProviderBreakerLocked(task.providerId, ownerKey);
+      } else if (isDefiniteProviderUsageLimit(task.failureReason)) {
+        markProviderLimitedLocked(task.providerId, ownerKey, {
+          until: envelope.providerResetAt,
+          source: 'opencode_status',
+        });
+        clearProviderProbeLocked(task.providerId, ownerKey, task.taskId);
+      } else {
+        clearProviderProbeLocked(task.providerId, ownerKey, task.taskId);
+      }
+      clearAutoResumeTimer(priorEnvelope.taskId);
+      // The prior's acknowledgement is normally recorded by the attempt itself;
+      // heal it here when the follow-up settled first (restart recovery, or a
+      // follow-up that finished before the acknowledgement commit ran).
+      const acknowledgement = priorEnvelope.action === null
+        ? { acknowledgedAt: now(), action: 'retry_in_place', followUpTaskId: task.taskId }
+        : {};
+      await commitEnvelopeUpdateLocked(priorEnvelope, {
+        ...priorEnvelope,
+        ...acknowledgement,
+        autoResume: {
+          ...priorState,
+          state: task.status === 'completed' ? 'succeeded' : (eligible ? 'superseded' : 'ended'),
+          lastAttemptTaskId: task.taskId,
+          nextAttemptAt: null,
+          revision: priorState.revision + 1,
+        },
+      });
+      providerRecoveryContinuationClaims.delete(priorEnvelope.taskId);
+    }
+    if (!eligible) return;
+
+    const at = now();
+    const origin = resolveAutoResumeOriginLocked(task);
+    // The reset hint only describes the provider that just rejected the task. When
+    // that was the backup, the lineage keeps what it knew about the origin.
+    const originReset = task.providerId === origin.providerId
+      ? envelope.providerResetAt
+      : (continuesAutoAttempt ? priorState.resetAt : null);
+    const initial = initialAutoResumeState({
+      now: at,
+      enabled: priorState ? priorState.enabled : autoResumeDefaultEnabled,
+      providerResetAt: originReset,
+      prior: continuesAutoAttempt ? { ...priorState, lastAttemptTaskId: task.taskId } : null,
+      taskId: task.taskId,
+    });
+    const state = recordProviderRejection(initial, { now: at, providerResetAt: originReset });
+    await commitEnvelopeUpdateLocked(envelope, {
+      ...envelope,
+      autoResume: { ...state, state: 'planning', revision: 1 },
+    });
+    if (state.enabled) scheduleAutoResumePlanning(task.taskId, state.cancelGeneration, planningDelayMs);
+  };
+
+  const planAutoResume = async (taskId, generation) => {
+    if (shutDown || !autoResumeAttempt) return;
+    const task = tasks.get(taskId);
+    const envelope = resultEnvelopes.get(taskId);
+    if (
+      !task
+      || !envelope
+      || !isAutoResumeActive(envelope)
+      || envelope.autoResume.cancelGeneration !== generation
+    ) {
+      return;
+    }
+    // Host lookups run outside the lock; every answer is re-validated under it.
+    const origin = resolveAutoResumeOriginLocked(task);
+    const ownerKey = await resolveAutoResumeOwnerKey(task.rootSessionId);
+    const backup = await resolveAutoResumeHook('resolveBackupExecution', {
+      rootSessionId: task.rootSessionId,
+      directory: task.directory,
+      agent: task.agent,
+      providerId: origin.providerId,
+      modelId: origin.modelId,
+    });
+    const providerReset = await resolveAutoResumeHook('resolveProviderReset', {
+      providerId: origin.providerId,
+      ownerKey,
+      directory: task.directory,
+      rootSessionId: task.rootSessionId,
+    });
+    await runExclusive(async () => {
+      if (shutDown) return;
+      const current = tasks.get(taskId);
+      const previous = resultEnvelopes.get(taskId);
+      if (!current || !previous || previous.action !== null || !isAutoResumeActive(previous)) return;
+      const state = previous.autoResume;
+      if (
+        state.cancelGeneration !== generation
+        || (state.state !== 'planning' && state.state !== 'scheduled')
+      ) {
+        return;
+      }
+      const at = now();
+      markProviderLimitedLocked(origin.providerId, ownerKey, {
+        until: state.resetAt,
+        source: state.resetSource ?? 'opencode_status',
+      });
+      if (providerReset && providerReset.limited !== false && Number.isFinite(providerReset.resetAt)) {
+        markProviderLimitedLocked(origin.providerId, ownerKey, {
+          until: providerReset.resetAt,
+          source: 'meridian_quota',
+        });
+      }
+      const plan = planAutoResumeAttempt({
+        now: at,
+        task: current,
+        state,
+        backup,
+        breakerUntil: (providerId) => breakerUntilLocked(providerId, ownerKey),
+        providerReset,
+        origin,
+      });
+      if (plan.state !== 'scheduled') {
+        await commitAutoResumeExhaustedLocked(previous, plan.reason);
+        return;
+      }
+      await commitAutoResumeStateLocked(previous, {
+        state: 'scheduled',
+        nextAttemptAt: plan.nextAttemptAt,
+        target: plan.target,
+        resetAt: plan.resetAt ?? null,
+        resetSource: plan.resetSource ?? null,
+        reason: null,
+      });
+      scheduleAutoResumeAttempt(taskId, generation, plan.nextAttemptAt);
+    });
+  };
+
+  const runAutoResumeAttempt = async (taskId, generation) => {
+    if (shutDown || !autoResumeAttempt) return;
+    let params = null;
+    let ownerKey = '';
+    let targetProviderId = null;
+    await runExclusive(async () => {
+      if (shutDown) return;
+      const task = tasks.get(taskId);
+      const previous = resultEnvelopes.get(taskId);
+      if (!task || !previous || previous.action !== null || !isAutoResumeActive(previous)) return;
+      const state = previous.autoResume;
+      if (state.cancelGeneration !== generation || state.state !== 'scheduled' || !state.target) return;
+      const at = now();
+      ownerKey = ownerKeyFor(task.rootSessionId);
+      targetProviderId = state.target.providerId;
+      const rearmAt = async (nextAttemptAt) => {
+        await commitAutoResumeStateLocked(previous, { nextAttemptAt });
+        scheduleAutoResumeAttempt(taskId, generation, nextAttemptAt);
+      };
+      const breaker = getProviderBreakerLocked(targetProviderId, ownerKey);
+      if (breaker && breaker.until !== null && breaker.until > at) {
+        await rearmAt(breaker.until);
+        return;
+      }
+      if (
+        breaker?.probing
+        && breaker.probing.taskId !== taskId
+        && at - breaker.probing.since < autoResumeProbeStaggerMs
+      ) {
+        await rearmAt(breaker.probing.since + autoResumeProbeStaggerMs);
+        return;
+      }
+      if (state.attemptCount >= AUTO_RESUME_MAX_ATTEMPTS) {
+        await commitAutoResumeExhaustedLocked(previous, 'attempt_cap');
+        return;
+      }
+      if (at >= state.expiresAt) {
+        await commitAutoResumeExhaustedLocked(previous, 'time_cap');
+        return;
+      }
+      await commitAutoResumeStateLocked(previous, {
+        state: 'attempting',
+        attemptCount: state.attemptCount + 1,
+        lastAttemptAt: at,
+        nextAttemptAt: null,
+      });
+      setProviderProbeLocked(targetProviderId, ownerKey, { taskId, since: at });
+      params = buildAutoResumeAcknowledgeParams({ task, envelope: resultEnvelopes.get(taskId) });
+    });
+    if (!params) return;
+
+    let outcome;
+    try {
+      outcome = await autoResumeAttempt(params);
+    } catch (error) {
+      outcome = {
+        outcome: 'rejected',
+        code: 'attempt_failed',
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    await runExclusive(async () => {
+      if (shutDown) return;
+      const previous = resultEnvelopes.get(taskId);
+      const state = previous?.autoResume;
+      if (!previous || !state || state.cancelGeneration !== generation) return;
+      if (outcome?.outcome === 'started' && previous.action !== null) return;
+      if (state.state !== 'attempting') return;
+      const at = now();
+      clearProviderProbeLocked(targetProviderId, ownerKey, taskId);
+      if (outcome?.outcome === 'deferred') {
+        const retryAfterMs = Number.isFinite(outcome.retryAfterMs)
+          ? Math.max(0, outcome.retryAfterMs)
+          : AUTO_RESUME_HOST_RETRY_MS;
+        const nextAttemptAt = at + retryAfterMs;
+        await commitAutoResumeStateLocked(previous, {
+          state: 'scheduled',
+          attemptCount: Math.max(0, state.attemptCount - 1),
+          nextAttemptAt,
+        });
+        scheduleAutoResumeAttempt(taskId, generation, nextAttemptAt);
+        return;
+      }
+      // Rejected, threw, or claimed `started` without acknowledging the result.
+      const lastError = {
+        code: outcome?.outcome === 'started'
+          ? 'attempt_unacknowledged'
+          : (typeof outcome?.code === 'string' && outcome.code ? outcome.code : 'attempt_rejected'),
+        message: typeof outcome?.message === 'string'
+          ? outcome.message
+          : 'Auto-resume attempt was rejected by the host',
+        at,
+      };
+      const hostFailures = state.hostFailures + 1;
+      if (hostFailures >= AUTO_RESUME_MAX_HOST_FAILURES) {
+        clearAutoResumeTimer(taskId);
+        await commitAutoResumeStateLocked(previous, {
+          state: 'exhausted',
+          reason: 'host_failures',
+          attemptCount: Math.max(0, state.attemptCount - 1),
+          hostFailures,
+          lastError,
+          nextAttemptAt: null,
+        });
+        return;
+      }
+      const nextAttemptAt = at + AUTO_RESUME_HOST_RETRY_MS;
+      await commitAutoResumeStateLocked(previous, {
+        state: 'scheduled',
+        attemptCount: Math.max(0, state.attemptCount - 1),
+        hostFailures,
+        lastError,
+        nextAttemptAt,
+      });
+      scheduleAutoResumeAttempt(taskId, generation, nextAttemptAt);
+    });
+  };
 
   const launchTask = (task) => {
     if (activeLaunches.has(task.taskId)) return;
@@ -820,6 +1331,102 @@ export const createManagedTaskScheduler = (options = {}) => {
     timeoutTimers.set(task.taskId, timer);
   };
 
+  // Restart re-arm. Timers are process state, so every persisted active auto-resume
+  // is re-derived here: breakers from known resets, `planning` and near-due
+  // `scheduled` states re-planned after the startup grace (never fired blindly),
+  // far `scheduled` states re-armed as-is, and `attempting` states reconciled
+  // against the follow-up their idempotency key may already have created.
+  const rearmAutoResumeLocked = async () => {
+    if (shutDown || !autoResumeAttempt) return;
+    const at = now();
+    const ordered = [...resultEnvelopes.values()].sort((left, right) => left.sequence - right.sequence);
+    for (const envelope of ordered) {
+      const task = tasks.get(envelope.taskId);
+      if (!task || !isAutoResumeActive(envelope)) continue;
+      const state = envelope.autoResume;
+      const ownerKey = ownerKeyFor(task.rootSessionId);
+      const origin = resolveAutoResumeOriginLocked(task);
+      if (state.resetAt !== null && state.resetAt > at) {
+        markProviderLimitedLocked(origin.providerId, ownerKey, {
+          until: state.resetAt,
+          source: state.resetSource ?? 'opencode_status',
+        });
+      }
+      const generation = state.cancelGeneration;
+      if (state.state === 'attempting') {
+        let followUp = null;
+        if (envelope.action !== null) {
+          followUp = envelope.followUpTaskId ? tasks.get(envelope.followUpTaskId) ?? null : null;
+        } else {
+          const followUpTaskId = idempotencyIndex.get(idempotencyIndexKey(
+            task.rootSessionId,
+            autoResumeAttemptKey(task.taskId, state),
+          ));
+          followUp = followUpTaskId ? tasks.get(followUpTaskId) ?? null : null;
+          if (followUp) {
+            // The attempt did submit before the restart; heal the acknowledgement.
+            await commitEnvelopeUpdateLocked(envelope, {
+              ...envelope,
+              acknowledgedAt: at,
+              action: 'retry_in_place',
+              followUpTaskId: followUp.taskId,
+              autoResume: {
+                ...state,
+                lastAttemptTaskId: followUp.taskId,
+                nextAttemptAt: null,
+                revision: state.revision + 1,
+              },
+            });
+          } else {
+            await commitAutoResumeStateLocked(envelope, {
+              state: 'planning',
+              attemptCount: Math.max(0, state.attemptCount - 1),
+              nextAttemptAt: null,
+            });
+            scheduleAutoResumePlanning(task.taskId, generation, autoResumeStartupGraceMs);
+            continue;
+          }
+        }
+        if (followUp && isTerminalManagedTaskStatus(followUp.status)) {
+          // Settled while we were down: settle the prior and park the follow-up.
+          await parkAutoResumeLocked(followUp, { planningDelayMs: autoResumeStartupGraceMs });
+        } else if (followUp) {
+          setProviderProbeLocked(followUp.providerId, ownerKey, {
+            taskId: task.taskId,
+            since: state.lastAttemptAt ?? at,
+          });
+        }
+        continue;
+      }
+      if (
+        state.state === 'planning'
+        || state.nextAttemptAt === null
+        || state.nextAttemptAt <= at + autoResumeStartupGraceMs
+      ) {
+        scheduleAutoResumePlanning(task.taskId, generation, autoResumeStartupGraceMs);
+        continue;
+      }
+      scheduleAutoResumeAttempt(task.taskId, generation, state.nextAttemptAt);
+    }
+    // Follow-ups whose prior was settled but which never got parked themselves.
+    for (const envelope of ordered) {
+      if (!resultEnvelopes.has(envelope.taskId)) continue;
+      const current = resultEnvelopes.get(envelope.taskId);
+      if (current.autoResume !== null || current.action !== null) continue;
+      const task = tasks.get(current.taskId);
+      if (!task?.priorTaskId || !isTerminalManagedTaskStatus(task.status)) continue;
+      const priorState = resultEnvelopes.get(task.priorTaskId)?.autoResume ?? null;
+      if (
+        !priorState
+        || priorState.lastAttemptTaskId !== task.taskId
+        || (priorState.state !== 'attempting' && priorState.state !== 'superseded')
+      ) {
+        continue;
+      }
+      await parkAutoResumeLocked(task, { planningDelayMs: autoResumeStartupGraceMs });
+    }
+  };
+
   const initialize = () => {
     if (shutDown) {
       return Promise.reject(new ManagedOrchestrationError(
@@ -842,6 +1449,9 @@ export const createManagedTaskScheduler = (options = {}) => {
             dispatchGroupId: rawTask?.dispatchGroupId ?? null,
             dispatchCallId: rawTask?.dispatchCallId ?? null,
             readOnly: rawTask?.readOnly ?? false,
+            recoveryLineageId: rawTask?.recoveryLineageId ?? null,
+            childPromptedAt: rawTask?.childPromptedAt ?? null,
+            firstAssistantPartAt: rawTask?.firstAssistantPartAt ?? null,
           });
           if (tasks.has(task.taskId)) {
             throw new ManagedOrchestrationError('duplicate_task', `duplicate task ${task.taskId} in ledger`);
@@ -861,7 +1471,11 @@ export const createManagedTaskScheduler = (options = {}) => {
           throw new ManagedOrchestrationError('invalid_ledger', 'managed result envelopes are invalid');
         }
         for (const rawEnvelope of loadedEnvelopes) {
-          const envelope = validateManagedTaskResultEnvelope(rawEnvelope);
+          const envelope = validateManagedTaskResultEnvelope({
+            ...rawEnvelope,
+            providerResetAt: rawEnvelope?.providerResetAt ?? null,
+            autoResume: rawEnvelope?.autoResume ?? null,
+          });
           const task = tasks.get(envelope.taskId);
           if (!task || resultEnvelopes.has(envelope.taskId)) {
             throw new ManagedOrchestrationError(
@@ -898,6 +1512,16 @@ export const createManagedTaskScheduler = (options = {}) => {
         for (const task of active) await recoverTask(cloneTask(task));
       } finally {
         recovering = false;
+      }
+      if (autoResumeAttempt) {
+        const rootSessionIds = new Set();
+        for (const envelope of resultEnvelopes.values()) {
+          if (isAutoResumeActive(envelope)) rootSessionIds.add(envelope.rootSessionId);
+        }
+        for (const rootSessionId of rootSessionIds) await resolveAutoResumeOwnerKey(rootSessionId);
+        await runExclusive(async () => {
+          await rearmAutoResumeLocked();
+        });
       }
       for (const task of tasks.values()) {
         scheduleTaskDeadline(task);
@@ -1017,6 +1641,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         executionKind: input.executionKind ?? 'start',
         createdAt: now(),
         timeoutAt: input.timeoutAt ?? null,
+        recoveryLineageId: input.recoveryLineageId ?? null,
       });
       await commitNewTaskLocked(next);
       return cloneTask(next);
@@ -1079,7 +1704,17 @@ export const createManagedTaskScheduler = (options = {}) => {
       if (!task) {
         throw new ManagedOrchestrationError('task_not_found', `managed task ${taskId} was not found`);
       }
-      if (isTerminalManagedTaskStatus(task.status)) return cloneTask(task);
+      if (isTerminalManagedTaskStatus(task.status)) {
+        // A parked result still waiting to resume itself: stopping it switches the
+        // automatic resume off instead of re-settling an immutable terminal task.
+        await runExclusive(async () => {
+          const current = tasks.get(taskId);
+          const envelope = resultEnvelopes.get(taskId);
+          if (!current || !envelope || !isAutoResumeActive(envelope)) return;
+          await disableAutoResumeLocked(current, envelope, 'cancelled');
+        });
+        return cloneTask(tasks.get(taskId) ?? task);
+      }
 
       if (task.status === 'queued') {
         await runExclusive(async () => {
@@ -1571,6 +2206,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       for (const taskId of [...timeoutTimers.keys()]) clearTaskTimeout(taskId);
       for (const taskId of [...startingLeaseTimers.keys()]) clearStartingLease(taskId);
       for (const taskId of [...reconciliationRetryTimers.keys()]) clearReconciliationRetry(taskId);
+      for (const taskId of [...autoResumeTimers.keys()]) clearAutoResumeTimer(taskId);
       const shutdownError = new ManagedOrchestrationError(
         'scheduler_shut_down',
         'managed orchestration scheduler is shut down',
@@ -1628,6 +2264,11 @@ export const createManagedTaskScheduler = (options = {}) => {
     if (typeof actionOptions.idempotencyKey !== 'string' || !actionOptions.idempotencyKey.trim()) {
       throw new ManagedOrchestrationError('missing_idempotency_key', 'result action idempotencyKey is required');
     }
+    // Internal: set by the host's auto-resume `attempt`. A stale generation (the
+    // user toggled auto-resume off, or retried by hand) must never create work.
+    const autoResumeGeneration = Number.isSafeInteger(actionOptions.autoResumeGeneration)
+      ? actionOptions.autoResumeGeneration
+      : null;
 
     const pending = acknowledgementPromises.get(taskId);
     if (pending) {
@@ -1645,6 +2286,18 @@ export const createManagedTaskScheduler = (options = {}) => {
       const sourceTask = tasks.get(taskId);
       if (!currentEnvelope || !sourceTask) {
         throw new ManagedOrchestrationError('result_not_found', `managed task result ${taskId} was not found`);
+      }
+      if (
+        autoResumeGeneration !== null
+        && (
+          !isAutoResumeActive(currentEnvelope)
+          || currentEnvelope.autoResume.cancelGeneration !== autoResumeGeneration
+        )
+      ) {
+        throw new ManagedOrchestrationError(
+          'auto_resume_stale',
+          'automatic resume attempt no longer matches the parked result',
+        );
       }
       if (currentEnvelope.action !== null) {
         if (currentEnvelope.action !== action) {
@@ -1757,6 +2410,7 @@ export const createManagedTaskScheduler = (options = {}) => {
           priorTaskId: sourceTask.taskId,
           executionKind: action,
           timeoutAt: resolveFollowUpTimeoutAt(sourceTask, actionOptions.timeoutAt, now),
+          recoveryLineageId: sourceTask.recoveryLineageId ?? createLineageId(sourceTask.taskId),
         });
       }
 
@@ -1772,11 +2426,39 @@ export const createManagedTaskScheduler = (options = {}) => {
           );
         }
         if (previous.action === action) return;
+        let autoResume = previous.autoResume;
+        if (autoResume) {
+          if (autoResumeGeneration !== null && autoResume.cancelGeneration === autoResumeGeneration) {
+            // Automatic attempt: the follow-up is the probe; its settlement moves
+            // this state on (superseded / succeeded / ended).
+            autoResume = {
+              ...autoResume,
+              lastAttemptTaskId: followUpTask?.taskId ?? autoResume.lastAttemptTaskId,
+              nextAttemptAt: null,
+              revision: autoResume.revision + 1,
+            };
+          } else {
+            // A human disposed of the result: any pending automatic attempt is void.
+            if (autoResume.target) {
+              clearProviderProbeLocked(autoResume.target.providerId, ownerKeyFor(sourceTask.rootSessionId), taskId);
+            }
+            autoResume = {
+              ...autoResume,
+              state: 'acknowledged',
+              reason: 'manual_retry',
+              cancelGeneration: autoResume.cancelGeneration + 1,
+              nextAttemptAt: null,
+              revision: autoResume.revision + 1,
+            };
+          }
+          clearAutoResumeTimer(taskId);
+        }
         const next = {
           ...previous,
           acknowledgedAt: now(),
           action,
           followUpTaskId: followUpTask?.taskId ?? null,
+          autoResume,
         };
         await commitEnvelopeUpdateLocked(previous, next);
         providerRecoveryContinuationClaims.delete(taskId);
@@ -1793,6 +2475,91 @@ export const createManagedTaskScheduler = (options = {}) => {
     } finally {
       acknowledgementPromises.delete(taskId);
     }
+  };
+
+  const setResultAutoResume = async (taskId, { enabled } = {}) => {
+    await ensureInitialized();
+    if (typeof enabled !== 'boolean') {
+      throw new ManagedOrchestrationError('invalid_auto_resume_request', 'enabled must be a boolean');
+    }
+    return await runExclusive(async () => {
+      const task = tasks.get(taskId);
+      const previous = resultEnvelopes.get(taskId);
+      if (!task || !previous) {
+        throw new ManagedOrchestrationError('result_not_found', `managed task result ${taskId} was not found`);
+      }
+      if (previous.action !== null) {
+        throw new ManagedOrchestrationError(
+          'result_already_acknowledged',
+          `result is already acknowledged with ${previous.action}`,
+        );
+      }
+      if (!autoResumeAttempt || !isAutoResumeEligible(task, previous)) {
+        throw new ManagedOrchestrationError(
+          'auto_resume_not_applicable',
+          'automatic resume only applies to a parked provider usage limit',
+        );
+      }
+      const state = previous.autoResume;
+      const active = isAutoResumeActive(previous);
+      const unchanged = enabled ? active : (state !== null && !active && state.enabled === false);
+      if (unchanged) return { envelope: structuredClone(previous) };
+
+      if (!enabled) {
+        await disableAutoResumeLocked(task, previous, 'user');
+        return { envelope: structuredClone(resultEnvelopes.get(taskId)) };
+      }
+
+      const at = now();
+      const base = state ?? recordProviderRejection(
+        initialAutoResumeState({ now: at, enabled: true, providerResetAt: previous.providerResetAt }),
+        { now: at, providerResetAt: previous.providerResetAt },
+      );
+      const cancelGeneration = state ? state.cancelGeneration + 1 : base.cancelGeneration;
+      clearAutoResumeTimer(taskId);
+      if (state?.target) {
+        clearProviderProbeLocked(state.target.providerId, ownerKeyFor(task.rootSessionId), taskId);
+      }
+      // Caps are retained across a re-enable: the lineage budget is not a toggle.
+      const next = {
+        ...base,
+        enabled: true,
+        cancelGeneration,
+        nextAttemptAt: null,
+        target: null,
+        ...(base.expiresAt <= at
+          ? { state: 'exhausted', reason: 'time_cap' }
+          : { state: 'planning', reason: null }),
+        revision: state ? state.revision + 1 : 1,
+      };
+      await commitEnvelopeUpdateLocked(previous, { ...previous, autoResume: next });
+      if (next.state === 'planning') scheduleAutoResumePlanning(taskId, cancelGeneration, 0);
+      return { envelope: structuredClone(resultEnvelopes.get(taskId)) };
+    });
+  };
+
+  const cancelAutoResumeForSession = async (sessionId, reason) => {
+    await ensureInitialized();
+    if (typeof sessionId !== 'string' || !sessionId.trim()) {
+      throw new ManagedOrchestrationError('missing_session_id', 'sessionId is required');
+    }
+    if (reason !== 'session_deleted' && reason !== 'cancelled') {
+      throw new ManagedOrchestrationError(
+        'invalid_auto_resume_reason',
+        'reason must be session_deleted or cancelled',
+      );
+    }
+    return await runExclusive(async () => {
+      const cancelledTaskIds = [];
+      for (const task of [...tasks.values()].sort(compareManagedTaskQueueOrder)) {
+        if (task.rootSessionId !== sessionId && task.childSessionId !== sessionId) continue;
+        const envelope = resultEnvelopes.get(task.taskId);
+        if (!envelope || !isAutoResumeActive(envelope)) continue;
+        await disableAutoResumeLocked(task, envelope, reason);
+        cancelledTaskIds.push(task.taskId);
+      }
+      return { cancelledTaskIds };
+    });
   };
 
   const confirmAgentHandoff = async (input) => {
@@ -1899,6 +2666,8 @@ export const createManagedTaskScheduler = (options = {}) => {
     inspectAgentHandoff,
     confirmAgentHandoff,
     acknowledgeResult,
+    setResultAutoResume,
+    cancelAutoResumeForSession,
     shutdown,
     releaseModeLease,
     flush,
@@ -1927,6 +2696,8 @@ export const createManagedTaskScheduler = (options = {}) => {
         pendingLeaseCount: startingLeaseTimers.size,
         pendingReconciliationRetryCount: reconciliationRetryTimers.size,
         activeProviderRecoveryContinuationClaimCount: providerRecoveryContinuationClaims.size,
+        pendingAutoResumeCount: [...resultEnvelopes.values()].filter(isAutoResumeActive).length,
+        providerBreakerCount: providerBreakers.size,
         compactedTaskCount,
         serializedBytes: lastSerializedBytes,
         shutDown,

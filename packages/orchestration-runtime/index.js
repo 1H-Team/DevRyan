@@ -1,4 +1,5 @@
 export * from './agent-contracts.js';
+export * from './auto-resume-policy.js';
 export * from './contract.js';
 export * from './managed-result-projection.js';
 export * from './model-availability.js';

@@ -49,6 +49,14 @@ describe('managed task transitions', () => {
     expect(canTransitionManagedTaskStatus('completed', 'running')).toBe(false);
   });
 
+  test('treats the recovery lineage id as immutable', () => {
+    const previous = task('starting');
+    expect(() => assertManagedTaskTransition(previous, { ...previous, recoveryLineageId: 'dvr_lineage_x' }))
+      .toThrow('recoveryLineageId is immutable');
+    expect(assertManagedTaskTransition(previous, { ...previous, childPromptedAt: 1_500 }))
+      .toMatchObject({ childPromptedAt: 1_500 });
+  });
+
   test('permits same-status metadata updates before terminal settlement', () => {
     const previous = task('starting');
     const next = {

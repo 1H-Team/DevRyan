@@ -44,6 +44,10 @@ const MAX_STALE_TAIL_REPROMPTS = 1;
 export const MANAGED_TURN_BUDGET_ABORT_GRACE_TURNS = 20;
 export const MANAGED_TURN_BUDGET_PROMPT = 'You have used the turn budget for this task. Finish with the current state now: report what changed and what remains, then end with **Status:** complete or **Status:** blocked.';
 export const MANAGED_RETRY_IN_PLACE_PROMPT = 'Continue the task from the existing progress. The previous provider could not continue. Do not repeat completed work.';
+// Appended to an in-place retry prompt as `Continuing on <provider>/<model>[ · <variant>]
+// after a provider usage limit.` so the transcript records which execution took over.
+// Prompt recognition strips it, so counting and stale-tail anchoring see the bare prompt.
+export const MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX = 'Continuing on ';
 export const MANAGED_RESUME_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous managed turn stopped before completion. Do not repeat completed work.';
 export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous model request timed out. Do not repeat completed work.';
 export const MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous model connection was interrupted. Do not repeat completed work.';
@@ -324,8 +328,18 @@ const extractAssistantWork = (record) => {
   };
 };
 
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const MODEL_CONTINUATION_NOTICE_PATTERN = new RegExp(
+  `\\n\\n${escapeRegExp(MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX)}[^\\n]*$`,
+);
+
+const buildModelContinuationNotice = (task) => (
+  `${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}${task.providerId}/${task.modelId}`
+  + `${task.variant ? ` · ${task.variant}` : ''} after a provider usage limit.`
+);
+
 const matchesManagedUserPrompt = (value, prompt) => {
-  const normalized = trimString(value);
+  const normalized = trimString(value).replace(MODEL_CONTINUATION_NOTICE_PATTERN, '');
   return normalized === prompt
     || normalized === `${MANAGED_READ_ONLY_PROMPT}\n\n${prompt}`;
 };
@@ -916,7 +930,19 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       recoverablePreview: observation.recoverablePreview,
       canonicalRefs: observation.canonicalRefs,
       resumable: true,
+      providerResetAt: observation.statusNext ?? null,
     };
+  };
+
+  // Progress stamps are advisory: a control without `recordProgress` (bare
+  // observation, older hosts) and a lost lease both leave the task untouched.
+  const recordProgress = async (control, progress) => {
+    if (typeof control?.recordProgress !== 'function') return;
+    try {
+      await control.recordProgress(progress);
+    } catch {
+      // The stamp never decides the task outcome.
+    }
   };
 
   const waitForTerminal = async (task, waitOptions = {}) => {
@@ -939,6 +965,15 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     const staleTailPrompt = trimString(waitOptions.staleTailAnchor?.prompt) || '';
     let staleTailReprompts = 0;
     let staleTailGraceExhausted = false;
+    // First assistant output of THIS attempt: the inherited stale tail never counts.
+    let firstAssistantPartStamped = false;
+    const stampFirstAssistantPart = async (observation) => {
+      if (firstAssistantPartStamped) return;
+      const messageId = observation.latestAssistantMessageId;
+      if (!messageId || messageId === staleTailAnchorId) return;
+      firstAssistantPartStamped = true;
+      await recordProgress(waitOptions.control, { firstAssistantPartAt: now() });
+    };
     // Turn-budget backstop. Turns are counted from this wait's baseline: 0 for a
     // fresh child, the inherited tail for resume/retry (a deliberately resumed
     // attempt gets a fresh budget instead of an instant re-abort), and the first
@@ -1025,6 +1060,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
             const liveObservation = await readObservation(task, status);
             lastSuccessfulObservation = liveObservation;
             lastTranscriptReadAt = observedAt;
+            await stampFirstAssistantPart(liveObservation);
             const turnBudgetResult = await enforceTurnBudget(liveObservation);
             if (turnBudgetResult) return turnBudgetResult;
             if (liveObservation.progressSignature !== lastLiveProgressSignature) {
@@ -1094,6 +1130,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         lastTranscriptReadAt = now();
         lastSuccessfulObservation = observation;
         firstTransientFailureAt = null;
+        await stampFirstAssistantPart(observation);
       } catch (error) {
         if (shutdownController.signal.aborted) {
           throw shutdownController.signal.reason ?? error;
@@ -1280,6 +1317,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       prompt: resolveInitialTaskPrompt(task, promptPreamble),
       tools: resolveTaskPromptTools(task),
     });
+    await recordProgress(control, { childPromptedAt: now() });
     await retainCheckpoint({
       task,
       childSessionId,
@@ -1287,7 +1325,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       stage: 'after provider prompt',
       deleteSession: true,
     });
-    return await waitForTerminal(runningTask, { terminalErrorAfter, turnBudgetBaseline: 0 });
+    return await waitForTerminal(runningTask, { terminalErrorAfter, turnBudgetBaseline: 0, control });
   };
 
   const observe = async (task) => await waitForTerminal(task);
@@ -1333,13 +1371,13 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       ) {
         // Still live past the settle window: a genuinely running child, not teardown.
         await retainInPlaceAcceptance(task, control, 'before resumed live observation');
-        return await waitForTerminal(task);
+        return await waitForTerminal(task, { control });
       }
       observation = await readObservation(task, status);
     } catch (error) {
       if (!isTransientObservationError(error)) throw error;
       await retainInPlaceAcceptance(task, control, 'before resumed observation');
-      return await waitForTerminal(task);
+      return await waitForTerminal(task, { control });
     }
 
     const providerUsageLimit = settleProviderUsageLimit(task, observation);
@@ -1374,6 +1412,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         prompt: resolveTaskPrompt(task, MANAGED_RESUME_CONTINUATION_PROMPT),
         tools: resolveTaskPromptTools(task),
       });
+      await recordProgress(control, { childPromptedAt: now() });
       const staleTailAnchor = {
         assistantMessageId: staleTailAssistantMessageId,
         promptPostedAt: now(),
@@ -1383,6 +1422,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       await sleep(pollIntervalMs, { signal: shutdownController.signal });
       assertRunning();
       return await waitForTerminal(task, {
+        control,
         deferEmptyTerminal: true,
         staleTailAnchor,
         terminalErrorAfter,
@@ -1391,7 +1431,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     }
 
     await retainInPlaceAcceptance(task, control, 'before resumed observation');
-    return await waitForTerminal(task, { turnBudgetBaseline: observation.assistantCount });
+    return await waitForTerminal(task, { control, turnBudgetBaseline: observation.assistantCount });
   };
 
   const retryInPlace = async (task, control) => {
@@ -1414,9 +1454,14 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       modelId: task.modelId,
       agent: task.agent,
       variant: task.variant,
-      prompt: resolveTaskPrompt(task, MANAGED_RETRY_IN_PLACE_PROMPT),
+      prompt: resolveTaskPrompt(
+        task,
+        `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${buildModelContinuationNotice(task)}`,
+      ),
       tools: resolveTaskPromptTools(task),
     });
+    await recordProgress(control, { childPromptedAt: now() });
+    // The anchor re-posts the bare prompt; recognition strips the notice either way.
     const staleTailAnchor = {
       assistantMessageId: staleTailAssistantMessageId,
       promptPostedAt: now(),
@@ -1430,6 +1475,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       deleteSession: false,
     });
     return await waitForTerminal(task, {
+      control,
       deferEmptyTerminal: true,
       staleTailAnchor,
       terminalErrorAfter,

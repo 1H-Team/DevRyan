@@ -52,6 +52,15 @@ const validateSnapshot = (value: unknown): ManagedOrchestrationState => {
       readOnly: isRecord(candidate) && candidate.readOnly !== undefined
         ? candidate.readOnly
         : false,
+      recoveryLineageId: isRecord(candidate) && candidate.recoveryLineageId !== undefined
+        ? candidate.recoveryLineageId
+        : null,
+      childPromptedAt: isRecord(candidate) && candidate.childPromptedAt !== undefined
+        ? candidate.childPromptedAt
+        : null,
+      firstAssistantPartAt: isRecord(candidate) && candidate.firstAssistantPartAt !== undefined
+        ? candidate.firstAssistantPartAt
+        : null,
     });
     if (tasks.has(task.taskId)) throw new TypeError(`duplicate managed task ${task.taskId}`);
     const idempotencyKey = `${task.rootSessionId}\u0000${task.idempotencyKey}`;
@@ -64,8 +73,17 @@ const validateSnapshot = (value: unknown): ManagedOrchestrationState => {
   }
 
   const envelopes = new Set<string>();
+  const normalizedEnvelopes: ReturnType<typeof validateManagedTaskResultEnvelope>[] = [];
   for (const candidate of value.resultEnvelopes) {
-    const envelope = validateManagedTaskResultEnvelope(candidate);
+    const envelope = validateManagedTaskResultEnvelope({
+      ...(isRecord(candidate) ? candidate : {}),
+      providerResetAt: isRecord(candidate) && candidate.providerResetAt !== undefined
+        ? candidate.providerResetAt
+        : null,
+      autoResume: isRecord(candidate) && candidate.autoResume !== undefined
+        ? candidate.autoResume
+        : null,
+    });
     if (envelopes.has(envelope.taskId)) {
       throw new TypeError(`duplicate managed result envelope for task ${envelope.taskId}`);
     }
@@ -73,9 +91,14 @@ const validateSnapshot = (value: unknown): ManagedOrchestrationState => {
     if (!task) throw new TypeError(`managed result envelope has no task ${envelope.taskId}`);
     assertManagedTaskResultEnvelopeMatchesTask(task, envelope);
     envelopes.add(envelope.taskId);
+    normalizedEnvelopes.push(envelope);
   }
 
-  return { ...value, tasks: normalizedTasks } as unknown as ManagedOrchestrationState;
+  return {
+    ...value,
+    tasks: normalizedTasks,
+    resultEnvelopes: normalizedEnvelopes,
+  } as unknown as ManagedOrchestrationState;
 };
 
 export const createVsCodeManagedOrchestrationLedger = (options: {
