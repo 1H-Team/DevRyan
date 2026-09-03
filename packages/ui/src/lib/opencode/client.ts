@@ -352,11 +352,173 @@ const getDesktopFilesApi = (): FilesAPI | null => {
   return null;
 };
 
+// Scoped (tree) revert contract. The server is written concurrently against
+// these shapes, so every parser below tolerates missing or partial fields.
+export type ScopedRevertScope = "tree" | "session";
+
+export type ScopedRevertFile = { path: string; status: string };
+export type ScopedRevertSessionTarget = { id: string; targetMessageID: string };
+
+export type ScopedSessionRevertResult = {
+  session: Session;
+  reverted: { files: ScopedRevertFile[]; sessions: ScopedRevertSessionTarget[] };
+  verification: { ok: boolean; files?: ScopedRevertFile[] } | null;
+  redoAvailable: boolean;
+};
+
+export type ScopedSessionUnrevertResult = {
+  session: Session;
+  restored: ScopedRevertFile[];
+};
+
+export type SessionTreeChangedFileStatus = "added" | "modified" | "deleted";
+
+export type SessionTreeChangedFile = {
+  path: string;
+  status: SessionTreeChangedFileStatus;
+  additions: number;
+  deletions: number;
+  sessions: string[];
+};
+
+export type SessionTreeChanges = {
+  files: SessionTreeChangedFile[];
+  sessionCount: number;
+  hasUnattributedMutations: boolean;
+  firstUserMessageID: string | null;
+  rootSessionID: string | null;
+};
+
+/**
+ * Error thrown by the scoped revert routes. `code` mirrors the server's error
+ * code (`working_tree_changed`, `directory_busy`, `redo_unavailable`, …) and
+ * `files` / `sessions` carry whatever detail the server attached.
+ */
+export class ScopedRevertError extends Error {
+  code?: string;
+  status?: number;
+  files?: ScopedRevertFile[];
+  sessions?: ScopedRevertSessionTarget[];
+
+  constructor(message: string, init: {
+    code?: string;
+    status?: number;
+    files?: ScopedRevertFile[];
+    sessions?: ScopedRevertSessionTarget[];
+  } = {}) {
+    super(message);
+    this.name = "ScopedRevertError";
+    this.code = init.code;
+    this.status = init.status;
+    this.files = init.files;
+    this.sessions = init.sessions;
+  }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === "object" && value !== null && !Array.isArray(value)
+);
+
+const parseScopedRevertFiles = (value: unknown): ScopedRevertFile[] => {
+  if (!Array.isArray(value)) return [];
+  const files: ScopedRevertFile[] = [];
+  for (const entry of value) {
+    if (typeof entry === "string") {
+      files.push({ path: entry, status: "modified" });
+      continue;
+    }
+    if (!isRecord(entry) || typeof entry.path !== "string") continue;
+    files.push({ path: entry.path, status: typeof entry.status === "string" ? entry.status : "modified" });
+  }
+  return files;
+};
+
+const parseScopedRevertSessions = (value: unknown): ScopedRevertSessionTarget[] => {
+  if (!Array.isArray(value)) return [];
+  const sessions: ScopedRevertSessionTarget[] = [];
+  for (const entry of value) {
+    if (typeof entry === "string") {
+      sessions.push({ id: entry, targetMessageID: "" });
+      continue;
+    }
+    if (!isRecord(entry) || typeof entry.id !== "string") continue;
+    sessions.push({
+      id: entry.id,
+      targetMessageID: typeof entry.targetMessageID === "string" ? entry.targetMessageID : "",
+    });
+  }
+  return sessions;
+};
+
+const SCOPED_REVERT_ENVELOPE_KEYS = new Set(["reverted", "verification", "redoAvailable", "restored"]);
+
+const parseScopedRevertSession = (payload: Record<string, unknown>): Session | null => {
+  if (isRecord(payload.session) && typeof payload.session.id === "string") {
+    return payload.session as unknown as Session;
+  }
+  // Older shape: the session fields are spread on the top-level payload.
+  if (typeof payload.id === "string") {
+    const session: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(payload)) {
+      if (!SCOPED_REVERT_ENVELOPE_KEYS.has(key)) session[key] = value;
+    }
+    return session as unknown as Session;
+  }
+  return null;
+};
+
+async function readScopedRevertError(response: Response, fallback: string): Promise<ScopedRevertError> {
+  const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+  const code = payload && typeof payload.code === "string" ? payload.code : undefined;
+  const detail = payload && typeof payload.error === "string" && payload.error.length > 0
+    ? `: ${payload.error}`
+    : "";
+  return new ScopedRevertError(`${fallback} (${response.status})${detail}`, {
+    code,
+    status: response.status,
+    files: parseScopedRevertFiles(payload?.files),
+    sessions: parseScopedRevertSessions(payload?.sessions),
+  });
+}
+
+function buildScopedRevertUrl(baseUrl: string, sessionId: string, route: string, directory?: string): URL {
+  const base = baseUrl.replace(/\/$/, "");
+  const url = new URL(`${base}/openchamber/session/${encodeURIComponent(sessionId)}/${route}`);
+  if (directory && directory.length > 0) {
+    url.searchParams.set("directory", directory);
+  }
+  return url;
+}
+
+async function raceScopedRevertWatchdog<T>(
+  request: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const watchdog = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      const error = new ScopedRevertError(timeoutMessage, { code: "SCOPED_REVERT_TIMEOUT", status: 504 });
+      controller.abort(error);
+      reject(error);
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([request(controller.signal), watchdog]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
 export async function requestScopedSessionRevert({
   baseUrl,
   sessionId,
   messageId,
   directory,
+  scope = "tree",
+  rootSessionId,
   timeoutMs = SCOPED_REVERT_CLIENT_TIMEOUT_MS,
   fetchImpl = globalThis.fetch,
 }: {
@@ -364,53 +526,174 @@ export async function requestScopedSessionRevert({
   sessionId: string;
   messageId: string;
   directory?: string;
+  scope?: ScopedRevertScope;
+  rootSessionId?: string;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
-}): Promise<Session> {
-  const base = baseUrl.replace(/\/$/, "");
-  const url = new URL(`${base}/openchamber/session/${encodeURIComponent(sessionId)}/scoped-revert`);
-  if (directory && directory.length > 0) {
-    url.searchParams.set("directory", directory);
-  }
+}): Promise<ScopedSessionRevertResult> {
+  const url = buildScopedRevertUrl(baseUrl, sessionId, "scoped-revert", directory);
 
-  const controller = new AbortController();
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  const watchdog = new Promise<never>((_resolve, reject) => {
-    timeout = setTimeout(() => {
-      const error = new Error("Scoped session revert timed out") as Error & { code?: string };
-      error.code = "SCOPED_REVERT_TIMEOUT";
-      controller.abort(error);
-      reject(error);
-    }, timeoutMs);
-  });
-
-  const request = async (): Promise<Session> => {
+  return raceScopedRevertWatchdog(async (signal) => {
     const response = await fetchImpl(url.toString(), {
       method: "POST",
       headers: {
         accept: "application/json",
         "content-type": "application/json",
       },
-      body: JSON.stringify({ messageID: messageId }),
-      signal: controller.signal,
+      body: JSON.stringify({
+        messageID: messageId,
+        scope,
+        ...(rootSessionId ? { rootSessionID: rootSessionId, rootSessionId } : {}),
+      }),
+      signal,
     });
 
     if (!response.ok) {
-      const payload = await response.json().catch(() => null) as { error?: string } | null;
-      const detail = payload?.error ? `: ${payload.error}` : "";
-      throw new Error(`Failed to revert session safely (${response.status})${detail}`);
+      throw await readScopedRevertError(response, "Failed to revert session safely");
     }
 
-    const session = await response.json().catch(() => null) as Session | null;
-    if (!session) throw new Error("Failed to revert session safely");
-    return session;
-  };
+    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+    const session = payload ? parseScopedRevertSession(payload) : null;
+    if (!payload || !session) throw new ScopedRevertError("Failed to revert session safely");
 
-  try {
-    return await Promise.race([request(), watchdog]);
-  } finally {
-    if (timeout !== undefined) clearTimeout(timeout);
+    const reverted = isRecord(payload.reverted) ? payload.reverted : {};
+    const verification = isRecord(payload.verification)
+      ? {
+        ok: payload.verification.ok !== false,
+        ...(Array.isArray(payload.verification.files)
+          ? { files: parseScopedRevertFiles(payload.verification.files) }
+          : {}),
+      }
+      : null;
+
+    return {
+      session,
+      reverted: {
+        files: parseScopedRevertFiles(reverted.files),
+        sessions: parseScopedRevertSessions(reverted.sessions),
+      },
+      verification,
+      redoAvailable: payload.redoAvailable === true,
+    };
+  }, timeoutMs, "Scoped session revert timed out");
+}
+
+export async function requestScopedSessionUnrevert({
+  baseUrl,
+  sessionId,
+  directory,
+  timeoutMs = SCOPED_REVERT_CLIENT_TIMEOUT_MS,
+  fetchImpl = globalThis.fetch,
+}: {
+  baseUrl: string;
+  sessionId: string;
+  directory?: string;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<ScopedSessionUnrevertResult> {
+  const url = buildScopedRevertUrl(baseUrl, sessionId, "scoped-unrevert", directory);
+
+  return raceScopedRevertWatchdog(async (signal) => {
+    const response = await fetchImpl(url.toString(), {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+      signal,
+    });
+
+    if (!response.ok) {
+      throw await readScopedRevertError(response, "Failed to restore reverted session");
+    }
+
+    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+    const session = payload ? parseScopedRevertSession(payload) : null;
+    if (!payload || !session) throw new ScopedRevertError("Failed to restore reverted session");
+
+    return {
+      session,
+      restored: parseScopedRevertFiles(payload.restored),
+    };
+  }, timeoutMs, "Scoped session unrevert timed out");
+}
+
+const parseSessionTreeChangedFileStatus = (value: unknown): SessionTreeChangedFileStatus => {
+  if (value === "added" || value === "deleted" || value === "modified") return value;
+  if (value === "A" || value === "?" || value === "created") return "added";
+  if (value === "D" || value === "removed") return "deleted";
+  return "modified";
+};
+
+const parseCount = (value: unknown): number => (
+  typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
+);
+
+export function parseSessionTreeChanges(payload: unknown): SessionTreeChanges {
+  const record = isRecord(payload) ? payload : {};
+  const files: SessionTreeChangedFile[] = [];
+  if (Array.isArray(record.files)) {
+    for (const entry of record.files) {
+      if (!isRecord(entry) || typeof entry.path !== "string" || entry.path.length === 0) continue;
+      files.push({
+        path: entry.path,
+        status: parseSessionTreeChangedFileStatus(entry.status),
+        additions: parseCount(entry.additions ?? entry.insertions),
+        deletions: parseCount(entry.deletions),
+        sessions: Array.isArray(entry.sessions)
+          ? entry.sessions.filter((id): id is string => typeof id === "string")
+          : [],
+      });
+    }
   }
+
+  const sessionIds = new Set<string>();
+  for (const file of files) {
+    for (const id of file.sessions) sessionIds.add(id);
+  }
+
+  return {
+    files,
+    sessionCount: typeof record.sessionCount === "number" && Number.isFinite(record.sessionCount)
+      ? Math.max(0, Math.trunc(record.sessionCount))
+      : sessionIds.size,
+    hasUnattributedMutations: record.hasUnattributedMutations === true,
+    firstUserMessageID: typeof record.firstUserMessageID === "string" && record.firstUserMessageID.length > 0
+      ? record.firstUserMessageID
+      : null,
+    rootSessionID: typeof record.rootSessionID === "string" && record.rootSessionID.length > 0
+      ? record.rootSessionID
+      : null,
+  };
+}
+
+export async function requestSessionTreeChanges({
+  baseUrl,
+  sessionId,
+  directory,
+  fetchImpl = globalThis.fetch,
+  signal,
+}: {
+  baseUrl: string;
+  sessionId: string;
+  directory?: string;
+  fetchImpl?: typeof fetch;
+  signal?: AbortSignal;
+}): Promise<SessionTreeChanges> {
+  const url = buildScopedRevertUrl(baseUrl, sessionId, "changes", directory);
+  const response = await fetchImpl(url.toString(), {
+    method: "GET",
+    headers: { accept: "application/json" },
+    signal,
+  });
+
+  if (!response.ok) {
+    throw await readScopedRevertError(response, "Failed to load session changes");
+  }
+
+  const payload = await response.json().catch(() => null);
+  return parseSessionTreeChanges(payload);
 }
 
 class OpencodeService {
@@ -1516,17 +1799,48 @@ class OpencodeService {
     return response.data;
   }
 
+  /**
+   * Revert the session tree (root + every sub-agent session) back to a point
+   * in the chat. Returns the authoritative session plus what was reverted.
+   */
   async revertSessionScoped(
     sessionId: string,
     messageId: string,
     directory?: string,
-  ): Promise<Session> {
+    options: { scope?: ScopedRevertScope; rootSessionId?: string } = {},
+  ): Promise<ScopedSessionRevertResult> {
     const targetDirectory = directory || this.currentDirectory;
     return requestScopedSessionRevert({
       baseUrl: this.baseUrl,
       sessionId,
       messageId,
       directory: targetDirectory,
+      scope: options.scope ?? "tree",
+      rootSessionId: options.rootSessionId,
+    });
+  }
+
+  async unrevertSessionScoped(sessionId: string, directory?: string): Promise<ScopedSessionUnrevertResult> {
+    const targetDirectory = directory || this.currentDirectory;
+    return requestScopedSessionUnrevert({
+      baseUrl: this.baseUrl,
+      sessionId,
+      directory: targetDirectory,
+    });
+  }
+
+  async getSessionTreeChanges(
+    sessionId: string,
+    directory?: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<SessionTreeChanges> {
+    const targetDirectory = directory || this.currentDirectory;
+    return requestSessionTreeChanges({
+      baseUrl: this.baseUrl,
+      sessionId,
+      directory: targetDirectory,
+      fetchImpl: this.noStoreFetch,
+      signal: options.signal,
     });
   }
 
