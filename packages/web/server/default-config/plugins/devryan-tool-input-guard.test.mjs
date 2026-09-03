@@ -236,7 +236,26 @@ describe('DevRyan tool input guard plugin', () => {
     expect(args).toMatchObject({ timeout: 900_000 });
   });
 
-  test.each([999, MAX_SHELL_TIMEOUT_MS + 1, 2_000.5, '240000', null])(
+  test.each([
+    [1, 1_000],
+    [30, 30_000],
+    [999, 999_000],
+  ])('reads a small shell deadline as seconds: %j -> %j ms', async (timeout, expected) => {
+    const args = { command: 'pwd', timeout };
+    await expect(beforeTool('bash', args)).resolves.toBeUndefined();
+    expect(args).toMatchObject({ timeout: expected });
+  });
+
+  test.each([1_000, 3_601, MAX_SHELL_TIMEOUT_MS])(
+    'keeps a deadline at or above the millisecond floor as milliseconds: %j',
+    async (timeout) => {
+      const args = { command: 'pwd', timeout };
+      await expect(beforeTool('bash', args)).resolves.toBeUndefined();
+      expect(args).toMatchObject({ timeout });
+    },
+  );
+
+  test.each([0, -1, MAX_SHELL_TIMEOUT_MS + 1, 2_000.5, 999.5, '240000', '30', null])(
     'rejects an invalid shell deadline: %j',
     async (timeout) => {
       await expect(beforeTool('bash', { command: 'pwd', timeout })).rejects.toMatchObject({

@@ -164,13 +164,24 @@ const enforceShellTimeout = (args) => {
     args.timeout = DEFAULT_SHELL_TIMEOUT_MS;
     return;
   }
+  // Models routinely send `timeout: 30` / `120` meaning seconds. Any positive
+  // integer below the millisecond floor can only sensibly mean seconds, so
+  // convert it instead of rejecting the call.
+  if (
+    Number.isSafeInteger(args.timeout)
+    && args.timeout >= 1
+    && args.timeout < MIN_SHELL_TIMEOUT_MS
+  ) {
+    args.timeout = Math.min(args.timeout * 1000, MAX_SHELL_TIMEOUT_MS);
+    return;
+  }
   if (
     !Number.isSafeInteger(args.timeout)
     || args.timeout < MIN_SHELL_TIMEOUT_MS
     || args.timeout > MAX_SHELL_TIMEOUT_MS
   ) {
     throw inputError(
-      `shell timeout must be an integer between ${MIN_SHELL_TIMEOUT_MS} and ${MAX_SHELL_TIMEOUT_MS} milliseconds.`,
+      `shell timeout must be an integer between ${MIN_SHELL_TIMEOUT_MS} and ${MAX_SHELL_TIMEOUT_MS} milliseconds; values under ${MIN_SHELL_TIMEOUT_MS} are read as seconds.`,
     );
   }
 };
