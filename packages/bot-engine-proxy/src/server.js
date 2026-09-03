@@ -206,7 +206,6 @@ export async function startEngineProxyService({
   docker = createDockerSocketClient(),
   reasoningNetwork,
   computerNetwork,
-  hostControlNetwork,
   egressProxyUrl,
   runtimeRoot,
 } = {}) {
@@ -216,7 +215,6 @@ export async function startEngineProxyService({
     images,
     reasoningNetwork,
     computerNetwork,
-    hostControlNetwork,
     egressProxyUrl,
     runtimeRoot,
   });
@@ -247,7 +245,6 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
     port: Number(process.env.DEVRYAN_BOT_ENGINE_PROXY_PORT || DEFAULT_PORT),
     reasoningNetwork: process.env.DEVRYAN_BOT_REASONING_NETWORK,
     computerNetwork: process.env.DEVRYAN_BOT_COMPUTER_NETWORK,
-    hostControlNetwork: process.env.DEVRYAN_BOT_HOST_CONTROL_NETWORK,
     egressProxyUrl: process.env.DEVRYAN_MODEL_EGRESS_URL,
     runtimeRoot: process.env.DEVRYAN_BOT_HOST_RUNTIME_ROOT,
   }).then(({ address }) => {

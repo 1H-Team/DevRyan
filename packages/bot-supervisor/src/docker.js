@@ -352,11 +352,6 @@ export function createDockerSocketClient({
       query: { force: 'false', v: 'false' },
       expected: [204],
     }),
-    connectContainerNetwork: (network, id) => call({
-      method: 'POST',
-      pathname: `/networks/${encodeURIComponent(network)}/connect`,
-      body: { Container: id },
-    }),
     listContainerDirectory: async (id, containerPath) => {
       const created = await call({
         method: 'POST',
@@ -591,20 +586,6 @@ const validateBaseRequest = (input) => {
   }
 };
 
-const validateGatewayUrl = (value) => {
-  let parsed;
-  try {
-    parsed = new URL(value);
-  } catch {
-    fail('Bot private gateway URL is invalid', 'bot_supervisor_request_invalid', { statusCode: 400 });
-  }
-  if (parsed.protocol !== 'http:' || parsed.hostname !== 'host.docker.internal' || !parsed.port
-    || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) {
-    fail('Bot private gateway URL is invalid', 'bot_supervisor_request_invalid', { statusCode: 400 });
-  }
-  return parsed.origin;
-};
-
 const validateReasoningRequest = (input) => {
   exactKeys(input, [
     'botId',
@@ -614,7 +595,6 @@ const validateReasoningRequest = (input) => {
     'revisionId',
     'runtimeToken',
     'compiledHash',
-    'gatewayUrl',
     'egressToken',
     'environmentSecretCount',
     'chatgptImageGeneration',
@@ -633,7 +613,6 @@ const validateReasoningRequest = (input) => {
       statusCode: 400,
     });
   }
-  validateGatewayUrl(input.gatewayUrl);
 };
 
 const validateComputerRequest = (input) => {
@@ -645,7 +624,6 @@ const validateComputerRequest = (input) => {
     'revisionId',
     'runtimeToken',
     'scopeMode',
-    'gatewayUrl',
     'egressToken',
     'isolationTier',
   ]);
@@ -663,7 +641,6 @@ const validateComputerRequest = (input) => {
       statusCode: 400,
     });
   }
-  validateGatewayUrl(input.gatewayUrl);
 };
 
 const validateTargetRequest = (input) => {
@@ -709,7 +686,7 @@ export function createDynamicContainerSpec({
   revisionId = null,
   runtimeToken = null,
   scopeMode = null,
-  gatewayUrl,
+  gatewayRelayUrl,
   egressProxyUrl,
   egressToken = null,
   isolationTier = 'standard',
@@ -749,20 +726,20 @@ export function createDynamicContainerSpec({
         `DEVRYAN_BOT_CHANNEL_ID=${channelId}`,
         `DEVRYAN_BOT_REVISION_ID=${revisionId}`,
         `DEVRYAN_BOT_RUNTIME_TOKEN=${runtimeToken}`,
-        `DEVRYAN_BOT_GATEWAY_URL=${gatewayUrl}`,
+        `DEVRYAN_BOT_GATEWAY_URL=${gatewayRelayUrl}`,
         `DEVRYAN_MODEL_EGRESS_URL=${egressProxyUrl}`,
         `DEVRYAN_BOT_ENVIRONMENT_SECRET_COUNT=${environmentSecretCount}`,
         `DEVRYAN_BOT_CHATGPT_IMAGE_GENERATION=${chatgptImageGeneration ? '1' : '0'}`,
         `HTTP_PROXY=${authenticatedEgressProxy}`,
         `HTTPS_PROXY=${authenticatedEgressProxy}`,
-        'NO_PROXY=127.0.0.1,localhost,host.docker.internal',
+        `NO_PROXY=127.0.0.1,localhost,${new URL(gatewayRelayUrl).hostname}`,
       ]
     : [
         `DEVRYAN_BOT_RUN_ID=${runId}`,
         `DEVRYAN_BOT_CHANNEL_ID=${channelId}`,
         `DEVRYAN_BOT_REVISION_ID=${revisionId}`,
         `DEVRYAN_BOT_RUNTIME_TOKEN=${runtimeToken}`,
-        `DEVRYAN_BOT_GATEWAY_URL=${gatewayUrl}`,
+        `DEVRYAN_BOT_GATEWAY_URL=${gatewayRelayUrl}`,
         `DEVRYAN_BOT_SCOPE_MODE=${scopeMode}`,
         `DEVRYAN_BROWSER_EGRESS_URL=${egressProxyUrl}`,
         `DEVRYAN_BROWSER_EGRESS_TOKEN=${egressToken}`,
@@ -795,15 +772,7 @@ export function createDynamicContainerSpec({
       NanoCpus: limits.nanoCpus,
       NetworkMode: network,
       ...(kind === 'computer' && isolationTier === 'runsc' ? { Runtime: 'runsc' } : {}),
-      ...(['reasoning', 'computer'].includes(kind) ? {
-        ExtraHosts: ['host.docker.internal:host-gateway'],
-      } : {}),
       PidsLimit: limits.pids,
-      ...(kind === 'computer' ? {
-        PortBindings: {
-          [port]: [{ HostIp: '127.0.0.1', HostPort: '' }],
-        },
-      } : {}),
       ReadonlyRootfs: true,
       SecurityOpt: ['no-new-privileges:true'],
       ShmSize: limits.shmBytes,
@@ -819,25 +788,16 @@ export function createDynamicContainerSpec({
 const containerRunning = (container) => container?.State?.Running === true;
 const containerId = (container) => container?.Id || container?.ID;
 
-const publishedEndpoint = (container, kind) => {
-  const binding = container?.NetworkSettings?.Ports?.[BOT_CONTAINER_PORTS[kind]]?.[0];
-  if (!binding) return null;
-  if (binding.HostIp !== '127.0.0.1' && binding.HostIp !== '::1') {
-    fail('Bot runtime port is not loopback-confined', 'bot_supervisor_port_exposure_invalid', {
-      statusCode: 409,
-    });
-  }
-  const port = Number(binding.HostPort);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
-  return Object.freeze({ host: binding.HostIp, port });
-};
-
+// Neither kind publishes a host port. Docker refuses to publish one for a
+// container attached only to internal networks, and a bridge added to get one
+// back would also hand the container a route to the host and the internet. The
+// supervisor shares both internal networks and proxies the traffic instead.
 const runtimeEndpoint = (container, kind, name) => {
   if (!containerRunning(container)) return null;
-  if (kind === 'reasoning') {
-    return Object.freeze({ host: name, port: 4096 });
-  }
-  return publishedEndpoint(container, kind);
+  return Object.freeze({
+    host: name,
+    port: Number(BOT_CONTAINER_PORTS[kind].split('/')[0]),
+  });
 };
 
 const inspectOrNull = async (docker, method, value) => {
@@ -855,7 +815,6 @@ export function createBotDockerSupervisor({
   images,
   reasoningNetwork = 'devryan-bots_runtime-internal',
   computerNetwork = 'devryan-bots_default',
-  hostControlNetwork = 'devryan-bots-host-control',
   egressProxyUrl = 'http://egress:43121',
   runtimeRoot = '/var/lib/devryan-bots/host-runtime',
 } = {}) {
@@ -867,7 +826,6 @@ export function createBotDockerSupervisor({
     'startContainer',
     'stopContainer',
     'removeContainer',
-    'connectContainerNetwork',
     'listContainerDirectory',
     'statContainerPath',
     'putContainerArchive',
@@ -915,16 +873,21 @@ export function createBotDockerSupervisor({
       }
     }
   };
+  // Both are internal networks: a dynamic container is never attached to a
+  // bridge, so it has no route to the host or the public internet.
   const networks = Object.freeze({
     reasoning: normalizeNetwork(reasoningNetwork, 'reasoning'),
     computer: normalizeNetwork(computerNetwork, 'computer'),
-    hostControl: normalizeNetwork(hostControlNetwork, 'host control'),
   });
   if (typeof runtimeRoot !== 'string' || !path.posix.isAbsolute(runtimeRoot)
     || runtimeRoot.length > 2_048 || /[:\u0000\r\n]/u.test(runtimeRoot)
     || path.posix.normalize(runtimeRoot) !== runtimeRoot) {
     fail('Bot host runtime root is invalid', 'bot_supervisor_configuration_invalid');
   }
+  // Reasoning and computer containers hold no route to the host. Both the model
+  // proxy and the private gateway relay answer on the egress service's
+  // in-network address, so one canonical origin is baked into both kinds.
+  let gatewayRelayUrl;
   for (const value of [egressProxyUrl]) {
     let parsed;
     try {
@@ -936,6 +899,7 @@ export function createBotDockerSupervisor({
       || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) {
       fail('Bot service URL configuration is invalid', 'bot_supervisor_configuration_invalid');
     }
+    gatewayRelayUrl = parsed.origin;
   }
 
   const locks = new Map();
@@ -1049,6 +1013,12 @@ export function createBotDockerSupervisor({
       ...(kind === 'computer' ? {
         'devryan.egress-capability': `sha256:${crypto.createHash('sha256').update(input.egressToken).digest('hex')}`,
         'devryan.isolation': input.isolationTier,
+        // The in-network gateway address is baked into the container
+        // environment, so a container still pointing at a retired address
+        // cannot stage files and must be rotated. The address no longer
+        // carries the host gateway port, so an ordinary DevRyan restart no
+        // longer restarts Chromium.
+        'devryan.gateway': `sha256:${crypto.createHash('sha256').update(gatewayRelayUrl).digest('hex')}`,
       } : {}),
     };
     let existing = await inspectOwnedContainer(identity, names);
@@ -1067,6 +1037,7 @@ export function createBotDockerSupervisor({
       ...(kind === 'computer' ? [
         'devryan.scope-mode',
         'devryan.isolation',
+        'devryan.gateway',
       ] : []),
     ];
     const replacementRequired = existing && rotationLabels.some(
@@ -1091,7 +1062,7 @@ export function createBotDockerSupervisor({
         revisionId: input.revisionId,
         runtimeToken: input.runtimeToken,
         scopeMode: kind === 'computer' ? input.scopeMode : null,
-        gatewayUrl: input.gatewayUrl,
+        gatewayRelayUrl,
         egressProxyUrl,
         egressToken: input.egressToken,
         isolationTier: kind === 'computer' ? input.isolationTier : 'standard',
@@ -1102,19 +1073,12 @@ export function createBotDockerSupervisor({
       });
       try {
         const created = await docker.createContainer(names.container, config);
-        if (['reasoning', 'computer'].includes(kind)) {
-          await docker.connectContainerNetwork(networks.hostControl, created.Id);
-        }
         await docker.startContainer(created.Id);
       } catch (error) {
         mapDockerFailure(error);
       }
       existing = await docker.inspectContainer(names.container);
     } else {
-      if (['reasoning', 'computer'].includes(kind)
-        && !Object.hasOwn(existing.NetworkSettings?.Networks || {}, networks.hostControl)) {
-        await docker.connectContainerNetwork(networks.hostControl, containerId(existing));
-      }
       if (!containerRunning(existing)) {
         await docker.startContainer(containerId(existing));
         existing = await docker.inspectContainer(names.container);
@@ -1123,7 +1087,7 @@ export function createBotDockerSupervisor({
 
     const endpoint = runtimeEndpoint(existing, kind, names.container);
     if (!endpoint) {
-      fail('Docker did not publish the Bot runtime port', 'bot_supervisor_port_unavailable', {
+      fail('Docker did not report a running Bot runtime', 'bot_supervisor_port_unavailable', {
         statusCode: 502,
       });
     }

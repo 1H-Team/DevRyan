@@ -64,9 +64,11 @@ const validateEnvironment = (environment = process.env) => {
   } catch {
     fail(ERROR_CODES.configInvalid, 'private gateway URL is invalid');
   }
-  if (gateway.protocol !== 'http:' || gateway.hostname !== 'host.docker.internal'
-    || !gateway.port || gateway.username || gateway.password || gateway.pathname !== '/'
-    || gateway.search || gateway.hash) {
+  // The container has no route to the host: the private gateway is reached at
+  // the egress service's in-network address, which relays to the host loopback.
+  if (gateway.protocol !== 'http:' || gateway.hostname !== 'egress'
+    || gateway.port !== '43121' || gateway.username || gateway.password
+    || gateway.pathname !== '/' || gateway.search || gateway.hash) {
     fail(ERROR_CODES.configInvalid, 'private gateway URL is invalid');
   }
   const runtimeToken = environment.DEVRYAN_BOT_RUNTIME_TOKEN;

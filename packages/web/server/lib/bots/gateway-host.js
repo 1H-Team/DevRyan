@@ -239,8 +239,10 @@ export function createBotGatewayHost({
   randomBytes = crypto.randomBytes,
   logger = console,
   shutdownTimeoutMs = 5_000,
+  onBound = null,
 } = {}) {
   if (typeof handleOperation !== 'function' || host !== '127.0.0.1'
+    || (onBound !== null && typeof onBound !== 'function')
     || !Number.isInteger(port) || port < 0 || port > 65535
     || !Number.isInteger(bodyLimit) || bodyLimit < 1 || bodyLimit > 1024 * 1024
     || !Number.isInteger(responseLimit) || responseLimit < 1 || responseLimit > 4 * 1024 * 1024
@@ -341,7 +343,10 @@ export function createBotGatewayHost({
       if (boundPort !== null) return;
       if (shutdownPromise) fail('Bot gateway host has shut down', 'bot_gateway_shutdown', 503);
       if (!startPromise) {
-        startPromise = new Promise((resolve, reject) => {
+        // Persistent computer containers keep the gateway address they were
+        // created with, so a deployment asks for the port it used last time
+        // and only falls back to a fresh random port when that one is taken.
+        const listen = (candidate) => new Promise((resolve, reject) => {
           const onError = (error) => {
             server.off('listening', onListening);
             reject(error);
@@ -362,10 +367,20 @@ export function createBotGatewayHost({
           };
           server.once('error', onError);
           server.once('listening', onListening);
-          server.listen(port, host);
-        }).finally(() => {
-          startPromise = null;
+          server.listen(candidate, host);
         });
+        startPromise = listen(port)
+          .catch((error) => {
+            if (port === 0 || error?.code !== 'EADDRINUSE') throw error;
+            logger.warn?.('[bots] gateway port in use; binding a fresh loopback port', { port });
+            return listen(0);
+          })
+          .then(async () => {
+            if (onBound) await onBound(boundPort);
+          })
+          .finally(() => {
+            startPromise = null;
+          });
       }
       await startPromise;
     },

@@ -83,15 +83,24 @@ re-verifies the final file before reporting readiness. Callers cannot select a
 host path, container, volume, archive path,
 ownership, or mode.
 
-Reasoning data-plane traffic uses a separate
-`/v1/runtime/<256-bit-capability>/<OpenCode-path>` tunnel. The capability is
-created in memory only after an authenticated reasoning ensure/status response,
-is bound to that deterministic owned container, rotates when the container is
-replaced, and is revoked by stop/reset. It is not a ninth Docker-management
-verb. The tunnel accepts only ordinary HTTP methods, caps bodies at 4 MiB,
-allowlists request headers, strips caller authorization/cookies/forwarding
-headers and upstream cookies, and targets only the fixed OpenCode port of an
-owned reasoning container.
+Runtime data-plane traffic uses a separate
+`/v1/runtime/<256-bit-capability>/<runtime-path>` tunnel, which carries both
+kinds because neither publishes a host port. The capability is created in memory
+only after an authenticated ensure/status response, is bound to that
+deterministic owned container, rotates when the container is replaced, and is
+revoked by stop/reset. It is not a ninth Docker-management verb. The tunnel
+accepts only ordinary HTTP methods, caps bodies at 4 MiB, allowlists request
+headers, strips cookies and forwarding headers in both directions, and targets
+only the fixed runtime port of an owned container.
+
+The allowlist differs by kind, because the two runtimes authenticate
+differently. OpenCode has no authentication of its own, so the scoped capability
+is the whole authority and no caller credential reaches a reasoning container.
+The computer authenticates every call itself, so its bearer capability and its
+gateway-token header are the only extra headers that cross. The upstream
+inactivity bound is dropped once a response starts streaming: a screencast of an
+idle page sends no frames for minutes, and the caller's abort signal still ends
+it.
 
 ## Engine-proxy and Docker socket boundary
 
@@ -168,23 +177,34 @@ model-egress token. The supervisor validates its wire shape and places it only
 in standard proxy URL credentials (`devryan:<token>`), so normal proxy clients
 emit authenticated `Proxy-Authorization` without mixing it with upstream model
 `Authorization`. Labels contain no egress or gateway bearer value.
-The private `host.docker.internal` gateway is explicitly exempted through
-`NO_PROXY`; otherwise ordinary proxy resolution would incorrectly send local
-Library, Memory, artifact, and approval calls to model egress.
+The private gateway answers on the egress service's own in-network address and
+is explicitly exempted through `NO_PROXY`; otherwise ordinary proxy resolution
+would incorrectly send local Library, Memory, artifact, and approval calls to
+model egress instead of to the gateway relay.
 
 ## Confinement
 
 Both runtime kinds run as UID/GID 10001 with no-new-privileges, all capabilities
 dropped, PID/memory/CPU limits, a read-only root filesystem, and bounded tmpfs.
-Reasoning publishes no host port: it stays on the internal reasoning network and
-is reached only through the scoped supervisor tunnel above. It also joins the
-dedicated no-masquerade `host_control` network with a fixed
-`host.docker.internal:host-gateway` mapping solely so authenticated private
-gateway calls can reach the Mac host loopback; that network provides no public
-egress. Computer alone publishes a loopback-only ephemeral host port. Reasoning
-and computer networks are internal; only bot-egress joins the public-NAT
-network. Reasoning receives the fixed model proxy, while computer Chromium
-receives a loopback authenticated relay to the same service with a
+
+Neither kind joins a network that is not internal, and neither publishes a host
+port. That is one property, not two: Docker refuses to publish a host port for a
+container attached only to internal networks, so a published port would have
+required a bridge, and on Docker Desktop a container holding a bridge can open
+direct outbound connections whether or not the bridge masquerades. Both
+directions therefore run through services that already straddle the boundary.
+Inbound, the supervisor shares both internal networks and hands the host one
+revocable scoped path per container. Outbound, authenticated private-gateway
+calls go to the egress service, which relays them to the host loopback address
+Electron published on its control channel; a container cannot supply or discover
+that address. No `host.docker.internal` mapping is left in either container.
+
+The supervisor holds no verb that attaches a container to a network, so an
+internal-only runtime cannot be widened after it is created.
+
+Reasoning and computer networks are internal; only bot-egress joins the
+public-NAT network. Reasoning receives the fixed model proxy, while computer
+Chromium receives a loopback authenticated relay to the same service with a
 browser-purpose token. Neither runtime may fall back to direct public egress.
 Chromium receives exactly 1 GiB of shared memory. Callers cannot select another
 proxy.

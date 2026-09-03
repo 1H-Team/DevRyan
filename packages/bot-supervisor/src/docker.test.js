@@ -21,7 +21,7 @@ const DIGEST_B = `sha256:${'b'.repeat(64)}`;
 const RUNTIME_TOKEN = 'runtime-token-0123456789abcdef0123456789';
 const COMPILED_HASH = 'c'.repeat(64);
 const HOST_RUNTIME_ROOT = '/Users/test/.config/openchamber/bots/runtime';
-const GATEWAY_URL = 'http://host.docker.internal:55100';
+const GATEWAY_RELAY_URL = 'http://egress:43121';
 const EGRESS_TOKEN = `drb1.${'e'.repeat(64)}.${'f'.repeat(43)}`;
 const SHARED_BOT_ID = 'b0000000-0000-4000-8000-000000000001';
 const SHARED_CHANNEL_ID = 'c0000000-0000-4000-8000-000000000001';
@@ -154,12 +154,6 @@ class FakeDocker {
     if (entry) this.containers.delete(entry[0]);
   }
 
-  async connectContainerNetwork(network, id) {
-    this.calls.push(['connectContainerNetwork', network, id]);
-    const container = [...this.containers.values()].find((candidate) => candidate.Id === id);
-    container.NetworkSettings.Networks[network] = {};
-  }
-
   async statContainerPath(id, containerPath) {
     this.calls.push(['statContainerPath', id, containerPath]);
     const entry = this.workspaceEntries.get(`${id}:${containerPath}`);
@@ -258,7 +252,6 @@ const reasoningRequest = () => ({
   revisionId: 'revision-01',
   runtimeToken: RUNTIME_TOKEN,
   compiledHash: COMPILED_HASH,
-  gatewayUrl: GATEWAY_URL,
   egressToken: EGRESS_TOKEN,
   environmentSecretCount: 0,
   chatgptImageGeneration: false,
@@ -301,7 +294,6 @@ const computerRequest = () => ({
   revisionId: 'revision-01',
   runtimeToken: RUNTIME_TOKEN,
   scopeMode: 'team',
-  gatewayUrl: GATEWAY_URL,
   egressToken: EGRESS_TOKEN,
   isolationTier: 'standard',
 });
@@ -314,7 +306,6 @@ const sharedComputerRequest = () => ({
   revisionId: SHARED_REVISION_ID,
   runtimeToken: RUNTIME_TOKEN,
   scopeMode: 'team',
-  gatewayUrl: GATEWAY_URL,
   egressToken: EGRESS_TOKEN,
   isolationTier: 'standard',
 });
@@ -362,7 +353,7 @@ describe('restricted Bot Docker supervisor', () => {
     expect(config.HostConfig.CapDrop).toEqual(['ALL']);
     expect(config.HostConfig).not.toHaveProperty('PortBindings');
     expect(config.HostConfig.NetworkMode).toBe('devryan-bots_runtime-internal');
-    expect(config.HostConfig.ExtraHosts).toEqual(['host.docker.internal:host-gateway']);
+    expect(config.HostConfig).not.toHaveProperty('ExtraHosts');
     expect(config.HostConfig.Memory).toBe(BOT_RESOURCE_LIMITS.reasoning.memoryBytes);
     expect(config.HostConfig.PidsLimit).toBe(BOT_RESOURCE_LIMITS.reasoning.pids);
     expect(config.Labels).toMatchObject({
@@ -377,12 +368,11 @@ describe('restricted Bot Docker supervisor', () => {
     expect(config.Env).toContain(
       `HTTPS_PROXY=http://devryan:${EGRESS_TOKEN}@egress:43121/`,
     );
-    expect(config.Env).toContain('NO_PROXY=127.0.0.1,localhost,host.docker.internal');
-    expect(docker.calls).toContainEqual([
-      'connectContainerNetwork',
-      'devryan-bots-host-control',
-      expect.any(String),
-    ]);
+    expect(config.Env).toContain('NO_PROXY=127.0.0.1,localhost,egress');
+    expect(config.Env).toContain(`DEVRYAN_BOT_GATEWAY_URL=${GATEWAY_RELAY_URL}`);
+    // The container joins exactly one internal network and is attached to
+    // nothing else, so it has no route to the host or the public internet.
+    expect(docker.calls.some(([name]) => name === 'connectContainerNetwork')).toBe(false);
     expect(JSON.stringify(config.Labels)).not.toContain(EGRESS_TOKEN);
 
     expect(docker.calls.some(([name, , candidate]) => (
@@ -747,8 +737,11 @@ describe('restricted Bot Docker supervisor', () => {
       name === 'createContainer' && candidate.ExposedPorts?.['43122/tcp']
     ))[2];
     expect(config.HostConfig.ShmSize).toBe(1024 ** 3);
-    expect(config.HostConfig.PortBindings['43122/tcp'])
-      .toEqual([{ HostIp: '127.0.0.1', HostPort: '' }]);
+    // Publishing a host port would require a bridge, and a bridge would also
+    // hand Chromium a route off its internal network. The supervisor proxies it.
+    expect(config.HostConfig).not.toHaveProperty('PortBindings');
+    expect(config.HostConfig).not.toHaveProperty('ExtraHosts');
+    expect(config.Env).toContain(`DEVRYAN_BOT_GATEWAY_URL=${GATEWAY_RELAY_URL}`);
     expect(config.Env).toContain('DEVRYAN_COMPUTER_NETWORK_POLICY=proxy-only');
     expect(config.Env).toContain('DEVRYAN_BROWSER_EGRESS_URL=http://egress:43121');
     expect(config.Env).toContain(`DEVRYAN_BROWSER_EGRESS_TOKEN=${EGRESS_TOKEN}`);
@@ -791,6 +784,27 @@ describe('restricted Bot Docker supervisor', () => {
 
     expect(bumped.replaced).toBe(true);
     expect([...docker.containers.values()][0].Config.Labels['devryan.revision']).toBe('revision-02');
+  });
+
+  test('recreates a computer still carrying a retired gateway address', async () => {
+    const { docker, supervisor } = createFixture();
+    const first = await supervisor.ensureComputer(computerRequest());
+    const volumes = [...docker.volumes.keys()].sort();
+
+    const same = await supervisor.ensureComputer(computerRequest());
+    expect(same).toMatchObject({ name: first.name, replaced: false });
+
+    // A computer created before the gateway moved in-network still holds the old
+    // host-loopback address in its environment and cannot stage files, so the
+    // recorded address is what decides whether it survives.
+    const stale = [...docker.containers.values()][0];
+    stale.Config.Labels['devryan.gateway'] = 'sha256:0000000000000000000000000000000000000000000000000000000000000000';
+
+    const moved = await supervisor.ensureComputer(computerRequest());
+    const current = [...docker.containers.values()][0];
+    expect(moved.replaced).toBe(true);
+    expect([...docker.volumes.keys()].sort()).toEqual(volumes);
+    expect(current.Config.Env).toContain(`DEVRYAN_BOT_GATEWAY_URL=${GATEWAY_RELAY_URL}`);
   });
 
   test('rotates computer capabilities while preserving the scoped profile and scratch volumes', async () => {
@@ -1053,7 +1067,6 @@ if (process.env.DEVRYAN_RUN_DOCKER_TESTS === '1') {
         revisionId: `revision-${suffix}`,
         runtimeToken: RUNTIME_TOKEN,
         scopeMode: 'team',
-        gatewayUrl: GATEWAY_URL,
         egressToken: EGRESS_TOKEN,
         isolationTier: 'standard',
       };
@@ -1101,7 +1114,6 @@ if (process.env.DEVRYAN_RUN_DOCKER_TESTS === '1') {
       const suffix = crypto.randomUUID();
       const deploymentId = `integration-${suffix}`;
       const reasoningNetwork = `devryan-bot-reasoning-${suffix}`;
-      const hostControlNetwork = `devryan-bot-control-${suffix}`;
       const botId = `bot-${suffix}`;
       const channelId = `channel-${suffix}`;
       const revisionId = `revision-${suffix}`;
@@ -1144,7 +1156,6 @@ if (process.env.DEVRYAN_RUN_DOCKER_TESTS === '1') {
         return result.stdout.trim();
       };
       let reasoningNetworkCreated = false;
-      let hostControlNetworkCreated = false;
       const docker = createDockerSocketClient();
       const supervisor = createBotDockerSupervisor({
         docker,
@@ -1154,14 +1165,11 @@ if (process.env.DEVRYAN_RUN_DOCKER_TESTS === '1') {
           computer: process.env.DEVRYAN_BOT_COMPUTER_IMAGE || COMPUTER_IMAGE,
         },
         reasoningNetwork,
-        hostControlNetwork,
         runtimeRoot,
       });
       try {
         runDocker(['network', 'create', '--internal', reasoningNetwork]);
         reasoningNetworkCreated = true;
-        runDocker(['network', 'create', '--internal', hostControlNetwork]);
-        hostControlNetworkCreated = true;
         const reasoning = await supervisor.ensureReasoning({
           botId,
           scopeKey,
@@ -1170,7 +1178,6 @@ if (process.env.DEVRYAN_RUN_DOCKER_TESTS === '1') {
           revisionId,
           runtimeToken: RUNTIME_TOKEN,
           compiledHash: COMPILED_HASH,
-          gatewayUrl: GATEWAY_URL,
           egressToken: EGRESS_TOKEN,
           environmentSecretCount: 1,
           chatgptImageGeneration: false,
@@ -1241,7 +1248,6 @@ fs.writeFileSync(process.argv[1], Buffer.from(process.argv[2], 'base64'), { mode
         await supervisor.reset({
           kind: 'computer', botId, scopeKey: `bot:${botId}`, resource: 'shared',
         }).catch(() => undefined);
-        if (hostControlNetworkCreated) runDocker(['network', 'rm', hostControlNetwork]);
         if (reasoningNetworkCreated) runDocker(['network', 'rm', reasoningNetwork]);
         fs.rmSync(runtimeRoot, { recursive: true, force: true });
       }

@@ -27,22 +27,39 @@ const privatePost = (url, init) => new Promise((resolve, reject) => {
   request.end(init.body);
 });
 
+// A timeout composed through AbortSignal.any() is only weakly held by the
+// composite and can be collected before it fires (Node). Own the timer.
+const boundedSignal = (signal, timeoutMs) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new DOMException('Managed OpenAI authentication timed out.', 'TimeoutError')), timeoutMs);
+  timer.unref?.();
+  const forward = () => controller.abort(signal.reason);
+  if (signal?.aborted) forward(); else signal?.addEventListener('abort', forward, { once: true });
+  return { signal: controller.signal, release: () => { clearTimeout(timer); signal?.removeEventListener('abort', forward); } };
+};
+
 function createAccessClient(environment, fetchImpl = privatePost) {
   const bot = Boolean(environment.DEVRYAN_BOT_GATEWAY_URL);
   const base = bot ? environment.DEVRYAN_BOT_GATEWAY_URL : environment.DEVRYAN_OPENAI_OAUTH_URL;
   const token = bot ? environment.DEVRYAN_BOT_RUNTIME_TOKEN : environment.DEVRYAN_OPENAI_OAUTH_TOKEN;
   if (!base && !token) return null;
   const url = new URL(base);
-  if (url.protocol !== 'http:' || url.hostname !== (bot ? 'host.docker.internal' : '127.0.0.1')
-    || !url.port || url.username || url.password || url.pathname !== '/' || url.search || url.hash
+  // In a Bot the gateway is the egress service's in-network relay; the
+  // container has no route to the host. On the host it is plain loopback.
+  if (url.protocol !== 'http:' || url.hostname !== (bot ? 'egress' : '127.0.0.1')
+    || (bot ? url.port !== '43121' : !url.port)
+    || url.username || url.password || url.pathname !== '/' || url.search || url.hash
     || !/^[A-Za-z0-9_-]{43}$/.test(token || '')) throw failure();
   return async (operation, { signal } = {}) => {
-    const response = await fetchImpl(new URL(bot ? '/api/bots/private/oauth' : `/${operation}`, url), {
-      method: 'POST', redirect: 'error', signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
-      headers: { authorization: `Bearer ${token}`, ...(bot ? { 'content-type': 'application/json' } : {}) },
-      ...(bot ? { body: JSON.stringify({ operation, protocol: 1 }) } : {}),
-    });
+    const bound = boundedSignal(signal, 20_000);
+    let response;
+    try {
+      response = await fetchImpl(new URL(bot ? '/api/bots/private/oauth' : `/${operation}`, url), {
+        method: 'POST', redirect: 'error', signal: bound.signal,
+        headers: { authorization: `Bearer ${token}`, ...(bot ? { 'content-type': 'application/json' } : {}) },
+        ...(bot ? { body: JSON.stringify({ operation, protocol: 1 }) } : {}),
+      });
+    } finally { bound.release(); }
     if (Number(response.headers.get('content-length')) > 32 * 1024) { await response.body?.cancel(); throw failure(); }
     const reader = response.body.getReader();
     let size = 0;
@@ -106,17 +123,25 @@ function createTransport(access, fetchImpl = fetch) {
   };
 }
 
+// OpenCode answers provider discovery only after every plugin has registered,
+// and the Bot host treats that answer as its readiness probe. Registration
+// therefore never waits on the gateway: the handshake starts immediately with
+// a short bound and the hooks await its outcome.
+const READY_HANDSHAKE_TIMEOUT_MS = 5_000;
+
 async function plugin(_input, options = {}) {
   const environment = options.environment || process.env;
   const access = createAccessClient(environment, options.fetchImpl);
   if (!access) return {};
   // A failed handshake must not cause OpenCode to drop this plugin and silently
   // fall back to its independent refresh loader. Keep a failing transport.
-  const ready = await access('ready').catch(() => ({ oauth: true }));
+  const readyTimeoutMs = Number.isFinite(options.readyTimeoutMs) ? options.readyTimeoutMs : READY_HANDSHAKE_TIMEOUT_MS;
+  const readyBound = boundedSignal(null, readyTimeoutMs);
+  const ready = access('ready', { signal: readyBound.signal }).catch(() => ({ oauth: true })).finally(readyBound.release);
   let imageWrite = Promise.resolve();
   return {
     async 'tool.execute.before'(input) {
-      if (!ready.oauth || !['gpt_imagegen', 'devryan_image'].includes(input.tool)) return;
+      if (!(await ready).oauth || !['gpt_imagegen', 'devryan_image'].includes(input.tool)) return;
       if (!environment.DEVRYAN_BOT_GATEWAY_URL) { await access('access'); return; }
       // The pinned image tool reads the scoped auth file directly. Update its
       // existing bind-mounted inode; never put a reusable refresh token there.
@@ -136,7 +161,7 @@ async function plugin(_input, options = {}) {
     // Config options are applied after built-in auth loaders. Leave their
     // login methods, provider models, parameters and header hooks intact.
     async config(config) {
-      if (!ready.oauth) return;
+      if (!(await ready).oauth) return;
       config.provider ||= {};
       config.provider.openai ||= {};
       config.provider.openai.options ||= {};

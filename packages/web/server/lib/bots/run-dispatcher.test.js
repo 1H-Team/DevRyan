@@ -2011,8 +2011,27 @@ describe('Production Bot FIFO run dispatcher', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(exhausted.store.retryRun).not.toHaveBeenCalled();
     expect(exhausted.getRow().state).toBe('failed');
+
+    // A configuration failure (missing environment secret) is not a boot
+    // problem: replaying it would only repeat the same failure.
+    const misconfigured = createExecutionHarness({
+      startReasoningRun: vi.fn(async () => {
+        throw Object.assign(new Error('Bot environment secrets are unavailable'), {
+          code: 'bot_environment_secrets_unavailable', statusCode: 503, botRuntimeStage: 'environment',
+        });
+      }),
+      retryRun: vi.fn(async () => { throw new Error('should not retry'); }),
+    });
+    await misconfigured.dispatcher.resumeRun(misconfigured.getRow());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(misconfigured.store.retryRun).not.toHaveBeenCalled();
+    expect(misconfigured.getRow().context_snapshot).toEqual(expect.objectContaining({
+      failurePhase: 'startup',
+      failureStage: 'environment',
+    }));
     await harness.dispatcher.shutdown();
     await exhausted.dispatcher.shutdown();
+    await misconfigured.dispatcher.shutdown();
   });
 
   it.each(['waiting_approval', 'needs_reconciliation'])(

@@ -6,7 +6,7 @@ import { BOT_TARGET_OPENCODE_VERSION } from '../../web/server/lib/opencode/versi
 
 const TOKEN = 'runtime-token-0123456789abcdef0123456789';
 const environment = () => ({
-  DEVRYAN_BOT_GATEWAY_URL: 'http://host.docker.internal:57123',
+  DEVRYAN_BOT_GATEWAY_URL: 'http://egress:43121',
   DEVRYAN_BOT_RUNTIME_TOKEN: TOKEN,
   DEVRYAN_BOT_RUN_ID: 'run-01',
   DEVRYAN_BOT_CHANNEL_ID: 'channel-01',
@@ -172,7 +172,7 @@ describe('scoped OpenCode Bot plugin', () => {
     expect(loaded.tool.devryan_bot.description).toContain('never close, reset, sign out of, or clear it');
     expect(loaded.tool.devryan_bot.description.length).toBeLessThan(800);
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe('http://host.docker.internal:57123/api/bots/private/gateway');
+    expect(calls[0].url).toBe('http://egress:43121/api/bots/private/gateway');
     expect(calls[0].options.headers.authorization).toBe(`Bearer ${TOKEN}`);
     expect(calls[0].options.redirect).toBe('error');
     expect(JSON.parse(calls[0].options.body)).toEqual({

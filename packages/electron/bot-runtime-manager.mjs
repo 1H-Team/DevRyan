@@ -86,6 +86,16 @@ const FIXED_DOCKER_CANDIDATES = Object.freeze([
   '/Applications/Docker.app/Contents/Resources/bin/docker',
 ]);
 const FIXED_SERVICES = Object.freeze(['supervisor', 'engine-proxy', 'egress', 'indexer']);
+// Reasoning and computer containers reach the private gateway on the host
+// loopback through this bridge. Docker Desktop routes container traffic back
+// only when it is masqueraded to the VM address, so a bridge created with the
+// retired no-masquerade policy loses host reachability after a VM restart.
+export const HOST_CONTROL_NETWORK = 'devryan-bots-host-control';
+const HOST_CONTROL_MASQUERADE_OPTION = 'com.docker.network.bridge.enable_ip_masquerade';
+const BOT_RUNTIME_LABEL = 'devryan.runtime';
+const BOT_RUNTIME_LABEL_VALUE = 'production-bots';
+const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project';
+const COMPOSE_SERVICE_LABEL = 'com.docker.compose.service';
 const IMAGE_ENVIRONMENT_KEYS = Object.freeze({
   supervisor: 'DEVRYAN_BOT_SUPERVISOR_IMAGE',
   'engine-proxy': 'DEVRYAN_BOT_ENGINE_PROXY_IMAGE',
@@ -105,6 +115,7 @@ const SERVICE_ENVIRONMENT_KEYS = Object.freeze([
   'DEVRYAN_BOT_HOST_RUNTIME_ROOT',
 ]);
 const BASE64URL_SECRET_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const RUNTIME_PROXY_PATH_PATTERN = /^\/v1\/runtime\/[A-Za-z0-9_-]{43}$/;
 const DEPLOYMENT_ID_PATTERN = /^deployment-[0-9a-f]{24}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SCOPE_PATTERN = /^(?:channel|bot):[0-9a-f-]{36}(?::user:[0-9a-f-]{36})?$/i;
@@ -581,6 +592,25 @@ const parseComposeRows = (stdout) => {
   }
 };
 
+const parseContainerLabels = (raw) => {
+  const labels = {};
+  for (const pair of String(raw || '').split(',')) {
+    const index = pair.indexOf('=');
+    if (index > 0) labels[pair.slice(0, index)] = pair.slice(index + 1);
+  }
+  return labels;
+};
+
+const hostControlNetworkIssue = () => ({
+  code: 'host_control_network_stale',
+  message: 'The Bot host-control network uses a policy Docker Desktop cannot route; repair recreates it',
+});
+
+const hostControlAttachmentIssue = () => ({
+  code: 'host_control_attachment_retired',
+  message: 'A Bot container still holds a network attachment that reaches the host; repair recreates it',
+});
+
 const exactObject = (value, fields) => (
   value
   && typeof value === 'object'
@@ -846,8 +876,10 @@ const readSupervisorResponse = async (response, maximumBytes = SUPERVISOR_RESPON
   }
 };
 
-const exposeReasoningProxyEndpoint = (supervisorEndpoint, result) => {
-  if (result?.kind !== 'reasoning' || result.state !== 'running') return result;
+// Neither runtime container publishes a host port any more, so both are
+// reached through the supervisor's loopback port and a scoped proxy path.
+const exposeRuntimeProxyEndpoint = (supervisorEndpoint, result) => {
+  if (!['reasoning', 'computer'].includes(result?.kind) || result.state !== 'running') return result;
   const endpoint = result.endpoint;
   if (!exactObject(endpoint, ['proxyToken'])
     || !BASE64URL_SECRET_PATTERN.test(endpoint.proxyToken)) {
@@ -877,15 +909,17 @@ const exposeReasoningProxyEndpoint = (supervisorEndpoint, result) => {
 
 const computerRuntimeOrigin = (result) => {
   if (result?.kind !== 'computer' || result.state !== 'running'
-    || !exactObject(result.endpoint, ['host', 'port'])
+    || !exactObject(result.endpoint, ['host', 'port', 'path'])
     || !['127.0.0.1', '::1'].includes(result.endpoint.host)
     || !Number.isInteger(result.endpoint.port)
-    || result.endpoint.port < 1 || result.endpoint.port > 65_535) {
+    || result.endpoint.port < 1 || result.endpoint.port > 65_535
+    || !RUNTIME_PROXY_PATH_PATTERN.test(result.endpoint.path)) {
     fail('Bot supervisor returned an invalid computer endpoint', 'bot_runtime_supervisor_response_invalid');
   }
-  return result.endpoint.host === '::1'
+  const origin = result.endpoint.host === '::1'
     ? `http://[::1]:${result.endpoint.port}`
     : `http://127.0.0.1:${result.endpoint.port}`;
+  return `${origin}${result.endpoint.path}`;
 };
 
 const serviceIssues = (rows) => {
@@ -1390,6 +1424,134 @@ export function createBotRuntimeManager({
     }
     engineMemoryProbe = { at: now(), warnings };
     return warnings;
+  };
+
+  const inspectHostControlNetwork = async (dockerPath, deadlineAt = null) => {
+    const result = await run(
+      dockerPath,
+      ['network', 'inspect', HOST_CONTROL_NETWORK, '--format', '{{json .}}'],
+      baseEnvironment,
+      deadlineAt,
+    );
+    if (result.exitCode !== 0) return { exists: false, stale: false };
+    let network;
+    try {
+      network = JSON.parse(String(result.stdout || '').trim());
+    } catch {
+      return { exists: false, stale: false };
+    }
+    const options = network?.Options && typeof network.Options === 'object' ? network.Options : {};
+    return { exists: true, stale: options[HOST_CONTROL_MASQUERADE_OPTION] === 'false' };
+  };
+
+  const listHostControlContainers = async (dockerPath, deadlineAt = null) => {
+    const result = await run(
+      dockerPath,
+      ['ps', '--all', '--no-trunc', '--filter', `network=${HOST_CONTROL_NETWORK}`, '--format', '{{json .}}'],
+      baseEnvironment,
+      deadlineAt,
+    );
+    if (result.exitCode !== 0) return null;
+    return parseComposeRows(result.stdout).map((row) => {
+      const labels = parseContainerLabels(row?.Labels);
+      const service = labels[COMPOSE_PROJECT_LABEL] === BOT_RUNTIME_COMPOSE_PROJECT
+        && FIXED_SERVICES.includes(labels[COMPOSE_SERVICE_LABEL])
+        ? labels[COMPOSE_SERVICE_LABEL]
+        : null;
+      return {
+        id: typeof row?.ID === 'string' ? row.ID : '',
+        name: typeof row?.Names === 'string' ? row.Names : '',
+        running: String(row?.State || '').toLowerCase() === 'running',
+        managed: labels[BOT_RUNTIME_LABEL] === BOT_RUNTIME_LABEL_VALUE,
+        service,
+      };
+    });
+  };
+
+  // Two retired topologies need a repair: a bridge Docker Desktop cannot route,
+  // and a reasoning or computer container that still holds an attachment to it
+  // and with it a route to the host and the public internet.
+  const inspectHostControlRepair = async (dockerPath, deadlineAt = null) => {
+    const network = await inspectHostControlNetwork(dockerPath, deadlineAt);
+    if (!network.exists) return { staleNetwork: false, retiredAttachments: false };
+    if (network.stale) return { staleNetwork: true, retiredAttachments: false };
+    const attached = await listHostControlContainers(dockerPath, deadlineAt);
+    return {
+      staleNetwork: false,
+      retiredAttachments: (attached || [])
+        .some((container) => container.service === null && container.managed),
+    };
+  };
+
+  // "stop" honours each container's StopTimeout so Chromium can flush its
+  // profile; "rm --force" then also covers a container that ignored it. The
+  // supervisor recreates them on demand and their named volumes, including the
+  // Chromium profile, survive. Detaching them instead is not an option: Docker
+  // Desktop's loopback port forwarding then lands on the wrong container.
+  const removeDynamicContainers = async (dockerPath, ids, failureCode, deadlineAt) => {
+    if (ids.length === 0) return;
+    const stopped = await run(dockerPath, ['stop', ...ids], baseEnvironment, deadlineAt);
+    if (stopped.exitCode !== 0 && !/no such container/i.test(stopped.stderr)) {
+      fail('Unable to stop Bot containers for the network repair', failureCode);
+    }
+    const removed = await run(dockerPath, ['rm', '--force', ...ids], baseEnvironment, deadlineAt);
+    if (removed.exitCode !== 0 && !/no such container/i.test(removed.stderr)) {
+      fail('Unable to remove Bot containers for the network repair', failureCode);
+    }
+  };
+
+  // Two retired topologies are repaired here.
+  //
+  // A bridge still carrying the no-masquerade policy has to be rebuilt, and
+  // Compose only rebuilds a network when nothing else is attached: attached
+  // containers make the rebuild fail, and a stopped one keeps the removed
+  // network ID and can never start again. So the attached fixed services are
+  // removed (Compose recreates them) and the supervisor-created containers are
+  // stopped and removed.
+  //
+  // A reasoning or computer container created before this bridge stopped being
+  // part of their topology still holds an attachment to it, and with it a route
+  // to the host and the public internet. It is removed even when the bridge
+  // itself is current; the supervisor recreates it on internal networks only.
+  const migrateHostControlTopology = async (dockerPath, manifest, failureCode, deadlineAt = null) => {
+    const network = await inspectHostControlNetwork(dockerPath, deadlineAt);
+    if (!network.exists) return;
+    const attached = await listHostControlContainers(dockerPath, deadlineAt);
+    if (attached === null) {
+      if (!network.stale) return;
+      fail('Unable to inspect the Bot host-control network attachments', failureCode);
+    }
+    const dynamic = attached.filter((container) => container.service === null && container.managed);
+    if (!network.stale) {
+      await removeDynamicContainers(
+        dockerPath,
+        dynamic.map((container) => container.id).filter(Boolean),
+        failureCode,
+        deadlineAt,
+      );
+      return;
+    }
+    if (attached.some((container) => !container.id || !container.managed)) {
+      fail('Refusing to recreate the Bot host-control network while an unmanaged container is attached', failureCode);
+    }
+    const services = FIXED_SERVICES.filter((service) => attached.some((container) => container.service === service));
+    if (services.length > 0) {
+      const removed = await run(
+        dockerPath,
+        composeArgs(composePath, ['rm', '--force', '--stop', ...services]),
+        await composeEnvironment(manifest),
+        deadlineAt,
+      );
+      if (removed.exitCode !== 0) fail('Unable to stop Bot runtime services for the network repair', failureCode);
+    }
+    await removeDynamicContainers(
+      dockerPath,
+      dynamic.map((container) => container.id).filter(Boolean),
+      failureCode,
+      deadlineAt,
+    );
+    const removed = await run(dockerPath, ['network', 'rm', HOST_CONTROL_NETWORK], baseEnvironment, deadlineAt);
+    if (removed.exitCode !== 0) fail('Unable to remove the outdated Bot host-control network', failureCode);
   };
 
   const requireDocker = async (deadlineAt = null) => {
@@ -2115,6 +2277,33 @@ export function createBotRuntimeManager({
     fail('Bot browser egress capability could not be rotated', lastCode);
   };
 
+  // Reasoning and computer containers hold no route to the host, so their
+  // private-gateway calls are relayed by the egress service. The host address
+  // travels on the egress control channel, never through a container: this is
+  // the only place it is published, and it is refreshed before every container
+  // that will use it starts.
+  const setEgressGatewayOrigin = async (context, gatewayUrl) => {
+    let response;
+    try {
+      response = await fetchImpl(`${context.egressEndpoint}/v1/gateway/origin`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${context.egressControlToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ origin: gatewayUrl }),
+        redirect: 'error',
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch {
+      fail('Bot gateway relay is unavailable', 'bot_runtime_egress_unavailable');
+    }
+    const payload = await readSupervisorResponse(response);
+    if (!response.ok || payload?.ok !== true || payload?.result?.origin !== gatewayUrl) {
+      fail('Bot gateway relay address could not be published', 'bot_runtime_egress_unavailable');
+    }
+  };
+
   const activateEgressRevision = async (context, input) => {
     let response;
     try {
@@ -2157,7 +2346,9 @@ export function createBotRuntimeManager({
         issuedAt,
         expiresAt: issuedAt + 14 * 60 * 1000,
       });
-      const { egressHosts: _egressHosts, ...reasoningInput } = input;
+      const { egressHosts: _egressHosts, gatewayUrl: _gatewayUrl, ...reasoningInput } = input;
+      void _gatewayUrl;
+      await setEgressGatewayOrigin(context, input.gatewayUrl);
       supervisorInput = { ...reasoningInput, egressToken };
     } else if (computer) {
       const issuedAt = Date.now();
@@ -2175,17 +2366,25 @@ export function createBotRuntimeManager({
       const {
         browserEgressHosts: _browserEgressHosts,
         browserNetworkMode: _browserNetworkMode,
+        gatewayUrl: _gatewayUrl,
         ...computerInput
       } = input;
       void _browserEgressHosts;
       void _browserNetworkMode;
+      void _gatewayUrl;
+      await setEgressGatewayOrigin(context, input.gatewayUrl);
       supervisorInput = { ...computerInput, egressToken };
     }
     const rawResult = await postSupervisor(context, pathname, supervisorInput);
+    // The computer is reached through the supervisor's runtime proxy, so the
+    // scoped address has to be resolved before anything calls it.
+    const exposedResult = ['ensureReasoning', 'ensureComputer', 'inspect'].includes(operation)
+      ? exposeRuntimeProxyEndpoint(context.endpoint, rawResult)
+      : rawResult;
     if (computer) {
       try {
         await rotateComputerEgressCapability({
-          result: rawResult,
+          result: exposedResult,
           runtimeToken: input.runtimeToken,
           egressToken: supervisorInput.egressToken,
         });
@@ -2301,10 +2500,7 @@ export function createBotRuntimeManager({
         truncated: rawResult.truncated,
       });
     }
-    const result = operation === 'ensureReasoning'
-      || (operation === 'inspect' && input.kind === 'reasoning')
-      ? exposeReasoningProxyEndpoint(context.endpoint, rawResult)
-      : rawResult;
+    const result = exposedResult;
     if (reasoning) {
       try {
         await activateEgressRevision(context, input);
@@ -2426,7 +2622,10 @@ export function createBotRuntimeManager({
       };
     }
     publishProgress({ phase: 'verifying_health' });
-    const issues = await inspectServices(dockerPath, currentState.current, deadlineAt);
+    const issues = [...await inspectServices(dockerPath, currentState.current, deadlineAt)];
+    const hostControl = await inspectHostControlRepair(dockerPath, deadlineAt);
+    if (hostControl.staleNetwork) issues.push(hostControlNetworkIssue());
+    if (hostControl.retiredAttachments) issues.push(hostControlAttachmentIssue());
     const warnings = await probeEngineMemoryWarnings(dockerPath, deadlineAt);
     return {
       ...baseStatus({
@@ -2477,6 +2676,7 @@ export function createBotRuntimeManager({
 
   const composeUp = async (dockerPath, manifest, failureCode, deadlineAt = null) => {
     publishProgress({ phase: 'starting_services' });
+    await migrateHostControlTopology(dockerPath, manifest, failureCode, deadlineAt);
     const result = await run(
       dockerPath,
       composeArgs(composePath, ['up', '--detach', '--remove-orphans']),
@@ -2568,7 +2768,12 @@ export function createBotRuntimeManager({
     const services = imageIssues.length === 0
       ? await inspectServices(dockerPath, currentState.current, deadlineAt)
       : [];
-    if (imageIssues.length === 0 && services.length === 0 && !currentState.staged) {
+    const hostControl = imageIssues.length === 0 && services.length === 0
+      ? await inspectHostControlRepair(dockerPath, deadlineAt)
+      : { staleNetwork: false, retiredAttachments: false };
+    const hostControlRepair = hostControl.staleNetwork || hostControl.retiredAttachments;
+    if (imageIssues.length === 0 && services.length === 0 && !hostControlRepair
+      && !currentState.staged) {
       return {
         ...baseStatus({
           state: currentState.current.fingerprint === desiredManifest.fingerprint

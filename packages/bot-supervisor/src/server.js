@@ -16,17 +16,35 @@ const MAX_SHARED_IMPORT_BODY_BYTES = 36 * 1024 * 1024;
 const MAX_RUNTIME_PROXY_BODY_BYTES = 4 * 1024 * 1024;
 const RUNTIME_PROXY_PREFIX = '/v1/runtime/';
 const RUNTIME_PROXY_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
-const REASONING_CONTAINER_PATTERN = /^devryan-bot-reasoning-[0-9a-f]{24}$/;
+const RUNTIME_CONTAINER_PORTS = Object.freeze({
+  reasoning: Object.freeze({ pattern: /^devryan-bot-reasoning-[0-9a-f]{24}$/, port: 4096 }),
+  computer: Object.freeze({ pattern: /^devryan-bot-computer-[0-9a-f]{24}$/, port: 43122 }),
+});
 const RUNTIME_PROXY_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']);
-const RUNTIME_PROXY_REQUEST_HEADERS = new Set([
-  'accept',
-  'accept-encoding',
-  'content-type',
-  'last-event-id',
-  'user-agent',
-  'x-opencode-directory',
-  'x-opencode-workspace',
-]);
+// The reasoning runtime has no authentication of its own, so the scoped proxy
+// capability is the whole authority and no caller credential may reach it. The
+// computer authenticates every call itself, so its own two credentials are the
+// only extra headers that cross.
+const RUNTIME_PROXY_REQUEST_HEADERS = Object.freeze({
+  reasoning: new Set([
+    'accept',
+    'accept-encoding',
+    'content-type',
+    'last-event-id',
+    'user-agent',
+    'x-opencode-directory',
+    'x-opencode-workspace',
+  ]),
+  computer: new Set([
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'last-event-id',
+    'user-agent',
+    'x-devryan-gateway-token',
+  ]),
+});
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
   'keep-alive',
@@ -137,10 +155,12 @@ const runtimeProxyRoute = (request) => {
 };
 
 const proxyRequestHeaders = (request, target) => {
+  const allowed = RUNTIME_PROXY_REQUEST_HEADERS[target.kind];
+  if (!allowed) requestFail('Scoped Bot runtime kind is invalid', 'bot_supervisor_internal_error', 500);
   const headers = { host: `${target.host}:${target.port}` };
   for (const [name, value] of Object.entries(request.headers)) {
     const normalized = name.toLowerCase();
-    if (!RUNTIME_PROXY_REQUEST_HEADERS.has(normalized) || value === undefined) continue;
+    if (!allowed.has(normalized) || value === undefined) continue;
     headers[normalized] = value;
   }
   return headers;
@@ -175,6 +195,7 @@ const forwardRuntimeRequest = async ({ request, response, target, upstreamPath }
       path: upstreamPath,
       headers: proxyRequestHeaders(request, target),
     }, (upstreamResponse) => {
+      upstream.setTimeout(0);
       response.writeHead(
         upstreamResponse.statusCode || 502,
         proxyResponseHeaders(upstreamResponse.headers),
@@ -186,6 +207,10 @@ const forwardRuntimeRequest = async ({ request, response, target, upstreamPath }
       upstreamResponse.on('end', settle);
       upstreamResponse.pipe(response);
     });
+    // The inactivity bound guards a runtime that never answers. Once the
+    // response is streaming it is dropped: a screencast of an idle page sends
+    // no frames for minutes and must not be torn down for it. The client's
+    // abort signal and the response close handler still end the stream.
     upstream.setTimeout(120_000, () => upstream.destroy());
     upstream.on('error', () => {
       if (!response.headersSent) {
@@ -267,13 +292,17 @@ export function createSupervisorHttpServer({
     runtimeProxyTargets.delete(proxyToken);
   };
 
+  // Neither runtime container publishes a host port, so both are reached only
+  // through this proxy: the supervisor shares their internal networks and holds
+  // the one loopback port Electron can call.
   const exposeRuntimeProxy = (result, { rotate = false } = {}) => {
-    if (result?.kind !== 'reasoning' || result.state !== 'running') return result;
+    const expected = RUNTIME_CONTAINER_PORTS[result?.kind];
+    if (!expected || result.state !== 'running') return result;
     const target = result.endpoint;
     if (!target || typeof target !== 'object' || Array.isArray(target)
       || Object.keys(target).sort().join('\0') !== 'host\0port'
-      || !REASONING_CONTAINER_PATTERN.test(target.host)
-      || target.host !== result.name || target.port !== 4096) {
+      || !expected.pattern.test(target.host)
+      || target.host !== result.name || target.port !== expected.port) {
       requestFail('Scoped Bot runtime endpoint is invalid', 'bot_supervisor_internal_error', 500);
     }
     const existingToken = runtimeProxyTokensByContainer.get(result.name);
@@ -282,7 +311,7 @@ export function createSupervisorHttpServer({
       : crypto.randomBytes(32).toString('base64url');
     if (existingToken && existingToken !== proxyToken) runtimeProxyTargets.delete(existingToken);
     runtimeProxyTokensByContainer.set(result.name, proxyToken);
-    runtimeProxyTargets.set(proxyToken, Object.freeze({ ...target }));
+    runtimeProxyTargets.set(proxyToken, Object.freeze({ ...target, kind: result.kind }));
     return Object.freeze({
       ...result,
       endpoint: Object.freeze({ proxyToken }),
@@ -307,7 +336,7 @@ export function createSupervisorHttpServer({
         await forwardRuntimeRequest({
           request,
           response,
-          target: resolveRuntimeProxyTarget(target),
+          target: { ...resolveRuntimeProxyTarget(target), kind: target.kind },
           upstreamPath: proxyRoute.upstreamPath,
         });
         return;
@@ -341,12 +370,12 @@ export function createSupervisorHttpServer({
         route === 'POST /v1/shared/import' ? MAX_SHARED_IMPORT_BODY_BYTES : MAX_BODY_BYTES,
       );
       let result = await operation(body);
-      if (route === 'POST /v1/ensure/reasoning') {
+      if (route === 'POST /v1/ensure/reasoning' || route === 'POST /v1/ensure/computer') {
         result = exposeRuntimeProxy(result, { rotate: result?.replaced === true });
-      } else if (route === 'POST /v1/status' && body.kind === 'reasoning') {
+      } else if (route === 'POST /v1/status') {
         result = exposeRuntimeProxy(result);
       } else if ((route === 'POST /v1/stop' || route === 'POST /v1/reset')
-        && body.kind === 'reasoning' && typeof result?.name === 'string') {
+        && typeof result?.name === 'string') {
         revokeRuntimeProxy(result.name);
       }
       sendJson(response, 200, { ok: true, result });
@@ -374,7 +403,6 @@ export async function startSupervisorService({
   docker = createDockerSocketClient(),
   reasoningNetwork,
   computerNetwork,
-  hostControlNetwork,
   egressProxyUrl,
   runtimeRoot,
   engineProxyUrl = null,
@@ -388,7 +416,6 @@ export async function startSupervisorService({
         images,
         reasoningNetwork,
         computerNetwork,
-        hostControlNetwork,
         egressProxyUrl,
         runtimeRoot,
       });
@@ -419,7 +446,6 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
     port,
     reasoningNetwork: process.env.DEVRYAN_BOT_REASONING_NETWORK,
     computerNetwork: process.env.DEVRYAN_BOT_COMPUTER_NETWORK,
-    hostControlNetwork: process.env.DEVRYAN_BOT_HOST_CONTROL_NETWORK,
     egressProxyUrl: process.env.DEVRYAN_MODEL_EGRESS_URL,
     runtimeRoot: process.env.DEVRYAN_BOT_HOST_RUNTIME_ROOT,
     engineProxyUrl: process.env.DEVRYAN_BOT_ENGINE_PROXY_URL,

@@ -753,8 +753,10 @@ export function createBotOpenCodeProvider({
             oauthReadinessAttempt += 1;
             let response;
             try {
+              // Provider discovery waits for plugin registration; give each
+              // attempt the full 30 s instead of the 15 s default request bound.
               response = await client.provider.list({ directory: WORKSPACE_DIRECTORY }, {
-                signal: botRequestSignal(normalized.signal, AbortSignal.timeout(30_000)),
+                signal: botRequestSignal(normalized.signal, null, 30_000),
               });
             } catch (error) {
               const failureClass = safeUpstreamFailureClass(error);

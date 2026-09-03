@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -188,7 +189,28 @@ export function createBotsRuntime({
   });
   const policyEngine = createBotPolicyEngine();
   let gatewayOperationHandler = null;
+  // Computer containers outlive DevRyan restarts and carry the gateway address
+  // they were created with, so the loopback port is remembered per deployment.
+  const gatewayPortPath = path.join(dataDirectory, 'bots', 'gateway', 'port.v1.json');
+  const rememberedGatewayPort = () => {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(gatewayPortPath, 'utf8'));
+      return Number.isInteger(parsed?.port) && parsed.port > 1024 && parsed.port <= 65535 ? parsed.port : 0;
+    } catch {
+      return 0;
+    }
+  };
+  const rememberGatewayPort = async (port) => {
+    try {
+      await fs.promises.mkdir(path.dirname(gatewayPortPath), { recursive: true, mode: 0o700 });
+      await fs.promises.writeFile(gatewayPortPath, JSON.stringify({ version: 1, port }), { mode: 0o600 });
+    } catch (error) {
+      recordDiagnostic({ code: 'bot_gateway_port_persist_failed', message: error?.message || 'unknown' });
+    }
+  };
   const gatewayHost = createBotGatewayHost({
+    port: rememberedGatewayPort(),
+    onBound: rememberGatewayPort,
     handleOAuth: (claims, operation) => modelCredentialBroker.runtimeOAuth(claims, operation),
     handleOperation(input) {
       if (!gatewayOperationHandler) {

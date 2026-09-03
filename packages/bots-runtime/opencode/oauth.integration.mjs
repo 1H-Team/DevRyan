@@ -21,6 +21,7 @@ try {
   const mounts = [
     [`${root}/packages/web/server/lib/opencode`, '/src/opencode'],
     [`${root}/packages/web/server/lib/bots`, '/src/bots'],
+    [`${root}/packages/bot-egress/src`, '/src/egress'],
     [`${root}/packages/bots-runtime`, '/src/node_modules/@openchamber/bots-runtime'],
     [`${root}/packages/bots-runtime/opencode/oauth-fixture.mjs`, '/opt/devryan/oauth-fixture.mjs'],
     ...(!baked ? [
@@ -33,6 +34,7 @@ try {
     '--tmpfs', '/tmp:rw,exec', '--tmpfs', '/data:rw', '--tmpfs', '/workspace:rw',
     '--add-host', 'chatgpt.com:127.0.0.1', '--add-host', 'api.openai.com:127.0.0.1',
     '--add-host', 'auth.openai.com:127.0.0.1', '--add-host', 'host.docker.internal:127.0.0.1',
+    '--add-host', 'egress:127.0.0.1',
     '-e', 'HOME=/tmp/fixture-home', '-e', 'NODE_EXTRA_CA_CERTS=/fixture-tls/cert.pem',
     ...mounts.flatMap(([source, target]) => ['-v', `${source}:${target}:ro`]),
     '--entrypoint', 'node', image, '/opt/devryan/oauth-fixture.mjs'];

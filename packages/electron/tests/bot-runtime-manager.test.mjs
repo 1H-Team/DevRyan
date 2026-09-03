@@ -109,6 +109,11 @@ const createMemoryStateStore = (initial = null) => {
   };
 };
 
+const parseServiceLabel = (labels) => String(labels || '')
+  .split(',')
+  .map((entry) => entry.split('='))
+  .find(([key]) => key === 'com.docker.compose.service')?.[1];
+
 const createFakeRunner = ({
   dockerRunning = true,
   serviceRows = healthyServices(),
@@ -121,10 +126,52 @@ const createFakeRunner = ({
   runscDeclared = false,
   runscSmokeExitCode = 0,
   memTotalBytes = 16 * 1024 * 1024 * 1024,
+  hostControlNetwork = { stale: false },
+  attachedContainers = [],
 } = {}) => {
   const calls = [];
+  let staleNetwork = hostControlNetwork?.stale === true;
+  // `docker ps --filter network=...` stops listing what has been removed, so
+  // the repair can be observed converging instead of repeating.
+  let attached = typeof attachedContainers === 'function' ? attachedContainers : [...attachedContainers];
   const runProcess = async (file, args, options = {}) => {
     calls.push({ file, args: [...args], env: { ...options.env }, shell: options.shell });
+    if (args[0] === 'network' && args[1] === 'inspect') {
+      if (!hostControlNetwork) {
+        return { exitCode: 1, stdout: '', stderr: `Error response from daemon: network ${args[2]} not found` };
+      }
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          Name: args[2],
+          Options: staleNetwork ? { 'com.docker.network.bridge.enable_ip_masquerade': 'false' } : {},
+        }),
+        stderr: '',
+      };
+    }
+    if (args[0] === 'network' && args[1] === 'rm') {
+      staleNetwork = false;
+      if (Array.isArray(attached)) attached = [];
+      return { exitCode: 0, stdout: `${args[2]}\n`, stderr: '' };
+    }
+    if (args[0] === 'stop' || args[0] === 'rm') {
+      const ids = args.filter((value) => !value.startsWith('-')).slice(1);
+      if (args[0] === 'rm' && Array.isArray(attached)) {
+        attached = attached.filter((row) => !ids.includes(row.ID));
+      }
+      return { exitCode: 0, stdout: ids.join('\n'), stderr: '' };
+    }
+    if (args[0] === 'ps') {
+      const rows = typeof attached === 'function' ? attached() : attached;
+      return { exitCode: 0, stdout: rows.map((row) => JSON.stringify(row)).join('\n'), stderr: '' };
+    }
+    if (args[0] === 'compose' && args.includes('rm')) {
+      const services = args.slice(args.indexOf('rm') + 1).filter((value) => !value.startsWith('-'));
+      if (Array.isArray(attached)) {
+        attached = attached.filter((row) => !services.includes(parseServiceLabel(row.Labels)));
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
     if (args[0] === 'version') {
       return dockerRunning
         ? { exitCode: 0, stdout: '{"Server":{"Version":"28.0.0"}}', stderr: '' }
@@ -623,6 +670,8 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       ...BOT_RUNTIME_IMAGE_KEYS.map((key) => [
         'image', 'inspect', '--format', '{{json .RepoDigests}}', manifest.images[key].reference,
       ]),
+      ['network', 'inspect', 'devryan-bots-host-control', '--format', '{{json .}}'],
+      ['ps', '--all', '--no-trunc', '--filter', 'network=devryan-bots-host-control', '--format', '{{json .}}'],
       [...composePrefix, 'up', '--detach', '--remove-orphans'],
       [...composePrefix, 'ps', '--format', 'json'],
     ]);
@@ -694,6 +743,8 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       ...BOT_RUNTIME_IMAGE_KEYS.map((key) => [
         'image', 'inspect', '--format', '{{json .RepoDigests}}', manifest.images[key].reference,
       ]),
+      ['network', 'inspect', 'devryan-bots-host-control', '--format', '{{json .}}'],
+      ['ps', '--all', '--no-trunc', '--filter', 'network=devryan-bots-host-control', '--format', '{{json .}}'],
       [...composePrefix, 'up', '--detach', '--remove-orphans'],
       [...composePrefix, 'ps', '--format', 'json'],
     ]);
@@ -768,6 +819,126 @@ describe('Electron-owned Docker Bot runtime manager', () => {
 
     const healthy = createManager({ stateStore: createMemoryStateStore(initial) });
     expect(await healthy.manager.status()).toMatchObject({ state: 'healthy', code: null });
+  });
+
+  const hostControlContainer = (id, name, state, labels) => ({
+    ID: id,
+    Names: name,
+    State: state,
+    Labels: `devryan.runtime=production-bots,${labels}`,
+  });
+
+  test('recreates a host-control network Docker Desktop cannot route and the Bot containers attached to it', async () => {
+    const manifest = releaseManifest();
+    const initial = { version: 1, current: manifest, previous: null, staged: null };
+    const runner = createFakeRunner({
+      hostControlNetwork: { stale: true },
+      attachedContainers: [
+        hostControlContainer('sup1', 'devryan-bots-supervisor-1', 'running', 'com.docker.compose.project=devryan-bots,com.docker.compose.service=supervisor'),
+        hostControlContainer('idx1', 'devryan-bots-indexer-1', 'running', 'com.docker.compose.project=devryan-bots,com.docker.compose.service=indexer'),
+        hostControlContainer('comp1', 'devryan-bot-computer-1', 'running', 'devryan.kind=computer'),
+        hostControlContainer('comp2', 'devryan-bot-computer-2', 'exited', 'devryan.kind=computer'),
+        hostControlContainer('reas1', 'devryan-bot-reasoning-1', 'running', 'devryan.kind=reasoning'),
+      ],
+    });
+    const { manager } = createManager({ manifest, runner, stateStore: createMemoryStateStore(initial) });
+    expect(await manager.status()).toMatchObject({
+      state: 'degraded',
+      code: 'bot_runtime_degraded',
+      issues: [{ code: 'host_control_network_stale' }],
+    });
+
+    await expect(manager.ensureReady()).resolves.toMatchObject({ state: 'healthy', changed: true });
+    const argv = runner.calls.map(({ args }) => args);
+    const indexOf = (predicate) => argv.findIndex(predicate);
+    const composeRm = indexOf((args) => args[0] === 'compose' && args.includes('rm'));
+    const stop = indexOf((args) => args[0] === 'stop');
+    const rm = indexOf((args) => args[0] === 'rm');
+    const networkRm = indexOf((args) => args[0] === 'network' && args[1] === 'rm');
+    const composeUp = indexOf((args) => args[0] === 'compose' && args.includes('up'));
+    expect(argv[composeRm]).toEqual([...composePrefix, 'rm', '--force', '--stop', 'supervisor', 'indexer']);
+    expect(argv[stop]).toEqual(['stop', 'comp1', 'comp2', 'reas1']);
+    expect(argv[rm]).toEqual(['rm', '--force', 'comp1', 'comp2', 'reas1']);
+    expect(argv[networkRm]).toEqual(['network', 'rm', 'devryan-bots-host-control']);
+    expect(composeRm).toBeLessThan(stop);
+    expect(stop).toBeLessThan(rm);
+    expect(rm).toBeLessThan(networkRm);
+    expect(networkRm).toBeLessThan(composeUp);
+    expect(argv.some((args) => args[0] === 'network' && ['disconnect', 'connect'].includes(args[1]))).toBe(false);
+    expect(argv.filter((args) => args[0] === 'compose' && args.includes('up'))).toHaveLength(1);
+    expect(await manager.status()).toMatchObject({ state: 'healthy', code: null });
+  });
+
+  test('detaches Bot containers still holding the retired host-control attachment', async () => {
+    const manifest = releaseManifest();
+    const initial = { version: 1, current: manifest, previous: null, staged: null };
+    const runner = createFakeRunner({
+      attachedContainers: [
+        hostControlContainer('sup1', 'devryan-bots-supervisor-1', 'running', 'com.docker.compose.project=devryan-bots,com.docker.compose.service=supervisor'),
+        hostControlContainer('idx1', 'devryan-bots-indexer-1', 'running', 'com.docker.compose.project=devryan-bots,com.docker.compose.service=indexer'),
+        hostControlContainer('comp1', 'devryan-bot-computer-1', 'running', 'devryan.kind=computer'),
+        hostControlContainer('reas1', 'devryan-bot-reasoning-1', 'exited', 'devryan.kind=reasoning'),
+      ],
+    });
+    const { manager } = createManager({ manifest, runner, stateStore: createMemoryStateStore(initial) });
+
+    // The bridge itself is current, so it and the services that still publish
+    // loopback ports through it are left alone; only the containers running
+    // Bot-authored work lose their route off the internal networks.
+    await expect(manager.ensureReady()).resolves.toMatchObject({ state: 'healthy' });
+    const argv = runner.calls.map(({ args }) => args);
+    expect(argv).toContainEqual(['stop', 'comp1', 'reas1']);
+    expect(argv).toContainEqual(['rm', '--force', 'comp1', 'reas1']);
+    expect(argv.some((args) => args[0] === 'network' && args[1] === 'rm')).toBe(false);
+    expect(argv.some((args) => args[0] === 'compose' && args.includes('rm'))).toBe(false);
+    expect(argv.some((args) => args[0] === 'network' && ['connect', 'disconnect'].includes(args[1]))).toBe(false);
+  });
+
+  test('leaves the fixed services alone when nothing holds a retired attachment', async () => {
+    const manifest = releaseManifest();
+    const initial = { version: 1, current: manifest, previous: null, staged: null };
+    const runner = createFakeRunner({
+      attachedContainers: [
+        hostControlContainer('sup1', 'devryan-bots-supervisor-1', 'running', 'com.docker.compose.project=devryan-bots,com.docker.compose.service=supervisor'),
+      ],
+    });
+    const { manager } = createManager({ manifest, runner, stateStore: createMemoryStateStore(initial) });
+
+    await expect(manager.ensureReady()).resolves.toMatchObject({ state: 'healthy' });
+    const argv = runner.calls.map(({ args }) => args);
+    expect(argv.some((args) => ['stop', 'rm'].includes(args[0]))).toBe(false);
+  });
+
+  test('refuses the host-control network repair while an unmanaged container is attached', async () => {
+    const manifest = releaseManifest();
+    const initial = { version: 1, current: manifest, previous: null, staged: null };
+    const runner = createFakeRunner({
+      hostControlNetwork: { stale: true },
+      attachedContainers: [
+        hostControlContainer('sup1', 'devryan-bots-supervisor-1', 'running', 'com.docker.compose.project=devryan-bots,com.docker.compose.service=supervisor'),
+        { ID: 'other', Names: 'someone-elses-container', State: 'running', Labels: 'com.docker.compose.project=other' },
+      ],
+    });
+    const { manager } = createManager({ manifest, runner, stateStore: createMemoryStateStore(initial) });
+    await expect(manager.ensureReady()).rejects.toMatchObject({ code: 'bot_runtime_repair_failed' });
+    const argv = runner.calls.map(({ args }) => args);
+    expect(argv.some((args) => ['stop', 'rm'].includes(args[0]) || (args[0] === 'network' && args[1] === 'rm'))).toBe(false);
+    expect(argv.some((args) => args[0] === 'compose' && (args.includes('rm') || args.includes('up')))).toBe(false);
+  });
+
+  test('leaves a masqueraded or absent host-control network alone', async () => {
+    const manifest = releaseManifest();
+    const initial = { version: 1, current: manifest, previous: null, staged: null };
+    for (const hostControlNetwork of [{ stale: false }, null]) {
+      const runner = createFakeRunner({ hostControlNetwork });
+      const { manager } = createManager({ manifest, runner, stateStore: createMemoryStateStore(initial) });
+      expect(await manager.status()).toMatchObject({ state: 'healthy', code: null });
+      await expect(manager.repair()).resolves.toMatchObject({ state: 'healthy' });
+      const argv = runner.calls.map(({ args }) => args);
+      // Attachments are probed, but nothing is stopped, removed, or rebuilt.
+      expect(argv.some((args) => ['stop', 'rm'].includes(args[0]) || (args[0] === 'network' && args[1] !== 'inspect'))).toBe(false);
+      expect(argv.some((args) => args[0] === 'compose' && args.includes('up'))).toBe(false);
+    }
   });
 
   test('warns about a small Docker Desktop VM without blocking a healthy runtime', async () => {
@@ -1229,13 +1400,19 @@ describe('Electron-owned Docker Bot runtime manager', () => {
             kind: 'computer',
             name: 'devryan-bot-computer-abc123',
             state: 'running',
-            endpoint: { host: '127.0.0.1', port: 55122 },
+            endpoint: { proxyToken: 'q'.repeat(43) },
             image: `sha256:${'b'.repeat(64)}`,
             replaced: false,
           },
         }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
-      if (pathname === '/v1/egress/rotate') {
+      if (pathname === '/v1/gateway/origin') {
+        return new Response(JSON.stringify({
+          ok: true,
+          result: { origin: JSON.parse(options.body).origin },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (pathname === `/v1/runtime/${'q'.repeat(43)}/v1/egress/rotate`) {
         if (rejectBrowserRotation) {
           return new Response(JSON.stringify({
             ok: false,
@@ -1337,21 +1514,28 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       [...composePrefix, 'port', 'supervisor', '43120'],
       [...composePrefix, 'port', 'egress', '43121'],
     ]);
-    expect(requests).toHaveLength(2);
-    expect(requests[0].url).toBe('http://127.0.0.1:55120/v1/ensure/reasoning');
-    expect(requests[0].options.method).toBe('POST');
-    expect(requests[0].options.headers.authorization).toMatch(/^Bearer [A-Za-z0-9_-]{43}$/);
-    expect(JSON.parse(requests[0].options.body)).toMatchObject({
+    expect(requests).toHaveLength(3);
+    // The host gateway address is published on the egress control channel
+    // before the container that will use it starts, and never travels to the
+    // supervisor or into a container.
+    expect(requests[0].url).toBe('http://127.0.0.1:55121/v1/gateway/origin');
+    expect(JSON.parse(requests[0].options.body))
+      .toEqual({ origin: 'http://host.docker.internal:55100' });
+    expect(requests[1].url).toBe('http://127.0.0.1:55120/v1/ensure/reasoning');
+    expect(requests[1].options.method).toBe('POST');
+    expect(requests[1].options.headers.authorization).toMatch(/^Bearer [A-Za-z0-9_-]{43}$/);
+    expect(JSON.parse(requests[1].options.body)).toMatchObject({
       botId,
       runId,
       channelId,
       revisionId,
       egressToken: expect.stringMatching(/^drb1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/),
     });
-    expect(JSON.parse(requests[0].options.body)).not.toHaveProperty('egressHosts');
-    expect(requests[1].url).toBe('http://127.0.0.1:55121/v1/revisions/activate');
-    expect(JSON.parse(requests[1].options.body)).toEqual({ botId, revisionId });
-    expect(requests[0].options).not.toHaveProperty('shell');
+    expect(JSON.parse(requests[1].options.body)).not.toHaveProperty('egressHosts');
+    expect(JSON.parse(requests[1].options.body)).not.toHaveProperty('gatewayUrl');
+    expect(requests[2].url).toBe('http://127.0.0.1:55121/v1/revisions/activate');
+    expect(JSON.parse(requests[2].options.body)).toEqual({ botId, revisionId });
+    expect(requests[1].options).not.toHaveProperty('shell');
 
     const escapedArtifact = path.join(artifactsDirectory, 'escaped.md');
     await fs.symlink(path.join(configDirectory, 'revision.json'), escapedArtifact);
@@ -1423,18 +1607,21 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       sha256: sharedSha256,
     });
 
+    const proxyPath = `/v1/runtime/${'q'.repeat(43)}`;
     expect(requests.map(({ url }) => new URL(url).pathname)).toEqual([
+      '/v1/gateway/origin',
       '/v1/ensure/reasoning',
       '/v1/revisions/activate',
+      '/v1/gateway/origin',
       '/v1/ensure/computer',
-      '/v1/egress/rotate',
+      `${proxyPath}/v1/egress/rotate`,
       '/v1/status',
       '/v1/stop',
       '/v1/workspace/write',
       '/v1/shared/import',
     ]);
     const browserRotation = requests.find(({ url }) => (
-      new URL(url).pathname === '/v1/egress/rotate'
+      new URL(url).pathname === `${proxyPath}/v1/egress/rotate`
     ));
     expect(browserRotation.options.headers.authorization).toBe(`Bearer ${'u'.repeat(43)}`);
     expect(JSON.parse(browserRotation.options.body).token)
@@ -1459,7 +1646,7 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       scopeMode: 'personalized',
       gatewayUrl: 'http://host.docker.internal:55100',
     })).rejects.toMatchObject({ code: 'bot_runtime_request_invalid' });
-    expect(requests).toHaveLength(8);
+    expect(requests).toHaveLength(10);
 
     rejectBrowserRotation = true;
     await expect(manager.ensureComputer({
@@ -1475,9 +1662,10 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       browserEgressHosts: [],
       isolationTier: 'standard',
     })).rejects.toMatchObject({ code: 'DEVRYAN_BOT_BROWSER_EGRESS_TOKEN_INVALID' });
-    expect(requests.slice(-3).map(({ url }) => new URL(url).pathname)).toEqual([
+    expect(requests.slice(-4).map(({ url }) => new URL(url).pathname)).toEqual([
+      '/v1/gateway/origin',
       '/v1/ensure/computer',
-      '/v1/egress/rotate',
+      `${proxyPath}/v1/egress/rotate`,
       '/v1/stop',
     ]);
     rejectBrowserRotation = false;

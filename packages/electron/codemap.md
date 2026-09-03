@@ -81,7 +81,18 @@ and desktop-host broker bridges.
   cap on each Docker command. After Compose starts the fixed topology, it polls
   for up to 90 seconds of service-health convergence without recreating
   containers and commits installation state only after health succeeds; failed
-  updates retain the prior manifest plus staged candidate. It emits only
+  updates retain the prior manifest plus staged candidate. Health also checks
+  the `devryan-bots-host-control` bridge for two retired topologies. A bridge
+  still carrying the no-masquerade policy (unroutable on Docker Desktop after a
+  VM restart) marks the runtime degraded, and repair recreates it by removing
+  the attached fixed services, gracefully stopping and removing the
+  supervisor-created reasoning and computer containers (their named volumes
+  survive and the supervisor recreates them on demand), dropping the bridge,
+  and letting Compose rebuild it. A reasoning or computer container still
+  attached to a current bridge holds a retired route to the host and the public
+  internet; that also marks the runtime degraded, and repair stops and removes
+  just those containers, leaving the bridge and the first-party services that
+  publish loopback ports through it untouched. It emits only
   sanitized phase/count/code snapshots with terminal `ready`/`failed` guarantees
   through runtime capability state. Docker Desktop's virtualized socket group
   and native Linux's resolved socket group are supplied only to the engine-proxy
@@ -122,7 +133,9 @@ and desktop-host broker bridges.
   never accepts a renderer-selected Docker name or argument.
   Agent-endpoint requests and Chromium networking also receive
   purpose-separated egress capabilities. Browser tokens bind `public_only` or
-  exact-host allowlist policy and rotate through the computer's loopback relay.
+  exact-host allowlist policy and rotate through the computer's loopback relay,
+  reached over the supervisor's scoped runtime proxy because the computer
+  publishes no host port of its own.
   `runsc` activation requires both a declared Docker runtime and a disposable
   owned smoke container; failure blocks publication/startup with no downgrade.
 - **Quit-risk projection**: `quit-risk.mjs` converts server scheduler, tunnel,

@@ -62,7 +62,9 @@ container replacement. `/workspace` is a separate persistent named volume and
 survives run changes, pause/resume, and container replacement until an explicit
 reset or purge. Uploads are fetched from, and downloads are published to, the
 authenticated private gateway using the current command's short-lived run
-capability. Callers cannot nominate host paths.
+capability. The container holds no route to the host, so the gateway is reached
+at the bot-egress service's in-network address, which relays the call to the
+host loopback. Callers cannot nominate host paths.
 
 Profile reset requires an explicit confirmation and closes Chromium before
 deleting profile contents. Normal shutdown asks Chromium to close through CDP,
@@ -177,7 +179,12 @@ Run unit tests with `bun test packages/bot-computer`. Set
 `DEVRYAN_RUN_BROWSER_TESTS=1` for the Docker-backed fixture-browser group.
 The Docker group kills Chromium while leaving this service alive, confirms
 bounded concurrent recovery and one browser generation, and verifies that an
-established persistent login survives relaunch and container replacement. Its
+established persistent login survives relaunch and container replacement.
+Chromium commits its cookie database about every 30 s and only a graceful
+shutdown flushes it sooner, so the crash step waits out that window first: a
+crash inside it can still lose a login made moments earlier, while container
+stop/restart (graceful) always keeps both persistent and browser-session
+cookies. Its
 isolated fixture egress also exercises real `window.open`/`target="_blank"`
 popup handoff and return, Chromium click, right/middle/double click, hover,
 drag, wheel, printable keys, text insertion, navigation keys, and modifier
