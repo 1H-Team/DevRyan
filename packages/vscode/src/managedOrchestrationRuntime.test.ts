@@ -294,7 +294,10 @@ describe('VS Code managed orchestration owner', () => {
       resumable: true,
     });
     const updated = { ...resultEnvelope, autoResume: { enabled: false, state: 'cancelled' } };
-    const setResultAutoResume = vi.fn(async (_taskId: string, _options: { enabled: boolean }) => ({ envelope: updated }));
+    const setResultAutoResume = vi.fn<(
+      taskId: string,
+      options: { enabled: boolean },
+    ) => Promise<{ envelope: typeof updated }>>(async () => ({ envelope: updated }));
     const scheduler = {
       initialize: vi.fn(async () => undefined),
       getTask: vi.fn(() => task),
@@ -344,7 +347,10 @@ describe('VS Code managed orchestration owner', () => {
 
   it('drops autoResumeGeneration from acknowledgements that do not come from the auto-resume attempt', async () => {
     const task = queuedTask(1);
-    const acknowledgeResult = vi.fn(async (_taskId: string, _options: Record<string, unknown>) => ({
+    const acknowledgeResult = vi.fn<(
+      taskId: string,
+      options: Record<string, unknown>,
+    ) => Promise<{ envelope: { taskId: string; action: string }; followUpTask: null }>>(async () => ({
       envelope: { taskId: task.taskId, action: 'continue' },
       followUpTask: null,
     }));
@@ -388,7 +394,10 @@ describe('VS Code managed orchestration owner', () => {
 
   it('cancels auto-resume plans for deleted sessions once the scheduler is initialized', async () => {
     const task = queuedTask(1);
-    const cancelAutoResumeForSession = vi.fn(async (_sessionId: string, _reason: string) => ({
+    const cancelAutoResumeForSession = vi.fn<(
+      sessionId: string,
+      reason: string,
+    ) => Promise<{ cancelledTaskIds: string[] }>>(async () => ({
       cancelledTaskIds: [task.taskId],
     }));
     const scheduler = {

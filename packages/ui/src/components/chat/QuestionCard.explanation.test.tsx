@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { renderToStaticMarkup } from "react-dom/server"
 
-import { QuestionExplanation, splitQuestionPrompt } from "./QuestionPromptText"
+import { QuestionExplanation } from "./QuestionPromptText"
+import { splitQuestionPrompt } from "./questionPrompt"
 
 const deviationQuestion = [
   "Should the audit flag live on the user row instead of a new table?",

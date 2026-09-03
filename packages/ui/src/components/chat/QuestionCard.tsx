@@ -25,7 +25,8 @@ import {
 } from './questionCardNavigation';
 import { deriveCustomModeFromText, getQuestionOptionPresentation } from './questionCardOptions';
 import { QuestionOptionRow } from './QuestionOptionRow';
-import { QuestionExplanation, splitQuestionPrompt } from './QuestionPromptText';
+import { QuestionExplanation } from './QuestionPromptText';
+import { splitQuestionPrompt } from './questionPrompt';
 import {
   acknowledgeQuestionRequests,
   claimQuestionSubmissions,
