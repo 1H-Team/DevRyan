@@ -7,6 +7,7 @@ import {
 } from './discovery-runtime.js';
 
 export const BROWSER_LEASES_PATH = '/api/desktop/browser-leases';
+export const BROWSER_LEASE_RESOLVE_PATH = `${BROWSER_LEASES_PATH}/resolve`;
 
 const DEFAULT_LINEAGE_CACHE_MAX_ENTRIES = 100;
 const DEFAULT_LINEAGE_REQUEST_TIMEOUT_MS = 2_000;
@@ -406,6 +407,23 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     });
   };
 
+  const resolveLeaseContext = async (scope, rootSessionId, epoch) => {
+    if (typeof resolveBrowserLeaseContext !== 'function') return null;
+    try {
+      return await resolveBrowserLeaseContext({
+        rootSessionId,
+        opencodeSessionID: scope.opencodeSessionID,
+        directory: scope.directory,
+        agent: scope.agent,
+      });
+    } catch (error) {
+      assertAdmission(epoch);
+      const code = normalizeOptionalString(error?.code) || 'browser_owner_context_unavailable';
+      const message = normalizeOptionalString(error?.message) || 'Browser owner context is unavailable';
+      throw new BrowserLeaseError(code, message, Number(error?.statusCode) || 503);
+    }
+  };
+
   const acquireInternal = async (input) => {
     const epoch = admissionEpoch;
     assertAdmission(epoch);
@@ -449,22 +467,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
       assertAdmission(epoch);
       await readAvailability();
       assertAdmission(epoch);
-      let resolvedContext = null;
-      if (typeof resolveBrowserLeaseContext === 'function') {
-        try {
-          resolvedContext = await resolveBrowserLeaseContext({
-            rootSessionId,
-            opencodeSessionID: scope.opencodeSessionID,
-            directory: scope.directory,
-            agent: scope.agent,
-          });
-        } catch (error) {
-          assertAdmission(epoch);
-          const code = normalizeOptionalString(error?.code) || 'browser_owner_context_unavailable';
-          const message = normalizeOptionalString(error?.message) || 'Browser owner context is unavailable';
-          throw new BrowserLeaseError(code, message, Number(error?.statusCode) || 503);
-        }
-      }
+      const resolvedContext = await resolveLeaseContext(scope, rootSessionId, epoch);
       assertAdmission(epoch);
       const leaseId = createLeaseID();
       const fence = createFence();
@@ -536,6 +539,27 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     const cleanup = () => activeAcquisitions.delete(operation);
     void operation.then(cleanup, cleanup);
     return operation;
+  };
+
+  // Read-only preview lookup for a bare `open`. It applies the acquire
+  // admission, availability, scope, lineage, and owner-context error mapping,
+  // but creates no surface or lease record, never touches the reuse map, and
+  // returns only the preview URL. Credentials stay on the acquire path.
+  const resolvePreview = async (input) => {
+    const epoch = admissionEpoch;
+    assertAdmission(epoch);
+    if (typeof createBrowserLease !== 'function') {
+      throw new BrowserLeaseError('browser_unavailable', 'Agent browser control is unavailable', 503);
+    }
+    const scope = parseScope(input);
+    await readAvailability();
+    assertAdmission(epoch);
+    const rootSessionId = await resolveRootSessionID(scope);
+    assertAdmission(epoch);
+    const resolvedContext = await resolveLeaseContext(scope, rootSessionId, epoch);
+    return {
+      previewUrl: normalizeOptionalString(resolvedContext?.metadata?.previewUrl),
+    };
   };
 
   const requireMatchingScope = (record, scope) => {
@@ -707,6 +731,15 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     }
   };
 
+  const handleResolveRequest = async (req, res) => {
+    if (!authorize(req, res)) return;
+    try {
+      res.status(200).json(await resolvePreview(req.body));
+    } catch (error) {
+      handleError(res, error);
+    }
+  };
+
   const handleTouchRequest = async (req, res) => {
     if (!authorize(req, res)) return;
     try {
@@ -727,6 +760,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
 
   const attach = (app) => {
     app.post(BROWSER_LEASES_PATH, handleAcquireRequest);
+    app.post(BROWSER_LEASE_RESOLVE_PATH, handleResolveRequest);
     app.post(`${BROWSER_LEASES_PATH}/:leaseId/touch`, handleTouchRequest);
     app.delete(`${BROWSER_LEASES_PATH}/:leaseId`, handleReleaseRequest);
   };
@@ -734,6 +768,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
   return {
     attach,
     acquire,
+    resolvePreview,
     touch,
     release,
     pauseForReset,
@@ -745,6 +780,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     resolveRootSessionID,
     handleHostClosed,
     handleAcquireRequest,
+    handleResolveRequest,
     handleTouchRequest,
     handleReleaseRequest,
     getSnapshot: () => [...leasesByID.values()].map((record) => ({

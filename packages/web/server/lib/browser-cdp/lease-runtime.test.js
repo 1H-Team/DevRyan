@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  BROWSER_LEASE_RESOLVE_PATH,
   BROWSER_LEASES_PATH,
   BrowserLeaseError,
   createBrowserLeaseRuntime,
@@ -170,6 +171,129 @@ describe('browser lease runtime', () => {
       code: 'branch_preview_auth_failed',
       statusCode: 401,
     });
+  });
+
+  it('resolves the branch preview without creating a lease or exposing credentials', async () => {
+    const resolveBrowserLeaseContext = vi.fn(async () => ({
+      metadata: {
+        authoritativeOwner: true,
+        ownerUserId: 'user-1',
+        projectId: 'project-1',
+        branchName: 'dev',
+        previewUrl: 'https://dev1.1health.ae/',
+        previewOrigin: 'https://dev1.1health.ae',
+        serviceTokenConfigured: true,
+        partition: 'persist:devryan-preview',
+      },
+      credential: {
+        origin: 'https://dev1.1health.ae',
+        clientId: 'client.access',
+        clientSecret: 'secret',
+      },
+    }));
+    const { runtime, createBrowserLease } = createRuntime({
+      runtime: { resolveBrowserLeaseContext },
+    });
+
+    const response = createResponse();
+    await runtime.handleResolveRequest(createRequest(), response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({ previewUrl: 'https://dev1.1health.ae/' });
+    expect(Object.keys(response.body)).toEqual(['previewUrl']);
+    const serialized = JSON.stringify(response.body);
+    for (const forbidden of ['clientId', 'clientSecret', 'partition', 'client.access', 'secret', 'leaseId', 'wsUrl']) {
+      expect(serialized).not.toContain(forbidden);
+    }
+    expect(resolveBrowserLeaseContext).toHaveBeenCalledWith(expect.objectContaining({
+      rootSessionId: 'ses_root',
+      opencodeSessionID: 'ses_child',
+      directory: '/workspace',
+      agent: 'builder',
+    }));
+    expect(createBrowserLease).not.toHaveBeenCalled();
+    expect(runtime.getSnapshot()).toEqual([]);
+
+    // Acquire is untouched: it still re-resolves and still creates the lease.
+    await expect(runtime.acquire(scope())).resolves.toMatchObject({
+      leaseId: 'dvr_lease_1',
+      created: true,
+      previewUrl: 'https://dev1.1health.ae/',
+    });
+    expect(resolveBrowserLeaseContext).toHaveBeenCalledTimes(2);
+    expect(createBrowserLease).toHaveBeenCalledTimes(1);
+    expect(createBrowserLease).toHaveBeenCalledWith(expect.objectContaining({
+      previewCredential: {
+        origin: 'https://dev1.1health.ae',
+        clientId: 'client.access',
+        clientSecret: 'secret',
+      },
+    }));
+  });
+
+  it('reports a null preview from the single-user resolver without touching the reuse map', async () => {
+    const withNullResolver = createRuntime({
+      runtime: { resolveBrowserLeaseContext: vi.fn(async () => null) },
+    });
+    const withoutResolver = createRuntime();
+
+    await expect(withNullResolver.runtime.resolvePreview(scope())).resolves.toEqual({ previewUrl: null });
+    await expect(withoutResolver.runtime.resolvePreview(scope())).resolves.toEqual({ previewUrl: null });
+    expect(withNullResolver.createBrowserLease).not.toHaveBeenCalled();
+    expect(withoutResolver.createBrowserLease).not.toHaveBeenCalled();
+    expect(withNullResolver.runtime.getSnapshot()).toEqual([]);
+
+    // The reuse map is untouched: the first acquire after resolve creates the
+    // first lease and the second acquire reuses it exactly as before.
+    await expect(withNullResolver.runtime.acquire(scope())).resolves.toMatchObject({
+      leaseId: 'dvr_lease_1',
+      created: true,
+      previewUrl: null,
+    });
+    await expect(withNullResolver.runtime.acquire(scope())).resolves.toMatchObject({
+      leaseId: 'dvr_lease_1',
+      created: false,
+    });
+    expect(withNullResolver.createBrowserLease).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves resolver error codes and the acquire bearer contract on resolve', async () => {
+    for (const [code, statusCode] of [
+      ['agent_browser_disabled', 403],
+      ['browser_owner_context_mismatch', 403],
+      ['branch_preview_auth_failed', 401],
+    ]) {
+      const { runtime, createBrowserLease } = createRuntime({
+        runtime: {
+          resolveBrowserLeaseContext: vi.fn(async () => {
+            throw Object.assign(new Error(`${code} failure`), { code, statusCode });
+          }),
+        },
+      });
+      const response = createResponse();
+      await runtime.handleResolveRequest(createRequest(), response);
+      expect(response.statusCode).toBe(statusCode);
+      expect(response.body).toEqual({ error: { code, message: `${code} failure` } });
+      expect(createBrowserLease).not.toHaveBeenCalled();
+    }
+
+    const { runtime, createBrowserLease } = createRuntime();
+    const invalid = createResponse();
+    await runtime.handleResolveRequest(createRequest({ body: { opencodeSessionID: 'ses_child' } }), invalid);
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.body).toMatchObject({ error: { code: 'invalid_request' } });
+
+    for (const request of [{ address: '192.168.1.10' }, { token: 'wrong' }, { token: null }]) {
+      const acquired = createResponse();
+      const resolved = createResponse();
+      await runtime.handleAcquireRequest(createRequest(request), acquired);
+      await runtime.handleResolveRequest(createRequest(request), resolved);
+      expect(resolved.statusCode).toBe(acquired.statusCode);
+      expect(resolved.body).toEqual(acquired.body);
+      expect(resolved.getHeader('cache-control')).toContain('no-store');
+      expect(resolved.getHeader('access-control-allow-origin')).toBeUndefined();
+    }
+    expect(createBrowserLease).not.toHaveBeenCalled();
   });
 
   it('serializes concurrent acquisition only within the exact reuse key', async () => {
@@ -577,9 +701,11 @@ describe('browser lease runtime', () => {
     });
     expect(routes).toEqual([
       ['POST', BROWSER_LEASES_PATH],
+      ['POST', BROWSER_LEASE_RESOLVE_PATH],
       ['POST', `${BROWSER_LEASES_PATH}/:leaseId/touch`],
       ['DELETE', `${BROWSER_LEASES_PATH}/:leaseId`],
     ]);
+    expect(BROWSER_LEASE_RESOLVE_PATH).toBe('/api/desktop/browser-leases/resolve');
 
     const remote = createResponse();
     await runtime.handleAcquireRequest(createRequest({ address: '192.168.1.10' }), remote);
