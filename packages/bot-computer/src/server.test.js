@@ -308,7 +308,7 @@ describe('authenticated computer HTTP API', () => {
         token: TOKEN,
         runId: 'fixture-run',
         scopeMode: 'team',
-        gatewayUrl: 'http://host.docker.internal:43120',
+        gatewayUrl: 'http://egress:43121',
         profileDirectory: path.join(directory, 'profile'),
         scratchDirectory: path.join(directory, 'scratch'),
         egressProxyUrl: 'http://egress:43121',

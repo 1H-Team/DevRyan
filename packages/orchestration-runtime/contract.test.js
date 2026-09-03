@@ -85,9 +85,13 @@ describe('managed orchestration contract', () => {
       status: 'queued',
       readOnly: false,
       childSessionId: null,
+      recoveryLineageId: null,
       leaseToken: null,
       startedAt: null,
       finishedAt: null,
+      childPromptedAt: null,
+      firstAssistantPartAt: null,
+      waitingReason: null,
       failureReason: null,
       partial: false,
       recoverablePreview: '',
@@ -95,6 +99,91 @@ describe('managed orchestration contract', () => {
     });
     expect(JSON.parse(JSON.stringify(task))).toEqual(task);
     expect(validateManagedTaskRecord(task)).toBe(task);
+  });
+
+  test('carries recovery lineage and child progress stamps as nullable durable fields', () => {
+    const root = createManagedTaskRecord(validInput());
+    const followUp = createManagedTaskRecord(validInput({
+      taskId: 'dvr_task_02',
+      idempotencyKey: 'follow-up-02',
+      priorTaskId: root.taskId,
+      attempt: 2,
+      executionKind: 'retry_in_place',
+      recoveryLineageId: 'dvr_lineage_01',
+    }));
+
+    expect(root.recoveryLineageId).toBeNull();
+    expect(followUp.recoveryLineageId).toBe('dvr_lineage_01');
+    expect(validateManagedTaskRecord({ ...root, childPromptedAt: 1_500, firstAssistantPartAt: 1_600 }))
+      .toMatchObject({ childPromptedAt: 1_500, firstAssistantPartAt: 1_600 });
+    expect(() => validateManagedTaskRecord({ ...root, recoveryLineageId: 'lineage_01' }))
+      .toThrow('recoveryLineageId must start with dvr_lineage_');
+    expect(() => validateManagedTaskRecord({ ...root, childPromptedAt: -1 }))
+      .toThrow('childPromptedAt must be a non-negative finite timestamp or null');
+    expect(() => validateManagedTaskRecord({ ...root, firstAssistantPartAt: 'soon' }))
+      .toThrow('firstAssistantPartAt must be a non-negative finite timestamp or null');
+
+    const projected = toManagedTaskEvent({ ...followUp, childPromptedAt: 1_500 }).properties.task;
+    expect(projected).toMatchObject({
+      recoveryLineageId: 'dvr_lineage_01',
+      childPromptedAt: 1_500,
+      firstAssistantPartAt: null,
+    });
+  });
+
+  test('carries a queued-only waiting reason and projects it to events', () => {
+    const root = createManagedTaskRecord(validInput());
+    expect(root.waitingReason).toBeNull();
+
+    const capacity = { kind: 'capacity', activeCount: 4, limit: 4, since: 1_500 };
+    const pressure = { kind: 'system_pressure', activeCount: 2, limit: null, since: 1_600 };
+    expect(validateManagedTaskRecord({ ...root, waitingReason: capacity }))
+      .toMatchObject({ waitingReason: capacity });
+    expect(validateManagedTaskRecord({ ...root, waitingReason: pressure }))
+      .toMatchObject({ waitingReason: pressure });
+    expect(validateManagedTaskRecord({ ...root, waitingReason: { ...capacity, limit: null } }).waitingReason.limit)
+      .toBeNull();
+
+    expect(() => validateManagedTaskRecord({ ...root, waitingReason: undefined }))
+      .toThrow('waitingReason must be an object or null');
+    expect(() => validateManagedTaskRecord({ ...root, waitingReason: { ...capacity, kind: 'busy' } }))
+      .toThrow('waitingReason.kind must be capacity or system_pressure');
+    expect(() => validateManagedTaskRecord({ ...root, waitingReason: { ...capacity, activeCount: -1 } }))
+      .toThrow('waitingReason.activeCount must be a non-negative integer');
+    expect(() => validateManagedTaskRecord({ ...root, waitingReason: { ...capacity, limit: 0 } }))
+      .toThrow('waitingReason.limit must be a positive integer or null');
+    expect(() => validateManagedTaskRecord({ ...root, waitingReason: { ...pressure, limit: 2 } }))
+      .toThrow('waitingReason.limit must be null for system_pressure');
+    expect(() => validateManagedTaskRecord({ ...root, waitingReason: { ...capacity, since: 'now' } }))
+      .toThrow('waitingReason.since must be a non-negative finite timestamp');
+    expect(() => validateManagedTaskRecord({ ...root, waitingReason: { ...capacity, extra: true } }))
+      .toThrow('waitingReason.extra is not a waiting reason field');
+    for (const status of ['starting', 'running', 'completed', 'failed', 'aborted', 'interrupted']) {
+      expect(() => validateManagedTaskRecord({ ...root, status, waitingReason: capacity }))
+        .toThrow('waitingReason must be null unless the task is queued');
+    }
+
+    const projected = toManagedTaskEvent({ ...root, waitingReason: capacity }).properties.task;
+    expect(projected.waitingReason).toEqual(capacity);
+    expect(projected.waitingReason).not.toBe(capacity);
+    expect(toManagedTaskEvent(root).properties.task.waitingReason).toBeNull();
+  });
+
+  test('exports the shared manual Model Recovery gate', () => {
+    const parked = {
+      ...createManagedTaskRecord(validInput()),
+      childSessionId: 'ses_child',
+      status: 'failed',
+      startedAt: 1_100,
+      finishedAt: 1_200,
+      failureReason: 'out of usage',
+    };
+    expect(contract.requiresManualModelRecovery(parked, { resumable: true })).toBe(true);
+    expect(contract.requiresManualModelRecovery(parked, { resumable: false })).toBe(false);
+    expect(contract.requiresManualModelRecovery(
+      { ...parked, failureReason: 'provider disconnected' },
+      { resumable: true },
+    )).toBe(false);
   });
 
   test('defaults legacy work to no private dispatch identity', () => {

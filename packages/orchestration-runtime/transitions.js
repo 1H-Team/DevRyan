@@ -36,6 +36,7 @@ const IMMUTABLE_FIELDS = Object.freeze([
   'executionKind',
   'createdAt',
   'timeoutAt',
+  'recoveryLineageId',
 ]);
 
 const terminalRecordChanged = (previous, next) => {
@@ -61,6 +62,12 @@ export const assertManagedTaskTransition = (previous, next) => {
     if (!Object.is(previous[field], next[field])) {
       throw new Error(`${field} is immutable`);
     }
+  }
+
+  // `waitingReason` is mutable only while the task is queued; leaving `queued`
+  // (launch or abort) must clear it.
+  if (next.status !== 'queued' && next.waitingReason !== null) {
+    throw new Error('waitingReason must be null unless the task is queued');
   }
 
   validateManagedTaskRecord(next);

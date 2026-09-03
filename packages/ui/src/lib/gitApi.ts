@@ -5,6 +5,7 @@ import * as gitHttp from './gitApiHttp';
 import { opencodeClient } from './opencode/client';
 import { renderMagicPrompt, type MagicPromptId } from './magicPrompts';
 import { createSessionRecord } from '@/sync/session-actions';
+import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useContextStore } from '@/stores/contextStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import {
@@ -543,11 +544,23 @@ export async function executeApprovedCommitPlan(
   };
 }
 
+type PullRequestGenerationRequest = {
+  base: string;
+  head: string;
+  context?: string;
+  prompt: string;
+  providerId?: string;
+  modelId?: string;
+};
+
 export async function generatePullRequestDescription(
   directory: string,
   payload: { base: string; head: string; context?: string }
 ): Promise<import('./api/types').GeneratedPullRequestDescription> {
   const startedAt = Date.now();
+  // Hint for the server's session-model fallback tier (it prefers its own
+  // Builder resolution, so this only matters for hosts without one).
+  const fallbackModel = resolveGenerationModel(useSessionUIStore.getState().currentSessionId, 'builder');
 
   const commitLog = await getGitLog(directory, {
     from: payload.base,
@@ -592,6 +605,7 @@ export async function generatePullRequestDescription(
     head: payload.head,
     commits: commits.length,
     changedFiles: changedFiles.length,
+    fallbackModel: fallbackModel ? `${fallbackModel.providerId}/${fallbackModel.modelId}` : null,
   });
 
   const hiddenPrompt = await renderMagicPrompt('git.pr.generate.instructions', {
@@ -602,15 +616,18 @@ export async function generatePullRequestDescription(
     additional_context_block: payload.context?.trim() ? `\nAdditional context:\n${payload.context.trim()}` : '',
   });
 
+  const request: PullRequestGenerationRequest = {
+    base: payload.base,
+    head: payload.head,
+    ...(payload.context?.trim() ? { context: payload.context.trim() } : {}),
+    prompt: hiddenPrompt,
+    ...(fallbackModel ? { providerId: fallbackModel.providerId, modelId: fallbackModel.modelId } : {}),
+  };
+
   try {
     const runtimeGit = getRuntimeGit();
     const generator = runtimeGit?.generatePullRequestDescription ?? gitHttp.generatePullRequestDescription;
-    const result = await generator(directory, {
-      base: payload.base,
-      head: payload.head,
-      ...(payload.context?.trim() ? { context: payload.context.trim() } : {}),
-      prompt: hiddenPrompt,
-    });
+    const result = await generator(directory, request);
     console.info('[git-generation][browser] success', {
       transport: 'direct_zen',
       kind: 'pr',
@@ -633,6 +650,7 @@ export async function generatePullRequestDescription(
       kind: 'pr',
       elapsedMs: Date.now() - startedAt,
       message: error instanceof Error ? error.message : String(error),
+      code: typeof (error as { code?: unknown } | null)?.code === 'string' ? (error as { code: string }).code : null,
       error,
     });
     throw error;

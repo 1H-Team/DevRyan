@@ -208,6 +208,28 @@ export type FreeZenFailureReason =
   | 'request_failed';
 
 export function classifyFreeZenFailure(error: unknown): FreeZenFailureReason;
+
+export const FREE_ZEN_LONG_COOLDOWN_MS: number;
+export const FREE_ZEN_SHORT_COOLDOWN_MS: number;
+export interface FreeZenCooldowns {
+  isCoolingDown(model: FreeZenModel | string | null | undefined, at?: number): boolean;
+  mark(
+    model: FreeZenModel | string | null | undefined,
+    reason?: FreeZenFailureReason | string,
+    options?: { at?: number; cooldownMs?: number },
+  ): number | null;
+  reset(): void;
+  durationFor(reason?: string): number;
+  snapshot(at?: number): Array<{ model: string; reason: string; until: number }>;
+}
+export function createFreeZenCooldowns(options?: {
+  now?: () => number;
+  longMs?: number;
+  shortMs?: number;
+}): FreeZenCooldowns;
+export const sharedFreeZenCooldowns: FreeZenCooldowns;
+
+export type FreeZenSkipReason = 'cooling_down' | 'max_models' | 'deadline';
 export function runFreeZenModelRotation<TInput = unknown, TOutput = TInput>(options: {
   models: Array<FreeZenModel | string>;
   timeoutMs: number;
@@ -221,6 +243,9 @@ export function runFreeZenModelRotation<TInput = unknown, TOutput = TInput>(opti
     reason?: FreeZenFailureReason;
     status?: number;
   }) => void;
+  cooldowns?: FreeZenCooldowns | null;
+  maxModels?: number;
+  deadlineMs?: number;
   now?: () => number;
   setTimer?: typeof setTimeout;
   clearTimer?: typeof clearTimeout;
@@ -236,13 +261,36 @@ export function runFreeZenModelRotation<TInput = unknown, TOutput = TInput>(opti
     reason: FreeZenFailureReason;
     status?: number;
   }>;
+  skipped: Array<{ model: string; reason: FreeZenSkipReason }>;
+  deadlineExceeded: boolean;
 }>;
 
 export interface GeneratedPullRequestDraft {
   title: string;
   body: string;
 }
-export function normalizePullRequestDraft(value: unknown): GeneratedPullRequestDraft | null;
+export const PULL_REQUEST_TITLE_MAX_LENGTH: number;
+export function shortenPullRequestTitle(value: unknown, maxLength?: number): string;
+export function normalizePullRequestDraft(
+  value: unknown,
+  options?: { maxTitleLength?: number },
+): GeneratedPullRequestDraft | null;
+
+export const PULL_REQUEST_DIFF_MAX_CHARS: number;
+export interface PullRequestDiffContext {
+  text: string;
+  truncated: boolean;
+  totalChars: number;
+  includedChars: number;
+  fileCount: number;
+  skippedBinary: string[];
+  omitted: string[];
+}
+export function buildPullRequestDiffContext(input?: {
+  diff?: string | null;
+  stat?: string | null;
+  maxChars?: number;
+}): PullRequestDiffContext;
 
 export interface SharedCommitDraftFileContext {
   path: string;

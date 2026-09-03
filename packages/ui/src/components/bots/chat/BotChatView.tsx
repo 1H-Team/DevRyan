@@ -151,6 +151,7 @@ export const BotChatView: React.FC<BotChatViewProps> = ({ bot, channelId }) => {
         botId={bot.id}
         channel={channel}
         runtimeState={capabilities?.state ?? 'runtime_unavailable'}
+        runtimeCode={capabilities?.code ?? null}
         runtimeAvailable={capabilities?.available === true && bot.lifecycle === 'active'}
         runtimeWarnings={resolveBotRuntimeWarnings(capabilities)}
         onRuntimeIntent={requestRuntimePrewarm}

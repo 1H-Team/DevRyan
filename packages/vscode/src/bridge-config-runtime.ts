@@ -3,15 +3,23 @@ import * as path from 'path';
 import { isDeepStrictEqual } from 'node:util';
 import {
   createCommand,
+  deleteAgentBackupModel,
   deleteAgentModelOverride,
   deleteCommand,
   getAgentConfig,
   getAgentSources,
   getCommandSources,
+  INVALID_AGENT_RUNTIME_SETTINGS_CODE,
+  INVALID_ORCHESTRATION_LIMITS_CODE,
   listAgentModelOverrides,
   listConfigAgents,
+  readAgentRuntimeSettings,
+  readOrchestrationLimits,
   updateCommand,
+  writeAgentBackupModel,
   writeAgentModelOverride,
+  writeAgentRuntimeSettings,
+  writeOrchestrationLimits,
   type CommandScope,
   COMMAND_SCOPE,
   discoverSkills,
@@ -409,13 +417,80 @@ export async function handleConfigBridgeMessage(
       return { id, type, success: true, data: { overrides: listAgentModelOverrides() } };
     }
 
+    case 'api:config/orchestration-limits:get':
+    case 'api:config/orchestration-limits:set': {
+      // Mirrors GET/PUT /api/config/orchestration-limits and answers a
+      // `{ status, body }` envelope (like the prompt-mode bridge) so an invalid
+      // PUT reaches the settings page as a 400, exactly as on the web host.
+      // DevRyan-only sidecar state (OpenCode never reads it), so no
+      // markConfigChange. VS Code samples no memory pressure: the snapshot is
+      // always `unavailable` and the scheduler applies the concurrency cap alone.
+      const isWrite = type === 'api:config/orchestration-limits:set';
+      const pressure = {
+        state: 'normal',
+        availableRatio: null,
+        swapUsedRatio: null,
+        sampledAt: null,
+        source: 'unavailable',
+      };
+      try {
+        const limits = isWrite
+          ? writeOrchestrationLimits((payload as Record<string, unknown>) || {})
+          : readOrchestrationLimits();
+        return { id, type, success: true, data: { status: 200, body: { ...limits, pressure } } };
+      } catch (error) {
+        const message = error instanceof Error && error.message
+          ? error.message
+          : (isWrite ? 'Failed to update orchestration limits' : 'Failed to read orchestration limits');
+        const invalid = (error as { code?: unknown })?.code === INVALID_ORCHESTRATION_LIMITS_CODE;
+        return { id, type, success: true, data: { status: invalid ? 400 : 500, body: { error: message } } };
+      }
+    }
+
+    case 'api:config/agent-runtime:get':
+    case 'api:config/agent-runtime:set': {
+      // Mirrors GET/PUT /api/config/agent-runtime with the orchestration-limits
+      // `{ status, body }` envelope. Sidecar-only state, so no markConfigChange;
+      // OpenCode reads `lsp` when its instance starts, so a changed value owes
+      // a restart and the settings page offers one.
+      const isWrite = type === 'api:config/agent-runtime:set';
+      try {
+        const previous = readAgentRuntimeSettings();
+        if (!isWrite) {
+          return {
+            id,
+            type,
+            success: true,
+            data: { status: 200, body: { lsp: previous.lsp, appliesOnRestart: true } },
+          };
+        }
+        const next = writeAgentRuntimeSettings((payload as Record<string, unknown>) || {});
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            status: 200,
+            body: { lsp: next.lsp, appliesOnRestart: true, restartRequired: next.lsp !== previous.lsp },
+          },
+        };
+      } catch (error) {
+        const message = error instanceof Error && error.message
+          ? error.message
+          : (isWrite ? 'Failed to update agent runtime settings' : 'Failed to read agent runtime settings');
+        const invalid = (error as { code?: unknown })?.code === INVALID_AGENT_RUNTIME_SETTINGS_CODE;
+        return { id, type, success: true, data: { status: invalid ? 400 : 500, body: { error: message } } };
+      }
+    }
+
     case 'api:config/agents': {
-      const { method, name, body, directory, override } = (payload || {}) as {
+      const { method, name, body, directory, override, backupModel } = (payload || {}) as {
         method?: string;
         name?: string;
         body?: Record<string, unknown>;
         directory?: string;
         override?: boolean;
+        backupModel?: boolean;
       };
       const agentName = typeof name === 'string' ? name.trim() : '';
 
@@ -428,6 +503,29 @@ export async function handleConfigBridgeMessage(
 
       if (!agentName) {
         return { id, type, success: false, error: 'Agent name is required' };
+      }
+
+      if (backupModel === true) {
+        // Backup models are DevRyan-only sidecar state (OpenCode never reads them),
+        // so no markConfigChange: nothing needs an apply/restart.
+        try {
+          if (normalizedMethod === 'PUT') {
+            const saved = writeAgentBackupModel(agentName, body || {}, workingDirectory);
+            const agent = getAgentConfig(agentName, workingDirectory);
+            return { id, type, success: true, data: { success: true, backupModel: saved, agent } };
+          }
+
+          if (normalizedMethod === 'DELETE') {
+            const deleted = deleteAgentBackupModel(agentName);
+            const agent = getAgentConfig(agentName, workingDirectory);
+            return { id, type, success: true, data: { success: true, deleted, backupModel: null, agent } };
+          }
+        } catch (error) {
+          const message = error instanceof Error && error.message ? error.message : 'Failed to update agent backup model';
+          return { id, type, success: false, error: message };
+        }
+
+        return { id, type, success: false, error: `Unsupported backup model method: ${normalizedMethod}` };
       }
 
       if (override === true) {

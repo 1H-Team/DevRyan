@@ -1117,6 +1117,7 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
     await new Promise((resolve) => server.listen(0, '0.0.0.0', resolve));
     const address = server.address();
     return Object.freeze({
+      port: address.port,
       gatewayUrl: `http://host.docker.internal:${address.port}`,
       thirdPartyUrl: `http://127.0.0.1:${address.port}/third-party-top`,
       publishedDownload: () => publishedDownload,
@@ -1126,8 +1127,26 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
     });
   };
 
-  const startFixtureEgress = async () => {
+  // The container has no route to the host, so it reaches the private gateway
+  // through the egress service, which relays it. This fixture stands in for both
+  // roles on the one in-network address the container knows.
+  const startFixtureEgress = async (site) => {
     const server = http.createServer((request, response) => {
+      if (request.url.startsWith('/api/bots/private/')) {
+        const relayed = http.request({
+          hostname: '127.0.0.1',
+          port: site.port,
+          method: request.method,
+          path: request.url,
+          headers: { ...request.headers, host: `host.docker.internal:${site.port}` },
+        }, (relayedResponse) => {
+          response.writeHead(relayedResponse.statusCode || 502, relayedResponse.headers);
+          relayedResponse.pipe(response);
+        });
+        relayed.once('error', () => response.writeHead(502).end());
+        request.pipe(relayed);
+        return;
+      }
       if (request.headers['proxy-authorization'] !== `Bearer ${browserEgressToken}`) {
         response.writeHead(407).end();
         return;
@@ -1289,7 +1308,7 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
           '--env', `DEVRYAN_BOT_RUNTIME_TOKEN=${integrationToken}`,
           '--env', `DEVRYAN_BOT_RUN_ID=${runId}`,
           '--env', 'DEVRYAN_BOT_SCOPE_MODE=team',
-          '--env', `DEVRYAN_BOT_GATEWAY_URL=${fixtureSite.gatewayUrl}`,
+          '--env', 'DEVRYAN_BOT_GATEWAY_URL=http://egress:43121',
           '--env', 'DEVRYAN_BROWSER_EGRESS_URL=http://egress:43121/',
           '--env', `DEVRYAN_BROWSER_EGRESS_TOKEN=${browserEgressToken}`,
           image,
@@ -1380,7 +1399,7 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
       };
 
       try {
-        fixtureEgress = await startFixtureEgress();
+        fixtureEgress = await startFixtureEgress(fixtureSite);
         await docker(
           'build', '--quiet', '--file', 'packages/bot-computer/Dockerfile',
           '--tag', image, '.',
@@ -1437,6 +1456,11 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         expect(await chromiumProcessCount()).toBe(1);
         expect(await xvfbProcessCount()).toBe(1);
 
+        // Chromium commits its cookie database on a 30 s timer and nothing but a
+        // graceful shutdown flushes it sooner. The agent can no longer close the
+        // browser to force that flush, so a crash inside the window would lose the
+        // login on disk; let the periodic commit run before simulating the crash.
+        await new Promise((resolve) => setTimeout(resolve, 31_000));
         await killChromium();
         expect((await commandComputer(
           baseUrl,

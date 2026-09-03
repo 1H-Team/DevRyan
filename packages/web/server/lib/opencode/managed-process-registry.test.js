@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,7 @@ import {
   readManagedOpenCodeRegistry,
   reapOrphanedManagedOpenCodeProcesses,
   registerManagedOpenCodeProcess,
+  terminateManagedOpenCodePid,
   unregisterManagedOpenCodeProcess,
 } from './managed-process-registry.js';
 
@@ -208,6 +209,56 @@ describe('managed OpenCode process registry', () => {
       'opencode serve --hostname 127.0.0.1 --port 4096',
       { binary: 'opencode', port: 45678 },
     )).toBe(false);
+  });
+
+  it('persists the working directory (registry v2) and reads v1 files without one', () => {
+    const registryPath = createRegistryPath();
+    registerManagedOpenCodeProcess({
+      childPid: 300,
+      ownerPid: 100,
+      port: 45678,
+      binary: 'opencode',
+      hostRuntime: 'web',
+      workingDirectory: '/tmp/project ',
+    }, { registryPath });
+
+    const written = JSON.parse(readFileSync(registryPath, 'utf8'));
+    expect(written.version).toBe(2);
+    expect(readManagedOpenCodeRegistry({ registryPath })).toEqual([
+      expect.objectContaining({ childPid: 300, workingDirectory: '/tmp/project' }),
+    ]);
+
+    writeFileSync(registryPath, JSON.stringify({
+      version: 1,
+      processes: [{ childPid: 301, ownerPid: 100, port: 45679, binary: 'opencode', hostRuntime: 'web', startedAt: 5 }],
+    }));
+    expect(readManagedOpenCodeRegistry({ registryPath })).toEqual([
+      expect.objectContaining({ childPid: 301, port: 45679, workingDirectory: null }),
+    ]);
+  });
+
+  it('signals listed descendants alongside the target group when terminating', async () => {
+    let alive = true;
+    // Signal 0 is the liveness probe; the target dies on the first TERM round.
+    // `-200` (group kill) fails so the fallback signals the pid directly.
+    const processKill = vi.fn((pid, signal) => {
+      if (signal === 0) {
+        if (!alive) throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+        return true;
+      }
+      if (pid === -200) throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+      alive = false;
+      return true;
+    });
+
+    await expect(terminateManagedOpenCodePid(200, {
+      platform: 'darwin',
+      processKill,
+      descendantPids: [201, 202, 200, 0, 'x'],
+    })).resolves.toBe(true);
+
+    const termCalls = processKill.mock.calls.filter(([, signal]) => signal === 'SIGTERM').map(([pid]) => pid);
+    expect(termCalls).toEqual([-200, 200, 201, 202]);
   });
 
   it('aligns context-mode storage under the OpenChamber data dir', () => {

@@ -755,6 +755,28 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
     errorCode: BROWSER_ERROR_CODES.leaseAcquireFailed,
   }));
 
+  // Read-only preview lookup for a bare open. It returns undefined on any
+  // failure (an older server without the route, a transport error, or a remote
+  // error code) so the caller falls through to acquire, which surfaces the
+  // same error codes and retry semantics as before.
+  const resolveBranchPreview = async (scope, signal) => {
+    try {
+      const payload = await requestJson({
+        environment,
+        url: `${environment.leasesUrl}/resolve`,
+        method: 'POST',
+        body: scope,
+        signal,
+        errorCode: BROWSER_ERROR_CODES.leaseAcquireFailed,
+      });
+      return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const hasHeldLease = (reuseKey) => connections.has(reuseKey) || connectionAttempts.has(reuseKey);
+
   const touch = async (leaseId, scope, signal) => requestJson({
     environment,
     url: `${environment.leasesUrl}/${encodeURIComponent(leaseId)}/touch`,
@@ -884,6 +906,14 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
           const reuseKey = `${scope.opencodeSessionID}\u0000${scope.messageID}`;
           if (command === 'close' && failedAcquisitionKeys.has(reuseKey)) {
             return 'Browser lease already closed.';
+          }
+          if (command === 'open' && args.length === 0 && !hasHeldLease(reuseKey)) {
+            // Resolve the branch preview before any surface exists. A branch
+            // without a preview hands off without an Electron renderer or an
+            // agent-browser daemon ever starting. A preview URL, an older
+            // server, or any failure continues through the unchanged acquire.
+            const resolved = await resolveBranchPreview(scope, context?.abort);
+            if (resolved?.previewUrl === null) return NO_PREVIEW_HANDOFF_MESSAGE;
           }
           let lease;
           try {

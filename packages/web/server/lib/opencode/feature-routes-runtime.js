@@ -1,6 +1,8 @@
 import { registerFsRoutes } from '../fs/routes.js';
 import { registerQuotaRoutes } from '../quota/routes.js';
 import { registerGitHubRoutes } from '../github/routes.js';
+import { createProcessesRuntime } from '../processes/runtime.js';
+import { registerProcessesRoutes } from '../processes/routes.js';
 import { registerGitRoutes } from '../git/routes.js';
 import { registerMagicPromptRoutes } from '../magic-prompts/routes.js';
 import { registerSessionFoldersRoutes } from '../session-folders/routes.js';
@@ -15,6 +17,7 @@ import { createPluginReadModel, registerReadonlyPluginRoutes } from './plugins-r
 import { createSlimSetupRuntime, registerSlimSetupRoutes } from './slim-install.js';
 import { registerConfigApplyRoutes } from './config-apply-runtime.js';
 import { createImageAssetsRuntime } from '../image-assets/runtime.js';
+import { getSystemPressure } from '../system/pressure.js';
 
 export const createFeatureRoutesRuntime = (dependencies) => {
   const {
@@ -72,6 +75,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       restartOpenCode,
       waitForOpenCodeReady,
       isExternalOpenCode,
+      syncManagedAgentRuntimeConfig,
+      isManagedOpenCodeRunning,
       buildAugmentedPath,
       projectConfigRuntime,
       scheduledTasksRuntime,
@@ -81,6 +86,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       resolveZenModel,
       resolveZenModelNonBlocking,
       fetchFreeZenModels,
+      getCachedZenModels,
       xaiToolCatalogRuntime,
       recordCommitTiming,
       resolveManagedProject,
@@ -106,6 +112,9 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       abortActiveSessions: abortActiveSessionsForConfigRestart,
       auditForceRestart: auditForceConfigRestart,
     });
+
+    // Host process inspection (bottom-dock Processes tab, session-delete auto-stop).
+    const processesRuntime = createProcessesRuntime({ dataDir: openchamberDataDir });
 
     registerOpenCodeRoutes(app, {
       crypto,
@@ -133,6 +142,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       waitForOpenCodeReady,
       isExternalOpenCode,
       cursorSdkRuntime,
+      processesRuntime,
       standardSessionTitleRuntime,
       emitSyntheticOpenCodeEvent,
       resolveZenModel,
@@ -188,6 +198,12 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       listStaleAgentModelOverrides,
       writeAgentModelOverride,
       deleteAgentModelOverride,
+      writeAgentBackupModel,
+      deleteAgentBackupModel,
+      readOrchestrationLimits,
+      writeOrchestrationLimits,
+      readAgentRuntimeSettings,
+      writeAgentRuntimeSettings,
       listConfigAgents,
       getCommandSources,
       createCommand,
@@ -212,6 +228,15 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       listStaleAgentModelOverrides,
       writeAgentModelOverride,
       deleteAgentModelOverride,
+      writeAgentBackupModel,
+      deleteAgentBackupModel,
+      readOrchestrationLimits,
+      writeOrchestrationLimits,
+      getSystemPressure,
+      readAgentRuntimeSettings,
+      writeAgentRuntimeSettings,
+      syncManagedAgentRuntimeConfig,
+      isManagedOpenCodeRunning,
       listConfigAgents,
       getCommandSources,
       createCommand,
@@ -303,11 +328,18 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       ownsSession,
     });
     registerGitHubRoutes(app);
+    registerProcessesRoutes(app, { runtime: processesRuntime });
     registerGitRoutes(app, {
       resolveZenModel,
       resolveCommitZenModel: resolveZenModelNonBlocking,
       fetchFreeZenModels,
+      // Last known free-model catalog so a catalog outage degrades to stale
+      // models (then the session model) instead of failing with no attempt.
+      getCachedFreeZenModels: getCachedZenModels,
       recordCommitTiming,
+      // PR description tier 2 (session model through a hidden helper session).
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
     });
     registerMagicPromptRoutes(app, {
       fsPromises,

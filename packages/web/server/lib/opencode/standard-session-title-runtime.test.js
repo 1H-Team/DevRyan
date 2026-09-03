@@ -120,10 +120,13 @@ const createFakeOpenCode = ({
   return { state, fetchImpl };
 };
 
+// The default prompt derives to 'Reliable Session Title Summaries', so a
+// session-model stub returning the same string leaves the upgrade a no-op and
+// the persistence-focused cases see exactly one projection.
 const createRuntime = ({
   fake,
   outbox,
-  generateTitle = vi.fn(async () => 'Reliable Session Title Summaries'),
+  generateSessionModelTitle = vi.fn(async () => 'Reliable Session Title Summaries'),
   projected = [],
   diagnostics = [],
   now,
@@ -133,7 +136,7 @@ const createRuntime = ({
     fetchImpl: fake.fetchImpl,
     buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
     getOpenCodeAuthHeaders: () => ({}),
-    generateTitle,
+    generateSessionModelTitle,
     outbox: outbox || createMemorySessionTitleOutbox({ now }),
     onTitleGenerated: vi.fn(async (input) => projected.push(input)),
     recordDiagnostic: vi.fn(async (input) => diagnostics.push(input)),
@@ -150,13 +153,36 @@ const idleEvent = (sessionID = 'ses_1', type = 'session.status') => (
     : { type, properties: { sessionID, status: { type: 'idle' } } }
 );
 
+const captureTimers = () => {
+  const timers = [];
+  const setTimer = vi.fn((callback, delay) => {
+    const handle = { callback, delay, cleared: false, unref: vi.fn() };
+    timers.push(handle);
+    return handle;
+  });
+  const clearTimer = vi.fn((handle) => {
+    handle.cleared = true;
+  });
+  return { timers, setTimer, clearTimer };
+};
+
+const settleAfterPatches = async (fake, count) => {
+  for (let index = 0; index < 50 && fake.state.patches.length < count; index += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+};
+
+const stageOutcomes = (diagnostics, ...stages) => diagnostics
+  .map(({ payload }) => `${payload.stage}:${payload.outcome}`)
+  .filter((entry) => stages.some((stage) => entry.startsWith(`${stage}:`)));
+
 const pendingJob = (overrides = {}) => ({
   key: 'a'.repeat(64),
   sessionID: 'ses_1',
   directory: '/tmp/project-a',
   sourceHash: 'b'.repeat(64),
   candidateTitle: 'Reliable Session Title Summaries',
-  source: 'free_zen',
+  source: 'derived',
   state: 'pending_idle',
   attemptCount: 1,
   nextAttemptAt: 2_000,
@@ -206,103 +232,123 @@ describe('standard session title runtime', () => {
     await runtime.dispose();
   });
 
-  it('uses the selected session model when every free model attempt fails', async () => {
-    const prompt = 'Please fix durable title persistence without modifying files';
+  it('projects the derived placeholder immediately, then upgrades with the session model', async () => {
+    const prompt = 'Repair provider neutral title generation';
     const fake = createFakeOpenCode({ prompt });
     const projected = [];
+    const diagnostics = [];
     const outbox = createMemorySessionTitleOutbox();
-    const runtime = createRuntime({
-      fake,
-      projected,
-      outbox,
-      generateTitle: vi.fn(async () => ({ title: null, attempts: 3 })),
-      generateSessionModelTitle: vi.fn(async () => 'Durable Title Persistence'),
-    });
+    const generateSessionModelTitle = vi.fn(async () => 'Neutral Title Generation Pipeline');
+    const runtime = createRuntime({ fake, projected, diagnostics, outbox, generateSessionModelTitle });
 
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project', text: prompt });
-    expect(projected[0].source).toBe('session_model');
-    expect(projected[0].title).toBe('Durable Title Persistence');
+    await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project', text: prompt })).resolves.toBe(true);
+
+    expect(projected.map(({ source, title }) => ({ source, title }))).toEqual([
+      { source: 'derived', title: 'Provider Neutral Title Generation' },
+      { source: 'session_model', title: 'Neutral Title Generation Pipeline' },
+    ]);
+    expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
+    expect(generateSessionModelTitle).toHaveBeenCalledWith(expect.objectContaining({
+      text: prompt,
+      providerID: 'openai',
+      modelID: 'gpt-5.6-sol',
+      timeoutMs: 10_000,
+    }));
     expect(await outbox.list()).toEqual([expect.objectContaining({
-      candidateTitle: 'Durable Title Persistence',
+      candidateTitle: 'Neutral Title Generation Pipeline',
       source: 'session_model',
+      replacesTitle: 'Provider Neutral Title Generation',
     })]);
+    expect(stageOutcomes(diagnostics, 'derived', 'session_model', 'free_zen')).toEqual([
+      'derived:complete',
+      'session_model:complete',
+    ]);
     await runtime.processOpenCodeEvent(idleEvent());
-    expect(fake.state.sessions.get('ses_1').title).toBe('Durable Title Persistence');
+    expect(fake.state.sessions.get('ses_1').title).toBe('Neutral Title Generation Pipeline');
     expect(await outbox.list()).toEqual([]);
     await runtime.dispose();
   });
 
-  it('builds the retry rotation only from the live zero-cost catalog', async () => {
+  it.each(['anthropic', 'opencode-with-claude'])('keeps the derived title for %s sessions without a session-model call', async (providerID) => {
     const fake = createFakeOpenCode();
-    const summarizeTitle = vi.fn(async ({ zenModel }) => zenModel === 'free-b'
-      ? { summary: 'Live Catalog Session Titles', summarized: true, model: zenModel, attempts: 1 }
-      : { summary: '', summarized: false, reason: 'Unavailable', attempts: 1 });
-    const runtime = createRuntime({
-      fake,
-      generateTitle: null,
-      fetchFreeZenModels: vi.fn(async () => [{ id: 'free-a' }, { id: 'free-b' }]),
-      zenModelRotation: ['paid-selected-model'],
-      summarizeTitle,
-    });
+    const projected = [];
+    const outbox = createMemorySessionTitleOutbox();
+    const generateSessionModelTitle = vi.fn(async () => 'Upgraded Session Model Title');
+    const runtime = createRuntime({ fake, projected, outbox, generateSessionModelTitle });
 
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await expect(runtime.schedule({
+      sessionID: 'ses_1',
+      directory: '/tmp/project',
+      providerID,
+      modelID: 'claude-model',
+    })).resolves.toBe(true);
 
-    expect(summarizeTitle).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      zenModel: 'free-a',
-      zenModelRotation: [],
-      transientRetries: 0,
-    }));
-    expect(summarizeTitle).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      zenModel: 'free-b',
-      generationTimeoutMs: 4_500,
-    }));
+    expect(generateSessionModelTitle).not.toHaveBeenCalled();
+    expect(projected).toEqual([expect.objectContaining({ source: 'derived', title: 'Reliable Session Title Summaries' })]);
+    expect(await outbox.list()).toEqual([expect.objectContaining({
+      candidateTitle: 'Reliable Session Title Summaries',
+      source: 'derived',
+    })]);
+    expect(fake.state.calls.some(({ method }) => method === 'POST')).toBe(false);
+    await runtime.processOpenCodeEvent(idleEvent());
+    expect(fake.state.sessions.get('ses_1').title).toBe('Reliable Session Title Summaries');
     await runtime.dispose();
   });
 
-  it('uses the selected session model instead of a configured paid Zen rotation when the live catalog is empty', async () => {
-    const fake = createFakeOpenCode({ prompt: 'Repair provider neutral title generation' });
+  it('projects the derived title before the session-model promise resolves', async () => {
+    const fake = createFakeOpenCode();
     const projected = [];
-    const summarizeTitle = vi.fn();
-    const runtime = createRuntime({
-      fake,
-      projected,
-      generateTitle: null,
-      fetchFreeZenModels: vi.fn(async () => []),
-      zenModelRotation: ['paid-selected-model'],
-      summarizeTitle,
-      generateSessionModelTitle: vi.fn(async () => 'Provider Neutral Title Generation'),
-    });
-
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-
-    expect(summarizeTitle).not.toHaveBeenCalled();
-    expect(projected[0]).toEqual(expect.objectContaining({
-      source: 'session_model',
-      title: 'Provider Neutral Title Generation',
+    const outbox = createMemorySessionTitleOutbox();
+    let resolveGeneration;
+    const generateSessionModelTitle = vi.fn(() => new Promise((resolve) => {
+      resolveGeneration = resolve;
     }));
+    const runtime = createRuntime({ fake, projected, outbox, generateSessionModelTitle });
+
+    const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    for (let index = 0; index < 20 && !resolveGeneration; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(resolveGeneration).toBeTypeOf('function');
+    expect(projected).toEqual([expect.objectContaining({ source: 'derived', title: 'Reliable Session Title Summaries' })]);
+    expect(await outbox.list()).toEqual([expect.objectContaining({
+      candidateTitle: 'Reliable Session Title Summaries',
+      source: 'derived',
+    })]);
+
+    resolveGeneration('Upgraded Session Model Title');
+    await expect(scheduled).resolves.toBe(true);
+    expect(projected).toHaveLength(2);
+    expect(projected[1]).toEqual(expect.objectContaining({ source: 'session_model', title: 'Upgraded Session Model Title' }));
     await runtime.dispose();
   });
 
-  it('bounds a stalled live catalog independently from per-model generation', async () => {
-    const fake = createFakeOpenCode({ prompt: 'Repair bounded catalog title generation' });
+  it('bounds the session-model upgrade and keeps the derived title when it stalls', async () => {
+    const fake = createFakeOpenCode();
     const projected = [];
-    const runtime = createRuntime({
-      fake,
-      projected,
-      generateTitle: null,
-      fetchFreeZenModels: vi.fn(() => new Promise(() => {})),
-      catalogTimeoutMs: 5,
-      generateSessionModelTitle: vi.fn(async () => 'Bounded Catalog Title Generation'),
-    });
-    const startedAt = Date.now();
+    const diagnostics = [];
+    const { timers, setTimer, clearTimer } = captureTimers();
+    const generateSessionModelTitle = vi.fn(() => new Promise(() => {}));
+    const runtime = createRuntime({ fake, projected, diagnostics, generateSessionModelTitle, setTimer, clearTimer });
 
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    const boundTimer = () => timers.find(({ delay, cleared }) => delay === 10_000 && !cleared);
+    for (let index = 0; index < 20 && !boundTimer(); index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(projected).toEqual([expect.objectContaining({ source: 'derived' })]);
 
-    expect(Date.now() - startedAt).toBeLessThan(200);
-    expect(projected[0]).toEqual(expect.objectContaining({
-      source: 'session_model',
-      title: 'Bounded Catalog Title Generation',
+    boundTimer().callback();
+    await expect(scheduled).resolves.toBe(true);
+    expect(projected).toHaveLength(1);
+    expect(diagnostics.map(({ payload }) => payload)).toContainEqual(expect.objectContaining({
+      stage: 'session_model',
+      outcome: 'failed',
+      reason: 'timeout',
+      attempt: 1,
     }));
+    expect(timers.filter(({ delay }) => delay === 60_000)).toHaveLength(1);
     await runtime.dispose();
   });
 
@@ -312,7 +358,7 @@ describe('standard session title runtime', () => {
     const runtime = createRuntime({
       fake,
       projected,
-      generateTitle: vi.fn(async () => ({ title: null, attempts: 8 })),
+      generateSessionModelTitle: null,
     });
 
     await runtime.schedule({
@@ -331,28 +377,99 @@ describe('standard session title runtime', () => {
       tools: {},
     });
     expect(body.variant).toBeUndefined();
-    expect(projected[0]).toEqual(expect.objectContaining({ source: 'session_model', title: 'Selected Model Session Title' }));
+    expect(projected.map(({ source, title }) => ({ source, title }))).toEqual([
+      { source: 'derived', title: 'Reliable Session Title Summaries' },
+      { source: 'session_model', title: 'Selected Model Session Title' },
+    ]);
     expect(fake.state.sessions.has('ses_helper')).toBe(false);
     await runtime.dispose();
   });
 
-  it('keeps the placeholder when both free Zen and the selected model fail', async () => {
-    const prompt = 'In dashboard/professional/profile update the published profile shortcut';
-    const fake = createFakeOpenCode({ prompt });
+  it('keeps the derived title when the session model fails and retries once after sixty seconds', async () => {
+    const fake = createFakeOpenCode();
     const projected = [];
+    const diagnostics = [];
     const outbox = createMemorySessionTitleOutbox();
-    const runtime = createRuntime({
-      fake,
-      projected,
-      outbox,
-      generateTitle: vi.fn(async () => ({ title: null, attempts: 8 })),
-      generateSessionModelTitle: vi.fn(async () => null),
-    });
+    const { timers, setTimer, clearTimer } = captureTimers();
+    const generateSessionModelTitle = vi.fn(async () => null);
+    const runtime = createRuntime({ fake, projected, diagnostics, outbox, generateSessionModelTitle, setTimer, clearTimer });
+    const retryTimers = () => timers.filter(({ delay }) => delay === 60_000);
 
-    await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' })).resolves.toBe(false);
-    expect(projected).toEqual([]);
+    await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' })).resolves.toBe(true);
+    expect(projected).toEqual([expect.objectContaining({ source: 'derived', title: 'Reliable Session Title Summaries' })]);
+    expect(await outbox.list()).toEqual([expect.objectContaining({
+      candidateTitle: 'Reliable Session Title Summaries',
+      source: 'derived',
+    })]);
+    expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
+    expect(retryTimers()).toHaveLength(1);
+
+    // A re-entrant schedule (the next prompt) must not spend the retry early.
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
+
+    retryTimers()[0].callback();
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(generateSessionModelTitle).toHaveBeenCalledTimes(2);
+    expect(retryTimers()).toHaveLength(1);
+
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(generateSessionModelTitle).toHaveBeenCalledTimes(2);
+    expect(projected.every(({ source }) => source === 'derived')).toBe(true);
+    expect(stageOutcomes(diagnostics, 'session_model', 'generation_retry')).toEqual([
+      'session_model:failed',
+      'generation_retry:retry_scheduled',
+      'session_model:failed',
+    ]);
+    await runtime.processOpenCodeEvent(idleEvent());
+    expect(fake.state.sessions.get('ses_1').title).toBe('Reliable Session Title Summaries');
+    await runtime.dispose();
+  });
+
+  it('upgrades its own persisted derived title on retry', async () => {
+    const fake = createFakeOpenCode({ status: 'idle' });
+    const outbox = createMemorySessionTitleOutbox();
+    const { timers, setTimer, clearTimer } = captureTimers();
+    const generateSessionModelTitle = vi.fn(async () => null);
+    const runtime = createRuntime({ fake, outbox, generateSessionModelTitle, setTimer, clearTimer });
+
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await settleAfterPatches(fake, 1);
+    expect(fake.state.sessions.get('ses_1').title).toBe('Reliable Session Title Summaries');
     expect(await outbox.list()).toEqual([]);
-    expect(fake.state.sessions.get('ses_1').title).toBe(PLACEHOLDER);
+
+    generateSessionModelTitle.mockResolvedValue('Upgraded Session Model Title');
+    timers.find(({ delay }) => delay === 60_000).callback();
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(generateSessionModelTitle).toHaveBeenCalledTimes(2);
+    await settleAfterPatches(fake, 2);
+    expect(fake.state.patches).toEqual([
+      { sessionID: 'ses_1', title: 'Reliable Session Title Summaries' },
+      { sessionID: 'ses_1', title: 'Upgraded Session Model Title' },
+    ]);
+    expect(fake.state.sessions.get('ses_1').title).toBe('Upgraded Session Model Title');
+    expect(await outbox.list()).toEqual([]);
+    await runtime.dispose();
+  });
+
+  it('never upgrades a user-typed title', async () => {
+    const fake = createFakeOpenCode({ status: 'idle' });
+    const outbox = createMemorySessionTitleOutbox();
+    const { timers, setTimer, clearTimer } = captureTimers();
+    const generateSessionModelTitle = vi.fn(async () => null);
+    const runtime = createRuntime({ fake, outbox, generateSessionModelTitle, setTimer, clearTimer });
+
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await settleAfterPatches(fake, 1);
+    fake.state.sessions.get('ses_1').title = 'User Typed Session Name';
+
+    generateSessionModelTitle.mockResolvedValue('Upgraded Session Model Title');
+    timers.find(({ delay }) => delay === 60_000).callback();
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
+    expect(fake.state.patches).toHaveLength(1);
+    expect(fake.state.sessions.get('ses_1').title).toBe('User Typed Session Name');
+    expect(await outbox.list()).toEqual([]);
     await runtime.dispose();
   });
 
@@ -376,7 +493,7 @@ describe('standard session title runtime', () => {
     const directRuntime = createStandardSessionTitleRuntime({
       fetchImpl: fake.fetchImpl,
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
-      generateTitle: vi.fn(async () => 'Reliable Session Title Summaries'),
+      generateSessionModelTitle: vi.fn(async () => 'Reliable Session Title Summaries'),
       outbox,
       onTitleGenerated: vi.fn(async () => events.push('projection')),
       watchdogEnabled: false,
@@ -429,7 +546,7 @@ describe('standard session title runtime', () => {
       fake,
       projected: secondProjected,
       outbox: createFileSessionTitleOutbox({ filePath }),
-      generateTitle: vi.fn(async () => {
+      generateSessionModelTitle: vi.fn(async () => {
         throw new Error('must not regenerate');
       }),
     });
@@ -541,51 +658,55 @@ describe('standard session title runtime', () => {
     await runtime.dispose();
   });
 
-  it('preserves a manual rename that lands while generation is still running', async () => {
+  it('preserves a manual rename that lands while the session model is still running', async () => {
     const fake = createFakeOpenCode();
     let resolveGeneration;
-    const generateTitle = vi.fn(() => new Promise((resolve) => {
+    const generateSessionModelTitle = vi.fn(() => new Promise((resolve) => {
       resolveGeneration = resolve;
     }));
     const projected = [];
     const outbox = createMemorySessionTitleOutbox();
-    const runtime = createRuntime({ fake, generateTitle, projected, outbox });
+    const runtime = createRuntime({ fake, generateSessionModelTitle, projected, outbox });
     const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    for (let index = 0; index < 10 && !resolveGeneration; index += 1) {
+    for (let index = 0; index < 20 && !resolveGeneration; index += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
+    expect(projected).toEqual([expect.objectContaining({ source: 'derived' })]);
     fake.state.sessions.get('ses_1').title = 'Manual Rename During Generation';
-    resolveGeneration('Reliable Session Title Summaries');
+    resolveGeneration('Upgraded Session Model Title');
 
     await scheduled;
 
-    expect(projected).toEqual([]);
+    expect(projected).toHaveLength(1);
     expect(await outbox.list()).toEqual([]);
+    expect(fake.state.patches).toEqual([]);
     expect(fake.state.sessions.get('ses_1').title).toBe('Manual Rename During Generation');
+    await runtime.processOpenCodeEvent(idleEvent());
+    expect(fake.state.patches).toEqual([]);
     await runtime.dispose();
   });
 
   it('drops generated work when the parent session is deleted during generation', async () => {
     const fake = createFakeOpenCode();
     let resolveGeneration;
-    const generateTitle = vi.fn(() => new Promise((resolve) => {
+    const generateSessionModelTitle = vi.fn(() => new Promise((resolve) => {
       resolveGeneration = resolve;
     }));
     const projected = [];
     const outbox = createMemorySessionTitleOutbox();
-    const runtime = createRuntime({ fake, generateTitle, projected, outbox });
+    const runtime = createRuntime({ fake, generateSessionModelTitle, projected, outbox });
     const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    for (let index = 0; index < 10 && !resolveGeneration; index += 1) {
+    for (let index = 0; index < 20 && !resolveGeneration; index += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     fake.state.sessions.delete('ses_1');
     fake.state.messages.delete('ses_1');
     fake.state.statuses.delete('ses_1');
-    resolveGeneration('Reliable Session Title Summaries');
+    resolveGeneration('Upgraded Session Model Title');
 
     await scheduled;
 
-    expect(projected).toEqual([]);
+    expect(projected).toEqual([expect.objectContaining({ source: 'derived' })]);
     expect(await outbox.list()).toEqual([]);
     expect(fake.state.patches).toEqual([]);
     await runtime.dispose();
@@ -608,8 +729,8 @@ describe('standard session title runtime', () => {
 
   it('ignores a late placeholder update after authoritative persistence', async () => {
     const fake = createFakeOpenCode();
-    const generateTitle = vi.fn(async () => 'Reliable Session Title Summaries');
-    const runtime = createRuntime({ fake, generateTitle });
+    const generateSessionModelTitle = vi.fn(async () => 'Reliable Session Title Summaries');
+    const runtime = createRuntime({ fake, generateSessionModelTitle });
     await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
     await runtime.processOpenCodeEvent(idleEvent());
     await runtime.processOpenCodeEvent({
@@ -619,7 +740,7 @@ describe('standard session title runtime', () => {
       },
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(generateTitle).toHaveBeenCalledTimes(1);
+    expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
     expect(fake.state.sessions.get('ses_1').title).toBe('Reliable Session Title Summaries');
     await runtime.dispose();
   });
@@ -627,19 +748,19 @@ describe('standard session title runtime', () => {
   it('deduplicates scheduling and removes pending work for deleted sessions', async () => {
     const fake = createFakeOpenCode();
     let resolveGeneration;
-    const generateTitle = vi.fn(() => new Promise((resolve) => {
+    const generateSessionModelTitle = vi.fn(() => new Promise((resolve) => {
       resolveGeneration = resolve;
     }));
     const outbox = createMemorySessionTitleOutbox();
-    const runtime = createRuntime({ fake, outbox, generateTitle });
+    const runtime = createRuntime({ fake, outbox, generateSessionModelTitle });
     const first = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
     const second = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    for (let index = 0; index < 10 && !resolveGeneration; index += 1) {
+    for (let index = 0; index < 20 && !resolveGeneration; index += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     resolveGeneration('Reliable Session Title Summaries');
     await Promise.all([first, second]);
-    expect(generateTitle).toHaveBeenCalledTimes(1);
+    expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
     await runtime.processOpenCodeEvent({ type: 'session.deleted', properties: { sessionID: 'ses_1' } });
     expect(await outbox.list()).toEqual([]);
     await runtime.dispose();
@@ -653,10 +774,10 @@ describe('standard session title runtime', () => {
     }));
     const fake = createFakeOpenCode({ sessions });
     const projected = [];
-    const generateTitle = vi.fn(async ({ text }) => deriveLocalSessionTitle(text));
-    const runtime = createRuntime({ fake, projected, generateTitle });
+    const generateSessionModelTitle = vi.fn(async ({ text }) => deriveLocalSessionTitle(text));
+    const runtime = createRuntime({ fake, projected, generateSessionModelTitle });
     await runtime.schedulePlaceholderRecovery({ directory: '/tmp/project' });
-    expect(generateTitle).toHaveBeenCalledTimes(25);
+    expect(generateSessionModelTitle).toHaveBeenCalledTimes(25);
     expect(projected).toHaveLength(25);
     expect(fake.state.calls.some(({ method }) => method === 'POST')).toBe(false);
     await runtime.dispose();
@@ -723,7 +844,6 @@ describe('standard session title runtime', () => {
       buildOpenCodeUrl: vi.fn(() => {
         throw new Error('OpenCode port is not available');
       }),
-      generateTitle: vi.fn(),
       outbox,
       watchdogEnabled: true,
       retryDelaysMs: [1_000],

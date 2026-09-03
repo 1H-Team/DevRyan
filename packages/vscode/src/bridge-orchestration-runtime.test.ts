@@ -114,6 +114,43 @@ describe('VS Code managed orchestration bridge', () => {
     });
   });
 
+  it('maps the auto-resume toggle to set_auto_resume with path identity', async () => {
+    const runtime = {
+      getSnapshot: vi.fn(),
+      handleRpc: vi.fn(async ({ method }) => ({ method })),
+    };
+
+    const response = await handleManagedOrchestrationBridgeMessage({
+      id: 'req_auto_resume',
+      type: 'api:orchestration:request',
+      payload: {
+        action: 'auto_resume',
+        taskId: 'dvr_task_path',
+        body: {
+          taskId: 'dvr_task_body',
+          rootSessionId: 'ses_root',
+          directory: '/workspace',
+          enabled: false,
+        },
+      },
+    }, runtime);
+    expect(runtime.handleRpc).toHaveBeenCalledWith({
+      method: 'set_auto_resume',
+      params: {
+        taskId: 'dvr_task_path',
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        enabled: false,
+      },
+    });
+    expect(response).toEqual({
+      id: 'req_auto_resume',
+      type: 'api:orchestration:request',
+      success: true,
+      data: { status: 200, body: { method: 'set_auto_resume' } },
+    });
+  });
+
   it('maps handoff requests to the runtime without changing the public body', async () => {
     const runtime = {
       getSnapshot: vi.fn(),

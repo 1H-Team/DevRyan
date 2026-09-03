@@ -11,7 +11,11 @@ export type ManagedOrchestrationRpcRequest = {
   params?: Record<string, unknown>;
 };
 
-export type ManagedOrchestrationRpcContext = { signal?: AbortSignal };
+export type ManagedOrchestrationRpcContext = {
+  signal?: AbortSignal;
+  /** Set only by the runtime's own auto-resume attempt; never by the bridge. */
+  autoResume?: boolean;
+};
 
 export type ManagedOrchestrationBridgeEnvironment = Readonly<{
   DEVRYAN_ORCHESTRATION_URL: string;

@@ -8,7 +8,7 @@ export const RECOVERY_CONTINUATION = 'Continue from the existing progress and co
 // recovery (docs/PROVIDER_RECOVERY.md). Extend only with transport and hook
 // conformance evidence; the host target pin lives in
 // packages/web/server/lib/opencode/version-policy.js and must stay listed here.
-export const PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['1.18.25', '1.18.26']);
+export const PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['1.18.25', '1.18.26', '1.18.27']);
 export const isProviderRecoverySupportedRuntimeVersion = (version) => (
   typeof version === 'string' && PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS.includes(version)
 );

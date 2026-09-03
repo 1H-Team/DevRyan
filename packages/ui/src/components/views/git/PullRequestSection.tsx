@@ -63,7 +63,7 @@ import type {
   GitHubPullRequestsListResult,
   GitRemote,
 } from '@/lib/api/types';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, type I18nKey } from '@/lib/i18n';
 import { resolveGitHubSourceRepo } from '@/lib/github/sourceRepo';
 import { useAuthPrincipal } from '@/lib/authSession';
 import { PrBodyHydrationTracker, type PrBodyHydrationRequest } from './prBodyHydrationTracker';
@@ -359,6 +359,20 @@ function useDetectedUpstreamRepo(directory: string, github: GitHubAPI | undefine
 
   return { detectedUpstream, upstreamBranches };
 }
+
+// Server/runtime error codes for the PR "Generate" button → user-facing cause.
+const GENERATE_DESCRIPTION_CAUSE_KEYS: Record<string, I18nKey> = {
+  FREE_ZEN_EXHAUSTED: 'gitView.pr.toast.generateDescriptionCause.exhausted',
+  NO_FREE_MODELS: 'gitView.pr.toast.generateDescriptionCause.noFreeModels',
+  CATALOG_UNAVAILABLE: 'gitView.pr.toast.generateDescriptionCause.catalogUnavailable',
+  SESSION_MODEL_FAILED: 'gitView.pr.toast.generateDescriptionCause.sessionModelFailed',
+  TIMEOUT: 'gitView.pr.toast.generateDescriptionCause.timeout',
+};
+
+const readGenerationErrorCode = (error: unknown): string | null => {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && code.trim().length > 0 ? code.trim() : null;
+};
 
 export const PullRequestSection: React.FC<{
   directory: string;
@@ -1446,6 +1460,10 @@ export const PullRequestSection: React.FC<{
     };
   }, []);
 
+  // Lets the failure toast's Retry action call the latest generateDescription
+  // without the callback having to reference itself.
+  const generateDescriptionRef = React.useRef<() => Promise<void>>(async () => {});
+
   const generateDescription = React.useCallback(async () => {
     if (isGenerating) return;
     if (!directory) return;
@@ -1465,12 +1483,22 @@ export const PullRequestSection: React.FC<{
         payload.context = additionalContext;
       }
       const generated = await generatePullRequestDescription(directory, payload);
-
-      if (generated.title?.trim()) {
-        setTitle(generated.title.trim());
+      const nextTitle = generated.title?.trim() ?? '';
+      const nextBody = generated.body?.trim() ?? '';
+      if (!nextTitle && !nextBody) {
+        throw new Error('The model returned an empty pull request description');
       }
-      if (generated.body?.trim()) {
-        setBody(generated.body.trim());
+
+      // Replace both fields from the response so a fresh title never sits next
+      // to a stale body (or vice versa).
+      setTitle(nextTitle);
+      setBody(nextBody);
+      if (!nextTitle || !nextBody) {
+        toast.warning(t('gitView.pr.toast.generateDescriptionPartial'), {
+          description: t(nextTitle
+            ? 'gitView.pr.toast.generateDescriptionPartialBody'
+            : 'gitView.pr.toast.generateDescriptionPartialTitle'),
+        });
       }
       onGeneratedDescription?.();
     } catch (e) {
@@ -1478,11 +1506,25 @@ export const PullRequestSection: React.FC<{
         return;
       }
       const message = e instanceof Error ? e.message : String(e);
-      toast.error(t('gitView.pr.toast.generateDescriptionFailed'), { description: message });
+      const code = readGenerationErrorCode(e);
+      const causeKey = code ? GENERATE_DESCRIPTION_CAUSE_KEYS[code] : undefined;
+      toast.error(t('gitView.pr.toast.generateDescriptionFailed'), {
+        description: causeKey ? `${t(causeKey)} ${message}` : message,
+        action: {
+          label: t('gitView.pr.toast.generateDescriptionRetry'),
+          onClick: () => {
+            void generateDescriptionRef.current();
+          },
+        },
+      });
     } finally {
       setIsGenerating(false);
     }
   }, [additionalContext, branch, detectedUpstream?.defaultBranchSha, directory, isGenerating, onGeneratedDescription, targetBaseBranch, t, useDetectedUpstream]);
+
+  React.useEffect(() => {
+    generateDescriptionRef.current = generateDescription;
+  }, [generateDescription]);
 
   const startNextPr = React.useCallback(() => {
     if (!pr || (pr.state !== 'closed' && pr.state !== 'merged')) {

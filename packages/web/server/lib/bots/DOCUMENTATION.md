@@ -206,20 +206,32 @@ without shell evaluation; terminal, abort, failed startup, shutdown, recovery,
 and purge paths remove or restore the corresponding host material. The
 persistent computer never receives it.
 
-`gateway-host.js` binds a random `127.0.0.1` port before a Bot container can
-start. Random bearer capabilities bind Bot, run, channel, revision, runtime
-kind, scope, operations, and expiry. The host requires Docker's exact Host
-header through `host.docker.internal`, denies browser/forwarded headers,
-enforces request/response limits, stores only token hashes, and never logs
-payloads or credentials. Until the channel/action modules install a handler,
-operations fail closed with a stable unavailable response.
+`gateway-host.js` binds a `127.0.0.1` port before a Bot container can start:
+the port the deployment used last time (remembered under
+`bots/gateway/port.v1.json`, random on first start, and replaced by a fresh
+random port only when it is already taken), which keeps the address the egress
+relay was told about stable across DevRyan restarts. Random bearer capabilities
+bind Bot, run, channel, revision, runtime kind, scope, operations, and expiry.
+
+No Bot container reaches this port itself: reasoning and computer containers
+hold no route off their internal networks, so their calls arrive through the
+bot-egress relay, which Electron addresses over the same authenticated control
+channel it uses for revision attestation. The host still requires Docker's exact
+Host header through `host.docker.internal`, which no other process on the host
+loopback sends, denies browser/forwarded headers, enforces request/response
+limits, stores only token hashes, and never logs payloads or credentials. Until
+the channel/action modules install a handler, operations fail closed with a
+stable unavailable response.
 
 The selected egress authorities cross the same typed Electron boundary.
 Electron signs a short-lived deployment/Bot/revision capability, the
 supervisor places it only in standard proxy URL credentials, and a separately
 authenticated loopback control call attests the current active revision to the
-model-egress service. If attestation fails after container creation, Electron
-stops that scoped container before returning failure.
+model-egress service. The same control channel publishes the gateway address
+before each container that will use it starts; the address is stripped from the
+supervisor request, so neither the supervisor nor any container ever holds it.
+If attestation fails after container creation, Electron stops that scoped
+container before returning failure.
 
 Graceful process shutdown stops all scoped Bot OpenCode containers, revokes
 private gateway capabilities, ingests/removes scoped auth, and closes the
@@ -1298,7 +1310,11 @@ Expired evidence objects fail closed before decryption.
 Only `healthy` is runnable. The payload advertises Electron runtime-management
 availability but never exposes a mutation route. Capability resolution always
 inspects the current Electron status before projecting a prior server-execution
-failure. When the host is healthy, the server retries its execution composition
+failure; route reads reuse one Electron status probe for sixty seconds
+(`?refresh=1` forces a new probe, failed probes are never cached, and any
+execution-state change drops the entry), while per-run preflight and
+host-driven reconciliation always probe live. When the host is healthy, the
+server retries its execution composition
 through a bounded single-flight reconciliation and clears the prior failure only
 after durable run recovery succeeds. Routes resolve execution services dynamically
 so a successful reconciliation does not require restarting DevRyan.

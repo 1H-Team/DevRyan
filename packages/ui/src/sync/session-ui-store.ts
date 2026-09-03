@@ -293,6 +293,10 @@ export const buildPlanModeSyntheticInstruction = (contextModeAvailable: boolean)
   "",
   "Explain why this change is being made — the problem or need it addresses, what prompted it, and the intended outcome. 1–2 short paragraphs.",
   "",
+  "## Constraints & assumptions",
+  "",
+  "Optional. Bullet the repository rules the plan must satisfy (skills, docs/guides, migration gates, ownership rules) and the assumptions the plan relies on. Omit this section when there are none.",
+  "",
   "## Critical files",
   "",
   "**New files**",
@@ -872,6 +876,8 @@ export type SessionUIState = {
   shareSession: (sessionId: string) => Promise<Session | null>
   unshareSession: (sessionId: string) => Promise<Session | null>
   revertToMessage: (sessionId: string, messageId: string) => Promise<void>
+  /** Session Undo: revert the root session's tree back to its first user message. */
+  undoSession: (sessionId: string) => Promise<void>
   forkFromMessage: (sessionId: string, messageId: string) => Promise<void>
   handleSlashUndo: (sessionId: string) => Promise<void>
   handleSlashRedo: (sessionId: string) => Promise<void>
@@ -3057,6 +3063,14 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   },
 
   // ---------------------------------------------------------------------------
+  // undoSession — delegates to session-actions (tree revert to the first user message)
+  // ---------------------------------------------------------------------------
+  undoSession: async (sessionId) => {
+    const { undoSession: undo } = await import("./session-actions")
+    await undo(sessionId)
+  },
+
+  // ---------------------------------------------------------------------------
   // handleSlashUndo — reads from sync
   // ---------------------------------------------------------------------------
   handleSlashUndo: async (sessionId) => {
@@ -3125,7 +3139,10 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         ? String(textPart.text).slice(0, 50) + (textPart.text.length > 50 ? "..." : "")
         : "[No text]"
 
-      await get().revertToMessage(sessionId, targetMessage.id)
+      // Forward step: restore the previous revert, then revert to the next
+      // user message — one client transaction, one tree-scoped operation.
+      const { revertToMessage: revert } = await import("./session-actions")
+      await revert(sessionId, targetMessage.id, { unrevertFirst: true })
 
       const { toast } = await import("sonner")
       toast.success(`Redid to: ${preview}`)

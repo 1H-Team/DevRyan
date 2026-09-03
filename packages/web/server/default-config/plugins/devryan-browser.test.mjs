@@ -64,6 +64,8 @@ const makeChild = ({ stdout = '', stderr = '', code = 0, close = true } = {}) =>
 const stubLeaseFetch = ({
   wsUrl = 'ws://127.0.0.1:54321/devtools/page/private-capability',
   previewUrl,
+  // 404 mimics an older server without the resolve route.
+  resolveStatus = 200,
 } = {}) => {
   const requests = [];
   vi.stubGlobal('fetch', vi.fn(async (url, init) => {
@@ -75,6 +77,18 @@ const stubLeaseFetch = ({
       signal: init.signal,
     };
     requests.push(request);
+    if (request.method === 'POST' && request.url.endsWith('/api/desktop/browser-leases/resolve')) {
+      if (resolveStatus !== 200) {
+        return new Response(JSON.stringify({ error: { code: 'not_found', message: 'Not found' } }), {
+          status: resolveStatus,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ previewUrl: previewUrl ?? null }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     if (request.method === 'POST' && request.url.endsWith('/api/desktop/browser-leases')) {
       return new Response(JSON.stringify({
         leaseId: 'dvr_lease_1',
@@ -208,7 +222,7 @@ describe('DevRyan agent browser plugin', () => {
   });
 
   it('opens the configured branch preview when open has no explicit URL', async () => {
-    stubLeaseFetch({ previewUrl: 'https://dev1.1health.ae/' });
+    const requests = stubLeaseFetch({ previewUrl: 'https://dev1.1health.ae/' });
     const spawnImpl = vi.fn((binary, args) => makeChild({
       stdout: args.includes('connect') ? 'connected\n' : 'opened\n',
     }));
@@ -219,6 +233,35 @@ describe('DevRyan agent browser plugin', () => {
     expect(spawnImpl.mock.calls.some(([, args]) => (
       args.at(-2) === 'open' && args.at(-1) === 'https://dev1.1health.ae/'
     ))).toBe(true);
+    // A resolved preview continues through the unchanged acquire path; the
+    // acquire body is the plain scope, not the resolved URL.
+    expect(requests.slice(0, 2).map((request) => [request.method, request.url])).toEqual([
+      ['POST', 'http://127.0.0.1:45678/api/desktop/browser-leases/resolve'],
+      ['POST', 'http://127.0.0.1:45678/api/desktop/browser-leases'],
+    ]);
+    expect(requests[1].body).toEqual(requests[0].body);
+  });
+
+  it('hands off a branch without a preview before any lease is acquired', async () => {
+    const requests = stubLeaseFetch();
+    const spawnImpl = vi.fn();
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+
+    await expect(plugin.tool.devryan_browser.execute({ command: 'open' }, context()))
+      .resolves.toBe(__test.NO_PREVIEW_HANDOFF_MESSAGE);
+    expect(spawnImpl).not.toHaveBeenCalled();
+    expect(requests.map((request) => [request.method, request.url])).toEqual([
+      ['POST', 'http://127.0.0.1:45678/api/desktop/browser-leases/resolve'],
+    ]);
+    expect(requests[0]).toMatchObject({
+      authorization: 'Bearer private-token',
+      body: {
+        opencodeSessionID: 'ses_child',
+        messageID: 'msg_turn',
+        directory: '/workspace',
+        agent: 'builder',
+      },
+    });
   });
 
   it('maps loopback opens to the configured preview and preserves the full resource path', () => {
@@ -237,7 +280,9 @@ describe('DevRyan agent browser plugin', () => {
   });
 
   it('returns a successful local handoff and releases a newly created unused lease', async () => {
-    const requests = stubLeaseFetch();
+    // An older server answers 404 on resolve, so the legacy acquire-then-
+    // release handoff must keep working unchanged.
+    const requests = stubLeaseFetch({ resolveStatus: 404 });
     const spawnImpl = vi.fn();
     const plugin = await DevRyanBrowserPlugin({ spawnImpl });
 
@@ -245,6 +290,10 @@ describe('DevRyan agent browser plugin', () => {
       .resolves.toBe(__test.NO_PREVIEW_HANDOFF_MESSAGE);
     expect(spawnImpl).not.toHaveBeenCalled();
     expect(requests.some((request) => request.url.endsWith('/touch'))).toBe(false);
+    expect(requests.slice(0, 2).map((request) => [request.method, request.url])).toEqual([
+      ['POST', 'http://127.0.0.1:45678/api/desktop/browser-leases/resolve'],
+      ['POST', 'http://127.0.0.1:45678/api/desktop/browser-leases'],
+    ]);
     expect(requests.at(-1)).toMatchObject({
       method: 'DELETE',
       url: 'http://127.0.0.1:45678/api/desktop/browser-leases/dvr_lease_1',
@@ -271,6 +320,9 @@ describe('DevRyan agent browser plugin', () => {
     expect(spawnImpl).toHaveBeenCalledTimes(spawnCount);
     expect(requests.filter((request) => request.url.endsWith('/touch'))).toHaveLength(touchCount);
     expect(requests.some((request) => request.method === 'DELETE')).toBe(false);
+    // The held-lease check runs before resolve, so the reused lease is
+    // consulted directly and no resolve request is made.
+    expect(requests.some((request) => request.url.endsWith('/resolve'))).toBe(false);
 
     await expect(tool.execute({ command: 'close' }, context()))
       .resolves.toBe('Browser lease closed.');
@@ -310,7 +362,12 @@ describe('DevRyan agent browser plugin', () => {
       .resolves.toBe('Browser lease already closed.');
     await expect(plugin.tool.devryan_browser.execute({ command: 'close' }, context()))
       .resolves.toBe('Browser lease already closed.');
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    // The 401 on resolve falls through to a single acquire (no retry on an
+    // auth failure), and neither close makes a request.
+    expect(fetchImpl.mock.calls.map(([url]) => String(url))).toEqual([
+      'http://127.0.0.1:45678/api/desktop/browser-leases/resolve',
+      'http://127.0.0.1:45678/api/desktop/browser-leases',
+    ]);
     expect(spawnImpl).not.toHaveBeenCalled();
   });
 

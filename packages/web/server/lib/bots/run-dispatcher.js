@@ -31,8 +31,18 @@ const DRAIN_RETRY_MAX_MS = 60_000;
 // next message wait long; past this budget the durable queue takes over.
 const INLINE_MEMORY_EXTRACTION_BUDGET_MS = 30_000;
 // A run whose runtime never started is replayed automatically this many times
-// before its failure is shown to the user.
+// before its failure is shown to the user. Only stages where the failure is a
+// slow or flaky runtime boot qualify; a missing secret or credential is a
+// configuration problem that a replay cannot fix.
 const AUTOMATIC_STARTUP_RETRY_LIMIT = 2;
+const AUTOMATIC_STARTUP_RETRY_STAGES = new Set([
+  'gateway',
+  'container',
+  'readiness',
+  'oauth_readiness',
+  'admission',
+  'shared_copy',
+]);
 const MAX_REQUESTER_STREAM_TEXT_BYTES = 192 * 1024;
 const MAX_PENDING_MESSAGE_COUNT = 8;
 const MAX_PENDING_PART_COUNT = 128;
@@ -1861,6 +1871,7 @@ export function createBotRunDispatcher({
       // a bounded number of times before the failure is shown.
       if (current?.state === 'failed' && contextSnapshot.failurePhase === 'startup'
         && contextSnapshot.retryable === true
+        && AUTOMATIC_STARTUP_RETRY_STAGES.has(failureStage)
         && (Number(contextSnapshot.retryCount) || 0) < AUTOMATIC_STARTUP_RETRY_LIMIT) {
         automaticRetry = { runId: claimed.id, channelId: claimed.channel_id };
       }

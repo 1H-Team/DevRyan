@@ -62,7 +62,6 @@ describe('Bot supervisor HTTP service', () => {
       revisionId: 'revision-1',
       runtimeToken: 'runtime-token-0123456789abcdef0123456789',
       compiledHash: 'a'.repeat(64),
-      gatewayUrl: 'http://host.docker.internal:55100',
       egressToken: `drb1.${'e'.repeat(64)}.${'f'.repeat(43)}`,
       environmentSecretCount: 0,
       chatgptImageGeneration: false,
@@ -200,5 +199,79 @@ describe('Bot supervisor HTTP service', () => {
     expect(stopped.status).toBe(200);
     expect((await fetch(`${baseUrl}/v1/runtime/${proxyToken}/global/health`)).status)
       .toBe(404);
+  });
+
+  test('tunnels the computer through the same scoped capability, with no published port', async () => {
+    const requests = [];
+    const upstream = http.createServer((request, response) => {
+      requests.push({
+        url: request.url,
+        authorization: request.headers.authorization,
+        cookie: request.headers.cookie,
+      });
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end('{"ok":true,"result":{"rotated":true}}');
+    });
+    servers.push(upstream);
+    await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+
+    const containerName = `devryan-bot-computer-${'c'.repeat(24)}`;
+    const supervisor = fakeSupervisor();
+    supervisor.ensureComputer = async () => ({
+      kind: 'computer',
+      name: containerName,
+      state: 'running',
+      endpoint: { host: containerName, port: 43122 },
+      image: `sha256:${'b'.repeat(64)}`,
+      replaced: false,
+    });
+    supervisor.stop = async () => ({ name: containerName, state: 'stopped' });
+    const target = upstream.address();
+    const baseUrl = await start(supervisor, {
+      resolveRuntimeProxyTarget: () => ({ host: '127.0.0.1', port: target.port }),
+    });
+
+    const ensured = await command(baseUrl, '/v1/ensure/computer', {
+      botId: 'bot-1',
+      scopeKey: 'bot:bot-1',
+      runId: 'run-1',
+      channelId: '1',
+      revisionId: 'revision-1',
+      runtimeToken: 'runtime-token-0123456789abcdef0123456789',
+      scopeMode: 'team',
+      egressToken: `drb1.${'e'.repeat(64)}.${'f'.repeat(43)}`,
+      isolationTier: 'standard',
+    });
+    const payload = await ensured.json();
+    // The container publishes no host port, so the scoped proxy path is the
+    // only address the host is given.
+    expect(Object.keys(payload.result.endpoint)).toEqual(['proxyToken']);
+    const proxyToken = payload.result.endpoint.proxyToken;
+
+    // Unlike the reasoning runtime, the computer authenticates every call
+    // itself, so its bearer capability has to survive the proxy.
+    const rotated = await fetch(`${baseUrl}/v1/runtime/${proxyToken}/v1/egress/rotate`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer computer-capability',
+        'content-type': 'application/json',
+        cookie: 'session=1',
+      },
+      body: '{"token":"rotated"}',
+    });
+    expect(rotated.status).toBe(200);
+    expect(requests).toEqual([{
+      url: '/v1/egress/rotate',
+      authorization: 'Bearer computer-capability',
+      cookie: undefined,
+    }]);
+
+    const stopped = await command(baseUrl, '/v1/stop', {
+      kind: 'computer',
+      botId: 'bot-1',
+      scopeKey: 'bot:bot-1',
+    });
+    expect(stopped.status).toBe(200);
+    expect((await fetch(`${baseUrl}/v1/runtime/${proxyToken}/v1/status`)).status).toBe(404);
   });
 });

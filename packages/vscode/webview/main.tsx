@@ -589,6 +589,36 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
     return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
+  if (pathname === '/api/config/orchestration-limits' && (method === 'GET' || method === 'PUT')) {
+    // Host-wide sub-agent limits. Like the Claude prompt-mode routes, the bridge
+    // answers `{ status, body }` so a 400 for an invalid PUT reaches the settings page intact.
+    try {
+      const body = method === 'PUT' && typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+      const result = method === 'GET'
+        ? await sendBridgeMessage<{ status: number; body: unknown }>('api:config/orchestration-limits:get')
+        : await sendBridgeMessage<{ status: number; body: unknown }>('api:config/orchestration-limits:set', body);
+      return new Response(JSON.stringify(result.body), { status: result.status, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  if (pathname === '/api/config/agent-runtime' && (method === 'GET' || method === 'PUT')) {
+    // Agent runtime switches (language servers). Same `{ status, body }`
+    // envelope as the limits route so a 400 for an invalid PUT reaches the settings page intact.
+    try {
+      const body = method === 'PUT' && typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+      const result = method === 'GET'
+        ? await sendBridgeMessage<{ status: number; body: unknown }>('api:config/agent-runtime:get')
+        : await sendBridgeMessage<{ status: number; body: unknown }>('api:config/agent-runtime:set', body);
+      return new Response(JSON.stringify(result.body), { status: result.status, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
   if (pathname === '/api/config/agent-overrides') {
     try {
       const data = await sendBridgeMessage('api:config/agent-overrides');
@@ -633,10 +663,13 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
   if (pathname.startsWith('/api/config/agents/')) {
     const agentSuffix = pathname.slice('/api/config/agents/'.length);
     const isOverrideRequest = agentSuffix.endsWith('/override');
+    const isBackupModelRequest = agentSuffix.endsWith('/backup-model');
     const isConfigRequest = agentSuffix.endsWith('/config');
     const encodedName = isOverrideRequest
       ? agentSuffix.slice(0, -'/override'.length)
-      : (isConfigRequest ? agentSuffix.slice(0, -'/config'.length) : agentSuffix);
+      : (isBackupModelRequest
+        ? agentSuffix.slice(0, -'/backup-model'.length)
+        : (isConfigRequest ? agentSuffix.slice(0, -'/config'.length) : agentSuffix));
     const name = decodeURIComponent(encodedName);
     const verb = ((init?.method || 'GET') as string).toUpperCase();
     const body = init?.body ? JSON.parse(init.body as string) : {};
@@ -668,6 +701,7 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
         body,
         directory,
         override: isOverrideRequest,
+        backupModel: isBackupModelRequest,
         config: isConfigRequest,
       });
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });

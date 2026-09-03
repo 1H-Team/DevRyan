@@ -11,6 +11,14 @@ import {
   parseConnectAuthority,
 } from './connect-policy.js';
 import {
+  GatewayRelayError,
+  createGatewayOriginRegistry,
+  createGatewayRelayAgent,
+  isGatewayRelayPath,
+  relayGatewayRequest,
+  sendGatewayRelayFailure,
+} from './gateway-relay.js';
+import {
   EgressTokenError,
   createRuntimeTokenAuthorizer,
   normalizeBrowserHosts,
@@ -19,6 +27,11 @@ import {
 
 const DEFAULT_PORT = 43121;
 const CONTROL_BODY_LIMIT = 4 * 1024;
+const CONTROL_ROUTES = Object.freeze([
+  '/v1/revisions/activate',
+  '/v1/revisions/deactivate',
+  '/v1/gateway/origin',
+]);
 const CONNECT_TIMEOUT_MS = 10_000;
 const CONTROL_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -122,6 +135,14 @@ const readBoundedControlJson = (request) => new Promise((resolve, reject) => {
   });
   request.once('error', reject);
 });
+
+const validateGatewayOriginControlBody = (body) => {
+  if (!body || typeof body !== 'object' || Array.isArray(body)
+    || Object.keys(body).join('\0') !== 'origin' || typeof body.origin !== 'string') {
+    fail('Egress gateway origin request is invalid', 'bot_egress_control_invalid', 400);
+  }
+  return body.origin;
+};
 
 const validateRevisionControlBody = (body) => {
   if (!body || typeof body !== 'object' || Array.isArray(body)
@@ -306,7 +327,8 @@ const httpFailure = (error) => {
   if (error instanceof EgressTokenError) {
     return { statusCode: 407, code: error.code, message: 'Proxy authentication required' };
   }
-  if (error instanceof EgressPolicyError || error instanceof EgressRequestError) {
+  if (error instanceof EgressPolicyError || error instanceof EgressRequestError
+    || error instanceof GatewayRelayError) {
     return { statusCode: error.statusCode, code: error.code, message: error.message };
   }
   return { statusCode: 502, code: 'bot_egress_upstream_failed', message: 'Model upstream failed' };
@@ -353,6 +375,9 @@ export function createModelEgressProxyServer({
   authorizeToken,
   controlToken = null,
   revisionRegistry = null,
+  gatewayOriginRegistry = null,
+  gatewayRelayAgent = createGatewayRelayAgent(),
+  connectGateway = undefined,
   lookup,
   forwardHttp = defaultForwardHttp,
   openTunnel = defaultOpenTunnel,
@@ -368,11 +393,14 @@ export function createModelEgressProxyServer({
       response.end('{"ok":true}\n');
       return;
     }
-    if (request.url === '/v1/revisions/activate' || request.url === '/v1/revisions/deactivate') {
+    if (CONTROL_ROUTES.includes(request.url)) {
       try {
+        const gatewayRoute = request.url === '/v1/gateway/origin';
         if (!CONTROL_TOKEN_PATTERN.test(controlToken || '')
-          || !revisionRegistry || typeof revisionRegistry.activate !== 'function'
-          || typeof revisionRegistry.deactivate !== 'function') {
+          || (gatewayRoute
+            ? typeof gatewayOriginRegistry?.set !== 'function'
+            : (!revisionRegistry || typeof revisionRegistry.activate !== 'function'
+              || typeof revisionRegistry.deactivate !== 'function'))) {
           fail('Egress revision control is unavailable', 'bot_egress_control_unavailable', 503);
         }
         if (request.method !== 'POST') {
@@ -385,7 +413,13 @@ export function createModelEgressProxyServer({
         if (contentType !== 'application/json') {
           fail('Egress revision control content type is invalid', 'bot_egress_control_invalid', 415);
         }
-        const input = validateRevisionControlBody(await readBoundedControlJson(request));
+        const body = await readBoundedControlJson(request);
+        if (gatewayRoute) {
+          const origin = gatewayOriginRegistry.set(validateGatewayOriginControlBody(body));
+          sendControlJson(response, 200, { ok: true, result: { origin } });
+          return;
+        }
+        const input = validateRevisionControlBody(body);
         const activated = request.url.endsWith('/activate');
         const result = activated
           ? revisionRegistry.activate(input)
@@ -397,6 +431,20 @@ export function createModelEgressProxyServer({
           ok: false,
           error: { code: failure.code, message: failure.message },
         });
+      }
+      return;
+    }
+    if (isGatewayRelayPath(request.url)) {
+      try {
+        await relayGatewayRequest({
+          request,
+          response,
+          originRegistry: gatewayOriginRegistry,
+          agent: gatewayRelayAgent,
+          ...(connectGateway ? { connect: connectGateway } : {}),
+        });
+      } catch (error) {
+        sendGatewayRelayFailure(response, error);
       }
       return;
     }
@@ -453,6 +501,7 @@ export async function startModelEgressProxy({
   authorizeToken,
   controlToken = null,
   revisionRegistry = null,
+  gatewayOriginRegistry = null,
   port = DEFAULT_PORT,
   host = '0.0.0.0',
   lookup,
@@ -461,6 +510,7 @@ export async function startModelEgressProxy({
     authorizeToken,
     controlToken,
     revisionRegistry,
+    gatewayOriginRegistry,
     lookup,
   });
   await new Promise((resolve, reject) => {
@@ -491,10 +541,17 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
     deploymentId: process.env.DEVRYAN_BOT_DEPLOYMENT_ID,
     isRevisionActive: async (revisionId, botId) => revisionRegistry.isActive(revisionId, botId),
   });
+  // The host gateway address normally arrives on the control channel before a
+  // container needs it; the optional seed only serves controlled integration
+  // environments that never run the Electron control plane.
+  const gatewayOriginRegistry = createGatewayOriginRegistry({
+    initialOrigin: process.env.DEVRYAN_BOT_GATEWAY_ORIGIN || null,
+  });
   startModelEgressProxy({
     authorizeToken,
     controlToken: process.env.DEVRYAN_BOT_EGRESS_CONTROL_TOKEN,
     revisionRegistry,
+    gatewayOriginRegistry,
     port: Number(process.env.DEVRYAN_BOT_EGRESS_PORT || DEFAULT_PORT),
   }).then(({ address }) => {
     const boundPort = typeof address === 'object' && address ? address.port : DEFAULT_PORT;

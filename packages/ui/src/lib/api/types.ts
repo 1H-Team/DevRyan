@@ -965,6 +965,61 @@ export interface EvidenceAPI {
   getDiff(checkpointID: string, file?: string): Promise<TurnEvidenceDiffSummary | TurnEvidenceFileDiff>;
 }
 
+// ============== Processes (bottom-dock Processes tab) ==============
+
+export type ManagedProcessCategory = 'dev_server' | 'agent_cli' | 'lsp' | 'mcp' | 'other';
+
+export interface ManagedProcessInfo {
+  pid: number;
+  ppid: number;
+  pgid: number;
+  startedAt: number | null;
+  ageMs: number | null;
+  command: string;
+  category: ManagedProcessCategory;
+  ports: number[];
+  sessionId: string | null;
+  workingDirectory?: string | null;
+}
+
+export interface OrphanedOpenCodeServerInfo {
+  pid: number;
+  port: number | null;
+  command: string;
+  ageMs: number | null;
+  startedAt: number | null;
+}
+
+export interface ProcessesSnapshot {
+  supported: boolean;
+  platform?: string;
+  processes: ManagedProcessInfo[];
+  orphanServers: OrphanedOpenCodeServerInfo[];
+  generatedAt?: number;
+}
+
+export interface ProcessStopResult {
+  pid: number;
+  terminated: boolean;
+  stoppedDescendants: number[];
+}
+
+export interface ProcessTrackingProjectSetting {
+  directory: string;
+  trackAgentProcesses: boolean;
+  heavyCheckSlots: number;
+}
+
+export interface ProcessesAPI {
+  list(directory?: string | null): Promise<ProcessesSnapshot>;
+  stop(pid: number, startedAt: number | null): Promise<ProcessStopResult>;
+  getProjectSetting(directory: string): Promise<ProcessTrackingProjectSetting>;
+  setProjectSetting(
+    directory: string,
+    value: { trackAgentProcesses?: boolean; heavyCheckSlots?: number },
+  ): Promise<ProcessTrackingProjectSetting>;
+}
+
 export type ProviderContextUsageSnapshot = {
   sessionID: string;
   status: 'available' | 'unavailable';
@@ -1368,6 +1423,7 @@ export interface RuntimeAPIs {
   push?: PushAPI;
   diagnostics?: DiagnosticsAPI;
   evidence?: EvidenceAPI;
+  processes?: ProcessesAPI;
   contextUsage?: ContextUsageAPI;
   tools: ToolsAPI;
   editor?: EditorAPI;

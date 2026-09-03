@@ -61,6 +61,10 @@ const validateSnapshot = (value) => {
       dispatchGroupId: candidate?.dispatchGroupId ?? null,
       dispatchCallId: candidate?.dispatchCallId ?? null,
       readOnly: candidate?.readOnly ?? false,
+      recoveryLineageId: candidate?.recoveryLineageId ?? null,
+      childPromptedAt: candidate?.childPromptedAt ?? null,
+      firstAssistantPartAt: candidate?.firstAssistantPartAt ?? null,
+      waitingReason: candidate?.waitingReason ?? null,
     };
     validateManagedTaskRecord(task);
     if (tasks.has(task.taskId)) {
@@ -76,7 +80,13 @@ const validateSnapshot = (value) => {
   }
 
   const envelopes = new Set();
-  for (const envelope of value.resultEnvelopes) {
+  const normalizedEnvelopes = [];
+  for (const candidate of value.resultEnvelopes) {
+    const envelope = {
+      ...candidate,
+      providerResetAt: candidate?.providerResetAt ?? null,
+      autoResume: candidate?.autoResume ?? null,
+    };
     validateManagedTaskResultEnvelope(envelope);
     if (envelopes.has(envelope.taskId)) {
       throw new TypeError(`duplicate managed result envelope for task ${envelope.taskId}`);
@@ -87,9 +97,10 @@ const validateSnapshot = (value) => {
     }
     assertManagedTaskResultEnvelopeMatchesTask(task, envelope);
     envelopes.add(envelope.taskId);
+    normalizedEnvelopes.push(envelope);
   }
 
-  return { ...value, tasks: normalizedTasks };
+  return { ...value, tasks: normalizedTasks, resultEnvelopes: normalizedEnvelopes };
 };
 
 export const createAtomicManagedOrchestrationLedger = (options = {}) => {

@@ -16,6 +16,10 @@ import {
 } from '@openchamber/orchestration-runtime';
 
 import { createAtomicManagedOrchestrationLedger } from './atomic-ledger.js';
+import {
+  createClaudeCompatibilityPreambleResolver,
+  resolveManagedTaskTurnBudget,
+} from './claude-compatibility.js';
 import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
 import { createManagedOrchestrationPrivateHost } from './private-host.js';
 
@@ -25,6 +29,14 @@ const FIXER_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
 const ORACLE_TASK_TIMEOUT_MS = 15 * 60 * 1_000;
 const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 25_000;
+const AUTO_RESUME_HOST_DEFER_MS = 30_000;
+// Acknowledge outcomes that mean the parked result already moved on; the
+// scheduler treats them as a settled attempt rather than a host failure.
+const AUTO_RESUME_SETTLED_CODES = new Set([
+  'auto_resume_stale',
+  'result_already_acknowledged',
+  'result_already_acknowledging',
+]);
 
 const resolveMinimumTaskTimeoutMs = (agent) => {
   const normalizedAgent = typeof agent === 'string' ? agent.trim().toLowerCase() : '';
@@ -68,6 +80,8 @@ const resolveReadOnly = (params) => {
 };
 
 const ERROR_STATUS_BY_CODE = Object.freeze({
+  auto_resume_not_applicable: 409,
+  auto_resume_stale: 409,
   child_session_conflict: 409,
   duplicate_idempotency_key: 409,
   handoff_conflict: 409,
@@ -185,6 +199,18 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const resolveAgentExecution = typeof options.resolveAgentExecution === 'function'
     ? options.resolveAgentExecution
     : null;
+  // Auto-resume host hooks. The owner key scopes provider breakers per account
+  // (`'local'` for a single-user host); the backup execution is the agent's
+  // configured backup model; the reset probe asks Meridian when a limit lifts.
+  const resolveAutoResumeOwnerKey = typeof options.resolveOwnerKey === 'function'
+    ? options.resolveOwnerKey
+    : () => 'local';
+  const resolveAutoResumeBackupExecution = typeof options.resolveBackupExecution === 'function'
+    ? options.resolveBackupExecution
+    : () => null;
+  const resolveAutoResumeProviderReset = typeof options.resolveProviderReset === 'function'
+    ? options.resolveProviderReset
+    : () => null;
   const persistence = options.persistence ?? createAtomicManagedOrchestrationLedger({
     dataDirectory: options.dataDirectory,
     logger,
@@ -218,7 +244,48 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     cursorSdkRuntime: options.cursorSdkRuntime,
     fetchImpl: options.fetchImpl,
     readTerminalError: (input) => terminalErrors.read(input),
+    // Claude compatibility mode drops opencode's system prompt for Anthropic-routed
+    // children, so their agent rules travel inside the first task prompt instead.
+    resolveTaskPromptPreamble: options.resolveTaskPromptPreamble
+      ?? createClaudeCompatibilityPreambleResolver({ now }),
+    // Designer/fixer tool loops get an assistant-turn backstop (wrap-up prompt,
+    // then abort) so a runaway child cannot burn the whole task timeout.
+    resolveTaskTurnBudget: options.resolveTaskTurnBudget ?? resolveManagedTaskTurnBudget,
   });
+  // One automatic resume attempt for a result parked on a definite provider
+  // usage limit. It re-enters the acknowledge RPC exactly as a user's Try Again
+  // would, plus the internal generation guard the scheduler uses to reject a
+  // stale attempt; the host defers (never fails) while work admission is blocked.
+  const attemptAutoResume = async (params) => {
+    const block = getWorkAdmissionBlock();
+    if (block) {
+      return {
+        outcome: 'deferred',
+        retryAfterMs: AUTO_RESUME_HOST_DEFER_MS,
+        reason: block.code || 'CONTEXT_MODE_RECOVERY_PENDING',
+      };
+    }
+    try {
+      const result = await handleRpcInternal({ method: 'acknowledge', params }, { autoResume: true });
+      return {
+        outcome: 'started',
+        followUpTaskId: typeof result?.followUpTask?.taskId === 'string' ? result.followUpTask.taskId : null,
+      };
+    } catch (rawError) {
+      const error = normalizeRuntimeError(rawError);
+      const code = typeof error?.code === 'string' && error.code ? error.code : 'attempt_failed';
+      if (AUTO_RESUME_SETTLED_CODES.has(code)) return { outcome: 'started', followUpTaskId: null };
+      if (error?.statusCode === 503) {
+        return { outcome: 'deferred', retryAfterMs: AUTO_RESUME_HOST_DEFER_MS, reason: code };
+      }
+      return {
+        outcome: 'rejected',
+        code,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
   const scheduler = options.scheduler ?? createManagedTaskScheduler({
     executor,
     persistence,
@@ -227,6 +294,15 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     logger,
     ...(options.createTaskId ? { createTaskId: options.createTaskId } : {}),
     ...(options.createLeaseToken ? { createLeaseToken: options.createLeaseToken } : {}),
+    // Host launch admission (sub-agent cap + memory pressure). Absent → the
+    // scheduler admits every queued task immediately, as before.
+    ...(typeof options.admitLaunch === 'function' ? { admitLaunch: options.admitLaunch } : {}),
+    autoResume: {
+      resolveOwnerKey: resolveAutoResumeOwnerKey,
+      resolveBackupExecution: resolveAutoResumeBackupExecution,
+      resolveProviderReset: resolveAutoResumeProviderReset,
+      attempt: attemptAutoResume,
+    },
   });
 
   let privateHost;
@@ -615,6 +691,11 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           ...(params.label ? { label: params.label } : {}),
           ...(params.prompt ? { prompt: params.prompt } : {}),
           timeoutAt,
+          // Only the scheduler's own auto-resume attempt may carry the generation
+          // guard; routes and the private host never forward it.
+          ...(context.autoResume === true && Number.isSafeInteger(params.autoResumeGeneration)
+            ? { autoResumeGeneration: params.autoResumeGeneration }
+            : {}),
         });
         return {
           ...projectManagedResultEnvelope(task, result.envelope, resultMode),
@@ -622,6 +703,14 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             ? projectTaskResult(result.followUpTask, resultMode)
             : null,
         };
+      }
+      case 'set_auto_resume': {
+        const task = getScopedTask(params);
+        if (typeof params.enabled !== 'boolean') {
+          throw createRuntimeError('invalid_request', 'enabled must be a boolean', 400);
+        }
+        const result = await scheduler.setResultAutoResume(task.taskId, { enabled: params.enabled });
+        return projectManagedResultEnvelope(task, result.envelope, resultMode);
       }
       default:
         throw createRuntimeError('rpc_method_not_found', `Unknown managed orchestration method: ${method}`, 404);
@@ -726,7 +815,28 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     initialize,
     handleRpc,
     getSnapshot,
-    processOpenCodeEvent: (payload) => terminalErrors.observe(payload),
+    processOpenCodeEvent: (payload) => {
+      const observed = terminalErrors.observe(payload);
+      // A deleted root session can never receive its follow-up, so its parked
+      // auto-resume plans stop here instead of firing into a missing session.
+      if (payload?.type === 'session.deleted') {
+        const sessionId = payload.properties?.info?.id;
+        if (
+          initialized
+          && typeof sessionId === 'string'
+          && sessionId
+          && typeof scheduler.cancelAutoResumeForSession === 'function'
+        ) {
+          scheduler.cancelAutoResumeForSession(sessionId, 'session_deleted').catch((error) => {
+            logger.warn?.('[ManagedOrchestration] Failed to cancel auto-resume for a deleted session', {
+              sessionId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+        }
+      }
+      return observed;
+    },
     shutdown,
     flush: () => scheduler.flush(),
     getDiagnostics() {

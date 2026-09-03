@@ -74,7 +74,28 @@ const ANTHROPIC_OAUTH_DEFAULT_BASE_URL = 'http://127.0.0.1:3456';
 const AGENT_WRITE_DISABLED_MESSAGE = 'Agent configuration is read-only. Edit project .opencode/agents/*.md files directly.';
 const OPENCHAMBER_CONFIG_KEY = 'openchamber';
 const AGENT_OVERRIDES_CONFIG_KEY = 'agentOverrides';
+// Backup models live under their own sidecar key (never inside agentOverrides):
+// normalizeAgentModelOverride rejects unknown keys, and slim/plugin overrides are
+// written to an OpenCode-read file. OpenCode never reads this key.
+const AGENT_BACKUP_MODELS_CONFIG_KEY = 'agentBackupModels';
+// Managed sub-agent launch limits: DevRyan-only sidecar state read by the
+// scheduler's launch admission. OpenCode never reads this key.
+const ORCHESTRATION_LIMITS_CONFIG_KEY = 'orchestrationLimits';
+const MIN_CONCURRENT_SUBAGENTS = 1;
+const MAX_CONCURRENT_SUBAGENTS = 16;
+const ORCHESTRATION_LIMITS_READ_CACHE_TTL_MS = 5_000;
+export const INVALID_ORCHESTRATION_LIMITS_CODE = 'invalid_orchestration_limits';
+const invalidOrchestrationLimits = (message: string): Error =>
+  Object.assign(new Error(message), { code: INVALID_ORCHESTRATION_LIMITS_CODE });
+// Agent runtime switches (`openchamber.agentRuntime`): sidecar state behind the
+// settings page's language-server toggle. The web host's runtime overlay turns
+// `lsp: false` into OpenCode config; the extension persists the switch only.
+const AGENT_RUNTIME_SETTINGS_CONFIG_KEY = 'agentRuntime';
+export const INVALID_AGENT_RUNTIME_SETTINGS_CODE = 'invalid_agent_runtime_settings';
+const invalidAgentRuntimeSettings = (message: string): Error =>
+  Object.assign(new Error(message), { code: INVALID_AGENT_RUNTIME_SETTINGS_CODE });
 const ALLOWED_AGENT_OVERRIDE_KEYS = new Set(['model', 'variant', 'councillors']);
+const ALLOWED_AGENT_BACKUP_MODEL_KEYS = new Set(['model', 'variant', 'providerID', 'modelID', 'providerId', 'modelId']);
 const CLEARED_VARIANT_SENTINEL = '';
 const COUNCIL_AGENT_NAME = 'council';
 const COUNCIL_MODELS_FILE_NAME = 'council.models.json';
@@ -194,6 +215,17 @@ type AgentModelOverride = {
   councillors?: Array<{ model: string; variant?: string | null }>;
 };
 
+export type AgentBackupModel = {
+  model: string;
+  variant: string | null;
+};
+
+export type AgentBackupModelRecord = {
+  providerID: string;
+  modelID: string;
+  variant: string | null;
+};
+
 type ConfigAgent = Record<string, unknown> & {
   name: string;
   scope: AgentScope;
@@ -202,6 +234,7 @@ type ConfigAgent = Record<string, unknown> & {
   modelRefs?: string[];
   councillors?: Array<{ model: string; variant?: string | null }>;
   variant?: string | null;
+  backupModel?: AgentBackupModelRecord | null;
 };
 
 const ensureDirs = () => {
@@ -1132,6 +1165,108 @@ const getAgentOverridesContainer = (config: Record<string, unknown>): Record<str
   return overrides as Record<string, unknown>;
 };
 
+const getAgentBackupModelsContainer = (config: Record<string, unknown>): Record<string, unknown> => {
+  const namespace = config[OPENCHAMBER_CONFIG_KEY];
+  if (!namespace || typeof namespace !== 'object' || Array.isArray(namespace)) {
+    return {};
+  }
+
+  const backupModels = (namespace as Record<string, unknown>)[AGENT_BACKUP_MODELS_CONFIG_KEY];
+  if (!backupModels || typeof backupModels !== 'object' || Array.isArray(backupModels)) {
+    return {};
+  }
+
+  return backupModels as Record<string, unknown>;
+};
+
+/**
+ * Normalizes a per-agent backup model payload to `{ model: 'provider/model', variant }`.
+ * Accepts `{ model: 'provider/model' | { providerID, modelID }, variant? }` or a bare
+ * `{ providerID, modelID, variant? }`. Equality with the agent's primary model is
+ * checked in writeAgentBackupModel, where the agent config is known.
+ */
+export const normalizeAgentBackupModel = (rawBackupModel: unknown): AgentBackupModel => {
+  if (!rawBackupModel || typeof rawBackupModel !== 'object' || Array.isArray(rawBackupModel)) {
+    throw new Error('Agent backup model must be an object');
+  }
+
+  for (const key of Object.keys(rawBackupModel)) {
+    if (!ALLOWED_AGENT_BACKUP_MODEL_KEYS.has(key)) {
+      throw new Error('Only model and variant can be set on an agent backup model');
+    }
+  }
+
+  const source = rawBackupModel as Record<string, unknown>;
+  const model = Object.prototype.hasOwnProperty.call(source, 'model')
+    ? modelValueToRef(source.model)
+    : modelValueToRef(source);
+  if (!model || !parseModelRef(model)) {
+    throw new Error('Agent backup model must use provider/model format');
+  }
+
+  let variant: string | null = null;
+  if (Object.prototype.hasOwnProperty.call(source, 'variant')) {
+    variant = normalizeVariant(source.variant);
+  }
+
+  return { model, variant };
+};
+
+export const listAgentBackupModels = (): Record<string, AgentBackupModel> => {
+  const config = readUserConfig();
+  const backupModels = getAgentBackupModelsContainer(config);
+  const normalized: Record<string, AgentBackupModel> = {};
+
+  for (const [agentName, rawBackupModel] of Object.entries(backupModels)) {
+    try {
+      normalized[agentName] = normalizeAgentBackupModel(rawBackupModel);
+    } catch {
+      // Ignore malformed backup entries so one bad entry does not hide agents.
+    }
+  }
+
+  return normalized;
+};
+
+const resolveAgentBackupModelRecord = (
+  backupModels: Record<string, AgentBackupModel>,
+  agentName: unknown,
+): AgentBackupModelRecord | null => {
+  const entry = typeof agentName === 'string' ? backupModels[agentName] : undefined;
+  if (!entry) return null;
+  const parsed = parseModelRef(entry.model);
+  if (!parsed) return null;
+  return {
+    providerID: parsed.providerID,
+    modelID: parsed.modelID,
+    variant: typeof entry.variant === 'string' ? entry.variant : null,
+  };
+};
+
+export const readAgentBackupModel = (agentName: string): AgentBackupModelRecord | null =>
+  resolveAgentBackupModelRecord(listAgentBackupModels(), agentName);
+
+const attachAgentBackupModel = <T extends ConfigAgent>(agent: T, backupModels: Record<string, AgentBackupModel>): T => {
+  const next = {
+    ...agent,
+    backupModel: resolveAgentBackupModelRecord(backupModels, agent.name),
+  };
+  if (typeof agent.__path === 'string') {
+    Object.defineProperty(next, '__path', { value: agent.__path, enumerable: false });
+  }
+  return next;
+};
+
+// The effective execution model is the scalar `model`; modelRefs may still
+// carry frontmatter/councillor refs.
+const getAgentPrimaryModelRef = (agentConfig: Record<string, unknown> | undefined): string | null => {
+  const scalarModel = modelValueToRef(agentConfig?.model);
+  if (scalarModel) return scalarModel;
+  const modelRefs = Array.isArray(agentConfig?.modelRefs) ? agentConfig.modelRefs : [];
+  const firstModelRef = modelRefs.find((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+  return firstModelRef ? firstModelRef.trim() : null;
+};
+
 export const listAgentModelOverrides = (): Record<string, AgentModelOverride> => {
   const config = readUserConfig();
   const overrides = getAgentOverridesContainer(config);
@@ -2017,21 +2152,24 @@ const assertKnownAgentName = (agentName: string, workingDirectory?: string) => {
 
 export const listConfigAgents = (workingDirectory?: string): ConfigAgent[] => {
   const overrides = listAgentModelOverrides();
+  const backupModels = listAgentBackupModels();
   return getBaseConfigAgents(workingDirectory)
     .map((agent) => (agent.source === AGENT_SCOPE.SLIM || agent.slimRuntimeModel
       ? agent
       : applyAgentModelOverride(agent, overrides[agent.name])))
+    .map((agent) => attachAgentBackupModel(agent, backupModels))
     .sort((a, b) => a.name.localeCompare(b.name));
 };
 
 export const getAgentConfig = (agentName: string, workingDirectory?: string): { source: string; scope: AgentScope | null; config: ConfigAgent | Record<string, never> } => {
   const overrides = listAgentModelOverrides();
+  const backupModels = listAgentBackupModels();
   const slimAgents = getSlimConfigAgents(workingDirectory);
   if (slimAgents[agentName]) {
     return {
       source: 'slim',
       scope: AGENT_SCOPE.SLIM,
-      config: slimAgents[agentName],
+      config: attachAgentBackupModel(slimAgents[agentName], backupModels),
     };
   }
   const slimRuntimeAgents = getSlimRuntimeModelAgents(workingDirectory);
@@ -2043,7 +2181,10 @@ export const getAgentConfig = (agentName: string, workingDirectory?: string): { 
     return {
       source: 'md',
       scope: AGENT_SCOPE.PROJECT,
-      config: modelConfig.slimRuntimeModel ? modelConfig : applyAgentModelOverride(modelConfig, overrides[agentName]),
+      config: attachAgentBackupModel(
+        modelConfig.slimRuntimeModel ? modelConfig : applyAgentModelOverride(modelConfig, overrides[agentName]),
+        backupModels,
+      ),
     };
   }
 
@@ -2053,7 +2194,10 @@ export const getAgentConfig = (agentName: string, workingDirectory?: string): { 
     return {
       source: 'md',
       scope: AGENT_SCOPE.PACKAGED,
-      config: modelConfig.slimRuntimeModel ? modelConfig : applyAgentModelOverride(modelConfig, overrides[agentName]),
+      config: attachAgentBackupModel(
+        modelConfig.slimRuntimeModel ? modelConfig : applyAgentModelOverride(modelConfig, overrides[agentName]),
+        backupModels,
+      ),
     };
   }
 
@@ -2061,7 +2205,7 @@ export const getAgentConfig = (agentName: string, workingDirectory?: string): { 
     return {
       source: 'slim',
       scope: AGENT_SCOPE.SLIM,
-      config: slimRuntimeAgents[agentName],
+      config: attachAgentBackupModel(slimRuntimeAgents[agentName], backupModels),
     };
   }
 
@@ -2760,6 +2904,215 @@ export const deleteAgentModelOverride = (agentName: string, workingDirectory?: s
   });
 
   return true;
+};
+
+/**
+ * Persists a per-agent backup model in the DevRyan sidecar. Unlike model
+ * overrides this never routes to Slim config or agent frontmatter: OpenCode
+ * must never see it. It is only consulted by the managed-task scheduler when
+ * the primary model hits a provider usage limit.
+ */
+export const writeAgentBackupModel = (agentName: string, rawBackupModel: unknown, workingDirectory?: string): AgentBackupModel => {
+  const backupModel = normalizeAgentBackupModel(rawBackupModel);
+  assertKnownAgentName(agentName, workingDirectory);
+
+  const primaryModelRef = getAgentPrimaryModelRef(getAgentConfig(agentName, workingDirectory).config);
+  if (primaryModelRef && primaryModelRef === backupModel.model) {
+    throw new Error('Agent backup model must differ from the primary model');
+  }
+
+  const config = readUserConfig();
+  const openchamber = isPlainObject(config[OPENCHAMBER_CONFIG_KEY])
+    ? { ...(config[OPENCHAMBER_CONFIG_KEY] as Record<string, unknown>) }
+    : {};
+  const backupModels = getAgentBackupModelsContainer(config);
+
+  writeUserConfig({
+    ...config,
+    [OPENCHAMBER_CONFIG_KEY]: {
+      ...openchamber,
+      [AGENT_BACKUP_MODELS_CONFIG_KEY]: {
+        ...backupModels,
+        [agentName]: backupModel,
+      },
+    },
+  });
+
+  return backupModel;
+};
+
+export const deleteAgentBackupModel = (agentName: string): boolean => {
+  const config = readUserConfig();
+  const openchamber = isPlainObject(config[OPENCHAMBER_CONFIG_KEY])
+    ? { ...(config[OPENCHAMBER_CONFIG_KEY] as Record<string, unknown>) }
+    : {};
+  const backupModels = { ...getAgentBackupModelsContainer(config) };
+
+  if (!Object.prototype.hasOwnProperty.call(backupModels, agentName)) {
+    return false;
+  }
+
+  delete backupModels[agentName];
+  writeUserConfig({
+    ...config,
+    [OPENCHAMBER_CONFIG_KEY]: {
+      ...openchamber,
+      [AGENT_BACKUP_MODELS_CONFIG_KEY]: backupModels,
+    },
+  });
+
+  return true;
+};
+
+export type OrchestrationLimits = {
+  maxConcurrentSubagents: number;
+  pauseUnderMemoryPressure: boolean;
+};
+
+export const DEFAULT_ORCHESTRATION_LIMITS: Readonly<OrchestrationLimits> = Object.freeze({
+  maxConcurrentSubagents: 4,
+  pauseUnderMemoryPressure: true,
+});
+
+const isValidConcurrentSubagents = (value: unknown): value is number => (
+  Number.isSafeInteger(value)
+  && (value as number) >= MIN_CONCURRENT_SUBAGENTS
+  && (value as number) <= MAX_CONCURRENT_SUBAGENTS
+);
+
+/** Lenient read-side normalization: anything malformed falls back to the default. */
+export const normalizeOrchestrationLimits = (raw: unknown): OrchestrationLimits => {
+  const source: Record<string, unknown> = isPlainObject(raw) ? raw : {};
+  const maxConcurrentSubagents = source.maxConcurrentSubagents;
+  const pauseUnderMemoryPressure = source.pauseUnderMemoryPressure;
+  return {
+    maxConcurrentSubagents: isValidConcurrentSubagents(maxConcurrentSubagents)
+      ? maxConcurrentSubagents
+      : DEFAULT_ORCHESTRATION_LIMITS.maxConcurrentSubagents,
+    pauseUnderMemoryPressure: typeof pauseUnderMemoryPressure === 'boolean'
+      ? pauseUnderMemoryPressure
+      : DEFAULT_ORCHESTRATION_LIMITS.pauseUnderMemoryPressure,
+  };
+};
+
+/** Strict write-side validation of a partial update; unknown keys are ignored. */
+export const validateOrchestrationLimitsPatch = (partial: unknown): Partial<OrchestrationLimits> => {
+  if (!isPlainObject(partial)) {
+    throw invalidOrchestrationLimits('Orchestration limits must be an object');
+  }
+  const patch: Partial<OrchestrationLimits> = {};
+  if (Object.prototype.hasOwnProperty.call(partial, 'maxConcurrentSubagents')) {
+    const candidate = partial.maxConcurrentSubagents;
+    if (!isValidConcurrentSubagents(candidate)) {
+      throw invalidOrchestrationLimits(
+        `maxConcurrentSubagents must be an integer between ${MIN_CONCURRENT_SUBAGENTS} and ${MAX_CONCURRENT_SUBAGENTS}`,
+      );
+    }
+    patch.maxConcurrentSubagents = candidate;
+  }
+  if (Object.prototype.hasOwnProperty.call(partial, 'pauseUnderMemoryPressure')) {
+    const candidate = partial.pauseUnderMemoryPressure;
+    if (typeof candidate !== 'boolean') {
+      throw invalidOrchestrationLimits('pauseUnderMemoryPressure must be a boolean');
+    }
+    patch.pauseUnderMemoryPressure = candidate;
+  }
+  return patch;
+};
+
+let orchestrationLimitsCache: { value: OrchestrationLimits; expiresAt: number } | null = null;
+
+export const invalidateOrchestrationLimitsCache = () => {
+  orchestrationLimitsCache = null;
+};
+
+/** Cached for 5 s: the scheduler's launch admission calls this on every pump. */
+export const readOrchestrationLimits = (): OrchestrationLimits => {
+  const now = Date.now();
+  if (orchestrationLimitsCache && orchestrationLimitsCache.expiresAt > now) {
+    return { ...orchestrationLimitsCache.value };
+  }
+  const sidecar = readOpenchamberSidecar();
+  const value = normalizeOrchestrationLimits(sidecar?.[ORCHESTRATION_LIMITS_CONFIG_KEY]);
+  orchestrationLimitsCache = { value, expiresAt: now + ORCHESTRATION_LIMITS_READ_CACHE_TTL_MS };
+  return { ...value };
+};
+
+/**
+ * Sidecar-only write, like backup models: OpenCode never sees this key and
+ * nothing needs an apply/restart. Sibling sidecar keys are preserved.
+ */
+export const writeOrchestrationLimits = (partial: unknown): OrchestrationLimits => {
+  const patch = validateOrchestrationLimitsPatch(partial);
+  const sidecar = readOpenchamberSidecar() ?? {};
+  const next: OrchestrationLimits = {
+    ...normalizeOrchestrationLimits(sidecar[ORCHESTRATION_LIMITS_CONFIG_KEY]),
+    ...patch,
+  };
+  persistOpenchamberFromConfig({
+    [OPENCHAMBER_CONFIG_KEY]: { ...sidecar, [ORCHESTRATION_LIMITS_CONFIG_KEY]: next },
+  });
+  orchestrationLimitsCache = null;
+  return { ...next };
+};
+
+export type AgentRuntimeSettings = {
+  /** Language servers (typescript-language-server, etc.) inside agent sessions. */
+  lsp: boolean;
+};
+
+export const DEFAULT_AGENT_RUNTIME_SETTINGS: Readonly<AgentRuntimeSettings> = Object.freeze({
+  lsp: true,
+});
+
+const AGENT_RUNTIME_SETTING_KEYS = new Set<string>(Object.keys(DEFAULT_AGENT_RUNTIME_SETTINGS));
+
+/** Lenient read-side normalization: unknown keys drop, non-booleans fall back to the default. */
+export const normalizeAgentRuntimeSettings = (raw: unknown): AgentRuntimeSettings => {
+  const source: Record<string, unknown> = isPlainObject(raw) ? raw : {};
+  return {
+    lsp: typeof source.lsp === 'boolean' ? source.lsp : DEFAULT_AGENT_RUNTIME_SETTINGS.lsp,
+  };
+};
+
+/** Strict write-side validation: only known keys, each an explicit boolean. */
+export const validateAgentRuntimeSettingsPatch = (partial: unknown): Partial<AgentRuntimeSettings> => {
+  if (!isPlainObject(partial)) {
+    throw invalidAgentRuntimeSettings('Agent runtime settings must be a plain object');
+  }
+  const patch: Partial<AgentRuntimeSettings> = {};
+  for (const [key, value] of Object.entries(partial)) {
+    if (!AGENT_RUNTIME_SETTING_KEYS.has(key)) {
+      throw invalidAgentRuntimeSettings(`Unknown agent runtime setting: ${key}`);
+    }
+    if (typeof value !== 'boolean') {
+      throw invalidAgentRuntimeSettings(`Agent runtime setting "${key}" must be a boolean`);
+    }
+    patch[key as keyof AgentRuntimeSettings] = value;
+  }
+  return patch;
+};
+
+/** Uncached: only the settings page reads this, unlike the scheduler-polled limits. */
+export const readAgentRuntimeSettings = (): AgentRuntimeSettings => (
+  normalizeAgentRuntimeSettings(readOpenchamberSidecar()?.[AGENT_RUNTIME_SETTINGS_CONFIG_KEY])
+);
+
+/**
+ * Sidecar-only write, like the limits: OpenCode never sees this key here and
+ * sibling sidecar keys are preserved. It takes effect on the next start.
+ */
+export const writeAgentRuntimeSettings = (partial: unknown): AgentRuntimeSettings => {
+  const patch = validateAgentRuntimeSettingsPatch(partial);
+  const sidecar = readOpenchamberSidecar() ?? {};
+  const next: AgentRuntimeSettings = {
+    ...normalizeAgentRuntimeSettings(sidecar[AGENT_RUNTIME_SETTINGS_CONFIG_KEY]),
+    ...patch,
+  };
+  persistOpenchamberFromConfig({
+    [OPENCHAMBER_CONFIG_KEY]: { ...sidecar, [AGENT_RUNTIME_SETTINGS_CONFIG_KEY]: next },
+  });
+  return { ...next };
 };
 
 export const getAgentSources = (agentName: string, workingDirectory?: string): ConfigSources => {

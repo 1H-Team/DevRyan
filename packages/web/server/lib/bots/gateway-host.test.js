@@ -140,6 +140,32 @@ describe('private Docker Bot gateway host', () => {
     }));
   });
 
+  it('reuses a preferred loopback port and falls back to a random port when it is taken', async () => {
+    const bound = [];
+    const first = createBotGatewayHost({ handleOperation: async () => ({ ok: true }), onBound: (port) => { bound.push(port); } });
+    gateways.push(first);
+    await first.start();
+    const preferred = first.getAddress().port;
+    await first.shutdown();
+
+    const reused = createBotGatewayHost({ handleOperation: async () => ({ ok: true }), port: preferred, onBound: (port) => { bound.push(port); } });
+    gateways.push(reused);
+    await reused.start();
+    expect(reused.getAddress().port).toBe(preferred);
+
+    const fallback = createBotGatewayHost({
+      handleOperation: async () => ({ ok: true }),
+      port: preferred,
+      onBound: (port) => { bound.push(port); },
+      logger: { warn: vi.fn(), error: vi.fn() },
+    });
+    gateways.push(fallback);
+    await fallback.start();
+    expect(fallback.getAddress().port).toBeGreaterThan(0);
+    expect(fallback.getAddress().port).not.toBe(preferred);
+    expect(bound).toEqual([preferred, preferred, fallback.getAddress().port]);
+  });
+
   it('rejects non-Docker/browser origins, mismatched claims, operations, and bearer tokens', async () => {
     const handleOperation = vi.fn(async () => ({}));
     const gateway = createBotGatewayHost({ handleOperation });

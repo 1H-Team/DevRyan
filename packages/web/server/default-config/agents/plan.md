@@ -57,6 +57,10 @@ Plan output format — the body that follows the <!--plan--> sentinel must use e
 
 Explain why this change is being made — the problem or need it addresses, what prompted it, and the intended outcome. 1–2 short paragraphs.
 
+## Constraints & assumptions
+
+Optional. Bullet the repository rules the plan must satisfy (skills, docs/guides, migration gates, ownership rules) and the assumptions the plan relies on. Omit this section when there are none.
+
 ## Critical files
 
 **New files**

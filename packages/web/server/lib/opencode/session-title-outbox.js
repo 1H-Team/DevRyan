@@ -4,7 +4,9 @@ import path from 'node:path';
 
 const OUTBOX_VERSION = 1;
 const MAX_OUTBOX_BYTES = 2 * 1024 * 1024;
-const VALID_SOURCES = new Set(['free_zen', 'session_model', 'local_fallback']);
+// 'free_zen' and 'local_fallback' are no longer produced but stay accepted so an
+// outbox written by an older build rehydrates instead of being quarantined.
+const VALID_SOURCES = new Set(['derived', 'session_model', 'free_zen', 'local_fallback']);
 const VALID_STATES = new Set(['pending_idle', 'persisting']);
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
@@ -22,10 +24,12 @@ const normalizeJob = (value, now) => {
   const sourceHash = trimString(value.sourceHash).toLowerCase();
   const candidateTitle = trimString(value.candidateTitle);
   const source = trimString(value.source);
+  const replacesTitle = trimString(value.replacesTitle);
   const state = trimString(value.state);
   if (!key || key.length > 2_048 || !sessionID || sessionID.length > 256) return null;
   if (!/^[a-f0-9]{64}$/.test(sourceHash)) return null;
   if (!candidateTitle || candidateTitle.length > 80) return null;
+  if (replacesTitle.length > 80) return null;
   if (!VALID_SOURCES.has(source) || !VALID_STATES.has(state)) return null;
 
   const createdAt = finiteTimestamp(value.createdAt, now);
@@ -36,6 +40,9 @@ const normalizeJob = (value, now) => {
     sourceHash,
     candidateTitle,
     source,
+    // The title an upgraded candidate may overwrite (the runtime's own derived
+    // title); absent for first-pass jobs.
+    ...(replacesTitle ? { replacesTitle } : {}),
     state,
     attemptCount: Number.isSafeInteger(value.attemptCount) && value.attemptCount >= 0
       ? value.attemptCount

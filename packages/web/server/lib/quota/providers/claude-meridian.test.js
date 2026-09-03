@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  createClaudeProxyBaseUrlResolver,
   createMeridianClaudeContextUsageClient,
+  extractMeridianClaudeResetSignal,
   fetchMeridianClaudeQuota,
   resolveSafeClaudeMeridianUrl,
   resolveSafeClaudeQuotaUrl,
@@ -33,6 +35,111 @@ describe('Claude Meridian quota', () => {
   it('rejects malformed payloads', () => {
     expect(transformMeridianClaudeQuota({ buckets: 'bad' }).ok).toBe(false);
     expect(transformMeridianClaudeQuota({ buckets: [{ type: 'unknown', utilization: 1 }] }).ok).toBe(false);
+  });
+
+  it('extracts the auto-resume reset signal from raw buckets', () => {
+    const fiveHourReset = 1_760_000_050_000;
+    const sevenDayReset = 1_760_000_020_000;
+    expect(extractMeridianClaudeResetSignal(null)).toBeNull();
+    expect(extractMeridianClaudeResetSignal({ buckets: 'bad' })).toBeNull();
+    expect(extractMeridianClaudeResetSignal({ buckets: [] })).toEqual({ limited: false, resetAt: null });
+    // Nothing limited: the earliest known reset of any bucket.
+    expect(extractMeridianClaudeResetSignal({
+      buckets: [
+        { type: 'five_hour', status: 'allowed', utilization: 0.3, resetsAt: fiveHourReset },
+        { type: 'seven_day', status: 'allowed_warning', utilization: 0.8, resetsAt: sevenDayReset },
+      ],
+    })).toEqual({ limited: false, resetAt: sevenDayReset });
+    // A rejected bucket wins even when its utilization reads below 100%, and
+    // only limited buckets contribute their reset.
+    expect(extractMeridianClaudeResetSignal({
+      buckets: [
+        { type: 'five_hour', status: 'rejected', utilization: 0.9, resetsAt: fiveHourReset },
+        { type: 'seven_day', status: 'allowed', utilization: 0.2, resetsAt: sevenDayReset },
+      ],
+    })).toEqual({ limited: true, resetAt: fiveHourReset });
+    // Utilization at or above 100% counts as limited; ISO resets are accepted;
+    // the earliest limited reset is reported.
+    expect(extractMeridianClaudeResetSignal({
+      buckets: [
+        { type: 'five_hour', status: 'allowed', utilization: 1, resetsAt: '2025-10-09T08:00:00.000Z' },
+        { type: 'seven_day_opus', status: 'rejected', utilization: 1.2, resetsAt: fiveHourReset },
+        null,
+      ],
+    })).toEqual({ limited: true, resetAt: Date.parse('2025-10-09T08:00:00.000Z') });
+    expect(extractMeridianClaudeResetSignal({
+      buckets: [{ type: 'five_hour', status: 'rejected' }],
+    })).toEqual({ limited: true, resetAt: null });
+  });
+
+  it('caches the Claude proxy base URL per directory and single-flights concurrent lookups', async () => {
+    let at = 1_000;
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ providers: [{ id: 'anthropic', options: { baseURL: 'http://127.0.0.1:3456' } }] }),
+    }));
+    const resolver = createClaudeProxyBaseUrlResolver({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({ authorization: 'Bearer token' }),
+      fetchImpl,
+      now: () => at,
+      ttlMs: 60_000,
+    });
+
+    await expect(Promise.all([resolver.resolve('/workspace'), resolver.resolve('/workspace')]))
+      .resolves.toEqual(['http://127.0.0.1:3456', 'http://127.0.0.1:3456']);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'http://127.0.0.1:4096/config/providers?directory=%2Fworkspace',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({ Accept: 'application/json', authorization: 'Bearer token' }),
+      }),
+    );
+    await expect(resolver.resolve('/other')).resolves.toBe('http://127.0.0.1:3456');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[1][0]).toBe('http://127.0.0.1:4096/config/providers?directory=%2Fother');
+
+    at += 59_000;
+    await expect(resolver.resolve('/workspace')).resolves.toBe('http://127.0.0.1:3456');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    at += 2_000;
+    await expect(resolver.resolve('/workspace')).resolves.toBe('http://127.0.0.1:3456');
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    resolver.clear();
+    await expect(resolver.resolve('/workspace')).resolves.toBe('http://127.0.0.1:3456');
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  it('keeps a zero-TTL resolver uncached, rejects unsafe proxies, skips external runtimes, and surfaces transport errors', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ providers: [{ id: 'anthropic', baseURL: 'https://api.anthropic.com' }] }),
+    }));
+    const resolver = createClaudeProxyBaseUrlResolver({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      fetchImpl,
+      ttlMs: 0,
+    });
+    await expect(resolver.resolve('')).resolves.toBeNull();
+    await expect(resolver.resolve(null)).resolves.toBeNull();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[0][0]).toBe('http://127.0.0.1:4096/config/providers');
+
+    const external = createClaudeProxyBaseUrlResolver({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      isExternalOpenCode: () => true,
+      fetchImpl,
+    });
+    await expect(external.resolve('/workspace')).resolves.toBeNull();
+    await expect(createClaudeProxyBaseUrlResolver({ fetchImpl }).resolve('/workspace')).resolves.toBeNull();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+
+    const failing = createClaudeProxyBaseUrlResolver({
+      buildOpenCodeUrl: (pathname) => pathname,
+      fetchImpl: vi.fn(async () => { throw new Error('offline'); }),
+    });
+    await expect(failing.resolve('/workspace')).rejects.toThrow('offline');
   });
 
   it('bounds response bodies', async () => {

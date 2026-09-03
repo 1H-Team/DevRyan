@@ -71,6 +71,15 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     listStaleAgentModelOverrides,
     writeAgentModelOverride,
     deleteAgentModelOverride,
+    writeAgentBackupModel,
+    deleteAgentBackupModel,
+    readOrchestrationLimits,
+    writeOrchestrationLimits,
+    getSystemPressure,
+    readAgentRuntimeSettings,
+    writeAgentRuntimeSettings,
+    syncManagedAgentRuntimeConfig,
+    isManagedOpenCodeRunning,
     listConfigAgents,
     getCommandSources,
     createCommand,
@@ -340,6 +349,174 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       console.error('Failed to delete agent model override:', error);
       res.status(500).json({ error: formatErrorMessage(error, 'Failed to delete agent model override') });
     }
+  });
+
+  // Backup models are DevRyan-only sidecar state (OpenCode never reads them), so
+  // these routes deliberately skip markConfigChange: nothing needs an apply/restart.
+  app.put('/api/config/agents/:name/backup-model', async (req, res) => {
+    try {
+      const agentName = req.params.name;
+      const { directory, error } = await resolveProjectDirectory(req);
+      if (!directory) {
+        return res.status(400).json({ error });
+      }
+      if (typeof writeAgentBackupModel !== 'function') {
+        return res.status(501).json({ error: 'Agent backup models are not supported by this host' });
+      }
+
+      const backupModel = writeAgentBackupModel(agentName, req.body || {}, directory);
+      const agent = getAgentConfig(agentName, directory);
+      return res.json({ success: true, backupModel, agent });
+    } catch (error) {
+      console.error('Failed to write agent backup model:', error);
+      const message = formatErrorMessage(error, 'Failed to write agent backup model');
+      const status = message.includes('not found') ? 404 : 400;
+      res.status(status).json({ error: message });
+    }
+  });
+
+  app.delete('/api/config/agents/:name/backup-model', async (req, res) => {
+    try {
+      const agentName = req.params.name;
+      const { directory, error } = await resolveProjectDirectory(req);
+      if (!directory) {
+        return res.status(400).json({ error });
+      }
+      if (typeof deleteAgentBackupModel !== 'function') {
+        return res.status(501).json({ error: 'Agent backup models are not supported by this host' });
+      }
+
+      const deleted = deleteAgentBackupModel(agentName, { workingDirectory: directory });
+      const agent = getAgentConfig(agentName, directory);
+      return res.json({ success: true, deleted, backupModel: null, agent });
+    } catch (error) {
+      console.error('Failed to delete agent backup model:', error);
+      res.status(500).json({ error: formatErrorMessage(error, 'Failed to delete agent backup model') });
+    }
+  });
+
+  // Managed sub-agent launch limits are DevRyan-only sidecar state (OpenCode
+  // never reads them), so these routes also skip markConfigChange: the
+  // scheduler re-reads them on its next admission check.
+  const UNAVAILABLE_PRESSURE = Object.freeze({
+    state: 'normal',
+    availableRatio: null,
+    swapUsedRatio: null,
+    sampledAt: null,
+    source: 'unavailable',
+  });
+  const projectOrchestrationLimits = (limits) => {
+    let pressure = null;
+    try {
+      pressure = typeof getSystemPressure === 'function' ? getSystemPressure() : null;
+    } catch {
+      pressure = null;
+    }
+    return {
+      maxConcurrentSubagents: limits.maxConcurrentSubagents,
+      pauseUnderMemoryPressure: limits.pauseUnderMemoryPressure,
+      pressure: pressure && typeof pressure === 'object' ? pressure : { ...UNAVAILABLE_PRESSURE },
+    };
+  };
+
+  app.get('/api/config/orchestration-limits', (req, res) => {
+    if (!canReadFullAgentConfig(req.principal)) {
+      return res.status(403).json({ error: 'Orchestration limits are not available for this user' });
+    }
+    if (typeof readOrchestrationLimits !== 'function') {
+      return res.status(501).json({ error: 'Orchestration limits are not supported by this host' });
+    }
+    try {
+      return res.json(projectOrchestrationLimits(readOrchestrationLimits()));
+    } catch (error) {
+      console.error('Failed to read orchestration limits:', error);
+      return res.status(500).json({ error: formatErrorMessage(error, 'Failed to read orchestration limits') });
+    }
+  });
+
+  app.put('/api/config/orchestration-limits', (req, res) => {
+    if (!canReadFullAgentConfig(req.principal)) {
+      return res.status(403).json({ error: 'Orchestration limits are not available for this user' });
+    }
+    if (typeof writeOrchestrationLimits !== 'function') {
+      return res.status(501).json({ error: 'Orchestration limits are not supported by this host' });
+    }
+    try {
+      return res.json(projectOrchestrationLimits(writeOrchestrationLimits(req.body || {})));
+    } catch (error) {
+      const invalid = error?.code === 'invalid_orchestration_limits';
+      if (!invalid) console.error('Failed to write orchestration limits:', error);
+      return res.status(invalid ? 400 : 500).json({
+        error: formatErrorMessage(error, 'Failed to write orchestration limits'),
+      });
+    }
+  });
+
+  // Agent runtime switches (`openchamber.agentRuntime`, today the language
+  // server toggle) are sidecar state that the managed overlay turns into
+  // OpenCode config. OpenCode resolves `lsp` when its instance is created, so a
+  // write re-runs the overlay sync for the next start instead of
+  // markConfigChange: nothing restarts here, the response says whether a
+  // restart is still owed.
+  const AGENT_RUNTIME_UNAVAILABLE = 'Agent runtime settings are not supported by this host';
+  const AGENT_RUNTIME_FORBIDDEN = 'Agent runtime settings are not available for this user';
+
+  app.get('/api/config/agent-runtime', (req, res) => {
+    if (!canReadFullAgentConfig(req.principal)) {
+      return res.status(403).json({ error: AGENT_RUNTIME_FORBIDDEN });
+    }
+    if (typeof readAgentRuntimeSettings !== 'function') {
+      return res.status(501).json({ error: AGENT_RUNTIME_UNAVAILABLE });
+    }
+    try {
+      const settings = readAgentRuntimeSettings();
+      return res.json({ lsp: settings.lsp, appliesOnRestart: true });
+    } catch (error) {
+      console.error('Failed to read agent runtime settings:', error);
+      return res.status(500).json({ error: formatErrorMessage(error, 'Failed to read agent runtime settings') });
+    }
+  });
+
+  app.put('/api/config/agent-runtime', async (req, res) => {
+    if (!canReadFullAgentConfig(req.principal)) {
+      return res.status(403).json({ error: AGENT_RUNTIME_FORBIDDEN });
+    }
+    if (typeof readAgentRuntimeSettings !== 'function' || typeof writeAgentRuntimeSettings !== 'function') {
+      return res.status(501).json({ error: AGENT_RUNTIME_UNAVAILABLE });
+    }
+    let previous;
+    let next;
+    try {
+      previous = readAgentRuntimeSettings();
+      next = writeAgentRuntimeSettings(req.body || {});
+    } catch (error) {
+      const invalid = error?.code === 'invalid_agent_runtime_settings';
+      if (!invalid) console.error('Failed to write agent runtime settings:', error);
+      return res.status(invalid ? 400 : 500).json({
+        error: formatErrorMessage(error, 'Failed to write agent runtime settings'),
+      });
+    }
+
+    const changed = next.lsp !== previous.lsp;
+    if (changed && typeof syncManagedAgentRuntimeConfig === 'function') {
+      // The sidecar already holds the new value and every start re-syncs, so a
+      // failed sync only delays the overlay until the next restart.
+      try {
+        await syncManagedAgentRuntimeConfig();
+      } catch (error) {
+        console.warn('Failed to re-sync the runtime agent overlay after an agent runtime settings write:', error);
+      }
+    }
+    // Without a host getter, assume a server is running: a spurious restart
+    // hint costs less than a missing one.
+    const managedRunning = typeof isManagedOpenCodeRunning === 'function'
+      ? Boolean(isManagedOpenCodeRunning())
+      : true;
+    return res.json({
+      lsp: next.lsp,
+      appliesOnRestart: true,
+      restartRequired: changed && managedRunning,
+    });
   });
 
   const rejectAgentMutation = (_req, res) => {

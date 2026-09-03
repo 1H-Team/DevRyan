@@ -42,6 +42,24 @@ export const executionFromManagedAgent = (agent) => {
   };
 };
 
+/**
+ * Host-configured backup execution for a managed agent (Settings → Agents →
+ * Backup model). Null when none is set. Only consulted when the primary model
+ * hits a provider usage limit; never a substitute for executionFromManagedAgent.
+ */
+export const backupExecutionFromManagedAgent = (agent) => {
+  const backup = agent?.backupModel;
+  if (!isRecord(backup)) return null;
+  const providerId = clean(backup.providerID ?? backup.providerId);
+  const modelId = clean(backup.modelID ?? backup.modelId);
+  if (!providerId || !modelId) return null;
+  return {
+    providerId,
+    modelId,
+    variant: clean(backup.variant) || null,
+  };
+};
+
 export const isSingleModelManagedAgent = (agent) => {
   if (!agent || !executionFromManagedAgent(agent)) return false;
   if (Array.isArray(agent.councillors) && agent.councillors.length > 0) return false;

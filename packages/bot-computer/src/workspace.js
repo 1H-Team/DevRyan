@@ -38,7 +38,9 @@ const validateGateway = (value) => {
   } catch {
     fail('Artifact gateway URL is invalid', 'DEVRYAN_BOT_FILE_CONFIG_INVALID', 500);
   }
-  if (url.protocol !== 'http:' || url.hostname !== 'host.docker.internal' || !url.port
+  // The container has no route to the host: the private gateway is reached at
+  // the egress service's in-network address, which relays to the host loopback.
+  if (url.protocol !== 'http:' || url.hostname !== 'egress' || url.port !== '43121'
     || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
     fail('Artifact gateway URL is invalid', 'DEVRYAN_BOT_FILE_CONFIG_INVALID', 500);
   }

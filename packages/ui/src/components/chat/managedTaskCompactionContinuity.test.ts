@@ -116,6 +116,8 @@ const envelope = (
     acknowledgedAt: action === null ? null : createdAt + 1,
     action,
     followUpTaskId: null,
+    providerResetAt: null,
+    autoResume: null,
   };
 };
 
@@ -139,6 +141,7 @@ const state = (
   loadSnapshot: async () => undefined,
   cancelTask: async () => undefined,
   acknowledgeTask: async () => undefined,
+  setAutoResume: async () => undefined,
   reset: () => undefined,
 });
 

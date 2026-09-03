@@ -1,6 +1,11 @@
 import { describe, expect, test, beforeEach, mock } from "bun:test"
 import type { PermissionRequest } from "@/types/permission"
 import type { Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type {
+  ScopedSessionRevertResult,
+  ScopedSessionUnrevertResult,
+  SessionTreeChanges,
+} from "@/lib/opencode/client"
 import { applyDirectoryEvent } from "./event-reducer"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
 import { ABORT_GUARD_TTL_MS, isAbortGuardActive, resetAbortGuardState } from "./abort-retry-guard"
@@ -22,7 +27,11 @@ const sessionAbortCalls: Array<Record<string, unknown>> = []
 const sessionMessageCalls: Array<Record<string, unknown>> = []
 const sessionUnrevertCalls: Array<Record<string, unknown>> = []
 const sessionForkCalls: Array<Record<string, unknown>> = []
-const scopedRevertCalls: Array<{ sessionId: string; messageId: string; directory?: string }> = []
+type ScopedRevertOptions = { scope?: "tree" | "session"; rootSessionId?: string }
+const scopedRevertCalls: Array<{ sessionId: string; messageId: string; directory?: string; options?: ScopedRevertOptions }> = []
+const scopedUnrevertCalls: Array<{ sessionId: string; directory?: string }> = []
+const treeChangesCalls: Array<{ sessionId: string; directory?: string }> = []
+const toastCalls: Array<{ kind: string; message: string }> = []
 const registeredSessionDirectories: Array<{ sessionId: string; directory: string }> = []
 let sessionCreateHandler: (params: Record<string, unknown>) => Promise<unknown> = () => Promise.resolve({ data: makeSession("created-session") })
 let sessionUpdateHandler: (params: Record<string, unknown>) => Promise<unknown> = () => Promise.resolve({ data: true })
@@ -31,12 +40,17 @@ let sessionAbortHandler: (params: Record<string, unknown>) => Promise<unknown> =
 let sessionMessagesHandler: (params: Record<string, unknown>) => Promise<unknown> = () => Promise.resolve({ data: [] })
 let sessionUnrevertHandler: (params: Record<string, unknown>) => Promise<unknown> = (params) => Promise.resolve({ data: makeSession(String(params.sessionID)) })
 let sessionForkHandler: (params: Record<string, unknown>) => Promise<unknown> = () => Promise.resolve({ data: makeSession("forked-session") })
-let scopedRevertHandler: (sessionId: string, messageId: string, directory?: string) => Promise<Session> = (sessionId, messageId) => Promise.resolve({
-  id: sessionId,
-  title: sessionId,
-  time: { created: 1, updated: 2 },
-  revert: { messageID: messageId },
-} as unknown as Session)
+let scopedRevertHandler: (
+  sessionId: string,
+  messageId: string,
+  directory?: string,
+  options?: ScopedRevertOptions,
+) => Promise<ScopedSessionRevertResult> = (sessionId, messageId) => Promise.resolve(makeScopedRevertResult(sessionId, messageId))
+let scopedUnrevertHandler: (sessionId: string, directory?: string) => Promise<ScopedSessionUnrevertResult> = (sessionId) => Promise.resolve({
+  session: makeSession(sessionId),
+  restored: [],
+})
+let treeChangesHandler: (sessionId: string, directory?: string) => Promise<SessionTreeChanges> = () => Promise.resolve(makeTreeChanges())
 const restoredAttachmentCalls: Array<{ url: string; mimeType: string; filename: string }> = []
 
 const setCurrentSessionCalls: Array<{ id: string | null; directory?: string | null }> = []
@@ -166,9 +180,17 @@ const sessionActionsOpencodeClient = Object.assign(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     getScopedSdkClient: (_: string) => mockScopedClient,
     getDirectory: () => "/test/project",
-    revertSessionScoped: (sessionId: string, messageId: string, directory?: string) => {
-      scopedRevertCalls.push({ sessionId, messageId, directory })
-      return scopedRevertHandler(sessionId, messageId, directory)
+    revertSessionScoped: (sessionId: string, messageId: string, directory?: string, options?: ScopedRevertOptions) => {
+      scopedRevertCalls.push({ sessionId, messageId, directory, options })
+      return scopedRevertHandler(sessionId, messageId, directory, options)
+    },
+    unrevertSessionScoped: (sessionId: string, directory?: string) => {
+      scopedUnrevertCalls.push({ sessionId, directory })
+      return scopedUnrevertHandler(sessionId, directory)
+    },
+    getSessionTreeChanges: (sessionId: string, directory?: string) => {
+      treeChangesCalls.push({ sessionId, directory })
+      return treeChangesHandler(sessionId, directory)
     },
   },
 )
@@ -176,6 +198,21 @@ const sessionActionsOpencodeClient = Object.assign(
 mock.module("@/lib/opencode/client", () => ({
   ...actualOpencodeClientModule,
   opencodeClient: sessionActionsOpencodeClient,
+}))
+
+// Record toasts instead of rendering them; the tree revert announces outcomes here.
+const recordToast = (kind: string) => (message: unknown) => {
+  toastCalls.push({ kind, message: String(message) })
+}
+mock.module("sonner", () => ({
+  toast: Object.assign(recordToast("default"), {
+    success: recordToast("success"),
+    error: recordToast("error"),
+    info: recordToast("info"),
+    warning: recordToast("warning"),
+    message: recordToast("message"),
+    dismiss: () => {},
+  }),
 }))
 
 // Mock useConfigStore
@@ -502,6 +539,36 @@ function makeSession(id: string, parentID?: string | null): Session {
   } as unknown as Session
 }
 
+function makeScopedRevertResult(
+  sessionId: string,
+  messageId: string,
+  overrides: Partial<ScopedSessionRevertResult> = {},
+): ScopedSessionRevertResult {
+  return {
+    session: {
+      id: sessionId,
+      title: sessionId,
+      time: { created: 1, updated: 2 },
+      revert: { messageID: messageId },
+    } as unknown as Session,
+    reverted: { files: [], sessions: [{ id: sessionId, targetMessageID: messageId }] },
+    verification: { ok: true },
+    redoAvailable: true,
+    ...overrides,
+  }
+}
+
+function makeTreeChanges(overrides: Partial<SessionTreeChanges> = {}): SessionTreeChanges {
+  return {
+    files: [],
+    sessionCount: 1,
+    hasUnattributedMutations: false,
+    firstUserMessageID: null,
+    rootSessionID: null,
+    ...overrides,
+  }
+}
+
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (reason?: unknown) => void
@@ -745,12 +812,7 @@ describe("archiveSessions batch behavior", () => {
     sessionUnrevertHandler = (params) => Promise.resolve({ data: makeSession(String(params.sessionID)) })
     sessionForkHandler = () => Promise.resolve({ data: makeSession("forked-session") })
     sessionCreateHandler = () => Promise.resolve({ data: makeSession("created-session") })
-    scopedRevertHandler = (sessionId, messageId) => Promise.resolve({
-      id: sessionId,
-      title: sessionId,
-      time: { created: 1, updated: 2 },
-      revert: { messageID: messageId },
-    } as unknown as Session)
+    scopedRevertHandler = (sessionId, messageId) => Promise.resolve(makeScopedRevertResult(sessionId, messageId))
   })
 
   test("expands direct and nested descendants for shared session scope helpers", async () => {
@@ -2000,12 +2062,7 @@ describe("revertToMessage scoped revert", () => {
     }
     sessionDirectories["session-a"] = "/test/project"
     sessionDirectories["session-b"] = "/other/project"
-    scopedRevertHandler = (sessionId, messageId) => Promise.resolve({
-      id: sessionId,
-      title: sessionId,
-      time: { created: 1, updated: 2 },
-      revert: { messageID: messageId },
-    } as unknown as Session)
+    scopedRevertHandler = (sessionId, messageId) => Promise.resolve(makeScopedRevertResult(sessionId, messageId))
     sessionMessagesHandler = () => Promise.resolve({ data: [] })
   })
 
@@ -2027,7 +2084,7 @@ describe("revertToMessage scoped revert", () => {
     await revertToMessage("session-a", "msg_2")
 
     expect(scopedRevertCalls).toEqual([
-      { sessionId: "session-a", messageId: "msg_2", directory: "/test/project" },
+      { sessionId: "session-a", messageId: "msg_2", directory: "/test/project", options: { scope: "tree", rootSessionId: "session-a" } },
     ])
     expect(store.getState().session[0]?.revert).toEqual({ messageID: "msg_2" })
     expect(store.getState().message["session-a"]).toEqual([before])
@@ -2098,7 +2155,7 @@ describe("revertToMessage scoped revert", () => {
   })
 
   test("keeps an acknowledged revert restoration owned by its session across navigation", async () => {
-    const deferred = createDeferred<Session>()
+    const deferred = createDeferred<ScopedSessionRevertResult>()
     scopedRevertHandler = () => deferred.promise
     mockCurrentSessionId = "session-a"
     const session = makeSession("session-a")
@@ -2126,9 +2183,9 @@ describe("revertToMessage scoped revert", () => {
       attachedFiles: [{ filename: "b.txt" }],
     }
     deferred.resolve({
-      ...session,
-      revert: { messageID: "msg_2" },
-    } as unknown as Session)
+      ...makeScopedRevertResult("session-a", "msg_2"),
+      session: { ...session, revert: { messageID: "msg_2" } } as unknown as Session,
+    })
     await revert
 
     expect(inputStoreState.pendingInputText).toBe("session b draft")
@@ -2143,7 +2200,7 @@ describe("revertToMessage scoped revert", () => {
   })
 
   test("does not overwrite composer edits made while a revert is pending", async () => {
-    const deferred = createDeferred<Session>()
+    const deferred = createDeferred<ScopedSessionRevertResult>()
     scopedRevertHandler = () => deferred.promise
     mockCurrentSessionId = "session-a"
     const session = makeSession("session-a")
@@ -2165,7 +2222,10 @@ describe("revertToMessage scoped revert", () => {
       pendingInputText: "new draft typed during revert",
       attachedFiles: [{ filename: "new.txt" }],
     }
-    deferred.resolve({ ...session, revert: { messageID: "msg_2" } } as unknown as Session)
+    deferred.resolve({
+      ...makeScopedRevertResult("session-a", "msg_2"),
+      session: { ...session, revert: { messageID: "msg_2" } } as unknown as Session,
+    })
     await revert
 
     expect(useInputStore.getState().consumeRestoredInput("session-a", 1)).toBeNull()
@@ -2194,7 +2254,7 @@ describe("revertToMessage scoped revert", () => {
     await revertToMessage("session-a", "msg_2")
 
     expect(scopedRevertCalls).toEqual([
-      { sessionId: "session-a", messageId: "msg_2", directory: "/other/project" },
+      { sessionId: "session-a", messageId: "msg_2", directory: "/other/project", options: { scope: "tree", rootSessionId: "session-a" } },
     ])
     expect(sessionStore.getState().session[0]?.revert).toEqual({ messageID: "msg_2" })
     expect(currentStore.getState().session).toEqual([])
@@ -2226,7 +2286,7 @@ describe("revertToMessage scoped revert", () => {
     await revertToMessage("session-a", "msg_2")
 
     expect(scopedRevertCalls).toEqual([
-      { sessionId: "session-a", messageId: "msg_2", directory: "/test/project" },
+      { sessionId: "session-a", messageId: "msg_2", directory: "/test/project", options: { scope: "tree", rootSessionId: "session-a" } },
     ])
     expect(store.getState().message["session-a"]).toEqual([before])
     expect(store.getState().session[0]?.revert).toEqual({ messageID: "msg_2" })
@@ -2260,7 +2320,7 @@ describe("revertToMessage scoped revert", () => {
     await revertToMessage("session-a", "msg_2")
 
     expect(scopedRevertCalls).toEqual([
-      { sessionId: "session-a", messageId: "msg_2", directory: "/test/project" },
+      { sessionId: "session-a", messageId: "msg_2", directory: "/test/project", options: { scope: "tree", rootSessionId: "session-a" } },
     ])
   })
 
@@ -2288,14 +2348,14 @@ describe("revertToMessage scoped revert", () => {
 
     expect(thrown instanceof Error ? thrown.message : "").toBe("safe revert conflict")
     expect(scopedRevertCalls).toEqual([
-      { sessionId: "session-a", messageId: "msg_2", directory: "/test/project" },
+      { sessionId: "session-a", messageId: "msg_2", directory: "/test/project", options: { scope: "tree", rootSessionId: "session-a" } },
     ])
     expect(store.getState().message["session-a"]).toEqual([target, after])
     expect(store.getState().session[0]?.revert).toBe(undefined)
   })
 
   test("recovers a concurrent new turn when an idle scoped revert fails", async () => {
-    const deferred = createDeferred<Session>()
+    const deferred = createDeferred<ScopedSessionRevertResult>()
     scopedRevertHandler = () => deferred.promise
     const session = makeSession("session-a")
     const target = {
@@ -2416,12 +2476,7 @@ describe("revertToMessage scoped revert", () => {
 
   test("ignores duplicate revert requests while a transaction is pending", async () => {
     const deferred = createDeferred<Session>()
-    scopedRevertHandler = (sessionId, messageId) => deferred.promise.then(() => ({
-      id: sessionId,
-      title: sessionId,
-      time: { created: 1, updated: 2 },
-      revert: { messageID: messageId },
-    } as unknown as Session))
+    scopedRevertHandler = (sessionId, messageId) => deferred.promise.then(() => makeScopedRevertResult(sessionId, messageId))
     const session = makeSession("session-a")
     const target = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as unknown as import("@opencode-ai/sdk/v2/client").Message
     const after = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as unknown as import("@opencode-ai/sdk/v2/client").Message
@@ -2439,7 +2494,7 @@ describe("revertToMessage scoped revert", () => {
     await revertToMessage("session-a", "msg_2")
 
     expect(scopedRevertCalls).toEqual([
-      { sessionId: "session-a", messageId: "msg_2", directory: "/test/project" },
+      { sessionId: "session-a", messageId: "msg_2", directory: "/test/project", options: { scope: "tree", rootSessionId: "session-a" } },
     ])
     expect(store.getState().message["session-a"]).toEqual([])
 
@@ -3057,6 +3112,8 @@ describe("session actions use target session directory", () => {
     sessionAbortCalls.length = 0
     sessionMessageCalls.length = 0
     sessionUnrevertCalls.length = 0
+    scopedUnrevertCalls.length = 0
+    scopedUnrevertHandler = (sessionId) => Promise.resolve({ session: makeSession(sessionId), restored: [] })
     sessionForkCalls.length = 0
     setCurrentSessionCalls.length = 0
     restoredAttachmentCalls.length = 0
@@ -3154,12 +3211,12 @@ describe("session actions use target session directory", () => {
       thrown = error
     }
     expect(thrown instanceof Error ? thrown.message : "").toBe("Cannot redo while this chat is being reverted")
-    expect(sessionUnrevertCalls).toEqual([])
+    expect(scopedUnrevertCalls).toEqual([])
 
     sessionStore.setState({ revert_transaction: {} })
     await unrevertSession("session-b")
-    expect(sessionUnrevertCalls).toEqual([
-      { sessionID: "session-b", directory: "/other/project" },
+    expect(scopedUnrevertCalls).toEqual([
+      { sessionId: "session-b", directory: "/other/project" },
     ])
   })
 
@@ -3183,9 +3240,10 @@ describe("session actions use target session directory", () => {
     expect(sessionAbortCalls).toEqual([
       { sessionID: "session-b", directory: "/other/project" },
     ])
-    expect(sessionUnrevertCalls).toEqual([
-      { sessionID: "session-b", directory: "/other/project" },
+    expect(scopedUnrevertCalls).toEqual([
+      { sessionId: "session-b", directory: "/other/project" },
     ])
+    expect(sessionUnrevertCalls).toEqual([])
     expect(sessionMessageCalls).toEqual([
       { sessionID: "session-b", directory: "/other/project", limit: 200 },
     ])
@@ -3927,6 +3985,14 @@ describe("revertToMessage recovery behavior", () => {
     })
     const childStores = createChildStores([["/test/project", store]])
     scopedRevertHandler = () => Promise.reject(new Error("server rejected revert"))
+    // The tree revert waits for the aborted session to report idle, as the
+    // server does after an abort lands.
+    sessionAbortHandler = (params) => {
+      store.setState((state) => ({
+        session_status: { ...state.session_status, [String(params.sessionID)]: { type: "idle" } as SessionStatus },
+      }))
+      return Promise.resolve({ data: true })
+    }
     sessionMessagesHandler = () => Promise.resolve({
       data: [
         {
@@ -4025,5 +4091,330 @@ describe("abortCurrentOperationConfirmed stop reliability", () => {
     expect(result).toBe(false)
     expect(clearSessionStoppingCalls).toContain("session-a")
     expect(isAbortGuardActive("session-a", Date.now())).toBe(false)
+  })
+})
+
+describe("session tree revert", () => {
+  const userMsg = (id: string, sessionID: string, created: number): Message => (
+    { id, sessionID, role: "user", time: { created } } as unknown as Message
+  )
+  const assistantMsg = (id: string, sessionID: string, created: number): Message => (
+    { id, sessionID, role: "assistant", time: { created, completed: created } } as unknown as Message
+  )
+  const flushToasts = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+  beforeEach(() => {
+    scopedRevertCalls.length = 0
+    scopedUnrevertCalls.length = 0
+    treeChangesCalls.length = 0
+    sessionAbortCalls.length = 0
+    sessionMessageCalls.length = 0
+    toastCalls.length = 0
+    inputStoreState = {}
+    mockComposerRevisions.clear()
+    mockCurrentSessionId = null
+    mockGlobalActiveSessions = []
+    mockGlobalArchivedSessions = []
+    for (const key of Object.keys(sessionDirectories)) {
+      delete sessionDirectories[key]
+    }
+    sessionDirectories["session-a"] = "/test/project"
+    scopedRevertHandler = (sessionId, messageId) => Promise.resolve(makeScopedRevertResult(sessionId, messageId))
+    scopedUnrevertHandler = (sessionId) => Promise.resolve({ session: makeSession(sessionId), restored: [] })
+    treeChangesHandler = () => Promise.resolve(makeTreeChanges())
+    sessionMessagesHandler = () => Promise.resolve({ data: [] })
+    sessionAbortHandler = () => Promise.resolve({ data: true })
+  })
+
+  /** Root + child + grandchild in one directory, every message a leaf of the root's chat. */
+  const createTreeStore = () => {
+    const root = makeSession("session-a")
+    const child = makeSession("child-1", "session-a")
+    const grandchild = makeSession("child-2", "child-1")
+    const store = createStore({}, [root, child, grandchild])
+    store.setState({
+      message: {
+        "session-a": [
+          userMsg("msg_1", "session-a", 1),
+          assistantMsg("msg_2a", "session-a", 2),
+          userMsg("msg_2", "session-a", 3),
+          assistantMsg("msg_3", "session-a", 4),
+        ],
+        "child-1": [userMsg("c1_1", "child-1", 5)],
+        "child-2": [userMsg("c2_1", "child-2", 6)],
+      },
+      part: { msg_1: [], msg_2a: [], msg_2: [], msg_3: [], c1_1: [], c2_1: [] },
+    })
+    return store
+  }
+
+  test("aborts the whole tree deepest-first, waits for idle, then sends tree scope with the root id", async () => {
+    const store = createTreeStore()
+    store.setState({
+      session_status: {
+        "session-a": { type: "busy" },
+        "child-1": { type: "busy" },
+        "child-2": { type: "busy" },
+      } as Record<string, SessionStatus>,
+    })
+    sessionAbortHandler = (params) => {
+      store.setState((state) => ({
+        session_status: { ...state.session_status, [String(params.sessionID)]: { type: "idle" } as SessionStatus },
+      }))
+      return Promise.resolve({ data: true })
+    }
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await revertToMessage("session-a", "msg_2")
+
+    expect(sessionAbortCalls.map((call) => call.sessionID)).toEqual(["child-2", "child-1", "session-a"])
+    expect(scopedRevertCalls).toEqual([{
+      sessionId: "session-a",
+      messageId: "msg_2",
+      directory: "/test/project",
+      options: { scope: "tree", rootSessionId: "session-a" },
+    }])
+    expect(store.getState().session_status["child-2"]).toEqual({ type: "idle" })
+    expect(store.getState().revert_transaction["session-a"]?.status).toBe("confirmed")
+    expect(store.getState().message["session-a"]?.map((message) => message.id)).toEqual(["msg_1", "msg_2a"])
+  })
+
+  test("reverting from a child's message sends the child's message and session with the root id", async () => {
+    const store = createTreeStore()
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await revertToMessage("child-1", "c1_1")
+
+    expect(scopedRevertCalls).toEqual([{
+      sessionId: "child-1",
+      messageId: "c1_1",
+      directory: "/test/project",
+      options: { scope: "tree", rootSessionId: "session-a" },
+    }])
+    expect(sessionAbortCalls).toEqual([])
+  })
+
+  test("applies the markers the server reports for other tree sessions and announces the outcome", async () => {
+    const store = createTreeStore()
+    const childStores = createChildStores([["/test/project", store]])
+    scopedRevertHandler = (sessionId, messageId) => Promise.resolve(makeScopedRevertResult(sessionId, messageId, {
+      reverted: {
+        files: [{ path: "src/a.ts", status: "modified" }, { path: "src/b.ts", status: "deleted" }],
+        sessions: [
+          { id: "session-a", targetMessageID: "msg_2" },
+          { id: "child-1", targetMessageID: "c1_1" },
+        ],
+      },
+    }))
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await revertToMessage("session-a", "msg_2")
+    await flushToasts()
+
+    const sessions = store.getState().session as Array<Session & { revert?: { messageID?: string } }>
+    expect(sessions.find((session) => session.id === "session-a")?.revert).toEqual({ messageID: "msg_2" })
+    expect(sessions.find((session) => session.id === "child-1")?.revert).toEqual({ messageID: "c1_1" })
+    expect(toastCalls).toEqual([{ kind: "success", message: "Reverted 2 files across 2 sessions" }])
+  })
+
+  test("undoSession reverts the root to the first user message reported by the changes endpoint", async () => {
+    const store = createTreeStore()
+    const childStores = createChildStores([["/test/project", store]])
+    treeChangesHandler = () => Promise.resolve(makeTreeChanges({ firstUserMessageID: "msg_1", rootSessionID: "session-a" }))
+
+    const { setActionRefs, undoSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await undoSession("child-2")
+
+    // The first call resolves the revert point; the post-revert refresh of the
+    // tree-changes store calls the same endpoint again.
+    expect(treeChangesCalls[0]).toEqual({ sessionId: "session-a", directory: "/test/project" })
+    expect(scopedRevertCalls).toEqual([{
+      sessionId: "session-a",
+      messageId: "msg_1",
+      directory: "/test/project",
+      options: { scope: "tree", rootSessionId: "session-a" },
+    }])
+    expect(store.getState().message["session-a"]).toEqual([])
+  })
+
+  test("undoSession falls back to the local first user message when the changes endpoint fails", async () => {
+    const store = createTreeStore()
+    const childStores = createChildStores([["/test/project", store]])
+    treeChangesHandler = () => Promise.reject(new Error("offline"))
+
+    const { setActionRefs, undoSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await undoSession("session-a")
+
+    expect(scopedRevertCalls.map((call) => call.messageId)).toEqual(["msg_1"])
+  })
+
+  test("unrevertSession uses the scoped route and maps redo_unavailable to a toast", async () => {
+    const store = createTreeStore()
+    const childStores = createChildStores([["/test/project", store]])
+    scopedUnrevertHandler = () => Promise.reject(
+      new actualOpencodeClientModule.ScopedRevertError("Failed (409)", { code: "redo_unavailable", status: 409 }),
+    )
+
+    const { setActionRefs, unrevertSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await unrevertSession("session-a")
+    await flushToasts()
+
+    expect(scopedUnrevertCalls).toEqual([{ sessionId: "session-a", directory: "/test/project" }])
+    expect(sessionUnrevertCalls).toEqual([])
+    expect(sessionMessageCalls).toEqual([])
+    expect(toastCalls).toEqual([{ kind: "info", message: "Nothing to redo" }])
+  })
+
+  test("unrevertSession merges the restored session and refetches messages", async () => {
+    const store = createTreeStore()
+    store.setState({
+      session: store.getState().session.map((session) => (
+        session.id === "session-a" ? { ...session, revert: { messageID: "msg_2" } } as Session : session
+      )),
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    scopedUnrevertHandler = (sessionId) => Promise.resolve({
+      session: makeSession(sessionId),
+      restored: [{ path: "src/a.ts", status: "modified" }],
+    })
+
+    const { setActionRefs, unrevertSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await unrevertSession("session-a")
+    await flushToasts()
+
+    expect((store.getState().session[0] as Session & { revert?: unknown }).revert).toBe(undefined)
+    expect(sessionMessageCalls).toEqual([{ sessionID: "session-a", directory: "/test/project", limit: 200 }])
+    expect(toastCalls).toEqual([{ kind: "success", message: "Restored 1 file" }])
+  })
+
+  test("slash redo forward step unreverts and then reverts to the target in one transaction", async () => {
+    const store = createTreeStore()
+    const childStores = createChildStores([["/test/project", store]])
+    const order: string[] = []
+    let transactionDuringUnrevert: string | undefined
+    scopedUnrevertHandler = (sessionId) => {
+      order.push("unrevert")
+      transactionDuringUnrevert = store.getState().revert_transaction["session-a"]?.status
+      return Promise.resolve({ session: makeSession(sessionId), restored: [] })
+    }
+    scopedRevertHandler = (sessionId, messageId) => {
+      order.push("revert")
+      return Promise.resolve(makeScopedRevertResult(sessionId, messageId))
+    }
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await revertToMessage("session-a", "msg_2", { unrevertFirst: true })
+
+    expect(order).toEqual(["unrevert", "revert"])
+    expect(transactionDuringUnrevert).toBe("pending")
+    expect(scopedUnrevertCalls).toEqual([{ sessionId: "session-a", directory: "/test/project" }])
+    expect(scopedRevertCalls.map((call) => call.messageId)).toEqual(["msg_2"])
+    expect(store.getState().revert_transaction["session-a"]?.status).toBe("confirmed")
+    expect(store.getState().message["session-a"]?.map((message) => message.id)).toEqual(["msg_1", "msg_2a"])
+  })
+
+  test("slash redo rolls back when the revert after a successful unrevert fails", async () => {
+    const store = createTreeStore()
+    const childStores = createChildStores([["/test/project", store]])
+    scopedRevertHandler = () => Promise.reject(
+      new actualOpencodeClientModule.ScopedRevertError("Failed (409)", { code: "working_tree_changed", status: 409 }),
+    )
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    let thrown: unknown = null
+    try {
+      await revertToMessage("session-a", "msg_2", { unrevertFirst: true })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown instanceof Error ? thrown.message : "").toBe("Files changed while reverting; nothing was written")
+    expect(scopedUnrevertCalls).toHaveLength(1)
+    expect(store.getState().revert_transaction["session-a"]).toBe(undefined)
+    expect(store.getState().message["session-a"]?.map((message) => message.id)).toEqual(["msg_1", "msg_2a", "msg_2", "msg_3"])
+  })
+
+  test("maps server error codes to user-facing copy and rolls back the optimistic revert", async () => {
+    const cases: Array<{ code: string; files?: Array<{ path: string; status: string }>; expected: string }> = [
+      { code: "directory_busy", expected: "Another session is working in this project; wait for it to finish" },
+      { code: "session_busy", expected: "This chat is still working; wait for it to finish" },
+      { code: "working_tree_changed", expected: "Files changed while reverting; nothing was written" },
+      {
+        code: "ambiguous_hunk",
+        files: [{ path: "src/a.ts", status: "modified" }],
+        expected: "Could not revert src/a.ts: the change no longer matches the file",
+      },
+      {
+        code: "binary_diff_unsupported",
+        files: [{ path: "assets/logo.png", status: "modified" }],
+        expected: "Could not revert assets/logo.png: binary files are not supported",
+      },
+      { code: "SCOPED_REVERT_TIMEOUT", expected: "Reverting timed out; check the working tree before retrying" },
+    ]
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+
+    for (const testCase of cases) {
+      const store = createTreeStore()
+      const childStores = createChildStores([["/test/project", store]])
+      setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+      scopedRevertHandler = () => Promise.reject(
+        new actualOpencodeClientModule.ScopedRevertError("Failed (409)", {
+          code: testCase.code,
+          status: 409,
+          files: testCase.files,
+        }),
+      )
+
+      let thrown: unknown = null
+      try {
+        await revertToMessage("session-a", "msg_2")
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown instanceof Error ? thrown.message : "").toBe(testCase.expected)
+      expect((thrown as { code?: string }).code).toBe(testCase.code)
+      expect(store.getState().message["session-a"]?.map((message) => message.id)).toEqual(["msg_1", "msg_2a", "msg_2", "msg_3"])
+      expect((store.getState().session[0] as Session & { revert?: unknown }).revert).toBe(undefined)
+    }
+  })
+
+  test("leaves unknown failures untouched so callers still see the original message", async () => {
+    const store = createTreeStore()
+    const childStores = createChildStores([["/test/project", store]])
+    scopedRevertHandler = () => Promise.reject(new Error("server rejected revert"))
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    let thrown: unknown = null
+    try {
+      await revertToMessage("session-a", "msg_2")
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown instanceof Error ? thrown.message : "").toBe("server rejected revert")
   })
 })

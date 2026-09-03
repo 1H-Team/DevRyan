@@ -33,6 +33,7 @@ type BotComposerProps = {
   botId: string;
   channel: BotChannel;
   runtimeState: string;
+  runtimeCode?: string | null;
   runtimeAvailable: boolean;
   runtimeWarnings?: readonly BotRuntimeWarning[];
   recoveryAction?: BotRuntimeRecoveryAction | null;
@@ -46,6 +47,7 @@ export const BotComposer: React.FC<BotComposerProps> = ({
   botId,
   channel,
   runtimeState,
+  runtimeCode = null,
   runtimeAvailable,
   runtimeWarnings = [],
   recoveryAction = null,
@@ -69,7 +71,7 @@ export const BotComposer: React.FC<BotComposerProps> = ({
   const dragEnterCountRef = React.useRef(0);
   const uploadingRef = React.useRef(false);
   const uploadGenerationRef = React.useRef(0);
-  const runtimeMessageKey = resolveBotRuntimeMessageKey(runtimeState);
+  const runtimeMessageKey = resolveBotRuntimeMessageKey(runtimeState, runtimeCode);
   const hasWriteAccess = channel.canSend && channel.accessRole !== 'reader';
   const canSend = hasWriteAccess && runtimeAvailable;
   const accepting = Boolean(pendingMessageId);

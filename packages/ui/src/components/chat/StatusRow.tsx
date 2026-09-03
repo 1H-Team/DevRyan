@@ -571,10 +571,13 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   }
 
   return (
-    <div className={cn("mb-1", !hasLeftAccessory && "chat-column")} style={STATUS_ROW_CONTAINER_STYLE}>
-      <div className={cn("flex items-center justify-between py-0.5 gap-2 h-[1.2rem]", hasLeftAccessory && "px-0.5")}>
-        {/* Left: Abort status or Working placeholder or leftAccessory */}
-        <div className={cn("flex-1 flex items-center min-w-0", hasLeftAccessory ? "pl-1.5" : "overflow-hidden")}>
+    <div className="mb-1 chat-column" style={STATUS_ROW_CONTAINER_STYLE}>
+      <div className="flex items-center justify-between py-0.5 gap-2 h-[1.2rem]">
+        {/* Left: Abort status, stall/tool warnings, then either the working
+            placeholder or the idle-time accessory (session changes footer).
+            The container only hands over an accessory while the assistant has
+            nothing of its own to say, so the accessory wins that slot. */}
+        <div className={cn("flex-1 flex items-center min-w-0", !hasLeftAccessory && "overflow-hidden")}>
           {showAssistantStatus && showAbortStatus ? (
             <div className="flex h-full items-center text-[var(--status-error)] pl-0.5">
               <span className="flex items-center gap-1.5 typography-ui-label">
@@ -604,6 +607,8 @@ export const StatusRow: React.FC<StatusRowProps> = ({
               <RiErrorWarningLine size={16} className="shrink-0" aria-hidden="true" />
               <span className="truncate">{longRunningToolError ?? longRunningToolStatusText}</span>
             </div>
+          ) : leftAccessory ? (
+            leftAccessory
           ) : showAssistantStatus && !suppressAssistantStatusText && shouldRenderPlaceholder ? (
             <WorkingPlaceholder
               key={currentSessionId ?? "no-session"}
@@ -614,13 +619,11 @@ export const StatusRow: React.FC<StatusRowProps> = ({
               retryInfo={retryInfo}
               agentName={agentName}
             />
-          ) : leftAccessory ? (
-            leftAccessory
           ) : null}
         </div>
 
         {/* Right: Abort (mobile only) + Todo + View Plan */}
-        <div className={cn("relative flex items-center gap-2 flex-shrink-0", hasLeftAccessory ? "pr-1.5" : "-mr-3")} ref={popoverRef}>
+        <div className="relative flex items-center gap-2 flex-shrink-0 -mr-3" ref={popoverRef}>
           {abortButton}
           {resolveProviderStallButton}
           {stopLongRunningToolButton}

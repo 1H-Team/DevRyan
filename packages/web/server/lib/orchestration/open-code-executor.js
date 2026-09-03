@@ -253,5 +253,12 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
     ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
     ...(options.idleStablePolls === undefined ? {} : { idleStablePolls: options.idleStablePolls }),
     ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
+    ...(options.maxAssistantTurns === undefined ? {} : { maxAssistantTurns: options.maxAssistantTurns }),
+    ...(typeof options.resolveTaskPromptPreamble === 'function'
+      ? { resolveTaskPromptPreamble: options.resolveTaskPromptPreamble }
+      : {}),
+    ...(typeof options.resolveTaskTurnBudget === 'function'
+      ? { resolveTaskTurnBudget: options.resolveTaskTurnBudget }
+      : {}),
   });
 };

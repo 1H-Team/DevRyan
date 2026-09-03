@@ -4,27 +4,53 @@
     {
       "name": "web",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3001,
       "autoPort": false
     },
     {
       "name": "web-verify",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["OPENCHAMBER_DATA_DIR=/Users/zoubair/.config/openchamber-verify", "bun", "packages/web/server/index.js", "--port", "3101"],
+      "runtimeArgs": [
+        "OPENCHAMBER_DATA_DIR=/Users/zoubair/.config/openchamber-verify",
+        "bun",
+        "packages/web/server/index.js",
+        "--port",
+        "3101"
+      ],
       "port": 3101
     },
     {
       "name": "web-hmr",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["./scripts/dev-web-hmr.mjs"],
+      "runtimeArgs": [
+        "./scripts/dev-web-hmr.mjs"
+      ],
       "port": 5180
     },
     {
       "name": "devryan-live",
       "runtimeExecutable": "sleep",
-      "runtimeArgs": ["86400"],
+      "runtimeArgs": [
+        "86400"
+      ],
       "port": 5180
+    },
+    {
+      "name": "electron-npx",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "OPENCHAMBER_ELECTRON_DEV=1",
+        "OPENCHAMBER_DEV_FORCE_NPX_ELECTRON=1",
+        "OPENCHAMBER_DATA_DIR=/Users/zoubair/.config/openchamber-verify-electron",
+        "OPENCHAMBER_ELECTRON_USER_DATA_DIR=/Users/zoubair/.config/openchamber-verify-electron/electron-user-data",
+        "/Users/zoubair/Repositories/DevRyan/packages/electron/node_modules/.bin/electron",
+        "/Users/zoubair/Repositories/DevRyan/packages/electron/main.mjs"
+      ],
+      "port": 61890
     }
   ]
 }

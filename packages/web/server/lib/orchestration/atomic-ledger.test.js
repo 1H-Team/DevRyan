@@ -88,6 +88,62 @@ describe('atomic managed orchestration ledger', () => {
     expect(loaded.tasks[0].dispatchGroupId).toBeNull();
     expect(loaded.tasks[0].dispatchCallId).toBeNull();
     expect(loaded.tasks[0].readOnly).toBe(false);
+    expect(loaded.tasks[0].recoveryLineageId).toBeNull();
+    expect(loaded.tasks[0].childPromptedAt).toBeNull();
+    expect(loaded.tasks[0].firstAssistantPartAt).toBeNull();
+    expect(ledger.getDiagnostics().quarantinedPath).toBeNull();
+  });
+
+  it('hydrates legacy result envelopes without provider reset or auto-resume state', async () => {
+    const dataDirectory = await createTemporaryDirectory();
+    const ledger = await createOwnedLedger({ dataDirectory });
+    const task = {
+      ...queuedTask(1),
+      status: 'failed',
+      childSessionId: 'ses_child',
+      leaseToken: 'dvr_lease_failed',
+      startedAt: 1_100,
+      finishedAt: 1_200,
+      failureReason: 'out of usage',
+      partial: false,
+    };
+    delete task.recoveryLineageId;
+    delete task.childPromptedAt;
+    delete task.firstAssistantPartAt;
+    const legacyEnvelope = {
+      owner: 'devryan',
+      envelopeId: 'dvr_result_1_1',
+      taskId: task.taskId,
+      rootSessionId: task.rootSessionId,
+      parentTaskId: null,
+      childSessionId: task.childSessionId,
+      directory: task.directory,
+      sequence: 1,
+      status: 'failed',
+      partial: false,
+      failureReason: task.failureReason,
+      attempt: 1,
+      priorTaskId: null,
+      executionKind: 'start',
+      recoverablePreview: '',
+      canonicalRefs: [],
+      resumable: true,
+      createdAt: 1_200,
+      acknowledgedAt: null,
+      action: null,
+      followUpTaskId: null,
+    };
+    await fs.mkdir(path.dirname(ledger.filePath), { recursive: true });
+    await fs.writeFile(ledger.filePath, JSON.stringify({
+      version: 1,
+      tasks: [task],
+      resultEnvelopes: [legacyEnvelope],
+    }), { mode: 0o600 });
+
+    const loaded = await ledger.load();
+
+    expect(loaded.resultEnvelopes[0]).toMatchObject({ providerResetAt: null, autoResume: null });
+    expect(loaded.tasks[0]).toMatchObject({ recoveryLineageId: null, childPromptedAt: null });
     expect(ledger.getDiagnostics().quarantinedPath).toBeNull();
   });
 

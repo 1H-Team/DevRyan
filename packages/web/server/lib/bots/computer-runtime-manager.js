@@ -180,7 +180,13 @@ export function createBotComputerRuntimeManager({
           && current.revisionId === bot.active_revision_id
           && Date.now() < current.tokenRefreshAt) {
           failures.delete(botId);
-          return current;
+          // The computer is reached through the supervisor's runtime proxy, and
+          // that proxy path is reissued when the supervisor restarts. Adopt the
+          // address the inspection just reported instead of a remembered one.
+          if (inspected.endpoint?.baseUrl === current.endpoint?.baseUrl) return current;
+          const refreshed = Object.freeze({ ...current, endpoint: inspected.endpoint });
+          runtimes.set(botId, refreshed);
+          return refreshed;
         }
       }
       return provisionBot(bot, await resolveToken(botId, current));

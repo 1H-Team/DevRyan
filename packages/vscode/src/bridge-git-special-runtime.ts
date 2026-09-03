@@ -5,12 +5,15 @@ import type { BridgeContext, BridgeResponse } from './bridge';
 import { getVsCodeHarnessRuntime } from './harness-runtime-access';
 import {
   COMMIT_DRAFT_DEADLINE_MS,
+  buildPullRequestDiffContext,
   createFreeZenModelCatalog,
   createCommitModelCooldowns,
   generateCommitDraftWithDeadline,
   normalizePullRequestDraft,
   normalizeGeneratedCommitDraft,
   runFreeZenModelRotation,
+  sharedFreeZenCooldowns,
+  type FreeZenModel,
   type SharedCommitDraftContext,
 } from '@openchamber/shared-runtime';
 
@@ -38,6 +41,10 @@ const BRIDGE_COMMIT_DIFF_TRUNCATION_MARKER = '\n... [diff truncated]';
 const BRIDGE_COMMIT_CONTEXT_DEADLINE_MS = 1_500;
 const BRIDGE_PR_MODEL_TIMEOUT_MS = 15_000;
 const BRIDGE_PR_MAX_TOKENS = 1_200;
+// Bounded like the web route: three warm free models, 45 s in total.
+const BRIDGE_PR_MAX_FREE_MODELS = 3;
+const BRIDGE_PR_FREE_DEADLINE_MS = 45_000;
+const BRIDGE_PR_DIFF_TIMEOUT_MS = 8_000;
 
 const bridgeCommitModelCooldowns = createCommitModelCooldowns();
 const bridgeFreeZenModelCatalog = createFreeZenModelCatalog({
@@ -398,6 +405,68 @@ export const normalizeBridgeCommitSubject = (value: string): string => {
   return normalized.message.subject;
 };
 
+type BridgePullRequestAttempt = { tier: 'free_zen'; model: string | null; reason: string | null };
+
+const raceWithin = async <T,>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+};
+
+// The webview prompt only carries commit subjects and file paths; feed the
+// real base...head diff (stat + capped unified diff, binaries skipped).
+const collectBridgePullRequestDiff = async (
+  deps: SpecialGitDeps,
+  directory: string,
+  base: string,
+  head: string,
+): Promise<string> => {
+  const run = async (args: string[]): Promise<string> => {
+    try {
+      const result = await raceWithin<ExecGitResult | null>(
+        Promise.resolve(deps.execGit(args, directory)),
+        BRIDGE_PR_DIFF_TIMEOUT_MS,
+        null,
+      );
+      return result && result.exitCode === 0 ? String(result.stdout || '') : '';
+    } catch {
+      return '';
+    }
+  };
+  const [diff, stat] = await Promise.all([
+    run(['diff', '--no-color', '-U2', `${base}...${head}`]),
+    run(['diff', '--stat=120', '--no-color', `${base}...${head}`]),
+  ]);
+  return buildPullRequestDiffContext({ diff, stat }).text;
+};
+
+const pullRequestFailure = (
+  id: string,
+  type: string,
+  code: 'FREE_ZEN_EXHAUSTED' | 'NO_FREE_MODELS' | 'CATALOG_UNAVAILABLE',
+  error: string,
+  attempts: BridgePullRequestAttempt[],
+): BridgeResponse => {
+  const response: BridgeResponse & { code: string } = {
+    id,
+    type,
+    success: false,
+    error,
+    code,
+    // Merged onto the webview-side Error so the UI can name the cause.
+    errorData: { code, attempts },
+  };
+  return response;
+};
+
 export async function handleSpecialGitBridgeMessage(
   message: BridgeMessageInput,
   ctx: BridgeContext | undefined,
@@ -638,17 +707,36 @@ export async function handleSpecialGitBridgeMessage(
       }
 
       try {
-        const models = await bridgeFreeZenModelCatalog.fetchModels();
+        const diffContext = await collectBridgePullRequestDiff(deps, directory, base, head);
+        const fullPrompt = diffContext ? `${generationPrompt}\n\n${diffContext}` : generationPrompt;
+
+        let models: FreeZenModel[] = [];
+        let catalogState: 'fresh' | 'stale' | 'unavailable' = 'fresh';
+        try {
+          models = await bridgeFreeZenModelCatalog.fetchModels();
+        } catch {
+          models = bridgeFreeZenModelCatalog.getCachedModels({ allowStale: true });
+          catalogState = models.length > 0 ? 'stale' : 'unavailable';
+        }
+        if (models.length === 0) {
+          return catalogState === 'unavailable'
+            ? pullRequestFailure(id, type, 'CATALOG_UNAVAILABLE', 'Free Zen model catalog is unavailable', [])
+            : pullRequestFailure(id, type, 'NO_FREE_MODELS', 'No free Zen models are currently available', []);
+        }
+
         const result = await runFreeZenModelRotation({
           models,
           timeoutMs: BRIDGE_PR_MODEL_TIMEOUT_MS,
+          maxModels: BRIDGE_PR_MAX_FREE_MODELS,
+          deadlineMs: BRIDGE_PR_FREE_DEADLINE_MS,
+          cooldowns: sharedFreeZenCooldowns,
           request: ({ model, timeoutMs }) => generateBridgeTextWithZen({
-            prompt: generationPrompt,
+            prompt: fullPrompt,
             zenModel: model,
             timeoutMs,
             maxTokens: BRIDGE_PR_MAX_TOKENS,
           }),
-          accept: normalizePullRequestDraft,
+          accept: (value) => normalizePullRequestDraft(value),
           onAttempt: (attempt) => {
             try {
               getVsCodeHarnessRuntime()?.record({
@@ -658,6 +746,8 @@ export async function handleSpecialGitBridgeMessage(
                   durationMs: attempt.durationMs,
                   outcome: attempt.outcome,
                   model: attempt.model,
+                  tier: 'free_zen',
+                  state: catalogState,
                   retry: attempt.attempt > 1,
                   providerOutcome: attempt.reason || attempt.outcome,
                 },
@@ -668,7 +758,19 @@ export async function handleSpecialGitBridgeMessage(
           },
         });
         if (!result.ok || !result.value) {
-          return { id, type, success: false, error: 'Unable to generate a pull request description with the available free Zen models' };
+          const attempts: BridgePullRequestAttempt[] = [
+            ...result.failures.map((failure) => ({ tier: 'free_zen' as const, model: failure.model, reason: failure.reason })),
+            ...result.skipped.map((entry) => ({ tier: 'free_zen' as const, model: entry.model, reason: entry.reason })),
+          ];
+          return pullRequestFailure(
+            id,
+            type,
+            'FREE_ZEN_EXHAUSTED',
+            result.deadlineExceeded
+              ? 'Free Zen models ran out of time while generating the pull request description'
+              : 'Unable to generate a pull request description with the available free Zen models',
+            attempts,
+          );
         }
         return { id, type, success: true, data: result.value };
       } catch (error) {

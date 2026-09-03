@@ -24,10 +24,14 @@ services:
       devryan.runtime: production-bots
       devryan.owner: electron
       devryan.deployment: ${DEVRYAN_BOT_DEPLOYMENT_ID:?missing deployment id}
+    # host_control is what makes the loopback-published supervisor port routable;
+    # reasoning and computer are the internal networks it proxies runtime
+    # traffic over, so neither container needs a published port of its own.
     networks:
       - management
       - host_control
       - reasoning
+      - computer
 
   engine-proxy:
     image: ${DEVRYAN_BOT_ENGINE_PROXY_IMAGE:?missing engine proxy image}
@@ -54,7 +58,6 @@ services:
       DEVRYAN_BOT_COMPUTER_IMAGE: ${DEVRYAN_BOT_COMPUTER_IMAGE:?missing computer image}
       DEVRYAN_BOT_REASONING_NETWORK: devryan-bots-reasoning
       DEVRYAN_BOT_COMPUTER_NETWORK: devryan-bots-computer
-      DEVRYAN_BOT_HOST_CONTROL_NETWORK: devryan-bots-host-control
       DEVRYAN_MODEL_EGRESS_URL: http://egress:43121
     labels:
       devryan.runtime: production-bots
@@ -89,6 +92,11 @@ services:
       DEVRYAN_BOT_EGRESS_CONTROL_TOKEN: ${DEVRYAN_BOT_EGRESS_CONTROL_TOKEN:?missing egress control token}
       DEVRYAN_BOT_DEPLOYMENT_ID: ${DEVRYAN_BOT_DEPLOYMENT_ID:?missing deployment id}
       DEVRYAN_BOT_ACTIVE_REVISIONS: ${DEVRYAN_BOT_ACTIVE_REVISIONS:-}
+    # The relay to the private gateway on the host loopback is the only reason
+    # any Bot traffic still reaches the host; Electron pushes the address on the
+    # control channel and no container may supply one.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     labels:
       devryan.runtime: production-bots
       devryan.owner: electron
@@ -145,14 +153,23 @@ volumes:
     name: devryan-bot-index
 
 networks:
+  # Docker refuses to publish a host port for a container attached only to
+  # internal networks, so the first-party services that publish a loopback port
+  # (supervisor, indexer) hold this bridge. Reasoning and computer containers
+  # never join it: they reach the private gateway through the egress relay and
+  # are reached back through the supervisor's runtime proxy, so no container
+  # running Bot-authored work has a route off its internal network.
+  # It must stay masqueraded: Docker Desktop routes replies only to the VM's own
+  # address, so a no-masquerade bridge silently loses host reachability after
+  # the VM restarts. bot-runtime-manager.mjs recreates a bridge that still
+  # carries the retired no-masquerade policy, and detaches containers that still
+  # hold a retired attachment.
   host_control:
     name: devryan-bots-host-control
     driver: bridge
-    driver_opts:
-      com.docker.network.bridge.enable_ip_masquerade: "false"
     labels:
       devryan.runtime: production-bots
-      devryan.network-policy: loopback-published-no-masquerade
+      devryan.network-policy: host-gateway-bridge
   management:
     name: devryan-bots-management
     internal: true

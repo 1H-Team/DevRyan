@@ -40,14 +40,18 @@ authenticated `bot-engine-proxy` is the sole socket process.
 2. A deterministic-name collision with labels outside the active deployment is
    refused, never adopted or deleted.
 3. Image replacement removes only the owned container. Named volumes survive.
-4. Reasoning publishes no host port and remains on the internal reasoning
-   network. Its second attachment is the no-masquerade `host_control` network,
-   used only for the authenticated Mac host-loopback gateway. Computer publishes
-   only to `127.0.0.1` with an ephemeral host port.
-5. Computer containers remain on an internal network and receive only a
-   browser-purpose proxy token/relay; direct public egress is unavailable.
+4. Neither kind joins a non-internal network or publishes a host port; Docker
+   will not publish one for an internal-only container, and a bridge added to
+   get one back would also hand the container a route to the host and the
+   public internet. Both are reached through the supervisor's scoped runtime
+   proxy, and both reach the private gateway through the bot-egress relay.
+   `createBotDockerSupervisor` holds no network-attach verb at all.
+5. Computer containers receive only a browser-purpose proxy token/relay; direct
+   public egress is unavailable.
 6. Run/channel/revision/reasoning-capability rotation replaces a dynamic
-   container while preserving its scope-owned volumes. Browser-egress
+   container while preserving its scope-owned volumes; a computer also rotates
+   when the in-network gateway address it was created for changes, which no
+   longer moves when DevRyan restarts. Browser-egress
    capability rotation is applied live through the computer control route and
    never restarts the persistent profile; failure stops the computer.
 7. Reasoning config is compiled by the server, no-follow verified by Electron,
@@ -55,7 +59,7 @@ authenticated `bot-engine-proxy` is the sole socket process.
    separate per-run mount.
 8. A reasoning container receives only an Electron-signed short-lived egress
    capability in fixed proxy credentials; no token is copied into labels, and
-   `host.docker.internal` remains an explicit `NO_PROXY` private-gateway route.
+   the in-network gateway relay remains an explicit `NO_PROXY` route.
 9. Per-run artifacts are derived from the fixed runtime root after recursive
    Electron validation and mounted read-only at `/workspace/.devryan`; callers
    cannot submit a host artifact path.

@@ -18,7 +18,7 @@ const ensureResult = (kind) => ({
   endpoint: {
     host: '127.0.0.1',
     port: kind === 'reasoning' ? 55101 : 55102,
-    ...(kind === 'reasoning' ? { path: PROXY_PATH } : {}),
+    path: PROXY_PATH,
   },
   image: `sha256:${'b'.repeat(64)}`,
   replaced: false,
@@ -35,7 +35,7 @@ const createHost = () => ({
     endpoint: {
       host: '127.0.0.1',
       port: 55101,
-      ...(target.kind === 'reasoning' ? { path: PROXY_PATH } : {}),
+      path: PROXY_PATH,
     },
     image: `sha256:${'b'.repeat(64)}`,
   })),

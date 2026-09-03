@@ -8,6 +8,12 @@
  * - title: concise session title
  */
 
+import {
+  FREE_ZEN_LONG_COOLDOWN_MS,
+  FREE_ZEN_SHORT_COOLDOWN_MS,
+  sharedFreeZenCooldowns,
+} from '@openchamber/shared-runtime';
+
 export function buildSummarizationPrompt(maxLength, mode = 'tts') {
   if (mode === 'title') {
     return `Generate a concise title for this coding session.
@@ -141,29 +147,28 @@ const backoffDelayMs = (baseMs, attempt) => {
   return Math.round(capped * (0.5 + Math.random() * 0.5));
 };
 
-const ZEN_MODEL_COOLDOWN_MS = 5 * 60 * 1_000;
-const ZEN_TRANSIENT_MODEL_COOLDOWN_MS = 30 * 1_000;
-const zenModelCooldowns = new Map();
+// The ledger itself is shared with every other free Zen consumer in this
+// process (PR descriptions, ...), so a rate limit seen by one feature protects
+// all of them.
+const ZEN_MODEL_COOLDOWN_MS = FREE_ZEN_LONG_COOLDOWN_MS;
+const ZEN_TRANSIENT_MODEL_COOLDOWN_MS = FREE_ZEN_SHORT_COOLDOWN_MS;
 
 export const isRateLimitedZenError = (error) => (
   error instanceof ZenApiError && error.status === 429
 );
 
-const markZenModelCoolingDown = (model, now, cooldownMs = ZEN_MODEL_COOLDOWN_MS) => {
-  if (model) zenModelCooldowns.set(model, now + Math.max(1, Number(cooldownMs) || ZEN_MODEL_COOLDOWN_MS));
+const markZenModelCoolingDown = (
+  model,
+  now,
+  cooldownMs = ZEN_MODEL_COOLDOWN_MS,
+  reason = cooldownMs === ZEN_TRANSIENT_MODEL_COOLDOWN_MS ? 'upstream_error' : 'rate_limited',
+) => {
+  if (model) sharedFreeZenCooldowns.mark(model, reason, { at: now, cooldownMs });
 };
 
-const isZenModelCoolingDown = (model, now) => {
-  const until = zenModelCooldowns.get(model);
-  if (until === undefined) return false;
-  if (until <= now) {
-    zenModelCooldowns.delete(model);
-    return false;
-  }
-  return true;
-};
+const isZenModelCoolingDown = (model, now) => sharedFreeZenCooldowns.isCoolingDown(model, now);
 
-export const __resetZenModelCooldowns = () => zenModelCooldowns.clear();
+export const __resetZenModelCooldowns = () => sharedFreeZenCooldowns.reset();
 
 export const isTransientZenError = (error) => {
   if (error instanceof ZenApiError) {
@@ -584,7 +589,7 @@ export async function summarizeText({
 
       // A model we cannot use is never worth retrying as-is — advance at once.
       if (isUnusableZenModelError(error)) {
-        markZenModelCoolingDown(model, now());
+        markZenModelCoolingDown(model, now(), ZEN_MODEL_COOLDOWN_MS, 'model_unavailable');
         if (advanceModel()) continue;
         break;
       }

@@ -11,7 +11,7 @@ const RUNTIME_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const COMPILED_HASH_PATTERN = /^[0-9a-f]{64}$/;
 const NAME_PATTERN = /^devryan-bot-[a-z0-9-]{1,120}$/;
 const EGRESS_AUTHORITY_PATTERN = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?:443$/;
-const REASONING_PROXY_PATH_PATTERN = /^\/v1\/runtime\/[A-Za-z0-9_-]{43}$/;
+const RUNTIME_PROXY_PATH_PATTERN = /^\/v1\/runtime\/[A-Za-z0-9_-]{43}$/;
 const WORKSPACE_FILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SHARED_FILE_MAX_BYTES = 25 * 1024 * 1024;
 
@@ -181,13 +181,14 @@ const validateTarget = (input, kind) => {
   });
 };
 
-const validateEndpoint = (endpoint, kind) => {
-  const expectedKeys = kind === 'reasoning' ? 'host\0path\0port' : 'host\0port';
+// Both runtime kinds are reached through the supervisor's scoped runtime proxy
+// on the host loopback; neither container publishes a port of its own.
+const validateEndpoint = (endpoint) => {
   if (!endpoint || typeof endpoint !== 'object' || Array.isArray(endpoint)
-    || Object.keys(endpoint).sort().join('\0') !== expectedKeys
+    || Object.keys(endpoint).sort().join('\0') !== 'host\0path\0port'
     || !['127.0.0.1', '::1'].includes(endpoint.host)
     || !Number.isInteger(endpoint.port) || endpoint.port < 1 || endpoint.port > 65535
-    || (kind === 'reasoning' && !REASONING_PROXY_PATH_PATTERN.test(endpoint.path))) {
+    || !RUNTIME_PROXY_PATH_PATTERN.test(endpoint.path)) {
     fail('Bot runtime endpoint is not loopback-confined', 'bot_runtime_endpoint_invalid', 502);
   }
   const origin = endpoint.host === '::1'
@@ -196,8 +197,8 @@ const validateEndpoint = (endpoint, kind) => {
   return Object.freeze({
     host: endpoint.host,
     port: endpoint.port,
-    ...(kind === 'reasoning' ? { path: endpoint.path } : {}),
-    baseUrl: `${origin}${kind === 'reasoning' ? endpoint.path : ''}`,
+    path: endpoint.path,
+    baseUrl: `${origin}${endpoint.path}`,
   });
 };
 
@@ -211,7 +212,7 @@ const validateEnsureResult = (result, expectedKind) => {
     || typeof result.replaced !== 'boolean' || !NAME_PATTERN.test(result.name)) {
     fail('Electron returned an invalid Bot runtime result', 'bot_runtime_host_response_invalid', 502);
   }
-  return Object.freeze({ ...result, endpoint: validateEndpoint(result.endpoint, expectedKind) });
+  return Object.freeze({ ...result, endpoint: validateEndpoint(result.endpoint) });
 };
 
 const validateStatusResult = (result, expectedKind) => {
@@ -230,7 +231,7 @@ const validateStatusResult = (result, expectedKind) => {
     ...result,
     endpoint: result.state === 'absent' || result.endpoint === null
       ? null
-      : validateEndpoint(result.endpoint, expectedKind),
+      : validateEndpoint(result.endpoint),
     ...(result.state === 'absent' ? { image: null } : {}),
   });
 };

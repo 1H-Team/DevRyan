@@ -49,6 +49,15 @@ describe('managed orchestration UI routes', () => {
     expect(cancel.status).toBe(200);
     expect(cancel.body.method).toBe('cancel');
 
+    const autoResume = await request(app)
+      .post('/api/orchestration/task/dvr_task_1/auto-resume')
+      .send({ taskId: 'dvr_task_body', rootSessionId: 'ses_root', directory: '/workspace', enabled: false });
+    expect(autoResume.status).toBe(200);
+    expect(autoResume.body).toEqual({
+      method: 'set_auto_resume',
+      params: { taskId: 'dvr_task_1', rootSessionId: 'ses_root', directory: '/workspace', enabled: false },
+    });
+
     const acknowledge = await request(app)
       .post('/api/orchestration/task/dvr_task_1/acknowledge')
       .send({
@@ -65,6 +74,7 @@ describe('managed orchestration UI routes', () => {
     expect(runtime.handleRpc.mock.calls.map(([input]) => input.method)).toEqual([
       'status',
       'cancel',
+      'set_auto_resume',
       'acknowledge',
     ]);
   });

@@ -51,6 +51,10 @@ import {
 } from "./abort-retry-guard"
 import { areSessionRecordsEqual, isStrictlyOlderSession } from "./session-recency"
 import { mergeSessionPreservingMeaningfulTitle } from "@/lib/sessionTitles"
+import { formatMessage, useI18nStore, type I18nKey, type I18nParams } from "@/lib/i18n/store"
+import { sessionEvents } from "@/lib/sessionEvents"
+import { refreshSessionTreeChanges } from "@/stores/useSessionTreeChangesStore"
+import type { ScopedRevertFile, ScopedRevertSessionTarget, ScopedSessionRevertResult } from "@/lib/opencode/client"
 
 const MESSAGE_REFETCH_LIMIT = 200
 const MESSAGE_REFETCH_SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
@@ -2021,16 +2025,232 @@ export async function rejectQuestion(
 // Message history
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Session-tree revert helpers
+//
+// One rule for every chat revert control: a revert always spans the session
+// tree of the prompt — the root session plus every sub-agent session that
+// worked for it — back to a point in the chat. Other sessions' work is never
+// touched.
+// ---------------------------------------------------------------------------
+
+const REVERT_TREE_IDLE_WAIT_MS = 8_000
+const REVERT_TREE_IDLE_POLL_MS = 50
+
+export type RevertToMessageOptions = {
+  /**
+   * Redo step: restore the previous revert first, then revert to `messageId`
+   * inside the same client transaction.
+   */
+  unrevertFirst?: boolean
+}
+
+type RevertTree = {
+  rootSessionId: string
+  ids: string[]
+  directoryById: Map<string, string>
+}
+
+type RevertErrorLike = Error & {
+  code?: string
+  status?: number
+  files?: ScopedRevertFile[]
+  sessions?: ScopedRevertSessionTarget[]
+}
+
+const translate = (key: I18nKey, params?: I18nParams): string =>
+  formatMessage(useI18nStore.getState().dictionary, key, params)
+
+const formatFileCount = (count: number): string =>
+  translate(count === 1 ? "chat.sessionChanges.count.fileSingle" : "chat.sessionChanges.count.filePlural", { count })
+
+const formatSessionCount = (count: number): string =>
+  translate(count === 1 ? "chat.sessionChanges.count.sessionSingle" : "chat.sessionChanges.count.sessionPlural", { count })
+
+/** Walk `parentID` up through every known session until the root. */
+export function resolveRootSessionId(sessionId: string): string {
+  const { sessions } = collectKnownSessionHierarchy()
+  const parentById = new Map<string, string>()
+  for (const session of sessions) {
+    const parentID = (session as SessionWithHierarchy).parentID
+    if (parentID) parentById.set(session.id, parentID)
+  }
+  const visited = new Set<string>([sessionId])
+  let current = sessionId
+  for (;;) {
+    const parentID = parentById.get(current)
+    if (!parentID || visited.has(parentID)) return current
+    visited.add(parentID)
+    current = parentID
+  }
+}
+
+function collectRevertTree(sessionId: string): RevertTree {
+  const rootSessionId = resolveRootSessionId(sessionId)
+  const { directoryById } = collectKnownSessionHierarchy()
+  const ids = getSessionIdsWithDescendants([rootSessionId])
+  if (!ids.includes(rootSessionId)) ids.unshift(rootSessionId)
+  return { rootSessionId, ids, directoryById }
+}
+
+// The live session status is the only signal the server will ever flip after
+// an abort; message heuristics (a trailing assistant message without a
+// completion stamp) would keep the wait spinning on a session that is not
+// actually running.
+function isTreeSessionSettled(sessionId: string, directory: string | undefined): boolean {
+  if (!directory) return true
+  let store: StoreApi<DirectoryStore>
+  try {
+    store = directoryStore(directory)
+  } catch {
+    return true
+  }
+  const status = store.getState().session_status[sessionId]
+  return !status || status.type === "idle"
+}
+
+/** Poll (bounded) until every session in the tree reports idle. */
+async function waitForSessionTreeIdle(tree: RevertTree, fallbackDirectory: string | undefined): Promise<boolean> {
+  const directoryFor = (id: string) => tree.directoryById.get(id) ?? fallbackDirectory
+  const deadline = Date.now() + REVERT_TREE_IDLE_WAIT_MS
+  for (;;) {
+    if (tree.ids.every((id) => isTreeSessionSettled(id, directoryFor(id)))) return true
+    if (Date.now() >= deadline) return false
+    await new Promise((resolve) => setTimeout(resolve, REVERT_TREE_IDLE_POLL_MS))
+  }
+}
+
+/**
+ * Abort every working session in the tree (deepest first) and wait for the
+ * statuses to settle, so the server never rewrites files under a generation
+ * that is still streaming tool calls.
+ */
+async function abortSessionTreeBeforeRevert(tree: RevertTree, fallbackDirectory: string | undefined): Promise<void> {
+  const directoryFor = (id: string) => tree.directoryById.get(id) ?? fallbackDirectory
+  const working = tree.ids.filter((id) => !isTreeSessionSettled(id, directoryFor(id)))
+  if (working.length === 0) return
+
+  const knownDirectoryById = new Map<string, string>()
+  for (const id of tree.ids) {
+    const directory = directoryFor(id)
+    if (directory) knownDirectoryById.set(id, directory)
+  }
+
+  await abortWorkingSessionsBeforeRemoval(working, knownDirectoryById)
+  await waitForSessionTreeIdle(tree, fallbackDirectory)
+}
+
+/** Copy every revert marker the server applied onto the local session records. */
+function applyRevertedSessionMarkers(
+  sessions: Session[],
+  reverted: ScopedRevertSessionTarget[],
+  skipSessionId: string,
+): boolean {
+  let changed = false
+  for (const target of reverted) {
+    if (!target.id || !target.targetMessageID || target.id === skipSessionId) continue
+    const index = sessions.findIndex((session) => session.id === target.id)
+    if (index < 0) continue
+    const existing = (sessions[index] as Session & { revert?: { messageID?: string } }).revert
+    if (existing?.messageID === target.targetMessageID) continue
+    sessions[index] = { ...sessions[index], revert: { messageID: target.targetMessageID } } as Session
+    changed = true
+  }
+  return changed
+}
+
+/** Map a scoped revert failure to the copy the user should read. */
+export function describeScopedRevertFailure(error: unknown): string | null {
+  const candidate = error as RevertErrorLike | null
+  if (!candidate || typeof candidate !== "object") return null
+  const code = typeof candidate.code === "string" ? candidate.code : undefined
+  const file = candidate.files?.[0]?.path
+  switch (code) {
+    case "directory_busy":
+      return translate("chat.sessionChanges.error.directoryBusy")
+    case "session_busy":
+      return translate("chat.sessionChanges.error.sessionBusy")
+    case "working_tree_changed":
+      return translate("chat.sessionChanges.error.workingTreeChanged")
+    case "ambiguous_hunk":
+      return translate("chat.sessionChanges.error.ambiguousHunk", { file: file ?? translate("chat.sessionChanges.error.unknownFile") })
+    case "binary_diff_unsupported":
+      return translate("chat.sessionChanges.error.binaryDiffUnsupported", { file: file ?? translate("chat.sessionChanges.error.unknownFile") })
+    case "redo_unavailable":
+      return translate("chat.sessionChanges.toast.nothingToRedo")
+    case "SCOPED_REVERT_TIMEOUT":
+      return translate("chat.sessionChanges.error.timeout")
+    default:
+      return null
+  }
+}
+
+/**
+ * Callers toast `error.message`, so the mapped copy travels on the error
+ * itself. `code`, `files`, and `sessions` are preserved for callers that
+ * branch on them.
+ */
+export function toUserFacingRevertError(error: unknown): unknown {
+  const message = describeScopedRevertFailure(error)
+  if (!message) return error
+  const source = error as RevertErrorLike
+  if (source.message === message) return error
+  const mapped = new Error(message) as RevertErrorLike
+  mapped.name = source.name
+  mapped.code = source.code
+  mapped.status = source.status
+  mapped.files = source.files
+  mapped.sessions = source.sessions
+  return mapped
+}
+
+export const isRevertErrorCode = (error: unknown, code: string): boolean =>
+  Boolean(error) && typeof error === "object" && (error as RevertErrorLike).code === code
+
+function announceRevertOutcome(result: ScopedSessionRevertResult): void {
+  const fileCount = result.reverted.files.length
+  const sessionCount = Math.max(1, new Set(result.reverted.sessions.map((entry) => entry.id)).size)
+  const failedVerification = result.verification && result.verification.ok === false
+    ? result.verification.files?.[0]?.path ?? result.reverted.files[0]?.path
+    : undefined
+  void import("sonner").then(({ toast }) => {
+    if (failedVerification !== undefined) {
+      toast.warning(translate("chat.sessionChanges.error.verificationFailed", {
+        file: failedVerification || translate("chat.sessionChanges.error.unknownFile"),
+      }))
+      return
+    }
+    if (fileCount === 0) {
+      toast.success(translate("chat.sessionChanges.toast.revertedNoFiles"))
+      return
+    }
+    toast.success(translate("chat.sessionChanges.toast.reverted", {
+      files: formatFileCount(fileCount),
+      sessions: formatSessionCount(sessionCount),
+    }))
+  }).catch(() => undefined)
+}
+
+function settleSessionTreeAfterRevert(directory: string | undefined, rootSessionId: string): void {
+  if (!directory) return
+  void refreshSessionTreeChanges(directory, rootSessionId).catch(() => undefined)
+  sessionEvents.requestGitRefresh({ directory })
+}
+
 /**
  * Revert to a specific user message.
  *
- * 1. Abort if session is busy
+ * 1. Resolve the session tree (root + sub-agents) and abort every working member
  * 2. Extract text from the target message for prompt restoration
  * 3. Optimistically set revert marker so messages hide immediately
- * 4. Call OpenChamber's scoped session revert and merge returned session
+ * 4. Call OpenChamber's tree-scoped session revert and merge returned session
  * 5. Queue a session- and revision-owned composer restoration after acknowledgement
  */
-export async function revertToMessage(sessionId: string, messageId: string): Promise<void> {
+export async function revertToMessage(
+  sessionId: string,
+  messageId: string,
+  options: RevertToMessageOptions = {},
+): Promise<void> {
   if (!messageId) {
     throw new Error("messageID is required")
   }
@@ -2042,6 +2262,16 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   const activeTransaction = state.revert_transaction[sessionId]
   if (activeTransaction && activeTransaction.status === "pending") {
     return
+  }
+
+  // The tree is fixed before the optimistic marker lands so a child that
+  // finishes mid-flight cannot slip out of the abort set.
+  const tree = collectRevertTree(sessionId)
+  const { rootSessionId } = tree
+  for (const treeSessionId of tree.ids) {
+    if (treeSessionId !== sessionId && hasPendingSessionRevert(store, treeSessionId)) {
+      return
+    }
   }
 
   // Extract message text for prompt restoration (only non-synthetic text parts —
@@ -2106,37 +2336,40 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
     if (!updateSessionUserActivityFromMessages(draft, sessionId)) return nextState
     return { session_user_activity: draft.session_user_activity }
   })
-  // Abort if busy after the transaction marker is active.
-  const status = state.session_status[sessionId]
-  if (status && status.type !== "idle") {
-    try {
-      registerManualAbortGuard(sessionId, sessionDirectory, status)
-      await sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory })
-      store.setState((current) => {
-        const currentTransaction = current.revert_transaction[sessionId]
-        if (!currentTransaction || currentTransaction.version !== transaction.version) {
-          return current
-        }
-        if (current.session_status[sessionId]?.type === "idle") {
-          return current
-        }
-        return {
-          session_status: {
-            ...current.session_status,
-            [sessionId]: { type: "idle" as const },
-          },
-        }
-      })
-    } catch {
-      // ignore abort errors; scoped revert remains the authoritative operation.
-      // The abort never reached the server, so stop masking live status.
-      clearAbortGuard(sessionId)
+  // Abort the whole tree (deepest first) after the transaction marker is
+  // active, then wait for the statuses to settle. The selected session keeps
+  // the optimistic idle edge it always had so the row never shows a stale
+  // "working" label while the revert request is in flight.
+  await abortSessionTreeBeforeRevert(tree, sessionDirectory)
+  store.setState((current) => {
+    const currentTransaction = current.revert_transaction[sessionId]
+    if (!currentTransaction || currentTransaction.version !== transaction.version) {
+      return current
     }
-  }
+    const currentStatus = current.session_status[sessionId]
+    if (!currentStatus || currentStatus.type === "idle") {
+      return current
+    }
+    return {
+      session_status: {
+        ...current.session_status,
+        [sessionId]: { type: "idle" as const },
+      },
+    }
+  })
 
   // Call SDK and merge authoritative result into store
   try {
-    const result = await opencodeClient.revertSessionScoped(sessionId, messageId, sessionDirectory)
+    if (options.unrevertFirst) {
+      // Redo: put the working tree back first, then rewind to the new point.
+      // Both requests share one client transaction so the suffix stays hidden
+      // (and can be rolled back) as a unit.
+      await opencodeClient.unrevertSessionScoped(sessionId, sessionDirectory)
+    }
+    const result = await opencodeClient.revertSessionScoped(sessionId, messageId, sessionDirectory, {
+      scope: "tree",
+      rootSessionId,
+    })
     if (result) {
       const current = store.getState()
       const currentTransaction = current.revert_transaction[sessionId]
@@ -2147,8 +2380,15 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
         ...current.revert_transaction,
         [sessionId]: { ...currentTransaction, status: "confirmed", serverAcknowledged: true } as RevertTransaction,
       }
-      if (idx >= 0) {
-        updated[idx] = result
+      let sessionsChanged = false
+      if (idx >= 0 && result.session) {
+        updated[idx] = result.session
+        sessionsChanged = true
+      }
+      if (applyRevertedSessionMarkers(updated, result.reverted.sessions, sessionId)) {
+        sessionsChanged = true
+      }
+      if (sessionsChanged) {
         store.setState({
           session: updated,
           revert_transaction: nextRevertTransactions,
@@ -2160,8 +2400,11 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
       // after the safe scoped revert is acknowledged. If the server rejects the
       // revert, the visible messages and the user's existing draft stay aligned.
       queueRevertedUserMessageInput(sessionId, targetParts, messageText, expectedComposerRevision)
+      announceRevertOutcome(result)
+      settleSessionTreeAfterRevert(sessionDirectory, rootSessionId)
     }
-  } catch (err) {
+  } catch (rawError) {
+    const err = toUserFacingRevertError(rawError)
     // Rollback: restore removed messages + revert marker
     const current = store.getState()
     const currentTransaction = current.revert_transaction[sessionId]
@@ -2301,8 +2544,54 @@ export function reconcileUnexpectedAbort(sessionId: string, directoryOverride?: 
 }
 
 /**
- * Unrevert — restore all previously reverted messages.
- * Restore all previously reverted messages. Aborts if busy, merges result.
+ * Session Undo: revert the root session's tree back to its first user message.
+ * The first user message comes from the changes endpoint (the server's view of
+ * the tree), falling back to the first user message in the local list.
+ */
+export async function undoSession(sessionId: string): Promise<void> {
+  const rootSessionId = resolveRootSessionId(sessionId)
+  const directory = getSessionDirectory(rootSessionId)
+  const store = directoryStore(directory)
+
+  assertSessionRevertMutationAllowed(rootSessionId, directory, "undo")
+
+  let firstUserMessageID: string | undefined
+  try {
+    const changes = await opencodeClient.getSessionTreeChanges(rootSessionId, directory)
+    firstUserMessageID = changes.firstUserMessageID ?? undefined
+  } catch {
+    // The local message list is the fallback source of truth.
+  }
+
+  const localFirstUserMessage = () => (store.getState().message[rootSessionId] ?? []).find((message) => message.role === "user")
+
+  if (firstUserMessageID) {
+    const known = (store.getState().message[rootSessionId] ?? []).some((message) => message.id === firstUserMessageID)
+    if (!known) {
+      try {
+        await refetchSessionMessages(rootSessionId, directory)
+      } catch {
+        // Fall through to the local fallback below.
+      }
+      const stillMissing = !(store.getState().message[rootSessionId] ?? []).some((message) => message.id === firstUserMessageID)
+      if (stillMissing) firstUserMessageID = undefined
+    }
+  }
+
+  if (!firstUserMessageID) {
+    firstUserMessageID = localFirstUserMessage()?.id
+  }
+  if (!firstUserMessageID) {
+    throw new Error(translate("chat.sessionChanges.error.nothingToUndo"))
+  }
+
+  await revertToMessage(rootSessionId, firstUserMessageID)
+}
+
+/**
+ * Unrevert — restore all previously reverted messages and files.
+ * Aborts the session if busy, calls the tree-scoped unrevert, merges result.
+ * `redo_unavailable` is not an error for the user: it toasts "Nothing to redo".
  */
 export async function unrevertSession(sessionId: string): Promise<void> {
   const sessionDirectory = getSessionDirectory(sessionId)
@@ -2324,21 +2613,40 @@ export async function unrevertSession(sessionId: string): Promise<void> {
     }
   }
 
-  const result = await sdk().session.unrevert({ sessionID: sessionId, directory: sessionDirectory })
-  if (result.data) {
+  let result: Awaited<ReturnType<typeof opencodeClient.unrevertSessionScoped>>
+  try {
+    result = await opencodeClient.unrevertSessionScoped(sessionId, sessionDirectory)
+  } catch (rawError) {
+    if (isRevertErrorCode(rawError, "redo_unavailable")) {
+      void import("sonner").then(({ toast }) => {
+        toast.info(translate("chat.sessionChanges.toast.nothingToRedo"))
+      }).catch(() => undefined)
+      return
+    }
+    throw toUserFacingRevertError(rawError)
+  }
+
+  if (result?.session) {
     const current = store.getState()
     const sessions = [...current.session]
     const revertTransactions = { ...current.revert_transaction }
     delete revertTransactions[sessionId]
     const idx = sessions.findIndex((s) => s.id === sessionId)
     if (idx >= 0) {
-      sessions[idx] = result.data
+      sessions[idx] = result.session
       store.setState({ session: sessions, revert_transaction: revertTransactions })
     } else {
       store.setState({ revert_transaction: revertTransactions })
     }
   }
   await refetchSessionMessages(sessionId, sessionDirectory)
+  const restoredCount = result?.restored.length ?? 0
+  if (restoredCount > 0) {
+    void import("sonner").then(({ toast }) => {
+      toast.success(translate("chat.sessionChanges.toast.restored", { files: formatFileCount(restoredCount) }))
+    }).catch(() => undefined)
+  }
+  settleSessionTreeAfterRevert(sessionDirectory, resolveRootSessionId(sessionId))
 }
 
 /**

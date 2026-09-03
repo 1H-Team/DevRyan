@@ -24,7 +24,12 @@ const PACKAGED_AGENT_SCOPE = 'packaged';
 const AGENT_WRITE_DISABLED_MESSAGE = 'Agent configuration is read-only. Edit project .opencode/agents/*.md files directly.';
 const OPENCHAMBER_CONFIG_KEY = 'openchamber';
 const AGENT_OVERRIDES_CONFIG_KEY = 'agentOverrides';
+// Backup models live under their own sidecar key (never inside agentOverrides):
+// normalizeAgentModelOverride rejects unknown keys, and slim/plugin overrides are
+// written to an OpenCode-read file. OpenCode never reads this key.
+const AGENT_BACKUP_MODELS_CONFIG_KEY = 'agentBackupModels';
 const ALLOWED_AGENT_OVERRIDE_KEYS = new Set(['model', 'variant', 'councillors']);
+const ALLOWED_AGENT_BACKUP_MODEL_KEYS = new Set(['model', 'variant', 'providerID', 'modelID', 'providerId', 'modelId']);
 const SLIM_DEFAULT_DISABLED_AGENTS = ['observer'];
 const SLIM_PROTECTED_AGENTS = new Set(['orchestrator', 'councillor']);
 
@@ -166,6 +171,20 @@ function getAgentOverridesContainer(config) {
   return overrides;
 }
 
+function getAgentBackupModelsContainer(config) {
+  const openchamber = config?.[OPENCHAMBER_CONFIG_KEY];
+  if (!openchamber || typeof openchamber !== 'object' || Array.isArray(openchamber)) {
+    return {};
+  }
+
+  const backupModels = openchamber[AGENT_BACKUP_MODELS_CONFIG_KEY];
+  if (!backupModels || typeof backupModels !== 'object' || Array.isArray(backupModels)) {
+    return {};
+  }
+
+  return backupModels;
+}
+
 function readUserConfig(options = {}) {
   const userConfigPath = resolveUserConfigPath(options);
   const raw = readConfigFile(userConfigPath);
@@ -275,6 +294,91 @@ function listAgentModelOverrides(options = {}) {
   }
 
   return normalized;
+}
+
+/**
+ * Normalizes a per-agent backup model payload to `{ model: 'provider/model', variant }`.
+ * Accepts `{ model: 'provider/model' | { providerID, modelID }, variant? }` or a bare
+ * `{ providerID, modelID, variant? }`. Equality with the agent's primary model is
+ * checked in writeAgentBackupModel, where the agent config is known.
+ */
+function normalizeAgentBackupModel(rawBackupModel) {
+  if (!rawBackupModel || typeof rawBackupModel !== 'object' || Array.isArray(rawBackupModel)) {
+    throw new Error('Agent backup model must be an object');
+  }
+
+  for (const key of Object.keys(rawBackupModel)) {
+    if (!ALLOWED_AGENT_BACKUP_MODEL_KEYS.has(key)) {
+      throw new Error('Only model and variant can be set on an agent backup model');
+    }
+  }
+
+  const model = Object.prototype.hasOwnProperty.call(rawBackupModel, 'model')
+    ? modelValueToRef(rawBackupModel.model)
+    : modelValueToRef(rawBackupModel);
+  if (!model || !parseModelReference(model)) {
+    throw new Error('Agent backup model must use provider/model format');
+  }
+
+  let variant = null;
+  if (Object.prototype.hasOwnProperty.call(rawBackupModel, 'variant')) {
+    variant = normalizeVariant(rawBackupModel.variant);
+    if (variant === undefined) {
+      throw new Error('Agent backup model variant must be a string or null');
+    }
+  }
+
+  return { model, variant };
+}
+
+function listAgentBackupModels(options = {}) {
+  const config = readUserConfig(options);
+  const backupModels = getAgentBackupModelsContainer(config);
+  const normalized = {};
+
+  for (const [agentName, rawBackupModel] of Object.entries(backupModels)) {
+    try {
+      normalized[agentName] = normalizeAgentBackupModel(rawBackupModel);
+    } catch {
+      // Ignore malformed backup entries so one bad entry does not hide agents.
+    }
+  }
+
+  return normalized;
+}
+
+function resolveAgentBackupModelRecord(backupModels, agentName) {
+  const entry = backupModels && typeof agentName === 'string' ? backupModels[agentName] : undefined;
+  if (!entry) return null;
+  const parsed = parseModelReference(entry.model);
+  if (!parsed) return null;
+  return {
+    providerID: parsed.providerID,
+    modelID: parsed.modelID,
+    variant: typeof entry.variant === 'string' ? entry.variant : null,
+  };
+}
+
+function attachAgentBackupModel(agent, backupModels) {
+  if (!agent || typeof agent !== 'object' || Array.isArray(agent)) return agent;
+  const next = {
+    ...agent,
+    backupModel: resolveAgentBackupModelRecord(backupModels, agent.name),
+  };
+  if (agent.__path) {
+    Object.defineProperty(next, '__path', { value: agent.__path, enumerable: false });
+  }
+  return next;
+}
+
+// The effective execution model (what executionFromManagedAgent runs) is the
+// scalar `model`; modelRefs may still carry frontmatter/councillor refs.
+function getAgentPrimaryModelRef(agentConfig) {
+  const scalarModel = modelValueToRef(agentConfig?.model);
+  if (scalarModel) return scalarModel;
+  const modelRefs = Array.isArray(agentConfig?.modelRefs) ? agentConfig.modelRefs : [];
+  const firstModelRef = modelRefs.find((entry) => typeof entry === 'string' && entry.trim());
+  return firstModelRef ? firstModelRef.trim() : null;
 }
 
 function listStaleAgentModelOverrides(workingDirectory, options = {}) {
@@ -600,6 +704,63 @@ function deleteAgentModelOverride(agentName, options = {}) {
   return true;
 }
 
+/**
+ * Persists a per-agent backup model in the DevRyan sidecar. Unlike model
+ * overrides this never routes to Slim config or agent frontmatter: OpenCode
+ * must never see it. It is only consulted by the managed-task scheduler when
+ * the primary model hits a provider usage limit.
+ */
+function writeAgentBackupModel(agentName, rawBackupModel, workingDirectory, options = {}) {
+  const backupModel = normalizeAgentBackupModel(rawBackupModel);
+  assertKnownAgentName(agentName, workingDirectory, options);
+
+  const primaryModelRef = getAgentPrimaryModelRef(getAgentConfig(agentName, workingDirectory, options).config);
+  if (primaryModelRef && primaryModelRef === backupModel.model) {
+    throw new Error('Agent backup model must differ from the primary model');
+  }
+
+  const config = readUserConfig(options);
+  const openchamber = config[OPENCHAMBER_CONFIG_KEY] && typeof config[OPENCHAMBER_CONFIG_KEY] === 'object' && !Array.isArray(config[OPENCHAMBER_CONFIG_KEY])
+    ? { ...config[OPENCHAMBER_CONFIG_KEY] }
+    : {};
+  const backupModels = getAgentBackupModelsContainer(config);
+
+  writeUserConfig({
+    ...config,
+    [OPENCHAMBER_CONFIG_KEY]: {
+      ...openchamber,
+      [AGENT_BACKUP_MODELS_CONFIG_KEY]: {
+        ...backupModels,
+        [agentName]: backupModel,
+      },
+    },
+  }, options);
+
+  return backupModel;
+}
+
+function deleteAgentBackupModel(agentName, options = {}) {
+  const config = readUserConfig(options);
+  const openchamber = config[OPENCHAMBER_CONFIG_KEY] && typeof config[OPENCHAMBER_CONFIG_KEY] === 'object' && !Array.isArray(config[OPENCHAMBER_CONFIG_KEY])
+    ? { ...config[OPENCHAMBER_CONFIG_KEY] }
+    : {};
+  const backupModels = { ...getAgentBackupModelsContainer(config) };
+
+  if (!Object.prototype.hasOwnProperty.call(backupModels, agentName)) {
+    return false;
+  }
+
+  delete backupModels[agentName];
+  writeUserConfig({
+    ...config,
+    [OPENCHAMBER_CONFIG_KEY]: {
+      ...openchamber,
+      [AGENT_BACKUP_MODELS_CONFIG_KEY]: backupModels,
+    },
+  }, options);
+  return true;
+}
+
 function parseAgentMdFile(filePath, scope, rootDir) {
   const { frontmatter, body } = parseMdFile(filePath);
   const companionCouncillors = readAgentModelsCompanion(filePath);
@@ -688,10 +849,12 @@ function listProjectAgents(workingDirectory) {
 
 function listConfigAgents(workingDirectory, options = {}) {
   const overrides = listAgentModelOverrides(options);
+  const backupModels = listAgentBackupModels(options);
   return getBaseConfigAgents(workingDirectory, options)
     .map((agent) => (agent.source === SLIM_SCOPE || agent.slimRuntimeModel
       ? agent
       : applyAgentModelOverride(agent, overrides[agent.name])))
+    .map((agent) => attachAgentBackupModel(agent, backupModels))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -849,12 +1012,13 @@ function getAgentSources(agentName, workingDirectory) {
 
 function getAgentConfig(agentName, workingDirectory, options = {}) {
   const overrides = listAgentModelOverrides(options);
+  const backupModels = listAgentBackupModels(options);
   const slimAgents = getSlimConfigAgents(workingDirectory, options);
   if (slimAgents[agentName]) {
     return {
       source: 'slim',
       scope: SLIM_SCOPE,
-      config: slimAgents[agentName],
+      config: attachAgentBackupModel(slimAgents[agentName], backupModels),
     };
   }
   const slimRuntimeAgents = getSlimRuntimeModelAgents(workingDirectory, options);
@@ -867,7 +1031,7 @@ function getAgentConfig(agentName, workingDirectory, options = {}) {
     return {
       source: 'md',
       scope: AGENT_SCOPE.PROJECT,
-      config,
+      config: attachAgentBackupModel(config, backupModels),
     };
   }
 
@@ -888,7 +1052,7 @@ function getAgentConfig(agentName, workingDirectory, options = {}) {
     return {
       source: 'md',
       scope: PACKAGED_AGENT_SCOPE,
-      config,
+      config: attachAgentBackupModel(config, backupModels),
     };
   }
 
@@ -896,7 +1060,7 @@ function getAgentConfig(agentName, workingDirectory, options = {}) {
     return {
       source: 'slim',
       scope: SLIM_SCOPE,
-      config: slimRuntimeAgents[agentName],
+      config: attachAgentBackupModel(slimRuntimeAgents[agentName], backupModels),
     };
   }
 
@@ -904,6 +1068,27 @@ function getAgentConfig(agentName, workingDirectory, options = {}) {
     source: 'none',
     scope: null,
     config: {},
+  };
+}
+
+/**
+ * Single-user (non-managed) resolver a scheduler timer can call without an HTTP
+ * request: returns the configured backup execution for `agent` in `directory`,
+ * or null when no backup model is set. Agent lookup is case-insensitive to
+ * mirror findManagedAgent in the multi-user runtime.
+ */
+function resolveLocalAgentBackupExecution({ directory, agent, options = {} } = {}) {
+  const normalizedName = typeof agent === 'string' ? agent.trim().toLowerCase() : '';
+  if (!normalizedName) return null;
+  const match = listConfigAgents(directory, options).find((entry) => (
+    typeof entry?.name === 'string' && entry.name.trim().toLowerCase() === normalizedName
+  ));
+  const backupModel = match?.backupModel;
+  if (!backupModel?.providerID || !backupModel?.modelID) return null;
+  return {
+    providerId: backupModel.providerID,
+    modelId: backupModel.modelID,
+    variant: typeof backupModel.variant === 'string' && backupModel.variant.trim() ? backupModel.variant.trim() : null,
   };
 }
 
@@ -925,6 +1110,12 @@ export {
   listStaleAgentModelOverrides,
   writeAgentModelOverride,
   deleteAgentModelOverride,
+  AGENT_BACKUP_MODELS_CONFIG_KEY,
+  normalizeAgentBackupModel,
+  listAgentBackupModels,
+  writeAgentBackupModel,
+  deleteAgentBackupModel,
+  resolveLocalAgentBackupExecution,
   listProjectAgents,
   listConfigAgents,
   throwAgentWriteDisabled as createAgent,

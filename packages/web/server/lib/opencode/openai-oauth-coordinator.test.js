@@ -129,7 +129,7 @@ describe('managed OpenAI OAuth owner', () => {
     fs.writeFileSync(scopedAuthFile, '{}', { mode: 0o600 });
     const inode = fs.statSync(scopedAuthFile).ino;
     let accessToken = 'image-access-1';
-    const hooks = await plugin({}, { environment: { DEVRYAN_BOT_GATEWAY_URL: 'http://host.docker.internal:12345', DEVRYAN_BOT_RUNTIME_TOKEN: 'a'.repeat(43) },
+    const hooks = await plugin({}, { environment: { DEVRYAN_BOT_GATEWAY_URL: 'http://egress:43121', DEVRYAN_BOT_RUNTIME_TOKEN: 'a'.repeat(43) },
       scopedAuthFile, fetchImpl: async (_url, init) => JSON.parse(init.body).operation === 'ready'
         ? Response.json({ protocol: 1, oauth: true })
         : Response.json({ accessToken, expiresAt: Date.now() + 3600000, accountId: 'account-a', generation: 'safe-generation' }) });
@@ -182,6 +182,23 @@ describe('managed OpenAI OAuth owner', () => {
     const apiConfig = { provider: { openai: { options: { apiKey: 'fixture-key' } } } };
     await api.config(apiConfig);
     expect(apiConfig.provider.openai.options).toEqual({ apiKey: 'fixture-key' });
+  });
+
+  it('registers without waiting for a stalled handshake and bounds the wait inside hooks', async () => {
+    const environment = { DEVRYAN_BOT_GATEWAY_URL: 'http://egress:43121', DEVRYAN_BOT_RUNTIME_TOKEN: 'a'.repeat(43) };
+    let handshakeSettled = false;
+    // The gateway never answers the handshake; every later call fails fast.
+    const fetchImpl = (_url, init) => (JSON.parse(init.body).operation === 'ready'
+      ? new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => { handshakeSettled = true; reject(init.signal.reason); }, { once: true });
+      })
+      : Promise.reject(new Error('offline')));
+    const hooks = await plugin({}, { environment, fetchImpl, readyTimeoutMs: 200 });
+    expect(handshakeSettled).toBe(false); // registration returned while the gateway was still silent
+    const config = {};
+    await hooks.config(config);
+    expect(handshakeSettled).toBe(true); // the hook waited only for the bounded handshake
+    await expect(config.provider.openai.options.fetch('https://api.openai.com/v1/responses')).rejects.toBeDefined();
   });
 
   it('does not dispatch or replay after cancellation while waiting for access', async () => {

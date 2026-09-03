@@ -25,12 +25,28 @@ export {
   listStaleAgentModelOverrides,
   writeAgentModelOverride,
   deleteAgentModelOverride,
+  writeAgentBackupModel,
+  deleteAgentBackupModel,
+  resolveLocalAgentBackupExecution,
   listProjectAgents,
   listConfigAgents,
   createAgent,
   updateAgent,
   deleteAgent,
 } from './agents.js';
+
+export {
+  normalizeOrchestrationLimits,
+  readOrchestrationLimits,
+  writeOrchestrationLimits,
+} from './orchestration-limits.js';
+
+export {
+  INVALID_AGENT_RUNTIME_SETTINGS_CODE,
+  normalizeAgentRuntimeSettings,
+  readAgentRuntimeSettings,
+  writeAgentRuntimeSettings,
+} from './agent-runtime-settings.js';
 
 export {
   listPackagedAgents,

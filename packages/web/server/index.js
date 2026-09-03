@@ -100,7 +100,13 @@ import { createStandardSessionTitleRuntime } from './lib/opencode/standard-sessi
 import { createHarnessPreflight, registerHarnessPreflightRoute } from './lib/opencode/harness-preflight.js';
 import { inspectClaudeRuntimeCompatibility } from './lib/opencode/claude-runtime-compatibility.js';
 import { resolveApprovedSkills } from './lib/opencode/skill-policy.js';
-import { getAgentConfig, getAgentSources, listConfigAgents, listStaleAgentModelOverrides } from './lib/opencode/agents.js';
+import {
+  getAgentConfig,
+  getAgentSources,
+  listConfigAgents,
+  listStaleAgentModelOverrides,
+  resolveLocalAgentBackupExecution,
+} from './lib/opencode/agents.js';
 import { listPackagedAgents } from './lib/opencode/packaged-agents.js';
 import {
   findWorktreeRoot,
@@ -129,7 +135,11 @@ import { createBrowserCdpDiscoveryRuntime } from './lib/browser-cdp/discovery-ru
 import { createBrowserLeaseRuntime } from './lib/browser-cdp/lease-runtime.js';
 import { createBrowserObservationRuntime } from './lib/browser-cdp/observation-runtime.js';
 import { dynamicNoStoreMiddleware } from './lib/http-cache-policy.js';
+import { createMeridianProviderResetProbe } from './lib/orchestration/provider-reset-probe.js';
 import { createWebManagedOrchestrationRuntime } from './lib/orchestration/runtime.js';
+import { createLaunchAdmissionHook } from './lib/orchestration/launch-admission.js';
+import { readOrchestrationLimits } from './lib/opencode/orchestration-limits.js';
+import { getSystemPressure } from './lib/system/pressure.js';
 import { registerManagedOrchestrationRoutes } from './lib/orchestration/routes.js';
 import { createWebHarnessRuntime } from './lib/harness/runtime.js';
 import { createWebPrimaryRecoveryRuntime } from './lib/harness/provider-recovery.js';
@@ -1093,8 +1103,6 @@ const standardSessionTitleRuntime = createStandardSessionTitleRuntime({
   fetchImpl: fetch,
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
-  fetchFreeZenModels,
-  getCachedZenModels,
   outboxFilePath: path.join(OPENCHAMBER_DATA_DIR, 'session-title-outbox.json'),
   onTitleGenerated: ({ session, title, directory }) => {
     emitSyntheticOpenCodeEvent({
@@ -1410,6 +1418,7 @@ observeContextModeToolFailure = (payload) => (
   openCodeLifecycleRuntime.observeContextModeToolFailure(payload)
 );
 const restartOpenCode = (...args) => openCodeLifecycleRuntime.restartOpenCode(...args);
+const syncManagedAgentRuntimeConfig = (...args) => openCodeLifecycleRuntime.syncManagedAgentRuntimeConfig(...args);
 const waitForOpenCodeReady = (...args) => openCodeLifecycleRuntime.waitForOpenCodeReady(...args);
 const waitForAgentPresence = (...args) => openCodeLifecycleRuntime.waitForAgentPresence(...args);
 const commandDeadlineRuntime = createWebCommandDeadlineRuntime({
@@ -2038,6 +2047,14 @@ async function main(options = {}) {
   registerEvidenceRoutes(app, { runtime: evidenceRuntime });
   await harnessInitialization;
 
+  const providerResetProbe = createMeridianProviderResetProbe({
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+    fetchImpl: fetch,
+    isExternalOpenCode: () => (
+      isExternalOpenCode || ENV_SKIP_OPENCODE_START || Boolean(ENV_CONFIGURED_OPENCODE_HOST)
+    ),
+  });
   managedOrchestrationRuntime = createWebManagedOrchestrationRuntime({
     dataDirectory: OPENCHAMBER_DATA_DIR,
     buildOpenCodeUrl,
@@ -2050,8 +2067,26 @@ async function main(options = {}) {
       || ENV_CONFIGURED_OPENCODE_HOST
     ),
     getWorkAdmissionBlock: harnessRuntime.getPromptAdmissionBlock,
+    // Launch admission: the configurable concurrent sub-agent cap plus a pause
+    // while the host is under memory pressure. Running work is never touched.
+    admitLaunch: createLaunchAdmissionHook({
+      readLimits: () => readOrchestrationLimits(),
+      getSystemPressure,
+      logger: console,
+    }),
     resolveAgentExecution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
       ?? params.fallbackExecution,
+    // Auto-resume hooks: managed sessions key breakers per owning user and use
+    // the host-managed backup model; local sessions fall back to the packaged
+    // agent config. Meridian answers when an Anthropic limit lifts.
+    resolveOwnerKey: async (params) => (
+      (await multiUserRuntime?.resolveSessionOwnerKey?.(params)) ?? 'local'
+    ),
+    resolveBackupExecution: async (params) => (
+      (await multiUserRuntime?.resolveSessionAgentBackupExecution?.(params))
+      ?? resolveLocalAgentBackupExecution({ directory: params.directory, agent: params.agent })
+    ),
+    resolveProviderReset: (params) => providerResetProbe.resolveProviderReset(params),
     auxiliaryRpcHandlers: {
       primary_recovery: (params) => primaryRecoveryRuntime.plugin(params),
       resolve_agent_execution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
@@ -2234,6 +2269,11 @@ async function main(options = {}) {
     restartOpenCode,
     waitForOpenCodeReady,
     isExternalOpenCode: () => isExternalOpenCode || ENV_SKIP_OPENCODE_START,
+    syncManagedAgentRuntimeConfig,
+    // A live managed process is what makes an agent-runtime change owe a restart.
+    isManagedOpenCodeRunning: () => Boolean(
+      openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode,
+    ),
     buildAugmentedPath,
     projectConfigRuntime,
     scheduledTasksRuntime,
@@ -2242,6 +2282,7 @@ async function main(options = {}) {
     emitSyntheticOpenCodeEvent,
     resolveZenModel,
     fetchFreeZenModels,
+    getCachedZenModels,
     xaiToolCatalogRuntime,
     resolveZenModelNonBlocking,
     recordCommitTiming: (req, payload) => harnessRuntime.record({

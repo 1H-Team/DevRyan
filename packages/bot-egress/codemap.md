@@ -11,7 +11,10 @@ rebinding, and arbitrary targets.
 ## Entry points
 
 - `src/server.js`: streaming HTTP and CONNECT proxy transport plus the
-  separately authenticated active-revision registry/control route.
+  separately authenticated active-revision and gateway-address control routes.
+- `src/gateway-relay.js`: the private-gateway relay that lets internal-only
+  reasoning and computer containers reach the host loopback gateway, its route
+  allowlist, and the control-published host origin.
 - `src/connect-policy.js`: authority parsing, exact allowlist checks, DNS
   rebinding defense, and public-address classification.
 - `src/token.js`: signed runtime capabilities, host normalization, expiry, and
@@ -29,8 +32,12 @@ rebinding, and arbitrary targets.
 3. Every resolved address must be public; one private DNS answer denies all.
 4. Upstream sockets connect to the already-reviewed IP address to avoid a
    second DNS lookup.
-5. Reasoning and computer containers have no direct public interface; only this
-   service joins the public-NAT network. Chromium reaches it through a rotating
-   loopback bearer relay.
+5. Reasoning and computer containers have no direct public interface and no
+   route to the host; only this service joins the public-NAT network. Chromium
+   reaches it through a rotating loopback bearer relay.
 6. Standard Basic proxy credentials require the fixed `devryan` username and
    carry the same signed token as the direct Bearer form.
+7. The private-gateway relay forwards only the four gateway routes, only to the
+   host origin published on the control channel, and only with headers it
+   builds itself. It fails closed before that address is published, and it
+   authenticates nothing: the gateway still checks every capability.

@@ -44,6 +44,32 @@ the relay as an explicit proxy, disables QUIC, and disables the implicit
 loopback bypass. Proxy failure therefore disables browser networking instead of
 falling back to direct container egress.
 
+## Private gateway relay
+
+Reasoning and computer containers join internal networks only, so they cannot
+open a socket to the host at all. Their authenticated private-gateway calls
+arrive here instead, on the same in-network address as the proxy, and this
+service relays them to the host loopback gateway. It is the one Bot-facing
+service already bridged to the host.
+
+The host address arrives on the separately authenticated control channel
+(`POST /v1/gateway/origin`) and is never accepted from a relayed request: it
+must be an `http://host.docker.internal:<port>` origin with no credentials,
+path, query, or fragment. Until it is published the relay answers 503, so a
+container can reach the gateway the deployment pinned and nothing else on the
+host loopback.
+
+Only the four gateway routes are relayed; any other path is refused here rather
+than forwarded, so the relay never becomes a general HTTP client aimed at the
+host. The upstream header set is built from scratch rather than filtered: the
+`Host` the gateway checks, the caller's bearer capability, the declared body
+shape, and a staged filename. Nothing a container sends can smuggle a cookie or
+a forwarding header past it, and only a reviewed response header set comes back.
+Bodies and responses are streamed under per-route bounds that mirror the
+gateway's own maxima, so the relay is never the narrower limit. The gateway
+still authenticates every call: the relay carries a capability, it does not
+grant one.
+
 The standalone image starts fail-closed. Electron publishes the service on an
 ephemeral loopback port and activates the current `(Bot, revision)` pair through
 `POST /v1/revisions/activate` with the purpose-separated

@@ -3,11 +3,17 @@ import type { Agent } from "@opencode-ai/sdk/v2";
 import {
   buildAgentConfigPayload,
   buildAgentModelOverridePayload,
+  buildAgentRuntimeSettingsPayload,
+  buildOrchestrationLimitsPayload,
   buildSettingsAgentCatalog,
   filterVisibleAgentSelectorOptions,
   filterVisibleSettingsAgents,
   normalizeAgentForSettings,
+  normalizeAgentRuntimeSettings,
+  normalizeOrchestrationLimits,
   useAgentsStore,
+  type AgentRuntimeSettings,
+  type OrchestrationLimits,
 } from "./useAgentsStore";
 import { useConfigStore } from "./useConfigStore";
 import { useSelectionStore } from "@/sync/selection-store";
@@ -367,6 +373,144 @@ describe("agent model override persistence", () => {
     }
   });
 
+  test("saves a backup model through the backup-model route and reconciles the local record from the response", async () => {
+    const originalAgents = useAgentsStore.getState().agents;
+    useAgentsStore.setState({
+      agents: [makeAgent({
+        name: "builder",
+        mode: "primary",
+        model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+        modelRefs: ["anthropic/claude-sonnet-4-5"],
+        variant: "low",
+      } as Partial<Agent> & { name: string })],
+    });
+
+    let fetchCalls = 0;
+    const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls += 1;
+      expect(String(input).startsWith("/api/config/agents/builder/backup-model")).toBe(true);
+      expect(init?.method).toBe("PUT");
+      expect(JSON.parse(String(init?.body))).toEqual({ model: "openai/gpt-5.5", variant: "high" });
+      return new Response(JSON.stringify({
+        success: true,
+        backupModel: { model: "openai/gpt-5.5", variant: "high" },
+        agent: {
+          source: "md",
+          scope: "project",
+          config: {
+            name: "builder",
+            model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+            modelRefs: ["anthropic/claude-sonnet-4-5"],
+            variant: "low",
+            backupModel: { providerID: "openai", modelID: "gpt-5.5", variant: "high" },
+          },
+        },
+      }), { status: 200 });
+    };
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      await useAgentsStore.getState().saveAgentBackupModel("builder", { model: "openai/gpt-5.5", variant: "high" });
+
+      expect(fetchCalls).toBe(1);
+      const savedAgent = useAgentsStore.getState().agents.find((agent) => agent.name === "builder") as Agent & {
+        backupModel?: { providerID: string; modelID: string; variant: string | null } | null;
+        variant?: string;
+      };
+      expect(savedAgent.backupModel).toEqual({ providerID: "openai", modelID: "gpt-5.5", variant: "high" });
+      expect(savedAgent.model).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-4-5" });
+      expect(savedAgent.variant).toBe("low");
+    } finally {
+      globalThis.fetch = originalFetch;
+      useAgentsStore.setState({ agents: originalAgents });
+    }
+  });
+
+  test("sends a null backup variant and reconciles from the request when the response omits agent config", async () => {
+    const originalAgents = useAgentsStore.getState().agents;
+    useAgentsStore.setState({
+      agents: [makeAgent({
+        name: "builder",
+        model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+      } as Partial<Agent> & { name: string })],
+    });
+
+    let requestBody: unknown = null;
+    const fetchMock = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    };
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      await useAgentsStore.getState().saveAgentBackupModel("builder", { model: "openai/gpt-5.5", variant: "  " });
+
+      expect(requestBody).toEqual({ model: "openai/gpt-5.5", variant: null });
+      const savedAgent = useAgentsStore.getState().agents.find((agent) => agent.name === "builder") as Agent & {
+        backupModel?: { providerID: string; modelID: string; variant: string | null } | null;
+      };
+      expect(savedAgent.backupModel).toEqual({ providerID: "openai", modelID: "gpt-5.5", variant: null });
+      expect(savedAgent.model).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-4-5" });
+    } finally {
+      globalThis.fetch = originalFetch;
+      useAgentsStore.setState({ agents: originalAgents });
+    }
+  });
+
+  test("rejects a malformed backup model ref before calling the host and surfaces host errors", async () => {
+    let fetchCalls = 0;
+    const fetchMock = async () => {
+      fetchCalls += 1;
+      return new Response(JSON.stringify({ error: "Agent backup model must differ from the primary model" }), { status: 400 });
+    };
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      await expect(useAgentsStore.getState().saveAgentBackupModel("builder", { model: "   " })).rejects.toThrow(/provider\/model/);
+      expect(fetchCalls).toBe(0);
+
+      await expect(useAgentsStore.getState().saveAgentBackupModel("builder", { model: "anthropic/claude-sonnet-4-5" }))
+        .rejects.toThrow("Agent backup model must differ from the primary model");
+      expect(fetchCalls).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("clears a backup model through the backup-model route and nulls the local record", async () => {
+    const originalAgents = useAgentsStore.getState().agents;
+    useAgentsStore.setState({
+      agents: [makeAgent({
+        name: "builder",
+        model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+        backupModel: { providerID: "openai", modelID: "gpt-5.5", variant: "high" },
+      } as Partial<Agent> & { name: string })],
+    });
+
+    let fetchCalls = 0;
+    const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls += 1;
+      expect(String(input).startsWith("/api/config/agents/builder/backup-model")).toBe(true);
+      expect(init?.method).toBe("DELETE");
+      return new Response(JSON.stringify({ success: true, deleted: true, backupModel: null }), { status: 200 });
+    };
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      await useAgentsStore.getState().resetAgentBackupModel("builder");
+
+      expect(fetchCalls).toBe(1);
+      const savedAgent = useAgentsStore.getState().agents.find((agent) => agent.name === "builder") as Agent & {
+        backupModel?: unknown;
+      };
+      expect(savedAgent.backupModel).toBeNull();
+      expect(savedAgent.model).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-4-5" });
+    } finally {
+      globalThis.fetch = originalFetch;
+      useAgentsStore.setState({ agents: originalAgents });
+    }
+  });
+
   test("syncs saved override agent config into the chat config store", async () => {
     const originalAgents = useConfigStore.getState().agents;
     const originalSettingsAgents = useAgentsStore.getState().agents;
@@ -519,5 +663,268 @@ describe("buildSettingsAgentCatalog", () => {
 
     expect(catalog.map((agent) => agent.name)).toEqual(["orchestrator"]);
     expect(catalog.find((agent) => agent.name === "orchestrator")?.description).toBe("Project override");
+  });
+});
+
+describe("orchestration limits", () => {
+  const limitsPayload = (overrides: Record<string, unknown> = {}) => ({
+    maxConcurrentSubagents: 4,
+    pauseUnderMemoryPressure: true,
+    pressure: { state: "normal", availableRatio: 0.42, swapUsedRatio: 0.1, sampledAt: 1_000, source: "vm_stat" },
+    ...overrides,
+  });
+  const seed = (): OrchestrationLimits => {
+    const limits = normalizeOrchestrationLimits(limitsPayload());
+    if (!limits) throw new Error("fixture must normalize");
+    useAgentsStore.setState({ orchestrationLimits: limits });
+    return limits;
+  };
+  const restore = () => {
+    globalThis.fetch = originalFetch;
+    useAgentsStore.setState({ orchestrationLimits: null });
+  };
+
+  test("loads host-wide sub-agent limits through the orchestration-limits route", async () => {
+    let requested: { url: string; method: string | undefined } | null = null;
+    const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
+      requested = { url: String(input), method: init?.method };
+      return new Response(JSON.stringify(limitsPayload({
+        maxConcurrentSubagents: 6,
+        pressure: { state: "elevated", availableRatio: "n/a", swapUsedRatio: null, sampledAt: 2_000, source: "vm_stat" },
+      })), { status: 200 });
+    };
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      const limits = await useAgentsStore.getState().getOrchestrationLimits();
+
+      expect(requested).toEqual({ url: "/api/config/orchestration-limits", method: "GET" });
+      expect(limits).toEqual({
+        maxConcurrentSubagents: 6,
+        pauseUnderMemoryPressure: true,
+        pressure: { state: "elevated", availableRatio: null, swapUsedRatio: null, sampledAt: 2_000, source: "vm_stat" },
+      });
+      expect(useAgentsStore.getState().orchestrationLimits).toEqual(limits);
+    } finally {
+      restore();
+    }
+  });
+
+  test("reads a host without the route as having no limits to show", async () => {
+    seed();
+    globalThis.fetch = (async () => new Response(JSON.stringify({ error: "Not found" }), { status: 404 })) as unknown as typeof fetch;
+
+    try {
+      await expect(useAgentsStore.getState().getOrchestrationLimits()).resolves.toBeNull();
+      expect(useAgentsStore.getState().orchestrationLimits).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  test("rejects a malformed limits payload without storing it", async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ maxConcurrentSubagents: 40, pauseUnderMemoryPressure: true }), { status: 200 })) as unknown as typeof fetch;
+
+    try {
+      await expect(useAgentsStore.getState().getOrchestrationLimits()).rejects.toThrow("Failed to load sub-agent limits");
+      expect(useAgentsStore.getState().orchestrationLimits).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  test("saves a partial update optimistically and reconciles from the response", async () => {
+    seed();
+    let optimistic: number | null = null;
+    let requestBody: unknown = null;
+    let method: string | undefined;
+    const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("/api/config/orchestration-limits");
+      method = init?.method;
+      requestBody = JSON.parse(String(init?.body));
+      optimistic = useAgentsStore.getState().orchestrationLimits?.maxConcurrentSubagents ?? null;
+      return new Response(JSON.stringify(limitsPayload({
+        maxConcurrentSubagents: 8,
+        pressure: { state: "critical", availableRatio: 0.05, swapUsedRatio: 0.9, sampledAt: 3_000, source: "vm_stat" },
+      })), { status: 200 });
+    };
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      const saved = await useAgentsStore.getState().saveOrchestrationLimits({ maxConcurrentSubagents: 8 });
+
+      expect(method).toBe("PUT");
+      expect(requestBody).toEqual({ maxConcurrentSubagents: 8 });
+      expect(optimistic).toBe(8);
+      expect(saved.pressure.state).toBe("critical");
+      expect(useAgentsStore.getState().orchestrationLimits).toEqual(saved);
+      expect(useAgentsStore.getState().orchestrationLimits?.pauseUnderMemoryPressure).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+
+  test("reverts the optimistic value and throws when the host rejects the update", async () => {
+    const before = seed();
+    globalThis.fetch = (async () => new Response(
+      JSON.stringify({ error: "maxConcurrentSubagents must be between 1 and 16" }),
+      { status: 400 },
+    )) as unknown as typeof fetch;
+
+    try {
+      await expect(useAgentsStore.getState().saveOrchestrationLimits({ pauseUnderMemoryPressure: false }))
+        .rejects.toThrow("must be between 1 and 16");
+      expect(useAgentsStore.getState().orchestrationLimits).toEqual(before);
+    } finally {
+      restore();
+    }
+  });
+
+  test("validates the payload before touching the host", async () => {
+    seed();
+    let calls = 0;
+    globalThis.fetch = (async () => { calls += 1; return new Response("{}", { status: 200 }); }) as unknown as typeof fetch;
+
+    try {
+      await expect(useAgentsStore.getState().saveOrchestrationLimits({ maxConcurrentSubagents: 0 })).rejects.toThrow("between 1 and 16");
+      await expect(useAgentsStore.getState().saveOrchestrationLimits({})).rejects.toThrow("Nothing to save");
+      expect(calls).toBe(0);
+      expect(buildOrchestrationLimitsPayload({ maxConcurrentSubagents: 3.4, pauseUnderMemoryPressure: true }))
+        .toEqual({ maxConcurrentSubagents: 3, pauseUnderMemoryPressure: true });
+      expect(normalizeOrchestrationLimits(limitsPayload({ pressure: undefined }))?.pressure)
+        .toEqual({ state: "normal", availableRatio: null, swapUsedRatio: null, sampledAt: null, source: "unavailable" });
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe("agent runtime settings", () => {
+  const seed = (overrides: Partial<AgentRuntimeSettings> = {}): AgentRuntimeSettings => {
+    const settings: AgentRuntimeSettings = { lsp: true, appliesOnRestart: true, restartRequired: false, ...overrides };
+    useAgentsStore.setState({ agentRuntimeSettings: settings });
+    return settings;
+  };
+  const restore = () => {
+    globalThis.fetch = originalFetch;
+    useAgentsStore.setState({ agentRuntimeSettings: null });
+  };
+  const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+
+  test("loads the switches through the agent-runtime route", async () => {
+    let requested: { url: string; method: string | undefined } | null = null;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      requested = { url: String(input), method: init?.method };
+      return jsonResponse({ lsp: false, appliesOnRestart: true });
+    }) as unknown as typeof fetch;
+
+    try {
+      const settings = await useAgentsStore.getState().getAgentRuntimeSettings();
+
+      expect(requested).toEqual({ url: "/api/config/agent-runtime", method: "GET" });
+      expect(settings).toEqual({ lsp: false, appliesOnRestart: true, restartRequired: false });
+      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual(settings);
+    } finally {
+      restore();
+    }
+  });
+
+  test("reads a host without the route (404 or 501) as having nothing to show", async () => {
+    for (const status of [404, 501]) {
+      seed();
+      globalThis.fetch = (async () => jsonResponse({ error: "Not here" }, status)) as unknown as typeof fetch;
+      try {
+        await expect(useAgentsStore.getState().getAgentRuntimeSettings()).resolves.toBeNull();
+        expect(useAgentsStore.getState().agentRuntimeSettings).toBeNull();
+      } finally {
+        restore();
+      }
+    }
+  });
+
+  test("rejects a malformed payload and surfaces host errors without storing them", async () => {
+    globalThis.fetch = (async () => jsonResponse({ lsp: "yes" })) as unknown as typeof fetch;
+    try {
+      await expect(useAgentsStore.getState().getAgentRuntimeSettings()).rejects.toThrow("Failed to load agent runtime settings");
+      expect(useAgentsStore.getState().agentRuntimeSettings).toBeNull();
+    } finally {
+      restore();
+    }
+
+    globalThis.fetch = (async () => jsonResponse({ error: "Agent runtime settings are not available for this user" }, 403)) as unknown as typeof fetch;
+    try {
+      await expect(useAgentsStore.getState().getAgentRuntimeSettings()).rejects.toThrow("not available for this user");
+      expect(useAgentsStore.getState().agentRuntimeSettings).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  test("saves optimistically, reconciles from the response, and keeps the owed restart", async () => {
+    seed();
+    let optimistic: boolean | null = null;
+    let requestBody: unknown = null;
+    let method: string | undefined;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("/api/config/agent-runtime");
+      method = init?.method;
+      requestBody = JSON.parse(String(init?.body));
+      optimistic = useAgentsStore.getState().agentRuntimeSettings?.lsp ?? null;
+      return jsonResponse({ lsp: false, appliesOnRestart: true, restartRequired: true });
+    }) as unknown as typeof fetch;
+
+    try {
+      const saved = await useAgentsStore.getState().saveAgentRuntimeSettings({ lsp: false });
+
+      expect(method).toBe("PUT");
+      expect(requestBody).toEqual({ lsp: false });
+      expect(optimistic).toBe(false);
+      expect(saved).toEqual({ lsp: false, appliesOnRestart: true, restartRequired: true });
+      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual(saved);
+
+      // Toggling back before restarting still owes the restart, and so does a reload.
+      globalThis.fetch = (async () => jsonResponse({ lsp: true, appliesOnRestart: true, restartRequired: false })) as unknown as typeof fetch;
+      const restored = await useAgentsStore.getState().saveAgentRuntimeSettings({ lsp: true });
+      expect(restored.restartRequired).toBe(true);
+
+      globalThis.fetch = (async () => jsonResponse({ lsp: true, appliesOnRestart: true })) as unknown as typeof fetch;
+      await useAgentsStore.getState().getAgentRuntimeSettings();
+      expect(useAgentsStore.getState().agentRuntimeSettings?.restartRequired).toBe(true);
+
+      useAgentsStore.getState().markAgentRuntimeRestarted();
+      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual({ lsp: true, appliesOnRestart: true, restartRequired: false });
+    } finally {
+      restore();
+    }
+  });
+
+  test("reverts the optimistic value and throws when the host rejects the update", async () => {
+    const before = seed();
+    globalThis.fetch = (async () => jsonResponse({ error: 'Agent runtime setting "lsp" must be a boolean' }, 400)) as unknown as typeof fetch;
+
+    try {
+      await expect(useAgentsStore.getState().saveAgentRuntimeSettings({ lsp: false }))
+        .rejects.toThrow("must be a boolean");
+      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual(before);
+    } finally {
+      restore();
+    }
+  });
+
+  test("validates the payload before touching the host", async () => {
+    seed();
+    let calls = 0;
+    globalThis.fetch = (async () => { calls += 1; return jsonResponse({}); }) as unknown as typeof fetch;
+
+    try {
+      await expect(useAgentsStore.getState().saveAgentRuntimeSettings({})).rejects.toThrow("Nothing to save");
+      expect(calls).toBe(0);
+      expect(buildAgentRuntimeSettingsPayload({ lsp: false })).toEqual({ lsp: false });
+      expect(normalizeAgentRuntimeSettings({ lsp: true })).toEqual({ lsp: true, appliesOnRestart: true, restartRequired: false });
+      expect(normalizeAgentRuntimeSettings({ lsp: 1 })).toBeNull();
+      expect(normalizeAgentRuntimeSettings(null)).toBeNull();
+    } finally {
+      restore();
+    }
   });
 });

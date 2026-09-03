@@ -3,6 +3,9 @@ import {
   PROVIDER_USAGE_LIMIT_FAILURE_KIND,
   classifyManagedTaskFailure,
   classifyProviderRetryFailure,
+  isDefiniteProviderUsageLimit,
+  isManagedTaskModelUnavailable,
+  isProviderPromptRejected,
 } from './provider-retry-policy.js';
 
 export const MANAGED_TASK_OWNER = 'devryan';
@@ -24,6 +27,9 @@ export const MAX_MANAGED_TASK_FAILURE_BYTES = 16 * 1024;
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
 const STATUS_SET = new Set(MANAGED_TASK_STATUSES);
+export const MANAGED_TASK_WAITING_REASON_KINDS = Object.freeze(['capacity', 'system_pressure']);
+const WAITING_REASON_KIND_SET = new Set(MANAGED_TASK_WAITING_REASON_KINDS);
+const WAITING_REASON_FIELDS = new Set(['kind', 'activeCount', 'limit', 'since']);
 const MODE_SET = new Set(['builder', 'orchestrator']);
 const EXECUTION_KIND_SET = new Set(['start', 'retry', 'resume', 'recover_in_place', 'retry_in_place']);
 const MANAGED_TASK_INITIALISMS = Object.freeze({
@@ -118,6 +124,36 @@ const assertNullableTimestamp = (value, field) => {
   }
 };
 
+// Why a queued task is not launching yet. `limit` is the effective concurrency
+// cap for `capacity` and always null for `system_pressure`.
+const assertNullableWaitingReason = (value, field) => {
+  if (value === null) return;
+  if (!isRecord(value)) {
+    throw new TypeError(`${field} must be an object or null`);
+  }
+  for (const key of Object.keys(value)) {
+    if (!WAITING_REASON_FIELDS.has(key)) {
+      throw new TypeError(`${field}.${key} is not a waiting reason field`);
+    }
+  }
+  if (!WAITING_REASON_KIND_SET.has(value.kind)) {
+    throw new TypeError(`${field}.kind must be capacity or system_pressure`);
+  }
+  if (!Number.isSafeInteger(value.activeCount) || value.activeCount < 0) {
+    throw new TypeError(`${field}.activeCount must be a non-negative integer`);
+  }
+  if (value.kind === 'system_pressure') {
+    if (value.limit !== null) {
+      throw new TypeError(`${field}.limit must be null for system_pressure`);
+    }
+  } else if (value.limit !== null && (!Number.isSafeInteger(value.limit) || value.limit < 1)) {
+    throw new TypeError(`${field}.limit must be a positive integer or null`);
+  }
+  if (!Number.isFinite(value.since) || value.since < 0) {
+    throw new TypeError(`${field}.since must be a non-negative finite timestamp`);
+  }
+};
+
 const assertJsonCompatible = (value, path = 'record') => {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
   if (typeof value === 'number' && Number.isFinite(value)) return;
@@ -199,6 +235,13 @@ export const validateManagedTaskRecord = (task) => {
   assertNullableTimestamp(task.startedAt, 'startedAt');
   assertNullableTimestamp(task.finishedAt, 'finishedAt');
   assertNullableTimestamp(task.timeoutAt, 'timeoutAt');
+  assertNullableString(task.recoveryLineageId, 'recoveryLineageId', { prefix: 'dvr_lineage_' });
+  assertNullableTimestamp(task.childPromptedAt, 'childPromptedAt');
+  assertNullableTimestamp(task.firstAssistantPartAt, 'firstAssistantPartAt');
+  assertNullableWaitingReason(task.waitingReason, 'waitingReason');
+  if (task.status !== 'queued' && task.waitingReason !== null) {
+    throw new TypeError('waitingReason must be null unless the task is queued');
+  }
   assertJsonCompatible(task, 'task');
   return task;
 };
@@ -215,9 +258,13 @@ export const createManagedTaskRecord = (input) => {
     dispatchCallId: input.dispatchCallId ?? null,
     readOnly: input.readOnly ?? false,
     childSessionId: input.childSessionId ?? null,
+    recoveryLineageId: input.recoveryLineageId ?? null,
     leaseToken: null,
     startedAt: null,
     finishedAt: null,
+    childPromptedAt: null,
+    firstAssistantPartAt: null,
+    waitingReason: null,
     failureReason: null,
     partial: false,
     recoverablePreview: '',
@@ -241,6 +288,24 @@ export const isManagedTaskAgentRetryAvailable = (task) => {
     classifyProviderRetryFailure(task.failureReason),
   );
 };
+
+/**
+ * A terminal result the agent must not dispose of on its own: the user picks a
+ * model and thinking level (Model Recovery) before work continues in place.
+ * Shared by the scheduler's acknowledgement gate and the auto-resume policy.
+ */
+export const requiresManualModelRecovery = (task, resultEnvelope) => Boolean(
+  task.childSessionId
+  && !isManagedTaskAgentRetryAvailable(task)
+  && (task.status === 'failed' || task.status === 'interrupted')
+  && resultEnvelope?.resumable
+  && !isProviderPromptRejected(task.failureReason)
+  && (
+    isDefiniteProviderUsageLimit(task.failureReason)
+    || isManagedTaskModelUnavailable(task.failureReason)
+    || (task.mode === 'orchestrator' && task.dispatchGroupId !== null && task.attempt >= 2)
+  )
+);
 
 const projectTaskForEvent = (task) => {
   const failureKind = classifyManagedTaskFailure(task.failureReason);
@@ -270,6 +335,10 @@ const projectTaskForEvent = (task) => {
     startedAt: task.startedAt,
     finishedAt: task.finishedAt,
     timeoutAt: task.timeoutAt,
+    recoveryLineageId: task.recoveryLineageId,
+    childPromptedAt: task.childPromptedAt,
+    firstAssistantPartAt: task.firstAssistantPartAt,
+    waitingReason: task.waitingReason ? { ...task.waitingReason } : null,
     failureReason: task.failureReason,
     failureKind,
     partial: task.partial,

@@ -4,7 +4,8 @@ export type SessionTitleOutboxJob = {
   directory: string;
   sourceHash: string;
   candidateTitle: string;
-  source: 'free_zen' | 'session_model' | 'local_fallback';
+  source: 'derived' | 'session_model' | 'free_zen' | 'local_fallback';
+  replacesTitle?: string;
   state: 'pending_idle' | 'persisting';
   attemptCount: number;
   nextAttemptAt: number;

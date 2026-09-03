@@ -38,7 +38,7 @@ recovery remains the fallback until host enforcement is advertised.
 Enforcement requires a live managed runtime, exclusive private file-lock owner,
 healthy durable storage, an allow-listed OpenCode version verified through
 `/global/health` (`PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS` in
-`provider-recovery-policy.js`: 1.18.25 and 1.18.26, the current host target
+`provider-recovery-policy.js`: 1.18.25, 1.18.26 and 1.18.27, the current host target
 pin), and the bundled plugin handshake. Unsupported versions, external
 runtimes, and opt-in WebSocket/native transports remain manual. Do not expand
 this allowlist without transport and hook conformance tests.
@@ -89,7 +89,7 @@ bounded to 30 seconds with bounded individual observations. Idle, an abort
 acknowledgement, a failed read, and renderer-forced idle are not sufficient.
 Healthy status-map omission is accepted only with independent session,
 transcript and blocker checks. Generic timeout wording is ineligible; the exact
-`UnknownError` timeout shape of an allow-listed runtime (1.18.25, 1.18.26) has
+`UnknownError` timeout shape of an allow-listed runtime (1.18.25, 1.18.26, 1.18.27) has
 a version-specific compatibility rule.
 
 With no prior work, recovery reuses original text and safe file/data attachment
@@ -169,6 +169,14 @@ Implementation verification, August 30–31, 2026:
 | Real OpenCode 1.18.25 with loopback fake provider | Heartbeat-only, missing headers, silent SSE and stalled non-SSE body each recovered exactly once |
 | Semantic cutoff with heartbeat traffic | One provider request, `needs_attention`, zero automatic recovery attempts |
 | Shared browser component | Status, Stop, blocked action, disconnect/reconnect and explicit continuation checked |
+
+OpenCode 1.18.27 compatibility was verified on September 3, 2026 with the
+isolated loopback-provider fixture. Heartbeat-only traffic completed exactly one
+automatic recovery. Missing headers, silent SSE and a stalled non-SSE body
+reached the native-retry fence with one provider request and zero recovery
+attempts. Semantic cutoff also made only one request and no recovery attempt.
+The plugin hooks, request preparation, tool registry and processor sources are
+unchanged from 1.18.26. See [upgrade notes](OPENCODE_1_18_27_UPGRADE_NOTES.md).
 
 The opt-in executable fixture is `tests/provider-recovery/runtime-conformance.mjs`.
 It requires `DEVRYAN_TEST_OPENCODE_BIN` and has no access to the user's provider

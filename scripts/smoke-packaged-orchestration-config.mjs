@@ -78,7 +78,7 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
     throw new Error(`Missing default Claude dependency: ${ANTHROPIC_OAUTH_PLUGIN_SPEC}`);
   }
   for (const [packageName, version] of Object.entries({
-    '@opencode-ai/plugin': '1.18.26',
+    '@opencode-ai/plugin': '1.18.27',
     'adm-zip': '0.6.0',
     'mammoth': '1.12.1',
     'unpdf': '1.8.0',

@@ -1,6 +1,15 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { EventEmitter } from 'events';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
-import { getOpenChamberDataDir } from './managedOpenCodeRegistry';
+import { getOpenChamberDataDir, readManagedOpenCodeRegistry } from './managedOpenCodeRegistry';
+
+const spawnMock = vi.fn();
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return { ...actual, spawn: (...args: unknown[]) => spawnMock(...args) };
+});
 
 vi.mock('vscode', () => ({
   workspace: {
@@ -16,7 +25,40 @@ const {
   buildManagedOpenCodeEnvOverrides,
   buildManagedOpenCodeProcessEnv,
   buildManagedOpenCodeServeArgs,
+  spawnManagedOpenCodeServer,
 } = await import('./opencode');
+
+// A pid far above any real pid range: `process.kill(-pid)` fails with ESRCH so
+// the close path falls back to the fake child's own kill().
+const FAKE_CHILD_PID = 4_000_000;
+
+const createFakeChild = () => {
+  const child = Object.assign(new EventEmitter(), {
+    pid: FAKE_CHILD_PID,
+    exitCode: null as number | null,
+    signalCode: null as string | null,
+    stdout: new EventEmitter(),
+    stderr: new EventEmitter(),
+    kill: vi.fn(),
+  });
+  child.kill.mockImplementation(() => {
+    child.exitCode = 0;
+    child.emit('exit', 0);
+    child.emit('close', 0);
+    return true;
+  });
+  return child;
+};
+
+const originalDataDir = process.env.OPENCHAMBER_DATA_DIR;
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  spawnMock.mockReset();
+  if (originalDataDir === undefined) delete process.env.OPENCHAMBER_DATA_DIR;
+  else process.env.OPENCHAMBER_DATA_DIR = originalDataDir;
+  while (tempDirs.length > 0) fs.rmSync(tempDirs.pop()!, { recursive: true, force: true });
+});
 
 describe('VS Code managed OpenCode launch', () => {
   it('keeps configured bundled plugins enabled for managed serve', () => {
@@ -108,5 +150,33 @@ describe('VS Code managed OpenCode launch', () => {
         },
       })).toThrow('private IPv4 loopback');
     }
+  });
+});
+
+describe('VS Code managed OpenCode registration order', () => {
+  it('registers the child (with its working directory) before readiness and unregisters on a failed start', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-registry-'));
+    tempDirs.push(dataDir);
+    process.env.OPENCHAMBER_DATA_DIR = dataDir;
+    const child = createFakeChild();
+    spawnMock.mockImplementation(() => child);
+
+    const pending = spawnManagedOpenCodeServer('/tmp/workspace', 45678, 50);
+    // Spawn is synchronous inside the call; the record must exist while the
+    // readiness wait is still pending (no listening line has been emitted).
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(readManagedOpenCodeRegistry()).toEqual([
+      expect.objectContaining({
+        childPid: FAKE_CHILD_PID,
+        ownerPid: process.pid,
+        port: 45678,
+        hostRuntime: 'vscode',
+        workingDirectory: '/tmp/workspace',
+      }),
+    ]);
+
+    await expect(pending).rejects.toThrow('Timeout waiting for server to start');
+    expect(child.kill).toHaveBeenCalled();
+    expect(readManagedOpenCodeRegistry()).toEqual([]);
   });
 });

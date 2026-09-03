@@ -1,12 +1,20 @@
 // Runs only inside the disposable, network-disabled acceptance container.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import http from 'node:http';
 import https from 'node:https';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createOpenAiOAuthCoordinator } from '/src/opencode/openai-oauth-coordinator.js';
 import { createOpenAiOAuthBridge } from '/src/opencode/openai-oauth-bridge.js';
 import { createBotGatewayHost } from '/src/bots/gateway-host.js';
+import {
+  createGatewayOriginRegistry,
+  createGatewayRelayAgent,
+  isGatewayRelayPath,
+  relayGatewayRequest,
+  sendGatewayRelayFailure,
+} from '/src/egress/gateway-relay.js';
 import botPlugin from './devryan-bot-tools.mjs';
 
 assert.equal(JSON.parse(await fs.readFile('/opt/devryan/node_modules/opencode-ai/package.json', 'utf8')).version, '1.18.26');
@@ -72,6 +80,30 @@ const gateway = createBotGatewayHost({ handleOperation: async () => { throw new 
     return operation === 'ready' ? { protocol: 1, oauth: true } : coordinator.access({ expectedAccountId: 'fixture-account' });
   } });
 await gateway.start();
+// A Bot container has no route to the host, so its gateway calls go through the
+// egress relay. The acceptance run exercises the real relay: `egress` and
+// `host.docker.internal` both resolve to loopback inside this container.
+const gatewayOriginRegistry = createGatewayOriginRegistry({
+  initialOrigin: gateway.getAddress().dockerGatewayUrl,
+});
+const relayAgent = createGatewayRelayAgent();
+const relay = http.createServer(async (request, response) => {
+  if (!isGatewayRelayPath(request.url)) {
+    response.writeHead(404).end();
+    return;
+  }
+  try {
+    await relayGatewayRequest({
+      request,
+      response,
+      originRegistry: gatewayOriginRegistry,
+      agent: relayAgent,
+    });
+  } catch (error) {
+    sendGatewayRelayFailure(response, error);
+  }
+});
+await new Promise((resolve) => relay.listen(43121, '127.0.0.1', resolve));
 
 async function launch(name, port, environment, plugin) {
   console.log(`Starting isolated ${name}`);
@@ -129,7 +161,7 @@ try {
     const revisionId = `d0000000-0000-4000-8000-00000000000${n}`;
     claimsByRun.set(runId, botId);
     const capability = gateway.issueCapability({ runId, botId, channelId, revisionId, scopeKey: `channel:${channelId}`, kind: 'reasoning', operations: ['memory.search'] });
-    return { DEVRYAN_BOT_GATEWAY_URL: capability.dockerGatewayUrl, DEVRYAN_BOT_RUNTIME_TOKEN: capability.token,
+    return { DEVRYAN_BOT_GATEWAY_URL: 'http://egress:43121', DEVRYAN_BOT_RUNTIME_TOKEN: capability.token,
       DEVRYAN_BOT_RUN_ID: runId, DEVRYAN_BOT_CHANNEL_ID: channelId, DEVRYAN_BOT_REVISION_ID: revisionId, DEVRYAN_BOT_CHATGPT_IMAGE_GENERATION: '1' };
   });
   const bots = await Promise.all(environments.map((env, i) => launch(`bot${i}`, 4098 + i, env, 'file:///opt/devryan/devryan-bot-tools.mjs')));
@@ -160,6 +192,9 @@ try {
   throw error;
 } finally {
   for (const child of children) child.kill('SIGKILL');
+  relayAgent.destroy();
+  relay.closeAllConnections();
+  await new Promise((resolve) => relay.close(resolve));
   await gateway.shutdown();
   await bridge.close();
   server.closeAllConnections();

@@ -71,7 +71,12 @@ const saveBehaviorSetting = async (settings: Partial<DesktopSettings>, fallbackE
   }
 };
 
-export const BehaviorPage: React.FC = () => {
+type BehaviorPageProps = {
+  /** Extra host-wide policy sections rendered after the built-in ones, inside the same scroll area. */
+  children?: React.ReactNode;
+};
+
+export const BehaviorPage: React.FC<BehaviorPageProps> = ({ children }) => {
   const { t } = useI18n();
   const [prompt, setPrompt] = React.useState('');
   const [responseStyleLevel, setResponseStyleLevel] = React.useState<ResponseStyleLevel>(DEFAULT_BEHAVIOR_SETTINGS.responseStyleLevel);
@@ -349,6 +354,7 @@ export const BehaviorPage: React.FC = () => {
           </section>
         </div>
 
+        {children}
       </div>
     </ScrollableOverlay>
   );

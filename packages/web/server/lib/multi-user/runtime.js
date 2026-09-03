@@ -115,6 +115,7 @@ import {
   shouldHideProtectedDotenv,
 } from './dotenv-visibility.js';
 import {
+  backupExecutionFromManagedAgent,
   findManagedAgent,
   isSingleModelManagedAgent,
   resolveManagedAgentExecution,
@@ -2719,6 +2720,39 @@ export async function createMultiUserRuntime({
       statusCode: 409,
       code: 'managed_agent_model_unavailable',
     });
+  };
+
+  // Owner key for a managed root session (`user:<user_id>`), or null when the
+  // session is unknown/archived. Lets a scheduler timer key usage-limit state
+  // per account without an HTTP request.
+  const resolveSessionOwnerKey = async ({ rootSessionId } = {}) => {
+    const sessionId = typeof rootSessionId === 'string' ? rootSessionId.trim() : '';
+    if (!sessionId) return null;
+    const owner = await sessionOwnership(sessionId);
+    if (!owner?.user_id || owner.archived_at) return null;
+    return `user:${owner.user_id}`;
+  };
+
+  // Mirror of resolveSessionAgentExecution's ownership + plan-context checks,
+  // but returns null instead of throwing: a missing backup model is the common
+  // case and must never fail the scheduler. Backup models are host-only; personal
+  // agent defaults do not apply.
+  const resolveSessionAgentBackupExecution = async ({
+    rootSessionId,
+    directory = '',
+    agent,
+  } = {}) => {
+    const sessionId = typeof rootSessionId === 'string' ? rootSessionId.trim() : '';
+    if (!sessionId) return null;
+    const owner = await sessionOwnership(sessionId);
+    if (!owner || owner.archived_at) return null;
+    const principal = await loadPrincipal(owner.user_id);
+    if (!principal) return null;
+    const planContext = await resolveOwnedSessionPlanContext(principal, sessionId, directory);
+    if (!planContext) return null;
+    if (typeof listManagedConfigAgents !== 'function') return null;
+    const agents = listManagedConfigAgents(planContext.directory);
+    return backupExecutionFromManagedAgent(findManagedAgent(agents, agent));
   };
 
   const ownsSession = async (principal, sessionId) => {
@@ -5480,6 +5514,8 @@ export async function createMultiUserRuntime({
     ownsSession,
     resolveOwnedSessionPlanContext,
     resolveSessionAgentExecution,
+    resolveSessionOwnerKey,
+    resolveSessionAgentBackupExecution,
     resolveBrowserLeaseContext,
     canSessionTokenHashAccess,
     audit,

@@ -235,6 +235,26 @@ describe("hasStructuredPlanBody", () => {
   })
 })
 
+describe("optional Constraints & assumptions heading", () => {
+  test("counts the optional section toward the two-heading rule", () => {
+    const body = ["## Context", "", "why", "", "## Constraints & assumptions", "", "- follow the migration gate"].join("\n")
+    expect(hasStructuredPlanBody(body)).toBe(true)
+    expect(resolvePlanCardSplit(`intro\n${body}`, { isPlanModeSource: true })).toEqual({
+      preambleText: "intro\n",
+      planText: body,
+      source: "structured",
+    })
+  })
+
+  test("accepts the short Constraints and Assumptions spellings", () => {
+    for (const heading of ["## Constraints", "### Assumptions"]) {
+      const body = ["## Context", "", "why", "", heading, "", "- note"].join("\n")
+      expect(hasStructuredPlanBody(body)).toBe(true)
+    }
+    expect(hasStructuredPlanBody(["## Context", "", "why", "", "## Notes", "", "- note"].join("\n"))).toBe(false)
+  })
+})
+
 const structuredPlanBody = [
   "# Cursor Plan Card Fix",
   "",

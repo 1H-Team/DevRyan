@@ -490,41 +490,113 @@ export async function generateCommitMessageDraft(
   return result as GeneratedCommitWorkflowResult;
 }
 
+// Tier 1 (free Zen, 45 s) + tier 2 (session model, 60 s) + diff collection.
+export const PR_DESCRIPTION_REQUEST_TIMEOUT_MS = 120_000;
+
+export type PullRequestGenerationAttempt = {
+  tier: string;
+  model: string | null;
+  reason: string | null;
+  durationMs?: number;
+};
+
+export type PullRequestGenerationErrorCode =
+  | 'FREE_ZEN_EXHAUSTED'
+  | 'NO_FREE_MODELS'
+  | 'CATALOG_UNAVAILABLE'
+  | 'SESSION_MODEL_FAILED'
+  | 'TIMEOUT'
+  | (string & {});
+
+export class PullRequestGenerationError extends Error {
+  code?: PullRequestGenerationErrorCode;
+  status?: number;
+  attempts?: PullRequestGenerationAttempt[];
+
+  constructor(
+    message: string,
+    options: { code?: PullRequestGenerationErrorCode; status?: number; attempts?: PullRequestGenerationAttempt[] } = {},
+  ) {
+    super(message);
+    this.name = 'PullRequestGenerationError';
+    this.code = options.code;
+    this.status = options.status;
+    this.attempts = options.attempts;
+  }
+}
+
 export async function generatePullRequestDescription(
   directory: string,
-  payload: { base: string; head: string; context?: string; prompt?: string }
+  payload: { base: string; head: string; context?: string; prompt?: string; providerId?: string; modelId?: string }
 ): Promise<{ title: string; body: string }> {
-  const { base, head, context, prompt } = payload;
+  const { base, head, context, prompt, providerId, modelId } = payload;
   if (!base || !head) {
     throw new Error('base and head are required');
   }
 
-  const requestBody: { base: string; head: string; context?: string; prompt?: string } = { base, head };
+  const requestBody: {
+    base: string;
+    head: string;
+    context?: string;
+    prompt?: string;
+    providerId?: string;
+    modelId?: string;
+  } = { base, head };
   if (context?.trim()) {
     requestBody.context = context.trim();
   }
   if (prompt?.trim()) {
     requestBody.prompt = prompt.trim();
   }
-
-  const response = await fetch(buildUrl(`${API_BASE}/pr-description`, directory), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || 'Failed to generate PR description');
+  if (providerId?.trim() && modelId?.trim()) {
+    requestBody.providerId = providerId.trim();
+    requestBody.modelId = modelId.trim();
   }
 
-  const data = await response.json().catch(() => null);
-  const title = typeof data?.title === 'string' ? data.title : '';
-  const body = typeof data?.body === 'string' ? data.body : '';
-  if (!title && !body) {
-    throw new Error('Malformed PR description response');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PR_DESCRIPTION_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(buildUrl(`${API_BASE}/pr-description`, directory), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: response.statusText })) as {
+        error?: unknown;
+        code?: unknown;
+        attempts?: unknown;
+      };
+      throw new PullRequestGenerationError(
+        typeof error?.error === 'string' && error.error ? error.error : 'Failed to generate PR description',
+        {
+          code: typeof error?.code === 'string' ? error.code : undefined,
+          status: response.status,
+          attempts: Array.isArray(error?.attempts) ? (error.attempts as PullRequestGenerationAttempt[]) : undefined,
+        },
+      );
+    }
+
+    const data = await response.json().catch(() => null);
+    const title = typeof data?.title === 'string' ? data.title : '';
+    const body = typeof data?.body === 'string' ? data.body : '';
+    if (!title && !body) {
+      throw new PullRequestGenerationError('Malformed PR description response', { status: response.status });
+    }
+    return { title, body };
+  } catch (error) {
+    if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+      throw new PullRequestGenerationError(
+        `Pull request generation timed out after ${Math.round(PR_DESCRIPTION_REQUEST_TIMEOUT_MS / 1000)}s`,
+        { code: 'TIMEOUT' },
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  return { title, body };
 }
 
 export async function listGitWorktrees(directory: string): Promise<GitWorktreeInfo[]> {

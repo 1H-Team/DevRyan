@@ -3,7 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 
-const REGISTRY_VERSION = 1;
+// v2 adds `workingDirectory`; v1 files (no such field) still read as null.
+const REGISTRY_VERSION = 2;
 const REGISTRY_FILE_NAME = 'managed-opencode-processes.json';
 
 export type ManagedOpenCodeProcessRecord = {
@@ -14,6 +15,7 @@ export type ManagedOpenCodeProcessRecord = {
   hostRuntime: string;
   hostname: string | null;
   startedAt: number;
+  workingDirectory: string | null;
 };
 
 export type ReapManagedOpenCodeProcessesResult = {
@@ -80,6 +82,9 @@ function normalizeRegistryRecord(record: unknown): ManagedOpenCodeProcessRecord 
     hostRuntime: typeof raw.hostRuntime === 'string' && raw.hostRuntime.trim() ? raw.hostRuntime.trim() : 'vscode',
     hostname: typeof raw.hostname === 'string' && raw.hostname.trim() ? raw.hostname.trim() : null,
     startedAt: Number.isFinite(raw.startedAt) ? Math.trunc(Number(raw.startedAt)) : Date.now(),
+    workingDirectory: typeof raw.workingDirectory === 'string' && raw.workingDirectory.trim()
+      ? raw.workingDirectory.trim()
+      : null,
   };
 }
 

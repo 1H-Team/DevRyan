@@ -2,7 +2,10 @@ import React from 'react';
 import { RiErrorWarningLine, RiRefreshLine } from '@remixicon/react';
 
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { formatDurationMilliseconds } from '@/lib/duration';
 import { useI18n } from '@/lib/i18n';
+import type { ManagedTaskAutoResumeError, ManagedTaskAutoResumeState } from '@/lib/orchestrationApi';
 import { cn } from '@/lib/utils';
 import type { ProviderRecoverySelection } from '@/stores/useProviderRecoveryStore';
 import {
@@ -10,6 +13,40 @@ import {
   ControlledVariantPicker,
   type ControlledModelPickerProvider,
 } from './ControlledModelPicker';
+
+/** Presentation slice of a usage-limit envelope's auto-resume block. */
+export type ModelRecoveryAutoResume = {
+  enabled: boolean;
+  state: ManagedTaskAutoResumeState;
+  nextAttemptAt: number | null;
+  expiresAt: number | null;
+  attemptCount: number;
+  targetLabel: string | null;
+  resetAt: number | null;
+  lastError: ManagedTaskAutoResumeError | null;
+  reason?: string | null;
+};
+
+const DEFAULT_NOW = () => Date.now();
+
+/** Milliseconds until `target`, re-read once a second while `ticking`. */
+const useCountdown = (target: number | null, now: () => number, ticking: boolean) => {
+  const [remaining, setRemaining] = React.useState<number | null>(() => (
+    target === null ? null : Math.max(0, target - now())
+  ));
+  React.useEffect(() => {
+    if (target === null) {
+      setRemaining(null);
+      return undefined;
+    }
+    const tick = () => setRemaining(Math.max(0, target - now()));
+    tick();
+    if (!ticking) return undefined;
+    const timer = window.setInterval(tick, 1_000);
+    return () => window.clearInterval(timer);
+  }, [now, target, ticking]);
+  return remaining;
+};
 
 export function ModelRecoveryCard({
   title,
@@ -25,6 +62,10 @@ export function ModelRecoveryCard({
   retryLabel,
   retryingLabel,
   embedded = false,
+  autoResume,
+  onAutoResumeChange,
+  autoResumePending = false,
+  now = DEFAULT_NOW,
 }: {
   title: string;
   detail?: string | null;
@@ -39,8 +80,43 @@ export function ModelRecoveryCard({
   retryLabel?: string;
   retryingLabel?: string;
   embedded?: boolean;
+  /** Omit (or pass null) to render the card without the auto-resume row. */
+  autoResume?: ModelRecoveryAutoResume | null;
+  onAutoResumeChange?(enabled: boolean): void | Promise<void>;
+  autoResumePending?: boolean;
+  /** Clock used for the countdown; injectable for tests. */
+  now?: () => number;
 }) {
   const { t } = useI18n();
+  const scheduled = Boolean(autoResume?.enabled && autoResume.state === 'scheduled');
+  const countdown = useCountdown(scheduled ? autoResume?.nextAttemptAt ?? null : null, now, scheduled);
+  const autoResumeModel = autoResume?.targetLabel ?? originalModelLabel;
+  const autoResumeStatus = (() => {
+    if (!autoResume) return null;
+    if (autoResume.state === 'exhausted') {
+      const reason = autoResume.reason ?? autoResume.lastError?.message ?? null;
+      return reason
+        ? t('chat.modelRecovery.autoResume.exhausted', { reason })
+        : t('chat.modelRecovery.autoResume.exhaustedNoReason');
+    }
+    if (!autoResume.enabled) return t('chat.modelRecovery.autoResume.off');
+    if (autoResume.state === 'attempting') {
+      return t('chat.modelRecovery.autoResume.attempting', { model: autoResumeModel });
+    }
+    if (autoResume.state === 'scheduled' && countdown !== null) {
+      return t('chat.modelRecovery.autoResume.scheduled', {
+        countdown: formatDurationMilliseconds(countdown).label,
+        model: autoResumeModel,
+      });
+    }
+    if (autoResume.state === 'planning' || autoResume.state === 'scheduled') {
+      return t('chat.modelRecovery.autoResume.planning');
+    }
+    return null;
+  })();
+  const autoResumeError = autoResume && autoResume.state !== 'exhausted'
+    ? autoResume.lastError?.message ?? null
+    : null;
   return (
     <section
       aria-label={t('chat.modelRecovery.title')}
@@ -96,7 +172,31 @@ export function ModelRecoveryCard({
               {t('chat.modelRecovery.failedModel', { model: originalModelLabel })}
             </p>
           </div>
-          <div className="flex min-w-0 justify-end border-t border-border/60 pt-2">
+          <div
+            className={cn(
+              'flex min-w-0 items-center gap-3 border-t border-border/60 pt-2',
+              autoResume ? 'justify-between' : 'justify-end',
+            )}
+          >
+            {autoResume ? (
+              <div className="min-w-0 flex-1 space-y-1">
+                <label className="flex w-fit cursor-pointer items-center gap-2 typography-micro text-foreground">
+                  <Checkbox
+                    checked={autoResume.enabled}
+                    onChange={(next) => void onAutoResumeChange?.(next)}
+                    disabled={pending || autoResumePending || !onAutoResumeChange}
+                    ariaLabel={t('chat.modelRecovery.autoResume.label')}
+                  />
+                  <span>{t('chat.modelRecovery.autoResume.label')}</span>
+                </label>
+                {autoResumeStatus ? (
+                  <p className="typography-micro text-muted-foreground">{autoResumeStatus}</p>
+                ) : null}
+                {autoResumeError ? (
+                  <p role="alert" className="typography-micro text-[var(--status-error)]">{autoResumeError}</p>
+                ) : null}
+              </div>
+            ) : null}
             <Button
               type="button"
               size="sm"

@@ -2461,6 +2461,80 @@ describe('DevRyan managed orchestration plugin', () => {
     }, context())).rejects.toThrow('Unsupported managed task action');
   });
 
+  it('reports a scheduled automatic resume instead of asking for Try Again', async () => {
+    const parkedTask = (taskId) => ({
+      taskId,
+      status: 'failed',
+      childSessionId: 'ses_designer',
+      mode: 'orchestrator',
+      attempt: 1,
+      agentRetryAvailable: false,
+      failureKind: 'provider_usage_limit',
+    });
+    const envelopes = {
+      dvr_task_scheduled: {
+        taskId: 'dvr_task_scheduled',
+        action: null,
+        resumable: true,
+        autoResume: {
+          revision: 2,
+          enabled: true,
+          state: 'scheduled',
+          nextAttemptAt: 1_760_000_000_000,
+          target: { kind: 'backup', providerId: 'openai', modelId: 'gpt-5.4', variant: null },
+        },
+      },
+      dvr_task_cancelled: {
+        taskId: 'dvr_task_cancelled',
+        action: null,
+        resumable: true,
+        autoResume: { revision: 3, enabled: false, state: 'cancelled', nextAttemptAt: null, target: null },
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      const result = request.method === 'wait' && envelopes[request.params.taskId]
+        ? { task: parkedTask(request.params.taskId), resultEnvelope: envelopes[request.params.taskId] }
+        : { accepted: true };
+      return new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    const scheduled = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_scheduled',
+    }, context()));
+    expect(scheduled).toMatchObject({
+      manualRecoveryRequired: true,
+      manualRecoveryInstruction: expect.stringContaining('scheduled an automatic resume'),
+      autoResume: {
+        scheduled: true,
+        state: 'scheduled',
+        nextAttemptAt: 1_760_000_000_000,
+        target: { kind: 'backup', providerId: 'openai', modelId: 'gpt-5.4', variant: null },
+      },
+      resultEnvelope: { taskId: 'dvr_task_scheduled', action: null },
+    });
+    expect(scheduled.manualRecoveryInstruction).not.toContain('Try Again');
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'continue',
+      task_id: 'dvr_task_scheduled',
+    }, context())).rejects.toThrow('Manual model recovery requires');
+
+    const cancelled = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_cancelled',
+    }, context()));
+    expect(cancelled).toMatchObject({
+      manualRecoveryRequired: true,
+      manualRecoveryInstruction: expect.stringContaining('awaiting user action'),
+    });
+    expect(cancelled).not.toHaveProperty('autoResume');
+  });
+
   it('returns exhausted provider prompt rejection for agent disposition without Model Recovery', async () => {
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
@@ -3387,5 +3461,269 @@ describe('dispatch result wording', () => {
     }, context({ messageID: 'msg_002', callID: 'toolu_nodup' }));
 
     expect(requests[0].params.allowDuplicate).toBe(false);
+  });
+});
+
+describe('open-todo continuation safety net', () => {
+  const OPEN_TODO_PROMPT = 'Your turn ended with open todos. If a plan deviation stopped you, classify it (Class 1: note it and continue; Class 2: ask with the question tool) and continue from the first open todo. If everything is done, mark the todos complete and give the final summary.';
+
+  const flush = async (rounds = 20) => {
+    for (let index = 0; index < rounds; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  };
+
+  // Runs the idle-triggered scan chain (startup/trailing scan plus settle
+  // retries) to completion; the open-todo check only fires after the chain.
+  const drainScans = async (scheduled) => {
+    for (let index = 0; index < 8; index += 1) {
+      await flush();
+      if (scheduled.length === 0) break;
+      scheduled.shift().callback();
+    }
+    await flush();
+  };
+
+  const openTodoRecords = ({
+    agent = 'orchestrator',
+    text = 'The plan step conflicts with the repository rules, so I stopped here.',
+  } = {}) => [
+    {
+      info: {
+        id: 'msg_user_1',
+        role: 'user',
+        agent: 'orchestrator',
+        model: { providerID: 'openai', modelID: 'gpt-5.5', variant: 'medium' },
+      },
+      parts: [{ type: 'text', text: 'Implement the saved plan.' }],
+    },
+    {
+      info: { id: 'msg_assistant_1', role: 'assistant', agent, parentID: 'msg_user_1' },
+      parts: [{ type: 'text', text }],
+    },
+  ];
+
+  const createOpenTodoClient = ({
+    records = openTodoRecords(),
+    todos = [{ id: 'todo_1', content: 'Phase 1: wire it', status: 'in_progress', priority: 'high' }],
+    questions = [],
+    session = { id: 'ses_root', directory: '/workspace' },
+    status = {},
+  } = {}) => ({
+    session: {
+      messages: vi.fn(async () => ({ data: records })),
+      status: vi.fn(async () => ({ data: status })),
+      get: vi.fn(async () => ({ data: session })),
+      todo: vi.fn(async () => ({ data: todos })),
+      promptAsync: vi.fn(async (request) => {
+        records.push({
+          info: {
+            id: request.body.messageID,
+            role: 'user',
+            agent: request.body.agent,
+            model: { ...request.body.model, variant: request.body.variant },
+          },
+          parts: request.body.parts,
+        });
+        // The orchestrator answers the nudge and goes idle again.
+        records.push({
+          info: { id: `${request.body.messageID}_reply`, role: 'assistant', agent: 'orchestrator', parentID: request.body.messageID },
+          parts: [{ type: 'text', text: 'Still working through the open todo.' }],
+        });
+        return { data: true };
+      }),
+    },
+    question: { list: vi.fn(async () => ({ data: questions })) },
+  });
+
+  const stubOpenTodoRpc = ({ barrierState = 'clear', continuations = [] } = {}) => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      if (request.method === 'list_provider_recovery_continuations') return rpcResponse({ continuations });
+      if (request.method === 'barrier_status') {
+        return rpcResponse({ state: barrierState, taskIds: barrierState === 'clear' ? [] : ['dvr_task_1'] });
+      }
+      return rpcResponse({});
+    }));
+    return requests;
+  };
+
+  const startPlugin = async (client) => {
+    const scheduled = [];
+    const plugin = await DevRyanManagedOrchestrationPlugin({
+      client,
+      directory: '/workspace',
+      scheduleTimeout(callback, delayMs) {
+        scheduled.push({ callback, delayMs });
+        return { unref() {} };
+      },
+    });
+    return { plugin, scheduled };
+  };
+
+  const idle = (plugin, sessionID = 'ses_root') => plugin.event({
+    event: { type: 'session.idle', properties: { sessionID } },
+  });
+
+  it('lets the question tool through a locked barrier', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      requests.push(JSON.parse(init.body));
+      return rpcResponse({ state: 'active', taskIds: ['dvr_task_1'] });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    await expect(plugin['tool.execute.before'](
+      { tool: 'question', sessionID: 'ses_root', callID: 'call_question' },
+      { args: { questions: [] } },
+    )).resolves.toBeUndefined();
+    expect(requests).toEqual([]);
+  });
+
+  it('nudges an idle orchestrator root turn that left todos open', async () => {
+    const requests = stubOpenTodoRpc();
+    const client = createOpenTodoClient();
+    const { plugin, scheduled } = await startPlugin(client);
+
+    idle(plugin);
+    await drainScans(scheduled);
+    await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledTimes(1));
+
+    expect(client.session.promptAsync).toHaveBeenCalledWith({
+      path: { id: 'ses_root' },
+      query: { directory: '/workspace' },
+      body: {
+        messageID: expect.stringMatching(/^msg_[0-9a-f]{26}$/),
+        agent: 'orchestrator',
+        model: { providerID: 'openai', modelID: 'gpt-5.5' },
+        variant: 'medium',
+        parts: [{ type: 'text', synthetic: true, text: OPEN_TODO_PROMPT }],
+      },
+    }, { throwOnError: false });
+    expect(client.session.todo).toHaveBeenCalledWith({
+      path: { id: 'ses_root' },
+      query: { directory: '/workspace' },
+    });
+    expect(client.session.get).toHaveBeenCalledWith({
+      path: { id: 'ses_root' },
+      query: { directory: '/workspace' },
+    });
+    expect(requests.map(({ method }) => method)).toContain('barrier_status');
+  });
+
+  it.each([
+    ['no open todos', { todos: [{ id: 'todo_1', content: 'done', status: 'completed', priority: 'high' }] }],
+    ['a pending question', { questions: [{ id: 'q_1', sessionID: 'ses_root', questions: [] }] }],
+    ['a builder turn', { records: openTodoRecords({ agent: 'builder' }) }],
+    ['a manual Model Recovery result', { records: openTodoRecords({ text: 'Result has manualRecoveryRequired: true; waiting for Try Again.' }) }],
+    ['a provider-recovery wake', { records: openTodoRecords({ text: 'Handling [devryan-provider-recovery:v1:dvr_task_1] now.' }) }],
+    ['a child session', { session: { id: 'ses_root', directory: '/workspace', parentID: 'ses_parent' } }],
+    ['a busy session', { status: { ses_root: { type: 'busy' } } }],
+    ['a trailing unanswered user message', { records: openTodoRecords().slice(0, 1) }],
+  ])('sends nothing for %s', async (_label, overrides) => {
+    stubOpenTodoRpc();
+    const client = createOpenTodoClient(overrides);
+    const { plugin, scheduled } = await startPlugin(client);
+
+    idle(plugin);
+    await drainScans(scheduled);
+
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not query the barrier when no todo is open', async () => {
+    const requests = stubOpenTodoRpc();
+    const client = createOpenTodoClient({ todos: [] });
+    const { plugin, scheduled } = await startPlugin(client);
+
+    idle(plugin);
+    await drainScans(scheduled);
+
+    expect(requests.map(({ method }) => method)).not.toContain('barrier_status');
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it.each(['active', 'awaiting_acknowledgement'])('sends nothing while the barrier is %s', async (barrierState) => {
+    stubOpenTodoRpc({ barrierState });
+    const client = createOpenTodoClient();
+    const { plugin, scheduled } = await startPlugin(client);
+
+    idle(plugin);
+    await drainScans(scheduled);
+
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it('leaves a session to provider recovery when a continuation is listed for it', async () => {
+    stubOpenTodoRpc({
+      continuations: [{
+        sourceTaskId: 'dvr_task_limited',
+        taskId: 'dvr_task_1',
+        rootSessionId: 'ses_root',
+        childSessionId: 'ses_child',
+        directory: '/workspace',
+        kind: 'manual_recovery',
+      }],
+    });
+    const client = createOpenTodoClient();
+    const { plugin, scheduled } = await startPlugin(client);
+
+    idle(plugin);
+    await drainScans(scheduled);
+
+    expect(client.session.todo).not.toHaveBeenCalled();
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it('caps continuations at three per user message and deduplicates within 60 seconds', async () => {
+    stubOpenTodoRpc();
+    const client = createOpenTodoClient();
+    const { plugin, scheduled } = await startPlugin(client);
+    let now = 1_700_000_000_000;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      idle(plugin);
+      await drainScans(scheduled);
+      await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledTimes(1));
+
+      // Same turn, inside the dedupe window: nothing.
+      now += 10_000;
+      idle(plugin);
+      await drainScans(scheduled);
+      expect(client.session.promptAsync).toHaveBeenCalledTimes(1);
+
+      for (const expected of [2, 3, 3, 3]) {
+        now += 61_000;
+        idle(plugin);
+        await drainScans(scheduled);
+        expect(client.session.promptAsync).toHaveBeenCalledTimes(expected);
+      }
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('honours the cap from the transcript after a plugin restart', async () => {
+    stubOpenTodoRpc();
+    const records = openTodoRecords();
+    for (let index = 0; index < 3; index += 1) {
+      records.push({
+        info: { id: `msg_nudge_${index}`, role: 'user', agent: 'orchestrator' },
+        parts: [{ type: 'text', text: OPEN_TODO_PROMPT, synthetic: true }],
+      });
+      records.push({
+        info: { id: `msg_nudge_${index}_reply`, role: 'assistant', agent: 'orchestrator' },
+        parts: [{ type: 'text', text: 'Still stuck.' }],
+      });
+    }
+    const client = createOpenTodoClient({ records });
+    const { plugin, scheduled } = await startPlugin(client);
+
+    idle(plugin);
+    await drainScans(scheduled);
+
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
   });
 });

@@ -328,12 +328,40 @@ describe('managed scheduler parent actions', () => {
       providerId: 'openai',
       modelId: 'gpt-5.4',
       variant: 'high',
+      recoveryLineageId: 'dvr_lineage_1',
     });
+    expect(original.recoveryLineageId).toBeNull();
     expect(starts).toHaveLength(originalStartCount);
     expect(inPlaceRetries).toHaveLength(1);
     expect(inPlaceRetries[0].childSessionId).toBe(original.childSessionId);
     expect(settled.status).toBe('completed');
     expect(action.envelope.action).toBe('retry_in_place');
+    expect(action.envelope.autoResume).toBeNull();
+  });
+
+  test('follow-ups of a follow-up share the root lineage id', async () => {
+    const { original, scheduler } = await createTerminalHarness({
+      inPlaceRetryResult: {
+        status: 'failed',
+        failureReason: 'provider failed again',
+        partial: true,
+        resumable: true,
+      },
+    });
+    const first = await scheduler.acknowledgeResult(original.taskId, {
+      action: 'retry_in_place',
+      idempotencyKey: 'lineage-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+      variant: 'high',
+    });
+    await scheduler.waitForTask(first.followUpTask.taskId);
+    const second = await scheduler.acknowledgeResult(first.followUpTask.taskId, {
+      action: 'resume',
+      idempotencyKey: 'lineage-2',
+    });
+    expect(first.followUpTask.recoveryLineageId).toBe('dvr_lineage_1');
+    expect(second.followUpTask.recoveryLineageId).toBe('dvr_lineage_1');
   });
 
   test('leaves provider usage limits unacknowledged until a selected manual retry', async () => {
@@ -377,10 +405,47 @@ describe('managed scheduler parent actions', () => {
       modelId: 'gpt-5.4',
       variant: 'high',
       readOnly: true,
+      recoveryLineageId: 'dvr_lineage_1',
     });
     expect(starts).toHaveLength(originalStartCount);
     expect(inPlaceRetries).toHaveLength(1);
     expect(settled.status).toBe('completed');
+  });
+
+  test('a manual retry of an auto-resuming provider limit records the acknowledged state', async () => {
+    const { original, scheduler } = await createTerminalHarness({
+      failureReason: "You've hit your session limit · resets 7:30pm",
+      submitOverrides: { dispatchGroupId: 'msg_parent' },
+      schedulerOptions: {
+        autoResume: {
+          resolveBackupExecution: () => null,
+          attempt: async () => ({ outcome: 'deferred', retryAfterMs: 60_000, reason: 'test' }),
+        },
+      },
+    });
+    expect(scheduler.getResultEnvelope(original.taskId).autoResume).toMatchObject({
+      enabled: true,
+      cancelGeneration: 0,
+    });
+
+    const action = await scheduler.acknowledgeResult(original.taskId, {
+      action: 'retry_in_place',
+      idempotencyKey: 'manual-over-auto',
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+      variant: 'high',
+    });
+
+    expect(action.envelope.autoResume).toMatchObject({
+      state: 'acknowledged',
+      reason: 'manual_retry',
+      cancelGeneration: 1,
+      nextAttemptAt: null,
+    });
+    expect(action.followUpTask.recoveryLineageId).toBe('dvr_lineage_1');
+    await scheduler.waitForTask(action.followUpTask.taskId);
+    expect(scheduler.getDiagnostics().pendingAutoResumeCount).toBe(0);
+    await scheduler.shutdown();
   });
 
   test('retries provider prompt rejection once in a fresh child with a rewritten prompt', async () => {

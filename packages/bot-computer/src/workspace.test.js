@@ -19,7 +19,7 @@ const fixture = async (fetchImpl) => {
     scratchDirectory,
     workspace: createWorkspaceGateway({
       scratchDirectory,
-      gatewayUrl: 'http://host.docker.internal:57123',
+      gatewayUrl: 'http://egress:43121',
       runtimeToken: 'runtime-token-0123456789abcdef0123456789',
       fetchImpl,
     }),

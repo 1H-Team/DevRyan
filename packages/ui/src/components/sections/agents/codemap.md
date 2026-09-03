@@ -18,6 +18,14 @@ use the personal agent-default API, show Personal/Inherited provenance, and
 never mutate host agent files. Council and every non-model field remain
 host-managed.
 
+`SubagentLimitsSection.tsx` and `AgentRuntimeSection.tsx` are host-wide policy
+sections rendered inside Global Agent Behavior, never inside one agent's
+editor: the sub-agent concurrency cap and memory-pressure pause, and the
+agent-runtime language-server switch (`/api/config/agent-runtime`, applied on
+the next managed runtime restart; a changed value shows a restart note and,
+where the host exposes `restartOpenCode`, a Restart Runtime button). Host
+admins edit; other principals read the effective values.
+
 ## Flow
 Settings navigation selects a section; section reads/writes config through hooks/APIs.
 

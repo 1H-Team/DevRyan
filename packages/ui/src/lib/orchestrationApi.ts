@@ -26,6 +26,125 @@ export type ManagedTaskAcknowledgementResponse = {
   followUpTask: ManagedTaskProjection | null;
 };
 
+export type ManagedTaskAutoResumeState =
+  | 'planning'
+  | 'scheduled'
+  | 'attempting'
+  | 'superseded'
+  | 'succeeded'
+  | 'ended'
+  | 'cancelled'
+  | 'exhausted'
+  | 'acknowledged';
+
+export type ManagedTaskAutoResumeResetSource = 'opencode_status' | 'meridian_quota' | 'backoff';
+
+/** Mirrors `ManagedTaskAutoResumeReason` in packages/orchestration-runtime/index.d.ts. */
+export type ManagedTaskAutoResumeReason =
+  | 'user'
+  | 'manual_retry'
+  | 'session_deleted'
+  | 'cancelled'
+  | 'attempt_cap'
+  | 'time_cap'
+  | 'host_failures'
+  | 'window_rejections';
+
+export type ManagedTaskAutoResumeTarget = {
+  kind: 'backup' | 'original';
+  providerId: string;
+  modelId: string;
+  variant: string | null;
+};
+
+export type ManagedTaskAutoResumeError = {
+  code: string;
+  message: string;
+  at: number;
+};
+
+/**
+ * Host-owned automatic recovery state carried on a usage-limit result
+ * envelope. `revision` only moves forward; the store keeps the highest one.
+ */
+export type ManagedTaskAutoResume = {
+  revision: number;
+  enabled: boolean;
+  state: ManagedTaskAutoResumeState;
+  cancelGeneration: number;
+  lineageStartedAt: number;
+  expiresAt: number;
+  attemptCount: number;
+  noSignalProbes: number;
+  rejectionsInWindow: number;
+  windowResetAt: number | null;
+  nextAttemptAt: number | null;
+  resetAt: number | null;
+  resetSource: ManagedTaskAutoResumeResetSource | null;
+  target: ManagedTaskAutoResumeTarget | null;
+  lastAttemptTaskId: string | null;
+  lastAttemptAt: number | null;
+  lastError: ManagedTaskAutoResumeError | null;
+  hostFailures: number;
+  reason: ManagedTaskAutoResumeReason | null;
+};
+
+const MANAGED_TASK_AUTO_RESUME_ACTIVE_STATES: ReadonlySet<ManagedTaskAutoResumeState> = new Set([
+  'planning',
+  'scheduled',
+  'attempting',
+]);
+
+export const isManagedTaskAutoResumeActive = (
+  autoResume: Pick<ManagedTaskAutoResume, 'enabled' | 'state'> | null | undefined,
+) => Boolean(autoResume?.enabled && MANAGED_TASK_AUTO_RESUME_ACTIVE_STATES.has(autoResume.state));
+
+/**
+ * Task fields added for automatic recovery. Optional so wire-shaped records from
+ * older hosts (and fixtures) stay assignable; the store always writes them,
+ * normalizing absent values to null.
+ */
+export type ManagedTaskRecoveryFields = {
+  recoveryLineageId?: string | null;
+  childPromptedAt?: number | null;
+  firstAssistantPartAt?: number | null;
+};
+
+/** Mirrors the scheduler's `waitingReason.kind`: why a queued task has not started yet. */
+export type ManagedTaskWaitingReasonKind = 'capacity' | 'system_pressure';
+
+/**
+ * Host-owned reason a queued task is being held back. Mutable while the task
+ * stays queued; the store normalizes it to null for every other status. Same
+ * optionality rule as the recovery fields.
+ */
+export type ManagedTaskWaitingReason = {
+  kind: ManagedTaskWaitingReasonKind;
+  /** Starting + running tasks at the time of the check. */
+  activeCount: number;
+  /** Effective cap for `capacity`; null for `system_pressure`. */
+  limit: number | null;
+  since: number;
+};
+
+export type ManagedTaskSchedulingFields = {
+  waitingReason?: ManagedTaskWaitingReason | null;
+};
+
+export type ManagedTaskProjectedRecord = ManagedTaskEventRecord & ManagedTaskRecoveryFields & ManagedTaskSchedulingFields;
+
+/** Envelope fields added for automatic recovery; same optionality rule as the task fields. */
+export type ManagedTaskEnvelopeRecoveryFields = {
+  providerResetAt?: number | null;
+  autoResume?: ManagedTaskAutoResume | null;
+};
+
+export type ManagedTaskProjectedEnvelope = ManagedTaskResultEnvelope & ManagedTaskEnvelopeRecoveryFields;
+
+export type ManagedTaskAutoResumeResponse = {
+  resultEnvelope: ManagedTaskResultEnvelope;
+};
+
 export type ManagedAgentHandoffRequest = {
   rootSessionId: string;
   fromMode: 'orchestrator';
@@ -78,6 +197,11 @@ export type ManagedOrchestrationApi = {
     modelId?: string;
     variant?: string | null;
   }): Promise<ManagedTaskAcknowledgementResponse>;
+  setAutoResume(taskId: string, body: {
+    rootSessionId: string;
+    directory?: string;
+    enabled: boolean;
+  }): Promise<ManagedTaskAutoResumeResponse>;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
@@ -169,6 +293,12 @@ export const createManagedOrchestrationApi = (options: {
     acknowledgeTask(taskId, body) {
       return postJson<ManagedTaskAcknowledgementResponse>(
         `/api/orchestration/task/${encodeURIComponent(taskId)}/acknowledge`,
+        body,
+      );
+    },
+    setAutoResume(taskId, body) {
+      return postJson<ManagedTaskAutoResumeResponse>(
+        `/api/orchestration/task/${encodeURIComponent(taskId)}/auto-resume`,
         body,
       );
     },

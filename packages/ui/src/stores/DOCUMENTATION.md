@@ -208,6 +208,28 @@ Core model:
 - one serialized snapshot load per scope, reconciled against events received
   after that load began in one atomic store update
 
+Queued tasks may carry a host-owned `waitingReason` (`capacity`, with the
+active count and effective cap, or `system_pressure`) saying why the scheduler
+has not started them. Ingestion validates it, normalizes it to `null` for any
+non-queued status or malformed value (never dropping the task), compares it
+structurally so identical replays keep the record reference, and exposes it
+through `managedOrchestrationSelectors.waitingReasonForTask`. The host-wide
+knobs behind it (`maxConcurrentSubagents`, `pauseUnderMemoryPressure`, the
+live memory-pressure sample) live in `useAgentsStore` as `orchestrationLimits`,
+loaded and saved optimistically through `/api/config/orchestration-limits`
+from the Sub-Agent Limits section of Global Agent Behavior.
+
+The managed agent-runtime switches (today only `lsp`, OpenCode's language
+servers inside agent sessions) live next to them as `agentRuntimeSettings`,
+loaded and saved optimistically through `/api/config/agent-runtime` from the
+Agent Runtime section of the same page. OpenCode reads these when its instance
+starts, so the host answers `appliesOnRestart: true` and a `PUT` that changes
+the value while a managed server runs answers `restartRequired: true`; the
+store keeps that flag across reloads and later saves until
+`markAgentRuntimeRestarted()` runs (the section's Restart Runtime button, which
+posts the manual configuration reload through `apis.settings.restartOpenCode`).
+A 404 or 501 from the host clears the state so the section hides.
+
 Ownership and safety rules:
 
 1. The store is not persisted. The web/Electron or VS Code host ledger is the
