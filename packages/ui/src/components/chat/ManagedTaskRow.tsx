@@ -29,8 +29,21 @@ import { formatEffortLabel } from './mobileControlsUtils';
 type ManagedTaskRowTask = ManagedTaskProjectedRecord;
 type ManagedTaskRowEnvelope = ManagedTaskProjectedEnvelope;
 
+const getWaitingLabel = (
+  waitingReason: ManagedTaskRowTask['waitingReason'],
+  t: ReturnType<typeof useI18n>['t'],
+) => {
+  if (!waitingReason) return null;
+  if (waitingReason.kind === 'system_pressure') return t('chat.managedTasks.waiting.systemPressure');
+  if (waitingReason.limit === null) return t('chat.managedTasks.waiting.capacityNoLimit');
+  return t('chat.managedTasks.waiting.capacity', {
+    active: waitingReason.activeCount,
+    limit: waitingReason.limit,
+  });
+};
+
 const getStatusPresentation = (
-  task: Pick<ManagedTaskRowTask, 'executionKind' | 'status' | 'childPromptedAt' | 'firstAssistantPartAt'>,
+  task: Pick<ManagedTaskRowTask, 'executionKind' | 'status' | 'childPromptedAt' | 'firstAssistantPartAt' | 'waitingReason'>,
   t: ReturnType<typeof useI18n>['t'],
 ) => {
   if (task.status === 'completed') {
@@ -40,7 +53,9 @@ const getStatusPresentation = (
     return { label: t('chat.managedTasks.summary.error'), className: 'text-[var(--status-error)]' };
   }
   if (task.status === 'queued') {
-    return { label: t('chat.managedTasks.summary.queued'), className: 'text-muted-foreground' };
+    // The scheduler says why it is holding the task back (concurrency cap or memory pressure).
+    const waitingLabel = getWaitingLabel(task.waitingReason, t);
+    return { label: waitingLabel ?? t('chat.managedTasks.summary.queued'), className: 'text-muted-foreground' };
   }
   if (
     (task.status === 'starting' || task.status === 'running')

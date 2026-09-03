@@ -20,6 +20,7 @@ import {
   type ManagedTaskMode,
   type ManagedTaskResultAction,
   type ManagedTaskScheduler,
+  type ManagedTaskSchedulerOptions,
 } from '@openchamber/orchestration-runtime';
 
 import {
@@ -276,6 +277,8 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
   resolveBackupExecution?: ManagedTaskAutoResumeOptions['resolveBackupExecution'];
   resolveProviderReset?: ManagedTaskAutoResumeOptions['resolveProviderReset'];
   auxiliaryRpcHandlers?: Record<string, (params: Record<string, unknown>) => Promise<unknown>>;
+  /** Host launch admission (concurrency cap); absent → every queued task launches immediately. */
+  admitLaunch?: ManagedTaskSchedulerOptions['admitLaunch'];
   validateAgentExecution?: (input: {
     directory: string;
     providerId: string;
@@ -376,6 +379,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
     logger,
     ...(options.createTaskId ? { createTaskId: options.createTaskId } : {}),
     ...(options.createLeaseToken ? { createLeaseToken: options.createLeaseToken } : {}),
+    ...(options.admitLaunch ? { admitLaunch: options.admitLaunch } : {}),
     autoResume: {
       resolveOwnerKey: resolveAutoResumeOwnerKey,
       resolveBackupExecution: resolveAutoResumeBackupExecution,

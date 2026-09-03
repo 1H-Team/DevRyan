@@ -208,6 +208,17 @@ Core model:
 - one serialized snapshot load per scope, reconciled against events received
   after that load began in one atomic store update
 
+Queued tasks may carry a host-owned `waitingReason` (`capacity`, with the
+active count and effective cap, or `system_pressure`) saying why the scheduler
+has not started them. Ingestion validates it, normalizes it to `null` for any
+non-queued status or malformed value (never dropping the task), compares it
+structurally so identical replays keep the record reference, and exposes it
+through `managedOrchestrationSelectors.waitingReasonForTask`. The host-wide
+knobs behind it (`maxConcurrentSubagents`, `pauseUnderMemoryPressure`, the
+live memory-pressure sample) live in `useAgentsStore` as `orchestrationLimits`,
+loaded and saved optimistically through `/api/config/orchestration-limits`
+from the Sub-Agent Limits section of Global Agent Behavior.
+
 Ownership and safety rules:
 
 1. The store is not persisted. The web/Electron or VS Code host ledger is the

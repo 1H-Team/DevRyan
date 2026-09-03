@@ -345,6 +345,89 @@ export const buildAgentBackupModelPayload = (config: AgentBackupModelInput): { m
   };
 };
 
+export type OrchestrationMemoryPressureState = 'normal' | 'elevated' | 'critical';
+
+export type OrchestrationMemoryPressure = {
+  state: OrchestrationMemoryPressureState;
+  availableRatio: number | null;
+  swapUsedRatio: number | null;
+  sampledAt: number | null;
+  /** Sampler name; `unavailable` when the host cannot read memory pressure. */
+  source: string;
+};
+
+/** Host-wide scheduler pacing; mirrors `GET /api/config/orchestration-limits`. */
+export type OrchestrationLimits = {
+  maxConcurrentSubagents: number;
+  pauseUnderMemoryPressure: boolean;
+  pressure: OrchestrationMemoryPressure;
+};
+
+export type OrchestrationLimitsInput = Partial<Pick<OrchestrationLimits, 'maxConcurrentSubagents' | 'pauseUnderMemoryPressure'>>;
+
+export const CONCURRENT_SUBAGENTS_MIN = 1;
+export const CONCURRENT_SUBAGENTS_MAX = 16;
+export const CONCURRENT_SUBAGENTS_DEFAULT = 4;
+
+const ORCHESTRATION_LIMITS_ENDPOINT = '/api/config/orchestration-limits';
+const MEMORY_PRESSURE_STATES = new Set<OrchestrationMemoryPressureState>(['normal', 'elevated', 'critical']);
+/** Serializes optimistic saves: only the newest one may reconcile or revert the store. */
+let orchestrationLimitsSaveGeneration = 0;
+
+const isLimitsRecord = (value: unknown): value is Record<string, unknown> => (
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+);
+
+const normalizeFiniteNumber = (value: unknown): number | null => (
+  typeof value === 'number' && Number.isFinite(value) ? value : null
+);
+
+const isConcurrentSubagentsCount = (value: unknown): value is number => (
+  Number.isInteger(value)
+  && (value as number) >= CONCURRENT_SUBAGENTS_MIN
+  && (value as number) <= CONCURRENT_SUBAGENTS_MAX
+);
+
+export const normalizeOrchestrationLimits = (value: unknown): OrchestrationLimits | null => {
+  if (!isLimitsRecord(value)) return null;
+  if (!isConcurrentSubagentsCount(value.maxConcurrentSubagents)) return null;
+  if (typeof value.pauseUnderMemoryPressure !== 'boolean') return null;
+  const pressure = isLimitsRecord(value.pressure) ? value.pressure : null;
+  const state = pressure?.state;
+  const source = pressure?.source;
+  return {
+    maxConcurrentSubagents: value.maxConcurrentSubagents as number,
+    pauseUnderMemoryPressure: value.pauseUnderMemoryPressure as boolean,
+    pressure: {
+      state: MEMORY_PRESSURE_STATES.has(state as OrchestrationMemoryPressureState)
+        ? state as OrchestrationMemoryPressureState
+        : 'normal',
+      availableRatio: normalizeFiniteNumber(pressure?.availableRatio),
+      swapUsedRatio: normalizeFiniteNumber(pressure?.swapUsedRatio),
+      sampledAt: normalizeFiniteNumber(pressure?.sampledAt),
+      source: typeof source === 'string' && source.trim() ? source : 'unavailable',
+    },
+  };
+};
+
+export const buildOrchestrationLimitsPayload = (input: OrchestrationLimitsInput): OrchestrationLimitsInput => {
+  const payload: OrchestrationLimitsInput = {};
+  if (input.maxConcurrentSubagents !== undefined) {
+    const next = Math.round(input.maxConcurrentSubagents);
+    if (!isConcurrentSubagentsCount(next)) {
+      throw new Error(`Concurrent sub-agents must be between ${CONCURRENT_SUBAGENTS_MIN} and ${CONCURRENT_SUBAGENTS_MAX}`);
+    }
+    payload.maxConcurrentSubagents = next;
+  }
+  if (input.pauseUnderMemoryPressure !== undefined) {
+    payload.pauseUnderMemoryPressure = Boolean(input.pauseUnderMemoryPressure);
+  }
+  if (Object.keys(payload).length === 0) {
+    throw new Error('Nothing to save for sub-agent limits');
+  }
+  return payload;
+};
+
 export interface AgentConfig {
   name: string;
   description?: string;
@@ -474,6 +557,12 @@ interface AgentsStore {
   resetAgentModelOverride: (name: string) => Promise<AgentOverrideMutationResponse>;
   saveAgentBackupModel: (name: string, config: AgentBackupModelInput) => Promise<AgentOverrideMutationResponse>;
   resetAgentBackupModel: (name: string) => Promise<AgentOverrideMutationResponse>;
+  /** Host-wide sub-agent pacing; null until loaded, or when the host has no such route. */
+  orchestrationLimits: OrchestrationLimits | null;
+  /** Loads the limits into the store; resolves null on hosts without the route. */
+  getOrchestrationLimits: () => Promise<OrchestrationLimits | null>;
+  /** Applies a partial update optimistically; reverts and rethrows when the host rejects it. */
+  saveOrchestrationLimits: (input: OrchestrationLimitsInput) => Promise<OrchestrationLimits>;
 }
 
 declare global {
@@ -491,6 +580,7 @@ export const useAgentsStore = create<AgentsStore>()(
         agents: [],
         staleModelOverrides: [],
         isLoading: false,
+        orchestrationLimits: null,
 
         setSelectedAgent: (name: string | null) => {
           set({ selectedAgentName: name });
@@ -692,6 +782,57 @@ export const useAgentsStore = create<AgentsStore>()(
           }));
           invalidateAgentsLoadCache(configDirectory);
           return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as AgentOverrideMutationResponse : null;
+        },
+
+        // Sub-agent limits are host-wide scheduler state, not agent config:
+        // no directory scope, no agents-cache invalidation, no config sync.
+        getOrchestrationLimits: async () => {
+          const response = await fetch(ORCHESTRATION_LIMITS_ENDPOINT, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+          });
+          if (response.status === 404) {
+            set({ orchestrationLimits: null });
+            return null;
+          }
+          if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            throw new Error(payload?.error || 'Failed to load sub-agent limits');
+          }
+          const limits = normalizeOrchestrationLimits(await response.json().catch(() => null));
+          if (!limits) {
+            throw new Error('Failed to load sub-agent limits');
+          }
+          set({ orchestrationLimits: limits });
+          return limits;
+        },
+
+        saveOrchestrationLimits: async (input: OrchestrationLimitsInput) => {
+          const body = buildOrchestrationLimitsPayload(input);
+          const generation = ++orchestrationLimitsSaveGeneration;
+          const previous = get().orchestrationLimits;
+          const optimistic = previous ? { ...previous, ...body } : null;
+          if (optimistic) set({ orchestrationLimits: optimistic });
+          try {
+            const response = await fetch(ORCHESTRATION_LIMITS_ENDPOINT, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+              body: JSON.stringify(body),
+            });
+            if (!response.ok) {
+              const payload = await response.json().catch(() => null);
+              throw new Error(payload?.error || 'Failed to save sub-agent limits');
+            }
+            const next = normalizeOrchestrationLimits(await response.json().catch(() => null)) ?? optimistic;
+            if (!next) {
+              throw new Error('Failed to save sub-agent limits');
+            }
+            if (generation === orchestrationLimitsSaveGeneration) set({ orchestrationLimits: next });
+            return next;
+          } catch (error) {
+            if (generation === orchestrationLimitsSaveGeneration) set({ orchestrationLimits: previous });
+            throw error;
+          }
         },
       }),
       {

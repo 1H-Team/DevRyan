@@ -16,6 +16,7 @@ import { RiAddLine, RiArrowDownSLine, RiCloseLine, RiFlashlightFill, RiInformati
 import { cn } from '@/lib/utils';
 import { ModelSelector } from './ModelSelector';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
+import { SubagentLimitsSection } from './SubagentLimitsSection';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
@@ -819,7 +820,13 @@ export const AgentsPage: React.FC = () => {
   }, [resetAgentBackupModel, selectedAgentName, t]);
 
   if (!selectedAgentName) {
-    return behaviorUiHidden ? null : <BehaviorPage />;
+    if (behaviorUiHidden) return null;
+    // Host-wide scheduler pacing sits with the other per-host policy, not inside one agent's editor.
+    return (
+      <BehaviorPage>
+        <SubagentLimitsSection canEdit={isHostModelEditor} />
+      </BehaviorPage>
+    );
   }
 
   const renderThinkingLevelRow = (

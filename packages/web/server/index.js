@@ -137,6 +137,9 @@ import { createBrowserObservationRuntime } from './lib/browser-cdp/observation-r
 import { dynamicNoStoreMiddleware } from './lib/http-cache-policy.js';
 import { createMeridianProviderResetProbe } from './lib/orchestration/provider-reset-probe.js';
 import { createWebManagedOrchestrationRuntime } from './lib/orchestration/runtime.js';
+import { createLaunchAdmissionHook } from './lib/orchestration/launch-admission.js';
+import { readOrchestrationLimits } from './lib/opencode/orchestration-limits.js';
+import { getSystemPressure } from './lib/system/pressure.js';
 import { registerManagedOrchestrationRoutes } from './lib/orchestration/routes.js';
 import { createWebHarnessRuntime } from './lib/harness/runtime.js';
 import { createWebPrimaryRecoveryRuntime } from './lib/harness/provider-recovery.js';
@@ -2063,6 +2066,13 @@ async function main(options = {}) {
       || ENV_CONFIGURED_OPENCODE_HOST
     ),
     getWorkAdmissionBlock: harnessRuntime.getPromptAdmissionBlock,
+    // Launch admission: the configurable concurrent sub-agent cap plus a pause
+    // while the host is under memory pressure. Running work is never touched.
+    admitLaunch: createLaunchAdmissionHook({
+      readLimits: () => readOrchestrationLimits(),
+      getSystemPressure,
+      logger: console,
+    }),
     resolveAgentExecution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
       ?? params.fallbackExecution,
     // Auto-resume hooks: managed sessions key breakers per owning user and use

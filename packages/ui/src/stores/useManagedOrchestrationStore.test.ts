@@ -66,6 +66,7 @@ const withRecoveryDefaults = (task: ManagedTaskEventRecord): ManagedTaskProjecte
   recoveryLineageId: null,
   childPromptedAt: null,
   firstAssistantPartAt: null,
+  waitingReason: null,
 });
 
 const taskEvent = (task: ManagedTaskProjectedRecord, resultEnvelope?: ManagedTaskEvent['properties']['resultEnvelope']): ManagedTaskEvent => ({
@@ -689,6 +690,69 @@ describe('managed orchestration store', () => {
     expect('prompt' in stored).toBe(false);
     expect('leaseToken' in stored).toBe(false);
     expect('unknownLargeField' in stored).toBe(false);
+  });
+
+  test('projects why a queued task is waiting and drops the reason once it leaves the queue', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const selector = managedOrchestrationSelectors.waitingReasonForTask('dvr_task_1');
+    const capacity = { kind: 'capacity' as const, activeCount: 4, limit: 4, since: 1_500 };
+
+    store.getState().ingestEvent(taskEvent({ ...projectedTask(1), waitingReason: capacity }));
+    expect(selector(store.getState())).toEqual(capacity);
+    const held = store.getState().tasksById.dvr_task_1;
+
+    // An identical replay keeps the record reference.
+    store.getState().ingestEvent(taskEvent({ ...projectedTask(1), waitingReason: { ...capacity } }));
+    expect(store.getState().tasksById.dvr_task_1).toBe(held);
+
+    // The reason may change while the task stays queued.
+    const pressure = { kind: 'system_pressure' as const, activeCount: 2, limit: null, since: 1_600 };
+    store.getState().ingestEvent(taskEvent({ ...projectedTask(1), waitingReason: pressure }));
+    expect(selector(store.getState())).toEqual(pressure);
+    store.getState().ingestEvent(taskEvent({ ...projectedTask(1), waitingReason: null }));
+    expect(selector(store.getState())).toBeNull();
+
+    // Only a queued task waits: a stale reason on a started task reads as absent.
+    store.getState().ingestEvent(taskEvent({
+      ...projectedTask(1, 'starting', { childSessionId: 'ses_child' }),
+      waitingReason: capacity,
+    }));
+    expect(store.getState().tasksById.dvr_task_1.status).toBe('starting');
+    expect(selector(store.getState())).toBeNull();
+    expect(managedOrchestrationSelectors.waitingReasonForTask('dvr_task_none')(store.getState())).toBeNull();
+  });
+
+  test('keeps a queued task whose waiting reason is malformed and reads the reason as absent', () => {
+    const malformed: unknown[] = [
+      { kind: 'throttled', activeCount: 1, limit: 4, since: 1_500 },
+      { kind: 'capacity', activeCount: -1, limit: 4, since: 1_500 },
+      { kind: 'capacity', activeCount: 1.5, limit: 4, since: 1_500 },
+      { kind: 'capacity', activeCount: 1, limit: 'four', since: 1_500 },
+      { kind: 'capacity', activeCount: 1, limit: 4 },
+      { kind: 'system_pressure', activeCount: 1, limit: null, since: -1 },
+      'capacity',
+      [],
+    ];
+    for (const waitingReason of malformed) {
+      const store = createManagedOrchestrationStore({ api: fakeApi() });
+      store.getState().ingestEvent(taskEvent({ ...projectedTask(1), waitingReason } as ManagedTaskProjectedRecord));
+      expect(store.getState().tasksById.dvr_task_1).toEqual(withRecoveryDefaults(projectedTask(1)));
+    }
+  });
+
+  test('carries a waiting reason through an authoritative snapshot', async () => {
+    const waitingReason = { kind: 'capacity' as const, activeCount: 3, limit: 3, since: 1_500 };
+    const store = createManagedOrchestrationStore({
+      api: fakeApi({
+        async getSnapshot() {
+          return emptySnapshot({ tasks: [{ ...projectedTask(1), waitingReason } as ManagedTaskEventRecord] });
+        },
+      }),
+    });
+
+    await store.getState().loadSnapshot();
+
+    expect(managedOrchestrationSelectors.waitingReasonForTask('dvr_task_1')(store.getState())).toEqual(waitingReason);
   });
 
   test('rejects stale transitions and non-regressing same-status metadata', () => {

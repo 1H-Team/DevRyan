@@ -64,6 +64,12 @@ export const assertManagedTaskTransition = (previous, next) => {
     }
   }
 
+  // `waitingReason` is mutable only while the task is queued; leaving `queued`
+  // (launch or abort) must clear it.
+  if (next.status !== 'queued' && next.waitingReason !== null) {
+    throw new Error('waitingReason must be null unless the task is queued');
+  }
+
   validateManagedTaskRecord(next);
 
   if (!canTransitionManagedTaskStatus(previous.status, next.status)) {

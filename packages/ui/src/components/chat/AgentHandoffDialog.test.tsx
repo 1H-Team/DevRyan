@@ -42,6 +42,7 @@ const tasks: ManagedTaskProjection[] = Array.from({ length: 12 }, (_, index) => 
     recoveryLineageId: null,
     childPromptedAt: null,
     firstAssistantPartAt: null,
+    waitingReason: null,
   },
 }));
 

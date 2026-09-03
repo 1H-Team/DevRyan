@@ -11,7 +11,11 @@ import {
 } from '@openchamber/orchestration-runtime';
 
 import { I18nProvider } from '@/lib/i18n';
-import type { ManagedTaskAutoResume, ManagedTaskProjectedEnvelope } from '@/lib/orchestrationApi';
+import type {
+  ManagedTaskAutoResume,
+  ManagedTaskProjectedEnvelope,
+  ManagedTaskWaitingReason,
+} from '@/lib/orchestrationApi';
 
 mock.module('@/components/ui/ProviderLogo', () => ({
   ProviderLogo: ({ providerId }: { providerId: string }) => React.createElement('img', { src: `/logos/${providerId}.svg` }),
@@ -191,6 +195,28 @@ describe('ManagedTaskRow', () => {
 
     const legacy = renderView(<ManagedTaskRowView task={running} onOpenChild={() => undefined} />);
     expect(legacy).toContain('Running...');
+  });
+
+  test('says why a queued task is waiting on the scheduler', () => {
+    const queued = toManagedTaskEvent(record('dvr_task_wait', 'queued')).properties.task;
+    const render = (waitingReason: ManagedTaskWaitingReason | null) => renderView(
+      <ManagedTaskRowView task={{ ...queued, waitingReason }} onOpenChild={() => undefined} />,
+    );
+
+    const capped = render({ kind: 'capacity', activeCount: 4, limit: 4, since: 1_050 });
+    expect(capped).toContain('Waiting for a free slot (4 of 4 running)');
+    expect(capped).not.toContain('Queued...');
+
+    const uncapped = render({ kind: 'capacity', activeCount: 3, limit: null, since: 1_050 });
+    expect(uncapped).toContain('Waiting for a free slot');
+    expect(uncapped).not.toContain('running)');
+
+    expect(render({ kind: 'system_pressure', activeCount: 2, limit: null, since: 1_050 }))
+      .toContain('Waiting for memory pressure to ease');
+
+    const plain = render(null);
+    expect(plain).toContain('Queued...');
+    expect(plain).not.toContain('Waiting for');
   });
 
   test('announces the automatic continuation on the attempt the prior envelope launched', () => {

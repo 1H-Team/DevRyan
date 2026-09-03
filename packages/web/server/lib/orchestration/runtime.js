@@ -294,6 +294,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     logger,
     ...(options.createTaskId ? { createTaskId: options.createTaskId } : {}),
     ...(options.createLeaseToken ? { createLeaseToken: options.createLeaseToken } : {}),
+    // Host launch admission (sub-agent cap + memory pressure). Absent → the
+    // scheduler admits every queued task immediately, as before.
+    ...(typeof options.admitLaunch === 'function' ? { admitLaunch: options.admitLaunch } : {}),
     autoResume: {
       resolveOwnerKey: resolveAutoResumeOwnerKey,
       resolveBackupExecution: resolveAutoResumeBackupExecution,

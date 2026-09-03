@@ -61,6 +61,9 @@ const validateSnapshot = (value: unknown): ManagedOrchestrationState => {
       firstAssistantPartAt: isRecord(candidate) && candidate.firstAssistantPartAt !== undefined
         ? candidate.firstAssistantPartAt
         : null,
+      waitingReason: isRecord(candidate) && candidate.waitingReason !== undefined
+        ? candidate.waitingReason
+        : null,
     });
     if (tasks.has(task.taskId)) throw new TypeError(`duplicate managed task ${task.taskId}`);
     const idempotencyKey = `${task.rootSessionId}\u0000${task.idempotencyKey}`;

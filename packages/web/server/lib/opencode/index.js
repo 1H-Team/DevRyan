@@ -36,6 +36,12 @@ export {
 } from './agents.js';
 
 export {
+  normalizeOrchestrationLimits,
+  readOrchestrationLimits,
+  writeOrchestrationLimits,
+} from './orchestration-limits.js';
+
+export {
   listPackagedAgents,
 } from './packaged-agents.js';
 

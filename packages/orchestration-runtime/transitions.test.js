@@ -57,6 +57,25 @@ describe('managed task transitions', () => {
       .toMatchObject({ childPromptedAt: 1_500 });
   });
 
+  test('keeps the waiting reason mutable while queued and forces null afterwards', () => {
+    const queued = task('queued');
+    const reason = { kind: 'capacity', activeCount: 4, limit: 4, since: 1_500 };
+    const held = assertManagedTaskTransition(queued, { ...queued, waitingReason: reason });
+    expect(held.waitingReason).toEqual(reason);
+    expect(assertManagedTaskTransition(held, { ...held, waitingReason: null }).waitingReason).toBeNull();
+    expect(assertManagedTaskTransition(held, {
+      ...held,
+      waitingReason: { kind: 'system_pressure', activeCount: 1, limit: null, since: 1_600 },
+    }).waitingReason.kind).toBe('system_pressure');
+
+    const launched = { ...held, status: 'starting', leaseToken: 'dvr_lease_1', startedAt: 1_700 };
+    expect(() => assertManagedTaskTransition(held, launched))
+      .toThrow('waitingReason must be null unless the task is queued');
+    expect(() => assertManagedTaskTransition(held, { ...held, status: 'aborted', finishedAt: 1_700 }))
+      .toThrow('waitingReason must be null unless the task is queued');
+    expect(assertManagedTaskTransition(held, { ...launched, waitingReason: null }).status).toBe('starting');
+  });
+
   test('permits same-status metadata updates before terminal settlement', () => {
     const previous = task('starting');
     const next = {

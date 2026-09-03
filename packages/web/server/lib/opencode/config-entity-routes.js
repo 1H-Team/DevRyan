@@ -73,6 +73,9 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     deleteAgentModelOverride,
     writeAgentBackupModel,
     deleteAgentBackupModel,
+    readOrchestrationLimits,
+    writeOrchestrationLimits,
+    getSystemPressure,
     listConfigAgents,
     getCommandSources,
     createCommand,
@@ -385,6 +388,63 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     } catch (error) {
       console.error('Failed to delete agent backup model:', error);
       res.status(500).json({ error: formatErrorMessage(error, 'Failed to delete agent backup model') });
+    }
+  });
+
+  // Managed sub-agent launch limits are DevRyan-only sidecar state (OpenCode
+  // never reads them), so these routes also skip markConfigChange: the
+  // scheduler re-reads them on its next admission check.
+  const UNAVAILABLE_PRESSURE = Object.freeze({
+    state: 'normal',
+    availableRatio: null,
+    swapUsedRatio: null,
+    sampledAt: null,
+    source: 'unavailable',
+  });
+  const projectOrchestrationLimits = (limits) => {
+    let pressure = null;
+    try {
+      pressure = typeof getSystemPressure === 'function' ? getSystemPressure() : null;
+    } catch {
+      pressure = null;
+    }
+    return {
+      maxConcurrentSubagents: limits.maxConcurrentSubagents,
+      pauseUnderMemoryPressure: limits.pauseUnderMemoryPressure,
+      pressure: pressure && typeof pressure === 'object' ? pressure : { ...UNAVAILABLE_PRESSURE },
+    };
+  };
+
+  app.get('/api/config/orchestration-limits', (req, res) => {
+    if (!canReadFullAgentConfig(req.principal)) {
+      return res.status(403).json({ error: 'Orchestration limits are not available for this user' });
+    }
+    if (typeof readOrchestrationLimits !== 'function') {
+      return res.status(501).json({ error: 'Orchestration limits are not supported by this host' });
+    }
+    try {
+      return res.json(projectOrchestrationLimits(readOrchestrationLimits()));
+    } catch (error) {
+      console.error('Failed to read orchestration limits:', error);
+      return res.status(500).json({ error: formatErrorMessage(error, 'Failed to read orchestration limits') });
+    }
+  });
+
+  app.put('/api/config/orchestration-limits', (req, res) => {
+    if (!canReadFullAgentConfig(req.principal)) {
+      return res.status(403).json({ error: 'Orchestration limits are not available for this user' });
+    }
+    if (typeof writeOrchestrationLimits !== 'function') {
+      return res.status(501).json({ error: 'Orchestration limits are not supported by this host' });
+    }
+    try {
+      return res.json(projectOrchestrationLimits(writeOrchestrationLimits(req.body || {})));
+    } catch (error) {
+      const invalid = error?.code === 'invalid_orchestration_limits';
+      if (!invalid) console.error('Failed to write orchestration limits:', error);
+      return res.status(invalid ? 400 : 500).json({
+        error: formatErrorMessage(error, 'Failed to write orchestration limits'),
+      });
     }
   });
 

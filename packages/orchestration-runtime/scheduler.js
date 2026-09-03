@@ -45,6 +45,10 @@ import {
 } from './provider-capabilities.js';
 
 const ACTIVE_STATUSES = new Set(['starting', 'running']);
+const WAITING_REASON_KINDS = new Set(['capacity', 'system_pressure']);
+const ADMISSION_RETRY_DEFAULT_MS = 5_000;
+const ADMISSION_RETRY_MIN_MS = 1_000;
+const ADMISSION_RETRY_MAX_MS = 60_000;
 const TERMINAL_RESULT_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
 const AGENT_HANDOFF_MANUAL_RECOVERY_ABANDON = Symbol('agent-handoff-manual-recovery-abandon');
 
@@ -62,6 +66,7 @@ const resolveFollowUpTimeoutAt = (sourceTask, requestedTimeoutAt, now) => {
 
 const cloneTask = (task) => task ? {
   ...task,
+  waitingReason: task.waitingReason ? { ...task.waitingReason } : null,
   canonicalRefs: task.canonicalRefs.map((reference) => ({ ...reference })),
 } : null;
 
@@ -193,6 +198,9 @@ export const createManagedTaskScheduler = (options = {}) => {
   if (!Number.isFinite(autoResumeProbeStaggerMs) || autoResumeProbeStaggerMs < 0) {
     throw new RangeError('autoResume.probeStaggerMs must be a non-negative finite number');
   }
+  // Launch admission is inert unless the host supplies `admitLaunch`: every
+  // queued task then launches immediately, exactly as before the hook existed.
+  const admitLaunch = typeof options.admitLaunch === 'function' ? options.admitLaunch : null;
 
   const tasks = new Map();
   const resultEnvelopes = new Map();
@@ -220,6 +228,9 @@ export const createManagedTaskScheduler = (options = {}) => {
   let lastSerializedBytes = 0;
   let shutDown = false;
   let shutdownPromise = null;
+  let admissionRetryTimer = null;
+  let admissionRetryDueAt = null;
+  let admissionHeldCount = 0;
 
   const unrefTimer = (timer) => {
     if (timer && typeof timer.unref === 'function') timer.unref();
@@ -1249,10 +1260,103 @@ export const createManagedTaskScheduler = (options = {}) => {
     reconciliationRetryTimers.set(task.taskId, timer);
   };
 
+  const clearAdmissionRetry = () => {
+    if (admissionRetryTimer === null) return;
+    const timer = admissionRetryTimer;
+    admissionRetryTimer = null;
+    admissionRetryDueAt = null;
+    cancelTimeout(timer);
+  };
+
+  // One retry timer serves the whole queue; the earliest pending due time wins.
+  const scheduleAdmissionRetry = (delayMs) => {
+    if (shutDown) return;
+    const dueAt = now() + delayMs;
+    if (admissionRetryTimer !== null && admissionRetryDueAt !== null && admissionRetryDueAt <= dueAt) {
+      return;
+    }
+    clearAdmissionRetry();
+    admissionRetryDueAt = dueAt;
+    admissionRetryTimer = unrefTimer(scheduleTimeout(() => {
+      admissionRetryTimer = null;
+      admissionRetryDueAt = null;
+      if (shutDown) return;
+      void pump().catch((error) => {
+        logger.warn?.('[ManagedOrchestration] Launch admission retry failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }, delayMs));
+  };
+
+  const normalizeAdmissionRetryMs = (value) => {
+    if (!Number.isFinite(value)) return ADMISSION_RETRY_DEFAULT_MS;
+    return Math.min(ADMISSION_RETRY_MAX_MS, Math.max(ADMISSION_RETRY_MIN_MS, Math.trunc(value)));
+  };
+
+  // Fail open: a throwing or malformed host decision launches the task.
+  const resolveLaunchAdmission = async (task, activeCount, queuedCount) => {
+    if (!admitLaunch) return { admit: true };
+    let decision;
+    try {
+      decision = await admitLaunch({ task: cloneTask(task), activeCount, queuedCount, now: now() });
+    } catch (error) {
+      logger.warn?.('[ManagedOrchestration] Launch admission hook failed; admitting', {
+        taskId: task.taskId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { admit: true };
+    }
+    if (!decision || typeof decision !== 'object' || decision.admit !== false) return { admit: true };
+    if (!WAITING_REASON_KINDS.has(decision.reason)) {
+      logger.warn?.('[ManagedOrchestration] Launch admission hook returned an unknown reason; admitting', {
+        taskId: task.taskId,
+        reason: decision.reason,
+      });
+      return { admit: true };
+    }
+    const limit = decision.reason === 'capacity'
+      && Number.isSafeInteger(decision.limit)
+      && decision.limit >= 1
+      ? decision.limit
+      : null;
+    return {
+      admit: false,
+      reason: decision.reason,
+      limit,
+      retryInMs: normalizeAdmissionRetryMs(decision.retryInMs),
+    };
+  };
+
+  // Persists the hold on the head task only when kind, limit, or activeCount
+  // changed; `since` survives while the kind is unchanged.
+  const recordWaitingReasonLocked = async (previous, decision, activeCount) => {
+    const existing = previous.waitingReason;
+    if (
+      existing
+      && existing.kind === decision.reason
+      && existing.limit === decision.limit
+      && existing.activeCount === activeCount
+    ) {
+      return;
+    }
+    const next = {
+      ...previous,
+      waitingReason: {
+        kind: decision.reason,
+        activeCount,
+        limit: decision.limit,
+        since: existing && existing.kind === decision.reason ? existing.since : now(),
+      },
+    };
+    await commitTaskUpdateLocked(previous, next);
+  };
+
   async function pump() {
     if (shutDown) return;
     const admitted = [];
     await runExclusive(async () => {
+      if (shutDown) return;
       const queued = [...tasks.values()]
         .filter((task) => (
           task.status === 'queued'
@@ -1262,17 +1366,37 @@ export const createManagedTaskScheduler = (options = {}) => {
           )
         ))
         .sort(compareManagedTaskQueueOrder);
-      for (const previous of queued) {
+      let activeCount = 0;
+      let queuedCount = 0;
+      for (const task of tasks.values()) {
+        if (ACTIVE_STATUSES.has(task.status)) activeCount += 1;
+        else if (task.status === 'queued') queuedCount += 1;
+      }
+      let held = 0;
+      for (const [index, previous] of queued.entries()) {
+        const decision = await resolveLaunchAdmission(previous, activeCount, queuedCount);
+        if (!decision.admit) {
+          // FIFO: a held head blocks everything behind it, so nothing jumps the queue.
+          held = queued.length - index;
+          await recordWaitingReasonLocked(previous, decision, activeCount);
+          scheduleAdmissionRetry(decision.retryInMs);
+          break;
+        }
         const next = {
           ...previous,
           status: 'starting',
           leaseToken: createLeaseToken(),
           startedAt: now(),
+          waitingReason: null,
         };
         await commitTaskUpdateLocked(previous, next);
         scheduleStartingLease(next);
         admitted.push(cloneTask(next));
+        activeCount += 1;
+        queuedCount -= 1;
       }
+      admissionHeldCount = held;
+      if (held === 0) clearAdmissionRetry();
     });
     for (const task of admitted) launchTask(task);
   }
@@ -1452,6 +1576,7 @@ export const createManagedTaskScheduler = (options = {}) => {
             recoveryLineageId: rawTask?.recoveryLineageId ?? null,
             childPromptedAt: rawTask?.childPromptedAt ?? null,
             firstAssistantPartAt: rawTask?.firstAssistantPartAt ?? null,
+            waitingReason: rawTask?.waitingReason ?? null,
           });
           if (tasks.has(task.taskId)) {
             throw new ManagedOrchestrationError('duplicate_task', `duplicate task ${task.taskId} in ledger`);
@@ -1725,6 +1850,7 @@ export const createManagedTaskScheduler = (options = {}) => {
             status: 'aborted',
             finishedAt: now(),
             failureReason: reason,
+            waitingReason: null,
           };
           await commitTerminalTaskLocked(previous, next);
         });
@@ -1827,6 +1953,7 @@ export const createManagedTaskScheduler = (options = {}) => {
             status: 'aborted',
             finishedAt: now(),
             failureReason: 'Stopped during orchestrator-to-builder handoff',
+            waitingReason: null,
           };
           await commitTerminalTaskLocked(previous, next);
         });
@@ -2207,6 +2334,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       for (const taskId of [...startingLeaseTimers.keys()]) clearStartingLease(taskId);
       for (const taskId of [...reconciliationRetryTimers.keys()]) clearReconciliationRetry(taskId);
       for (const taskId of [...autoResumeTimers.keys()]) clearAutoResumeTimer(taskId);
+      clearAdmissionRetry();
       const shutdownError = new ManagedOrchestrationError(
         'scheduler_shut_down',
         'managed orchestration scheduler is shut down',
@@ -2698,6 +2826,8 @@ export const createManagedTaskScheduler = (options = {}) => {
         activeProviderRecoveryContinuationClaimCount: providerRecoveryContinuationClaims.size,
         pendingAutoResumeCount: [...resultEnvelopes.values()].filter(isAutoResumeActive).length,
         providerBreakerCount: providerBreakers.size,
+        admissionHeldCount,
+        admissionRetryPending: admissionRetryTimer !== null,
         compactedTaskCount,
         serializedBytes: lastSerializedBytes,
         shutDown,

@@ -15,6 +15,11 @@ import {
   writeAgentModelOverride,
 } from './agents.js';
 import { registerConfigEntityRoutes, sanitizeAgentRuntimeMetadata } from './config-entity-routes.js';
+import {
+  invalidateOrchestrationLimitsCache,
+  readOrchestrationLimits,
+  writeOrchestrationLimits,
+} from './orchestration-limits.js';
 
 describe('restricted agent runtime metadata', () => {
   it('preserves effective model and safe Slim preset provenance', () => {
@@ -196,5 +201,165 @@ describe('agent backup model routes', () => {
     await request(app).post('/api/config/agents/builder').send({}).expect(405);
     await request(app).patch('/api/config/agents/builder').send({}).expect(405);
     await request(app).delete('/api/config/agents/builder').expect(405);
+  });
+});
+
+describe('orchestration limits routes', () => {
+  let tempRoot;
+  let userConfigPath;
+  let sidecarPath;
+  let markConfigChange;
+  let pressure;
+
+  const createApp = (principal) => {
+    const app = express();
+    app.use(express.json());
+    if (principal) {
+      app.use((req, _res, next) => {
+        req.principal = principal;
+        next();
+      });
+    }
+    registerConfigEntityRoutes(app, {
+      resolveProjectDirectory: async () => ({ directory: tempRoot }),
+      resolveOptionalProjectDirectory: async () => ({ directory: tempRoot }),
+      markConfigChange,
+      clientReloadDelayMs: 0,
+      getAgentSources: () => ({ md: { exists: false }, json: { exists: false } }),
+      getAgentConfig: () => null,
+      listAgentModelOverrides: () => ({}),
+      writeAgentModelOverride: () => {},
+      deleteAgentModelOverride: () => false,
+      readOrchestrationLimits: () => readOrchestrationLimits({ userConfigPath }),
+      writeOrchestrationLimits: (body) => writeOrchestrationLimits(body, { userConfigPath }),
+      getSystemPressure: () => pressure,
+      listConfigAgents: () => [],
+      getCommandSources: () => ({ md: { exists: false }, json: { exists: false } }),
+      createCommand: () => {},
+      updateCommand: () => {},
+      deleteCommand: () => {},
+      listMcpConfigs: () => [],
+      getMcpConfig: () => null,
+      createMcpConfig: () => {},
+      updateMcpConfig: () => {},
+      deleteMcpConfig: () => {},
+    });
+    return app;
+  };
+
+  beforeEach(async () => {
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-orchestration-limit-routes-'));
+    userConfigPath = path.join(tempRoot, 'opencode-config', 'config.json');
+    sidecarPath = path.join(path.dirname(userConfigPath), '.openchamber', 'config.json');
+    await fs.mkdir(path.dirname(userConfigPath), { recursive: true });
+    markConfigChange = vi.fn(async () => ({ runtimeApplied: false, requiresApply: true }));
+    pressure = { state: 'elevated', availableRatio: 0.12, swapUsedRatio: 0.4, sampledAt: 1_000, source: 'vm_stat' };
+    invalidateOrchestrationLimitsCache();
+  });
+
+  afterEach(async () => {
+    invalidateOrchestrationLimitsCache();
+    if (tempRoot) {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+    tempRoot = undefined;
+  });
+
+  it('reads defaults with the live pressure snapshot and writes only the sidecar', async () => {
+    const app = createApp();
+
+    await request(app)
+      .get('/api/config/orchestration-limits')
+      .expect(200)
+      .expect((res) => {
+        expect(res.body).toEqual({
+          maxConcurrentSubagents: 4,
+          pauseUnderMemoryPressure: true,
+          pressure,
+        });
+      });
+
+    await fs.mkdir(path.dirname(sidecarPath), { recursive: true });
+    await fs.writeFile(sidecarPath, JSON.stringify({ agentBackupModels: { builder: { model: 'openai/gpt-5.5', variant: null } } }));
+    invalidateOrchestrationLimitsCache();
+
+    await request(app)
+      .put('/api/config/orchestration-limits')
+      .send({ maxConcurrentSubagents: 8 })
+      .expect(200)
+      .expect((res) => {
+        expect(res.body).toEqual({ maxConcurrentSubagents: 8, pauseUnderMemoryPressure: true, pressure });
+      });
+
+    await request(app)
+      .put('/api/config/orchestration-limits')
+      .send({ pauseUnderMemoryPressure: false, pressure: { state: 'ignored' } })
+      .expect(200)
+      .expect((res) => {
+        expect(res.body).toEqual({ maxConcurrentSubagents: 8, pauseUnderMemoryPressure: false, pressure });
+      });
+
+    const sidecar = JSON.parse(await fs.readFile(sidecarPath, 'utf8'));
+    expect(sidecar).toEqual({
+      agentBackupModels: { builder: { model: 'openai/gpt-5.5', variant: null } },
+      orchestrationLimits: { maxConcurrentSubagents: 8, pauseUnderMemoryPressure: false },
+    });
+    await expect(fs.stat(userConfigPath)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    await request(app)
+      .get('/api/config/orchestration-limits')
+      .expect(200)
+      .expect((res) => {
+        expect(res.body).toMatchObject({ maxConcurrentSubagents: 8, pauseUnderMemoryPressure: false });
+      });
+    expect(markConfigChange).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid bodies with 400 without touching the sidecar', async () => {
+    const app = createApp({ role: 'admin' });
+
+    for (const body of [
+      { maxConcurrentSubagents: 0 },
+      { maxConcurrentSubagents: 17 },
+      { maxConcurrentSubagents: 2.5 },
+      { maxConcurrentSubagents: '4' },
+      { pauseUnderMemoryPressure: 'yes' },
+    ]) {
+      await request(app)
+        .put('/api/config/orchestration-limits')
+        .send(body)
+        .expect(400)
+        .expect((res) => {
+          expect(res.body.error).toMatch(/maxConcurrentSubagents|pauseUnderMemoryPressure/);
+        });
+    }
+
+    await expect(fs.stat(sidecarPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(markConfigChange).not.toHaveBeenCalled();
+  });
+
+  it('falls back to an unavailable pressure snapshot and guards restricted principals', async () => {
+    pressure = null;
+    await request(createApp({ role: 'admin' }))
+      .get('/api/config/orchestration-limits')
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.pressure).toEqual({
+          state: 'normal',
+          availableRatio: null,
+          swapUsedRatio: null,
+          sampledAt: null,
+          source: 'unavailable',
+        });
+      });
+
+    const restricted = createApp({ scope: 'managed', role: 'member', policy: { settingsPages: ['home'] } });
+    await request(restricted).get('/api/config/orchestration-limits').expect(403);
+    await request(restricted).put('/api/config/orchestration-limits').send({ maxConcurrentSubagents: 2 }).expect(403);
+    await expect(fs.stat(sidecarPath)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    await request(createApp({ scope: 'managed', role: 'member', policy: { settingsPages: ['agents'] } }))
+      .get('/api/config/orchestration-limits')
+      .expect(200);
   });
 });

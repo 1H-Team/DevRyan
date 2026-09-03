@@ -64,6 +64,7 @@ const validateSnapshot = (value) => {
       recoveryLineageId: candidate?.recoveryLineageId ?? null,
       childPromptedAt: candidate?.childPromptedAt ?? null,
       firstAssistantPartAt: candidate?.firstAssistantPartAt ?? null,
+      waitingReason: candidate?.waitingReason ?? null,
     };
     validateManagedTaskRecord(task);
     if (tasks.has(task.taskId)) {

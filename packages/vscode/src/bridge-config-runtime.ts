@@ -9,11 +9,14 @@ import {
   getAgentConfig,
   getAgentSources,
   getCommandSources,
+  INVALID_ORCHESTRATION_LIMITS_CODE,
   listAgentModelOverrides,
   listConfigAgents,
+  readOrchestrationLimits,
   updateCommand,
   writeAgentBackupModel,
   writeAgentModelOverride,
+  writeOrchestrationLimits,
   type CommandScope,
   COMMAND_SCOPE,
   discoverSkills,
@@ -409,6 +412,36 @@ export async function handleConfigBridgeMessage(
 
     case 'api:config/agent-overrides': {
       return { id, type, success: true, data: { overrides: listAgentModelOverrides() } };
+    }
+
+    case 'api:config/orchestration-limits:get':
+    case 'api:config/orchestration-limits:set': {
+      // Mirrors GET/PUT /api/config/orchestration-limits and answers a
+      // `{ status, body }` envelope (like the prompt-mode bridge) so an invalid
+      // PUT reaches the settings page as a 400, exactly as on the web host.
+      // DevRyan-only sidecar state (OpenCode never reads it), so no
+      // markConfigChange. VS Code samples no memory pressure: the snapshot is
+      // always `unavailable` and the scheduler applies the concurrency cap alone.
+      const isWrite = type === 'api:config/orchestration-limits:set';
+      const pressure = {
+        state: 'normal',
+        availableRatio: null,
+        swapUsedRatio: null,
+        sampledAt: null,
+        source: 'unavailable',
+      };
+      try {
+        const limits = isWrite
+          ? writeOrchestrationLimits((payload as Record<string, unknown>) || {})
+          : readOrchestrationLimits();
+        return { id, type, success: true, data: { status: 200, body: { ...limits, pressure } } };
+      } catch (error) {
+        const message = error instanceof Error && error.message
+          ? error.message
+          : (isWrite ? 'Failed to update orchestration limits' : 'Failed to read orchestration limits');
+        const invalid = (error as { code?: unknown })?.code === INVALID_ORCHESTRATION_LIMITS_CODE;
+        return { id, type, success: true, data: { status: invalid ? 400 : 500, body: { error: message } } };
+      }
     }
 
     case 'api:config/agents': {

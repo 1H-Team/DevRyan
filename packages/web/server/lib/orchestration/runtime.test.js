@@ -1006,6 +1006,77 @@ describe('web managed orchestration runtime', () => {
     await runtime.shutdown();
   });
 
+  it('holds a queued task for capacity with a projected waiting reason until running work finishes', async () => {
+    const runs = [];
+    const events = [];
+    const runtime = createWebManagedOrchestrationRuntime({
+      persistence: createPersistence(),
+      executor: {
+        start(task) {
+          const result = deferred();
+          runs.push({ task, result });
+          return result.promise;
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return {}; },
+        async shutdown() {},
+      },
+      admitLaunch: ({ activeCount }) => (
+        activeCount >= 1
+          ? { admit: false, reason: 'capacity', limit: 1, retryInMs: 5_000 }
+          : { admit: true }
+      ),
+      publishEvent: (event) => events.push(event),
+      createTaskId: (() => {
+        let index = 0;
+        return () => `dvr_task_cap_${++index}`;
+      })(),
+      createLeaseToken: (() => {
+        let index = 0;
+        return () => `dvr_lease_cap_${++index}`;
+      })(),
+      now: () => 1_000,
+    });
+    await runtime.initialize();
+
+    const first = await runtime.handleRpc({ method: 'submit', params: submitParams(1) });
+    const second = await runtime.handleRpc({ method: 'submit', params: submitParams(2) });
+    await runtime.flush();
+
+    const capacityReason = { kind: 'capacity', activeCount: 1, limit: 1, since: 1_000 };
+    expect(first.task).toMatchObject({ status: 'starting', waitingReason: null });
+    expect(second.task).toMatchObject({ status: 'queued', waitingReason: capacityReason });
+    expect(runs.map((run) => run.task.taskId)).toEqual(['dvr_task_cap_1']);
+
+    const status = await runtime.handleRpc({
+      method: 'status',
+      params: { taskId: second.task.taskId, rootSessionId: 'ses_root' },
+    });
+    expect(status.task).toMatchObject({ status: 'queued', waitingReason: capacityReason });
+    expect('prompt' in status.task).toBe(false);
+
+    const snapshot = await runtime.getSnapshot({ rootSessionId: 'ses_root' });
+    expect(snapshot.tasks.find((task) => task.taskId === second.task.taskId).waitingReason).toEqual(capacityReason);
+    expect(events.some((event) => (
+      event.properties?.task?.taskId === second.task.taskId
+      && event.properties.task.waitingReason?.kind === 'capacity'
+    ))).toBe(true);
+    expect(runtime.getDiagnostics().scheduler).toMatchObject({ admissionHeldCount: 1, admissionRetryPending: true });
+
+    runs[0].result.resolve({ status: 'completed', recoverablePreview: 'done' });
+    await runtime.flush();
+
+    expect(runs.map((run) => run.task.taskId)).toEqual(['dvr_task_cap_1', 'dvr_task_cap_2']);
+    const started = await runtime.handleRpc({
+      method: 'status',
+      params: { taskId: second.task.taskId, rootSessionId: 'ses_root' },
+    });
+    expect(started.task).toMatchObject({ status: 'starting', waitingReason: null });
+    expect(runtime.getDiagnostics().scheduler).toMatchObject({ admissionHeldCount: 0, admissionRetryPending: false });
+    await runtime.shutdown();
+  });
+
   it('projects exhausted usage as immediate manual recovery on web and Electron', async () => {
     const runtime = createWebManagedOrchestrationRuntime({
       persistence: createPersistence(),

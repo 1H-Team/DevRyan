@@ -127,6 +127,19 @@ export interface ManagedTaskAutoResume {
   reason: ManagedTaskAutoResumeReason | null;
 }
 
+export type ManagedTaskWaitingReasonKind = 'capacity' | 'system_pressure';
+
+/** Why a queued task is being held back from launch. Mutable only while `status === 'queued'`. */
+export interface ManagedTaskWaitingReason {
+  kind: ManagedTaskWaitingReasonKind;
+  /** Tasks in `starting` or `running` when the hold was decided. */
+  activeCount: number;
+  /** Effective concurrency cap for `capacity`; null for `system_pressure`. */
+  limit: number | null;
+  /** First time the task was held for this kind. */
+  since: number;
+}
+
 export interface ManagedTaskRecord {
   owner: 'devryan';
   taskId: string;
@@ -161,6 +174,8 @@ export interface ManagedTaskRecord {
   childPromptedAt: number | null;
   /** When this attempt's first own assistant output was observed. */
   firstAssistantPartAt: number | null;
+  /** Why a queued task is not launching yet; null once it leaves `queued`. */
+  waitingReason: ManagedTaskWaitingReason | null;
   failureReason: string | null;
   partial: boolean;
   recoverablePreview: string;
@@ -459,6 +474,25 @@ export interface ManagedTaskAutoResumeOptions {
   defaultEnabled?: boolean;
 }
 
+export interface ManagedTaskLaunchAdmissionParams {
+  task: ManagedTaskRecord;
+  /** Tasks in `starting` or `running`, including ones admitted earlier in the same pump. */
+  activeCount: number;
+  queuedCount: number;
+  now: number;
+}
+
+export type ManagedTaskLaunchAdmissionDecision =
+  | { admit: true }
+  | {
+      admit: false;
+      reason: ManagedTaskWaitingReasonKind;
+      /** Effective cap for `capacity`; ignored for `system_pressure`. */
+      limit?: number | null;
+      /** Default 5_000, clamped to 1_000..60_000. */
+      retryInMs?: number;
+    };
+
 export interface ManagedTaskSchedulerOptions {
   executor: ManagedTaskExecutor;
   persistence?: ManagedOrchestrationPersistence;
@@ -477,6 +511,12 @@ export interface ManagedTaskSchedulerOptions {
   maxHistoryAgeMs?: number;
   maxPersistedBytes?: number;
   autoResume?: ManagedTaskAutoResumeOptions;
+  /** Host launch admission (concurrency cap, memory pressure). Absent → every
+   * queued task launches immediately. A held task keeps FIFO order, carries
+   * `waitingReason`, and is re-checked after `retryInMs` or when any task finishes.
+   * A throwing hook admits (fail open). */
+  admitLaunch?: (params: ManagedTaskLaunchAdmissionParams) =>
+    ManagedTaskLaunchAdmissionDecision | Promise<ManagedTaskLaunchAdmissionDecision>;
 }
 
 export interface ManagedTaskSchedulerDiagnostics {
@@ -493,6 +533,9 @@ export interface ManagedTaskSchedulerDiagnostics {
   /** Envelopes whose auto-resume is enabled and still planning/scheduled/attempting. */
   pendingAutoResumeCount: number;
   providerBreakerCount: number;
+  /** Queued tasks the last pump left unlaunched because the host held admission. */
+  admissionHeldCount: number;
+  admissionRetryPending: boolean;
   compactedTaskCount: number;
   serializedBytes: number;
   shutDown: boolean;
@@ -773,6 +816,7 @@ export function createManagedTaskRecord(input: Omit<ManagedTaskRecord,
   | 'finishedAt'
   | 'childPromptedAt'
   | 'firstAssistantPartAt'
+  | 'waitingReason'
   | 'failureReason'
   | 'partial'
   | 'recoverablePreview'

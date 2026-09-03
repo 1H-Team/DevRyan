@@ -24,6 +24,8 @@ import {
   type ManagedTaskAutoResumeState,
   type ManagedTaskProjectedEnvelope,
   type ManagedTaskProjectedRecord,
+  type ManagedTaskWaitingReason,
+  type ManagedTaskWaitingReasonKind,
 } from '@/lib/orchestrationApi';
 
 const MANAGED_TASK_STATUSES = new Set<ManagedTaskStatus>([
@@ -84,6 +86,10 @@ const MANAGED_TASK_AUTO_RESUME_RESET_SOURCES = new Set<ManagedTaskAutoResumeRese
   'opencode_status',
   'meridian_quota',
   'backoff',
+]);
+const MANAGED_TASK_WAITING_REASON_KINDS = new Set<ManagedTaskWaitingReasonKind>([
+  'capacity',
+  'system_pressure',
 ]);
 
 export type ManagedTaskPendingAction = 'cancel' | 'auto_resume' | ManagedTaskResultAction;
@@ -171,6 +177,24 @@ const isCanonicalReference = (value: unknown) => (
   && typeof value.id === 'string'
   && Boolean(value.id.trim())
 );
+
+/**
+ * Why a queued task has not started. A malformed value degrades to "no
+ * reason" instead of rejecting the task, and only a queued task carries one.
+ */
+export const parseManagedTaskWaitingReason = (value: unknown): ManagedTaskWaitingReason | null => {
+  if (!isRecord(value)) return null;
+  if (!MANAGED_TASK_WAITING_REASON_KINDS.has(value.kind as ManagedTaskWaitingReasonKind)) return null;
+  if (!isCount(value.activeCount)) return null;
+  if (value.limit !== null && !isCount(value.limit)) return null;
+  if (!isTimestamp(value.since)) return null;
+  return {
+    kind: value.kind as ManagedTaskWaitingReasonKind,
+    activeCount: value.activeCount as number,
+    limit: value.limit as number | null,
+    since: value.since as number,
+  };
+};
 
 const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord | null => {
   if (!isRecord(value)) return null;
@@ -273,6 +297,8 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord
       : null,
     childPromptedAt: isTimestamp(value.childPromptedAt) ? value.childPromptedAt : null,
     firstAssistantPartAt: isTimestamp(value.firstAssistantPartAt) ? value.firstAssistantPartAt : null,
+    // Queued-only scheduler state; a stale reason on a started task is dropped.
+    waitingReason: value.status === 'queued' ? parseManagedTaskWaitingReason(value.waitingReason) : null,
   };
 };
 
@@ -501,7 +527,7 @@ const sameRecord = (left: Record<string, unknown>, right: Record<string, unknown
   for (const key of leftKeys) {
     const leftValue = left[key];
     const rightValue = right[key];
-    if (key === 'canonicalRefs' || key === 'autoResume') {
+    if (key === 'canonicalRefs' || key === 'autoResume' || key === 'waitingReason') {
       if (JSON.stringify(leftValue) !== JSON.stringify(rightValue)) return false;
     } else if (!Object.is(leftValue, rightValue)) {
       return false;
@@ -1358,6 +1384,10 @@ export const managedOrchestrationSelectors = {
   ),
   autoResume: (taskId: string) => (state: ManagedOrchestrationStore) => (
     state.resultEnvelopesByTaskId[taskId]?.autoResume ?? null
+  ),
+  /** Why the scheduler is holding a queued task back; null once it starts. */
+  waitingReasonForTask: (taskId: string) => (state: ManagedOrchestrationStore) => (
+    state.tasksById[taskId]?.waitingReason ?? null
   ),
   latestTaskForChildSession: (childSessionId: string) => (
     state: ManagedOrchestrationStore

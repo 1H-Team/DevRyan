@@ -4,7 +4,7 @@ import { ChatViewProvider } from './ChatViewProvider';
 import { AgentManagerPanelProvider } from './AgentManagerPanelProvider';
 import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
 import { createOpenCodeManager, type OpenCodeManager } from './opencode';
-import { readAgentBackupModel } from './opencodeConfig';
+import { readAgentBackupModel, readOrchestrationLimits } from './opencodeConfig';
 import {
   getSessionActivitySnapshot,
   startGlobalEventWatcher,
@@ -231,6 +231,14 @@ export async function activate(context: vscode.ExtensionContext) {
       return backupModel
         ? { providerId: backupModel.providerID, modelId: backupModel.modelID, variant: backupModel.variant }
         : null;
+    },
+    // Cap-only launch admission: VS Code samples no memory pressure. Running
+    // work is never touched; a held task waits in FIFO order with a reason.
+    admitLaunch: ({ activeCount }) => {
+      const { maxConcurrentSubagents } = readOrchestrationLimits();
+      return activeCount >= maxConcurrentSubagents
+        ? { admit: false as const, reason: 'capacity' as const, limit: maxConcurrentSubagents, retryInMs: 5_000 }
+        : { admit: true as const };
     },
     auxiliaryRpcHandlers: {
       primary_recovery: async (params) => {

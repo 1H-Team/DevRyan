@@ -10,7 +10,7 @@ describe('managed Agent settings presentation', () => {
     expect(sidebarSource).toContain('isGlobalAgentBehaviorUiHidden(principal)');
     expect(sidebarSource).toContain('!behaviorHidden && renderBehavior()');
     expect(sidebarSource).toContain('setSelectedAgent(fallback.name)');
-    expect(pageSource).toContain('behaviorUiHidden ? null : <BehaviorPage />');
+    expect(pageSource).toContain('if (behaviorUiHidden) return null;');
   });
 
   test('uses personal defaults for authorized developers and keeps other fields read-only', () => {

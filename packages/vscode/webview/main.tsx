@@ -589,6 +589,21 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
     return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
+  if (pathname === '/api/config/orchestration-limits' && (method === 'GET' || method === 'PUT')) {
+    // Host-wide sub-agent limits. Like the Claude prompt-mode routes, the bridge
+    // answers `{ status, body }` so a 400 for an invalid PUT reaches the settings page intact.
+    try {
+      const body = method === 'PUT' && typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+      const result = method === 'GET'
+        ? await sendBridgeMessage<{ status: number; body: unknown }>('api:config/orchestration-limits:get')
+        : await sendBridgeMessage<{ status: number; body: unknown }>('api:config/orchestration-limits:set', body);
+      return new Response(JSON.stringify(result.body), { status: result.status, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
   if (pathname === '/api/config/agent-overrides') {
     try {
       const data = await sendBridgeMessage('api:config/agent-overrides');

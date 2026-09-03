@@ -110,7 +110,28 @@ export type ManagedTaskRecoveryFields = {
   firstAssistantPartAt?: number | null;
 };
 
-export type ManagedTaskProjectedRecord = ManagedTaskEventRecord & ManagedTaskRecoveryFields;
+/** Mirrors the scheduler's `waitingReason.kind`: why a queued task has not started yet. */
+export type ManagedTaskWaitingReasonKind = 'capacity' | 'system_pressure';
+
+/**
+ * Host-owned reason a queued task is being held back. Mutable while the task
+ * stays queued; the store normalizes it to null for every other status. Same
+ * optionality rule as the recovery fields.
+ */
+export type ManagedTaskWaitingReason = {
+  kind: ManagedTaskWaitingReasonKind;
+  /** Starting + running tasks at the time of the check. */
+  activeCount: number;
+  /** Effective cap for `capacity`; null for `system_pressure`. */
+  limit: number | null;
+  since: number;
+};
+
+export type ManagedTaskSchedulingFields = {
+  waitingReason?: ManagedTaskWaitingReason | null;
+};
+
+export type ManagedTaskProjectedRecord = ManagedTaskEventRecord & ManagedTaskRecoveryFields & ManagedTaskSchedulingFields;
 
 /** Envelope fields added for automatic recovery; same optionality rule as the task fields. */
 export type ManagedTaskEnvelopeRecoveryFields = {
