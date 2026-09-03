@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Production Bots: refuse to set up, repair, update or roll back the Bot runtime while containers labelled with another DevRyan installation's deployment id are attached, report `bot_runtime_foreign_deployment` in status, and tell the user which installation to stop first.
+
 ## [1.1.10] - 2026-09-02
 
 - Bot startup: reuse warm runtimes between turns, bound concurrent cold starts, safely retry failures before execution, and distinguish runtime startup failures from provider errors.

@@ -869,6 +869,88 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     expect(await manager.status()).toMatchObject({ state: 'healthy', code: null });
   });
 
+  const ownDeploymentId = () => deriveBotRuntimeServiceEnvironment(Buffer.alloc(32, 7), { dockerSocketGid: 20 })
+    .DEVRYAN_BOT_DEPLOYMENT_ID;
+  const FOREIGN_DEPLOYMENT_ID = 'deployment-ffffffffffffffffffffffff';
+  const foreignServices = () => [
+    hostControlContainer('fsup', 'devryan-bots-supervisor-1', 'running', `com.docker.compose.project=devryan-bots,com.docker.compose.service=supervisor,devryan.deployment=${FOREIGN_DEPLOYMENT_ID}`),
+    hostControlContainer('fidx', 'devryan-bots-indexer-1', 'running', `com.docker.compose.project=devryan-bots,com.docker.compose.service=indexer,devryan.deployment=${FOREIGN_DEPLOYMENT_ID}`),
+    hostControlContainer('fcomp', 'devryan-bot-computer-1', 'running', `devryan.kind=computer,devryan.deployment=${FOREIGN_DEPLOYMENT_ID}`),
+  ];
+
+  test('reports a runtime owned by another installation instead of trusting its healthy services', async () => {
+    const manifest = releaseManifest();
+    const initial = { version: 1, current: manifest, previous: null, staged: null };
+    const runner = createFakeRunner({ attachedContainers: foreignServices() });
+    const { manager } = createManager({ manifest, runner, stateStore: createMemoryStateStore(initial) });
+
+    expect(await manager.status()).toMatchObject({
+      state: 'degraded',
+      code: 'bot_runtime_foreign_deployment',
+      issues: [{ code: 'foreign_deployment', deployment: FOREIGN_DEPLOYMENT_ID }],
+    });
+    expect(runner.calls.some(({ args }) => ['stop', 'rm'].includes(args[0]))).toBe(false);
+  });
+
+  test('refuses to repair, set up or update over another installation without touching its containers', async () => {
+    const manifest = releaseManifest();
+    const initial = { version: 1, current: manifest, previous: null, staged: null };
+    for (const operation of ['repair', 'ensureReady']) {
+      const runner = createFakeRunner({ attachedContainers: foreignServices() });
+      const { manager } = createManager({ manifest, runner, stateStore: createMemoryStateStore(initial) });
+      const error = await manager[operation]().catch((caught) => caught);
+      expect(error).toMatchObject({
+        code: 'bot_runtime_foreign_deployment',
+        diagnostics: { foreignDeployment: FOREIGN_DEPLOYMENT_ID },
+      });
+      expect(error.message).toContain(FOREIGN_DEPLOYMENT_ID);
+      const argv = runner.calls.map(({ args }) => args);
+      expect(argv.some((args) => ['stop', 'rm'].includes(args[0]))).toBe(false);
+      expect(argv.some((args) => args[0] === 'compose' && (args.includes('up') || args.includes('rm')))).toBe(false);
+      expect(argv.some((args) => args[0] === 'network' && args[1] === 'rm')).toBe(false);
+    }
+    const setupRunner = createFakeRunner({ attachedContainers: foreignServices() });
+    const setupStore = createMemoryStateStore();
+    const { manager: fresh } = createManager({ manifest, runner: setupRunner, stateStore: setupStore });
+    await expect(fresh.setup()).rejects.toMatchObject({ code: 'bot_runtime_foreign_deployment' });
+    expect(setupRunner.calls.some(({ args }) => args[0] === 'compose' && args.includes('up'))).toBe(false);
+    expect(setupStore.writes).toEqual([]);
+  });
+
+  test('refuses to rebuild a stale host-control network while another installation is attached', async () => {
+    const manifest = releaseManifest();
+    const initial = { version: 1, current: manifest, previous: null, staged: null };
+    const runner = createFakeRunner({ hostControlNetwork: { stale: true }, attachedContainers: foreignServices() });
+    const { manager } = createManager({ manifest, runner, stateStore: createMemoryStateStore(initial) });
+
+    await expect(manager.ensureReady()).rejects.toMatchObject({ code: 'bot_runtime_foreign_deployment' });
+    const argv = runner.calls.map(({ args }) => args);
+    expect(argv.some((args) => ['stop', 'rm'].includes(args[0]))).toBe(false);
+    expect(argv.some((args) => args[0] === 'compose' && args.includes('rm'))).toBe(false);
+    expect(argv.some((args) => args[0] === 'network' && args[1] === 'rm')).toBe(false);
+  });
+
+  test('treats containers carrying its own deployment id as its own', async () => {
+    const manifest = releaseManifest();
+    const initial = { version: 1, current: manifest, previous: null, staged: null };
+    const own = ownDeploymentId();
+    const runner = createFakeRunner({
+      attachedContainers: [
+        hostControlContainer('sup1', 'devryan-bots-supervisor-1', 'running', `com.docker.compose.project=devryan-bots,com.docker.compose.service=supervisor,devryan.deployment=${own}`),
+        hostControlContainer('comp1', 'devryan-bot-computer-1', 'running', `devryan.kind=computer,devryan.deployment=${own}`),
+      ],
+    });
+    const { manager } = createManager({ manifest, runner, stateStore: createMemoryStateStore(initial) });
+
+    expect(await manager.status()).toMatchObject({
+      state: 'degraded',
+      code: 'bot_runtime_degraded',
+      issues: [{ code: 'host_control_attachment_retired' }],
+    });
+    await expect(manager.ensureReady()).resolves.toMatchObject({ state: 'healthy' });
+    expect(runner.calls.map(({ args }) => args)).toContainEqual(['stop', 'comp1']);
+  });
+
   test('detaches Bot containers still holding the retired host-control attachment', async () => {
     const manifest = releaseManifest();
     const initial = { version: 1, current: manifest, previous: null, staged: null };

@@ -51,8 +51,11 @@ export const resolveBotRuntimeWarningMessageKey = (code: string): I18nKey | null
   RUNTIME_WARNING_KEYS[code] ?? null
 );
 
-export const resolveBotRuntimeMessageKey = (state: string): I18nKey | null => {
+export const resolveBotRuntimeMessageKey = (state: string, code?: string | null): I18nKey | null => {
   if (state === 'healthy') return null;
+  // Another DevRyan installation on the same machine owns the Bot runtime;
+  // "needs repair" would send the user into a repair that refuses to run.
+  if (code === 'bot_runtime_foreign_deployment') return 'bots.runtime.foreignDeployment';
   if (state === 'docker_stopped') return 'bots.runtime.dockerStopped';
   if (state === 'docker_not_installed') return 'bots.runtime.dockerNotInstalled';
   if (state === 'setup_required') return 'bots.runtime.setupRequired';

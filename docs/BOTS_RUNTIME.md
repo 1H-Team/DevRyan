@@ -526,6 +526,14 @@ The operations have fixed meanings:
 - **Repair** reasserts the same desired signed manifest and fixed topology. It
   replaces unhealthy owned containers but retains named profiles, workspaces,
   and the index unless an explicit reset is separately confirmed.
+- **Foreign deployment guard.** Every DevRyan installation on a machine uses
+  the same Compose project and resource names, but each labels its containers
+  with its own `devryan.deployment` id. When the containers attached to the
+  host-control bridge carry another installation's id (for example a
+  source-development app started with a different `OPENCHAMBER_DATA_DIR`),
+  status reports `bot_runtime_foreign_deployment` and Setup, Repair, Update and
+  Rollback refuse before stopping, removing or recreating anything. Stop Bots
+  in the other installation first, then repair here.
 - **Update** stages the desired signed manifest, verifies replacement services,
   and commits it only after health succeeds. Existing runs remain revision- and
   digest-pinned until the controlled replacement boundary.

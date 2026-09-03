@@ -82,7 +82,10 @@ and desktop-host broker bridges.
   for up to 90 seconds of service-health convergence without recreating
   containers and commits installation state only after health succeeds; failed
   updates retain the prior manifest plus staged candidate. Health also checks
-  the `devryan-bots-host-control` bridge for two retired topologies. A bridge
+  the `devryan-bots-host-control` bridge for two retired topologies and for
+  containers labelled with another installation's `devryan.deployment` id
+  (status `bot_runtime_foreign_deployment`; Setup, Repair, Update and Rollback
+  refuse before stopping, removing or recreating anything). A bridge
   still carrying the no-masquerade policy (unroutable on Docker Desktop after a
   VM restart) marks the runtime degraded, and repair recreates it by removing
   the attached fixed services, gracefully stopping and removing the

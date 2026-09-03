@@ -116,6 +116,7 @@ export const dict = {
   'bots.runtime.setupRequired': 'The private Bot runtime needs setup',
   'bots.runtime.updateRequired': 'The private Bot runtime needs an update before it can run',
   'bots.runtime.needsRepair': 'The private Bot runtime needs repair',
+  'bots.runtime.foreignDeployment': 'Another DevRyan installation on this computer owns the Bot runtime. Stop Bots in that installation, then repair here.',
   'bots.runtime.indexRebuilding': 'The Bot index is rebuilding',
   'bots.runtime.migrationRequired': 'The Bot database needs an administrator migration',
   'bots.runtime.encryptionUnavailable': 'Secure Bot encryption is unavailable',

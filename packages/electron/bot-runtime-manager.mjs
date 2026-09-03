@@ -601,6 +601,31 @@ const parseContainerLabels = (raw) => {
   return labels;
 };
 
+const DEPLOYMENT_LABEL = 'devryan.deployment';
+
+// Dev and production installations share the Compose project name and the
+// resource names, but every container they create carries its own deployment
+// id. A container labelled with another id belongs to another installation:
+// its secrets differ, so adopting or removing it can only break that side.
+const foreignDeploymentMessage = (deployment) => (
+  `Another DevRyan installation (${deployment}) owns the Bot runtime on this machine. `
+  + 'Stop Bots in that installation, then retry.'
+);
+
+const foreignDeploymentIssue = (deployment) => ({
+  code: 'foreign_deployment',
+  deployment,
+  message: foreignDeploymentMessage(deployment),
+});
+
+const failForeignDeployment = (deployment) => {
+  throw new BotRuntimeManagerError(
+    foreignDeploymentMessage(deployment),
+    'bot_runtime_foreign_deployment',
+    { foreignDeployment: deployment },
+  );
+};
+
 const hostControlNetworkIssue = () => ({
   code: 'host_control_network_stale',
   message: 'The Bot host-control network uses a policy Docker Desktop cannot route; repair recreates it',
@@ -1444,7 +1469,14 @@ export function createBotRuntimeManager({
     return { exists: true, stale: options[HOST_CONTROL_MASQUERADE_OPTION] === 'false' };
   };
 
-  const listHostControlContainers = async (dockerPath, deadlineAt = null) => {
+  const resolveDeploymentId = async (manifest) => (
+    (await composeEnvironment(manifest)).DEVRYAN_BOT_DEPLOYMENT_ID
+  );
+
+  // Every fixed service of an installation is attached to the host-control
+  // bridge, so this one listing also reveals whether another installation's
+  // deployment currently owns the shared Compose project.
+  const listHostControlContainers = async (dockerPath, deploymentId, deadlineAt = null) => {
     const result = await run(
       dockerPath,
       ['ps', '--all', '--no-trunc', '--filter', `network=${HOST_CONTROL_NETWORK}`, '--format', '{{json .}}'],
@@ -1458,28 +1490,40 @@ export function createBotRuntimeManager({
         && FIXED_SERVICES.includes(labels[COMPOSE_SERVICE_LABEL])
         ? labels[COMPOSE_SERVICE_LABEL]
         : null;
+      const managed = labels[BOT_RUNTIME_LABEL] === BOT_RUNTIME_LABEL_VALUE;
+      const deployment = DEPLOYMENT_ID_PATTERN.test(labels[DEPLOYMENT_LABEL] || '')
+        ? labels[DEPLOYMENT_LABEL]
+        : null;
       return {
         id: typeof row?.ID === 'string' ? row.ID : '',
         name: typeof row?.Names === 'string' ? row.Names : '',
         running: String(row?.State || '').toLowerCase() === 'running',
-        managed: labels[BOT_RUNTIME_LABEL] === BOT_RUNTIME_LABEL_VALUE,
+        managed,
         service,
+        deployment,
+        foreign: managed && deployment !== null && deployment !== deploymentId,
       };
     });
   };
 
+  const findForeignDeployment = (attached) => (
+    (attached || []).find((container) => container.foreign)?.deployment ?? null
+  );
+
   // Two retired topologies need a repair: a bridge Docker Desktop cannot route,
   // and a reasoning or computer container that still holds an attachment to it
-  // and with it a route to the host and the public internet.
-  const inspectHostControlRepair = async (dockerPath, deadlineAt = null) => {
+  // and with it a route to the host and the public internet. A foreign
+  // deployment is reported, never repaired.
+  const inspectHostControlRepair = async (dockerPath, manifest, deadlineAt = null) => {
     const network = await inspectHostControlNetwork(dockerPath, deadlineAt);
-    if (!network.exists) return { staleNetwork: false, retiredAttachments: false };
-    if (network.stale) return { staleNetwork: true, retiredAttachments: false };
-    const attached = await listHostControlContainers(dockerPath, deadlineAt);
+    if (!network.exists) return { staleNetwork: false, retiredAttachments: false, foreignDeployment: null };
+    if (network.stale) return { staleNetwork: true, retiredAttachments: false, foreignDeployment: null };
+    const attached = await listHostControlContainers(dockerPath, await resolveDeploymentId(manifest), deadlineAt);
     return {
       staleNetwork: false,
       retiredAttachments: (attached || [])
-        .some((container) => container.service === null && container.managed),
+        .some((container) => container.service === null && container.managed && !container.foreign),
+      foreignDeployment: findForeignDeployment(attached),
     };
   };
 
@@ -1516,11 +1560,15 @@ export function createBotRuntimeManager({
   const migrateHostControlTopology = async (dockerPath, manifest, failureCode, deadlineAt = null) => {
     const network = await inspectHostControlNetwork(dockerPath, deadlineAt);
     if (!network.exists) return;
-    const attached = await listHostControlContainers(dockerPath, deadlineAt);
+    const attached = await listHostControlContainers(dockerPath, await resolveDeploymentId(manifest), deadlineAt);
     if (attached === null) {
       if (!network.stale) return;
       fail('Unable to inspect the Bot host-control network attachments', failureCode);
     }
+    // Compose "up" would adopt and recreate the other installation's services;
+    // refuse before anything is stopped, removed or recreated.
+    const foreignDeployment = findForeignDeployment(attached);
+    if (foreignDeployment) failForeignDeployment(foreignDeployment);
     const dynamic = attached.filter((container) => container.service === null && container.managed);
     if (!network.stale) {
       await removeDynamicContainers(
@@ -2623,7 +2671,21 @@ export function createBotRuntimeManager({
     }
     publishProgress({ phase: 'verifying_health' });
     const issues = [...await inspectServices(dockerPath, currentState.current, deadlineAt)];
-    const hostControl = await inspectHostControlRepair(dockerPath, deadlineAt);
+    const hostControl = await inspectHostControlRepair(dockerPath, currentState.current, deadlineAt);
+    if (hostControl.foreignDeployment) {
+      // The foreign services answer "compose ps" as if they were ours, so the
+      // ownership check must win over the service health it reports.
+      return {
+        ...baseStatus({
+          state: 'degraded',
+          code: 'bot_runtime_foreign_deployment',
+          currentState,
+          desiredManifest,
+          issues: [foreignDeploymentIssue(hostControl.foreignDeployment), ...issues],
+        }),
+        changed,
+      };
+    }
     if (hostControl.staleNetwork) issues.push(hostControlNetworkIssue());
     if (hostControl.retiredAttachments) issues.push(hostControlAttachmentIssue());
     const warnings = await probeEngineMemoryWarnings(dockerPath, deadlineAt);
@@ -2769,8 +2831,9 @@ export function createBotRuntimeManager({
       ? await inspectServices(dockerPath, currentState.current, deadlineAt)
       : [];
     const hostControl = imageIssues.length === 0 && services.length === 0
-      ? await inspectHostControlRepair(dockerPath, deadlineAt)
-      : { staleNetwork: false, retiredAttachments: false };
+      ? await inspectHostControlRepair(dockerPath, currentState.current, deadlineAt)
+      : { staleNetwork: false, retiredAttachments: false, foreignDeployment: null };
+    if (hostControl.foreignDeployment) failForeignDeployment(hostControl.foreignDeployment);
     const hostControlRepair = hostControl.staleNetwork || hostControl.retiredAttachments;
     if (imageIssues.length === 0 && services.length === 0 && !hostControlRepair
       && !currentState.staged) {

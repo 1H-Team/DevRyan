@@ -83,6 +83,13 @@ describe('BotComposer', () => {
     expect(resolveBotRuntimeMessageKey('runtime_degraded')).toBe('bots.runtime.needsRepair');
   });
 
+  test('names another installation instead of offering a repair that would refuse to run', () => {
+    expect(resolveBotRuntimeMessageKey('runtime_degraded', 'bot_runtime_foreign_deployment'))
+      .toBe('bots.runtime.foreignDeployment');
+    expect(resolveBotRuntimeMessageKey('runtime_degraded', 'bot_runtime_degraded')).toBe('bots.runtime.needsRepair');
+    expect(resolveBotRuntimeMessageKey('healthy', 'bot_runtime_foreign_deployment')).toBeNull();
+  });
+
   test('shows Docker memory warnings on a healthy runtime without disabling sending', () => {
     const warnings = resolveBotRuntimeWarnings({
       available: true,
