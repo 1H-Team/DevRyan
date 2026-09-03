@@ -4,7 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Production Bots: refuse to set up, repair, update or roll back the Bot runtime while containers labelled with another DevRyan installation's deployment id are attached, report `bot_runtime_foreign_deployment` in status, and tell the user which installation to stop first.
+## [1.1.11] - 2026-09-04
+
+- Sessions: add tree-scoped revert and redo with durable change summaries, an Undo footer, and consistent recovery across web, Electron, and VS Code.
+- Managed orchestration: persist automatic resume plans for provider limits, add per-agent backup models, bound concurrent subagents under memory pressure, and improve continuation, task-status, and plan-deviation guidance.
+- Processes and settings: add the Processes view with opt-in session attribution, automatic cleanup controls, and heavy-check slots; add a language-server switch for managed agent sessions.
+- OpenCode: update the managed host runtime, SDK, packaged plugin, VS Code recommendation, and verified provider-recovery compatibility to 1.18.27 while retaining the independently pinned Production Bot runtime image.
+- Production Bots: refuse cross-installation runtime mutations, reduce idle sweep work, cache status reads, and lower managed OpenCode serve noise.
+- Git and sessions: make generated pull-request titles and descriptions reliable, prefer derived session titles before one model upgrade, and remove automatic free-Zen rotation.
+- Reliability: resolve branch previews before browser lease acquisition, interpret legacy short shell timeouts correctly, and keep the full lint/type-check contract green.
+- Database: deploy and verify all repository migrations and the required Production Bots schema marker before release publication.
+- Release: update all DevRyan package and desktop metadata to 1.1.11.
 
 ## [1.1.10] - 2026-09-02
 
