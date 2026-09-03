@@ -13,6 +13,10 @@ import type {
   ManagedOrchestrationApi,
   ManagedOrchestrationSnapshot,
   ManagedTaskAcknowledgementResponse,
+  ManagedTaskAutoResume,
+  ManagedTaskAutoResumeResponse,
+  ManagedTaskProjectedEnvelope,
+  ManagedTaskProjectedRecord,
 } from '@/lib/orchestrationApi';
 import {
   createManagedOrchestrationStore,
@@ -56,7 +60,15 @@ const projectedTask = (...args: Parameters<typeof taskRecord>) => (
   toManagedTaskEvent(taskRecord(...args)).properties.task
 );
 
-const taskEvent = (task: ManagedTaskEventRecord, resultEnvelope?: ManagedTaskEvent['properties']['resultEnvelope']): ManagedTaskEvent => ({
+/** What the store holds for a wire record from a host without the recovery fields. */
+const withRecoveryDefaults = (task: ManagedTaskEventRecord): ManagedTaskProjectedRecord => ({
+  ...task,
+  recoveryLineageId: null,
+  childPromptedAt: null,
+  firstAssistantPartAt: null,
+});
+
+const taskEvent = (task: ManagedTaskProjectedRecord, resultEnvelope?: ManagedTaskEvent['properties']['resultEnvelope']): ManagedTaskEvent => ({
   type: 'openchamber:managed-task',
   properties: {
     owner: 'devryan',
@@ -98,8 +110,53 @@ const fakeApi = (overrides: Partial<ManagedOrchestrationApi> = {}): ManagedOrche
   async getTask() { throw new Error('not implemented'); },
   async cancelTask() { throw new Error('not implemented'); },
   async acknowledgeTask() { throw new Error('not implemented'); },
+  async setAutoResume() { throw new Error('not implemented'); },
   ...overrides,
 });
+
+const autoResumeBlock = (overrides: Partial<ManagedTaskAutoResume> = {}): ManagedTaskAutoResume => ({
+  revision: 1,
+  enabled: true,
+  state: 'scheduled',
+  cancelGeneration: 0,
+  lineageStartedAt: 4_000,
+  expiresAt: 40_000,
+  attemptCount: 0,
+  noSignalProbes: 0,
+  rejectionsInWindow: 0,
+  windowResetAt: null,
+  nextAttemptAt: 10_000,
+  resetAt: 9_000,
+  resetSource: 'opencode_status',
+  target: { kind: 'backup', providerId: 'anthropic', modelId: 'claude-sonnet-5', variant: null },
+  lastAttemptTaskId: null,
+  lastAttemptAt: null,
+  lastError: null,
+  hostFailures: 0,
+  reason: null,
+  ...overrides,
+});
+
+/** A usage-limit failure with a resumable, unacknowledged envelope. */
+const usageLimitFailure = () => {
+  const failed = taskRecord(1, 'failed', {
+    childSessionId: 'ses_child',
+    failureReason: 'usage limit reached',
+    partial: true,
+    recoverablePreview: 'Partial result',
+  });
+  const envelope = createManagedTaskResultEnvelope(failed, {
+    sequence: 1,
+    createdAt: 4_000,
+    resumable: true,
+  });
+  const projected = {
+    ...toManagedTaskEvent(failed, envelope).properties.task,
+    failureKind: 'provider_usage_limit' as const,
+    agentRetryAvailable: false,
+  };
+  return { projected, envelope };
+};
 
 describe('managed orchestration store', () => {
   test('indexes the latest task lineage by exact child session and falls back after compaction', () => {
@@ -598,7 +655,7 @@ describe('managed orchestration store', () => {
 
     expect(running.agentRetryAvailable).toBe(true);
     expect(failed.agentRetryAvailable).toBe(false);
-    expect(store.getState().tasksById[failed.taskId]).toEqual(failed);
+    expect(store.getState().tasksById[failed.taskId]).toEqual(withRecoveryDefaults(failed));
   });
 
   test('rejects event attempts to mutate the queue-time execution snapshot', () => {
@@ -611,7 +668,7 @@ describe('managed orchestration store', () => {
       providerId: 'different-provider',
     }));
 
-    expect(store.getState().tasksById.dvr_task_1).toEqual(queued);
+    expect(store.getState().tasksById.dvr_task_1).toEqual(withRecoveryDefaults(queued));
   });
 
   test('projects event records without retaining private or unknown fields', () => {
@@ -1280,5 +1337,186 @@ describe('managed orchestration store', () => {
     expect(store.getState().taskIdsByRootId).toEqual({});
     expect(store.getState().manualRecoveryTaskIdByChildSessionId).toEqual({});
     expect(store.getState().available).toBeNull();
+  });
+
+  test('normalizes missing recovery fields from older hosts to null', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const { projected, envelope } = usageLimitFailure();
+    store.getState().ingestEvent(taskEvent(projected, envelope));
+
+    const task = store.getState().tasksById[projected.taskId];
+    expect(task?.recoveryLineageId).toBeNull();
+    expect(task?.childPromptedAt).toBeNull();
+    expect(task?.firstAssistantPartAt).toBeNull();
+    const stored = store.getState().resultEnvelopesByTaskId[projected.taskId];
+    expect(stored?.providerResetAt).toBeNull();
+    expect(stored?.autoResume).toBeNull();
+    expect(managedOrchestrationSelectors.autoResume(projected.taskId)(store.getState())).toBeNull();
+    expect(managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession('ses_child')(
+      store.getState(),
+    )).toBe(projected.taskId);
+  });
+
+  test('merges child prompt and first assistant timestamps while a task is active and pins its lineage', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const running = {
+      ...projectedTask(1, 'running', { childSessionId: 'ses_child' }),
+      recoveryLineageId: 'lineage_1',
+      childPromptedAt: 2_500,
+      firstAssistantPartAt: null,
+    };
+    store.getState().ingestEvent(taskEvent(running));
+    expect(store.getState().tasksById[running.taskId]).toMatchObject({
+      recoveryLineageId: 'lineage_1',
+      childPromptedAt: 2_500,
+      firstAssistantPartAt: null,
+    });
+
+    store.getState().ingestEvent(taskEvent({ ...running, firstAssistantPartAt: 2_800 }));
+    expect(store.getState().tasksById[running.taskId]?.firstAssistantPartAt).toBe(2_800);
+
+    store.getState().ingestEvent(taskEvent({ ...running, recoveryLineageId: 'lineage_2', firstAssistantPartAt: 2_900 }));
+    expect(store.getState().tasksById[running.taskId]).toMatchObject({
+      recoveryLineageId: 'lineage_1',
+      firstAssistantPartAt: 2_800,
+    });
+
+    store.getState().ingestEvent(taskEvent({ ...running, childPromptedAt: 'soon' as never }));
+    expect(store.getState().tasksById[running.taskId]?.firstAssistantPartAt).toBe(2_800);
+  });
+
+  test('keeps auto-resume progress on an unacknowledged envelope and ignores stale revisions', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const { projected, envelope } = usageLimitFailure();
+    const withAutoResume = (
+      autoResume: ManagedTaskAutoResume | null,
+      providerResetAt: number | null = 9_000,
+    ): ManagedTaskProjectedEnvelope => ({ ...envelope, providerResetAt, autoResume });
+
+    store.getState().ingestEvent(taskEvent(projected, withAutoResume(autoResumeBlock())));
+    expect(managedOrchestrationSelectors.autoResume(projected.taskId)(store.getState())).toMatchObject({
+      revision: 1,
+      state: 'scheduled',
+      target: { kind: 'backup', providerId: 'anthropic', modelId: 'claude-sonnet-5', variant: null },
+    });
+    expect(store.getState().resultEnvelopesByTaskId[projected.taskId]?.providerResetAt).toBe(9_000);
+
+    store.getState().ingestEvent(taskEvent(
+      projected,
+      withAutoResume(autoResumeBlock({ revision: 2, state: 'attempting', attemptCount: 1 })),
+    ));
+    expect(managedOrchestrationSelectors.autoResume(projected.taskId)(store.getState())).toMatchObject({
+      revision: 2,
+      state: 'attempting',
+      attemptCount: 1,
+    });
+
+    store.getState().ingestEvent(taskEvent(projected, withAutoResume(autoResumeBlock())));
+    expect(managedOrchestrationSelectors.autoResume(projected.taskId)(store.getState())?.revision).toBe(2);
+
+    store.getState().ingestEvent(taskEvent(projected, withAutoResume(null, null)));
+    expect(managedOrchestrationSelectors.autoResume(projected.taskId)(store.getState())?.revision).toBe(2);
+
+    const before = store.getState().resultEnvelopesByTaskId[projected.taskId];
+    store.getState().ingestEvent(taskEvent(
+      projected,
+      withAutoResume(autoResumeBlock({ revision: 2, state: 'attempting', attemptCount: 1 })),
+    ));
+    expect(store.getState().resultEnvelopesByTaskId[projected.taskId]).toBe(before);
+
+    store.getState().ingestEvent(taskEvent(
+      projected,
+      withAutoResume(autoResumeBlock({ revision: 2, state: 'attempting', attemptCount: 1 }), 12_000),
+    ));
+    expect(store.getState().resultEnvelopesByTaskId[projected.taskId]?.providerResetAt).toBe(12_000);
+    expect(store.getState().resultEnvelopesByTaskId[projected.taskId]?.action).toBeNull();
+
+    store.getState().ingestEvent(taskEvent(
+      projected,
+      withAutoResume({ ...autoResumeBlock({ revision: 3 }), state: 'later' as never }),
+    ));
+    expect(managedOrchestrationSelectors.autoResume(projected.taskId)(store.getState())?.revision).toBe(2);
+  });
+
+  test('setAutoResume posts the toggle, holds a pending action, and upserts the returned envelope', async () => {
+    const { projected, envelope } = usageLimitFailure();
+    const requests: Array<{ taskId: string; body: Record<string, unknown> }> = [];
+    const response = deferred<ManagedTaskAutoResumeResponse>();
+    const store = createManagedOrchestrationStore({
+      api: fakeApi({
+        async setAutoResume(taskId, body) {
+          requests.push({ taskId, body });
+          return response.promise;
+        },
+      }),
+    });
+    const initial: ManagedTaskProjectedEnvelope = { ...envelope, providerResetAt: 9_000, autoResume: autoResumeBlock() };
+    store.getState().ingestEvent(taskEvent(projected, initial));
+
+    const first = store.getState().setAutoResume(projected.taskId, false);
+    const second = store.getState().setAutoResume(projected.taskId, false);
+    expect(second).toBe(first);
+    expect(managedOrchestrationSelectors.pendingAction(projected.taskId)(store.getState())).toBe('auto_resume');
+
+    response.resolve({
+      resultEnvelope: {
+        ...initial,
+        autoResume: autoResumeBlock({ revision: 2, enabled: false, state: 'cancelled', cancelGeneration: 1 }),
+      } as ManagedTaskAutoResumeResponse['resultEnvelope'],
+    });
+    await first;
+
+    expect(requests).toEqual([{
+      taskId: projected.taskId,
+      body: { rootSessionId: 'ses_root', directory: '/workspace', enabled: false },
+    }]);
+    expect(managedOrchestrationSelectors.autoResume(projected.taskId)(store.getState())).toMatchObject({
+      revision: 2,
+      enabled: false,
+      state: 'cancelled',
+    });
+    expect(managedOrchestrationSelectors.pendingAction(projected.taskId)(store.getState())).toBeUndefined();
+    expect(managedOrchestrationSelectors.actionError(projected.taskId)(store.getState())).toBeUndefined();
+    expect(managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession('ses_child')(
+      store.getState(),
+    )).toBe(projected.taskId);
+  });
+
+  test('setAutoResume surfaces host rejections and keeps the current envelope', async () => {
+    const { projected, envelope } = usageLimitFailure();
+    const store = createManagedOrchestrationStore({
+      api: fakeApi({
+        async setAutoResume() { throw new Error('auto_resume_stale'); },
+      }),
+    });
+    const initial: ManagedTaskProjectedEnvelope = { ...envelope, providerResetAt: 9_000, autoResume: autoResumeBlock() };
+    store.getState().ingestEvent(taskEvent(projected, initial));
+    const before = store.getState().resultEnvelopesByTaskId[projected.taskId];
+
+    await store.getState().setAutoResume(projected.taskId, false);
+
+    expect(managedOrchestrationSelectors.actionError(projected.taskId)(store.getState())).toBe('auto_resume_stale');
+    expect(managedOrchestrationSelectors.pendingAction(projected.taskId)(store.getState())).toBeUndefined();
+    expect(store.getState().resultEnvelopesByTaskId[projected.taskId]).toBe(before);
+  });
+
+  test('setAutoResume rejects a response for a different envelope or without an auto-resume block', async () => {
+    const { projected, envelope } = usageLimitFailure();
+    let reply: ManagedTaskAutoResumeResponse['resultEnvelope'] = { ...envelope, envelopeId: 'dvr_result_other' };
+    const store = createManagedOrchestrationStore({
+      api: fakeApi({ async setAutoResume() { return { resultEnvelope: reply }; } }),
+    });
+    store.getState().ingestEvent(taskEvent(projected, { ...envelope, providerResetAt: null, autoResume: autoResumeBlock() } as ManagedTaskProjectedEnvelope));
+
+    await store.getState().setAutoResume(projected.taskId, true);
+    expect(managedOrchestrationSelectors.actionError(projected.taskId)(store.getState())).toContain('did not match');
+
+    reply = { ...envelope };
+    await store.getState().setAutoResume(projected.taskId, true);
+    expect(managedOrchestrationSelectors.actionError(projected.taskId)(store.getState())).toContain('did not match');
+    expect(managedOrchestrationSelectors.autoResume(projected.taskId)(store.getState())?.revision).toBe(1);
+
+    await store.getState().setAutoResume('dvr_task_missing', true);
+    expect(managedOrchestrationSelectors.actionError('dvr_task_missing')(store.getState())).toBe('Managed task result was not found');
   });
 });

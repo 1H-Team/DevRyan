@@ -9,10 +9,8 @@ import {
   truncateManagedText,
   validateManagedTaskResultEnvelope,
   type ManagedTaskEvent,
-  type ManagedTaskEventRecord,
   type ManagedTaskRemovalEvent,
   type ManagedTaskResultAction,
-  type ManagedTaskResultEnvelope,
   type ManagedTaskStatus,
 } from '@openchamber/orchestration-runtime';
 
@@ -20,6 +18,11 @@ import {
   managedOrchestrationApi,
   type ManagedOrchestrationApi,
   type ManagedOrchestrationSnapshot,
+  type ManagedTaskAutoResume,
+  type ManagedTaskAutoResumeResetSource,
+  type ManagedTaskAutoResumeState,
+  type ManagedTaskProjectedEnvelope,
+  type ManagedTaskProjectedRecord,
 } from '@/lib/orchestrationApi';
 
 const MANAGED_TASK_STATUSES = new Set<ManagedTaskStatus>([
@@ -51,8 +54,27 @@ const IMMUTABLE_PROJECTED_TASK_FIELDS = [
   'executionKind',
   'createdAt',
   'timeoutAt',
-] as const satisfies readonly (keyof ManagedTaskEventRecord)[];
+  'recoveryLineageId',
+] as const satisfies readonly (keyof ManagedTaskProjectedRecord)[];
 const EMPTY_TASK_IDS: readonly string[] = Object.freeze([]);
+const MANAGED_TASK_AUTO_RESUME_STATES = new Set<ManagedTaskAutoResumeState>([
+  'planning',
+  'scheduled',
+  'attempting',
+  'superseded',
+  'succeeded',
+  'ended',
+  'cancelled',
+  'exhausted',
+  'acknowledged',
+]);
+const MANAGED_TASK_AUTO_RESUME_RESET_SOURCES = new Set<ManagedTaskAutoResumeResetSource>([
+  'opencode_status',
+  'meridian_quota',
+  'backoff',
+]);
+
+export type ManagedTaskPendingAction = 'cancel' | 'auto_resume' | ManagedTaskResultAction;
 
 export type ManagedRootDelegationPhase = 'starting' | 'waiting' | null;
 
@@ -62,16 +84,21 @@ type ManagedOrchestrationWarningEvent = {
 };
 
 type ParsedManagedTaskProjection = {
-  task: ManagedTaskEventRecord;
-  envelope: ManagedTaskResultEnvelope | null;
+  task: ManagedTaskProjectedRecord;
+  envelope: ManagedTaskProjectedEnvelope | null;
+};
+
+type ParsedManagedOrchestrationSnapshot = Omit<ManagedOrchestrationSnapshot, 'tasks' | 'resultEnvelopes'> & {
+  tasks: ManagedTaskProjectedRecord[];
+  resultEnvelopes: ManagedTaskProjectedEnvelope[];
 };
 
 export type ManagedOrchestrationUiEvent = ManagedTaskEvent | ManagedTaskRemovalEvent | ManagedOrchestrationWarningEvent;
 
 export type ManagedOrchestrationStore = {
-  tasksById: Readonly<Record<string, ManagedTaskEventRecord>>;
+  tasksById: Readonly<Record<string, ManagedTaskProjectedRecord>>;
   taskIdsByRootId: Readonly<Record<string, readonly string[]>>;
-  resultEnvelopesByTaskId: Readonly<Record<string, ManagedTaskResultEnvelope>>;
+  resultEnvelopesByTaskId: Readonly<Record<string, ManagedTaskProjectedEnvelope>>;
   latestTaskIdByChildSessionId: Readonly<Record<string, string>>;
   manualRecoveryTaskIdByChildSessionId: Readonly<Record<string, string>>;
   available: boolean | null;
@@ -79,7 +106,7 @@ export type ManagedOrchestrationStore = {
   recoveryWarning: string | null;
   isLoadingSnapshot: boolean;
   snapshotError: string | null;
-  pendingActionByTaskId: Readonly<Record<string, 'cancel' | ManagedTaskResultAction>>;
+  pendingActionByTaskId: Readonly<Record<string, ManagedTaskPendingAction>>;
   actionErrorByTaskId: Readonly<Record<string, string>>;
   ingestEvent(event: unknown): void;
   loadSnapshot(options?: { rootSessionId?: string }): Promise<void>;
@@ -89,13 +116,14 @@ export type ManagedOrchestrationStore = {
     modelId: string;
     variant: string | null;
   }): Promise<void>;
+  setAutoResume(taskId: string, enabled: boolean): Promise<void>;
   reset(): void;
 };
 
 const initialState = () => ({
-  tasksById: {} as Readonly<Record<string, ManagedTaskEventRecord>>,
+  tasksById: {} as Readonly<Record<string, ManagedTaskProjectedRecord>>,
   taskIdsByRootId: {} as Readonly<Record<string, readonly string[]>>,
-  resultEnvelopesByTaskId: {} as Readonly<Record<string, ManagedTaskResultEnvelope>>,
+  resultEnvelopesByTaskId: {} as Readonly<Record<string, ManagedTaskProjectedEnvelope>>,
   latestTaskIdByChildSessionId: {} as Readonly<Record<string, string>>,
   manualRecoveryTaskIdByChildSessionId: {} as Readonly<Record<string, string>>,
   available: null as boolean | null,
@@ -103,7 +131,7 @@ const initialState = () => ({
   recoveryWarning: null as string | null,
   isLoadingSnapshot: false,
   snapshotError: null as string | null,
-  pendingActionByTaskId: {} as Readonly<Record<string, 'cancel' | ManagedTaskResultAction>>,
+  pendingActionByTaskId: {} as Readonly<Record<string, ManagedTaskPendingAction>>,
   actionErrorByTaskId: {} as Readonly<Record<string, string>>,
 });
 
@@ -119,6 +147,10 @@ const isTimestamp = (value: unknown): value is number => (
   typeof value === 'number' && Number.isFinite(value) && value >= 0
 );
 const isNullableTimestamp = (value: unknown): value is number | null => value === null || isTimestamp(value);
+const isOptionalNullableTimestamp = (value: unknown): value is number | null | undefined => (
+  value === undefined || isNullableTimestamp(value)
+);
+const isCount = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
 
 const isCanonicalReference = (value: unknown) => (
   isRecord(value)
@@ -128,7 +160,7 @@ const isCanonicalReference = (value: unknown) => (
   && Boolean(value.id.trim())
 );
 
-const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | null => {
+const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord | null => {
   if (!isRecord(value)) return null;
   const valid = value.owner === 'devryan'
     && typeof value.taskId === 'string'
@@ -174,7 +206,11 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
     && typeof value.recoverablePreview === 'string'
     && Array.isArray(value.canonicalRefs)
     && value.canonicalRefs.every(isCanonicalReference)
-    && typeof value.agentRetryAvailable === 'boolean';
+    && typeof value.agentRetryAvailable === 'boolean'
+    // Automatic-recovery fields; absent on older hosts.
+    && isOptionalNullableString(value.recoveryLineageId)
+    && isOptionalNullableTimestamp(value.childPromptedAt)
+    && isOptionalNullableTimestamp(value.firstAssistantPartAt);
   if (!valid) return null;
   return {
     owner: 'devryan',
@@ -188,7 +224,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
     childSessionId: value.childSessionId as string | null,
     directory: value.directory as string,
     sequence: value.sequence as number,
-    mode: value.mode as ManagedTaskEventRecord['mode'],
+    mode: value.mode as ManagedTaskProjectedRecord['mode'],
     providerId: truncateManagedText(value.providerId, 1_024),
     modelId: truncateManagedText(value.modelId, 1_024),
     agent: truncateManagedText(value.agent, 1_024),
@@ -197,7 +233,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
     status: value.status as ManagedTaskStatus,
     attempt: value.attempt as number,
     priorTaskId: value.priorTaskId as string | null,
-    executionKind: value.executionKind as ManagedTaskEventRecord['executionKind'],
+    executionKind: value.executionKind as ManagedTaskProjectedRecord['executionKind'],
     createdAt: value.createdAt as number,
     startedAt: value.startedAt as number | null,
     finishedAt: value.finishedAt as number | null,
@@ -220,17 +256,119 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
         id: truncateManagedText(reference.id, 1_024),
       })),
     agentRetryAvailable: value.agentRetryAvailable as boolean,
+    recoveryLineageId: typeof value.recoveryLineageId === 'string'
+      ? truncateManagedText(value.recoveryLineageId, 1_024)
+      : null,
+    childPromptedAt: isTimestamp(value.childPromptedAt) ? value.childPromptedAt : null,
+    firstAssistantPartAt: isTimestamp(value.firstAssistantPartAt) ? value.firstAssistantPartAt : null,
   };
 };
 
-export const isManagedTaskEventRecord = (value: unknown): value is ManagedTaskEventRecord => (
+export const isManagedTaskEventRecord = (value: unknown): value is ManagedTaskProjectedRecord => (
   parseManagedTaskEventRecord(value) !== null
 );
 
-const parseEnvelope = (value: unknown): ManagedTaskResultEnvelope | null => {
+const parseManagedTaskAutoResumeTarget = (
+  value: unknown,
+): ManagedTaskAutoResume['target'] | undefined => {
+  if (value === null) return null;
+  if (
+    !isRecord(value)
+    || (value.kind !== 'backup' && value.kind !== 'original')
+    || typeof value.providerId !== 'string'
+    || !value.providerId.trim()
+    || typeof value.modelId !== 'string'
+    || !value.modelId.trim()
+    || !isNullableString(value.variant)
+  ) return undefined;
+  return {
+    kind: value.kind as 'backup' | 'original',
+    providerId: truncateManagedText(value.providerId, 1_024),
+    modelId: truncateManagedText(value.modelId, 1_024),
+    variant: value.variant === null ? null : truncateManagedText(value.variant, 1_024),
+  };
+};
+
+const parseManagedTaskAutoResumeError = (
+  value: unknown,
+): ManagedTaskAutoResume['lastError'] | undefined => {
+  if (value === null) return null;
+  if (
+    !isRecord(value)
+    || typeof value.code !== 'string'
+    || !value.code.trim()
+    || typeof value.message !== 'string'
+    || !isTimestamp(value.at)
+  ) return undefined;
+  return {
+    code: truncateManagedText(value.code, 1_024),
+    message: truncateManagedText(value.message, MAX_MANAGED_TASK_FAILURE_BYTES),
+    at: value.at,
+  };
+};
+
+/**
+ * Validates the host's auto-resume block on a result envelope. Returns null for
+ * anything that is not a complete, well-typed block so a malformed host payload
+ * degrades to "no automatic recovery" instead of dropping the envelope.
+ */
+export const parseManagedTaskAutoResume = (value: unknown): ManagedTaskAutoResume | null => {
+  if (!isRecord(value)) return null;
+  const target = parseManagedTaskAutoResumeTarget(value.target);
+  const lastError = parseManagedTaskAutoResumeError(value.lastError);
+  if (target === undefined || lastError === undefined) return null;
+  const valid = isCount(value.revision)
+    && typeof value.enabled === 'boolean'
+    && MANAGED_TASK_AUTO_RESUME_STATES.has(value.state as ManagedTaskAutoResumeState)
+    && isCount(value.cancelGeneration)
+    && isTimestamp(value.lineageStartedAt)
+    && isTimestamp(value.expiresAt)
+    && isCount(value.attemptCount)
+    && isCount(value.noSignalProbes)
+    && isCount(value.rejectionsInWindow)
+    && isNullableTimestamp(value.windowResetAt)
+    && isNullableTimestamp(value.nextAttemptAt)
+    && isNullableTimestamp(value.resetAt)
+    && (
+      value.resetSource === null
+      || MANAGED_TASK_AUTO_RESUME_RESET_SOURCES.has(value.resetSource as ManagedTaskAutoResumeResetSource)
+    )
+    && isNullableString(value.lastAttemptTaskId)
+    && isNullableTimestamp(value.lastAttemptAt)
+    && isCount(value.hostFailures)
+    && isNullableString(value.reason);
+  if (!valid) return null;
+  return {
+    revision: value.revision as number,
+    enabled: value.enabled as boolean,
+    state: value.state as ManagedTaskAutoResumeState,
+    cancelGeneration: value.cancelGeneration as number,
+    lineageStartedAt: value.lineageStartedAt as number,
+    expiresAt: value.expiresAt as number,
+    attemptCount: value.attemptCount as number,
+    noSignalProbes: value.noSignalProbes as number,
+    rejectionsInWindow: value.rejectionsInWindow as number,
+    windowResetAt: value.windowResetAt as number | null,
+    nextAttemptAt: value.nextAttemptAt as number | null,
+    resetAt: value.resetAt as number | null,
+    resetSource: value.resetSource as ManagedTaskAutoResumeResetSource | null,
+    target,
+    lastAttemptTaskId: value.lastAttemptTaskId === null
+      ? null
+      : truncateManagedText(value.lastAttemptTaskId, 1_024),
+    lastAttemptAt: value.lastAttemptAt as number | null,
+    lastError,
+    hostFailures: value.hostFailures as number,
+    reason: value.reason === null ? null : truncateManagedText(value.reason, MAX_MANAGED_TASK_FAILURE_BYTES),
+  };
+};
+
+const parseEnvelope = (value: unknown): ManagedTaskProjectedEnvelope | null => {
   try {
     const envelope = validateManagedTaskResultEnvelope(value);
     if (!envelope.canonicalRefs.every(isCanonicalReference)) return null;
+    // The runtime validator ignores the automatic-recovery fields; read them off the raw payload.
+    const raw = envelope as unknown as Record<string, unknown>;
     return {
       owner: 'devryan',
       envelopeId: envelope.envelopeId,
@@ -261,6 +399,8 @@ const parseEnvelope = (value: unknown): ManagedTaskResultEnvelope | null => {
       acknowledgedAt: envelope.acknowledgedAt,
       action: envelope.action,
       followUpTaskId: envelope.followUpTaskId,
+      providerResetAt: isTimestamp(raw.providerResetAt) ? raw.providerResetAt : null,
+      autoResume: parseManagedTaskAutoResume(raw.autoResume),
     };
   } catch {
     return null;
@@ -268,8 +408,8 @@ const parseEnvelope = (value: unknown): ManagedTaskResultEnvelope | null => {
 };
 
 const envelopeMatchesTask = (
-  task: ManagedTaskEventRecord,
-  envelope: ManagedTaskResultEnvelope,
+  task: ManagedTaskProjectedRecord,
+  envelope: ManagedTaskProjectedEnvelope,
 ) => (
   envelope.taskId === task.taskId
   && envelope.rootSessionId === task.rootSessionId
@@ -286,7 +426,7 @@ const envelopeMatchesTask = (
   && JSON.stringify(envelope.canonicalRefs) === JSON.stringify(task.canonicalRefs)
 );
 
-const parseSnapshot = (value: unknown): ManagedOrchestrationSnapshot => {
+const parseSnapshot = (value: unknown): ParsedManagedOrchestrationSnapshot => {
   if (
     !isRecord(value)
     || typeof value.available !== 'boolean'
@@ -298,8 +438,8 @@ const parseSnapshot = (value: unknown): ManagedOrchestrationSnapshot => {
     throw new TypeError('Managed orchestration returned an invalid snapshot');
   }
 
-  const tasks: ManagedTaskEventRecord[] = [];
-  const tasksById = new Map<string, ManagedTaskEventRecord>();
+  const tasks: ManagedTaskProjectedRecord[] = [];
+  const tasksById = new Map<string, ManagedTaskProjectedRecord>();
   for (const candidate of value.tasks) {
     const task = parseManagedTaskEventRecord(candidate);
     if (!task || tasksById.has(task.taskId)) {
@@ -309,7 +449,7 @@ const parseSnapshot = (value: unknown): ManagedOrchestrationSnapshot => {
     tasksById.set(task.taskId, task);
   }
 
-  const resultEnvelopes: ManagedTaskResultEnvelope[] = [];
+  const resultEnvelopes: ManagedTaskProjectedEnvelope[] = [];
   const envelopeTaskIds = new Set<string>();
   for (const candidate of value.resultEnvelopes) {
     const envelope = parseEnvelope(candidate);
@@ -346,7 +486,7 @@ const sameRecord = (left: Record<string, unknown>, right: Record<string, unknown
   for (const key of leftKeys) {
     const leftValue = left[key];
     const rightValue = right[key];
-    if (key === 'canonicalRefs') {
+    if (key === 'canonicalRefs' || key === 'autoResume') {
       if (JSON.stringify(leftValue) !== JSON.stringify(rightValue)) return false;
     } else if (!Object.is(leftValue, rightValue)) {
       return false;
@@ -355,23 +495,23 @@ const sameRecord = (left: Record<string, unknown>, right: Record<string, unknown
   return true;
 };
 
-const sameTask = (left: ManagedTaskEventRecord, right: ManagedTaskEventRecord) => (
+const sameTask = (left: ManagedTaskProjectedRecord, right: ManagedTaskProjectedRecord) => (
   sameRecord(left as unknown as Record<string, unknown>, right as unknown as Record<string, unknown>)
 );
 
-const sameEnvelope = (left: ManagedTaskResultEnvelope, right: ManagedTaskResultEnvelope) => (
+const sameEnvelope = (left: ManagedTaskProjectedEnvelope, right: ManagedTaskProjectedEnvelope) => (
   sameRecord(left as unknown as Record<string, unknown>, right as unknown as Record<string, unknown>)
 );
 
-const metadataRegressed = (current: ManagedTaskEventRecord, incoming: ManagedTaskEventRecord) => (
+const metadataRegressed = (current: ManagedTaskProjectedRecord, incoming: ManagedTaskProjectedRecord) => (
   (current.childSessionId !== null && incoming.childSessionId !== current.childSessionId)
   || (current.startedAt !== null && incoming.startedAt !== current.startedAt)
   || (current.finishedAt !== null && incoming.finishedAt !== current.finishedAt)
 );
 
 const immutableTaskMetadataChanged = (
-  current: ManagedTaskEventRecord,
-  incoming: ManagedTaskEventRecord,
+  current: ManagedTaskProjectedRecord,
+  incoming: ManagedTaskProjectedRecord,
 ) => IMMUTABLE_PROJECTED_TASK_FIELDS.some((field) => !Object.is(current[field], incoming[field]));
 
 const statusStage = (status: ManagedTaskStatus) => {
@@ -382,9 +522,9 @@ const statusStage = (status: ManagedTaskStatus) => {
 };
 
 const mergeTask = (
-  current: ManagedTaskEventRecord | undefined,
-  incoming: ManagedTaskEventRecord,
-): ManagedTaskEventRecord => {
+  current: ManagedTaskProjectedRecord | undefined,
+  incoming: ManagedTaskProjectedRecord,
+): ManagedTaskProjectedRecord => {
   if (!current) return incoming;
   if (immutableTaskMetadataChanged(current, incoming)) return current;
   if (sameTask(current, incoming)) return current;
@@ -398,14 +538,27 @@ const mergeTask = (
 };
 
 const mergeEnvelope = (
-  current: ManagedTaskResultEnvelope | undefined,
-  incoming: ManagedTaskResultEnvelope,
-): ManagedTaskResultEnvelope => {
+  current: ManagedTaskProjectedEnvelope | undefined,
+  incoming: ManagedTaskProjectedEnvelope,
+): ManagedTaskProjectedEnvelope => {
   if (!current) return incoming;
   if (current.envelopeId !== incoming.envelopeId || current.sequence !== incoming.sequence) return current;
   if (sameEnvelope(current, incoming)) return current;
   if (current.action !== null) return current;
-  if (incoming.action === null || incoming.acknowledgedAt === null) return current;
+  if (incoming.action === null) {
+    // Auto-resume progress arrives on an unacknowledged envelope. The host bumps
+    // `revision` on every change, so only a newer revision (or a provider reset
+    // update at the same revision) may replace what we hold; stale replays lose.
+    const currentRevision = current.autoResume?.revision ?? 0;
+    const incomingRevision = incoming.autoResume?.revision ?? 0;
+    if (incomingRevision > currentRevision) return incoming;
+    if (
+      incomingRevision === currentRevision
+      && !Object.is(incoming.providerResetAt, current.providerResetAt)
+    ) return incoming;
+    return current;
+  }
+  if (incoming.acknowledgedAt === null) return current;
   return incoming;
 };
 
@@ -415,10 +568,10 @@ const sameIds = (left: readonly string[] | undefined, right: readonly string[]) 
 
 const withRootIds = (
   current: Readonly<Record<string, readonly string[]>>,
-  tasksById: Readonly<Record<string, ManagedTaskEventRecord>>,
+  tasksById: Readonly<Record<string, ManagedTaskProjectedRecord>>,
   roots: Set<string>,
 ) => {
-  const grouped = new Map<string, ManagedTaskEventRecord[]>();
+  const grouped = new Map<string, ManagedTaskProjectedRecord[]>();
   roots.forEach((rootSessionId) => grouped.set(rootSessionId, []));
   for (const task of Object.values(tasksById)) {
     grouped.get(task.rootSessionId)?.push(task);
@@ -441,8 +594,8 @@ const withRootIds = (
 };
 
 const isManualRecoveryTask = (
-  task: ManagedTaskEventRecord,
-  envelope: ManagedTaskResultEnvelope | undefined,
+  task: ManagedTaskProjectedRecord,
+  envelope: ManagedTaskProjectedEnvelope | undefined,
 ) => Boolean(
   task.childSessionId
   && !task.agentRetryAvailable
@@ -458,10 +611,10 @@ const isManualRecoveryTask = (
 );
 
 const resolveLatestTaskIdForChildSession = (
-  tasksById: Readonly<Record<string, ManagedTaskEventRecord>>,
+  tasksById: Readonly<Record<string, ManagedTaskProjectedRecord>>,
   childSessionId: string,
 ) => {
-  let latest: ManagedTaskEventRecord | null = null;
+  let latest: ManagedTaskProjectedRecord | null = null;
   for (const task of Object.values(tasksById)) {
     if (task.childSessionId !== childSessionId) continue;
     if (
@@ -475,7 +628,7 @@ const resolveLatestTaskIdForChildSession = (
 
 const withLatestTaskIdsByChildSession = (
   current: Readonly<Record<string, string>>,
-  tasksById: Readonly<Record<string, ManagedTaskEventRecord>>,
+  tasksById: Readonly<Record<string, ManagedTaskProjectedRecord>>,
   childSessionIds: Set<string>,
 ) => {
   let next: Record<string, string> | null = null;
@@ -490,11 +643,11 @@ const withLatestTaskIdsByChildSession = (
 };
 
 const resolveManualRecoveryTaskId = (
-  tasksById: Readonly<Record<string, ManagedTaskEventRecord>>,
-  resultEnvelopesByTaskId: Readonly<Record<string, ManagedTaskResultEnvelope>>,
+  tasksById: Readonly<Record<string, ManagedTaskProjectedRecord>>,
+  resultEnvelopesByTaskId: Readonly<Record<string, ManagedTaskProjectedEnvelope>>,
   childSessionId: string,
 ) => {
-  let latest: ManagedTaskEventRecord | null = null;
+  let latest: ManagedTaskProjectedRecord | null = null;
   for (const task of Object.values(tasksById)) {
     if (
       task.childSessionId !== childSessionId
@@ -511,8 +664,8 @@ const resolveManualRecoveryTaskId = (
 
 const withManualRecoveryTaskIds = (
   current: Readonly<Record<string, string>>,
-  tasksById: Readonly<Record<string, ManagedTaskEventRecord>>,
-  resultEnvelopesByTaskId: Readonly<Record<string, ManagedTaskResultEnvelope>>,
+  tasksById: Readonly<Record<string, ManagedTaskProjectedRecord>>,
+  resultEnvelopesByTaskId: Readonly<Record<string, ManagedTaskProjectedEnvelope>>,
   childSessionIds: Set<string>,
 ) => {
   let next: Record<string, string> | null = null;
@@ -568,8 +721,8 @@ export const createManagedOrchestrationStore = (options: {
   const store = create<ManagedOrchestrationStore>()((set, get) => {
     const upsertMany = (projections: readonly ParsedManagedTaskProjection[]) => {
       set((state) => {
-        let mutableTasksById: Record<string, ManagedTaskEventRecord> | null = null;
-        let mutableEnvelopesByTaskId: Record<string, ManagedTaskResultEnvelope> | null = null;
+        let mutableTasksById: Record<string, ManagedTaskProjectedRecord> | null = null;
+        let mutableEnvelopesByTaskId: Record<string, ManagedTaskProjectedEnvelope> | null = null;
         const affectedRoots = new Set<string>();
         const affectedChildSessionIds = new Set<string>();
 
@@ -625,7 +778,7 @@ export const createManagedOrchestrationStore = (options: {
       });
     };
 
-    const upsert = (task: ManagedTaskEventRecord, envelope?: ManagedTaskResultEnvelope | null) => {
+    const upsert = (task: ManagedTaskProjectedRecord, envelope?: ManagedTaskProjectedEnvelope | null) => {
       upsertMany([{ task, envelope: envelope ?? null }]);
     };
 
@@ -646,7 +799,7 @@ export const createManagedOrchestrationStore = (options: {
 
     const setActionState = (
       taskId: string,
-      pending: 'cancel' | ManagedTaskResultAction | null,
+      pending: ManagedTaskPendingAction | null,
       error?: string | null,
     ) => set((state) => {
       const pendingActionByTaskId = { ...state.pendingActionByTaskId };
@@ -777,7 +930,7 @@ export const createManagedOrchestrationStore = (options: {
               rootSessionId?.trim() ? { rootSessionId: rootSessionId.trim() } : {},
             ));
             if (generation !== loadGeneration) return;
-            const wasRemovedDuringLoad = (task: ManagedTaskEventRecord) => {
+            const wasRemovedDuringLoad = (task: ManagedTaskProjectedRecord) => {
               const removed = removedDuringLoad.get(task.taskId);
               return Boolean(
                 removed
@@ -789,14 +942,14 @@ export const createManagedOrchestrationStore = (options: {
             const incomingIds = new Set(snapshot.tasks
               .filter((task) => !wasRemovedDuringLoad(task))
               .map((task) => task.taskId));
-            const validEnvelopes = new Map<string, ManagedTaskResultEnvelope>();
+            const validEnvelopes = new Map<string, ManagedTaskProjectedEnvelope>();
             for (const envelope of snapshot.resultEnvelopes) {
               validEnvelopes.set(envelope.taskId, envelope);
             }
             const removedTaskIds = new Set<string>();
             set((state) => {
-              let mutableTasksById: Record<string, ManagedTaskEventRecord> | null = null;
-              let mutableEnvelopesByTaskId: Record<string, ManagedTaskResultEnvelope> | null = null;
+              let mutableTasksById: Record<string, ManagedTaskProjectedRecord> | null = null;
+              let mutableEnvelopesByTaskId: Record<string, ManagedTaskProjectedEnvelope> | null = null;
               const affectedRoots = new Set<string>();
               const affectedChildSessionIds = new Set<string>();
 
@@ -843,7 +996,7 @@ export const createManagedOrchestrationStore = (options: {
                 }
               }
 
-              let mutablePendingActions: Record<string, 'cancel' | ManagedTaskResultAction> | null = null;
+              let mutablePendingActions: Record<string, ManagedTaskPendingAction> | null = null;
               let mutableActionErrors: Record<string, string> | null = null;
               for (const taskId of removedTaskIds) {
                 if (Object.prototype.hasOwnProperty.call(state.pendingActionByTaskId, taskId)) {
@@ -1042,6 +1195,57 @@ export const createManagedOrchestrationStore = (options: {
         actionPromises.set(taskId, { promise: operation, token: actionToken, removed: false });
         return operation;
       },
+      setAutoResume(taskId, enabled) {
+        const existing = actionPromises.get(taskId);
+        if (existing) return existing.promise;
+        const task = get().tasksById[taskId];
+        const envelope = get().resultEnvelopesByTaskId[taskId];
+        if (!task || !envelope) {
+          setActionState(taskId, null, 'Managed task result was not found');
+          return Promise.resolve();
+        }
+        const actionGeneration = generation;
+        const actionToken = Symbol(taskId);
+        setActionState(taskId, 'auto_resume', null);
+        const operation = Promise.resolve().then(async () => {
+          try {
+            const response = await api.setAutoResume(taskId, {
+              rootSessionId: task.rootSessionId,
+              directory: task.directory,
+              enabled,
+            });
+            const actionState = actionPromises.get(taskId);
+            if (
+              generation !== actionGeneration
+              || actionState?.token !== actionToken
+              || actionState.removed
+            ) return;
+            const nextEnvelope = parseEnvelope(isRecord(response) ? response.resultEnvelope : undefined);
+            if (
+              !nextEnvelope
+              || !envelopeMatchesTask(task, nextEnvelope)
+              || nextEnvelope.envelopeId !== envelope.envelopeId
+              || nextEnvelope.sequence !== envelope.sequence
+              || !nextEnvelope.autoResume
+            ) {
+              throw new TypeError('Managed orchestration response did not match the auto-resume request');
+            }
+            upsertMany([{ task, envelope: nextEnvelope }]);
+            setActionState(taskId, null, null);
+          } catch (error) {
+            const actionState = actionPromises.get(taskId);
+            if (
+              generation === actionGeneration
+              && actionState?.token === actionToken
+              && !actionState.removed
+            ) setActionState(taskId, null, errorMessage(error));
+          } finally {
+            if (actionPromises.get(taskId)?.token === actionToken) actionPromises.delete(taskId);
+          }
+        });
+        actionPromises.set(taskId, { promise: operation, token: actionToken, removed: false });
+        return operation;
+      },
       reset() {
         generation += 1;
         snapshotLoads.clear();
@@ -1136,6 +1340,9 @@ export const managedOrchestrationSelectors = {
   task: (taskId: string) => (state: ManagedOrchestrationStore) => state.tasksById[taskId],
   resultEnvelope: (taskId: string) => (state: ManagedOrchestrationStore) => (
     state.resultEnvelopesByTaskId[taskId]
+  ),
+  autoResume: (taskId: string) => (state: ManagedOrchestrationStore) => (
+    state.resultEnvelopesByTaskId[taskId]?.autoResume ?? null
   ),
   latestTaskForChildSession: (childSessionId: string) => (
     state: ManagedOrchestrationStore

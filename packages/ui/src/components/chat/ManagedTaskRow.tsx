@@ -3,11 +3,14 @@ import { RiExternalLinkLine } from '@remixicon/react';
 import {
   formatManagedTaskDisplayName,
   type ManagedTaskEventRecord,
-  type ManagedTaskResultEnvelope,
 } from '@openchamber/orchestration-runtime';
 
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
+import type {
+  ManagedTaskProjectedEnvelope,
+  ManagedTaskProjectedRecord,
+} from '@/lib/orchestrationApi';
 import { useConfigStore } from '@/stores/useConfigStore';
 import type { ProviderRecoverySelection } from '@/stores/useProviderRecoveryStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -18,12 +21,16 @@ import {
 } from '@/stores/useManagedOrchestrationStore';
 import { navigateToManagedTaskChild } from './managedTaskNavigation';
 import { getSameChildFollowUpTaskId } from './managedTaskRetryLineage';
-import { ModelRecoveryCard } from './ModelRecoveryCard';
+import { ModelRecoveryCard, type ModelRecoveryAutoResume } from './ModelRecoveryCard';
 import type { ControlledModelPickerProvider } from './ControlledModelPicker';
 import { formatEffortLabel } from './mobileControlsUtils';
 
+/** Store records carry the (optional) recovery fields; plain wire records stay accepted. */
+type ManagedTaskRowTask = ManagedTaskProjectedRecord;
+type ManagedTaskRowEnvelope = ManagedTaskProjectedEnvelope;
+
 const getStatusPresentation = (
-  task: Pick<ManagedTaskEventRecord, 'executionKind' | 'status'>,
+  task: Pick<ManagedTaskRowTask, 'executionKind' | 'status' | 'childPromptedAt' | 'firstAssistantPartAt'>,
   t: ReturnType<typeof useI18n>['t'],
 ) => {
   if (task.status === 'completed') {
@@ -34,6 +41,14 @@ const getStatusPresentation = (
   }
   if (task.status === 'queued') {
     return { label: t('chat.managedTasks.summary.queued'), className: 'text-muted-foreground' };
+  }
+  if (
+    (task.status === 'starting' || task.status === 'running')
+    && task.childPromptedAt
+    && !task.firstAssistantPartAt
+  ) {
+    // The child has its prompt but the model has not produced anything yet.
+    return { label: t('chat.managedTasks.summary.startingModel'), className: 'text-muted-foreground' };
   }
   if (task.status === 'starting') {
     return { label: t('chat.managedTasks.summary.preparing'), className: 'text-muted-foreground' };
@@ -57,11 +72,13 @@ const providerModelLabel = (
 const getProviderFailurePresentation = ({
   task,
   recoverySourceTask,
+  priorEnvelope,
   providers,
   t,
 }: {
-  task: ManagedTaskEventRecord;
-  recoverySourceTask?: ManagedTaskEventRecord;
+  task: ManagedTaskRowTask;
+  recoverySourceTask?: ManagedTaskRowTask;
+  priorEnvelope?: ManagedTaskRowEnvelope;
   providers: ControlledModelPickerProvider[];
   t: ReturnType<typeof useI18n>['t'];
 }) => {
@@ -108,6 +125,23 @@ const getProviderFailurePresentation = ({
     };
   }
 
+  // This task is the attempt the prior usage-limit envelope's auto-resume launched.
+  const continuedAfterLimit = Boolean(
+    task.priorTaskId
+    && priorEnvelope?.taskId === task.priorTaskId
+    && priorEnvelope.autoResume?.lastAttemptTaskId === task.taskId,
+  );
+  if (continuedAfterLimit) {
+    return {
+      message: t('chat.managedTasks.providerLimit.continued', {
+        model: providerModelLabel(task, providers).model,
+        thinking: formatEffortLabel(task.variant ?? undefined, { providerId: task.providerId }),
+      }),
+      className: 'text-[var(--status-success)]',
+      role: 'status' as const,
+    };
+  }
+
   const recoveredSameChild = recoverySourceTask?.failureKind === 'provider_usage_limit'
     && (task.executionKind === 'retry_in_place' || task.executionKind === 'recover_in_place')
     && task.status === 'completed';
@@ -123,21 +157,64 @@ const getProviderFailurePresentation = ({
   };
 };
 
+/**
+ * Only usage-limit failures get the auto-resume row. An envelope without the
+ * host's block (older host, or not applicable) renders the box unchecked and off.
+ */
+const deriveAutoResume = (
+  task: ManagedTaskRowTask,
+  resultEnvelope: ManagedTaskRowEnvelope | undefined,
+  providers: ControlledModelPickerProvider[],
+): ModelRecoveryAutoResume | undefined => {
+  if (task.failureKind !== 'provider_usage_limit') return undefined;
+  const providerResetAt = resultEnvelope?.providerResetAt ?? null;
+  const autoResume = resultEnvelope?.autoResume ?? null;
+  if (!autoResume) {
+    return {
+      enabled: false,
+      state: 'cancelled',
+      nextAttemptAt: null,
+      expiresAt: null,
+      attemptCount: 0,
+      targetLabel: null,
+      resetAt: providerResetAt,
+      lastError: null,
+      reason: null,
+    };
+  }
+  return {
+    enabled: autoResume.enabled,
+    state: autoResume.state,
+    nextAttemptAt: autoResume.nextAttemptAt,
+    expiresAt: autoResume.expiresAt,
+    attemptCount: autoResume.attemptCount,
+    targetLabel: autoResume.target ? providerModelLabel(autoResume.target, providers).combined : null,
+    resetAt: autoResume.resetAt ?? providerResetAt,
+    lastError: autoResume.lastError,
+    reason: autoResume.reason,
+  };
+};
+
 export type ManagedTaskRowViewProps = {
-  task: ManagedTaskEventRecord;
-  recoverySourceTask?: ManagedTaskEventRecord;
+  task: ManagedTaskRowTask;
+  recoverySourceTask?: ManagedTaskRowTask;
+  /** Envelope of `task.priorTaskId`, when that task is still in the store. */
+  priorEnvelope?: ManagedTaskRowEnvelope;
   onOpenChild(): void;
-  resultEnvelope?: ManagedTaskResultEnvelope;
+  resultEnvelope?: ManagedTaskRowEnvelope;
   pending?: boolean;
   childActive?: boolean;
   actionError?: string | null;
   providers?: ControlledModelPickerProvider[];
   onRetryInPlace?(selection: ProviderRecoverySelection): void | Promise<void>;
+  autoResumePending?: boolean;
+  onAutoResumeChange?(enabled: boolean): void | Promise<void>;
 };
 
 export const ManagedTaskRowView = React.memo(({
   task,
   recoverySourceTask,
+  priorEnvelope,
   onOpenChild,
   resultEnvelope,
   pending = false,
@@ -145,6 +222,8 @@ export const ManagedTaskRowView = React.memo(({
   actionError = null,
   providers = [],
   onRetryInPlace,
+  autoResumePending = false,
+  onAutoResumeChange,
 }: ManagedTaskRowViewProps) => {
   const { t } = useI18n();
   const manualRecoveryRequired = Boolean(
@@ -171,9 +250,11 @@ export const ManagedTaskRowView = React.memo(({
   const providerFailurePresentation = getProviderFailurePresentation({
     task,
     recoverySourceTask,
+    priorEnvelope,
     providers,
     t,
   });
+  const autoResume = showRecovery ? deriveAutoResume(task, resultEnvelope, providers) : undefined;
   const [selection, setSelection] = React.useState<ProviderRecoverySelection>(() => ({
     providerId: task.providerId,
     modelId: task.modelId,
@@ -225,6 +306,9 @@ export const ManagedTaskRowView = React.memo(({
           actionError={actionError}
           onSelectionChange={setSelection}
           onRetry={() => onRetryInPlace?.(selection)}
+          autoResume={autoResume}
+          onAutoResumeChange={onAutoResumeChange}
+          autoResumePending={autoResumePending}
         />
       ) : null}
     </article>
@@ -262,6 +346,11 @@ export const ManagedTaskRow = React.memo(({
     () => managedOrchestrationSelectors.task(task?.priorTaskId ?? ''),
     [task?.priorTaskId],
   ));
+  // Undefined when the prior task was compacted away; the row then renders on its own.
+  const priorEnvelope = useManagedOrchestrationStore(React.useMemo(
+    () => managedOrchestrationSelectors.resultEnvelope(task?.priorTaskId ?? ''),
+    [task?.priorTaskId],
+  ));
   const sameChildFollowUpTaskId = getSameChildFollowUpTaskId(resultEnvelope);
   const childStatus = useSessionStatus(task?.childSessionId ?? '', task?.directory ?? undefined);
   const childActive = childStatus?.type === 'busy' || childStatus?.type === 'retry';
@@ -282,6 +371,7 @@ export const ManagedTaskRow = React.memo(({
     <ManagedTaskRowView
       task={task}
       recoverySourceTask={recoverySourceTask}
+      priorEnvelope={priorEnvelope}
       resultEnvelope={resultEnvelope}
       pending={pendingAction === 'retry_in_place'}
       childActive={childActive}
@@ -291,6 +381,11 @@ export const ManagedTaskRow = React.memo(({
         taskId,
         'retry_in_place',
         selection,
+      )}
+      autoResumePending={pendingAction === 'auto_resume'}
+      onAutoResumeChange={(enabled) => useManagedOrchestrationStore.getState().setAutoResume(
+        taskId,
+        enabled,
       )}
       onOpenChild={() => {
         navigateToManagedTaskChild(task, (sessionId, directory) => {

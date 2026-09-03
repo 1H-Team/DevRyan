@@ -128,6 +128,53 @@ describe('managed orchestration API', () => {
     }]);
   });
 
+  test('posts auto-resume toggles to the task route with the scoped body', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const api = createManagedOrchestrationApi({
+      fetchImpl: async (input, init) => {
+        requests.push({ url: String(input), init });
+        return Response.json({ resultEnvelope: { envelopeId: 'dvr_result_1', taskId: 'dvr_task_1' } });
+      },
+    });
+
+    const response = await api.setAutoResume('dvr_task_1/unsafe', {
+      rootSessionId: 'ses_root',
+      directory: '/workspace',
+      enabled: false,
+    });
+
+    expect(response).toEqual({ resultEnvelope: { envelopeId: 'dvr_result_1', taskId: 'dvr_task_1' } });
+    expect(requests.map(({ url }) => url)).toEqual([
+      '/api/orchestration/task/dvr_task_1%2Funsafe/auto-resume',
+    ]);
+    expect(requests[0]?.init?.method).toBe('POST');
+    expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({
+      rootSessionId: 'ses_root',
+      directory: '/workspace',
+      enabled: false,
+    });
+    expect(new Headers(requests[0]?.init?.headers).get('X-DevRyan-CSRF')).toBe('1');
+  });
+
+  test('surfaces auto-resume conflicts with their authoritative code', async () => {
+    const api = createManagedOrchestrationApi({
+      fetchImpl: async () => Response.json({
+        ok: false,
+        error: { code: 'auto_resume_stale', message: 'newer revision exists' },
+      }, { status: 409 }),
+    });
+
+    let failure: ManagedOrchestrationApiError | null = null;
+    try {
+      await api.setAutoResume('dvr_task_1', { rootSessionId: 'ses_root', enabled: true });
+    } catch (error) {
+      failure = error as ManagedOrchestrationApiError;
+    }
+    expect(failure?.status).toBe(409);
+    expect(failure?.code).toBe('auto_resume_stale');
+    expect(failure?.message).toBe('newer revision exists');
+  });
+
   test('uses no-store snapshots and reports invalid successful JSON', async () => {
     const requests: Array<{ input: string; init?: RequestInit }> = [];
     const api = createManagedOrchestrationApi({

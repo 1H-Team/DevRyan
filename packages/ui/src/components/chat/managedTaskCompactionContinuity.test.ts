@@ -139,6 +139,7 @@ const state = (
   loadSnapshot: async () => undefined,
   cancelTask: async () => undefined,
   acknowledgeTask: async () => undefined,
+  setAutoResume: async () => undefined,
   reset: () => undefined,
 });
 
