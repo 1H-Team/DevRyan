@@ -2240,6 +2240,7 @@ async function main(options = {}) {
     emitSyntheticOpenCodeEvent,
     resolveZenModel,
     fetchFreeZenModels,
+    getCachedZenModels,
     xaiToolCatalogRuntime,
     resolveZenModelNonBlocking,
     recordCommitTiming: (req, payload) => harnessRuntime.record({

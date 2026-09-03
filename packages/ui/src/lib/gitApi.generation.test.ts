@@ -543,6 +543,47 @@ describe("git generation routing", () => {
     expect(promptCalls).toHaveLength(0)
     expect(deleteSessionCalls).toHaveLength(0)
   })
+
+  test("sends the resolvable session model as a fallback hint with the PR prompt", async () => {
+    currentSessionId = "active-session"
+    sessionModelSelections.set("active-session", {
+      providerId: "provider-active",
+      modelId: "model-active",
+    })
+    await generatePullRequestDescriptionQuietly("/repo", { base: "main", head: "feature/hint" })
+
+    expect(directGenerationRequests).toHaveLength(1)
+    expect(directGenerationRequests[0]?.providerId).toBe("provider-active")
+    expect(directGenerationRequests[0]?.modelId).toBe("model-active")
+    expect(String(directGenerationRequests[0]?.prompt)).toContain("hidden pr prompt")
+  })
+
+  test("omits the fallback model hint when no model is resolvable", async () => {
+    currentProviderId = null
+    currentModelId = null
+    await generatePullRequestDescriptionQuietly("/repo", { base: "main", head: "feature/no-hint" })
+
+    expect(directGenerationRequests).toHaveLength(1)
+    expect(directGenerationRequests[0]?.providerId).toBe(undefined)
+    expect(directGenerationRequests[0]?.modelId).toBe(undefined)
+  })
+
+  test("keeps the transport error code and attempts on PR generation failures", async () => {
+    directPrError = Object.assign(new Error("Free models are exhausted"), {
+      code: "FREE_ZEN_EXHAUSTED",
+      attempts: [{ tier: "free_zen", model: "free-a", reason: "rate_limited" }],
+    })
+
+    let generationError: unknown
+    try {
+      await generatePullRequestDescriptionQuietly("/repo", { base: "main", head: "feature/code" })
+    } catch (error) {
+      generationError = error
+    }
+
+    expect((generationError as { code?: string }).code).toBe("FREE_ZEN_EXHAUSTED")
+    expect((generationError as { attempts?: unknown[] }).attempts).toHaveLength(1)
+  })
 })
 
 describe("buildCommitPlanContext", () => {

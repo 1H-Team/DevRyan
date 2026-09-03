@@ -244,9 +244,10 @@ describe('POST /api/git/pr-description', () => {
       .send({ base: 'main', head: 'feature/direct-pr', prompt: 'Return the Generate PR JSON' })
       .expect(200);
 
-    expect(response.body).toEqual({
+    expect(response.body).toMatchObject({
       title: 'Use direct Zen PR generation',
       body: '## Summary\n- Avoid chat sessions',
+      source: 'free_zen',
     });
     expect(fetchFreeZenModels).toHaveBeenCalledTimes(1);
     expect(generatePullRequestDescription).toHaveBeenCalledWith(expect.objectContaining({

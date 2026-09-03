@@ -81,6 +81,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       resolveZenModel,
       resolveZenModelNonBlocking,
       fetchFreeZenModels,
+      getCachedZenModels,
       xaiToolCatalogRuntime,
       recordCommitTiming,
       resolveManagedProject,
@@ -307,7 +308,13 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       resolveZenModel,
       resolveCommitZenModel: resolveZenModelNonBlocking,
       fetchFreeZenModels,
+      // Last known free-model catalog so a catalog outage degrades to stale
+      // models (then the session model) instead of failing with no attempt.
+      getCachedFreeZenModels: getCachedZenModels,
       recordCommitTiming,
+      // PR description tier 2 (session model through a hidden helper session).
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
     });
     registerMagicPromptRoutes(app, {
       fsPromises,

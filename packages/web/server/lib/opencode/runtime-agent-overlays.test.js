@@ -92,6 +92,14 @@ const TITLE_AGENT_OVERLAY = {
     permission: { '*': 'deny' },
     prompt: expect.any(String),
   },
+  'devryan-pr': {
+    description: 'Internal no-tools pull request draft generator',
+    mode: 'subagent',
+    hidden: true,
+    temperature: 0,
+    permission: { '*': 'deny' },
+    prompt: expect.any(String),
+  },
 };
 
 describe('syncRuntimeAgentOverlays', () => {
@@ -1565,6 +1573,15 @@ describe('syncRuntimeAgentOverlays', () => {
       temperature: 0,
       permission: { '*': 'deny' },
     });
+    expect(runtimeConfig.agent?.['devryan-pr']).toMatchObject({
+      mode: 'subagent',
+      hidden: true,
+      temperature: 0,
+      permission: { '*': 'deny' },
+    });
+    expect(runtimeConfig.agent?.['devryan-pr'].prompt).toMatch(/"title": string, "body": string/);
+    // The helper only adds itself; nothing else is disabled by it.
+    expect(Object.keys(runtimeConfig.agent).filter((name) => runtimeConfig.agent[name]?.disable === true)).toEqual(['title']);
   });
 
   it('adds bounded OpenAI connection and total-request liveness timeouts for OAuth auth', async () => {
