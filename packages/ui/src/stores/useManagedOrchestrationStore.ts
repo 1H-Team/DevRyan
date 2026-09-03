@@ -19,6 +19,7 @@ import {
   type ManagedOrchestrationApi,
   type ManagedOrchestrationSnapshot,
   type ManagedTaskAutoResume,
+  type ManagedTaskAutoResumeReason,
   type ManagedTaskAutoResumeResetSource,
   type ManagedTaskAutoResumeState,
   type ManagedTaskProjectedEnvelope,
@@ -68,6 +69,17 @@ const MANAGED_TASK_AUTO_RESUME_STATES = new Set<ManagedTaskAutoResumeState>([
   'exhausted',
   'acknowledged',
 ]);
+const MANAGED_TASK_AUTO_RESUME_REASONS = new Set<ManagedTaskAutoResumeReason>([
+  'user',
+  'manual_retry',
+  'session_deleted',
+  'cancelled',
+  'attempt_cap',
+  'time_cap',
+  'host_failures',
+  'window_rejections',
+]);
+
 const MANAGED_TASK_AUTO_RESUME_RESET_SOURCES = new Set<ManagedTaskAutoResumeResetSource>([
   'opencode_status',
   'meridian_quota',
@@ -359,7 +371,10 @@ export const parseManagedTaskAutoResume = (value: unknown): ManagedTaskAutoResum
     lastAttemptAt: value.lastAttemptAt as number | null,
     lastError,
     hostFailures: value.hostFailures as number,
-    reason: value.reason === null ? null : truncateManagedText(value.reason, MAX_MANAGED_TASK_FAILURE_BYTES),
+    // Unknown reasons from a newer host degrade to null instead of dropping the state.
+    reason: MANAGED_TASK_AUTO_RESUME_REASONS.has(value.reason as ManagedTaskAutoResumeReason)
+      ? (value.reason as ManagedTaskAutoResumeReason)
+      : null,
   };
 };
 

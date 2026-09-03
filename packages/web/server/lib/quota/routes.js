@@ -26,18 +26,13 @@ import {
   validateOpenCodeZenCredential,
 } from './providers/opencode.js';
 import {
+  createClaudeProxyBaseUrlResolver,
   createMeridianClaudeContextUsageClient,
-  resolveSafeClaudeQuotaUrl,
 } from './providers/claude-meridian.js';
+import { isAnthropicProviderId } from '../opencode/anthropic-provider-ids.js';
 import { resolveClaudeCodeLaunch as resolveClaudeCodeLaunchDefault } from '../opencode/claude-cli-runtime.js';
 
 const jsonParser = express.json({ limit: MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES });
-const CLAUDE_PROVIDER_IDS = new Set([
-  'claude',
-  'anthropic',
-  'anthropic-oauth',
-  'opencode-with-claude',
-]);
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 
 const unavailableContextUsage = (sessionID) => ({
@@ -172,27 +167,15 @@ export function registerQuotaRoutes(app, {
     return resolved.directory;
   };
 
-  const resolveClaudeProxyBaseUrl = async (workingDirectory) => {
-    if (isExternalOpenCode() || typeof buildOpenCodeUrl !== 'function') return null;
-    const query = workingDirectory
-      ? `?directory=${encodeURIComponent(workingDirectory)}`
-      : '';
-    const response = await fetch(buildOpenCodeUrl(`/config/providers${query}`, ''), {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        ...getOpenCodeAuthHeaders(),
-      },
-    });
-    if (!response.ok) return null;
-    const payload = await response.json().catch(() => null);
-    const providers = Array.isArray(payload?.providers) ? payload.providers : [];
-    const anthropic = providers.find((provider) => provider?.id === 'anthropic');
-    const baseUrl = anthropic?.options?.baseURL ?? anthropic?.baseURL;
-    return typeof baseUrl === 'string' && resolveSafeClaudeQuotaUrl(baseUrl)
-      ? baseUrl
-      : null;
-  };
+  // Shared with the managed-orchestration provider reset probe. A zero TTL keeps
+  // this route uncached exactly as before; overlapping requests share one lookup.
+  const claudeProxyBaseUrls = createClaudeProxyBaseUrlResolver({
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+    isExternalOpenCode,
+    ttlMs: 0,
+  });
+  const resolveClaudeProxyBaseUrl = (workingDirectory) => claudeProxyBaseUrls.resolve(workingDirectory);
 
   app.get('/api/quota/providers', async (req, res) => {
     try {
@@ -319,11 +302,11 @@ export function registerQuotaRoutes(app, {
       const { fetchQuotaForProvider } = await getQuotaProviders();
       const forceRefresh = req.query.refresh === 'true';
       const workingDirectory = await resolveQuotaDirectory(req);
-      const claudeProxyBaseUrl = CLAUDE_PROVIDER_IDS.has(providerId)
+      const claudeProxyBaseUrl = isAnthropicProviderId(providerId)
         ? await resolveClaudeProxyBaseUrl(workingDirectory)
         : null;
       const externalRuntime = isExternalOpenCode();
-      const claudeCodeLaunch = CLAUDE_PROVIDER_IDS.has(providerId) && !externalRuntime
+      const claudeCodeLaunch = isAnthropicProviderId(providerId) && !externalRuntime
         ? resolveClaudeCodeLaunch({
             pathValue: typeof buildAugmentedPath === 'function'
               ? buildAugmentedPath()
@@ -335,7 +318,7 @@ export function registerQuotaRoutes(app, {
         workingDirectory,
         isExternalRuntime: externalRuntime,
         claudeProxyBaseUrl,
-        ...(CLAUDE_PROVIDER_IDS.has(providerId) ? { claudeCodeLaunch } : {}),
+        ...(isAnthropicProviderId(providerId) ? { claudeCodeLaunch } : {}),
       }));
     } catch (error) {
       console.error('Failed to fetch quota:', error);

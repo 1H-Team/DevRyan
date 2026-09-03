@@ -744,15 +744,47 @@ const waitForTerminalTask = async (taskId, scoped, signal, initialResult, result
   }
 };
 
-const exposeManualModelRecovery = (result) => (
-  requiresManualModelRecovery(result)
-    ? {
-        ...result,
-        manualRecoveryRequired: true,
-        manualRecoveryInstruction: 'This task is terminal and awaiting user action. Leave its result unacknowledged, tell the user to choose a model and thinking level in Model Recovery, and do not claim that it is still running or will resume automatically.',
-      }
-    : result
-);
+const MANUAL_MODEL_RECOVERY_INSTRUCTION = 'This task is terminal and awaiting user action. Leave its result unacknowledged, tell the user to choose a model and thinking level in Model Recovery, and do not claim that it is still running or will resume automatically.';
+const SCHEDULED_AUTO_RESUME_INSTRUCTION = 'This task hit a provider usage limit and DevRyan has scheduled an automatic resume (see autoResume). Leave its result unacknowledged, do not retry or change its model, and end the turn; DevRyan will continue the same child automatically, or the user can pick a model in Model Recovery.';
+const AUTO_RESUME_ACTIVE_STATES = new Set(['planning', 'scheduled', 'attempting']);
+
+// Mirrors the scheduler's isAutoResumeActive: enabled and still planning,
+// scheduled, or attempting. Anything else is the plain Model Recovery park.
+const readScheduledAutoResume = (resultEnvelope) => {
+  const autoResume = isRecord(resultEnvelope) && isRecord(resultEnvelope.autoResume)
+    ? resultEnvelope.autoResume
+    : null;
+  if (!autoResume || autoResume.enabled !== true || !AUTO_RESUME_ACTIVE_STATES.has(autoResume.state)) {
+    return null;
+  }
+  const target = isRecord(autoResume.target) ? autoResume.target : null;
+  return {
+    scheduled: true,
+    state: autoResume.state,
+    nextAttemptAt: Number.isFinite(autoResume.nextAttemptAt) ? autoResume.nextAttemptAt : null,
+    target: target
+      ? {
+          kind: typeof target.kind === 'string' ? target.kind : null,
+          providerId: typeof target.providerId === 'string' ? target.providerId : null,
+          modelId: typeof target.modelId === 'string' ? target.modelId : null,
+          variant: typeof target.variant === 'string' ? target.variant : null,
+        }
+      : null,
+  };
+};
+
+const exposeManualModelRecovery = (result) => {
+  if (!requiresManualModelRecovery(result)) return result;
+  const autoResume = readScheduledAutoResume(result.resultEnvelope);
+  return {
+    ...result,
+    manualRecoveryRequired: true,
+    manualRecoveryInstruction: autoResume
+      ? SCHEDULED_AUTO_RESUME_INSTRUCTION
+      : MANUAL_MODEL_RECOVERY_INSTRUCTION,
+    ...(autoResume ? { autoResume } : {}),
+  };
+};
 
 const executeAction = async (args, context, client, dispatchCallId = null, resultMode = 'reference') => {
   const action = requireText(args.action, 'action');
@@ -1792,7 +1824,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     'tool.execute.before': beforeToolExecute,
     tool: {
       devryan_task: tool({
-      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. Large terminal previews return an initial resultReference page; call read_result with each exact nextCursor until complete before dispositioning the result. A completed result accepts only continue. Retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns immediately with manualRecoveryRequired while its durable result stays pending for the user-facing Model Recovery controls, except provider prompt rejection, which requires the one agent recovery to use a reframed prompt in a fresh child. A stale_task_reference or already_dispositioned result requires no repeated wait, disposition, or replacement child; follow its authoritative barrier instruction and continue from the last confirmed parent state when clear. This is distinct from provider-native task orchestration.',
+      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. Large terminal previews return an initial resultReference page; call read_result with each exact nextCursor until complete before dispositioning the result. A completed result accepts only continue. Retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns immediately with manualRecoveryRequired while its durable result stays pending for the user-facing Model Recovery controls, except provider prompt rejection, which requires the one agent recovery to use a reframed prompt in a fresh child. When that result also carries autoResume.scheduled, DevRyan retries the same child automatically at the reported time or on the backup model; leave it unacknowledged and end the turn. A stale_task_reference or already_dispositioned result requires no repeated wait, disposition, or replacement child; follow its authoritative barrier instruction and continue from the last confirmed parent state when clear. This is distinct from provider-native task orchestration.',
       args: {
         action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, read_result, cancel, continue, retry, resume, or abandon. Use read_result only after a terminal wait returns resultReference.nextCursor, and pass each cursor exactly once in order until complete. A completed result accepts only continue; retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns manualRecoveryRequired and remains pending for the user-facing Model Recovery controls. After the user retries, an idle-parent continuation collects the recovered result. Wait stays attached only until the requested task is terminal while DevRyan polls internally; use status for a non-blocking live snapshot. stale_task_reference and already_dispositioned are no-op recovery states and must not trigger a replacement task or repeated acknowledgement.'),
         task_id: tool.schema.string().optional().describe('Managed dvr_task_ ID. Required for every action except start.'),

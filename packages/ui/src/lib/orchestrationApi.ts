@@ -39,6 +39,17 @@ export type ManagedTaskAutoResumeState =
 
 export type ManagedTaskAutoResumeResetSource = 'opencode_status' | 'meridian_quota' | 'backoff';
 
+/** Mirrors `ManagedTaskAutoResumeReason` in packages/orchestration-runtime/index.d.ts. */
+export type ManagedTaskAutoResumeReason =
+  | 'user'
+  | 'manual_retry'
+  | 'session_deleted'
+  | 'cancelled'
+  | 'attempt_cap'
+  | 'time_cap'
+  | 'host_failures'
+  | 'window_rejections';
+
 export type ManagedTaskAutoResumeTarget = {
   kind: 'backup' | 'original';
   providerId: string;
@@ -75,7 +86,7 @@ export type ManagedTaskAutoResume = {
   lastAttemptAt: number | null;
   lastError: ManagedTaskAutoResumeError | null;
   hostFailures: number;
-  reason: string | null;
+  reason: ManagedTaskAutoResumeReason | null;
 };
 
 const MANAGED_TASK_AUTO_RESUME_ACTIVE_STATES: ReadonlySet<ManagedTaskAutoResumeState> = new Set([

@@ -70,9 +70,9 @@ export const handleManagedOrchestrationBridgeMessage = async (
       });
     } else if (action === 'handoff') {
       result = await runtime.handleRpc({ method: 'handoff', params: body });
-    } else if (action === 'cancel' || action === 'acknowledge') {
+    } else if (action === 'cancel' || action === 'acknowledge' || action === 'auto_resume') {
       result = await runtime.handleRpc({
-        method: action,
+        method: action === 'auto_resume' ? 'set_auto_resume' : action,
         params: {
           ...body,
           taskId,

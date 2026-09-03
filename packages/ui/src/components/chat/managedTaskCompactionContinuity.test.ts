@@ -116,6 +116,8 @@ const envelope = (
     acknowledgedAt: action === null ? null : createdAt + 1,
     action,
     followUpTaskId: null,
+    providerResetAt: null,
+    autoResume: null,
   };
 };
 

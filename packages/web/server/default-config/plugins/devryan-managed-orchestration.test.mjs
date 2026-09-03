@@ -2461,6 +2461,80 @@ describe('DevRyan managed orchestration plugin', () => {
     }, context())).rejects.toThrow('Unsupported managed task action');
   });
 
+  it('reports a scheduled automatic resume instead of asking for Try Again', async () => {
+    const parkedTask = (taskId) => ({
+      taskId,
+      status: 'failed',
+      childSessionId: 'ses_designer',
+      mode: 'orchestrator',
+      attempt: 1,
+      agentRetryAvailable: false,
+      failureKind: 'provider_usage_limit',
+    });
+    const envelopes = {
+      dvr_task_scheduled: {
+        taskId: 'dvr_task_scheduled',
+        action: null,
+        resumable: true,
+        autoResume: {
+          revision: 2,
+          enabled: true,
+          state: 'scheduled',
+          nextAttemptAt: 1_760_000_000_000,
+          target: { kind: 'backup', providerId: 'openai', modelId: 'gpt-5.4', variant: null },
+        },
+      },
+      dvr_task_cancelled: {
+        taskId: 'dvr_task_cancelled',
+        action: null,
+        resumable: true,
+        autoResume: { revision: 3, enabled: false, state: 'cancelled', nextAttemptAt: null, target: null },
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      const result = request.method === 'wait' && envelopes[request.params.taskId]
+        ? { task: parkedTask(request.params.taskId), resultEnvelope: envelopes[request.params.taskId] }
+        : { accepted: true };
+      return new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    const scheduled = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_scheduled',
+    }, context()));
+    expect(scheduled).toMatchObject({
+      manualRecoveryRequired: true,
+      manualRecoveryInstruction: expect.stringContaining('scheduled an automatic resume'),
+      autoResume: {
+        scheduled: true,
+        state: 'scheduled',
+        nextAttemptAt: 1_760_000_000_000,
+        target: { kind: 'backup', providerId: 'openai', modelId: 'gpt-5.4', variant: null },
+      },
+      resultEnvelope: { taskId: 'dvr_task_scheduled', action: null },
+    });
+    expect(scheduled.manualRecoveryInstruction).not.toContain('Try Again');
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'continue',
+      task_id: 'dvr_task_scheduled',
+    }, context())).rejects.toThrow('Manual model recovery requires');
+
+    const cancelled = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_cancelled',
+    }, context()));
+    expect(cancelled).toMatchObject({
+      manualRecoveryRequired: true,
+      manualRecoveryInstruction: expect.stringContaining('awaiting user action'),
+    });
+    expect(cancelled).not.toHaveProperty('autoResume');
+  });
+
   it('returns exhausted provider prompt rejection for agent disposition without Model Recovery', async () => {
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {

@@ -164,6 +164,21 @@ const deferred = () => {
   return { promise, resolve };
 };
 
+// Auto-resume planning and attempts run on real zero-delay timers; poll until
+// the scheduler reaches the expected durable state.
+const waitFor = async <T>(
+  probe: () => Promise<T | null | undefined | false>,
+  timeoutMs = 5_000,
+): Promise<T> => {
+  const startedAt = Date.now();
+  for (;;) {
+    const value = await probe();
+    if (value) return value as T;
+    if (Date.now() - startedAt > timeoutMs) throw new Error('timed out waiting for the expected state');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+};
+
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((directory) => (
     fs.rm(directory, { recursive: true, force: true })
@@ -269,6 +284,282 @@ describe('VS Code managed orchestration owner', () => {
       },
     })).rejects.toMatchObject({ code: 'CONTEXT_MODE_RECOVERY_PENDING', statusCode: 503 });
     expect(acknowledgeResult).toHaveBeenCalledOnce();
+    await runtime.shutdown();
+  });
+
+  it('routes set_auto_resume through task scope, validates enabled, and projects the envelope', async () => {
+    const { task, resultEnvelope } = createTerminalPair('auto_resume', 'parked', {
+      status: 'failed',
+      failureReason: 'out of usage',
+      resumable: true,
+    });
+    const updated = { ...resultEnvelope, autoResume: { enabled: false, state: 'cancelled' } };
+    const setResultAutoResume = vi.fn(async (_taskId: string, _options: { enabled: boolean }) => ({ envelope: updated }));
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      getTask: vi.fn(() => task),
+      getResultEnvelope: vi.fn(() => resultEnvelope),
+      setResultAutoResume,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    } as unknown as ManagedTaskScheduler;
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      scheduler,
+      persistence: createPersistence(),
+      executor: {
+        async start() { throw new Error('must not start'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+    });
+
+    await expect(runtime.handleRpc({
+      method: 'set_auto_resume',
+      params: { taskId: task.taskId, rootSessionId: 'ses_other', enabled: false },
+    })).rejects.toMatchObject({ code: 'task_scope_mismatch', statusCode: 403 });
+    await expect(runtime.handleRpc({
+      method: 'set_auto_resume',
+      params: { taskId: task.taskId, rootSessionId: task.rootSessionId, enabled: 'no' },
+    })).rejects.toMatchObject({ code: 'invalid_request', statusCode: 400 });
+    expect(setResultAutoResume).not.toHaveBeenCalled();
+
+    await expect(runtime.handleRpc({
+      method: 'set_auto_resume',
+      params: { taskId: task.taskId, rootSessionId: task.rootSessionId, directory: task.directory, enabled: false },
+    })).resolves.toEqual({ resultEnvelope: updated });
+    expect(setResultAutoResume).toHaveBeenCalledWith(task.taskId, { enabled: false });
+
+    for (const code of ['auto_resume_not_applicable', 'auto_resume_stale']) {
+      setResultAutoResume.mockRejectedValueOnce(Object.assign(new Error(code), { code }));
+      await expect(runtime.handleRpc({
+        method: 'set_auto_resume',
+        params: { taskId: task.taskId, rootSessionId: task.rootSessionId, enabled: true },
+      })).rejects.toMatchObject({ code, statusCode: 409 });
+    }
+    await runtime.shutdown();
+  });
+
+  it('drops autoResumeGeneration from acknowledgements that do not come from the auto-resume attempt', async () => {
+    const task = queuedTask(1);
+    const acknowledgeResult = vi.fn(async (_taskId: string, _options: Record<string, unknown>) => ({
+      envelope: { taskId: task.taskId, action: 'continue' },
+      followUpTask: null,
+    }));
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      getTask: vi.fn(() => task),
+      getResultEnvelope: vi.fn(() => null),
+      acknowledgeResult,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    } as unknown as ManagedTaskScheduler;
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      scheduler,
+      persistence: createPersistence(),
+      executor: {
+        async start() { throw new Error('must not start'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+    });
+
+    await runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: task.taskId,
+        rootSessionId: task.rootSessionId,
+        directory: task.directory,
+        action: 'continue',
+        idempotencyKey: 'continue-public',
+        autoResumeGeneration: 3,
+      },
+    });
+    expect(acknowledgeResult).toHaveBeenCalledTimes(1);
+    expect(acknowledgeResult.mock.calls[0][1]).not.toHaveProperty('autoResumeGeneration');
+    expect(acknowledgeResult.mock.calls[0][1]).toMatchObject({ action: 'continue', idempotencyKey: 'continue-public' });
+    await runtime.shutdown();
+  });
+
+  it('cancels auto-resume plans for deleted sessions once the scheduler is initialized', async () => {
+    const task = queuedTask(1);
+    const cancelAutoResumeForSession = vi.fn(async (_sessionId: string, _reason: string) => ({
+      cancelledTaskIds: [task.taskId],
+    }));
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      getTask: vi.fn(() => task),
+      getResultEnvelope: vi.fn(() => null),
+      cancelAutoResumeForSession,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    } as unknown as ManagedTaskScheduler;
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      scheduler,
+      persistence: createPersistence(),
+      executor: {
+        async start() { throw new Error('must not start'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+    });
+    const deleted = { type: 'session.deleted', properties: { info: { id: 'ses_root' } } };
+
+    runtime.processOpenCodeEvent(deleted);
+    expect(cancelAutoResumeForSession).not.toHaveBeenCalled();
+
+    await runtime.initialize();
+    runtime.processOpenCodeEvent(deleted);
+    runtime.processOpenCodeEvent({ type: 'session.updated', properties: { info: { id: 'ses_root' } } });
+    runtime.processOpenCodeEvent({ type: 'session.deleted', properties: {} });
+    await Promise.resolve();
+    expect(cancelAutoResumeForSession).toHaveBeenCalledTimes(1);
+    expect(cancelAutoResumeForSession).toHaveBeenCalledWith('ses_root', 'session_deleted');
+    await runtime.shutdown();
+  });
+
+  it('defers automatic resume attempts while work admission is blocked, then resumes on the backup model', async () => {
+    let block: { code: string; error: string } | null = null;
+    const starts: ManagedTaskRecord[] = [];
+    const firstStart = deferred();
+    const resolveBackupExecution = vi.fn(async () => ({ providerId: 'openai', modelId: 'gpt-5.4', variant: 'high' }));
+    const resolveProviderReset = vi.fn(async () => null);
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      persistence: createPersistence(),
+      executor: {
+        start(task) {
+          starts.push(task);
+          return firstStart.promise;
+        },
+        // Auto-resume acknowledges with retry_in_place, so the follow-up runs
+        // through the executor's in-place retry path; a child completes only
+        // once the executor accepted it.
+        async retryInPlace(task, control) {
+          starts.push(task);
+          await control.markAccepted();
+          return { status: 'completed' as const, recoverablePreview: 'done on the backup model' };
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+      getWorkAdmissionBlock: () => block,
+      resolveOwnerKey: () => 'user:owner',
+      resolveBackupExecution,
+      resolveProviderReset,
+      createTaskId: (() => {
+        let index = 0;
+        return () => `dvr_task_auto_${++index}`;
+      })(),
+      createLeaseToken: (() => {
+        let index = 0;
+        return () => `dvr_lease_auto_${++index}`;
+      })(),
+      now: () => 1_000,
+    });
+    const submitted = getTask(await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, { childSessionId: 'ses_child_auto', dispatchGroupId: 'msg_parent' }),
+    }));
+    // Block admission only once the child is running, then let it hit the limit.
+    block = { code: 'CONTEXT_MODE_RECOVERY_PENDING', error: 'Context-mode recovery is pending' };
+    firstStart.resolve({ status: 'failed', failureReason: 'out of usage', resumable: true });
+    await runtime.flush();
+    type ParkedStatus = {
+      resultEnvelope?: {
+        action: string | null;
+        autoResume?: (Record<string, unknown> & { nextAttemptAt?: number | null; state?: string }) | null;
+      };
+    };
+    const status = async () => await runtime.handleRpc({
+      method: 'status',
+      params: { taskId: submitted.taskId, rootSessionId: 'ses_root' },
+    }) as ParkedStatus;
+    const diagnostics = () => runtime.getDiagnostics() as { scheduler: { pendingAutoResumeCount: number } };
+
+    // The scheduler planned the backup attempt, the host answered "deferred"
+    // (admission blocked), and the plan re-armed 30 s out without a follow-up.
+    const parked = await waitFor(async () => {
+      const current = await status();
+      return current.resultEnvelope?.autoResume?.nextAttemptAt === 31_000 ? current : null;
+    });
+    expect(parked.resultEnvelope?.action).toBeNull();
+    expect(parked.resultEnvelope?.autoResume).toMatchObject({
+      enabled: true,
+      state: 'scheduled',
+      attemptCount: 0,
+      hostFailures: 0,
+      lastError: null,
+      nextAttemptAt: 31_000,
+      target: { kind: 'backup', providerId: 'openai', modelId: 'gpt-5.4', variant: 'high' },
+    });
+    expect(starts).toHaveLength(1);
+    expect(resolveBackupExecution).toHaveBeenCalledWith({
+      rootSessionId: 'ses_root',
+      directory: '/workspace',
+      agent: 'explorer',
+      providerId: 'github-copilot',
+      modelId: 'gpt-4.1',
+    });
+    expect(resolveProviderReset).toHaveBeenCalledWith({
+      providerId: 'github-copilot',
+      ownerKey: 'user:owner',
+      directory: '/workspace',
+      rootSessionId: 'ses_root',
+    });
+    expect(diagnostics().scheduler.pendingAutoResumeCount).toBe(1);
+
+    // Lift the block and re-plan immediately through the UI toggle: the attempt
+    // now acknowledges the parked result itself and starts the backup child.
+    block = null;
+    await runtime.handleRpc({
+      method: 'set_auto_resume',
+      params: { taskId: submitted.taskId, rootSessionId: 'ses_root', enabled: false },
+    });
+    const enabled = await runtime.handleRpc({
+      method: 'set_auto_resume',
+      params: { taskId: submitted.taskId, rootSessionId: 'ses_root', enabled: true },
+    }) as ParkedStatus;
+    expect(enabled.resultEnvelope?.autoResume).toMatchObject({ enabled: true, state: 'planning' });
+    type Snapshot = {
+      tasks: Array<{ taskId: string; status: string }>;
+      resultEnvelopes: Array<{
+        taskId: string;
+        action: string | null;
+        followUpTaskId?: string | null;
+        autoResume: { state: string } | null;
+      }>;
+    };
+    const settled = await waitFor(async () => {
+      const snapshot = await runtime.getSnapshot({ rootSessionId: 'ses_root' }) as unknown as Snapshot;
+      const followUp = snapshot.tasks.find((entry) => entry.taskId === 'dvr_task_auto_2');
+      const source = snapshot.resultEnvelopes.find((entry) => entry.taskId === submitted.taskId);
+      return followUp?.status === 'completed' && source?.autoResume?.state === 'succeeded' ? snapshot : null;
+    });
+    expect(settled.resultEnvelopes.find((entry) => entry.taskId === submitted.taskId)).toMatchObject({
+      action: 'retry_in_place',
+      followUpTaskId: 'dvr_task_auto_2',
+      autoResume: { state: 'succeeded', lastAttemptTaskId: 'dvr_task_auto_2', target: { kind: 'backup' } },
+    });
+    expect(starts).toHaveLength(2);
+    expect(starts[1]).toMatchObject({
+      taskId: 'dvr_task_auto_2',
+      priorTaskId: submitted.taskId,
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+      variant: 'high',
+      executionKind: 'retry_in_place',
+    });
+    expect(diagnostics().scheduler.pendingAutoResumeCount).toBe(0);
     await runtime.shutdown();
   });
 
@@ -734,6 +1025,8 @@ describe('VS Code managed orchestration owner', () => {
       acknowledgedAt: 2_100,
       action: 'retry_in_place',
       followUpTaskId: followUp.taskId,
+      providerResetAt: null,
+      autoResume: null,
     };
     const waitForResultAction = vi.fn<ManagedTaskScheduler['waitForResultAction']>(
       async () => resultEnvelope,
@@ -1559,6 +1852,7 @@ describe('VS Code managed orchestration owner', () => {
     const control = {
       async setChildSessionId() { return true; },
       async markAccepted() { return true; },
+      async recordProgress() { return true; },
     };
 
     const normal = await executor.start({
@@ -1641,6 +1935,7 @@ describe('VS Code managed orchestration owner', () => {
     }, {
       async setChildSessionId() { return true; },
       async markAccepted() { return true; },
+      async recordProgress() { return true; },
     })).resolves.toMatchObject({
       status: 'failed',
       failureReason: 'Provider usage limit reached: Subscribe to continue',
@@ -1695,6 +1990,7 @@ describe('VS Code managed orchestration owner', () => {
     }, {
       async setChildSessionId() { return true; },
       async markAccepted() { return true; },
+      async recordProgress() { return true; },
     });
 
     const alpha = observe('ses_alpha');
@@ -1755,6 +2051,7 @@ describe('VS Code managed orchestration owner', () => {
     }, {
       async setChildSessionId() { return true; },
       async markAccepted() { return true; },
+      async recordProgress() { return true; },
     });
 
     const differentDirectories = [
@@ -1863,6 +2160,7 @@ describe('VS Code managed orchestration owner', () => {
     }, {
       async setChildSessionId() { return false; },
       async markAccepted() { throw new Error('must not accept'); },
+      async recordProgress() { return true; },
     })).rejects.toThrow('lost launch ownership before provider prompt');
 
     expect(cursorSdkRuntime.handlePromptAsync).not.toHaveBeenCalled();

@@ -4,6 +4,7 @@ import { ChatViewProvider } from './ChatViewProvider';
 import { AgentManagerPanelProvider } from './AgentManagerPanelProvider';
 import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
 import { createOpenCodeManager, type OpenCodeManager } from './opencode';
+import { readAgentBackupModel } from './opencodeConfig';
 import {
   getSessionActivitySnapshot,
   startGlobalEventWatcher,
@@ -223,6 +224,14 @@ export async function activate(context: vscode.ExtensionContext) {
     getWorkAdmissionBlock: () => (
       getVsCodeHarnessRuntime()?.getPromptAdmissionBlock() ?? null
     ),
+    // Auto-resume falls back to the agent's configured backup model; the VS Code
+    // host has no per-account owner and no Meridian reset signal.
+    resolveBackupExecution: async ({ agent }) => {
+      const backupModel = readAgentBackupModel(agent);
+      return backupModel
+        ? { providerId: backupModel.providerID, modelId: backupModel.modelID, variant: backupModel.variant }
+        : null;
+    },
     auxiliaryRpcHandlers: {
       primary_recovery: async (params) => {
         const runtime = getVsCodeHarnessRuntime()?.getPrimaryRecoveryRuntime();

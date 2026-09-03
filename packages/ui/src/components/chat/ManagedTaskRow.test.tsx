@@ -17,8 +17,11 @@ mock.module('@/components/ui/ProviderLogo', () => ({
   ProviderLogo: ({ providerId }: { providerId: string }) => React.createElement('img', { src: `/logos/${providerId}.svg` }),
 }));
 // The connected row reads the child's live status; there is no sync provider in these tests.
+// `session-ui-store` (imported by the row) also binds `setActiveSession`, so the
+// mock must export it or the store fails to link against the mocked module.
 mock.module('@/sync/sync-context', () => ({
   useSessionStatus: () => undefined,
+  setActiveSession: () => undefined,
 }));
 // Static markup cannot receive clicks, so capture the checkbox's change handler instead.
 let latestCheckboxChange: ((checked: boolean) => void) | null = null;

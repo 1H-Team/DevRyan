@@ -1,3 +1,5 @@
+import { createKeyedSingleFlight } from '@openchamber/orchestration-runtime';
+
 import { toNumber, toTimestamp, toUsageWindow } from '../utils/index.js';
 
 export const CLAUDE_MERIDIAN_UNAVAILABLE_CODE = 'claude_meridian_unavailable';
@@ -29,6 +31,69 @@ export const resolveSafeClaudeMeridianUrl = (baseUrl, pathname) => {
 export const resolveSafeClaudeQuotaUrl = (baseUrl) => (
   resolveSafeClaudeMeridianUrl(baseUrl, '/v1/usage/quota')
 );
+
+export const CLAUDE_PROXY_BASE_URL_TTL_MS = 60_000;
+
+/**
+ * Resolves the loopback Meridian (Claude) proxy base URL that managed OpenCode
+ * advertises as the `anthropic` provider's `baseURL` for one working directory.
+ * Answers are cached per directory for `ttlMs` (0 disables caching) and
+ * overlapping lookups for the same directory share one `/config/providers`
+ * request. Transport failures propagate so each caller decides how to degrade.
+ */
+export const createClaudeProxyBaseUrlResolver = ({
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders = () => ({}),
+  isExternalOpenCode = () => false,
+  fetchImpl,
+  now = Date.now,
+  ttlMs = CLAUDE_PROXY_BASE_URL_TTL_MS,
+} = {}) => {
+  const cache = new Map();
+  const singleFlight = createKeyedSingleFlight();
+
+  const lookup = async (workingDirectory) => {
+    const query = workingDirectory
+      ? `?directory=${encodeURIComponent(workingDirectory)}`
+      : '';
+    const response = await (fetchImpl ?? globalThis.fetch)(buildOpenCodeUrl(`/config/providers${query}`, ''), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...getOpenCodeAuthHeaders(),
+      },
+    });
+    if (!response.ok) return null;
+    const payload = await response.json().catch(() => null);
+    const providers = Array.isArray(payload?.providers) ? payload.providers : [];
+    const anthropic = providers.find((provider) => provider?.id === 'anthropic');
+    const baseUrl = anthropic?.options?.baseURL ?? anthropic?.baseURL;
+    return typeof baseUrl === 'string' && resolveSafeClaudeQuotaUrl(baseUrl)
+      ? baseUrl
+      : null;
+  };
+
+  const resolve = async (workingDirectory) => {
+    if (isExternalOpenCode() || typeof buildOpenCodeUrl !== 'function') return null;
+    const key = typeof workingDirectory === 'string' ? workingDirectory : '';
+    const cached = cache.get(key);
+    if (cached && cached.expiresAt > now()) return cached.value;
+    return singleFlight.run(`claude-proxy-base-url:${key}`, async () => {
+      const current = cache.get(key);
+      if (current && current.expiresAt > now()) return current.value;
+      const value = await lookup(key);
+      if (ttlMs > 0) cache.set(key, { value, expiresAt: now() + ttlMs });
+      return value;
+    });
+  };
+
+  return Object.freeze({
+    resolve,
+    clear() {
+      cache.clear();
+    },
+  });
+};
 
 const toTokenCount = (value) => {
   const parsed = toNumber(value);
@@ -289,7 +354,36 @@ export const transformMeridianClaudeQuota = (payload) => {
   };
 };
 
-export const fetchMeridianClaudeQuota = async ({
+/**
+ * Reads the usage-limit signal the managed-task auto-resume planner needs from
+ * a raw Meridian `/v1/usage/quota` payload (the transformed quota windows drop
+ * bucket `status`). A bucket is limited when Meridian marked it `rejected` or
+ * its utilization reached 100%. `resetAt` is the earliest reset among limited
+ * buckets, or — when nothing is limited — the earliest known reset of any
+ * bucket (null when Meridian reported none). Malformed payloads yield null.
+ */
+export const extractMeridianClaudeResetSignal = (payload) => {
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.buckets)) return null;
+  let limited = false;
+  let limitedResetAt = null;
+  let anyResetAt = null;
+  for (const bucket of payload.buckets) {
+    if (!bucket || typeof bucket !== 'object') continue;
+    const utilization = toNumber(bucket.utilization);
+    const resetAt = toTimestamp(bucket.resetsAt);
+    const bucketLimited = bucket.status === 'rejected' || (utilization !== null && utilization >= 1);
+    if (resetAt !== null) anyResetAt = anyResetAt === null ? resetAt : Math.min(anyResetAt, resetAt);
+    if (!bucketLimited) continue;
+    limited = true;
+    if (resetAt !== null) {
+      limitedResetAt = limitedResetAt === null ? resetAt : Math.min(limitedResetAt, resetAt);
+    }
+  }
+  return { limited, resetAt: limited ? limitedResetAt : anyResetAt };
+};
+
+/** Bounded raw `/v1/usage/quota` read: `{ ok: true, payload }` or the failure record. */
+export const fetchMeridianClaudeQuotaPayload = async ({
   baseUrl,
   fetchImpl = globalThis.fetch,
   timeoutMs = REQUEST_TIMEOUT_MS,
@@ -303,12 +397,16 @@ export const fetchMeridianClaudeQuota = async ({
     };
   }
 
-  const result = await fetchBoundedJson({
+  return fetchBoundedJson({
     url: quotaUrl,
     fetchImpl,
     timeoutMs,
     unavailableCode: CLAUDE_MERIDIAN_UNAVAILABLE_CODE,
     label: 'Claude quota proxy',
   });
+};
+
+export const fetchMeridianClaudeQuota = async (options = {}) => {
+  const result = await fetchMeridianClaudeQuotaPayload(options);
   return result.ok ? transformMeridianClaudeQuota(result.payload) : result;
 };

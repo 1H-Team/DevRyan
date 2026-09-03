@@ -85,6 +85,16 @@ export const registerManagedOrchestrationRoutes = (app, options = {}) => {
     })
   )));
 
+  app.post('/api/orchestration/task/:taskId/auto-resume', parseJson, run(async (request) => (
+    await runtime.handleRpc({
+      method: 'set_auto_resume',
+      params: {
+        ...(request.body ?? {}),
+        taskId: request.params.taskId,
+      },
+    })
+  )));
+
   app.post('/api/orchestration/task/:taskId/acknowledge', parseJson, run(async (request) => (
     await runtime.handleRpc({
       method: 'acknowledge',

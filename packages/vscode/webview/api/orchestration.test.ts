@@ -94,6 +94,41 @@ describe('VS Code managed orchestration webview API', () => {
     });
   });
 
+  it('routes the auto-resume toggle through the extension host as auto_resume', async () => {
+    const send = vi.fn(async (_type: string, payload: unknown) => ({ status: 200, body: payload }));
+    const toggled = await handleManagedOrchestrationApiRequest({
+      url: new URL('https://webview.invalid/api/orchestration/task/dvr_task_path/auto-resume'),
+      method: 'POST',
+      readBody: async () => JSON.stringify({
+        taskId: 'dvr_task_body',
+        rootSessionId: 'ses_root',
+        enabled: true,
+      }),
+      send,
+    });
+    expect(await responseJson(toggled)).toEqual({
+      status: 200,
+      body: {
+        action: 'auto_resume',
+        taskId: 'dvr_task_path',
+        body: {
+          taskId: 'dvr_task_body',
+          rootSessionId: 'ses_root',
+          enabled: true,
+        },
+      },
+    });
+
+    const wrongMethod = await handleManagedOrchestrationApiRequest({
+      url: new URL('https://webview.invalid/api/orchestration/task/dvr_task_path/auto-resume'),
+      method: 'GET',
+      readBody: async () => '',
+      send,
+    });
+    expect((await responseJson(wrongMethod)).status).toBe(405);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it('routes the handoff endpoint through the extension bridge', async () => {
     const send = vi.fn(async (_type: string, payload: unknown) => ({ status: 200, body: payload }));
     const body = {

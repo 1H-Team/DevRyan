@@ -86,7 +86,7 @@ export const handleManagedOrchestrationApiRequest = async (options: {
       rootSessionId: options.url.searchParams.get('rootSessionId')?.trim() || undefined,
     };
   } else {
-    const match = pathname.match(/^\/api\/orchestration\/task\/([^/]+)(?:\/(cancel|acknowledge))?$/);
+    const match = pathname.match(/^\/api\/orchestration\/task\/([^/]+)(?:\/(cancel|acknowledge|auto-resume))?$/);
     if (!match) return null;
     const taskId = decodeTaskId(match[1]);
     if (!taskId) return errorResponse(400, 'invalid_request', 'Task ID is invalid');
@@ -99,10 +99,10 @@ export const handleManagedOrchestrationApiRequest = async (options: {
         rootSessionId: options.url.searchParams.get('rootSessionId')?.trim() || undefined,
         directory: options.url.searchParams.get('directory')?.trim() || undefined,
       };
-    } else if ((action === 'cancel' || action === 'acknowledge') && method === 'POST') {
+    } else if ((action === 'cancel' || action === 'acknowledge' || action === 'auto-resume') && method === 'POST') {
       const parsed = await parseBody(options.readBody, options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES);
       if (parsed.response) return parsed.response;
-      payload = { action, taskId, body: parsed.body ?? {} };
+      payload = { action: action === 'auto-resume' ? 'auto_resume' : action, taskId, body: parsed.body ?? {} };
     } else {
       return errorResponse(405, 'method_not_allowed', 'Method not allowed');
     }
