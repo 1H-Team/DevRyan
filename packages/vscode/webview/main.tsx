@@ -604,6 +604,21 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
     }
   }
 
+  if (pathname === '/api/config/agent-runtime' && (method === 'GET' || method === 'PUT')) {
+    // Agent runtime switches (language servers). Same `{ status, body }`
+    // envelope as the limits route so a 400 for an invalid PUT reaches the settings page intact.
+    try {
+      const body = method === 'PUT' && typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+      const result = method === 'GET'
+        ? await sendBridgeMessage<{ status: number; body: unknown }>('api:config/agent-runtime:get')
+        : await sendBridgeMessage<{ status: number; body: unknown }>('api:config/agent-runtime:set', body);
+      return new Response(JSON.stringify(result.body), { status: result.status, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
   if (pathname === '/api/config/agent-overrides') {
     try {
       const data = await sendBridgeMessage('api:config/agent-overrides');

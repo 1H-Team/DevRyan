@@ -1418,6 +1418,7 @@ observeContextModeToolFailure = (payload) => (
   openCodeLifecycleRuntime.observeContextModeToolFailure(payload)
 );
 const restartOpenCode = (...args) => openCodeLifecycleRuntime.restartOpenCode(...args);
+const syncManagedAgentRuntimeConfig = (...args) => openCodeLifecycleRuntime.syncManagedAgentRuntimeConfig(...args);
 const waitForOpenCodeReady = (...args) => openCodeLifecycleRuntime.waitForOpenCodeReady(...args);
 const waitForAgentPresence = (...args) => openCodeLifecycleRuntime.waitForAgentPresence(...args);
 const commandDeadlineRuntime = createWebCommandDeadlineRuntime({
@@ -2268,6 +2269,11 @@ async function main(options = {}) {
     restartOpenCode,
     waitForOpenCodeReady,
     isExternalOpenCode: () => isExternalOpenCode || ENV_SKIP_OPENCODE_START,
+    syncManagedAgentRuntimeConfig,
+    // A live managed process is what makes an agent-runtime change owe a restart.
+    isManagedOpenCodeRunning: () => Boolean(
+      openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode,
+    ),
     buildAugmentedPath,
     projectConfigRuntime,
     scheduledTasksRuntime,

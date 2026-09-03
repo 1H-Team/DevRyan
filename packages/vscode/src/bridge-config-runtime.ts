@@ -9,13 +9,16 @@ import {
   getAgentConfig,
   getAgentSources,
   getCommandSources,
+  INVALID_AGENT_RUNTIME_SETTINGS_CODE,
   INVALID_ORCHESTRATION_LIMITS_CODE,
   listAgentModelOverrides,
   listConfigAgents,
+  readAgentRuntimeSettings,
   readOrchestrationLimits,
   updateCommand,
   writeAgentBackupModel,
   writeAgentModelOverride,
+  writeAgentRuntimeSettings,
   writeOrchestrationLimits,
   type CommandScope,
   COMMAND_SCOPE,
@@ -440,6 +443,42 @@ export async function handleConfigBridgeMessage(
           ? error.message
           : (isWrite ? 'Failed to update orchestration limits' : 'Failed to read orchestration limits');
         const invalid = (error as { code?: unknown })?.code === INVALID_ORCHESTRATION_LIMITS_CODE;
+        return { id, type, success: true, data: { status: invalid ? 400 : 500, body: { error: message } } };
+      }
+    }
+
+    case 'api:config/agent-runtime:get':
+    case 'api:config/agent-runtime:set': {
+      // Mirrors GET/PUT /api/config/agent-runtime with the orchestration-limits
+      // `{ status, body }` envelope. Sidecar-only state, so no markConfigChange;
+      // OpenCode reads `lsp` when its instance starts, so a changed value owes
+      // a restart and the settings page offers one.
+      const isWrite = type === 'api:config/agent-runtime:set';
+      try {
+        const previous = readAgentRuntimeSettings();
+        if (!isWrite) {
+          return {
+            id,
+            type,
+            success: true,
+            data: { status: 200, body: { lsp: previous.lsp, appliesOnRestart: true } },
+          };
+        }
+        const next = writeAgentRuntimeSettings((payload as Record<string, unknown>) || {});
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            status: 200,
+            body: { lsp: next.lsp, appliesOnRestart: true, restartRequired: next.lsp !== previous.lsp },
+          },
+        };
+      } catch (error) {
+        const message = error instanceof Error && error.message
+          ? error.message
+          : (isWrite ? 'Failed to update agent runtime settings' : 'Failed to read agent runtime settings');
+        const invalid = (error as { code?: unknown })?.code === INVALID_AGENT_RUNTIME_SETTINGS_CODE;
         return { id, type, success: true, data: { status: invalid ? 400 : 500, body: { error: message } } };
       }
     }

@@ -42,6 +42,13 @@ export {
 } from './orchestration-limits.js';
 
 export {
+  INVALID_AGENT_RUNTIME_SETTINGS_CODE,
+  normalizeAgentRuntimeSettings,
+  readAgentRuntimeSettings,
+  writeAgentRuntimeSettings,
+} from './agent-runtime-settings.js';
+
+export {
   listPackagedAgents,
 } from './packaged-agents.js';
 

@@ -17,6 +17,12 @@ const DEFAULT_AGENT_RUNTIME_SETTINGS = Object.freeze({
 });
 const AGENT_RUNTIME_SETTING_KEYS = Object.freeze(Object.keys(DEFAULT_AGENT_RUNTIME_SETTINGS));
 const READ_CACHE_TTL_MS = 5_000;
+// Validation failures carry a code (like `invalid_orchestration_limits`) so the
+// settings route can answer 400 for them and 500 for a failed sidecar write.
+const INVALID_AGENT_RUNTIME_SETTINGS_CODE = 'invalid_agent_runtime_settings';
+const invalidAgentRuntimeSettings = (message) => (
+  Object.assign(new Error(message), { code: INVALID_AGENT_RUNTIME_SETTINGS_CODE })
+);
 
 const readCache = new Map();
 
@@ -50,15 +56,15 @@ const normalizeAgentRuntimeSettings = (raw) => {
  */
 const validateAgentRuntimeSettingsPatch = (partial) => {
   if (!isPlainObject(partial)) {
-    throw new Error('Agent runtime settings must be a plain object');
+    throw invalidAgentRuntimeSettings('Agent runtime settings must be a plain object');
   }
   const patch = {};
   for (const [key, value] of Object.entries(partial)) {
     if (!AGENT_RUNTIME_SETTING_KEYS.includes(key)) {
-      throw new Error(`Unknown agent runtime setting: ${key}`);
+      throw invalidAgentRuntimeSettings(`Unknown agent runtime setting: ${key}`);
     }
     if (typeof value !== 'boolean') {
-      throw new Error(`Agent runtime setting "${key}" must be a boolean`);
+      throw invalidAgentRuntimeSettings(`Agent runtime setting "${key}" must be a boolean`);
     }
     patch[key] = value;
   }
@@ -102,6 +108,7 @@ const writeAgentRuntimeSettings = (partial, options = {}) => {
 export {
   AGENT_RUNTIME_SETTINGS_KEY,
   DEFAULT_AGENT_RUNTIME_SETTINGS,
+  INVALID_AGENT_RUNTIME_SETTINGS_CODE,
   READ_CACHE_TTL_MS as AGENT_RUNTIME_SETTINGS_CACHE_TTL_MS,
   clearAgentRuntimeSettingsCache,
   normalizeAgentRuntimeSettings,

@@ -76,6 +76,10 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     readOrchestrationLimits,
     writeOrchestrationLimits,
     getSystemPressure,
+    readAgentRuntimeSettings,
+    writeAgentRuntimeSettings,
+    syncManagedAgentRuntimeConfig,
+    isManagedOpenCodeRunning,
     listConfigAgents,
     getCommandSources,
     createCommand,
@@ -446,6 +450,73 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         error: formatErrorMessage(error, 'Failed to write orchestration limits'),
       });
     }
+  });
+
+  // Agent runtime switches (`openchamber.agentRuntime`, today the language
+  // server toggle) are sidecar state that the managed overlay turns into
+  // OpenCode config. OpenCode resolves `lsp` when its instance is created, so a
+  // write re-runs the overlay sync for the next start instead of
+  // markConfigChange: nothing restarts here, the response says whether a
+  // restart is still owed.
+  const AGENT_RUNTIME_UNAVAILABLE = 'Agent runtime settings are not supported by this host';
+  const AGENT_RUNTIME_FORBIDDEN = 'Agent runtime settings are not available for this user';
+
+  app.get('/api/config/agent-runtime', (req, res) => {
+    if (!canReadFullAgentConfig(req.principal)) {
+      return res.status(403).json({ error: AGENT_RUNTIME_FORBIDDEN });
+    }
+    if (typeof readAgentRuntimeSettings !== 'function') {
+      return res.status(501).json({ error: AGENT_RUNTIME_UNAVAILABLE });
+    }
+    try {
+      const settings = readAgentRuntimeSettings();
+      return res.json({ lsp: settings.lsp, appliesOnRestart: true });
+    } catch (error) {
+      console.error('Failed to read agent runtime settings:', error);
+      return res.status(500).json({ error: formatErrorMessage(error, 'Failed to read agent runtime settings') });
+    }
+  });
+
+  app.put('/api/config/agent-runtime', async (req, res) => {
+    if (!canReadFullAgentConfig(req.principal)) {
+      return res.status(403).json({ error: AGENT_RUNTIME_FORBIDDEN });
+    }
+    if (typeof readAgentRuntimeSettings !== 'function' || typeof writeAgentRuntimeSettings !== 'function') {
+      return res.status(501).json({ error: AGENT_RUNTIME_UNAVAILABLE });
+    }
+    let previous;
+    let next;
+    try {
+      previous = readAgentRuntimeSettings();
+      next = writeAgentRuntimeSettings(req.body || {});
+    } catch (error) {
+      const invalid = error?.code === 'invalid_agent_runtime_settings';
+      if (!invalid) console.error('Failed to write agent runtime settings:', error);
+      return res.status(invalid ? 400 : 500).json({
+        error: formatErrorMessage(error, 'Failed to write agent runtime settings'),
+      });
+    }
+
+    const changed = next.lsp !== previous.lsp;
+    if (changed && typeof syncManagedAgentRuntimeConfig === 'function') {
+      // The sidecar already holds the new value and every start re-syncs, so a
+      // failed sync only delays the overlay until the next restart.
+      try {
+        await syncManagedAgentRuntimeConfig();
+      } catch (error) {
+        console.warn('Failed to re-sync the runtime agent overlay after an agent runtime settings write:', error);
+      }
+    }
+    // Without a host getter, assume a server is running: a spurious restart
+    // hint costs less than a missing one.
+    const managedRunning = typeof isManagedOpenCodeRunning === 'function'
+      ? Boolean(isManagedOpenCodeRunning())
+      : true;
+    return res.json({
+      lsp: next.lsp,
+      appliesOnRestart: true,
+      restartRequired: changed && managedRunning,
+    });
   });
 
   const rejectAgentMutation = (_req, res) => {

@@ -87,6 +87,13 @@ const ORCHESTRATION_LIMITS_READ_CACHE_TTL_MS = 5_000;
 export const INVALID_ORCHESTRATION_LIMITS_CODE = 'invalid_orchestration_limits';
 const invalidOrchestrationLimits = (message: string): Error =>
   Object.assign(new Error(message), { code: INVALID_ORCHESTRATION_LIMITS_CODE });
+// Agent runtime switches (`openchamber.agentRuntime`): sidecar state behind the
+// settings page's language-server toggle. The web host's runtime overlay turns
+// `lsp: false` into OpenCode config; the extension persists the switch only.
+const AGENT_RUNTIME_SETTINGS_CONFIG_KEY = 'agentRuntime';
+export const INVALID_AGENT_RUNTIME_SETTINGS_CODE = 'invalid_agent_runtime_settings';
+const invalidAgentRuntimeSettings = (message: string): Error =>
+  Object.assign(new Error(message), { code: INVALID_AGENT_RUNTIME_SETTINGS_CODE });
 const ALLOWED_AGENT_OVERRIDE_KEYS = new Set(['model', 'variant', 'councillors']);
 const ALLOWED_AGENT_BACKUP_MODEL_KEYS = new Set(['model', 'variant', 'providerID', 'modelID', 'providerId', 'modelId']);
 const CLEARED_VARIANT_SENTINEL = '';
@@ -3046,6 +3053,65 @@ export const writeOrchestrationLimits = (partial: unknown): OrchestrationLimits 
     [OPENCHAMBER_CONFIG_KEY]: { ...sidecar, [ORCHESTRATION_LIMITS_CONFIG_KEY]: next },
   });
   orchestrationLimitsCache = null;
+  return { ...next };
+};
+
+export type AgentRuntimeSettings = {
+  /** Language servers (typescript-language-server, etc.) inside agent sessions. */
+  lsp: boolean;
+};
+
+export const DEFAULT_AGENT_RUNTIME_SETTINGS: Readonly<AgentRuntimeSettings> = Object.freeze({
+  lsp: true,
+});
+
+const AGENT_RUNTIME_SETTING_KEYS = new Set<string>(Object.keys(DEFAULT_AGENT_RUNTIME_SETTINGS));
+
+/** Lenient read-side normalization: unknown keys drop, non-booleans fall back to the default. */
+export const normalizeAgentRuntimeSettings = (raw: unknown): AgentRuntimeSettings => {
+  const source: Record<string, unknown> = isPlainObject(raw) ? raw : {};
+  return {
+    lsp: typeof source.lsp === 'boolean' ? source.lsp : DEFAULT_AGENT_RUNTIME_SETTINGS.lsp,
+  };
+};
+
+/** Strict write-side validation: only known keys, each an explicit boolean. */
+export const validateAgentRuntimeSettingsPatch = (partial: unknown): Partial<AgentRuntimeSettings> => {
+  if (!isPlainObject(partial)) {
+    throw invalidAgentRuntimeSettings('Agent runtime settings must be a plain object');
+  }
+  const patch: Partial<AgentRuntimeSettings> = {};
+  for (const [key, value] of Object.entries(partial)) {
+    if (!AGENT_RUNTIME_SETTING_KEYS.has(key)) {
+      throw invalidAgentRuntimeSettings(`Unknown agent runtime setting: ${key}`);
+    }
+    if (typeof value !== 'boolean') {
+      throw invalidAgentRuntimeSettings(`Agent runtime setting "${key}" must be a boolean`);
+    }
+    patch[key as keyof AgentRuntimeSettings] = value;
+  }
+  return patch;
+};
+
+/** Uncached: only the settings page reads this, unlike the scheduler-polled limits. */
+export const readAgentRuntimeSettings = (): AgentRuntimeSettings => (
+  normalizeAgentRuntimeSettings(readOpenchamberSidecar()?.[AGENT_RUNTIME_SETTINGS_CONFIG_KEY])
+);
+
+/**
+ * Sidecar-only write, like the limits: OpenCode never sees this key here and
+ * sibling sidecar keys are preserved. It takes effect on the next start.
+ */
+export const writeAgentRuntimeSettings = (partial: unknown): AgentRuntimeSettings => {
+  const patch = validateAgentRuntimeSettingsPatch(partial);
+  const sidecar = readOpenchamberSidecar() ?? {};
+  const next: AgentRuntimeSettings = {
+    ...normalizeAgentRuntimeSettings(sidecar[AGENT_RUNTIME_SETTINGS_CONFIG_KEY]),
+    ...patch,
+  };
+  persistOpenchamberFromConfig({
+    [OPENCHAMBER_CONFIG_KEY]: { ...sidecar, [AGENT_RUNTIME_SETTINGS_CONFIG_KEY]: next },
+  });
   return { ...next };
 };
 

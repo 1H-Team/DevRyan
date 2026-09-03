@@ -428,6 +428,43 @@ export const buildOrchestrationLimitsPayload = (input: OrchestrationLimitsInput)
   return payload;
 };
 
+/** Managed agent-runtime switches; mirrors `GET /api/config/agent-runtime`. */
+export type AgentRuntimeSettings = {
+  /** OpenCode's language servers inside agent sessions. */
+  lsp: boolean;
+  /** OpenCode reads these when its instance starts, never live. */
+  appliesOnRestart: boolean;
+  /** A save changed the value while the managed runtime ran; cleared once it restarts. */
+  restartRequired: boolean;
+};
+
+export type AgentRuntimeSettingsInput = Partial<Pick<AgentRuntimeSettings, 'lsp'>>;
+
+const AGENT_RUNTIME_ENDPOINT = '/api/config/agent-runtime';
+/** Serializes optimistic saves, like the limits above. */
+let agentRuntimeSaveGeneration = 0;
+
+export const normalizeAgentRuntimeSettings = (value: unknown): AgentRuntimeSettings | null => {
+  if (!isLimitsRecord(value)) return null;
+  if (typeof value.lsp !== 'boolean') return null;
+  return {
+    lsp: value.lsp,
+    appliesOnRestart: value.appliesOnRestart !== false,
+    restartRequired: value.restartRequired === true,
+  };
+};
+
+export const buildAgentRuntimeSettingsPayload = (input: AgentRuntimeSettingsInput): AgentRuntimeSettingsInput => {
+  const payload: AgentRuntimeSettingsInput = {};
+  if (input.lsp !== undefined) {
+    payload.lsp = Boolean(input.lsp);
+  }
+  if (Object.keys(payload).length === 0) {
+    throw new Error('Nothing to save for agent runtime settings');
+  }
+  return payload;
+};
+
 export interface AgentConfig {
   name: string;
   description?: string;
@@ -563,6 +600,14 @@ interface AgentsStore {
   getOrchestrationLimits: () => Promise<OrchestrationLimits | null>;
   /** Applies a partial update optimistically; reverts and rethrows when the host rejects it. */
   saveOrchestrationLimits: (input: OrchestrationLimitsInput) => Promise<OrchestrationLimits>;
+  /** Managed agent-runtime switches; null until loaded, or when the host has no such route. */
+  agentRuntimeSettings: AgentRuntimeSettings | null;
+  /** Loads the switches; resolves null on hosts without the route (404 or 501). */
+  getAgentRuntimeSettings: () => Promise<AgentRuntimeSettings | null>;
+  /** Applies a partial update optimistically; reverts and rethrows when the host rejects it. */
+  saveAgentRuntimeSettings: (input: AgentRuntimeSettingsInput) => Promise<AgentRuntimeSettings>;
+  /** Clears the owed restart once the managed runtime has been restarted. */
+  markAgentRuntimeRestarted: () => void;
 }
 
 declare global {
@@ -581,6 +626,7 @@ export const useAgentsStore = create<AgentsStore>()(
         staleModelOverrides: [],
         isLoading: false,
         orchestrationLimits: null,
+        agentRuntimeSettings: null,
 
         setSelectedAgent: (name: string | null) => {
           set({ selectedAgentName: name });
@@ -833,6 +879,71 @@ export const useAgentsStore = create<AgentsStore>()(
             if (generation === orchestrationLimitsSaveGeneration) set({ orchestrationLimits: previous });
             throw error;
           }
+        },
+
+        // Agent runtime switches are host-wide too, and OpenCode only reads them
+        // at start: the store keeps an owed restart until one actually happens,
+        // so a reload of the section never hides it.
+        getAgentRuntimeSettings: async () => {
+          const response = await fetch(AGENT_RUNTIME_ENDPOINT, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+          });
+          if (response.status === 404 || response.status === 501) {
+            set({ agentRuntimeSettings: null });
+            return null;
+          }
+          if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            throw new Error(payload?.error || 'Failed to load agent runtime settings');
+          }
+          const loaded = normalizeAgentRuntimeSettings(await response.json().catch(() => null));
+          if (!loaded) {
+            throw new Error('Failed to load agent runtime settings');
+          }
+          const settings = {
+            ...loaded,
+            restartRequired: loaded.restartRequired || get().agentRuntimeSettings?.restartRequired === true,
+          };
+          set({ agentRuntimeSettings: settings });
+          return settings;
+        },
+
+        saveAgentRuntimeSettings: async (input: AgentRuntimeSettingsInput) => {
+          const body = buildAgentRuntimeSettingsPayload(input);
+          const generation = ++agentRuntimeSaveGeneration;
+          const previous = get().agentRuntimeSettings;
+          const optimistic = previous ? { ...previous, ...body } : null;
+          if (optimistic) set({ agentRuntimeSettings: optimistic });
+          try {
+            const response = await fetch(AGENT_RUNTIME_ENDPOINT, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+              body: JSON.stringify(body),
+            });
+            if (!response.ok) {
+              const payload = await response.json().catch(() => null);
+              throw new Error(payload?.error || 'Failed to save agent runtime settings');
+            }
+            const saved = normalizeAgentRuntimeSettings(await response.json().catch(() => null)) ?? optimistic;
+            if (!saved) {
+              throw new Error('Failed to save agent runtime settings');
+            }
+            const next = {
+              ...saved,
+              restartRequired: saved.restartRequired || previous?.restartRequired === true,
+            };
+            if (generation === agentRuntimeSaveGeneration) set({ agentRuntimeSettings: next });
+            return next;
+          } catch (error) {
+            if (generation === agentRuntimeSaveGeneration) set({ agentRuntimeSettings: previous });
+            throw error;
+          }
+        },
+
+        markAgentRuntimeRestarted: () => {
+          const current = get().agentRuntimeSettings;
+          if (current?.restartRequired) set({ agentRuntimeSettings: { ...current, restartRequired: false } });
         },
       }),
       {

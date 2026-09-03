@@ -20,6 +20,11 @@ import {
   readOrchestrationLimits,
   writeOrchestrationLimits,
 } from './orchestration-limits.js';
+import {
+  clearAgentRuntimeSettingsCache,
+  readAgentRuntimeSettings,
+  writeAgentRuntimeSettings,
+} from './agent-runtime-settings.js';
 
 describe('restricted agent runtime metadata', () => {
   it('preserves effective model and safe Slim preset provenance', () => {
@@ -361,5 +366,216 @@ describe('orchestration limits routes', () => {
     await request(createApp({ scope: 'managed', role: 'member', policy: { settingsPages: ['agents'] } }))
       .get('/api/config/orchestration-limits')
       .expect(200);
+  });
+});
+
+describe('agent runtime settings routes', () => {
+  let tempRoot;
+  let userConfigPath;
+  let sidecarPath;
+  let markConfigChange;
+  let syncManagedAgentRuntimeConfig;
+  let managedRunning;
+
+  const createApp = (principal, overrides = {}) => {
+    const app = express();
+    app.use(express.json());
+    if (principal) {
+      app.use((req, _res, next) => {
+        req.principal = principal;
+        next();
+      });
+    }
+    registerConfigEntityRoutes(app, {
+      resolveProjectDirectory: async () => ({ directory: tempRoot }),
+      resolveOptionalProjectDirectory: async () => ({ directory: tempRoot }),
+      markConfigChange,
+      clientReloadDelayMs: 0,
+      getAgentSources: () => ({ md: { exists: false }, json: { exists: false } }),
+      getAgentConfig: () => null,
+      listAgentModelOverrides: () => ({}),
+      writeAgentModelOverride: () => {},
+      deleteAgentModelOverride: () => false,
+      readAgentRuntimeSettings: () => readAgentRuntimeSettings({ userConfigPath }),
+      writeAgentRuntimeSettings: (body) => writeAgentRuntimeSettings(body, { userConfigPath }),
+      syncManagedAgentRuntimeConfig,
+      isManagedOpenCodeRunning: () => managedRunning,
+      listConfigAgents: () => [],
+      getCommandSources: () => ({ md: { exists: false }, json: { exists: false } }),
+      createCommand: () => {},
+      updateCommand: () => {},
+      deleteCommand: () => {},
+      listMcpConfigs: () => [],
+      getMcpConfig: () => null,
+      createMcpConfig: () => {},
+      updateMcpConfig: () => {},
+      deleteMcpConfig: () => {},
+      ...overrides,
+    });
+    return app;
+  };
+
+  beforeEach(async () => {
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-agent-runtime-routes-'));
+    userConfigPath = path.join(tempRoot, 'opencode-config', 'config.json');
+    sidecarPath = path.join(path.dirname(userConfigPath), '.openchamber', 'config.json');
+    await fs.mkdir(path.dirname(userConfigPath), { recursive: true });
+    markConfigChange = vi.fn(async () => ({ runtimeApplied: false, requiresApply: true }));
+    syncManagedAgentRuntimeConfig = vi.fn(async () => ({ changed: true }));
+    managedRunning = true;
+    clearAgentRuntimeSettingsCache();
+  });
+
+  afterEach(async () => {
+    clearAgentRuntimeSettingsCache();
+    if (tempRoot) {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+    tempRoot = undefined;
+  });
+
+  it('reads the language-server default without touching the sidecar', async () => {
+    await request(createApp())
+      .get('/api/config/agent-runtime')
+      .expect(200)
+      .expect((res) => {
+        expect(res.body).toEqual({ lsp: true, appliesOnRestart: true });
+      });
+
+    await expect(fs.stat(sidecarPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(syncManagedAgentRuntimeConfig).not.toHaveBeenCalled();
+  });
+
+  it('round-trips lsp through the sidecar, re-syncs the overlay, and owes a restart once per change', async () => {
+    const app = createApp({ role: 'admin' });
+    await fs.mkdir(path.dirname(sidecarPath), { recursive: true });
+    await fs.writeFile(sidecarPath, JSON.stringify({
+      orchestrationLimits: { maxConcurrentSubagents: 8, pauseUnderMemoryPressure: true },
+    }));
+    clearAgentRuntimeSettingsCache();
+
+    await request(app)
+      .put('/api/config/agent-runtime')
+      .send({ lsp: false })
+      .expect(200)
+      .expect((res) => {
+        expect(res.body).toEqual({ lsp: false, appliesOnRestart: true, restartRequired: true });
+      });
+    expect(syncManagedAgentRuntimeConfig).toHaveBeenCalledTimes(1);
+
+    const sidecar = JSON.parse(await fs.readFile(sidecarPath, 'utf8'));
+    expect(sidecar).toEqual({
+      orchestrationLimits: { maxConcurrentSubagents: 8, pauseUnderMemoryPressure: true },
+      agentRuntime: { lsp: false },
+    });
+    await expect(fs.stat(userConfigPath)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    await request(app)
+      .get('/api/config/agent-runtime')
+      .expect(200)
+      .expect((res) => {
+        expect(res.body).toEqual({ lsp: false, appliesOnRestart: true });
+      });
+
+    // Writing the value that is already stored changes nothing: no overlay
+    // sync, no restart owed.
+    await request(app)
+      .put('/api/config/agent-runtime')
+      .send({ lsp: false })
+      .expect(200)
+      .expect((res) => {
+        expect(res.body).toEqual({ lsp: false, appliesOnRestart: true, restartRequired: false });
+      });
+    expect(syncManagedAgentRuntimeConfig).toHaveBeenCalledTimes(1);
+
+    await request(app)
+      .put('/api/config/agent-runtime')
+      .send({ lsp: true })
+      .expect(200)
+      .expect((res) => {
+        expect(res.body).toEqual({ lsp: true, appliesOnRestart: true, restartRequired: true });
+      });
+    expect(syncManagedAgentRuntimeConfig).toHaveBeenCalledTimes(2);
+    expect(markConfigChange).not.toHaveBeenCalled();
+  });
+
+  it('owes no restart without a running managed server and keeps the write when the overlay sync fails', async () => {
+    managedRunning = false;
+    await request(createApp({ role: 'admin' }))
+      .put('/api/config/agent-runtime')
+      .send({ lsp: false })
+      .expect(200)
+      .expect((res) => {
+        expect(res.body).toEqual({ lsp: false, appliesOnRestart: true, restartRequired: false });
+      });
+    expect(syncManagedAgentRuntimeConfig).toHaveBeenCalledTimes(1);
+
+    managedRunning = true;
+    syncManagedAgentRuntimeConfig.mockRejectedValueOnce(new Error('overlay root not writable'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await request(createApp({ role: 'admin' }))
+        .put('/api/config/agent-runtime')
+        .send({ lsp: true })
+        .expect(200)
+        .expect((res) => {
+          expect(res.body).toEqual({ lsp: true, appliesOnRestart: true, restartRequired: true });
+        });
+    } finally {
+      warn.mockRestore();
+    }
+    expect(JSON.parse(await fs.readFile(sidecarPath, 'utf8'))).toEqual({ agentRuntime: { lsp: true } });
+  });
+
+  it('rejects invalid bodies with 400 without touching the sidecar or the overlay', async () => {
+    const app = createApp({ role: 'admin' });
+
+    for (const body of [
+      { lsp: 'no' },
+      { lsp: 1 },
+      { formatter: true },
+      [true],
+    ]) {
+      await request(app)
+        .put('/api/config/agent-runtime')
+        .send(body)
+        .expect(400)
+        .expect((res) => {
+          expect(res.body.error).toMatch(/lsp|formatter|plain object/);
+        });
+    }
+
+    await expect(fs.stat(sidecarPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(syncManagedAgentRuntimeConfig).not.toHaveBeenCalled();
+    expect(markConfigChange).not.toHaveBeenCalled();
+  });
+
+  it('answers 501 without the host helpers and guards restricted principals', async () => {
+    const unsupported = createApp({ role: 'admin' }, {
+      readAgentRuntimeSettings: undefined,
+      writeAgentRuntimeSettings: undefined,
+    });
+    await request(unsupported).get('/api/config/agent-runtime').expect(501);
+    await request(unsupported).put('/api/config/agent-runtime').send({ lsp: false }).expect(501);
+
+    const restricted = createApp({ scope: 'managed', role: 'member', policy: { settingsPages: ['home'] } });
+    await request(restricted).get('/api/config/agent-runtime').expect(403);
+    await request(restricted).put('/api/config/agent-runtime').send({ lsp: false }).expect(403);
+    await expect(fs.stat(sidecarPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(syncManagedAgentRuntimeConfig).not.toHaveBeenCalled();
+
+    await request(createApp({ scope: 'managed', role: 'member', policy: { settingsPages: ['agents'] } }))
+      .get('/api/config/agent-runtime')
+      .expect(200);
+  });
+
+  it('assumes a running server when the host exposes no process getter', async () => {
+    await request(createApp({ role: 'admin' }, { isManagedOpenCodeRunning: undefined }))
+      .put('/api/config/agent-runtime')
+      .send({ lsp: false })
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.restartRequired).toBe(true);
+      });
   });
 });

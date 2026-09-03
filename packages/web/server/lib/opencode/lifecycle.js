@@ -1489,6 +1489,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     waitForOpenCodeReady,
     waitForAgentPresence,
     applyOpenCodeConfigChanges,
+    // Settings routes that only change the runtime overlay (agent-runtime
+    // switches) re-run the same sync a start does, without restarting.
+    syncManagedAgentRuntimeConfig,
     bootstrapOpenCodeAtStartup,
     startHealthMonitoring,
     triggerHealthCheck,
