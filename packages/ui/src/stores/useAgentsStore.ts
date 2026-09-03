@@ -306,6 +306,45 @@ const syncConfigStoreAgent = (nextAgent: Agent) => {
 export type AgentScope = 'packaged' | 'project';
 export type AgentOverrideMutationResponse = Record<string, unknown> | null;
 
+/** Host-configured fallback used only when the primary model hits a provider usage limit. */
+export type AgentBackupModel = {
+  providerID: string;
+  modelID: string;
+  variant: string | null;
+};
+
+export type AgentBackupModelInput = {
+  model: string;
+  variant?: string | null;
+};
+
+const normalizeAgentBackupModelRecord = (value: unknown): AgentBackupModel | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const candidate = value as { providerID?: unknown; modelID?: unknown; model?: unknown; variant?: unknown };
+  const variant = typeof candidate.variant === 'string' && candidate.variant.trim().length > 0
+    ? candidate.variant.trim()
+    : null;
+  if (typeof candidate.providerID === 'string' && candidate.providerID && typeof candidate.modelID === 'string' && candidate.modelID) {
+    return { providerID: candidate.providerID, modelID: candidate.modelID, variant };
+  }
+  const modelRef = modelValueToRef(candidate.model);
+  const parsed = modelRef ? parseModelRef(modelRef) : null;
+  return parsed ? { ...parsed, variant } : null;
+};
+
+export const buildAgentBackupModelPayload = (config: AgentBackupModelInput): { model: string; variant: string | null } => {
+  const model = modelValueToRef(config.model);
+  if (!model) {
+    throw new Error('Backup model must use provider/model format');
+  }
+  return {
+    model,
+    variant: typeof config.variant === 'string' && config.variant.trim().length > 0 ? config.variant.trim() : null,
+  };
+};
+
 export interface AgentConfig {
   name: string;
   description?: string;
@@ -337,6 +376,8 @@ export type AgentWithExtras = Agent & {
   /** Ordered raw model refs for council-style multi-model agents. */
   modelRefs?: string[];
   councillors?: Array<{ model: string; variant?: string | null }>;
+  /** Host-side backup model; never influences `model`/`variant`. */
+  backupModel?: AgentBackupModel | null;
   modelResolution?: {
     presetName: string | null;
     source: 'root-override' | 'preset' | 'root';
@@ -431,6 +472,8 @@ interface AgentsStore {
   getVisibleAgents: () => Agent[];
   saveAgentModelOverride: (name: string, config: Partial<AgentConfig>) => Promise<AgentOverrideMutationResponse>;
   resetAgentModelOverride: (name: string) => Promise<AgentOverrideMutationResponse>;
+  saveAgentBackupModel: (name: string, config: AgentBackupModelInput) => Promise<AgentOverrideMutationResponse>;
+  resetAgentBackupModel: (name: string) => Promise<AgentOverrideMutationResponse>;
 }
 
 declare global {
@@ -586,6 +629,67 @@ export const useAgentsStore = create<AgentsStore>()(
             }));
             syncConfigStoreAgent(nextAgent as Agent);
           }
+          invalidateAgentsLoadCache(configDirectory);
+          return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as AgentOverrideMutationResponse : null;
+        },
+
+        // Backup models are DevRyan-only sidecar state: they never change the
+        // agent's `model`/`variant`, so we only patch `backupModel` on the local
+        // record and deliberately skip the chat config store sync.
+        saveAgentBackupModel: async (name: string, config: AgentBackupModelInput) => {
+          const body = buildAgentBackupModelPayload(config);
+          const configDirectory = getConfigDirectory();
+          const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
+          invalidateAgentsLoadCache(configDirectory);
+          const response = await fetch(`/api/config/agents/${encodeURIComponent(name)}/backup-model${query}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(configDirectory ? { 'x-opencode-directory': configDirectory } : {}),
+            },
+            body: JSON.stringify(body),
+          });
+
+          if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            throw new Error(payload?.error || 'Failed to save agent backup model');
+          }
+
+          const payload = await response.json().catch(() => null);
+          const nextBackupModel = normalizeAgentBackupModelRecord(payload?.agent?.config?.backupModel)
+            ?? normalizeAgentBackupModelRecord(payload?.backupModel)
+            ?? normalizeAgentBackupModelRecord(body);
+          set((state) => ({
+            agents: state.agents.map((agent) => (
+              agent.name === name ? { ...agent, backupModel: nextBackupModel } as Agent : agent
+            )),
+          }));
+          invalidateAgentsLoadCache(configDirectory);
+          return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as AgentOverrideMutationResponse : null;
+        },
+
+        resetAgentBackupModel: async (name: string) => {
+          const configDirectory = getConfigDirectory();
+          const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
+          invalidateAgentsLoadCache(configDirectory);
+          const response = await fetch(`/api/config/agents/${encodeURIComponent(name)}/backup-model${query}`, {
+            method: 'DELETE',
+            headers: {
+              ...(configDirectory ? { 'x-opencode-directory': configDirectory } : {}),
+            },
+          });
+
+          if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            throw new Error(payload?.error || 'Failed to clear agent backup model');
+          }
+
+          const payload = await response.json().catch(() => null);
+          set((state) => ({
+            agents: state.agents.map((agent) => (
+              agent.name === name ? { ...agent, backupModel: null } as Agent : agent
+            )),
+          }));
           invalidateAgentsLoadCache(configDirectory);
           return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as AgentOverrideMutationResponse : null;
         },

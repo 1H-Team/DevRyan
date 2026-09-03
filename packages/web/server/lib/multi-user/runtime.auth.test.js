@@ -3532,6 +3532,116 @@ describe('multi-user authentication runtime', () => {
     })).rejects.toMatchObject({ code: 'managed_agent_model_unavailable', statusCode: 409 });
   });
 
+  it('resolves session owner keys and host backup executions without throwing on mismatches', async () => {
+    const repositoryPath = await createGitRepo();
+    const projectId = '74444444-4444-4444-8444-444444444444';
+    const harness = await createHarness({
+      profiles: [fixtureProfile('developer'), fixtureProfile('admin')],
+      projects: [{
+        id: projectId,
+        label: 'Backup project',
+        repository_path: repositoryPath,
+        remote_url: null,
+        default_branch: 'main',
+        status: 'active',
+      }],
+      accessRows: [
+        { user_id: USER_IDS.developer, project_id: projectId, is_default: true, github_account_id: null },
+        { user_id: USER_IDS.admin, project_id: projectId, is_default: true, github_account_id: null },
+      ],
+      branchRows: [
+        { user_id: USER_IDS.developer, project_id: projectId, branch_name: 'developer', workspace_path: repositoryPath, is_default: true },
+        { user_id: USER_IDS.admin, project_id: projectId, branch_name: 'main', workspace_path: repositoryPath, is_default: true },
+      ],
+      ownershipRows: [
+        {
+          session_id: 'ses_developer_root',
+          user_id: USER_IDS.developer,
+          project_id: projectId,
+          branch_name: 'developer',
+          public_directory: repositoryPath,
+          archived_at: null,
+        },
+        {
+          session_id: 'ses_archived_root',
+          user_id: USER_IDS.developer,
+          project_id: projectId,
+          branch_name: 'developer',
+          public_directory: repositoryPath,
+          archived_at: '2026-09-01T00:00:00.000Z',
+        },
+      ],
+      userPolicies: [{
+        user_id: USER_IDS.developer,
+        settings_overrides: {
+          agentModelSelections: {
+            Orchestrator: { providerId: 'anthropic', modelId: 'personal-must-not-apply' },
+          },
+        },
+      }],
+    });
+    const agents = [{
+      name: 'Orchestrator',
+      model: { providerID: 'openai', modelID: 'gpt-5.6-sol' },
+      variant: 'medium',
+      modelRefs: ['openai/gpt-5.6-sol'],
+      backupModel: { providerID: 'anthropic', modelID: 'claude-sonnet-4-6', variant: 'high' },
+    }, {
+      name: 'Council',
+      model: { providerID: 'openai', modelID: 'gpt-5.6-sol' },
+      variant: 'medium',
+      modelRefs: ['openai/gpt-5.6-sol', 'anthropic/claude-sonnet-4-6'],
+      backupModel: null,
+    }];
+    registerAdminRoutes(harness, { listConfigAgents: () => agents });
+
+    await expect(harness.runtime.resolveSessionOwnerKey({ rootSessionId: 'ses_developer_root' }))
+      .resolves.toBe(`user:${USER_IDS.developer}`);
+    await expect(harness.runtime.resolveSessionOwnerKey({ rootSessionId: 'ses_archived_root' })).resolves.toBeNull();
+    await expect(harness.runtime.resolveSessionOwnerKey({ rootSessionId: 'ses_missing' })).resolves.toBeNull();
+    await expect(harness.runtime.resolveSessionOwnerKey({ rootSessionId: '' })).resolves.toBeNull();
+    await expect(harness.runtime.resolveSessionOwnerKey()).resolves.toBeNull();
+
+    await expect(harness.runtime.resolveSessionAgentBackupExecution({
+      rootSessionId: 'ses_developer_root',
+      directory: repositoryPath,
+      agent: 'orchestrator',
+    })).resolves.toEqual({ providerId: 'anthropic', modelId: 'claude-sonnet-4-6', variant: 'high' });
+    await expect(harness.runtime.resolveSessionAgentBackupExecution({
+      rootSessionId: 'ses_developer_root',
+      agent: 'Orchestrator',
+    })).resolves.toEqual({ providerId: 'anthropic', modelId: 'claude-sonnet-4-6', variant: 'high' });
+    await expect(harness.runtime.resolveSessionAgentBackupExecution({
+      rootSessionId: 'ses_developer_root',
+      directory: repositoryPath,
+      agent: 'Council',
+    })).resolves.toBeNull();
+    await expect(harness.runtime.resolveSessionAgentBackupExecution({
+      rootSessionId: 'ses_developer_root',
+      directory: repositoryPath,
+      agent: 'Unknown agent',
+    })).resolves.toBeNull();
+    await expect(harness.runtime.resolveSessionAgentBackupExecution({
+      rootSessionId: 'ses_developer_root',
+      directory: path.join(os.tmpdir(), 'devryan-unassigned-backup-directory'),
+      agent: 'orchestrator',
+    })).resolves.toBeNull();
+    await expect(harness.runtime.resolveSessionAgentBackupExecution({
+      rootSessionId: 'ses_archived_root',
+      directory: repositoryPath,
+      agent: 'orchestrator',
+    })).resolves.toBeNull();
+    await expect(harness.runtime.resolveSessionAgentBackupExecution({
+      rootSessionId: 'ses_missing',
+      directory: repositoryPath,
+      agent: 'orchestrator',
+    })).resolves.toBeNull();
+    await expect(harness.runtime.resolveSessionAgentBackupExecution({
+      rootSessionId: '',
+      agent: 'orchestrator',
+    })).resolves.toBeNull();
+  });
+
   it('classifies scheduled-task access from authoritative owner and branch state', async () => {
     const repositoryPath = await createGitRepo();
     const project = {

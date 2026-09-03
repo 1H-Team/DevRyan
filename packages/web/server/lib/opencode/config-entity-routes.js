@@ -71,6 +71,8 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     listStaleAgentModelOverrides,
     writeAgentModelOverride,
     deleteAgentModelOverride,
+    writeAgentBackupModel,
+    deleteAgentBackupModel,
     listConfigAgents,
     getCommandSources,
     createCommand,
@@ -339,6 +341,50 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     } catch (error) {
       console.error('Failed to delete agent model override:', error);
       res.status(500).json({ error: formatErrorMessage(error, 'Failed to delete agent model override') });
+    }
+  });
+
+  // Backup models are DevRyan-only sidecar state (OpenCode never reads them), so
+  // these routes deliberately skip markConfigChange: nothing needs an apply/restart.
+  app.put('/api/config/agents/:name/backup-model', async (req, res) => {
+    try {
+      const agentName = req.params.name;
+      const { directory, error } = await resolveProjectDirectory(req);
+      if (!directory) {
+        return res.status(400).json({ error });
+      }
+      if (typeof writeAgentBackupModel !== 'function') {
+        return res.status(501).json({ error: 'Agent backup models are not supported by this host' });
+      }
+
+      const backupModel = writeAgentBackupModel(agentName, req.body || {}, directory);
+      const agent = getAgentConfig(agentName, directory);
+      return res.json({ success: true, backupModel, agent });
+    } catch (error) {
+      console.error('Failed to write agent backup model:', error);
+      const message = formatErrorMessage(error, 'Failed to write agent backup model');
+      const status = message.includes('not found') ? 404 : 400;
+      res.status(status).json({ error: message });
+    }
+  });
+
+  app.delete('/api/config/agents/:name/backup-model', async (req, res) => {
+    try {
+      const agentName = req.params.name;
+      const { directory, error } = await resolveProjectDirectory(req);
+      if (!directory) {
+        return res.status(400).json({ error });
+      }
+      if (typeof deleteAgentBackupModel !== 'function') {
+        return res.status(501).json({ error: 'Agent backup models are not supported by this host' });
+      }
+
+      const deleted = deleteAgentBackupModel(agentName, { workingDirectory: directory });
+      const agent = getAgentConfig(agentName, directory);
+      return res.json({ success: true, deleted, backupModel: null, agent });
+    } catch (error) {
+      console.error('Failed to delete agent backup model:', error);
+      res.status(500).json({ error: formatErrorMessage(error, 'Failed to delete agent backup model') });
     }
   });
 

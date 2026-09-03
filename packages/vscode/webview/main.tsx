@@ -633,10 +633,13 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
   if (pathname.startsWith('/api/config/agents/')) {
     const agentSuffix = pathname.slice('/api/config/agents/'.length);
     const isOverrideRequest = agentSuffix.endsWith('/override');
+    const isBackupModelRequest = agentSuffix.endsWith('/backup-model');
     const isConfigRequest = agentSuffix.endsWith('/config');
     const encodedName = isOverrideRequest
       ? agentSuffix.slice(0, -'/override'.length)
-      : (isConfigRequest ? agentSuffix.slice(0, -'/config'.length) : agentSuffix);
+      : (isBackupModelRequest
+        ? agentSuffix.slice(0, -'/backup-model'.length)
+        : (isConfigRequest ? agentSuffix.slice(0, -'/config'.length) : agentSuffix));
     const name = decodeURIComponent(encodedName);
     const verb = ((init?.method || 'GET') as string).toUpperCase();
     const body = init?.body ? JSON.parse(init.body as string) : {};
@@ -668,6 +671,7 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
         body,
         directory,
         override: isOverrideRequest,
+        backupModel: isBackupModelRequest,
         config: isConfigRequest,
       });
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });

@@ -21,4 +21,16 @@ describe('managed Agent settings presentation', () => {
     expect(pageSource).toContain('Reset to Host');
     expect(sessionsSource).toContain('if (!canEditPersonalAgentModels(principal)) return null;');
   });
+
+  test('offers a host-only backup model row that personal editors see read-only', () => {
+    expect(pageSource).toContain("t('settings.agents.page.field.backupModel')");
+    expect(pageSource).toContain("t('settings.agents.page.field.backupModelTooltip')");
+    expect(pageSource).toContain("t('settings.agents.page.field.backupModelNone')");
+    expect(pageSource).toContain('await saveAgentBackupModel(selectedAgentName, {');
+    expect(pageSource).toContain('await resetAgentBackupModel(selectedAgentName)');
+    expect(pageSource).toContain("renderThinkingLevelRow('backup-thinking', true, backupModel, backupVariant, setBackupVariant, setBackupModel)");
+    expect(pageSource).toContain('{!isCouncilAgent && !isPersonalModelEditor ? (');
+    expect(pageSource).toContain('disabled={!canEditSelectedModel || isSavingModelOverride || !backupModel.trim()}');
+    expect(pageSource).toContain('disabled={!canEditSelectedModel || isSavingModelOverride || !savedBackupModelRef}');
+  });
 });

@@ -1176,3 +1176,120 @@ describe('VS Code MCP OAuth stale-state handling', () => {
     ].sort());
   });
 });
+
+describe('VS Code agent backup models', () => {
+  let tempHome;
+  let originalHome;
+  let originalOpenCodeConfigDirectory;
+
+  afterEach(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    if (originalOpenCodeConfigDirectory === undefined) {
+      delete process.env.OPENCODE_CONFIG_DIR;
+    } else {
+      process.env.OPENCODE_CONFIG_DIR = originalOpenCodeConfigDirectory;
+    }
+    if (tempHome) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
+    tempHome = undefined;
+    originalOpenCodeConfigDirectory = undefined;
+    vi.resetModules();
+  });
+
+  const loadRuntime = async () => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-backup-models-'));
+    originalHome = process.env.HOME;
+    originalOpenCodeConfigDirectory = process.env.OPENCODE_CONFIG_DIR;
+    process.env.HOME = tempHome;
+    delete process.env.OPENCODE_CONFIG_DIR;
+    vi.resetModules();
+    return import('./opencodeConfig');
+  };
+
+  it('normalizes backup model payloads to provider/model plus variant', async () => {
+    const { normalizeAgentBackupModel } = await loadRuntime();
+
+    expect(normalizeAgentBackupModel({ model: 'openai/gpt-5.5', variant: 'high' })).toEqual({ model: 'openai/gpt-5.5', variant: 'high' });
+    expect(normalizeAgentBackupModel({ model: 'openai/gpt-5.5' })).toEqual({ model: 'openai/gpt-5.5', variant: null });
+    expect(normalizeAgentBackupModel({ model: { providerID: 'openai', modelID: 'gpt-5.5' }, variant: '  ' })).toEqual({ model: 'openai/gpt-5.5', variant: null });
+    expect(normalizeAgentBackupModel({ providerId: 'anthropic', modelId: 'claude-sonnet-4-6', variant: 'max' })).toEqual({ model: 'anthropic/claude-sonnet-4-6', variant: 'max' });
+
+    expect(() => normalizeAgentBackupModel(undefined)).toThrow(/must be an object/);
+    expect(() => normalizeAgentBackupModel({})).toThrow(/provider\/model/);
+    expect(() => normalizeAgentBackupModel({ model: 'gpt-5.5' })).toThrow(/provider\/model/);
+    expect(() => normalizeAgentBackupModel({ model: 'openai/gpt-5.5', variant: 7 })).toThrow(/variant must be a string or null/);
+    expect(() => normalizeAgentBackupModel({ model: 'openai/gpt-5.5', councillors: [] })).toThrow(/Only model and variant/);
+  });
+
+  it('round-trips a backup model through the sidecar and attaches it to agent records', async () => {
+    const {
+      deleteAgentBackupModel,
+      getAgentConfig,
+      listAgentBackupModels,
+      listConfigAgents,
+      readAgentBackupModel,
+      writeAgentBackupModel,
+      writeAgentModelOverride,
+    } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-backup-project-'));
+    const sidecarPath = path.join(tempHome, '.config', 'opencode', '.openchamber', 'config.json');
+    writeAgentMarkdown(path.join(projectDir, '.opencode', 'agents'), 'builder', [
+      'mode: primary',
+      'model: anthropic/claude-sonnet-4-5',
+      'variant: low',
+    ]);
+
+    try {
+      expect(getAgentConfig('builder', projectDir).config.backupModel).toBeNull();
+      expect(listConfigAgents(projectDir).find((agent) => agent.name === 'builder').backupModel).toBeNull();
+      expect(readAgentBackupModel('builder')).toBeNull();
+
+      expect(writeAgentBackupModel('builder', { model: 'openai/gpt-5.5', variant: 'high' }, projectDir))
+        .toEqual({ model: 'openai/gpt-5.5', variant: 'high' });
+
+      const sidecar = readJson(sidecarPath);
+      expect(sidecar.agentBackupModels).toEqual({ builder: { model: 'openai/gpt-5.5', variant: 'high' } });
+      expect(sidecar).not.toHaveProperty('agentOverrides');
+      const opencodeConfig = readJson(path.join(tempHome, '.config', 'opencode', 'config.json'));
+      expect(opencodeConfig).not.toHaveProperty('openchamber');
+      expect(opencodeConfig).not.toHaveProperty('agentBackupModels');
+
+      expect(listAgentBackupModels()).toEqual({ builder: { model: 'openai/gpt-5.5', variant: 'high' } });
+      expect(readAgentBackupModel('builder')).toEqual({ providerID: 'openai', modelID: 'gpt-5.5', variant: 'high' });
+
+      const config = getAgentConfig('builder', projectDir).config;
+      expect(config.model).toEqual({ providerID: 'anthropic', modelID: 'claude-sonnet-4-5' });
+      expect(config.variant).toBe('low');
+      expect(config.overrides).toEqual({ model: false, variant: false, councillors: false });
+      expect(config.backupModel).toEqual({ providerID: 'openai', modelID: 'gpt-5.5', variant: 'high' });
+      expect(listConfigAgents(projectDir).find((agent) => agent.name === 'builder').backupModel)
+        .toEqual({ providerID: 'openai', modelID: 'gpt-5.5', variant: 'high' });
+
+      expect(() => writeAgentBackupModel('builder', { model: 'anthropic/claude-sonnet-4-5' }, projectDir))
+        .toThrow(/must differ from the primary model/);
+      expect(() => writeAgentBackupModel('ghost', { model: 'openai/gpt-5.5' }, projectDir)).toThrow(/not found/);
+      expect(() => writeAgentBackupModel('builder', { model: 'nope' }, projectDir)).toThrow(/provider\/model/);
+
+      writeAgentModelOverride('builder', { model: 'openai/gpt-5.5', variant: 'medium' }, projectDir);
+      expect(() => writeAgentBackupModel('builder', { model: 'openai/gpt-5.5' }, projectDir))
+        .toThrow(/must differ from the primary model/);
+      const overridden = readJson(sidecarPath);
+      expect(overridden.agentOverrides.builder).toEqual({ model: 'openai/gpt-5.5', variant: 'medium' });
+      expect(overridden.agentOverrides.builder).not.toHaveProperty('backupModel');
+      expect(overridden.agentBackupModels.builder).toEqual({ model: 'openai/gpt-5.5', variant: 'high' });
+
+      expect(deleteAgentBackupModel('builder')).toBe(true);
+      expect(deleteAgentBackupModel('builder')).toBe(false);
+      expect(readAgentBackupModel('builder')).toBeNull();
+      expect(getAgentConfig('builder', projectDir).config.backupModel).toBeNull();
+      expect(readJson(sidecarPath).agentOverrides.builder).toEqual({ model: 'openai/gpt-5.5', variant: 'medium' });
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+});

@@ -273,12 +273,16 @@ export const AgentsPage: React.FC = () => {
     agents,
     staleModelOverrides,
     saveAgentModelOverride,
+    saveAgentBackupModel,
+    resetAgentBackupModel,
   } = useAgentsStore(useShallow((s) => ({
     selectedAgentName: s.selectedAgentName,
     getAgentByName: s.getAgentByName,
     agents: s.agents,
     staleModelOverrides: s.staleModelOverrides,
     saveAgentModelOverride: s.saveAgentModelOverride,
+    saveAgentBackupModel: s.saveAgentBackupModel,
+    resetAgentBackupModel: s.resetAgentBackupModel,
   })));
 
   const selectedAgent = selectedAgentName ? getAgentByName(selectedAgentName) : null;
@@ -295,6 +299,8 @@ export const AgentsPage: React.FC = () => {
   const [councilModels, setCouncilModels] = React.useState<string[]>(['']);
   const [councilVariants, setCouncilVariants] = React.useState<Array<string | undefined>>([undefined]);
   const [variant, setVariant] = React.useState<string | undefined>(undefined);
+  const [backupModel, setBackupModel] = React.useState('');
+  const [backupVariant, setBackupVariant] = React.useState<string | undefined>(undefined);
   const [temperature, setTemperature] = React.useState<number | undefined>(undefined);
   const [prompt, setPrompt] = React.useState('');
   const [globalPermission, setGlobalPermission] = React.useState<PermissionAction>('allow');
@@ -317,6 +323,12 @@ export const AgentsPage: React.FC = () => {
   const personalSelection = selectedAgentName
     ? findAgentDefaultOverride(personalAgentSelections, selectedAgentName)
     : null;
+  const savedBackupModel = selectedAgent
+    ? ((selectedAgent as { backupModel?: { providerID?: string; modelID?: string; variant?: string | null } | null }).backupModel ?? null)
+    : null;
+  const savedBackupModelRef = savedBackupModel?.providerID && savedBackupModel?.modelID
+    ? `${savedBackupModel.providerID}/${savedBackupModel.modelID}`
+    : '';
   const inheritedSelection = selectedAgentName && selectedAgent
     ? resolveAgentDefaultSelection({
       agentName: selectedAgentName,
@@ -650,6 +662,13 @@ export const AgentsPage: React.FC = () => {
           ? (selectedAgent as { variant: string }).variant
           : undefined);
       const variantValue = resolveVariantForModel(modelValue, savedVariantValue);
+      const selectedBackup = (selectedAgent as { backupModel?: { providerID?: string; modelID?: string; variant?: string | null } | null }).backupModel ?? null;
+      const backupModelValue = selectedBackup?.providerID && selectedBackup?.modelID
+        ? `${selectedBackup.providerID}/${selectedBackup.modelID}`
+        : '';
+      const backupVariantValue = backupModelValue
+        ? resolveVariantForModel(backupModelValue, typeof selectedBackup?.variant === 'string' ? selectedBackup.variant : undefined)
+        : undefined;
       const temperatureValue = selectedAgent.temperature;
       const promptValue = selectedAgent.prompt || '';
 
@@ -660,6 +679,8 @@ export const AgentsPage: React.FC = () => {
       setCouncilModels(toEditableModelRows(councilModelValues));
       setCouncilVariants(councilVariantValues.length > 0 ? councilVariantValues : [undefined]);
       setVariant(variantValue);
+      setBackupModel(backupModelValue);
+      setBackupVariant(backupVariantValue);
       setTemperature(temperatureValue);
       setPrompt(promptValue);
 
@@ -750,6 +771,52 @@ export const AgentsPage: React.FC = () => {
       setIsSavingModelOverride(false);
     }
   }, [applyDefaultsToCurrent, isPersonalModelEditor, resetAgentModelSelection, selectedAgentName, t]);
+
+  const handleSaveBackupModel = React.useCallback(async () => {
+    if (!selectedAgentName) {
+      return;
+    }
+    const trimmedBackupModel = backupModel.trim();
+    if (!trimmedBackupModel) {
+      toast.error(t('settings.agents.page.toast.modelRequired'));
+      return;
+    }
+
+    setIsSavingModelOverride(true);
+    try {
+      const resolvedVariant = resolveAgentVariantForSave(
+        getProviderForModelRef(trimmedBackupModel),
+        trimmedBackupModel,
+        backupVariant,
+      );
+      await saveAgentBackupModel(selectedAgentName, {
+        model: trimmedBackupModel,
+        variant: resolvedVariant ?? null,
+      });
+      toast.success(t('settings.agents.page.toast.backupModelSaved'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('settings.agents.page.toast.backupModelSaveFailed'));
+    } finally {
+      setIsSavingModelOverride(false);
+    }
+  }, [backupModel, backupVariant, getProviderForModelRef, saveAgentBackupModel, selectedAgentName, t]);
+
+  const handleClearBackupModel = React.useCallback(async () => {
+    if (!selectedAgentName) {
+      return;
+    }
+    setIsSavingModelOverride(true);
+    try {
+      await resetAgentBackupModel(selectedAgentName);
+      setBackupModel('');
+      setBackupVariant(undefined);
+      toast.success(t('settings.agents.page.toast.backupModelCleared'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('settings.agents.page.toast.backupModelClearFailed'));
+    } finally {
+      setIsSavingModelOverride(false);
+    }
+  }, [resetAgentBackupModel, selectedAgentName, t]);
 
   if (!selectedAgentName) {
     return behaviorUiHidden ? null : <BehaviorPage />;
@@ -1051,6 +1118,81 @@ export const AgentsPage: React.FC = () => {
                 )}
 
                 {!isCouncilAgent && thinkingLevelRow}
+
+                {!isCouncilAgent ? (
+                  <div className="flex flex-col gap-1 py-1 sm:flex-row sm:items-center sm:gap-3">
+                    <div className="flex min-w-0 flex-col sm:w-40 shrink-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="typography-ui-label text-foreground">{t('settings.agents.page.field.backupModel')}</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent sideOffset={8} className="max-w-xs">
+                            {t('settings.agents.page.field.backupModelTooltip')}
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </div>
+                    {isPersonalModelEditor ? (
+                      <div className="flex min-w-0 flex-1 items-center typography-meta text-muted-foreground">
+                        <span className="truncate">
+                          {savedBackupModelRef
+                            ? `${savedBackupModelRef}${savedBackupModel?.variant ? ` · ${savedBackupModel.variant}` : ''}`
+                            : t('settings.agents.page.field.backupModelNone')}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <ModelSelector
+                          providerId={parseModelIdentifier(backupModel)?.providerId ?? ''}
+                          modelId={parseModelIdentifier(backupModel)?.modelId ?? ''}
+                          className="w-full sm:max-w-[360px]"
+                          disabled={!canEditSelectedModel || isSavingModelOverride}
+                          onChange={(providerId: string, modelId: string) => {
+                            const nextBackupModel = providerId && modelId ? `${providerId}/${modelId}` : '';
+                            setBackupModel(nextBackupModel);
+                            setBackupVariant((currentVariant) => resolveVariantForModel(nextBackupModel, currentVariant));
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+
+                {!isCouncilAgent && !isPersonalModelEditor
+                  ? renderThinkingLevelRow('backup-thinking', true, backupModel, backupVariant, setBackupVariant, setBackupModel)
+                  : null}
+
+                {!isCouncilAgent && !isPersonalModelEditor ? (
+                  <div className="flex flex-col gap-1 py-1 sm:flex-row sm:items-center sm:gap-3">
+                    <div className="hidden sm:block sm:w-40 shrink-0" />
+                    <div className="flex min-w-0 flex-1 justify-end gap-2 sm:justify-start">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="xs"
+                        className="!font-normal normal-case"
+                        onClick={() => void handleSaveBackupModel()}
+                        disabled={!canEditSelectedModel || isSavingModelOverride || !backupModel.trim()}
+                      >
+                        <RiSaveLine className="h-3.5 w-3.5" />
+                        {t('settings.agents.page.actions.saveBackupModel')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="xs"
+                        className="!font-normal normal-case"
+                        onClick={() => void handleClearBackupModel()}
+                        disabled={!canEditSelectedModel || isSavingModelOverride || !savedBackupModelRef}
+                      >
+                        <RiCloseLine className="h-3.5 w-3.5" />
+                        {t('settings.agents.page.actions.clearBackupModel')}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className={cn("py-1", isMobile ? "flex flex-col gap-2" : "flex items-center gap-3")}>
                   <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "sm:w-40 shrink-0")}>

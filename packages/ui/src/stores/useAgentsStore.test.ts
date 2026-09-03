@@ -367,6 +367,144 @@ describe("agent model override persistence", () => {
     }
   });
 
+  test("saves a backup model through the backup-model route and reconciles the local record from the response", async () => {
+    const originalAgents = useAgentsStore.getState().agents;
+    useAgentsStore.setState({
+      agents: [makeAgent({
+        name: "builder",
+        mode: "primary",
+        model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+        modelRefs: ["anthropic/claude-sonnet-4-5"],
+        variant: "low",
+      } as Partial<Agent> & { name: string })],
+    });
+
+    let fetchCalls = 0;
+    const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls += 1;
+      expect(String(input).startsWith("/api/config/agents/builder/backup-model")).toBe(true);
+      expect(init?.method).toBe("PUT");
+      expect(JSON.parse(String(init?.body))).toEqual({ model: "openai/gpt-5.5", variant: "high" });
+      return new Response(JSON.stringify({
+        success: true,
+        backupModel: { model: "openai/gpt-5.5", variant: "high" },
+        agent: {
+          source: "md",
+          scope: "project",
+          config: {
+            name: "builder",
+            model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+            modelRefs: ["anthropic/claude-sonnet-4-5"],
+            variant: "low",
+            backupModel: { providerID: "openai", modelID: "gpt-5.5", variant: "high" },
+          },
+        },
+      }), { status: 200 });
+    };
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      await useAgentsStore.getState().saveAgentBackupModel("builder", { model: "openai/gpt-5.5", variant: "high" });
+
+      expect(fetchCalls).toBe(1);
+      const savedAgent = useAgentsStore.getState().agents.find((agent) => agent.name === "builder") as Agent & {
+        backupModel?: { providerID: string; modelID: string; variant: string | null } | null;
+        variant?: string;
+      };
+      expect(savedAgent.backupModel).toEqual({ providerID: "openai", modelID: "gpt-5.5", variant: "high" });
+      expect(savedAgent.model).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-4-5" });
+      expect(savedAgent.variant).toBe("low");
+    } finally {
+      globalThis.fetch = originalFetch;
+      useAgentsStore.setState({ agents: originalAgents });
+    }
+  });
+
+  test("sends a null backup variant and reconciles from the request when the response omits agent config", async () => {
+    const originalAgents = useAgentsStore.getState().agents;
+    useAgentsStore.setState({
+      agents: [makeAgent({
+        name: "builder",
+        model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+      } as Partial<Agent> & { name: string })],
+    });
+
+    let requestBody: unknown = null;
+    const fetchMock = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    };
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      await useAgentsStore.getState().saveAgentBackupModel("builder", { model: "openai/gpt-5.5", variant: "  " });
+
+      expect(requestBody).toEqual({ model: "openai/gpt-5.5", variant: null });
+      const savedAgent = useAgentsStore.getState().agents.find((agent) => agent.name === "builder") as Agent & {
+        backupModel?: { providerID: string; modelID: string; variant: string | null } | null;
+      };
+      expect(savedAgent.backupModel).toEqual({ providerID: "openai", modelID: "gpt-5.5", variant: null });
+      expect(savedAgent.model).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-4-5" });
+    } finally {
+      globalThis.fetch = originalFetch;
+      useAgentsStore.setState({ agents: originalAgents });
+    }
+  });
+
+  test("rejects a malformed backup model ref before calling the host and surfaces host errors", async () => {
+    let fetchCalls = 0;
+    const fetchMock = async () => {
+      fetchCalls += 1;
+      return new Response(JSON.stringify({ error: "Agent backup model must differ from the primary model" }), { status: 400 });
+    };
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      await expect(useAgentsStore.getState().saveAgentBackupModel("builder", { model: "   " })).rejects.toThrow(/provider\/model/);
+      expect(fetchCalls).toBe(0);
+
+      await expect(useAgentsStore.getState().saveAgentBackupModel("builder", { model: "anthropic/claude-sonnet-4-5" }))
+        .rejects.toThrow("Agent backup model must differ from the primary model");
+      expect(fetchCalls).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("clears a backup model through the backup-model route and nulls the local record", async () => {
+    const originalAgents = useAgentsStore.getState().agents;
+    useAgentsStore.setState({
+      agents: [makeAgent({
+        name: "builder",
+        model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+        backupModel: { providerID: "openai", modelID: "gpt-5.5", variant: "high" },
+      } as Partial<Agent> & { name: string })],
+    });
+
+    let fetchCalls = 0;
+    const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls += 1;
+      expect(String(input).startsWith("/api/config/agents/builder/backup-model")).toBe(true);
+      expect(init?.method).toBe("DELETE");
+      return new Response(JSON.stringify({ success: true, deleted: true, backupModel: null }), { status: 200 });
+    };
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      await useAgentsStore.getState().resetAgentBackupModel("builder");
+
+      expect(fetchCalls).toBe(1);
+      const savedAgent = useAgentsStore.getState().agents.find((agent) => agent.name === "builder") as Agent & {
+        backupModel?: unknown;
+      };
+      expect(savedAgent.backupModel).toBeNull();
+      expect(savedAgent.model).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-4-5" });
+    } finally {
+      globalThis.fetch = originalFetch;
+      useAgentsStore.setState({ agents: originalAgents });
+    }
+  });
+
   test("syncs saved override agent config into the chat config store", async () => {
     const originalAgents = useConfigStore.getState().agents;
     const originalSettingsAgents = useAgentsStore.getState().agents;

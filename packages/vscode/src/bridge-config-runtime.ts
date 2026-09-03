@@ -3,6 +3,7 @@ import * as path from 'path';
 import { isDeepStrictEqual } from 'node:util';
 import {
   createCommand,
+  deleteAgentBackupModel,
   deleteAgentModelOverride,
   deleteCommand,
   getAgentConfig,
@@ -11,6 +12,7 @@ import {
   listAgentModelOverrides,
   listConfigAgents,
   updateCommand,
+  writeAgentBackupModel,
   writeAgentModelOverride,
   type CommandScope,
   COMMAND_SCOPE,
@@ -410,12 +412,13 @@ export async function handleConfigBridgeMessage(
     }
 
     case 'api:config/agents': {
-      const { method, name, body, directory, override } = (payload || {}) as {
+      const { method, name, body, directory, override, backupModel } = (payload || {}) as {
         method?: string;
         name?: string;
         body?: Record<string, unknown>;
         directory?: string;
         override?: boolean;
+        backupModel?: boolean;
       };
       const agentName = typeof name === 'string' ? name.trim() : '';
 
@@ -428,6 +431,29 @@ export async function handleConfigBridgeMessage(
 
       if (!agentName) {
         return { id, type, success: false, error: 'Agent name is required' };
+      }
+
+      if (backupModel === true) {
+        // Backup models are DevRyan-only sidecar state (OpenCode never reads them),
+        // so no markConfigChange: nothing needs an apply/restart.
+        try {
+          if (normalizedMethod === 'PUT') {
+            const saved = writeAgentBackupModel(agentName, body || {}, workingDirectory);
+            const agent = getAgentConfig(agentName, workingDirectory);
+            return { id, type, success: true, data: { success: true, backupModel: saved, agent } };
+          }
+
+          if (normalizedMethod === 'DELETE') {
+            const deleted = deleteAgentBackupModel(agentName);
+            const agent = getAgentConfig(agentName, workingDirectory);
+            return { id, type, success: true, data: { success: true, deleted, backupModel: null, agent } };
+          }
+        } catch (error) {
+          const message = error instanceof Error && error.message ? error.message : 'Failed to update agent backup model';
+          return { id, type, success: false, error: message };
+        }
+
+        return { id, type, success: false, error: `Unsupported backup model method: ${normalizedMethod}` };
       }
 
       if (override === true) {
