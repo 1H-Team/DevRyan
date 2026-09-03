@@ -13,6 +13,10 @@ import {
   readConfigFile,
 } from './shared.js';
 import { listManagedRuntimeAgentModelOverrides } from './agents.js';
+import {
+  normalizeAgentRuntimeSettings,
+  readAgentRuntimeSettings,
+} from './agent-runtime-settings.js';
 import { listMcpConfigs } from './mcp.js';
 import {
   buildBlockedManagedRuntimeMcpOverlay,
@@ -560,6 +564,22 @@ const mergeProviderRecords = (left, right) => {
   }));
 };
 
+// OpenCode (v1.18.27 config/config.ts) merges, in order: the user's global
+// `~/.config/opencode/{config,opencode}.json(c)` (Global.Path.config is the
+// XDG path even when OPENCODE_CONFIG_DIR is set), OPENCODE_CONFIG, project
+// opencode.json(c) files, then every ConfigPaths.directories entry — where
+// OPENCODE_CONFIG_DIR (this overlay directory) is listed last. Each layer is
+// mergeDeep'd over the previous one, so a scalar written here replaces the
+// `lsp: true` that slim-install writes into the user's config. lsp/lsp.ts
+// short-circuits on `!cfg.lsp` ("all LSPs are disabled") before registering
+// any server, so no typescript-language-server/tsserver is ever spawned.
+const buildAgentRuntimeLspOverlay = (options = {}) => {
+  const settings = isPlainObject(options.agentRuntimeSettings)
+    ? normalizeAgentRuntimeSettings(options.agentRuntimeSettings)
+    : readAgentRuntimeSettings({ userConfigPath: options.userConfigPath });
+  return settings.lsp === false ? { lsp: false } : null;
+};
+
 const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
   const activePluginPlan = buildActivePluginPlan(workingDirectory, options);
   const packagedPluginSpecs = Array.isArray(options.packagedPluginSpecs)
@@ -604,6 +624,7 @@ const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
     activePluginPlan.overlay,
     buildAnthropicOAuthProxyOverlay(workingDirectory, options),
     buildPackagedPluginOverlay(packagedPluginSpecs),
+    buildAgentRuntimeLspOverlay(options),
   ].filter(Boolean);
 
   if (overlays.length === 0) {
