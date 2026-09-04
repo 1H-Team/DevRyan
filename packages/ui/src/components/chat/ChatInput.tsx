@@ -794,7 +794,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     ));
     const effectiveCurrentAgentName = sessionSavedAgentName ?? currentAgentName;
     const setProviderModel = useConfigStore((state) => state.setProviderModel);
-    const isPlanModeSelected = useSelectionStore((state) => state.getPlanModeSelection(currentSessionId));
+    const isPlanModeSelected = useSelectionStore((state) => state.getPlanModeSelection(currentSessionId, currentDraftId));
     const setPlanModeSelection = useSelectionStore((state) => state.setPlanModeSelection);
     const setAgent = useConfigStore((state) => state.setAgent);
     const agents = useVisibleConfigAgents();
@@ -1581,9 +1581,12 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         queuedOnly: true,
                         isSubtaskSession: currentSessionIsSubtask,
                     });
-                    if (shouldInterruptCurrentTurn) {
-                        await sessionActions.interruptCurrentOperationForQueuedSend(sessionId);
-                    }
+                    // Start the bounded interrupt without awaiting it: the
+                    // message is inserted at click time and its POST waits on
+                    // the gate for the abort to settle.
+                    const awaitTransportGate = shouldInterruptCurrentTurn
+                        ? sessionActions.beginQueuedSendInterrupt(sessionId)
+                        : undefined;
 
                     const messageID = dispatchedMessage.messageId;
                     const directory = dispatchedMessage.directory;
@@ -1599,7 +1602,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         variant,
                         'normal',
                         planMode,
-                        (messageID || directory) ? { messageID, directory } : undefined,
+                        (messageID || directory || awaitTransportGate)
+                            ? { messageID, directory, awaitTransportGate }
+                            : undefined,
                     );
                 },
             });
@@ -1694,7 +1699,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     await sendQueuedMessagesNowForSession({
                         sessionId: queueSessionId,
                         interruptBeforeFlush: shouldInterruptCurrentTurn,
-                        interruptCurrentOperation: sessionActions.interruptCurrentOperationForQueuedSend,
+                        beginInterrupt: sessionActions.beginQueuedSendInterrupt,
                         fallbackSendConfig: {
                             providerID: sendProviderId,
                             modelID: sendModelId,
@@ -2178,7 +2183,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const handlePlanModeToggle = React.useCallback(() => {
         const nextPlanMode = !isPlanModeSelected;
-        setPlanModeSelection(currentSessionId, nextPlanMode);
+        setPlanModeSelection(currentSessionId, nextPlanMode, currentDraftId);
         if (!currentSessionId && currentDraftId && newSessionDraftOpen) {
             updateNewSessionDraftSendConfig({ planMode: nextPlanMode });
         }

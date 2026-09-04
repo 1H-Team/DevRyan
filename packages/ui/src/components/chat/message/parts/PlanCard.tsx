@@ -1,5 +1,6 @@
 import React from 'react';
 import { RiDraftLine, RiArrowDownSLine } from '@remixicon/react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
@@ -12,7 +13,9 @@ import {
   getPlanSendInstructionsPromptId,
   getPlanSendPlanMode,
   getPlanSendVisiblePromptId,
+  resolvePlanImplementationAgent,
 } from '@/components/views/planSend';
+import { useConfigStore } from '@/stores/useConfigStore';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import {
@@ -278,28 +281,37 @@ const PlanCard: React.FC<PlanCardProps> = ({
       });
 
       const selection = useSelectionStore.getState();
-      const agent = selection.getSessionAgentSelection(sessionId) ?? undefined;
-      const agentModel =
-        agent != null
-          ? selection.getAgentModelForSession(sessionId, agent)
-          : null;
-      const modelSel = agentModel ?? selection.getSessionModelSelection(sessionId);
+      const configState = useConfigStore.getState();
+      // Always dispatch to an explicit agent. Leaving it undefined makes
+      // OpenCode reuse the session's last agent, which after a plan-mode turn
+      // is the edit-less `plan` agent — the implementation then never starts.
+      const agent = resolvePlanImplementationAgent({
+        sessionAgent: selection.getSessionAgentSelection(sessionId),
+        draftAgent: useSessionUIStore.getState().getLastUserChoice(sessionId)?.agent
+          ?? configState.currentAgentName
+          ?? null,
+        agents: configState.agents ?? [],
+        settingsDefaultAgent: configState.settingsDefaultAgent ?? null,
+      });
+      const agentModel = selection.getAgentModelForSession(sessionId, agent);
+      const currentModel = configState.currentProviderId && configState.currentModelId
+        ? { providerId: configState.currentProviderId, modelId: configState.currentModelId }
+        : null;
+      const modelSel = agentModel ?? selection.getSessionModelSelection(sessionId) ?? currentModel;
       if (!modelSel?.providerId || !modelSel?.modelId) {
+        toast.error('Select a model before implementing the plan.');
         setIsSubmitting(false);
         return;
       }
       useSelectionStore.getState().setPlanModeSelection(sessionId, false);
       useSessionUIStore.getState().markPlanImplementationRequested(implementationKey);
       useSessionUIStore.getState().markPlanImplementing(sessionId, sourceMessageId);
-      const variant =
-        agent != null
-          ? selection.getAgentModelVariantForSession(
-              sessionId,
-              agent,
-              modelSel.providerId,
-              modelSel.modelId,
-            )
-          : undefined;
+      const variant = selection.getAgentModelVariantForSession(
+        sessionId,
+        agent,
+        modelSel.providerId,
+        modelSel.modelId,
+      );
 
       await useSessionUIStore.getState().sendMessageToSession(
         sessionId,
@@ -328,7 +340,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
           },
         },
       );
-    } catch {
+    } catch (error) {
       useSessionUIStore.getState().rollbackPlanImplementation(
         sessionId,
         sourceMessageId,
@@ -336,6 +348,8 @@ const PlanCard: React.FC<PlanCardProps> = ({
         implementationMessageId,
       );
       setIsSubmitting(false);
+      const rawMessage = error instanceof Error ? error.message.trim() : '';
+      toast.error(rawMessage.length > 0 ? rawMessage : 'Failed to start implementing the plan.');
     }
   }, [actionState.canImplement, currentPlanFileRecord?.path, currentPlanFileRecord?.status, implementationKey, isSubmitting, planText, sessionId, sourceMessageId]);
 

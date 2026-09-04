@@ -5,9 +5,9 @@ const pageSource = readFileSync(new URL('./AgentsPage.tsx', import.meta.url), 'u
 const sectionSource = readFileSync(new URL('./AgentRuntimeSection.tsx', import.meta.url), 'utf8');
 
 describe('agent runtime presentation', () => {
-  test('sits with the host-wide policy page right after the sub-agent limits', () => {
+  test('sits with the host-wide policy page inside Global Agent Behavior', () => {
     expect(pageSource).toContain('<AgentRuntimeSection canEdit={isHostModelEditor} />');
-    expect(pageSource.indexOf('<SubagentLimitsSection'))
+    expect(pageSource.indexOf('<BehaviorPage>'))
       .toBeLessThan(pageSource.indexOf('<AgentRuntimeSection'));
     expect(pageSource.indexOf('<AgentRuntimeSection'))
       .toBeLessThan(pageSource.indexOf("t('settings.agents.page.section.identityRole')"));

@@ -83,6 +83,7 @@ describe('managed orchestration contract', () => {
       ...validInput(),
       owner: 'devryan',
       status: 'queued',
+      dispatchWaveId: null,
       readOnly: false,
       childSessionId: null,
       recoveryLineageId: null,
@@ -261,6 +262,7 @@ describe('managed orchestration contract', () => {
     expect(event.properties.task.taskId).toBe(task.taskId);
     expect(event.properties.task.dispatchCallId).toBe('call_dispatch_01');
     expect(event.properties.task.dispatchGrouped).toBe(true);
+    expect(event.properties.task.dispatchWaveId).toBeNull();
     expect(event.properties.task.label).toBe(task.label);
     expect(event.properties.task).not.toHaveProperty('prompt');
     expect(event.properties.task).not.toHaveProperty('idempotencyKey');
@@ -269,6 +271,21 @@ describe('managed orchestration contract', () => {
     expect(event.properties.task.agentRetryAvailable).toBe(true);
     expect(event.properties.directory).toBe('/workspace');
     expect(JSON.parse(JSON.stringify(event))).toEqual(event);
+  });
+
+  test('projects the display-only dispatch wave while still withholding the group id', () => {
+    const task = createManagedTaskRecord(validInput({ dispatchWaveId: 'dvr_wave_01' }));
+    const projected = toManagedTaskEvent(task).properties.task;
+
+    expect(task.dispatchWaveId).toBe('dvr_wave_01');
+    expect(projected.dispatchWaveId).toBe('dvr_wave_01');
+    expect(projected.dispatchGrouped).toBe(true);
+    expect(projected).not.toHaveProperty('dispatchGroupId');
+    expect(createManagedTaskRecord(validInput()).dispatchWaveId).toBeNull();
+    expect(() => createManagedTaskRecord(validInput({ dispatchWaveId: 'wave_01' }))).toThrow(
+      /dispatchWaveId must start with dvr_wave_/,
+    );
+    expect(() => createManagedTaskRecord(validInput({ dispatchWaveId: 42 }))).toThrow(TypeError);
   });
 
   test('projects deadline failures without exposing the private dispatch group', () => {

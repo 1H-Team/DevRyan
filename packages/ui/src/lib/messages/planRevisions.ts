@@ -1,6 +1,11 @@
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 
-import { isPlanModeUserMessage, resolveMessagePlanCard } from './actionablePlan';
+import {
+    hasPlanImplementationRequestPart,
+    resolveMessagePlanCard,
+    resolvePlanTurnIntent,
+    type PlanTurnIntent,
+} from './actionablePlan';
 import { isFullySyntheticMessage } from './synthetic';
 
 /**
@@ -38,6 +43,8 @@ export interface PlanRevision {
     rootUserMessageId: string;
     /** Root turn plus every folded continuation turn, in order. */
     memberTurnIds: string[];
+    /** Intent of the root turn; never `implement` (those groups are not revisions). */
+    intent: PlanTurnIntent;
     isPlanModeRevision: boolean;
     /** Member turn containing the selected source message. */
     sourceTurnId: string | null;
@@ -73,13 +80,17 @@ const hasCompactionSignal = (parts: readonly Part[]): boolean => (
 /**
  * A continuation turn is one the runtime injected rather than the user
  * authoring: a compaction command, or a user message made entirely of
- * synthetic parts. Recorded plan-mode requests are always user-authored.
+ * synthetic parts. Recorded plan-mode requests are always user-authored, and
+ * so is an Implement Plan request: it is fully synthetic by construction but
+ * always opens a new group, otherwise its assistants would be folded into the
+ * plan revision as `after-source` siblings and render nothing.
  */
 export const isContinuationTurnUserMessage = (
     parts: readonly Part[],
     isRecordedPlanMode: boolean,
 ): boolean => {
     if (isRecordedPlanMode) return false;
+    if (hasPlanImplementationRequestPart(parts)) return false;
     if (hasCompactionSignal(parts)) return true;
     return isFullySyntheticMessage([...parts]);
 };
@@ -104,11 +115,18 @@ const groupTurnsIntoRevisions = (turns: readonly PlanRevisionTurnInput[]): TurnG
 
 const projectGroup = (group: TurnGroup): PlanRevision | null => {
     const { root, members } = group;
-    const isPlanModeRevision = isPlanModeUserMessage(
+    const intent = resolvePlanTurnIntent(
         root.userInfo,
         root.userParts,
         root.isRecordedPlanMode,
     );
+    // An implementation turn is never a plan revision: its assistants must not
+    // become a plan source (even when they echo plan-shaped headings) and must
+    // never be role-tagged relative to a source, so they render as normal work.
+    if (intent === 'implement') {
+        return null;
+    }
+    const isPlanModeRevision = intent === 'plan';
 
     let sourceTurnId: string | null = null;
     let source: PlanRevisionAssistantInput | null = null;
@@ -161,6 +179,7 @@ const projectGroup = (group: TurnGroup): PlanRevision | null => {
         rootTurnId: root.turnId,
         rootUserMessageId: root.userMessageId,
         memberTurnIds: members.map((member) => member.turnId),
+        intent,
         isPlanModeRevision,
         sourceTurnId,
         sourceMessageId: source?.id ?? null,
@@ -176,7 +195,8 @@ const projectGroup = (group: TurnGroup): PlanRevision | null => {
 /**
  * Projects ordered turns into logical plan revisions. Only groups that carry
  * a plan (a source message was found) or were opened by a plan-mode request
- * are returned; other turn groups are not plan revisions.
+ * are returned; other turn groups — including every Implement Plan group —
+ * are not plan revisions.
  */
 export const projectPlanRevisions = (turns: readonly PlanRevisionTurnInput[]): PlanRevision[] => {
     const revisions: PlanRevision[] = [];

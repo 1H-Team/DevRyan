@@ -470,7 +470,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         ? (sessionSavedAgentName || stickySessionAgentName || currentAgentName)
         : currentAgentName;
     const uiAgentName = isHiddenBuiltinAgentOption(rawUiAgentName) ? undefined : rawUiAgentName;
-    const isPlanModeSelected = useSelectionStore((state) => state.getPlanModeSelection(currentSessionId));
+    const isPlanModeSelected = useSelectionStore((state) => state.getPlanModeSelection(currentSessionId, currentDraftId));
     const setPlanModeSelection = useSelectionStore((state) => state.setPlanModeSelection);
     const lastSelectableAgentRef = React.useRef<string | null>(null);
 
@@ -1607,7 +1607,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     const handlePlanToggle = React.useCallback(() => {
         const nextPlanMode = !isPlanModeSelected;
-        setPlanModeSelection(currentSessionId, nextPlanMode);
+        setPlanModeSelection(currentSessionId, nextPlanMode, currentDraftId);
         if (!currentSessionId && currentDraftId && newSessionDraftOpen) {
             updateNewSessionDraftSendConfig({ planMode: nextPlanMode });
         }

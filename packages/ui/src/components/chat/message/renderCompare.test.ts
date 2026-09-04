@@ -76,6 +76,7 @@ describe('areRelevantTurnGroupingContextsEqual', () => {
     const withDispatch = createTurnContext({
       managedTaskProjection: {
         ownerMessageId: 'assistant-1',
+        waveId: null,
         taskIds: ['dvr_task_one'],
         pendingDispatches: [],
         fallbackTasks: [],
@@ -90,6 +91,7 @@ describe('areRelevantTurnGroupingContextsEqual', () => {
     const first = createTurnContext({
       managedTaskProjection: {
         ownerMessageId: 'assistant-2',
+        waveId: null,
         taskIds: ['dvr_task_one'],
         pendingDispatches: [],
         fallbackTasks: [],
@@ -98,6 +100,7 @@ describe('areRelevantTurnGroupingContextsEqual', () => {
     const second = createTurnContext({
       managedTaskProjection: {
         ownerMessageId: 'assistant-2',
+        waveId: null,
         taskIds: ['dvr_task_one', 'dvr_task_two'],
         pendingDispatches: [],
         fallbackTasks: [],

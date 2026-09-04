@@ -60,6 +60,7 @@ const validateSnapshot = (value) => {
       ...candidate,
       dispatchGroupId: candidate?.dispatchGroupId ?? null,
       dispatchCallId: candidate?.dispatchCallId ?? null,
+      dispatchWaveId: candidate?.dispatchWaveId ?? null,
       readOnly: candidate?.readOnly ?? false,
       recoveryLineageId: candidate?.recoveryLineageId ?? null,
       childPromptedAt: candidate?.childPromptedAt ?? null,

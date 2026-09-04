@@ -12,7 +12,7 @@ import {
 import { ensureOAuthLoopbackPortAvailable } from './oauth-loopback-preflight.js';
 import { registerScopedSessionRevertRoute } from './session-scoped-revert.js';
 import { createHarnessError, withHarnessResult } from './harness-result.js';
-import { stripMessageDiffContent } from './diff-summary.js';
+import { stripEventDiffContent, stripMessageDiffContent } from './diff-summary.js';
 
 const PROMPT_ASYNC_MESSAGE_ID_HEADER = 'x-openchamber-message-id';
 // Transcripts carry diff snapshots and are not a fast control-plane read.
@@ -137,6 +137,133 @@ export const createSseBoundaryTracker = () => {
 const hasForwardableRequestBody = (req) => {
   const contentLength = Number(req.headers?.['content-length'] ?? 0);
   return contentLength > 0 || Boolean(req.headers?.['transfer-encoding']);
+};
+
+// A single upstream SSE block is never forwarded partially below this size, so
+// the stripper can parse it whole. Beyond it the bytes are passed through raw
+// (unparsed) rather than buffered, so the stream never stalls on one event.
+export const SSE_DIFF_STRIP_MAX_BLOCK_CHARS = 256 * 1024 * 1024;
+const SSE_DIFF_STRIP_MARKER = '"diffs"';
+
+const normalizeSseLineEndings = (value) => value.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+const stripSseEnvelope = (parsed, strip) => {
+  if (parsed && typeof parsed === 'object' && parsed.payload && typeof parsed.payload === 'object') {
+    // `/global/event` wraps each event as `{ directory, payload }`.
+    const payload = strip(parsed.payload);
+    return payload === parsed.payload ? parsed : { ...parsed, payload };
+  }
+  return strip(parsed);
+};
+
+/**
+ * Block-level transform for the raw OpenCode SSE byte stream. Complete blocks
+ * (terminated by a blank line) are forwarded one at a time; only a block whose
+ * data mentions `"diffs"` is parsed, trimmed with `stripEventDiffContent`, and
+ * re-serialised with its `id:`/`event:`/comment lines intact. Everything else
+ * (heartbeats, comments, unparsable blocks) is forwarded verbatim.
+ */
+export const createSseDiffStripper = ({
+  strip = stripEventDiffContent,
+  maxBlockChars = SSE_DIFF_STRIP_MAX_BLOCK_CHARS,
+} = {}) => {
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let scanFrom = 0;
+  let pendingCarriageReturn = false;
+  let passthroughUntilBoundary = false;
+
+  const transformBlock = (block) => {
+    if (!block.includes(SSE_DIFF_STRIP_MARKER)) return block;
+    const lines = block.split('\n');
+    const dataLines = [];
+    let firstDataLine = -1;
+    for (let index = 0; index < lines.length; index += 1) {
+      if (!lines[index].startsWith('data:')) continue;
+      if (firstDataLine === -1) firstDataLine = index;
+      dataLines.push(lines[index].slice(5).replace(/^\s/, ''));
+    }
+    if (firstDataLine === -1) return block;
+
+    let parsed;
+    try {
+      parsed = JSON.parse(dataLines.join('\n'));
+    } catch {
+      return block;
+    }
+    let stripped;
+    try {
+      stripped = stripSseEnvelope(parsed, strip);
+    } catch {
+      return block;
+    }
+    if (stripped === parsed) return block;
+
+    const output = [];
+    for (let index = 0; index < lines.length; index += 1) {
+      if (lines[index].startsWith('data:')) {
+        if (index === firstDataLine) output.push(`data: ${JSON.stringify(stripped)}`);
+        continue;
+      }
+      output.push(lines[index]);
+    }
+    return output.join('\n');
+  };
+
+  return {
+    /** Feed one upstream chunk; returns the text that may be forwarded now. */
+    push(chunk) {
+      let text = typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true });
+      if (pendingCarriageReturn) {
+        text = `\r${text}`;
+        pendingCarriageReturn = false;
+      }
+      if (text.endsWith('\r')) {
+        // A CR at the chunk edge may be half of a CRLF; hold it for the next chunk.
+        pendingCarriageReturn = true;
+        text = text.slice(0, -1);
+      }
+      if (text.length === 0) return '';
+      buffer += normalizeSseLineEndings(text);
+
+      let output = '';
+      for (;;) {
+        const boundary = buffer.indexOf('\n\n', scanFrom);
+        if (boundary === -1) break;
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        scanFrom = 0;
+        if (passthroughUntilBoundary) {
+          passthroughUntilBoundary = false;
+          output += `${block}\n\n`;
+          continue;
+        }
+        output += `${transformBlock(block)}\n\n`;
+      }
+      // Resume the boundary scan one char back so a "\n\n" split across chunks is found.
+      scanFrom = buffer.length > 0 ? buffer.length - 1 : 0;
+      if (buffer.length > maxBlockChars) {
+        output += buffer;
+        buffer = '';
+        scanFrom = 0;
+        passthroughUntilBoundary = true;
+      }
+      return output;
+    },
+    /** Stream end: forward whatever partial block remains, unparsed. */
+    flush() {
+      let text = decoder.decode();
+      if (pendingCarriageReturn) {
+        text = `\r${text}`;
+        pendingCarriageReturn = false;
+      }
+      const output = `${buffer}${normalizeSseLineEndings(text)}`;
+      buffer = '';
+      scanFrom = 0;
+      passthroughUntilBoundary = false;
+      return output;
+    },
+  };
 };
 
 export const replayParsedRequestBody = (proxyReq, req) => {
@@ -290,18 +417,37 @@ export const registerOpenCodeProxy = (app, deps) => {
 
       scheduleHeartbeat();
 
+      // Upstream bytes are re-framed per SSE block so `message.updated` /
+      // `session.updated` diff bodies (tens of MB each) never reach clients;
+      // the boundary tracker observes what was actually written so heartbeats
+      // still only land between complete blocks.
+      const diffStripper = createSseDiffStripper();
+      let upstreamDone = false;
       reader = upstream.body.getReader();
       while (!abortController.signal.aborted) {
         const { done, value } = await reader.read();
         if (done) {
+          upstreamDone = true;
           break;
         }
         if (value && value.length > 0) {
-          sseBoundary.observe(value);
-          const canContinue = await enqueueSseWrite(value);
+          const forwarded = diffStripper.push(value);
+          if (forwarded.length === 0) {
+            continue;
+          }
+          sseBoundary.observe(forwarded);
+          const canContinue = await enqueueSseWrite(forwarded);
           if (!canContinue) {
             break;
           }
+        }
+      }
+
+      if (upstreamDone && !abortController.signal.aborted) {
+        const tail = diffStripper.flush();
+        if (tail.length > 0) {
+          sseBoundary.observe(tail);
+          await enqueueSseWrite(tail);
         }
       }
 

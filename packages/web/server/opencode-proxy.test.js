@@ -2091,7 +2091,7 @@ describe('OpenCode tree-scoped revert, redo and change summary', () => {
     await fs.access(journalPath);
   });
 
-  it('summarizes tree changes since the first user message without writing', async () => {
+  it('does not attribute legacy worktree-wide summaries to a session', async () => {
     await setupRepo({ 'a.txt': 'base\n', 'c.txt': 'gone\n' });
     await writeRepoFile('a.txt', 'base\nroot-line\nchild-line\n');
     await writeRepoFile('b.txt', 'new\nfile\nhere\n');
@@ -2123,21 +2123,10 @@ describe('OpenCode tree-scoped revert, redo and change summary', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload).toEqual({
-      files: [
-        { path: 'a.txt', status: 'modified', additions: 2, deletions: 0, sessions: ['root', 'child'] },
-        { path: 'b.txt', status: 'added', additions: 3, deletions: 0, sessions: ['root'] },
-        { path: 'c.txt', status: 'deleted', additions: 0, deletions: 1, sessions: ['child'] },
-      ],
-      sessionCount: 2,
-      sessions: [
-        { id: 'root', targetMessageID: 'msg-1' },
-        { id: 'child', targetMessageID: 'msg-c' },
-      ],
-      hasUnattributedMutations: true,
-      firstUserMessageID: 'msg-1',
-      rootSessionID: 'root',
-    });
+    expect(payload).toEqual(expect.objectContaining({
+      files: [], coverage: 'partial', reasons: ['historical_capture_unavailable'],
+      rootSessionID: 'root', hasUnattributedMutations: false,
+    }));
     expect(stub.calls.revert).toEqual([]);
     expect(await readRepoFile('a.txt')).toBe('base\nroot-line\nchild-line\n');
     await expect(fs.access(resolveRevertJournalPath({ openchamberDataDir: dataDir, directory: repoDirectory, rootSessionID: 'root' })))
@@ -2164,7 +2153,8 @@ describe('OpenCode tree-scoped revert, redo and change summary', () => {
     const payload = await (await fetch(urls.changesUrl('root'))).json();
 
     expect(payload.hasUnattributedMutations).toBe(false);
-    expect(payload.files).toEqual([{ path: 'a.txt', status: 'modified', additions: 1, deletions: 0, sessions: ['root'] }]);
+    expect(payload.files).toEqual([]);
+    expect(payload.coverage).toBe('partial');
   });
 
   it("keeps single-session behaviour with scope 'session'", async () => {

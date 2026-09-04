@@ -247,6 +247,111 @@ const directoryCovers = (key, directory) => (
   key === directory || directory.startsWith(key.endsWith(path.sep) ? key : `${key}${path.sep}`)
 );
 
+const resolvePluginDirectory = (pluginInput) => {
+  if (typeof pluginInput?.directory === 'string' && pluginInput.directory) return pluginInput.directory;
+  if (typeof pluginInput?.worktree === 'string' && pluginInput.worktree) return pluginInput.worktree;
+  return process.cwd();
+};
+
+// Path guard: absolute tool paths are validated before OpenCode's own
+// `external_directory` permission check, so a degenerate path (a model
+// repetition loop) or a path under a directory that does not exist fails the
+// call with DEVRYAN_TOOL_INPUT_INVALID instead of asking the user to approve a
+// directory that is not there. Relative paths, non-strings, anything inside the
+// project (OpenCode reports missing files itself) and existing external
+// directories are left alone, so OpenCode's prompt still fires for real paths.
+const READ_PATH_ARGS = ['path', 'filePath', 'file_path', 'file'];
+const WRITE_PATH_ARGS = ['filePath', 'path'];
+const PATH_TOOL_ARGS = new Map([
+  ['read', READ_PATH_ARGS],
+  ['oc_read', READ_PATH_ARGS],
+  ['edit', WRITE_PATH_ARGS],
+  ['multiedit', WRITE_PATH_ARGS],
+  ['patch', WRITE_PATH_ARGS],
+  ['write', WRITE_PATH_ARGS],
+  ['grep', ['path']],
+  ['glob', ['path']],
+  ['list', ['path']],
+  ['bash', ['cwd', 'workdir']],
+  ['shell', ['cwd', 'workdir']],
+]);
+// Tools that create their target: the parent directory must exist, the target need not.
+const PARENT_EXISTS_TOOLS = new Set(['edit', 'multiedit', 'patch', 'write']);
+const PATH_MAX_LENGTH = 512;
+const PATH_MAX_SEGMENTS = 40;
+const PATH_SEGMENT_MAX_BYTES = 255; // NAME_MAX on macOS and Linux
+const PATH_MAX_SEGMENT_REPEATS = 4;
+const PATH_EXISTENCE_MAX_STEPS = 64;
+const PATH_GUARD_HINT = 'Use an existing absolute path inside the project or list the parent first.';
+const PATH_SEGMENT_SEPARATOR = path.sep === '\\' ? /[\\/]/ : '/';
+
+const describePathDegeneration = (value) => {
+  if (value.length > PATH_MAX_LENGTH) {
+    return `is ${value.length} characters long (limit ${PATH_MAX_LENGTH})`;
+  }
+  const segments = value.split(PATH_SEGMENT_SEPARATOR).filter(Boolean);
+  if (segments.length > PATH_MAX_SEGMENTS) {
+    return `has ${segments.length} path segments (limit ${PATH_MAX_SEGMENTS})`;
+  }
+  const counts = new Map();
+  for (const segment of segments) {
+    const bytes = Buffer.byteLength(segment, 'utf8');
+    if (bytes > PATH_SEGMENT_MAX_BYTES) {
+      return `contains a ${bytes}-byte segment (file names are limited to ${PATH_SEGMENT_MAX_BYTES} bytes)`;
+    }
+    const count = (counts.get(segment) ?? 0) + 1;
+    counts.set(segment, count);
+    if (count >= PATH_MAX_SEGMENT_REPEATS) {
+      return `repeats the segment "${segment}" ${count} times`;
+    }
+  }
+  const doubleSlash = value.indexOf('//');
+  if (doubleSlash !== -1) {
+    const prefix = value.slice(0, doubleSlash) || path.parse(value).root;
+    if (!fs.existsSync(prefix)) return `contains "//" after the non-existent prefix ${prefix}`;
+  }
+  return null;
+};
+
+const findDeepestExistingAncestor = (start) => {
+  let current = start;
+  for (let step = 0; step < PATH_EXISTENCE_MAX_STEPS; step += 1) {
+    if (fs.existsSync(current)) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return current;
+    current = parent;
+  }
+  return null;
+};
+
+const validateToolPathInput = (tool, args, { directory } = {}) => {
+  const keys = PATH_TOOL_ARGS.get(tool);
+  if (!keys || !isRecord(args)) return;
+  const projectRoot = normalizeDirectory(directory);
+  for (const key of keys) {
+    const raw = args[key];
+    if (typeof raw !== 'string') continue;
+    const value = raw.trim();
+    if (!value || !path.isAbsolute(value)) continue;
+    const resolved = path.resolve(value);
+    // A path that exists on disk is never garbage, whatever its shape.
+    const targetExists = fs.existsSync(resolved);
+    const degeneration = targetExists ? null : describePathDegeneration(value);
+    if (degeneration) {
+      throw inputError(`${tool}.${key} ${degeneration}; this is not a real path. ${PATH_GUARD_HINT}`);
+    }
+    if (targetExists) continue;
+    if (projectRoot && directoryCovers(projectRoot, resolved)) continue;
+    const parent = path.dirname(resolved);
+    const parentExists = fs.existsSync(parent);
+    if (parentExists && PARENT_EXISTS_TOOLS.has(tool)) continue;
+    const ancestor = (parentExists ? parent : findDeepestExistingAncestor(parent)) ?? path.parse(resolved).root;
+    throw inputError(
+      `${tool}.${key} points to a ${parentExists ? 'path' : 'directory'} that does not exist; deepest existing ancestor is ${ancestor}. ${PATH_GUARD_HINT}`,
+    );
+  }
+};
+
 const isHeavyCheckCommand = (command) => {
   if (typeof command !== 'string') return false;
   const text = command.replace(/\s+/g, ' ').trim();
@@ -434,9 +539,7 @@ const createShellPolicies = (pluginInput = {}, testOptions = {}) => {
   const dataDir = typeof testOptions.dataDir === 'string' && testOptions.dataDir
     ? path.resolve(testOptions.dataDir)
     : resolveDataDir(testOptions.env);
-  const directory = typeof pluginInput?.directory === 'string' && pluginInput.directory
-    ? pluginInput.directory
-    : (typeof pluginInput?.worktree === 'string' && pluginInput.worktree ? pluginInput.worktree : process.cwd());
+  const directory = resolvePluginDirectory(pluginInput);
   const tracking = createTrackingReader({
     dataDir,
     refreshMs: testOptions.trackingRefreshMs,
@@ -482,10 +585,12 @@ const createShellPolicies = (pluginInput = {}, testOptions = {}) => {
 };
 
 export const DevRyanToolInputGuardPlugin = async (pluginInput = {}, testOptions = {}) => {
+  const directory = resolvePluginDirectory(pluginInput);
   const shellPolicies = createShellPolicies(pluginInput, testOptions);
 
   return {
     'tool.execute.before': async (input, output) => {
+      validateToolPathInput(input?.tool, output?.args, { directory });
       if (READ_TOOLS.has(input?.tool)) {
         validateReadInput(output?.args);
         return;
@@ -529,6 +634,8 @@ export const __test = Object.assign(() => ({}), {
   isKnownBinaryReadPath,
   looksLikeBinaryReadOutput,
   renderBlockedBinaryRead,
+  validateToolPathInput,
+  resolvePluginDirectory,
   isHeavyCheckCommand,
   prefixSessionMarker,
   createHeavyCheckSlots,

@@ -14,6 +14,7 @@ import {
   createTurnEvidenceRuntime,
   type CommandDeadlineController,
   type PrimaryRecoveryHost,
+  type SessionChangeHost,
   type CommandDeadlineRecord,
   type DiagnosticJournal,
   type DiagnosticSanitizer,
@@ -89,6 +90,8 @@ export interface VsCodeHarnessRuntime {
   setCommandDeadlineRuntime(runtime: CommandDeadlineController): void;
   setPrimaryRecoveryRuntime(runtime: PrimaryRecoveryHost): void;
   getPrimaryRecoveryRuntime(): PrimaryRecoveryHost | null;
+  setSessionChangeHost(host: SessionChangeHost): void;
+  getSessionChangeHost(): SessionChangeHost | null;
   observeCommandDeadlineEvent(payload: unknown, directory?: string | null): Promise<boolean>;
   reconcileCommandDeadlines(): Promise<void>;
   beginDrain(): void;
@@ -257,6 +260,7 @@ export const createVsCodeHarnessRuntime = (
   let getContextModeRecoveryStatus: () => ContextModeRecoveryStatus | null = () => null;
   let commandDeadlineRuntime: CommandDeadlineController | null = null;
   let primaryRecoveryRuntime: PrimaryRecoveryHost | null = null;
+  let sessionChangeHost: SessionChangeHost | null = null;
   let initialization: Promise<void> | null = null;
 
   const record = (entry: Record<string, unknown>): boolean => journal.enqueue({
@@ -314,6 +318,8 @@ export const createVsCodeHarnessRuntime = (
     },
     setPrimaryRecoveryRuntime(nextRuntime) { primaryRecoveryRuntime = nextRuntime; },
     getPrimaryRecoveryRuntime() { return primaryRecoveryRuntime; },
+    setSessionChangeHost(host) { sessionChangeHost = host; },
+    getSessionChangeHost() { return sessionChangeHost; },
     observeCommandDeadlineEvent(payload, directory = null) {
       return commandDeadlineRuntime?.observe(payload, directory) ?? Promise.resolve(false);
     },
@@ -351,6 +357,7 @@ export const createVsCodeHarnessRuntime = (
     recordOpenCodeEvent(value, directory = null) {
       const normalized = getEventPayload(value);
       primaryRecoveryRuntime?.observe(normalized.payload);
+      void sessionChangeHost?.observe(normalized.payload, normalized.directory || directory).catch(() => record({ type: 'log', event: 'session_changes_observation_failed' }));
       const resolvedDirectory = normalized.directory || directory;
       record({
         type: 'open_code_event',
@@ -425,6 +432,7 @@ export const createVsCodeHarnessRuntime = (
         evidenceRuntime.drain(),
         commandDeadlineRuntime?.drain(),
         primaryRecoveryRuntime?.drain(),
+        sessionChangeHost?.drain(),
         worktreeStore.drain(),
         commandDeadlineStore.drain(),
         evidenceStore.drain(),

@@ -175,6 +175,17 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.showReasoningTraces === 'boolean') {
       result.showReasoningTraces = candidate.showReasoningTraces;
     }
+    if (candidate.opencodeDbMaintenance && typeof candidate.opencodeDbMaintenance === 'object' && !Array.isArray(candidate.opencodeDbMaintenance)) {
+      // Pre-launch OpenCode database maintenance (see lib/opencode/db-maintenance.js).
+      const source = candidate.opencodeDbMaintenance;
+      const maintenance = {};
+      if (typeof source.enabled === 'boolean') maintenance.enabled = source.enabled;
+      if (typeof source.idleHours === 'number' && Number.isFinite(source.idleHours)) maintenance.idleHours = source.idleHours;
+      if (typeof source.keepSeqPerAggregate === 'number' && Number.isFinite(source.keepSeqPerAggregate)) {
+        maintenance.keepSeqPerAggregate = source.keepSeqPerAggregate;
+      }
+      if (Object.keys(maintenance).length > 0) result.opencodeDbMaintenance = maintenance;
+    }
     if (typeof candidate.showTextJustificationActivity === 'boolean') {
       result.showTextJustificationActivity = candidate.showTextJustificationActivity;
     }

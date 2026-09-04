@@ -51,3 +51,7 @@ Zustand store layer for persisted and session-local client state: UI preferences
 - Works alongside `src/sync/*`: sync owns ordinary high-frequency OpenCode message/session data; managed-task and Production Bot stores remain separate projections with their own event owners.
 - Consumed throughout `components/*` and `hooks/*`.
 - Depends on `lib/*` for transport and persistence side effects (e.g., config reload, desktop settings writes, git/project operations).
+
+## Session change cache
+
+`useSessionTreeChangesStore.ts` keys summaries by runtime URL, principal, directory and root session. It checks response identity, cancels obsolete generations, retains rich fields during refresh, and bounds entries by count and bytes. Repository polling cannot replace captured revisions; explicit capture notifications and session lifecycle edges refresh them. Auth changes, deletion and directory disposal invalidate caches.

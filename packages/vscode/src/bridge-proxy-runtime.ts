@@ -308,6 +308,13 @@ export async function handleProxyBridgeMessage(
         }
       }
       recordSessionControl(normalizedMethod, normalizedPath, decodedBody);
+      const changesResult = await getVsCodeHarnessRuntime()?.getSessionChangeHost?.()?.handleRequest(
+        normalizedMethod, normalizedPath, decodedBody,
+      );
+      if (changesResult) return { id, type, success: true, data: {
+        status: changesResult.status, headers: { 'content-type': 'application/json' },
+        bodyBase64: deps.base64EncodeUtf8(JSON.stringify(changesResult.body)),
+      } };
       const recoveryResult = await getVsCodeHarnessRuntime()?.getPrimaryRecoveryRuntime?.()?.handleRequest(
         normalizedMethod, normalizedPath, decodedBody,
       );

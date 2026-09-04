@@ -4,6 +4,9 @@
 VS Code extension runtime: hosts DevRyan inside VS Code (sidebar + editor panels), manages OpenCode lifecycle/connectivity, and bridges webview requests to VS Code/OS capabilities.
 
 ## Design
+
+- **Session change parity**: `extension.ts` composes the shared harness session-change host; `harnessRuntime.ts` observes canonical terminal/deletion events and drains it. `bridge-proxy-runtime.ts` serves the same summary/diff/Undo/Redo contract as web/Electron. Managed plugins use the existing private bridge; storage lives under extension global storage.
+
 - **Extension-host + webview split**:
   - `src/extension.ts`: activation, command registration, provider wiring.
   - `src/ChatViewProvider.ts`, `AgentManagerPanelProvider.ts`, `SessionEditorPanelProvider.ts`: UI container controllers.

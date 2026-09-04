@@ -61,3 +61,7 @@ SSE/polling events enter reducers, then produce store patches consumed by chat/s
 ## Integration
 Bridges lib/opencode streams with Zustand stores and session/chat components.
 - Primary host recovery: `event-pipeline.ts` consumes versioned per-session projections before ordinary event reduction. `provider-stall-recovery.ts` yields to an enforcing host; reconnect refreshes the narrow recovery projection. The host remains the admission and cancellation authority.
+
+## Session change lifecycle
+
+`event-pipeline.ts` routes `session.changes.updated` directly to the narrow session-change refresh channel without adding high-frequency shared state. `sync-context.tsx` clears summaries on permanent session deletion and directory disposal. The summary store fences late responses independently of event timing.

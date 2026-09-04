@@ -69,3 +69,25 @@ export const stripSessionDiffContent = (session) => {
   if (summary === session.summary) return session;
   return { ...session, summary };
 };
+
+/**
+ * Live-stream variant: trims the diff bodies carried by an OpenCode SSE event
+ * payload (`{ type, properties }`). `message.updated` wraps the message as
+ * `properties.info`, `session.updated` wraps the session the same way; every
+ * other event type is returned untouched. Returns the same reference when
+ * nothing was stripped so hub replay and fan-out can skip re-serialisation.
+ */
+export const stripEventDiffContent = (payload) => {
+  if (!isRecord(payload) || !isRecord(payload.properties)) return payload;
+  if (payload.type === 'message.updated') {
+    const properties = stripMessageDiffContent(payload.properties);
+    return properties === payload.properties ? payload : { ...payload, properties };
+  }
+  if (payload.type === 'session.updated') {
+    const info = stripSessionDiffContent(payload.properties.info);
+    return info === payload.properties.info
+      ? payload
+      : { ...payload, properties: { ...payload.properties, info } };
+  }
+  return payload;
+};

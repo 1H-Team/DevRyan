@@ -35,6 +35,7 @@ import {
 import { useRetryVisibility } from './lib/turns/retryVisibility';
 import { ManagedTaskCompactionContinuity } from './ManagedTaskCompactionContinuity';
 import { getLatestCompactionBoundaryAt } from './managedTaskCompactionProjection';
+import { SessionChangesCard } from './SessionChangesCard';
 
 // New sync system imports
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -257,6 +258,11 @@ const ChatViewport = React.memo(({
                         <ManagedTaskCompactionContinuity
                             rootSessionId={currentSessionId}
                             compactionBoundaryAt={compactionBoundaryAt}
+                            isMobile={isMobile}
+                            onContentChange={handleMessageContentChange}
+                        />
+
+                        <SessionChangesCard
                             isMobile={isMobile}
                             onContentChange={handleMessageContentChange}
                         />

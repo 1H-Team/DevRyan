@@ -11,8 +11,13 @@ const { afterEach, describe, expect, test } = process.env.VITEST
   ? await import('vitest')
   : await import('bun:test');
 
+// The fixtures below use /tmp/project/... paths that do not exist on disk; treat
+// /tmp as the project root so the path guard's outside-project existence walk
+// (covered by its own describe block) leaves them alone.
+const LEGACY_FIXTURE_ROOT = '/tmp';
+
 const beforeTool = async (tool, args) => {
-  const hooks = await DevRyanToolInputGuardPlugin();
+  const hooks = await DevRyanToolInputGuardPlugin({ directory: LEGACY_FIXTURE_ROOT });
   return hooks['tool.execute.before'](
     { tool, sessionID: 'session-1', callID: 'call-1' },
     { args },
@@ -478,5 +483,175 @@ describe('DevRyan tool input guard shell policies', () => {
     expect(__test.resolveDataDir({ OPENCHAMBER_DATA_DIR: '/tmp/a', CONTEXT_MODE_DATA_DIR: '/tmp/b' })).toBe(path.resolve('/tmp/a'));
     expect(__test.resolveDataDir({ CONTEXT_MODE_DATA_DIR: '/tmp/b' })).toBe(path.resolve('/tmp/b'));
     expect(__test.resolveDataDir({})).toBe(path.join(os.homedir(), '.config', 'openchamber'));
+  });
+});
+
+// Verbatim from the run-2 harness journal: a designer child on the backup model
+// emitted this as a grep argument (a repetition loop), and OpenCode then asked
+// the user for external_directory permission on a directory that does not exist.
+const JOURNAL_GARBAGE_PATH = '/Users/z/zoubair/.0/Repositories//onehealth-.0/onehealth49008.0nehealth17088.0connector9796.0nehealth26962.0nehealth-30915.0nehealth25823.0nehealth40482.0nehealth45058.0nehealth-connector35875.0nehealth38343.0nehealth42516.0nehealth47618.0nehealth-connector41673.0nehealth-connector44495.0nehealth-connector43533.0nehealth-connector38163.0nehealth-connector35062.0nehealth-49462.0nehealth46374.0nehealth44039.0nehealth-connector49115.0nehealth-connector36137.0nehealth39789.0nehealth37786.0nehealth41355.0nehealth43546.0nehealth42157.0nehealth42020.0nehealth38810.0nehealth40912.0nehealth44828.0nehealth46389.0nehealth42294.0nehealth43630.0nehealth49227.0nehealth-connector/apps/web/src/pages/dashboard/Practice/Services.tsx';
+
+describe('DevRyan tool path guard', () => {
+  // root/            existing external directory (outside the project)
+  //   project/src/   the plugin's project directory
+  //   external/      an existing external directory
+  const createProject = () => {
+    const root = createDataDir();
+    const project = path.join(root, 'project');
+    const external = path.join(root, 'external');
+    fs.mkdirSync(path.join(project, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(project, 'src', 'index.ts'), 'export {};\n');
+    fs.mkdirSync(external, { recursive: true });
+    return { root, project, external };
+  };
+
+  const guardFor = (directory) => async (tool, args) => {
+    const hooks = await DevRyanToolInputGuardPlugin({ directory });
+    const output = { args };
+    await hooks['tool.execute.before']({ tool, sessionID: 'session-1', callID: 'call-1' }, output);
+    return output.args;
+  };
+
+  const invalid = (fragment) => ({
+    code: 'DEVRYAN_TOOL_INPUT_INVALID',
+    message: expect.stringContaining(fragment),
+  });
+
+  test.each(['grep', 'read'])('rejects the journal repetition-loop path for %s before any permission prompt', async (tool) => {
+    const { project } = createProject();
+    const before = guardFor(project);
+    expect(JOURNAL_GARBAGE_PATH.length).toBeGreaterThan(512);
+    await expect(before(tool, { path: JOURNAL_GARBAGE_PATH })).rejects.toMatchObject(
+      invalid(`${tool}.path is ${JOURNAL_GARBAGE_PATH.length} characters long (limit 512)`),
+    );
+    await expect(before(tool, { path: JOURNAL_GARBAGE_PATH })).rejects.toMatchObject({
+      message: expect.stringMatching(/^DEVRYAN_TOOL_INPUT_INVALID: Invalid input: /),
+    });
+    expect(() => __test.validateToolPathInput(tool, { path: JOURNAL_GARBAGE_PATH }, { directory: project }))
+      .toThrow(expect.objectContaining({ code: 'DEVRYAN_TOOL_INPUT_INVALID' }));
+  });
+
+  test('rejects a segment longer than NAME_MAX and a path with too many segments', async () => {
+    const { project } = createProject();
+    const before = guardFor(project);
+    const longSegment = `${'a'.repeat(300)}.ts`;
+    await expect(before('read', { path: path.join(project, longSegment) })).rejects.toMatchObject(
+      invalid('read.path contains a 303-byte segment (file names are limited to 255 bytes)'),
+    );
+    const deep = Array.from({ length: 45 }, (_, index) => `s${index}`).join('/');
+    await expect(before('glob', { path: path.join(project, deep) })).rejects.toMatchObject(
+      invalid('path segments (limit 40)'),
+    );
+  });
+
+  test('rejects a segment repeated four times unless the path really exists', async () => {
+    const { root, project } = createProject();
+    const before = guardFor(project);
+    const repeated = path.join(root, 'r', 'r', 'r', 'r', 'file.ts');
+    await expect(before('read', { path: repeated })).rejects.toMatchObject(
+      invalid('read.path repeats the segment "r" 4 times'),
+    );
+    fs.mkdirSync(path.dirname(repeated), { recursive: true });
+    fs.writeFileSync(repeated, 'real\n');
+    await expect(before('read', { path: repeated })).resolves.toEqual({ path: repeated });
+  });
+
+  test('rejects "//" after a non-existent prefix and tolerates it after an existing one', async () => {
+    const { root, project } = createProject();
+    const before = guardFor(project);
+    await expect(before('grep', { path: `${root}/nope//src` })).rejects.toMatchObject(
+      invalid(`grep.path contains "//" after the non-existent prefix ${root}/nope`),
+    );
+    await expect(before('read', { path: `${project}//src/index.ts` })).resolves.toEqual({ path: `${project}//src/index.ts` });
+    await expect(before('read', { path: `${project}//src/missing.ts` })).resolves.toBeDefined();
+  });
+
+  test('rejects an outside path whose deepest existing ancestor is three levels up', async () => {
+    const { root, project } = createProject();
+    const before = guardFor(project);
+    const target = path.join(root, 'outside', 'a', 'b', 'c.ts');
+    await expect(before('read', { path: target })).rejects.toMatchObject(
+      invalid(`read.path points to a directory that does not exist; deepest existing ancestor is ${root}. Use an existing absolute path inside the project or list the parent first.`),
+    );
+    await expect(before('write', { filePath: target, content: '' })).rejects.toMatchObject(
+      invalid(`write.filePath points to a directory that does not exist; deepest existing ancestor is ${root}`),
+    );
+    await expect(before('list', { path: path.dirname(target) })).rejects.toMatchObject(invalid('list.path points to a directory that does not exist'));
+  });
+
+  test('allows existing external directories so OpenCode can still ask its own external_directory question', async () => {
+    const { root, project, external } = createProject();
+    const before = guardFor(project);
+    await expect(before('grep', { path: external, pattern: 'x' })).resolves.toEqual({ path: external, pattern: 'x' });
+    await expect(before('glob', { path: root, pattern: '**/*.ts' })).resolves.toBeDefined();
+    await expect(before('list', { path: os.homedir() })).resolves.toBeDefined();
+    await expect(before('read', { path: path.join(project, 'src', 'index.ts') })).resolves.toBeDefined();
+  });
+
+  test('allows a new file inside the project and a write whose external parent exists', async () => {
+    const { project, external } = createProject();
+    const before = guardFor(project);
+    await expect(before('write', { filePath: path.join(project, 'new', 'deep', 'file.ts'), content: '' })).resolves.toBeDefined();
+    await expect(before('read', { path: path.join(project, 'src', 'missing.ts') })).resolves.toBeDefined();
+    await expect(before('write', { filePath: path.join(external, 'new.ts'), content: '' })).resolves.toBeDefined();
+    await expect(before('edit', { filePath: path.join(external, 'new.ts'), oldString: 'a', newString: 'b' })).resolves.toBeDefined();
+    await expect(before('edit', { filePath: path.join(external, 'nested', 'new.ts') })).rejects.toMatchObject(
+      invalid(`edit.filePath points to a directory that does not exist; deepest existing ancestor is ${external}`),
+    );
+  });
+
+  test('rejects a read of a missing file in an existing external directory', async () => {
+    const { project, external } = createProject();
+    const before = guardFor(project);
+    await expect(before('read', { path: path.join(external, 'missing.ts') })).rejects.toMatchObject(
+      invalid(`read.path points to a path that does not exist; deepest existing ancestor is ${external}`),
+    );
+    await expect(before('oc_read', { filePath: path.join(external, 'missing.ts') })).rejects.toMatchObject(
+      invalid('oc_read.filePath points to a path that does not exist'),
+    );
+  });
+
+  test('leaves relative paths, non-strings and non-path tools untouched', async () => {
+    const { project } = createProject();
+    const before = guardFor(project);
+    await expect(before('read', { path: 'src/missing.ts' })).resolves.toEqual({ path: 'src/missing.ts' });
+    await expect(before('grep', { path: '../../nowhere', pattern: 'x' })).resolves.toBeDefined();
+    await expect(before('grep', { path: ['/nowhere/a', '/nowhere/b'], pattern: 'x' })).resolves.toBeDefined();
+    await expect(before('custom_tool', { path: '/nowhere/at/all' })).resolves.toEqual({ path: '/nowhere/at/all' });
+    expect(__test.validateToolPathInput('read', { path: 'relative/file.ts' }, {})).toBeUndefined();
+    expect(__test.validateToolPathInput('read', undefined, { directory: project })).toBeUndefined();
+  });
+
+  test('validates bash and shell cwd/workdir only when present', async () => {
+    const { root, project, external } = createProject();
+    const before = guardFor(project);
+    await expect(before('bash', { command: 'pwd' })).resolves.toMatchObject({ command: 'pwd', timeout: DEFAULT_SHELL_TIMEOUT_MS });
+    await expect(before('bash', { command: 'pwd', cwd: external })).resolves.toMatchObject({ cwd: external, timeout: DEFAULT_SHELL_TIMEOUT_MS });
+    await expect(before('bash', { command: 'pwd', cwd: path.join(root, 'missing') })).rejects.toMatchObject(
+      invalid(`bash.cwd points to a path that does not exist; deepest existing ancestor is ${root}`),
+    );
+    await expect(before('shell', { command: 'pwd', workdir: path.join(root, 'missing', 'deeper') })).rejects.toMatchObject(
+      invalid('shell.workdir points to a directory that does not exist'),
+    );
+  });
+
+  test('runs before the binary-path and grep-target checks', async () => {
+    const { root, project } = createProject();
+    const before = guardFor(project);
+    await expect(before('read', { path: path.join(root, 'nowhere', 'image.png') })).rejects.toMatchObject(
+      invalid('read.path points to a directory that does not exist'),
+    );
+    await expect(before('read', { path: path.join(project, 'image.png') })).rejects.toMatchObject(
+      invalid('read cannot load binary files'),
+    );
+    await expect(before('grep', { path: `${project}/src ${project}/pages`, pattern: 'x' })).rejects.toMatchObject(
+      invalid('grep.path accepts exactly one path'),
+    );
+  });
+
+  test('resolves the project directory from directory, then worktree, then cwd', () => {
+    expect(__test.resolvePluginDirectory({ directory: '/tmp/a', worktree: '/tmp/b' })).toBe('/tmp/a');
+    expect(__test.resolvePluginDirectory({ worktree: '/tmp/b' })).toBe('/tmp/b');
+    expect(__test.resolvePluginDirectory({})).toBe(process.cwd());
   });
 });

@@ -41,6 +41,12 @@ export type ManagedTaskDispatchFallback = {
 
 export type ManagedTaskTurnProjection = {
   ownerMessageId: string;
+  /**
+   * Scheduler wave label shared by every task in this card, or null when the
+   * card holds unlabeled work (old ledgers, builder dispatches, a store that
+   * has not loaded yet) or only provisional starts.
+   */
+  waveId: string | null;
   taskIds: string[];
   pendingDispatches: PendingManagedTaskDispatch[];
   fallbackTasks: ManagedTaskDispatchFallback[];
@@ -49,6 +55,37 @@ export type ManagedTaskTurnProjection = {
 export type ManagedTaskTurnMessage = {
   messageId: string;
   parts: readonly Part[];
+};
+
+export type ManagedTaskTurnProjectionOptions = {
+  /**
+   * Persisted `dispatchWaveId` of a task, read from the orchestration store.
+   * Return null/undefined when the task is unknown or unlabeled.
+   */
+  getTaskWaveId?: (taskId: string) => string | null | undefined;
+  /**
+   * True while any task of the wave is non-terminal or its result is still
+   * unacknowledged, which is exactly when the scheduler would label the next
+   * start with the same wave.
+   */
+  isWaveOpen?: (waveId: string) => boolean;
+};
+
+/**
+ * Group key for tasks the store cannot place in a wave. Every unlabeled task
+ * of one turn shares this key, so ledgers written before waves existed keep
+ * rendering one card per turn anchored at the first dispatching message.
+ */
+const UNLABELED_TURN_GROUP_KEY = 'turn';
+const messageGroupKey = (messageId: string) => `message:${messageId}`;
+const normalizeWaveId = (value: string | null | undefined): string | null => (
+  typeof value === 'string' && value.startsWith('dvr_wave_') ? value : null
+);
+
+const appendTo = <T>(map: Map<string, T[]>, key: string, value: T) => {
+  const existing = map.get(key);
+  if (existing) existing.push(value);
+  else map.set(key, [value]);
 };
 
 const MANAGED_TASK_STATUSES = new Set<ManagedTaskStatus>([
@@ -260,95 +297,147 @@ export const resolveManagedTaskDispatch = (parts: readonly Part[]) => {
   return { contentParts, taskIds, pendingDispatches };
 };
 
+/**
+ * One Agent Dispatch card per parallel wave.
+ *
+ * Every managed start in the turn is first pinned to the assistant message
+ * that issued it (a provisional start keeps its `callID`, so authoritative
+ * output arriving in a later message still counts for the original message).
+ * Starts are then grouped by the scheduler's `dispatchWaveId`: a card is owned
+ * by the first message that dispatched into its wave and collects every later
+ * start of that wave, however many assistant messages the fan-out spans.
+ * Provisional starts join the latest wave while it is open (the scheduler will
+ * label them with it), otherwise they stay at their own message. Tasks the
+ * store cannot label share one per-turn card at the first dispatching message,
+ * which is how ledgers written before waves existed keep rendering.
+ *
+ * Display only: nothing here decides whether or when a task launches.
+ */
 export const resolveManagedTaskTurnProjection = (
   messages: readonly ManagedTaskTurnMessage[],
+  options: ManagedTaskTurnProjectionOptions = {},
 ): ManagedTaskTurnProjection[] => {
-  const projectionsByMessageId = new Map<string, ManagedTaskTurnProjection>();
-  const projectionOrder: string[] = [];
-  const ownerMessageIdByTaskId = new Map<string, string>();
-  const ownerMessageIdByDispatchCallId = new Map<string, string>();
-  const seenTaskIds = new Set<string>();
+  const getTaskWaveId = options.getTaskWaveId ?? (() => null);
+  const isWaveOpen = options.isWaveOpen ?? (() => false);
+
+  // Pass 1: where each start was issued.
+  const messageOrder: string[] = [];
+  const seenMessageIds = new Set<string>();
+  const dispatchMessageIdByTaskId = new Map<string, string>();
+  const messageIdByDispatchCallId = new Map<string, string>();
+  const pendingDispatchesByMessageId = new Map<string, PendingManagedTaskDispatch[]>();
   const seenPendingPartIds = new Set<string>();
   const allParts: Part[] = [];
 
-  const ensureProjection = (messageId: string): ManagedTaskTurnProjection => {
-    const existing = projectionsByMessageId.get(messageId);
-    if (existing) return existing;
-    const projection: ManagedTaskTurnProjection = {
-      ownerMessageId: messageId,
-      taskIds: [],
-      pendingDispatches: [],
-      fallbackTasks: [],
-    };
-    projectionsByMessageId.set(messageId, projection);
-    projectionOrder.push(messageId);
-    return projection;
-  };
-
   for (const message of messages) {
+    if (!seenMessageIds.has(message.messageId)) {
+      seenMessageIds.add(message.messageId);
+      messageOrder.push(message.messageId);
+    }
     allParts.push(...message.parts);
     const dispatch = resolveManagedTaskDispatch(message.parts);
 
     for (const taskId of dispatch.taskIds) {
-      if (seenTaskIds.has(taskId)) continue;
-      seenTaskIds.add(taskId);
-      ownerMessageIdByTaskId.set(taskId, message.messageId);
-      ensureProjection(message.messageId).taskIds.push(taskId);
+      if (!dispatchMessageIdByTaskId.has(taskId)) {
+        dispatchMessageIdByTaskId.set(taskId, message.messageId);
+      }
     }
 
     for (const pendingDispatch of dispatch.pendingDispatches) {
       if (seenPendingPartIds.has(pendingDispatch.partId)) continue;
       seenPendingPartIds.add(pendingDispatch.partId);
-      if (pendingDispatch.dispatchCallId && !ownerMessageIdByDispatchCallId.has(pendingDispatch.dispatchCallId)) {
-        ownerMessageIdByDispatchCallId.set(pendingDispatch.dispatchCallId, message.messageId);
+      if (pendingDispatch.dispatchCallId && !messageIdByDispatchCallId.has(pendingDispatch.dispatchCallId)) {
+        messageIdByDispatchCallId.set(pendingDispatch.dispatchCallId, message.messageId);
       }
-      ensureProjection(message.messageId).pendingDispatches.push(pendingDispatch);
+      appendTo(pendingDispatchesByMessageId, message.messageId, pendingDispatch);
     }
   }
 
-  const allFallbackTasks = resolveManagedTaskFallbacks(allParts);
+  // Pass 2: authoritative output re-homes a task to the message of its
+  // provisional start (matched by dispatch call) and retires that provisional row.
+  const fallbackTaskByTaskId = new Map<string, ManagedTaskDispatchFallback>();
   const authoritativeDispatchCallIds = new Set<string>();
 
-  for (const fallbackTask of allFallbackTasks) {
-    const pendingOwnerMessageId = fallbackTask.dispatchCallId
-      ? ownerMessageIdByDispatchCallId.get(fallbackTask.dispatchCallId)
+  for (const fallbackTask of resolveManagedTaskFallbacks(allParts)) {
+    const provisionalMessageId = fallbackTask.dispatchCallId
+      ? messageIdByDispatchCallId.get(fallbackTask.dispatchCallId)
       : undefined;
-    const currentOwnerMessageId = ownerMessageIdByTaskId.get(fallbackTask.taskId);
-    const ownerMessageId = pendingOwnerMessageId ?? currentOwnerMessageId;
-    if (!ownerMessageId) continue;
+    const dispatchMessageId = provisionalMessageId ?? dispatchMessageIdByTaskId.get(fallbackTask.taskId);
+    if (!dispatchMessageId) continue;
 
-    if (fallbackTask.dispatchCallId && pendingOwnerMessageId) {
+    if (fallbackTask.dispatchCallId && provisionalMessageId) {
       authoritativeDispatchCallIds.add(fallbackTask.dispatchCallId);
     }
+    dispatchMessageIdByTaskId.set(fallbackTask.taskId, dispatchMessageId);
+    fallbackTaskByTaskId.set(fallbackTask.taskId, fallbackTask);
+  }
 
-    if (currentOwnerMessageId && currentOwnerMessageId !== ownerMessageId) {
-      const currentOwner = projectionsByMessageId.get(currentOwnerMessageId);
-      if (currentOwner) {
-        currentOwner.taskIds = currentOwner.taskIds.filter((taskId) => taskId !== fallbackTask.taskId);
+  const taskIdsByDispatchMessageId = new Map<string, string[]>();
+  for (const [taskId, messageId] of dispatchMessageIdByTaskId) {
+    appendTo(taskIdsByDispatchMessageId, messageId, taskId);
+  }
+
+  // Pass 3: group by wave. A group's owner is the first message that dispatched into it.
+  const projectionsByGroupKey = new Map<string, ManagedTaskTurnProjection>();
+  const ensureProjection = (groupKey: string, messageId: string, waveId: string | null) => {
+    const existing = projectionsByGroupKey.get(groupKey);
+    if (existing) return existing;
+    const projection: ManagedTaskTurnProjection = {
+      ownerMessageId: messageId,
+      waveId,
+      taskIds: [],
+      pendingDispatches: [],
+      fallbackTasks: [],
+    };
+    projectionsByGroupKey.set(groupKey, projection);
+    return projection;
+  };
+
+  let latestWaveId: string | null = null;
+  for (const messageId of messageOrder) {
+    for (const taskId of taskIdsByDispatchMessageId.get(messageId) ?? []) {
+      const waveId = normalizeWaveId(getTaskWaveId(taskId));
+      const projection = ensureProjection(waveId ?? UNLABELED_TURN_GROUP_KEY, messageId, waveId);
+      projection.taskIds.push(taskId);
+      const fallbackTask = fallbackTaskByTaskId.get(taskId);
+      if (fallbackTask) projection.fallbackTasks.push(fallbackTask);
+      if (waveId) latestWaveId = waveId;
+    }
+
+    for (const pendingDispatch of pendingDispatchesByMessageId.get(messageId) ?? []) {
+      if (pendingDispatch.dispatchCallId && authoritativeDispatchCallIds.has(pendingDispatch.dispatchCallId)) {
+        continue;
       }
+      // No wave seen yet: the start belongs with the turn's unlabeled work. A
+      // still-open wave will label this start too, so it joins that card; after
+      // the wave closed the start will open a new wave at its own message.
+      const groupKey = latestWaveId === null
+        ? UNLABELED_TURN_GROUP_KEY
+        : isWaveOpen(latestWaveId)
+          ? latestWaveId
+          : messageGroupKey(messageId);
+      ensureProjection(groupKey, messageId, groupKey === latestWaveId ? latestWaveId : null)
+        .pendingDispatches
+        .push(pendingDispatch);
     }
-
-    const owner = ensureProjection(ownerMessageId);
-    if (!owner.taskIds.includes(fallbackTask.taskId)) {
-      owner.taskIds.push(fallbackTask.taskId);
-    }
-    ownerMessageIdByTaskId.set(fallbackTask.taskId, ownerMessageId);
-    owner.fallbackTasks.push(fallbackTask);
   }
 
-  for (const projection of projectionsByMessageId.values()) {
-    projection.pendingDispatches = projection.pendingDispatches.filter((dispatch) => (
-      !dispatch.dispatchCallId || !authoritativeDispatchCallIds.has(dispatch.dispatchCallId)
-    ));
-    projection.fallbackTasks = projection.fallbackTasks.filter((task) => (
-      ownerMessageIdByTaskId.get(task.taskId) === projection.ownerMessageId
-    ));
+  // Pass 4: one card per owner message. Groups were created in message order,
+  // so merging in insertion order keeps the cards chronological.
+  const projectionsByOwnerMessageId = new Map<string, ManagedTaskTurnProjection>();
+  for (const projection of projectionsByGroupKey.values()) {
+    const existing = projectionsByOwnerMessageId.get(projection.ownerMessageId);
+    if (!existing) {
+      projectionsByOwnerMessageId.set(projection.ownerMessageId, projection);
+      continue;
+    }
+    existing.waveId = existing.waveId ?? projection.waveId;
+    existing.taskIds.push(...projection.taskIds);
+    existing.pendingDispatches.push(...projection.pendingDispatches);
+    existing.fallbackTasks.push(...projection.fallbackTasks);
   }
 
-  return projectionOrder
-    .map((messageId) => projectionsByMessageId.get(messageId))
-    .filter((projection): projection is ManagedTaskTurnProjection => Boolean(
-      projection
-      && (projection.taskIds.length > 0 || projection.pendingDispatches.length > 0),
-    ));
+  return Array.from(projectionsByOwnerMessageId.values()).filter((projection) => (
+    projection.taskIds.length > 0 || projection.pendingDispatches.length > 0
+  ));
 };

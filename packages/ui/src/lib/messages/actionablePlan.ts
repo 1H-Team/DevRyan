@@ -190,8 +190,26 @@ const isPlanModeMetadata = (message: Message): boolean => {
 };
 
 /**
- * Returns true when the given user message was sent in plan mode. Reads from
- * three signals in priority order:
+ * What a user turn asks of the assistant, as far as plan handling goes:
+ *   - `implement`: the turn carries the plan-implementation request marker
+ *     (Implement Plan). Its assistants must render as ordinary work, never as a
+ *     plan source or a plan-revision epilogue.
+ *   - `plan`: the turn was sent in plan mode.
+ *   - `none`: neither.
+ */
+export type PlanTurnIntent = 'implement' | 'plan' | 'none';
+
+export const hasPlanImplementationRequestPart = (parts: readonly Part[] | undefined): boolean => (
+  (parts ?? []).some((part) => parsePlanImplementationRequestPart(part) !== null)
+);
+
+/**
+ * Single authority for a user turn's plan intent. The implementation marker is
+ * an explicit negative signal that wins over every plan-mode signal: an
+ * Implement Plan turn is posted while the session's last agent may still be
+ * `plan` (so OpenCode stamps `mode: 'plan'` on it) and the recorded flag or the
+ * synthetic preface can be stale, none of which makes it a planning turn.
+ * Otherwise the three plan-mode signals apply in priority order:
  *   1. `recordedPlanMode` — caller-supplied flag from `useSessionUIStore.planModeUserMessages`
  *      (locally persisted, the most reliable signal).
  *   2. Message metadata (`mode === 'plan'` or `metadata.openchamberPlanMode === true`)
@@ -199,16 +217,29 @@ const isPlanModeMetadata = (message: Message): boolean => {
  *      remote/migrated sessions).
  *   3. Synthetic plan-mode instruction part (the "User has requested to enter plan mode" prefix).
  */
+export const resolvePlanTurnIntent = (
+  message: Message | undefined,
+  parts: readonly Part[] | undefined,
+  recordedPlanMode: boolean,
+): PlanTurnIntent => {
+  if (!message || message.role !== 'user') return 'none';
+  if (hasPlanImplementationRequestPart(parts)) return 'implement';
+  if (recordedPlanMode) return 'plan';
+  if (isPlanModeMetadata(message)) return 'plan';
+  if ((parts ?? []).some(isPlanModeInstructionPart)) return 'plan';
+  return 'none';
+};
+
+/**
+ * Returns true when the given user message was sent in plan mode. Thin wrapper
+ * over `resolvePlanTurnIntent` so every caller inherits the implementation
+ * marker as a negative signal.
+ */
 export const isPlanModeUserMessage = (
   message: Message | undefined,
   parts: readonly Part[] | undefined,
   recordedPlanMode: boolean,
-): boolean => {
-  if (!message || message.role !== 'user') return false;
-  if (recordedPlanMode) return true;
-  if (isPlanModeMetadata(message)) return true;
-  return (parts ?? []).some(isPlanModeInstructionPart);
-};
+): boolean => resolvePlanTurnIntent(message, parts, recordedPlanMode) === 'plan';
 
 export const collectAssistantTextParts = (parts: readonly Part[]): string[] => {
   const textParts: string[] = [];

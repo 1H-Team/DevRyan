@@ -44,8 +44,18 @@ export type SendQueuedMessageToSession = (
   variant?: string,
   inputMode?: "normal",
   planMode?: boolean,
-  lifecycleCallbacks?: { messageID?: string; directory?: string },
+  lifecycleCallbacks?: QueuedSendLifecycleCallbacks,
 ) => Promise<void>
+
+export type QueuedSendLifecycleCallbacks = {
+  messageID?: string
+  directory?: string
+  /** Awaited by the send right before its prompt reaches the transport. */
+  awaitTransportGate?: () => Promise<void>
+}
+
+/** Starts the steered interrupt and returns the gate the first send awaits. */
+export type BeginQueuedSendInterrupt = (sessionId: string) => () => Promise<void>
 
 export type FlushQueuedMessagesOptions = {
   sessionId: string
@@ -60,11 +70,17 @@ export type FlushQueuedMessagesOptions = {
     sessionId: string
     agentName: string | null | undefined
   }) => Promise<boolean>
+  /**
+   * Transport gate for the first send only: it is inserted optimistically at
+   * once and posted when the gate settles. Later messages wait on the
+   * previous turn's idle instead.
+   */
+  firstSendTransportGate?: () => Promise<void>
 }
 
 export type SendQueuedMessagesNowOptions = FlushQueuedMessagesOptions & {
   interruptBeforeFlush: boolean
-  interruptCurrentOperation: (sessionId: string) => Promise<void>
+  beginInterrupt: BeginQueuedSendInterrupt
 }
 
 export type DispatchQueuedMessageOptions = {
@@ -192,16 +208,9 @@ export async function waitForQueuedTurnIdle(
     throw new Error("Timed out waiting for queued message turn to finish")
   }
 
-  const busyDeadline = Date.now() + 5_000
-
-  while (Date.now() < busyDeadline) {
-    const status = getSyncSessionStatusAnyDirectory(sessionId)
-    if (status && status.type !== "idle") {
-      break
-    }
-    await delay(100)
-  }
-
+  // No pre-wait for the session to turn busy: the optimistic send flips the
+  // status to busy before it resolves, so an idle status here means the turn
+  // already settled (or never started) and the next message may go out.
   const idleDeadline = Date.now() + 30 * 60_000
   while (Date.now() < idleDeadline) {
     const status = getSyncSessionStatusAnyDirectory(sessionId)
@@ -269,6 +278,10 @@ export async function flushQueuedMessagesForSession(options: FlushQueuedMessages
       const preparedMessage = options.prepareQueuedMessage(queuedMessage, sendConfig)
       const messageID = preparedMessage.messageID ?? queuedMessage.messageId
       const directory = preparedMessage.directory ?? queuedMessage.directory
+      const awaitTransportGate = nextMessageIndex === 0 ? options.firstSendTransportGate : undefined
+      const lifecycleCallbacks: QueuedSendLifecycleCallbacks | undefined = (messageID || directory || awaitTransportGate)
+        ? { messageID, directory, ...(awaitTransportGate ? { awaitTransportGate } : {}) }
+        : undefined
 
       await sendMessageToSession(
         options.sessionId,
@@ -282,9 +295,7 @@ export async function flushQueuedMessagesForSession(options: FlushQueuedMessages
         preparedMessage.variant,
         "normal",
         preparedMessage.planMode,
-        (messageID || directory)
-          ? { messageID, directory }
-          : undefined,
+        lifecycleCallbacks,
       )
 
       nextMessageIndex += 1
@@ -314,9 +325,13 @@ export async function flushQueuedMessagesForSession(options: FlushQueuedMessages
 export async function sendQueuedMessagesNowForSession(
   options: SendQueuedMessagesNowOptions,
 ): Promise<number> {
-  if (options.interruptBeforeFlush) {
-    await options.interruptCurrentOperation(options.sessionId)
-  }
+  // The interrupt starts now, but the flush does not wait for it: the first
+  // queued message is inserted optimistically at once and its POST awaits the
+  // (bounded) abort through the transport gate. A failed interrupt rejects
+  // the gate, the first send rolls back, and the flush restores the queue.
+  const firstSendTransportGate = options.interruptBeforeFlush
+    ? options.beginInterrupt(options.sessionId)
+    : undefined
 
-  return flushQueuedMessagesForSession(options)
+  return flushQueuedMessagesForSession({ ...options, firstSendTransportGate })
 }

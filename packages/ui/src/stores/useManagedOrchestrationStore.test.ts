@@ -687,9 +687,89 @@ describe('managed orchestration store', () => {
 
     const stored = store.getState().tasksById.dvr_task_1 as unknown as Record<string, unknown>;
     expect(stored.dispatchGrouped).toBe(false);
+    expect(stored.dispatchWaveId).toBeNull();
     expect('prompt' in stored).toBe(false);
     expect('leaseToken' in stored).toBe(false);
     expect('unknownLargeField' in stored).toBe(false);
+  });
+
+  test('indexes dispatch waves, keeps a wave open until every result is acknowledged, and stays identity-stable', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const selector = managedOrchestrationSelectors.dispatchWaveIndex;
+    const empty = selector(store.getState());
+    expect(empty.waveIdByTaskId.size).toBe(0);
+    expect(empty.openWaveIds.size).toBe(0);
+
+    store.getState().ingestEvent(taskEvent(projectedTask(1, 'running', { dispatchWaveId: 'dvr_wave_01' })));
+    store.getState().ingestEvent(taskEvent(projectedTask(2, 'running', { dispatchWaveId: 'dvr_wave_01' })));
+    store.getState().ingestEvent(taskEvent(projectedTask(3, 'queued')));
+    const running = selector(store.getState());
+    expect(Array.from(running.waveIdByTaskId)).toEqual([
+      ['dvr_task_1', 'dvr_wave_01'],
+      ['dvr_task_2', 'dvr_wave_01'],
+    ]);
+    expect(Array.from(running.openWaveIds)).toEqual(['dvr_wave_01']);
+    // Repeated reads and unrelated task updates reuse the same index object.
+    expect(selector(store.getState())).toBe(running);
+    store.getState().ingestEvent(taskEvent(projectedTask(3, 'starting')));
+    expect(selector(store.getState())).toBe(running);
+
+    // One task finishing does not close the wave while a sibling still runs or
+    // while its own result is unacknowledged.
+    const firstDone = taskRecord(1, 'completed', { childSessionId: 'ses_child_1' });
+    const firstEnvelope = createManagedTaskResultEnvelope(firstDone, { sequence: 1, createdAt: 4_001, resumable: false });
+    store.getState().ingestEvent(taskEvent(
+      { ...toManagedTaskEvent(firstDone, firstEnvelope).properties.task, dispatchWaveId: 'dvr_wave_01' },
+      firstEnvelope,
+    ));
+    const secondDone = taskRecord(2, 'completed', { childSessionId: 'ses_child_2' });
+    const secondEnvelope = createManagedTaskResultEnvelope(secondDone, { sequence: 2, createdAt: 4_002, resumable: false });
+    store.getState().ingestEvent(taskEvent(
+      { ...toManagedTaskEvent(secondDone, secondEnvelope).properties.task, dispatchWaveId: 'dvr_wave_01' },
+      secondEnvelope,
+    ));
+    expect(selector(store.getState())).toBe(running);
+    expect(selector(store.getState()).openWaveIds.has('dvr_wave_01')).toBe(true);
+
+    store.getState().ingestEvent(taskEvent(
+      { ...toManagedTaskEvent(firstDone, firstEnvelope).properties.task, dispatchWaveId: 'dvr_wave_01' },
+      { ...firstEnvelope, action: 'continue', acknowledgedAt: 5_001 },
+    ));
+    expect(selector(store.getState()).openWaveIds.has('dvr_wave_01')).toBe(true);
+    store.getState().ingestEvent(taskEvent(
+      { ...toManagedTaskEvent(secondDone, secondEnvelope).properties.task, dispatchWaveId: 'dvr_wave_01' },
+      { ...secondEnvelope, action: 'continue', acknowledgedAt: 5_002 },
+    ));
+    const closed = selector(store.getState());
+    expect(closed).not.toBe(running);
+    expect(closed.openWaveIds.size).toBe(0);
+    expect(closed.waveIdByTaskId.get('dvr_task_2')).toBe('dvr_wave_01');
+  });
+
+  test('keeps the display-only dispatch wave label and treats it as immutable', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const queued = projectedTask(1, 'queued', { dispatchWaveId: 'dvr_wave_01' });
+    store.getState().ingestEvent(taskEvent(queued));
+
+    expect(store.getState().tasksById.dvr_task_1?.dispatchWaveId).toBe('dvr_wave_01');
+
+    // A later event may not relabel the wave.
+    store.getState().ingestEvent(taskEvent({
+      ...projectedTask(1, 'starting'),
+      dispatchWaveId: 'dvr_wave_02',
+    }));
+    expect(store.getState().tasksById.dvr_task_1).toEqual(withRecoveryDefaults(queued));
+
+    // Hosts predating the label (field absent) and malformed labels read as null.
+    const legacy = projectedTask(2) as ManagedTaskEventRecord & { dispatchWaveId?: unknown };
+    delete legacy.dispatchWaveId;
+    store.getState().ingestEvent(taskEvent(legacy as ManagedTaskEventRecord));
+    expect(store.getState().tasksById.dvr_task_2?.dispatchWaveId).toBeNull();
+    store.getState().ingestEvent(taskEvent({
+      ...projectedTask(3),
+      dispatchWaveId: 'wave_without_prefix',
+    }));
+    expect(store.getState().tasksById.dvr_task_3?.dispatchWaveId).toBeNull();
   });
 
   test('projects why a queued task is waiting and drops the reason once it leaves the queue', () => {

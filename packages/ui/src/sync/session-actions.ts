@@ -1602,6 +1602,19 @@ export async function optimisticSend(input: {
   files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
   directory?: string | null
   includeAssistantPlaceholder?: boolean
+  /**
+   * Extra text parts the transport sends alongside `content`. Synthetic ones
+   * are mirrored into the optimistic message so marker-driven detection (the
+   * plan-implementation request) sees them from the first render instead of
+   * only once the server echoes the message back.
+   */
+  additionalParts?: Array<{ text: string; synthetic?: boolean }>
+  /**
+   * Awaited after the optimistic insert and right before `send`. A steered /
+   * queued send passes the gate from `beginQueuedSendInterrupt` so the user
+   * message appears at click time while the bounded abort settles.
+   */
+  awaitTransportGate?: () => Promise<void>
   /** The actual API call — receives the optimistic messageID so the server can use the same ID */
   send: (messageID: string) => Promise<void>
   onMessageID?: (messageID: string) => void
@@ -1647,6 +1660,17 @@ export async function optimisticSend(input: {
       id: createClientMessageId("prt"),
       type: "text",
       text: "User has requested to enter plan mode.",
+      synthetic: true,
+    } as unknown as Part)
+  }
+  for (const part of input.additionalParts ?? []) {
+    if (part.synthetic !== true) continue
+    const text = typeof part.text === "string" ? part.text : ""
+    if (text.length === 0) continue
+    optimisticParts.push({
+      id: createClientMessageId("prt"),
+      type: "text",
+      text,
       synthetic: true,
     } as unknown as Part)
   }
@@ -1737,6 +1761,7 @@ export async function optimisticSend(input: {
 
   // Set busy status
   const current = storeForMessage.getState()
+  const statusBeforeSend = current.session_status[input.sessionId]
   storeForMessage.setState({
     session_status: {
       ...current.session_status,
@@ -1744,8 +1769,18 @@ export async function optimisticSend(input: {
     },
   })
 
+  let transportGateFailed = false
   try {
     throwIfAborted(input.signal)
+    if (input.awaitTransportGate) {
+      try {
+        await input.awaitTransportGate()
+      } catch (error) {
+        transportGateFailed = true
+        throw error
+      }
+      throwIfAborted(input.signal)
+    }
     await input.send(messageID)
   } catch (error) {
     // Rollback via optimistic infrastructure
@@ -1772,7 +1807,12 @@ export async function optimisticSend(input: {
     storeForMessage.setState({
       session_status: {
         ...s.session_status,
-        [input.sessionId]: { type: "idle" as const },
+        // A failed transport gate means the prompt was never posted and the
+        // interrupt did not go through: the session is still in its pre-click
+        // state, so restore that instead of masking a live busy/retry with idle.
+        [input.sessionId]: transportGateFailed && statusBeforeSend
+          ? statusBeforeSend
+          : { type: "idle" as const },
       },
     })
     throw error
@@ -1908,7 +1948,19 @@ export async function interruptCurrentOperationForQueuedSend(sessionId: string):
   await interruptCurrentOperationForSteeredSend(sessionId)
 }
 
-export async function interruptCurrentOperationForSteeredSend(sessionId: string): Promise<void> {
+/**
+ * Upper bound on the steered abort. OpenCode normally acknowledges an abort
+ * within a few hundred milliseconds; when it does not (a hung provider stream,
+ * a stalled proxy), the steered send must not wait forever. Shorter than
+ * ABORT_CONFIRM_TIMEOUT_MS because a steered send races against a prompt the
+ * user has already clicked to send.
+ */
+export const STEERED_ABORT_TIMEOUT_MS = 4_000
+
+export async function interruptCurrentOperationForSteeredSend(
+  sessionId: string,
+  timeoutMs: number = STEERED_ABORT_TIMEOUT_MS,
+): Promise<void> {
   if (!sessionId) return
   const sessionDirectory = getSessionDirectory(sessionId)
   const status = getSessionStatusForAction(sessionId, sessionDirectory)
@@ -1916,16 +1968,51 @@ export async function interruptCurrentOperationForSteeredSend(sessionId: string)
 
   postAbortRequestedMark(sessionId, sessionDirectory)
   registerManualAbortGuard(sessionId, sessionDirectory, status)
+  let watchdogTimer: ReturnType<typeof setTimeout> | undefined
   try {
-    await sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory })
+    const watchdog = new Promise<never>((_resolve, reject) => {
+      watchdogTimer = setTimeout(() => {
+        reject(new Error("Session abort timed out"))
+      }, timeoutMs)
+    })
+    await Promise.race([
+      sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory }),
+      watchdog,
+    ])
   } catch (error) {
-    // The interrupt never reached the server — do not mask live status.
+    // The interrupt never reached the server, or never settled — do not mask
+    // live status.
     clearAbortGuard(sessionId)
     throw error
+  } finally {
+    if (watchdogTimer !== undefined) clearTimeout(watchdogTimer)
   }
   markSessionAbort(sessionId, "steered", getLatestAssistantMessageId(sessionId, sessionDirectory))
   forceSessionIdleAfterManualAbort(sessionId, sessionDirectory)
   await waitForSessionIdleAfterQueuedInterrupt(sessionId, sessionDirectory)
+}
+
+/**
+ * Starts the interrupt for a queued / steered send and returns the transport
+ * gate the send awaits right before posting its prompt. The connection check
+ * and the bounded abort run together, in the background: the caller inserts
+ * the optimistic user message at click time while they settle, and OpenCode
+ * still never receives the prompt during an abort. A rejected gate (abort
+ * failed or timed out, connection lost) makes the send roll its optimistic
+ * message back through its normal failure path.
+ */
+export function beginQueuedSendInterrupt(
+  sessionId: string,
+  timeoutMs: number = STEERED_ABORT_TIMEOUT_MS,
+): () => Promise<void> {
+  const gate = Promise.all([
+    waitForConnectionOrThrow(),
+    interruptCurrentOperationForSteeredSend(sessionId, timeoutMs),
+  ]).then(() => undefined)
+  // The send observes the rejection when it awaits the gate; keep an early
+  // rejection from surfacing as an unhandled promise in the meantime.
+  gate.catch(() => {})
+  return () => gate
 }
 
 // ---------------------------------------------------------------------------

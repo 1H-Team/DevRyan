@@ -8,7 +8,12 @@ import {
   hasCompletedQueuedTurn,
   isQueuedMessageFlushInFlight,
   sendQueuedMessagesNowForSession,
+  waitForQueuedTurnIdle,
 } from "./queuedSend"
+
+const nextTick = (): Promise<void> => new Promise((resolve) => {
+  setTimeout(resolve, 0)
+})
 
 const createAttachment = (filename: string): AttachedFile => ({
   id: filename,
@@ -537,16 +542,25 @@ describe("queued message flushing", () => {
     expect(isQueuedMessageFlushInFlight("session-a")).toBe(false)
   })
 
-  test("steers before atomically flushing every queued turn in FIFO order", async () => {
+  test("steers in the background: the first send is inserted at click time and posts once the gate settles", async () => {
     const operations: string[] = []
     useMessageQueueStore.getState().addToQueue("session-a", { content: "first queued" })
     useMessageQueueStore.getState().addToQueue("session-a", { content: "second queued" })
+    let settleInterrupt: () => void = () => {}
+    const gateSeenBy: string[] = []
 
     const sentCount = await sendQueuedMessagesNowForSession({
       sessionId: "session-a",
       interruptBeforeFlush: true,
-      interruptCurrentOperation: async (sessionId) => {
+      beginInterrupt: (sessionId) => {
         operations.push(`steer:${sessionId}`)
+        const gate = new Promise<void>((resolve) => {
+          settleInterrupt = () => {
+            operations.push("steer-settled")
+            resolve()
+          }
+        })
+        return () => gate
       },
       fallbackSendConfig: { providerID: "provider-a", modelID: "model-a" },
       prepareQueuedMessage: (message, sendConfig) => ({
@@ -554,34 +568,52 @@ describe("queued message flushing", () => {
         providerID: sendConfig.providerID,
         modelID: sendConfig.modelID,
       }),
-      sendMessageToSession: async (_sessionId, content) => {
-        operations.push(`send:${content}`)
+      sendMessageToSession: async (_sessionId, content, ...rest) => {
+        const lifecycle = rest[rest.length - 1] as { awaitTransportGate?: () => Promise<void> } | undefined
+        // Optimistic insert happens before the interrupt resolves.
+        operations.push(`insert:${content}`)
+        if (lifecycle?.awaitTransportGate) {
+          gateSeenBy.push(content)
+          // Let the interrupt settle only after the insert was observed.
+          void nextTick().then(() => settleInterrupt())
+          await lifecycle.awaitTransportGate()
+        }
+        operations.push(`post:${content}`)
       },
       waitForReadyToSendNext: async () => {
-        operations.push("wait")
+        operations.push("wait-idle")
       },
     })
 
     expect(sentCount).toBe(2)
     expect(operations).toEqual([
       "steer:session-a",
-      "send:first queued",
-      "wait",
-      "send:second queued",
+      "insert:first queued",
+      "steer-settled",
+      "post:first queued",
+      "wait-idle",
+      "insert:second queued",
+      "post:second queued",
     ])
+    // Only the first message posts through the gate; later ones wait on idle only.
+    expect(gateSeenBy).toEqual(["first queued"])
     expect(useMessageQueueStore.getState().getQueueForSession("session-a")).toEqual([])
   })
 
-  test("leaves the queue untouched when steering fails before the claim", async () => {
+  test("restores the whole queue when the steered interrupt fails", async () => {
     useMessageQueueStore.getState().addToQueue("session-a", { content: "still queued" })
+    useMessageQueueStore.getState().addToQueue("session-a", { content: "also still queued" })
+    const posted: string[] = []
 
     let error: unknown
     try {
       await sendQueuedMessagesNowForSession({
         sessionId: "session-a",
         interruptBeforeFlush: true,
-        interruptCurrentOperation: async () => {
-          throw new Error("abort failed")
+        beginInterrupt: () => {
+          const gate = Promise.reject(new Error("Session abort timed out"))
+          gate.catch(() => {})
+          return () => gate
         },
         fallbackSendConfig: { providerID: "provider-a", modelID: "model-a" },
         prepareQueuedMessage: (message, sendConfig) => ({
@@ -589,16 +621,55 @@ describe("queued message flushing", () => {
           providerID: sendConfig.providerID,
           modelID: sendConfig.modelID,
         }),
+        sendMessageToSession: async (_sessionId, content, ...rest) => {
+          const lifecycle = rest[rest.length - 1] as { awaitTransportGate?: () => Promise<void> } | undefined
+          await lifecycle?.awaitTransportGate?.()
+          posted.push(content)
+        },
       })
     } catch (caught) {
       error = caught
     }
 
-    expect(error instanceof Error ? error.message : "").toBe("abort failed")
-
+    expect(error instanceof Error ? error.message : "").toBe("Session abort timed out")
+    expect(posted).toEqual([])
     expect(useMessageQueueStore.getState().getQueueForSession("session-a").map((message) => message.content)).toEqual([
       "still queued",
+      "also still queued",
     ])
+  })
+
+  test("does not start the interrupt when no steering is needed", async () => {
+    useMessageQueueStore.getState().addToQueue("session-a", { content: "queued" })
+    let interruptStarted = false
+    let lifecycleSeen: { awaitTransportGate?: () => Promise<void> } | undefined
+
+    await sendQueuedMessagesNowForSession({
+      sessionId: "session-a",
+      interruptBeforeFlush: false,
+      beginInterrupt: () => {
+        interruptStarted = true
+        return () => Promise.resolve()
+      },
+      fallbackSendConfig: { providerID: "provider-a", modelID: "model-a" },
+      prepareQueuedMessage: (message, sendConfig) => ({
+        content: message.content,
+        providerID: sendConfig.providerID,
+        modelID: sendConfig.modelID,
+      }),
+      sendMessageToSession: async (_sessionId, _content, ...rest) => {
+        lifecycleSeen = rest[rest.length - 1] as typeof lifecycleSeen
+      },
+    })
+
+    expect(interruptStarted).toBe(false)
+    expect(lifecycleSeen?.awaitTransportGate).toBe(undefined)
+  })
+
+  test("waitForQueuedTurnIdle returns at once for an idle session instead of pre-waiting for busy", async () => {
+    const startedAt = Date.now()
+    await waitForQueuedTurnIdle("session-never-busy")
+    expect(Date.now() - startedAt).toBeLessThan(1_000)
   })
 
   test("authorizes each captured agent at dispatch time and restores blocked Builder work", async () => {

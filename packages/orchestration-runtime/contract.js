@@ -187,6 +187,7 @@ export const validateManagedTaskRecord = (task) => {
   assertString(task.rootSessionId, 'rootSessionId');
   assertNullableString(task.dispatchGroupId, 'dispatchGroupId', { maxBytes: 1024 });
   assertNullableString(task.dispatchCallId, 'dispatchCallId', { maxBytes: 1024 });
+  assertNullableString(task.dispatchWaveId, 'dispatchWaveId', { prefix: 'dvr_wave_', maxBytes: 1024 });
   assertNullableString(task.parentTaskId, 'parentTaskId', { prefix: 'dvr_task_' });
   assertNullableString(task.childSessionId, 'childSessionId');
   assertString(task.directory, 'directory');
@@ -256,6 +257,7 @@ export const createManagedTaskRecord = (input) => {
     status: 'queued',
     dispatchGroupId: input.dispatchGroupId ?? null,
     dispatchCallId: input.dispatchCallId ?? null,
+    dispatchWaveId: input.dispatchWaveId ?? null,
     readOnly: input.readOnly ?? false,
     childSessionId: input.childSessionId ?? null,
     recoveryLineageId: input.recoveryLineageId ?? null,
@@ -317,6 +319,9 @@ const projectTaskForEvent = (task) => {
     // The raw group id is deliberately withheld; consumers only need to know whether the
     // task belongs to a dispatch group so they can mirror the manual-recovery gate.
     dispatchGrouped: task.dispatchGroupId !== null,
+    // Display-only label: which parallel dispatch wave the task belongs to. Not a
+    // secret (it carries no message identity), so the UI may group cards by it.
+    dispatchWaveId: task.dispatchWaveId,
     parentTaskId: task.parentTaskId,
     childSessionId: task.childSessionId,
     directory: task.directory,

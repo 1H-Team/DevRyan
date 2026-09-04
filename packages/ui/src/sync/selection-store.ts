@@ -11,7 +11,8 @@ export type SelectionState = {
   builderHandoffClearedSessionIds: Set<string>
   sessionPlanModeSelections: Map<string, boolean>
   defaultPlanModeSelection: boolean
-  draftPlanModeSelection: boolean
+  /** Explicit per-draft plan-mode toggles; a draft without an entry falls through to the default. */
+  draftPlanModeSelections: Map<string, boolean>
   sessionAgentModelSelections: Map<string, Map<string, { providerId: string; modelId: string }>>
   draftModelSelections: Map<string, { providerId: string; modelId: string }>
   draftAgentSelections: Map<string, string>
@@ -27,11 +28,14 @@ export type SelectionState = {
   hasBuilderHandoffClearance: (sessionId: string) => boolean
   setSessionPlanMode: (sessionId: string, enabled: boolean) => void
   getSessionPlanMode: (sessionId: string) => boolean
-  setDefaultPlanModeSelection: (enabled: boolean, options?: { syncDraft?: boolean }) => void
-  setDraftPlanMode: (enabled: boolean) => void
-  clearDraftPlanMode: () => void
-  setPlanModeSelection: (sessionId: string | null | undefined, enabled: boolean) => void
-  getPlanModeSelection: (sessionId: string | null | undefined) => boolean
+  setDefaultPlanModeSelection: (enabled: boolean) => void
+  setDraftPlanMode: (draftId: string, enabled: boolean) => void
+  getDraftPlanMode: (draftId: string) => boolean
+  clearDraftPlanMode: (draftId: string) => void
+  /** Writes the matching scope: the session when given, else the draft when given, else the default. */
+  setPlanModeSelection: (sessionId: string | null | undefined, enabled: boolean, draftId?: string | null) => void
+  /** Resolves session map → draft map → default. */
+  getPlanModeSelection: (sessionId: string | null | undefined, draftId?: string | null) => boolean
   saveAgentModelForSession: (sessionId: string, agentName: string, providerId: string, modelId: string) => void
   getAgentModelForSession: (sessionId: string, agentName: string) => { providerId: string; modelId: string } | null
   saveAgentModelVariantForSession: (sessionId: string, agentName: string, providerId: string, modelId: string, variant: string | undefined) => void
@@ -59,7 +63,7 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
   builderHandoffClearedSessionIds: new Set(),
   sessionPlanModeSelections: new Map(),
   defaultPlanModeSelection: false,
-  draftPlanModeSelection: false,
+  draftPlanModeSelections: new Map(),
   sessionAgentModelSelections: new Map(),
   draftModelSelections: new Map(),
   draftAgentSelections: new Map(),
@@ -119,41 +123,49 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
 
   getSessionPlanMode: (sessionId) => get().sessionPlanModeSelections.get(sessionId) ?? false,
 
-  setDefaultPlanModeSelection: (enabled, options) =>
+  // Plan mode is scoped like model and agent selections: one entry per
+  // session, one per draft. A draft that was never toggled follows the
+  // default, so changing the default never overwrites an explicit toggle and
+  // sending one draft never touches another draft's choice.
+  setDefaultPlanModeSelection: (enabled) =>
+    set((s) => (s.defaultPlanModeSelection === enabled ? s : { defaultPlanModeSelection: enabled })),
+
+  setDraftPlanMode: (draftId, enabled) =>
     set((s) => {
-      const shouldSyncDraft = options?.syncDraft ?? s.draftPlanModeSelection === s.defaultPlanModeSelection;
-      if (s.defaultPlanModeSelection === enabled && (!shouldSyncDraft || s.draftPlanModeSelection === enabled)) {
-        return s;
-      }
-      return {
-        defaultPlanModeSelection: enabled,
-        draftPlanModeSelection: shouldSyncDraft ? enabled : s.draftPlanModeSelection,
-      }
+      if (s.draftPlanModeSelections.get(draftId) === enabled) return s
+      const map = new Map(s.draftPlanModeSelections)
+      map.set(draftId, enabled)
+      return { draftPlanModeSelections: map }
     }),
 
-  setDraftPlanMode: (enabled) =>
+  getDraftPlanMode: (draftId) => get().draftPlanModeSelections.get(draftId) ?? get().defaultPlanModeSelection,
+
+  clearDraftPlanMode: (draftId) =>
     set((s) => {
-      if (s.draftPlanModeSelection === enabled) return s
-      return { draftPlanModeSelection: enabled }
+      if (!s.draftPlanModeSelections.has(draftId)) return s
+      const map = new Map(s.draftPlanModeSelections)
+      map.delete(draftId)
+      return { draftPlanModeSelections: map }
     }),
 
-  clearDraftPlanMode: () =>
-    set((s) => {
-      if (s.draftPlanModeSelection === s.defaultPlanModeSelection) return s
-      return { draftPlanModeSelection: s.defaultPlanModeSelection }
-    }),
-
-  setPlanModeSelection: (sessionId, enabled) => {
+  setPlanModeSelection: (sessionId, enabled, draftId) => {
     if (sessionId) {
       get().setSessionPlanMode(sessionId, enabled)
       return
     }
-    get().setDraftPlanMode(enabled)
+    if (draftId) {
+      get().setDraftPlanMode(draftId, enabled)
+      return
+    }
+    // Neither a session nor a draft to scope the toggle to: the only
+    // remaining scope is the default that untoggled drafts fall through to.
+    get().setDefaultPlanModeSelection(enabled)
   },
 
-  getPlanModeSelection: (sessionId) => {
+  getPlanModeSelection: (sessionId, draftId) => {
     if (sessionId) return get().getSessionPlanMode(sessionId)
-    return get().draftPlanModeSelection
+    if (draftId) return get().getDraftPlanMode(draftId)
+    return get().defaultPlanModeSelection
   },
 
   saveAgentModelForSession: (sessionId, agentName, providerId, modelId) =>
@@ -284,21 +296,25 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
         || s.draftAgentSelections.has(draftId)
         || s.draftAgentModelSelections.has(draftId)
         || s.draftAgentModelVariantSelections.has(draftId)
+        || s.draftPlanModeSelections.has(draftId)
       if (!hasDraft) return s
 
       const draftModelSelections = new Map(s.draftModelSelections)
       const draftAgentSelections = new Map(s.draftAgentSelections)
       const draftAgentModelSelections = new Map(s.draftAgentModelSelections)
       const draftAgentModelVariantSelections = new Map(s.draftAgentModelVariantSelections)
+      const draftPlanModeSelections = new Map(s.draftPlanModeSelections)
       draftModelSelections.delete(draftId)
       draftAgentSelections.delete(draftId)
       draftAgentModelSelections.delete(draftId)
       draftAgentModelVariantSelections.delete(draftId)
+      draftPlanModeSelections.delete(draftId)
       return {
         draftModelSelections,
         draftAgentSelections,
         draftAgentModelSelections,
         draftAgentModelVariantSelections,
+        draftPlanModeSelections,
       }
     }),
 
@@ -353,15 +369,18 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
       const draftModel = s.draftModelSelections.get(draftId)
       const draftAgentModels = s.draftAgentModelSelections.get(draftId)
       const draftAgentVariants = s.draftAgentModelVariantSelections.get(draftId)
-      if (!draftAgent && !draftModel && !draftAgentModels && !draftAgentVariants) return s
+      const draftPlanMode = s.draftPlanModeSelections.get(draftId)
+      if (!draftAgent && !draftModel && !draftAgentModels && !draftAgentVariants && draftPlanMode === undefined) return s
 
       const sessionAgentSelections = new Map(s.sessionAgentSelections)
       const sessionModelSelections = new Map(s.sessionModelSelections)
       const sessionAgentModelSelections = new Map(s.sessionAgentModelSelections)
+      const sessionPlanModeSelections = new Map(s.sessionPlanModeSelections)
       const draftModelSelections = new Map(s.draftModelSelections)
       const draftAgentSelections = new Map(s.draftAgentSelections)
       const draftAgentModelSelections = new Map(s.draftAgentModelSelections)
       const draftAgentModelVariantSelections = new Map(s.draftAgentModelVariantSelections)
+      const draftPlanModeSelections = new Map(s.draftPlanModeSelections)
 
       if (draftAgent) {
         sessionAgentSelections.set(sessionId, draftAgent)
@@ -371,6 +390,13 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
       }
       if (draftAgentModels) {
         sessionAgentModelSelections.set(sessionId, new Map(draftAgentModels))
+      }
+      // Only an explicit draft toggle carries over; the session map stores
+      // enabled entries only (see setSessionPlanMode).
+      if (draftPlanMode === true) {
+        sessionPlanModeSelections.set(sessionId, true)
+      } else if (draftPlanMode === false) {
+        sessionPlanModeSelections.delete(sessionId)
       }
       if (draftAgentVariants) {
         let sessionVariantMap = agentModelVariantSelections.get(sessionId)
@@ -387,15 +413,18 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
       draftAgentSelections.delete(draftId)
       draftAgentModelSelections.delete(draftId)
       draftAgentModelVariantSelections.delete(draftId)
+      draftPlanModeSelections.delete(draftId)
 
       return {
         sessionAgentSelections,
         sessionModelSelections,
         sessionAgentModelSelections,
+        sessionPlanModeSelections,
         draftModelSelections,
         draftAgentSelections,
         draftAgentModelSelections,
         draftAgentModelVariantSelections,
+        draftPlanModeSelections,
         lastUsedProvider: draftModel ? { providerID: draftModel.providerId, modelID: draftModel.modelId } : s.lastUsedProvider,
       }
     }),

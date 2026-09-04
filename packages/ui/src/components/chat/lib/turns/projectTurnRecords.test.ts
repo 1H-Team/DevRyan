@@ -102,7 +102,7 @@ describe('projectTurnRecords', () => {
         expect(projection.ungroupedMessageIds.size).toBe(0);
     });
 
-    test('does not render assistant replies while their parent user turn is missing', () => {
+    test('attaches an assistant whose parent turn is missing to the preceding user turn', () => {
         const user1 = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
         const assistant1 = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 });
         const assistant2 = createMessageEntry({ id: 'a2', role: 'assistant', parentID: 'u2', createdAt: 4 });
@@ -111,18 +111,34 @@ describe('projectTurnRecords', () => {
 
         expect(projection.turns).toHaveLength(1);
         expect(projection.turns[0]?.turnId).toBe('u1');
-        expect(projection.turns[0]?.assistantMessageIds).toEqual(['a1']);
+        expect(projection.turns[0]?.assistantMessageIds).toEqual(['a1', 'a2']);
         expect(projection.ungroupedMessageIds.has('a2')).toBe(false);
-        expect(projection.indexes.messageToTurnId.has('a2')).toBe(false);
+        expect(projection.indexes.messageToTurnId.get('a2')).toBe('u1');
     });
 
-    test('does not render orphan assistant messages as standalone ungrouped entries', () => {
+    test('attaches an assistant with an empty parent id to the last user turn before it', () => {
+        const user1 = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant1 = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 });
+        const user2 = createMessageEntry({ id: 'u2', role: 'user', createdAt: 3 });
+        const orphan = createMessageEntry({ id: 'a2', role: 'assistant', createdAt: 4 });
+        const user3 = createMessageEntry({ id: 'u3', role: 'user', createdAt: 5 });
+
+        const projection = projectTurnRecords([user1, assistant1, user2, orphan, user3]);
+
+        expect(projection.turns.map((turn) => turn.turnId)).toEqual(['u1', 'u2', 'u3']);
+        expect(projection.turns[1]?.assistantMessageIds).toEqual(['a2']);
+        expect(projection.turns[2]?.assistantMessageIds).toEqual([]);
+        expect(projection.indexes.messageToTurnId.get('a2')).toBe('u2');
+        expect(projection.ungroupedMessageIds.size).toBe(0);
+    });
+
+    test('renders an assistant with no preceding user turn as an ungrouped entry', () => {
         const assistant = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'missing-user', createdAt: 1 });
 
         const projection = projectTurnRecords([assistant]);
 
         expect(projection.turns).toHaveLength(0);
-        expect(projection.ungroupedMessageIds.has('a1')).toBe(false);
+        expect(projection.ungroupedMessageIds.has('a1')).toBe(true);
         expect(projection.indexes.messageToTurnId.has('a1')).toBe(false);
     });
 

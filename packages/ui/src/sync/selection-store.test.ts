@@ -8,7 +8,7 @@ const resetSelectionStore = () => {
     builderHandoffClearedSessionIds: new Set(),
     sessionPlanModeSelections: new Map(),
     defaultPlanModeSelection: false,
-    draftPlanModeSelection: false,
+    draftPlanModeSelections: new Map(),
     sessionAgentModelSelections: new Map(),
     draftAgentSelections: new Map(),
     draftModelSelections: new Map(),
@@ -18,38 +18,99 @@ const resetSelectionStore = () => {
   })
 }
 
-describe("selection-store plan mode defaults", () => {
+describe("selection-store plan mode per draft", () => {
   beforeEach(() => {
     resetSelectionStore()
   })
 
-  test("uses the configured default for draft plan mode after clearing draft overrides", () => {
-    const store = useSelectionStore.getState() as SelectionState & {
-      setDefaultPlanModeSelection: (enabled: boolean) => void
-    }
+  const planModeOf = (draftId: string) => useSelectionStore.getState().getPlanModeSelection(null, draftId)
 
-    store.setDefaultPlanModeSelection(true)
+  test("untoggled drafts fall through to the configured default; clearing a draft restores it", () => {
+    useSelectionStore.getState().setDefaultPlanModeSelection(true)
 
     expect(useSelectionStore.getState().getPlanModeSelection(null)).toBe(true)
+    expect(useSelectionStore.getState().getPlanModeSelection(undefined, null)).toBe(true)
+    expect(planModeOf("draft-a")).toBe(true)
+    expect(useSelectionStore.getState().getDraftPlanMode("draft-b")).toBe(true)
 
-    useSelectionStore.getState().setDraftPlanMode(false)
-    expect(useSelectionStore.getState().getPlanModeSelection(undefined)).toBe(false)
+    useSelectionStore.getState().setPlanModeSelection(null, false, "draft-a")
+    expect(planModeOf("draft-a")).toBe(false)
+    expect(planModeOf("draft-b")).toBe(true)
 
-    useSelectionStore.getState().clearDraftPlanMode()
-    expect(useSelectionStore.getState().getPlanModeSelection(null)).toBe(true)
+    useSelectionStore.getState().clearDraftPlanMode("draft-a")
+    expect(planModeOf("draft-a")).toBe(true)
   })
 
-  test("clears draft plan mode back to a disabled default", () => {
-    const store = useSelectionStore.getState() as SelectionState & {
-      setDefaultPlanModeSelection: (enabled: boolean) => void
-    }
+  test("two drafts toggle independently", () => {
+    useSelectionStore.getState().setPlanModeSelection(null, true, "draft-a")
+    useSelectionStore.getState().setPlanModeSelection(null, true, "draft-b")
+    useSelectionStore.getState().setPlanModeSelection(null, false, "draft-a")
 
-    store.setDefaultPlanModeSelection(false)
-    useSelectionStore.getState().setDraftPlanMode(true)
+    expect(planModeOf("draft-a")).toBe(false)
+    expect(planModeOf("draft-b")).toBe(true)
+    expect(planModeOf("draft-c")).toBe(false)
+    expect(useSelectionStore.getState().defaultPlanModeSelection).toBe(false)
+  })
+
+  test("sending draft A clears only A's plan mode", () => {
+    useSelectionStore.getState().setPlanModeSelection(null, true, "draft-a")
+    useSelectionStore.getState().setPlanModeSelection(null, true, "draft-b")
+
+    useSelectionStore.getState().clearDraftPlanMode("draft-a")
+    expect(planModeOf("draft-a")).toBe(false)
+    expect(planModeOf("draft-b")).toBe(true)
+
+    // Draft disposal drops the entry the same way.
+    useSelectionStore.getState().setPlanModeSelection(null, true, "draft-a")
+    useSelectionStore.getState().clearDraftSelection("draft-a")
+    expect(planModeOf("draft-a")).toBe(false)
+    expect(planModeOf("draft-b")).toBe(true)
+    expect(useSelectionStore.getState().draftPlanModeSelections.has("draft-a")).toBe(false)
+  })
+
+  test("changing the default never overwrites an explicit draft toggle", () => {
+    useSelectionStore.getState().setPlanModeSelection(null, false, "draft-a")
+    useSelectionStore.getState().setDefaultPlanModeSelection(true)
+
+    expect(planModeOf("draft-a")).toBe(false)
+    expect(planModeOf("draft-b")).toBe(true)
+
+    useSelectionStore.getState().setDefaultPlanModeSelection(false)
+    expect(planModeOf("draft-a")).toBe(false)
+    expect(planModeOf("draft-b")).toBe(false)
+  })
+
+  test("without a session or draft the toggle writes the default scope", () => {
+    useSelectionStore.getState().setPlanModeSelection(null, true)
     expect(useSelectionStore.getState().getPlanModeSelection(null)).toBe(true)
+    expect(useSelectionStore.getState().defaultPlanModeSelection).toBe(true)
+    expect(useSelectionStore.getState().draftPlanModeSelections.size).toBe(0)
+  })
 
-    useSelectionStore.getState().clearDraftPlanMode()
-    expect(useSelectionStore.getState().getPlanModeSelection(null)).toBe(false)
+  test("session scope wins over draft scope", () => {
+    useSelectionStore.getState().setPlanModeSelection("session-1", true)
+    useSelectionStore.getState().setPlanModeSelection(null, false, "draft-a")
+
+    expect(useSelectionStore.getState().getPlanModeSelection("session-1", "draft-a")).toBe(true)
+    expect(useSelectionStore.getState().getPlanModeSelection("session-2", "draft-a")).toBe(false)
+  })
+
+  test("promoting a draft copies only an explicit plan-mode toggle onto the session", () => {
+    useSelectionStore.getState().setPlanModeSelection(null, true, "draft-a")
+    useSelectionStore.getState().promoteDraftSelectionToSession("draft-a", "session-1")
+    expect(useSelectionStore.getState().getSessionPlanMode("session-1")).toBe(true)
+    expect(useSelectionStore.getState().draftPlanModeSelections.has("draft-a")).toBe(false)
+
+    // An explicit "off" beats an enabled default and clears the session entry.
+    useSelectionStore.getState().setDefaultPlanModeSelection(true)
+    useSelectionStore.getState().setSessionPlanMode("session-2", true)
+    useSelectionStore.getState().setPlanModeSelection(null, false, "draft-b")
+    useSelectionStore.getState().promoteDraftSelectionToSession("draft-b", "session-2")
+    expect(useSelectionStore.getState().getSessionPlanMode("session-2")).toBe(false)
+
+    // An untoggled draft leaves the session untouched.
+    useSelectionStore.getState().promoteDraftSelectionToSession("draft-c", "session-3")
+    expect(useSelectionStore.getState().getSessionPlanMode("session-3")).toBe(false)
   })
 })
 

@@ -1208,6 +1208,7 @@ describe('VS Code managed orchestration owner', () => {
     const legacyTask = { ...queuedTask(1) } as Record<string, unknown>;
     delete legacyTask.dispatchGroupId;
     delete legacyTask.dispatchCallId;
+    delete legacyTask.dispatchWaveId;
     delete legacyTask.readOnly;
     await fs.mkdir(path.dirname(ledger.filePath), { recursive: true });
     await fs.writeFile(ledger.filePath, JSON.stringify({
@@ -1220,6 +1221,7 @@ describe('VS Code managed orchestration owner', () => {
 
     expect(loaded?.tasks[0].dispatchGroupId).toBeNull();
     expect(loaded?.tasks[0].dispatchCallId).toBeNull();
+    expect(loaded?.tasks[0].dispatchWaveId).toBeNull();
     expect(loaded?.tasks[0].readOnly).toBe(false);
     expect(ledger.getDiagnostics?.().quarantinedPath).toBeNull();
   });

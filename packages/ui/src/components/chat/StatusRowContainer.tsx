@@ -36,7 +36,6 @@ import { stopLongRunningTool } from '@/sync/long-running-tool-recovery';
 import { formatElapsedDuration } from '@/lib/duration';
 import { useDocumentAnimationState } from '@/hooks/useDocumentAnimationState';
 import { useHasActiveReasoningDisclosure } from './message/parts/reasoningDisclosureStatus';
-import { SessionChangesFooter } from './SessionChangesFooter';
 
 type ManagedDelegationStatusPhase = 'starting' | 'waiting' | null;
 
@@ -166,33 +165,6 @@ export const resolveManagedChildGenericStatusText = ({
         ? recoveringText
         : waitingText;
 };
-
-// Exported for focused regression tests. The session-changes footer only
-// borrows the row's left slot while nothing else owns it: no live work, no
-// pending revert, no abort/stall/long-running-tool notice.
-// eslint-disable-next-line react-refresh/only-export-components
-export const shouldRenderSessionChangesFooter = ({
-    isWorking,
-    isRevertPending,
-    wasAborted,
-    hasProviderStall,
-    hasLongRunningTool,
-    hasCurrentSession,
-}: {
-    isWorking: boolean;
-    isRevertPending: boolean;
-    wasAborted: boolean;
-    hasProviderStall: boolean;
-    hasLongRunningTool: boolean;
-    hasCurrentSession: boolean;
-}): boolean => (
-    hasCurrentSession
-    && !isWorking
-    && !isRevertPending
-    && !wasAborted
-    && !hasProviderStall
-    && !hasLongRunningTool
-);
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const resolveProviderWaitingStatusText = ({
@@ -404,17 +376,8 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             );
         }
     }, [childStores, currentSessionId, resyncSession]);
-    const showSessionChangesFooter = shouldRenderSessionChangesFooter({
-        isWorking: display.isWorking,
-        isRevertPending,
-        wasAborted: wasAborted || Boolean(working.wasAborted),
-        hasProviderStall: Boolean(providerStall),
-        hasLongRunningTool: Boolean(longRunningPresentation?.actionable),
-        hasCurrentSession: Boolean(currentSessionId),
-    });
     return (
         <StatusRow
-            leftAccessory={showSessionChangesFooter ? <SessionChangesFooter /> : undefined}
             isWorking={display.isWorking}
             statusText={display.statusText}
             isGenericStatus={display.isGenericStatus}

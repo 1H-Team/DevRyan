@@ -192,6 +192,10 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     discoverSkills = () => [],
     onOpenCodeRestarted = () => {},
     onStartupStatus = () => {},
+    // Awaited right before a managed spawn while no managed child exists (the
+    // window in which OpenCode's database is not in use). Best-effort: errors
+    // are logged and never block the launch.
+    beforeManagedSpawn = async () => {},
   } = deps;
 
   const emitStartupStatus = (text) => {
@@ -958,6 +962,17 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       processEnvironment.DEVRYAN_BROWSER_CDP_DISCOVERY_URL = browserDiscoveryUrl;
       processEnvironment.DEVRYAN_BROWSER_CDP_TOKEN = browserToken;
       processEnvironment.DEVRYAN_AGENT_BROWSER_BIN = agentBrowserBinary;
+    }
+
+    if (!state.openCodeProcess) {
+      try {
+        await beforeManagedSpawn({ reason: state.isRestartingOpenCode ? 'restart' : 'startup' });
+      } catch (error) {
+        console.warn(
+          '[OpenCode] Pre-launch hook failed; launching anyway:',
+          error instanceof Error ? error.message : String(error),
+        );
+      }
     }
 
     try {

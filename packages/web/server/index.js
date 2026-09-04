@@ -137,11 +137,9 @@ import { createBrowserObservationRuntime } from './lib/browser-cdp/observation-r
 import { dynamicNoStoreMiddleware } from './lib/http-cache-policy.js';
 import { createMeridianProviderResetProbe } from './lib/orchestration/provider-reset-probe.js';
 import { createWebManagedOrchestrationRuntime } from './lib/orchestration/runtime.js';
-import { createLaunchAdmissionHook } from './lib/orchestration/launch-admission.js';
-import { readOrchestrationLimits } from './lib/opencode/orchestration-limits.js';
-import { getSystemPressure } from './lib/system/pressure.js';
 import { registerManagedOrchestrationRoutes } from './lib/orchestration/routes.js';
 import { createWebHarnessRuntime } from './lib/harness/runtime.js';
+import { createSessionChangeHost } from '@openchamber/harness-runtime';
 import { createWebPrimaryRecoveryRuntime } from './lib/harness/provider-recovery.js';
 import { createWebCommandDeadlineRuntime } from './lib/harness/command-deadline-runtime.js';
 import { registerDiagnosticsRoutes } from './lib/diagnostics/routes.js';
@@ -151,6 +149,14 @@ import { registerEvidenceRoutes } from './lib/evidence/routes.js';
 import { registerIndexingPolicy } from './lib/indexing-policy.js';
 import { getPublicRuntimePort } from './lib/runtime-port-visibility.js';
 import { configureWorktreeBootstrapRuntime } from './lib/git/service.js';
+import { stripEventDiffContent } from './lib/opencode/diff-summary.js';
+import {
+  OPENCODE_DB_PRELAUNCH_TIME_BUDGET_MS,
+  createOpenCodeDbCompactionScheduler,
+  createOpenCodeDbMaintenance,
+  normalizeOpenCodeDbMaintenanceSettings,
+} from './lib/opencode/db-maintenance.js';
+import { registerOpenCodeDbMaintenanceRoutes } from './lib/opencode/db-maintenance-routes.js';
 import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware';
 import webPush from 'web-push';
 
@@ -1147,6 +1153,10 @@ globalMessageStreamHub = createGlobalMessageStreamHub({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   upstreamStallTimeoutMs: getUpstreamStallTimeoutMs,
+  // Applied before replay buffering and fan-out: WS clients only ever need the
+  // per-file diff counts, never the multi-MB patch bodies OpenCode attaches to
+  // `message.updated` / `session.updated`.
+  transformEventPayload: stripEventDiffContent,
 });
 
 const processCanonicalOpenCodeEvent = createCanonicalOpenCodeEventProcessor({
@@ -1329,6 +1339,32 @@ const openAiOAuthCoordinator = createOpenAiOAuthCoordinator({
   recordDiagnostic: (entry) => harnessRuntime.record(entry),
 });
 const openAiOAuthBridge = createOpenAiOAuthBridge({ coordinator: openAiOAuthCoordinator });
+
+const openCodeDbMaintenance = createOpenCodeDbMaintenance({
+  dataDir: OPENCHAMBER_DATA_DIR,
+  journal: (entry) => harnessRuntime.record(entry),
+});
+const openCodeDbCompactionScheduler = createOpenCodeDbCompactionScheduler();
+const readOpenCodeDbMaintenanceSettings = async () => normalizeOpenCodeDbMaintenanceSettings(
+  (await readSettingsFromDisk())?.opencodeDbMaintenance,
+);
+// Runs in the only window where OpenCode's database is not open by the
+// runtime: right before a managed spawn while no managed child exists. The
+// automatic pass is delete-only and time-bounded; Settings → Storage "Compact"
+// schedules a single forced VACUUM pass and restarts OpenCode to reach here.
+const runOpenCodeDbMaintenanceBeforeSpawn = async ({ reason } = {}) => {
+  const forced = openCodeDbCompactionScheduler.consumeForced();
+  const settings = await readOpenCodeDbMaintenanceSettings();
+  if (!forced && !settings.enabled) return;
+  await openCodeDbMaintenance.run({
+    idleHours: settings.idleHours,
+    keepSeqPerAggregate: settings.keepSeqPerAggregate,
+    vacuum: forced ? 'force' : 'never',
+    timeBudgetMs: forced ? null : OPENCODE_DB_PRELAUNCH_TIME_BUDGET_MS,
+    reason: forced ? 'compact' : (typeof reason === 'string' && reason ? reason : 'startup'),
+  });
+};
+
 const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   getManagedOAuthEnvironment: () => openAiOAuthBridge.environment(),
   state: openCodeLifecycleState,
@@ -1412,6 +1448,7 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
     void projectPrewarmRuntime?.run('opencode-restart');
   },
   onStartupStatus: (text) => onOpenCodeStartupStatus?.(text),
+  beforeManagedSpawn: runOpenCodeDbMaintenanceBeforeSpawn,
 });
 
 observeContextModeToolFailure = (payload) => (
@@ -1455,6 +1492,13 @@ const primaryRecoveryRuntime = createWebPrimaryRecoveryRuntime({
     sessionID: incident.sessionID, messageID: incident.messageID, payload: incident }),
 });
 harnessRuntime.setPrimaryRecoveryRuntime(primaryRecoveryRuntime);
+const sessionChangeHost = createSessionChangeHost({
+  dataDirectory: OPENCHAMBER_DATA_DIR,
+  publishEvent: emitSyntheticOpenCodeEvent,
+  buildOpenCodeUrl: (pathname) => buildOpenCodeUrl(pathname, ''),
+  getOpenCodeAuthHeaders,
+});
+harnessRuntime.setSessionChangeHost(sessionChangeHost);
 observeCommandDeadline = (payload) => commandDeadlineRuntime.observe(payload);
 const canForceConfigRestart = (principal) => (
   principal?.scope === 'local-admin' || principal?.role === 'admin'
@@ -2026,6 +2070,11 @@ async function main(options = {}) {
     },
   });
   browserObservationRuntime.registerRoutes(app);
+  app.use('/api/openchamber/session/:sessionID/changes', express.json({ limit: '16kb' }), async (req, res, next) => {
+    const result = await sessionChangeHost.handleRequest(req.method, req.originalUrl, req.body);
+    if (!result) return next();
+    res.status(result.status).json(result.body);
+  });
   app.use('/api/session/:sessionID',
     express.json({ limit: '50mb', verify: (req, _res, buf) => { req.rawBody = buf; } }),
     primaryRecoveryRuntime.middleware);
@@ -2045,6 +2094,13 @@ async function main(options = {}) {
     getAppMetrics: typeof options.getAppMetrics === 'function' ? options.getAppMetrics : null,
   });
   registerEvidenceRoutes(app, { runtime: evidenceRuntime });
+  registerOpenCodeDbMaintenanceRoutes(app, {
+    maintenance: openCodeDbMaintenance,
+    scheduler: openCodeDbCompactionScheduler,
+    restartOpenCode: () => restartOpenCode(),
+    isManagedRuntime: () => !(isExternalOpenCode || ENV_SKIP_OPENCODE_START || Boolean(ENV_CONFIGURED_OPENCODE_HOST)),
+    readMaintenanceSettings: readOpenCodeDbMaintenanceSettings,
+  });
   await harnessInitialization;
 
   const providerResetProbe = createMeridianProviderResetProbe({
@@ -2067,13 +2123,6 @@ async function main(options = {}) {
       || ENV_CONFIGURED_OPENCODE_HOST
     ),
     getWorkAdmissionBlock: harnessRuntime.getPromptAdmissionBlock,
-    // Launch admission: the configurable concurrent sub-agent cap plus a pause
-    // while the host is under memory pressure. Running work is never touched.
-    admitLaunch: createLaunchAdmissionHook({
-      readLimits: () => readOrchestrationLimits(),
-      getSystemPressure,
-      logger: console,
-    }),
     resolveAgentExecution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
       ?? params.fallbackExecution,
     // Auto-resume hooks: managed sessions key breakers per owning user and use
@@ -2089,6 +2138,7 @@ async function main(options = {}) {
     resolveProviderReset: (params) => providerResetProbe.resolveProviderReset(params),
     auxiliaryRpcHandlers: {
       primary_recovery: (params) => primaryRecoveryRuntime.plugin(params),
+      session_changes: (params) => sessionChangeHost.plugin(params),
       resolve_agent_execution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
         ?? params.fallbackExecution,
     },

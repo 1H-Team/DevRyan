@@ -150,3 +150,7 @@ adapter own primary turn admission, semantic liveness, durable recovery and
 cancellation across web/Electron and VS Code. Default policy is observe. Full
 safety, protocol, storage, rollout and rollback contracts are documented in
 [`docs/PROVIDER_RECOVERY.md`](../../docs/PROVIDER_RECOVERY.md).
+
+## Session-owned changes
+
+`lib/session-changes.js` owns always-on execution receipts, private Git snapshots, cumulative net summaries, bounded stored revisions, and conflict-checked file-only Undo/Redo. It is independent of optional diagnostic evidence. `lib/session-changes-host.js` validates canonical session identity, lineage and directory; consumes paginated history; and exposes the same plugin/HTTP contract in web/Electron and VS Code. Full contract, operational limits and verification: `docs/SESSION_CHANGES.md`.

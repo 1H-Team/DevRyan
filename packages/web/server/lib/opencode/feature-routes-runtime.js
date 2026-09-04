@@ -17,7 +17,6 @@ import { createPluginReadModel, registerReadonlyPluginRoutes } from './plugins-r
 import { createSlimSetupRuntime, registerSlimSetupRoutes } from './slim-install.js';
 import { registerConfigApplyRoutes } from './config-apply-runtime.js';
 import { createImageAssetsRuntime } from '../image-assets/runtime.js';
-import { getSystemPressure } from '../system/pressure.js';
 
 export const createFeatureRoutesRuntime = (dependencies) => {
   const {
@@ -200,8 +199,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       deleteAgentModelOverride,
       writeAgentBackupModel,
       deleteAgentBackupModel,
-      readOrchestrationLimits,
-      writeOrchestrationLimits,
       readAgentRuntimeSettings,
       writeAgentRuntimeSettings,
       listConfigAgents,
@@ -230,9 +227,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       deleteAgentModelOverride,
       writeAgentBackupModel,
       deleteAgentBackupModel,
-      readOrchestrationLimits,
-      writeOrchestrationLimits,
-      getSystemPressure,
       readAgentRuntimeSettings,
       writeAgentRuntimeSettings,
       syncManagedAgentRuntimeConfig,

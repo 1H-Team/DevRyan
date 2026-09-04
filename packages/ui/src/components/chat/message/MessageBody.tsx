@@ -31,6 +31,7 @@ import {
     shouldSuppressPostPlanText,
 } from '@/lib/messages/planCardRender';
 import { isOrphanNarrationFragment } from '@/lib/messages/orphanNarration';
+import { PlanTurnTraceContext } from '../PlanTurnTraceContext';
 import { usePlanRevisionPresentation } from '../usePlanTurnTraceEntry';
 import { useMessageTTS } from '@/hooks/useMessageTTS';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -1361,10 +1362,19 @@ const AssistantMessageBody = React.memo(({
     ), [assistantPlanText, hasCopyableText, isTouchContext, onCopyMessage]);
 
     const planRevision = usePlanRevisionPresentation(messageId, turnGroupingContext?.turnId);
+    const planTurnTraceIndex = React.useContext(PlanTurnTraceContext);
+    // An Implement Plan turn never renders as a plan response: its user message
+    // is recognised by the implementation marker, its group is never a plan
+    // revision, and its output must not be cut off at a plan card.
+    const isPlanImplementationTurn = Boolean(
+        turnGroupingContext?.turnId
+        && planTurnTraceIndex?.turnIntentById.get(turnGroupingContext.turnId) === 'implement',
+    );
     // Continuation-turn members inherit the revision's plan-mode status so a
     // plan emitted by a synthetic continuation resolves like its user-authored
     // origin turn would.
-    const isPlanRevisionModeSource = isPlanModeSource || planRevision.entry?.isPlanModeRevision === true;
+    const isPlanRevisionModeSource = !isPlanImplementationTurn
+        && (isPlanModeSource || planRevision.entry?.isPlanModeRevision === true);
     // Only the revision's selected source message mounts the PlanCard; earlier
     // siblings consume their superseded plan bodies without a card.
     const mountPlanCard = planRevision.role !== 'before-source';
@@ -1488,8 +1498,10 @@ const AssistantMessageBody = React.memo(({
             // An actionable Plan-mode response ends at its Plan card. Providers
             // may append late reasoning/tool parts after the final plan text;
             // keep those authoritative parts in sync state, but do not let them
-            // visually displace the plan from the end of the response.
-            if (shouldStopAfterPlanCard(messagePlan, isPlanRevisionModeSource, hasRenderedPlanCard)) {
+            // visually displace the plan from the end of the response. An
+            // implementation turn is exempt: everything it produces is work
+            // output and must stay visible.
+            if (!isPlanImplementationTurn && shouldStopAfterPlanCard(messagePlan, isPlanRevisionModeSource, hasRenderedPlanCard)) {
                 break;
             }
 
@@ -1940,6 +1952,7 @@ const AssistantMessageBody = React.memo(({
         collapsedPreviewCount,
         expandedTools,
         isMessageCompleted,
+        isPlanImplementationTurn,
         isPlanModeSource,
         isPlanRevisionModeSource,
         isPlanRevisionPostSourceMessage,

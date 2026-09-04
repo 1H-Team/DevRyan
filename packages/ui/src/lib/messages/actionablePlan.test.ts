@@ -5,11 +5,13 @@ import {
   buildPlanImplementationRequestMarker,
   findPlanCardReasoningPartIndex,
   findPlanCardSentinel,
+  hasPlanImplementationRequestPart,
   hasStructuredPlanBody,
   isPlanModeUserMessage,
   parsePlanImplementationRequestPart,
   resolveMessagePlanCard,
   resolvePlanCardSplit,
+  resolvePlanTurnIntent,
   splitPlanCardSentinel,
   splitReasoningPartPlan,
   stripPlanCardSentinel,
@@ -124,12 +126,80 @@ describe("isPlanModeUserMessage", () => {
     )).toBe(true)
   })
 
+  test("an implementation marker beats every plan-mode signal", () => {
+    const marker = syntheticTextPart(buildPlanImplementationRequestMarker({
+      sourceSessionId: "session-1",
+      sourceMessageId: "assistant-1",
+      planIndex: 0,
+    }))
+    const instructions = syntheticTextPart("Read the plan at /repo/.opencode/plans/fix.md and implement it.")
+    const message = {
+      ...userMessage("user-2"),
+      mode: "plan",
+      agent: "plan",
+      metadata: { openchamberPlanMode: true },
+    } as unknown as Message
+
+    // Recorded flag + mode: 'plan' + openchamber metadata + a stale preface all
+    // lose to the marker: the turn is an implementation request.
+    expect(isPlanModeUserMessage(message, [marker, instructions], true)).toBe(false)
+    expect(isPlanModeUserMessage(
+      message,
+      [syntheticTextPart("User has requested to enter plan mode."), marker, instructions],
+      true,
+    )).toBe(false)
+  })
+
   test("ignores assistant messages", () => {
     expect(isPlanModeUserMessage(assistantMessage("assistant-1"), [], true)).toBe(false)
   })
 
   test("returns false for undefined message", () => {
     expect(isPlanModeUserMessage(undefined, [], true)).toBe(false)
+  })
+})
+
+describe("resolvePlanTurnIntent", () => {
+  const marker = syntheticTextPart(buildPlanImplementationRequestMarker({
+    sourceSessionId: "session-1",
+    sourceMessageId: "assistant-1",
+    planIndex: 0,
+  }))
+
+  test("classifies implement, plan and plain turns", () => {
+    expect(resolvePlanTurnIntent(userMessage("user-1"), [marker], false)).toBe("implement")
+    expect(resolvePlanTurnIntent(userMessage("user-1"), [], true)).toBe("plan")
+    expect(resolvePlanTurnIntent(
+      { ...userMessage("user-1"), mode: "plan" } as Message,
+      [],
+      false,
+    )).toBe("plan")
+    expect(resolvePlanTurnIntent(
+      userMessage("user-1"),
+      [syntheticTextPart("User has requested to enter plan mode.")],
+      false,
+    )).toBe("plan")
+    expect(resolvePlanTurnIntent(userMessage("user-1"), [], false)).toBe("none")
+  })
+
+  test("the marker wins over the recorded flag and plan metadata", () => {
+    expect(resolvePlanTurnIntent(
+      { ...userMessage("user-1"), mode: "plan" } as Message,
+      [marker],
+      true,
+    )).toBe("implement")
+  })
+
+  test("only user messages carry an intent", () => {
+    expect(resolvePlanTurnIntent(assistantMessage("assistant-1"), [marker], true)).toBe("none")
+    expect(resolvePlanTurnIntent(undefined, [marker], true)).toBe("none")
+  })
+
+  test("hasPlanImplementationRequestPart ignores visible or malformed markers", () => {
+    expect(hasPlanImplementationRequestPart([marker])).toBe(true)
+    expect(hasPlanImplementationRequestPart([{ ...marker, synthetic: false } as Part])).toBe(false)
+    expect(hasPlanImplementationRequestPart([syntheticTextPart(`${PLAN_IMPLEMENTATION_REQUEST_PREFIX}{broken`)])).toBe(false)
+    expect(hasPlanImplementationRequestPart(undefined)).toBe(false)
   })
 })
 

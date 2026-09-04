@@ -1,6 +1,6 @@
 {
   "name": "openchamber-monorepo",
-  "version": "1.1.11",
+  "version": "1.1.12",
   "description": "OpenChamber monorepo workspace for web, ui, and desktop runtimes",
   "private": true,
   "type": "module",
@@ -24,6 +24,7 @@
     "dev": "node ./scripts/dev.mjs",
     "agent:eval": "node ./scripts/agent-evals/main.mjs",
     "perf:electron": "node ./scripts/perf/electron-resource-benchmark.mjs",
+    "perf:pipeline": "node ./scripts/perf/session-pipeline-profile.mjs",
     "build": "bun run --filter '*' build",
     "build:web": "bun run --cwd packages/web build",
     "build:ui": "bun run --cwd packages/ui build",

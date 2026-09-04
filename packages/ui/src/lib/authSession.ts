@@ -113,6 +113,11 @@ export const retryAuthSession = async (): Promise<void> => {
 
 export const getAuthPrincipal = (): AuthPrincipal => currentPrincipal;
 
+export const subscribeAuthPrincipal = (listener: () => void): (() => void) => {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+};
+
 export const useAuthPrincipal = (): AuthPrincipal => React.useSyncExternalStore(
   (listener) => {
     listeners.add(listener);

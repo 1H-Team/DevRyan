@@ -4,16 +4,13 @@ import {
   buildAgentConfigPayload,
   buildAgentModelOverridePayload,
   buildAgentRuntimeSettingsPayload,
-  buildOrchestrationLimitsPayload,
   buildSettingsAgentCatalog,
   filterVisibleAgentSelectorOptions,
   filterVisibleSettingsAgents,
   normalizeAgentForSettings,
   normalizeAgentRuntimeSettings,
-  normalizeOrchestrationLimits,
   useAgentsStore,
   type AgentRuntimeSettings,
-  type OrchestrationLimits,
 } from "./useAgentsStore";
 import { useConfigStore } from "./useConfigStore";
 import { useSelectionStore } from "@/sync/selection-store";
@@ -578,7 +575,7 @@ describe("agent model override persistence", () => {
       sessionAgentSelections: new Map(),
       sessionPlanModeSelections: new Map(),
       defaultPlanModeSelection: false,
-      draftPlanModeSelection: false,
+      draftPlanModeSelections: new Map(),
       sessionAgentModelSelections: new Map([
         ["session-1", new Map([["builder", { providerId: "anthropic", modelId: "claude-sonnet-4-5" }]])],
       ]),
@@ -663,139 +660,6 @@ describe("buildSettingsAgentCatalog", () => {
 
     expect(catalog.map((agent) => agent.name)).toEqual(["orchestrator"]);
     expect(catalog.find((agent) => agent.name === "orchestrator")?.description).toBe("Project override");
-  });
-});
-
-describe("orchestration limits", () => {
-  const limitsPayload = (overrides: Record<string, unknown> = {}) => ({
-    maxConcurrentSubagents: 4,
-    pauseUnderMemoryPressure: true,
-    pressure: { state: "normal", availableRatio: 0.42, swapUsedRatio: 0.1, sampledAt: 1_000, source: "vm_stat" },
-    ...overrides,
-  });
-  const seed = (): OrchestrationLimits => {
-    const limits = normalizeOrchestrationLimits(limitsPayload());
-    if (!limits) throw new Error("fixture must normalize");
-    useAgentsStore.setState({ orchestrationLimits: limits });
-    return limits;
-  };
-  const restore = () => {
-    globalThis.fetch = originalFetch;
-    useAgentsStore.setState({ orchestrationLimits: null });
-  };
-
-  test("loads host-wide sub-agent limits through the orchestration-limits route", async () => {
-    let requested: { url: string; method: string | undefined } | null = null;
-    const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
-      requested = { url: String(input), method: init?.method };
-      return new Response(JSON.stringify(limitsPayload({
-        maxConcurrentSubagents: 6,
-        pressure: { state: "elevated", availableRatio: "n/a", swapUsedRatio: null, sampledAt: 2_000, source: "vm_stat" },
-      })), { status: 200 });
-    };
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    try {
-      const limits = await useAgentsStore.getState().getOrchestrationLimits();
-
-      expect(requested).toEqual({ url: "/api/config/orchestration-limits", method: "GET" });
-      expect(limits).toEqual({
-        maxConcurrentSubagents: 6,
-        pauseUnderMemoryPressure: true,
-        pressure: { state: "elevated", availableRatio: null, swapUsedRatio: null, sampledAt: 2_000, source: "vm_stat" },
-      });
-      expect(useAgentsStore.getState().orchestrationLimits).toEqual(limits);
-    } finally {
-      restore();
-    }
-  });
-
-  test("reads a host without the route as having no limits to show", async () => {
-    seed();
-    globalThis.fetch = (async () => new Response(JSON.stringify({ error: "Not found" }), { status: 404 })) as unknown as typeof fetch;
-
-    try {
-      await expect(useAgentsStore.getState().getOrchestrationLimits()).resolves.toBeNull();
-      expect(useAgentsStore.getState().orchestrationLimits).toBeNull();
-    } finally {
-      restore();
-    }
-  });
-
-  test("rejects a malformed limits payload without storing it", async () => {
-    globalThis.fetch = (async () => new Response(JSON.stringify({ maxConcurrentSubagents: 40, pauseUnderMemoryPressure: true }), { status: 200 })) as unknown as typeof fetch;
-
-    try {
-      await expect(useAgentsStore.getState().getOrchestrationLimits()).rejects.toThrow("Failed to load sub-agent limits");
-      expect(useAgentsStore.getState().orchestrationLimits).toBeNull();
-    } finally {
-      restore();
-    }
-  });
-
-  test("saves a partial update optimistically and reconciles from the response", async () => {
-    seed();
-    let optimistic: number | null = null;
-    let requestBody: unknown = null;
-    let method: string | undefined;
-    const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("/api/config/orchestration-limits");
-      method = init?.method;
-      requestBody = JSON.parse(String(init?.body));
-      optimistic = useAgentsStore.getState().orchestrationLimits?.maxConcurrentSubagents ?? null;
-      return new Response(JSON.stringify(limitsPayload({
-        maxConcurrentSubagents: 8,
-        pressure: { state: "critical", availableRatio: 0.05, swapUsedRatio: 0.9, sampledAt: 3_000, source: "vm_stat" },
-      })), { status: 200 });
-    };
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    try {
-      const saved = await useAgentsStore.getState().saveOrchestrationLimits({ maxConcurrentSubagents: 8 });
-
-      expect(method).toBe("PUT");
-      expect(requestBody).toEqual({ maxConcurrentSubagents: 8 });
-      expect(optimistic).toBe(8);
-      expect(saved.pressure.state).toBe("critical");
-      expect(useAgentsStore.getState().orchestrationLimits).toEqual(saved);
-      expect(useAgentsStore.getState().orchestrationLimits?.pauseUnderMemoryPressure).toBe(true);
-    } finally {
-      restore();
-    }
-  });
-
-  test("reverts the optimistic value and throws when the host rejects the update", async () => {
-    const before = seed();
-    globalThis.fetch = (async () => new Response(
-      JSON.stringify({ error: "maxConcurrentSubagents must be between 1 and 16" }),
-      { status: 400 },
-    )) as unknown as typeof fetch;
-
-    try {
-      await expect(useAgentsStore.getState().saveOrchestrationLimits({ pauseUnderMemoryPressure: false }))
-        .rejects.toThrow("must be between 1 and 16");
-      expect(useAgentsStore.getState().orchestrationLimits).toEqual(before);
-    } finally {
-      restore();
-    }
-  });
-
-  test("validates the payload before touching the host", async () => {
-    seed();
-    let calls = 0;
-    globalThis.fetch = (async () => { calls += 1; return new Response("{}", { status: 200 }); }) as unknown as typeof fetch;
-
-    try {
-      await expect(useAgentsStore.getState().saveOrchestrationLimits({ maxConcurrentSubagents: 0 })).rejects.toThrow("between 1 and 16");
-      await expect(useAgentsStore.getState().saveOrchestrationLimits({})).rejects.toThrow("Nothing to save");
-      expect(calls).toBe(0);
-      expect(buildOrchestrationLimitsPayload({ maxConcurrentSubagents: 3.4, pauseUnderMemoryPressure: true }))
-        .toEqual({ maxConcurrentSubagents: 3, pauseUnderMemoryPressure: true });
-      expect(normalizeOrchestrationLimits(limitsPayload({ pressure: undefined }))?.pressure)
-        .toEqual({ state: "normal", availableRatio: null, swapUsedRatio: null, sampledAt: null, source: "unavailable" });
-    } finally {
-      restore();
-    }
   });
 });
 

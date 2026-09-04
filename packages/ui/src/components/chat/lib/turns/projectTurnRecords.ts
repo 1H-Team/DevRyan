@@ -235,6 +235,10 @@ export const projectTurnRecords = (
 
     const turns: TurnRecord[] = [];
     const turnByUserId = new Map<string, TurnRecord>();
+    // Message index of each turn's user message, in message order, so an
+    // assistant whose parent turn is unknown can attach to the turn that
+    // precedes it.
+    const turnMessageIndexes: number[] = [];
     const groupedMessageIds = new Set<string>();
 
     messages.forEach((message, index) => {
@@ -265,9 +269,19 @@ export const projectTurnRecords = (
             },
         };
         turns.push(turn);
+        turnMessageIndexes.push(index);
         turnByUserId.set(turn.userMessageId, turn);
         groupedMessageIds.add(message.info.id);
     });
+
+    const findPrecedingTurn = (messageIndex: number): TurnRecord | undefined => {
+        for (let position = turnMessageIndexes.length - 1; position >= 0; position -= 1) {
+            if (turnMessageIndexes[position]! < messageIndex) {
+                return turns[position];
+            }
+        }
+        return undefined;
+    };
 
     messages.forEach((message, index) => {
         const role = resolveMessageRole(message);
@@ -275,8 +289,12 @@ export const projectTurnRecords = (
             return;
         }
 
+        // An assistant always renders somewhere: under its parent turn when the
+        // parent is known, else under the last turn whose user message precedes
+        // it (an optimistic user message carries an empty parentID, and a
+        // provider may echo a parent id the client never saw), else ungrouped.
         const parentId = getMessageParentId(message);
-        const targetTurn = parentId ? turnByUserId.get(parentId) : undefined;
+        const targetTurn = (parentId ? turnByUserId.get(parentId) : undefined) ?? findPrecedingTurn(index);
         if (!targetTurn) {
             return;
         }
@@ -328,9 +346,6 @@ export const projectTurnRecords = (
     const projection = projectTurnIndexes(stableTurns);
     const ungroupedMessageIds = new Set<string>();
     messages.forEach((message) => {
-        if (resolveMessageRole(message) === 'assistant') {
-            return;
-        }
         if (!groupedMessageIds.has(message.info.id)) {
             ungroupedMessageIds.add(message.info.id);
         }

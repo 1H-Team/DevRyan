@@ -364,6 +364,7 @@ async function routeMessage(params: {
       await waitForWorktreeBootstrapForSend(messageDirectory)
     }
     throwIfAborted(params.lifecycleCallbacks?.signal)
+    await params.lifecycleCallbacks?.awaitTransportGate?.()
     assertTransportAllowed()
     const sdk = opencodeClient.getSdkClient()
     await sdk.session.shell({
@@ -407,6 +408,7 @@ async function routeMessage(params: {
       throw new Error("Cursor SDK cannot accept live messages into a running subtask yet. Stop or wait for it to finish, then send.")
     }
 
+    await params.lifecycleCallbacks?.awaitTransportGate?.()
     await opencodeClient.sendImmediateSubtaskPrompt({
       id: params.sessionId,
       text: params.content,
@@ -458,6 +460,7 @@ async function routeMessage(params: {
         },
         signal: params.lifecycleCallbacks?.signal,
         preserveProviderRecovery: params.lifecycleCallbacks?.preserveProviderRecovery,
+        awaitTransportGate: params.lifecycleCallbacks?.awaitTransportGate,
         send: (messageID) => opencodeClient.sendCommand({
           id: params.sessionId,
           providerID: params.providerID,
@@ -489,6 +492,7 @@ async function routeMessage(params: {
     files: params.files,
     directory: messageDirectory,
     planMode: params.planMode,
+    additionalParts,
     includeAssistantPlaceholder: params.providerID === CURSOR_ACP_PROVIDER_ID,
     onMessageID: (messageID) => {
       useSessionUIStore.getState().recordUserMessagePlanMode(params.sessionId, messageID, params.planMode === true)
@@ -500,6 +504,7 @@ async function routeMessage(params: {
     },
     signal: params.lifecycleCallbacks?.signal,
     preserveProviderRecovery: params.lifecycleCallbacks?.preserveProviderRecovery,
+    awaitTransportGate: params.lifecycleCallbacks?.awaitTransportGate,
     send: (messageID) => {
       const planModePrefaceText = params.planMode === true
         ? buildPlanModeSyntheticInstruction(opencodeClient.getContextModeAvailable())
@@ -591,6 +596,13 @@ type SendLifecycleCallbacks = {
   onSessionReady?: (sessionID: string, directory?: string | null) => void
   signal?: AbortSignal
   preserveProviderRecovery?: boolean
+  /**
+   * Awaited right before the prompt is handed to the transport (after the
+   * optimistic insert). A queued / steered send passes the gate returned by
+   * `beginQueuedSendInterrupt` so the bounded abort settles while the user
+   * already sees their message.
+   */
+  awaitTransportGate?: () => Promise<void>
 }
 
 type PendingQuestionDismissal = {
@@ -2512,7 +2524,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const draftSendConfig = normalizeDraftSendConfig(capturedDraft?.sendConfig ?? draft.sendConfig)
       const resolvedPlanMode = typeof draftSendConfig?.planMode === "boolean"
         ? draftSendConfig.planMode
-        : (planMode ?? draft.planMode ?? useSelectionStore.getState().getPlanModeSelection(null))
+        : (planMode ?? draft.planMode ?? useSelectionStore.getState().getPlanModeSelection(null, capturedDraftId))
       const submittedDraftText = content
       const submittedAttachments = attachments?.map((attachment) => ({ ...attachment }))
       let draftDirectoryOverride = resolveDirectoryForDraftSend(draft)
@@ -2656,7 +2668,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       if (resolvedPlanMode) {
         useSelectionStore.getState().setSessionPlanMode(created.id, true)
       }
-      if (get().currentDraftId === capturedDraftId) useSelectionStore.getState().clearDraftPlanMode()
+      // Only the sent draft's plan-mode toggle is consumed; every other draft
+      // keeps its own choice.
+      if (capturedDraftId) useSelectionStore.getState().clearDraftPlanMode(capturedDraftId)
 
       get().initializeNewOpenChamberSession(created.id, configState.agents ?? [])
 
