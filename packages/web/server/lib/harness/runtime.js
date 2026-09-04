@@ -41,6 +41,7 @@ export const createWebHarnessRuntime = (options = {}) => {
   let evidenceRuntime = null;
   let commandDeadlineRuntime = null;
   let primaryRecoveryRuntime = null;
+  let sessionChangeHost = null;
 
   const initialize = () => {
     initialization ??= Promise.all([
@@ -172,6 +173,7 @@ export const createWebHarnessRuntime = (options = {}) => {
       evidenceRuntime?.drain?.(),
       commandDeadlineRuntime?.drain?.(),
       primaryRecoveryRuntime?.drain?.(),
+      sessionChangeHost?.drain(),
       worktreeStore.drain(),
       commandDeadlineStore.drain(),
     ]);
@@ -193,6 +195,7 @@ export const createWebHarnessRuntime = (options = {}) => {
     record,
     recordOpenCodeEvent(payload, directory = null) {
       primaryRecoveryRuntime?.observe(payload);
+      void sessionChangeHost?.observe(payload, directory).catch(() => record({ type: 'log', event: 'session_changes_observation_failed' }));
       return record({
         type: 'open_code_event',
         directory,
@@ -218,6 +221,7 @@ export const createWebHarnessRuntime = (options = {}) => {
     setEvidenceRuntime,
     setCommandDeadlineRuntime,
     setPrimaryRecoveryRuntime(runtime) { primaryRecoveryRuntime = runtime; },
+    setSessionChangeHost(runtime) { sessionChangeHost = runtime; },
     getWorktreeRuntime: () => worktreeRuntime,
     getWorktreeReceipts,
     getCommandDeadlineRecoveryStatus: () => commandDeadlineRuntime?.getStatus?.() ?? null,

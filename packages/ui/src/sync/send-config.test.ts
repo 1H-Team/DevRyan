@@ -204,7 +204,7 @@ describe("send config resolution", () => {
       draftAgentModelVariantSelections: new Map(),
       lastUsedProvider: null,
       defaultPlanModeSelection: false,
-      draftPlanModeSelection: false,
+      draftPlanModeSelections: new Map(),
     })
     useSelectionStore.getState().setPlanModeSelection(null, false)
   })

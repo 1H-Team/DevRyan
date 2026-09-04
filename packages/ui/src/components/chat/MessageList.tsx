@@ -649,14 +649,22 @@ const TurnBlock = React.memo(({
         return byMessageId;
     }, [visibleActivityParts]);
 
+    // Wave labels group parallel dispatches into one Agent Dispatch card even
+    // when the fan-out spans several assistant messages. The selector is
+    // identity-stable unless a task changes wave or a wave opens/closes.
+    const managedDispatchWaves = useManagedOrchestrationStore(managedOrchestrationSelectors.dispatchWaveIndex);
     const managedTaskProjectionsByMessageId = React.useMemo(() => new Map(
         resolveManagedTaskTurnProjection(
             visibleAssistantMessages.map((message) => ({
                 messageId: message.info.id,
                 parts: message.parts,
             })),
+            {
+                getTaskWaveId: (taskId) => managedDispatchWaves.waveIdByTaskId.get(taskId) ?? null,
+                isWaveOpen: (waveId) => managedDispatchWaves.openWaveIds.has(waveId),
+            },
         ).map((projection) => [projection.ownerMessageId, projection] as const),
-    ), [visibleAssistantMessages]);
+    ), [managedDispatchWaves, visibleAssistantMessages]);
 
     const assistantImageMessages = React.useMemo(() => {
         const responseComplete = visibleAssistantMessages.length > 0

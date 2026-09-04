@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
 import type { SessionTreeChanges } from '@/lib/opencode/client'
 import { sessionEvents } from '@/lib/sessionEvents'
+import { getAuthPrincipal, setAuthPrincipal } from '@/lib/authSession'
 import {
   clearDirectorySessionTreeChanges,
+  clearSessionTreeChanges,
   getSessionTreeChangesKey,
   observeSessionTreeActivity,
   refreshSessionTreeChanges,
@@ -63,9 +65,78 @@ describe('useSessionTreeChangesStore', () => {
   })
 
   test('keys entries by normalized directory and root session id', () => {
-    expect(getSessionTreeChangesKey('/repo/', 'ses_1')).toBe('/repo\0ses_1')
-    expect(getSessionTreeChangesKey('C:\\repo\\', 'ses_1')).toBe('C:/repo\0ses_1')
+    expect(JSON.parse(getSessionTreeChangesKey('/repo/', 'ses_1')).slice(2)).toEqual(['/repo', 'ses_1'])
+    expect(JSON.parse(getSessionTreeChangesKey('C:\\repo\\', 'ses_1')).slice(2)).toEqual(['C:/repo', 'ses_1'])
     expect(getSessionTreeChangesKey('/repo', 'ses_1')).toBe(getSessionTreeChangesKey('/repo//', 'ses_1'))
+  })
+
+  test('rejects a response naming another independent session', async () => {
+    respond = () => Promise.resolve(makeChanges({ rootSessionID: 'ses_other', files: [file('other.ts')] }))
+    await refreshSessionTreeChanges('/repo', 'ses_root')
+    const entry = useSessionTreeChangesStore.getState().entries.get(getSessionTreeChangesKey('/repo', 'ses_root'))
+    expect(entry?.files).toEqual([])
+    expect(entry?.error).toContain('identity mismatch')
+  })
+
+  test('rejects a response from another worktree with the same session id', async () => {
+    respond = () => Promise.resolve(makeChanges({ directory: '/other-worktree', files: [file('other.ts')] }))
+    await refreshSessionTreeChanges('/repo', 'ses_root')
+    const entry = useSessionTreeChangesStore.getState().entries.get(getSessionTreeChangesKey('/repo', 'ses_root'))
+    expect(entry?.files).toEqual([])
+    expect(entry?.error).toContain('directory mismatch')
+  })
+
+  test('switching worktrees drops a released request even after returning to the same task', async () => {
+    const previous = createDeferred()
+    respond = () => previous.promise
+    const release = subscribeSessionTreeChanges('/repo', 'ses_root')
+    release()
+    respond = () => Promise.resolve(makeChanges({ revision: 'current', files: [file('current.ts')] }))
+    const releaseCurrent = subscribeSessionTreeChanges('/repo', 'ses_root')
+    await wait(0)
+    previous.resolve(makeChanges({ revision: 'old', files: [file('old.ts')] }))
+    await wait(0)
+    expect(useSessionTreeChangesStore.getState().entries.get(getSessionTreeChangesKey('/repo', 'ses_root'))?.revision).toBe('current')
+    releaseCurrent()
+  })
+
+  test('late responses cannot resurrect a deleted session', async () => {
+    const deferred = createDeferred()
+    respond = () => deferred.promise
+    const request = refreshSessionTreeChanges('/repo', 'ses_root')
+    clearSessionTreeChanges('/repo', 'ses_root')
+    deferred.resolve(makeChanges({ files: [file('deleted.ts')] }))
+    await request
+    expect(useSessionTreeChangesStore.getState().entries.size).toBe(0)
+  })
+
+  test('changing account clears cached files and rejects old in-flight responses', async () => {
+    const principal = getAuthPrincipal()
+    const deferred = createDeferred()
+    respond = () => deferred.promise
+    const previousKey = getSessionTreeChangesKey('/repo', 'ses_root')
+    const request = refreshSessionTreeChanges('/repo', 'ses_root')
+    try {
+      setAuthPrincipal({ ...principal, id: 'different-account' })
+      expect(getSessionTreeChangesKey('/repo', 'ses_root')).not.toBe(previousKey)
+      deferred.resolve(makeChanges({ files: [file('private.ts')] }))
+      await request
+      expect(useSessionTreeChangesStore.getState().entries.size).toBe(0)
+    } finally { setAuthPrincipal(principal) }
+  })
+
+  test('repository polling does not re-fetch captured history; capture notifications do', async () => {
+    respond = () => Promise.resolve(makeChanges({ revision: 'revision', coverage: 'complete' }))
+    const unsubscribe = subscribeSessionTreeChanges('/repo', 'ses_root')
+    await wait(0)
+    calls.length = 0
+    sessionEvents.requestGitRefresh({ directory: '/repo' })
+    await wait(DEBOUNCE_MS * 3)
+    expect(calls).toEqual([])
+    sessionEvents.requestGitRefresh({ directory: '/repo', sessionChanges: true })
+    await wait(DEBOUNCE_MS * 3)
+    expect(calls).toHaveLength(1)
+    unsubscribe()
   })
 
   test('subscribing fetches immediately and stores the entry under the key', async () => {

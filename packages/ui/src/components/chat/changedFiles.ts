@@ -21,6 +21,8 @@ export interface GitChangedFile {
     relativePath: string;
     insertions: number;
     deletions: number;
+    binary?: boolean;
+    oldPath?: string | null;
     status: string;
 }
 

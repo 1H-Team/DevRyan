@@ -43,6 +43,7 @@ const IMMUTABLE_PROJECTED_TASK_FIELDS = [
   'rootSessionId',
   'dispatchCallId',
   'dispatchGrouped',
+  'dispatchWaveId',
   'parentTaskId',
   'directory',
   'sequence',
@@ -205,6 +206,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord
     && Boolean(value.rootSessionId.trim())
     && isOptionalNullableString(value.dispatchCallId)
     && (value.dispatchGrouped === undefined || typeof value.dispatchGrouped === 'boolean')
+    && isOptionalNullableString(value.dispatchWaveId)
     && isNullableString(value.parentTaskId)
     && isNullableString(value.childSessionId)
     && typeof value.directory === 'string'
@@ -256,6 +258,11 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord
       ? null
       : truncateManagedText(value.dispatchCallId, 1_024),
     dispatchGrouped: value.dispatchGrouped === true,
+    // Display-only wave label; absent on hosts predating it. Only a well-formed
+    // `dvr_wave_` id is kept so the chat never groups cards by an arbitrary string.
+    dispatchWaveId: typeof value.dispatchWaveId === 'string' && value.dispatchWaveId.startsWith('dvr_wave_')
+      ? truncateManagedText(value.dispatchWaveId, 1_024)
+      : null,
     parentTaskId: value.parentTaskId as string | null,
     childSessionId: value.childSessionId as string | null,
     directory: value.directory as string,
@@ -1302,8 +1309,86 @@ export const createManagedOrchestrationStore = (options: {
 
 export const useManagedOrchestrationStore = createManagedOrchestrationStore();
 
+/**
+ * Wave labels the chat groups Agent Dispatch cards by. `openWaveIds` holds
+ * every wave with a task that is non-terminal or whose result is still
+ * unacknowledged: the scheduler labels the next start with that wave, so the
+ * chat attaches provisional starts to it. Display only.
+ */
+export type ManagedDispatchWaveIndex = {
+  waveIdByTaskId: ReadonlyMap<string, string>;
+  openWaveIds: ReadonlySet<string>;
+};
+
+const EMPTY_DISPATCH_WAVE_INDEX: ManagedDispatchWaveIndex = Object.freeze({
+  waveIdByTaskId: new Map<string, string>(),
+  openWaveIds: new Set<string>(),
+});
+
+const buildDispatchWaveIndex = (state: ManagedOrchestrationStore): ManagedDispatchWaveIndex => {
+  const waveIdByTaskId = new Map<string, string>();
+  const openWaveIds = new Set<string>();
+  for (const task of Object.values(state.tasksById)) {
+    const waveId = task.dispatchWaveId ?? null;
+    if (!waveId) continue;
+    waveIdByTaskId.set(task.taskId, waveId);
+    if (openWaveIds.has(waveId)) continue;
+    if (!isTerminalManagedTaskStatus(task.status)) {
+      openWaveIds.add(waveId);
+      continue;
+    }
+    const envelope = state.resultEnvelopesByTaskId[task.taskId];
+    if (!envelope || envelope.action === null) openWaveIds.add(waveId);
+  }
+  if (waveIdByTaskId.size === 0) return EMPTY_DISPATCH_WAVE_INDEX;
+  return { waveIdByTaskId, openWaveIds };
+};
+
+const isSameDispatchWaveIndex = (current: ManagedDispatchWaveIndex, next: ManagedDispatchWaveIndex) => {
+  if (current === next) return true;
+  if (
+    current.waveIdByTaskId.size !== next.waveIdByTaskId.size
+    || current.openWaveIds.size !== next.openWaveIds.size
+  ) return false;
+  for (const [taskId, waveId] of next.waveIdByTaskId) {
+    if (current.waveIdByTaskId.get(taskId) !== waveId) return false;
+  }
+  for (const waveId of next.openWaveIds) {
+    if (!current.openWaveIds.has(waveId)) return false;
+  }
+  return true;
+};
+
+// Identity-stable across store updates that do not move a task between waves
+// or open/close a wave, so subscribers re-render only when a card would change.
+let dispatchWaveIndexCache: {
+  tasksById: ManagedOrchestrationStore['tasksById'];
+  resultEnvelopesByTaskId: ManagedOrchestrationStore['resultEnvelopesByTaskId'];
+  index: ManagedDispatchWaveIndex;
+} | null = null;
+
+const selectDispatchWaveIndex = (state: ManagedOrchestrationStore): ManagedDispatchWaveIndex => {
+  const cache = dispatchWaveIndexCache;
+  if (
+    cache
+    && cache.tasksById === state.tasksById
+    && cache.resultEnvelopesByTaskId === state.resultEnvelopesByTaskId
+  ) {
+    return cache.index;
+  }
+  const built = buildDispatchWaveIndex(state);
+  const index = cache && isSameDispatchWaveIndex(cache.index, built) ? cache.index : built;
+  dispatchWaveIndexCache = {
+    tasksById: state.tasksById,
+    resultEnvelopesByTaskId: state.resultEnvelopesByTaskId,
+    index,
+  };
+  return index;
+};
+
 export const managedOrchestrationSelectors = {
   emptyTaskIds: EMPTY_TASK_IDS,
+  dispatchWaveIndex: selectDispatchWaveIndex,
   taskIdsForRoot: (rootSessionId: string) => (state: ManagedOrchestrationStore) => (
     state.taskIdsByRootId[rootSessionId] ?? EMPTY_TASK_IDS
   ),

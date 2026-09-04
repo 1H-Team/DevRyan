@@ -12,6 +12,7 @@ import { clearDesktopCache, getDesktopCacheInfo, isDesktopLocalOriginActive, isE
 import { formatBytes } from '@/lib/formatBytes';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { DiagnosticsClearRange, DiagnosticsStatus } from '@/lib/api/types';
+import { OpenCodeStorageSettings } from './OpenCodeStorageSettings';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
@@ -424,6 +425,7 @@ export const SessionRetentionSettings: React.FC = () => {
             : t('settings.openchamber.sessionRetention.manualCleanup.eligibleDeleteNow', { count: pendingCount })}
         </p>
         <DiagnosticDataCleanup />
+        <OpenCodeStorageSettings />
       </div>
     </div>
   );

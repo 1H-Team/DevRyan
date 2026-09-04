@@ -17,20 +17,6 @@ const SNAPSHOT_CONCURRENCY = 16;
 const SESSION_FETCH_CONCURRENCY = 4;
 const REVERT_JOURNAL_MAX_BYTES = 8 * 1024 * 1024;
 const REVERT_SCOPES = new Set(['tree', 'session']);
-// Mirror of packages/ui/src/lib/sessionChangeAttribution.ts: successful shell
-// tools can mutate files without naming them in their input.
-const UNATTRIBUTED_MUTATION_TOOLS = new Set(['bash', 'shell', 'cmd', 'powershell', 'terminal']);
-const SUCCESS_TOOL_STATUSES = new Set(['complete', 'completed', 'done']);
-const TOOL_NAME_ALIASES = new Map([
-  ['oc_bash', 'bash'],
-  ['shell_command', 'bash'],
-  ['terminal_command', 'bash'],
-  ['run_command', 'bash'],
-  ['execute_command', 'bash'],
-  ['exec_command', 'bash'],
-  ['command', 'bash'],
-  ['sh', 'bash'],
-]);
 const scopedRevertLocks = new Map();
 
 class ScopedRevertConflictError extends Error {
@@ -1747,128 +1733,14 @@ export const runScopedSessionUnrevert = async ({
 // Change summary (read-only)
 // ---------------------------------------------------------------------------
 
-const normalizeToolName = (value) => {
-  if (typeof value !== 'string') return '';
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  let normalized = trimmed.replace(/:\d+$/, '');
-  if (normalized.includes('.')) {
-    const parts = normalized.split('.').filter(Boolean);
-    normalized = parts[parts.length - 1] ?? normalized;
-  }
-  normalized = normalized
-    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .replace(/[-\s]+/g, '_')
-    .toLowerCase()
-    .replace(/_?tool_?call$/, '');
-  return TOOL_NAME_ALIASES.get(normalized) ?? normalized;
-};
-
-const isSuccessfulToolPart = (part) => {
-  if (part?.type !== 'tool') return false;
-  const status = typeof part.state?.status === 'string' ? part.state.status.trim().toLowerCase() : '';
-  return SUCCESS_TOOL_STATUSES.has(status);
-};
-
-const planHasUnattributedMutations = (plan) => plan.entries.some((entry) => (
-  entry.ordered.slice(entry.targetIndex, entry.endIndex).some((record) => (
-    record?.info?.role === 'assistant'
-      && (Array.isArray(record.parts) ? record.parts : []).some((part) => (
-        isSuccessfulToolPart(part) && UNATTRIBUTED_MUTATION_TOOLS.has(normalizeToolName(part.tool))
-      ))
-  ))
-));
-
-const DIFF_STATUSES = new Set(['added', 'deleted', 'modified']);
-
-const opExistence = async (op) => {
-  if (op.kind === 'diff') {
-    const status = DIFF_STATUSES.has(op.diff?.status) ? op.diff.status : 'modified';
-    return { before: status !== 'added', after: status !== 'deleted' };
-  }
-  return { before: op.snapshot.exists, after: await fileExists(op.snapshot.absolute) };
-};
-
-/**
- * Summarizes what the prompt's session tree changed since the root's first
- * user message, using the same tree plan as the revert (no lock, no writes).
- */
-export const computeScopedSessionChanges = async ({
-  buildOpenCodeUrl,
-  getOpenCodeAuthHeaders,
-  fetchImpl,
-  directory,
-  sessionID,
-  openCodeSnapshotRoot,
-  timeoutMs = SCOPED_REVERT_TIMEOUT_MS,
-  signal: parentSignal,
-}) => {
+/** Legacy hosts without capture support must not attribute worktree snapshots
+ * to a session. The managed hosts mount SessionChangeHost before this route. */
+export const computeScopedSessionChanges = async ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl, directory, sessionID, signal }) => {
   const client = createClient({ buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl });
-  const abortContext = createAbortContext({ timeoutMs, signal: parentSignal });
-  const signal = abortContext.signal;
-
-  try {
-    const sessions = await abortable(listSessionTree({ ...client, sessionID, directory, signal }), signal);
-    const rootSessionID = sessions[0].id;
-    const recordsBySession = await fetchTreeMessages({ client, directory, sessions, signal });
-    const rootRecords = sortMessageRecords(recordsBySession.get(rootSessionID) ?? []);
-    const firstUser = rootRecords.find((record) => record?.info?.role === 'user' && typeof record.info.id === 'string');
-    if (!firstUser) {
-      return {
-        files: [],
-        sessionCount: 0,
-        sessions: [],
-        hasUnattributedMutations: false,
-        firstUserMessageID: null,
-        rootSessionID,
-      };
-    }
-
-    const plan = collectTreeRevertPlan({ sessions, recordsBySession, targetMessageID: firstUser.info.id });
-    try {
-      await attachSnapshotOps({ plan, directory, snapshotRoot: openCodeSnapshotRoot, signal });
-    } catch (error) {
-      if (signal.aborted) throwIfAborted(signal);
-      console.warn('[scoped-revert] Could not read snapshot fallbacks for the change summary:', error?.message || error);
-    }
-
-    const files = [];
-    for (const [file, group] of mergeTreeOps(planOps(plan), directory)) {
-      throwIfAborted(signal);
-      const chronological = [...group.kept].reverse();
-      const first = await opExistence(chronological[0]);
-      const last = await opExistence(chronological[chronological.length - 1]);
-      let status = 'modified';
-      if (!first.before && last.after) status = 'added';
-      else if (!last.after) status = 'deleted';
-      let additions = 0;
-      let deletions = 0;
-      for (const op of group.kept) {
-        if (op.kind !== 'diff') continue;
-        additions += Number.isFinite(op.diff?.additions) ? op.diff.additions : 0;
-        deletions += Number.isFinite(op.diff?.deletions) ? op.diff.deletions : 0;
-      }
-      files.push({
-        path: file,
-        status,
-        additions,
-        deletions,
-        sessions: Array.from(new Set(group.all.map((op) => op.sessionID))),
-      });
-    }
-    files.sort((a, b) => a.path.localeCompare(b.path));
-
-    return {
-      files,
-      sessionCount: plan.entries.length,
-      sessions: plan.entries.map((entry) => ({ id: entry.sessionID, targetMessageID: entry.targetMessageID })),
-      hasUnattributedMutations: planHasUnattributedMutations(plan),
-      firstUserMessageID: firstUser.info.id,
-      rootSessionID,
-    };
-  } finally {
-    abortContext.dispose();
-  }
+  const sessions = await listSessionTree({ ...client, sessionID, directory, signal });
+  return { files: [], sessionCount: sessions.length, sessions: [],
+    rootSessionID: sessionID, firstUserMessageID: null, hasUnattributedMutations: false,
+    coverage: 'partial', reasons: ['historical_capture_unavailable'] };
 };
 
 // ---------------------------------------------------------------------------

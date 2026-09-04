@@ -8,6 +8,7 @@ import {
   sendMessageStreamWsEvent,
 } from './protocol.js';
 import { createGlobalMessageStreamHub } from './global-hub.js';
+import { stripEventDiffContent } from '../opencode/diff-summary.js';
 import { createGlobalMessageStreamWsBridge } from './global-ws-bridge.js';
 import { acceptDirectoryMessageStreamWsConnection } from './directory-ws-bridge.js';
 import {
@@ -220,6 +221,8 @@ export function createMessageStreamWsRuntime({
     fetchImpl,
     upstreamStallTimeoutMs,
     upstreamReconnectDelayMs,
+    // Same trim the server-owned hub applies: diff patch bodies never fan out.
+    transformEventPayload: stripEventDiffContent,
   });
 
   const globalBridge = createGlobalMessageStreamWsBridge({

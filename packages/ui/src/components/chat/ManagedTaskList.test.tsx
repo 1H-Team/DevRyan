@@ -841,62 +841,259 @@ describe('managed task presentation', () => {
     expect(designerDispatch.taskIds).toEqual(['dvr_task_designer']);
   });
 
-  test('keeps separate same-turn launches at their chronological dispatch messages', () => {
-    const projections = resolveManagedTaskTurnProjection([
-      {
-        messageId: 'assistant-explorer',
-        parts: [{
-          id: 'explorer-start',
-          type: 'tool',
-          tool: 'devryan_task',
-          state: {
-            status: 'completed',
-            input: { action: 'start', agent: 'explorer', label: 'inspect-runtime' },
-            output: JSON.stringify({ task: { taskId: 'dvr_task_explorer' } }),
-          },
-        }] as never,
-      },
-      {
-        messageId: 'assistant-wait',
-        parts: [{
-          id: 'wait-part',
-          type: 'tool',
-          tool: 'devryan_task',
-          state: {
-            status: 'completed',
-            input: { action: 'wait', taskIds: ['dvr_task_explorer'] },
-          },
-        }] as never,
-      },
-      {
-        messageId: 'assistant-designer',
-        parts: [{
-          id: 'designer-start',
-          type: 'tool',
-          tool: 'devryan_task',
-          state: {
-            status: 'completed',
-            input: { action: 'start', agent: 'designer', label: 'review-layout' },
-            output: JSON.stringify({ task: { taskId: 'dvr_task_designer' } }),
-          },
-        }] as never,
-      },
-    ]);
+  const sameTurnLaunchMessages = () => [
+    {
+      messageId: 'assistant-explorer',
+      parts: [{
+        id: 'explorer-start',
+        type: 'tool',
+        tool: 'devryan_task',
+        state: {
+          status: 'completed',
+          input: { action: 'start', agent: 'explorer', label: 'inspect-runtime' },
+          output: JSON.stringify({ task: { taskId: 'dvr_task_explorer' } }),
+        },
+      }] as never,
+    },
+    {
+      messageId: 'assistant-wait',
+      parts: [{
+        id: 'wait-part',
+        type: 'tool',
+        tool: 'devryan_task',
+        state: {
+          status: 'completed',
+          input: { action: 'wait', taskIds: ['dvr_task_explorer'] },
+        },
+      }] as never,
+    },
+    {
+      messageId: 'assistant-designer',
+      parts: [{
+        id: 'designer-start',
+        type: 'tool',
+        tool: 'devryan_task',
+        state: {
+          status: 'completed',
+          input: { action: 'start', agent: 'designer', label: 'review-layout' },
+          output: JSON.stringify({ task: { taskId: 'dvr_task_designer' } }),
+        },
+      }] as never,
+    },
+  ];
 
-    expect(projections).toEqual([
+  test('groups same-turn launches by dispatch wave instead of by assistant message', () => {
+    const waves: Record<string, string> = {
+      dvr_task_explorer: 'dvr_wave_first',
+      dvr_task_designer: 'dvr_wave_first',
+    };
+
+    // The designer was started while the explorer's wave was still open, so both
+    // launches share the card anchored at the first dispatching message.
+    expect(resolveManagedTaskTurnProjection(sameTurnLaunchMessages(), {
+      getTaskWaveId: (taskId) => waves[taskId] ?? null,
+      isWaveOpen: () => true,
+    })).toEqual([{
+      ownerMessageId: 'assistant-explorer',
+      waveId: 'dvr_wave_first',
+      taskIds: ['dvr_task_explorer', 'dvr_task_designer'],
+      pendingDispatches: [],
+      fallbackTasks: [],
+    }]);
+
+    // Started after the explorer's result was acknowledged: a new wave opens a
+    // second card at its own dispatch message, whatever the wait message did.
+    waves.dvr_task_designer = 'dvr_wave_second';
+    expect(resolveManagedTaskTurnProjection(sameTurnLaunchMessages(), {
+      getTaskWaveId: (taskId) => waves[taskId] ?? null,
+      isWaveOpen: (waveId) => waveId === 'dvr_wave_second',
+    })).toEqual([
       {
         ownerMessageId: 'assistant-explorer',
+        waveId: 'dvr_wave_first',
         taskIds: ['dvr_task_explorer'],
         pendingDispatches: [],
         fallbackTasks: [],
       },
       {
         ownerMessageId: 'assistant-designer',
+        waveId: 'dvr_wave_second',
         taskIds: ['dvr_task_designer'],
         pendingDispatches: [],
         fallbackTasks: [],
       },
     ]);
+  });
+
+  test('renders unlabeled same-turn launches as one card at the first dispatching message', () => {
+    // Ledgers written before waves existed (and a store that has not loaded yet)
+    // carry no wave: the whole turn keeps one card, as before per-message cards.
+    expect(resolveManagedTaskTurnProjection(sameTurnLaunchMessages())).toEqual([{
+      ownerMessageId: 'assistant-explorer',
+      waveId: null,
+      taskIds: ['dvr_task_explorer', 'dvr_task_designer'],
+      pendingDispatches: [],
+      fallbackTasks: [],
+    }]);
+    // A malformed label never becomes a group key.
+    expect(resolveManagedTaskTurnProjection(sameTurnLaunchMessages(), {
+      getTaskWaveId: () => 'not-a-wave',
+      isWaveOpen: () => true,
+    })[0]?.waveId).toBeNull();
+  });
+
+  const fallbackOutput = (
+    taskId: string,
+    dispatchCallId: string,
+    agent: string,
+    label: string,
+    status: 'running' | 'completed' = 'running',
+  ) => JSON.stringify({
+    task: {
+      taskId,
+      dispatchCallId,
+      agent,
+      label,
+      status,
+      childSessionId: `ses_${agent}`,
+      directory: '/workspace',
+    },
+  });
+
+  const startPart = (
+    id: string,
+    callID: string,
+    agent: string,
+    label: string,
+    output: string,
+  ) => ({
+    id,
+    type: 'tool',
+    tool: 'devryan_task',
+    callID,
+    state: {
+      status: 'completed',
+      input: { action: 'start', agent, label },
+      output,
+    },
+  });
+
+  test('wave spanning two assistant messages renders one card grouped by agent', () => {
+    const projections = resolveManagedTaskTurnProjection([
+      {
+        messageId: 'assistant-explorer',
+        parts: [
+          startPart('explorer-start', 'call_explorer', 'explorer', 'inspect-runtime', fallbackOutput('dvr_task_explorer', 'call_explorer', 'explorer', 'inspect-runtime')),
+        ] as never,
+      },
+      {
+        messageId: 'assistant-designer',
+        parts: [
+          startPart('designer-start', 'call_designer', 'designer', 'review-layout', fallbackOutput('dvr_task_designer', 'call_designer', 'designer', 'review-layout')),
+          {
+            id: 'fixer-start',
+            type: 'tool',
+            tool: 'devryan_task',
+            callID: 'call_fixer',
+            state: {
+              status: 'running',
+              input: { action: 'start', agent: 'fixer', label: 'patch-border' },
+            },
+          },
+        ] as never,
+      },
+    ], {
+      getTaskWaveId: () => 'dvr_wave_first',
+      isWaveOpen: (waveId) => waveId === 'dvr_wave_first',
+    });
+
+    expect(projections).toHaveLength(1);
+    expect(projections[0]).toMatchObject({
+      ownerMessageId: 'assistant-explorer',
+      waveId: 'dvr_wave_first',
+      taskIds: ['dvr_task_explorer', 'dvr_task_designer'],
+    });
+    // The still-provisional fixer start joins the open wave's card too.
+    expect(projections[0]?.pendingDispatches.map((dispatch) => dispatch.partId)).toEqual(['fixer-start']);
+
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ManagedTaskList
+          taskIds={projections[0]!.taskIds}
+          pendingDispatches={projections[0]!.pendingDispatches}
+          fallbackTasks={projections[0]!.fallbackTasks}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html.match(/data-managed-task-card="true"/g)).toHaveLength(1);
+    expect(html.match(/<h3[^>]*>Agent Dispatch<\/h3>/g)).toHaveLength(1);
+    expect(html.match(/data-managed-task-fallback-id=/g)).toHaveLength(2);
+    expect(html).toContain('Explorer');
+    expect(html).toContain('Designer');
+    expect(html).toContain('Fixer');
+    expect(html).toContain('Inspect Runtime');
+    expect(html).toContain('Review Layout');
+  });
+
+  test('second wave after acknowledgement renders a second card', () => {
+    const waves: Record<string, string> = {
+      dvr_task_explorer: 'dvr_wave_first',
+      dvr_task_designer: 'dvr_wave_second',
+    };
+    const projections = resolveManagedTaskTurnProjection([
+      {
+        messageId: 'assistant-explorer',
+        parts: [
+          startPart('explorer-start', 'call_explorer', 'explorer', 'inspect-runtime', fallbackOutput('dvr_task_explorer', 'call_explorer', 'explorer', 'inspect-runtime', 'completed')),
+        ] as never,
+      },
+      {
+        messageId: 'assistant-acknowledge',
+        parts: [{
+          id: 'continue-part',
+          type: 'tool',
+          tool: 'devryan_task',
+          state: {
+            status: 'completed',
+            input: { action: 'continue', task_id: 'dvr_task_explorer' },
+            output: JSON.stringify({ acknowledged: true }),
+          },
+        }] as never,
+      },
+      {
+        messageId: 'assistant-designer',
+        parts: [
+          startPart('designer-start', 'call_designer', 'designer', 'review-layout', fallbackOutput('dvr_task_designer', 'call_designer', 'designer', 'review-layout')),
+        ] as never,
+      },
+    ], {
+      getTaskWaveId: (taskId) => waves[taskId] ?? null,
+      // The first wave was acknowledged before the designer started.
+      isWaveOpen: (waveId) => waveId === 'dvr_wave_second',
+    });
+
+    expect(projections.map((projection) => [projection.ownerMessageId, projection.waveId, projection.taskIds])).toEqual([
+      ['assistant-explorer', 'dvr_wave_first', ['dvr_task_explorer']],
+      ['assistant-designer', 'dvr_wave_second', ['dvr_task_designer']],
+    ]);
+
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        {projections.map((projection) => (
+          <ManagedTaskList
+            key={projection.ownerMessageId}
+            taskIds={projection.taskIds}
+            pendingDispatches={projection.pendingDispatches}
+            fallbackTasks={projection.fallbackTasks}
+          />
+        ))}
+      </I18nProvider>,
+    );
+
+    expect(html.match(/data-managed-task-card="true"/g)).toHaveLength(2);
+    expect(html.match(/<h3[^>]*>Agent Dispatch<\/h3>/g)).toHaveLength(2);
+    expect(html.match(/data-managed-task-fallback-id=/g)).toHaveLength(2);
   });
 
   test('keeps parallel launches from one assistant message in one card projection', () => {
@@ -928,6 +1125,7 @@ describe('managed task presentation', () => {
 
     expect(projections).toEqual([{
       ownerMessageId: 'assistant-parallel',
+      waveId: null,
       taskIds: ['dvr_task_explorer', 'dvr_task_designer'],
       pendingDispatches: [],
       fallbackTasks: [],
@@ -975,7 +1173,11 @@ describe('managed task presentation', () => {
           },
         }] as never,
       },
-    ]);
+    ], {
+      // The designer retry opened its own wave; the provisional fixer start has no task yet.
+      getTaskWaveId: (taskId) => (taskId === 'dvr_task_designer' ? 'dvr_wave_designer' : null),
+      isWaveOpen: () => true,
+    });
 
     expect(projections.map((projection) => projection.ownerMessageId)).toEqual([
       'assistant-provisional',
@@ -1027,6 +1229,7 @@ describe('managed task presentation', () => {
 
     expect(projections).toEqual([{
       ownerMessageId: 'assistant-provisional',
+      waveId: null,
       taskIds: ['dvr_task_fixer'],
       pendingDispatches: [],
       fallbackTasks: [{ partId: 'fixer-complete', ...task }],
@@ -1165,12 +1368,14 @@ describe('managed task presentation', () => {
 
     expect(firstTurn).toEqual([{
       ownerMessageId: 'assistant-turn-one',
+      waveId: null,
       taskIds: ['dvr_task_turn_one'],
       pendingDispatches: [],
       fallbackTasks: [],
     }]);
     expect(secondTurn).toEqual([{
       ownerMessageId: 'assistant-turn-two',
+      waveId: null,
       taskIds: ['dvr_task_turn_two'],
       pendingDispatches: [],
       fallbackTasks: [],

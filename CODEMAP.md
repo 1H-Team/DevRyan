@@ -53,6 +53,9 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 | `tests/visual-production-bots/` | Test-only real-component visual fixture and separately packaged Electron CDP shell for Production Bots state coverage. | [tests/visual-production-bots/codemap.md](tests/visual-production-bots/codemap.md) |
 
 ## Where To Change Things
+
+- **Session change summaries, capture, revision review and card Undo/Redo** → `packages/harness-runtime/lib/session-changes*.js`, `packages/web/server/default-config/plugins/devryan-session-changes.mjs`, and `packages/ui/src/components/chat/sessionChangesController.ts`. Contract and limits: `docs/SESSION_CHANGES.md`; real-component fixture: `tests/visual-session-changes/`.
+
 - **Session creation latency/cancellation** → `packages/ui/src/sync/session-creation.ts`, `session-actions.ts`, `session-ui-store.ts`, `packages/web/server/lib/opencode/session-creation.js`, and `context-mode-native-hotfix.js`. Isolated benchmarks: `scripts/benchmark-session-creation.mjs`; real-worker checks: `scripts/verify-context-mode-workers.mjs`; packaged-renderer fixture: `tests/visual-session-creation/codemap.md`; results: `docs/SESSION_CREATION_VERIFICATION.md`.
 
 - **Shared host/Bot OpenAI OAuth, stale login copies or reconnect errors** → `docs/BOT_OAUTH_COORDINATION.md`, `packages/web/server/lib/opencode/openai-oauth-coordinator.js`, `packages/web/server/lib/bots/host-oauth-connections.js`, and `packages/web/server/default-config/plugins/devryan-openai-oauth.mjs`.

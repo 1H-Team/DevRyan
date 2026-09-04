@@ -1,17 +1,23 @@
 import { create } from 'zustand'
 
 import { opencodeClient, type SessionTreeChangedFile, type SessionTreeChanges } from '@/lib/opencode/client'
+import { getAuthPrincipal, subscribeAuthPrincipal } from '@/lib/authSession'
 import { sessionEvents } from '@/lib/sessionEvents'
 
 /**
  * Files changed by a session tree (root + every sub-agent session that worked
  * for it), as reported by `GET /api/openchamber/session/:id/changes`.
  *
- * Keyed by `${directory}\0${rootSessionID}`. Refreshes are debounced (500 ms)
+ * Keyed by runtime, principal, directory and root session. Refreshes are debounced (500 ms)
  * and every response is checked against the latest request for its key so a
  * slow, superseded fetch can never overwrite fresher data.
  */
 export type SessionTreeChangesEntry = {
+  revision?: string
+  worktreeDirectory?: string
+  coverage?: 'complete' | 'partial'
+  reasons?: string[]
+  undone?: boolean
   files: SessionTreeChangedFile[]
   sessionCount: number
   hasUnattributedMutations: boolean
@@ -41,13 +47,11 @@ const normalizeDirectory = (value: string): string => {
 }
 
 export const getSessionTreeChangesKey = (directory: string, rootSessionID: string): string =>
-  `${normalizeDirectory(directory)}\0${rootSessionID}`
+  JSON.stringify([opencodeClient.getBaseUrl(), getAuthPrincipal().id, normalizeDirectory(directory), rootSessionID])
 
 const splitKey = (key: string): { directory: string; rootSessionID: string } => {
-  const separator = key.indexOf('\0')
-  return separator < 0
-    ? { directory: key, rootSessionID: '' }
-    : { directory: key.slice(0, separator), rootSessionID: key.slice(separator + 1) }
+  const [, , directory, rootSessionID] = JSON.parse(key) as [string, string, string, string]
+  return { directory, rootSessionID }
 }
 
 export const useSessionTreeChangesStore = create<SessionTreeChangesStore>(() => ({
@@ -76,6 +80,14 @@ const requestSequence = new Map<string, number>()
 const inFlightControllers = new Map<string, AbortController>()
 const subscriberCounts = new Map<string, number>()
 const workingByKey = new Map<string, boolean>()
+const entryBytes = (entry: SessionTreeChangesEntry): number => new TextEncoder().encode(JSON.stringify(entry)).byteLength
+let authIdentity = getAuthPrincipal().id
+subscribeAuthPrincipal(() => {
+  const next = getAuthPrincipal().id
+  if (next === authIdentity) return
+  authIdentity = next
+  resetSessionTreeChanges()
+})
 
 const patchEntry = (key: string, patch: Partial<SessionTreeChangesEntry>): void => {
   useSessionTreeChangesStore.setState((current) => {
@@ -88,10 +100,19 @@ const patchEntry = (key: string, patch: Partial<SessionTreeChangesEntry>): void 
       fetchedAt: previous?.fetchedAt ?? 0,
       loading: previous?.loading ?? false,
       error: previous?.error ?? null,
+      ...previous,
       ...patch,
     }
     const entries = new Map(current.entries)
+    entries.delete(key)
     entries.set(key, next)
+    let bytes = [...entries.values()].reduce((sum, entry) => sum + entryBytes(entry), 0)
+    for (const [candidate, entry] of entries) {
+      if (entries.size <= 128 && bytes <= 8 * 1024 * 1024) break
+      if (candidate === key) continue
+      bytes -= entryBytes(entry)
+      entries.delete(candidate)
+    }
     return { entries }
   })
 }
@@ -104,6 +125,7 @@ const areFilesEqual = (left: SessionTreeChangedFile[], right: SessionTreeChanged
     const b = right[index]
     if (
       a.path !== b.path
+      || a.oldPath !== b.oldPath
       || a.status !== b.status
       || a.additions !== b.additions
       || a.deletions !== b.deletions
@@ -140,15 +162,20 @@ export async function refreshSessionTreeChanges(directory: string, rootSessionID
   let failure: string | null = null
   try {
     result = await fetcher(rootSessionID, directory, controller.signal)
+    if (entryBytes({ ...result, fetchedAt: 0, loading: false, error: null }) > 8 * 1024 * 1024) throw new Error('Session change summary exceeds the cache limit')
+    if (result.directory && normalizeDirectory(result.directory) !== normalizeDirectory(directory)) throw new Error('Session change response directory mismatch')
+    if (result.rootSessionID !== rootSessionID) throw new Error('Session change response identity mismatch')
   } catch (error) {
     if (controller.signal.aborted) return
+    result = null
     failure = error instanceof Error ? error.message : String(error)
   }
 
   // A newer request for the same key owns the entry now.
-  if (requestSequence.get(key) !== sequence) return
+  if (controller.signal.aborted || requestSequence.get(key) !== sequence || getSessionTreeChangesKey(directory, rootSessionID) !== key) return
   if (inFlightControllers.get(key) === controller) {
     inFlightControllers.delete(key)
+    requestSequence.delete(key)
   }
 
   if (!result) {
@@ -158,6 +185,11 @@ export async function refreshSessionTreeChanges(directory: string, rootSessionID
 
   const previous = useSessionTreeChangesStore.getState().entries.get(key)
   patchEntry(key, {
+    revision: result.revision,
+    worktreeDirectory: result.worktreeDirectory,
+    coverage: result.coverage,
+    reasons: result.reasons,
+    undone: result.undone,
     files: previous && areFilesEqual(previous.files, result.files) ? previous.files : result.files,
     sessionCount: result.sessionCount,
     hasUnattributedMutations: result.hasUnattributedMutations,
@@ -222,6 +254,11 @@ export function subscribeSessionTreeChanges(directory: string, rootSessionID: st
     if (remaining <= 0) {
       subscriberCounts.delete(key)
       workingByKey.delete(key)
+      inFlightControllers.get(key)?.abort()
+      inFlightControllers.delete(key)
+      requestSequence.delete(key)
+      const timer = debounceTimers.get(key)
+      if (timer !== undefined) { clearTimeout(timer); debounceTimers.delete(key) }
     } else {
       subscriberCounts.set(key, remaining)
     }
@@ -241,7 +278,7 @@ export function clearSessionTreeChanges(directory: string, rootSessionID: string
   }
   inFlightControllers.get(key)?.abort()
   inFlightControllers.delete(key)
-  requestSequence.set(key, (requestSequence.get(key) ?? 0) + 1)
+  requestSequence.delete(key)
   workingByKey.delete(key)
   useSessionTreeChangesStore.setState((current) => {
     if (!current.entries.has(key)) return current
@@ -253,16 +290,16 @@ export function clearSessionTreeChanges(directory: string, rootSessionID: string
 
 export function clearDirectorySessionTreeChanges(directory: string): void {
   if (!directory) return
-  const prefix = `${normalizeDirectory(directory)}\0`
+  const normalized = normalizeDirectory(directory)
   for (const key of [...useSessionTreeChangesStore.getState().entries.keys(), ...debounceTimers.keys()]) {
-    if (!key.startsWith(prefix)) continue
+    if (splitKey(key).directory !== normalized) continue
     const { rootSessionID } = splitKey(key)
     clearSessionTreeChanges(directory, rootSessionID)
   }
 }
 
 /** Test seam: drop every entry, timer, and subscription. */
-export function resetSessionTreeChangesForTests(): void {
+export function resetSessionTreeChanges(): void {
   for (const timer of debounceTimers.values()) clearTimeout(timer)
   debounceTimers.clear()
   for (const controller of inFlightControllers.values()) controller.abort()
@@ -275,11 +312,14 @@ export function resetSessionTreeChangesForTests(): void {
 
 // Shell commands and tool edits already broadcast git refresh hints; the same
 // hint keeps every subscribed tree in that directory fresh.
-sessionEvents.onGitRefreshHint(({ directory }) => {
-  const prefix = `${normalizeDirectory(directory)}\0`
+sessionEvents.onGitRefreshHint(({ directory, sessionChanges }) => {
+  const normalized = normalizeDirectory(directory)
   for (const key of subscriberCounts.keys()) {
-    if (!key.startsWith(prefix)) continue
+    if (splitKey(key).directory !== normalized) continue
     const { rootSessionID } = splitKey(key)
+    if (!sessionChanges && useSessionTreeChangesStore.getState().entries.get(key)?.revision) continue
     requestSessionTreeChangesRefresh(directory, rootSessionID)
   }
 })
+
+export const resetSessionTreeChangesForTests = resetSessionTreeChanges

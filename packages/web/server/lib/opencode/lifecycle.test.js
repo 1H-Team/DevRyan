@@ -485,6 +485,70 @@ describe('OpenCode lifecycle', () => {
     expect(readManagedOpenCodeRegistry()).toEqual([]);
   });
 
+  it('awaits beforeManagedSpawn before spawning while no managed process exists', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    const order = [];
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const beforeManagedSpawn = vi.fn(async (input) => {
+      order.push(['hook', input]);
+      await gate;
+    });
+
+    const runtime = createRuntime({ beforeManagedSpawn });
+    const started = runtime.startOpenCode();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(beforeManagedSpawn).toHaveBeenCalledTimes(1);
+    expect(spawnMock).not.toHaveBeenCalled();
+    order.push(['release']);
+    release();
+
+    const server = await started;
+    expect(server?.url).toBe('http://127.0.0.1:45678');
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(order).toEqual([['hook', { reason: 'startup' }], ['release']]);
+    await server.close();
+  });
+
+  it('launches anyway when beforeManagedSpawn rejects', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    const beforeManagedSpawn = vi.fn(async () => {
+      throw new Error('maintenance exploded');
+    });
+
+    try {
+      const runtime = createRuntime({ beforeManagedSpawn });
+      const server = await runtime.startOpenCode();
+      expect(server?.url).toBe('http://127.0.0.1:45678');
+      expect(beforeManagedSpawn).toHaveBeenCalledTimes(1);
+      expect(spawnMock).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[OpenCode] Pre-launch hook failed; launching anyway:',
+        'maintenance exploded',
+      );
+      await server.close();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('resolves the managed OpenCode working directory from persisted settings before launch', async () => {
     delete process.env.OPENCODE_BINARY;
     const persistedDirectory = mkdtempSync(join(tmpdir(), 'openchamber-cursor-workspace-'));

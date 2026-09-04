@@ -17,7 +17,6 @@ import { cn } from '@/lib/utils';
 import { ModelSelector } from './ModelSelector';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
 import { AgentRuntimeSection } from './AgentRuntimeSection';
-import { SubagentLimitsSection } from './SubagentLimitsSection';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
@@ -822,11 +821,10 @@ export const AgentsPage: React.FC = () => {
 
   if (!selectedAgentName) {
     if (behaviorUiHidden) return null;
-    // Host-wide scheduler pacing and runtime switches sit with the other
-    // per-host policy, not inside one agent's editor.
+    // Host-wide runtime switches sit with the other per-host policy, not
+    // inside one agent's editor.
     return (
       <BehaviorPage>
-        <SubagentLimitsSection canEdit={isHostModelEditor} />
         <AgentRuntimeSection canEdit={isHostModelEditor} />
       </BehaviorPage>
     );

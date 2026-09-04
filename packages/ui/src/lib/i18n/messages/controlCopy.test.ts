@@ -62,6 +62,11 @@ const NON_LABEL_CONTROL_COPY_KEYS = new Set([
   'chat.pendingChanges.changedInWorkspace',
   'chat.queuedMessage.attachments',
   'chat.queuedMessage.empty',
+  // Session changed-files card: the muted "Review changes" subtitle and the
+  // "Show N more files" disclosure strip are sentence-style by design.
+  'chat.sessionChanges.card.reviewChanges',
+  'chat.sessionChanges.card.showLess',
+  'chat.sessionChanges.card.showMore',
   'desktopHostSwitcher.status.ping',
   'diffView.selector.selectFile',
   'gitView.branch.mergeDescription',

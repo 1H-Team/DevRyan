@@ -79,6 +79,7 @@ describe('atomic managed orchestration ledger', () => {
     const legacyTask = { ...queuedTask(1) };
     delete legacyTask.dispatchGroupId;
     delete legacyTask.dispatchCallId;
+    delete legacyTask.dispatchWaveId;
     delete legacyTask.readOnly;
     await fs.mkdir(path.dirname(ledger.filePath), { recursive: true });
     await fs.writeFile(ledger.filePath, JSON.stringify(snapshot([legacyTask])), { mode: 0o600 });
@@ -87,6 +88,7 @@ describe('atomic managed orchestration ledger', () => {
 
     expect(loaded.tasks[0].dispatchGroupId).toBeNull();
     expect(loaded.tasks[0].dispatchCallId).toBeNull();
+    expect(loaded.tasks[0].dispatchWaveId).toBeNull();
     expect(loaded.tasks[0].readOnly).toBe(false);
     expect(loaded.tasks[0].recoveryLineageId).toBeNull();
     expect(loaded.tasks[0].childPromptedAt).toBeNull();

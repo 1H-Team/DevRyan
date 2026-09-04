@@ -147,6 +147,14 @@ export interface ManagedTaskRecord {
   rootSessionId: string;
   dispatchGroupId: string | null;
   dispatchCallId: string | null;
+  /**
+   * Display-only label for the parallel dispatch wave this task belongs to
+   * (`dvr_wave_` prefix). A wave opens with the first grouped start after the
+   * root's dispatch barrier last cleared and collects every start while that
+   * barrier is still locked; follow-ups inherit their prior's wave. Null for
+   * ungrouped work and for records persisted before the label existed.
+   */
+  dispatchWaveId: string | null;
   parentTaskId: string | null;
   childSessionId: string | null;
   directory: string;
@@ -189,8 +197,10 @@ export function requiresManualModelRecovery(
 ): boolean;
 
 export type ManagedTaskEventRecord = Omit<ManagedTaskRecord,
-  'prompt' | 'idempotencyKey' | 'dispatchGroupId' | 'readOnly' | 'leaseToken'> & {
+  'prompt' | 'idempotencyKey' | 'dispatchGroupId' | 'dispatchWaveId' | 'readOnly' | 'leaseToken'> & {
     dispatchGrouped: boolean;
+    /** Optional on the wire so records from hosts predating the label stay assignable; consumers read absent as null. */
+    dispatchWaveId?: string | null;
     failureKind: ManagedTaskFailureKind;
     agentRetryAvailable: boolean;
   };
@@ -267,6 +277,8 @@ export interface ManagedTaskSubmitInput {
   rootSessionId: string;
   dispatchGroupId?: string | null;
   dispatchCallId?: string | null;
+  /** Explicit wave label; when absent the scheduler derives it from barrier state (follow-ups inherit their prior's). */
+  dispatchWaveId?: string | null;
   parentTaskId?: string | null;
   childSessionId?: string | null;
   directory: string;
@@ -499,6 +511,7 @@ export interface ManagedTaskSchedulerOptions {
   now?: () => number;
   createTaskId?: () => string;
   createLeaseToken?: () => string;
+  createWaveId?: () => string;
   publishEvent?: (event: ManagedOrchestrationEvent) => void | Promise<void>;
   logger?: Pick<Console, 'warn'>;
   scheduleTimeout?: (callback: () => void, delayMs: number) => unknown;
@@ -808,6 +821,7 @@ export function createManagedTaskRecord(input: Omit<ManagedTaskRecord,
   | 'status'
   | 'dispatchGroupId'
   | 'dispatchCallId'
+  | 'dispatchWaveId'
   | 'readOnly'
   | 'childSessionId'
   | 'recoveryLineageId'
@@ -825,6 +839,7 @@ export function createManagedTaskRecord(input: Omit<ManagedTaskRecord,
   childSessionId?: string | null;
   dispatchGroupId?: string | null;
   dispatchCallId?: string | null;
+  dispatchWaveId?: string | null;
   readOnly?: boolean;
   recoveryLineageId?: string | null;
 }): ManagedTaskRecord;

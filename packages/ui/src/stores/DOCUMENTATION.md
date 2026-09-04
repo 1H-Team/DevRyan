@@ -208,19 +208,16 @@ Core model:
 - one serialized snapshot load per scope, reconciled against events received
   after that load began in one atomic store update
 
-Queued tasks may carry a host-owned `waitingReason` (`capacity`, with the
-active count and effective cap, or `system_pressure`) saying why the scheduler
-has not started them. Ingestion validates it, normalizes it to `null` for any
-non-queued status or malformed value (never dropping the task), compares it
-structurally so identical replays keep the record reference, and exposes it
-through `managedOrchestrationSelectors.waitingReasonForTask`. The host-wide
-knobs behind it (`maxConcurrentSubagents`, `pauseUnderMemoryPressure`, the
-live memory-pressure sample) live in `useAgentsStore` as `orchestrationLimits`,
-loaded and saved optimistically through `/api/config/orchestration-limits`
-from the Sub-Agent Limits section of Global Agent Behavior.
+Task records carry a `waitingReason` field for ledger/wire compatibility
+(records written by v1.1.11 carry `waitingReason: null`). Ingestion still
+parses it, normalizes it to `null` for any non-queued status or malformed
+value (never dropping the task), and compares it structurally so identical
+replays keep the record reference. No DevRyan host wires launch admission, so
+sub-agent launches are never capped or held and the field is always `null` in
+practice (user requirement, 2026-09-04); no store surfaces limits or pacing.
 
 The managed agent-runtime switches (today only `lsp`, OpenCode's language
-servers inside agent sessions) live next to them as `agentRuntimeSettings`,
+servers inside agent sessions) live in `useAgentsStore` as `agentRuntimeSettings`,
 loaded and saved optimistically through `/api/config/agent-runtime` from the
 Agent Runtime section of the same page. OpenCode reads these when its instance
 starts, so the host answers `appliesOnRestart: true` and a `PUT` that changes
@@ -267,7 +264,13 @@ Ownership and safety rules:
     resumable, unacknowledged tasks whose `agentRetryAvailable` flag is false
     and whose safe policy projection is either a definite provider limit or a
     grouped Orchestrator attempt at/after attempt 2. The private group ID never
-    enters the store; only the immutable `dispatchGrouped` boolean does.
+    enters the store; only the immutable `dispatchGrouped` boolean does. The
+    display-only `dispatchWaveId` is kept when it carries the `dvr_wave_`
+    prefix (absent or malformed reads as null) and is immutable after the
+    first event. `managedOrchestrationSelectors.dispatchWaveIndex` derives an
+    identity-stable `{ waveIdByTaskId, openWaveIds }` index — a wave is open
+    while any of its tasks is non-terminal or unacknowledged — so the chat can
+    group Agent Dispatch cards by wave without re-rendering on every task event.
     Definite usage/quota exhaustion, including exhausted provider session
     and rate-limit allowances, is projected with
     `failureKind: provider_usage_limit` and closes the flag on the first

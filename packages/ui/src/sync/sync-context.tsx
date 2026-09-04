@@ -1,4 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
+import { clearSessionTreeChanges, clearDirectorySessionTreeChanges } from '@/stores/useSessionTreeChangesStore'
 import React, { createContext, useContext, useEffect, useRef, useCallback, useMemo } from "react"
 import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { Session } from "@opencode-ai/sdk/v2"
@@ -2157,6 +2158,7 @@ const removeDeletedSessionFromAllChildStores = (
     })
     useTodosPersistStore.getState().setSessionTodos(sessionID, undefined)
     clearSessionChangeAttribution(directory, sessionID)
+    clearSessionTreeChanges(directory, sessionID)
     childStores.mark(directory)
   }
 
@@ -3510,6 +3512,7 @@ export function SyncProvider(props: {
         messageLoader.invalidateDirectory(directory)
         directorySessionLifecycleOverlays.delete(normalizeEventDirectory(directory))
         clearDirectorySessionChangeAttributions(directory)
+        clearDirectorySessionTreeChanges(directory)
         releaseDirectoryOwnedSyncState(
           directory,
           snapshot,

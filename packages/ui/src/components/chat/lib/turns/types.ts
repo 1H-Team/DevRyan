@@ -4,6 +4,7 @@ import type {
     ProviderTransportFailureKind,
 } from '@openchamber/orchestration-runtime';
 import type { ResponseStyleLevel } from '@/lib/responseStyle';
+import type { PlanTurnIntent } from '@/lib/messages/actionablePlan';
 import type { ManagedTaskTurnProjection } from '../../managedTaskDispatch';
 import type { AssistantImageMessage } from '../../message/parts/generatedImageResults';
 
@@ -129,6 +130,8 @@ export interface PlanTurnTraceEntry {
     memberTurnIds: string[];
     /** Member turn containing the selected source message. */
     sourceTurnId: string | null;
+    /** Intent of the revision's root turn; never `implement`. */
+    intent: PlanTurnIntent;
     isPlanModeRevision: boolean;
     assistantSourceMessageId: string | null;
     assistantParentMessageId: string | null;
@@ -151,6 +154,8 @@ export interface PlanTurnTraceIndex {
     messageRoleById: Map<string, PlanRevisionMessageRole>;
     /** Member turns rendered as no output because they follow the source turn. */
     suppressedTurnIds: Set<string>;
+    /** Every turn's own plan intent, including `implement` turns that never become revisions. */
+    turnIntentById: Map<string, PlanTurnIntent>;
     latestPlanTurnId: string | null;
     latestPlanSourceMessageId: string | null;
     pendingPlanTurnId: string | null;

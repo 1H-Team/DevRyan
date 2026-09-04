@@ -1506,7 +1506,7 @@ export const useConfigStore = create<ConfigStore>()(
                         settingsOverrideKeys: parseSettingsOverrideKeys(payload.multiUser?.settingsOverrideKeys),
                     });
                     if (field === 'defaultPlanMode') {
-                        useSelectionStore.getState().setDefaultPlanModeSelection(payload.defaultPlanMode === true, { syncDraft: true });
+                        useSelectionStore.getState().setDefaultPlanModeSelection(payload.defaultPlanMode === true);
                     }
                 },
 
@@ -1902,7 +1902,7 @@ export const useConfigStore = create<ConfigStore>()(
 
                 setSettingsDefaultPlanMode: (enabled: boolean) => {
                     set({ settingsDefaultPlanMode: enabled });
-                    useSelectionStore.getState().setDefaultPlanModeSelection(enabled, { syncDraft: true });
+                    useSelectionStore.getState().setDefaultPlanModeSelection(enabled);
                 },
 
                 setSettingsAutoCreateWorktree: (enabled: boolean) => {
@@ -2323,10 +2323,7 @@ export const useConfigStore = create<ConfigStore>()(
                     speechVolume: state.speechVolume,
                 }),
                 onRehydrateStorage: () => (state) => {
-                    useSelectionStore.getState().setDefaultPlanModeSelection(
-                        state?.settingsDefaultPlanMode === true,
-                        { syncDraft: true }
-                    );
+                    useSelectionStore.getState().setDefaultPlanModeSelection(state?.settingsDefaultPlanMode === true);
                 },
              },
          ),

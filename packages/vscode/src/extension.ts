@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
-import { createPrimaryRecoveryHost, createPrimaryRecoveryManagedAdapter } from '@openchamber/harness-runtime';
+import { createPrimaryRecoveryHost, createPrimaryRecoveryManagedAdapter, createSessionChangeHost } from '@openchamber/harness-runtime';
 import { ChatViewProvider } from './ChatViewProvider';
 import { AgentManagerPanelProvider } from './AgentManagerPanelProvider';
 import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
 import { createOpenCodeManager, type OpenCodeManager } from './opencode';
-import { readAgentBackupModel, readOrchestrationLimits } from './opencodeConfig';
+import { readAgentBackupModel } from './opencodeConfig';
 import {
   getSessionActivitySnapshot,
   startGlobalEventWatcher,
@@ -178,6 +178,16 @@ export async function activate(context: vscode.ExtensionContext) {
   );
   const harnessRuntime = getVsCodeHarnessRuntime();
   if (harnessRuntime) {
+    harnessRuntime.setSessionChangeHost(createSessionChangeHost({
+      publishEvent: publishSessionViewEvent,
+      dataDirectory: context.globalStorageUri.fsPath,
+      buildOpenCodeUrl: (pathname) => {
+        const base = openCodeManager?.getApiUrl();
+        if (!base) throw new Error('OpenCode is unavailable');
+        return new URL(pathname.replace(/^\//, ''), `${base.replace(/\/$/, '')}/`);
+      },
+      getOpenCodeAuthHeaders: () => openCodeManager?.getOpenCodeAuthHeaders() ?? {},
+    }));
     const primaryRecovery = createPrimaryRecoveryHost({
       dataDirectory: context.globalStorageUri.fsPath,
       buildOpenCodeUrl: (pathname) => {
@@ -232,15 +242,12 @@ export async function activate(context: vscode.ExtensionContext) {
         ? { providerId: backupModel.providerID, modelId: backupModel.modelID, variant: backupModel.variant }
         : null;
     },
-    // Cap-only launch admission: VS Code samples no memory pressure. Running
-    // work is never touched; a held task waits in FIFO order with a reason.
-    admitLaunch: ({ activeCount }) => {
-      const { maxConcurrentSubagents } = readOrchestrationLimits();
-      return activeCount >= maxConcurrentSubagents
-        ? { admit: false as const, reason: 'capacity' as const, limit: maxConcurrentSubagents, retryInMs: 5_000 }
-        : { admit: true as const };
-    },
     auxiliaryRpcHandlers: {
+      session_changes: async (params) => {
+        const host = getVsCodeHarnessRuntime()?.getSessionChangeHost();
+        if (!host) throw new Error('Session changes host is unavailable');
+        return host.plugin(params);
+      },
       primary_recovery: async (params) => {
         const runtime = getVsCodeHarnessRuntime()?.getPrimaryRecoveryRuntime();
         if (!runtime) throw new Error('Primary recovery runtime is unavailable');

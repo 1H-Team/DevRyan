@@ -32,6 +32,23 @@ change runtime scheduling, caching, persistence, or OpenCode behavior.
   growth slopes, child-process churn as memory-time, responsiveness
   percentiles, busy-session buckets, Docker, system competitors, timeline) and
   `--compare` diffs two runs.
+- `session-pipeline-profile.mjs` profiles what one session *tree* spent, from
+  the OpenCode database instead of the process table: it opens
+  `~/.local/share/opencode/opencode.db` read-only (`better-sqlite3` from
+  `packages/web` via `createRequire`, falling back to `node:sqlite` when the
+  native binding was built for another Node ABI), walks `session.parent_id`
+  recursively from `--session`, and aggregates per session and per tree: turns,
+  assistant messages and tokens by provider/model, tool calls by name
+  (count/errors/p50/p95/bytes), `DEVRYAN_TOOL_INPUT_INVALID:` guard rejections
+  by model, skill loads (and the same skill re-loaded across one parent's
+  children), MCP calls by server, bash classified as
+  `tsc | vitest | bun test | eslint | git | playwright | other`, and wall time.
+  `--preflight` / `--turn-timing` join `/api/diagnostics/harness/preflight`
+  (once per agent+provider+model) and `/api/diagnostics/turn-timing/recent`
+  (by assistant message id) from the running server and are skipped silently
+  when it is unreachable. Output is `report.md` + `report.json` under
+  `.cache/perf/multi-session/<run>/pipeline/`. Pure helpers
+  (`classifyBashCommand`, `aggregateTree`, …) are exported for the tests.
 
 ## Integration
 
@@ -41,3 +58,6 @@ For a live workload measurement run
 `node scripts/perf/multi-session-sampler.mjs --label <name>` while the
 installed app is running, then
 `node scripts/perf/multi-session-report.mjs .cache/perf/multi-session/<name>`.
+To see what a session tree spent (tools, skills, tokens per model) run
+`bun run perf:pipeline -- --session <ses_id> --run <name> [--preflight --turn-timing]`;
+it reads the live database read-only and is safe while the app is running.

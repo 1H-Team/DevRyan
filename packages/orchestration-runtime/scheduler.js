@@ -164,6 +164,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   }
   const createTaskId = options.createTaskId ?? (() => createRandomId('dvr_task_'));
   const createLeaseToken = options.createLeaseToken ?? (() => createRandomId('dvr_lease_'));
+  const createWaveId = options.createWaveId ?? (() => createRandomId('dvr_wave_'));
   const publishEvent = options.publishEvent ?? (() => undefined);
   const logger = options.logger ?? console;
   const maxTerminalRecords = options.maxTerminalRecords ?? DEFAULT_MANAGED_TERMINAL_MAX_RECORDS;
@@ -625,6 +626,35 @@ export const createManagedTaskScheduler = (options = {}) => {
         })
         .map((task) => task.taskId),
     };
+  };
+
+  const latestDispatchWaveIdLocked = (rootSessionId) => {
+    let latest = null;
+    for (const task of tasks.values()) {
+      if (task.rootSessionId !== rootSessionId || task.dispatchWaveId === null) continue;
+      if (!latest || task.sequence > latest.sequence) latest = task;
+    }
+    return latest?.dispatchWaveId ?? null;
+  };
+
+  /**
+   * Display-only label naming the parallel dispatch wave a grouped task belongs
+   * to. A wave opens with the first grouped start after the root's barrier last
+   * cleared; every start while that barrier is still locked (any wave task
+   * non-terminal or unacknowledged) joins it. Follow-ups inherit their prior's
+   * wave so lineage stays in one card. The label is read from barrier state
+   * that `submit` already holds; it never admits, holds, retries, or times
+   * anything.
+   */
+  const resolveDispatchWaveIdLocked = (input) => {
+    if (typeof input.dispatchWaveId === 'string') return input.dispatchWaveId;
+    if (input.priorTaskId) {
+      const prior = tasks.get(input.priorTaskId);
+      if (prior) return prior.dispatchWaveId;
+    }
+    if (input.dispatchGroupId === null || input.dispatchGroupId === undefined) return null;
+    if (getDispatchBarrierStateLocked(input.rootSessionId).state === 'clear') return createWaveId();
+    return latestDispatchWaveIdLocked(input.rootSessionId) ?? createWaveId();
   };
 
   const collectAgentHandoffTaskIdsLocked = (rootSessionId) => (
@@ -1572,6 +1602,7 @@ export const createManagedTaskScheduler = (options = {}) => {
             ...rawTask,
             dispatchGroupId: rawTask?.dispatchGroupId ?? null,
             dispatchCallId: rawTask?.dispatchCallId ?? null,
+            dispatchWaveId: rawTask?.dispatchWaveId ?? null,
             readOnly: rawTask?.readOnly ?? false,
             recoveryLineageId: rawTask?.recoveryLineageId ?? null,
             childPromptedAt: rawTask?.childPromptedAt ?? null,
@@ -1749,6 +1780,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         rootSessionId: input.rootSessionId,
         dispatchGroupId: input.dispatchGroupId ?? null,
         dispatchCallId: input.dispatchCallId ?? null,
+        dispatchWaveId: resolveDispatchWaveIdLocked(input),
         parentTaskId: input.parentTaskId ?? null,
         childSessionId: input.childSessionId ?? null,
         directory: input.directory,
@@ -2521,6 +2553,7 @@ export const createManagedTaskScheduler = (options = {}) => {
           rootSessionId: sourceTask.rootSessionId,
           dispatchGroupId: sourceTask.dispatchGroupId,
           dispatchCallId: sourceTask.dispatchCallId,
+          dispatchWaveId: sourceTask.dispatchWaveId,
           parentTaskId: sourceTask.parentTaskId,
           childSessionId: action === 'resume' || action === 'retry_in_place'
             ? sourceTask.childSessionId

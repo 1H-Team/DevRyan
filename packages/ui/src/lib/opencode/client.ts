@@ -371,17 +371,25 @@ export type ScopedSessionUnrevertResult = {
   restored: ScopedRevertFile[];
 };
 
-export type SessionTreeChangedFileStatus = "added" | "modified" | "deleted";
+export type SessionTreeChangedFileStatus = "added" | "modified" | "deleted" | "renamed";
 
 export type SessionTreeChangedFile = {
   path: string;
+  oldPath?: string | null;
   status: SessionTreeChangedFileStatus;
-  additions: number;
-  deletions: number;
+  additions: number | null;
+  deletions: number | null;
   sessions: string[];
 };
 
 export type SessionTreeChanges = {
+  revision?: string;
+  directory?: string;
+  worktreeID?: string;
+  worktreeDirectory?: string;
+  coverage?: 'complete' | 'partial';
+  reasons?: string[];
+  undone?: boolean;
   files: SessionTreeChangedFile[];
   sessionCount: number;
   hasUnattributedMutations: boolean;
@@ -620,7 +628,7 @@ export async function requestScopedSessionUnrevert({
 }
 
 const parseSessionTreeChangedFileStatus = (value: unknown): SessionTreeChangedFileStatus => {
-  if (value === "added" || value === "deleted" || value === "modified") return value;
+  if (value === "added" || value === "deleted" || value === "modified" || value === "renamed") return value;
   if (value === "A" || value === "?" || value === "created") return "added";
   if (value === "D" || value === "removed") return "deleted";
   return "modified";
@@ -639,8 +647,9 @@ export function parseSessionTreeChanges(payload: unknown): SessionTreeChanges {
       files.push({
         path: entry.path,
         status: parseSessionTreeChangedFileStatus(entry.status),
-        additions: parseCount(entry.additions ?? entry.insertions),
-        deletions: parseCount(entry.deletions),
+        additions: entry.additions === null ? null : parseCount(entry.additions ?? entry.insertions),
+        deletions: entry.deletions === null ? null : parseCount(entry.deletions),
+        ...(typeof entry.oldPath === "string" ? { oldPath: entry.oldPath } : {}),
         sessions: Array.isArray(entry.sessions)
           ? entry.sessions.filter((id): id is string => typeof id === "string")
           : [],
@@ -654,6 +663,15 @@ export function parseSessionTreeChanges(payload: unknown): SessionTreeChanges {
   }
 
   return {
+    ...(typeof record.revision === 'string' ? {
+      revision: record.revision,
+      directory: typeof record.directory === 'string' ? record.directory : undefined,
+      worktreeID: typeof record.worktreeID === 'string' ? record.worktreeID : undefined,
+      worktreeDirectory: typeof record.worktreeDirectory === 'string' ? record.worktreeDirectory : undefined,
+      undone: record.undone === true,
+    } : {}),
+    coverage: record.revision && record.coverage === 'complete' ? 'complete' : 'partial',
+    reasons: Array.isArray(record.reasons) ? record.reasons.filter((reason): reason is string => typeof reason === 'string') : ['capture_unavailable'],
     files,
     sessionCount: typeof record.sessionCount === "number" && Number.isFinite(record.sessionCount)
       ? Math.max(0, Math.trunc(record.sessionCount))
@@ -1842,6 +1860,23 @@ class OpencodeService {
       fetchImpl: this.noStoreFetch,
       signal: options.signal,
     });
+  }
+
+  async sessionChangesAction(sessionId: string, directory: string, revision: string, action: 'undo' | 'redo'): Promise<void> {
+    const url = buildScopedRevertUrl(this.baseUrl, sessionId, `changes/${action}`, directory);
+    const response = await this.noStoreFetch(url.toString(), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision }) });
+    if (!response.ok) throw await readScopedRevertError(response, 'Cannot restore session changes');
+  }
+
+  async getSessionChangesDiff(sessionId: string, directory: string, revision: string, file: string, signal?: AbortSignal): Promise<string> {
+    const url = buildScopedRevertUrl(this.baseUrl, sessionId, 'changes/diff', directory);
+    url.searchParams.set('revision', revision);
+    url.searchParams.set('file', file);
+    const response = await this.noStoreFetch(url.toString(), { signal });
+    if (!response.ok) throw await readScopedRevertError(response, 'Cannot load session diff');
+    const body: unknown = await response.json();
+    if (!isRecord(body) || body.rootSessionID !== sessionId || body.revision !== revision || body.path !== file || typeof body.patch !== 'string') throw new Error('Session diff identity mismatch');
+    return body.patch;
   }
 
   async unrevertSession(sessionId: string): Promise<Session> {

@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  DEFAULT_PLAN_IMPLEMENTATION_AGENT,
   buildPlanImplementationSyntheticParts,
   buildPlanSendPromptVariables,
   getPlanSendPlanMode,
+  resolvePlanImplementationAgent,
 } from './planSend';
 import { parsePlanImplementationRequestPart } from '@/lib/messages/actionablePlan';
 import type { Part } from '@opencode-ai/sdk/v2/client';
@@ -81,5 +83,69 @@ describe('buildPlanImplementationSyntheticParts', () => {
       synthetic: true,
       text: 'Read the saved plan and implement it.',
     });
+  });
+});
+
+describe('resolvePlanImplementationAgent', () => {
+  const agents = [
+    { name: 'plan', mode: 'primary' },
+    { name: 'builder', mode: 'primary' },
+    { name: 'orchestrator', mode: 'primary' },
+    { name: 'designer', mode: 'primary', hidden: true },
+    { name: 'fixer', mode: 'subagent' },
+  ];
+
+  test('prefers the session selection, then the draft or last-used agent', () => {
+    expect(resolvePlanImplementationAgent({
+      sessionAgent: 'orchestrator',
+      draftAgent: 'builder',
+      agents,
+    })).toBe('orchestrator');
+    expect(resolvePlanImplementationAgent({
+      sessionAgent: null,
+      draftAgent: 'orchestrator',
+      agents,
+    })).toBe('orchestrator');
+  });
+
+  test('never resolves to the plan agent', () => {
+    expect(resolvePlanImplementationAgent({
+      sessionAgent: 'plan',
+      draftAgent: 'plan',
+      agents,
+    })).toBe('builder');
+    expect(resolvePlanImplementationAgent({
+      sessionAgent: 'plan',
+      draftAgent: null,
+      agents: [],
+      settingsDefaultAgent: 'plan',
+    })).toBe(DEFAULT_PLAN_IMPLEMENTATION_AGENT);
+  });
+
+  test('skips hidden and non-primary candidates and falls back to the build agent', () => {
+    expect(resolvePlanImplementationAgent({
+      sessionAgent: 'designer',
+      draftAgent: 'fixer',
+      agents,
+    })).toBe('builder');
+  });
+
+  test('falls back to the settings default agent when no build agent exists', () => {
+    const noBuilder = [
+      { name: 'plan', mode: 'primary' },
+      { name: 'orchestrator', mode: 'primary' },
+      { name: 'council', mode: 'primary' },
+    ];
+    expect(resolvePlanImplementationAgent({
+      agents: noBuilder,
+      settingsDefaultAgent: 'council',
+    })).toBe('council');
+    expect(resolvePlanImplementationAgent({ agents: noBuilder })).toBe('orchestrator');
+  });
+
+  test('trusts explicit names when no agent catalog is known and ends at the built-in build agent', () => {
+    expect(resolvePlanImplementationAgent({ sessionAgent: '  custom-agent ', agents: [] })).toBe('custom-agent');
+    expect(resolvePlanImplementationAgent({ agents: [] })).toBe(DEFAULT_PLAN_IMPLEMENTATION_AGENT);
+    expect(resolvePlanImplementationAgent({})).toBe(DEFAULT_PLAN_IMPLEMENTATION_AGENT);
   });
 });

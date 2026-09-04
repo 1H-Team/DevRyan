@@ -715,6 +715,43 @@ export interface PrimaryRecoveryHostOptions {
   fetchImpl?: typeof fetch;
 }
 export function createPrimaryRecoveryHost(options: PrimaryRecoveryHostOptions): PrimaryRecoveryHost;
+export interface SessionChangeIdentity {
+  directory: string; sessionID: string; messageID?: string; callID?: string;
+  userMessageID?: string; parentID?: string | null; paths?: string[]; captureDeadline?: number;
+}
+export interface SessionChangeSummary {
+  rootSessionID: string; directory: string; worktreeDirectory: string; worktreeID: string; revision: string;
+  coverage: 'complete' | 'partial'; reasons: string[]; sessionCount: number;
+  firstUserMessageID: string | null; hasUnattributedMutations: false; undone?: boolean;
+  files: Array<{ path: string; oldPath: string | null; status: 'added' | 'deleted' | 'modified' | 'renamed';
+    additions: number | null; deletions: number | null; sessions: string[] }>;
+}
+export interface SessionChangeRuntime {
+  begin(input: SessionChangeIdentity & { messageID: string; callID: string }): Promise<void>;
+  finish(input: SessionChangeIdentity & { callID: string }): Promise<void>;
+  registerSession(input: SessionChangeIdentity): Promise<void>;
+  importHistorical(inputs: Array<SessionChangeIdentity & { callID: string; createdAt: number;
+    files: Array<{ path: string; before: string | null; after: string | null }> }>): Promise<void>;
+  summarize(input: { directory: string; rootSessionID: string; sessions?: Array<{ id: string }>;
+    firstUserMessageID?: string | null; coverageReasons?: string[];
+    expectedCalls?: Array<{ sessionID: string; callID: string }>;
+    hiddenMessages?: Array<{ sessionID: string; messageID: string }> }): Promise<SessionChangeSummary>;
+  diff(input: { directory: string; rootSessionID: string; revision: string; file: string }): Promise<{ rootSessionID: string; revision: string; path: string; patch: string }>;
+  restore(input: { directory: string; rootSessionID: string; revision: string; redo?: boolean }): Promise<{ undone: boolean }>;
+  deleteSession(sessionID: string): Promise<void>;
+  observe(event: unknown, directory?: string | null): Promise<void>;
+  drain(): Promise<void>;
+}
+export function createSessionChangeRuntime(options: { directory: string; maxBytes?: number; maxOperations?: number;
+  maxCaptureBytes?: number; maxRevisions?: number;
+  onChange?: (scope: { directory: string; sessionID: string }) => void | Promise<void> }): SessionChangeRuntime;
+export interface SessionChangeHost {
+  plugin(input: Record<string, unknown>): Promise<unknown>;
+  handleRequest(method: string, path: string, body?: unknown): Promise<null | { status: number; body: unknown }>;
+  observe(event: unknown, directory?: string | null): Promise<void>;
+  drain(): Promise<void>;
+}
+export function createSessionChangeHost(options: Pick<PrimaryRecoveryHostOptions, 'dataDirectory' | 'buildOpenCodeUrl' | 'getOpenCodeAuthHeaders' | 'fetchImpl' | 'publishEvent'>): SessionChangeHost;
 export function createPrimaryRecoveryManagedAdapter(rpc: (request: { method: string; params: Record<string, unknown> }) => Promise<unknown>): Pick<PrimaryRecoveryHostOptions, 'managedBarrier' | 'cancelDescendants'>;
 export const PROVIDER_RECOVERY_POLICY_VERSION: 1;
 export const PROVIDER_PROGRESS_TIMEOUT_MS: number;

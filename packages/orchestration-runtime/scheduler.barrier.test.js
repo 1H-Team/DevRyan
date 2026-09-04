@@ -35,6 +35,7 @@ const input = (index, overrides = {}) => ({
 const createHarness = async () => {
   let taskCounter = 0;
   let leaseCounter = 0;
+  let waveCounter = 0;
   const runs = [];
   const scheduler = createManagedTaskScheduler({
     executor: {
@@ -49,6 +50,7 @@ const createHarness = async () => {
     },
     createTaskId: () => `dvr_task_${++taskCounter}`,
     createLeaseToken: () => `dvr_lease_${++leaseCounter}`,
+    createWaveId: () => `dvr_wave_${++waveCounter}`,
     now: () => 1_000 + taskCounter,
   });
   await scheduler.initialize();
@@ -159,6 +161,7 @@ describe('managed scheduler dispatch barrier', () => {
     const retry = await disposition(scheduler, original.taskId, 'retry');
     expect(retry.followUpTask.dispatchGroupId).toBe(original.dispatchGroupId);
     expect(retry.followUpTask.dispatchCallId).toBe(original.dispatchCallId);
+    expect(retry.followUpTask.dispatchWaveId).toBe(original.dispatchWaveId);
     const followUpBarrier = scheduler.waitForDispatchBarrier('ses_root');
     runs[1].result.resolve({ status: 'completed' });
 
@@ -227,8 +230,154 @@ describe('managed scheduler dispatch barrier', () => {
 
     expect(scheduler.getTask(terminal.taskId).dispatchGroupId).toBeNull();
     expect(scheduler.getTask(terminal.taskId).dispatchCallId).toBeNull();
+    expect(scheduler.getTask(terminal.taskId).dispatchWaveId).toBeNull();
     expect(savedState.tasks[0].dispatchGroupId).toBeNull();
     expect(savedState.tasks[0].dispatchCallId).toBeNull();
+    expect(savedState.tasks[0].dispatchWaveId).toBeNull();
     expect((await scheduler.waitForDispatchBarrier('ses_root')).state).toBe('clear');
+  });
+});
+
+describe('managed scheduler dispatch waves (display-only label)', () => {
+  test('labels every grouped start while the barrier is locked with the same wave', async () => {
+    const { runs, scheduler } = await createHarness();
+    const first = await scheduler.submit(input(1));
+    expect(first.dispatchWaveId).toBe('dvr_wave_1');
+
+    // Second start while the first child is still active (barrier: active).
+    const second = await scheduler.submit(input(2, { dispatchCallId: 'call_dispatch_02', agent: 'designer' }));
+    expect(second.dispatchWaveId).toBe('dvr_wave_1');
+
+    // Third start after both finished but before either result is acknowledged
+    // (barrier: awaiting_acknowledgement) still joins the wave.
+    runs[0].result.resolve({ status: 'completed' });
+    runs[1].result.resolve({ status: 'completed' });
+    await scheduler.waitForTask(first.taskId);
+    await scheduler.waitForTask(second.taskId);
+    expect((await scheduler.waitForDispatchBarrier('ses_root')).state).toBe('awaiting_acknowledgement');
+    const third = await scheduler.submit(input(3, { dispatchCallId: 'call_dispatch_03', agent: 'fixer' }));
+    expect(third.dispatchWaveId).toBe('dvr_wave_1');
+
+    // Dispatch itself is unchanged: every start launched immediately.
+    expect(runs).toHaveLength(3);
+  });
+
+  test('opens a new wave for the first start after the barrier cleared', async () => {
+    const { runs, scheduler } = await createHarness();
+    const first = await scheduler.submit(input(1));
+    runs[0].result.resolve({ status: 'completed' });
+    await scheduler.waitForTask(first.taskId);
+    await disposition(scheduler, first.taskId);
+    expect((await scheduler.waitForDispatchBarrier('ses_root')).state).toBe('clear');
+
+    const second = await scheduler.submit(input(2, { dispatchCallId: 'call_dispatch_02' }));
+    expect(second.dispatchWaveId).toBe('dvr_wave_2');
+    expect(second.dispatchWaveId).not.toBe(first.dispatchWaveId);
+  });
+
+  test('keeps waves per root and leaves builder or ungrouped work unlabeled', async () => {
+    const { scheduler } = await createHarness();
+    const grouped = await scheduler.submit(input(1));
+    const ungrouped = await scheduler.submit(input(2, {
+      dispatchGroupId: null,
+      dispatchCallId: null,
+      allowDuplicate: true,
+    }));
+    const otherRoot = await scheduler.submit(input(3, {
+      rootSessionId: 'ses_other_root',
+      dispatchCallId: 'call_dispatch_03',
+    }));
+
+    expect(grouped.dispatchWaveId).toBe('dvr_wave_1');
+    expect(ungrouped.dispatchWaveId).toBeNull();
+    expect(otherRoot.dispatchWaveId).toBe('dvr_wave_2');
+  });
+
+  test('resume follow-ups inherit the source wave', async () => {
+    const { runs, scheduler } = await createHarness();
+    const original = await scheduler.submit(input(1));
+    await runs[0].control.setChildSessionId('ses_child_1');
+    await runs[0].control.markAccepted();
+    runs[0].result.resolve({ status: 'failed', failureReason: 'resume me', resumable: true });
+    await scheduler.waitForTask(original.taskId);
+
+    const resume = await disposition(scheduler, original.taskId, 'resume');
+    expect(resume.followUpTask.priorTaskId).toBe(original.taskId);
+    expect(resume.followUpTask.dispatchWaveId).toBe(original.dispatchWaveId);
+    expect(resume.followUpTask.dispatchWaveId).toBe('dvr_wave_1');
+  });
+
+  const createLegacyHarness = async ({ status, resumable }) => {
+    let taskCounter = 0;
+    let waveCounter = 0;
+    const runs = [];
+    const legacy = createManagedTaskRecord({
+      ...input(1),
+      taskId: 'dvr_task_legacy',
+      sequence: 1,
+      attempt: 1,
+      priorTaskId: null,
+      executionKind: 'start',
+      createdAt: 1_000,
+    });
+    const terminal = {
+      ...legacy,
+      status,
+      childSessionId: 'ses_legacy',
+      leaseToken: 'dvr_lease_legacy',
+      startedAt: 1_100,
+      finishedAt: 1_200,
+      failureReason: status === 'completed' ? null : 'legacy failure',
+    };
+    delete terminal.dispatchWaveId;
+    const scheduler = createManagedTaskScheduler({
+      persistence: {
+        async load() {
+          return {
+            version: 1,
+            tasks: [terminal],
+            resultEnvelopes: [createManagedTaskResultEnvelope(
+              { ...terminal, dispatchWaveId: null },
+              { sequence: 1, createdAt: 1_200, resumable },
+            )],
+          };
+        },
+        async save() {},
+      },
+      executor: {
+        start(task, control) {
+          const result = deferred();
+          runs.push({ control, result, task });
+          return result.promise;
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return {}; },
+      },
+      createTaskId: () => `dvr_task_${++taskCounter}`,
+      createWaveId: () => `dvr_wave_${++waveCounter}`,
+      now: () => 2_000,
+    });
+    await scheduler.initialize();
+    return { runs, scheduler };
+  };
+
+  test('hydrates records without a wave as unlabeled and starts a fresh wave after them', async () => {
+    const { scheduler } = await createLegacyHarness({ status: 'completed', resumable: false });
+
+    expect(scheduler.getTask('dvr_task_legacy').dispatchWaveId).toBeNull();
+    // The legacy result is still unacknowledged, so the barrier is locked, but
+    // no labeled task exists to join: the next start opens its own wave.
+    expect((await scheduler.waitForDispatchBarrier('ses_root')).state).toBe('awaiting_acknowledgement');
+    const next = await scheduler.submit(input(2, { dispatchCallId: 'call_dispatch_02' }));
+    expect(next.dispatchWaveId).toBe('dvr_wave_1');
+  });
+
+  test('a follow-up of an unlabeled legacy task stays unlabeled instead of minting a wave', async () => {
+    const { scheduler } = await createLegacyHarness({ status: 'failed', resumable: true });
+
+    const retry = await disposition(scheduler, 'dvr_task_legacy', 'retry');
+    expect(retry.followUpTask.priorTaskId).toBe('dvr_task_legacy');
+    expect(retry.followUpTask.dispatchWaveId).toBeNull();
   });
 });

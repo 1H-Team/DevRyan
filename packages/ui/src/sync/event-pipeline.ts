@@ -21,6 +21,7 @@ import {
   responsivenessPerfObserve,
 } from "@/stores/utils/streamDebug"
 import { appendStreamingTextDelta } from "./part-delta"
+import { sessionEvents } from "@/lib/sessionEvents"
 import { usePrimaryRecoveryStore } from "@/stores/usePrimaryRecoveryStore"
 
 export type QueuedEvent = {
@@ -648,6 +649,10 @@ export function createEventPipeline(input: EventPipelineInput) {
     responsivenessPerfCount("event_pipeline.enqueue_count")
     const normalizedPayload = normalizeIncomingEvent(payload)
     const normalizedType = (normalizedPayload as unknown as { type?: string }).type
+    if (normalizedType === "session.changes.updated") {
+      sessionEvents.requestGitRefresh({ directory: routeDirectory?.(directory, normalizedPayload) || directory, sessionChanges: true })
+      return
+    }
     if (normalizedType === "openchamber:primary-recovery") {
       const data = normalizedPayload as unknown as { properties?: { sessionID?: unknown; recovery?: unknown } }
       if (typeof data.properties?.sessionID === "string") {

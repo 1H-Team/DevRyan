@@ -471,6 +471,6 @@ export function resolveCurrentDraftSendConfig(draftId: string | null | undefined
     variant: resolved.variant,
     planMode: hasOwn(draftSendConfig, "planMode")
       ? draftSendConfig?.planMode === true
-      : selection.getPlanModeSelection(null),
+      : selection.getPlanModeSelection(null, draftId),
   }
 }

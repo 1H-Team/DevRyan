@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createGlobalMessageStreamHub } from './global-hub.js';
+import { stripEventDiffContent } from '../opencode/diff-summary.js';
 
 function createSseResponse({ blocks = [] } = {}) {
   const encoder = new TextEncoder();
@@ -258,6 +259,50 @@ describe('createGlobalMessageStreamHub', () => {
       expect(received.map((event) => event.eventId)).toEqual(['evt-1', undefined, undefined]);
       expect(transformEventPayload).toHaveBeenCalledTimes(3);
       expect(hub.replayAfter('missing').events.map((event) => event.eventId)).toEqual(['evt-1']);
+    } finally {
+      hub.stop();
+    }
+  });
+
+  it('strips diff patch bodies from message.updated before fanout and replay with the shared transform', async () => {
+    const received = [];
+    const upstream = {
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'msg_1',
+          role: 'user',
+          summary: {
+            additions: 2,
+            deletions: 1,
+            files: 1,
+            diffs: [{ file: 'src/a.ts', status: 'modified', additions: 2, deletions: 1, patch: '@@ -1 +1 @@\n-a\n+b' }],
+          },
+        },
+      },
+    };
+    const hub = createGlobalMessageStreamHub({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      upstreamReconnectDelayMs: 100,
+      fetchImpl: async () => createSseResponse({
+        blocks: [`id: evt-1\ndata: ${JSON.stringify(upstream)}\n\n`],
+      }),
+      transformEventPayload: stripEventDiffContent,
+    });
+    hub.subscribeEvent((event) => received.push(event));
+
+    try {
+      hub.start();
+      await waitForAssertion(() => expect(received).toHaveLength(1));
+      const expectedSummary = {
+        additions: 2,
+        deletions: 1,
+        files: 1,
+        diffs: [{ file: 'src/a.ts', status: 'modified', additions: 2, deletions: 1 }],
+      };
+      expect(received[0].payload.properties.info.summary).toEqual(expectedSummary);
+      expect(hub.replayAfter('missing').events[0].payload.properties.info.summary).toEqual(expectedSummary);
     } finally {
       hub.stop();
     }

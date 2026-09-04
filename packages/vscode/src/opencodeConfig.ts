@@ -78,15 +78,6 @@ const AGENT_OVERRIDES_CONFIG_KEY = 'agentOverrides';
 // normalizeAgentModelOverride rejects unknown keys, and slim/plugin overrides are
 // written to an OpenCode-read file. OpenCode never reads this key.
 const AGENT_BACKUP_MODELS_CONFIG_KEY = 'agentBackupModels';
-// Managed sub-agent launch limits: DevRyan-only sidecar state read by the
-// scheduler's launch admission. OpenCode never reads this key.
-const ORCHESTRATION_LIMITS_CONFIG_KEY = 'orchestrationLimits';
-const MIN_CONCURRENT_SUBAGENTS = 1;
-const MAX_CONCURRENT_SUBAGENTS = 16;
-const ORCHESTRATION_LIMITS_READ_CACHE_TTL_MS = 5_000;
-export const INVALID_ORCHESTRATION_LIMITS_CODE = 'invalid_orchestration_limits';
-const invalidOrchestrationLimits = (message: string): Error =>
-  Object.assign(new Error(message), { code: INVALID_ORCHESTRATION_LIMITS_CODE });
 // Agent runtime switches (`openchamber.agentRuntime`): sidecar state behind the
 // settings page's language-server toggle. The web host's runtime overlay turns
 // `lsp: false` into OpenCode config; the extension persists the switch only.
@@ -2962,98 +2953,6 @@ export const deleteAgentBackupModel = (agentName: string): boolean => {
   });
 
   return true;
-};
-
-export type OrchestrationLimits = {
-  maxConcurrentSubagents: number;
-  pauseUnderMemoryPressure: boolean;
-};
-
-export const DEFAULT_ORCHESTRATION_LIMITS: Readonly<OrchestrationLimits> = Object.freeze({
-  maxConcurrentSubagents: 4,
-  pauseUnderMemoryPressure: true,
-});
-
-const isValidConcurrentSubagents = (value: unknown): value is number => (
-  Number.isSafeInteger(value)
-  && (value as number) >= MIN_CONCURRENT_SUBAGENTS
-  && (value as number) <= MAX_CONCURRENT_SUBAGENTS
-);
-
-/** Lenient read-side normalization: anything malformed falls back to the default. */
-export const normalizeOrchestrationLimits = (raw: unknown): OrchestrationLimits => {
-  const source: Record<string, unknown> = isPlainObject(raw) ? raw : {};
-  const maxConcurrentSubagents = source.maxConcurrentSubagents;
-  const pauseUnderMemoryPressure = source.pauseUnderMemoryPressure;
-  return {
-    maxConcurrentSubagents: isValidConcurrentSubagents(maxConcurrentSubagents)
-      ? maxConcurrentSubagents
-      : DEFAULT_ORCHESTRATION_LIMITS.maxConcurrentSubagents,
-    pauseUnderMemoryPressure: typeof pauseUnderMemoryPressure === 'boolean'
-      ? pauseUnderMemoryPressure
-      : DEFAULT_ORCHESTRATION_LIMITS.pauseUnderMemoryPressure,
-  };
-};
-
-/** Strict write-side validation of a partial update; unknown keys are ignored. */
-export const validateOrchestrationLimitsPatch = (partial: unknown): Partial<OrchestrationLimits> => {
-  if (!isPlainObject(partial)) {
-    throw invalidOrchestrationLimits('Orchestration limits must be an object');
-  }
-  const patch: Partial<OrchestrationLimits> = {};
-  if (Object.prototype.hasOwnProperty.call(partial, 'maxConcurrentSubagents')) {
-    const candidate = partial.maxConcurrentSubagents;
-    if (!isValidConcurrentSubagents(candidate)) {
-      throw invalidOrchestrationLimits(
-        `maxConcurrentSubagents must be an integer between ${MIN_CONCURRENT_SUBAGENTS} and ${MAX_CONCURRENT_SUBAGENTS}`,
-      );
-    }
-    patch.maxConcurrentSubagents = candidate;
-  }
-  if (Object.prototype.hasOwnProperty.call(partial, 'pauseUnderMemoryPressure')) {
-    const candidate = partial.pauseUnderMemoryPressure;
-    if (typeof candidate !== 'boolean') {
-      throw invalidOrchestrationLimits('pauseUnderMemoryPressure must be a boolean');
-    }
-    patch.pauseUnderMemoryPressure = candidate;
-  }
-  return patch;
-};
-
-let orchestrationLimitsCache: { value: OrchestrationLimits; expiresAt: number } | null = null;
-
-export const invalidateOrchestrationLimitsCache = () => {
-  orchestrationLimitsCache = null;
-};
-
-/** Cached for 5 s: the scheduler's launch admission calls this on every pump. */
-export const readOrchestrationLimits = (): OrchestrationLimits => {
-  const now = Date.now();
-  if (orchestrationLimitsCache && orchestrationLimitsCache.expiresAt > now) {
-    return { ...orchestrationLimitsCache.value };
-  }
-  const sidecar = readOpenchamberSidecar();
-  const value = normalizeOrchestrationLimits(sidecar?.[ORCHESTRATION_LIMITS_CONFIG_KEY]);
-  orchestrationLimitsCache = { value, expiresAt: now + ORCHESTRATION_LIMITS_READ_CACHE_TTL_MS };
-  return { ...value };
-};
-
-/**
- * Sidecar-only write, like backup models: OpenCode never sees this key and
- * nothing needs an apply/restart. Sibling sidecar keys are preserved.
- */
-export const writeOrchestrationLimits = (partial: unknown): OrchestrationLimits => {
-  const patch = validateOrchestrationLimitsPatch(partial);
-  const sidecar = readOpenchamberSidecar() ?? {};
-  const next: OrchestrationLimits = {
-    ...normalizeOrchestrationLimits(sidecar[ORCHESTRATION_LIMITS_CONFIG_KEY]),
-    ...patch,
-  };
-  persistOpenchamberFromConfig({
-    [OPENCHAMBER_CONFIG_KEY]: { ...sidecar, [ORCHESTRATION_LIMITS_CONFIG_KEY]: next },
-  });
-  orchestrationLimitsCache = null;
-  return { ...next };
 };
 
 export type AgentRuntimeSettings = {

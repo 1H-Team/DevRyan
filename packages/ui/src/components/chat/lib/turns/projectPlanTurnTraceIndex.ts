@@ -1,3 +1,4 @@
+import { resolvePlanTurnIntent, type PlanTurnIntent } from '@/lib/messages/actionablePlan';
 import {
     projectPlanRevisions,
     type PlanRevision,
@@ -22,6 +23,36 @@ const areStringArraysEqual = (left: string[], right: string[]): boolean => {
     return left.every((value, index) => value === right[index]);
 };
 
+const areStringSetsEqual = (left: ReadonlySet<string>, right: ReadonlySet<string>): boolean => {
+    if (left === right) return true;
+    if (left.size !== right.size) return false;
+    for (const value of left) {
+        if (!right.has(value)) return false;
+    }
+    return true;
+};
+
+const areMapKeysEqual = (left: ReadonlyMap<string, unknown>, right: ReadonlyMap<string, unknown>): boolean => {
+    if (left === right) return true;
+    if (left.size !== right.size) return false;
+    for (const key of left.keys()) {
+        if (!right.has(key)) return false;
+    }
+    return true;
+};
+
+const areTurnIntentMapsEqual = (
+    left: ReadonlyMap<string, PlanTurnIntent>,
+    right: ReadonlyMap<string, PlanTurnIntent>,
+): boolean => {
+    if (left === right) return true;
+    if (left.size !== right.size) return false;
+    for (const [turnId, intent] of left) {
+        if (right.get(turnId) !== intent) return false;
+    }
+    return true;
+};
+
 const areTraceEntriesEqual = (left: PlanTurnTraceEntry, right: PlanTurnTraceEntry): boolean => (
     left.sessionId === right.sessionId
     && left.planVersion === right.planVersion
@@ -29,6 +60,7 @@ const areTraceEntriesEqual = (left: PlanTurnTraceEntry, right: PlanTurnTraceEntr
     && left.userMessageId === right.userMessageId
     && areStringArraysEqual(left.memberTurnIds, right.memberTurnIds)
     && left.sourceTurnId === right.sourceTurnId
+    && left.intent === right.intent
     && left.isPlanModeRevision === right.isPlanModeRevision
     && left.assistantSourceMessageId === right.assistantSourceMessageId
     && left.assistantParentMessageId === right.assistantParentMessageId
@@ -94,6 +126,7 @@ const buildTraceEntry = (
     userMessageId: revision.rootUserMessageId,
     memberTurnIds: revision.memberTurnIds,
     sourceTurnId: revision.sourceTurnId,
+    intent: revision.intent,
     isPlanModeRevision: revision.isPlanModeRevision,
     assistantSourceMessageId: revision.sourceMessageId,
     assistantParentMessageId: revision.sourceParentMessageId,
@@ -113,9 +146,18 @@ export const projectPlanTurnTraceIndex = (
 ): PlanTurnTraceIndex => {
     const recordedPlanModeMessageIds = options.recordedPlanModeMessageIds ?? new Set<string>();
     const sessionIdByTurnId = new Map<string, string | null>();
+    // Every turn's own intent, including Implement Plan turns, which never
+    // become revisions (and so never appear in `byTurnId`). Renderers use it
+    // to keep implementation output from being treated as a plan response.
+    const turnIntentById = new Map<string, PlanTurnIntent>();
     const inputs = turns.map((turn) => {
         sessionIdByTurnId.set(turn.turnId, getSessionId(turn));
-        return toRevisionTurnInput(turn, recordedPlanModeMessageIds);
+        const input = toRevisionTurnInput(turn, recordedPlanModeMessageIds);
+        turnIntentById.set(
+            turn.turnId,
+            resolvePlanTurnIntent(input.userInfo, input.userParts, input.isRecordedPlanMode),
+        );
+        return input;
     });
 
     const revisions = projectPlanRevisions(inputs);
@@ -159,6 +201,7 @@ export const projectPlanTurnTraceIndex = (
         bySourceMessageId,
         messageRoleById,
         suppressedTurnIds,
+        turnIntentById,
         latestPlanTurnId,
         latestPlanSourceMessageId: latestEntry?.assistantSourceMessageId ?? null,
         pendingPlanTurnId,
@@ -176,6 +219,12 @@ export const projectPlanTurnTraceIndex = (
             return nextEntry ? areTraceEntriesEqual(entry, nextEntry) : false;
         })
         && areMessageRoleMapsEqual(previousIndex.messageRoleById, nextIndex.messageRoleById)
+        // Membership changes (a turn folding into or leaving a revision, a
+        // suppressed epilogue turn appearing) must invalidate the memo even when
+        // the entries themselves compare equal.
+        && areStringSetsEqual(previousIndex.suppressedTurnIds, nextIndex.suppressedTurnIds)
+        && areMapKeysEqual(previousIndex.byTurnId, nextIndex.byTurnId)
+        && areTurnIntentMapsEqual(previousIndex.turnIntentById, nextIndex.turnIntentById)
     ) {
         return previousIndex;
     }

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.12] - 2026-09-04
+
+- Sessions: replace the changes footer with a full changed-files card, tree-scoped Undo controls, durable change summaries, and reliable queued send-now interruption.
+- Plans and drafts: keep plan mode scoped to each draft, render implementation-plan turns without treating them as future plan sources, and preserve actionable plan revisions.
+- Managed orchestration: group parallel dispatches into one card per wave, remove the sub-agent launch cap and memory-pressure hold, and clarify packaged agent deviation guidance.
+- OpenCode storage: add database maintenance and Storage settings with process-liveness protection, strict path validation, and a quiet fallback when the SQLite driver is unavailable.
+- Performance and diagnostics: strip diff patch bodies from live SSE traffic and add a session-pipeline profiler for tool, skill, and token usage across a session tree.
+- Database: deploy and verify all repository migrations and the required Production Bots schema marker before release publication.
+- Release: update all DevRyan package and desktop metadata to 1.1.12.
+
 ## [1.1.11] - 2026-09-04
 
 - Sessions: add tree-scoped revert and redo with durable change summaries, an Undo footer, and consistent recovery across web, Electron, and VS Code.
