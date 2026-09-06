@@ -4,7 +4,7 @@ type RuntimeWindowLike = {
   __OPENCHAMBER_RUNTIME_APIS__?: {
     runtime?: {
       isDesktop?: boolean;
-      isVSCode?: boolean;
+
     };
   };
 };

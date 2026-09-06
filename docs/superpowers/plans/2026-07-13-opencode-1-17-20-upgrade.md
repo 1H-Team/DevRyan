@@ -4,7 +4,7 @@
 
 **Goal:** Align DevRyan's recommended OpenCode runtime and shared `@opencode-ai/sdk` dependency on stable version 1.17.20.
 
-**Architecture:** Keep the current cross-runtime policy structure: web and VS Code each expose the same recommended external runtime version, while all SDK-consuming workspaces share the same caret dependency range. Regenerate the root Bun lockfile and make no API changes unless compilation proves they are necessary.
+**Architecture:** Keep the current cross-runtime policy structure: web each expose the same recommended external runtime version, while all SDK-consuming workspaces share the same caret dependency range. Regenerate the root Bun lockfile and make no API changes unless compilation proves they are necessary.
 
 **Tech Stack:** Bun workspaces, Node.js, `@opencode-ai/sdk`, Vitest/Bun tests, TypeScript, JavaScript.
 
@@ -24,12 +24,9 @@
 - Modify: `packages/web/server/lib/opencode/opencode-resolution-runtime.test.js`
 - Modify: `packages/web/server/lib/opencode/version-policy.js`
 - Modify: `packages/web/server/lib/opencode/DOCUMENTATION.md`
-- Modify: `packages/vscode/src/bridge-config-runtime.test.js`
-- Modify: `packages/vscode/src/opencodeVersionPolicy.ts`
-- Modify: `packages/vscode/src/DOCUMENTATION.md`
 
 **Interfaces:**
-- Consumes: Existing `TARGET_OPENCODE_VERSION` and `OPENCODE_TARGET_INSTALL_COMMAND` exports in web and VS Code.
+- Consumes: Existing `TARGET_OPENCODE_VERSION` and `OPENCODE_TARGET_INSTALL_COMMAND` exports in web.
 - Produces: The same exports with `TARGET_OPENCODE_VERSION === "1.17.20"` and install commands containing `--version 1.17.20`.
 
 - [x] **Step 1: Change policy test expectations to 1.17.20**
@@ -51,8 +48,6 @@ Run:
 bunx vitest run server/lib/opencode/opencode-resolution-runtime.test.js --no-file-parallelism --maxWorkers=1
 bunx vitest run --config vitest.config.mjs src/bridge-config-runtime.test.js
 ```
-
-Run the first command from `packages/web` and the second from `packages/vscode`.
 
 Expected: failures showing the implementation still returns target/install version 1.17.19.
 
@@ -79,8 +74,6 @@ bunx vitest run server/lib/opencode/opencode-resolution-runtime.test.js --no-fil
 bunx vitest run --config vitest.config.mjs src/bridge-config-runtime.test.js
 ```
 
-Run the first command from `packages/web` and the second from `packages/vscode`.
-
 Expected: both files pass.
 
 ### Task 2: Update the shared SDK dependency
@@ -89,7 +82,6 @@ Expected: both files pass.
 - Modify: `package.json`
 - Modify: `packages/ui/package.json`
 - Modify: `packages/web/package.json`
-- Modify: `packages/vscode/package.json`
 - Modify: `bun.lock`
 
 **Interfaces:**
@@ -119,7 +111,6 @@ Expected: `bun.lock` resolves `@opencode-ai/sdk@1.17.20` and does not introduce 
 Run:
 
 ```bash
-rg -n '1\.17\.19|"@opencode-ai/sdk": "\^1\.17\.20"|@opencode-ai/sdk@1\.17\.20' package.json bun.lock packages/web/package.json packages/ui/package.json packages/vscode/package.json packages/web/server/lib/opencode packages/vscode/src
 ```
 
 Expected: all four manifests show `^1.17.20`, the lockfile shows 1.17.20, and no current policy/test/documentation reference remains at 1.17.19.
@@ -160,7 +151,6 @@ Run:
 ```bash
 git diff --check
 git status --short
-git diff -- package.json bun.lock packages/ui/package.json packages/web/package.json packages/vscode/package.json packages/web/server/lib/opencode packages/vscode/src docs/superpowers/plans/2026-07-13-opencode-1-17-20-upgrade.md
 ```
 
 Expected: no whitespace errors; the OpenCode diff is limited to version declarations, generated lock data, policy expectations, and documentation, while the user's pre-existing session-store edits remain unmodified.

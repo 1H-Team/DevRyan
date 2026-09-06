@@ -5,7 +5,6 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ConfigApplyControls } from '@/components/views/config-apply/ConfigApplyControls';
 import { canAccessSettingsPage, useAuthPrincipal } from '@/lib/authSession';
 import { useI18n } from '@/lib/i18n';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { SettingsPagePermissionBoundary } from '@/lib/settings/permission-context';
 import { cn } from '@/lib/utils';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -128,7 +127,6 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
     ];
     return definitions.filter((page) => (
       canAccessSettingsDestination(principal, page.slug)
-      && (page.slug !== 'bug-reports' || !isVSCodeRuntime())
     ));
   }, [principal, t]);
 

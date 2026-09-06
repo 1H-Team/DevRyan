@@ -3,7 +3,7 @@ import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 
 import { registerGitRoutes } from './routes.js';
-import { runWithRequestPrincipal } from '../multi-user/request-context.js';
+import { getRequestPrincipal, runWithRequestPrincipal } from '../multi-user/request-context.js';
 
 const receipt = {
   operationId: 'wt_1',
@@ -41,22 +41,60 @@ const makeApp = (overrides = {}, principal = null) => {
     ...overrides,
   };
   const app = express();
+  const requestWitness = [];
   app.use(express.json());
   if (principal) {
     app.use((req, _res, next) => runWithRequestPrincipal(principal, next));
   }
+  app.use((req, res, next) => {
+    const observedPrincipal = getRequestPrincipal();
+    const witness = {
+      method: req.method,
+      path: req.originalUrl,
+      principal: observedPrincipal ? {
+        id: observedPrincipal.id,
+        role: observedPrincipal.role,
+        scope: observedPrincipal.scope,
+        assignedBranches: (observedPrincipal.assignments || []).map((entry) => entry.branchName).slice(0, 10),
+      } : null,
+      matchedRoute: null,
+      status: null,
+    };
+    requestWitness.push(witness);
+    res.once('finish', () => {
+      witness.matchedRoute = typeof req.route?.path === 'string' ? req.route.path : null;
+      witness.status = res.statusCode;
+    });
+    next();
+  });
   registerGitRoutes(app, {
     loadGitLibraries: async () => libraries,
   });
-  return { app, libraries };
+  return { app, libraries, requestWitness };
 };
 
 describe('durable worktree operation routes', () => {
   it('returns operation receipts from create, lookup, active-list, retry, and legacy status routes', async () => {
-    const { app, libraries } = makeApp();
+    const { app, libraries, requestWitness } = makeApp();
+    const recordUnexpectedStatus = (response) => {
+      if (response.status === 200) return;
+      console.error('Unexpected worktree operation response', JSON.stringify({
+        expectedStatus: 200,
+        actualStatus: response.status,
+        contentType: response.headers['content-type'] || null,
+        body: response.text?.slice(0, 2048) || null,
+        bodyTruncated: (response.text?.length || 0) > 2048,
+        requestWitness: requestWitness.slice(-10),
+        libraryCalls: Object.fromEntries(Object.entries(libraries).map(([name, library]) => [
+          name,
+          library.mock.calls.slice(-10),
+        ])),
+      }));
+    };
     const created = await request(app)
       .post('/api/git/worktrees?directory=/repo')
       .send({ idempotencyKey: 'request_1', mode: 'new' })
+      .expect(recordUnexpectedStatus)
       .expect(200);
     expect(created.body).toMatchObject({
       path: receipt.directory,
@@ -66,15 +104,19 @@ describe('durable worktree operation routes', () => {
 
     expect((await request(app)
       .get('/api/git/worktrees/operations/wt_1')
+      .expect(recordUnexpectedStatus)
       .expect(200)).body).toMatchObject({ operationId: 'wt_1' });
     expect((await request(app)
       .get('/api/git/worktrees/operations?active=1')
+      .expect(recordUnexpectedStatus)
       .expect(200)).body).toEqual({ operations: [receipt] });
     expect((await request(app)
       .post('/api/git/worktrees/operations/wt_1/retry')
+      .expect(recordUnexpectedStatus)
       .expect(200)).body).toMatchObject({ operationId: 'wt_1', attempt: 2 });
     expect((await request(app)
       .get('/api/git/worktrees/bootstrap-status?directory=/legacy')
+      .expect(recordUnexpectedStatus)
       .expect(200)).body).toMatchObject({ status: 'not_applicable' });
     expect(libraries.createWorktree).toHaveBeenCalledWith('/repo', expect.objectContaining({
       idempotencyKey: 'request_1',

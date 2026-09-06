@@ -10,7 +10,7 @@ Role-aware shared-host user and access administration inside Settings.
   page (in-page `selectedUserId` drill-down with a Back button), plus the
   one-time temporary-password / invite-URL banners. In local web/Electron mode
   it renders the standalone GitHub account controls instead of requesting the
-  managed-only `/api/admin/*` datasets; VS Code receives an explanatory state.
+  managed-only `/api/admin/*` datasets.
 - `useAdminUsersData.ts` owns all fetching with per-domain reloaders
   (`reloadUsers`, `reloadInvites`, `reloadActivity`, `reloadProjects`,
   `reloadRoles`, `reloadGithubAccounts`, `reloadAll`) so mutations refresh only

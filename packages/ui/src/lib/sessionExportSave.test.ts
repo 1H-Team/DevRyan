@@ -23,7 +23,7 @@ describe('saveSessionExportMarkdown', () => {
 
     const result = await saveSessionExportMarkdown('# Chat', 'chat.md', {
       saveDesktop: mock(async () => ({ status: 'saved' as const, path: '/tmp/chat.md' })),
-      isVSCode: () => false,
+
       fetchRequest: async () => {
         fetchCount += 1;
         return new Response();
@@ -50,7 +50,7 @@ describe('saveSessionExportMarkdown', () => {
 
     const result = await saveSessionExportMarkdown('# Chat', 'chat.md', {
       saveDesktop: mock(async () => ({ status: 'canceled' as const })),
-      isVSCode: () => false,
+
       fetchRequest: async () => {
         fetchCount += 1;
         return new Response();
@@ -70,60 +70,11 @@ describe('saveSessionExportMarkdown', () => {
     expect(downloadCount).toBe(0);
   });
 
-  test('returns the confirmed path from VS Code', async () => {
-    let fetchCount = 0;
-
-    const result = await saveSessionExportMarkdown('# Chat', 'chat.md', {
-      saveDesktop: unavailableDesktop,
-      isVSCode: () => true,
-      fetchRequest: async () => {
-        fetchCount += 1;
-        return Response.json({ saved: true, path: '/workspace/chat.md' });
-      },
-    });
-
-    expect(result).toEqual({ status: 'saved', path: '/workspace/chat.md' });
-    expect(fetchCount).toBe(1);
-  });
-
-  test('returns VS Code cancellation without downloading', async () => {
-    let downloadCount = 0;
-    const result = await saveSessionExportMarkdown('# Chat', 'chat.md', {
-      saveDesktop: unavailableDesktop,
-      isVSCode: () => true,
-      fetchRequest: mock(async () => Response.json({ saved: false, canceled: true })),
-      download: () => {
-        downloadCount += 1;
-      },
-    });
-
-    expect(result).toEqual({ status: 'canceled' });
-    expect(downloadCount).toBe(0);
-  });
-
-  test('rejects malformed VS Code save responses', async () => {
-    const error = await captureError(() => saveSessionExportMarkdown('# Chat', 'chat.md', {
-      saveDesktop: unavailableDesktop,
-      isVSCode: () => true,
-      fetchRequest: mock(async () => Response.json({ saved: false })),
-    }));
-    expect(error?.message).toContain('VS Code returned an invalid export result');
-  });
-
-  test('rejects failed VS Code save responses', async () => {
-    const error = await captureError(() => saveSessionExportMarkdown('# Chat', 'chat.md', {
-      saveDesktop: unavailableDesktop,
-      isVSCode: () => true,
-      fetchRequest: mock(async () => new Response('nope', { status: 500 })),
-    }));
-    expect(error?.message).toContain('VS Code could not save the exported session');
-  });
-
   test('returns browser picker cancellation without downloading', async () => {
     let downloadCount = 0;
     const result = await saveSessionExportMarkdown('# Chat', 'chat.md', {
       saveDesktop: unavailableDesktop,
-      isVSCode: () => false,
+
       pickBrowserFile: mock(async () => ({ status: 'canceled' as const })),
       download: () => {
         downloadCount += 1;
@@ -138,7 +89,7 @@ describe('saveSessionExportMarkdown', () => {
     const downloads: Array<[string, string]> = [];
     const result = await saveSessionExportMarkdown('# Chat', 'chat.md', {
       saveDesktop: unavailableDesktop,
-      isVSCode: () => false,
+
       pickBrowserFile: mock(async () => ({ status: 'unavailable' as const })),
       download: (content, filename) => {
         downloads.push([content, filename]);

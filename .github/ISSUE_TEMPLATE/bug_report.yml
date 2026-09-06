@@ -20,7 +20,6 @@ body:
         - Desktop (macOS)
         - Desktop Web
         - Mobile (Web/PWA)
-        - VS Code extension
         - Not sure
     validations:
       required: true

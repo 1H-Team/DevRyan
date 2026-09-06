@@ -912,7 +912,7 @@ export const settingsDict = {
   'settings.skills.catalog.shared.field.chooseProjectPlaceholder': 'Choose project',
   'settings.skills.catalog.shared.field.searchSkillsPlaceholder': 'Search skills…',
   'settings.skills.catalog.shared.toast.repositoryRequired': 'Repository source is required',
-  'settings.skills.catalog.shared.toast.privateRepoNotSupportedVsCode': 'Private repositories are not supported in VS Code yet',
+
   'settings.skills.catalog.shared.toast.foundSkills': 'Found {count} skill(s)',
   'settings.skills.catalog.shared.noDescription': 'No description provided',
   'settings.skills.catalog.shared.actions.scan': 'Scan',
@@ -1841,7 +1841,7 @@ export const settingsDict = {
   'settings.notifications.page.delivery.browserPermissionHint': 'Your browser may ask for permission the first time.',
   'settings.notifications.page.delivery.permissionDenied': 'Notification permission denied. Enable it in your browser settings.',
   'settings.notifications.page.delivery.permissionGrantedButDisabled': 'Permission granted, but notifications are disabled.',
-  'settings.notifications.page.delivery.vscodeHint': 'When enabled, notifications are delivered through VS Code native notifications.',
+
   'settings.notifications.page.events.title': 'Notification Events',
   'settings.notifications.page.events.completionAria': 'Session Completion',
   'settings.notifications.page.events.completionLabel': 'Session Completion',

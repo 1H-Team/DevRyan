@@ -917,6 +917,7 @@ export const AgentsPage: React.FC = () => {
                   <SelectSeparator />
                 </>
               ) : null}
+              <SelectItem value={NO_VARIANT_VALUE}>{formatEffortLabel(undefined)}</SelectItem>
               {rowAvailableVariants.map((availableVariant) => (
                 <SelectItem key={availableVariant} value={availableVariant}>
                   {formatEffortLabel(availableVariant, { providerId: parsedRowModel?.providerId })}

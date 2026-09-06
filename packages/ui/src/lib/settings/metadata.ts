@@ -38,7 +38,7 @@ export type SettingsPageGroup =
   | 'advanced';
 
 export interface SettingsRuntimeContext {
-  isVSCode: boolean;
+
   isWeb: boolean;
   isDesktop: boolean;
   isManaged: boolean;
@@ -89,7 +89,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     kind: 'single',
     description: 'Submit product issues and, for administrators, review reports and error logs.',
     keywords: ['bug', 'bugs', 'report', 'issue', 'status', 'error', 'errors', 'logs', 'diagnostics', 'development'],
-    isAvailable: (ctx) => ctx.isManaged && !ctx.isVSCode,
+    isAvailable: (ctx) => ctx.isManaged,
   },
   {
     slug: 'projects',
@@ -104,7 +104,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'projects',
     kind: 'split',
     keywords: ['ssh', 'remote', 'instances', 'tunnels', 'forwarding', 'connection'],
-    isAvailable: (ctx) => ctx.isDesktop && !ctx.isWeb && !ctx.isVSCode,
+    isAvailable: (ctx) => ctx.isDesktop && !ctx.isWeb,
   },
   {
     slug: 'providers',
@@ -183,7 +183,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'git',
     kind: 'single',
     keywords: ['git', 'github', 'identity', 'identities', 'ssh', 'profiles', 'credentials', 'keys', 'commit', 'gitmoji', 'oauth', 'prs', 'issues'],
-    isAvailable: (ctx) => !ctx.isVSCode,
+    isAvailable: () => true,
   },
   {
     slug: 'appearance',
@@ -205,7 +205,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'general',
     kind: 'single',
     keywords: ['keyboard', 'hotkeys', 'shortcuts', 'bindings'],
-    isAvailable: (ctx) => !ctx.isVSCode,
+    isAvailable: () => true,
   },
   {
     slug: 'sessions',
@@ -220,12 +220,12 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'general',
     kind: 'split',
     keywords: ['prompts', 'templates', 'git', 'github', 'review', 'commit', 'pull request'],
-    isAvailable: (ctx) => !ctx.isVSCode,
+    isAvailable: () => true,
   },
 
   { slug: 'notifications', title: 'Notifications', group: 'general', kind: 'single', keywords: ['alerts', 'native', 'summary', 'summarization'], },
-  { slug: 'voice', title: 'Voice', group: 'advanced', kind: 'single', keywords: ['tts', 'speech', 'voice'], isAvailable: (ctx) => !ctx.isVSCode },
-  { slug: 'tunnel', title: 'Remote Tunnel', group: 'advanced', kind: 'single', keywords: ['tunnel', 'cloudflare', 'qr', 'remote', 'mobile', 'share'], isAvailable: (ctx) => !ctx.isVSCode },
+  { slug: 'voice', title: 'Voice', group: 'advanced', kind: 'single', keywords: ['tts', 'speech', 'voice'], isAvailable: () => true },
+  { slug: 'tunnel', title: 'Remote Tunnel', group: 'advanced', kind: 'single', keywords: ['tunnel', 'cloudflare', 'qr', 'remote', 'mobile', 'share'], isAvailable: () => true },
   { slug: 'about', title: 'About', group: 'general', kind: 'single', keywords: ['about', 'version', 'data', 'retention', 'diagnostics', 'logs', 'export', 'support'], },
 ] as const;
 

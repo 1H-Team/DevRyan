@@ -19,7 +19,7 @@ import { BotsEventOwner, createBotEventReconciler } from './BotsEventOwner';
 await import('@/components/chat/MarkdownRendererImpl');
 
 const NOW = '2026-08-31T00:00:00.000Z';
-const runtimeApis = { runtime: { isVSCode: false }, editor: {}, files: {} } as unknown as RuntimeAPIs;
+const runtimeApis = { runtime: {}, editor: {}, files: {} } as unknown as RuntimeAPIs;
 const bot: BotSummary = { id: 'event-bot', name: 'Event Bot', title: '', summary: '', avatarUrl: null, avatarFallback: 'EB', lifecycle: 'active', tenancy: 'team', activeRevisionId: 'revision', createdAt: NOW, updatedAt: NOW, retiredAt: null };
 const channel: BotChannel = { id: 'event-channel', botId: bot.id, ownerUserId: 'member', accessRole: 'owner', canSend: true, lifecycle: 'active', currentCheckpointNumber: 0, lastMessageSequence: 0, lastMessageAt: null, createdAt: NOW, updatedAt: NOW, archivedAt: null };
 const snapshot: BotSnapshot = { bots: [bot], revisions: [], memberships: [{ botId: bot.id, userId: 'member', role: 'member', activatedAt: NOW, revokedAt: null, updatedAt: NOW }], channels: [channel], channelPreviews: [], runs: [], recentActions: [], pendingApprovals: [], computers: [] };

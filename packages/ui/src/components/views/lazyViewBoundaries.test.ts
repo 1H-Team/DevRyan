@@ -104,9 +104,8 @@ describe('shared lazy view boundaries', () => {
     const mainLayout = readSource('components/layout/MainLayout.tsx');
     const rightSidebarTabs = readSource('components/layout/RightSidebarTabs.tsx');
     const contextPanel = readSource('components/layout/ContextPanel.tsx');
-    const vscodeLayout = readSource('components/layout/VSCodeLayout.tsx');
 
-    for (const source of [mainLayout, rightSidebarTabs, contextPanel, vscodeLayout]) {
+    for (const source of [mainLayout, rightSidebarTabs, contextPanel]) {
       expect(source).not.toContain("from '@/lib/chunkLoadRecovery'");
     }
 
@@ -139,10 +138,6 @@ describe('shared lazy view boundaries', () => {
     expect(contextPanel).toContain("from '@/components/views/lazyViews'");
     expect((contextPanel.match(/<LazyViewBoundary>/g)?.length ?? 0) >= 2).toBe(true);
 
-    expect(vscodeLayout).toContain("from '@/components/views/lazyViews'");
-    expect(vscodeLayout).toContain('<LazyViewBoundary>');
-    expect(vscodeLayout).toContain('<LazySettingsView');
-    expect(vscodeLayout).toContain("useConfigApplyStatusLifecycle(currentView === 'settings')");
   });
 
   test('keeps settings navigation metadata independent from the heavy settings view', () => {
@@ -205,18 +200,4 @@ describe('shared lazy view boundaries', () => {
     }
   });
 
-  test('loads Agent Manager only inside the VS Code agent-manager panel branch', () => {
-    const vscodeApp = readSource('apps/VSCodeApp.tsx');
-    const agentManagerBranch = vscodeApp.slice(
-      vscodeApp.indexOf("if (panelType === 'agentManager')"),
-      vscodeApp.indexOf('\n  return (', vscodeApp.indexOf("if (panelType === 'agentManager')")),
-    );
-
-    expect(vscodeApp).toContain("from '@/components/views/lazyViews'");
-    expect(vscodeApp).not.toContain("from '@/components/views/agent-manager'");
-    expect(/import\s+\{\s*AgentManagerView\s*\}/.test(vscodeApp)).toBe(false);
-    expect(agentManagerBranch).toContain('<LazyViewBoundary>');
-    expect(agentManagerBranch).toContain('<LazyAgentManagerView />');
-    expect(vscodeApp.slice(0, vscodeApp.indexOf("if (panelType === 'agentManager')"))).not.toContain('<LazyAgentManagerView />');
-  });
 });

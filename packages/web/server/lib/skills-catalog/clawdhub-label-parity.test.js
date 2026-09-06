@@ -17,8 +17,7 @@ describe('ClawdHub label parity', () => {
     const labels = [
       extractLabel('packages/web/server/lib/skills-catalog/curated-sources.js'),
       extractLabel('packages/ui/src/stores/useSkillsCatalogStore.ts'),
-      extractLabel('packages/vscode/src/skillsCatalog.ts'),
     ];
-    expect(labels).toEqual(['ClawdHub', 'ClawdHub', 'ClawdHub']);
+    expect(labels).toEqual(['ClawdHub', 'ClawdHub']);
   });
 });

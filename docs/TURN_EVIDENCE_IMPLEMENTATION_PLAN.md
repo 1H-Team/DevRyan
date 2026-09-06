@@ -5,9 +5,7 @@ This scope excludes durable worktree bootstrap and diagnostic bundles.
 > Status note: implementation is underway in the working tree. The shared
 > primitives live in `packages/harness-runtime` (`createTurnEvidenceRuntime`,
 > `createEvidenceGitRuntime`, `createEvidenceLedger`, `createRecordStore`), the
-> web host integration in `packages/web/server/lib/evidence/`, and the VS Code
-> host in `packages/vscode/src/bridge-evidence-runtime.ts`. This plan is the
-> spec those pieces must satisfy; where the implementation already made a
+> web host integration lives in `packages/web/server/lib/evidence/`. Where the implementation already made a
 > structural choice (package location, state machine, routes, ref scheme), the
 > plan has been reconciled to it.
 
@@ -33,7 +31,7 @@ tool-derived changed-file surfaces or `PendingChangesBar`.
 ## 1. Shared runtime
 
 The shared runtime lives in `packages/harness-runtime`, a private Node ESM
-package shared by Web/Electron and VS Code (Electron embeds the web server, so
+package shared by Web/Electron (Electron embeds the web server, so
 the web wiring covers it).
 
 It owns:
@@ -46,8 +44,7 @@ It owns:
 Hosts inject Git execution, storage directory, per-project enablement lookup,
 session-state resolution, logging, and event publication. Web/Electron data
 lives under the harness data root (`harnessRuntime.paths.evidenceDir`, under
-`OPENCHAMBER_DATA_DIR`); VS Code data under
-`context.globalStorageUri/turn-evidence/`.
+`OPENCHAMBER_DATA_DIR`).
 
 Use versioned JSON records with serialized atomic writes, `0600` permissions,
 fsync, corruption quarantine, and startup recovery.
@@ -92,11 +89,7 @@ paths need their own hooks:
   admission middleware (`packages/web/server/lib/harness/runtime.js`) already
   emits the lifecycle event; evidence subscribes to that rather than adding a
   second middleware.
-- VS Code: `bridge-proxy-runtime.ts` `admitPrompt` already records the prompt
-  (path, directory, `messageID`) into the harness runtime; evidence subscribes
-  to the same lifecycle events.
 - Managed orchestration tasks: `packages/web/server/lib/orchestration/open-code-executor.js`
-  and `packages/vscode/src/managedOpenCodeExecutor.ts` post `prompt_async`
   directly to the OpenCode backend and call
   `cursorSdkRuntime.handlePromptAsync` directly — both bypass the Express
   layer. They must emit the same lifecycle events explicitly.
@@ -267,7 +260,7 @@ Shared runtime surface (already sketched in `harness-runtime`):
 - `clearProject(directory)`
 
 HTTP mirror (implemented in `packages/web/server/lib/evidence/routes.js`;
-VS Code mirrors via `bridge-evidence-runtime.ts` + webview API):
+):
 
 - `GET/PUT /api/evidence/project`
 - `DELETE /api/evidence/project`
@@ -363,13 +356,13 @@ remain unchanged.
   project clearing (including the ref-prefix guard).
 - API validation: path traversal, non-recorded diff paths, refs/revisions in
   inputs, and cross-project checkpoint access are all rejected.
-- Contract-test identical Web/Electron and VS Code behavior across standard
+- Contract-test identical Web/Electron behavior across standard
   OpenCode, Cursor, and managed orchestration prompt paths.
 - UI tests for leaf-store isolation, loading/complete/warning/gap states, lazy
   diff loading, and the absence of restore controls.
 - A perf smoke test on a repository with a large untracked tree, asserting
   the capture respects its timeout and the prompt proceeds.
-- Update root and package codemaps plus Git, OpenCode event, VS Code, and
+- Update root and package codemaps plus Git, OpenCode event, and
   chat documentation.
 - Validate with `bun test packages/harness-runtime`,
   `bun run validate:full`, and `bun run build`.

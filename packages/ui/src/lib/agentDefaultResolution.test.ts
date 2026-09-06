@@ -30,6 +30,17 @@ const orchestrator = {
 };
 
 describe('agent default resolution', () => {
+  test('a personal row without a variant captures provider default instead of inheriting host effort', () => {
+    const selection = resolveAgentDefaultSelection({
+      agentName: 'Orchestrator',
+      agents: [orchestrator],
+      providers,
+      personalSelections: { Orchestrator: { providerId: 'openai', modelId: 'gpt-5.6-sol' } },
+    });
+    expect(selection?.variant).toBeNull();
+    expect(selection?.source).toBe('personal');
+  });
+
   test('finds account overrides case-insensitively and gives them precedence over the live host default', () => {
     const personalSelections = {
       ORCHESTRATOR: {
@@ -129,7 +140,7 @@ describe('agent default resolution', () => {
       agentName: 'Orchestrator',
       providerId: 'openai',
       modelId: 'gpt-5.6-sol',
-      variant: 'medium',
+      variant: null,
       source: 'availability-fallback',
     });
   });

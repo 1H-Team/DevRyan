@@ -27,6 +27,10 @@ export function legacyBrandedReleaseAssetNames(assetNames) {
   return assetNames.filter((name) => /^openchamber[_-]/i.test(name));
 }
 
+export function unsupportedExtensionAssets(assetNames) {
+  return assetNames.filter((name) => /\.vsix(?:\.|$)|vscode/i.test(name));
+}
+
 async function fetchJson(url, token, { allowNotFound = false, fetchImpl = fetch } = {}) {
   const response = await fetchImpl(url, {
     headers: {
@@ -94,6 +98,10 @@ async function main() {
 
   const tag = `v${version}`;
   const assetNames = await fetchReleaseAssetNames({ repo, tag, token });
+  const extensions = unsupportedExtensionAssets(assetNames);
+  if (extensions.length > 0) {
+    throw new Error(`Release ${tag} contains unsupported extension assets:\n${extensions.join('\n')}`);
+  }
   const missing = missingRequiredReleaseAssets(assetNames, version);
 
   if (missing.length > 0) {

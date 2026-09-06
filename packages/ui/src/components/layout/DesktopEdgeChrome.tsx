@@ -12,7 +12,7 @@ import {
 import { useUIStore } from '@/stores/useUIStore';
 import { useTabletStandalonePwaRuntime } from '@/lib/device';
 import { cn } from '@/lib/utils';
-import { isDesktopShell, isVSCodeRuntime } from '@/lib/desktop';
+import { isDesktopShell } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import { formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
 import {
@@ -54,7 +54,6 @@ export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({
     return /Macintosh|Mac OS X/.test(navigator.userAgent || '');
   }, []);
   const [isDesktopWindowFullscreen, setIsDesktopWindowFullscreen] = React.useState(false);
-  const isVSCode = isVSCodeRuntime();
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -161,16 +160,16 @@ export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({
   }), []);
 
   const botChromeHeightStyle = React.useMemo<React.CSSProperties | undefined>(() => {
-    if (!botMode || isDesktopApp || isVSCode) {
+    if (!botMode || isDesktopApp) {
       return undefined;
     }
 
     return {
       height: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
     };
-  }, [botMode, isDesktopApp, isVSCode]);
+  }, [botMode, isDesktopApp]);
 
-  if (isMobile || (isVSCode && !botMode)) {
+  if (isMobile) {
     return null;
   }
 

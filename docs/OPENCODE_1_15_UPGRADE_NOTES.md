@@ -17,7 +17,6 @@ Date: 2026-05-15
 - `bun run validate:full`: passed.
 - `bun run build`: passed.
 - `bun run --cwd packages/web test`: 44 test files passed, 271 tests passed.
-- `bun run vscode:build`: passed.
 - `bun run electron:build`: passed and produced macOS arm64 artifacts. Notarization was skipped because notarization options were unavailable in the local environment.
 
 ## Runtime Smoke

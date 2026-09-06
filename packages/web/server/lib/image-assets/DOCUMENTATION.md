@@ -8,8 +8,7 @@ URLs. Generated files outside the workspace require a short-lived opaque grant
 bound to the principal, canonical path, session, and message.
 
 Remote and embedded images are never fetched by the server. Web and Electron use
-the preparation route; VS Code continues through its workspace-confined raw-file
-bridge and therefore cannot read generated temporary files outside the workspace.
+the preparation route.
 
 Public route:
 

@@ -26,6 +26,11 @@ const assistant = (id, parentID, parts, overrides = {}) => ({
 });
 
 const structuredPlan = '# Plan\n\n## Context\nInspect the current flow.\n\n## Implementation\nAdd the event.';
+const implementationPart = () => ({
+  type: 'text',
+  synthetic: true,
+  text: '[openchamber-plan-action:v1] {"action":"implement","sourceSessionId":"ses_1","sourceMessageId":"asst_1","planIndex":0}',
+});
 
 describe('detectPlanReadyRevision', () => {
   it('recognizes a terminal sentinel snapshot before its parent history is visible', () => {
@@ -47,6 +52,44 @@ describe('detectPlanReadyRevision', () => {
     ]);
 
     expect(result).toMatchObject({ sourceMessageId: 'asst_1', planText: `${structuredPlan}` });
+  });
+
+  it.each([
+    '[devryan-provider-recovery:v1:task_fixture]\nCollect the result.',
+    '[devryan-open-todo-continuation:v1]\nContinue the open todo.',
+    'Your turn ended with open todos. If a plan deviation stopped you, classify it (Class 1: note it and continue; Class 2: ask with the question tool) and continue from the first open todo. If everything is done, mark the todos complete and give the final summary.',
+  ])('does not announce a maintenance response as a plan even with a sentinel: %s', (text) => {
+    expect(detectPlanReadyRevision([
+      user('usr_1', [planModePart()]),
+      assistant('asst_1', 'usr_1', [{ type: 'text', text: structuredPlan }]),
+      user('wake', [planModePart(), { type: 'text', text, synthetic: true }]),
+      assistant('wake_response', 'wake', [{ type: 'text', text: `<!--plan-->\n${structuredPlan}` }]),
+    ])).toBeNull();
+  });
+
+  it('does not fold a maintenance epilogue into the earlier actionable revision', () => {
+    expect(detectPlanReadyRevision([
+      user('usr_1', [planModePart()]),
+      assistant('asst_1', 'usr_1', [{ type: 'text', text: structuredPlan }]),
+      user('wake', [{ type: 'text', text: '[devryan-open-todo-continuation:v1]\nContinue.', synthetic: true }]),
+      assistant('wake_response', 'wake', [{ type: 'text', text: 'Collected the result.' }]),
+    ])).toBeNull();
+  });
+
+  it('gives actual implementation precedence over a repeated sentinel and stale Plan flags', () => {
+    const approval = user('approve', [planModePart(), implementationPart()]);
+    approval.info.mode = 'plan';
+    expect(detectPlanReadyRevision([
+      approval,
+      assistant('implementation', 'approve', [{ type: 'text', text: `<!--plan-->\n${structuredPlan}` }]),
+    ])).toBeNull();
+  });
+
+  it('keeps a human marker quotation eligible for an explicitly returned plan', () => {
+    expect(detectPlanReadyRevision([
+      user('human', [{ type: 'text', text: '[devryan-provider-recovery:v1:task_fixture]\nExplain this.' }]),
+      assistant('plan', 'human', [{ type: 'text', text: `<!--plan-->\n${structuredPlan}` }]),
+    ])?.sourceMessageId).toBe('plan');
   });
 
   it('recognizes structured text and reasoning plans from plan-mode revisions', () => {
@@ -113,11 +156,7 @@ describe('detectPlanReadyRevision', () => {
     expect(detectPlanReadyRevision([
       user('usr_1', [planModePart()]),
       assistant('asst_1', 'usr_1', [{ type: 'text', text: structuredPlan }]),
-      user('usr_2', [{
-        type: 'text',
-        synthetic: true,
-        text: '[openchamber-plan-action:v1] {"action":"implement"}',
-      }]),
+      user('usr_2', [implementationPart()]),
       assistant('asst_2', 'usr_2', [{ type: 'text', text: 'Implemented.' }]),
     ])).toBeNull();
   });

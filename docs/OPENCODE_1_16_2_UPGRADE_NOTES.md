@@ -4,9 +4,9 @@ Date: 2026-06-05
 
 ## Result
 
-- `@opencode-ai/sdk` is declared as `^1.16.2` in the root, web, UI, and VS Code package manifests.
+- `@opencode-ai/sdk` is declared as `^1.16.2` in the root, web, UI, package manifests.
 - `bun.lock` now resolves `@opencode-ai/sdk` to `1.16.2` with integrity `sha512-Z/xZ7q79dYeE0afqIk/yFEcRNGEQFcE+H8ssYivUiy+xGZ1mGwT72jpaQZKBwPn3JH4sRCu4KA2lcktBQfcOjg==`.
-- Web and VS Code OpenCode runtime policy now target `1.16.2`.
+- Web OpenCode runtime policy now target `1.16.2`.
 - `/api/config/opencode-resolution` now advertises `targetVersion: "1.16.2"` and install command `curl -fsSL https://opencode.ai/install | bash -s -- --version 1.16.2 --no-modify-path`.
 - No DevRyan API endpoint changes were needed.
 
@@ -20,7 +20,6 @@ Date: 2026-06-05
 
 - TDD red checks failed correctly while policy still returned `1.16.0`:
   - `bun run --cwd packages/web test -- server/lib/opencode/opencode-resolution-runtime.test.js`
-  - `bun run --cwd packages/vscode test -- packages/vscode/src/bridge-config-runtime.test.js`
 - Focused web resolution test passed after the policy update: 1 test file and 1 test.
 - Focused VS Code bridge runtime tests passed after the policy update: 5 test files and 21 tests, plus 4 quota provider tests.
 - Focused SDK-sensitive UI sync tests passed: event pipeline, reconnect recovery, session actions, message fetch, bootstrap global/session-list, and plan lifecycle detection/settlement suites.

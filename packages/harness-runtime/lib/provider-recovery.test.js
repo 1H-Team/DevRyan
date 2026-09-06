@@ -47,18 +47,20 @@ describe('failure classification', () => {
     expect(classifyPrimaryTransportError(timeout, '1.18.25')?.source).toBe('opencode_1.18.25_compatibility');
     expect(classifyPrimaryTransportError(timeout, '1.18.26')?.source).toBe('opencode_1.18.26_compatibility');
     expect(classifyPrimaryTransportError(timeout, '1.18.27')?.source).toBe('opencode_1.18.27_compatibility');
-    expect(classifyPrimaryTransportError(timeout, '1.18.28')).toBeNull();
+    expect(classifyPrimaryTransportError(timeout, '1.18.29')?.source).toBe('opencode_1.18.29_compatibility');
+    expect(classifyPrimaryTransportError(timeout, '1.18.30')).toBeNull();
     expect(classifyPrimaryTransportError(timeout, undefined)).toBeNull();
     expect(classifyPrimaryTransportError({ name: 'UnknownError', message: 'request timeout' }, '1.18.25')).toBeNull();
     expect(classifyPrimaryTransportError({ name: 'UnknownError', message: 'request timeout' }, '1.18.26')).toBeNull();
   });
   test('allow-lists only verified OpenCode versions for enforcement', async () => {
-    expect([...PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS]).toEqual(['1.18.25', '1.18.26', '1.18.27']);
+    expect([...PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS]).toEqual(['1.18.25', '1.18.26', '1.18.27', '1.18.29']);
     const f = await fixture();
     const hello = (version) => f.controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version });
     expect((await hello('1.18.26')).supported).toBe(true);
     expect((await hello('1.18.27')).supported).toBe(true);
-    expect((await hello('1.18.28')).supported).toBe(false);
+    expect((await hello('1.18.29')).supported).toBe(true);
+    expect((await hello('1.18.30')).supported).toBe(false);
     expect((await hello('1.18.25')).supported).toBe(true);
   });
   test.each(['AuthenticationError', 'QuotaError', 'CertificateError', 'ModelNotFoundError', 'AbortError', 'PolicyError'])(

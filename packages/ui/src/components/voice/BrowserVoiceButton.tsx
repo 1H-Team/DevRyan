@@ -14,7 +14,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { isRecoverableVoiceSilenceError, useBrowserVoice } from '@/hooks/useBrowserVoice';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { browserVoiceService } from '@/lib/voice/browserVoiceService';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { Button } from '@/components/ui/button';
 import {
     Tooltip,
@@ -61,7 +60,7 @@ const normalizeVoiceErrorMessage = (error: string): string => {
  */
 export function BrowserVoiceButton() {
     const voiceModeEnabled = useConfigStore((s) => s.voiceModeEnabled);
-    
+
     const {
         status,
         isSupported,
@@ -75,14 +74,14 @@ export function BrowserVoiceButton() {
         localRecovery,
         recoverWithLocal,
     } = useBrowserVoice();
-    
+
     const [isPressing, setIsPressing] = useState(false);
-    const isVSCode = isVSCodeRuntime();
-    const buttonSizeClass = isMobile ? 'h-8 w-8 min-h-[32px] min-w-[32px]' : (isVSCode ? 'h-5 w-5' : 'h-6 w-6');
-    const iconSizeClass = isMobile ? 'h-[18px] w-[18px]' : (isVSCode ? 'h-4 w-4' : 'h-[18px] w-[18px]');
-    const activeStopIconSizeClass = isMobile ? 'h-[19px] w-[19px]' : (isVSCode ? 'h-[17px] w-[17px]' : 'h-[19px] w-[19px]');
+
+    const buttonSizeClass = isMobile ? 'h-8 w-8 min-h-[32px] min-w-[32px]' : ('h-6 w-6');
+    const iconSizeClass = isMobile ? 'h-[18px] w-[18px]' : ('h-[18px] w-[18px]');
+    const activeStopIconSizeClass = isMobile ? 'h-[19px] w-[19px]' : ('h-[19px] w-[19px]');
     const clearHoverBackgroundClass = 'bg-transparent hover:!bg-transparent active:!bg-transparent focus-visible:!bg-transparent';
-    
+
     // Refs for touch handling
     const touchHandledRef = useRef(false);
     const lastToastedErrorRef = useRef<string | null>(null);
@@ -141,7 +140,7 @@ export function BrowserVoiceButton() {
             }
             lastToastedErrorRef.current = error;
             const displayError = normalizeVoiceErrorMessage(error);
-            
+
             toast.error(displayError, {
                 duration: 5000,
             });
@@ -249,8 +248,6 @@ export function BrowserVoiceButton() {
         setIsPressing(false);
     }, []);
 
-
-
     // If voice mode is disabled, don't render anything
     if (!voiceModeEnabled) {
         return null;
@@ -342,7 +339,7 @@ export function BrowserVoiceButton() {
                             ) : (
                                 <VoiceStatusIndicator
                                     status={isError ? 'idle' : status}
-                                    size={isMobile || isVSCode ? 'sm' : 'md'}
+                                    size={isMobile ? 'sm' : 'md'}
                                     audioLevel={audioLevel}
                                 />
                             )}

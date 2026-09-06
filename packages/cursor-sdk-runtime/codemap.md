@@ -1,7 +1,7 @@
 # packages/cursor-sdk-runtime/
 
 ## Responsibility
-Shared Cursor SDK runtime for DevRyan hosts. It keeps Cursor model execution, SDK auth discovery, virtual provider discovery, and split SDK/usage credential helpers in one package so web/Electron and VS Code do not duplicate provider behavior.
+Shared Cursor SDK runtime for DevRyan hosts. It keeps Cursor model execution, SDK auth discovery, virtual provider discovery, and split SDK/usage credential helpers in one package so web/Electron do not duplicate provider behavior.
 
 ## Design
 - `index.js`: ESM runtime and credential helpers.
@@ -40,4 +40,3 @@ Shared Cursor SDK runtime for DevRyan hosts. It keeps Cursor model execution, SD
 - Web/Electron creates the runtime in `packages/web/server/index.js` and intercepts `cursor-acp` prompt sends before the OpenCode proxy.
 - Web/Electron merges `getSessionStatus()` into `/api/session/status` so Cursor SDK sessions report live busy/idle state alongside OpenCode sessions.
 - Web/Electron consumes `listPendingQuestions()`, `replyToQuestion()`, and `rejectQuestion()` through the focused `/api/question` merge routes. Cursor question events reuse the canonical OpenCode event and card payloads.
-- VS Code uses the shared credential/status/configure helpers through `packages/vscode/src/bridge-system-runtime.ts` and the same prompt/status/message/abort owner for managed Cursor children through `packages/vscode/src/managedOpenCodeExecutor.ts`.

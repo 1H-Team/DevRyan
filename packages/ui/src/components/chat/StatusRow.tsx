@@ -22,7 +22,6 @@ type TodoPriority = string;
 import { useUIStore } from "@/stores/useUIStore";
 import { useTodosPersistStore } from "@/stores/useTodosPersistStore";
 import { WorkingPlaceholder } from "./message/parts/WorkingPlaceholder";
-import { isVSCodeRuntime } from "@/lib/desktop";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/lib/i18n";
 import {
@@ -158,7 +157,7 @@ interface StatusRowProps {
   longRunningToolPending?: boolean;
   longRunningToolError?: string | null;
   onStopLongRunningTool?: () => void;
-  // Abort state (for mobile/vscode)
+
   showAbort?: boolean;
   onAbort?: () => void;
   // Abort status display
@@ -236,13 +235,13 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const toggleContextPlan = useUIStore((state) => state.toggleContextPlan);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
-  const isVSCode = isVSCodeRuntime();
-  const isCompact = isMobile || isVSCode;
-  const shouldAutoRevealPlan = shouldAutoRevealPlanInMainTab({ isMobile, isVSCode });
+
+  const isCompact = isMobile;
+  const shouldAutoRevealPlan = shouldAutoRevealPlanInMainTab({ isMobile, });
   const planActionState = getStatusRowPlanActionState({
     showTodos,
     isPlanAvailable: isSessionPlanAvailable,
-    isVSCode,
+
     record: sessionPlanRecord,
   });
   const hasPlanTaskContext = hasPlanTaskTrackingContext({
@@ -368,7 +367,6 @@ export const StatusRow: React.FC<StatusRowProps> = ({
         task: todoTitle,
       });
 
-  // Abort button for mobile/vscode
   const abortButton = showAbort && onAbort ? (
     <button
       type="button"

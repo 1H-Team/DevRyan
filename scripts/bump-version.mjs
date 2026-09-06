@@ -22,7 +22,6 @@ const PACKAGES = [
   'packages/web/package.json',
   'packages/desktop/package.json',
   'packages/electron/package.json',
-  'packages/vscode/package.json',
 ];
 
 const TAURI_CONF = 'packages/desktop/src-tauri/tauri.conf.json';

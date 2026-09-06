@@ -1,6 +1,7 @@
 import { useConfigStore } from "@/stores/useConfigStore"
 import { useContextStore } from "@/stores/contextStore"
 import { useSelectionStore } from "./selection-store"
+import { assertSessionPlanSelectionReady } from "./sync-refs"
 import {
   findSelectableAgentByName,
   resolveDefaultAgentName,
@@ -18,7 +19,8 @@ export type SendConfig = {
   providerID?: string
   modelID?: string
   agent?: string
-  variant?: string
+  /** Missing inherits; null captures provider default; a string captures explicit effort. */
+  variant?: string | null
   planMode?: boolean
   modelProvenance?: SendConfigModelProvenance
 }
@@ -51,7 +53,7 @@ export type SendConfigResolverSnapshot = {
   currentAgentName?: string | null
   currentProviderId?: string
   currentModelId?: string
-  currentVariant?: string
+  currentVariant?: string | null
   settingsDefaultAgent?: string | null
   lastUsedProvider?: { providerID: string; modelID: string } | null
   agents: SendConfigAgent[]
@@ -63,8 +65,8 @@ export type SendConfigResolverSnapshot = {
   contextSessionModelSelection?: StoreModelSelection
   sessionAgentModelSelection?: StoreModelSelection
   contextSessionAgentModelSelection?: StoreModelSelection
-  sessionAgentModelVariant?: string
-  contextSessionAgentModelVariant?: string
+  sessionAgentModelVariant?: string | null
+  contextSessionAgentModelVariant?: string | null
   planMode: boolean
 }
 
@@ -101,12 +103,12 @@ function resolveVariantForModel(
   providerID?: string,
   modelID?: string,
   variant?: string | null,
-): string | undefined {
+): string | null {
   const cleanedVariant = clean(variant)
   const providerModel = findProviderModel(providers, providerID, modelID)
-  if (!providerModel) return undefined
+  if (!providerModel) return null
 
-  return resolveProviderModelVariant(providerModel.provider, modelID, cleanedVariant)
+  return resolveProviderModelVariant(providerModel.provider, modelID, cleanedVariant) ?? null
 }
 
 function hasOwn(object: object | null | undefined, key: keyof SendConfig): boolean {
@@ -136,14 +138,14 @@ export function resolveDraftSendSelection(params: {
   providers: SendConfigProvider[]
   inputProviderID: string
   inputModelID: string
-  inputVariant?: string
+  inputVariant?: string | null
   currentProviderID?: string
   currentModelID?: string
-  currentVariant?: string
+  currentVariant?: string | null
   draftAgentSelection?: string | null
   draftModelSelection?: StoreModelSelection
   draftAgentModelSelection?: StoreModelSelection
-  draftAgentModelVariant?: string
+  draftAgentModelVariant?: string | null
   draftSendConfig?: SendConfig | null
   agentModelSelections?: Record<string, AgentModelSelection>
 }): Required<Pick<SendConfig, "providerID" | "modelID">> & Pick<SendConfig, "agent" | "variant"> {
@@ -188,13 +190,14 @@ export function resolveDraftSendSelection(params: {
   // the selected agent's personal-or-inherited default, then retained current input.
   let providerID: string | undefined
   let modelID: string | undefined
-  let variant: string | undefined
+  let variant: string | null | undefined
   let selectedModel: SendConfigProviderModel | null = null
 
   if (explicitModel) {
     providerID = params.draftSendConfig?.providerID
     modelID = params.draftSendConfig?.modelID
-    variant = hasOwn(params.draftSendConfig, "variant") ? clean(params.draftSendConfig?.variant) : undefined
+    variant = params.draftSendConfig?.variant
+    selectedModel = explicitModel.model
   } else if (draftAgentModel) {
     providerID = params.draftAgentModelSelection?.providerId
     modelID = params.draftAgentModelSelection?.modelId
@@ -207,12 +210,12 @@ export function resolveDraftSendSelection(params: {
   } else if (agentModel) {
     providerID = accountAgentDefault?.providerId
     modelID = accountAgentDefault?.modelId
-    variant = clean(accountAgentDefault?.variant)
+    variant = accountAgentDefault?.variant
     selectedModel = agentModel.model
   } else if (accountAgentDefault) {
     providerID = accountAgentDefault.providerId
     modelID = accountAgentDefault.modelId
-    variant = clean(accountAgentDefault.variant)
+    variant = accountAgentDefault.variant
   } else if (inputModel) {
     providerID = params.inputProviderID
     modelID = params.inputModelID
@@ -226,7 +229,7 @@ export function resolveDraftSendSelection(params: {
     modelID = params.inputModelID
   }
 
-  if (!variant && !explicitModel) {
+  if (variant === undefined) {
     variant = resolveAgentVariantForModel(agent, selectedModel, providerID, modelID)
   }
 
@@ -236,7 +239,7 @@ export function resolveDraftSendSelection(params: {
     modelID: modelID ?? "",
     variant: findProviderModel(params.providers, providerID, modelID)
       ? resolveVariantForModel(params.providers, providerID, modelID, variant)
-      : clean(variant),
+      : clean(variant) ?? null,
   }
 }
 
@@ -272,7 +275,7 @@ export function resolveSessionSendConfigSnapshot(
         ?? clean(snapshot.currentModelId)
         ?? snapshot.lastUsedProvider?.modelID,
       agent,
-      variant: undefined,
+      variant: requested.variant === null ? null : clean(requested.variant),
       planMode: requested.planMode ?? snapshot.planMode,
     }
   }
@@ -319,12 +322,16 @@ export function resolveSessionSendConfigSnapshot(
     }
   }
 
-  const requestedOrStoredVariant = Object.prototype.hasOwnProperty.call(requested, "variant")
-    ? requested.variant
-    : (agent && providerID && modelID
-      ? (snapshot.sessionAgentModelVariant ?? snapshot.contextSessionAgentModelVariant)
-      : undefined) ?? clean(snapshot.currentVariant)
-  const variant = resolveVariantForModel(snapshot.providers, providerID, modelID, requestedOrStoredVariant)
+  // Null is an intentional provider default; only missing values inherit.
+  const requestedOrStoredVariant = [
+    requested.variant,
+    ...(agent ? [snapshot.sessionAgentModelVariant, snapshot.contextSessionAgentModelVariant] : []),
+    snapshot.currentVariant,
+  ].find((value) => value !== undefined)
+  const selectedAgent = snapshot.agents.find((entry) => entry.name === agent)
+  const inheritedVariant = resolveAgentVariantForModel(selectedAgent, selected?.model, providerID, modelID)
+  const variant = resolveVariantForModel(snapshot.providers, providerID, modelID,
+    requestedOrStoredVariant === undefined ? inheritedVariant : requestedOrStoredVariant)
 
   return {
     providerID,
@@ -336,6 +343,7 @@ export function resolveSessionSendConfigSnapshot(
 }
 
 export function resolveSessionSendConfig(sessionId: string, requested: SendConfig = {}): SendConfig {
+  if (requested.planMode === undefined) assertSessionPlanSelectionReady(sessionId)
   const context = useContextStore.getState()
   const config = useConfigStore.getState()
   const selection = useSelectionStore.getState()
@@ -413,18 +421,26 @@ export function resolveCurrentSendConfig(sessionId: string | null | undefined): 
       providerID: config.currentProviderId,
       modelID: config.currentModelId,
       agent: config.currentAgentName ?? undefined,
-      variant: config.currentVariant ?? undefined,
+      variant: config.currentVariant,
       planMode: selection.getPlanModeSelection(sessionId),
     })
   }
 
-  return {
-    providerID: config.currentProviderId,
-    modelID: config.currentModelId,
-    agent: config.currentAgentName ?? undefined,
-    variant: resolveVariantForModel(config.providers, config.currentProviderId, config.currentModelId, config.currentVariant),
+  return resolveSessionSendConfigSnapshot({
+    currentProviderId: config.currentProviderId,
+    currentModelId: config.currentModelId,
+    currentAgentName: config.currentAgentName,
+    currentVariant: config.currentVariant,
+    agents: config.agents,
+    providers: config.providers,
     planMode: selection.getPlanModeSelection(null),
-  }
+  })
+}
+
+/** New user/queue captures must not turn missing historical Plan authority into OFF. */
+export function captureCurrentSendConfig(sessionId: string | null | undefined): SendConfig {
+  if (sessionId) assertSessionPlanSelectionReady(sessionId)
+  return resolveCurrentSendConfig(sessionId)
 }
 
 export function resolveCurrentDraftSendConfig(draftId: string | null | undefined, draftSendConfig?: SendConfig | null): SendConfig {
@@ -452,10 +468,10 @@ export function resolveCurrentDraftSendConfig(draftId: string | null | undefined
     providers: config.providers,
     inputProviderID: config.currentProviderId,
     inputModelID: config.currentModelId,
-    inputVariant: config.currentVariant ?? undefined,
+    inputVariant: config.currentVariant,
     currentProviderID: config.currentProviderId,
     currentModelID: config.currentModelId,
-    currentVariant: config.currentVariant ?? undefined,
+    currentVariant: config.currentVariant,
     draftAgentSelection: draftAgent,
     draftModelSelection: draftModel,
     draftAgentModelSelection: draftAgentModel,

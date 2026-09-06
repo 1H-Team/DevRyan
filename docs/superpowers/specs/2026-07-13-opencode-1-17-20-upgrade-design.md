@@ -8,7 +8,7 @@ Update DevRyan's supported OpenCode baseline from 1.17.19 to the latest stable r
 
 - Update every workspace declaration of `@opencode-ai/sdk` from `^1.17.19` to `^1.17.20`.
 - Regenerate `bun.lock` so the resolved SDK is 1.17.20.
-- Update the web and VS Code target-runtime policy constants to 1.17.20.
+- Update the web target-runtime policy constants to 1.17.20.
 - Update version-policy tests and module documentation that describe the supported OpenCode baseline.
 - Update version-specific compatibility prose only where it refers to the supported baseline rather than a historical behavior that remains tied to 1.17.19.
 
@@ -22,9 +22,9 @@ The externally installed OpenCode runtime remains a recommendation and diagnosti
 
 ## Verification
 
-Because the SDK is shared across UI, web, and VS Code and the runtime target is a cross-runtime contract, run:
+Because the SDK is shared across UI, web, and the runtime target is a cross-runtime contract, run:
 
-- Focused version-policy tests for web and VS Code.
+- Focused version-policy tests for web.
 - `bun run validate:full`.
 - `bun run build`.
 

@@ -40,7 +40,7 @@ describe('pwa service worker startup policy', () => {
 
     expect(isDesktopRuntimeWindow({
       __OPENCHAMBER_RUNTIME_APIS__: {
-        runtime: { isDesktop: false, isVSCode: true },
+        runtime: { isDesktop: false, },
       },
     })).toBe(false);
   });

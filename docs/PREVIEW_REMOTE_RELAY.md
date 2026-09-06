@@ -21,7 +21,6 @@ OpenChamber server process and forwards requests to a **loopback** target
 | ------------------------------------------------------------------------ | ------------ |
 | Web UI in browser, OpenChamber server on same host as dev server         | yes          |
 | Electron desktop, dev server on same host                                | yes          |
-| VS Code extension, dev server on same host                               | yes          |
 | Mobile/tablet hitting OpenChamber over LAN, dev server on host           | yes          |
 | DevRyan reached through a tunnel, dev server on the DevRyan tunnel host    | yes          |
 | **Remote DevRyan** (cloud / shared), dev server on user's laptop           | **no**       |

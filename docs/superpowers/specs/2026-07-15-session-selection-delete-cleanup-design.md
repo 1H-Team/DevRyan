@@ -26,7 +26,7 @@ none of its Zustand Maps contain the target and only replaces Maps that
 actually change.
 
 Invoke that action from shared sync handling when a valid session.deleted
-payload supplies the deleted session ID. Web, Electron, and VS Code therefore
+payload supplies the deleted session ID. Web, Electron, therefore
 share the same cleanup boundary.
 
 ## Alternatives rejected

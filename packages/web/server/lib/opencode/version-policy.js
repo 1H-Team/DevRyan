@@ -1,4 +1,4 @@
-export const TARGET_OPENCODE_VERSION = '1.18.27';
+export const TARGET_OPENCODE_VERSION = '1.18.29';
 
 // The Bot runtime container image pins its own OpenCode build
 // (packages/bots-runtime/docker/opencode/Dockerfile). The two roll independently:

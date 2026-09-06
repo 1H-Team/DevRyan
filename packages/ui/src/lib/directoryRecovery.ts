@@ -1,5 +1,4 @@
 import { getAuthPrincipal } from '@/lib/authSession'
-import { isVSCodeRuntime } from '@/lib/desktop'
 import { opencodeClient } from '@/lib/opencode/client'
 import { probeDirectoryAvailability, type DirectoryAvailability } from '@/lib/directoryStatus'
 import type { ProjectEntry } from '@/lib/api/types'
@@ -18,7 +17,7 @@ type RecoveryProject = Pick<ProjectEntry, 'id' | 'path' | 'branches'>
 
 export type DirectoryRecoveryDependencies = {
   isManaged: () => boolean
-  isVSCode: () => boolean
+
   getCurrentDirectory: () => string
   getHomeDirectory: () => string
   getProjects: () => RecoveryProject[]
@@ -32,7 +31,7 @@ export type DirectoryRecoveryDependencies = {
 
 const defaultDependencies: DirectoryRecoveryDependencies = {
   isManaged: () => getAuthPrincipal().scope === 'managed',
-  isVSCode: () => isVSCodeRuntime(),
+
   getCurrentDirectory: () => useDirectoryStore.getState().currentDirectory,
   getHomeDirectory: () => useDirectoryStore.getState().homeDirectory,
   getProjects: () => useProjectsStore.getState().projects,
@@ -65,7 +64,6 @@ export async function recoverMissingActiveDirectory(
   preferredProjectRoot?: string,
 ): Promise<{ recovered: boolean; fallback?: string; reason?: string }> {
   if (dependencies.isManaged()) return { recovered: false, reason: 'managed' }
-  if (dependencies.isVSCode()) return { recovered: false, reason: 'vscode' }
 
   const missing = normalizeRecoveryDirectory(missingDirectory)
   if (!missing || normalizeRecoveryDirectory(dependencies.getCurrentDirectory()) !== missing) {

@@ -18,6 +18,7 @@ import {
   removeDevRyanManagedLegacyPluginSpecs,
 } from './managed-plugins.js';
 import { applyManagedMeridianSdkFeaturePolicy } from './meridian-sdk-features.js';
+import { applyMeridianHttpHotfix } from './meridian-http-hotfix.js';
 import {
   CLAUDE_RUNTIME_MANAGED_OVERRIDES,
   COMPATIBILITY_MARKER_RELATIVE_PATH,
@@ -140,6 +141,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     || inspectDevRyanManagedPluginInstallation;
   const applyContextModeHotfixFn = dependencies.applyContextModeHotfix
     || applyContextModeHotfix;
+  const applyMeridianHttpHotfixFn = dependencies.applyMeridianHttpHotfix || applyMeridianHttpHotfix;
   const profileRoot = dependencies.profileRoot || DEFAULT_PROFILE_ROOT;
   const configRoot = dependencies.configRoot || DEFAULT_CONFIG_ROOT;
   const configDirectory = dependencies.configDirectory || pathApi.join(homedir(), '.config', 'opencode');
@@ -168,6 +170,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       contextModeHotfixReinstall: null,
       warnings: [],
       meridianPolicy: null,
+      meridianHttpHotfix: null,
       claudeRuntime: null,
       managedPluginIssues: [],
     };
@@ -496,6 +499,13 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       fs: fsApi,
       path: pathApi,
     });
+    if (result.ok && result.claudeRuntime.source === 'managed' && result.claudeRuntime.runtimeStatus === 'ready') {
+      result.meridianHttpHotfix = applyMeridianHttpHotfixFn({ configDirectory, fs: fsApi });
+      if (!result.meridianHttpHotfix.ok) {
+        result.ok = false;
+        result.error = `${result.meridianHttpHotfix.code}: ${result.meridianHttpHotfix.error}`;
+      } else if (result.meridianHttpHotfix.changed) result.changed = true;
+    }
     if (
       result.ok
       && !result.installDegraded

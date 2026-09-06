@@ -11,3 +11,8 @@ Raw provider data is loaded, normalized, and exposed to settings/chat controls.
 
 ## Integration
 Integrated with provider sections, agent manager, and opencode client config.
+
+`variantControls.ts` validates explicit thinking variants and keeps provider
+default unset. It never chooses an effort from catalog order. Captured default
+intent (`null`) is owned by send/selection state; provider helpers expose no
+invented default variant key.

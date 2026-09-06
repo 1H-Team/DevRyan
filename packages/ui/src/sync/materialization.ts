@@ -17,7 +17,7 @@ const STREAMING_PART_FIELDS = ["text", "output"] as const
 
 export type MaterializedMessageRecord = {
   info: Message
-  parts: Part[]
+  parts?: Part[] | null
 }
 
 export type MaterializedState = {
@@ -251,6 +251,8 @@ export function materializeSessionSnapshots(
   for (const record of snapshots) {
     const messageID = record.info.id
     if (isPrepend && nextPartState[messageID]) continue
+    // A lightweight/missing envelope is not an authoritative empty user turn.
+    if (record.info.role === "user" && !Array.isArray(record.parts)) continue
 
     const existing = nextPartState[messageID]
     const nextParts = mergeMaterializedParts(
@@ -259,9 +261,11 @@ export function materializeSessionSnapshots(
       skipPartTypes,
       record.info.role === "assistant",
     )
-    if (haveEquivalentPartSnapshots(existing, nextParts)) continue
+    const knownEmptyUserParts = record.info.role === "user" && Array.isArray(record.parts)
+      && existing === undefined && nextParts.length === 0
+    if (haveEquivalentPartSnapshots(existing, nextParts) && !knownEmptyUserParts) continue
 
-    if (nextParts.length === 0) {
+    if (nextParts.length === 0 && record.info.role !== "user") {
       delete nextPartState[messageID]
     } else {
       nextPartState[messageID] = nextParts

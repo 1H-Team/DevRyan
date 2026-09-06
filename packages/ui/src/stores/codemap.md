@@ -5,6 +5,7 @@ Zustand store layer for persisted and session-local client state: UI preferences
 
 ## Design
 - **Store-per-domain**: each feature has a focused store (`useUIStore`, `useConfigStore`, `useGitStore`, `useSkillsStore`, etc.) to limit cross-feature coupling.
+- **Draft selection after catalog refresh**: `useConfigStore.loadAgents` uses the session UI store's existing `restoreLiveConfigForSelectedDraft` resolver after the active directory's catalog settles. Draft agent/model/thinking controls therefore match send-time selection even if the user changed drafts or controls during the request.
 - **Managed project projection**: `useProjectsStore.ts` treats the accepted managed principal's assignment list as authoritative immediately at principal acceptance and again during settings hydration. It groups assigned branches by project, replaces stale host-path projects with public `/projects/*` entries, and selects the default assignment before app effects mount. Git-integrate temp directories (`devryan-integrate-*`) are ignored by `addProject` and stripped during settings sanitization so leftover conflict worktrees cannot reappear in the admin sidebar.
 - **Managed account defaults**: `useConfigStore.ts` keeps sparse per-agent
   model/thinking overrides account-global, reports personal override keys from

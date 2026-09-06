@@ -63,16 +63,14 @@ describe('DesktopEdgeChrome desktop drag regions', () => {
     const edgeChromeSource = readSource('DesktopEdgeChrome.tsx');
     const headerSource = readSource('Header.tsx');
     const layoutSource = readSource('MainLayout.tsx');
-    const vscodeSource = readFileSync(resolve(testDir, 'VSCodeLayout.tsx'), 'utf8');
 
-    expect(edgeChromeSource).toContain('if (isMobile || (isVSCode && !botMode))');
+    expect(edgeChromeSource).toContain('if (isMobile)');
     expect(edgeChromeSource).toContain('{!hideActions && (isDesktopApp || botMode) && (');
-    expect(headerSource).toContain('const showsDesktopRightChrome = !isMobile && !isVSCode');
+    expect(headerSource).toContain('const showsDesktopRightChrome = !isMobile');
     expect(headerSource).toContain("? 'calc(11rem + var(--oc-wco-right-inset, 0px))'");
     expect(headerSource).toContain('browserActionPortalTarget={browserActionPortalTarget}');
     expect(layoutSource).toContain('isMobile={isMobile}');
     expect(layoutSource).toContain('browserActionPortalRef={setBrowserActionPortalTarget}');
-    expect(vscodeSource).not.toContain('browserActionPortal');
   });
 
   test('opens only a blank browser tab without starting preview discovery', () => {
@@ -122,7 +120,7 @@ describe('DesktopEdgeChrome desktop drag regions', () => {
     expect(chromeSource).toContain('side="left"');
     expect(chromeSource).toContain('side="right"');
     expect(chromeSource).toContain('data-bot-edge-controls={botMode || undefined}');
-    expect(chromeSource).toContain('if (isMobile || (isVSCode && !botMode))');
+    expect(chromeSource).toContain('if (isMobile)');
 
     const dragFillerIndex = chromeSource.indexOf('app-region-drag pointer-events-auto absolute top-0 left-0 h-full');
     const firstActionGuardIndex = chromeSource.indexOf('!hideActions && (');

@@ -6,7 +6,7 @@
 
 **Architecture:** Preserve the existing OpenCode/SSE architecture and add small ownership boundaries where the audit proved that ownership is ambiguous or unbounded. One runtime effect owns quota refresh; one question-card controller owns each option and acknowledged request; directory disposal releases all directory-scoped caches; the Cursor worker owns a bounded active-aware Agent cache. Provider-native events remain observational and separate from the later DevRyan-managed scheduler.
 
-**Tech Stack:** Bun, React, TypeScript, Zustand, Express/OpenCode SDK integration, Electron, VS Code, Node test runner, existing repository test helpers. No new dependencies.
+**Tech Stack:** Bun, React, TypeScript, Zustand, Express/OpenCode SDK integration, Electron, Node test runner, existing repository test helpers. No new dependencies.
 
 **Global constraints:**
 
@@ -250,7 +250,7 @@ Run:
 bun run validate:affected
 ```
 
-Expected: UI, web, and VS Code consumers remain green because this is shared session/sync behavior.
+Expected: UI, web, consumers remain green because this is shared session/sync behavior.
 
 - [ ] **Step 5: Run a controlled unavailable-model scenario**
 
@@ -462,7 +462,6 @@ git commit -m "fix: derive session indicators from unread state"
 - Modify: `packages/ui/src/apps/AppEffects.tsx`
 - Modify: `packages/ui/src/components/layout/Header.tsx`
 - Modify: `packages/ui/src/components/layout/DesktopRightChromeActions.tsx`
-- Modify: `packages/ui/src/components/layout/VSCodeLayout.tsx`
 - Modify: `packages/ui/src/components/sections/usage/UsagePage.tsx`
 - Modify: `packages/web/server/lib/quota/DOCUMENTATION.md`
 - Modify: `docs/audits/2026-07-10-devryan-reliability-pass.md`
@@ -541,7 +540,7 @@ rg -n "useQuotaAutoRefresh|setInterval" packages/ui/src/components packages/ui/s
 bun run validate:affected
 ```
 
-Expected: no component owns quota intervals, all focused tests pass, and shared UI/web/VS Code validation passes.
+Expected: no component owns quota intervals, all focused tests pass, and shared UI/web validation passes.
 
 - [x] **Step 8: Run runtime timing and failure scenarios**
 
@@ -552,7 +551,6 @@ With fake time in automation and one source app runtime manually, verify initial
 Update quota documentation with coordinator ownership and stale-data semantics. Run `git diff --check`, then:
 
 ```bash
-git add packages/ui/src/stores/quota-refresh-coordinator.ts packages/ui/src/stores/quota-refresh-coordinator.test.ts packages/ui/src/stores/useQuotaStore.ts packages/ui/src/stores/useQuotaStore.test.ts packages/ui/src/apps/AppEffects.tsx packages/ui/src/components/layout/Header.tsx packages/ui/src/components/layout/DesktopRightChromeActions.tsx packages/ui/src/components/layout/VSCodeLayout.tsx packages/ui/src/components/sections/usage/UsagePage.tsx packages/web/server/lib/quota/DOCUMENTATION.md docs/audits/2026-07-10-devryan-reliability-pass.md
 git commit -m "fix: centralize provider usage refresh"
 ```
 
@@ -858,7 +856,7 @@ bun run validate:affected
 bun run build
 ```
 
-Expected: provider-native tests pass, web/Electron/VS Code build boundaries remain green, and no provider content is added to fixtures.
+Expected: provider-native tests pass, web/Electron build boundaries remain green, and no provider content is added to fixtures.
 
 - [x] **Step 7: Exercise ChatGPT/OpenAI, Copilot, and Cursor compatibility**
 
@@ -904,7 +902,6 @@ Run:
 /usr/bin/time -l bun run validate:full
 /usr/bin/time -l bun run build
 bun run electron:build
-bun run vscode:build
 ```
 
 Expected: all checks and packaging-sensitive builds pass. Record wall time and peak RSS alongside baseline. If a command fails, repair the responsible task before proceeding.
@@ -939,7 +936,7 @@ The audit ledger must include:
 
 - [ ] **Step 6: Write the separately gated managed-orchestration plan**
 
-Use `superpowers:writing-plans` again. Trace every task to Workstreams 6–8 of the approved design. The second plan must specify the dependency-free `packages/orchestration-runtime` contract, max-three core scheduler, deterministic queue, idempotency, parent/child identity, mode lease, cancellation isolation, partial-result envelopes, persistence/restart reconciliation, web/Electron and VS Code adapters, narrow UI store, runtime test matrix, and final release gate.
+Use `superpowers:writing-plans` again. Trace every task to Workstreams 6–8 of the approved design. The second plan must specify the dependency-free `packages/orchestration-runtime` contract, max-three core scheduler, deterministic queue, idempotency, parent/child identity, mode lease, cancellation isolation, partial-result envelopes, persistence/restart reconciliation, web/Electron adapters, narrow UI store, runtime test matrix, and final release gate.
 
 Do not start scheduler implementation until stabilization validation and the audit matrix are green or limitations are explicitly recorded.
 

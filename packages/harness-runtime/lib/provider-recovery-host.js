@@ -19,7 +19,7 @@ export function createPrimaryRecoveryManagedAdapter(rpc) {
   };
 }
 
-// Shared by web (including Electron) and the VS Code extension host. No renderer
+// Shared by web and Electron hosts. No renderer
 // state, credentials, or OpenCode process lifecycle decisions belong here.
 export function createPrimaryRecoveryHost(options) {
   const fetchImpl = options.fetchImpl ?? fetch;

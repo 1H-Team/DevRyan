@@ -5,6 +5,11 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { smokePackagedOrchestrationConfig } from './smoke-packaged-orchestration-config.mjs';
+import {
+  applyMeridianHttpHotfix,
+  MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE,
+  MERIDIAN_HTTP_HOTFIX_VERSION,
+} from '../packages/web/server/lib/opencode/meridian-http-hotfix.js';
 
 const sourceRoot = path.resolve('packages/web/server/default-config');
 
@@ -27,6 +32,34 @@ test('smokes clean-user provisioning and runtime overlays from an artifact confi
   assert.ok(result.runtimePlugins.includes('plugins/devryan-managed-orchestration.mjs'));
   assert.ok(result.runtimePlugins.includes('plugins/openai-tool-schema-sanitizer.mjs'));
   assert.ok(result.runtimePlugins.includes('plugins/devryan-document-reader.mjs'));
+});
+
+test('the real Meridian source gate still rejects missing and placeholder dependency entrypoints', async () => {
+  await withConfig(async () => {}, async ({ configRoot }) => {
+    const packageRoot = path.join(configRoot, 'node_modules', '@rynfar', 'meridian');
+    const dist = path.join(packageRoot, 'dist');
+    await fs.mkdir(dist, { recursive: true });
+    await fs.writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({
+      version: MERIDIAN_HTTP_HOTFIX_VERSION,
+    }));
+    assert.deepEqual(applyMeridianHttpHotfix({ configDirectory: configRoot }), {
+      ok: false,
+      changed: false,
+      code: MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE,
+      error: 'Meridian HTTP hotfix files are unavailable',
+    });
+
+    const entrypoint = path.join(dist, 'cli-wxk8xvd3.js');
+    await fs.writeFile(entrypoint, '');
+    assert.deepEqual(applyMeridianHttpHotfix({ configDirectory: configRoot }), {
+      ok: false,
+      changed: false,
+      code: MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE,
+      error: 'Meridian HTTP source hash is incompatible',
+    });
+    assert.equal(await fs.readFile(entrypoint, 'utf8'), '');
+    await assert.rejects(fs.access(path.join(dist, 'devryan-meridian-http-server.js')), { code: 'ENOENT' });
+  });
 });
 
 test('rejects packaged user profile skills', async () => {

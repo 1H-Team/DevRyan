@@ -1,5 +1,4 @@
 import { getSafeStorage } from '@/stores/utils/safeStorage';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import type { AuthPrincipal } from '@/lib/authSession';
 
@@ -91,7 +90,7 @@ export const applyPersistedDirectoryPreferences = (principal?: AuthPrincipal): v
     directoryStore.synchronizeHomeDirectory(savedHome);
   }
 
-  if (resolvedDirectory && !isVSCodeRuntime()) {
+  if (resolvedDirectory) {
     directoryStore.setDirectory(resolvedDirectory, { showOverlay: false });
     return;
   }

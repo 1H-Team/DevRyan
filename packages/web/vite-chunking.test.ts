@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { build } from 'vite';
 
 import {
   resolveDependencyPackageName,
@@ -37,6 +38,54 @@ describe('resolveDependencyPackageName', () => {
   ])('rejects malformed or non-dependency id %s', (id) => {
     expect(resolveDependencyPackageName(id)).toBeUndefined();
   });
+});
+
+it.each([
+  'property-information',
+  'hast-util-whitespace',
+  'comma-separated-tokens',
+  'space-separated-tokens',
+  'zwitch',
+  'ccount',
+])('keeps shared %s from eagerly loading a lazy vendor group', async (packageName) => {
+  const entryId = 'virtual:chunk-ownership-entry';
+  const sharedId = `/chunk-ownership/node_modules/${packageName}/index.js`;
+  const markdownId = '/chunk-ownership/node_modules/remark-gfm/index.js';
+  const modules: Record<string, string> = {
+    [entryId]: `
+      import { value } from '${sharedId}';
+      globalThis.value = value;
+      globalThis.loadMarkdown = () => import('${markdownId}');
+    `,
+    [sharedId]: 'export const value = 42;',
+    [markdownId]: `import { value } from '${sharedId}'; export const render = () => value + 1;`,
+  };
+  const result = await build({
+    configFile: false,
+    logLevel: 'silent',
+    plugins: [{
+      name: 'chunk-ownership-fixture',
+      resolveId: (id) => Object.hasOwn(modules, id) ? id : undefined,
+      load: (id) => modules[id],
+    }],
+    build: {
+      write: false,
+      minify: false,
+      rollupOptions: { input: entryId, output: { manualChunks: resolveVendorChunkName } },
+    },
+  });
+  if (Array.isArray(result) || !('output' in result)) {
+    throw new Error('Expected one completed fixture build');
+  }
+  const chunks = result.output.filter((output) => output.type === 'chunk');
+  const entry = chunks.find((chunk) => chunk.isEntry);
+  const markdown = chunks.find((chunk) => chunk.name === 'vendor-markdown');
+  const utilities = chunks.find((chunk) => chunk.name === 'vendor-markup-utils');
+  if (!entry || !markdown || !utilities) throw new Error('Fixture entry, Markdown or utility chunk is missing');
+
+  expect(entry.imports).toContain(utilities.fileName);
+  expect(entry.imports).not.toContain(markdown.fileName);
+  expect(entry.dynamicImports).toContain(markdown.fileName);
 });
 
 describe('resolveVendorChunkName', () => {

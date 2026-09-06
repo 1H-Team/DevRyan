@@ -105,6 +105,7 @@ describe('web managed OpenCode executor transport', () => {
     expect(JSON.parse(prompt.init.body)).toEqual({
       agent: 'explorer',
       model: { providerID: 'github-copilot', modelID: 'gpt-4.1' },
+      variant: '',
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,

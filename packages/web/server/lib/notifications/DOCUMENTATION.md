@@ -9,7 +9,7 @@ This module owns server-side notification classification, template preparation, 
 - `packages/web/server/lib/notifications/push-runtime.js`: push subscription persistence, VAPID initialization, and UI visibility runtime.
 - `packages/web/server/lib/notifications/emitter-runtime.js`: desktop/stdout + UI SSE notification emission runtime.
 - `packages/web/server/lib/notifications/runtime.js`: trigger runtime for OpenCode event-driven notification fanout.
-- `packages/web/server/lib/notifications/plan-ready.js`: classifier for actionable plan revisions from event-backed or fetched message snapshots.
+- `packages/web/server/lib/notifications/plan-ready.js`: classifier for actionable plan revisions from event-backed or fetched message snapshots, with exact managed-maintenance and Implement suppression shared by the trigger runtime.
 - `packages/web/server/lib/notifications/template-runtime.js`: notification template variables, zen-model helpers, and session text/title enrichment runtime.
 - `packages/web/server/lib/notifications/message.js`: helper implementation module.
 - `packages/web/server/lib/notifications/message.test.js`: unit tests for notification message helpers.
@@ -68,9 +68,11 @@ Before dispatch, the runtime resolves the authoritative cached or fetched sessio
 
 Transient settings or settlement failures retain the candidate and retry with capped backoff. Session deletion clears pending candidates, retry timers, plan snapshots, and deduplication state. A successfully dispatched or intentionally suppressed candidate is recorded by assistant message ID so duplicate terminal or `idle` events cannot emit it again.
 
-Plan classification first uses the bounded event cache populated by `message.part.updated`. An explicit `<!--plan-->` sentinel is sufficient to classify the terminal assistant snapshot even when its parent user message is not yet visible through message history. Plan-mode instructions also allow structured plan content to be classified from the event snapshot. Compatibility history reads request only the latest 50 messages and use a short retry window for endpoint lag.
+Plan classification first uses the bounded event cache populated by `message.part.updated`. An explicit `<!--plan-->` sentinel can identify a candidate in a terminal assistant snapshot; Plan-mode instructions also allow structured plan content. Exact managed recovery/open-todo messages and valid Implement Plan requests cannot become a new proposal or fold into an older proposal, even when their response repeats the sentinel. The cache preserves synthetic markers in either instruction/maintenance arrival order.
 
-History and enrichment failures do not consume an eligible alert: ordinary completions use their default title/body, and sentinel-backed plans use the default Plan Ready title/body when template preparation fails. Once a plan revision is confirmed, it owns the terminal event; disabling Plan Ready intentionally suppresses that event rather than falling through to Session Completion.
+Before delivering a candidate with a parent ID, the trigger runtime verifies that exact canonical user record through the single-message endpoint (two-second request timeout), or uses its record from an already fetched authoritative snapshot. This catches maintenance/approval parts whose events were missed. An unavailable, malformed, wrong-session or wrong-ID parent uses the existing bounded metadata retries (250/1000/3000 ms); it cannot become a speculative Plan Ready or generic completion. Cached known negative intent needs no fetch. Compatibility history reads still request only the latest 50 messages with a short retry window for endpoint lag. Parentless legacy sentinel classification remains unchanged.
+
+History and enrichment failures do not consume a confirmed eligible alert: ordinary completions use their default title/body, and parent-verified sentinel-backed plans use the default Plan Ready title/body when template preparation fails. Once a plan revision is confirmed, it owns the terminal event; disabling Plan Ready intentionally suppresses that event rather than falling through to Session Completion.
 
 The user-facing completion name is **Session Completion**. Plan-producing turns remain Plan Ready (yellow lifecycle state); the later implementation turn produces Session Completion only after the green completed state settles.
 

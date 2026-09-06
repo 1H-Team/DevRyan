@@ -96,18 +96,16 @@ describe('lazy chat dialogs', () => {
     expect(source).toContain('onRetry={() => { void coordinator.retry(); }}');
   });
 
-  test('mounts tool-output dialogs only while open and preserves both shared warmup callers', () => {
+  test('mounts tool-output dialogs only while open and preserves shared warmup', () => {
     const chatMessage = readSource('ChatMessage.tsx');
     const fileAttachment = readSource('FileAttachment.tsx');
     const warmup = readSource('../../lib/startup/chat-runtime-warmup.ts');
     const webApp = readSource('../../App.tsx');
-    const vscodeApp = readSource('../../apps/VSCodeApp.tsx');
 
     expect(chatMessage).toContain('popupContent.open ? (');
-    expect((fileAttachment.match(/popupContent\.open \? \(/g) ?? []).length).toBe(2);
+    expect((fileAttachment.match(/popupContent\.open \? \(/g) ?? []).length).toBe(1);
     expect(warmup).toContain("import('@/components/chat/MarkdownRendererImpl')");
     expect(warmup).toContain("import('@/components/chat/message/ToolOutputDialog')");
     expect(webApp).toContain('void warmChatRuntime()');
-    expect(vscodeApp).toContain('void warmChatRuntime()');
   });
 });

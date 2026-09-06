@@ -10,4 +10,4 @@ Pure helpers for runtime tool metadata shared across host adapters.
 Host runtime adapters fetch available tool IDs from their transport, call these helpers, and expose the result through `ToolsAPI.getToolManifest()`.
 
 ## Integration
-Used by web and VS Code runtime API adapters; the shared UI consumes the typed contract from `lib/api/types.ts`.
+Used by web runtime API adapters; the shared UI consumes the typed contract from `lib/api/types.ts`.

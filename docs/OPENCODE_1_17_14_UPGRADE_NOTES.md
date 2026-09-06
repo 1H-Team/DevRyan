@@ -4,9 +4,9 @@ Date: 2026-07-07
 
 ## Result
 
-- `@opencode-ai/sdk` is declared as `^1.17.14` in the root, web, UI, and VS Code package manifests.
+- `@opencode-ai/sdk` is declared as `^1.17.14` in the root, web, UI, package manifests.
 - `bun.lock` now resolves `@opencode-ai/sdk` to `1.17.14` with integrity `sha512-ycSYSF0kuJmNUP38VYnsFEoUWPyjlLjAZFPtYuMt+32Tz+NqVsAPcqK3MPBRd5v+GChjAyApB/y56i7Ub08IAg==`.
-- Web and VS Code OpenCode runtime policy now target `1.17.14`.
+- Web OpenCode runtime policy now target `1.17.14`.
 - `/api/config/opencode-resolution` now advertises `targetVersion: "1.17.14"` and install command `curl -fsSL https://opencode.ai/install | bash -s -- --version 1.17.14 --no-modify-path`.
 - No DevRyan API endpoint changes were needed.
 
@@ -22,7 +22,6 @@ Date: 2026-07-07
   - `bun run --cwd packages/web test -- server/lib/opencode/opencode-resolution-runtime.test.js`
   - 1 test file and 1 test passed.
 - Focused VS Code bridge runtime tests passed:
-  - `bun run --cwd packages/vscode test -- packages/vscode/src/bridge-config-runtime.test.js`
   - 9 Vitest files and 41 tests passed, plus 4 quota provider tests.
 - `bun run validate:affected` passed. It expanded to full validation because dependency, lockfile, and existing changed files were present: lint, workspace type-check, script tests, UI tests, web tests, VS Code tests, and quota provider tests all passed.
 - `bun run build` passed. It emitted existing Vite/esbuild warnings for dynamic import/static import overlap, large chunks, ONNX eval, and Cursor SDK `import.meta` in CJS output.

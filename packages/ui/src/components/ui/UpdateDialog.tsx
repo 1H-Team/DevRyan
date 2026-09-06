@@ -26,7 +26,7 @@ interface UpdateDialogProps {
   onDownload: () => void;
   onRestart: () => void;
   /** Runtime type to show different UI for desktop vs web */
-  runtimeType?: 'desktop' | 'web' | 'vscode' | null;
+  runtimeType?: 'desktop' | 'web' | null;
 }
 
 const GITHUB_RELEASES_URL = 'https://github.com/1H-Team/DevRyan/releases';
@@ -108,7 +108,6 @@ function parseChangelogSections(body: string): ChangelogSection[] {
     return { version: match.version, date: match.date, start: match.start, end, raw };
   });
 }
-
 
 type InstallWebUpdateResult = {
   success: boolean;
@@ -301,7 +300,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
   return (
     <Dialog open={open} onOpenChange={isWebUpdating ? undefined : onOpenChange}>
       <DialogContent className="max-w-4xl p-5 bg-background border-[var(--interactive-border)]" showCloseButton={true}>
-        
+
         {/* Header Section */}
         <div className="flex items-center mb-1">
           <DialogTitle className="flex items-center gap-2.5">

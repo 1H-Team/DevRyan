@@ -15,7 +15,7 @@
 - Do not add dependencies or persisted state.
 - Provisional dispatch data is display-only; task IDs and child session IDs remain authoritative server/store data.
 - Preserve the unrelated uncommitted reasoning and visual-settings work already present in the main checkout.
-- Keep shared UI behavior identical across web, Electron, and VS Code.
+- Keep shared UI behavior identical across web and Electron.
 
 ---
 

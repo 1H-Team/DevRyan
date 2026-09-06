@@ -2,7 +2,6 @@ import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { StoreApi } from "zustand"
 import type { ChildStoreManager, DirectoryStore } from "./child-store"
 import { opencodeClient } from "@/lib/opencode/client"
-import { isVSCodeRuntime } from "@/lib/desktop"
 import { useFeatureFlagsStore } from "@/stores/useFeatureFlagsStore"
 import { streamPerfObserve } from "@/stores/utils/streamDebug"
 import { reconcileSessionChangeAttribution } from "@/stores/useSessionChangeAttributionStore"
@@ -18,14 +17,22 @@ import { clearSessionPrefetch, getSessionPrefetch, setSessionPrefetch } from "./
 import { clearSessionMessagePagination, setSessionMessagePagination } from "./message-pagination-store"
 import { startSessionLoadPerformanceEvent } from "./session-load-performance"
 import { dropSessionCaches } from "./session-cache"
+import { createSessionPlanSelectionSelector } from "./session-plan-selection"
+import { useSelectionStore } from "./selection-store"
+import { getSessionUIStoreIfInitialized } from "./sync-refs"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const FAST_INITIAL_PAGE_SIZE = 50
-const VSCODE_INITIAL_PAGE_SIZE = 30
+
 const FAST_EXPANSION_LIMITS = [100, 150] as const
-const VSCODE_EXPANSION_LIMITS = [50, 80, 120] as const
+
 const TAIL_REFRESH_LIMIT = 30
 const FRESHNESS_TTL_MS = 15_000
+const PLAN_SELECTION_MAX_PAGES = 10
+const PLAN_SELECTION_MAX_RECORDS = 1_000
+const PLAN_SELECTION_MAX_BYTES = 8 * 1024 * 1024
+const PLAN_SELECTION_PENDING_MESSAGE = "The session's Plan choice is still loading. Wait or choose Plan explicitly before sending."
+const PLAN_SELECTION_ERROR_MESSAGE = "The session's Plan choice could not be restored. Retry or choose Plan explicitly before sending."
 
 export type SessionMessageLoadKind = "initial" | "older" | "refresh" | "prefetch"
 export type SessionMessageLoadStatus = "idle" | "loading" | "ready" | "error"
@@ -40,6 +47,8 @@ export type SessionMessageLoadState = {
   complete: boolean
   generation: number
   updatedAt: number | undefined
+  planSelectionStatus: "unresolved" | "loading" | "ready" | "error"
+  planSelectionError: Error | null
 }
 
 export type SessionMessageTarget = {
@@ -53,6 +62,7 @@ type LoaderEntry = {
   inflight: Promise<void> | null
   queuedRefresh: Promise<void> | null
   optimistic: Map<string, OptimisticItem>
+  planSelectionOwner: { revision: number; generation: number; promise: Promise<void> } | null
 }
 
 type FetchedPage = {
@@ -82,15 +92,17 @@ const createDefaultState = (): SessionMessageLoadState => ({
   complete: false,
   generation: 0,
   updatedAt: undefined,
+  planSelectionStatus: "unresolved",
+  planSelectionError: null,
 })
 
 const getInitialPageSize = (): number => {
   if (!useFeatureFlagsStore.getState().sessionFastLoadEnabled) return DEFAULT_MESSAGE_LIMIT
-  return isVSCodeRuntime() ? VSCODE_INITIAL_PAGE_SIZE : FAST_INITIAL_PAGE_SIZE
+  return FAST_INITIAL_PAGE_SIZE
 }
 
 const getExpansionLimits = (): readonly number[] => (
-  isVSCodeRuntime() ? VSCODE_EXPANSION_LIMITS : FAST_EXPANSION_LIMITS
+  FAST_EXPANSION_LIMITS
 )
 
 export const EMPTY_SESSION_MESSAGE_LOAD_STATE: SessionMessageLoadState = Object.freeze(createDefaultState())
@@ -99,6 +111,7 @@ export class SessionMessageLoader {
   private readonly entries = new Map<string, LoaderEntry>()
   private readonly prefetched = new Map<string, SessionMessageTarget>()
   private activeKey: string | null = null
+  private selectionRevision = 0
   private activePrefetchDirectory: string | null = null
   private disposed = false
 
@@ -133,10 +146,14 @@ export class SessionMessageLoader {
     const entry = this.getEntry(normalized)
     if (options?.reason === "selected") {
       const key = this.keyFor(normalized)
+      if (this.activeKey !== key) this.selectionRevision += 1
       this.activeKey = key
       this.prefetched.delete(key)
     }
     const store = this.childStores.ensureChild(normalized.directory, { bootstrap: false })
+    const finishSelected = (loading: Promise<void>) => options?.reason === "selected"
+      ? this.ensurePlanSelection(normalized, entry, store, loading)
+      : loading
     const materialization = getSessionMaterializationStatus(store.getState(), normalized.sessionID)
 
     if (!options?.force && materialization.renderable && entry.snapshot.resolved) {
@@ -145,21 +162,21 @@ export class SessionMessageLoader {
       if (options?.reason === "selected" && stale && !entry.inflight) {
         void this.refreshTail(normalized)
       }
-      return entry.inflight ?? Promise.resolve()
+      return finishSelected(entry.inflight ?? Promise.resolve())
     }
 
     if (entry.inflight) {
       if (options?.reason !== "reactive" && entry.snapshot.loadingKind === "prefetch") {
         this.patchEntry(normalized, entry, { loadingKind: "initial" })
       }
-      return entry.inflight
+      return finishSelected(entry.inflight)
     }
 
     if (options?.force) this.bumpGeneration(normalized, entry)
     const kind: SessionMessageLoadKind = options?.reason === "reactive" ? "initial" : "initial"
-    return this.startLoad(normalized, entry, store, kind, async (isCurrent) => {
+    return finishSelected(this.startLoad(normalized, entry, store, kind, async (isCurrent) => {
       await this.loadInitial(normalized, entry, store, isCurrent)
-    })
+    }))
   }
 
   prefetch(target: SessionMessageTarget): Promise<void> {
@@ -187,6 +204,7 @@ export class SessionMessageLoader {
     const normalized = this.normalizeTarget(target)
     if (!normalized || this.disposed) return Promise.resolve()
     const entry = this.getEntry(normalized)
+    if (entry.planSelectionOwner) return entry.planSelectionOwner.promise.then(() => this.loadOlder(normalized))
     if (entry.inflight) return entry.inflight.then(() => this.loadOlder(normalized))
     if (entry.snapshot.complete || !entry.snapshot.cursor) return Promise.resolve()
     const store = this.childStores.ensureChild(normalized.directory, { bootstrap: false })
@@ -214,9 +232,9 @@ export class SessionMessageLoader {
     const normalized = this.normalizeTarget(target)
     if (!normalized || this.disposed) return Promise.resolve()
     const entry = this.getEntry(normalized)
-    if (entry.inflight) {
+    if (entry.inflight || entry.planSelectionOwner) {
       if (entry.queuedRefresh) return entry.queuedRefresh
-      const currentInflight = entry.inflight
+      const currentInflight = entry.planSelectionOwner?.promise ?? entry.inflight!
       const queued = currentInflight.then(() => {
         if (entry.queuedRefresh !== queued) return
         entry.queuedRefresh = null
@@ -252,6 +270,21 @@ export class SessionMessageLoader {
   getSnapshot(target: SessionMessageTarget): SessionMessageLoadState {
     const normalized = this.normalizeTarget(target)
     return normalized ? this.getEntry(normalized).snapshot : EMPTY_SESSION_MESSAGE_LOAD_STATE
+  }
+
+  /** Used only before a new live configuration capture, never to rewrite queued snapshots. */
+  assertPlanSelectionReady(target: SessionMessageTarget): void {
+    const normalized = this.normalizeTarget(target)
+    if (!normalized) throw new Error(PLAN_SELECTION_PENDING_MESSAGE)
+    if (useSelectionStore.getState().hasExplicitSessionPlanMode(normalized.sessionID)) return
+    const entry = this.getEntry(normalized)
+    if (entry.snapshot.planSelectionStatus !== "ready") {
+      throw entry.snapshot.planSelectionError ?? new Error(PLAN_SELECTION_PENDING_MESSAGE)
+    }
+    const store = this.childStores.getChild(normalized.directory)
+    if (!store || !this.restorePlanSelection(normalized, entry, store)) {
+      throw new Error(PLAN_SELECTION_PENDING_MESSAGE)
+    }
   }
 
   subscribe(target: SessionMessageTarget, listener: () => void): () => void {
@@ -386,6 +419,7 @@ export class SessionMessageLoader {
       inflight: null,
       queuedRefresh: null,
       optimistic: new Map(),
+      planSelectionOwner: null,
     }
     this.entries.set(key, entry)
     this.mirrorPagination(target, snapshot)
@@ -454,6 +488,118 @@ export class SessionMessageLoader {
     return promise
   }
 
+  private restorePlanSelection(
+    target: SessionMessageTarget,
+    entry: LoaderEntry,
+    store: StoreApi<DirectoryStore>,
+  ): boolean {
+    const selections = useSelectionStore.getState()
+    if (selections.hasExplicitSessionPlanMode(target.sessionID)) return true
+    const state = store.getState()
+    const choice = createSessionPlanSelectionSelector(
+      target.sessionID,
+      messageID => getSessionUIStoreIfInitialized()?.getState().isUserMessagePlanMode(messageID) ?? false,
+    )(state)
+    if (choice) {
+      selections.restoreSessionPlanMode(target.sessionID, choice.enabled)
+      return true
+    }
+    if (entry.snapshot.complete && state.message[target.sessionID]?.length === 0) {
+      selections.restoreSessionPlanMode(target.sessionID, false)
+      return true
+    }
+    return false
+  }
+
+  private ensurePlanSelection(
+    target: SessionMessageTarget,
+    entry: LoaderEntry,
+    store: StoreApi<DirectoryStore>,
+    initialLoad: Promise<void>,
+  ): Promise<void> {
+    const revision = this.selectionRevision
+    const generation = entry.snapshot.generation
+    if (entry.planSelectionOwner?.revision === revision && entry.planSelectionOwner.generation === generation) {
+      return entry.planSelectionOwner.promise
+    }
+    const key = this.keyFor(target)
+    const owner = { revision, generation, promise: Promise.resolve() }
+    const ownsSelection = () => !this.disposed && this.activeKey === key
+      && this.selectionRevision === revision && this.entries.get(key) === entry
+      && entry.planSelectionOwner === owner && entry.snapshot.generation === generation
+      && this.childStores.getChild(target.directory) === store
+    this.patchEntry(target, entry, { planSelectionStatus: "loading", planSelectionError: null })
+    const promise = Promise.resolve().then(async () => {
+      await initialLoad
+      if (!ownsSelection()) return
+      if (entry.snapshot.status === "error") throw entry.snapshot.error ?? new Error(PLAN_SELECTION_ERROR_MESSAGE)
+      const isCurrent = ownsSelection
+      if (this.restorePlanSelection(target, entry, store)) {
+        this.patchEntry(target, entry, { planSelectionStatus: "ready", planSelectionError: null })
+        return
+      }
+      const initialState = store.getState()
+      const initialMessages = initialState.message[target.sessionID] ?? []
+      const seenMessages = new Set(initialMessages.map(message => message.id))
+      const visitedCursors = new Set<string>()
+      let pages = 0
+      let records = initialMessages.length
+      let bytes = new TextEncoder().encode(JSON.stringify(initialMessages.map(info => ({
+        info, parts: initialState.part[info.id],
+      })))).byteLength
+      let refreshedMissingParts = false
+
+      while (isCurrent() && !this.restorePlanSelection(target, entry, store)) {
+        const state = store.getState()
+        const newestUser = [...(state.message[target.sessionID] ?? [])].reverse().find(isUserMessage)
+        const needsParts = newestUser && !state.part[newestUser.id]
+        if (pages >= PLAN_SELECTION_MAX_PAGES || records >= PLAN_SELECTION_MAX_RECORDS || bytes >= PLAN_SELECTION_MAX_BYTES) {
+          throw new Error(PLAN_SELECTION_ERROR_MESSAGE)
+        }
+        if (needsParts && refreshedMissingParts) throw new Error(PLAN_SELECTION_ERROR_MESSAGE)
+        if (!needsParts && (entry.snapshot.complete || !entry.snapshot.cursor)) throw new Error(PLAN_SELECTION_ERROR_MESSAGE)
+        const before = needsParts ? undefined : entry.snapshot.cursor
+        if (before && visitedCursors.has(before)) throw new Error(PLAN_SELECTION_ERROR_MESSAGE)
+        if (before) visitedCursors.add(before)
+        if (needsParts) refreshedMissingParts = true
+        const limit = Math.min(DEFAULT_MESSAGE_LIMIT, PLAN_SELECTION_MAX_RECORDS - records)
+        const page = await this.fetchPage(target, limit, before, "older")
+        if (!isCurrent()) return
+        pages += 1
+        records += page.session.length
+        bytes += new TextEncoder().encode(JSON.stringify(page.session.map(info => ({
+          info, parts: page.partsByMessageID.get(info.id),
+        })))).byteLength
+        if (records > PLAN_SELECTION_MAX_RECORDS || bytes > PLAN_SELECTION_MAX_BYTES
+          || (before && !page.complete && page.cursor === before)
+          || (before && page.session.length > 0 && page.session.every(message => seenMessages.has(message.id)))) {
+          throw new Error(PLAN_SELECTION_ERROR_MESSAGE)
+        }
+        const committed = this.commitPage(target, entry, store, page, before ? "prepend" : "merge", isCurrent)
+        if (!committed || !isCurrent()) return
+        for (const message of page.session) seenMessages.add(message.id)
+        this.patchEntry(target, entry, {
+          cursor: before ? page.cursor : entry.snapshot.cursor,
+          complete: before ? page.complete : entry.snapshot.complete,
+          limit: Math.max(entry.snapshot.limit, committed.length),
+        })
+        this.persistCoverage(target, entry.snapshot)
+      }
+      if (!isCurrent()) return
+      this.patchEntry(target, entry, { planSelectionStatus: "ready", planSelectionError: null })
+    }).catch(() => {
+      if (ownsSelection()) this.patchEntry(target, entry, {
+        planSelectionStatus: "error",
+        planSelectionError: new Error(PLAN_SELECTION_ERROR_MESSAGE),
+      })
+    }).finally(() => {
+      if (entry.planSelectionOwner === owner) entry.planSelectionOwner = null
+    })
+    owner.promise = promise
+    entry.planSelectionOwner = owner
+    return promise
+  }
+
   private async loadInitial(
     target: SessionMessageTarget,
     entry: LoaderEntry,
@@ -513,6 +659,9 @@ export class SessionMessageLoader {
         return sdk.session.messages({ sessionID: target.sessionID, limit: requestLimit, before })
       })
       const records = unwrapMessageRecordsResult(result).filter(hasMessageRecordInfo)
+      if (records.some(record => isUserMessage(record.info) && !Array.isArray(record.parts))) {
+        throw new Error("Session user message parts are unavailable")
+      }
       recordCount = records.length
       const session = records
         .map((record) => stripMessageDiffSnapshots(record.info))
@@ -595,7 +744,7 @@ export class SessionMessageLoader {
     if (key === this.activeKey || this.getEntry(target).snapshot.status !== "ready") return
     this.prefetched.delete(key)
     this.prefetched.set(key, target)
-    const limit = isVSCodeRuntime() ? 1 : 2
+    const limit = 2
     while (this.prefetched.size > limit) {
       const oldest = this.prefetched.entries().next().value as [string, SessionMessageTarget] | undefined
       if (!oldest) break

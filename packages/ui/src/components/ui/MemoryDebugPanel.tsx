@@ -10,7 +10,7 @@ import { getBackgroundTrimLimit } from '@/stores/types/sessionTypes';
 import {
   getResponsivenessPerfSnapshot,
   getStreamPerfSnapshot,
-  getVsCodeStreamPerfSnapshot,
+
   resetStreamPerf,
   type StreamPerfSnapshot,
 } from '@/stores/utils/streamDebug';
@@ -133,7 +133,7 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ onClose }) => {
   const messageRecord = useDirectorySync((state) => state.message);
   const totalGitHubRequests = useGitHubPrStatusStore((state) => state.totalRequestCount);
   const [streamSnapshot, setStreamSnapshot] = React.useState<StreamPerfSnapshot>(() => getStreamPerfSnapshot());
-  const [vscodeStreamSnapshot, setVsCodeStreamSnapshot] = React.useState<StreamPerfSnapshot>(() => getVsCodeStreamPerfSnapshot());
+
   const [responsivenessSnapshot, setResponsivenessSnapshot] = React.useState<StreamPerfSnapshot>(() => getResponsivenessPerfSnapshot());
   const streamMetricCounts = React.useMemo(() => {
     const counts = new Map<string, number>();
@@ -181,7 +181,7 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ onClose }) => {
   React.useEffect(() => {
     const refresh = () => {
       setStreamSnapshot(getStreamPerfSnapshot());
-      setVsCodeStreamSnapshot(getVsCodeStreamPerfSnapshot());
+
       setResponsivenessSnapshot(getResponsivenessPerfSnapshot());
     };
 
@@ -257,8 +257,8 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ onClose }) => {
           fallback: t('memoryDebugPanel.common.untitled'),
         }),
         messageCount,
-        isStreaming: memoryState?.isStreaming || false,
-        isZombie: memoryState?.isZombie || false,
+        isStreaming: memoryState?.isStreaming,
+        isZombie: memoryState?.isZombie,
         backgroundCount: memoryState?.backgroundMessageCount || 0,
         lastAccessed: memoryState?.lastAccessedAt || 0,
         isCurrent: session.id === currentSessionId
@@ -273,7 +273,7 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ onClose }) => {
       const payload = {
         generatedAt: new Date().toISOString(),
         ui: getStreamPerfSnapshot(),
-        vscode: getVsCodeStreamPerfSnapshot(),
+
         responsiveness: getResponsivenessPerfSnapshot(),
       };
       const result = await copyTextToClipboard(JSON.stringify(payload, null, 2), {
@@ -312,7 +312,7 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ onClose }) => {
                 onClick={() => {
                   resetStreamPerf();
                   setStreamSnapshot(getStreamPerfSnapshot());
-                  setVsCodeStreamSnapshot(getVsCodeStreamPerfSnapshot());
+
                   setResponsivenessSnapshot(getResponsivenessPerfSnapshot());
                 }}
               >
@@ -455,7 +455,6 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ onClose }) => {
 
           <div className="grid grid-cols-2 gap-2">
             <MetricCard label={t('memoryDebugPanel.metric.uiMetrics')} value={streamSnapshot.entries.length} />
-            <MetricCard label={t('memoryDebugPanel.metric.vscodeMetrics')} value={vscodeStreamSnapshot.entries.length} />
             <MetricCard label={t('memoryDebugPanel.metric.messageListRenders')} value={streamMetricCounts.messageListRender} />
             <MetricCard label={t('memoryDebugPanel.metric.messageListStreamRenders')} value={streamMetricCounts.messageListRenderStreaming} />
             <MetricCard label={t('memoryDebugPanel.metric.messageListCommitMax')} value={`${streamMetricCounts.messageListCommitMax.toFixed(1)}ms`} />
@@ -490,13 +489,6 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ onClose }) => {
             emptyLabel={t('memoryDebugPanel.section.noResponsivenessSamples')}
           />
 
-          {vscodeStreamSnapshot.entries.length > 0 ? (
-            <PerfSection
-              title={t('memoryDebugPanel.section.vscodeBridgeMetrics')}
-              snapshot={vscodeStreamSnapshot}
-              emptyLabel={t('memoryDebugPanel.section.noVscodeSamples')}
-            />
-          ) : null}
         </div>
       )}
     </Card>

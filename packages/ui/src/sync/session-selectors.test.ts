@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { Session } from '@opencode-ai/sdk/v2';
+import { createStore } from 'zustand/vanilla';
 import {
-  didSessionBranchChange,
+  subscribeToSessionBranch,
   selectSessionById,
   selectSessionChildren,
   selectSessionDirectoryById,
@@ -55,43 +56,20 @@ describe('stable session selectors', () => {
     expect(removed).toEqual([]);
   });
 
-  test('non-session store updates do not notify the session branch', () => {
+  test('only session branch changes notify real subscribers, and unsubscribe detaches them', () => {
     const sessions = [session('parent')];
-    expect(didSessionBranchChange({ session: sessions }, { session: sessions })).toBe(false);
-    expect(didSessionBranchChange({ session: [...sessions] }, { session: sessions })).toBe(true);
-  });
+    const store = createStore(() => ({ session: sessions, text: '' }));
+    let notifications = 0;
+    const unsubscribe = subscribeToSessionBranch(store, () => { notifications += 1; });
 
-  test('unrelated lifecycle events produce zero external-store render commits', () => {
-    const parent = session('parent');
-    const child = session('child', parent.id);
-    const unrelated = session('unrelated');
-    let exactSnapshot: Session | undefined = child;
-    let directorySnapshot: string | undefined = '/workspace';
-    let childrenSnapshot = selectSessionChildren([parent, child, unrelated], parent.id);
-    let renderCommits = 0;
-
-    const publish = (sessions: Session[]) => {
-      const nextExact = selectSessionById(sessions, child.id);
-      const nextDirectory = selectSessionDirectoryById(sessions, child.id);
-      const nextChildren = selectSessionChildren(sessions, parent.id, childrenSnapshot);
-      if (
-        nextExact !== exactSnapshot
-        || nextDirectory !== directorySnapshot
-        || nextChildren !== childrenSnapshot
-      ) {
-        renderCommits += 1;
-      }
-      exactSnapshot = nextExact;
-      directorySnapshot = nextDirectory;
-      childrenSnapshot = nextChildren;
-    };
-
-    publish([parent, child, unrelated, session('created')]);
-    publish([parent, child, { ...unrelated, title: 'updated' }]);
-    publish([parent, child]);
-    expect(renderCommits).toBe(0);
-
-    publish([parent, { ...child, title: 'target updated' }]);
-    expect(renderCommits).toBe(1);
+    for (let index = 0; index < 60; index += 1) {
+      store.setState({ text: `stream chunk ${index}` });
+    }
+    expect(notifications).toBe(0);
+    store.setState({ session: [...sessions, session('child', 'parent')] });
+    expect(notifications).toBe(1);
+    unsubscribe();
+    store.setState({ session: [] });
+    expect(notifications).toBe(1);
   });
 });

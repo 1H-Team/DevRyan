@@ -2,7 +2,9 @@
 
 ## Core purpose
 
-DevRyan provides UI runtimes (web/desktop/VS Code) for interacting with an OpenCode server (local auto-start or remote URL). UI uses HTTP + SSE via `@opencode-ai/sdk`.
+DevRyan provides UI runtimes (web/desktop) for interacting with an OpenCode server (local auto-start or remote URL). UI uses HTTP + SSE via `@opencode-ai/sdk`.
+
+Editor extensions are not a supported product. Do not add an extension workspace, publisher, or release artifact. Release verification rejects extension packages.
 
 ## Repository authority
 
@@ -16,7 +18,6 @@ DevRyan provides UI runtimes (web/desktop/VS Code) for interacting with an OpenC
 ## Release branding (MANDATORY)
 
 - All brand-bearing public GitHub Release asset filenames must use `DevRyan`. Distributable workflow artifacts exposed for direct download must also use `DevRyan`; internal handoff artifacts and tool-mandated neutral metadata such as `latest-mac.yml` may retain their required functional names. Never publish a user-facing asset with an `OpenChamber` or `openchamber` filename prefix.
-- Keep compatibility identifiers unchanged unless the user explicitly requests and approves a migration. This includes `@openchamber/*` npm packages, the `openchamber` CLI, `OPENCHAMBER_*` environment variables, `openchamber://`, config paths, IPC/event names, and VS Code extension IDs.
 - When a build tool derives an output filename from a compatibility identifier, copy it to a deterministic `DevRyan-*` staging filename before uploading it to GitHub Releases. Marketplace and npm publication may continue using the compatibility package identity.
 - Release verification must require the branded filenames and reject legacy-prefixed public assets.
 
@@ -24,7 +25,7 @@ DevRyan provides UI runtimes (web/desktop/VS Code) for interacting with an OpenC
 
 - `Desktop` (Electron) boots the web server **in the same Node process** as the Electron main, then loads the web UI from `http://127.0.0.1:<port>`. No sidecar subprocess.
 - `Desktop` (Tauri, legacy) still spawns `openchamber-server` as a bun-compiled sidecar binary. Kept only for auto-update compatibility with existing Tauri installs.
-- All backend logic lives in `packages/web/server/*` (and `packages/vscode/*` for the VS Code runtime). The native shell is not a feature backend.
+- All backend logic lives in `packages/web/server/*`. The native shell is not a feature backend.
 - The shell is used only for stable native integrations: menu, dialog (open folder), notifications, updater, deep-links, quit confirmation.
 
 ### Desktop shell: Electron is the target, Tauri is legacy
@@ -38,14 +39,13 @@ DevRyan provides UI runtimes (web/desktop/VS Code) for interacting with an OpenC
 
 ## Tech stack (source of truth: `package.json`, resolved: `bun.lock`)
 
-- Runtime/tooling: Bun (`package.json` `packageManager`), Node >=20 (`package.json` `engines`)
+- Runtime/tooling: Bun (`package.json` `packageManager`), Node >=22.13 (`package.json` `engines`)
 - UI: React, TypeScript, Vite, Tailwind v4
 - State: Zustand (`packages/ui/src/stores/`)
-- UI primitives: Base UI (`@base-ui/react`, primary source for dropdown/select/dialog/menu/tooltip/etc. — wrappers live in `packages/ui/src/components/ui/`), Radix UI (`package.json` deps, legacy usages being migrated), HeroUI (`package.json` deps), Remixicon (`package.json` deps)
+- UI primitives: Base UI (`@base-ui/react`, primary source for dropdown/select/dialog/menu/tooltip/etc. — wrappers live in `packages/ui/src/components/ui/`), Remixicon (`package.json` deps)
 - Server: Express (`packages/web/server/index.js`)
 - Desktop (forward): Electron 41 (`packages/electron/`)
 - Desktop (legacy, maintenance-only): Tauri v2 (`packages/desktop/src-tauri/`)
-- VS Code: extension + webview (`packages/vscode/`)
 
 ## Monorepo layout
 
@@ -55,7 +55,6 @@ Workspaces are `packages/*` (see `package.json`).
 - Web app + server + CLI: `packages/web`
 - Desktop shell (Electron — forward): `packages/electron`
 - Desktop shell (Tauri — legacy, maintenance-only): `packages/desktop`
-- VS Code extension: `packages/vscode`
 
 ## Repository Map
 
@@ -156,7 +155,6 @@ All scripts are in `package.json`.
 - Desktop build (Electron — primary): `bun run electron:build`
 - Desktop dev (Electron): `bun run electron:dev`
 - Desktop build (Tauri — legacy): `bun run desktop:build`
-- VS Code build: `bun run vscode:build`
 - Release smoke build: `bun run release:test` (shell script: `scripts/test-release-build.sh`)
 
 ## Runtime entry points
@@ -166,8 +164,6 @@ All scripts are in `package.json`.
 - Web CLI: `packages/web/bin/cli.js` (package bin: `packages/web/package.json`)
 - Desktop (Electron — primary): `packages/electron/main.mjs` (boots the web server in-process via `startWebUiServer`, loads web UI over loopback; preload at `packages/electron/preload.mjs` exposes the `__TAURI__` IPC shim so shared UI code is shell-agnostic)
 - Desktop (Tauri — legacy): `packages/desktop/src-tauri/src/main.rs`
-- VS Code extension host: `packages/vscode/src/extension.ts`
-- VS Code webview bootstrap: `packages/vscode/webview/main.tsx`
 
 ## OpenCode integration
 
@@ -213,7 +209,7 @@ All scripts are in `package.json`.
 
 - Keep diffs tight; avoid drive-by refactors.
 - Follow local precedent; inspect nearby code before introducing new patterns.
-- Backend changes: keep web, desktop, and VS Code behavior consistent when they share contracts.
+- Backend changes: keep web and desktop behavior consistent when they share contracts.
 - TypeScript: avoid `any`, blind casts, and shape guessing.
 - React: prefer function components + hooks; use classes only when required.
 - Control flow: prefer early returns and explicit branching over nested ternaries.
@@ -247,7 +243,7 @@ All scripts are in `package.json`.
 
 ### Cross-runtime parity
 
-- If web defines a route or payload contract that shared UI depends on, keep VS Code and desktop parity where applicable.
+- If web defines a route or payload contract that shared UI depends on, keep desktop parity where applicable.
 - Shared behavior differences must be intentional and visible in code.
 - Do not ship a web-only assumption into shared UI.
 
@@ -300,7 +296,7 @@ When working on terminal CLI commands, prompts, or output formatting, agents **M
 skill({ name: "clack-cli-patterns" })
 ```
 
-Scope: terminal CLI only (for example `packages/web/bin/*`). Do not apply this requirement to VS Code or web UI work.
+Scope: terminal CLI only (for example `packages/web/bin/*`). Do not apply this requirement to web UI work.
 
 ## Performance rules (MANDATORY)
 
@@ -363,7 +359,7 @@ A single store with N properties means every subscriber re-evaluates on every st
 
 ### Bootstrap resilience
 
-- **Treat startup 502/503 as transient.** Retry bootstrap/session-list flows with bounded retries/intervals, especially in VS Code where API readiness can lag bridge startup.
+- **Treat startup 502/503 as transient.** Retry bootstrap/session-list flows with bounded retries/intervals, when API readiness lags startup.
 - **Use polling recovery when failures are swallowed.** If an async loader resolves without throwing on failure, recover with interval retries gated by loaded-state checks.
 
 ### Scroll and DOM
@@ -464,13 +460,13 @@ When the report starts with an Error Log event UUID, treat that UUID as a durabl
 4. Do not expect the Error Log UUID itself to appear in journal records. Error Logs and the journal are separate stores correlated through session and tool/message/task identifiers: Error Logs provide durable administrative indexing, classification, and bounded sanitized summaries; the journal is the source for prompts, tool output, lifecycle ordering, recovery behavior, and detailed failure evidence.
 5. If the relevant host journal is unavailable, expired, or contains a qualifying gap, report that limitation instead of reconstructing missing detail.
 
-- Location (web/Electron): `~/.config/openchamber/harness/journal/` (data-root override: `$OPENCHAMBER_DATA_DIR`). VS Code uses `<globalStorage>/harness/journal/`. Pass `--dir <journal-dir>` to the CLI for either host.
+- Location (web/Electron): `~/.config/openchamber/harness/journal/` (data-root override: `$OPENCHAMBER_DATA_DIR`). Pass `--dir <journal-dir>` to the CLI for either host.
 - Layout: `index.json` summarizes `sessions/<sessionID>/manifest.json`; closed chunks are `*.ndjson.gz`, the active crash-safe chunk is plain `*.ndjson.open`, large strings are `blobs/<sha256>.txt.gz`, and records without a resolvable session are under `runtime/`. The directory's generated `README.md` is the self-describing format guide.
 - Legacy root `*.ndjson` segments coexist during the transition. They remain readable, are listed as `legacy`, are pruned before session buckets, and are removed by Clear All Data; they are never regrouped.
 - `message.part.delta` is intentionally absent. Repeated `message.part.updated` and `session.updated` records are last-write-wins; `coalesced` reports how many source events a stored record represents. These trims are not data-loss gaps. `gap` still means queue overflow, sanitization failure, or parse failure and must qualify conclusions.
 - Record types remain `open_code_event`, `prompt`, `control`, `lifecycle`, `worktree_transition`, `evidence_transition`, `connection`, `timing`, `log`, and `gap`. Resolved session IDs are stamped at the top level before storage.
 - Runtime health: `GET /api/diagnostics/status` (default port 3000; `dev:server` uses `${OPENCHAMBER_PORT:-3001}`) reports `sessionCount`, bytes, queue/write/gap counts, segment count, and the last error.
-- Caveats: records and manifests are sanitized before disk (secrets redacted, home/worktree paths rewritten to `<WORKTREE_…>` placeholders); retention is 7 days / 1 GiB total (256 MiB in VS Code). Absence of an expected non-delta record is itself evidence — the runtime never saw it.
+- Caveats: records and manifests are sanitized before disk (secrets redacted, home/worktree paths rewritten to `<WORKTREE_…>` placeholders); retention is 7 days / 1 GiB total. Absence of an expected non-delta record is itself evidence — the runtime never saw it.
 - Deep contracts: `packages/harness-runtime/DOCUMENTATION.md` (journal, sanitizer, export, storage limits) and `packages/web/server/lib/diagnostics/DOCUMENTATION.md` (HTTP status/clear/export/sanitize).
 
 ## Regression-prevention checklist
@@ -480,19 +476,19 @@ When the report starts with an Error Log event UUID, treat that UUID as a durabl
 - When adding store fields, ask: who reads this, how often does it change, and should it live elsewhere?
 - When touching polling or bootstrap, ask: can a lighter payload erase richer existing data?
 - When handling optimistic updates, ask: where is rollback, reconciliation, and duplicate prevention?
-- When changing shared routes or state contracts, ask: what breaks in web, desktop, and VS Code?
+- When changing shared routes or state contracts, ask: what breaks in web and desktop?
 - When fixing a bug with a heuristic, prefer narrowing the heuristic over widening it.
 
 ## Validation expectations
 
 - Default for small, low-risk code changes: run `bun run validate:quick` before finalizing. This lints changed TypeScript files, type-checks directly affected packages, and only runs tests when changed files are test files or quick-mode rules require them.
-- For package-local changes where dependents or package-wide linting matter, run `bun run validate:affected`. This expands UI changes to dependent web/VS Code type-checks and runs tests for affected UI/server code paths.
+- For package-local changes where dependents or package-wide linting matter, run `bun run validate:affected`. This expands UI changes to dependent web type-checks and runs tests for affected UI/server code paths.
 - Run `bun run validate:full` or the explicit full commands (`bun run type-check`, `bun run lint`, and `bun run test:full`) for release work, dependency/config changes, package exports, build tooling, cross-runtime contracts, risky sync/server/session changes, or whenever changed-file detection reports shared validation config changes.
 - Existing full commands remain valid: `bun run type-check` and `bun run lint` still run workspace-wide validation.
-- Also run `bun run build` when touching package exports, Vite/build config, Electron or VS Code packaging paths, dynamic imports, dependency graph changes, or files that could affect bundling.
+- Also run `bun run build` when touching package exports, Vite/build config, Electron packaging paths, dynamic imports, dependency graph changes, or files that could affect bundling.
 - Also run `bun run --cwd packages/web test` when touching `packages/web/server/**`, server libraries, CLI behavior, test files, or shared server contracts if `validate:affected` was not already used.
 - Validation examples: UI copy change → `bun run validate:quick`; server route change → `bun run validate:affected`; shared UI state change → `bun run validate:affected`; root config change → `bun run validate:full`.
-- Add focused runtime/manual checks only for the changed surface: user-visible UI behavior, state synchronization, streaming/session flows, Electron/VS Code shell integration, or other paths where static checks cannot prove behavior.
+- Add focused runtime/manual checks only for the changed surface: user-visible UI behavior, state synchronization, streaming/session flows, Electron shell integration, or other paths where static checks cannot prove behavior.
 - For hot-path changes, verify behavior under streaming or repeated events when those paths are affected.
 - For sync or startup changes, verify fresh load, retry/failure, and restart behavior when those paths are affected.
 - For session changes, verify create, stream, abort, permission, archive/delete, and revisit flows when those paths are affected.

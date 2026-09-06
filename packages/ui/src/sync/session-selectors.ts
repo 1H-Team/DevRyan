@@ -48,11 +48,6 @@ export const selectSessionChildren = (
   return next;
 };
 
-export const didSessionBranchChange = (
-  current: Pick<{ session: Session[] }, 'session'>,
-  previous: Pick<{ session: Session[] }, 'session'>,
-): boolean => current.session !== previous.session;
-
 /**
  * Subscribe at the session branch boundary so unrelated directory-store writes
  * never ask React to re-read session leaf snapshots.
@@ -61,7 +56,7 @@ export const subscribeToSessionBranch = <TState extends { session: Session[] }>(
   store: StoreApi<TState>,
   notify: () => void,
 ): (() => void) => store.subscribe((state, previous) => {
-  if (didSessionBranchChange(state, previous)) {
+  if (state.session !== previous.session) {
     notify();
   }
 });

@@ -1,0 +1,191 @@
+[
+  {
+    "run": "electron-chat-bAZaT1",
+    "runtime": "electron",
+    "outcome": "passed",
+    "startedAt": "2026-09-05T01:33:11.909Z",
+    "finishedAt": "2026-09-05T01:33:46.349Z",
+    "checks": [
+      {
+        "name": "selected session and composer",
+        "outcome": "passed",
+        "elapsedMs": 6808.8060000000005
+      },
+      {
+        "name": "four-session stream reaches selected transcript",
+        "outcome": "passed",
+        "elapsedMs": 1531.5469999999987
+      },
+      {
+        "name": "typing survives background streaming",
+        "outcome": "passed",
+        "elapsedMs": 506.4730419999978
+      },
+      {
+        "name": "send and reconcile a real composer submission",
+        "outcome": "passed",
+        "elapsedMs": 2465.5757080000003
+      },
+      {
+        "name": "cancel an active composer submission",
+        "outcome": "passed",
+        "elapsedMs": 242.8292079999992
+      },
+      {
+        "name": "reconnect and reopen without duplicate user messages",
+        "outcome": "passed",
+        "elapsedMs": 793.445958999997
+      }
+    ],
+    "consoleErrors": [],
+    "cleanupErrors": [],
+    "screenshots": [
+      "chat-idle.png"
+    ],
+    "diagnosticGapRecords": 0,
+    "fixturePromptCount": 2,
+    "abortedPrompts": 1,
+    "review": "All listed PNGs inspected. Limited chat/layout acceptance; see visual-review.md."
+  },
+  {
+    "run": "web-mobile-Wqkt6H",
+    "runtime": "web",
+    "outcome": "passed",
+    "startedAt": "2026-09-05T01:33:34.513Z",
+    "finishedAt": "2026-09-05T01:33:56.557Z",
+    "checks": [
+      {
+        "name": "selected session and composer",
+        "outcome": "passed",
+        "elapsedMs": 1714.4566670000004
+      },
+      {
+        "name": "light 390x844 composer and overflow",
+        "outcome": "passed",
+        "elapsedMs": 1.2121670000005906
+      },
+      {
+        "name": "light 390x844 touch drawer",
+        "outcome": "passed",
+        "elapsedMs": 964.8175000000001
+      },
+      {
+        "name": "light 844x390 composer and overflow",
+        "outcome": "passed",
+        "elapsedMs": 0.7474590000001626
+      },
+      {
+        "name": "light 768x1024 composer and overflow",
+        "outcome": "passed",
+        "elapsedMs": 0.7014170000002196
+      },
+      {
+        "name": "light 768x1024 touch drawer",
+        "outcome": "passed",
+        "elapsedMs": 945.2925000000014
+      },
+      {
+        "name": "dark 390x844 composer and overflow",
+        "outcome": "passed",
+        "elapsedMs": 1.7642500000001746
+      },
+      {
+        "name": "dark 390x844 touch drawer",
+        "outcome": "passed",
+        "elapsedMs": 975.7713340000009
+      },
+      {
+        "name": "dark 844x390 composer and overflow",
+        "outcome": "passed",
+        "elapsedMs": 1.122624999999971
+      },
+      {
+        "name": "dark 768x1024 composer and overflow",
+        "outcome": "passed",
+        "elapsedMs": 2.5324169999985315
+      },
+      {
+        "name": "dark 768x1024 touch drawer",
+        "outcome": "passed",
+        "elapsedMs": 992.7459580000013
+      },
+      {
+        "name": "four-session stream reaches selected transcript",
+        "outcome": "passed",
+        "elapsedMs": 1511.2687079999996
+      },
+      {
+        "name": "typing survives background streaming",
+        "outcome": "passed",
+        "elapsedMs": 505.99654100000043
+      },
+      {
+        "name": "send and reconcile a real composer submission",
+        "outcome": "passed",
+        "elapsedMs": 2484.233417000003
+      },
+      {
+        "name": "cancel an active composer submission",
+        "outcome": "passed",
+        "elapsedMs": 241.35441600000195
+      },
+      {
+        "name": "reconnect and reopen without duplicate user messages",
+        "outcome": "passed",
+        "elapsedMs": 1021.2703750000001
+      }
+    ],
+    "consoleErrors": [],
+    "cleanupErrors": [],
+    "screenshots": [
+      "light-drawer-open.png",
+      "light-390x844.png",
+      "light-844x390.png",
+      "light-768x1024.png",
+      "dark-drawer-open.png",
+      "dark-390x844.png",
+      "dark-844x390.png",
+      "dark-768x1024.png",
+      "chat-idle.png"
+    ],
+    "diagnosticGapRecords": 0,
+    "fixturePromptCount": 2,
+    "abortedPrompts": 1,
+    "review": "All listed PNGs inspected. Limited chat/layout acceptance; see visual-review.md."
+  },
+  {
+    "run": "live-DNN3Of",
+    "runtime": "live-host-http",
+    "outcome": "passed",
+    "startedAt": "2026-09-05T00:57:34.244Z",
+    "finishedAt": "2026-09-05T00:57:47.631Z",
+    "checks": [
+      {
+        "name": "first response completes",
+        "elapsedMs": 6839.174000000001,
+        "outcome": "passed"
+      },
+      {
+        "name": "second response streams",
+        "elapsedMs": 1756.096916999999,
+        "outcome": "passed"
+      },
+      {
+        "name": "event stream reconnect",
+        "outcome": "passed"
+      },
+      {
+        "name": "abort settles session",
+        "elapsedMs": 2.812332999999853,
+        "outcome": "passed"
+      }
+    ],
+    "consoleErrors": [],
+    "cleanupErrors": [],
+    "screenshots": [],
+    "diagnosticGapRecords": 0,
+    "fixturePromptCount": 0,
+    "abortedPrompts": null,
+    "review": "HTTP smoke only; no visual acceptance."
+  }
+]

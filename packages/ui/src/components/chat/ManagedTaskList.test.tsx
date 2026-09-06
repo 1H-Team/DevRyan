@@ -1696,11 +1696,8 @@ describe('managed task presentation', () => {
     expect(source).not.toContain('pb-1 pt-1');
     expect(source).not.toContain('pb-2 pt-3');
     expect(source).toContain('data-managed-task-card="true"');
-    expect(source).toContain('relative isolate overflow-hidden rounded-xl border border-[color:var(--managed-task-card-border)]');
-    expect(source).toContain("'--managed-task-card-border': 'color-mix(in srgb, var(--primary-base) 16%, var(--border))'");
-    // A real box-model border survives the forced overflow:hidden below; an inset-shadow ::after border
-    // does not (its bottom edge is clipped when multiple sub-agent rows make the card tall).
-    expect(source).not.toContain('after:shadow-[inset_0_0_0_1px_var(--managed-task-card-border)]');
+    // The multi-agent rendered-card test above owns the actual border classes,
+    // serialized color and absence of the clipped inset-shadow border.
     expect(source).not.toContain("after:content-['']");
     expect(mobileStyles).toContain('[data-managed-task-card="true"]');
     expect(mobileStyles).toContain('overflow: hidden !important;');

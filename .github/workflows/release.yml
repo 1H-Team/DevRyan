@@ -68,7 +68,6 @@ jobs:
             'packages/web/package.json',
             'packages/desktop/package.json',
             'packages/electron/package.json',
-            'packages/vscode/package.json',
           ];
           const jsonFiles = [
             ...packageFiles,

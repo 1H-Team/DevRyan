@@ -394,11 +394,7 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
         }
 
         if (runtime?.editor) {
-            if (runtime.runtime.isVSCode && file.patch) {
-                const label = `${getRelativePathFromDirectory(absolutePath, currentDirectory)} (changes)`;
-                void runtime.editor.openDiff('', absolutePath, label, { patch: file.patch });
-                return;
-            }
+
             void runtime.editor.openFile(absolutePath);
             return;
         }

@@ -153,9 +153,9 @@ describe('resolveSessionChangesFooterState', () => {
     });
   });
 
-  test('an undone session stays visible with zero files so Redo is reachable', () => {
+  test('an undone session is hidden with zero files', () => {
     expect(resolveSessionChangesFooterState({ ...base, fileCount: 0, isUndone: true })).toEqual({
-      visible: true, mode: 'undone', undoDisabled: false, disabledReason: null,
+      visible: false, mode: 'undone', undoDisabled: false, disabledReason: null,
     });
   });
 });
@@ -353,9 +353,11 @@ describe('SessionChangesCard (connected)', () => {
     expect(renderConnected()).toBe('');
   });
 
-  test('hides with zero files', () => {
-    seedEntry('ses_root', { files: [] });
-    expect(renderConnected()).toBe('');
+  test('hides with zero files regardless of loading, errors, or capture coverage', () => {
+    for (const overrides of [{}, { loading: true }, { error: 'Failed to load' }, { coverage: 'partial' as const }]) {
+      seedEntry('ses_root', { files: [], ...overrides });
+      expect(renderConnected()).toBe('');
+    }
   });
 
   test('hides while a revert is pending anywhere in the tree', () => {
@@ -380,7 +382,7 @@ describe('SessionChangesCard (connected)', () => {
       ...sources,
       sessions: [session('ses_root', undefined, { messageID: 'msg_1' }), session('ses_child', 'ses_root')],
     };
-    seedEntry('ses_root', { files: [], undone: true });
+    seedEntry('ses_root', { undone: true });
     rootMessages = { ses_root: [] };
     const markup = renderConnected();
     expect(markup).toContain('data-session-changes-card="undone"');

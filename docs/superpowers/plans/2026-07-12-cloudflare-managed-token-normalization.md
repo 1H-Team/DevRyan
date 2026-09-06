@@ -13,7 +13,7 @@
 - Work only inside `/Users/zoubair/Repositories/DevRyan`.
 - Add no dependencies.
 - Never log, return, snapshot, or otherwise expose a tunnel token.
-- Preserve raw-token behavior and existing web/Electron/VS Code contracts.
+- Preserve raw-token behavior and existing web/Electron contracts.
 - Do not modify Cloudflare DNS or route configuration.
 - Run `bun run validate:affected` and `bun run --cwd packages/web test` for this server change.
 - Perform a visual DevRyan check and verify Cloudflare reports a healthy replica.

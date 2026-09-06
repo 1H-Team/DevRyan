@@ -164,21 +164,25 @@ export const gradeToolRequirements = (caseId, toolEvents = []) => {
         && !hasFamily(events, 'mutation'),
     );
   }
-  if (caseId === 'repair-and-test') {
+  if (caseId === 'repair-and-test' || caseId === 'managed-repair-and-test') {
+    const managed = caseId === 'managed-repair-and-test';
+    const id = `${caseId}.tools`;
     for (const event of events) delete event.ordinal;
     const relevantEvents = events.filter((event) => (
       hasFamily([event], 'read')
       || hasFamily([event], 'test')
       || hasFamily([event], 'mutation')
     ));
-    if (relevantEvents.some((event) => event?.sessionScope !== 'root')) {
-      return result('repair-and-test.tools', false);
+    if (relevantEvents.some((event) => event?.sessionScope !== 'root'
+      && (!managed || event.sessionScope !== 'child'))) {
+      return result(id, false);
     }
-    const rootEvents = relevantEvents.filter((event) => event?.sessionScope === 'root');
-    const chain = selectCausalRepairChain(rootEvents, intervalByEvent);
-    if (!chain) return result('repair-and-test.tools', false);
+    // Managed QA separately verifies exact task/child/result membership. Keep
+    // each tool's actual scope while allowing its repair to cross that graph.
+    const chain = selectCausalRepairChain(relevantEvents, intervalByEvent);
+    if (!chain) return result(id, false);
     chain.forEach((event, index) => { event.ordinal = index + 1; });
-    return result('repair-and-test.tools', true);
+    return result(id, true);
   }
   if (caseId === 'managed-change') {
     const childEvents = events.filter((event) => event?.sessionScope === 'child');

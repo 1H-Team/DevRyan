@@ -19,7 +19,7 @@ const baseDiagnostics = {
 };
 
 const renderWithApis = (diagnostics: Record<string, unknown>) => renderToStaticMarkup(
-  <RuntimeAPIContext.Provider value={{ runtime: { isVSCode: false }, diagnostics } as unknown as RuntimeAPIs}>
+  <RuntimeAPIContext.Provider value={{ runtime: {}, diagnostics } as unknown as RuntimeAPIs}>
     <I18nProvider>
       <OpenCodeStorageSettings />
     </I18nProvider>
@@ -86,10 +86,6 @@ const renderView = (props: Partial<React.ComponentProps<typeof OpenCodeStorageSe
 );
 
 describe('OpenCodeStorageSettings', () => {
-  test('renders nothing when the runtime diagnostics API has no storage members (VS Code)', () => {
-    expect(renderWithApis(baseDiagnostics)).toBe('');
-    expect(renderWithApis({ ...baseDiagnostics, getOpenCodeStorage: async () => status })).toBe('');
-  });
 
   test('renders the section with a loading summary when the storage API exists', () => {
     const markup = renderWithApis({

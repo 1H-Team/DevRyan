@@ -47,9 +47,6 @@
 
 **Files:**
 
-- `packages/vscode/src/opencodeConfig.ts`
-- `packages/vscode/src/opencodeConfig.test.js`
-
 - [x] Generate the same direct OpenAI capability matrix as Web/Electron.
 - [x] Verify exact wire metadata and negative Pro coverage.
 
@@ -81,7 +78,7 @@
 
 ## Task 6: Verification, Install, and Visual QA
 
-- [ ] Run focused Cursor, UI, Web, and VS Code tests.
+- [ ] Run focused Cursor, UI, Web, tests.
 - [ ] Run `bun run validate:full`.
 - [ ] Build with `bun run electron:build`.
 - [ ] Install and restart `/Applications/DevRyan.app` while preserving user data.

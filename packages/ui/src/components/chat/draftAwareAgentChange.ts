@@ -14,7 +14,7 @@ export type DraftAwareAgentChangeContext = {
 
 export type DraftAwareAgentChangeActions = {
     setAgent: (agentName: string, options?: { preserveCurrentModel?: boolean }) => void;
-    setProviderModel: (providerId: string, modelId: string, variant?: string) => void;
+    setProviderModel: (providerId: string, modelId: string, variant?: string | null) => void;
     saveSessionAgentSelection: (sessionId: string, agentName: string) => void;
     getDraftAgentModelForSelection: (draftId: string, agentName: string) => { providerId: string; modelId: string } | null;
     getDraftAgentModelVariantForSelection: (
@@ -22,7 +22,7 @@ export type DraftAwareAgentChangeActions = {
         agentName: string,
         providerId: string,
         modelId: string,
-    ) => string | undefined;
+    ) => string | null | undefined;
     saveDraftAgentSelection: (draftId: string, agentName: string) => void;
     saveDraftModelSelection: (draftId: string, providerId: string, modelId: string) => void;
     saveDraftAgentModelForSelection: (draftId: string, agentName: string, providerId: string, modelId: string) => void;
@@ -31,7 +31,7 @@ export type DraftAwareAgentChangeActions = {
         agentName: string,
         providerId: string,
         modelId: string,
-        variant: string | undefined,
+        variant: string | null | undefined,
     ) => void;
     saveDraftSendConfig?: (
         draftId: string,
@@ -39,7 +39,7 @@ export type DraftAwareAgentChangeActions = {
             providerID?: string;
             modelID?: string;
             agent?: string;
-            variant?: string;
+            variant?: string | null;
             modelProvenance?: SendConfigModelProvenance;
         },
     ) => void;
@@ -47,11 +47,11 @@ export type DraftAwareAgentChangeActions = {
 
 export type DraftAwareModelChangeContext = DraftAwareAgentChangeContext & {
     currentAgentName?: string | null;
-    variant?: string;
+    variant?: string | null;
 };
 
 export type DraftAwareModelChangeActions = {
-    setProviderModel: (providerId: string, modelId: string, variant?: string) => void;
+    setProviderModel: (providerId: string, modelId: string, variant?: string | null) => void;
     saveSessionModelSelection: (sessionId: string, providerId: string, modelId: string) => void;
     saveAgentModelForSession: (sessionId: string, agentName: string, providerId: string, modelId: string) => void;
     saveAgentModelVariantForSession: (
@@ -59,7 +59,7 @@ export type DraftAwareModelChangeActions = {
         agentName: string,
         providerId: string,
         modelId: string,
-        variant: string | undefined,
+        variant: string | null | undefined,
     ) => void;
     saveDraftModelSelection: (draftId: string, providerId: string, modelId: string) => void;
     saveDraftAgentModelForSelection: (draftId: string, agentName: string, providerId: string, modelId: string) => void;
@@ -68,7 +68,7 @@ export type DraftAwareModelChangeActions = {
         agentName: string,
         providerId: string,
         modelId: string,
-        variant: string | undefined,
+        variant: string | null | undefined,
     ) => void;
     saveDraftSendConfig?: (
         draftId: string,
@@ -76,7 +76,7 @@ export type DraftAwareModelChangeActions = {
             providerID?: string;
             modelID?: string;
             agent?: string;
-            variant?: string;
+            variant?: string | null;
             modelProvenance?: SendConfigModelProvenance;
         },
     ) => void;
@@ -244,7 +244,7 @@ export function persistCycledThinkingVariant(
         currentAgentName?: string | null;
         providerId: string;
         modelId: string;
-        nextVariant: string | undefined;
+        nextVariant: string | null | undefined;
     },
     actions: Pick<
         DraftAwareModelChangeActions,

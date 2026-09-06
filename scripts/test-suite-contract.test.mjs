@@ -93,7 +93,6 @@ describe('full test-suite contract', () => {
       'packages/orchestration-runtime/',
       'packages/shared-runtime/',
       'packages/ui/',
-      'packages/vscode/',
       'packages/web/',
       'tests/visual-production-bots/',
     ];

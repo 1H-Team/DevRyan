@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
+import { createProjectIdFromPath } from '@/lib/projectId';
 
 import {
   buildSessionPlanFilePath,
@@ -14,16 +16,22 @@ const identity = {
 };
 
 describe('session plan files', () => {
-  test('constructs a deterministic revision-specific canonical path with sanitized segments', () => {
+  test('bounds the project storage component for long project roots', async () => {
+    const projectPath = `/repo/${'nested-project/'.repeat(16)}feature`;
+    const digest = createHash('sha256').update(createProjectIdFromPath(projectPath)).digest('hex');
+    expect(await buildSessionPlanFilePath('/Users/example', { ...identity, projectPath }))
+      .toContain(`/projects/path_sha256_${digest}/plans/`);
+  });
+  test('constructs a deterministic revision-specific canonical path with sanitized segments', async () => {
     expect(sanitizePlanPathSegment(' Add clamp / helper ')).toBe('Add-clamp-helper');
-    expect(buildSessionPlanFilePath('/Users/example', identity)).toBe(
+    expect(await buildSessionPlanFilePath('/Users/example', identity)).toBe(
       '/Users/example/.config/openchamber/projects/path_L1VzZXJzL2V4YW1wbGUvUmVwb3NpdG9yaWVzL1Rlc3Q/plans/1721234567890-Add-clamp-helper-msg_01-latest.md',
     );
 
-    expect(buildSessionPlanFilePath('/Users/example', {
+    expect(await buildSessionPlanFilePath('/Users/example', {
       ...identity,
       sourceMessageId: 'msg_02',
-    })).not.toBe(buildSessionPlanFilePath('/Users/example', identity));
+    })).not.toBe(await buildSessionPlanFilePath('/Users/example', identity));
   });
 
   test('writes the exact Markdown once and hydrates an existing revision without overwriting edits', async () => {

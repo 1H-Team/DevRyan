@@ -26,7 +26,6 @@ The full gate rejects skipped or todo tests, undiscovered JavaScript/TypeScript 
 | Legacy Tauri | `bun run --cwd packages/desktop test` | Locked Rust unit and local integration tests in `src-tauri` |
 | Shared UI | `bun run --cwd packages/ui test` | UI, store, sync, Git, tool presentation, and policy tests; global mocks run in isolated processes |
 | Web | `bun run --cwd packages/web test` | Web runtime adapters, Express APIs, libraries, CLI, packaging, and integration contracts |
-| VS Code | `bun run --cwd packages/vscode test` | Extension/webview Vitest suites plus recursively discovered package integration tests |
 
 Runner, discovery, validation-selection, and release-gate changes belong to `scripts/`. Feature tests belong beside their source unless an integration contract spans packages.
 
@@ -35,7 +34,7 @@ Runner, discovery, validation-selection, and release-gate changes belong to `scr
 `scripts/feature-test-matrix.mjs` is the executable source of truth connecting current source anchors to deterministic test anchors. Its contract test covers these feature families:
 
 - shared UI, chat, session, and event synchronization;
-- web/server APIs and web/VS Code `RuntimeAPIs` parity;
+- web/server APIs and web `RuntimeAPIs` parity;
 - Electron integrations and legacy Tauri compatibility;
 - Cursor SDK, managed orchestration, and Production Bots runtime contracts;
 - diagnostics, evidence, worktrees, providers, and quota;
@@ -194,3 +193,7 @@ Database migration verification is local-only: run an isolated Supabase stack,
 apply `supabase db reset`, assert forced RLS and browser-role revocations for
 `bot_skill_packages`/`bot_mcp_bindings`, then run `supabase db lint --local`.
 Never use `--linked` or target the production database for this check.
+
+## Isolated runtime audit QA
+
+Use [QA.md](QA.md) for the web/Electron fixture entrypoint, responsive screenshot review, explicit live-provider HTTP smoke and journal correlation workflow. This audit excludes VS Code runtime acceptance; the ordinary full validation contract remains unchanged.

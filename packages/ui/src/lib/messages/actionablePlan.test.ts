@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part, TextPart } from "@opencode-ai/sdk/v2/client"
 import {
   PLAN_IMPLEMENTATION_REQUEST_PREFIX,
   buildPlanImplementationRequestMarker,
@@ -8,6 +8,7 @@ import {
   hasPlanImplementationRequestPart,
   hasStructuredPlanBody,
   isPlanModeUserMessage,
+  isManagedPlanMaintenanceMessage,
   parsePlanImplementationRequestPart,
   resolveMessagePlanCard,
   resolvePlanCardSplit,
@@ -31,14 +32,14 @@ const assistantMessage = (id: string): Message => ({
   time: { created: Date.now() },
 } as Message)
 
-const syntheticTextPart = (text: string): Part => ({
+const syntheticTextPart = (text: string): TextPart => ({
   id: "part-1",
   sessionID: "session-1",
   messageID: "message-1",
   type: "text",
   text,
   synthetic: true,
-} as Part)
+})
 
 describe("plan implementation request marker", () => {
   const marker = buildPlanImplementationRequestMarker({
@@ -193,6 +194,49 @@ describe("resolvePlanTurnIntent", () => {
   test("only user messages carry an intent", () => {
     expect(resolvePlanTurnIntent(assistantMessage("assistant-1"), [marker], true)).toBe("none")
     expect(resolvePlanTurnIntent(undefined, [marker], true)).toBe("none")
+  })
+
+  test("managed maintenance preserves the Plan preface without requesting a fresh Plan", () => {
+    const plan = syntheticTextPart("User has requested to enter plan mode.\nProduce an implementation plan only.")
+    for (const text of [
+      "[devryan-provider-recovery:v1:task_fixture]\nCollect completed result.",
+      "[devryan-open-todo-continuation:v1]\nContinue the first open todo.",
+      "Your turn ended with open todos. If a plan deviation stopped you, classify it (Class 1: note it and continue; Class 2: ask with the question tool) and continue from the first open todo. If everything is done, mark the todos complete and give the final summary.",
+    ]) {
+      const parts = [plan, syntheticTextPart(text)]
+      expect(resolvePlanTurnIntent(userMessage("wake"), parts, true)).toBe("maintenance")
+      expect(isPlanModeUserMessage(userMessage("wake"), parts, true)).toBe(false)
+      expect(isManagedPlanMaintenanceMessage(parts)).toBe(true)
+      expect(resolvePlanTurnIntent(userMessage("implement"), [...parts, marker], true)).toBe("implement")
+      expect(isManagedPlanMaintenanceMessage([...parts, marker])).toBe(false)
+      expect(isManagedPlanMaintenanceMessage([{ ...syntheticTextPart(text), synthetic: false } as Part])).toBe(false)
+    }
+  })
+
+  test("does not widen maintenance matching to ordinary synthetic text or unknown marker versions", () => {
+    for (const text of [
+      "Your turn ended with open todos.",
+      "[devryan-provider-recovery:v2:task_fixture]",
+      "Quoted [devryan-provider-recovery:v1:task_fixture]",
+      "[devryan-open-todo-continuation:v1] without newline",
+      "Continue normally.",
+    ]) expect(isManagedPlanMaintenanceMessage([syntheticTextPart(text)])).toBe(false)
+  })
+
+  test("reads the longest canonical text field for maintenance just like Plan and Implement markers", () => {
+    const part: TextPart & { content: string } = {
+      ...syntheticTextPart("short"),
+      content: "[devryan-provider-recovery:v1:task_fixture]\nCollect completed result.",
+    }
+    expect(isManagedPlanMaintenanceMessage([part])).toBe(true)
+  })
+
+  test("explicit sentinel output cannot create a card for maintenance or Implement work", () => {
+    const parts = [syntheticTextPart("<!--plan-->\n# Plan\n## Context\nKeep context.\n## Implementation\n1. Do the work.")]
+    expect(resolveMessagePlanCard(parts, { isPlanModeSource: true, turnIntent: 'maintenance' })).toBeNull()
+    expect(resolveMessagePlanCard(parts, { isPlanModeSource: true, turnIntent: 'implement' })).toBeNull()
+    expect(resolveMessagePlanCard(parts, { isPlanModeSource: true, turnIntent: 'plan' })?.planText).toContain('# Plan')
+    expect(resolveMessagePlanCard(parts, { turnIntent: 'none' })?.source).toBe('sentinel')
   })
 
   test("hasPlanImplementationRequestPart ignores visible or malformed markers", () => {

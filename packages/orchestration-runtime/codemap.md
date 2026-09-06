@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-Transport-neutral DevRyan-managed task contracts and scheduler policy shared by web/Electron and VS Code runtime owners.
+Transport-neutral DevRyan-managed task contracts and scheduler policy shared by web/Electron runtime owners.
 
 ## Design
 
@@ -32,4 +32,4 @@ Transport-neutral DevRyan-managed task contracts and scheduler policy shared by 
 
 ## Integration
 
-Web/Electron and VS Code each own one scheduler instance and inject provider execution, persistence, clocks, identifiers, and event publication. Shared UI imports the public provider prompt-tool policy; UI presentation consumes only safe task projections and authoritative compaction removals.
+Web/Electron each own one scheduler instance and inject provider execution, persistence, clocks, identifiers, and event publication. Shared UI imports the public provider prompt-tool policy; UI presentation consumes only safe task projections and authoritative compaction removals.

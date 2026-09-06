@@ -1,5 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
+import { resolvePlanProjectStorageId } from '@openchamber/shared-runtime/lib/plan-storage-id.js';
 
 const normalizeProjectPathForId = (value) => {
   if (typeof value !== 'string') return '';
@@ -15,8 +16,8 @@ export const createProjectIdFromPath = (projectPath) => {
   return `path_${Buffer.from(normalized, 'utf8').toString('base64url')}`;
 };
 
-export const resolveProjectPlansDirectory = (projectPath, homeDirectory = os.homedir()) => {
-  const projectID = createProjectIdFromPath(projectPath);
+export const resolveProjectPlansDirectory = async (projectPath, homeDirectory = os.homedir()) => {
+  const projectID = await resolvePlanProjectStorageId(createProjectIdFromPath(projectPath));
   const normalizedHome = typeof homeDirectory === 'string' ? homeDirectory.trim() : '';
   if (!projectID || !normalizedHome) {
     return '';

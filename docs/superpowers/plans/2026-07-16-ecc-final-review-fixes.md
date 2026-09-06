@@ -28,5 +28,4 @@
 
 - Restart the safe loopback Electron runtime using the retained private profile.
 - Run one exact pinned Cursor repair evaluation (`cursor-acp/composer-2.5`, `Builder`, explicit null variant), verify PASS and the exact clean fixture invariant, then shut down the process tree.
-- Run focused evaluator/Cursor/web tests plus `validate:full`, `build`, `bundle:check`, `electron:build`, and `vscode:build` from fresh outputs where applicable.
 - Append sanitized evidence, commit the follow-up separately, and report the commit SHA and any limitations.

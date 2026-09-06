@@ -5,7 +5,7 @@ import { dedupeSessionsById, isSessionOwnedByProject, normalizePath, type Sessio
 type WorktreeMeta = { path: string };
 
 type Args = {
-  isVSCode: boolean;
+
   sessions: Session[];
   archivedSessions: Session[];
   availableWorktreesByProject: Map<string, WorktreeMeta[]>;
@@ -78,7 +78,7 @@ export const collectProjectSessionsForDirectories = (
 
 export const useProjectSessionLists = (args: Args) => {
   const {
-    isVSCode,
+
     sessions,
     archivedSessions,
     availableWorktreesByProject,
@@ -87,7 +87,7 @@ export const useProjectSessionLists = (args: Args) => {
 
   const getSessionsForProject = React.useCallback(
     (project: { normalizedPath: string }) => {
-      const worktreesForProject = isVSCode ? [] : (availableWorktreesByProject.get(project.normalizedPath) ?? []);
+      const worktreesForProject = (availableWorktreesByProject.get(project.normalizedPath) ?? []);
       const directories = [
         project.normalizedPath,
         ...worktreesForProject
@@ -97,7 +97,7 @@ export const useProjectSessionLists = (args: Args) => {
 
       return collectProjectSessionsForDirectories(sessions, directories);
     },
-    [availableWorktreesByProject, isVSCode, sessions],
+    [availableWorktreesByProject, sessions],
   );
 
   const getArchivedSessionsForProject = React.useCallback(

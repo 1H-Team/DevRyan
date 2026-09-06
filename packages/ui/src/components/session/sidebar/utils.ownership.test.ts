@@ -29,7 +29,6 @@ describe('buildSessionProjectOwnership', () => {
       [{ normalizedPath: '/repo' }, { normalizedPath: '/repo/packages/child' }],
       new Map(),
       [nested],
-      false,
     );
 
     expect(ownership.get(nested.id)).toBe('/repo/packages/child');
@@ -41,7 +40,6 @@ describe('buildSessionProjectOwnership', () => {
       [{ normalizedPath: '/repo' }],
       new Map([['/repo', [{ path: '/tmp/worktrees/feature' }]]]),
       [external],
-      false,
     );
 
     expect(ownership.get(external.id)).toBe('/repo');
@@ -53,7 +51,6 @@ describe('buildSessionProjectOwnership', () => {
       [{ normalizedPath: 'C:\\repo\\' }, { normalizedPath: 'C:\\repo\\child\\' }],
       new Map([['C:\\repo\\', [{ path: 'C:\\repo\\child\\' }]]]),
       [nested],
-      false,
     );
 
     expect(ownership.get(nested.id)).toBe('C:/repo/child');
@@ -72,7 +69,6 @@ describe('buildSessionProjectOwnership', () => {
       [{ normalizedPath: '/repo' }],
       new Map(),
       [parent, child, explicitUnknown],
-      false,
     );
 
     expect(ownership.get(child.id)).toBe('/repo');

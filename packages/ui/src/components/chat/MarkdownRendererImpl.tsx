@@ -102,13 +102,13 @@ const useExternalLinkInteractions = ({
 const extractTableData = (tableEl: HTMLTableElement): { headers: string[]; rows: string[][] } => {
   const headers: string[] = [];
   const rows: string[][] = [];
-  
+
   const thead = tableEl.querySelector('thead');
   if (thead) {
     const headerCells = thead.querySelectorAll('th');
     headerCells.forEach(cell => headers.push(cell.innerText.trim()));
   }
-  
+
   const tbody = tableEl.querySelector('tbody');
   if (tbody) {
     const rowEls = tbody.querySelectorAll('tr');
@@ -119,7 +119,7 @@ const extractTableData = (tableEl: HTMLTableElement): { headers: string[]; rows:
       rows.push(rowData);
     });
   }
-  
+
   return { headers, rows };
 };
 
@@ -130,7 +130,7 @@ const tableToCSV = ({ headers, rows }: { headers: string[]; rows: string[][] }):
     }
     return cell;
   };
-  
+
   const lines: string[] = [];
   if (headers.length > 0) {
     lines.push(headers.map(escapeCell).join(','));
@@ -143,7 +143,7 @@ const tableToTSV = ({ headers, rows }: { headers: string[]; rows: string[][] }):
   const escapeCell = (cell: string): string => {
     return cell.replace(/\t/g, '\\t').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
   };
-  
+
   const lines: string[] = [];
   if (headers.length > 0) {
     lines.push(headers.map(escapeCell).join('\t'));
@@ -154,11 +154,11 @@ const tableToTSV = ({ headers, rows }: { headers: string[]; rows: string[][] }):
 
 const tableToMarkdown = ({ headers, rows }: { headers: string[]; rows: string[][] }): string => {
   if (headers.length === 0) return '';
-  
+
   const escapeCell = (cell: string): string => {
     return cell.replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
   };
-  
+
   const lines: string[] = [];
   lines.push(`| ${headers.map(escapeCell).join(' | ')} |`);
   lines.push(`| ${headers.map(() => '---').join(' | ')} |`);
@@ -201,7 +201,7 @@ const TableCopyButton: React.FC<{ tableRef: React.RefObject<HTMLDivElement | nul
   const handleCopy = async (format: 'csv' | 'tsv') => {
     const tableEl = tableRef.current?.querySelector('table');
     if (!tableEl) return;
-    
+
     const data = extractTableData(tableEl);
     const content = format === 'csv' ? tableToCSV(data) : tableToTSV(data);
 
@@ -1368,7 +1368,7 @@ const MarkdownRendererContent: React.FC<MarkdownRendererContentProps> = ({
   effectiveDirectory,
 }) => {
   const currentTheme = useCurrentMermaidTheme();
-  const { editor, files, runtime } = useRuntimeAPIs();
+  const { editor, files } = useRuntimeAPIs();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const mermaidBlocks = React.useMemo(() => extractMermaidBlocks(content), [content]);
   useMermaidInlineInteractions({ containerRef, mermaidBlocks, onShowPopup });
@@ -1377,7 +1377,7 @@ const MarkdownRendererContent: React.FC<MarkdownRendererContentProps> = ({
     effectiveDirectory,
     editor,
     files,
-    preferRuntimeEditor: runtime.isVSCode,
+    preferRuntimeEditor: false,
     enabled: enableFileReferences && !isStreaming,
   });
   useExternalLinkInteractions({ containerRef });
@@ -1482,7 +1482,7 @@ const SimpleMarkdownRendererContent: React.FC<SimpleMarkdownRendererContentProps
   enableFileReferences = true,
   effectiveDirectory,
 }) => {
-  const { editor, files, runtime } = useRuntimeAPIs();
+  const { editor, files } = useRuntimeAPIs();
   const renderedContent = React.useMemo(
     () => (stripFrontmatter ? stripLeadingFrontmatter(content) : content),
     [content, stripFrontmatter],
@@ -1501,7 +1501,7 @@ const SimpleMarkdownRendererContent: React.FC<SimpleMarkdownRendererContentProps
     effectiveDirectory,
     editor,
     files,
-    preferRuntimeEditor: runtime.isVSCode,
+    preferRuntimeEditor: false,
     enabled: enableFileReferences,
   });
   useExternalLinkInteractions({ containerRef, enabled: !disableLinkSafety });

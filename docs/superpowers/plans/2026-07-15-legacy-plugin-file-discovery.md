@@ -7,6 +7,6 @@
 3. Update both read models to enumerate both directory conventions without
    changing the response shape or collapsing equal file names from distinct
    paths.
-4. Document the discovery contract in the web and VS Code module maps.
+4. Document the discovery contract in the web module maps.
 5. Run focused tests, affected validation, a real Plugins-page visual check,
    and post-run repository/process cleanup checks.

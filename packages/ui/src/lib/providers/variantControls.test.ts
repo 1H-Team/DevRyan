@@ -45,10 +45,11 @@ describe('provider variant controls', () => {
       .toEqual(['low', 'medium', 'high', 'xhigh']);
   });
 
-  test('resolves missing thinking to medium when supported, otherwise the first concrete variant', () => {
-    expect(resolveThinkingVariant(undefined, ['low', 'medium', 'high'])).toBe('medium');
-    expect(resolveThinkingVariant(undefined, ['low', 'high'])).toBe('low');
-    expect(resolveThinkingVariant('stale', ['low', 'medium'])).toBe('medium');
+  test('leaves missing thinking at provider default and rejects unknown variants', () => {
+    expect(resolveThinkingVariant(undefined, ['low', 'medium', 'high'])).toBeUndefined();
+    expect(resolveThinkingVariant(null, ['low', 'medium', 'high'])).toBeUndefined();
+    expect(resolveThinkingVariant(undefined, ['low', 'high'])).toBeUndefined();
+    expect(resolveThinkingVariant('stale', ['low', 'medium'])).toBeUndefined();
   });
 
   test('keeps none visible only when provider metadata advertises it', () => {
@@ -101,7 +102,7 @@ describe('provider variant controls', () => {
     const state = getModelVariantControlState(provider, 'gpt-5.4', undefined);
 
     expect(state?.visibleVariantOptions).toEqual(['low', 'medium', 'high']);
-    expect(state?.selectedVariant).toBe('medium');
+    expect(state?.selectedVariant).toBeUndefined();
     expect(state?.canToggleFast).toBe(true);
     expect(state?.fastEnabled).toBe(false);
     expect(resolveModelVariantSelection(provider, 'gpt-5.4', 'medium', { fastEnabled: true })).toEqual({
@@ -215,12 +216,12 @@ describe('provider variant controls', () => {
     const state = getModelVariantControlState(provider, 'agent-model', 'fast');
 
     expect(state?.visibleVariantOptions).toEqual(['low', 'medium']);
-    expect(state?.selectedVariant).toBe('medium');
+    expect(state?.selectedVariant).toBeUndefined();
     expect(state?.fastEnabled).toBe(true);
     expect(getModelVariantDisplayState(provider, 'agent-model', 'fast')).toEqual({
       displayModelId: 'agent-model',
       fastEnabled: true,
-      selectedVariant: 'medium',
+      selectedVariant: undefined,
       visibleVariantOptions: ['low', 'medium'],
     });
     expect(resolveModelVariantSelection(provider, 'agent-model', 'medium', { fastEnabled: true })).toEqual({
@@ -243,8 +244,8 @@ describe('provider variant controls', () => {
       modelId: 'agent-model-fast',
       variant: 'medium',
     });
-    expect(resolveProviderModelVariant(provider, 'agent-model', 'fast')).toBe('medium');
-    expect(resolveProviderModelVariant(provider, 'agent-model-fast', 'fast')).toBe('medium');
+    expect(resolveProviderModelVariant(provider, 'agent-model', 'fast')).toBeUndefined();
+    expect(resolveProviderModelVariant(provider, 'agent-model-fast', 'fast')).toBeUndefined();
   });
 
   test('hides paired fast models only when the base model exists', () => {

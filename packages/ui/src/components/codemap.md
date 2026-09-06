@@ -10,7 +10,7 @@ Contains all user-facing React components, organized by feature area (chat, sett
   accessible Coding Agents/Bots tablist used by the main sidebar and the Skills
   and MCP Servers Settings split panes; it owns presentation/keyboard behavior,
   not feature selection state.
-- **Runtime-capable composition**: desktop/vscode-specific shells are isolated in targeted components while reusing core chat/settings surfaces.
+- **Runtime-capable composition**: desktop-specific shells are isolated in targeted components while reusing core chat/settings surfaces.
 - **Independent desktop panels**: `layout/ContextPanel.tsx` owns Plan/File/Diff/Preview tabs, while `layout/BrowserPanel.tsx` owns the separate Browser workspace and Chrome-style page/lease tab strip so both panels can remain visible together.
 - **Error isolation**: boundary components (e.g., chat/view-level boundaries) prevent full-app crashes from feature failures.
 

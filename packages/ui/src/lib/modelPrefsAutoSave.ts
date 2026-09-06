@@ -1,13 +1,9 @@
 import { useUIStore } from '@/stores/useUIStore';
 import { updateDesktopSettings } from '@/lib/persistence';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { createModelPrefsBaseline, modelPrefsEqual, type ModelPrefsSnapshot } from '@/lib/modelPrefsSync';
 
 export const startModelPrefsAutoSave = () => {
   if (typeof window === 'undefined') {
-    return () => {};
-  }
-  if (isVSCodeRuntime()) {
     return () => {};
   }
 

@@ -1,4 +1,5 @@
 import { createProjectIdFromPath } from '../projects/project-id.js';
+import { resolvePlanProjectStorageId } from '@openchamber/shared-runtime/lib/plan-storage-id.js';
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 
@@ -17,7 +18,7 @@ const sanitizePlanPathSegment = (value) => String(value || '')
 
 const routeError = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 
-export const resolveSessionPlanRevision = ({
+export const resolveSessionPlanRevision = async ({
   dataDirectory,
   directory,
   sessionCreated,
@@ -47,7 +48,7 @@ export const resolveSessionPlanRevision = ({
     throw routeError(400, 'Plan source message ID is invalid');
   }
 
-  const projectID = sanitizePlanPathSegment(createProjectIdFromPath(normalizedDirectory));
+  const projectID = await resolvePlanProjectStorageId(sanitizePlanPathSegment(createProjectIdFromPath(normalizedDirectory)));
   if (!projectID) {
     throw routeError(400, 'Plan project identity is invalid');
   }
@@ -109,7 +110,7 @@ export const registerSessionPlanRoutes = (app, {
       if (typeof markdown !== 'string' || !markdown.trim()) {
         throw routeError(400, 'Completed plan Markdown is required');
       }
-      const revision = resolveFromRequest(req, sessionContext);
+      const revision = await resolveFromRequest(req, sessionContext);
       await fsPromises.mkdir(revision.directory, { recursive: true });
 
       let handle;
@@ -143,7 +144,7 @@ export const registerSessionPlanRoutes = (app, {
     try {
       const sessionContext = await authorizeSession(req, res);
       if (!sessionContext) return;
-      const revision = resolveFromRequest(req, sessionContext);
+      const revision = await resolveFromRequest(req, sessionContext);
       const content = await fsPromises.readFile(revision.path, 'utf8');
       return res.json({ path: revision.path, content });
     } catch (error) {
@@ -158,7 +159,7 @@ export const registerSessionPlanRoutes = (app, {
       if (!sessionContext) return;
       const markdown = req.body?.markdown;
       if (typeof markdown !== 'string') throw routeError(400, 'Plan Markdown is required');
-      const revision = resolveFromRequest(req, sessionContext);
+      const revision = await resolveFromRequest(req, sessionContext);
       const stat = await fsPromises.stat(revision.path).catch((error) => {
         if (error?.code === 'ENOENT') throw routeError(404, 'Plan revision not found');
         throw error;

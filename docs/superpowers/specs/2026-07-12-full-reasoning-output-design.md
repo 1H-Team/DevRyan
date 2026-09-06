@@ -92,7 +92,7 @@ Focused tests will prove:
 - disabling `showReasoningTraces` still hides reasoning;
 - active empty reasoning still displays the working indicator.
 
-Run the focused Bun tests first, then `bun run validate:affected` because this changes shared UI sync and chat rendering used by web, Electron, and VS Code.
+Run the focused Bun tests first, then `bun run validate:affected` because this changes shared UI sync and chat rendering used by web and Electron.
 
 ## Files expected to change
 
@@ -106,4 +106,4 @@ Run the focused Bun tests first, then `bun run validate:affected` because this c
 - `packages/ui/src/components/chat/message/MessageBody.tsx`
 - A focused message-rendering regression test near `MessageBody.tsx`, created if no existing test provides the required coverage.
 
-No server, Electron shell, legacy Tauri, or VS Code-specific implementation change is expected because all affected runtimes consume the shared UI.
+No server, Electron shell, legacy Tauri,-specific implementation change is expected because all affected runtimes consume the shared UI.

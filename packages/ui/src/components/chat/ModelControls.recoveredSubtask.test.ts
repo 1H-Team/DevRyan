@@ -9,7 +9,7 @@ describe("ModelControls recovered subtask restoration", () => {
       "useSession(currentSessionId, currentSessionDirectory ?? undefined)",
     )
     expect(source).toContain(
-      "resolveLatestUserChoiceFromMessages(currentSessionMessagesFromSync)",
+      "createLatestUserChoiceSelector(currentSessionId ?? '')",
     )
     expect(source).toContain(
       "const currentSessionMessagesResolved = useSessionMessagesResolved(",

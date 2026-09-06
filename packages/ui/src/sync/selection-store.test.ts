@@ -101,16 +101,76 @@ describe("selection-store plan mode per draft", () => {
     expect(useSelectionStore.getState().getSessionPlanMode("session-1")).toBe(true)
     expect(useSelectionStore.getState().draftPlanModeSelections.has("draft-a")).toBe(false)
 
-    // An explicit "off" beats an enabled default and clears the session entry.
+    // An explicit "off" beats an enabled default and survives restoration.
     useSelectionStore.getState().setDefaultPlanModeSelection(true)
     useSelectionStore.getState().setSessionPlanMode("session-2", true)
     useSelectionStore.getState().setPlanModeSelection(null, false, "draft-b")
     useSelectionStore.getState().promoteDraftSelectionToSession("draft-b", "session-2")
     expect(useSelectionStore.getState().getSessionPlanMode("session-2")).toBe(false)
+    useSelectionStore.getState().restoreSessionPlanMode("session-2", true)
+    expect(useSelectionStore.getState().getSessionPlanMode("session-2")).toBe(false)
 
     // An untoggled draft leaves the session untouched.
     useSelectionStore.getState().promoteDraftSelectionToSession("draft-c", "session-3")
     expect(useSelectionStore.getState().getSessionPlanMode("session-3")).toBe(false)
+  })
+})
+
+describe("selection-store Plan restoration", () => {
+  beforeEach(resetSelectionStore)
+
+  test("restores a cold session once without overwriting a later explicit Plan toggle", () => {
+    const store = useSelectionStore.getState()
+    store.restoreSessionPlanMode("session", true)
+    expect(store.getSessionPlanMode("session")).toBe(true)
+    store.setSessionPlanMode("session", false)
+    const selections = useSelectionStore.getState().sessionPlanModeSelections
+    store.restoreSessionPlanMode("session", true)
+    expect(store.getSessionPlanMode("session")).toBe(false)
+    expect(useSelectionStore.getState().sessionPlanModeSelections).toBe(selections)
+    store.restoreSessionPlanMode("other", true)
+    expect(store.getSessionPlanMode("other")).toBe(true)
+  })
+
+  test("an explicit off before history loads cannot be replaced by the older Plan turn", () => {
+    const store = useSelectionStore.getState()
+    store.setSessionPlanMode("session", false)
+    store.restoreSessionPlanMode("session", true)
+    expect(store.getSessionPlanMode("session")).toBe(false)
+    store.clearSessionSelection("session")
+    store.restoreSessionPlanMode("session", true)
+    expect(store.getSessionPlanMode("session")).toBe(true)
+  })
+
+  test("refines inferred Plan policy without notifying for an unchanged value", () => {
+    const store = useSelectionStore.getState()
+    store.restoreSessionPlanMode("session", false)
+    const selections = useSelectionStore.getState().sessionPlanModeSelections
+    store.restoreSessionPlanMode("session", false)
+    expect(useSelectionStore.getState().sessionPlanModeSelections).toBe(selections)
+    store.restoreSessionPlanMode("session", true)
+    expect(store.getSessionPlanMode("session")).toBe(true)
+    store.restoreSessionPlanMode("session", false)
+    expect(store.getSessionPlanMode("session")).toBe(false)
+  })
+
+  test("explicitly selecting the inferred value protects it from later history", () => {
+    const store = useSelectionStore.getState()
+    store.restoreSessionPlanMode("session", false)
+    const selections = useSelectionStore.getState().sessionPlanModeSelections
+    store.setSessionPlanMode("session", false)
+    store.restoreSessionPlanMode("session", true)
+    expect(store.getSessionPlanMode("session")).toBe(false)
+    expect(useSelectionStore.getState().sessionPlanModeSelections).toBe(selections)
+  })
+
+  test("promoted explicit draft OFF replaces and retires an inferred session choice", () => {
+    const store = useSelectionStore.getState()
+    store.restoreSessionPlanMode("session", true)
+    store.setDraftPlanMode("draft", false)
+    store.promoteDraftSelectionToSession("draft", "session")
+    store.restoreSessionPlanMode("session", true)
+    expect(store.getSessionPlanMode("session")).toBe(false)
   })
 })
 
@@ -223,5 +283,64 @@ describe("selection-store agent model selections", () => {
     expect(useSelectionStore.getState().getAgentModelVariantForSession("session-1", "builder", "anthropic", "claude")).toBe("high")
     expect(store.getDraftAgentSelection?.("draft-1")).toBe(null)
     expect(store.getDraftModelSelection?.("draft-1")).toBe(null)
+  })
+  test("promotes explicit provider default and distinguishes clearing from default", () => {
+    const store = useSelectionStore.getState()
+    store.saveDraftAgentModelVariantForSelection("draft-default", "builder", "openai", "gpt", null)
+    expect(store.getDraftAgentModelVariantForSelection("draft-default", "builder", "openai", "gpt")).toBeNull()
+    store.promoteDraftSelectionToSession("draft-default", "session-default")
+    expect(store.getAgentModelVariantForSession("session-default", "builder", "openai", "gpt")).toBeNull()
+    store.saveAgentModelVariantForSession("session-default", "builder", "openai", "gpt", undefined)
+    expect(store.getAgentModelVariantForSession("session-default", "builder", "openai", "gpt")).toBeUndefined()
+  })
+
+})
+
+
+describe("selection-store canonical user-choice restoration", () => {
+  beforeEach(() => {
+    resetSelectionStore()
+    for (const session of ["restore-a", "restore-b", "restore-empty"])
+      useSelectionStore.getState().clearSessionSelection(session)
+  })
+
+  test("keeps each restored canonical choice after another session and a newer unsent effort", () => {
+    const store = useSelectionStore.getState()
+    store.saveAgentModelVariantForSession("restore-a", "builder", "fixture", "model", null)
+    store.markSessionUserChoiceRestored("restore-a", "message-a|default")
+    store.saveAgentModelVariantForSession("restore-a", "builder", "fixture", "model", "low")
+    store.markSessionUserChoiceRestored("restore-b", "message-b|high")
+
+    expect(store.hasRestoredSessionUserChoice("restore-a", "message-a|default")).toBe(true)
+    expect(store.getAgentModelVariantForSession("restore-a", "builder", "fixture", "model")).toBe("low")
+    expect(store.hasRestoredSessionUserChoice("restore-a", "message-b|high")).toBe(false)
+    expect(store.hasRestoredSessionUserChoice("restore-b", "message-b|high")).toBe(true)
+  })
+
+  test("leaves new or refined canonical choices eligible and retains only the last successful key", () => {
+    const store = useSelectionStore.getState()
+    expect(store.hasRestoredSessionUserChoice("restore-a", "message-a|default")).toBe(false)
+    store.markSessionUserChoiceRestored("restore-a", "message-a|default")
+    expect(store.hasRestoredSessionUserChoice("restore-a", "message-a|high")).toBe(false)
+    expect(store.hasRestoredSessionUserChoice("restore-a", "message-new|default")).toBe(false)
+    store.markSessionUserChoiceRestored("restore-a", "message-a|high")
+    expect(store.hasRestoredSessionUserChoice("restore-a", "message-a|high")).toBe(true)
+    expect(store.hasRestoredSessionUserChoice("restore-a", "message-a|default")).toBe(false)
+  })
+
+  test("clears provenance even without other selections and never publishes a render update", () => {
+    const state = useSelectionStore.getState()
+    let notifications = 0
+    const unsubscribe = useSelectionStore.subscribe(() => { notifications += 1 })
+    try {
+      state.markSessionUserChoiceRestored("restore-empty", "message|default")
+      state.markSessionModelSelectionIntent("restore-empty", { providerID: "fixture", modelID: "model", variant: "low" })
+      expect(useSelectionStore.getState()).toBe(state)
+      state.clearSessionSelection("restore-empty")
+      expect(state.hasRestoredSessionUserChoice("restore-empty", "message|default")).toBe(false)
+      expect(state.getSessionModelSelectionIntent("restore-empty")).toBeUndefined()
+      expect(useSelectionStore.getState()).toBe(state)
+      expect(notifications).toBe(0)
+    } finally { unsubscribe() }
   })
 })

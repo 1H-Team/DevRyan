@@ -24,7 +24,7 @@ The shared OpenCode executor treats `false` as a hard stale-launch boundary:
   in history;
 - retry-in-place only aborts because its child is pre-existing canonical history.
 
-Web/Electron and VS Code transports implement the same child deletion contract. Cleanup
+Web/Electron transports implement the same child deletion contract. Cleanup
 attempts abort and delete independently so one failure does not prevent the other.
 
 ## Verification

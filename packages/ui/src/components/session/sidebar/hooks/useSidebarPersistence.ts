@@ -19,7 +19,7 @@ type Keys = {
 };
 
 type Args = {
-  isVSCode: boolean;
+
   hasLoadedGlobalSessions: boolean;
   safeStorage: SafeStorageLike;
   keys: Keys;
@@ -35,7 +35,7 @@ type Args = {
 
 export const useSidebarPersistence = (args: Args) => {
   const {
-    isVSCode,
+
     hasLoadedGlobalSessions,
     safeStorage,
     keys,
@@ -53,9 +53,7 @@ export const useSidebarPersistence = (args: Args) => {
   const pendingCollapsedProjects = React.useRef<Set<string> | null>(null);
 
   const flushCollapsedProjectsPersist = React.useCallback(() => {
-    if (isVSCode) {
-      return;
-    }
+
     const collapsed = pendingCollapsedProjects.current;
     pendingCollapsedProjects.current = null;
     persistCollapsedProjectsTimer.current = null;
@@ -72,10 +70,10 @@ export const useSidebarPersistence = (args: Args) => {
       sidebarCollapsed: collapsed.has(project.id),
     }));
     void updateDesktopSettings({ projects: updatedProjects }).catch(() => {});
-  }, [isVSCode]);
+  }, []);
 
   const scheduleCollapsedProjectsPersist = React.useCallback((collapsed: Set<string>) => {
-    if (typeof window === 'undefined' || isVSCode) {
+    if (typeof window === 'undefined') {
       return;
     }
 
@@ -86,7 +84,7 @@ export const useSidebarPersistence = (args: Args) => {
     persistCollapsedProjectsTimer.current = window.setTimeout(() => {
       flushCollapsedProjectsPersist();
     }, 700);
-  }, [isVSCode, flushCollapsedProjectsPersist]);
+  }, [ flushCollapsedProjectsPersist]);
 
   React.useEffect(() => {
     return () => {

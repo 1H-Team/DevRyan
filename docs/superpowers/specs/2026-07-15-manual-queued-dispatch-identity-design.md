@@ -38,7 +38,7 @@ module.
 ## Safety and scope
 
 - The logic lives in the shared UI and therefore applies equally to web,
-  Electron, and VS Code.
+  Electron,.
 - The helper does not drain or reorder unrelated queue rows.
 - Atomic exact-row claiming closes the click-versus-idle-flush race: only the
   sender that removes the row may invoke the transport.

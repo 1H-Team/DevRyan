@@ -5,7 +5,7 @@ DevRyan harness operations. It contains atomic private-file persistence,
 versioned record stores, turn lifecycle correlation, durable worktree bootstrap
 receipts, sanitized diagnostic journaling/export preparation, and optional Git
 turn-evidence primitives. It also owns the host-neutral persisted command-
-deadline controller used by web/Electron and VS Code.
+deadline controller used by web/Electron.
 
 `lib/atomic-file.js` also exports a dependency-free cross-process lock. Locks
 are acquired with exclusive `wx` creation and private mode, carry a random
@@ -16,7 +16,7 @@ serialize scheduler claims and ordinary mutations across web/Electron server
 processes.
 
 Host packages inject storage roots and platform effects. The shared UI never
-imports this package; it consumes HTTP or VS Code bridge contracts.
+imports this package; it consumes HTTP bridge contracts.
 
 ## Storage
 
@@ -29,7 +29,7 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
 
 - `lifecycle.js`: synchronous canonical OpenCode-event correlation.
 - `prompt-admission.js`: synchronous named-hold controller shared by web/Electron
-  and VS Code. A hold returns the exact HTTP-shaped block for new prompts and
+ . A hold returns the exact HTTP-shaped block for new prompts and
   managed-work launches while allowing active work, cancellation, result
   acknowledgement, and shutdown to drain. Reference-counted releases prevent
   one recovery owner from reopening admission held by another.
@@ -96,7 +96,7 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
 - Journal writes are ordered through a bounded O(1) enqueue path. Per-session
   chunks rotate at 4 MiB, the LRU writer pool keeps at most six file
   descriptors open, retention is seven days, and total storage caps at 1 GiB
-  by default. The VS Code host intentionally selects a 256 MiB cap. Legacy
+  by default. Legacy
   flat segments prune before whole inactive session directories; runtime
   closed chunks are the final tier.
 - `message.part.delta` is intentionally omitted. Repeated
@@ -147,10 +147,10 @@ detail.
 
 The dependency-free `provider-recovery` controller and `provider-recovery-host`
 adapter own primary turn admission, semantic liveness, durable recovery and
-cancellation across web/Electron and VS Code. Default policy is observe. Full
+cancellation across web/Electron. Default policy is observe. Full
 safety, protocol, storage, rollout and rollback contracts are documented in
 [`docs/PROVIDER_RECOVERY.md`](../../docs/PROVIDER_RECOVERY.md).
 
 ## Session-owned changes
 
-`lib/session-changes.js` owns always-on execution receipts, private Git snapshots, cumulative net summaries, bounded stored revisions, and conflict-checked file-only Undo/Redo. It is independent of optional diagnostic evidence. `lib/session-changes-host.js` validates canonical session identity, lineage and directory; consumes paginated history; and exposes the same plugin/HTTP contract in web/Electron and VS Code. Full contract, operational limits and verification: `docs/SESSION_CHANGES.md`.
+`lib/session-changes.js` owns always-on execution receipts, private Git snapshots, cumulative net summaries, bounded stored revisions, and conflict-checked file-only Undo/Redo. It is independent of optional diagnostic evidence. `lib/session-changes-host.js` validates canonical session identity, lineage and directory; consumes paginated history; and exposes the same plugin/HTTP contract in web/Electron. Full contract, operational limits and verification: `docs/SESSION_CHANGES.md`.

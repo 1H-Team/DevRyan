@@ -246,17 +246,6 @@ function buildGlobalEventWsUrl(lastEventId?: string): string {
   return toWebSocketUrl(httpUrl.toString())
 }
 
-function isVSCodeRuntime(): boolean {
-  if (typeof window === "undefined") {
-    return false
-  }
-
-  const runtimeApis = (window as unknown as {
-    __OPENCHAMBER_RUNTIME_APIS__?: { runtime?: { isVSCode?: boolean } }
-  }).__OPENCHAMBER_RUNTIME_APIS__
-  return runtimeApis?.runtime?.isVSCode === true
-}
-
 function getRendererRuntimeLabel(): string {
   if (typeof window === "undefined") {
     return "unknown"
@@ -265,7 +254,7 @@ function getRendererRuntimeLabel(): string {
   const runtimeApis = (window as unknown as {
     __OPENCHAMBER_DESKTOP_SERVER__?: unknown
     __OPENCHAMBER_ELECTRON__?: unknown
-    __OPENCHAMBER_RUNTIME_APIS__?: { runtime?: { isDesktop?: boolean; isVSCode?: boolean } }
+    __OPENCHAMBER_RUNTIME_APIS__?: { runtime?: { isDesktop?: boolean;  } }
   }).__OPENCHAMBER_RUNTIME_APIS__
 
   if (
@@ -275,9 +264,7 @@ function getRendererRuntimeLabel(): string {
   ) {
     return "desktop"
   }
-  if (runtimeApis?.runtime?.isVSCode === true) {
-    return "vscode"
-  }
+
   return "web"
 }
 
@@ -976,9 +963,7 @@ export function createEventPipeline(input: EventPipelineInput) {
   }
 
   const resolveTransport = (): "ws" | "sse" => {
-    if (isVSCodeRuntime()) {
-      return "sse"
-    }
+
     if (typeof WebSocket !== "function") {
       return "sse"
     }

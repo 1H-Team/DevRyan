@@ -83,6 +83,39 @@ const createStoreModel = (providerID: string, id: string, variants?: Model["vari
 })
 
 describe("send config resolution", () => {
+  test("captures inheritance once while explicit provider default survives later settings", () => {
+    const original = snapshot({
+      currentProviderId: "anthropic",
+      currentModelId: "claude-sonnet-4-5",
+      currentVariant: undefined,
+    })
+    const inherited = resolveSessionSendConfigSnapshot(original)
+    expect(inherited.variant).toBe("high")
+    const providerDefault = resolveSessionSendConfigSnapshot(original, { variant: null })
+    expect(providerDefault.variant).toBeNull()
+    expect(resolveSessionSendConfigSnapshot({ ...original, providers: [] }, providerDefault).variant).toBeNull()
+    expect(resolveSessionSendConfigSnapshot({ ...original, providers: [] }, inherited).variant).toBe("high")
+
+    const changed = { ...original, currentVariant: "medium", agents: original.agents.map((agent) => ({ ...agent, variant: "medium" })) }
+    expect(resolveSessionSendConfigSnapshot(changed, JSON.parse(JSON.stringify(inherited))).variant).toBe("high")
+    expect(resolveSessionSendConfigSnapshot(changed, JSON.parse(JSON.stringify(providerDefault))).variant).toBeNull()
+    expect(resolveSessionSendConfigSnapshot({ ...changed, sessionAgentModelVariant: null }).variant).toBeNull()
+  })
+
+  test("draft provider default overrides an inherited explicit effort", () => {
+    const state = snapshot()
+    expect(resolveDraftSendSelection({
+      requestedAgent: "builder",
+      agents: state.agents,
+      providers: state.providers,
+      inputProviderID: "anthropic",
+      inputModelID: "claude-sonnet-4-5",
+      draftSendConfig: JSON.parse(JSON.stringify({
+        providerID: "anthropic", modelID: "claude-sonnet-4-5", variant: null, modelProvenance: "explicit",
+      })),
+    }).variant).toBeNull()
+  })
+
   test("falls back from a stale session model that is absent from the provider catalog", () => {
     const result = resolveSessionSendConfigSnapshot(snapshot({
       sessionModelSelection: { providerId: "codex", modelId: "gpt-5.4" },
@@ -416,7 +449,7 @@ describe("send config resolution", () => {
     })
   })
 
-  test("new draft uses the model thinking fallback when the selected agent has no matching default variant", () => {
+  test("new draft preserves provider default when the selected agent has no matching default variant", () => {
     const result = resolveDraftSendSelection({
       requestedAgent: undefined,
       currentAgent: "builder",
@@ -439,7 +472,7 @@ describe("send config resolution", () => {
       agent: "builder",
       providerID: "anthropic",
       modelID: "claude-sonnet-4-5",
-      variant: "medium",
+      variant: null,
     })
   })
 
@@ -739,7 +772,7 @@ describe("send config resolution", () => {
       providerID: "openai",
       modelID: "gpt-5.5",
       agent: "builder",
-      variant: undefined,
+      variant: null,
       planMode: false,
     })
   })
@@ -772,7 +805,7 @@ describe("send config resolution", () => {
       agent: "builder",
       providerID: "openai",
       modelID: "gpt-5.5",
-      variant: undefined,
+      variant: null,
     })
   })
 
@@ -795,7 +828,7 @@ describe("send config resolution", () => {
       providerID: "openai",
       modelID: "gpt-5.5",
       agent: "builder",
-      variant: undefined,
+      variant: null,
       planMode: false,
     })
   })
@@ -816,12 +849,12 @@ describe("send config resolution", () => {
       providerID: "anthropic",
       modelID: "claude-sonnet-4-5",
       agent: "builder",
-      variant: undefined,
+      variant: null,
       planMode: false,
     })
   })
 
-  test("resolves an unset current thinking value to a concrete model fallback before send", () => {
+  test("captures provider default without inventing effort when the current agent has no matching default", () => {
     const providers: TestProvider[] = [{
       id: "openai",
       name: "OpenAI",
@@ -845,7 +878,7 @@ describe("send config resolution", () => {
       providerID: "openai",
       modelID: "gpt-5.5",
       agent: "builder",
-      variant: "medium",
+      variant: null,
       planMode: false,
     })
   })

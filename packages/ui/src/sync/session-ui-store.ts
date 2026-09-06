@@ -74,6 +74,7 @@ import {
   getSyncChildStores,
   getSyncSessionDirectoryAnyDirectory,
   setSessionUIStoreRef,
+  assertSessionPlanSelectionReady,
 } from "./sync-refs"
 import { markSessionsViewed } from "./notification-store"
 import { setActiveSession } from "./sync-context"
@@ -108,7 +109,7 @@ import {
 } from "./message-order"
 import { useSessionWorktreeStore } from "./session-worktree-store"
 import { getAttachedSessionDirectory } from "./session-worktree-contract"
-import { resolveSubtaskAgentFromMessages } from "./subtask-agent"
+import { resolveLatestUserChoiceFromMessages, resolveSubtaskAgentFromMessages } from "./subtask-agent"
 import { nextPlanIndicatorEntry, type PlanIndicatorEntry } from "./plan-indicator"
 import {
   clearLegacyNewDraftInput,
@@ -267,7 +268,7 @@ async function autoUnarchiveAfterSuccessfulSend(sessionId: string | null | undef
 }
 
 // Decision: keep the runtime plan-mode prompt in this shared UI module instead
-// of reading plan.md at send time, so web/Electron/VS Code use the same
+// of reading plan.md at send time, so web/Electron use the same
 // synchronous contract even when project agent files are unavailable or stale.
 export const buildPlanModeSyntheticInstruction = (contextModeAvailable: boolean): string => [
   "User has requested to enter plan mode.",
@@ -337,7 +338,7 @@ async function routeMessage(params: {
   modelID: string
   agent?: string
   agentMentionName?: string
-  variant?: string
+  variant?: string | null
   planMode?: boolean
   inputMode?: "normal" | "shell"
   files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
@@ -446,6 +447,7 @@ async function routeMessage(params: {
         providerID: params.providerID,
         modelID: params.modelID,
         agent: effectiveAgent,
+        variant: params.variant,
         files: params.files,
         directory: messageDirectory,
         planMode: params.planMode,
@@ -489,6 +491,7 @@ async function routeMessage(params: {
     providerID: params.providerID,
     modelID: params.modelID,
     agent: effectiveAgent,
+    variant: params.variant,
     files: params.files,
     directory: messageDirectory,
     planMode: params.planMode,
@@ -693,7 +696,7 @@ async function queuePromptAfterPendingQuestions(params: {
   modelID: string
   agent?: string
   attachments?: AttachedFile[]
-  variant?: string
+  variant?: string | null
   planMode?: boolean
   directory?: string | null
   inputMode?: "normal" | "shell"
@@ -857,7 +860,7 @@ export type SessionUIState = {
     attachments?: AttachedFile[],
     agentMentionName?: string,
     additionalParts?: Array<{ text: string; attachments?: AttachedFile[]; synthetic?: boolean }>,
-    variant?: string,
+    variant?: string | null,
     inputMode?: "normal" | "shell",
     planMode?: boolean,
   ) => Promise<void>
@@ -871,7 +874,7 @@ export type SessionUIState = {
     attachments?: AttachedFile[],
     agentMentionName?: string,
     additionalParts?: Array<{ text: string; attachments?: AttachedFile[]; synthetic?: boolean }>,
-    variant?: string,
+    variant?: string | null,
     inputMode?: "normal" | "shell",
     planMode?: boolean,
     lifecycleCallbacks?: SendLifecycleCallbacks,
@@ -898,7 +901,7 @@ export type SessionUIState = {
   // Data access helpers (read from sync)
   getSessionsByDirectory: (directory: string) => Session[]
   getDirectoryForSession: (sessionId: string) => string | null
-  getLastUserChoice: (sessionId: string) => { agent?: string; providerID?: string; modelID?: string; variant?: string } | null
+  getLastUserChoice: (sessionId: string) => { agent?: string; providerID?: string; modelID?: string; variant?: string | null } | null
   getCurrentAgent: (sessionId: string) => string | undefined
   debugSessionMessages: (sessionId: string) => Promise<void>
   pollForTokenUpdates: () => void
@@ -1507,12 +1510,12 @@ const prepareManagedDraftTarget = (input: {
 }
 
 /**
- * After selecting an existing draft and activating its directory, restore live
+ * After selecting a draft or refreshing its directory's agent catalog, restore live
  * agent/model/variant (and draft selection maps) from that draft's authoritative
  * resolution so UI, agent switches, prewarm, and first send stay aligned.
  * No-ops if the user has already switched away from `draftId`.
  */
-const restoreLiveConfigForSelectedDraft = (draftId: string, getState: () => SessionUIState): void => {
+export const restoreLiveConfigForSelectedDraft = (draftId: string, getState: () => SessionUIState): void => {
   const state = getState()
   if (state.currentDraftId !== draftId) return
 
@@ -1682,12 +1685,12 @@ const normalizeDraftSendConfig = (sendConfig: SendConfig | null | undefined): Se
   const providerID = cleanSendConfigString(sendConfig.providerID)
   const modelID = cleanSendConfigString(sendConfig.modelID)
   const agent = cleanSendConfigString(sendConfig.agent)
-  const variant = cleanSendConfigString(sendConfig.variant)
+  const variant = sendConfig.variant === null ? null : cleanSendConfigString(sendConfig.variant)
   const modelProvenance = normalizeSendConfigModelProvenance(sendConfig.modelProvenance)
   if (providerID) next.providerID = providerID
   if (modelID) next.modelID = modelID
   if (agent) next.agent = agent
-  if (variant) next.variant = variant
+  if (variant !== undefined) next.variant = variant
   if (typeof sendConfig.planMode === "boolean") next.planMode = sendConfig.planMode
   if (modelProvenance) next.modelProvenance = modelProvenance
   return Object.keys(next).length > 0 ? next : undefined
@@ -1697,8 +1700,10 @@ const mergeDraftSendConfig = (current: SendConfig | null | undefined, patch: Sen
   const next: SendConfig = { ...(normalizeDraftSendConfig(current) ?? {}) }
   const assignString = (key: "providerID" | "modelID" | "agent" | "variant") => {
     if (!Object.prototype.hasOwnProperty.call(patch, key)) return
-    const value = cleanSendConfigString(patch[key])
-    if (value) {
+    const value = key === "variant" && patch.variant === null ? null : cleanSendConfigString(patch[key])
+    if (value === null && key === "variant") {
+      next.variant = null
+    } else if (value) {
       next[key] = value
     } else {
       delete next[key]
@@ -2483,7 +2488,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     attachments?: AttachedFile[],
     agentMentionName?: string,
     additionalParts?: Array<{ text: string; attachments?: AttachedFile[]; synthetic?: boolean }>,
-    variant?: string,
+    variant?: string | null,
     inputMode?: "normal" | "shell",
     planMode?: boolean,
   ) => {
@@ -2762,6 +2767,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     // ---- Existing session, or defensive fallback when the UI has no active draft/session ----
     let targetSessionId = get().currentSessionId
+    if (targetSessionId && planMode === undefined) assertSessionPlanSelectionReady(targetSessionId)
     const resolvedPlanMode = planMode ?? useSelectionStore.getState().getPlanModeSelection(targetSessionId)
     const existingSelection = targetSessionId
       ? resolveSessionSendConfig(targetSessionId, {
@@ -3285,33 +3291,10 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   getLastUserChoice: (sessionId) => {
     const directory = get().getDirectoryForSession(sessionId) ?? undefined
     const messages = getSyncMessages(sessionId, directory)
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const message = messages[i] as Message & {
-        model?: { providerID?: string; modelID?: string; variant?: string }
-        variant?: string
-        mode?: string
-      }
-      if (message.role !== "user") {
-        continue
-      }
-
-      const providerID = typeof message.model?.providerID === "string" && message.model.providerID.trim().length > 0
-        ? message.model.providerID
-        : undefined
-      const modelID = typeof message.model?.modelID === "string" && message.model.modelID.trim().length > 0
-        ? message.model.modelID
-        : undefined
-      const agent = typeof message.agent === "string" && message.agent.trim().length > 0
-        ? message.agent
-        : (typeof message.mode === "string" && message.mode.trim().length > 0 ? message.mode : undefined)
-      const variantCandidate = message.model?.variant ?? message.variant
-      const variant = typeof variantCandidate === "string" && variantCandidate.trim().length > 0
-        ? variantCandidate
-        : undefined
-
-      return { agent, providerID, modelID, variant }
-    }
-    return null
+    const choice = resolveLatestUserChoiceFromMessages(messages, (messageID) => getSyncParts(messageID, directory))
+    if (!choice) return null
+    const { agent, providerID, modelID, variant } = choice
+    return { agent, providerID, modelID, variant }
   },
 
   getCurrentAgent: (sessionId) => {

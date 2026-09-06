@@ -21,7 +21,7 @@ export interface QueuedMessage {
         providerID: string;
         modelID: string;
         agent?: string;
-        variant?: string;
+        variant?: string | null;
         planMode?: boolean;
     };
 }

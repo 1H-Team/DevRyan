@@ -24,7 +24,7 @@ const latestUserMessageId = (messages: ReturnType<typeof getSyncMessages>): stri
 async function sendRecovery(
   sessionId: string,
   recovery: NonNullable<ReturnType<typeof planTransientRecovery>>,
-  requested: { providerID?: string; modelID?: string; variant?: string; agent?: string },
+  requested: { providerID?: string; modelID?: string; variant?: string | null; agent?: string },
   options: {
     onRecoveryUserMessageId?: (messageId: string) => void
     preserveProviderRecovery?: boolean
@@ -82,7 +82,7 @@ export async function executeProviderRecovery(record: ProviderRecoveryRecord): P
   return await sendRecovery(record.sessionId, recovery, {
     providerID: record.selection.providerId,
     modelID: record.selection.modelId,
-    variant: record.selection.variant ?? undefined,
+    variant: record.selection.variant,
     agent: record.agent ?? undefined,
   }, { preserveProviderRecovery: true })
 }

@@ -2,6 +2,10 @@ import crypto from 'node:crypto';
 
 // One identity per OpenCode process, shared by directory-scoped plugin instances.
 const instanceKey = Symbol.for('devryan.primary-recovery.instance.v1');
+const RPC_TIMEOUT_MS = 5000;
+// The host's hello performs its own bounded 5s OpenCode health verification.
+// Leave room for that result to cross the bridge without racing equal timers.
+const HELLO_TIMEOUT_MS = 10000;
 
 export const DevRyanPrimaryRecoveryPlugin = async ({ client, directory, fetchImpl = fetch } = {}) => {
   globalThis[instanceKey] ??= crypto.randomUUID();
@@ -14,12 +18,22 @@ export const DevRyanPrimaryRecoveryPlugin = async ({ client, directory, fetchImp
   }
   const instanceID = globalThis[instanceKey];
   const rpc = async (params) => {
-    const response = await fetchImpl(url, {
-      method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ method: 'primary_recovery', params: { ...params, instanceID } }),
-      signal: AbortSignal.timeout(5000),
-    });
-    const body = await response.json();
+    let response;
+    let body;
+    let phase = 'request';
+    try {
+      response = await fetchImpl(url, {
+        method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ method: 'primary_recovery', params: { ...params, instanceID } }),
+        signal: AbortSignal.timeout(params.action === 'hello' ? HELLO_TIMEOUT_MS : RPC_TIMEOUT_MS),
+      });
+      phase = 'response';
+      body = await response.json();
+    } catch (cause) {
+      // Fixed action/phase context survives OpenCode's generic Plugin.trigger
+      // stack without exposing the bridge URL, credentials, or response body.
+      throw new Error(`Primary recovery ${params.action} ${phase} failed`, { cause });
+    }
     if (!response.ok || !body.ok) throw new Error(body?.error?.code ?? 'Primary recovery host unavailable');
     return body.result;
   };

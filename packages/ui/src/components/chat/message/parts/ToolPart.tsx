@@ -1412,8 +1412,6 @@ const ToolPart: React.FC<ToolPartProps> = ({
         sessionEvents.requestGitRefresh({ directory: currentDirectory });
     }, [currentDirectory, isError, isFinalized, normalizedPartTool, part.id, status]);
 
-
-
     const shouldNotifyStructuralChange = isFinalized || isTaskTool;
 
     const onContentChangeRef = React.useRef(onContentChange);
@@ -1909,7 +1907,6 @@ const ToolPart: React.FC<ToolPartProps> = ({
         taskSessionId,
     ]);
 
-
     const taskSummaryLenRef = React.useRef<number>(taskSummaryEntries.length);
     React.useEffect(() => {
         if (!isTaskTool) {
@@ -1931,7 +1928,7 @@ const ToolPart: React.FC<ToolPartProps> = ({
     const descriptionPath = getToolDescriptionPath(normalizedPart, state, currentDirectory);
     const description = getToolDescription(normalizedPart, state, currentDirectory);
     const displayName = getToolMetadata(normalizedPartTool || part.tool).displayName;
-    
+
     // Tool title/description — shown inline as context
     const justificationText = React.useMemo(() => {
         if (normalizedPartTool === 'bash') {
@@ -1967,21 +1964,15 @@ const ToolPart: React.FC<ToolPartProps> = ({
 
         let filePath: unknown;
         let targetLine: number | undefined;
-        let toolDiff: string | undefined;
+
         if (normalizedPartTool === 'edit' || normalizedPartTool === 'multiedit') {
             filePath = getFirstToolPath(input, metadata);
             targetLine = getFirstChangedLineFromMetadata(normalizedPartTool, metadata);
-            if (typeof filePath === 'string') {
-                toolDiff = getPrimaryDiffFromMetadata(normalizedPartTool, metadata, filePath);
-            }
         } else if (normalizedPartTool === 'apply_patch') {
             const files = Array.isArray(metadata?.files) ? metadata?.files : [];
             const firstFile = files[0] as Record<string, unknown> | undefined;
             filePath = getFirstToolPath(firstFile, input, metadata);
             targetLine = getFirstChangedLineFromMetadata(normalizedPartTool, metadata);
-            if (typeof filePath === 'string') {
-                toolDiff = getPrimaryDiffFromMetadata(normalizedPartTool, metadata, filePath);
-            }
         } else if (['write', 'create', 'file_write'].includes(normalizedPartTool)) {
             filePath = getFirstToolPath(input, metadata);
         }
@@ -1992,11 +1983,7 @@ const ToolPart: React.FC<ToolPartProps> = ({
             if (!filePath.startsWith('/')) {
                 absolutePath = currentDirectory.endsWith('/') ? currentDirectory + filePath : currentDirectory + '/' + filePath;
             }
-            if (runtime.runtime.isVSCode && toolDiff && (normalizedPartTool === 'edit' || normalizedPartTool === 'multiedit' || normalizedPartTool === 'apply_patch')) {
-                const label = `${getRelativePath(absolutePath, currentDirectory)} (changes)`;
-                void runtime.editor.openDiff('', absolutePath, label, { line: targetLine, patch: toolDiff });
-                return;
-            }
+
             runtime.editor.openFile(absolutePath, targetLine);
         } else {
             onToggle(part.id);

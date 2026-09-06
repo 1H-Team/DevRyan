@@ -13,7 +13,7 @@ await import('@/components/chat/MarkdownRendererImpl');
 
 import { withDom } from './botMountedDom';
 
-const runtimeApis = { runtime: { isVSCode: false }, editor: {}, files: {} } as unknown as RuntimeAPIs;
+const runtimeApis = { runtime: {}, editor: {}, files: {} } as unknown as RuntimeAPIs;
 const channel: BotChannel = { id: 'mounted-channel', botId: 'mounted-bot', ownerUserId: 'member', accessRole: 'owner', canSend: true, lifecycle: 'active', currentCheckpointNumber: 0, lastMessageSequence: 0, lastMessageAt: null, createdAt: '', updatedAt: '', archivedAt: null };
 const bot: BotSummary = { id: channel.botId, name: 'Test Bot', title: '', summary: '', avatarUrl: null, avatarFallback: 'TB', lifecycle: 'active', tenancy: 'team', activeRevisionId: 'revision', createdAt: '', updatedAt: '', retiredAt: null };
 const message = (id: string, sequence: number, overrides: Partial<BotMessage> = {}): BotMessage => ({ id, sequence, channelId: channel.id, runId: 'run', actorUserId: 'member', role: 'user', assistantPhase: null, body: { text: 'User request', attachmentIds: [] }, attachmentCount: 0, createdAt: '2026-08-31T00:00:00Z', finalizedAt: '2026-08-31T00:00:00Z', ...overrides });

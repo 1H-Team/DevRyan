@@ -111,23 +111,19 @@ describe('UsagePage model rows', () => {
 
   test('sanitizers accept boolean usageShowPredValues', () => {
     const webSettingsSource = repoSource('packages/web/server/lib/opencode/settings-helpers.js');
-    const vscodeSettingsSource = repoSource('packages/vscode/src/bridge-settings-runtime.ts');
     const persistenceSource = repoSource('packages/ui/src/lib/persistence.ts');
 
     expect(webSettingsSource).toContain('typeof candidate.usageShowPredValues === \'boolean\'');
     expect(webSettingsSource).toContain('result.usageShowPredValues = candidate.usageShowPredValues');
-    expect(vscodeSettingsSource).toContain('typeof restChanges.usageShowPredValues !== \'boolean\'');
     expect(persistenceSource).toContain('typeof candidate.usageShowPredValues === \'boolean\'');
     expect(persistenceSource).toContain('result.usageShowPredValues = candidate.usageShowPredValues');
   });
 
   test('sanitizers reject non-boolean usageShowPredValues', () => {
     const webSettingsSource = repoSource('packages/web/server/lib/opencode/settings-helpers.js');
-    const vscodeSettingsSource = repoSource('packages/vscode/src/bridge-settings-runtime.ts');
     const persistenceSource = repoSource('packages/ui/src/lib/persistence.ts');
 
     expect(webSettingsSource).not.toContain('result.usageShowPredValues = candidate.usageShowPredValues ??');
-    expect(vscodeSettingsSource).toContain('delete restChanges.usageShowPredValues');
     expect(persistenceSource).not.toContain('result.usageShowPredValues = candidate.usageShowPredValues ??');
   });
 

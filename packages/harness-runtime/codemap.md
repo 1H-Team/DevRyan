@@ -4,13 +4,12 @@
 
 Dependency-free shared Node runtime for durable DevRyan harness state,
 diagnostics, lifecycle correlation, worktree operations, and optional turn
-evidence. Web/Electron and VS Code are hosts; the renderer consumes only host
+evidence. Web/Electron are hosts; the renderer consumes only host
 API contracts.
 
 ## Where to change things
 
 - Session-owned tool captures, cumulative revisions, stored diffs and conflict-checked restore: `lib/session-changes.js`; authenticated host HTTP/plugin adapter: `lib/session-changes-host.js`. See `docs/SESSION_CHANGES.md`.
-
 
 - Primary provider liveness, durable attempt/cancellation fences and read-only recovery: `lib/provider-recovery.js`, `lib/provider-recovery-policy.js`; shared host HTTP adapter: `lib/provider-recovery-host.js`.
 

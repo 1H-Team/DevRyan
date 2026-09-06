@@ -18,7 +18,7 @@ const createHarness = (overrides: HarnessOverrides = {}) => {
   ]);
   const dependencies: DirectoryRecoveryDependencies = {
     isManaged: () => false,
-    isVSCode: () => false,
+
     getCurrentDirectory: () => currentDirectory,
     getHomeDirectory: () => '/home/dev',
     getProjects: () => [{
@@ -72,13 +72,10 @@ describe('deleted active-directory recovery', () => {
     expect(harness.commits).toHaveLength(0);
   });
 
-  test('never replaces managed or VS Code paths', async () => {
+  test('never replaces managed paths', async () => {
     const managed = createHarness({ isManaged: () => true });
-    const vscode = createHarness({ isVSCode: () => true });
     expect((await recoverMissingActiveDirectory('/projects/app/.worktrees/feature', managed.dependencies)).reason).toBe('managed');
-    expect((await recoverMissingActiveDirectory('/projects/app/.worktrees/feature', vscode.dependencies)).reason).toBe('vscode');
     expect(managed.commits).toHaveLength(0);
-    expect(vscode.commits).toHaveLength(0);
   });
 
   test('falls back to runtime home when no registered root remains', async () => {

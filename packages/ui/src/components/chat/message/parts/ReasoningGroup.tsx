@@ -11,6 +11,11 @@ import {
     resolveReasoningRunActiveState,
 } from '../reasoningGrouping';
 import ReasoningPart from './ReasoningPart';
+import {
+    getReasoningDisclosureKey,
+    readReasoningDisclosureExpansion,
+    writeReasoningDisclosureExpansion,
+} from './reasoningDisclosureExpansion';
 import { isReasoningDisclosureToggleKey } from './reasoningDisclosureKeyboard';
 import { registerActiveReasoningDisclosure } from './reasoningDisclosureStatus';
 import { formatReasoningDuration, getReasoningDurationMilliseconds } from './reasoningDuration';
@@ -102,6 +107,22 @@ export const ReasoningDisclosure: React.FC<ReasoningDisclosureProps> = ({
         handleExpandedChange(!isExpanded);
     }, [handleExpandedChange, isExpanded]);
 
+    if (!entries.some((entry) => hasDisplayableReasoningText(entry.part, providerID))) {
+        if (!isActive) return null;
+
+        return (
+            <div
+                role="status"
+                data-reasoning-pending="true"
+                className={`flex items-center typography-meta text-muted-foreground ${
+                    isMobile ? 'min-h-11 py-2' : 'min-h-6 py-1 max-md:min-h-11 max-md:py-2'
+                }`}
+            >
+                <span className="animate-pulse motion-reduce:animate-none">{headerText}</span>
+            </div>
+        );
+    }
+
     return (
         <Collapsible
             open={isExpanded}
@@ -142,6 +163,7 @@ export const ReasoningDisclosure: React.FC<ReasoningDisclosureProps> = ({
                                 providerID={providerID}
                                 responseStyleLevel={responseStyleLevel}
                                 onContentChange={onContentChange}
+                                isMessageCompleted={isMessageCompleted}
                                 isMobile={isMobile}
                             />
                         ))}
@@ -161,7 +183,23 @@ const ReasoningGroupInner: React.FC<ReasoningGroupProps> = ({
     isTrailingLiveRun = false,
     isMobile = false,
 }) => {
-    const [isExpanded, setIsExpanded] = React.useState(false);
+    const firstEntry = entries[0];
+    const disclosureKey = getReasoningDisclosureKey(
+        firstEntry?.part.sessionID,
+        firstEntry?.messageId,
+        firstEntry?.part.id,
+    );
+    const [expansionChoice, setExpansionChoice] = React.useState(() => ({
+        key: disclosureKey,
+        expanded: readReasoningDisclosureExpansion(disclosureKey),
+    }));
+    const isExpanded = expansionChoice.key === disclosureKey
+        ? expansionChoice.expanded
+        : readReasoningDisclosureExpansion(disclosureKey);
+    const handleExpandedChange = React.useCallback((expanded: boolean) => {
+        writeReasoningDisclosureExpansion(disclosureKey, expanded);
+        setExpansionChoice({ key: disclosureKey, expanded });
+    }, [disclosureKey]);
     const isActive = resolveReasoningRunActiveState({
         isMessageCompleted,
         hasActivePart: entries.some((entry) => isReasoningPartActive(entry.part)),
@@ -193,6 +231,7 @@ const ReasoningGroupInner: React.FC<ReasoningGroupProps> = ({
                 providerID={providerID}
                 responseStyleLevel={responseStyleLevel}
                 onContentChange={onContentChange}
+                isMessageCompleted={isMessageCompleted}
                 isMobile={isMobile}
             />
         );
@@ -208,7 +247,7 @@ const ReasoningGroupInner: React.FC<ReasoningGroupProps> = ({
             isTrailingLiveRun={isTrailingLiveRun}
             isMobile={isMobile}
             isExpanded={isExpanded}
-            onExpandedChange={setIsExpanded}
+            onExpandedChange={handleExpandedChange}
         />
     );
 };

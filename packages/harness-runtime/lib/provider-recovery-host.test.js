@@ -47,7 +47,7 @@ async function setup(overrides = {}) {
 }
 
 test.each(['/api/session/ses_test/recovery', '/session/ses_test/recovery'])(
-  'web/Electron and VS Code path contract: %s', async (endpoint) => {
+  'web/Electron path contract: %s', async (endpoint) => {
     const f = await setup(); await f.fail();
     const result = await f.host.handleRequest('GET', endpoint, null);
     expect(result.status).toBe(200); expect(result.body.schemaVersion).toBe(1);

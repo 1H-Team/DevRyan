@@ -1,4 +1,5 @@
 import { createProjectIdFromPath } from '@/lib/projectId';
+import { resolvePlanProjectStorageId } from '../../../../shared-runtime/lib/plan-storage-id.js';
 
 export interface SessionPlanFileIdentity {
   projectPath: string;
@@ -44,13 +45,13 @@ export const sanitizePlanPathSegment = (value: string): string => {
     .replace(/^-+|-+$/g, '');
 };
 
-export const buildSessionPlanFilePath = (
+export const buildSessionPlanFilePath = async (
   homeDirectory: string,
   identity: SessionPlanFileIdentity,
-): string => {
+): Promise<string> => {
   const home = normalizePath(homeDirectory);
   const projectPath = normalizePath(identity.projectPath);
-  const projectId = sanitizePlanPathSegment(createProjectIdFromPath(projectPath));
+  const projectId = await resolvePlanProjectStorageId(sanitizePlanPathSegment(createProjectIdFromPath(projectPath)));
   const sessionSlug = sanitizePlanPathSegment(identity.sessionSlug);
   const sourceMessageId = sanitizePlanPathSegment(identity.sourceMessageId);
   const sessionCreated = Number.isFinite(identity.sessionCreated)
@@ -80,7 +81,7 @@ export const ensureSessionPlanFile = async ({
     throw new Error('Unable to resolve the home directory for plan storage');
   }
 
-  const filePath = buildSessionPlanFilePath(homeDirectory, identity);
+  const filePath = await buildSessionPlanFilePath(homeDirectory, identity);
   const existing = pendingWrites.get(filePath);
   if (existing) return existing;
 

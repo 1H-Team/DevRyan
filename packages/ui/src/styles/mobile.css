@@ -62,6 +62,34 @@
     min-width: 36px;
   }
 
+  /* Non-drawer session actions keep their full touch targets clear of the title. */
+  :root.mobile-pointer:not(.desktop-runtime) [data-session-row]:not([data-mobile-drawer-drag-lock="true"]) {
+    --session-row-action-padding: 80px;
+    --session-row-leading-clearance: 12px;
+  }
+
+  /* Project headings reserve only their rendered actions, including full touch targets. */
+  :root.mobile-pointer:not(.desktop-runtime) [data-project-header] {
+    --project-header-action-padding: 0px;
+    --project-header-secondary-right: 0.125rem;
+  }
+
+  :root.mobile-pointer:not(.desktop-runtime) [data-project-header][data-project-header-action-count="1"] {
+    --project-header-action-padding: calc(36px + 0.25rem);
+  }
+
+  :root.mobile-pointer:not(.desktop-runtime) [data-project-header][data-project-header-action-count="2"] {
+    --project-header-action-padding: calc(72px + 0.5rem);
+  }
+
+  :root.mobile-pointer:not(.desktop-runtime) [data-project-header][data-project-header-action-count="3"] {
+    --project-header-action-padding: calc(108px + 0.75rem);
+  }
+
+  :root.mobile-pointer:not(.desktop-runtime) [data-project-header][data-project-header-has-new-session="true"] {
+    --project-header-secondary-right: calc(36px + 0.375rem);
+  }
+
   /* Improve input field touch targets */
   :root.mobile-pointer:not(.desktop-runtime) input,
   :root.mobile-pointer:not(.desktop-runtime) textarea,

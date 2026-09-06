@@ -10,6 +10,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useContextStore } from '@/stores/contextStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
+import { resolveUserMessageVariant } from '@/sync/subtask-agent';
 import * as sessionActions from '@/sync/session-actions';
 import { toast } from '@/components/ui';
 import { useDeviceInfo } from '@/lib/device';
@@ -255,16 +256,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         const agent = getMessageInfoProp(previousMessage.info, 'agent');
         const providerID = getMessageInfoProp(previousMessage.info, 'providerID');
         const modelID = getMessageInfoProp(previousMessage.info, 'modelID');
-        const variant = getMessageInfoProp(previousMessage.info, 'variant');
         const resolvedAgent =
             typeof mode === 'string' && mode.trim().length > 0
                 ? mode
                 : (typeof agent === 'string' && agent.trim().length > 0 ? agent : undefined);
         const resolvedProvider = typeof providerID === 'string' && providerID.trim().length > 0 ? providerID : undefined;
         const resolvedModel = typeof modelID === 'string' && modelID.trim().length > 0 ? modelID : undefined;
-        const resolvedVariant = typeof variant === 'string' && variant.trim().length > 0 ? variant : undefined;
+        const resolvedVariant = resolveUserMessageVariant(previousMessage.info);
 
-        if (!resolvedAgent && !resolvedProvider && !resolvedModel && !resolvedVariant) {
+        if (!resolvedAgent && !resolvedProvider && !resolvedModel && resolvedVariant === undefined) {
             return null;
         }
 
@@ -373,7 +373,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         return contextModelSelection?.modelId ?? null;
     }, [isUser, messageModelID, contextModelSelection]);
 
-    const headerVariantRaw = !isUser ? (turnGroupingContext?.userMessageVariant ?? previousUserMetadata?.variant) : undefined;
+    const headerVariantRaw = !isUser
+        ? (turnGroupingContext?.userMessageVariant !== undefined
+            ? turnGroupingContext.userMessageVariant
+            : previousUserMetadata?.variant)
+        : undefined;
 
     const modelVariantDisplayState = React.useMemo(() => {
         if (isUser || !providerID || !modelID || providers.length === 0) {

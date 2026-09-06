@@ -233,7 +233,7 @@ describe('SettingsView navigation', () => {
     expect(bugReports?.kind).toBe('single');
     expect(
       bugReports?.isAvailable?.({
-        isVSCode: false,
+
         isWeb: true,
         isDesktop: false,
         isManaged: true,
@@ -241,18 +241,10 @@ describe('SettingsView navigation', () => {
     ).toBe(true);
     expect(
       bugReports?.isAvailable?.({
-        isVSCode: false,
+
         isWeb: true,
         isDesktop: false,
         isManaged: false,
-      }),
-    ).toBe(false);
-    expect(
-      bugReports?.isAvailable?.({
-        isVSCode: true,
-        isWeb: false,
-        isDesktop: false,
-        isManaged: true,
       }),
     ).toBe(false);
   });
@@ -281,17 +273,15 @@ describe('SettingsView navigation', () => {
     expect(getSettingsDestinationFallbackSlug('tunnel', new Set())).toBeNull();
   });
 
-  test('exposes both remote tabs on desktop, only Tunnel on web, and neither in VS Code', () => {
+  test('exposes both remote tabs on desktop, only Tunnel on web', () => {
     const remoteSlugs = ['remote-instances', 'tunnel'] as const;
     const visibleIn = (ctx: SettingsRuntimeContext) => (
       remoteSlugs.filter((slug) => getSettingsPageMeta(slug)?.isAvailable?.(ctx) ?? true)
     );
 
-    expect(visibleIn({ isDesktop: true, isWeb: false, isVSCode: false, isManaged: false }))
+    expect(visibleIn({ isDesktop: true, isWeb: false, isManaged: false }))
       .toEqual(['remote-instances', 'tunnel']);
-    expect(visibleIn({ isDesktop: false, isWeb: true, isVSCode: false, isManaged: false }))
+    expect(visibleIn({ isDesktop: false, isWeb: true, isManaged: false }))
       .toEqual(['tunnel']);
-    expect(visibleIn({ isDesktop: false, isWeb: false, isVSCode: true, isManaged: false }))
-      .toEqual([]);
   });
 });

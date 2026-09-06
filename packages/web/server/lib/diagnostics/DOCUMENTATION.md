@@ -21,8 +21,7 @@ requested session and descendants discovered from canonical session events.
 Every textual export entry receives a second deny-pattern pass.
 
 Electron owns the native save dialog and streams the local HTTP response into a
-private sibling temporary file before fsync and rename. VS Code builds the same
-ZIP in the extension host and uses `showSaveDialog`. Browser web downloads the
+private sibling temporary file before fsync and rename. Browser web downloads the
 streamed response through the browser download surface. Native hosts remove
 abandoned diagnostics temporary files after 24 hours.
 

@@ -57,9 +57,6 @@ reveals only the original imported local path through native IPC.
   latest-message preview, and compact relative time. Finalized previews rank the
   list by recency without moving rows during streaming. Coding Agents exclusively
   renders project/session, draft, search, multi-run, and scheduled-task controls.
-- VS Code exposes one deliberate entry that renders `Bots require the DevRyan
-  macOS app`. It never opens a Bot channel or calls Electron runtime-management
-  IPC.
 - A browser connected to an Electron-hosted server can use the full Bot HTTP/SSE
   UI. Setup and Repair remain absent there because `botsDesktopApi` requires both
   local Electron IPC and the local desktop origin. In the actual desktop renderer,

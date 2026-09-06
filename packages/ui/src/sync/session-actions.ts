@@ -3,7 +3,7 @@
  * Replaces the action methods from the old useSessionStore.
  */
 
-import type { OpencodeClient, Session, Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeClient, Session, Message, Part, SessionStatus, UserMessage } from "@opencode-ai/sdk/v2/client"
 import type { StoreApi } from "zustand"
 import { Binary } from "./binary"
 import {
@@ -22,6 +22,7 @@ import {
 } from "@/stores/useGlobalSessionsStore"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { getSessionUIStore, registerSessionDirectory } from "./sync-refs"
+import { useSelectionStore } from "./selection-store"
 import { registerGitGenerationSession } from "@/lib/git/gitGenerationSessions"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
 import { materializeSessionSnapshots } from "./materialization"
@@ -1598,6 +1599,7 @@ export async function optimisticSend(input: {
   providerID: string
   modelID: string
   agent?: string
+  variant?: string | null
   planMode?: boolean
   files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
   directory?: string | null
@@ -1684,7 +1686,13 @@ export async function optimisticSend(input: {
     providerID: input.providerID,
     system: "",
     agent: input.agent ?? "",
-    model: { providerID: input.providerID, modelID: input.modelID },
+    model: {
+      providerID: input.providerID,
+      modelID: input.modelID,
+      // Match native user records before the echo arrives so restoration keeps
+      // the captured thinking choice. Empty string is explicit provider default.
+      ...(input.variant !== undefined ? { variant: input.variant === null ? "" : input.variant } : {}),
+    } satisfies UserMessage["model"],
     metadata: input.planMode === true ? { openchamberPlanMode: true } as Record<string, unknown> : {} as Record<string, unknown>,
     time: { created: Date.now() },
   } as unknown as Message
@@ -1781,7 +1789,11 @@ export async function optimisticSend(input: {
       }
       throwIfAborted(input.signal)
     }
+    const manualSelection = useSelectionStore.getState().getSessionModelSelectionIntent(input.sessionId)
     await input.send(messageID)
+    // A queued older selection or a new pick while transport is pending must
+    // not release the composer's newer explicit intent. Failures keep it too.
+    useSelectionStore.getState().consumeSessionModelSelectionIntent(input.sessionId, manualSelection, input)
   } catch (error) {
     // Rollback via optimistic infrastructure
     if (optimisticAssistantMessage) {

@@ -54,7 +54,7 @@ describe("input-store attachments", () => {
       pendingInputText: null,
       pendingInputMode: "replace",
       pendingSyntheticParts: null,
-      activeEditorFile: null,
+
       pendingRestoredInputs: new Map(),
     })
     useInputStore.getState().setAttachedFiles([])
@@ -112,20 +112,6 @@ describe("input-store attachments", () => {
     await addPromise
 
     expect(useInputStore.getState().attachedFiles.map((file) => file.filename)).toEqual(["restored.txt"])
-  })
-
-  test("does not attach a VS Code selection that finishes reading after attachments are cleared", async () => {
-    const addPromise = useInputStore.getState().addVSCodeSelectionAttachment(
-      "/workspace/hello.txt",
-      new File(["hello"], "hello.txt", { type: "text/plain" })
-    )
-    expect(pendingReaders).toHaveLength(1)
-
-    useInputStore.getState().clearAttachedFiles()
-    resolveReader(pendingReaders[0], "data:text/plain;base64,aGVsbG8=")
-    await addPromise
-
-    expect(useInputStore.getState().attachedFiles).toEqual([])
   })
 
   test("restores a data URL attachment with decoded byte size", () => {
@@ -188,7 +174,9 @@ describe("input-store attachments", () => {
     await input.activateAttachedFilesTarget(`session:${sessionId}`)
     expect(input.consumeRestoredInput(sessionId, getSessionComposerRevision(sessionId))?.text).toBe('restored after remount')
     input.queueRestoredInput({ sessionId, text: 'stale after user edit', attachments: [], expectedComposerRevision })
-    input.addVSCodeFileAttachment('/synthetic/new.txt', 'new.txt', 4)
+    const attachment = input.addAttachedFile(new File(['new'], 'new.txt', { type: 'text/plain' }))
+    resolveReader(pendingReaders.shift()!, 'data:text/plain;base64,bmV3')
+    await attachment
     expect(input.consumeRestoredInput(sessionId, getSessionComposerRevision(sessionId))).toBeNull()
   })
 

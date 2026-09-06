@@ -13,4 +13,4 @@ Settings section for the three public DevRyan default plugins, existing OpenCode
 Settings view loads `usePluginsStore` when the Plugins page is active. The store calls `GET /api/config/plugins` for the active directory and exposes the stable default catalog plus read-only config/file lists to the sidebar/page. It also calls `GET /api/config/slim/status`; install/repair buttons are retained as recovery actions and refresh plugin status/lists.
 
 ## Integration
-Consumes shared plugin API types, `usePluginsStore`, and shared Settings layout primitives. Backend parity is provided by web server routes and VS Code bridge routing.
+Consumes shared plugin API types, `usePluginsStore`, and shared Settings layout primitives. Backend parity is provided by web server routes bridge routing.

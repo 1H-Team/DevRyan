@@ -84,6 +84,21 @@ describe('session plan revision routes', () => {
     expect(response.body.error).toBe('Session not found');
   });
 
+  it('creates, reads and updates a revision for a project whose encoded path exceeds a filesystem component', async () => {
+    const app = createApp({ dataDirectory });
+    const longIdentity = { ...identity, directory: `/repo/${'nested-project/'.repeat(16)}feature` };
+    const route = '/api/session/session-a/plan-revisions/msg-long-plan';
+    const created = await request(app).post(route).send({ ...longIdentity, markdown: '# Long project plan' });
+    expect(created.status).toBe(200);
+    expect(created.body.path).toMatch(/\/projects\/path_sha256_[a-f0-9]{64}\/plans\//);
+    const query = new URLSearchParams({ ...longIdentity, sessionCreated: String(identity.sessionCreated) });
+    const read = await request(app).get(`${route}?${query}`);
+    expect(read.body).toEqual({ path: created.body.path, content: '# Long project plan' });
+    const updated = await request(app).put(route).send({ ...longIdentity, markdown: '# Revised long project plan' });
+    expect(updated.body).toEqual({ path: created.body.path, saved: true });
+    expect(await fs.readFile(created.body.path, 'utf8')).toBe('# Revised long project plan');
+  });
+
   it('uses the ownership-derived project root instead of a managed worktree path', async () => {
     const canonicalDirectory = '/Users/example/Repositories/Canonical';
     const worktreeDirectory = '/Users/example/.local/share/opencode/worktree/project/feature';
@@ -109,7 +124,7 @@ describe('session plan revision routes', () => {
     expect(read.status).toBe(200);
     expect(read.body.content).toBe('# Worktree plan');
 
-    const canonical = resolveSessionPlanRevision({
+    const canonical = await resolveSessionPlanRevision({
       dataDirectory,
       ...identity,
       directory: canonicalDirectory,
@@ -151,12 +166,12 @@ describe('session plan revision routes', () => {
     expect(invalidDirectory.status).toBe(400);
     expect(invalidDirectory.body.error).toMatch(/absolute path/i);
 
-    expect(() => resolveSessionPlanRevision({
+    await expect(resolveSessionPlanRevision({
       dataDirectory,
       ...identity,
       sourceMessageID: '../escape',
       path,
-    })).toThrow(/source message ID/i);
+    })).rejects.toThrow(/source message ID/i);
   });
 
   it('surfaces real storage failures and non-file collisions', async () => {
@@ -170,7 +185,7 @@ describe('session plan revision routes', () => {
     expect(failed.status).toBe(500);
     expect(failed.body.error).toBe('disk full');
 
-    const revision = resolveSessionPlanRevision({
+    const revision = await resolveSessionPlanRevision({
       dataDirectory,
       ...identity,
       sourceMessageID: 'msg-plan-directory',

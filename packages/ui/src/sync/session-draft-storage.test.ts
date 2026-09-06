@@ -145,6 +145,17 @@ describe("session draft storage", () => {
     })
   })
 
+  test("round-trips captured provider default independently of a missing selection", () => {
+    persistDrafts(storage, {
+      "draft-default": {
+        id: "draft-default", text: "", createdAt: 1, updatedAt: 1,
+        selectedProjectId: null, directoryOverride: "/repo", parentID: null,
+        sendConfig: { providerID: "openai", modelID: "gpt", variant: null },
+      },
+    }, ["draft-default"])
+    expect(readPersistedDrafts(storage).draftsById["draft-default"]?.sendConfig?.variant).toBeNull()
+  })
+
   test("preserves legacy draft send config without provenance on round-trip", () => {
     storage.setItem(CHAT_DRAFTS_STORAGE_KEY, JSON.stringify({
       order: ["draft-legacy"],

@@ -271,6 +271,10 @@ export const useChatTimelineController = ({
 
         // Try anchor-based restoration first (pixel-perfect)
         if (snap.anchor) {
+            // The target can be outside the mounted range when a prepend first
+            // enables virtualization. MessageList owns restoring that range and
+            // applies the exact message offset in layout before the next paint.
+            if (messageListRef.current?.restoreViewportAnchor(snap.anchor)) return;
             const anchorEl = container.querySelector<HTMLElement>(
                 `[data-message-id="${snap.anchor.messageId}"]`,
             );
@@ -287,7 +291,7 @@ export const useChatTimelineController = ({
         if (delta > 0) {
             container.scrollTop = snap.top + delta;
         }
-    }, [renderedMessages, scrollRef]);
+    }, [messageListRef, renderedMessages, scrollRef]);
 
     const captureViewportAnchor = React.useCallback((): ViewportAnchor | null => {
         return messageListRef.current?.captureViewportAnchor() ?? null;

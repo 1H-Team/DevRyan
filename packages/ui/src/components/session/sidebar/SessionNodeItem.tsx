@@ -34,7 +34,7 @@ import {
 } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import { isCursorAcpErrorTitle, resolveDisplaySessionTitle } from '@/lib/sessionTitles';
-import { canUseElectronDesktopIPC, invokeDesktop, isVSCodeRuntime } from '@/lib/desktop';
+import { canUseElectronDesktopIPC, invokeDesktop } from '@/lib/desktop';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -314,7 +314,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     renderSessionNode,
     renderContext = 'project',
   } = props;
-  const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
+
   const isElectron = React.useMemo(() => canUseElectronDesktopIPC(), []);
   const session = node.session;
   const isArchiveAncestorOnly = archivedBucket && node.isArchiveAncestorOnly === true;
@@ -327,7 +327,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     revealOnHoverClass,
     revealPaddingClass,
   } = resolveSessionRowInteractionClasses();
-  const alwaysActionPaddingClass = 'pr-10';
+  const alwaysActionPaddingClass = 'pr-[var(--session-row-action-padding,3.5rem)]';
   const suppressNextSelectRef = React.useRef(false);
   const mobileSwipeRef = React.useRef<{
     pointerId: number;
@@ -1132,7 +1132,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
               isRowSelected && 'bg-primary/15',
             )}
           >
-            <div className="relative -ml-px flex min-w-0 flex-1 items-center">
+            <div className={cn(
+              'relative -ml-px flex min-w-0 flex-1 items-center',
+              hasChildren && 'pl-[var(--session-row-leading-clearance,0px)]',
+            )}>
               {leadingRail}
               <button
                 type="button"
@@ -1156,9 +1159,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                   mobileVariant && 'touch-pan-y',
                   isTouchPressed && 'bg-interactive-hover/70',
                   alwaysShowActions
-                    ? (isVSCode ? revealPaddingClass : alwaysActionPaddingClass)
+                    ? (alwaysActionPaddingClass)
                     : revealPaddingClass,
-                  alwaysShowActions && !isVSCode ? '' : workingStatusPaddingClass,
+                  alwaysShowActions ? '' : workingStatusPaddingClass,
                 )}
               >
                 <div className="flex w-full items-center min-w-0 flex-1 overflow-hidden gap-1">
@@ -1245,7 +1248,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
               'absolute right-0 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 transition-opacity',
               isMenuOpen
                 ? 'opacity-100'
-                : (alwaysShowActions && !isVSCode)
+                : (alwaysShowActions)
                   ? 'opacity-100'
                   : cn('opacity-0', revealOnHoverClass),
             )}>
@@ -1340,7 +1343,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                   {/* Keep an invisible anchor so the controlled context menu opens
                       where the former hover trigger lived, without exposing a
                       three-dots button on hover. */}
-                  <span aria-hidden="true" className="pointer-events-none block h-0 w-0" />
+                  <span aria-hidden="true" className="pointer-events-none block h-0 w-0 !min-h-0 !min-w-0" />
                 </DropdownMenuTrigger>
                 {sessionMenuContent}
               </DropdownMenu>

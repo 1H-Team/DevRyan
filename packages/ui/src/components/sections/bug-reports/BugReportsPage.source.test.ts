@@ -14,7 +14,7 @@ describe('managed Bug Reports settings page', () => {
     expect(source).toContain('const LazyErrorLogsPanel = /* @__PURE__ */ lazyWithChunkRecovery');
     expect(source).toContain('const LazyBotAuditPanel = /* @__PURE__ */ lazyWithChunkRecovery');
     expect(source).toContain("principal.scope === 'managed' && principal.role === 'admin'");
-    expect(source).toContain("principal.scope !== 'managed' || isVSCodeRuntime()");
+    expect(source).toContain("principal.scope !== 'managed'");
     expect(source).toContain("visitedTabs.has('reports')");
     expect(source).toContain("visitedTabs.has('agent-audit')");
     expect(source).toContain("visitedTabs.has('bot-audit')");

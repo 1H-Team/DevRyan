@@ -26,6 +26,7 @@ import {
 } from "./provider-tracker";
 import { resolveProviderPromptTools } from "./provider-prompt-tools";
 import { getSdkErrorMessage } from './sdk-error';
+import { CURSOR_ACP_PROVIDER_ID } from '../providers/cursorAcp';
 
 // Use relative path by default (works with both dev and nginx proxy server)
 // Can be overridden with VITE_OPENCODE_URL for absolute URLs in special deployments
@@ -1447,7 +1448,7 @@ class OpencodeService {
     prefaceText?: string;
     prefaceTextSynthetic?: boolean;
     agent?: string;
-    variant?: string;
+    variant?: string | null;
     planMode?: boolean;
     files?: Array<FileInputLite>;
     /** Additional text/file parts to include (for batch sending queued messages) */
@@ -1655,7 +1656,11 @@ class OpencodeService {
               modelID: params.modelID,
             },
             agent: params.agent,
-            variant: params.variant,
+            // Native OpenCode treats omission as agent inheritance. Its explicit
+            // empty variant clears that inheritance (verified on 1.18.27/29).
+            variant: params.variant === null
+              ? (params.providerID === CURSOR_ACP_PROVIDER_ID ? undefined : '')
+              : params.variant,
             messageID: messageId,
             ...(params.format ? { format: params.format } : {}),
             ...(tools ? { tools } : {}),
@@ -1733,7 +1738,7 @@ class OpencodeService {
     command: string;
     arguments?: string;
     agent?: string;
-    variant?: string;
+    variant?: string | null;
     files?: Array<FileInputLite>;
     messageId?: string;
     directory?: string | null;
@@ -1766,7 +1771,9 @@ class OpencodeService {
       arguments: params.arguments ?? '',
       model: `${params.providerID}/${params.modelID}`,
       ...(params.agent ? { agent: params.agent } : {}),
-      ...(params.variant ? { variant: params.variant } : {}),
+      ...(params.variant !== undefined && !(params.providerID === CURSOR_ACP_PROVIDER_ID && params.variant === null)
+        ? { variant: params.variant === null ? '' : params.variant }
+        : {}),
       ...(parts.length > 0 ? { parts } : {}),
       messageID: tempMessageId,
     };

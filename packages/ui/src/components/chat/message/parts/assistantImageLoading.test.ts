@@ -49,7 +49,7 @@ describe('assistant image preparation', () => {
         const results = await prepareAssistantImageCandidates({
             candidates,
             sessionId: 'session/1',
-            isVSCode: false,
+
             signal: controller.signal,
             fetchImpl,
         });
@@ -68,28 +68,6 @@ describe('assistant image preparation', () => {
         expect(results[2]?.status === 'ready' ? results[2].url : null).toBe('data:image/png;base64,iVBORw0KGgo=');
     });
 
-    test('uses only the workspace raw bridge in VS Code and never forwards an asset grant', async () => {
-        let fetchCount = 0;
-        const results = await prepareAssistantImageCandidates({
-            candidates: [candidate('workspace', 'art/result.png')],
-            sessionId: 'session-1',
-            directory: '/workspace',
-            isVSCode: true,
-            signal: new AbortController().signal,
-            fetchImpl: (async () => {
-                fetchCount += 1;
-                throw new Error('Preparation API must not be called in VS Code');
-            }) as typeof fetch,
-        });
-
-        expect(fetchCount).toBe(0);
-        expect(results[0]?.status).toBe('ready');
-        const url = results[0]?.status === 'ready' ? results[0].url : '';
-        expect(url).toContain('/api/fs/raw?');
-        expect(url).toContain('directory=%2Fworkspace');
-        expect(url).toContain('assistantImage=1');
-        expect(url).not.toContain('assetGrant');
-    });
 });
 
 describe('assistant image blob lifecycle', () => {

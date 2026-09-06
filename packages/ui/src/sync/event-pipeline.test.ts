@@ -97,16 +97,14 @@ class FakeWebSocket {
   }
 }
 
-function installBrowserStubs(options: { isVSCode?: boolean } = {}) {
+function installBrowserStubs() {
   const windowEvents = new EventTarget()
   globalThis.window = {
     location: {
       href: "http://127.0.0.1:5173/",
       origin: "http://127.0.0.1:5173",
     },
-    __OPENCHAMBER_RUNTIME_APIS__: options.isVSCode
-      ? { runtime: { platform: "vscode", isDesktop: false, isVSCode: true, label: "VS Code" } }
-      : undefined,
+    __OPENCHAMBER_RUNTIME_APIS__: undefined,
     addEventListener: windowEvents.addEventListener.bind(windowEvents),
     removeEventListener: windowEvents.removeEventListener.bind(windowEvents),
     dispatchEvent: windowEvents.dispatchEvent.bind(windowEvents),
@@ -647,61 +645,6 @@ describe("createEventPipeline", () => {
 
     expect(disconnectReasons).toEqual(["sse_error:SSE failed: 500 Internal Server Error"])
     expect(reconnectCount).toBe(0)
-  })
-
-  test("uses SSE directly for VS Code runtime auto transport", async () => {
-    installBrowserStubs({ isVSCode: true })
-
-    let releaseStream!: () => void
-    const streamHold = new Promise<void>((resolve) => {
-      releaseStream = resolve
-    })
-    let sseStarted!: () => void
-    const sseAttempted = new Promise<void>((resolve) => {
-      sseStarted = resolve
-    })
-    let reconnectCount = 0
-
-    const sdk = {
-      global: {
-        event: async () => {
-          sseStarted()
-          return {
-            stream: (async function* () {
-              yield {
-                directory: "/repo",
-                payload: { type: "server.connected", properties: {} } as OpencodeEvent,
-              }
-              await streamHold
-            })(),
-          }
-        },
-      },
-    } as unknown as OpencodeClient
-
-    const pipeline = createEventPipeline({
-      sdk,
-      transport: "auto",
-      reconnectDelayMs: 0,
-      wsReadyTimeoutMs: 100,
-      heartbeatTimeoutMs: 1_000,
-      onEvent: () => {},
-      onReconnect: () => {
-        reconnectCount += 1
-      },
-    })
-
-    try {
-      await Promise.race([sseAttempted, failAfter(500)])
-      await new Promise((resolve) => setTimeout(resolve, 20))
-      expect(FakeWebSocket.instances).toHaveLength(0)
-    } finally {
-      pipeline.cleanup()
-      releaseStream()
-      restoreBrowserStubs()
-    }
-
-    expect(reconnectCount).toBe(1)
   })
 
   test("interrupts retry delay when the browser comes back online", async () => {

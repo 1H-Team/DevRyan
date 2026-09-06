@@ -59,4 +59,55 @@ describe('versioned primary recovery plugin boundary', () => {
     delete process.env.DEVRYAN_ORCHESTRATION_URL;
     expect(await DevRyanPrimaryRecoveryPlugin({})).toEqual({});
   });
+  it.each(['request', 'response'])('identifies the failed RPC phase without weakening a %s failure', async (phase) => {
+    process.env.DEVRYAN_ORCHESTRATION_URL = 'http://127.0.0.1:12345/rpc';
+    process.env.DEVRYAN_ORCHESTRATION_TOKEN = 'isolated-fixture-token';
+    const cause = new DOMException('The operation timed out.', 'TimeoutError');
+    let signal;
+    const plugin = await DevRyanPrimaryRecoveryPlugin({ fetchImpl: async (_url, init) => {
+      signal = init.signal;
+      if (phase === 'request') throw cause;
+      return { json: async () => { throw cause; } };
+    } });
+    await expect(plugin['chat.message']({ sessionID: 'ses_fixture' }, { message: { id: 'msg_user' } }))
+      .rejects.toMatchObject({ message: `Primary recovery hello ${phase} failed`, cause });
+    expect(signal).toBeInstanceOf(AbortSignal);
+  });
+  it('accepts a verified hello returned just after the host health budget without retrying', async () => {
+    process.env.DEVRYAN_ORCHESTRATION_URL = 'http://127.0.0.1:12345/rpc';
+    process.env.DEVRYAN_ORCHESTRATION_TOKEN = 'isolated-fixture-token';
+    const actions = [];
+    const plugin = await DevRyanPrimaryRecoveryPlugin({ fetchImpl: async (_url, init) => {
+      const { params } = JSON.parse(init.body);
+      actions.push(params.action);
+      if (params.action === 'hello') await new Promise((resolve, reject) => {
+        const abort = () => { clearTimeout(timer); reject(init.signal.reason); };
+        const timer = setTimeout(() => { init.signal.removeEventListener('abort', abort); resolve(); }, 5200);
+        init.signal.addEventListener('abort', abort, { once: true });
+      });
+      return new Response(JSON.stringify({ ok: true, result: { allowed: true } }));
+    } });
+    await plugin['chat.message']({ sessionID: 'ses_fixture' }, { message: { id: 'msg_user' } });
+    expect(actions).toEqual(['hello', 'message']);
+  }, 15000);
+  it('keeps ordinary message RPCs bounded and fail-closed after the handshake succeeds', async () => {
+    process.env.DEVRYAN_ORCHESTRATION_URL = 'http://127.0.0.1:12345/rpc';
+    process.env.DEVRYAN_ORCHESTRATION_TOKEN = 'isolated-fixture-token';
+    const deadlines = [];
+    const originalTimeout = AbortSignal.timeout;
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(ms => {
+      deadlines.push(ms); return originalTimeout(ms);
+    });
+    try {
+      const cause = new DOMException('The operation timed out.', 'TimeoutError');
+      const plugin = await DevRyanPrimaryRecoveryPlugin({ fetchImpl: async (_url, init) => {
+        const { params } = JSON.parse(init.body);
+        if (params.action === 'message') throw cause;
+        return new Response(JSON.stringify({ ok: true, result: { allowed: true } }));
+      } });
+      await expect(plugin['chat.message']({ sessionID: 'ses_fixture' }, { message: { id: 'msg_user' } }))
+        .rejects.toMatchObject({ message: 'Primary recovery message request failed', cause });
+      expect(deadlines).toEqual([10000, 5000]);
+    } finally { timeout.mockRestore(); }
+  });
 });

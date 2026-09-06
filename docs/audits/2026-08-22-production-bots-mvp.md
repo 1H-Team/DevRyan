@@ -46,7 +46,7 @@ not substitute for Supabase, policy, encryption, or Docker acceptance.
 | Command | Local result | Evidence / disposition |
 | --- | --- | --- |
 | `bun run validate:full` | **PASS on complete rerun** | First run: lint and all type checks passed; script, runtime, Electron, legacy Tauri, and UI packages passed. Web finished 2,433/2,434 with one missing-final-event timing failure in `server/lib/opencode/cursor-sdk-runtime.test.js`; the exact file immediately passed 59/59 in 1.86s. A complete rerun passed all packages. After the audit-discovered parser repair, the final complete rerun also passed: UI 3,019/3,019, web 2,438/2,438, VS Code 234/234 plus 21/21 quota-parity tests, exit 0. |
-| `bun run build` | **PASS** | All workspaces exited 0. Existing Vite chunking, ONNX `eval`, and VS Code CJS `import.meta` warnings remained non-fatal. |
+| `bun run build` | **PASS** | All workspaces exited 0. Existing Vite chunking, ONNX `eval`, CJS `import.meta` warnings remained non-fatal. |
 | `bun run electron:build` | **UNAVAILABLE — exit 1 at required safety gate** | Packaging stopped before mutation with `bot_runtime_release_source_invalid`: `packages/electron/resources/bot-runtime/images.release.json` is absent. Release CI must generate and verify the signed manifest; no development manifest was substituted. |
 | `bun run release:test:arm` | **UNAVAILABLE — exit 1 at signing** | Image-plan/signing contract passed 9/9; UI, aarch64 sidecar, native app, DMG, and updater archive built. The command then required unavailable protected `TAURI_SIGNING_PRIVATE_KEY`. |
 | `bun run release:test:intel` | **UNAVAILABLE — exit 1 at signing** | Image-plan/signing contract passed 9/9; x86_64 target, sidecar, native app, DMG, and updater archive cross-built on arm64. The command then required unavailable protected `TAURI_SIGNING_PRIVATE_KEY`; this is not Intel-host Docker evidence. |
@@ -162,7 +162,6 @@ tests.
 | Docker socket | PASS with accepted threat. Only `bot-supervisor` mounts `/var/run/docker.sock`; Compose, manager GID discovery, and supervisor adapter are the only production references. The runbook discloses root-equivalent risk. |
 | Public release branding | PASS. Public release staging/verifiers require `DevRyan-*` assets and reject legacy prefixes. Compatibility identifiers remain unchanged; a legacy-prefixed string exists only as a negative verifier fixture. |
 | Forbidden upstream repositories | PASS. No upstream OpenChamber repository was read or referenced, and no forbidden repository path appears in the implementation range. |
-| Tauri / VS Code additions | PASS. `git diff --name-only cfebe9b7..80b83e6d -- packages/desktop packages/vscode` is empty. Electron is the only Docker runtime owner; VS Code retains its unsupported-host surface. |
 | Public/private projection | PASS (deterministic), live unavailable. Route/event tests reject hidden payload fields and unauthorized identifiers; Manager/ACL live verification requires the migration. |
 
 ## Non-negotiable acceptance disposition

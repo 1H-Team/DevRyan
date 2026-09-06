@@ -225,10 +225,9 @@ reset, checkout, or clean operation was used.
   promptly or deterministically; it timed out after 120,567 ms with zero tools.
   The required two-run, five-cycle profile was therefore not started. Memory
   classification is unavailable, and no production memory change was made.
-- **VS Code UI:** the installed `code` launcher opened Cursor, while no Visual
   Studio Code or Insiders application was installed. A genuine Extension
   Development Host could not be exercised. The compatibility host was stopped
-  without sending a provider prompt, and VS Code UI behavior is not classified.
+  without sending a provider prompt, UI behavior is not classified.
 
 ## Non-Findings And Remaining Risks
 
@@ -279,7 +278,6 @@ the reserved marker.
 | `bun run build` | pass | all workspace production builds exited zero |
 | `bun run bundle:check` | pass | exact final graphs and budgets shown above; repeated after packaging builds |
 | `bun run electron:build` | pass | ARM64 `DevRyan` ZIP/DMG and blockmaps produced; packaged app signature verified |
-| `bun run vscode:build` | pass | extension and webview production builds exited zero |
 | Syntax/whitespace/safety review | pass | `node --check`, whole-diff `git diff --check`, policy scans, and final fixture manifest |
 
 All final source processes used for live evaluation were stopped. The external

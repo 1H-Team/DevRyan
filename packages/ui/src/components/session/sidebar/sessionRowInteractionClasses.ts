@@ -10,7 +10,7 @@ export function resolveSessionRowInteractionClasses(): SessionRowInteractionClas
   return {
     revealOnHoverClass: 'group-hover:opacity-100 group-hover:pointer-events-auto',
     hideOnHoverClass: 'group-hover:opacity-0',
-    revealPaddingClass: 'group-hover:pr-9',
+    revealPaddingClass: 'group-hover:pr-[var(--session-row-action-padding,3rem)]',
   };
 }
 

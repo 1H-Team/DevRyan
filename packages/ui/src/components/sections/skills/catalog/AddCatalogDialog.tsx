@@ -21,7 +21,6 @@ import {
 import { RiGitRepositoryLine } from '@remixicon/react';
 
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { updateDesktopSettings } from '@/lib/persistence';
 import type { DesktopSettings, SkillCatalogConfig } from '@/lib/desktop';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
@@ -167,10 +166,6 @@ export const AddCatalogDialog: React.FC<AddCatalogDialogProps> = ({ open, onOpen
 
     if (!result.ok) {
       if (result.error?.kind === 'authRequired') {
-        if (isVSCodeRuntime()) {
-          toast.error(t('settings.skills.catalog.shared.toast.privateRepoNotSupportedVsCode'));
-          return;
-        }
 
         const ids = (result.error.identities || []) as IdentityOption[];
         setIdentityOptions(ids);
@@ -296,7 +291,7 @@ export const AddCatalogDialog: React.FC<AddCatalogDialogProps> = ({ open, onOpen
             />
           </div>
 
-          {identityOptions.length > 0 && !isVSCodeRuntime() ? (
+          {identityOptions.length > 0 ? (
             <div className="space-y-2">
               <div>
                 <span className="typography-ui-label text-[var(--status-warning)]">{t('settings.skills.catalog.shared.auth.title')}</span>

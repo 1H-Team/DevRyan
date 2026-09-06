@@ -37,12 +37,6 @@ const packages = {
     typeCheck: ['bun', ['run', 'type-check:desktop']],
     test: ['bun', ['run', '--cwd', 'packages/desktop', 'test']],
   },
-  vscode: {
-    prefix: 'packages/vscode/',
-    lint: ['bun', ['run', '--cwd', 'packages/vscode', 'lint']],
-    typeCheck: ['bun', ['run', 'vscode:type-check']],
-    test: ['bun', ['run', '--cwd', 'packages/vscode', 'test']],
-  },
   bots: {
     prefix: 'packages/bots-runtime/',
     test: ['bun', ['run', '--cwd', 'packages/bots-runtime', 'test']],
@@ -174,13 +168,6 @@ function isWebTestRelevant(file, quick) {
   return file.startsWith('packages/web/server/') || file.startsWith('packages/web/bin/');
 }
 
-function isVscodeTestRelevant(file, quick) {
-  if (!file.startsWith('packages/vscode/')) return false;
-  if (testFilePattern.test(file)) return true;
-  if (quick) return false;
-
-  return file.startsWith('packages/vscode/src/') || file.startsWith('packages/vscode/tests/');
-}
 
 function isElectronTestRelevant(file, quick) {
   if (!file.startsWith('packages/electron/')) return false;
@@ -248,11 +235,9 @@ function affectedTypeCheckPackages(changedPackages, includeDependents) {
   const result = new Set(changedPackages);
   if (includeDependents && changedPackages.has('ui')) {
     result.add('web');
-    result.add('vscode');
   }
   if (includeDependents && changedPackages.has('cursor')) {
     result.add('web');
-    result.add('vscode');
   }
   if (includeDependents && changedPackages.has('bots')) {
     result.add('electron');
@@ -262,11 +247,9 @@ function affectedTypeCheckPackages(changedPackages, includeDependents) {
   if (includeDependents && changedPackages.has('orchestration')) {
     result.add('ui');
     result.add('web');
-    result.add('vscode');
   }
   if (includeDependents && changedPackages.has('harness')) {
     result.add('web');
-    result.add('vscode');
   }
   return result;
 }
@@ -318,7 +301,6 @@ export function buildPlan(requestedMode, providedFiles) {
       if (isWebTestRelevant(file, false)) tests.add('web');
       if (isElectronTestRelevant(file, false)) tests.add('electron');
       if (isDesktopTestRelevant(file)) tests.add('desktop');
-      if (isVscodeTestRelevant(file, false)) tests.add('vscode');
       if (isBotsTestRelevant(file)) tests.add('bots');
       if (isBotServiceTestRelevant(file, 'packages/bot-supervisor/')) tests.add('botSupervisor');
       if (isBotServiceTestRelevant(file, 'packages/bot-engine-proxy/')) tests.add('botEngineProxy');
@@ -342,11 +324,9 @@ export function buildPlan(requestedMode, providedFiles) {
     if (tests.has('orchestration')) {
       tests.add('ui');
       tests.add('web');
-      tests.add('vscode');
     }
     if (tests.has('harness')) {
       tests.add('web');
-      tests.add('vscode');
     }
     return { files, commands: packageCommands(tests, 'test'), reason: 'affected tests requested' };
   }
@@ -381,7 +361,6 @@ export function buildPlan(requestedMode, providedFiles) {
     if (isWebTestRelevant(file, quick)) tests.add('web');
     if (isElectronTestRelevant(file, quick)) tests.add('electron');
     if (isDesktopTestRelevant(file)) tests.add('desktop');
-    if (isVscodeTestRelevant(file, quick)) tests.add('vscode');
     if (isBotsTestRelevant(file)) tests.add('bots');
     if (isBotServiceTestRelevant(file, 'packages/bot-supervisor/')) tests.add('botSupervisor');
     if (isBotServiceTestRelevant(file, 'packages/bot-engine-proxy/')) tests.add('botEngineProxy');
@@ -405,11 +384,9 @@ export function buildPlan(requestedMode, providedFiles) {
   if (!quick && tests.has('orchestration')) {
     tests.add('ui');
     tests.add('web');
-    tests.add('vscode');
   }
   if (!quick && tests.has('harness')) {
     tests.add('web');
-    tests.add('vscode');
   }
   commands.push(...packageCommands(tests, 'test'));
 

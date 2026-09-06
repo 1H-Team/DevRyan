@@ -8,7 +8,6 @@ describe('agent handoff guard integration', () => {
   test('wraps chat and routes shared desktop, mobile, keyboard, and send paths through the guard', () => {
     const chatView = read('../views/ChatView.tsx');
     const app = read('../../App.tsx');
-    const vscodeApp = read('../../apps/VSCodeApp.tsx');
     const miniChatApp = read('../../apps/ElectronMiniChatApp.tsx');
     const modelControls = read('./ModelControls.tsx');
     const chatInput = read('./ChatInput.tsx');
@@ -16,7 +15,6 @@ describe('agent handoff guard integration', () => {
 
     expect(chatView).not.toContain('<AgentHandoffGuardProvider>');
     expect(app).toContain('<AgentHandoffGuardProvider>\n                      <MainLayout />');
-    expect(vscodeApp).toContain('<AgentHandoffGuardProvider>\n                  <VSCodeLayout />');
     expect(miniChatApp).toContain('<AgentHandoffGuardProvider>');
     expect(modelControls).toContain('requestAgentChange({');
     expect(modelControls).toContain('handleCycleAgentFromModelPicker');

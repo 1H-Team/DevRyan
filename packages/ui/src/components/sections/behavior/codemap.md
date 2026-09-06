@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-Settings → Agents behavior controls shared by the web, Electron, and VS Code renderers.
+Settings → Agents behavior controls shared by the web and Electron renderers.
 
 ## Files
 

@@ -54,7 +54,7 @@ import { DevShutdownMenuItem } from '@/components/layout/DevShutdownMenuItem';
 import { ProjectActionsButton } from '@/components/layout/ProjectActionsButton';
 import { OpenInAppButton } from '@/components/desktop/OpenInAppButton';
 import { ActiveSessionChangesBadge } from '@/components/session/ActiveSessionChangesBadge';
-import { isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag } from '@/lib/desktop';
+import { isDesktopShell, startDesktopWindowDrag } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 import { DESKTOP_LEFT_CHROME_CLUSTER_WIDTH } from '@/components/layout/desktopChromeInsets';
@@ -206,7 +206,6 @@ export const Header: React.FC<HeaderProps> = ({
   const [mobileServicesTab, setMobileServicesTab] = React.useState<'usage' | 'mcp'>('usage');
   const [activeUsageProviderId, setActiveUsageProviderId] = React.useState<string | null>(null);
 
-  const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
   const isLeftSidebarOpen = React.useMemo(() => {
     if (!isMobile) {
       return isSidebarOpen;
@@ -525,7 +524,6 @@ export const Header: React.FC<HeaderProps> = ({
     return lastProjectActionsContextRef.current;
   }, [actionDirectory, activeProjectRef]);
 
-
   const planModeEnabled = useFeatureFlagsStore((state) => state.planModeEnabled);
   const isSessionPlanAvailable = useSessionUIStore((state) => state.isSessionPlanAvailable);
   const planTabAvailable = planModeEnabled && currentSessionId ? isSessionPlanAvailable(currentSessionId) : false;
@@ -605,7 +603,7 @@ export const Header: React.FC<HeaderProps> = ({
     }
     return 'pl-3';
   }, [isDesktopApp, isSidebarOpen, isTabletStandalonePwa]);
-  const showsDesktopRightChrome = !isMobile && !isVSCode;
+  const showsDesktopRightChrome = !isMobile;
   const reservesDesktopRightChromeSpace = showsDesktopRightChrome && !isRightSidebarOpen;
 
   const desktopHeaderRowInsetStyle = React.useMemo<React.CSSProperties | undefined>(() => {
@@ -630,7 +628,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, [isDesktopApp, isMacPlatform, macosMajorVersion]);
 
   const webWindowControlsOverlayStyle = React.useMemo<React.CSSProperties | undefined>(() => {
-    if (isDesktopApp || isVSCode) {
+    if (isDesktopApp) {
       return undefined;
     }
 
@@ -644,7 +642,7 @@ export const Header: React.FC<HeaderProps> = ({
       minHeight: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
       height: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
     };
-  }, [isDesktopApp, isSidebarOpen, isTabletStandalonePwa, isVSCode, reservesDesktopRightChromeSpace]);
+  }, [isDesktopApp, isSidebarOpen, isTabletStandalonePwa, reservesDesktopRightChromeSpace]);
 
   const botIdentityDesktopStyle = React.useMemo<React.CSSProperties>(() => {
     if (isDesktopApp) {

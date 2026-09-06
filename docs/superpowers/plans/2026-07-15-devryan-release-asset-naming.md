@@ -11,7 +11,6 @@
 ## Global Constraints
 
 - Brand-bearing public release filenames use `DevRyan`; compatibility identifiers and tool-mandated neutral metadata filenames such as `latest-mac.yml` remain unchanged.
-- Do not rename npm scopes, CLI commands, VS Code extension IDs, IPC events, protocols, config directories, or updater identity.
 - Preserve unrelated working-tree changes.
 - Validate release work with `bun run validate:full`.
 
@@ -92,16 +91,11 @@ Expected: all release-asset verifier tests pass.
 - Modify: `packages/docs/DEPLOYMENT.md`
 
 **Interfaces:**
-- Consumes: npm's `openchamber-web-<version>.tgz`, VSCE's `openchamber-<version>.vsix`, and generated desktop DMGs.
-- Produces: `artifacts/DevRyan-web-<version>.tgz`, `artifacts/DevRyan-<version>.vsix`, and `DevRyan_*` manual DMG artifacts.
 
 - [ ] **Step 1: Stage the npm tarball under the public brand**
 
 In `release.yml`, add a step after `npm pack` that validates exactly one tarball and copies it to `artifacts/DevRyan-web-${VERSION}.tgz`. Change the GitHub Release upload to `artifacts/*.tgz`; leave `npm publish` unchanged.
 
-- [ ] **Step 2: Stage the VSIX under the public brand**
-
-In `vscode-extension.yml`, add a step after packaging that reads `packages/vscode/package.json` version, validates exactly one VSIX, and copies it to `artifacts/DevRyan-${VERSION}.vsix`. Keep Marketplace/Open VSX publication pointed at the original VSIX and point workflow/GitHub Release uploads at the staged artifact.
 
 - [ ] **Step 3: Rename manual macOS workflow outputs**
 
@@ -134,14 +128,12 @@ Add a release branding section to `AGENTS.md` stating that all public GitHub Rel
 
 - [ ] **Step 2: Align the design note with workflow sequencing**
 
-Clarify that the main release verifier requires the branded web tarball and rejects legacy-prefixed assets, while the follow-up VSIX workflow deterministically stages its branded filename after the main release completes.
 
 - [ ] **Step 3: Rename existing v1.0.10 assets through the GitHub API**
 
 Resolve asset IDs from `gh api repos/1H-Team/DevRyan/releases/tags/v1.0.10`, then PATCH:
 
 ```text
-openchamber-1.0.10.vsix     -> DevRyan-1.0.10.vsix
 openchamber-web-1.0.10.tgz  -> DevRyan-web-1.0.10.tgz
 ```
 

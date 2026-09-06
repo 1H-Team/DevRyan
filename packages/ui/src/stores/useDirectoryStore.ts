@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from './utils/devtoolsGate';
 import { opencodeClient } from '@/lib/opencode/client';
-import { getDesktopHomeDirectory, isVSCodeRuntime } from '@/lib/desktop';
+import { getDesktopHomeDirectory } from '@/lib/desktop';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { useFileSearchStore } from '@/stores/useFileSearchStore';
 import { streamDebugEnabled } from '@/stores/utils/streamDebug';
@@ -41,7 +41,6 @@ const persistDirectorySettings = (changes: { homeDirectory?: string; lastDirecto
   }
   void updateDesktopSettings(changes);
 };
-
 
 const invalidateFileSearchCache = (scope?: string | null) => {
   try {
@@ -140,7 +139,7 @@ const getHomeDirectory = () => {
     }
 
     const storedHome = getStoredHomeDirectory();
-    if (storedHome && !isVSCodeRuntime()) {
+    if (storedHome) {
       cachedHomeDirectory = storedHome;
       return storedHome;
     }
@@ -152,7 +151,6 @@ const getHomeDirectory = () => {
   }
   return '/';
 };
-
 
 const normalizeHomeCandidate = (value?: string | null) => {
   if (typeof value !== 'string') {
@@ -232,22 +230,10 @@ const initializeHomeDirectory = async () => {
   return fallback;
 };
 
-const getVsCodeWorkspaceFolder = (): string | null => {
-  if (!isVSCodeRuntime()) {
-    return null;
-  }
-  const workspaceFolder = (window as unknown as { __VSCODE_CONFIG__?: { workspaceFolder?: unknown } }).__VSCODE_CONFIG__?.workspaceFolder;
-  if (typeof workspaceFolder !== 'string' || workspaceFolder.trim().length === 0) {
-    return null;
-  }
-  const normalized = normalizeDirectoryPath(workspaceFolder);
-  return normalized.length > 0 ? normalized : null;
-};
-
-const initialHomeDirectory = getVsCodeWorkspaceFolder() || getHomeDirectory();
+const initialHomeDirectory = getHomeDirectory();
 const initialCurrentDirectory = (() => {
   const persisted = getStoredLastDirectory();
-  if (persisted && !isVSCodeRuntime()) {
+  if (persisted) {
     return resolveDirectoryPath(persisted, initialHomeDirectory);
   }
   return initialHomeDirectory;

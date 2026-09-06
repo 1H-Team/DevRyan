@@ -580,13 +580,12 @@ describe('scheduled-tasks cross-process occurrence claims', () => {
       await vi.advanceTimersByTimeAsync(60_000);
 
       let persistedTask;
-      for (let attempt = 0; attempt < 200; attempt += 1) {
+      // Timer dispatch returns before the cross-process terminal write finishes.
+      await vi.waitFor(async () => {
         [persistedTask] = await firstConfig.listScheduledTasks('project-1');
-        if (persistedTask?.state?.lastScheduledFor === scheduledFor
-          && persistedTask.state.lastStatus !== 'running') {
-          break;
-        }
-      }
+        expect(persistedTask?.state?.lastScheduledFor).toBe(scheduledFor);
+        expect(persistedTask.state.lastStatus).toBe('success');
+      }, { timeout: 2_000 });
 
       const dispatchCount = clients.reduce(
         (total, client) => total + client.session.create.mock.calls.length,

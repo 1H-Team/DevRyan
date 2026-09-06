@@ -13,7 +13,7 @@
 - Work only inside `/Users/zoubair/Repositories/DevRyan`.
 - Do not add dependencies or change runtime API contracts.
 - Preserve the existing `showReasoningTraces` setting and its default.
-- Keep web, Electron, and VS Code behavior aligned through shared UI code.
+- Keep web and Electron behavior aligned through shared UI code.
 - Retain mechanical duplicate-frame and internal tool-runner diagnostic cleanup.
 - Use test-first red/green cycles and run `bun run validate:affected` before completion.
 

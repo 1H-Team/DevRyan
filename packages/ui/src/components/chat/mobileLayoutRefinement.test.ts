@@ -99,7 +99,7 @@ describe('mobile chat layout refinement', () => {
         const chatInput = readSource('ChatInput.tsx');
         const footer = chatInput.slice(chatInput.indexOf('data-chat-input-footer="true"'));
 
-        expect(agentButton).toContain('onPointerUp={onOpenAgentPanel}');
+        expect(agentButton).toContain('onClick={onOpenAgentPanel}');
         expect(agentButton).not.toContain('onCycleAgent');
         expect(agentButton).not.toContain('LONG_PRESS_MS');
         expect(agentButton).not.toContain('longPressTimerRef');

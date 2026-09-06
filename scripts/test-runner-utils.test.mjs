@@ -7,7 +7,6 @@ import { describe, test } from 'node:test';
 import { discoverTestFiles, isIsolatedUiTestSource } from './test-runner-utils.mjs';
 import { discoverElectronTestFiles } from './test-electron.mjs';
 import { discoverScriptTestFiles } from './test-scripts.mjs';
-import { discoverVscodeBunTestFiles } from './test-vscode.mjs';
 import { buildPlan } from './validate.mjs';
 
 const repoRoot = new URL('..', import.meta.url);
@@ -51,21 +50,6 @@ describe('test file discovery', () => {
     }
   });
 
-  test('discovers all VS Code Bun tests instead of one hardcoded quota file', () => {
-    const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-tests-'));
-    try {
-      mkdirSync(path.join(root, 'tests/quota'), { recursive: true });
-      writeFileSync(path.join(root, 'tests/quotaProviders.test.ts'), '');
-      writeFileSync(path.join(root, 'tests/quota/additional.test.ts'), '');
-
-      assert.deepEqual(discoverVscodeBunTestFiles(root), [
-        'tests/quota/additional.test.ts',
-        'tests/quotaProviders.test.ts',
-      ]);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
 
   test('discovers repository script tests recursively', () => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-script-tests-'));

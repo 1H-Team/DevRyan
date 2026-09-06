@@ -6,7 +6,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import {
   useMcpConfigStore,
   envRecordToArray,
@@ -607,7 +606,7 @@ export const McpPage: React.FC = () => {
   })));
 
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
-  const isVSCodeAuthRuntime = React.useMemo(() => isVSCodeRuntime(), []);
+
   const mcpStatus = useMcpStore((state) => state.getStatusForDirectory(currentDirectory ?? null));
   const mcpDiagnostics = useMcpStore((state) => state.getDiagnosticForDirectory(currentDirectory ?? null));
   const refreshStatus = useMcpStore((state) => state.refresh);
@@ -1035,7 +1034,7 @@ export const McpPage: React.FC = () => {
 
       // The identity change from this save intentionally resets the cached
       // auth so the client re-registers against the fresh redirect URI.
-      if (shouldPersistMcpOAuthRedirectUri(oauthRedirectUri, redirectUri) && !isVSCodeAuthRuntime) {
+      if (shouldPersistMcpOAuthRedirectUri(oauthRedirectUri, redirectUri)) {
         const saved = await updateMcp(selectedMcpName, {
           oauthEnabled,
           oauthClientId,
@@ -1089,9 +1088,7 @@ export const McpPage: React.FC = () => {
 
       if (opened) {
         toast.message(
-          isVSCodeAuthRuntime
-            ? t('settings.mcp.page.toast.completeAuthorizationInBrowserWithPaste')
-            : t('settings.mcp.page.toast.completeAuthorizationInBrowser'),
+          t('settings.mcp.page.toast.completeAuthorizationInBrowser'),
         );
       } else {
         toast.error(t('settings.mcp.page.toast.openAuthorizationUrlFailed'));
@@ -1106,7 +1103,7 @@ export const McpPage: React.FC = () => {
         setIsAuthorizing(false);
       }
     }
-  }, [currentDirectory, isVSCodeAuthRuntime, mcpType, oauthClientId, oauthClientSecret, oauthEnabled, oauthRedirectUri, oauthScope, requireSavedConfig, runtimeActionKey, selectedMcpName, startAuthMcp, t, tUnsafe, updateMcp]);
+  }, [currentDirectory, mcpType, oauthClientId, oauthClientSecret, oauthEnabled, oauthRedirectUri, oauthScope, requireSavedConfig, runtimeActionKey, selectedMcpName, startAuthMcp, t, tUnsafe, updateMcp]);
 
   const handleClearAuthorization = React.useCallback(async () => {
     if (!selectedMcpName || !requireSavedConfig()) return;
@@ -1301,7 +1298,7 @@ export const McpPage: React.FC = () => {
   const effectiveRuntimeStatus = runtimeStatus ?? runtimeDiagnostic;
   const isConnected = runtimeStatus?.status === 'connected';
   const needsAuthorization = runtimeStatus?.status === 'needs_auth' || runtimeStatus?.status === 'needs_client_registration';
-  const suggestedRedirectUri = isVSCodeAuthRuntime ? null : buildMcpOAuthRedirectUri(selectedMcpName, currentDirectory);
+  const suggestedRedirectUri = buildMcpOAuthRedirectUri(selectedMcpName, currentDirectory);
   const runtimeDescription = getStatusDescription(
     effectiveRuntimeStatus?.status,
     tUnsafe,

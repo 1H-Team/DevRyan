@@ -20,7 +20,6 @@ describe('quota refresh runtime ownership', () => {
     const renderingSurfaces = [
       '../components/layout/Header.tsx',
       '../components/layout/DesktopRightChromeActions.tsx',
-      '../components/layout/VSCodeLayout.tsx',
       '../components/sections/usage/UsagePage.tsx',
       '../components/sections/usage/UsageSidebar.tsx',
     ].map(source).join('\n');

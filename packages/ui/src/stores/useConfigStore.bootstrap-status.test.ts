@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test"
+import type { Model } from "@opencode-ai/sdk/v2"
 
 let getProvidersImpl: (options?: { directory?: string | null }) => Promise<unknown>
 let listAgentsStrictImpl: () => Promise<unknown>
 let providerCallOptions: Array<{ directory?: string | null } | undefined>
+let settingsDefaultAgent: string | undefined
 
 mock.module("@/lib/opencode/client", () => ({
   opencodeClient: {
@@ -20,11 +22,55 @@ mock.module("@/lib/opencode/client", () => ({
 
 const { useConfigStore } = await import("./useConfigStore")
 const { useDirectoryStore } = await import("./useDirectoryStore")
+const { useSessionUIStore } = await import("@/sync/session-ui-store")
+const { useSelectionStore } = await import("@/sync/selection-store")
+const { resolveCurrentDraftSendConfig } = await import("@/sync/send-config")
+
+const selectionModel = (id: string): Model => ({
+  id, providerID: "fixture", name: id,
+  api: { id, url: "https://fixture.invalid", npm: "fixture" },
+  capabilities: {
+    temperature: true, reasoning: true, attachment: false, toolcall: true,
+    input: { text: true, audio: false, image: false, video: false, pdf: false },
+    output: { text: true, audio: false, image: false, video: false, pdf: false },
+    interleaved: false,
+  },
+  cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+  limit: { context: 1000, output: 100 }, status: "active",
+  options: {}, headers: {}, release_date: "2026-01-01", variants: { low: {}, high: {} },
+})
+
+const prepareDraftSelection = (id: string, agent: string, model: string, variant: string | null) => {
+  const sendConfig = { providerID: "fixture", modelID: model, agent, variant, modelProvenance: "explicit" as const }
+  const draft = { id, text: "", createdAt: 1, updatedAt: 1, selectedProjectId: null,
+    directoryOverride: null, parentID: null, sendConfig }
+  useSessionUIStore.setState(state => ({
+    currentSessionId: null, currentDraftId: id,
+    draftsById: { ...state.draftsById, [id]: draft },
+    newSessionDraft: { open: true, id, directoryOverride: null, parentID: null, sendConfig },
+  }))
+  useSelectionStore.getState().saveDraftAgentSelection(id, agent)
+  useConfigStore.getState().setAgent(agent, { recordSessionSelection: false })
+  useConfigStore.getState().setProviderModel("fixture", model, variant)
+}
+
+const prepareSelectionCatalog = () => {
+  settingsDefaultAgent = "orchestrator"
+  useConfigStore.setState({
+    providers: [{ id: "fixture", name: "Fixture", source: "custom", options: {}, env: [],
+      models: [selectionModel("builder-model"), selectionModel("orchestrator-model")] }],
+    agents: [
+      { name: "builder", mode: "primary", model: { providerID: "fixture", modelID: "builder-model" }, permission: [], options: {} },
+      { name: "orchestrator", mode: "primary", model: { providerID: "fixture", modelID: "orchestrator-model" }, permission: [], options: {} },
+    ],
+  })
+}
 
 describe("useConfigStore startup load status", () => {
   beforeEach(() => {
     console.error = mock(() => {}) as unknown as typeof console.error
     providerCallOptions = []
+    settingsDefaultAgent = undefined
     getProvidersImpl = () => Promise.resolve({ providers: [], default: {} })
     listAgentsStrictImpl = () => Promise.resolve([])
     globalThis.fetch = mock((input: RequestInfo | URL) => {
@@ -37,6 +83,7 @@ describe("useConfigStore startup load status", () => {
           responseStyleEnabled: false,
           responseStylePreset: "concise",
           responseStyleCustomInstructions: "",
+          defaultAgent: settingsDefaultAgent,
         }), { status: 200 }))
       }
       return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
@@ -56,7 +103,15 @@ describe("useConfigStore startup load status", () => {
       isInitialized: false,
       initializationLoadStatus: "idle",
       initializationLoadError: undefined,
+      currentAgentName: undefined,
+      currentProviderId: "",
+      currentModelId: "",
+      currentVariant: undefined,
     })
+    useSessionUIStore.setState({ currentSessionId: null, currentDraftId: null, draftsById: {},
+      newSessionDraft: { open: false, directoryOverride: null, parentID: null } })
+    useSelectionStore.setState({ draftAgentSelections: new Map(), draftModelSelections: new Map(),
+      draftAgentModelSelections: new Map(), draftAgentModelVariantSelections: new Map() })
     useDirectoryStore.setState({
       currentDirectory: "/repo",
       directoryHistory: ["/repo"],
@@ -103,6 +158,55 @@ describe("useConfigStore startup load status", () => {
     expect(useConfigStore.getState().agentsLoadError).toBe(undefined)
     expect(useConfigStore.getState().agents).toEqual([])
     expect(useConfigStore.getState().responseStyleInstructionLoaded).toBe(true)
+  })
+
+  test("a late agent catalog keeps draft controls aligned with the actual Default send selection", async () => {
+    prepareSelectionCatalog()
+    const catalog = useConfigStore.getState().agents
+    let finishLoad!: (value: unknown) => void
+    listAgentsStrictImpl = () => new Promise(resolve => { finishLoad = resolve })
+    const loading = useConfigStore.getState().loadAgents()
+
+    prepareDraftSelection("picked-during-load", "builder", "builder-model", null)
+    finishLoad(catalog)
+    expect(await loading).toBe(true)
+
+    const state = useConfigStore.getState()
+    const draft = useSessionUIStore.getState().draftsById["picked-during-load"]
+    const send = resolveCurrentDraftSendConfig(draft.id, draft.sendConfig)
+    expect(state.settingsDefaultAgent).toBe("orchestrator")
+    expect(state.currentAgentName).toBe(send.agent)
+    expect(state.currentAgentName).toBe("builder")
+    expect(state.currentModelId).toBe(send.modelID)
+    expect(state.currentModelId).toBe("builder-model")
+    expect(state.currentVariant).toBe(send.variant)
+    expect(state.currentVariant).toBe(null)
+  })
+
+  test("agent catalog completion restores the draft selected during the request", async () => {
+    prepareSelectionCatalog()
+    const catalog = useConfigStore.getState().agents
+    prepareDraftSelection("previous-draft", "orchestrator", "orchestrator-model", "high")
+    let finishLoad!: (value: unknown) => void
+    listAgentsStrictImpl = () => new Promise(resolve => { finishLoad = resolve })
+    const loading = useConfigStore.getState().loadAgents()
+
+    prepareDraftSelection("current-draft", "builder", "builder-model", "low")
+    finishLoad(catalog)
+    expect(await loading).toBe(true)
+
+    expect(useConfigStore.getState().currentAgentName).toBe("builder")
+    expect(useConfigStore.getState().currentModelId).toBe("builder-model")
+    expect(useConfigStore.getState().currentVariant).toBe("low")
+    expect(useSessionUIStore.getState().draftsById["previous-draft"].sendConfig?.agent).toBe("orchestrator")
+  })
+
+  test("agent catalog still applies the configured default when no draft is selected", async () => {
+    prepareSelectionCatalog()
+    listAgentsStrictImpl = () => Promise.resolve(useConfigStore.getState().agents)
+    expect(await useConfigStore.getState().loadAgents()).toBe(true)
+    expect(useConfigStore.getState().currentAgentName).toBe("orchestrator")
+    expect(useConfigStore.getState().currentModelId).toBe("orchestrator-model")
   })
 
   test("workspace 403 retries providers once without a directory and resets the saved workspace", async () => {

@@ -33,7 +33,7 @@ Date: 2026-08-02
 
 ### Git worktrees and project isolation
 
-- Added bounded index-lock recovery to web and VS Code receipt-driven worktree population.
+- Added bounded index-lock recovery to web receipt-driven worktree population.
   Recovery deletes only an unchanged lock and does not mask non-lock failures.
 - Suppressed expected deletion-race logging while preserving the existing rejection contract.
 - Required a non-empty directory for repository clients, added a stable global-config
@@ -77,7 +77,7 @@ Date: 2026-08-02
   responses, was already implemented and tested. It was retained unchanged.
 - Deleted account-path behavior was not restored.
 - No new Tauri feature work was required; the server/shared UI changes apply to the Electron
-  target, web runtime, and VS Code parity surfaces described above.
+  target, web runtime, parity surfaces described above.
 
 ## Automated validation
 
@@ -91,7 +91,7 @@ Date: 2026-08-02
 - `port/ui-fixes`: UI tests (2,185 after the grouped-glob adaptation), UI type-check, and UI
   lint passed.
 - Every integration merge range was validated with `VALIDATE_BASE` set to its pre-merge ref.
-  The final UI merge range passed with 2,189 UI tests plus dependent web/VS Code type-checks.
+  The final UI merge range passed with 2,189 UI tests plus dependent web type-checks.
 - Focused integrated UI regressions passed: 185 tests covering number values, all shell aliases,
   pattern deduplication, glob descriptions, slash-command routing, and pending-question activity.
 - Final-suite commands and their results are recorded below after the integration-record commit.
@@ -133,11 +133,11 @@ Date: 2026-08-02
 ## Final validation results
 
 - `VALIDATE_BASE=0841a8c4b80bd5a94bc06a811356c60af458f619 bun run validate:affected`
-  passed. UI, web, and VS Code lint/type checks passed; UI reported 2,189 tests,
-  web 1,210, and VS Code 150 Vitest plus 17 Bun tests.
+  passed. UI, web, lint/type checks passed; UI reported 2,189 tests,
+  web 1,210, 150 Vitest plus 17 Bun tests.
 - `bun run validate:full` passed after preparing the existing Electron web-assets
   prerequisite. Workspace-wide lint, type-check, script tests, runtime tests, Electron
-  tests, UI tests, web tests, and VS Code tests all completed successfully.
+  tests, UI tests, web tests, tests all completed successfully.
 - `bun run build` passed for every workspace. Existing Vite chunk-size/eval warnings and
   VS Code's existing CJS `import.meta` warnings remained non-fatal.
 - `git diff --check 0841a8c4b80bd5a94bc06a811356c60af458f619...HEAD` and the working-tree

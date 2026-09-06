@@ -78,7 +78,7 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
     throw new Error(`Missing default Claude dependency: ${ANTHROPIC_OAUTH_PLUGIN_SPEC}`);
   }
   for (const [packageName, version] of Object.entries({
-    '@opencode-ai/plugin': '1.18.27',
+    '@opencode-ai/plugin': '1.18.29',
     'adm-zip': '0.6.0',
     'mammoth': '1.12.1',
     'unpdf': '1.8.0',
@@ -105,8 +105,10 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
       configRoot: resolvedConfigRoot,
       profileRoot,
       configDirectory,
-      // The smoke installer creates entrypoint placeholders; the source-hash hotfix has its own fixture tests.
+      // This installer checks placeholder entrypoints only. Real source-hash acceptance and
+      // runtime behavior remain covered by the Context Mode and Meridian hotfix suites.
       applyContextModeHotfix: () => ({ ok: true, changed: false }),
+      applyMeridianHttpHotfix: () => ({ ok: true, changed: false }),
       runCommand: async (_command, _args, { cwd }) => {
         const dependencies = readJson(path.join(cwd, 'package.json')).dependencies || {};
         const overrides = readJson(path.join(cwd, 'package.json')).overrides || {};

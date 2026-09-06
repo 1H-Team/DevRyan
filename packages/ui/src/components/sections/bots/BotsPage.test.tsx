@@ -17,7 +17,7 @@ describe('BotsPage', () => {
     const detail = managementDetail();
     const markup = renderToStaticMarkup(
       <I18nProvider>
-        <BotsPage initialCatalog={[detail.bot]} initialDetail={detail} initialCanCreateBot vscodeRuntime={false} />
+        <BotsPage initialCatalog={[detail.bot]} initialDetail={detail} initialCanCreateBot  />
       </I18nProvider>,
     );
 
@@ -33,16 +33,6 @@ describe('BotsPage', () => {
     expect(markup).not.toContain('Operating Instructions');
     expect(markup).toContain('Apply Changes');
     expect(markup).toContain('Create Bot');
-  });
-
-  test('renders a deliberate VS Code boundary without exposing setup controls', () => {
-    const markup = renderToStaticMarkup(
-      <I18nProvider><BotsPage vscodeRuntime /></I18nProvider>,
-    );
-
-    expect(markup).toContain('Bots require the DevRyan macOS app');
-    expect(markup).toContain('VS Code never starts or mutates Docker resources');
-    expect(markup).not.toContain('Setup Docker');
   });
 
   test('keeps creation failures visible inside the creation dialog', () => {

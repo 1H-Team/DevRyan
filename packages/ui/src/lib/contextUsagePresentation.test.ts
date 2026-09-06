@@ -63,8 +63,8 @@ describe('resolveContextUsageAvailability', () => {
 
 describe('shouldShowComposerContextUsage', () => {
     test('keeps the control present only in the desktop composer', () => {
-        expect(shouldShowComposerContextUsage({ isMobile: false, isVSCode: false })).toBe(true);
-        expect(shouldShowComposerContextUsage({ isMobile: true, isVSCode: false })).toBe(false);
-        expect(shouldShowComposerContextUsage({ isMobile: false, isVSCode: true })).toBe(false);
+        expect(shouldShowComposerContextUsage({ isMobile: false, })).toBe(true);
+        expect(shouldShowComposerContextUsage({ isMobile: true, })).toBe(false);
+
     });
 });

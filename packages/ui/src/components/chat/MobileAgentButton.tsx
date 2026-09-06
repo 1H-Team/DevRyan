@@ -14,7 +14,8 @@ interface MobileAgentButtonProps {
 
 const PLAN_MODE_AGENT_STYLE: React.CSSProperties = { color: 'var(--plan-mode-icon-color)' };
 
-// NOTE: Use pointer events instead of onClick to keep soft keyboard open on mobile
+// Keep composer focus until the click opens the picker. Opening on pointerup
+// lets the same tap's synthesized click activate an option in the new panel.
 export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onOpenAgentPanel, className }) => {
     const currentAgentName = useConfigStore((state) => state.currentAgentName);
     const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
@@ -32,7 +33,14 @@ export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onOpenAgen
     return (
         <button
             type="button"
-            onPointerUp={onOpenAgentPanel}
+            onClick={onOpenAgentPanel}
+            onMouseDown={(event) => event.preventDefault()}
+            onPointerDownCapture={(event) => {
+                if (event.pointerType === 'touch') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+            }}
             onContextMenu={(e) => e.preventDefault()}
             className={cn(
                 'inline-flex max-w-full items-center select-none',

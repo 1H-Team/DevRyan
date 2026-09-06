@@ -5,6 +5,13 @@
 
 import { create } from "zustand"
 
+type SessionModelSelectionIntent = Readonly<{
+  providerID: string
+  modelID: string
+  agent?: string
+  variant?: string | null
+}>
+
 export type SelectionState = {
   sessionModelSelections: Map<string, { providerId: string; modelId: string }>
   sessionAgentSelections: Map<string, string>
@@ -17,9 +24,14 @@ export type SelectionState = {
   draftModelSelections: Map<string, { providerId: string; modelId: string }>
   draftAgentSelections: Map<string, string>
   draftAgentModelSelections: Map<string, Map<string, { providerId: string; modelId: string }>>
-  draftAgentModelVariantSelections: Map<string, Map<string, Map<string, string>>>
+  draftAgentModelVariantSelections: Map<string, Map<string, Map<string, string | null>>>
   lastUsedProvider: { providerID: string; modelID: string } | null
 
+  hasRestoredSessionUserChoice: (sessionId: string, choiceKey: string) => boolean
+  markSessionUserChoiceRestored: (sessionId: string, choiceKey: string) => void
+  markSessionModelSelectionIntent: (sessionId: string, choice: SessionModelSelectionIntent) => void
+  getSessionModelSelectionIntent: (sessionId: string) => SessionModelSelectionIntent | undefined
+  consumeSessionModelSelectionIntent: (sessionId: string, expected: SessionModelSelectionIntent | undefined, sent: SessionModelSelectionIntent) => void
   saveSessionModelSelection: (sessionId: string, providerId: string, modelId: string) => void
   getSessionModelSelection: (sessionId: string) => { providerId: string; modelId: string } | null
   saveSessionAgentSelection: (sessionId: string, agentName: string) => void
@@ -27,6 +39,8 @@ export type SelectionState = {
   markBuilderHandoffCleared: (sessionId: string) => void
   hasBuilderHandoffClearance: (sessionId: string) => boolean
   setSessionPlanMode: (sessionId: string, enabled: boolean) => void
+  restoreSessionPlanMode: (sessionId: string, enabled: boolean) => void
+  hasExplicitSessionPlanMode: (sessionId: string) => boolean
   getSessionPlanMode: (sessionId: string) => boolean
   setDefaultPlanModeSelection: (enabled: boolean) => void
   setDraftPlanMode: (draftId: string, enabled: boolean) => void
@@ -38,16 +52,16 @@ export type SelectionState = {
   getPlanModeSelection: (sessionId: string | null | undefined, draftId?: string | null) => boolean
   saveAgentModelForSession: (sessionId: string, agentName: string, providerId: string, modelId: string) => void
   getAgentModelForSession: (sessionId: string, agentName: string) => { providerId: string; modelId: string } | null
-  saveAgentModelVariantForSession: (sessionId: string, agentName: string, providerId: string, modelId: string, variant: string | undefined) => void
-  getAgentModelVariantForSession: (sessionId: string, agentName: string, providerId: string, modelId: string) => string | undefined
+  saveAgentModelVariantForSession: (sessionId: string, agentName: string, providerId: string, modelId: string, variant: string | null | undefined) => void
+  getAgentModelVariantForSession: (sessionId: string, agentName: string, providerId: string, modelId: string) => string | null | undefined
   saveDraftModelSelection: (draftId: string, providerId: string, modelId: string) => void
   getDraftModelSelection: (draftId: string) => { providerId: string; modelId: string } | null
   saveDraftAgentSelection: (draftId: string, agentName: string) => void
   getDraftAgentSelection: (draftId: string) => string | null
   saveDraftAgentModelForSelection: (draftId: string, agentName: string, providerId: string, modelId: string) => void
   getDraftAgentModelForSelection: (draftId: string, agentName: string) => { providerId: string; modelId: string } | null
-  saveDraftAgentModelVariantForSelection: (draftId: string, agentName: string, providerId: string, modelId: string, variant: string | undefined) => void
-  getDraftAgentModelVariantForSelection: (draftId: string, agentName: string, providerId: string, modelId: string) => string | undefined
+  saveDraftAgentModelVariantForSelection: (draftId: string, agentName: string, providerId: string, modelId: string, variant: string | null | undefined) => void
+  getDraftAgentModelVariantForSelection: (draftId: string, agentName: string, providerId: string, modelId: string) => string | null | undefined
   clearDraftSelection: (draftId: string) => void
   clearSessionSelection: (sessionId: string) => void
   promoteDraftSelectionToSession: (draftId: string, sessionId: string) => void
@@ -55,7 +69,17 @@ export type SelectionState = {
 }
 
 // In-memory variant storage (not persisted)
-const agentModelVariantSelections = new Map<string, Map<string, Map<string, string>>>()
+const agentModelVariantSelections = new Map<string, Map<string, Map<string, string | null>>>()
+
+// Last successfully restored canonical choice, scoped to the same lifetime as
+// in-memory session selections. It has no reactive consumers.
+const restoredSessionUserChoices = new Map<string, string>()
+// An inferred Plan value may be refined as canonical history arrives. Explicit
+// choices remove this marker even when selecting the already displayed value.
+const restoredSessionPlanModes = new Map<string, boolean>()
+// Explicit composer choices outlive hydration and remounts, until a matching
+// local send succeeds. Object identity protects a newer pick during transport.
+const sessionModelSelectionIntents = new Map<string, SessionModelSelectionIntent>()
 
 export const useSelectionStore = create<SelectionState>()((set, get) => ({
   sessionModelSelections: new Map(),
@@ -70,6 +94,26 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
   draftAgentModelSelections: new Map(),
   draftAgentModelVariantSelections: new Map(),
   lastUsedProvider: null,
+
+  hasRestoredSessionUserChoice: (sessionId, choiceKey) =>
+    restoredSessionUserChoices.get(sessionId) === choiceKey,
+
+  markSessionUserChoiceRestored: (sessionId, choiceKey) => {
+    restoredSessionUserChoices.set(sessionId, choiceKey)
+  },
+
+  markSessionModelSelectionIntent: (sessionId, choice) => {
+    sessionModelSelectionIntents.set(sessionId, { ...choice })
+  },
+
+  getSessionModelSelectionIntent: (sessionId) => sessionModelSelectionIntents.get(sessionId),
+
+  consumeSessionModelSelectionIntent: (sessionId, expected, sent) => {
+    if (!expected || sessionModelSelectionIntents.get(sessionId) !== expected) return
+    if (expected.providerID !== sent.providerID || expected.modelID !== sent.modelID
+      || expected.agent !== sent.agent || (expected.variant ?? null) !== (sent.variant ?? null)) return
+    sessionModelSelectionIntents.delete(sessionId)
+  },
 
   saveSessionModelSelection: (sessionId, providerId, modelId) =>
     set((s) => {
@@ -109,19 +153,34 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
     get().builderHandoffClearedSessionIds.has(sessionId.trim())
   ),
 
-  setSessionPlanMode: (sessionId, enabled) =>
+  setSessionPlanMode: (sessionId, enabled) => {
+    restoredSessionPlanModes.delete(sessionId)
     set((s) => {
-      if ((s.sessionPlanModeSelections.get(sessionId) ?? false) === enabled) return s
+      if (s.sessionPlanModeSelections.get(sessionId) === enabled) return s
       const map = new Map(s.sessionPlanModeSelections)
-      if (enabled) {
-        map.set(sessionId, true)
-      } else {
-        map.delete(sessionId)
-      }
+      map.set(sessionId, enabled)
       return { sessionPlanModeSelections: map }
+    })
+  },
+
+  restoreSessionPlanMode: (sessionId, enabled) =>
+    set((s) => {
+      // An explicit toggle, including off, wins over historical restoration.
+      const current = s.sessionPlanModeSelections.get(sessionId)
+      if (current !== undefined && restoredSessionPlanModes.get(sessionId) !== current) return s
+      restoredSessionPlanModes.set(sessionId, enabled)
+      if (current === enabled) return s
+      const sessionPlanModeSelections = new Map(s.sessionPlanModeSelections)
+      sessionPlanModeSelections.set(sessionId, enabled)
+      return { sessionPlanModeSelections }
     }),
 
   getSessionPlanMode: (sessionId) => get().sessionPlanModeSelections.get(sessionId) ?? false,
+
+  hasExplicitSessionPlanMode: (sessionId) => {
+    const value = get().sessionPlanModeSelections.get(sessionId)
+    return value !== undefined && restoredSessionPlanModes.get(sessionId) !== value
+  },
 
   // Plan mode is scoped like model and agent selections: one entry per
   // session, one per draft. A draft that was never toggled follows the
@@ -185,19 +244,19 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
   saveAgentModelVariantForSession: (sessionId, agentName, providerId, modelId, variant) => {
     const key = `${providerId}/${modelId}`
     let agentMap = agentModelVariantSelections.get(sessionId)
-    if (!agentMap && variant) {
+    if (!agentMap && variant !== undefined) {
       agentMap = new Map()
       agentModelVariantSelections.set(sessionId, agentMap)
     }
     if (!agentMap) return
     let modelMap = agentMap.get(agentName)
-    if (!modelMap && variant) {
+    if (!modelMap && variant !== undefined) {
       modelMap = new Map()
       agentMap.set(agentName, modelMap)
     }
     if (!modelMap) return
 
-    if (!variant) {
+    if (variant === undefined) {
       modelMap.delete(key)
       if (modelMap.size === 0) {
         agentMap.delete(agentName)
@@ -263,7 +322,7 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
       const draftMap = new Map(outer.get(draftId) ?? new Map())
       const agentMap = new Map(draftMap.get(agentName) ?? new Map())
 
-      if (!variant) {
+      if (variant === undefined) {
         agentMap.delete(key)
       } else {
         agentMap.set(key, variant)
@@ -323,6 +382,9 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
     if (!normalizedSessionId) return
 
     agentModelVariantSelections.delete(normalizedSessionId)
+    restoredSessionUserChoices.delete(normalizedSessionId)
+    restoredSessionPlanModes.delete(normalizedSessionId)
+    sessionModelSelectionIntents.delete(normalizedSessionId)
     set((s) => {
       const hasModel = s.sessionModelSelections.has(normalizedSessionId)
       const hasAgent = s.sessionAgentSelections.has(normalizedSessionId)
@@ -391,12 +453,10 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
       if (draftAgentModels) {
         sessionAgentModelSelections.set(sessionId, new Map(draftAgentModels))
       }
-      // Only an explicit draft toggle carries over; the session map stores
-      // enabled entries only (see setSessionPlanMode).
-      if (draftPlanMode === true) {
-        sessionPlanModeSelections.set(sessionId, true)
-      } else if (draftPlanMode === false) {
-        sessionPlanModeSelections.delete(sessionId)
+      // Preserve explicit off too, so hydration cannot undo a draft choice.
+      if (draftPlanMode !== undefined) {
+        restoredSessionPlanModes.delete(sessionId)
+        sessionPlanModeSelections.set(sessionId, draftPlanMode)
       }
       if (draftAgentVariants) {
         let sessionVariantMap = agentModelVariantSelections.get(sessionId)

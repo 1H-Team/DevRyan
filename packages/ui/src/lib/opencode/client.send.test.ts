@@ -155,6 +155,38 @@ describe("opencode client sends", () => {
     expect(requestUrl.searchParams.has("directory")).toBe(false)
   })
 
+  test("leaves Cursor provider-default transport unchanged", async () => {
+    await opencodeClient.sendMessage({
+      id: "session-cursor", providerID: "cursor-acp", modelID: "composer", agent: "Builder", text: "hello", variant: null,
+    })
+    expect(Object.hasOwn(getPromptBody(), "variant")).toBe(false)
+    await opencodeClient.sendCommand({
+      id: "session-cursor", providerID: "cursor-acp", modelID: "composer", agent: "Builder", command: "check", variant: null,
+    })
+    const commandCall = fetchCalls.find((call) => call.url.includes("/command"))
+    expect(commandCall).toBeDefined()
+    const command = JSON.parse(String(commandCall?.init?.body))
+    expect(Object.hasOwn(command, "variant")).toBe(false)
+  })
+
+  for (const variant of [undefined, null, "high"]) {
+    test(`serializes captured thinking ${String(variant)} consistently for prompts and commands`, async () => {
+      await opencodeClient.sendMessage({
+        id: "session-thinking", providerID: "openai", modelID: "gpt", agent: "Builder", text: "hello", variant,
+      })
+      const prompt = getPromptBody()
+      expect(Object.hasOwn(prompt, "variant")).toBe(variant !== undefined)
+      expect(prompt.variant).toBe(variant === null ? "" : variant)
+
+      await opencodeClient.sendCommand({
+        id: "session-thinking", providerID: "openai", modelID: "gpt", agent: "Builder", command: "check", variant,
+      })
+      const command = JSON.parse(String(fetchCalls.find((call) => call.url.includes("/command"))?.init?.body ?? "{}"))
+      expect(Object.hasOwn(command, "variant")).toBe(variant !== undefined)
+      expect(command.variant).toBe(variant === null ? "" : variant)
+    })
+  }
+
   test("waits for worktree bootstrap before slash commands", async () => {
     await opencodeClient.sendCommand({
       id: "session-a",

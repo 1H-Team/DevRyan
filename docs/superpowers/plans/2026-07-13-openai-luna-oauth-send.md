@@ -4,7 +4,7 @@
 
 **Goal:** Make OpenAI `gpt-5.6-luna` and its Fast mode complete real chat turns through ChatGPT/Codex OAuth in DevRyan, without advertising a Luna reasoning mode that the active OpenCode runtime cannot execute.
 
-**Architecture:** Treat the active OpenCode runtime and its provider catalog as the execution authority. Reproduce the failure against OpenCode 1.17.19, add the missing Codex identity headers only to OAuth Luna requests in DevRyan's managed-runtime plugin, and remove only the synthetic Luna capability that the upstream catalog does not expose. Preserve the exact upstream model row, Fast service tier, and supported reasoning variants, keep web/Electron and VS Code behavior aligned, and verify the final path through the shared UI against the external Test project.
+**Architecture:** Treat the active OpenCode runtime and its provider catalog as the execution authority. Reproduce the failure against OpenCode 1.17.19, add the missing Codex identity headers only to OAuth Luna requests in DevRyan's managed-runtime plugin, and remove only the synthetic Luna capability that the upstream catalog does not expose. Preserve the exact upstream model row, Fast service tier, and supported reasoning variants, keep web/Electron behavior aligned, and verify the final path through the shared UI against the external Test project.
 
 **Tech Stack:** Bun, OpenCode 1.17.19, Express proxy routes, TypeScript/React/Zustand shared UI, Vitest/Bun tests, in-app browser visual testing.
 
@@ -14,7 +14,7 @@
 - Do not inspect or modify any upstream OpenChamber checkout.
 - Do not log or persist OAuth access tokens, refresh tokens, account IDs, provider response bodies, or prompt transcripts in repository artifacts.
 - Preserve API-key and external-OpenCode catalogs exactly as supplied by their provider runtime.
-- Keep web/Electron and VS Code provider behavior in parity.
+- Keep web/Electron provider behavior in parity.
 - Make no dependency changes; OpenCode and `@opencode-ai/sdk` remain pinned to `1.17.19`.
 - Before completion, run `bun run validate:affected`; because this touches `packages/web/server/**`, also ensure the web server suite runs, and run `bun run build` only if implementation changes package/build wiring.
 
@@ -247,7 +247,6 @@ Expected: PASS. If a test reveals that Fast is converted into a `fast` pseudo-va
 
 **Files:**
 - Test: `packages/web/server/lib/opencode/provider-routes.test.js`
-- Test: `packages/vscode/src/bridge-proxy-runtime.test.ts`
 - Runtime fixture: `/Users/zoubair/Repositories/Test`
 
 **Interfaces:**
@@ -256,13 +255,12 @@ Expected: PASS. If a test reveals that Fast is converted into a `fast` pseudo-va
 
 - [ ] **Step 1: Preserve provider-catalog parity assertions**
 
-Extend the existing web and VS Code OAuth catalog fixtures with Luna base/Fast variant maps and assert both proxies preserve those maps without credentials or DevRyan-only `max`/`ultra` additions.
+Extend the existing web OAuth catalog fixtures with Luna base/Fast variant maps and assert both proxies preserve those maps without credentials or DevRyan-only `max`/`ultra` additions.
 
 Run:
 
 ```bash
 bun test packages/web/server/lib/opencode/provider-routes.test.js
-bun run --cwd packages/vscode test
 ```
 
 Expected: PASS in both runtimes; API-key and external-OpenCode catalog tests remain unchanged.
@@ -275,7 +273,7 @@ Run:
 bun run validate:affected
 ```
 
-Expected: affected type-check, lint, UI tests, web server tests, and VS Code tests all pass with no new warnings.
+Expected: affected type-check, lint, UI tests, web server tests, tests all pass with no new warnings.
 
 - [ ] **Step 3: Visually test Luna base in the Test project**
 

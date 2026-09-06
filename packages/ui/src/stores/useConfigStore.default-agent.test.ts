@@ -222,7 +222,7 @@ describe("useConfigStore default agent selection", () => {
     })
   })
 
-  test("managed fresh drafts normalize a personal model-only default to the provider thinking fallback", () => {
+  test("managed fresh drafts preserve a personal model-only provider default", () => {
     setManagedDeveloper()
     useSessionUIStore.setState({
       currentSessionId: null,
@@ -287,9 +287,9 @@ describe("useConfigStore default agent selection", () => {
       agent: "Orchestrator",
       providerID: "openai",
       modelID: "gpt-5.6-sol",
-      variant: "medium",
+      variant: null,
     })
-    expect(send.variant).toBe("medium")
+    expect(send.variant).toBeNull()
   })
 
   test("fresh drafts show a managed account's personal thinking default", () => {
@@ -366,10 +366,10 @@ describe("useConfigStore default agent selection", () => {
 
     useConfigStore.getState().setAgent("Orchestrator")
 
-    expect(useConfigStore.getState().currentVariant).toBe("medium")
+    expect(useConfigStore.getState().currentVariant).toBeNull()
   })
 
-  test("normalizes unsupported managed variants to the provider fallback", () => {
+  test("rejects unsupported managed variants without inventing an effort", () => {
     setManagedDeveloper()
     useConfigStore.setState({
       providers: [{
@@ -395,7 +395,7 @@ describe("useConfigStore default agent selection", () => {
 
     useConfigStore.getState().applyDefaultsToCurrent()
 
-    expect(useConfigStore.getState().currentVariant).toBe("medium")
+    expect(useConfigStore.getState().currentVariant).toBeNull()
   })
 
   test("falls back from an unavailable managed selection to the configured agent model and variant", () => {
@@ -545,7 +545,7 @@ describe("useConfigStore default agent selection", () => {
       settingsDefaultAgent: "Builder",
     })
 
-    const observed: Array<{ agent?: string; providerId: string; modelId: string; variant?: string }> = []
+    const observed: Array<{ agent?: string; providerId: string; modelId: string; variant?: string | null }> = []
     const unsubscribe = useConfigStore.subscribe((state) => observed.push({
       agent: state.currentAgentName,
       providerId: state.currentProviderId,
@@ -591,11 +591,11 @@ describe("useConfigStore default agent selection", () => {
     expect(useConfigStore.getState().currentAgentName).toBe("Builder")
     expect(useConfigStore.getState().currentProviderId).toBe("anthropic")
     expect(useConfigStore.getState().currentModelId).toBe("claude")
-    expect(useConfigStore.getState().currentVariant).toBe(undefined)
+    expect(useConfigStore.getState().currentVariant).toBeNull()
   })
 
   test("updates provider, model, and variant atomically", () => {
-    const observed: Array<{ providerId: string; modelId: string; variant?: string }> = []
+    const observed: Array<{ providerId: string; modelId: string; variant?: string | null }> = []
     const unsubscribe = useConfigStore.subscribe((state) => {
       observed.push({
         providerId: state.currentProviderId,
@@ -694,7 +694,7 @@ describe("useConfigStore default agent selection", () => {
     expect(useConfigStore.getState().currentVariant).toBe(undefined)
   })
 
-  test("cycles through concrete thinking variants without wrapping to default", () => {
+  test("cycles through concrete thinking variants and provider default", () => {
     useConfigStore.setState({
       currentProviderId: "opencode",
       currentModelId: "builder-model",
@@ -718,6 +718,9 @@ describe("useConfigStore default agent selection", () => {
     })
 
     useConfigStore.getState().cycleCurrentVariant()
+    expect(useConfigStore.getState().currentVariant).toBe("low")
+
+    useConfigStore.getState().cycleCurrentVariant()
     expect(useConfigStore.getState().currentVariant).toBe("medium")
 
     useConfigStore.getState().cycleCurrentVariant()
@@ -730,7 +733,7 @@ describe("useConfigStore default agent selection", () => {
     expect(useConfigStore.getState().currentVariant).toBe("ultra")
 
     useConfigStore.getState().cycleCurrentVariant()
-    expect(useConfigStore.getState().currentVariant).toBe("low")
+    expect(useConfigStore.getState().currentVariant).toBeNull()
   })
 
   test("leaves an active session selection unchanged when the configured default agent changes", () => {
@@ -1086,7 +1089,7 @@ describe("mergeRuntimeAgentsWithConfigOverrides", () => {
     const merged = mergeRuntimeAgentsWithConfigOverrides(runtimeAgents, configAgents)
 
     expect(merged[0].model).toEqual({ providerID: "opencode", modelID: "builder-model" })
-    expect((merged[0] as Agent & { variant?: string }).variant).toBe("high")
+    expect((merged[0] as Agent & { variant?: string | null }).variant).toBe("high")
     expect((merged[0] as Agent & { modelRefs?: string[] }).modelRefs).toEqual([
       "opencode/builder-model",
       "anthropic/claude",
@@ -1153,7 +1156,7 @@ describe("mergeRuntimeAgentsWithConfigOverrides", () => {
 
     expect(merged.map((agent) => agent.name)).toEqual(["builder", "orchestrator"])
     expect(merged[1].model).toEqual({ providerID: "anthropic", modelID: "claude" })
-    expect((merged[1] as Agent & { variant?: string }).variant).toBe("high")
+    expect((merged[1] as Agent & { variant?: string | null }).variant).toBe("high")
   })
 
   test("keeps runtime execution metadata when applying config-backed model overrides", () => {
@@ -1174,7 +1177,7 @@ describe("mergeRuntimeAgentsWithConfigOverrides", () => {
     }] as unknown as Agent[]
 
     const merged = mergeRuntimeAgentsWithConfigOverrides(runtimeAgents, configAgents)
-    const explorer = merged[0] as Agent & { variant?: string; options?: { hidden?: boolean } }
+    const explorer = merged[0] as Agent & { variant?: string | null; options?: { hidden?: boolean } }
 
     expect(explorer.model).toEqual({ providerID: "anthropic", modelID: "claude" })
     expect(explorer.variant).toBe(undefined)

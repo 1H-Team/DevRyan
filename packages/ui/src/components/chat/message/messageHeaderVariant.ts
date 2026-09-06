@@ -1,7 +1,7 @@
 import { resolveThinkingVariant } from '@/lib/providers/variantControls';
 
 interface MessageHeaderVariantDisplayInput {
-    recordedVariant: string | undefined;
+    recordedVariant: string | null | undefined;
     modelVariantOptions: string[];
     fastEnabled: boolean;
 }
@@ -11,10 +11,10 @@ export interface MessageHeaderVariantDisplay {
     fastEnabled: boolean;
 }
 
-const isFastOnlyVariant = (variant: string | undefined) => variant?.trim().toLowerCase() === 'fast';
+const isFastOnlyVariant = (variant: string | null | undefined) => variant?.trim().toLowerCase() === 'fast';
 
 export const resolveMessageHeaderVariant = (
-    recordedVariant: string | undefined,
+    recordedVariant: string | null | undefined,
     modelVariantOptions: string[],
 ): string | undefined => {
     return resolveMessageHeaderVariantDisplay({

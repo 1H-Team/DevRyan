@@ -21,6 +21,12 @@ const LUNA_MODEL_IDS = new Set([
   "gpt-5.6-luna-fast",
 ]);
 const LUNA_API_MODEL_ID = "gpt-5.6-luna";
+// Reasoning effort and summaries are separate capabilities. Spark rejects the
+// summary parameter even at High; its existing Fast alias shares that policy.
+const NO_REASONING_SUMMARY_MODEL_IDS = new Set([
+  "gpt-5.3-codex-spark",
+  "gpt-5.3-codex-spark-fast",
+]);
 const CODEX_ORIGINATOR = "codex_cli_rs";
 const CODEX_USER_AGENT = "codex_cli_rs/0.0.0 (OpenCode)";
 const OPENCODE_COMPACTION_BUFFER = 20_000;
@@ -93,10 +99,25 @@ const buildReasoningVariant = (variants, effort) => {
   };
 };
 
-const normalizeReasoningSummary = (options) => {
+const supportsReasoningSummary = (model, catalogModelId) => {
+  const apiModelId = typeof model?.api?.id === "string" && model.api.id
+    ? model.api.id
+    : undefined;
+  const modelId = apiModelId || model?.id || catalogModelId;
+  return !NO_REASONING_SUMMARY_MODEL_IDS.has(modelId);
+};
+
+const normalizeReasoningSummary = (options, summarySupported) => {
+  if (!isPlainObject(options)) return options;
+  if (!summarySupported) {
+    if (!Object.hasOwn(options, "reasoningSummary")) return options;
+    const normalized = { ...options };
+    delete normalized.reasoningSummary;
+    return normalized;
+  }
+
   if (
-    !isPlainObject(options)
-    || !("reasoningEffort" in options)
+    !("reasoningEffort" in options)
     || options.reasoningEffort === "none"
     || (options.reasoningSummary !== undefined && options.reasoningSummary !== "auto")
   ) {
@@ -113,11 +134,12 @@ const normalizeReasoningSummaries = (models) => {
   for (const [modelId, model] of Object.entries(models)) {
     if (!isPlainObject(model)) continue;
 
-    const options = normalizeReasoningSummary(model.options);
+    const summarySupported = supportsReasoningSummary(model, modelId);
+    const options = normalizeReasoningSummary(model.options, summarySupported);
     let variants = model.variants;
     if (isPlainObject(variants)) {
       for (const [variantId, variant] of Object.entries(variants)) {
-        const normalizedVariant = normalizeReasoningSummary(variant);
+        const normalizedVariant = normalizeReasoningSummary(variant, summarySupported);
         if (normalizedVariant === variant) continue;
         if (variants === model.variants) variants = { ...model.variants };
         variants[variantId] = normalizedVariant;
@@ -183,11 +205,16 @@ const enforceDetailedOpenAIReasoningSummary = (input, output) => {
   if (model?.providerID !== PROVIDER_ID || !isPlainObject(output)) return;
 
   const options = isPlainObject(output.options) ? output.options : {};
+  if (!supportsReasoningSummary(model)) {
+    const normalized = normalizeReasoningSummary(options, false);
+    if (normalized !== options) output.options = normalized;
+    return;
+  }
   const reasoningEffort = options.reasoningEffort;
   if (reasoningEffort === "none") return;
 
   const isReasoningCapable = reasoningEffort !== undefined || model?.capabilities?.reasoning === true;
-  if (!isReasoningCapable) return;
+  if (!isReasoningCapable || options.reasoningSummary === "detailed") return;
 
   output.options = {
     ...options,

@@ -33,7 +33,7 @@ import {
   createRuntimeServiceCoordinator,
   isRuntimeServiceProtocolSupported,
   readRuntimeServiceDescriptor,
-  runtimeServiceOwnerPath,
+  waitForRuntimeServiceOwnerStopped as waitForOwnerStopped,
   unsealRuntimeServiceBootstrapToken,
 } from './runtime-service.mjs';
 import {
@@ -42,7 +42,11 @@ import {
 } from './desktop-host-broker.mjs';
 import { createRuntimeServiceRegistration } from './runtime-service-registration.mjs';
 import { createRuntimeServiceNativeControl } from './runtime-service-native.mjs';
-import { prepareAutomaticRuntimeService } from './runtime-service-startup.mjs';
+import {
+  prepareAutomaticRuntimeService,
+  createRuntimeOwnerAcquirer,
+  recoverAppBoundRuntime,
+} from './runtime-service-startup.mjs';
 import {
   buildQuitRiskSnapshot,
   emptyQuitRisk,
@@ -954,16 +958,19 @@ const inheritUserShellEnv = () => {
   }
 };
 
+const acquireRuntimeOwner = createRuntimeOwnerAcquirer({
+  getCoordinator: () => state.runtimeServiceCoordinator,
+  setCoordinator: (coordinator) => { state.runtimeServiceCoordinator = coordinator; },
+  createCoordinator: () => createRuntimeServiceCoordinator({
+    dataDirectory: dataRootDirectory(), safeStorage,
+    onDiagnostic: (detail) => log.warn('[runtime-service] owner recovery', detail),
+  }),
+});
+
 const spawnLocalServer = async () => {
   inheritUserShellEnv();
 
-  if (!state.runtimeServiceCoordinator) {
-    state.runtimeServiceCoordinator = await createRuntimeServiceCoordinator({
-      dataDirectory: dataRootDirectory(),
-      safeStorage,
-    });
-    await state.runtimeServiceCoordinator.acquire({ mode: 'app_bound' });
-  }
+  await acquireRuntimeOwner(isRuntimeServiceMode ? 'service' : 'app_bound');
 
   const settings = readSettingsRoot();
   const productionBotsExecutionDisabled = settings.productionBotsRuntimeMode === 'disabled';
@@ -1602,23 +1609,23 @@ const runtimeServiceCommandResult = async (operation) => {
   }
 };
 
-const waitForRuntimeServiceOwnerStopped = async (timeoutMs = 15_000) => {
-  const deadline = Date.now() + timeoutMs;
-  const ownerPath = runtimeServiceOwnerPath(dataRootDirectory());
-  while (Date.now() < deadline) {
-    const owner = await fsp.readFile(ownerPath, 'utf8').then((raw) => JSON.parse(raw), () => null);
-    if (!owner) return true;
-    let alive = true;
-    try {
-      process.kill(owner.pid, 0);
-    } catch (error) {
-      alive = error?.code === 'EPERM';
-    }
-    if (!alive) return true;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return false;
-};
+const waitForRuntimeServiceOwnerStopped = (timeoutMs = 15_000) => waitForOwnerStopped({
+  dataDirectory: dataRootDirectory(), timeoutMs,
+  onDiagnostic: (detail) => log.warn('[runtime-service] owner recovery', detail),
+});
+
+const recoverStartupToAppBound = (connectionError) => recoverAppBoundRuntime({
+  connectionError,
+  unregister: () => getRuntimeServiceRegistration().unregister(),
+  waitForStopped: () => waitForRuntimeServiceOwnerStopped(),
+  acquire: () => acquireRuntimeOwner('app_bound'),
+  setMode: () => mutateSettingsRoot((root) => { root.productionBotsRuntimeMode = 'app_bound'; }),
+  release: async () => {
+    await state.runtimeServiceCoordinator?.release();
+    state.runtimeServiceCoordinator = null;
+  },
+  log,
+});
 
 const waitForRuntimeServiceConnection = async (timeoutMs = 20_000) => {
   const deadline = Date.now() + timeoutMs;
@@ -1644,7 +1651,6 @@ const enableBackgroundBots = async ({ allowLegacy = false } = {}) => {
     return runtimeServiceStatus();
   }
 
-  const previousOwner = state.runtimeServiceCoordinator?.getOwner?.();
   try {
     await state.serverHandle?.checkpointBotRuns?.({ reason: 'runtime_service_handoff' });
     await state.serverHandle?.stopBotDispatcher?.();
@@ -1656,16 +1662,7 @@ const enableBackgroundBots = async ({ allowLegacy = false } = {}) => {
     await activateMainWindow(url, new URL(url).origin, { target: 'local', status: 'ok' });
     return runtimeServiceStatus();
   } catch (error) {
-    await registration.unregister().catch(() => undefined);
-    const stopped = await waitForRuntimeServiceOwnerStopped();
-    if (!stopped) {
-      const rollbackError = new Error('Background runtime ownership could not be released safely');
-      rollbackError.code = 'runtime_service_rollback_owner_active';
-      throw rollbackError;
-    }
-    await mutateSettingsRoot((root) => {
-      root.productionBotsRuntimeMode = previousOwner?.mode === 'service' ? 'service' : 'app_bound';
-    });
+    await recoverStartupToAppBound(error);
     state.runtimeServiceClient = false;
     state.sidecarUrl = null;
     const localUrl = await spawnLocalServer();
@@ -1923,9 +1920,9 @@ const currentStartupSplashPalette = () => (
 const startupErrorDetails = (error) => {
   const cause = error?.cause;
   const message = error instanceof Error ? error.message : String(error || 'Unknown startup error');
-  const code = typeof cause?.code === 'string'
-    ? cause.code
-    : (typeof error?.code === 'string' ? error.code : null);
+  const code = typeof error?.code === 'string'
+    ? error.code
+    : (typeof cause?.code === 'string' ? cause.code : null);
   const causeMessage = cause instanceof Error ? cause.message : '';
   return {
     message,
@@ -3635,6 +3632,24 @@ const prepareBotRuntimeInBackground = () => {
   });
 };
 
+const prepareForegroundRuntime = async () => {
+  if (state.runtimeServiceClient || state.runtimeServiceCoordinator?.getOwner()) return;
+  const automaticRuntime = await autoEnableBackgroundRuntimeOnFirstLaunch();
+  if (automaticRuntime.mode === 'service') {
+    try {
+      await resumeBackgroundRuntimeAfterAppUpdate();
+      await waitForRuntimeServiceConnection();
+    } catch (error) {
+      await recoverStartupToAppBound(error);
+      state.runtimeServiceClient = false;
+      state.sidecarUrl = null;
+      log.warn('[runtime-service] startup rolled back to app-bound Bots', {
+        code: error?.code || 'runtime_service_start_failed',
+      });
+    }
+  }
+};
+
 const startDesktopRuntime = () => {
   if (desktopStartupPromise) return desktopStartupPromise;
   const current = (async () => {
@@ -3642,6 +3657,7 @@ const startDesktopRuntime = () => {
       if (desktopStartupFailed) {
         applyDesktopKeepAwake(readDesktopKeepAwakeEnabled());
       }
+      await prepareForegroundRuntime();
       const startupContext = await resolveInitialUrl();
       const { initialUrl, localOrigin, bootOutcome } = startupContext;
       state.pendingBotStartupContext = null;
@@ -3665,7 +3681,11 @@ const startDesktopRuntime = () => {
       const details = startupErrorDetails(error);
       log.error('[electron] startup failed', details);
       releaseDesktopKeepAwake();
-      await killSidecar();
+      await killSidecar().catch(() => {
+        log.warn('[runtime-service] startup cleanup failed', {
+          phase: 'startup_cleanup', code: 'runtime_service_release_failed',
+        });
+      });
       await showStartupFailure(error);
     }
   })();
@@ -5164,11 +5184,7 @@ app.whenReady().then(async () => {
     return;
   }
   if (isRuntimeServiceMode) {
-    state.runtimeServiceCoordinator = await createRuntimeServiceCoordinator({
-      dataDirectory: dataRootDirectory(),
-      safeStorage,
-    });
-    await state.runtimeServiceCoordinator.acquire({ mode: 'service' });
+    await acquireRuntimeOwner('service');
     await spawnLocalServer();
     prepareBotRuntimeInBackground();
     process.once('SIGTERM', () => {
@@ -5212,29 +5228,6 @@ app.whenReady().then(async () => {
     url: null,
   });
 
-  const automaticRuntime = await autoEnableBackgroundRuntimeOnFirstLaunch();
-  if (automaticRuntime.mode === 'service') {
-    await resumeBackgroundRuntimeAfterAppUpdate();
-    try {
-      await waitForRuntimeServiceConnection();
-    } catch (error) {
-      await getRuntimeServiceRegistration().unregister().catch(() => undefined);
-      const stopped = await waitForRuntimeServiceOwnerStopped();
-      if (!stopped) {
-        const ownershipError = new Error('Background runtime ownership could not be resolved safely');
-        ownershipError.code = 'runtime_service_owner_active';
-        throw ownershipError;
-      }
-      await mutateSettingsRoot((root) => {
-        root.productionBotsRuntimeMode = 'app_bound';
-      });
-      state.runtimeServiceClient = false;
-      state.sidecarUrl = null;
-      log.warn('[runtime-service] startup rolled back to app-bound Bots', {
-        code: error?.code || 'runtime_service_start_failed',
-      });
-    }
-  }
 
   const initial = extractInitialDeepLinks();
   if (initial.length > 0) handleDeepLinks(initial);

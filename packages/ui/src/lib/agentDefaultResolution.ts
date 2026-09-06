@@ -21,7 +21,8 @@ export type AgentDefaultProvider = {
   }>;
 };
 
-export type ResolvedAgentDefault = AgentModelSelection & {
+export type ResolvedAgentDefault = Omit<AgentModelSelection, "variant"> & {
+  variant: string | null;
   agentName: string;
   source: AgentDefaultSource;
 };
@@ -83,11 +84,11 @@ export const resolveAgentDefaultSelection = ({
     ? findAgentDefaultOverride(personalSelections, agent.name)
     : null;
   const candidates = [
-    ...(personal ? [{ ...personal, source: 'personal' as const }] : []),
+    ...(personal ? [{ ...personal, variant: clean(personal.variant) || null, source: 'personal' as const }] : []),
     {
       providerId: hostProviderId,
       modelId: hostModelId,
-      ...(clean(agent.variant) ? { variant: clean(agent.variant) } : {}),
+      variant: clean(agent.variant) || null,
       source: isSingleModelAgentDefault(agent) ? 'inherited' as const : 'host-managed' as const,
     },
   ];
@@ -100,7 +101,7 @@ export const resolveAgentDefaultSelection = ({
       return {
         providerId: candidate.providerId,
         modelId: candidate.modelId,
-        ...(variant ? { variant } : {}),
+        variant: variant ?? null,
         agentName: agent.name,
         source: candidate.source,
       };
@@ -129,7 +130,7 @@ export const resolveAgentDefaultSelection = ({
     : undefined;
   return {
     ...fallback,
-    ...(variant ? { variant } : {}),
+    variant: variant ?? null,
     agentName: agent.name,
     source: 'availability-fallback',
   };

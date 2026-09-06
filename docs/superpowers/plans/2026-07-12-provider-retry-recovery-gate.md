@@ -12,7 +12,7 @@
 
 - Work only inside `/Users/zoubair/Repositories/DevRyan`.
 - Do not add dependencies.
-- Preserve shared web, Electron, and VS Code behavior through the shared UI sync layer.
+- Preserve shared web and Electron behavior through the shared UI sync layer.
 - Keep hot-path state updates narrow and source-of-truth-driven.
 
 ---

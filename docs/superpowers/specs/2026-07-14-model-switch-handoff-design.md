@@ -20,7 +20,7 @@ The live Test-project flow succeeded in both directions: Anthropic to OpenAI to 
 
 The change belongs in the shared UI send path in `packages/ui/src/sync/session-ui-store.ts`, where runtime-boundary context is already constructed before optimistic submission. Focused regressions belong in `packages/ui/src/sync/session-ui-store.send.test.ts`.
 
-No provider API, web-server route, Cursor runtime contract, dependency, or persisted session format changes are needed. Because the send path is shared UI logic, the same behavior applies to web, Electron, and VS Code runtimes.
+No provider API, web-server route, Cursor runtime contract, dependency, or persisted session format changes are needed. Because the send path is shared UI logic, the same behavior applies to web and Electron runtimes.
 
 ## Handoff Selection
 

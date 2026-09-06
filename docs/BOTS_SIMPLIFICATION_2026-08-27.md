@@ -193,7 +193,7 @@ not an ambiguous confidence bucket.
   extraction; Remembered/Forgotten semantics match durable state.
 - Lifecycle exposes Active, Paused, Deleted only, and complete deletion remains
   partial-failure-safe.
-- Web/Electron contracts stay aligned and VS Code continues its explicit
+- Web/Electron contracts stay aligned continues its explicit
   unsupported-computer presentation.
 
 ## Verification plan

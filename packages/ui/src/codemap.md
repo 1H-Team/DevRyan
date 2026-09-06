@@ -19,6 +19,6 @@ Implements the UI application: bootstrapping, top-level app orchestration, featu
 4. Sync/event reducers ingest server events, update live session/message state consumed by chat and sidebars, and clear stale working indicators when terminal assistant finishes arrive before idle status.
 
 ## Integration
-- `apps/` exposes alternate app wrappers (e.g., VS Code/Electron mini-chat embedding).
+- `apps/` exposes alternate app wrappers (e.g., Electron mini-chat embedding).
 - `contexts/` provides cross-cutting concerns (theme, runtime API registry, drawer, diff worker).
 - `types/` and `constants/` define shared contracts reused across components, hooks, and stores.

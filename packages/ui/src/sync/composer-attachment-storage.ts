@@ -14,8 +14,7 @@ export type PersistedComposerAttachment = {
   size: number
   source: AttachedFile["source"]
   serverPath?: string
-  vscodePath?: string
-  vscodeSource?: AttachedFile["vscodeSource"]
+
 }
 
 export type ComposerAttachmentPersistence = {
@@ -122,8 +121,7 @@ export const serializeComposerAttachments = (
   size: Math.max(0, Number.isFinite(attachment.size) ? attachment.size : 0),
   source: attachment.source,
   ...(attachment.serverPath ? { serverPath: attachment.serverPath } : {}),
-  ...(attachment.vscodePath ? { vscodePath: attachment.vscodePath } : {}),
-  ...(attachment.vscodeSource ? { vscodeSource: attachment.vscodeSource } : {}),
+
 }))
 
 const parseRecord = (value: unknown): PersistedComposerAttachment | null => {
@@ -134,7 +132,7 @@ const parseRecord = (value: unknown): PersistedComposerAttachment | null => {
   if (typeof record.dataUrl !== "string" || !record.dataUrl) return null
   if (typeof record.mimeType !== "string" || !record.mimeType) return null
   if (typeof record.filename !== "string" || !record.filename) return null
-  if (record.source !== "local" && record.source !== "server" && record.source !== "vscode") return null
+  if (record.source !== "local" && record.source !== "server") return null
   return {
     version: 1,
     id: record.id,
@@ -144,10 +142,7 @@ const parseRecord = (value: unknown): PersistedComposerAttachment | null => {
     size: typeof record.size === "number" && Number.isFinite(record.size) && record.size >= 0 ? record.size : 0,
     source: record.source,
     ...(typeof record.serverPath === "string" && record.serverPath ? { serverPath: record.serverPath } : {}),
-    ...(typeof record.vscodePath === "string" && record.vscodePath ? { vscodePath: record.vscodePath } : {}),
-    ...(record.vscodeSource === "file" || record.vscodeSource === "selection"
-      ? { vscodeSource: record.vscodeSource }
-      : {}),
+
   }
 }
 
@@ -168,8 +163,7 @@ export const deserializeComposerAttachments = (value: unknown): AttachedFile[] =
       size: record.size,
       source: record.source,
       serverPath: record.serverPath,
-      vscodePath: record.vscodePath,
-      vscodeSource: record.vscodeSource,
+
     })
   }
   return attachments

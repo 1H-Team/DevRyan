@@ -15,7 +15,7 @@ export type CreationSnapshot = Readonly<{
   providerID: string
   modelID: string
   agent?: string
-  variant?: string
+  variant?: string | null
   planMode: boolean
 }>
 export type CreationAttempt = {

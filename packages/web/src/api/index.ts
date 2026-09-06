@@ -15,7 +15,7 @@ import { createWebSessionPlansAPI } from './sessionPlans';
 import { createWebContextUsageAPI } from './contextUsage';
 
 export const createWebAPIs = (): RuntimeAPIs => ({
-  runtime: { platform: 'web', isDesktop: false, isVSCode: false, label: 'web' },
+  runtime: { platform: 'web', isDesktop: false, label: 'web' },
   terminal: createWebTerminalAPI(),
   git: createWebGitAPI(),
   files: createWebFilesAPI(),
