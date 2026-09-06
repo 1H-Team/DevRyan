@@ -47,7 +47,7 @@ describe("tool permission manifest", () => {
   test("deduplicates entries and normalizes empty directory attribution", () => {
     const manifest = buildToolManifest({
       toolIds: ["task", "task", "mcp__future_plugin__inspect"],
-      sourceRuntime: "vscode",
+      sourceRuntime: "desktop",
       directory: "   ",
     })
 

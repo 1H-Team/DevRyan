@@ -45,7 +45,7 @@ session. The first mounted consumer may bootstrap one snapshot when none is
 cached. `session.compacted` synchronously invalidates the previous provider
 value and triggers a mapping refresh; no UI fallback may reuse a token-bearing
 message before the latest compaction part. Web/Electron prefer Meridian, while
-VS Code and external OpenCode settle on the bounded post-compaction message
+External OpenCode settle on the bounded post-compaction message
 fallback without failing bootstrap.
 
 The composer subscribes to the selected session's message metadata and only
@@ -120,6 +120,35 @@ snapshot; it does not mean host-only. Existing-session selection and captured
 queue rows remain authoritative and are never rewritten when account or host
 defaults change. Provider hydration preserves a captured default until the
 catalog can authoritatively invalidate it.
+
+Plan mode is restored independently of model/effort from the latest authoritative
+user's canonical parts or exact recorded Plan flag. Native compaction requests,
+synthetic `compaction_continue`, and exact synthetic managed provider-recovery
+or open-todo wakes do not express a new Plan choice. Newest user info without
+parts defers restoration; later canonical hydration may refine an inferred
+value. An imperative marker distinguishes inferred values from explicit on/off
+toggles and promoted draft choices, which remain authoritative through remounts
+until that session is disposed or the UI reloads. The shared plan-intent resolver
+gives valid Implement Plan markers precedence over maintenance and stale Plan
+metadata. Managed wakes carrying inherited Plan instructions cannot become new
+Plan revisions, cards, or proposal notifications; native continuation revisions
+retain their existing presentation.
+The selected-session projection preserves its reference through assistant
+streaming updates and does not subscribe a provider root to message parts.
+If the initial tail contains only maintenance/assistant records, the shared
+message loader retrieves older pages for the selected session using the server's
+opaque cursor. Prefetch remains cheap; selection promotes both ready and pending
+prefetch work into this search. Retrieval stops at an authoritative user choice,
+10 older pages, 1,000 retained/read records, or 8 MiB of examined records. Repeated
+cursors/records, missing parts, exhausted nonempty history, and fetch failures
+leave a recoverable Plan-readiness error. The composer exposes Retry and an
+explicit local Plan choice also resolves readiness. Owner, generation, directory
+store, and selection checks reject stale results and errors.
+`captureCurrentSendConfig` and uncaptured core send resolution require that
+readiness before choosing Plan. Previously captured queue/retry configs with a
+boolean Plan choice remain sendable and keep their snapshots, including automatic
+idle dispatch. Known empty user-parts arrays are authoritative; omitted/null user
+parts preserve existing data or remain unknown rather than becoming OFF.
 
 ## Snapshot materialization non-regression
 
@@ -360,8 +389,7 @@ requires an exact identity match, releases task/result/action leaves, and marks
 the removal against every in-flight snapshot so stale snapshot data cannot
 resurrect it.
 
-`AppEffects.tsx` owns the initial host-ledger snapshot and direct VS Code
-webview events. `sync-context.tsx` reloads the snapshot after reconnect or a
+`AppEffects.tsx` owns the initial host-ledger snapshot. `sync-context.tsx` reloads the snapshot after reconnect or a
 replay gap. Snapshot requests are scope-deduplicated, so overlapping lifecycle
 signals do not create overlapping host work. High-frequency output from the
 managed child is still delivered through its canonical OpenCode session and is
@@ -521,7 +549,7 @@ Rules:
 5. Draft sends must resolve and validate provider/model/agent selection before creating the backend session. A missing model should keep the draft intact and avoid creating an empty chat.
 6. A foreground send must always target a real session ID. If the UI has no current session and no open draft, `session-ui-store.ts` creates and selects a normal session before optimistic send/routing; never route a prompt with an empty session ID.
 7. Backend session creation retries only the explicit pre-creation `503 OpenCode is restarting` response. Managed ownership registration retries happen server-side against one provisional OpenCode session; `503 identity_unavailable` with `retryable: false`, arbitrary 5xx responses, and ambiguous transport failures must preserve the draft without replaying the non-idempotent create request.
-8. Automatic session titles have exactly one owner. Standard-provider sessions are created without a title, then the host-side standard title runtime in web/Electron or VS Code generates the authoritative result after an accepted proxied prompt. It tries the live free Zen pool before an isolated selected-model helper, projects a valid title immediately through `session.updated`, and persists it only at a provider-safe lifecycle point. The sync layer never persists or displays a prompt-derived fallback for ordinary placeholders; it preserves a meaningful projected/manual title when a later canonical snapshot still contains a placeholder, while any later meaningful canonical title wins. Header/sidebar first-message subscriptions are limited to the narrow Cursor provider-error compatibility path. Cursor sessions remain owned by the separate Cursor title runtime, and explicit custom draft titles remain authoritative for every provider.
+8. Automatic session titles have exactly one owner. Standard-provider sessions are created without a title, then the host-side standard title runtime in web/Electron generates the authoritative result after an accepted proxied prompt. It tries the live free Zen pool before an isolated selected-model helper, projects a valid title immediately through `session.updated`, and persists it only at a provider-safe lifecycle point. The sync layer never persists or displays a prompt-derived fallback for ordinary placeholders; it preserves a meaningful projected/manual title when a later canonical snapshot still contains a placeholder, while any later meaningful canonical title wins. Header/sidebar first-message subscriptions are limited to the narrow Cursor provider-error compatibility path. Cursor sessions remain owned by the separate Cursor title runtime, and explicit custom draft titles remain authoritative for every provider.
 9. `session-actions.ts` resolves the UI store through the registered reference in `sync-refs.ts`; `session-ui-store.ts` registers the completed Zustand store after initialization. Authoritative deletion may use the optional ref read to invalidate an exact selected session synchronously, while headless consumers no-op when no UI store is registered. Tests that need a narrow UI store must register and release that reference instead of replacing the entire `session-ui-store` module, because Bun module mocks are process-wide and can leak into later chat-flow suites.
 10. When session creation has an explicit directory, that requested directory is the UI routing authority even if OpenCode returns an equivalent filesystem alias (for example `/tmp/project` as `/private/tmp/project`). Keep the returned value on the session as server metadata, but register/select the explicit path and expose it through the narrow per-session routing hint so every live consumer uses one child store.
 
@@ -695,8 +723,7 @@ snapshot. The loader materializes a page once after any adaptive expansion, so
 catch-up never replays historical events through the live reducer.
 
 With `sessionFastLoadEnabled`, web/Electron starts at 50 records and expands to
-100 then 150 only when a cursor remains without a user-turn boundary. VS Code
-uses 30, 50, 80, then 120. Disabling the non-persisted flag keeps the same
+100 then 150 only when a cursor remains without a user-turn boundary. Disabling the non-persisted flag keeps the same
 correctness owner but restores a 200-record first request and disables intent
 prefetch. Explicit Load Older pages remain 200 records.
 
@@ -711,8 +738,7 @@ turn may request that recovery.
 Intent prefetch is active-directory-only, one request at a time, and limited to
 six queued targets. Rows start exact-session work on pointer-down/click, hover
 after 180 ms, keyboard focus immediately, and settled neighbors after 600 ms.
-Only two non-active prefetched snapshots are retained on web/Electron and one
-in VS Code. No directory-wide runtime bootstrap is performed by prefetch.
+Only two non-active prefetched snapshots are retained on web/Electron. No directory-wide runtime bootstrap is performed by prefetch.
 
 `useSessionMessageLoadState(sessionID, directory)` is the exact reactive leaf
 for status, loading kind, error, resolution, retained limit, cursor,
@@ -794,3 +820,42 @@ const useViewportStore = create(() => ({ scrollAnchor: 0 }))
 const useSelectionStore = create(() => ({ selectedModel: null }))
 const useInputStore = create(() => ({ pendingInput: "" }))
 ```
+
+### Reducer lookup measurement
+
+Part snapshot and delta handlers reuse one owning-message lookup for assistant normalization. The exact-session presence check remains separate from legacy unscoped lookup so incomplete-snapshot recovery is unchanged. `bun run perf:reducer` measures this path without rendering; reviewed before/after measurements live in `docs/audits/2026-09-05-cleanup/performance.md`. The session-branch subscription test uses a real Zustand store to reject unrelated notifications and verify unsubscribe.
+
+## Captured thinking selection
+
+Coding Agents keep three internal values: `undefined` inherits the agent setting,
+`null` captures provider default, and a validated nonempty string captures an
+explicit effort. Send resolution freezes inheritance before enqueue or transport;
+draft JSON, draft-to-session promotion, context selection maps, queued rollback,
+and manual retry preserve `null`. Only missing legacy queue configuration may
+use a current fallback. Provider-default selections never manufacture `medium`
+or the first advertised effort.
+
+The native OpenCode transport maps captured `null` to its verified empty-variant
+wire contract, while missing values remain omitted. Restoring a canonical empty
+variant returns `null`, so reopen cannot silently inherit a later agent setting.
+Global agent overlays and account settings retain their existing schemas.
+
+The selection owner remembers the last successfully restored canonical user
+choice for each session in memory. `ModelControls` checks the complete user,
+agent, model and variant identity before restoring history, so responsive
+remounts and A→B→A navigation cannot overwrite a newer unsent choice with the
+same historical record. An explicit model or effort choice additionally retains
+an unsent selection intent, so delayed user parts cannot reveal a different old
+choice and replace the composer. A subsequent explicit agent change refreshes
+that pending intent from the resolved send configuration. `optimisticSend`
+releases it only after successful transport of the matching choice; a failed
+send, a different queued snapshot, or a newer pick during transport retains it.
+New or refined canonical records become eligible after that matching send;
+unavailable models are not marked restored. These imperative markers do not
+publish store updates, reset on full reload, and clear with permanent session
+selection deletion. Archive preserves them with the other reversible choices.
+
+`ModelControls.hydration.test.tsx` mounts the real controls with real config,
+selection and directory stores. Native button events exercise delayed parts,
+session switching/remounts, explicit Default, model changes and the actual
+optimistic dispatch boundary with controlled transport promises.

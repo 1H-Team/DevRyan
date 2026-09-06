@@ -2,6 +2,32 @@ import { describe, expect, test } from "bun:test"
 import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from "../materialization"
 
+test("preserves an authoritative empty user-parts envelope separately from missing parts", () => {
+  const info = userMessage("empty-user")
+  const state = { message: {}, part: {} }
+  const known = materializeSessionSnapshots(state, "ses_1", [{ info, parts: [] }])
+  expect(known.part[info.id]).toEqual([])
+  const repeat = materializeSessionSnapshots({ message: known.message, part: known.part }, "ses_1", [{ info, parts: [] }])
+  expect(repeat.partsChanged).toBe(false)
+  const missing = materializeSessionSnapshots(state, "ses_1", [{ info }])
+  expect(missing.part[info.id]).toBeUndefined()
+})
+
+test("missing same-ID user parts preserve cached Plan authority while explicit empty parts replace it", () => {
+  const info = userMessage("cached-plan")
+  const planPart: Part = { id: "plan-part", messageID: info.id, sessionID: "ses_1", type: "text", synthetic: true,
+    text: "User has requested to enter plan mode.\nProduce an implementation plan only." }
+  const state = { message: { ses_1: [info] }, part: { [info.id]: [planPart] } }
+  for (const record of [{ info }, { info, parts: null }]) {
+    const missing = materializeSessionSnapshots(state, "ses_1", [record])
+    expect(missing.part).toBe(state.part)
+    expect(missing.partsChanged).toBe(false)
+  }
+  const knownEmpty = materializeSessionSnapshots(state, "ses_1", [{ info, parts: [] }])
+  expect(knownEmpty.part[info.id]).toEqual([])
+  expect(knownEmpty.partsChanged).toBe(true)
+})
+
 function message(id: string, sessionID = "ses_1"): Message {
   return { id, sessionID, role: "assistant", time: { created: 1 } } as Message
 }

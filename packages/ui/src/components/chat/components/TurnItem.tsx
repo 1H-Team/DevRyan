@@ -15,6 +15,7 @@ const TurnItem: React.FC<TurnItemProps> = ({ turn, stickyUserHeader = true, rend
             className="relative w-full"
             id={`turn-${turn.turnId}`}
             data-turn-id={turn.turnId}
+            data-user-message-id={turn.userMessage.info.id}
             data-scroll-spy-id={turn.turnId}
         >
             {stickyUserHeader ? (

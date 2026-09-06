@@ -39,7 +39,6 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { TextSelectionMenu } from './TextSelectionMenu';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useChatSurfaceMode } from '@/components/chat/useChatSurfaceMode';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { formatTimestampForDisplay } from './timeFormat';
 import { ToolRevealOnMount } from './parts/ToolRevealOnMount';
 import { GroupedToolActivityRow } from './parts/ProgressiveGroup';
@@ -126,7 +125,6 @@ const normalizeSubtaskModel = (model: SubtaskPartLike['model']): string | null =
     if (!providerID || !modelID) return null;
     return `${providerID}/${modelID}`;
 };
-
 
 const UserSubtaskPart: React.FC<{ part: SubtaskPartLike }> = ({ part }) => {
     const [expanded, setExpanded] = React.useState(false);
@@ -306,8 +304,6 @@ const formatTurnDuration = (durationMs: number): string => {
     return `${minutes}m ${seconds}s`;
 };
 
-
-
 interface MessageBodyProps {
     sessionId?: string;
     messageId: string;
@@ -370,7 +366,6 @@ const writeRevealedToolIds = (messageId: string, value: Set<string>): void => {
     }
     revealedToolIdsByMessage.set(messageId, new Set(value));
 };
-
 
 const UserMessageBody = React.memo(({ messageId, parts, isMobile, alwaysShowActions = isMobile, hasTouchInput, hasTextContent, onCopyMessage, copiedMessage, onShowPopup, agentMention, onRevert, isReverting = false, onFork, userActionsMode = 'inline', stickyUserHeaderEnabled = true }: {
     messageId: string;
@@ -1081,7 +1076,6 @@ const AssistantMessageBody = React.memo(({
         return resolved ? { id: resolved.id, path: resolved.path } : null;
     }, [availableWorktreesByProject, currentSessionId, effectiveDirectory, messageSession?.directory, projects, sessionId]);
 
-
     const hasTools = toolParts.length > 0;
 
     const hasPendingTools = React.useMemo(() => {
@@ -1114,7 +1108,6 @@ const AssistantMessageBody = React.memo(({
         return toolParts.every((toolPart) => isToolFinalized(toolPart));
     }, [toolParts, hasPendingTools, isToolFinalized]);
 
-
     const reasoningParts = React.useMemo(() => {
         return visibleParts.filter((part) => part.type === 'reasoning');
     }, [visibleParts]);
@@ -1136,7 +1129,6 @@ const AssistantMessageBody = React.memo(({
         reasoningParts.length > 0 &&
         hasTools &&
         (hasPendingTools || hasOpenStep || !allToolsFinalized);
-
 
     const shouldHoldTools = awaitingMessageCompletion
         || (hasTools && (hasPendingTools || hasOpenStep || !allToolsFinalized));
@@ -1363,17 +1355,16 @@ const AssistantMessageBody = React.memo(({
 
     const planRevision = usePlanRevisionPresentation(messageId, turnGroupingContext?.turnId);
     const planTurnTraceIndex = React.useContext(PlanTurnTraceContext);
-    // An Implement Plan turn never renders as a plan response: its user message
-    // is recognised by the implementation marker, its group is never a plan
-    // revision, and its output must not be cut off at a plan card.
-    const isPlanImplementationTurn = Boolean(
-        turnGroupingContext?.turnId
-        && planTurnTraceIndex?.turnIntentById.get(turnGroupingContext.turnId) === 'implement',
-    );
+    // Implementation and managed maintenance output stays ordinary work even
+    // when the assistant echoes a sentinel or inherited Plan instructions.
+    const turnPlanIntent = turnGroupingContext?.turnId
+        ? planTurnTraceIndex?.turnIntentById.get(turnGroupingContext.turnId)
+        : undefined;
+    const suppressPlanResponse = turnPlanIntent === 'implement' || turnPlanIntent === 'maintenance';
     // Continuation-turn members inherit the revision's plan-mode status so a
     // plan emitted by a synthetic continuation resolves like its user-authored
     // origin turn would.
-    const isPlanRevisionModeSource = !isPlanImplementationTurn
+    const isPlanRevisionModeSource = !suppressPlanResponse
         && (isPlanModeSource || planRevision.entry?.isPlanModeRevision === true);
     // Only the revision's selected source message mounts the PlanCard; earlier
     // siblings consume their superseded plan bodies without a card.
@@ -1394,8 +1385,8 @@ const AssistantMessageBody = React.memo(({
     ), [activityByPart, localManagedTaskDispatch.contentParts]);
 
     const messagePlan = React.useMemo(
-        () => (sessionId != null ? resolveMessagePlanCard(planResolutionParts, { isPlanModeSource: isPlanRevisionModeSource }) : null),
-        [isPlanRevisionModeSource, planResolutionParts, sessionId],
+        () => (sessionId != null ? resolveMessagePlanCard(planResolutionParts, { isPlanModeSource: isPlanRevisionModeSource, turnIntent: turnPlanIntent }) : null),
+        [isPlanRevisionModeSource, planResolutionParts, sessionId, turnPlanIntent],
     );
 
     // Id of the reasoning part hosting the plan card, when the plan was emitted
@@ -1501,7 +1492,7 @@ const AssistantMessageBody = React.memo(({
             // visually displace the plan from the end of the response. An
             // implementation turn is exempt: everything it produces is work
             // output and must stay visible.
-            if (!isPlanImplementationTurn && shouldStopAfterPlanCard(messagePlan, isPlanRevisionModeSource, hasRenderedPlanCard)) {
+            if (!suppressPlanResponse && shouldStopAfterPlanCard(messagePlan, isPlanRevisionModeSource, hasRenderedPlanCard)) {
                 break;
             }
 
@@ -1952,7 +1943,7 @@ const AssistantMessageBody = React.memo(({
         collapsedPreviewCount,
         expandedTools,
         isMessageCompleted,
-        isPlanImplementationTurn,
+        suppressPlanResponse,
         isPlanModeSource,
         isPlanRevisionModeSource,
         isPlanRevisionPostSourceMessage,
@@ -2006,8 +1997,8 @@ const AssistantMessageBody = React.memo(({
     }, [messageCompletedAt, messageCreatedAt]);
 
     const footerTimestampClassName = 'text-sm text-muted-foreground/60 tabular-nums flex items-center gap-1';
-    const isVSCode = isVSCodeRuntime();
-    const canOpenMessagePreview = !isMiniChatSurface && !isMobile && !isVSCode;
+
+    const canOpenMessagePreview = !isMiniChatSurface && !isMobile;
 
     const finalTurnActionButtons = (
         <>

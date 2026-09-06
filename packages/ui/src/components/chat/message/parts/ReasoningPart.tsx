@@ -61,6 +61,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                         isAnimated={false}
                         isStreaming={isStreaming}
                         variant={variant === 'thinking' ? 'reasoning' : 'assistant'}
+                        loadingFallback={<div className="whitespace-pre-wrap break-words">{text}</div>}
                     />
                 </div>
                 {actions ? (
@@ -81,6 +82,7 @@ type ReasoningPartProps = {
     messageId: string;
     providerID?: string | null;
     responseStyleLevel?: ResponseStyleLevel;
+    isMessageCompleted?: boolean;
     isMobile?: boolean;
 };
 
@@ -90,6 +92,7 @@ const ReasoningPart = React.memo(({
     messageId,
     providerID,
     responseStyleLevel = 'provider',
+    isMessageCompleted = false,
     isMobile = false,
 }: ReasoningPartProps) => {
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
@@ -103,15 +106,14 @@ const ReasoningPart = React.memo(({
         [providerID, rawText, responseStyleLevel, shouldHideClippedPreview],
     );
     const isActive = isReasoningPartActive(part);
-    const isStreaming = chatRenderMode === 'live' && isActive;
+    const isStreaming = chatRenderMode === 'live' && !isMessageCompleted && isActive;
     const throttledText = useStreamingTextThrottle({
         text: textContent,
         phase: isStreaming ? 'streaming' : 'terminal',
         identityKey: `${messageId}:${part.id ?? 'reasoning'}`,
     });
 
-    // The disclosure owns the compact lifecycle label. Its expanded body
-    // renders nothing until the provider supplies displayable reasoning text.
+    // The group owns the compact lifecycle label until displayable text arrives.
     if (!throttledText || throttledText.trim().length === 0) {
         return null;
     }

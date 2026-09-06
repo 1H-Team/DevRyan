@@ -65,7 +65,7 @@ write a content-free audit containing principal, Bot, and normalized path. A
 fixed supervisor `opendir`/`lstat` operation lists only one directory level in
 the running computer, rather than recursively archiving the selected path. A
 local Electron host must return an accurate ready/offline/setup/runtime state;
-`unsupported` is reserved for web and VS Code hosts that do not own Docker.
+`unsupported` is reserved for web hosts that do not own Docker.
 
 When Supabase is not configured, the runtime still registers the capability
 route so clients can explain why Bots are unavailable. No Bot data route falls
@@ -1380,7 +1380,7 @@ events; events inserted after the snapshot remain visible. Dismissals cascade
 away only when retention removes their corresponding ledger events. Missing
 clear schema returns an explicit migration-required error without falling back
 to deletion or browser-only state. Web and Electron share these routes; the
-managed-host settings page remains unavailable in VS Code.
+managed-host settings page remains limited to authorized hosts.
 
 Retention defaults to 365 days and is configurable through
 `DEVRYAN_BOT_AUDIT_RETENTION_DAYS`. Values below the database-enforced 30-day

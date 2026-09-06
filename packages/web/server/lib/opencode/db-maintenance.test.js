@@ -109,16 +109,16 @@ const addSession = (db, id, { timeUpdated, events, bytes = 64, parent = null } =
  * whose session was deleted (20 events + sequence), a sequence-only orphan,
  * and a non-session aggregate (`prj_`) that must never be touched.
  */
-const createFixtureDb = (dir, { idleBytes = 64 } = {}) => {
+const createFixtureDb = (dir, { idleBytes = 64, now = NOW } = {}) => {
   const dbPath = path.join(dir, 'opencode.db');
   fs.writeFileSync(dbPath, '');
   const db = openDb(dbPath);
   db.pragma('journal_mode = WAL');
   db.exec(SCHEMA_SQL);
-  db.prepare('INSERT INTO project (id, worktree, time_created, time_updated) VALUES (?, ?, ?, ?)').run('prj_1', '/work', NOW, NOW);
-  addSession(db, 'ses_active', { timeUpdated: NOW - HOUR, events: 100 });
-  addSession(db, 'ses_idle', { timeUpdated: NOW - 48 * HOUR, events: 100, bytes: idleBytes });
-  addSession(db, 'ses_idle_small', { timeUpdated: NOW - 48 * HOUR, events: 10 });
+  db.prepare('INSERT INTO project (id, worktree, time_created, time_updated) VALUES (?, ?, ?, ?)').run('prj_1', '/work', now, now);
+  addSession(db, 'ses_active', { timeUpdated: now - HOUR, events: 100 });
+  addSession(db, 'ses_idle', { timeUpdated: now - 48 * HOUR, events: 100, bytes: idleBytes });
+  addSession(db, 'ses_idle_small', { timeUpdated: now - 48 * HOUR, events: 10 });
   addAggregate(db, 'ses_deleted', { events: 20 });
   addAggregate(db, 'ses_deleted_seq_only', { events: 3, sequenceOnly: true });
   addAggregate(db, 'prj_1', { events: 5 });
@@ -550,7 +550,9 @@ describe('createOpenCodeDbMaintenance', () => {
 
   it('runs end-to-end through the worker-thread executor', async () => {
     const dir = makeTempDir();
-    const dbPath = createFixtureDb(dir, { idleBytes: 8 * 1024 });
+    // The real worker has its own clock; keep its active/idle fixtures relative
+    // to wall time while deterministic in-process tests retain the fixed NOW.
+    const dbPath = createFixtureDb(dir, { idleBytes: 8 * 1024, now: Date.now() });
     const journal = vi.fn();
     const maintenance = createOpenCodeDbMaintenance({
       dbPath,
@@ -564,7 +566,9 @@ describe('createOpenCodeDbMaintenance', () => {
     const result = await maintenance.run({ vacuum: 'force', keepSeqPerAggregate: 64, reason: 'compact' });
 
     expect(result).toMatchObject({ status: 'ok', reason: 'compact', deletedEvents: 56, vacuumed: true });
+    expect(result.prunedSessions).toBe(1);
     expect(result.after.freelistPages).toBe(0);
+    expect(counts(dbPath).perAggregate.ses_active).toEqual({ n: 100, lo: 0, hi: 99 });
     expect(counts(dbPath).perAggregate.ses_idle).toEqual({ n: 64, lo: 36, hi: 99 });
     expect(journal).toHaveBeenCalledTimes(1);
   }, 20_000);

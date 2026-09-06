@@ -117,7 +117,7 @@ const normalizeCursorAcpEffort = (tokens: string[]) => {
     return CURSOR_ACP_EFFORT_ALIASES.get(tokens[0]);
 };
 
-const parseCursorAcpVariantKey = (variant?: string): CursorAcpVariantParts | null => {
+const parseCursorAcpVariantKey = (variant?: string | null): CursorAcpVariantParts | null => {
     const trimmed = typeof variant === 'string' ? variant.trim().toLowerCase() : '';
     if (!trimmed) {
         return null;
@@ -145,7 +145,7 @@ const parseCursorAcpVariantKey = (variant?: string): CursorAcpVariantParts | nul
     return { effort, thinking, canonical };
 };
 
-export const normalizeCursorAcpVariantKey = (variant?: string) => parseCursorAcpVariantKey(variant)?.canonical;
+export const normalizeCursorAcpVariantKey = (variant?: string | null) => parseCursorAcpVariantKey(variant)?.canonical;
 
 const getCursorAcpVariantRecord = (model: ProviderModel | undefined) => (
     model?.variants && typeof model.variants === 'object' ? model.variants : undefined
@@ -165,7 +165,7 @@ const getOrderedCursorAcpEfforts = (variants: Record<string, unknown>) => {
     return [...ordered, ...extras];
 };
 
-const resolveCursorAcpVariantKey = (variants: Record<string, unknown>, variant?: string) => {
+const resolveCursorAcpVariantKey = (variants: Record<string, unknown>, variant?: string | null) => {
     const parsed = parseCursorAcpVariantKey(variant);
     if (!parsed?.canonical) {
         return undefined;
@@ -206,7 +206,7 @@ const selectCursorAcpVariantForDimensions = (
 export const getCursorAcpVariantState = (
     provider: { id?: string; models?: ProviderModel[] } | undefined,
     modelId: string | undefined,
-    variant?: string,
+    variant?: string | null,
 ): CursorAcpVariantState | null => {
     if (!isCursorAcpProvider(provider) || !modelId) {
         return null;
@@ -253,7 +253,7 @@ export const getCursorAcpVariantState = (
 export const resolveCursorAcpVariantSelection = (
     provider: { id?: string; models?: ProviderModel[] } | undefined,
     modelId: string,
-    variant: string | undefined,
+    variant: string | null | undefined,
     updates: { fastEnabled?: boolean; thinkingEnabled?: boolean; effort?: string },
 ) => {
     const currentState = getCursorAcpVariantState(provider, modelId, variant);
@@ -292,7 +292,7 @@ const shouldUseLightLabel = (context?: EffortLabelContext) => (
     context?.providerId?.trim().toLowerCase() === 'openai'
 );
 
-export const formatEffortLabel = (variant?: string, context?: EffortLabelContext) => {
+export const formatEffortLabel = (variant?: string | null, context?: EffortLabelContext) => {
     if (!variant || variant.trim().length === 0) {
         return 'Default';
     }
@@ -341,25 +341,26 @@ export const getCursorAcpVariantDisplayLabel = (
 };
 
 export const resolveVisibleEffortVariant = (
-    variant: string | undefined,
+    variant: string | null | undefined,
     variants: string[],
 ) => {
     return resolveThinkingVariant(variant, variants) ?? null;
 };
 
 export const formatVisibleEffortLabel = (
-    variant: string | undefined,
+    variant: string | null | undefined,
     variants: string[],
     context?: EffortLabelContext,
 ) => {
     const visibleVariant = resolveVisibleEffortVariant(variant, variants);
-    return visibleVariant ? formatEffortLabel(visibleVariant, context) : null;
+    if (visibleVariant) return formatEffortLabel(visibleVariant, context);
+    return variants.length > 0 ? formatEffortLabel(undefined, context) : null;
 };
 
 export const getModelThinkingLevelLabel = (
     provider: { id?: string; models?: ProviderModel[] } | undefined,
     modelId: string | undefined,
-    variant?: string,
+    variant?: string | null,
 ) => {
     if (!provider || !modelId) {
         return null;
@@ -383,7 +384,7 @@ export const getModelThinkingLevelLabel = (
 
 export const DEFAULT_EFFORT_KEY = 'default';
 
-export const serializeEffortVariant = (variant?: string) => {
+export const serializeEffortVariant = (variant?: string | null) => {
     const trimmed = typeof variant === 'string' ? variant.trim() : '';
     return trimmed.length > 0 ? trimmed : DEFAULT_EFFORT_KEY;
 };
@@ -404,7 +405,7 @@ const EFFORT_RANKS: Record<string, number> = {
     minimal: 0,
 };
 
-export const getEffortRank = (variant?: string) => {
+export const getEffortRank = (variant?: string | null) => {
     if (!variant || variant.trim().length === 0) {
         return EFFORT_RANKS.default;
     }

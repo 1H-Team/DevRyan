@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
   spawnSync: vi.fn(() => ({ status: 0, stdout: '/usr/local/bin', stderr: '' })),
+  execFile: vi.fn((_command, _args, _options, callback) => callback(null, '/usr/local/bin', '')),
 }));
 
 const previousUpdateApiUrl = process.env.OPENCHAMBER_UPDATE_API_URL;

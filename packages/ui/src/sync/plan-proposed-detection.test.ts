@@ -60,6 +60,22 @@ const detect = (
 })
 
 describe("detectPlanProposedCandidate", () => {
+  test("managed collection with inherited Plan instructions cannot propose a replacement Plan", () => {
+    const state = buildState({
+      message: { [SESSION_ID]: [userMessage("human"), assistantMessage("plan"), userMessage("wake"), assistantMessage("collection")] },
+      part: {
+        human: [textPart("human", "Create the plan."), textPart("human", "User has requested to enter plan mode.", true)],
+        plan: [textPart("plan", "<!--plan-->\n# Original Plan")],
+        wake: [textPart("wake", "User has requested to enter plan mode.\nProduce an implementation plan only.", true), textPart("wake", "[devryan-provider-recovery:v1:task_fixture]\nCollect completed result.", true)],
+        collection: [textPart("collection", "<!--plan-->\n# Automatic Collection")],
+      },
+    })
+    expect(detect(state)).toBeNull()
+    state.message[SESSION_ID].push(userMessage("human-revision"), assistantMessage("revision"))
+    state.part["human-revision"] = [textPart("human-revision", "Revise the plan."), textPart("human-revision", "User has requested to enter plan mode.", true)]
+    state.part.revision = [textPart("revision", "<!--plan-->\n# Explicit Revised Plan")]
+    expect(detect(state)?.sourceMessageId).toBe("revision")
+  })
   test("returns the latest assistant plan turn when the completed assistant message contains a plan card", () => {
     const state = buildState({
       message: {

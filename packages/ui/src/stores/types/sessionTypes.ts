@@ -23,10 +23,9 @@ export interface AttachedFile {
     mimeType: string;
     filename: string;
     size: number;
-    source: "local" | "server" | "vscode";
+    source: "local" | "server";
     serverPath?: string;
-    vscodePath?: string;
-    vscodeSource?: 'file' | 'selection';
+
 }
 
 export type EditPermissionMode = 'allow' | 'ask' | 'deny' | 'full';
@@ -174,7 +173,7 @@ export type DraftSendConfig = {
     providerID?: string;
     modelID?: string;
     agent?: string;
-    variant?: string;
+    variant?: string | null;
     planMode?: boolean;
     modelProvenance?: 'explicit' | 'agent-default';
 };
@@ -344,7 +343,7 @@ export interface SessionStore {
     unshareSession: (id: string) => Promise<Session | null>;
     setCurrentSession: (id: string | null) => void;
     loadMessages: (sessionId: string, limit?: number) => Promise<void>;
-    sendMessage: (content: string, providerID: string, modelID: string, agent?: string, attachments?: AttachedFile[], agentMentionName?: string, additionalParts?: Array<{ text: string; attachments?: AttachedFile[]; synthetic?: boolean }>, variant?: string, inputMode?: 'normal' | 'shell') => Promise<void>;
+    sendMessage: (content: string, providerID: string, modelID: string, agent?: string, attachments?: AttachedFile[], agentMentionName?: string, additionalParts?: Array<{ text: string; attachments?: AttachedFile[]; synthetic?: boolean }>, variant?: string | null, inputMode?: 'normal' | 'shell') => Promise<void>;
     abortCurrentOperation: (sessionIdOverride?: string) => Promise<void>;
     acknowledgeSessionAbort: (sessionId: string) => void;
     armAbortPrompt: (durationMs?: number) => number | null;
@@ -367,7 +366,7 @@ export interface SessionStore {
     clearError: () => void;
     getSessionsByDirectory: (directory: string) => Session[];
     getDirectoryForSession: (sessionId: string) => string | null;
-    getLastUserChoice: (sessionId: string) => { agent?: string; providerID?: string; modelID?: string; variant?: string } | null;
+    getLastUserChoice: (sessionId: string) => { agent?: string; providerID?: string; modelID?: string; variant?: string | null } | null;
     getCurrentAgent: (sessionId: string) => string | undefined;
     syncMessages: (
       sessionId: string,
@@ -393,9 +392,8 @@ export interface SessionStore {
     saveAgentModelForSession: (sessionId: string, agentName: string, providerId: string, modelId: string) => void;
     getAgentModelForSession: (sessionId: string, agentName: string) => { providerId: string; modelId: string } | null;
 
-    saveAgentModelVariantForSession: (sessionId: string, agentName: string, providerId: string, modelId: string, variant: string | undefined) => void;
-    getAgentModelVariantForSession: (sessionId: string, agentName: string, providerId: string, modelId: string) => string | undefined;
-
+    saveAgentModelVariantForSession: (sessionId: string, agentName: string, providerId: string, modelId: string, variant: string | null | undefined) => void;
+    getAgentModelVariantForSession: (sessionId: string, agentName: string, providerId: string, modelId: string) => string | null | undefined;
 
     isOpenChamberCreatedSession: (sessionId: string) => boolean;
 

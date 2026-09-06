@@ -6,7 +6,7 @@
 
 **Architecture:** Add a focused user-profile provisioning runtime beside the existing OpenCode configuration modules. It merges a repository-owned baseline into the real user config, synchronizes managed files with hashes, installs missing packages idempotently, and is called before managed OpenCode starts; VS Code receives equivalent startup wiring. Generic plugin details remain read-only, while Slim status/actions render only for Slim selections or the empty setup surface.
 
-**Tech Stack:** Bun/Node.js, JavaScript and TypeScript, React, Zustand, Vitest, Express, Electron and VS Code managed OpenCode hosts.
+**Tech Stack:** Bun/Node.js, JavaScript and TypeScript, React, Zustand, Vitest, Express, Electron managed OpenCode hosts.
 
 ## Global Constraints
 
@@ -65,15 +65,11 @@ Expected: all clean-profile, no-op, merge, conflict, update, and install-failure
 - Modify: `packages/web/server/lib/opencode/lifecycle.js`
 - Modify: `packages/web/server/lib/opencode/lifecycle.test.js`
 - Modify: `packages/web/server/index.js`
-- Modify: `packages/vscode/src/opencodeConfig.ts`
-- Modify: `packages/vscode/src/opencode.ts`
-- Modify: `packages/vscode/src/opencode.test.ts`
-- Modify: `packages/vscode/src/DOCUMENTATION.md`
 - Modify: `packages/web/server/lib/opencode/DOCUMENTATION.md`
 
 **Interfaces:**
 - Consumes: `provisionUserProfile(): Promise<ProvisionResult>` before packaged agents and runtime overlays.
-- Produces: identical baseline configuration inputs and managed-startup behavior in web/Electron and VS Code; external runtimes skip provisioning.
+- Produces: identical baseline configuration inputs and managed-startup behavior in web/Electron; external runtimes skip provisioning.
 
 - [ ] **Step 1: Write failing lifecycle tests**
 
@@ -81,7 +77,6 @@ Add web lifecycle tests proving provisioning runs before agent/overlay sync and 
 
 - [ ] **Step 2: Run lifecycle tests and verify RED**
 
-Run: `bun run --cwd packages/web test -- lifecycle.test.js && bun test packages/vscode/src/opencode.test.ts`
 
 Expected: FAIL because startup has no provisioning dependency.
 
@@ -91,7 +86,6 @@ Inject the web runtime from `packages/web/server/index.js`; call it at the start
 
 - [ ] **Step 4: Run lifecycle tests and verify GREEN**
 
-Run: `bun run --cwd packages/web test -- lifecycle.test.js user-profile-provisioning.test.js && bun test packages/vscode/src/opencode.test.ts`
 
 Expected: all targeted startup and provisioning tests pass.
 
@@ -132,7 +126,6 @@ Expected: all plugin page and store tests pass.
 - Modify: `packages/web/server/default-config/codemap.md`
 - Modify: `packages/web/server/lib/opencode/DOCUMENTATION.md`
 - Modify: `packages/ui/src/components/sections/plugins/codemap.md`
-- Modify: `packages/vscode/src/DOCUMENTATION.md`
 - Modify: `codemap.md` only if an ownership/entrypoint changed.
 
 **Interfaces:**
@@ -159,7 +152,7 @@ Expected: exit code 0 with zero failed tests.
 
 Run: `bun run build`
 
-Expected: exit code 0 and packaged default-config assets remain available to web/Electron and VS Code resolution paths.
+Expected: exit code 0 and packaged default-config assets remain available to web/Electron resolution paths.
 
 - [ ] **Step 5: Inspect the final diff**
 

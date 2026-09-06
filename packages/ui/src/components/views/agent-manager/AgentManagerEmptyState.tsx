@@ -51,7 +51,7 @@ interface AgentManagerEmptyStateProps {
   isCreating?: boolean;
 }
 
-export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({ 
+export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
   className,
   onCreateGroup,
   isCreating = false,
@@ -71,40 +71,20 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
   const [mentionQuery, setMentionQuery] = React.useState('');
   const [showCommandAutocomplete, setShowCommandAutocomplete] = React.useState(false);
   const [commandQuery, setCommandQuery] = React.useState('');
-  
+
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const mentionRef = React.useRef<FileMentionHandle>(null);
   const commandRef = React.useRef<CommandAutocompleteHandle>(null);
-  
+
   const { currentTheme } = useThemeSystem();
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory ?? null);
   const { isGitRepository, isLoading: isLoadingBranches } = useBranchOptions(currentDirectory);
-  
-  const vscodeWorkspaceFolder = React.useMemo(() => {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-    const folder = (window as unknown as { __VSCODE_CONFIG__?: { workspaceFolder?: unknown } }).__VSCODE_CONFIG__?.workspaceFolder;
-    return typeof folder === 'string' && folder.trim().length > 0 ? folder.trim() : null;
-  }, []);
-
-  const isVSCodeRuntime = React.useMemo(() => {
-    if (typeof window === 'undefined') {
-      return false;
-    }
-    const apis = (window as unknown as { __OPENCHAMBER_RUNTIME_APIS__?: { runtime?: { isVSCode?: boolean } } }).__OPENCHAMBER_RUNTIME_APIS__;
-    return Boolean(apis?.runtime?.isVSCode);
-  }, []);
 
   // Get project directory for setup commands
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const projects = useProjectsStore((state) => state.projects);
   const projectRef = React.useMemo<ProjectRef | null>(() => {
-    // VS Code panel should always use the current workspace root.
-    if (isVSCodeRuntime && vscodeWorkspaceFolder) {
-      return { id: `vscode:${vscodeWorkspaceFolder}`, path: vscodeWorkspaceFolder };
-    }
 
     if (activeProjectId) {
       const project = projects.find((p) => p.id === activeProjectId);
@@ -118,15 +98,15 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
     }
 
     return null;
-  }, [activeProjectId, projects, currentDirectory, vscodeWorkspaceFolder, isVSCodeRuntime]);
+  }, [activeProjectId, projects, currentDirectory]);
 
   // Load setup commands from config
   React.useEffect(() => {
     if (!projectRef) return;
-    
+
     let cancelled = false;
     setIsLoadingSetupCommands(true);
-    
+
     (async () => {
       try {
         const commands = await getWorktreeSetupCommands(projectRef);
@@ -141,7 +121,7 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
         }
       }
     })();
-    
+
     return () => { cancelled = true; };
   }, [projectRef]);
 
@@ -321,17 +301,17 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
   const isSubmittingOrCreating = isSubmitting || isCreating;
 
   const isValid = Boolean(
-    groupName.trim() && 
-    prompt.trim() && 
-    selectedModels.length >= 1 && 
+    groupName.trim() &&
+    prompt.trim() &&
+    selectedModels.length >= 1 &&
     baseBranch &&
-    isGitRepository && 
+    isGitRepository &&
     !isLoadingBranches
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!isValid || isSubmittingOrCreating) return;
 
     setIsSubmitting(true);
@@ -573,7 +553,7 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
                 placeholder={t('agentManager.empty.prompt.placeholder')}
                 className="min-h-[100px] max-h-[300px] resize-none border-0 bg-transparent dark:bg-transparent px-4 py-3 typography-markdown focus-visible:ring-0 focus-visible:ring-offset-0"
               />
-            
+
             {/* Attached Files Display */}
             {attachedFiles.length > 0 && (
               <div className="flex flex-wrap gap-2 px-3 pb-2">
@@ -601,7 +581,7 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
                 ))}
               </div>
             )}
-            
+
               {/* Footer Controls */}
               <div className="flex items-center justify-between px-3 py-2 border-t border-border/40 bg-transparent">
               {/* Left Controls - Attachments */}
@@ -623,7 +603,7 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
                   <RiAddCircleLine className="h-[18px] w-[18px]" />
                 </button>
               </div>
-              
+
               {/* Right Controls - Model Count */}
               <div className="flex items-center gap-2">
                 <span className="typography-meta text-muted-foreground">

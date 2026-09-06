@@ -57,6 +57,12 @@ legacy drafts that persist both provider and model) may preserve a different mod
 ambient directory or reload state cannot make the display diverge from send-time
 agent-default routing.
 
+An asynchronous agent-catalog refresh restores the selected draft's authoritative
+send selection through `restoreLiveConfigForSelectedDraft`. It reads the active
+draft when the refresh completes, so a late response cannot replace a newer
+agent/model/thinking pick with account defaults or restore a draft the user left.
+Explicit settings actions still apply defaults normally.
+
 Managed non-admin accounts keep sparse per-agent provider, model, and optional
 thinking overrides as account-global state, never directory snapshots. Only an
 explicit Save in Settings → Sessions persists one through the server; composer
@@ -77,7 +83,7 @@ files for channels the principal can no longer access.
 
 `useConfigApplyStore.ts` is the renderer projection of the host-owned revisioned
 configuration-apply coordinator. Every successful config mutation merges its
-validated apply envelope. The always-mounted web/Electron and VS Code shells poll only
+validated apply envelope. The always-mounted web/Electron shells poll only
 transient pending/waiting/applying states, including after Settings closes, and stop
 once the host reaches a stable state. The store sends the exact expected revision for wait/force/external
 acknowledgement, retains failures for explicit retry, and refreshes only applied
@@ -229,7 +235,7 @@ A 404 or 501 from the host clears the state so the section hides.
 
 Ownership and safety rules:
 
-1. The store is not persisted. The web/Electron or VS Code host ledger is the
+1. The store is not persisted. The web/Electron host ledger is the
    durable source of truth and every app owner performs an initial snapshot.
 2. Ingestion reconstructs an explicit safe projection. Prompt text,
    idempotency keys, lease tokens, and unknown fields are not retained.

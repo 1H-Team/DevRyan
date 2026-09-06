@@ -257,6 +257,34 @@ describe('deterministic evaluation graders', () => {
     assert.deepEqual(events.map((event) => event.ordinal), [1, 2, 3, 4]);
   });
 
+  test('managed repair preserves root/child scope and orders the same private causal intervals across their graph', () => {
+    const collect = (change = () => {}) => {
+      const root = [{ kind: 'read', start: 1, end: 10 }, { kind: 'green', start: 30, end: 40 }];
+      const child = [{ kind: 'red', start: 10, end: 20 }, { kind: 'mutation', start: 20, end: 30 }];
+      change(root, child);
+      return collectSanitizedTools([
+        { sessionId: 'ses_parent', messages: [{ parts: root.map(repairPart) }] },
+        { sessionId: 'ses_child', messages: [{ parts: child.map(repairPart) }] },
+      ], { rootSessionId: 'ses_parent', ownedTestRelativePath });
+    };
+    const events = collect();
+    assert.equal(gradeToolRequirements('managed-repair-and-test', events).passed, true);
+    assert.deepEqual(events.map(event => [event.sessionScope, event.ordinal]),
+      [['root', 1], ['root', 4], ['child', 2], ['child', 3]]);
+    assert.doesNotMatch(JSON.stringify(events), /"start"|"end"|"time"/);
+    assert.equal(gradeToolRequirements('repair-and-test', collect()).passed, false,
+      'Delegated work must still fail the original direct-repair contract');
+    for (const change of [
+      (_root, child) => { child.splice(0, 1); },
+      (_root, child) => { child[1].start = 19; },
+      (root, child) => { root[1].end = child[1].end; },
+      (_root, child) => { child[0].start = NaN; },
+    ]) assert.equal(gradeToolRequirements('managed-repair-and-test', collect(change)).passed, false);
+    const unknown = collect();
+    unknown[2].sessionScope = 'unverified';
+    assert.equal(gradeToolRequirements('managed-repair-and-test', unknown).passed, false);
+  });
+
   test('searches multiple candidates and projects ordinals only onto the causal chain', () => {
     const events = collectRepairTools([
       { kind: 'read', tool: 'read', start: 1, end: 5 },

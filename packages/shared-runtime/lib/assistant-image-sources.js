@@ -208,6 +208,7 @@ const collectDefinitions = (markdown, masked) => {
 
 export const extractAssistantImageReferences = (markdown) => {
   if (typeof markdown !== 'string' || !markdown) return [];
+  if (!markdown.includes('[')) return [];
   const masked = maskCode(markdown);
   const definitions = collectDefinitions(markdown, masked);
   const references = [];

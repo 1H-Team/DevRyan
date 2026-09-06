@@ -130,14 +130,14 @@ const isMcpOAuthCallbackPath = (): boolean => {
 
 const EmbeddedSessionSelectionGate: React.FC<{
   embeddedSessionChat: EmbeddedSessionChatConfig | null;
-  isVSCodeRuntime: boolean;
-}> = ({ embeddedSessionChat, isVSCodeRuntime }) => {
+
+}> = ({ embeddedSessionChat, }) => {
   const sessions = useSessions();
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
 
   React.useEffect(() => {
-    if (!embeddedSessionChat || isVSCodeRuntime) {
+    if (!embeddedSessionChat) {
       return;
     }
 
@@ -150,7 +150,7 @@ const EmbeddedSessionSelectionGate: React.FC<{
     }
 
     void setCurrentSession(embeddedSessionChat.sessionId);
-  }, [currentSessionId, embeddedSessionChat, isVSCodeRuntime, sessions, setCurrentSession]);
+  }, [currentSessionId, embeddedSessionChat, sessions, setCurrentSession]);
 
   return null;
 };
@@ -525,7 +525,7 @@ function App({ apis }: AppProps) {
   const [showMemoryDebug, setShowMemoryDebug] = React.useState(false);
   const refreshGitHubAuthStatus = useGitHubAuthStore((state) => state.refreshStatus);
   const authPrincipal = useAuthPrincipal();
-  const [isVSCodeRuntime, setIsVSCodeRuntime] = React.useState<boolean>(() => apis.runtime.isVSCode);
+
   const [isEmbeddedVisible, setIsEmbeddedVisible] = React.useState(true);
   const [initRetryExhausted, setInitRetryExhausted] = React.useState(false);
   const [initRetryEpoch, setInitRetryEpoch] = React.useState(0);
@@ -564,10 +564,6 @@ function App({ apis }: AppProps) {
   }, [mobileKeyboardMode]);
 
   React.useEffect(() => {
-    setIsVSCodeRuntime(apis.runtime.isVSCode);
-  }, [apis.runtime.isVSCode]);
-
-  React.useEffect(() => {
     registerRuntimeAPIs(apis);
     return () => registerRuntimeAPIs(null);
   }, [apis]);
@@ -587,7 +583,7 @@ function App({ apis }: AppProps) {
 
   React.useEffect(() => {
     if (!isConnected || !isInitialized || !currentDirectory) return;
-    if (authPrincipal.scope === 'managed' || isVSCodeRuntime) return;
+    if (authPrincipal.scope === 'managed') return;
     if (isDesktopRuntime && (!bootOutcomeKnown || !bootViewIsMain)) return;
 
     void import('@/lib/directoryRecovery')
@@ -604,7 +600,7 @@ function App({ apis }: AppProps) {
     isConnected,
     isDesktopRuntime,
     isInitialized,
-    isVSCodeRuntime,
+
   ]);
 
   // Non-main desktop boot routes do not show chat, so they can leave the
@@ -662,16 +658,14 @@ function App({ apis }: AppProps) {
   }, [setPlanModeEnabled]);
 
   React.useEffect(() => {
-    // VS Code runtime bootstraps config + sessions after the managed OpenCode instance reports "connected".
+
     // Doing the default initialization here can race with startup and lead to one-shot failures.
-    if (isVSCodeRuntime) {
-      return;
-    }
+
     void initializeApp();
-  }, [initializeApp, isVSCodeRuntime]);
+  }, [initializeApp]);
 
   React.useEffect(() => {
-    if (isVSCodeRuntime || isInitialized) return;
+    if (isInitialized) return;
 
     let active = true;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -713,7 +707,7 @@ function App({ apis }: AppProps) {
       active = false;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [initRetryEpoch, isInitialized, isVSCodeRuntime]);
+  }, [initRetryEpoch, isInitialized]);
 
   React.useEffect(() => {
     if (isInitialized) {
@@ -732,18 +726,13 @@ function App({ apis }: AppProps) {
       return;
     }
 
-    // VS Code runtime loads sessions via VSCodeLayout bootstrap to avoid startup races.
-    if (isVSCodeRuntime) {
-      return;
-    }
-
     if (!isConnected) {
       return;
     }
     opencodeClient.setDirectory(currentDirectory);
 
     // Session loading is handled by the sync system's bootstrap — no manual loadSessions needed.
-  }, [currentDirectory, isSwitchingDirectory, isConnected, isVSCodeRuntime]);
+  }, [currentDirectory, isSwitchingDirectory, isConnected]);
 
   React.useEffect(() => {
     if (!embeddedSessionChat || typeof window === 'undefined') {
@@ -784,7 +773,7 @@ function App({ apis }: AppProps) {
   }, [embeddedSessionChat]);
 
   React.useEffect(() => {
-    if (!embeddedSessionChat?.directory || isVSCodeRuntime) {
+    if (!embeddedSessionChat?.directory) {
       return;
     }
 
@@ -793,7 +782,7 @@ function App({ apis }: AppProps) {
     }
 
     setDirectory(embeddedSessionChat.directory, { showOverlay: false });
-  }, [currentDirectory, embeddedSessionChat, isVSCodeRuntime, setDirectory]);
+  }, [currentDirectory, embeddedSessionChat, setDirectory]);
 
   React.useEffect(() => {
     if (!embeddedSessionChat || typeof window === 'undefined') {
@@ -1088,7 +1077,7 @@ function App({ apis }: AppProps) {
           <RuntimeAPIProvider apis={apis}>
             <TooltipProvider delayDuration={300} skipDelayDuration={150}>
               <div className="h-full text-foreground bg-background">
-                <EmbeddedSessionSelectionGate embeddedSessionChat={embeddedSessionChat} isVSCodeRuntime={isVSCodeRuntime} />
+                <EmbeddedSessionSelectionGate embeddedSessionChat={embeddedSessionChat}  />
                 <SyncAppEffects embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled} />
                 <AgentHandoffGuardProvider>
                   <ChatView />

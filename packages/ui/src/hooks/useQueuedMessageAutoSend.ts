@@ -55,14 +55,17 @@ export function useQueuedMessageAutoSend(enabledOrOptions?: boolean | { enabled?
         return;
       }
 
-      const fallbackSendConfig = resolveSessionSendConfig(sessionId);
-      if (!fallbackSendConfig.providerID || !fallbackSendConfig.modelID) {
-        return;
-      }
-
       inFlightSessionsRef.current.add(sessionId);
 
       try {
+        const hasCapturedConfigs = queueSnapshot.every(message => (
+          message.sendConfig?.providerID && message.sendConfig.modelID
+          && typeof message.sendConfig.planMode === 'boolean'
+        ));
+        const fallbackSendConfig = hasCapturedConfigs
+          ? queueSnapshot[0].sendConfig!
+          : resolveSessionSendConfig(sessionId);
+        if (!fallbackSendConfig.providerID || !fallbackSendConfig.modelID) return;
         await flushQueuedMessagesForSession({
           sessionId,
           waitForCurrentTurnBeforeFirstSend: true,

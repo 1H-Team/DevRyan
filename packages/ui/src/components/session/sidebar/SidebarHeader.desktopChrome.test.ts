@@ -24,7 +24,7 @@ describe('SidebarHeader desktop chrome spacing', () => {
     expect(headerSource).toContain('reserveExternalDesktopChromeRow && !showTopRow');
 
     expect(sessionSidebarSource).toContain(
-      "reserveExternalDesktopChromeRow={!mobileVariant && !isVSCode && (isDesktopShellRuntime || audience === 'bots')}",
+      "reserveExternalDesktopChromeRow={!mobileVariant && (isDesktopShellRuntime || audience === 'bots')}",
     );
     expect(sessionSidebarSource).toContain("showSidebarToggle={isWebRuntime && audience !== 'bots'}");
     expect(sessionSidebarSource).toContain('hideSearchAction={hideSearchInSidebarHeader}');

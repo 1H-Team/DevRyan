@@ -46,9 +46,7 @@ following prerequisites must all be true:
 
 1. DevRyan is installed as the local macOS Electron app. A migrated deployment
    may be owned by its registered background runtime while the UI is closed;
-   Docker mutations remain inside the signed local runtime boundary. VS Code
-   shows an explicit unsupported-host message, and the legacy Tauri shell does
-   not own this feature.
+   Docker mutations remain inside the signed local runtime boundary. The legacy Tauri shell does not own this feature.
 2. Supabase multi-user mode is configured and every repository migration,
    through `supabase/migrations/20260903110000_bot_memory_extraction_inline_claim.sql`,
    is deployed. A schema-cache miss returns `migration_required` with
@@ -645,6 +643,54 @@ logged out.
 
 ## Data, encryption, and retention
 
+### Damaged runtime owner recovery
+
+`runtime_service_owner_invalid` blocks startup when
+`runtime-service/owner.v1.lock` is malformed. Restarting the app alone cannot
+prove that a process which wrote damaged state has stopped.
+
+The first safe observation saves a private `owner-recovery.v2.json` proof with
+the OS boot-session UUID and the file's inode, birth time, size,
+change/modification times, and SHA-256. A later OS boot can quarantine that
+unchanged file. The mount device number is excluded from cross-boot identity:
+including it could make an unchanged file appear different and replace the
+pre-reboot evidence. Immediate file revalidation before quarantine still checks
+device/inode, timestamps, size, and hash. File age and service reachability are
+never substitutes for a changed boot UUID.
+
+Existing well-formed v1 proofs migrate using all of their identity fields
+except the device number, preserving their observed boot. The original v1 file
+is retained. A valid v2 proof takes precedence; a changed v2 identity cannot
+fall back to older v1 evidence. Repeated matching observations do not rewrite
+the proof. Proof updates, owner acquisition/release, and quarantine share the
+owner mutation guard. Stopped-owner polling holds it only while inspecting
+and recording state, never during the polling delay.
+
+Startup messages and content-free recovery diagnostics distinguish:
+
+- `reboot_required`: the damaged file has only been observed in this boot.
+- `file_changed`: a different damaged file was observed and a new proof saved.
+- `boot_identity_unavailable`: the OS boot UUID could not be verified.
+- `unsafe_file_state`: a link, unsupported file state, or changed file during
+  final revalidation prevented automatic repair.
+
+Unreadable files retain `runtime_service_owner_unreadable`. These failures do
+not authorize deletion or fallback to a second runtime.
+
+If recovery still fails after reboot, inspect the owner file, recovery proofs,
+and Electron startup log before changing anything. An operator repair must
+quit DevRyan, unregister any background service with the existing service
+control, and verify that neither a runtime process nor its launchd job remains.
+Preserve the damaged owner, proofs, and bounded diagnostics in a private backup;
+never display the handshake's sealed bootstrap token. Under the existing
+ownership mutation guard, recheck the exact observed regular file and move
+only that damaged owner to private quarantine. Abort if shutdown cannot be
+verified or the file changes. Reopen DevRyan to acquire a fresh owner; verify
+startup and a subsequent quit/reopen. Do not delete settings, credentials,
+sessions, deployment keys, or Docker volumes as part of owner repair.
+
+### Runtime data layout
+
 The data root is `$OPENCHAMBER_DATA_DIR` when set, otherwise the existing
 DevRyan compatibility data directory (normally `~/.config/openchamber`). Its
 Bot-owned local paths are:
@@ -659,6 +705,8 @@ Bot-owned local paths are:
   manifest state;
 - `runtime-service/owner.v1.lock`: private single-owner generation fence for
   the current data directory;
+- `runtime-service/owner-recovery.v2.json`: private cross-boot damaged-file
+  observation; a migrated `owner-recovery.v1.json` is preserved;
 - `runtime-service/handshake.v1.json`: private protocol/port/health descriptor
   whose bootstrap token is sealed with Electron `safeStorage` and rotated after
   one use;

@@ -41,7 +41,7 @@ Background session hydration is scoped to the current directory.
   changes the current directory and enables its normal bootstrap/materialization.
 
 Paths are normalized for separators, trailing slashes, and case before policy
-comparison so web, Electron, and VS Code share the same rule.
+comparison so web and Electron share the same rule.
 
 ## Why this boundary
 

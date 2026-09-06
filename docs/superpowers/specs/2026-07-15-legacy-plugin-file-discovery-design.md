@@ -39,7 +39,7 @@ user plugin files.
 
 ## Verification
 
-- Web and VS Code regression tests create singular and plural user/project
+- Web regression tests create singular and plural user/project
   files and assert all four are returned in deterministic order.
 - Existing malformed-entry and read-only route behavior remains unchanged.
 - The real Plugins Settings page shows the previously hidden singular user

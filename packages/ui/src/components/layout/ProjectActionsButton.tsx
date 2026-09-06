@@ -241,7 +241,7 @@ export const ProjectActionsButton = ({
   const { t } = useI18n();
   const principal = useAuthPrincipal();
   const canUseBrowser = hasAuthCapability(principal, 'browser');
-  const { terminal, runtime } = useRuntimeAPIs();
+  const { terminal } = useRuntimeAPIs();
   const { isMobile } = useDeviceInfo();
   const isDesktopShellApp = React.useMemo(() => isDesktopShell(), []);
   const desktopSshInstances = useDesktopSshStore((state) => state.instances);
@@ -459,7 +459,7 @@ export const ProjectActionsButton = ({
   }, [projectActionRuns, removeProjectActionRun, terminalSessions]);
 
   React.useEffect(() => {
-    if (runtime.isVSCode || typeof terminal.keepAlive !== 'function') {
+    if (typeof terminal.keepAlive !== 'function') {
       return;
     }
 
@@ -497,7 +497,7 @@ export const ProjectActionsButton = ({
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [projectActionRuns, runtime.isVSCode, terminal]);
+  }, [projectActionRuns, terminal]);
 
   React.useEffect(() => {
     for (const [runKey, entry] of Object.entries(projectActionRuns)) {
@@ -612,7 +612,7 @@ export const ProjectActionsButton = ({
   ]);
 
   const runAction = React.useCallback(async (action: OpenChamberProjectAction) => {
-    if (runtime.isVSCode || (!allowMobile && isMobile)) {
+    if ((!allowMobile && isMobile)) {
       return;
     }
 
@@ -772,7 +772,7 @@ export const ProjectActionsButton = ({
     openExternal,
     openProjectUrl,
     projectActionRuns,
-    runtime.isVSCode,
+
     removeProjectActionRun,
     setConnecting,
     setProjectActionRun,
@@ -1004,7 +1004,7 @@ export const ProjectActionsButton = ({
     return browserAction;
   }
 
-  if (runtime.isVSCode || (!allowMobile && isMobile)) {
+  if ((!allowMobile && isMobile)) {
     return browserActionPortal;
   }
   if (!stableProjectRef || !normalizedDirectory) {

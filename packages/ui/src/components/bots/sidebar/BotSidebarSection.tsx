@@ -1,11 +1,10 @@
 import React from 'react';
-import { RiRobot2Line } from '@remixicon/react';
+
 import { useShallow } from 'zustand/react/shallow';
 
 import { BotSidebarRow } from './BotSidebarRow';
 import { resolveBotSidebarStatus, type BotSidebarStatus } from './botSidebarStatus';
 import { selectBotCurrentRunId } from '../operations/selectBotCurrentRun';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import { useBotChannelStore, type BotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotOperationsStore, type BotOperationsStore } from '@/stores/useBotOperationsStore';
@@ -13,11 +12,9 @@ import { useBotsStore, type BotsStore } from '@/stores/useBotsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
 
-export const VSCODE_UNSUPPORTED_BOT_ID = 'vscode-unsupported';
-
 type BotSidebarSectionProps = {
   onBotSelected?: (botId: string) => void;
-  vscodeRuntime?: boolean;
+
   botsStore?: BotsStore;
   channelStore?: BotChannelStore;
   operationsStore?: BotOperationsStore;
@@ -26,7 +23,7 @@ type BotSidebarSectionProps = {
 
 export const BotSidebarSection: React.FC<BotSidebarSectionProps> = ({
   onBotSelected,
-  vscodeRuntime = isVSCodeRuntime(),
+
   botsStore = useBotsStore,
   channelStore = useBotChannelStore,
   operationsStore = useBotOperationsStore,
@@ -84,38 +81,16 @@ export const BotSidebarSection: React.FC<BotSidebarSectionProps> = ({
     if (!isMobile) useUIStore.getState().setRightSidebarOpen(true);
     onBotSelected?.(botId);
 
-    if (!vscodeRuntime) {
       void channelStore.getState().ensureOwnerChannel(botId).catch(() => undefined);
-    }
-  }, [botsStore, channelStore, isMobile, onBotSelected, vscodeRuntime]);
 
-  const openUnsupported = React.useCallback(() => {
-    botsStore.getState().selectBot(VSCODE_UNSUPPORTED_BOT_ID);
-    useMainSidebarAudienceStore.getState().setAudience('bots');
-    onBotSelected?.(VSCODE_UNSUPPORTED_BOT_ID);
-  }, [botsStore, onBotSelected]);
+  }, [botsStore, channelStore, isMobile, onBotSelected]);
 
   return (
     <section
       className={standalone ? 'min-w-0' : 'mb-2 min-w-0 border-b border-border/50 pb-2'}
       aria-label={t('bots.sidebar.listAria')}
     >
-      {vscodeRuntime ? (
-        <button
-          type="button"
-          aria-current={selectedBotId === VSCODE_UNSUPPORTED_BOT_ID ? 'page' : undefined}
-          onClick={openUnsupported}
-          className="flex min-h-14 w-full min-w-0 items-center gap-3 rounded-md px-2 py-2 text-left text-foreground transition-colors hover:bg-interactive-hover/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-        >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] border border-border/60 bg-[var(--surface-elevated)] text-muted-foreground">
-            <RiRobot2Line className="h-5 w-5" aria-hidden />
-          </span>
-          <span className="min-w-0">
-            <span className="block typography-ui-label font-medium">{t('bots.sidebar.title')}</span>
-            <span className="block truncate typography-micro text-muted-foreground">{t('bots.sidebar.desktopRequiredShort')}</span>
-          </span>
-        </button>
-      ) : orderedBotIds.length > 0 ? (
+      {orderedBotIds.length > 0 ? (
         <div className="space-y-0.5" role="list" aria-label={t('bots.sidebar.listAria')}>
           {orderedBotIds.map((botId) => {
             const bot = botsById[botId];

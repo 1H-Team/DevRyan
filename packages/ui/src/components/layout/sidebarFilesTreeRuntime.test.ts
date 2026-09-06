@@ -7,7 +7,7 @@ describe('shouldShowSidebarFileRowActions', () => {
     expect(shouldShowSidebarFileRowActions({
       platform: 'web',
       isDesktop: false,
-      isVSCode: false,
+
     })).toBe(false);
   });
 
@@ -15,15 +15,8 @@ describe('shouldShowSidebarFileRowActions', () => {
     expect(shouldShowSidebarFileRowActions({
       platform: 'desktop',
       isDesktop: true,
-      isVSCode: false,
+
     })).toBe(true);
   });
 
-  test('keeps row actions in the VS Code runtime', () => {
-    expect(shouldShowSidebarFileRowActions({
-      platform: 'vscode',
-      isDesktop: false,
-      isVSCode: true,
-    })).toBe(true);
-  });
 });

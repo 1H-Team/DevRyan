@@ -25,7 +25,9 @@ Service-layer modules for server features (OpenCode lifecycle, auth, shared-host
 - **Route registration pattern** for feature modules exposing `register*Routes(app, deps)`.
 - **Release authority**: `package-manager.js` reads the latest stable DevRyan
   release from `1H-Team/DevRyan`; `OPENCHAMBER_UPDATE_API_URL` remains an
-  explicit compatibility override rather than the default source.
+  explicit compatibility override rather than the default source. Automatic
+  update checks use asynchronous, single-flight package-manager detection;
+  terminal detection and update execution retain their synchronous entrypoints.
 
 ## Flow
 1. `server/index.js` imports factories/registrars from this directory.

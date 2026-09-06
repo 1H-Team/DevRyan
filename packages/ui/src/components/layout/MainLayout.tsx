@@ -105,7 +105,7 @@ export const MainLayout: React.FC = () => {
 
     useConfigApplyStatusLifecycle(isSettingsDialogOpen);
 
-    const { isMobile, isTablet } = useDeviceInfo();
+    const { isMobile, isTablet, screenWidth } = useDeviceInfo();
     const isDesktopShellRuntime = React.useMemo(() => isDesktopShell(), []);
     const sidebarWidth = useUIStore((state) => state.sidebarWidth);
     const rightSidebarWidth = useUIStore((state) => state.rightSidebarWidth);
@@ -146,38 +146,48 @@ export const MainLayout: React.FC = () => {
         setMultiRunLauncherOpen(false);
     }, [botMode, setBottomTerminalOpen, setMultiRunLauncherOpen]);
 
-    // Compute drawer width
-    useEffect(() => {
-        if (isMobile) {
-            leftDrawerWidth.current = window.innerWidth * (MOBILE_DRAWER_WIDTH_PERCENT / 100);
-            rightDrawerWidth.current = window.innerWidth * (MOBILE_DRAWER_WIDTH_PERCENT / 100);
-        }
-    }, [isMobile]);
-
     // Sync left drawer state and motion value
-    useEffect(() => {
+    React.useLayoutEffect(() => {
         if (!isMobile) return;
+        const width = screenWidth * (MOBILE_DRAWER_WIDTH_PERCENT / 100);
+        const resized = leftDrawerWidth.current !== width;
+        leftDrawerWidth.current = width;
         const targetX = mobileLeftDrawerOpen ? 0 : -leftDrawerWidth.current;
-        animate(leftDrawerX, targetX, {
+        if (resized) {
+            leftDrawerX.stop();
+            leftDrawerX.set(targetX);
+            return;
+        }
+        const animation = animate(leftDrawerX, targetX, {
             type: "spring",
             stiffness: 400,
             damping: 35,
             mass: 0.8
         });
-    }, [mobileLeftDrawerOpen, isMobile, leftDrawerX]);
+        return () => animation.stop();
+    }, [mobileLeftDrawerOpen, isMobile, screenWidth, leftDrawerX]);
 
     // Sync right drawer state and motion value
-    useEffect(() => {
+    React.useLayoutEffect(() => {
         if (!isMobile) return;
+        const width = screenWidth * (MOBILE_DRAWER_WIDTH_PERCENT / 100);
+        const resized = rightDrawerWidth.current !== width;
+        rightDrawerWidth.current = width;
         mobileRightDrawerOpenRef.current = isRightSidebarOpen;
         const targetX = isRightSidebarOpen ? 0 : rightDrawerWidth.current;
-        animate(rightDrawerX, targetX, {
+        if (resized) {
+            rightDrawerX.stop();
+            rightDrawerX.set(targetX);
+            return;
+        }
+        const animation = animate(rightDrawerX, targetX, {
             type: "spring",
             stiffness: 400,
             damping: 35,
             mass: 0.8
         });
-    }, [isMobile, isRightSidebarOpen, rightDrawerX]);
+        return () => animation.stop();
+    }, [isMobile, isRightSidebarOpen, screenWidth, rightDrawerX]);
 
     // Sync session switcher state to left drawer (one-way)
     useEffect(() => {

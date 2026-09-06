@@ -13,6 +13,11 @@ starts a new operation while an unchanged retry reuses the prior key.
 Sidebar utilities keep prompt-recency sorting, grouping, visible draft selection,
 hint-first session directory routing, and safe session-delete failure feedback
 testable outside React rendering.
+`sidebar/SessionNodeItem.tsx` keeps its invisible context-menu anchor at zero
+size even under the global touch-target minimum. Its non-drawer touch layout
+uses the mobile stylesheet's row clearance variables to keep full-size actions
+and child toggles clear of title glyphs; fine-pointer and drawer spacing retain
+their existing defaults.
 Active root sessions preserve pinned precedence and otherwise move only when a
 visible user prompt is dispatched; assistant/session metadata churn cannot
 reorder rows or automatic worktree groups. Every role

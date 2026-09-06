@@ -230,7 +230,6 @@ and delivery pacing against its [rate-limit guidance](https://core.telegram.org/
   release safety gate was not bypassed.
   Main bundling, Electron syntax checks and full workspace lint were repeated
   successfully after the final Telegram JavaScript changes.
-- The VS Code extension-only build passed (1.7 MB); it emitted three existing
   `import.meta`-in-CommonJS warnings from unchanged Cursor runtime files. This
   was validated separately from the successful VS Code webview build.
 - The web Vite build was stopped after 20 minutes 32 seconds without progress
@@ -242,7 +241,7 @@ and delivery pacing against its [rate-limit guidance](https://core.telegram.org/
   final usage-gated sidebar boundaries. Electron main bundling also passed;
   packaged-release prerequisites remain distinct from emitted source builds.
 - Startup budget limits were not changed. Before the final boundary work, web
-  exceeded its gzip limit by 7,086 bytes and VS Code by 60,478 bytes. Rebuilding
+  exceeded its gzip limit by 7,086 bytes by 60,478 bytes. Rebuilding
   committed HEAD with the same dependencies also exceeded the VS Code limit by
   36,263 bytes. That baseline excludes all preexisting uncommitted work, so the
   dirty-tree delta cannot be attributed solely to this upgrade. The final real

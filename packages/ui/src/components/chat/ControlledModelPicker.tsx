@@ -199,7 +199,7 @@ export function ControlledVariantPicker({
     value.variant ?? undefined,
     variants,
     { providerId: value.providerId },
-  ) ?? variants[0];
+  );
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -215,6 +215,12 @@ export function ControlledVariantPicker({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[min(210px,calc(100vw-2rem))]">
+        <DropdownMenuItem className="typography-meta" onSelect={() => onChange({ ...value, variant: null })}>
+          <div className="flex w-full items-center justify-between gap-2">
+            <span>{formatEffortLabel(undefined)}</span>
+            {activeVariant === undefined ? <RiCheckLine className="h-4 w-4 text-primary" /> : null}
+          </div>
+        </DropdownMenuItem>
         {variants.map((variant) => (
           <DropdownMenuItem
             key={variant}

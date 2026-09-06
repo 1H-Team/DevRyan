@@ -66,7 +66,7 @@ A provisional card alone improves perceived responsiveness but does not remove t
 - A terminal tool state without an authoritative task ID removes provisional content rather than leaving stale activity.
 - The UI does not derive live status from historical messages after the tool becomes terminal.
 - The tool instruction does not forbid todos for genuinely multi-step work; it only removes a todo operation whose sole purpose is to restate an already-decided delegation.
-- The scheduler remains the only source of task, queue, child-session, and completion state across web, Electron, and VS Code.
+- The scheduler remains the only source of task, queue, child-session, and completion state across web and Electron.
 - No dependency or persisted-data format changes are introduced.
 
 ## Testing and Acceptance

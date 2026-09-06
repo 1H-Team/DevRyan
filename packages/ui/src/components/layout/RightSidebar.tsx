@@ -2,7 +2,7 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/useUIStore';
 import { useI18n } from '@/lib/i18n';
-import { isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag } from '@/lib/desktop';
+import { isDesktopShell, startDesktopWindowDrag } from '@/lib/desktop';
 import { useTabletStandalonePwaRuntime } from '@/lib/device';
 
 export const RIGHT_SIDEBAR_CONTENT_WIDTH = 420;
@@ -21,7 +21,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
   const rightSidebarWidth = useUIStore((state) => state.rightSidebarWidth);
   const setRightSidebarWidth = useUIStore((state) => state.setRightSidebarWidth);
   const isDesktopApp = React.useMemo(() => isDesktopShell(), []);
-  const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
+
   const isTabletStandalonePwa = useTabletStandalonePwaRuntime();
   const [isResizing, setIsResizing] = React.useState(false);
   const startXRef = React.useRef(0);
@@ -154,7 +154,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
   }, [isDesktopApp]);
 
   const webWindowControlsOverlayStyle = React.useMemo<React.CSSProperties | undefined>(() => {
-    if (isDesktopApp || isVSCode) {
+    if (isDesktopApp) {
       return undefined;
     }
 
@@ -163,7 +163,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
       paddingRight: 'calc(0.75rem + var(--oc-wco-right-inset, 0px))',
       ...(isTabletStandalonePwa ? { paddingTop: 'var(--oc-safe-area-top, 0px)' } : null),
     };
-  }, [isDesktopApp, isTabletStandalonePwa, isVSCode]);
+  }, [isDesktopApp, isTabletStandalonePwa]);
 
   return (
     <aside

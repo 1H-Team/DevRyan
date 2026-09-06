@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'bun:test';
+import { formatEffortLabel } from '../chat/mobileControlsUtils';
+import { resolveAgentVariantForSave } from '../sections/agents/agentVariantSelection';
 
 const sessionDir = dirname(fileURLToPath(import.meta.url));
 const readSource = (path: string) => readFileSync(resolve(sessionDir, path), 'utf8');
@@ -45,9 +47,16 @@ describe('thinking variant labels', () => {
     expect(agentsPage).toContain('{ providerId: parsedRowModel?.providerId }');
   });
 
-  test('does not offer an unset thinking option in agent settings', () => {
+  test('offers provider Default in agent settings without inventing a thinking level', () => {
     const agentsPage = readSource('../sections/agents/AgentsPage.tsx');
+    const defaultOption = agentsPage.match(/<SelectItem value=\{NO_VARIANT_VALUE\}>(.*?)<\/SelectItem>/)?.[1];
+    const provider = {
+      id: 'openai',
+      models: [{ id: 'qa-model', variants: { low: {}, high: {} } }],
+    };
 
-    expect(agentsPage).not.toContain('<SelectItem value={NO_VARIANT_VALUE}>');
+    expect(defaultOption).toBe('{formatEffortLabel(undefined)}');
+    expect(formatEffortLabel(undefined)).toBe('Default');
+    expect(resolveAgentVariantForSave(provider, 'openai/qa-model', undefined)).toBeUndefined();
   });
 });

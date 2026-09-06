@@ -1,12 +1,13 @@
 import { describe, expect, test, beforeEach, mock } from "bun:test"
 import type { PermissionRequest } from "@/types/permission"
-import type { Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part, SessionStatus, UserMessage } from "@opencode-ai/sdk/v2/client"
 import type {
   ScopedSessionRevertResult,
   ScopedSessionUnrevertResult,
   SessionTreeChanges,
 } from "@/lib/opencode/client"
 import { applyDirectoryEvent } from "./event-reducer"
+import { createLatestUserChoiceSelector } from "./subtask-agent"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
 import { ABORT_GUARD_TTL_MS, isAbortGuardActive, resetAbortGuardState } from "./abort-retry-guard"
 
@@ -2958,6 +2959,92 @@ describe("revertToMessage scoped revert", () => {
     transport.resolve()
     await pendingSend
   })
+
+  for (const selection of [
+    { label: "Low", input: { variant: "low" }, nativeVariant: "low", restoredVariant: "low" },
+    { label: "High", input: { variant: "high" }, nativeVariant: "high", restoredVariant: "high" },
+    { label: "provider default", input: { variant: null }, nativeVariant: "", restoredVariant: null },
+    { label: "uncaptured variant", input: {}, nativeVariant: undefined, restoredVariant: undefined },
+  ] as const) {
+    test(`preserves ${selection.label} in the latest-user choice before a delayed canonical echo`, async () => {
+      const store = createStore({}, [makeSession("session-a")])
+      const childStores = createChildStores([["/test/project", store]])
+      const { setActionRefs, setOptimisticRefs, optimisticSend } = await import("./session-actions")
+      const { applyOptimisticAdd, applyOptimisticRemove } = await import("./optimistic")
+      setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+      setOptimisticRefs(
+        (input) => store.setState((state) => {
+          const draft = { message: { ...state.message }, part: { ...state.part } }
+          applyOptimisticAdd(draft, input)
+          return draft
+        }),
+        (input) => store.setState((state) => {
+          const draft = { message: { ...state.message }, part: { ...state.part } }
+          applyOptimisticRemove(draft, input)
+          return draft
+        }),
+      )
+      const transport = createDeferred<void>()
+      const transportStarted = createDeferred<string>()
+      const pendingSend = optimisticSend({
+        sessionId: "session-a",
+        content: "keep my thinking choice while this request is pending",
+        providerID: "fixture",
+        modelID: "fixture-model",
+        agent: "Builder",
+        directory: "/test/project",
+        ...selection.input,
+        send: (messageID) => {
+          transportStarted.resolve(messageID)
+          return transport.promise
+        },
+      })
+
+      try {
+        const messageID = await transportStarted.promise
+        const optimistic = store.getState().message["session-a"]?.[0]
+        if (optimistic?.role !== "user") throw new Error("Expected the optimistic user before transport settles")
+        expect(optimistic.model.variant).toBe(selection.nativeVariant)
+        expect(Object.hasOwn(optimistic.model, "variant")).toBe(selection.nativeVariant !== undefined)
+        const selectChoice = createLatestUserChoiceSelector("session-a")
+        const beforeEcho = selectChoice(store.getState())
+        expect(beforeEcho).toEqual({
+          id: messageID,
+          agent: "Builder",
+          providerID: "fixture",
+          modelID: "fixture-model",
+          variant: selection.restoredVariant,
+        })
+
+        const canonical: UserMessage = {
+          id: messageID,
+          sessionID: "session-a",
+          role: "user",
+          agent: "Builder",
+          time: { created: optimistic.time.created },
+          model: {
+            providerID: "fixture",
+            modelID: "fixture-model",
+            ...(selection.nativeVariant !== undefined ? { variant: selection.nativeVariant } : {}),
+          },
+        }
+        store.setState((state) => {
+          const draft = { ...state, message: { ...state.message }, part: { ...state.part } }
+          applyDirectoryEvent(draft, {
+            id: `event_${messageID}`,
+            type: "message.updated",
+            properties: { sessionID: canonical.sessionID, info: canonical },
+          })
+          return draft
+        })
+        expect(store.getState().message["session-a"]).toHaveLength(1)
+        expect(selectChoice(store.getState())).toBe(beforeEcho)
+      } finally {
+        transport.resolve()
+        await pendingSend
+      }
+    })
+  }
 
   test("ignores stale reverted session snapshots while optimistic resend is in flight", async () => {
     const session = {

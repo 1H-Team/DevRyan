@@ -100,7 +100,7 @@ export const resolveSessionChangesFooterState = ({
     const hidden = isGitRepo !== true
         || isRevertPending
         || isTreeWorking
-        || (fileCount === 0 && !isUndone);
+        || fileCount === 0;
     return {
         visible: !hidden,
         mode,
@@ -242,7 +242,6 @@ export const useSessionChangesController = (): SessionChangesController => {
         else if (reasons.includes('native_revert_active')) statusMessage = t('chat.sessionChanges.rewound');
         else statusMessage = t('chat.sessionChanges.incomplete');
     }
-    if (statusMessage && isGitRepo === true && !isTreeWorking && !isRevertPending) state.visible = true;
     state.undoDisabled = state.undoDisabled || Boolean(entry?.loading || entry?.error) || entry?.coverage !== 'complete' || !entry?.revision;
 
     const restore = React.useCallback((action: 'undo' | 'redo') => {

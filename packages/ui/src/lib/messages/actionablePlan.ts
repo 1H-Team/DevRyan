@@ -8,6 +8,10 @@ type MessageWithPlanModeMetadata = Message & {
 
 export const PLAN_MODE_INSTRUCTION_PREFIX = 'User has requested to enter plan mode';
 export const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
+const PROVIDER_RECOVERY_PREFIX = '[devryan-provider-recovery:v1:';
+const OPEN_TODO_CONTINUATION_PREFIX = '[devryan-open-todo-continuation:v1]\n';
+// Compatibility for canonical wakes written before the versioned marker.
+const LEGACY_OPEN_TODO_CONTINUATION_PROMPT = 'Your turn ended with open todos. If a plan deviation stopped you, classify it (Class 1: note it and continue; Class 2: ask with the question tool) and continue from the first open todo. If everything is done, mark the todos complete and give the final summary.';
 
 export type PlanImplementationRequest = {
   action: 'implement';
@@ -195,13 +199,35 @@ const isPlanModeMetadata = (message: Message): boolean => {
  *     (Implement Plan). Its assistants must render as ordinary work, never as a
  *     plan source or a plan-revision epilogue.
  *   - `plan`: the turn was sent in plan mode.
+ *   - `maintenance`: an exact managed wake carrying existing policy, not a new plan request.
  *   - `none`: neither.
  */
-export type PlanTurnIntent = 'implement' | 'plan' | 'none';
+export type PlanTurnIntent = 'implement' | 'plan' | 'maintenance' | 'none';
 
 export const hasPlanImplementationRequestPart = (parts: readonly Part[] | undefined): boolean => (
   (parts ?? []).some((part) => parsePlanImplementationRequestPart(part) !== null)
 );
+
+/** Managed collection/recovery wakes preserve policy but never request a new plan. */
+export const isManagedPlanMaintenanceMessage = (parts: readonly Part[] | undefined): boolean => {
+  if (hasPlanImplementationRequestPart(parts)) return false;
+  return (parts ?? []).some((part) => {
+    if (part.type !== 'text' || part.synthetic !== true) return false;
+    const text = getPartText(part);
+    return text.startsWith(PROVIDER_RECOVERY_PREFIX)
+      || text.startsWith(OPEN_TODO_CONTINUATION_PREFIX)
+      || text === LEGACY_OPEN_TODO_CONTINUATION_PROMPT;
+  });
+};
+
+/** Selection ignores native maintenance too; native plan continuation rendering stays intact. */
+export const isPlanSelectionMaintenanceMessage = (parts: readonly Part[]): boolean => {
+  if (hasPlanImplementationRequestPart(parts)) return false;
+  return isManagedPlanMaintenanceMessage(parts) || parts.some((part) => (
+    part.type === 'compaction'
+    || (part.type === 'text' && part.synthetic === true && part.metadata?.compaction_continue === true)
+  ));
+};
 
 /**
  * Single authority for a user turn's plan intent. The implementation marker is
@@ -209,7 +235,8 @@ export const hasPlanImplementationRequestPart = (parts: readonly Part[] | undefi
  * Implement Plan turn is posted while the session's last agent may still be
  * `plan` (so OpenCode stamps `mode: 'plan'` on it) and the recorded flag or the
  * synthetic preface can be stale, none of which makes it a planning turn.
- * Otherwise the three plan-mode signals apply in priority order:
+ * Exact managed wakes then suppress fresh Plan presentation. Otherwise the
+ * three plan-mode signals apply in priority order:
  *   1. `recordedPlanMode` — caller-supplied flag from `useSessionUIStore.planModeUserMessages`
  *      (locally persisted, the most reliable signal).
  *   2. Message metadata (`mode === 'plan'` or `metadata.openchamberPlanMode === true`)
@@ -224,6 +251,7 @@ export const resolvePlanTurnIntent = (
 ): PlanTurnIntent => {
   if (!message || message.role !== 'user') return 'none';
   if (hasPlanImplementationRequestPart(parts)) return 'implement';
+  if (isManagedPlanMaintenanceMessage(parts)) return 'maintenance';
   if (recordedPlanMode) return 'plan';
   if (isPlanModeMetadata(message)) return 'plan';
   if ((parts ?? []).some(isPlanModeInstructionPart)) return 'plan';
@@ -343,6 +371,7 @@ export const resolvePlanCardSplit = (
 
 export type ResolveMessagePlanCardOptions = {
   isPlanModeSource?: boolean;
+  turnIntent?: PlanTurnIntent;
 };
 
 /**
@@ -445,6 +474,7 @@ const resolveMessagePlanCardResolution = (
   parts: readonly Part[],
   options: ResolveMessagePlanCardOptions = {},
 ): MessagePlanCardResolution | null => {
+  if (options.turnIntent === 'implement' || options.turnIntent === 'maintenance') return null;
   const textParts = collectAssistantTextParts(parts);
   if (textParts.length === 0 && options.isPlanModeSource !== true) return null;
 

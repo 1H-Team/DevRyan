@@ -59,6 +59,7 @@ describe('user profile provisioning', () => {
       return { ok: true, exitCode: 0, stdout: '', stderr: '' };
     },
     applyContextModeHotfix: () => ({ ok: true, changed: false }),
+    applyMeridianHttpHotfix: () => ({ ok: true, changed: false }),
     ...overrides,
   });
 
@@ -95,7 +96,7 @@ describe('user profile provisioning', () => {
     expect(config).not.toHaveProperty('mcp');
     expect(packageJson.dependencies).toMatchObject({
       '@ai-sdk/openai-compatible': '^2.0.47',
-      '@opencode-ai/plugin': '1.18.27',
+      '@opencode-ai/plugin': '1.18.29',
       '@rama_nigg/open-cursor': '2.5.4',
       '@rynfar/meridian': '1.62.6',
       'context-mode': '1.0.169',
@@ -393,7 +394,7 @@ describe('user profile provisioning', () => {
       },
     });
 
-    const result = await createRuntime().provision();
+    const result = await createRuntime({ applyMeridianHttpHotfix: () => { throw new Error('User-managed package must not be patched'); } }).provision();
     const dependencies = readJson(packagePath).dependencies;
 
     expect(result.ok).toBe(true);
@@ -405,6 +406,16 @@ describe('user profile provisioning', () => {
       compatibilityStatus: 'user_managed',
       managementSources: { meridian: 'user-managed' },
     });
+  });
+
+  it('blocks managed startup when the reviewed Meridian HTTP patch is incompatible', async () => {
+    const result = await createRuntime({ applyMeridianHttpHotfix: () => ({
+      ok: false, changed: false, code: 'MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE', error: 'Unexpected installed source',
+    }) }).provision();
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE: Unexpected installed source');
+    expect(result.meridianHttpHotfix.ok).toBe(false);
+    expect(commands).toHaveLength(1);
   });
 
   it('preserves explicit user Claude runtime overrides and reports user management', async () => {

@@ -118,14 +118,6 @@ export const MultiRunLauncher: React.FC<MultiRunLauncherProps> = ({
 
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory ?? null);
   const homeDirectory = useDirectoryStore((state) => state.homeDirectory ?? null);
-  
-  const vscodeWorkspaceFolder = React.useMemo(() => {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-    const folder = (window as unknown as { __VSCODE_CONFIG__?: { workspaceFolder?: unknown } }).__VSCODE_CONFIG__?.workspaceFolder;
-    return typeof folder === 'string' && folder.trim().length > 0 ? folder.trim() : null;
-  }, []);
 
   // Get project directory for setup commands
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
@@ -197,13 +189,13 @@ export const MultiRunLauncher: React.FC<MultiRunLauncherProps> = ({
       return { id: selectedProject.id, path: selectedProject.path };
     }
 
-    const base = currentDirectory ?? vscodeWorkspaceFolder;
+    const base = currentDirectory;
     if (!base) {
       return null;
     }
 
     return { id: `path:${base}`, path: base };
-  }, [selectedProject, currentDirectory, vscodeWorkspaceFolder]);
+  }, [selectedProject, currentDirectory]);
 
   const [isDesktopApp, setIsDesktopApp] = React.useState<boolean>(() => {
     if (typeof window === 'undefined') {
@@ -317,10 +309,10 @@ export const MultiRunLauncher: React.FC<MultiRunLauncherProps> = ({
   // Load setup commands from config
   React.useEffect(() => {
     if (!projectRef) return;
-    
+
     let cancelled = false;
     setIsLoadingSetupCommands(true);
-    
+
     (async () => {
       try {
         const commands = await getWorktreeSetupCommands(projectRef);
@@ -335,7 +327,7 @@ export const MultiRunLauncher: React.FC<MultiRunLauncherProps> = ({
         }
       }
     })();
-    
+
     return () => { cancelled = true; };
   }, [projectRef]);
 
@@ -553,7 +545,7 @@ export const MultiRunLauncher: React.FC<MultiRunLauncherProps> = ({
       // Strip instanceId before passing to store (UI-only field)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const modelsForStore: MultiRunModelSelection[] = selectedModels.map(({ instanceId: _instanceId, ...rest }) => rest);
-      
+
       // Convert attached files to the format expected by the store
       const filesForStore = attachedFiles.map((f) => ({
         mime: f.mimeType,

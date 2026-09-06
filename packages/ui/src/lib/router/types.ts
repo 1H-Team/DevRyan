@@ -20,9 +20,8 @@ export interface RouteState {
  * Context for router operations - determines what capabilities are available.
  */
 export interface RouterContext {
-  /** Whether running in VS Code webview (limited URL capabilities) */
-  isVSCode: boolean;
-  /** Whether URL can be updated (false in VS Code, true elsewhere) */
+
+  /** Whether URL can be updated */
   canUpdateURL: boolean;
 }
 

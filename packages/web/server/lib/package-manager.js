@@ -1,4 +1,4 @@
-import { spawnSync } from 'child_process';
+import { execFile, spawnSync } from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
@@ -19,6 +19,7 @@ const COMPATIBILITY_UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL;
 const UPDATE_CHECK_URL = COMPATIBILITY_UPDATE_CHECK_URL || GITHUB_LATEST_RELEASE_API_URL;
 const DEFAULT_UPDATE_CHECK_INTERVAL_SEC = 6 * 60 * 60;
 let cachedDetectedPm = null;
+let pendingDetectedPm = null;
 
 function getSpawnSyncBaseOptions() {
   return process.platform === 'win32' ? { windowsHide: true } : {};
@@ -33,7 +34,7 @@ function getOpenChamberConfigDir() {
 }
 
 function sanitizeInstallScope(scope) {
-  if (scope === 'desktop-electron' || scope === 'desktop-tauri' || scope === 'vscode' || scope === 'web') return scope;
+  if (scope === 'desktop-electron' || scope === 'desktop-tauri' || scope === 'web') return scope;
   return 'web';
 }
 
@@ -69,7 +70,7 @@ function mapArch(value) {
 }
 
 function normalizeAppType(value) {
-  if (value === 'web' || value === 'desktop-electron' || value === 'desktop-tauri' || value === 'vscode') return value;
+  if (value === 'web' || value === 'desktop-electron' || value === 'desktop-tauri') return value;
   return 'web';
 }
 
@@ -78,15 +79,7 @@ function normalizeDeviceClass(value) {
   return 'unknown';
 }
 
-function normalizePlatform(value) {
-  if (value === 'macos' || value === 'windows' || value === 'linux' || value === 'web') return value;
-  return mapPlatform(process.platform);
-}
 
-function normalizeArch(value) {
-  if (value === 'arm64' || value === 'x64' || value === 'unknown') return value;
-  return mapArch(process.arch);
-}
 
 async function checkForUpdatesFromGithub(currentVersion) {
   try {
@@ -125,8 +118,8 @@ async function checkForUpdatesFromCompatibilityApi(currentVersion, options = {})
     const appType = normalizeAppType(options.appType);
     const hostPlatform = mapPlatform(process.platform);
     const hostArch = mapArch(process.arch);
-    const platform = appType === 'vscode' ? normalizePlatform(options.platform) : hostPlatform;
-    const arch = appType === 'vscode' ? normalizeArch(options.arch) : hostArch;
+    const platform = hostPlatform;
+    const arch = hostArch;
     const payload = {
       appType,
       deviceClass: normalizeDeviceClass(options.deviceClass),
@@ -530,6 +523,138 @@ export function detectPackageManager() {
   return detectPackageManagerDetails().packageManager;
 }
 
+// Update polling runs on the same event loop as prompt admission and SSE.
+// Keep its probes asynchronous; CLI detection and update execution retain their
+// synchronous APIs. Selection precedence matches detectPackageManagerDetails.
+const runDetectionCommand = (command, args, timeout) => new Promise((resolve) => {
+  try {
+    execFile(command, args, {
+      encoding: 'utf8', timeout, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024,
+      ...getSpawnSyncBaseOptions(),
+    }, (error, stdout) => resolve(error ? null : stdout));
+  } catch {
+    resolve(null);
+  }
+});
+
+const isCommandAvailableAsync = async (command) => (
+  await runDetectionCommand(command, ['--version'], 5000)
+) !== null;
+
+const getCommandOutputAsync = async (command, args) => (
+  (await runDetectionCommand(command, args, 10000))?.trim() || null
+);
+
+async function resolvePackageManagerCommandAsync(pm) {
+  for (const candidate of getPackageManagerCommandCandidates(pm)) {
+    if (await isCommandAvailableAsync(candidate)) return candidate;
+  }
+  return pm;
+}
+
+async function getGlobalNodeModulesRootsAsync(pm) {
+  const command = await resolvePackageManagerCommandAsync(pm);
+  if (!await isCommandAvailableAsync(command)) return [];
+  const roots = [];
+  if (pm === 'pnpm' || pm === 'npm') {
+    const root = await getCommandOutputAsync(command, ['root', '-g']);
+    if (root) roots.push(root);
+    const prefix = await getCommandOutputAsync(command, ['prefix', '-g']);
+    if (prefix) roots.push(process.platform === 'win32'
+      ? path.join(prefix, 'node_modules') : path.join(prefix, 'lib', 'node_modules'));
+  } else if (pm === 'yarn') {
+    const directory = await getCommandOutputAsync(command, ['global', 'dir']);
+    if (directory) roots.push(path.join(directory, 'node_modules'));
+  } else if (pm === 'bun') {
+    const directory = await getCommandOutputAsync(command, ['pm', 'bin', '-g']);
+    if (directory) {
+      roots.push(path.resolve(directory, '..', 'install', 'global', 'node_modules'));
+      roots.push(path.resolve(directory, '..', '..', 'node_modules'));
+    }
+  }
+  return getUniquePaths(roots);
+}
+
+async function getGlobalBinDirsAsync(pm) {
+  const command = await resolvePackageManagerCommandAsync(pm);
+  if (!await isCommandAvailableAsync(command)) return [];
+  const directories = [];
+  if (pm === 'pnpm') {
+    const directory = await getCommandOutputAsync(command, ['bin', '-g']);
+    if (directory) directories.push(directory);
+    const prefix = await getCommandOutputAsync(command, ['prefix', '-g']);
+    if (prefix) directories.push(process.platform === 'win32' ? prefix : path.join(prefix, 'bin'));
+  } else if (pm === 'yarn' || pm === 'bun') {
+    const args = pm === 'yarn' ? ['global', 'bin'] : ['pm', 'bin', '-g'];
+    const directory = await getCommandOutputAsync(command, args);
+    if (directory) directories.push(directory);
+  } else {
+    const prefix = await getCommandOutputAsync(command, ['prefix', '-g']);
+    if (prefix) directories.push(process.platform === 'win32' ? prefix : path.join(prefix, 'bin'));
+  }
+  return getUniquePaths(directories);
+}
+
+async function packageManagerOwnsCurrentInstallAsync(pm) {
+  const current = getComparablePaths(getCurrentPackagePath());
+  const candidates = (await getGlobalNodeModulesRootsAsync(pm)).map(getPackagePathForGlobalRoot);
+  for (const binDirectory of await getGlobalBinDirsAsync(pm)) {
+    const binaryName = process.platform === 'win32' ? 'openchamber.cmd' : 'openchamber';
+    try {
+      const binary = await fs.promises.realpath(path.join(binDirectory, binaryName));
+      candidates.push(path.resolve(binary, '..', '..'));
+    } catch {
+      // Missing or inaccessible global command is not ownership evidence.
+    }
+  }
+  return candidates.some((candidate) => candidate && pathSetContains(current, getComparablePaths(candidate)));
+}
+
+async function isPackageInstalledWithAsync(pm) {
+  const command = await resolvePackageManagerCommandAsync(pm);
+  const output = await runDetectionCommand(command, getPackageListArgs(pm), 10000);
+  return output !== null && (output.includes(PACKAGE_NAME) || output.includes('openchamber'));
+}
+
+async function detectPackageManagerUncachedAsync() {
+  const forced = process.env.OPENCHAMBER_PACKAGE_MANAGER?.trim();
+  if (['npm', 'pnpm', 'yarn', 'bun'].includes(forced)
+    && await isCommandAvailableAsync(await resolvePackageManagerCommandAsync(forced))) return forced;
+
+  const installPathPm = detectPackageManagerFromCurrentInstallPath();
+  if (installPathPm && await packageManagerOwnsCurrentInstallAsync(installPathPm)) return installPathPm;
+  for (const candidate of ['pnpm', 'yarn', 'bun', 'npm']) {
+    if (await packageManagerOwnsCurrentInstallAsync(candidate)) return candidate;
+  }
+
+  const userAgent = process.env.npm_config_user_agent || '';
+  const execPath = process.env.npm_execpath || '';
+  let hint = ['pnpm', 'yarn', 'bun', 'npm'].find((pm) => userAgent.startsWith(pm));
+  if (!hint) hint = ['pnpm', 'yarn', 'bun', 'npm'].find((pm) => execPath.includes(pm));
+  hint ||= detectPackageManagerFromInvocationPath(process.argv?.[1]) || installPathPm;
+  if (hint && await isCommandAvailableAsync(await resolvePackageManagerCommandAsync(hint))
+    && await isPackageInstalledWithAsync(hint)) return hint;
+
+  const runtime = detectPackageManagerFromRuntimePath(process.execPath);
+  if (runtime && await isCommandAvailableAsync(await resolvePackageManagerCommandAsync(runtime))
+    && await isPackageInstalledWithAsync(runtime)) return runtime;
+  for (const candidate of ['pnpm', 'yarn', 'bun', 'npm']) {
+    if (await isCommandAvailableAsync(await resolvePackageManagerCommandAsync(candidate))
+      && await isPackageInstalledWithAsync(candidate)) return candidate;
+  }
+  return 'npm';
+}
+
+export async function detectPackageManagerAsync() {
+  if (process.env.OPENCHAMBER_RUNTIME === 'desktop') return 'electron';
+  if (cachedDetectedPm) return cachedDetectedPm;
+  pendingDetectedPm ??= detectPackageManagerUncachedAsync().then((pm) => {
+    cachedDetectedPm ??= pm;
+    return cachedDetectedPm;
+  }).finally(() => { pendingDetectedPm = null; });
+  return pendingDetectedPm;
+}
+
 function detectPackageManagerFromInstallPath(pkgPath) {
   if (!pkgPath) return null;
   const normalized = pkgPath.replace(/\\/g, '/').toLowerCase();
@@ -612,25 +737,24 @@ function isCommandAvailable(command) {
   }
 }
 
+function getPackageListArgs(pm) {
+  switch (pm) {
+    case 'pnpm':
+      return ['list', '-g', '--depth=0', PACKAGE_NAME];
+    case 'yarn':
+      return ['global', 'list', '--depth=0'];
+    case 'bun':
+      return ['pm', 'ls', '-g'];
+    default:
+      return ['list', '-g', '--depth=0', PACKAGE_NAME];
+  }
+}
+
 function isPackageInstalledWith(pm) {
   try {
     const pmCommand = resolvePackageManagerCommand(pm);
-    let args;
-    switch (pm) {
-      case 'pnpm':
-        args = ['list', '-g', '--depth=0', PACKAGE_NAME];
-        break;
-      case 'yarn':
-        args = ['global', 'list', '--depth=0'];
-        break;
-      case 'bun':
-        args = ['pm', 'ls', '-g'];
-        break;
-      default:
-        args = ['list', '-g', '--depth=0', PACKAGE_NAME];
-    }
 
-    const result = spawnSync(pmCommand, args, {
+    const result = spawnSync(pmCommand, getPackageListArgs(pm), {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 10000,
@@ -713,7 +837,7 @@ function compareVersions(left, right) {
 
 export async function checkForUpdates(options = {}) {
   const currentVersion = options.currentVersion || getCurrentVersion();
-  const pm = detectPackageManager();
+  const pm = await detectPackageManagerAsync();
   const appType = normalizeAppType(options.appType);
 
   if (currentVersion !== 'unknown') {

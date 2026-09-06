@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui';
-import { isDesktopShell, isVSCodeRuntime } from '@/lib/desktop';
+import { isDesktopShell } from '@/lib/desktop';
 import { syncDesktopSettings, initializeAppearancePreferences } from '@/lib/persistence';
 import { applyPersistedDirectoryPreferences } from '@/lib/directoryPersistence';
 import { DesktopHostSwitcherInline } from '@/components/desktop/DesktopHostSwitcher';
@@ -236,10 +236,9 @@ interface ErrorScreenProps {
 
 export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) => {
   const { t } = useI18n();
-  const vscodeRuntime = React.useMemo(() => isVSCodeRuntime(), []);
-  const skipAuth = vscodeRuntime;
-  const showHostSwitcher = React.useMemo(() => isDesktopShell() && !vscodeRuntime, [vscodeRuntime]);
-  const [state, setState] = React.useState<GateState>(() => (skipAuth ? 'authenticated' : 'pending'));
+
+  const showHostSwitcher = React.useMemo(() => isDesktopShell(), []);
+  const [state, setState] = React.useState<GateState>(() => ('pending'));
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [displayName, setDisplayName] = React.useState('');
@@ -263,7 +262,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
   const offlineGrace = useAuthOfflineGrace();
   const [activePasskeyAction, setActivePasskeyAction] = React.useState<'auth' | 'register' | null>(null);
   const passwordInputRef = React.useRef<HTMLInputElement | null>(null);
-  const hasResyncedRef = React.useRef(skipAuth);
+  const hasResyncedRef = React.useRef(false);
   const acceptedPrincipalRef = React.useRef<AuthPrincipal | undefined>(undefined);
   const offlineGraceRef = React.useRef(false);
 
@@ -312,9 +311,6 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
   }, [trustDevice]);
 
   const refreshPasskeyStatus = React.useCallback(async () => {
-    if (skipAuth) {
-      return defaultPasskeyStatus;
-    }
 
     try {
       const nextStatus = await fetchPasskeyStatus();
@@ -324,14 +320,10 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
       setPasskeyStatus(defaultPasskeyStatus);
       return defaultPasskeyStatus;
     }
-  }, [skipAuth]);
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
-
-    if (skipAuth) {
-      return;
-    }
 
     void (async () => {
       try {
@@ -354,13 +346,9 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
     return () => {
       cancelled = true;
     };
-  }, [skipAuth]);
+  }, []);
 
   const checkStatus = React.useCallback(async () => {
-    if (skipAuth) {
-      if (acceptPrincipal(undefined)) setState('authenticated');
-      return;
-    }
 
     setState((prev) => (prev === 'authenticated' ? prev : 'pending'));
     try {
@@ -418,12 +406,12 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
       setIsTunnelLocked(false);
       setLocalResetAvailable(false);
     }
-  }, [acceptPrincipal, refreshPasskeyStatus, skipAuth]);
+  }, [acceptPrincipal, refreshPasskeyStatus]);
 
   React.useEffect(() => registerAuthSessionRetry(checkStatus), [checkStatus]);
 
   React.useEffect(() => {
-    if (skipAuth || state !== 'authenticated' || !offlineGrace) return;
+    if (state !== 'authenticated' || !offlineGrace) return;
 
     let cancelled = false;
     let attempt = 0;
@@ -452,18 +440,15 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
       if (timer) clearTimeout(timer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [checkStatus, offlineGrace, skipAuth, state]);
+  }, [checkStatus, offlineGrace, state]);
 
   React.useEffect(() => {
-    if (skipAuth) {
-      void checkStatus();
-      return;
-    }
+
     void checkStatus();
-  }, [checkStatus, skipAuth]);
+  }, [checkStatus]);
 
   React.useEffect(() => {
-    if (skipAuth || state !== 'authenticated' || acceptedPrincipalRef.current?.scope !== 'managed') {
+    if (state !== 'authenticated' || acceptedPrincipalRef.current?.scope !== 'managed') {
       return;
     }
 
@@ -540,13 +525,13 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
       if (refreshTimer) clearTimeout(refreshTimer);
       unsubscribe();
     };
-  }, [checkStatus, skipAuth, state]);
+  }, [checkStatus, state]);
 
   React.useEffect(() => {
-    if (!skipAuth && state === 'locked') {
+    if (state === 'locked') {
       hasResyncedRef.current = false;
     }
-  }, [skipAuth, state]);
+  }, [ state]);
 
   React.useEffect(() => {
     if (state === 'locked' && passwordInputRef.current) {
@@ -556,9 +541,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
   }, [state]);
 
   React.useEffect(() => {
-    if (skipAuth) {
-      return;
-    }
+
     if (state === 'authenticated' && !hasResyncedRef.current) {
       hasResyncedRef.current = true;
       void (async () => {
@@ -574,7 +557,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
         }
       })();
     }
-  }, [skipAuth, state]);
+  }, [ state]);
 
   const registerPasskeyForCurrentSession = React.useCallback(async () => {
     setActivePasskeyAction('register');

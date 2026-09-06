@@ -20,7 +20,7 @@ type AgentRuntimeSectionProps = {
 export const AgentRuntimeSection: React.FC<AgentRuntimeSectionProps> = ({ canEdit }) => {
   const { t } = useI18n();
   const apis = useRuntimeAPIs();
-  // Web and VS Code hosts expose this (it posts the manual configuration
+  // Web hosts expose this (it posts the manual configuration
   // reload, which restarts OpenCode once active chats finish); others may not.
   const restartOpenCode = apis.settings.restartOpenCode;
   const settings = useAgentsStore((state) => state.agentRuntimeSettings);

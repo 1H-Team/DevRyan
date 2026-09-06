@@ -18,4 +18,4 @@ Managed installation and skill provisioning for the Electron-only `agent-browser
 
 - Electron calls the installer and provisioner before starting managed OpenCode, then injects only the validated absolute binary path into the child environment.
 - Settings uses installer status/repair through local-sender-gated Electron IPC.
-- External OpenCode, standalone web, VS Code, and legacy Tauri do not invoke provisioning.
+- External OpenCode, standalone web, and legacy Tauri do not invoke provisioning.

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { AttachedFile } from "@/stores/types/sessionTypes"
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
+import { getSafeStorage } from "@/stores/utils/safeStorage"
+import { resolveLatestUserChoiceFromMessages } from "@/sync/subtask-agent"
 import {
   dispatchQueuedMessageForSession,
   flushQueuedMessagesForSession,
@@ -42,6 +44,46 @@ const assistantMessage = (
 describe("queued message flushing", () => {
   beforeEach(() => {
     useMessageQueueStore.setState({ queuedMessages: {}, queueModeEnabled: true })
+  })
+
+  test("keeps canonical provider default through queue persistence, reload, failure, and retry against a High fallback", async () => {
+    const restored = resolveLatestUserChoiceFromMessages(JSON.parse(JSON.stringify([{
+      id: "msg_user_default", role: "user", agent: "Builder",
+      model: { providerID: "openai", modelID: "gpt", variant: "" },
+      variant: "high",
+    }])))
+    if (!restored?.providerID || !restored.modelID) throw new Error("Expected the canonical user selection")
+    const captured = {
+      providerID: restored.providerID, modelID: restored.modelID, agent: restored.agent, variant: restored.variant,
+    }
+    useMessageQueueStore.getState().addToQueue("session-default", { content: "work", sendConfig: captured })
+    const storage = getSafeStorage()
+    const saved = storage.getItem('message-queue-store')
+    if (!saved) throw new Error('Expected persisted queue state')
+    useMessageQueueStore.setState({ queuedMessages: {} })
+    storage.setItem('message-queue-store', saved)
+    await useMessageQueueStore.persist.rehydrate()
+    const variants: Array<string | null | undefined> = []
+    const identities: Array<string | undefined> = []
+    let fail = true
+    const flush = () => flushQueuedMessagesForSession({
+      sessionId: "session-default",
+      fallbackSendConfig: { providerID: "openai", modelID: "gpt", variant: "high" },
+      prepareQueuedMessage: (message, sendConfig) => ({ ...sendConfig, content: message.content }),
+      sendMessageToSession: async (...args) => {
+        variants.push(args[8])
+        identities.push(args[11]?.messageID)
+        if (fail) throw new Error("connection lost")
+      },
+      waitForReadyToSendNext: async () => {},
+    })
+    await expect(flush()).rejects.toThrow("connection lost")
+    expect(useMessageQueueStore.getState().getQueueForSession("session-default")[0]?.sendConfig?.variant).toBeNull()
+    fail = false
+    expect(await flush()).toBe(1)
+    expect(variants).toEqual([null, null])
+    expect(identities[0]).toBeTruthy()
+    expect(identities[1]).toBe(identities[0])
   })
 
   test("sends claimed queued messages as sequential turns with captured config", async () => {

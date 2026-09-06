@@ -70,6 +70,7 @@ const renderReasoning = (
   options: {
     providerID?: string;
     responseStyleLevel?: "provider" | "actions" | "concise" | "detailed";
+    isMessageCompleted?: boolean;
     isMobile?: boolean;
   } = {},
 ): string => renderToStaticMarkup(
@@ -108,6 +109,17 @@ const expectNoDisclosurePresentation = (html: string): void => {
 }
 
 describe("ReasoningPart", () => {
+  test("authoritative message completion stops reasoning whose part has no end timestamp", () => {
+    const html = renderReasoning(createReasoningPart({
+      id: "cancelled-reasoning",
+      text: "Partial reasoning retained after cancellation.",
+      active: true,
+    }), { isMessageCompleted: true })
+
+    expect(html).toContain('data-streaming="false"')
+    expect(html).toContain("Partial reasoning retained after cancellation.")
+  })
+
   test("renders completed Anthropic reasoning Markdown immediately", () => {
     const reasoning = "I will use the source code and browser measurements."
     const html = renderReasoning(createReasoningPart({

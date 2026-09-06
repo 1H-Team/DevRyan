@@ -37,6 +37,10 @@ const {
     getReasoningDurationMilliseconds,
 } = await import('./reasoningDuration');
 const { isReasoningDisclosureToggleKey } = await import('./reasoningDisclosureKeyboard');
+const {
+    getReasoningDisclosureKey,
+    writeReasoningDisclosureExpansion,
+} = await import('./reasoningDisclosureExpansion');
 
 const clippedXaiPreview = `CLIPPED${'x'.repeat(193)}...`;
 
@@ -114,6 +118,23 @@ describe('reasoning duration presentation', () => {
 });
 
 describe('ReasoningGroup', () => {
+    test('restores the same explicit expansion after a desktop/mobile remount', () => {
+        const first = reasoningPart({ id: 'responsive-remount', text: 'Preserved reasoning.', end: 17_000 });
+        const key = getReasoningDisclosureKey(first.sessionID, 'message-1', first.id);
+        writeReasoningDisclosureExpansion(key, true);
+        try {
+            for (const isMobile of [false, true, false]) {
+                const html = renderGroup([first], { isMobile, isMessageCompleted: true });
+                expect(html).toContain('aria-expanded="true"');
+                expect(html).toContain('Preserved reasoning.');
+            }
+            writeReasoningDisclosureExpansion(key, false);
+            expect(renderGroup([first], { isMobile: true, isMessageCompleted: true })).toContain('aria-expanded="false"');
+        } finally {
+            writeReasoningDisclosureExpansion(key, false);
+        }
+    });
+
     test('keeps only the trailing reasoning run active across ended-part gaps', () => {
         expect(resolveReasoningRunActiveState({
             isMessageCompleted: false,
@@ -281,13 +302,29 @@ describe('ReasoningGroup', () => {
         expect(html).not.toContain('Thought for');
     });
 
-    test('renders an empty active reasoning shell but omits an empty terminal part', () => {
+    test('renders empty or whitespace-only active reasoning as a status without a disclosure', () => {
+        for (const text of ['', ' \n\t ']) {
+            const html = renderGroup([
+                reasoningPart({ id: 'reasoning-empty-active', text, end: null }),
+            ]);
+
+            expect(html).toContain('role="status"');
+            expect(html).toContain('Thinking…');
+            expect(html).not.toContain('<button');
+            expect(html).not.toContain('aria-expanded');
+            expect(html).not.toContain('data-reasoning-disclosure-content');
+        }
+    });
+
+    test('does not expose an empty control during an ended-part gap or after cancellation', () => {
+        const parts = [reasoningPart({ id: 'reasoning-empty-ended', text: '' })];
+        const gap = renderGroup(parts, { isTrailingLiveRun: true });
+        expect(gap).toContain('role="status"');
+        expect(gap).not.toContain('<button');
+        expect(renderGroup(parts, { isMessageCompleted: true, isTrailingLiveRun: true })).toBe('');
         expect(renderGroup([
-            reasoningPart({ id: 'reasoning-empty-active', text: '', end: null }),
-        ])).toContain('Thinking…');
-        expect(renderGroup([
-            reasoningPart({ id: 'reasoning-empty-terminal', text: '' }),
-        ], { isMessageCompleted: true })).toBe('');
+            reasoningPart({ id: 'reasoning-empty-aborted', text: ' \n ', end: null }),
+        ], { isMessageCompleted: true, isTrailingLiveRun: true })).toBe('');
     });
 
     test('renders no wrapper when every entry is a clipped xAI preview', () => {

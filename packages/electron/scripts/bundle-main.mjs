@@ -13,8 +13,8 @@
  * reached under Electron.
  *
  * @openchamber/harness-runtime intentionally remains inline if Electron ever
- * imports it directly. Today it is consumed through the external in-process
- * web server; the package is dependency-free ESM with no native loader edge.
+ * imports it directly. Runtime ownership also imports its cross-process lock;
+ * the package is dependency-free ESM with no native loader edge.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -25,41 +25,47 @@ import { readAndVerifyBotRuntimeImagesManifest } from '../../../scripts/verify-b
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 
-if (process.env.DEVRYAN_BOT_RUNTIME_REQUIRE_RELEASE_MANIFEST === '1') {
-  const packageJson = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
-  const expectedRevision = process.env.DEVRYAN_BOT_RUNTIME_SOURCE_REVISION?.trim()
-    || process.env.GITHUB_SHA?.trim();
-  const expectedRepositoryPrefix = process.env.DEVRYAN_BOT_RUNTIME_REPOSITORY_PREFIX?.trim();
-  await readAndVerifyBotRuntimeImagesManifest({
-    manifestPath: path.join(root, 'resources', 'bot-runtime', 'images.release.json'),
-    expectedReleaseId: packageJson.version,
-    ...(expectedRevision ? { expectedRevision } : {}),
-    ...(expectedRepositoryPrefix ? { expectedRepositoryPrefix } : {}),
+export async function bundleElectronMain({ outdir = path.join(root, 'dist-bundle') } = {}) {
+  if (process.env.DEVRYAN_BOT_RUNTIME_REQUIRE_RELEASE_MANIFEST === '1') {
+    const packageJson = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+    const expectedRevision = process.env.DEVRYAN_BOT_RUNTIME_SOURCE_REVISION?.trim()
+      || process.env.GITHUB_SHA?.trim();
+    const expectedRepositoryPrefix = process.env.DEVRYAN_BOT_RUNTIME_REPOSITORY_PREFIX?.trim();
+    await readAndVerifyBotRuntimeImagesManifest({
+      manifestPath: path.join(root, 'resources', 'bot-runtime', 'images.release.json'),
+      expectedReleaseId: packageJson.version,
+      ...(expectedRevision ? { expectedRevision } : {}),
+      ...(expectedRepositoryPrefix ? { expectedRepositoryPrefix } : {}),
+    });
+    console.log('[electron] verified Bot runtime release manifest before main-process bundling');
+  }
+
+  const result = await Bun.build({
+    entrypoints: [path.join(root, 'main.mjs')],
+    outdir,
+    target: 'node',
+    format: 'esm',
+    external: [
+      'electron',
+      '@openchamber/web',
+      '@openchamber/web/*',
+      'bun-pty',
+      'node-pty',
+      'better-sqlite3',
+    ],
+    minify: false,
+    sourcemap: 'none',
+    naming: '[name].mjs',
   });
-  console.log('[electron] verified Bot runtime release manifest before main-process bundling');
+
+  if (!result.success) {
+    for (const msg of result.logs) console.error(msg);
+    throw new Error('Electron main-process bundling failed');
+  }
+
+  return path.join(outdir, 'main.mjs');
 }
 
-const result = await Bun.build({
-  entrypoints: [path.join(root, 'main.mjs')],
-  outdir: path.join(root, 'dist-bundle'),
-  target: 'node',
-  format: 'esm',
-  external: [
-    'electron',
-    '@openchamber/web',
-    '@openchamber/web/*',
-    'bun-pty',
-    'node-pty',
-    'better-sqlite3',
-  ],
-  minify: false,
-  sourcemap: 'none',
-  naming: '[name].mjs',
-});
-
-if (!result.success) {
-  for (const msg of result.logs) console.error(msg);
-  process.exit(1);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  console.log(`[electron] main.mjs bundled -> ${await bundleElectronMain()}`);
 }
-
-console.log('[electron] main.mjs bundled -> dist-bundle/main.mjs');

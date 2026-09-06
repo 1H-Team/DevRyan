@@ -10,7 +10,7 @@ import { scopeMatches, subscribeToConfigChanges } from "@/lib/configSync";
 import type { ModelMetadata } from "@/types";
 import { getSafeStorage } from "./utils/safeStorage";
 import { filterVisibleAgentSelectorOptions } from "./useAgentsStore";
-import { useSessionUIStore } from "@/sync/session-ui-store";
+import { restoreLiveConfigForSelectedDraft, useSessionUIStore } from "@/sync/session-ui-store";
 import { useSelectionStore } from "@/sync/selection-store";
 import { hasExplicitDraftModelIntent } from "@/sync/send-config";
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
@@ -35,7 +35,7 @@ import {
     resolveSelectableAgentOptions,
 } from "@/lib/agentSelection";
 import { cacheResponseStyleInstructionFromSettings } from "@/lib/responseStyle";
-import { getOrderedThinkingVariants, resolveProviderModelVariant, resolveThinkingVariant } from "@/lib/providers/variantControls";
+import { getOrderedThinkingVariants, resolveProviderModelVariant } from "@/lib/providers/variantControls";
 import { isProviderModelAvailable, resolveAvailableProviderModel } from "@/lib/providers/modelAvailability";
 
 const MODELS_DEV_API_URL = "https://models.dev/api.json";
@@ -77,7 +77,7 @@ const parseSettingsOverrideKeys = (value: unknown): string[] => (
 
 const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
     try {
-        // 1. Runtime settings API (VSCode)
+        // 1. Runtime settings API
         const runtimeSettings = getRegisteredRuntimeAPIs()?.settings;
         if (runtimeSettings) {
             try {
@@ -599,7 +599,7 @@ interface DirectoryScopedConfig {
     agents: Agent[];
     currentProviderId: string;
     currentModelId: string;
-    currentVariant?: string | undefined;
+    currentVariant?: string | null;
     currentAgentName: string | undefined;
     selectedProviderId: string;
     defaultProviders: { [key: string]: string };
@@ -614,7 +614,7 @@ interface ConfigStore {
     agents: Agent[];
     currentProviderId: string;
     currentModelId: string;
-    currentVariant: string | undefined;
+    currentVariant: string | null | undefined;
     currentAgentName: string | undefined;
     selectedProviderId: string;
     agentModelSelections: Record<string, AgentModelSelection>;
@@ -633,7 +633,7 @@ interface ConfigStore {
     agentsLoadError: string | undefined;
     responseStyleInstructionLoaded: boolean;
     modelsMetadata: Map<string, ModelMetadata>;
-    // Legacy scalar model fields remain available to local/VS Code runtimes.
+    // Legacy scalar model fields remain available to local runtimes.
     // Managed accounts resolve models from sparse per-agent overrides instead.
     settingsDefaultModel: string | undefined; // format: "provider/model"
     settingsDefaultVariant: string | undefined;
@@ -708,11 +708,11 @@ interface ConfigStore {
     setProviderModel: (
         providerId: string,
         modelId: string,
-        variant?: string,
+        variant?: string | null,
         options?: { preserveSelectedProvider?: boolean },
     ) => void;
     setModel: (modelId: string) => void;
-    setCurrentVariant: (variant: string | undefined) => void;
+    setCurrentVariant: (variant: string | null | undefined) => void;
     cycleCurrentVariant: () => void;
     getCurrentModelVariants: () => string[];
     setAgent: (
@@ -1378,7 +1378,7 @@ export const useConfigStore = create<ConfigStore>()(
                     });
                 },
 
-                setCurrentVariant: (variant: string | undefined) => {
+                setCurrentVariant: (variant: string | null | undefined) => {
                     set((state) => {
                         if (state.currentVariant === variant) {
                             return state;
@@ -1416,17 +1416,12 @@ export const useConfigStore = create<ConfigStore>()(
 
                     const current = get().currentVariant;
                     if (!current || !variantKeys.includes(current)) {
-                        get().setCurrentVariant(resolveThinkingVariant(
-                            current,
-                            variantKeys,
-                            { providerId: get().currentProviderId },
-                        ));
+                        get().setCurrentVariant(variantKeys[0]);
                         return;
                     }
 
                     const index = variantKeys.indexOf(current);
-                    const nextIndex = (index + 1) % variantKeys.length;
-                    get().setCurrentVariant(variantKeys[nextIndex]);
+                    get().setCurrentVariant(index + 1 < variantKeys.length ? variantKeys[index + 1] : null);
                 },
  
                 setSelectedProvider: (providerId: string) => {
@@ -1699,7 +1694,16 @@ export const useConfigStore = create<ConfigStore>()(
                             }
 
                             if (get().activeDirectoryKey === directoryKey) {
-                                get().applyDefaultsToCurrent();
+                                // A catalog refresh can finish after a user picks a draft
+                                // agent/model. Restore the current draft's send selection
+                                // instead of painting the account default over that pick.
+                                const sessionState = useSessionUIStore.getState();
+                                const draftId = sessionState.currentSessionId ? null : sessionState.currentDraftId;
+                                if (draftId && sessionState.draftsById[draftId]) {
+                                    restoreLiveConfigForSelectedDraft(draftId, useSessionUIStore.getState);
+                                } else {
+                                    get().applyDefaultsToCurrent();
+                                }
                             }
 
                             return true;
@@ -1766,7 +1770,7 @@ export const useConfigStore = create<ConfigStore>()(
                     } = get();
                     const agentOptions = options?.agents?.length ? options.agents : agents;
                     const currentSessionId = useSessionUIStore.getState().currentSessionId;
-                    let resolvedModel: { providerId: string; modelId: string; variant?: string } | null = null;
+                    let resolvedModel: { providerId: string; modelId: string; variant?: string | null } | null = null;
 
                     if (agentName && options?.preserveCurrentModel !== true) {
                         if (currentSessionId) {
@@ -1808,9 +1812,9 @@ export const useConfigStore = create<ConfigStore>()(
                     // not a selection to preserve — resolve it the way the draft send will
                     // (explicit draft variant first, then the agent's configured variant),
                     // so the composer displays what will actually be sent.
-                    let preservedModelVariant: string | undefined;
+                    let preservedModelVariant: string | null | undefined;
                     if (agentName && options?.preserveCurrentModel === true && !currentSessionId
-                        && !get().currentVariant && currentProviderId && currentModelId) {
+                        && get().currentVariant === undefined && currentProviderId && currentModelId) {
                         const sessionState = useSessionUIStore.getState();
                         const draftId = sessionState.currentDraftId;
                         const draftSendConfig = draftId
@@ -1827,7 +1831,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 ? get().agentModelSelections
                                 : undefined,
                         });
-                        const candidate = explicitDraftModel
+                        const candidate = explicitDraftModel && draftSendConfig?.variant !== undefined
                             ? draftSendConfig?.variant
                             : (accountDefault?.providerId === currentProviderId
                                 && accountDefault.modelId === currentModelId
@@ -1837,7 +1841,7 @@ export const useConfigStore = create<ConfigStore>()(
                             providers.find((provider) => provider.id === currentProviderId),
                             currentModelId,
                             candidate,
-                        );
+                        ) ?? null;
                     }
 
                     set((state) => {

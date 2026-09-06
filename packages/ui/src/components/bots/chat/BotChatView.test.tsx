@@ -701,18 +701,6 @@ describe('BotChatView', () => {
     expect(identityHeader).not.toContain('Private channel');
   });
 
-  test('keeps VS Code deliberate and free of desktop runtime mutation calls', () => {
-    const botView = readFileSync(resolve(testDir, '../../views/BotView.tsx'), 'utf8');
-    const vscodeLayout = readFileSync(resolve(testDir, '../../layout/VSCodeLayout.tsx'), 'utf8');
-    const englishMessages = readFileSync(resolve(testDir, '../../../lib/i18n/messages/en.ts'), 'utf8');
-
-    expect(englishMessages).toContain("'bots.vscode.required': 'Bots require the DevRyan macOS app'");
-    expect(botView).toContain('if (vscode) return <UnsupportedBotsView vscode />');
-    expect(vscodeLayout).toContain('<LazyBotView />');
-    expect(vscodeLayout).not.toContain('botsDesktopApi');
-    expect(vscodeLayout).not.toContain('desktop_bot_runtime_setup');
-  });
-
   test('uses Electron operation progress for runtime recovery without local pending state', () => {
     const source = readFileSync(resolve(testDir, 'BotChatView.tsx'), 'utf8');
 

@@ -266,7 +266,14 @@ export const createRuntimeServiceRegistration = ({
         return unregisterLegacy();
       }
       activeMode = 'smappservice';
-      return callNativeControl('unregister');
+      const result = await callNativeControl('unregister');
+      // SMAppService may report failure when an unsigned bundle has no
+      // registration to remove. Ownership must still be proved stopped by
+      // the caller before starting an app-bound runtime.
+      if (result.state === 'not_found' || result.state === 'not_registered') {
+        return Object.freeze({ ...result, ok: true });
+      }
+      return result;
     },
     get settingsUrl() {
       return activeMode === 'smappservice'

@@ -20,7 +20,6 @@ does not replay the incident or change the running application's settings.
 semantic liveness, settlement, cancellation and the single automatic attempt.
 `provider-recovery-host.js` implements the shared HTTP-shaped contract and
 bounded OpenCode reads. The web harness composes it for web and Electron;
-`packages/vscode/src/extension.ts` composes the same host for VS Code. Electron
 main and legacy Tauri have no new recovery backend.
 
 Host environment settings, applied only when the host is launched:
@@ -38,7 +37,7 @@ recovery remains the fallback until host enforcement is advertised.
 Enforcement requires a live managed runtime, exclusive private file-lock owner,
 healthy durable storage, an allow-listed OpenCode version verified through
 `/global/health` (`PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS` in
-`provider-recovery-policy.js`: 1.18.25, 1.18.26 and 1.18.27, the current host target
+`provider-recovery-policy.js`: 1.18.25, 1.18.26, 1.18.27 and 1.18.29, the current host target
 pin), and the bundled plugin handshake. Unsupported versions, external
 runtimes, and opt-in WebSocket/native transports remain manual. Do not expand
 this allowlist without transport and hook conformance tests.
@@ -47,6 +46,12 @@ A handshake in another directory is insufficient: the exact admitted turn must
 also have a pre-request hook receipt from that runtime instance, and the failed
 assistant must match that receipt. Stale session errors are only reconciliation
 signals; they cannot authorize stopping or recovering a newer invocation.
+
+The plugin allows ten seconds for the initial private handshake because the
+host's live health verification has its own five-second deadline. Subsequent
+private RPCs retain their five-second deadline. Neither path retries failed
+requests or bypasses verification; transport failures identify the RPC action
+and request/response phase without including bridge credentials.
 
 The version gate follows OpenCode's [plugin hooks](https://github.com/anomalyco/opencode/blob/v1.18.25/packages/plugin/src/index.ts),
 [request preparation](https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/llm/request.ts),
@@ -89,7 +94,7 @@ bounded to 30 seconds with bounded individual observations. Idle, an abort
 acknowledgement, a failed read, and renderer-forced idle are not sufficient.
 Healthy status-map omission is accepted only with independent session,
 transcript and blocker checks. Generic timeout wording is ineligible; the exact
-`UnknownError` timeout shape of an allow-listed runtime (1.18.25, 1.18.26, 1.18.27) has
+`UnknownError` timeout shape of an allow-listed runtime (1.18.25, 1.18.26, 1.18.27, 1.18.29) has
 a version-specific compatibility rule.
 
 With no prior work, recovery reuses original text and safe file/data attachment
@@ -127,8 +132,7 @@ records as a troubleshooting shortcut while work may remain active.
 - `POST .../recovery/continue`: explicit new user turn after settlement, using
   original permissions and a fresh caller-supplied message ID. No implicit retry
   after uncertain delivery.
-- Ordinary prompt and abort routes use the same controller. VS Code's proxy
-  handles the identical contract without the `/api` prefix.
+- Ordinary prompt and abort routes use the same controller.
 - `openchamber:primary-recovery`: versioned per-session snapshot event. The UI
   uses a bounded narrow store and refreshes after reconnect and while visible.
 
@@ -178,18 +182,24 @@ attempts. Semantic cutoff also made only one request and no recovery attempt.
 The plugin hooks, request preparation, tool registry and processor sources are
 unchanged from 1.18.26. See [upgrade notes](OPENCODE_1_18_27_UPGRADE_NOTES.md).
 
+OpenCode 1.18.29 compatibility was verified on September 5, 2026 with the same
+isolated loopback-provider fixture. Heartbeat-only traffic completed exactly one
+automatic recovery. Missing headers, silent SSE and a stalled non-SSE body
+reached the native-retry fence with one provider request and zero recovery
+attempts. Semantic cutoff also made only one request and no recovery attempt.
+
 The opt-in executable fixture is `tests/provider-recovery/runtime-conformance.mjs`.
 It requires `DEVRYAN_TEST_OPENCODE_BIN` and has no access to the user's provider
 key or application runtime. Cold SDK initialization exceeded test startup bounds
 in some local runs; the non-SSE and semantic cases passed using the already
 initialized isolated fixture directory. These results validate recovery outcomes,
 not the identity of the transport timer that fired or the historical incident's
-wire behavior. Packaged Electron/VS Code visual acceptance, OAuth-specific
+wire behavior. Packaged Electron visual acceptance, OAuth-specific
 transport behavior, and the remaining full release matrix below are not signed
 off by the shared fixture checks.
 
 Before enabling enforce in a release, additionally run the packaged web/Electron
-and VS Code acceptance matrix against an isolated OpenCode process/provider
+acceptance matrix against an isolated OpenCode process/provider
 fixture: missing headers, silent SSE, OAuth/SSE heartbeats, non-SSE stalled body,
 tool-input progress, reasoning, blockers, sleep, restart at each dispatch phase,
 native retry fencing and simultaneous windows. WebSocket remains unsupported.

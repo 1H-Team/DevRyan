@@ -14,8 +14,7 @@ storage helpers retained for injected-storage tests and adapters.
   plus the returned path.
 - `sessionPlanFile.ts` contains the deterministic path and create-once storage
   helper used by focused injected-storage tests. Web and Electron do not call
-  generic filesystem APIs for session plans; the VS Code runtime mirrors this
-  path contract behind its bridge adapter.
+  generic filesystem APIs for session plans. These paths use the shared runtime's bounded plan-storage identity for long project roots.
 
 ## Integration
 

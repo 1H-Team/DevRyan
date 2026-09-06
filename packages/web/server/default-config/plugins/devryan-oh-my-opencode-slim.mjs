@@ -31,7 +31,11 @@ const loadSlimPlugin = async () => {
   }
 
   const module = await import(pathToFileURL(pluginEntrypoint).href);
-  const plugin = module.default || module;
+  const exported = module.default || module;
+  // Slim 2.2.15 uses the OpenCode plugin descriptor. Its server factory
+  // supplies the same runtime hooks as the legacy function export; setup is
+  // the native descriptor integration and must not replace DevRyan ownership.
+  const plugin = isRecord(exported) ? exported.server : exported;
   if (typeof plugin !== 'function') {
     throw new Error(
       `[DevRyan] Installed Oh My OpenCode Slim entrypoint does not export a plugin: ${pluginEntrypoint}`,

@@ -103,7 +103,7 @@ const renderAtWidth = (
   return renderToStaticMarkup(
     <I18nProvider>
       <div data-theme={theme} style={{ width }}>
-        <BotSidebarSection vscodeRuntime={false} {...stores} />
+        <BotSidebarSection  {...stores} />
       </div>
     </I18nProvider>,
   );
@@ -172,7 +172,7 @@ describe('BotSidebarSection', () => {
     Object.assign(operationsStore.getInitialState(), operationsStore.getState());
     return renderToStaticMarkup(
       <I18nProvider>
-        <BotSidebarSection vscodeRuntime={false} {...stores} operationsStore={operationsStore} />
+        <BotSidebarSection  {...stores} operationsStore={operationsStore} />
       </I18nProvider>,
     );
   };
@@ -200,17 +200,6 @@ describe('BotSidebarSection', () => {
       expect(markup).not.toContain('data-bot-sidebar-status');
       expect(markup).toContain('Deploy completed without errors.');
     }
-  });
-
-  test('offers one deliberate VS Code entry without contacting the desktop runtime', () => {
-    const stores = makeStores();
-    const markup = renderToStaticMarkup(
-      <I18nProvider><BotSidebarSection vscodeRuntime {...stores} /></I18nProvider>,
-    );
-
-    expect(markup).toContain('Requires the macOS App');
-    expect(markup).not.toContain('Setup');
-    expect(markup).not.toContain('Repair');
   });
 
   test('keeps Bot selection outside ordinary session nodes without clearing the coding session', () => {

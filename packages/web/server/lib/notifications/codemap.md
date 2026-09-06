@@ -7,6 +7,7 @@ Notification subsystem for browser push and in-app streaming: subscription lifec
 - **Route + runtime separation**: `routes.js` handles HTTP/SSE contracts; runtime/template/push modules encapsulate generation and delivery logic.
 - **Session-aware delivery**: visibility and activity state prevents noisy notifications when UI is foregrounded, and authoritative todo progress suppresses ready notifications while tasks remain pending or in progress.
 - **Template pipeline**: optional summarization/model-based message shaping before push dispatch.
+- **Plan intent**: `plan-ready.js` rejects exact managed maintenance and valid Implement turns before sentinel classification. `runtime.js` retains those markers in its bounded cache and verifies a candidate's exact canonical parent before fanout; missing parent metadata follows bounded retries.
 
 ## Flow
 1. Client subscribes/unsubscribes push endpoint (`/api/push/*`) and opens notification SSE stream.

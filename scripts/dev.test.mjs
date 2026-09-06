@@ -131,7 +131,6 @@ describe('affected validation planning', () => {
     ]);
 
     assert.deepEqual(plan.commands.map((entry) => entry.label), [
-      'typeCheck:vscode',
       'typeCheck:web',
       'test:cursor',
       'test:web',
@@ -188,11 +187,9 @@ describe('affected validation planning', () => {
 
     assert.deepEqual(plan.commands.map((entry) => entry.label), [
       'typeCheck:ui',
-      'typeCheck:vscode',
       'typeCheck:web',
       'test:orchestration',
       'test:ui',
-      'test:vscode',
       'test:web',
     ]);
   });

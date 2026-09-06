@@ -6,9 +6,24 @@ import {
   legacyBrandedReleaseAssetNames,
   missingRequiredReleaseAssets,
   requiredReleaseAssetNames,
+  unsupportedExtensionAssets,
 } from './verify-release-assets.mjs';
 
 describe('release asset verification', () => {
+  it('rejects extension packages and their download artifacts regardless of branding', () => {
+    assert.deepEqual(unsupportedExtensionAssets([
+      'DevRyan-1.1.13.vsix',
+      'legacy.VSIX',
+      'DevRyan-1.1.13.vsix.sha256',
+      'DevRyan-vscode-vsix.zip',
+      ...requiredReleaseAssetNames('1.1.13'),
+    ]), [
+      'DevRyan-1.1.13.vsix',
+      'legacy.VSIX',
+      'DevRyan-1.1.13.vsix.sha256',
+      'DevRyan-vscode-vsix.zip',
+    ]);
+  });
   it('finds a draft when GitHub does not expose it through the tag endpoint', async () => {
     const requests = [];
     const fetchImpl = async (url) => {

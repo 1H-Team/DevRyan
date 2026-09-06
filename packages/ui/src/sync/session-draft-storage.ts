@@ -26,7 +26,7 @@ const normalizeDraftSendConfig = (value: unknown): ChatDraft["sendConfig"] | und
   const providerID = normalizeOptionalString(record.providerID)
   const modelID = normalizeOptionalString(record.modelID)
   const agent = normalizeOptionalString(record.agent)
-  const variant = normalizeOptionalString(record.variant)
+  const variant = record.variant === null ? null : normalizeOptionalString(record.variant)
   const modelProvenance = record.modelProvenance === "explicit" || record.modelProvenance === "agent-default"
     ? record.modelProvenance
     : undefined
@@ -34,7 +34,7 @@ const normalizeDraftSendConfig = (value: unknown): ChatDraft["sendConfig"] | und
   if (providerID) sendConfig.providerID = providerID
   if (modelID) sendConfig.modelID = modelID
   if (agent) sendConfig.agent = agent
-  if (variant) sendConfig.variant = variant
+  if (variant !== undefined) sendConfig.variant = variant
   if (typeof record.planMode === "boolean") sendConfig.planMode = record.planMode
   if (modelProvenance) sendConfig.modelProvenance = modelProvenance
 

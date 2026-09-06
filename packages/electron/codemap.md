@@ -15,6 +15,7 @@ and desktop-host broker bridges.
   HttpOnly/SameSite runtime cookie and becomes a client instead of starting a
   second server.
 - **Bridge/shim pattern**: `preload.mjs` exposes `__OPENCHAMBER_ELECTRON__` and a `__TAURI__` compatibility surface so shared UI code can run on both Electron and legacy Tauri.
+- **Isolated QA packaging**: `scripts/bundle-main.mjs` exports `bundleElectronMain({ outdir })` with the same production external-module and release-manifest checks. Repository-only `scripts/qa/package-electron.mjs` reuses it to build a separate unsigned app from current main/server/preload and a selected UI artifact; its private test bootstrap and native-integration exclusions are documented in `docs/QA.md`.
 - **Origin policy**: `origin-policy.mjs` centralizes privileged-local vs allowed-content origin rules used by `main.mjs`, `preload.mjs`, init-script injection, navigation handlers, and IPC gates.
 - **Capability gating**: sensitive commands are enforced in main-process handlers (`openchamber:invoke`), with remote/local origin checks.
   The preload keeps an early Bot-runtime rejection when its immutable local-origin
@@ -57,6 +58,35 @@ and desktop-host broker bridges.
   opens the ZIP and DMG, executes the packaged status probe, and rejects
   artifacts missing the bridge, target architecture, valid agent plist,
   Developer ID signature, notarization prerequisites, or matching Team identity.
+- **Startup owner recovery**: `runtime-service.mjs` centralizes missing/valid/
+  malformed/unreadable owner reads, publishes a fsynced private owner inode via
+  exclusive hard link, and serializes acquire/reclaim/release through the shared
+  harness cross-process mutation lock. Malformed legacy writes receive a one-
+  second grace period. `owner-recovery.v2.json` records a damaged regular file's
+  inode, birth time, size, change/modification times, content hash, and the
+  macOS/Linux OS boot-session UUID. Its cross-boot comparison excludes the
+  mount device number; the immediate pre-quarantine comparison retains it.
+  Valid v1 proofs migrate without changing the original observed boot or
+  rewriting the legacy file. Matching retries preserve the proof. Stopped-owner
+  polling and acquisition serialize proof updates through the same mutation
+  guard, with polling waits outside the guard. Quarantine requires the exact
+  same damaged file and a changed boot-session UUID; wall-clock time, file age,
+  or an unreachable service never permits repair. The first observation
+  stays blocked with instructions to reboot and reopen; changed-file,
+  unavailable-boot, and unsafe-file failures have distinct recovery messages.
+  symlinks, unreadable state, and unavailable boot identities remain blocked. Quarantine retains only damaged
+  owner records, with private permissions, not user settings or credentials.
+  `runtime-service-startup.mjs` publishes coordinators only after acquisition,
+  shares concurrent claims, and orders fallback as unregister → prove stopped →
+  acquire app-bound → persist mode. First launch and Retry run the same foreground
+  preparation. Recovery logs contain phases/codes; a cleanup failure retains the
+  original connection error as its cause. Validated native unregister results
+  of `not_found`/`not_registered` are idempotent success, including unsigned
+  bundles; they never bypass stopped-owner verification or exclusive acquisition.
+  Post-update registration failures use the same guarded recovery path.
+  Recovery logs retain only allowlisted registration states and bounded native
+  and connection codes. Owner/descriptor v1 wire formats and
+  generation/instance release fencing remain compatible.
 - **Desktop-host broker**: `desktop-host-broker.mjs` projects only short-lived
   focus, notification, browser/CDP, and browser-observation capabilities from the foreground app to
   the service. App absence returns `desktop_host_unavailable`; it does not stop

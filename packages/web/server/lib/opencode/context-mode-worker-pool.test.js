@@ -18,7 +18,7 @@ const call = (projectDir = '/repo', sessionId = 'ses_one', args = {}) => ({ name
 afterEach(async () => { await Promise.all(pools.splice(0).map((item) => item.close())); FakeWorker.instances = []; });
 
 describe('Context Mode worker isolation', () => {
-  it('ships identical helpers in bundled VS Code and web provisioning', () => {
+  it('ships identical helpers in bundled web provisioning', () => {
     expect(WORKER_POOL_SOURCE).toBe(fs.readFileSync(new URL('./context-mode-worker-pool.js', import.meta.url), 'utf8'));
     expect(WORKER_SOURCE).toBe(fs.readFileSync(new URL('./context-mode-worker.js', import.meta.url), 'utf8'));
   });

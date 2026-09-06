@@ -16,7 +16,6 @@ import {
   type BotSummary,
 } from '@/lib/botsApi';
 import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import {
   type BotChannelStore,
   useBotChannelStore,
@@ -679,26 +678,6 @@ export const BotsEventOwner: React.FC = () => {
         runtime: null,
       });
       useBotOperationsStore.getState().setConnectionState('unsupported', 'bots_access_disabled');
-      return () => {
-        disposed = true;
-        ownerCount = Math.max(0, ownerCount - 1);
-        const generation = ++cleanupGeneration;
-        queueMicrotask(() => {
-          if (ownerCount === 0 && cleanupGeneration === generation) resetStores(null);
-        });
-      };
-    }
-    if (isVSCodeRuntime()) {
-      useBotsStore.getState().setCapabilities({
-        available: false,
-        state: 'unsupported_host',
-        code: 'bots_vscode_unsupported',
-        owner: 'vscode',
-        canManageRuntime: false,
-        canCreateBot: false,
-        runtime: null,
-      });
-      useBotOperationsStore.getState().setConnectionState('unsupported');
       return () => {
         disposed = true;
         ownerCount = Math.max(0, ownerCount - 1);

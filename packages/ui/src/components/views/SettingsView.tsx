@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import type { OpenChamberSection } from '@/components/sections/openchamber/types';
 import { useDeviceInfo } from '@/lib/device';
-import { isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
+import { isDesktopShell, isWebRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import { ConfigApplyControls } from '@/components/views/config-apply/ConfigApplyControls';
 import {
@@ -125,9 +125,9 @@ interface SettingsViewProps {
 }
 
 function buildRuntimeContext(isDesktop: boolean, isManaged: boolean): SettingsRuntimeContext {
-  const isVSCode = isVSCodeRuntime();
+
   const isWeb = !isDesktop && isWebRuntime();
-  return { isVSCode, isWeb, isDesktop, isManaged };
+  return {  isWeb, isDesktop, isManaged };
 }
 
 function isPageAvailable(page: SettingsPageMeta, ctx: SettingsRuntimeContext): boolean {
@@ -251,7 +251,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       .filter((page) => page.slug !== 'home')
       .filter((page) => canAccessSettingsDestination(principal, page.slug))
       .filter((page) => isPageAvailable(page, runtimeCtx))
-      .filter((page) => !(runtimeCtx.isVSCode && page.slug === 'projects'));
+      ;
   }, [runtimeCtx, principal]);
 
   React.useEffect(() => {
@@ -359,7 +359,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
   // Load stores when project changes or when a page becomes active.
   React.useEffect(() => {
-    if (!isSettingsDialogOpen && !runtimeCtx.isVSCode) {
+    if (!isSettingsDialogOpen) {
       return;
     }
 
@@ -387,7 +387,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       void usePluginsStore.getState().loadPlugins();
       void usePluginsStore.getState().loadSlimStatus();
     }
-  }, [activeProjectId, isSettingsDialogOpen, principal, runtimeCtx.isVSCode, settingsSlug]);
+  }, [activeProjectId, isSettingsDialogOpen, principal, settingsSlug]);
 
   React.useEffect(() => {
     if (!isBehaviorAliasPage) {
@@ -706,7 +706,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
             className={cn(
               getSettingsBackButtonHeaderClassName({ avoidMacTrafficLights: shouldAvoidMacTrafficLights }),
               'backdrop-blur-sm',
-              runtimeCtx.isVSCode ? 'bg-background/95' : 'bg-sidebar/95'
+              'bg-sidebar/95'
             )}
           >
             <div className={getSettingsBackButtonHeaderContentClassName()}>
@@ -780,7 +780,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
           <div className="border-t border-border bg-sidebar px-2 py-1 space-y-0.5">
             <ConfigApplyControls variant="sidebar" />
 
-            {!runtimeCtx.isVSCode && principal.scope === 'managed' ? (
+            {principal.scope === 'managed' ? (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -810,7 +810,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const renderMobileStage = () => {
     if (mobileStage === 'nav') {
       return (
-        <div className={cn('flex-1 min-h-0 overflow-hidden', runtimeCtx.isVSCode ? 'bg-background' : 'bg-sidebar')}>
+        <div className={cn('flex-1 min-h-0 overflow-hidden', 'bg-sidebar')}>
           <div className="flex h-full min-h-0 flex-col">
             <ErrorBoundary>{renderSettingsNav()}</ErrorBoundary>
           </div>
@@ -833,7 +833,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         );
       }
       return (
-        <div className={cn('flex-1 min-h-0 overflow-hidden', runtimeCtx.isVSCode ? 'bg-background' : 'bg-sidebar')}>
+        <div className={cn('flex-1 min-h-0 overflow-hidden', 'bg-sidebar')}>
           {settingsSlug === 'skills.installed' || settingsSlug === 'mcp' ? (
             <CapabilityMutationBoundary slug={settingsSlug} audience={settingsAudience}>
               <SettingsSectionBoundary>
@@ -869,7 +869,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     if (activePageMeta.kind === 'split') {
       const splitContent = (
         <div className="flex h-full min-h-0 overflow-hidden">
-          <div className={cn(getSettingsPageSidebarClassName(settingsSlug), 'border-r', runtimeCtx.isVSCode ? 'bg-background' : 'bg-sidebar')} style={{ borderColor: 'var(--interactive-border)' }}>
+          <div className={cn(getSettingsPageSidebarClassName(settingsSlug), 'border-r', 'bg-sidebar')} style={{ borderColor: 'var(--interactive-border)' }}>
             <SettingsSectionBoundary>{renderPageSidebar(settingsSlug, {})}</SettingsSectionBoundary>
           </div>
           <div className="min-h-0 flex-1 overflow-hidden bg-background">
@@ -968,9 +968,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
                 'relative flex h-full min-h-0 flex-col overflow-hidden border-r',
                 isDesktopApp
                   ? 'bg-sidebar'
-                  : runtimeCtx.isVSCode
-                    ? 'bg-background'
-                    : 'bg-sidebar',
+                  : 'bg-sidebar',
                 isResizing ? '' : 'transition-[width,min-width] duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)]'
               )}
               style={{

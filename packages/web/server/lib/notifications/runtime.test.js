@@ -58,6 +58,7 @@ const createPartPayload = ({
   type = 'text',
   text = '',
   state,
+  synthetic = false,
 }) => ({
   type: 'message.part.updated',
   properties: {
@@ -67,6 +68,7 @@ const createPartPayload = ({
       messageID: messageId,
       sessionID: 'ses_1',
       type,
+      ...(synthetic ? { synthetic: true } : {}),
       ...(type === 'tool' ? { state } : { text }),
     },
   },
@@ -166,6 +168,10 @@ const createRuntime = (settings = {}, options = {}) => {
         ? options.sessionInfo
         : { id: 'ses_1', title: 'Session title' }
     )),
+    fetchSessionMessage: vi.fn(async (sessionId, messageId) => ({
+      info: { id: messageId, sessionID: sessionId, role: 'user', mode: 'plan' },
+      parts: [{ type: 'text', text: 'Make a plan.' }],
+    })),
     fetchLastAssistantMessageText: vi.fn(async () => 'Done'),
     resolveNotificationTemplate: vi.fn((template, variables) => template.replace(/\{(\w+)\}/g, (_match, key) => variables[key] ?? '')),
     shouldApplyResolvedTemplateMessage: vi.fn(() => true),
@@ -184,6 +190,7 @@ const createRuntime = (settings = {}, options = {}) => {
     extractLastMessageText: mocks.extractLastMessageText,
     fetchSessionMessages: mocks.fetchSessionMessages,
     fetchSessionInfo: mocks.fetchSessionInfo,
+    fetchSessionMessage: mocks.fetchSessionMessage,
     fetchLastAssistantMessageText: mocks.fetchLastAssistantMessageText,
     resolveNotificationTemplate: mocks.resolveNotificationTemplate,
     shouldApplyResolvedTemplateMessage: mocks.shouldApplyResolvedTemplateMessage,
@@ -725,6 +732,84 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.desktop[0].kind).toBe('plan-ready');
     expect(mocks.fetchSessionMessages).not.toHaveBeenCalled();
     expect(mocks.resolveZenModel).not.toHaveBeenCalled();
+  });
+
+  it.each(['instruction-first', 'maintenance-first'])('suppresses maintenance Plan Ready across cached and payload fallback paths (%s)', async (order) => {
+    const { runtime, calls, mocks } = createRuntime();
+    const wakeId = 'user_wake';
+    const instruction = createPartPayload({ messageId: wakeId, partId: 'instruction',
+      text: 'User has requested to enter plan mode. Preserve the approved plan.', synthetic: true });
+    const maintenance = createPartPayload({ messageId: wakeId, partId: 'maintenance',
+      text: '[devryan-provider-recovery:v1:task_fixture]\nCollect the result.', synthetic: true });
+    await runtime.maybeSendPushForTrigger(createStatusPayload('busy'));
+    for (const event of order === 'instruction-first' ? [instruction, maintenance] : [maintenance, instruction]) {
+      await runtime.maybeSendPushForTrigger(event);
+    }
+    const text = '<!--plan-->\n# Existing plan\n\n## Verification\nAll checks finished.';
+    await runtime.maybeSendPushForTrigger(createPartPayload({ messageId: 'msg_wake', partId: 'wake-text', text }));
+    await runtime.maybeSendPushForTrigger(createCompletionPayload({ info: {
+      id: 'msg_wake', parentID: wakeId, parts: [{ type: 'text', text }],
+    } }));
+    await runtime.maybeSendPushForTrigger(createStatusPayload('idle'));
+
+    expect(calls.desktop.some(payload => payload.kind === 'plan-ready')).toBe(false);
+    expect(calls.ui.some(payload => payload.kind === 'plan-ready')).toBe(false);
+    expect(calls.push.some(payload => payload.data?.type === 'plan-ready')).toBe(false);
+    expect(mocks.fetchSessionMessages).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('checks the exact canonical parent when maintenance events were missed (cached instruction: %s)', async (cachedInstruction) => {
+    const { runtime, calls, mocks } = createRuntime();
+    mocks.fetchSessionMessage.mockResolvedValue({
+      info: { id: 'user_wake', sessionID: 'ses_1', role: 'user' },
+      parts: [
+        { type: 'text', synthetic: true, text: 'User has requested to enter plan mode. Inspect only.' },
+        { type: 'text', synthetic: true, text: '[devryan-open-todo-continuation:v1]\nContinue.' },
+      ],
+    });
+    await runtime.maybeSendPushForTrigger(createStatusPayload('busy'));
+    if (cachedInstruction) await primePlanMode(runtime, 'user_wake');
+    await runtime.maybeSendPushForTrigger(createCompletionPayload({ info: {
+      parentID: 'user_wake',
+      parts: [{ type: 'text', text: '<!--plan-->\n# Plan\n\n## Verification\nInspect.' }],
+    } }));
+    await runtime.maybeSendPushForTrigger(createStatusPayload('idle'));
+
+    expect(mocks.fetchSessionMessage).toHaveBeenCalledWith('ses_1', 'user_wake');
+    expect(calls.desktop.some(payload => payload.kind === 'plan-ready')).toBe(false);
+    expect(calls.ui.some(payload => payload.kind === 'plan-ready')).toBe(false);
+    expect(calls.push.some(payload => payload.data?.type === 'plan-ready')).toBe(false);
+  });
+
+  it('defers an unresolved plan parent and retries instead of sending a speculative notification', async () => {
+    vi.useFakeTimers();
+    const { runtime, calls, mocks } = createRuntime();
+    mocks.fetchSessionMessage.mockResolvedValueOnce(null);
+    await completePlanSession(runtime);
+    expect(calls.desktop).toHaveLength(0);
+    expect(calls.ui).toHaveLength(0);
+    expect(calls.push).toHaveLength(0);
+
+    await vi.advanceTimersByTimeAsync(250);
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0].kind).toBe('plan-ready');
+    expect(mocks.fetchSessionMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { info: { id: 'different', sessionID: 'ses_1', role: 'user' }, parts: [] },
+    { info: { id: 'user_plan_1', sessionID: 'another_session', role: 'user' }, parts: [] },
+    { info: { id: 'user_plan_1', sessionID: 'ses_1', role: 'user' } },
+  ])('bounds retries when canonical parent verification cannot establish the exact user record: %j', async (parent) => {
+    vi.useFakeTimers();
+    const { runtime, calls, mocks } = createRuntime();
+    mocks.fetchSessionMessage.mockResolvedValue(parent);
+    await completePlanSession(runtime);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(mocks.fetchSessionMessage).toHaveBeenCalledTimes(4);
+    expect(calls.desktop).toHaveLength(0);
+    expect(calls.ui).toHaveLength(0);
+    expect(calls.push).toHaveLength(0);
   });
 
   it('uses default Plan Ready text when template enrichment fails', async () => {

@@ -4,7 +4,7 @@ import type { PlanIndicatorEntry } from '@/sync/plan-indicator';
 interface StatusRowPlanActionOptions {
   showTodos: boolean;
   isPlanAvailable: boolean;
-  isVSCode: boolean;
+
   record: SessionPlanFileRecord | undefined;
 }
 
@@ -22,11 +22,11 @@ export interface PlanAutoRevealTarget {
 
 export const shouldAutoRevealPlanInMainTab = ({
   isMobile,
-  isVSCode,
+
 }: {
   isMobile: boolean;
-  isVSCode: boolean;
-}): boolean => isMobile || isVSCode;
+
+}): boolean => isMobile;
 
 export const getPlanAutoRevealTarget = ({
   sessionId,
@@ -77,10 +77,10 @@ export const hasPlanTaskTrackingContext = ({
 export const getStatusRowPlanActionState = ({
   showTodos,
   isPlanAvailable,
-  isVSCode,
+
   record,
 }: StatusRowPlanActionOptions): StatusRowPlanActionState => {
-  if (!showTodos || (!isPlanAvailable && !record) || isVSCode) {
+  if (!showTodos || (!isPlanAvailable && !record)) {
     return { visible: false, enabled: false, disabledReason: null };
   }
 

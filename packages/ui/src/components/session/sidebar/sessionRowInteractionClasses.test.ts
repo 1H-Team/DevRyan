@@ -5,14 +5,14 @@ import {
 } from './sessionRowInteractionClasses';
 
 describe('resolveSessionRowInteractionClasses', () => {
-  test('uses compact minimal hover padding', () => {
+  test('reserves hover space for both quick actions', () => {
     const classes = resolveSessionRowInteractionClasses();
 
     expect(classes.revealOnHoverClass).toContain('group-hover:opacity-100');
     expect(classes.revealOnHoverClass).toContain('group-hover:pointer-events-auto');
     expect(classes.revealOnHoverClass).not.toContain('group-focus-within');
     expect(classes.hideOnHoverClass).toBe('group-hover:opacity-0');
-    expect(classes.revealPaddingClass).toBe('group-hover:pr-9');
+    expect(classes.revealPaddingClass).toBe('group-hover:pr-[var(--session-row-action-padding,3rem)]');
     expect(classes.revealPaddingClass).not.toContain('group-focus-within');
   });
 });

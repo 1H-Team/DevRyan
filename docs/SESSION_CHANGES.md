@@ -3,7 +3,7 @@
 ## Ownership and capture
 
 The shared harness runtime owns cumulative session changes independently of
-optional turn evidence and diagnostic journaling. Web/Electron and VS Code
+optional turn evidence and diagnostic journaling. Web/Electron
 instantiate `createSessionChangeHost` with their own private data root, OpenCode
 request/auth adapter and event publisher. The managed
 `devryan-session-changes.mjs` plugin registers the initial user message and

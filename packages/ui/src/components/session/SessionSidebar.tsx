@@ -18,7 +18,6 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 import { useGitStore, useGitAllBranches, useGitRepoStatusMap } from '@/stores/useGitStore';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useArchivedAutoFolders } from './sidebar/hooks/useArchivedAutoFolders';
@@ -582,7 +581,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const isDesktopShellRuntime = React.useMemo(() => isDesktopShell(), []);
   const isTabletStandalonePwa = useTabletStandalonePwaRuntime();
 
-  const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
   const {
     buildGroupSearchText,
     filterSessionNodesForSearch,
@@ -594,15 +592,15 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     sessionUserActivity,
     archivedAssistantActivity,
     gitBranches,
-    isVSCode,
+
   });
   const { isTablet } = useDeviceInfo();
   const alwaysShowSidebarActions = mobileVariant || isTablet;
-  const isWebRuntime = !mobileVariant && !isVSCode && !isDesktopShellRuntime;
-  const hideSearchInSidebarHeader = isDesktopShellRuntime && !mobileVariant && !isVSCode;
+  const isWebRuntime = !mobileVariant && !isDesktopShellRuntime;
+  const hideSearchInSidebarHeader = isDesktopShellRuntime && !mobileVariant;
 
   const { scheduleCollapsedProjectsPersist } = useSidebarPersistence({
-    isVSCode,
+
     hasLoadedGlobalSessions,
     safeStorage,
     keys: {
@@ -875,12 +873,12 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       } catch { /* ignored */ }
 
       // Persist collapse state to server settings (web + desktop local/remote).
-      if (!isVSCode) {
+
         scheduleCollapsedProjectsPersist(next);
-      }
+
       return next;
     });
-  }, [isVSCode, safeStorage, scheduleCollapsedProjectsPersist]);
+  }, [ safeStorage, scheduleCollapsedProjectsPersist]);
 
   const normalizedProjects = React.useMemo(() => {
     return projects
@@ -982,9 +980,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       normalizedProjects,
       availableWorktreesByProject,
       dedupeSessionsById([...sessions, ...archivedSessions]),
-      isVSCode,
     ),
-    [archivedSessions, availableWorktreesByProject, isVSCode, normalizedProjects, sessions],
+    [archivedSessions, availableWorktreesByProject, normalizedProjects, sessions],
   );
   useSessionFolderCleanup({
     isSessionsLoading,
@@ -997,7 +994,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   });
 
   const { getSessionsForProject, getArchivedSessionsForProject } = useProjectSessionLists({
-    isVSCode,
+
     sessions,
     archivedSessions,
     availableWorktreesByProject,
@@ -1018,7 +1015,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     sessions,
     archivedSessions,
     availableWorktreesByProject,
-    isVSCode,
+
     isSessionsLoading,
     foldersMap,
     createFolder,
@@ -1777,7 +1774,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         onToggleSidebar={toggleSidebar}
         hideSearchAction={hideSearchInSidebarHeader}
         avoidWindowControlsOverlay={isTabletStandalonePwa}
-        reserveExternalDesktopChromeRow={!mobileVariant && !isVSCode && (isDesktopShellRuntime || audience === 'bots')}
+        reserveExternalDesktopChromeRow={!mobileVariant && (isDesktopShellRuntime || audience === 'bots')}
         audience={audience}
         onAudienceChange={setAudience}
       />
@@ -1886,7 +1883,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         onGitHubAccountSwitch={principal.scope === 'managed' ? undefined : handleGitHubAccountSwitch}
         showGitHubProfilePlaceholder={principal.scope === 'managed'
           && principal.assignments.some((assignment) => Boolean(assignment.githubAccountId))}
-        showRuntimeButtons={!isVSCode}
+        showRuntimeButtons={true}
         hideDirectoryControls={audience === 'bots' || shouldHideProjectAdminControls}
         handleOpenDirectoryDialog={handleOpenDirectoryDialog}
       />

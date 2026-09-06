@@ -1,5 +1,4 @@
 import type { AssistantImageCandidate } from './generatedImageResults';
-import { buildAssistantImageRawUrl } from './generatedImageResults';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const SUPPORTED_IMAGE_MIME_TYPES = new Set([
@@ -111,15 +110,14 @@ const parsePrepareResults = (payload: unknown): PrepareResponseResult[] => {
 export const prepareAssistantImageCandidates = async ({
     candidates,
     sessionId,
-    directory,
-    isVSCode,
+
     signal,
     fetchImpl = fetch,
 }: {
     candidates: readonly AssistantImageCandidate[];
     sessionId?: string;
     directory?: string;
-    isVSCode: boolean;
+
     signal: AbortSignal;
     fetchImpl?: typeof fetch;
 }): Promise<AssistantImagePreparation[]> => {
@@ -132,18 +130,6 @@ export const prepareAssistantImageCandidates = async ({
                 candidate,
                 status: 'ready',
                 url: candidate.source,
-                filename: candidate.filename,
-                ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
-                ...(typeof candidate.size === 'number' ? { size: candidate.size } : {}),
-            });
-            continue;
-        }
-
-        if (isVSCode) {
-            resolved.set(candidate.id, {
-                candidate,
-                status: 'ready',
-                url: buildAssistantImageRawUrl(candidate.source, directory, undefined, true),
                 filename: candidate.filename,
                 ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
                 ...(typeof candidate.size === 'number' ? { size: candidate.size } : {}),

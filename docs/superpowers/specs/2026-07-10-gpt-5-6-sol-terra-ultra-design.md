@@ -25,7 +25,7 @@ No Pro ID is inferred or patched. Anthropic and unrelated providers keep their d
 
 Managed OpenCode runtime overlays advertise literal `max` and `ultra` variants with matching `reasoningEffort` wire values. The records retain the standard reasoning summary and encrypted reasoning-content options used by adjacent OpenAI variants.
 
-This is a compatibility correction for incomplete upstream metadata, not a user-defined model mode. DevRyan does not modify source user configuration. Web/Electron and VS Code generate the same capability records.
+This is a compatibility correction for incomplete upstream metadata, not a user-defined model mode. DevRyan does not modify source user configuration. Web/Electron generate the same capability records.
 
 ### Cursor SDK
 
@@ -58,7 +58,7 @@ The selected raw string is preserved through keyboard cycling, agent defaults, d
 ## Testing and Verification
 
 - Cursor discovery tests prove Sol/Terra expose separate Max and Ultra wire selections, Luna exposes Max only, and Fast retains each level.
-- Web and VS Code overlay tests prove the exact capability matrix.
+- Web overlay tests prove the exact capability matrix.
 - Shared UI/send tests prove ordering, labels, raw wire fidelity, defaults, restoration, cycling, queues, and sends.
 - Electron packaging tests ensure Cursor SDK's `sqlite3` binding is rebuilt and shipped.
 - The installed app is queried for live provider metadata and visually checked at desktop and compact widths with console-error and clipping checks.

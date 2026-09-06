@@ -191,7 +191,7 @@ Per-row selectors must remain leaf-level. Unrelated session events must not crea
 
 ## Workstream 3: Usage and Rate-Limit Refresh
 
-Create one runtime-level refresh coordinator. Header, settings, desktop compact chrome, and VS Code surfaces consume store state but do not own timers.
+Create one runtime-level refresh coordinator. Header, settings, desktop compact chrome, surfaces consume store state but do not own timers.
 
 The coordinator behavior is:
 
@@ -296,7 +296,7 @@ Create one internal workspace package, `@openchamber/orchestration-runtime`, und
 
 The web server owns one scheduler instance for web and Electron. The VS Code extension host owns one scheduler instance for VS Code. Thin adapters inject OpenCode session operations, atomic runtime-state persistence, clocks/ID generation for tests, and event publication. Electron does not create a second scheduler because its in-process web server is already the runtime owner.
 
-The shared UI imports only the JSON-compatible contract types and consumes events through a dedicated narrow store. Core scheduling policy is never copied into UI, web route handlers, Electron IPC, or VS Code bridge handlers.
+The shared UI imports only the JSON-compatible contract types and consumes events through a dedicated narrow store. Core scheduling policy is never copied into UI, web route handlers, Electron IPC, bridge handlers.
 
 ### Ownership boundary
 
@@ -412,7 +412,7 @@ Managed task events carry:
 
 Web/Electron publish them through the existing synthetic global-event path. VS Code receives the same contract through its extension-host bridge. The shared UI reducer consumes one contract in a narrow managed-orchestration store rather than adding hot state to the broad sync store.
 
-The internal orchestration workspace package is the only owner of scheduler semantics. Web and VS Code adapters may differ in transport and persistence location but must pass the same contract and conformance suite.
+The internal orchestration workspace package is the only owner of scheduler semantics. Web adapters may differ in transport and persistence location but must pass the same contract and conformance suite.
 
 ## Workstream 7: Cross-Runtime Managed-Task UI
 
@@ -420,7 +420,7 @@ The UI presents managed tasks separately from provider-native task rows. It show
 
 The UI does not infer status from historical text. It subscribes by task/root identity to the dedicated managed store. High-frequency child output remains in the existing per-session message stores, so task-list updates do not repaint unrelated app chrome.
 
-Web, Electron, and VS Code expose the same functional actions and error semantics. Native shells remain transport/integration layers, not policy owners.
+Web, Electron, expose the same functional actions and error semantics. Native shells remain transport/integration layers, not policy owners.
 
 ## Oh My OpenCode Slim Compatibility
 
@@ -445,7 +445,7 @@ Add or update tests for:
 - event replay/cache byte bounds where implemented;
 - provider-native partial output, task failure, abort, and handoff projection;
 - managed scheduler concurrency, FIFO order, idempotency, cancellation isolation, slot release, mode lease, restart reconciliation, and partial recovery; and
-- web/VS Code contract parity.
+- web contract parity.
 
 ### Runtime scenarios
 
@@ -480,7 +480,7 @@ Every meaningful change follows this sequence:
 7. Inspect the diff for unintended changes.
 8. Record measurements and result before starting the next change.
 
-Use `bun run validate:full` for shared configuration, cross-runtime contracts, orchestration core, risky sync/session changes, or release verification. Run `bun run build` for package exports, dependency graph, Electron/VS Code packaging, dynamic imports, or other bundling-sensitive changes. Run the web server suite for changes under `packages/web/server/**` when affected validation does not already cover it.
+Use `bun run validate:full` for shared configuration, cross-runtime contracts, orchestration core, risky sync/session changes, or release verification. Run `bun run build` for package exports, dependency graph, Electron packaging, dynamic imports, or other bundling-sensitive changes. Run the web server suite for changes under `packages/web/server/**` when affected validation does not already cover it.
 
 ## Final Acceptance Matrix
 
@@ -525,7 +525,7 @@ Large existing files may be split only when the work introduces a clear new owne
 - **Slot leaks/deadlocks:** one idempotent terminal finalizer and restart reconciliation tests for every non-happy path.
 - **Broad render fanout:** dedicated managed-task store and leaf selectors; child output remains in per-session stores.
 - **Memory regression from duplicated output:** ledger references canonical sessions and keeps only bounded previews/history.
-- **Cross-runtime divergence:** one contract and shared core policy with thin web and VS Code adapters.
+- **Cross-runtime divergence:** one contract and shared core policy with thin web adapters.
 - **Unrelated refactoring:** change only measured or correctness-relevant ownership boundaries.
 
 ## Deliverables

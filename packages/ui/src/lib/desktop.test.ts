@@ -157,7 +157,7 @@ describe('desktop access helpers', () => {
     expect(invocations).toEqual(['desktop_get_cache_info', 'desktop_clear_cache']);
   });
 
-  test('does not expose Electron cache IPC to web, VS Code, legacy Tauri, or remote pages', async () => {
+  test('does not expose Electron cache IPC to web, legacy Tauri, or remote pages', async () => {
     let invokeCount = 0;
     const invoke = mock(async () => {
       invokeCount += 1;
@@ -167,13 +167,6 @@ describe('desktop access helpers', () => {
     installWindow({
       __TAURI__: { core: { invoke } },
     });
-    expect(await getDesktopCacheInfo()).toBeNull();
-
-    installWindow({
-      __OPENCHAMBER_RUNTIME_APIS__: {
-        runtime: { platform: 'vscode', isDesktop: false, isVSCode: true },
-      },
-    } as unknown as Partial<TestWindow>);
     expect(await getDesktopCacheInfo()).toBeNull();
 
     installWindow({});

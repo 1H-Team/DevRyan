@@ -24,6 +24,6 @@ Browser control and observation boundary: private desktop-only, session-turn-sco
 
 ## Integration
 - Registered by `server/index.js` through the base-route bootstrap's private-capability hook so UI authentication cannot intercept the managed bearer.
-- Electron injects create/touch/release callbacks; standalone web and VS Code omit them and receive 404.
+- Electron injects create/touch/release callbacks; standalone web omit them and receive 404.
 - App-bound Electron injects observation snapshot/stream callbacks directly. Runtime-service mode reaches the foreground Electron host through its authenticated desktop-host broker; an absent or older host fails the view only and never disturbs the lease.
 - `packages/web/server/default-config/plugins/devryan-browser.mjs` is the only managed model-facing lease client.

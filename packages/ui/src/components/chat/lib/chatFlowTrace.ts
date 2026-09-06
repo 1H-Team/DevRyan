@@ -1,6 +1,6 @@
 export const CHAT_FLOW_TRACE_SCHEMA_VERSION = 1 as const;
 
-export type ChatFlowTraceRuntime = 'web' | 'electron' | 'vscode';
+export type ChatFlowTraceRuntime = 'web' | 'electron';
 
 export type ChatFlowTraceAction =
     | 'plan.initial'

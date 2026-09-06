@@ -99,6 +99,10 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
   const suppressNextToggleRef = React.useRef(false);
   const menuInstanceKey = `project:${id}`;
   const isMenuOpen = openSidebarMenuKey === menuInstanceKey;
+  const hasNewSessionAction = showCreateButtons && Boolean(onNewSession);
+  const projectHeaderActionCount = Number(hasNewSessionAction)
+    + Number(showCreateButtons && isRepo && !hideWorktreeControls && Boolean(onNewWorktreeSession))
+    + Number(!hideProjectAdminControls);
 
   React.useEffect(() => {
     setImageFailed(false);
@@ -166,7 +170,13 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
             )}
             style={{ backgroundColor: isDesktopShell && isStuck ? 'transparent' : undefined }}
           >
-            <div className="relative flex items-center gap-1 px-0.5 py-0.5" {...attributes}>
+            <div
+              data-project-header
+              data-project-header-action-count={projectHeaderActionCount}
+              data-project-header-has-new-session={hasNewSessionAction ? 'true' : undefined}
+              className="relative flex items-center gap-1 px-0.5 py-0.5"
+              {...attributes}
+            >
               <Tooltip>
                 <TooltipTrigger asChild>
                     <button
@@ -178,8 +188,8 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                       className={cn(
                         'flex-1 min-w-0 flex items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded-md cursor-grab active:cursor-grabbing transition-[padding]',
                         isRepo && !hideWorktreeControls
-                          ? (alwaysShowActions ? 'pr-20' : 'pr-7 group-hover/project:pr-20 group-focus-within/project:pr-20')
-                          : (alwaysShowActions ? 'pr-14' : 'pr-7 group-hover/project:pr-14 group-focus-within/project:pr-14'),
+                          ? (alwaysShowActions ? 'pr-[var(--project-header-action-padding,5rem)]' : 'pr-7 group-hover/project:pr-[var(--project-header-action-padding,5rem)] group-focus-within/project:pr-[var(--project-header-action-padding,5rem)]')
+                          : (alwaysShowActions ? 'pr-[var(--project-header-action-padding,3.5rem)]' : 'pr-7 group-hover/project:pr-[var(--project-header-action-padding,3.5rem)] group-focus-within/project:pr-[var(--project-header-action-padding,3.5rem)]'),
                       )}
                     >
                     <span
@@ -220,7 +230,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
 
               <div className={cn(
                 'absolute top-1/2 z-10 flex -translate-y-1/2 items-center gap-1',
-                showCreateButtons ? 'right-7' : 'right-0.5',
+                showCreateButtons ? 'right-[var(--project-header-secondary-right,1.75rem)]' : 'right-0.5',
               )}>
                 {showCreateButtons && isRepo && !hideWorktreeControls && onNewWorktreeSession ? (
                   <Tooltip>

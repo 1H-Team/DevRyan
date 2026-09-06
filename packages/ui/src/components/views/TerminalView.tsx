@@ -47,7 +47,6 @@ const MODIFIER_ARROW_SUFFIX: Record<Modifier, string> = {
     cmd: '3',
 };
 
-
 const STREAM_OPTIONS = {
     retry: {
         maxRetries: 3,
@@ -96,8 +95,8 @@ export const TerminalView: React.FC = () => {
     const { isMobile, isTablet, hasTouchOnlyPointer } = useDeviceInfo();
     const isTouchTerminal = isMobile || isTablet;
     const useTouchTerminalInput = (isTouchTerminal || hasTouchOnlyPointer) && runtime.platform === 'web';
-    // Tabs are supported for web + desktop runtimes, including mobile (not VSCode).
-    const enableTabs = runtime.platform !== 'vscode';
+
+    const enableTabs = true;
     const showTerminalQuickKeysOnDesktop = useUIStore((state) => state.showTerminalQuickKeysOnDesktop);
     const showQuickKeys = isTouchTerminal || showTerminalQuickKeysOnDesktop;
 
@@ -236,7 +235,7 @@ export const TerminalView: React.FC = () => {
     const [hasOpenedTerminalViewport, setHasOpenedTerminalViewport] = React.useState(isTerminalVisible);
 
     React.useEffect(() => {
-        if (!isTerminalVisible || runtime.platform === 'vscode') {
+        if (!isTerminalVisible) {
             return;
         }
 
@@ -678,7 +677,6 @@ export const TerminalView: React.FC = () => {
         },
         [activeTabId, closeTab, disconnectStream, effectiveDirectory]
     );
-
 
     const handleViewportInput = React.useCallback(
         (data: string) => {

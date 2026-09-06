@@ -11,12 +11,14 @@ import type { ChildStoreManager } from "./child-store"
 import { getSessionMaterializationStatus } from "./materialization"
 import type { SessionUIState } from "./session-ui-store"
 import type { State } from "./types"
+import type { SessionMessageLoader } from "./session-message-loader"
 
 let _sdk: OpencodeClient | null = null
 let _childStores: ChildStoreManager | null = null
 let _directory: string = ""
 let _registerSessionDirectory: ((sessionID: string, directory: string) => void) | null = null
 let _sessionUIStore: StoreApi<SessionUIState> | null = null
+let _messageLoader: SessionMessageLoader | null = null
 
 export function setSessionUIStoreRef(store: StoreApi<SessionUIState>): void {
   _sessionUIStore = store
@@ -42,10 +44,12 @@ export function setSyncRefs(
   childStores: ChildStoreManager,
   directory: string,
   registerSessionDirectory?: (sessionID: string, directory: string) => void,
+  messageLoader?: SessionMessageLoader,
 ) {
   _sdk = sdk
   _childStores = childStores
   _directory = directory
+  _messageLoader = messageLoader ?? null
   if (registerSessionDirectory) {
     _registerSessionDirectory = registerSessionDirectory
   }
@@ -57,6 +61,7 @@ export function clearSyncRefs(childStores: ChildStoreManager): boolean {
   _childStores = null
   _directory = ""
   _registerSessionDirectory = null
+  _messageLoader = null
   return true
 }
 
@@ -83,6 +88,15 @@ export function getSyncChildStoresIfInitialized(): ChildStoreManager | null {
 
 export function getSyncDirectory(): string {
   return _directory
+}
+
+/** Only uncaptured/live Plan resolution needs history; captured queue choices bypass this. */
+export function assertSessionPlanSelectionReady(sessionID: string, directory?: string | null): void {
+  if (!_messageLoader) return
+  const targetDirectory = directory
+    || _sessionUIStore?.getState().getDirectoryForSession(sessionID)
+    || _directory
+  _messageLoader.assertPlanSelectionReady({ directory: targetDirectory, sessionID })
 }
 
 /** Read current directory's child store state. Returns undefined if not bootstrapped. */

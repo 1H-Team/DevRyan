@@ -1,0 +1,11 @@
+:root { --background: #fff; --foreground: #222; --muted-foreground: #60646c; --primary: #4771c4; }
+:root.dark { --background: #151719; --foreground: #e7e9ec; --muted-foreground: #a5abb3; --primary: #8caef4; }
+body { margin: 0; background: var(--background); color: var(--foreground); font: 15px system-ui, sans-serif; }
+main { max-width: 860px; margin: auto; padding: 24px; }
+h1 { font-size: 24px; font-weight: 600; }
+.fixture-description { margin: 8px 0 20px; color: var(--muted-foreground); }
+nav { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+nav button { border: 1px solid #858585; border-radius: 6px; padding: 6px 10px; }
+.fixture-transcript { display: grid; gap: 16px; border-top: 1px solid #858585; padding-top: 20px; }
+textarea { width: 100%; min-height: 84px; border: 1px solid #858585; border-radius: 8px; padding: 12px; margin-top: 28px; }
+output { display: block; margin-top: 14px; color: var(--muted-foreground); font-size: 12px; }

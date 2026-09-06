@@ -1,4 +1,4 @@
-import { detectPlanReadyRevision, PLAN_READY_DEFAULT_TEMPLATE } from './plan-ready.js';
+import { detectPlanReadyRevision, isPlanReadySuppressedUserMessage, PLAN_READY_DEFAULT_TEMPLATE } from './plan-ready.js';
 
 export const SESSION_COMPLETION_NOTIFICATION_SETTLE_MS = 500;
 
@@ -25,6 +25,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     buildTemplateVariables,
     extractLastMessageText,
     fetchSessionMessages,
+    fetchSessionMessage,
     fetchLastAssistantMessageText,
     resolveNotificationTemplate,
     shouldApplyResolvedTemplateMessage,
@@ -439,7 +440,7 @@ export const createNotificationTriggerRuntime = (deps) => {
       : `${part.type || 'part'}:${part.messageID || part.messageId || 'unknown'}`;
     if (part.type === 'text' || part.type === 'reasoning') {
       const text = readPartText(part).slice(0, PLAN_EVENT_CACHE_MAX_PART_CHARS);
-      return { id, type: part.type, text, ...(synthetic ? { synthetic: true } : {}) };
+      return { id, type: part.type, text, ...(synthetic || part.synthetic === true ? { synthetic: true } : {}) };
     }
     if (part.type === 'tool') {
       return {
@@ -516,17 +517,25 @@ export const createNotificationTriggerRuntime = (deps) => {
       const partText = readPartText(part);
       const isPlanModeInstruction = part.type === 'text'
         && partText.trim().startsWith(PLAN_MODE_INSTRUCTION_PREFIX);
+      const isSuppressionPart = part.type === 'text' && part.synthetic === true
+        && isPlanReadySuppressedUserMessage({ info: { role: 'user' }, parts: [part] });
       const hasSentinel = part.type === 'text' && partText.includes(PLAN_CARD_SENTINEL);
 
       let cache = planEventCacheBySessionId.get(sessionId);
-      if (isPlanModeInstruction) {
-        const cachedPart = trimPlanPartForCache(part, { synthetic: true });
-        cache = createPlanEventCache({
-          sessionId,
-          userMessageId: messageId,
-          userPart: cachedPart,
-          hasSentinel,
-        });
+      if (isPlanModeInstruction || isSuppressionPart) {
+        const cachedPart = trimPlanPartForCache(part, { synthetic: isPlanModeInstruction });
+        if (cache?.userMessageId === messageId) {
+          // Native user parts may arrive in either order. A later instruction
+          // must not erase this same wake's maintenance or approval marker.
+          setCachedPlanPart(cache, cache.userParts, cachedPart);
+        } else {
+          cache = createPlanEventCache({
+            sessionId,
+            userMessageId: messageId,
+            userPart: cachedPart,
+            hasSentinel,
+          });
+        }
         cachePlanSession(sessionId, cache);
         return;
       }
@@ -715,18 +724,49 @@ export const createNotificationTriggerRuntime = (deps) => {
     });
   };
 
+  const verifyPlanRevisionParent = async (revision, sessionId, fetchedMessages = []) => {
+    if (!revision?.sourceParentMessageId) return revision;
+    const parentId = revision.sourceParentMessageId;
+    try {
+      let parent = fetchedMessages.find((message) => message?.info?.id === parentId);
+      if (!parent) {
+        if (typeof fetchSessionMessage === 'function') {
+          parent = await fetchSessionMessage(sessionId, parentId);
+        } else {
+          const response = await fetch(buildOpenCodeUrl(
+            `/session/${encodeURIComponent(sessionId)}/message/${encodeURIComponent(parentId)}`, '',
+          ), {
+            method: 'GET',
+            headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+            signal: AbortSignal.timeout(2000),
+          });
+          if (!response.ok) return undefined;
+          parent = await response.json();
+        }
+      }
+      if (parent?.info?.id !== parentId || parent.info.role !== 'user'
+        || parent.info.sessionID !== sessionId || !Array.isArray(parent.parts)) return undefined;
+      return isPlanReadySuppressedUserMessage(parent) ? null : revision;
+    } catch {
+      return undefined;
+    }
+  };
+
   const resolvePlanRevisionForCompletion = async ({ payload, sessionId, allowGenericCompletion }) => {
     const info = payload.properties?.info;
     const cachedMessages = buildCachedPlanMessages(sessionId);
+    const cachedParent = cachedMessages.find((message) => message.info.id === info?.parentID);
+    // Known parent intent also governs the payload-only sentinel fallback.
+    if (isPlanReadySuppressedUserMessage(cachedParent)) return null;
     const cachedRevision = detectPlanReadyRevision(cachedMessages);
-    if (cachedRevision) return cachedRevision;
+    if (cachedRevision) return verifyPlanRevisionParent(cachedRevision, sessionId);
 
     const payloadParts = info?.parts || payload.properties?.parts;
     const fallbackMessages = info && Array.isArray(payloadParts)
       ? [{ info, parts: payloadParts }]
       : [];
     const payloadRevision = detectPlanReadyRevision(fallbackMessages);
-    if (payloadRevision) return payloadRevision;
+    if (payloadRevision) return verifyPlanRevisionParent(payloadRevision, sessionId);
 
     const planCache = planEventCacheBySessionId.get(sessionId);
     const shouldFetchCompatibilityHistory = Boolean(planCache) || !allowGenericCompletion;
@@ -743,9 +783,9 @@ export const createNotificationTriggerRuntime = (deps) => {
         messages = await fetchSessionMessages(sessionId, PLAN_HISTORY_LIMIT);
       }
 
-      return detectPlanReadyRevision(
-        messages.length > 0 && includesCurrentMessage() ? messages : fallbackMessages,
-      );
+      const availableMessages = messages.length > 0 && includesCurrentMessage() ? messages : fallbackMessages;
+      const revision = detectPlanReadyRevision(availableMessages);
+      return revision ? verifyPlanRevisionParent(revision, sessionId, messages) : null;
     } catch (error) {
       console.warn('[Notification] Plan classification failed:', error?.message || error);
       return null;
@@ -767,6 +807,9 @@ export const createNotificationTriggerRuntime = (deps) => {
       sessionId,
       allowGenericCompletion,
     });
+    // An unavailable parent is unresolved metadata, not an ordinary completion.
+    // Reuse the finite metadata retry path before consuming this candidate.
+    if (planRevision === undefined) return null;
 
     if (planRevision) {
       // A plan-producing turn owns the completion event. Turning this event off

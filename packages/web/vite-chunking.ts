@@ -46,6 +46,19 @@ export const resolveVendorChunkName = (id: string): string | undefined => {
   if (packageName === 'zustand') return 'vendor-zustand';
   if (packageName === '@opencode-ai/sdk') return 'vendor-opencode-sdk';
 
+  // These utilities are shared by eager syntax/markup consumers and the lazy
+  // Markdown renderer. Do not let Markdown's dependency closure claim them.
+  if (
+    packageName === 'property-information'
+    || packageName === 'hast-util-whitespace'
+    || packageName === 'comma-separated-tokens'
+    || packageName === 'space-separated-tokens'
+    || packageName === 'zwitch'
+    || packageName === 'ccount'
+  ) {
+    return 'vendor-markup-utils';
+  }
+
   if (
     packageName === 'react-markdown'
     || packageName === 'remark'

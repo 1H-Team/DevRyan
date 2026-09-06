@@ -3,8 +3,7 @@
 ## Responsibility
 
 Private Production Bot navigation, continuous canonical chat, and the Bot
-Operations rail shared by the web and Electron renderers, plus the deliberate
-unsupported VS Code presentation. Bot configuration lives separately in
+Operations rail shared by the web and Electron renderers. Bot configuration lives separately in
 `components/sections/bots/` and calls the management contracts in
 `lib/botsApi.ts`.
 
@@ -108,7 +107,6 @@ unsupported VS Code presentation. Bot configuration lives separately in
 1. `SessionSidebar` renders exactly one audience panel. `BotSidebarSection`
    selects a Bot without touching ordinary session state and ensures the current
    principal's owner channel.
-2. `MainLayout`/`VSCodeLayout` derive Bot mode from the audience switch;
    `BotView` then resolves host support, the selected Bot, and its authorized channel.
 3. `BotChatView` loads canonical messages and renders conversation groups,
    composer, and explicit run state. `chat/BotIdentityHeader.tsx` owns the
@@ -126,7 +124,6 @@ unsupported VS Code presentation. Bot configuration lives separately in
 
 - Lazy view boundary: `components/views/BotView.tsx` and `lazyViews.tsx`
 - Shell mode: `components/layout/MainLayout.tsx`, `Header.tsx`,
-  `RightSidebarTabs.tsx`, and `VSCodeLayout.tsx`
 - Navigation: `components/session/SessionSidebar.tsx`
 - Audience tabs/state: `components/shared/ProductAudienceTabs.tsx` and
   `stores/useMainSidebarAudienceStore.ts`

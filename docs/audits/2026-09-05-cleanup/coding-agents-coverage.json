@@ -1,0 +1,2415 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-09-06T06:06:05.902Z",
+  "fullAcceptance": false,
+  "report": "coding-agents-acceptance.md",
+  "sourceSha256": "3c96c656f19a3026612ab7313034d88de070c8e82b1876bcd0c91fcaa3656426",
+  "scriptsSha256": "890cf65db94235bf8b84ed3dbcda8ea25118e268a262c814ac804b2e14f5db19",
+  "packageEvidence": ".cache/qa/packaged-electron-YJDmZ4/package-evidence.json",
+  "counts": {
+    "requiredLiveCells": 24,
+    "requiredEffortObservations": 48,
+    "verifiedCoreEffortObservations": 12,
+    "verifiedFullLiveCells": 0,
+    "failedCoreEffortObservations": 1,
+    "unrunCoreEffortObservations": 3,
+    "blockedLiveCells": 16,
+    "requiredNaturalCombinations": 12,
+    "verifiedFullNaturalCombinations": 0,
+    "blockedNaturalCombinations": 8
+  },
+  "cells": [
+    {
+      "providerId": "openai",
+      "modelId": "gpt-5.6-sol",
+      "runtime": "web",
+      "agent": "builder",
+      "planMode": false,
+      "status": "unverified-complete-cell",
+      "access": "available",
+      "interactions": {
+        "default": {
+          "status": "verified",
+          "attempts": [
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-1/finish-MtRhNn-core-openai-web-builder-implement-default-core-journey-1/finish-MtRhNn-core-openai-web-builder-implement-default-core-journey-1-REf9bx/result.json",
+              "outcome": "passed",
+              "reviewed": true,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "passed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-web-builder-implement-default",
+                "runtime": "web",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "builder",
+                "planMode": false,
+                "variant": null,
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-web-builder-implement-default-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "builder",
+                "variant": null,
+                "planMode": false,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_0752f14cf0010gJ2P1ThGxUwMk",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": false
+                },
+                {
+                  "messageID": "msg_0752f30a1001swmEf2KM3FcAZ6",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": false
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:54007",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "builder",
+                  "variant": "medium",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "medium"
+                },
+                "thinkingLabels": [
+                  "Medium"
+                ],
+                "nativeAgent": "builder",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-1/finish-MtRhNn-core-openai-web-builder-implement-default-core-journey-1/finish-MtRhNn-core-openai-web-builder-implement-default-core-journey-1-REf9bx/root-closure-review.json"
+            }
+          ]
+        },
+        "high": {
+          "status": "verified",
+          "attempts": [
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-2/finish-MtRhNn-core-openai-web-builder-implement-high-core-journey-1/finish-MtRhNn-core-openai-web-builder-implement-high-core-journey-1-BHDZzz/result.json",
+              "outcome": "passed",
+              "reviewed": true,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "passed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-web-builder-implement-high",
+                "runtime": "web",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "builder",
+                "planMode": false,
+                "variant": "high",
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-web-builder-implement-high-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "builder",
+                "variant": "high",
+                "planMode": false,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_07532b59a001L8iJU93aMhMRHe",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": "high"
+                  },
+                  "variant": "high",
+                  "planMode": false
+                },
+                {
+                  "messageID": "msg_07532d2b0001oHxXHxXEYzG3Tk",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": "high"
+                  },
+                  "variant": "high",
+                  "planMode": false
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:54682",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "builder",
+                  "variant": "high",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "high"
+                },
+                "thinkingLabels": [
+                  "High"
+                ],
+                "nativeAgent": "builder",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-2/finish-MtRhNn-core-openai-web-builder-implement-high-core-journey-1/finish-MtRhNn-core-openai-web-builder-implement-high-core-journey-1-BHDZzz/root-closure-review.json"
+            }
+          ]
+        }
+      },
+      "manualCompaction": {
+        "status": "unverified"
+      },
+      "codingWork": {
+        "status": "unverified"
+      }
+    },
+    {
+      "providerId": "openai",
+      "modelId": "gpt-5.6-sol",
+      "runtime": "web",
+      "agent": "builder",
+      "planMode": true,
+      "status": "unverified-complete-cell",
+      "access": "available",
+      "interactions": {
+        "default": {
+          "status": "verified",
+          "attempts": [
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-3-plan-reveal-retry/finish-MtRhNn-core-openai-web-builder-plan-default-plan-reveal-retry-core-journey-1/finish-MtRhNn-core-openai-web-builder-plan-default-plan-reveal-retry-core-journey-1-cL5yOw/result.json",
+              "outcome": "passed",
+              "reviewed": true,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "passed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-web-builder-plan-default-plan-reveal-retry",
+                "runtime": "web",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "builder",
+                "planMode": true,
+                "variant": null,
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-web-builder-plan-default-plan-reveal-retry-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "builder",
+                "variant": null,
+                "planMode": true,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_07539a163001wN6ibB9J5Fp9zu",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": true
+                },
+                {
+                  "messageID": "msg_07539bc6f001qeiUYKssgKT9iL",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": true
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:55779",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "builder",
+                  "variant": "medium",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "medium"
+                },
+                "thinkingLabels": [
+                  "Medium"
+                ],
+                "nativeAgent": "builder",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-3-plan-reveal-retry/finish-MtRhNn-core-openai-web-builder-plan-default-plan-reveal-retry-core-journey-1/finish-MtRhNn-core-openai-web-builder-plan-default-plan-reveal-retry-core-journey-1-cL5yOw/root-closure-review.json"
+            },
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-3/finish-MtRhNn-core-openai-web-builder-plan-default-core-journey-1/finish-MtRhNn-core-openai-web-builder-plan-default-core-journey-1-IHcLFZ/result.json",
+              "outcome": "failed",
+              "reviewed": false,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "failed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-web-builder-plan-default",
+                "runtime": "web",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "builder",
+                "planMode": true,
+                "variant": null,
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-web-builder-plan-default-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "builder",
+                "variant": null,
+                "planMode": true,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_075345b78001ZZ7yokm7qmjZ6D",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": true
+                },
+                {
+                  "messageID": "msg_07534770e001rIgUzSjdPkfWvC",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": true
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:55040",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "builder",
+                  "variant": "medium",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "medium"
+                },
+                "thinkingLabels": [
+                  "Medium"
+                ],
+                "nativeAgent": "builder",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-3/finish-MtRhNn-core-openai-web-builder-plan-default-core-journey-1/finish-MtRhNn-core-openai-web-builder-plan-default-core-journey-1-IHcLFZ/root-closure-review.json"
+            }
+          ]
+        },
+        "high": {
+          "status": "verified",
+          "attempts": [
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-4/finish-MtRhNn-core-openai-web-builder-plan-high-core-journey-1/finish-MtRhNn-core-openai-web-builder-plan-high-core-journey-1-Pa6o3T/result.json",
+              "outcome": "passed",
+              "reviewed": true,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "passed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-web-builder-plan-high",
+                "runtime": "web",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "builder",
+                "planMode": true,
+                "variant": "high",
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-web-builder-plan-high-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "builder",
+                "variant": "high",
+                "planMode": true,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_0753bf01e001eRSaRUDbw6RrR2",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": "high"
+                  },
+                  "variant": "high",
+                  "planMode": true
+                },
+                {
+                  "messageID": "msg_0753c0ba6001aaq7FIuNCWU4Io",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": "high"
+                  },
+                  "variant": "high",
+                  "planMode": true
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:56312",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "builder",
+                  "variant": "high",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "high"
+                },
+                "thinkingLabels": [
+                  "High"
+                ],
+                "nativeAgent": "builder",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-4/finish-MtRhNn-core-openai-web-builder-plan-high-core-journey-1/finish-MtRhNn-core-openai-web-builder-plan-high-core-journey-1-Pa6o3T/root-closure-review.json"
+            }
+          ]
+        }
+      },
+      "manualCompaction": {
+        "status": "unverified"
+      },
+      "codingWork": {
+        "status": "unverified"
+      }
+    },
+    {
+      "providerId": "openai",
+      "modelId": "gpt-5.6-sol",
+      "runtime": "web",
+      "agent": "orchestrator",
+      "planMode": false,
+      "status": "unverified-complete-cell",
+      "access": "available",
+      "interactions": {
+        "default": {
+          "status": "verified",
+          "attempts": [
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-5/finish-MtRhNn-core-openai-web-orchestrator-implement-default-core-journey-1/finish-MtRhNn-core-openai-web-orchestrator-implement-default-core-journey-1-zBynkK/result.json",
+              "outcome": "passed",
+              "reviewed": true,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "passed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-web-orchestrator-implement-default",
+                "runtime": "web",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "orchestrator",
+                "planMode": false,
+                "variant": null,
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-web-orchestrator-implement-default-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "orchestrator",
+                "variant": null,
+                "planMode": false,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_0753d5a31001dQ0L3S8WNl7CAK",
+                  "agent": "orchestrator",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": false
+                },
+                {
+                  "messageID": "msg_0753d7593001LtKoDv1dKyUbjH",
+                  "agent": "orchestrator",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": false
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:56685",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "orchestrator",
+                  "variant": "medium",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "medium"
+                },
+                "thinkingLabels": [
+                  "Medium"
+                ],
+                "nativeAgent": "orchestrator",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-5/finish-MtRhNn-core-openai-web-orchestrator-implement-default-core-journey-1/finish-MtRhNn-core-openai-web-orchestrator-implement-default-core-journey-1-zBynkK/root-closure-review.json"
+            }
+          ]
+        },
+        "high": {
+          "status": "verified",
+          "attempts": [
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-6/finish-MtRhNn-core-openai-web-orchestrator-implement-high-core-journey-1/finish-MtRhNn-core-openai-web-orchestrator-implement-high-core-journey-1-ed1cwT/result.json",
+              "outcome": "passed",
+              "reviewed": true,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "passed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-web-orchestrator-implement-high",
+                "runtime": "web",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "orchestrator",
+                "planMode": false,
+                "variant": "high",
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-web-orchestrator-implement-high-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "orchestrator",
+                "variant": "high",
+                "planMode": false,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_075400932001MVUiyEwv1gOfF6",
+                  "agent": "orchestrator",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": "high"
+                  },
+                  "variant": "high",
+                  "planMode": false
+                },
+                {
+                  "messageID": "msg_07540228f001Czd9CAObTDKwd2",
+                  "agent": "orchestrator",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": "high"
+                  },
+                  "variant": "high",
+                  "planMode": false
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:57130",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "orchestrator",
+                  "variant": "high",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "high"
+                },
+                "thinkingLabels": [
+                  "High"
+                ],
+                "nativeAgent": "orchestrator",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-6/finish-MtRhNn-core-openai-web-orchestrator-implement-high-core-journey-1/finish-MtRhNn-core-openai-web-orchestrator-implement-high-core-journey-1-ed1cwT/root-closure-review.json"
+            }
+          ]
+        }
+      },
+      "manualCompaction": {
+        "status": "unverified"
+      },
+      "codingWork": {
+        "status": "unverified"
+      }
+    },
+    {
+      "providerId": "openai",
+      "modelId": "gpt-5.6-sol",
+      "runtime": "web",
+      "agent": "orchestrator",
+      "planMode": true,
+      "status": "unverified-complete-cell",
+      "access": "available",
+      "interactions": {
+        "default": {
+          "status": "verified",
+          "attempts": [
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-7/finish-MtRhNn-core-openai-web-orchestrator-plan-default-core-journey-1/finish-MtRhNn-core-openai-web-orchestrator-plan-default-core-journey-1-UurweJ/result.json",
+              "outcome": "passed",
+              "reviewed": true,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "passed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-web-orchestrator-plan-default",
+                "runtime": "web",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "orchestrator",
+                "planMode": true,
+                "variant": null,
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-web-orchestrator-plan-default-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "orchestrator",
+                "variant": null,
+                "planMode": true,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_07541783d001Wpo1x2Pz41HQ7J",
+                  "agent": "orchestrator",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": true
+                },
+                {
+                  "messageID": "msg_07541951f001jE4OnMs54j4Bem",
+                  "agent": "orchestrator",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": true
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:57604",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "orchestrator",
+                  "variant": "medium",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "medium"
+                },
+                "thinkingLabels": [
+                  "Medium"
+                ],
+                "nativeAgent": "orchestrator",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-7/finish-MtRhNn-core-openai-web-orchestrator-plan-default-core-journey-1/finish-MtRhNn-core-openai-web-orchestrator-plan-default-core-journey-1-UurweJ/root-closure-review.json"
+            }
+          ]
+        },
+        "high": {
+          "status": "verified",
+          "attempts": [
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-8/finish-MtRhNn-core-openai-web-orchestrator-plan-high-core-journey-1/finish-MtRhNn-core-openai-web-orchestrator-plan-high-core-journey-1-RKlURm/result.json",
+              "outcome": "passed",
+              "reviewed": true,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "passed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-web-orchestrator-plan-high",
+                "runtime": "web",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "orchestrator",
+                "planMode": true,
+                "variant": "high",
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-web-orchestrator-plan-high-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "orchestrator",
+                "variant": "high",
+                "planMode": true,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_07543386b001GSDnIrI6iERxKB",
+                  "agent": "orchestrator",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": "high"
+                  },
+                  "variant": "high",
+                  "planMode": true
+                },
+                {
+                  "messageID": "msg_0754353cc001ulqX1OdslOknBT",
+                  "agent": "orchestrator",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": "high"
+                  },
+                  "variant": "high",
+                  "planMode": true
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:57988",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "orchestrator",
+                  "variant": "high",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "high"
+                },
+                "thinkingLabels": [
+                  "High"
+                ],
+                "nativeAgent": "orchestrator",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-8/finish-MtRhNn-core-openai-web-orchestrator-plan-high-core-journey-1/finish-MtRhNn-core-openai-web-orchestrator-plan-high-core-journey-1-RKlURm/root-closure-review.json"
+            }
+          ]
+        }
+      },
+      "manualCompaction": {
+        "status": "unverified"
+      },
+      "codingWork": {
+        "status": "unverified"
+      }
+    },
+    {
+      "providerId": "openai",
+      "modelId": "gpt-5.6-sol",
+      "runtime": "electron",
+      "agent": "builder",
+      "planMode": false,
+      "status": "unverified-complete-cell",
+      "access": "available",
+      "interactions": {
+        "default": {
+          "status": "verified",
+          "attempts": [
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-9/finish-MtRhNn-core-openai-electron-builder-implement-default-core-journey-1/finish-MtRhNn-core-openai-electron-builder-implement-default-core-journey-1-ra6xQT/result.json",
+              "outcome": "passed",
+              "reviewed": true,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "passed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-electron-builder-implement-default",
+                "runtime": "electron",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "builder",
+                "planMode": false,
+                "variant": null,
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-electron-builder-implement-default-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "builder",
+                "variant": null,
+                "planMode": false,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_075459898001d7b0X31yGbtHmo",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": false
+                },
+                {
+                  "messageID": "msg_07545b335001h6Wme2tiQlPPvf",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": false
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:57123",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "builder",
+                  "variant": "medium",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "medium"
+                },
+                "thinkingLabels": [
+                  "Medium"
+                ],
+                "nativeAgent": "builder",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-9/finish-MtRhNn-core-openai-electron-builder-implement-default-core-journey-1/finish-MtRhNn-core-openai-electron-builder-implement-default-core-journey-1-ra6xQT/root-closure-review.json"
+            }
+          ]
+        },
+        "high": {
+          "status": "verified",
+          "attempts": [
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-10/finish-MtRhNn-core-openai-electron-builder-implement-high-core-journey-1/finish-MtRhNn-core-openai-electron-builder-implement-high-core-journey-1-olNyFO/result.json",
+              "outcome": "passed",
+              "reviewed": true,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "passed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-electron-builder-implement-high",
+                "runtime": "electron",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "builder",
+                "planMode": false,
+                "variant": "high",
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-electron-builder-implement-high-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "builder",
+                "variant": "high",
+                "planMode": false,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_07547b886001myTC1J9C0aaT7Q",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": "high"
+                  },
+                  "variant": "high",
+                  "planMode": false
+                },
+                {
+                  "messageID": "msg_07547dddb001VYGVthRJRSqGUw",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": "high"
+                  },
+                  "variant": "high",
+                  "planMode": false
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:57123",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "builder",
+                  "variant": "high",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "high"
+                },
+                "thinkingLabels": [
+                  "High"
+                ],
+                "nativeAgent": "builder",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-10/finish-MtRhNn-core-openai-electron-builder-implement-high-core-journey-1/finish-MtRhNn-core-openai-electron-builder-implement-high-core-journey-1-olNyFO/root-closure-review.json"
+            }
+          ]
+        }
+      },
+      "manualCompaction": {
+        "status": "unverified"
+      },
+      "codingWork": {
+        "status": "unverified"
+      }
+    },
+    {
+      "providerId": "openai",
+      "modelId": "gpt-5.6-sol",
+      "runtime": "electron",
+      "agent": "builder",
+      "planMode": true,
+      "status": "unverified-complete-cell",
+      "access": "available",
+      "interactions": {
+        "default": {
+          "status": "failed",
+          "attempts": [
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-11/finish-MtRhNn-core-openai-electron-builder-plan-default-core-journey-1/finish-MtRhNn-core-openai-electron-builder-plan-default-core-journey-1-PhDlDB/result.json",
+              "outcome": "failed",
+              "reviewed": false,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "failed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-electron-builder-plan-default",
+                "runtime": "electron",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "builder",
+                "planMode": true,
+                "variant": null,
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-electron-builder-plan-default-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "builder",
+                "variant": null,
+                "planMode": true,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_0754a6f26001P5I1OhvJr13km5",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": true
+                },
+                {
+                  "messageID": "msg_0754a897c001zm83OMX9HuQWlj",
+                  "agent": "builder",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": true
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:57123",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "builder",
+                  "variant": "medium",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "medium"
+                },
+                "thinkingLabels": [
+                  "Medium"
+                ],
+                "nativeAgent": "builder",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-11/finish-MtRhNn-core-openai-electron-builder-plan-default-core-journey-1/finish-MtRhNn-core-openai-electron-builder-plan-default-core-journey-1-PhDlDB/root-closure-review.json"
+            }
+          ]
+        },
+        "high": {
+          "status": "unrun",
+          "attempts": []
+        }
+      },
+      "manualCompaction": {
+        "status": "unverified"
+      },
+      "codingWork": {
+        "status": "unverified"
+      },
+      "interactionStopReason": "Repeated Plan-card visibility failure after one scoped correction; core-11 retained failed, remaining Electron Plan-on core cells unrun under stopping rule"
+    },
+    {
+      "providerId": "openai",
+      "modelId": "gpt-5.6-sol",
+      "runtime": "electron",
+      "agent": "orchestrator",
+      "planMode": false,
+      "status": "unverified-complete-cell",
+      "access": "available",
+      "interactions": {
+        "default": {
+          "status": "verified",
+          "attempts": [
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-13/finish-MtRhNn-core-openai-electron-orchestrator-implement-default-core-journey-1/finish-MtRhNn-core-openai-electron-orchestrator-implement-default-core-journey-1-OP2td6/result.json",
+              "outcome": "passed",
+              "reviewed": true,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "passed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-electron-orchestrator-implement-default",
+                "runtime": "electron",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "orchestrator",
+                "planMode": false,
+                "variant": null,
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-electron-orchestrator-implement-default-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "orchestrator",
+                "variant": null,
+                "planMode": false,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_0754e84f6001Cc68TqZDmXxc2q",
+                  "agent": "orchestrator",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": false
+                },
+                {
+                  "messageID": "msg_0754eb564001XrBD2SdfgvjdmY",
+                  "agent": "orchestrator",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": ""
+                  },
+                  "variant": "",
+                  "planMode": false
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:57123",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "orchestrator",
+                  "variant": "medium",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "medium"
+                },
+                "thinkingLabels": [
+                  "Medium"
+                ],
+                "nativeAgent": "orchestrator",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-13/finish-MtRhNn-core-openai-electron-orchestrator-implement-default-core-journey-1/finish-MtRhNn-core-openai-electron-orchestrator-implement-default-core-journey-1-OP2td6/root-closure-review.json"
+            }
+          ]
+        },
+        "high": {
+          "status": "verified",
+          "attempts": [
+            {
+              "result": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-14/finish-MtRhNn-core-openai-electron-orchestrator-implement-high-core-journey-1/finish-MtRhNn-core-openai-electron-orchestrator-implement-high-core-journey-1-s0fjcI/result.json",
+              "outcome": "passed",
+              "reviewed": true,
+              "checks": [
+                {
+                  "name": "initial managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "initial application and catalog bootstrap",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "candidate provider and managed runtime readiness",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "browser loaded the recorded candidate artifact",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "new session and primary agent selection",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live send and visible response",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "reload retains one canonical user turn",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "cancel an actual live generation",
+                  "outcome": "passed"
+                },
+                {
+                  "name": "live reconnect and continuation without duplication",
+                  "outcome": "passed"
+                }
+              ],
+              "requested": {
+                "id": "finish-MtRhNn-core-openai-electron-orchestrator-implement-high",
+                "runtime": "electron",
+                "transport": "live",
+                "providerId": "openai",
+                "modelId": "gpt-5.6-sol",
+                "agent": "orchestrator",
+                "planMode": false,
+                "variant": "high",
+                "timeoutMs": 420000,
+                "scenarioId": "core-journey",
+                "repetition": 1,
+                "runId": "finish-MtRhNn-core-openai-electron-orchestrator-implement-high-core-journey-1",
+                "evidenceDirectory": "<REPOSITORY>/.[REDACTED]:high_entropy"
+              },
+              "configuredSelection": {
+                "agent": "orchestrator",
+                "variant": "high",
+                "planMode": false,
+                "observedInControls": true
+              },
+              "canonicalSubmittedSelections": [
+                {
+                  "messageID": "msg_07550e6e1001HRkTBKr06MnwX9",
+                  "agent": "orchestrator",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": "high"
+                  },
+                  "variant": "high",
+                  "planMode": false
+                },
+                {
+                  "messageID": "msg_0755103c7001nuvMOQFjoxTDPs",
+                  "agent": "orchestrator",
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol",
+                    "variant": "high"
+                  },
+                  "variant": "high",
+                  "planMode": false
+                }
+              ],
+              "initialSelectionBeforeEffortChange": {
+                "origin": "http://127.0.0.1:57123",
+                "initialized": true,
+                "providersLoadStatus": "ready",
+                "agentsLoadStatus": "ready",
+                "providerCount": 3,
+                "agentCount": 10,
+                "pinnedModelAvailable": true,
+                "selectedModel": {
+                  "providerId": "openai",
+                  "modelId": "gpt-5.6-sol",
+                  "agent": "orchestrator",
+                  "variant": "high",
+                  "catalogAvailable": true
+                },
+                "selectedAgentDefault": {
+                  "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.6-sol"
+                  },
+                  "variant": "high"
+                },
+                "thinkingLabels": [
+                  "High"
+                ],
+                "nativeAgent": "orchestrator",
+                "composer": true,
+                "newChat": true,
+                "modelControl": true,
+                "agentControl": true
+              },
+              "review": ".cache/qa/finish-r4-MtRhNn/remaining-openai-evidence/core-14/finish-MtRhNn-core-openai-electron-orchestrator-implement-high-core-journey-1/finish-MtRhNn-core-openai-electron-orchestrator-implement-high-core-journey-1-s0fjcI/root-closure-review.json"
+            }
+          ]
+        }
+      },
+      "manualCompaction": {
+        "status": "unverified"
+      },
+      "codingWork": {
+        "status": "unverified"
+      }
+    },
+    {
+      "providerId": "openai",
+      "modelId": "gpt-5.6-sol",
+      "runtime": "electron",
+      "agent": "orchestrator",
+      "planMode": true,
+      "status": "unverified-complete-cell",
+      "access": "available",
+      "interactions": {
+        "default": {
+          "status": "unrun",
+          "attempts": []
+        },
+        "high": {
+          "status": "unrun",
+          "attempts": []
+        }
+      },
+      "manualCompaction": {
+        "status": "verified-native-continuity-with-preserved-grader-failure",
+        "effort": "high",
+        "evidence": ".cache/qa/finish-r4-MtRhNn/manual-network-retry-evidence/",
+        "review": ".cache/qa/finish-r4-MtRhNn/manual-network-retry-evidence/finish-MtRhNn-manual-network-retry-openai-electron-orchestrator-plan-high-project-work-1/finish-MtRhNn-manual-network-retry-openai-electron-orchestrator-plan-high-project-work-1-7AkpDR/root-closure-review.json"
+      },
+      "codingWork": {
+        "status": "independent-tests-and-scoped-browser-behavior-verified",
+        "effort": "high",
+        "limitations": [
+          "original whole-output JSON disposition grader failed; all nine acknowledgments independently correlated",
+          "browser exact RGB grader failed; requested-size generated-project mobile coverage remains unverified"
+        ]
+      },
+      "interactionStopReason": "Repeated Plan-card visibility failure after one scoped correction; core-11 retained failed, remaining Electron Plan-on core cells unrun under stopping rule"
+    },
+    {
+      "providerId": "anthropic",
+      "modelId": "claude-sonnet-4-6",
+      "runtime": "web",
+      "agent": "builder",
+      "planMode": false,
+      "status": "blocked",
+      "access": "blocked-no-supported-auth-record",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "anthropic",
+      "modelId": "claude-sonnet-4-6",
+      "runtime": "web",
+      "agent": "builder",
+      "planMode": true,
+      "status": "blocked",
+      "access": "blocked-no-supported-auth-record",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "anthropic",
+      "modelId": "claude-sonnet-4-6",
+      "runtime": "web",
+      "agent": "orchestrator",
+      "planMode": false,
+      "status": "blocked",
+      "access": "blocked-no-supported-auth-record",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "anthropic",
+      "modelId": "claude-sonnet-4-6",
+      "runtime": "web",
+      "agent": "orchestrator",
+      "planMode": true,
+      "status": "blocked",
+      "access": "blocked-no-supported-auth-record",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "anthropic",
+      "modelId": "claude-sonnet-4-6",
+      "runtime": "electron",
+      "agent": "builder",
+      "planMode": false,
+      "status": "blocked",
+      "access": "blocked-no-supported-auth-record",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "anthropic",
+      "modelId": "claude-sonnet-4-6",
+      "runtime": "electron",
+      "agent": "builder",
+      "planMode": true,
+      "status": "blocked",
+      "access": "blocked-no-supported-auth-record",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "anthropic",
+      "modelId": "claude-sonnet-4-6",
+      "runtime": "electron",
+      "agent": "orchestrator",
+      "planMode": false,
+      "status": "blocked",
+      "access": "blocked-no-supported-auth-record",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "anthropic",
+      "modelId": "claude-sonnet-4-6",
+      "runtime": "electron",
+      "agent": "orchestrator",
+      "planMode": true,
+      "status": "blocked",
+      "access": "blocked-no-supported-auth-record",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "xai",
+      "modelId": "grok-4.6",
+      "runtime": "web",
+      "agent": "builder",
+      "planMode": false,
+      "status": "blocked",
+      "access": "blocked-expired-or-near-expiry-access",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "xai",
+      "modelId": "grok-4.6",
+      "runtime": "web",
+      "agent": "builder",
+      "planMode": true,
+      "status": "blocked",
+      "access": "blocked-expired-or-near-expiry-access",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "xai",
+      "modelId": "grok-4.6",
+      "runtime": "web",
+      "agent": "orchestrator",
+      "planMode": false,
+      "status": "blocked",
+      "access": "blocked-expired-or-near-expiry-access",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "xai",
+      "modelId": "grok-4.6",
+      "runtime": "web",
+      "agent": "orchestrator",
+      "planMode": true,
+      "status": "blocked",
+      "access": "blocked-expired-or-near-expiry-access",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "xai",
+      "modelId": "grok-4.6",
+      "runtime": "electron",
+      "agent": "builder",
+      "planMode": false,
+      "status": "blocked",
+      "access": "blocked-expired-or-near-expiry-access",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "xai",
+      "modelId": "grok-4.6",
+      "runtime": "electron",
+      "agent": "builder",
+      "planMode": true,
+      "status": "blocked",
+      "access": "blocked-expired-or-near-expiry-access",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "xai",
+      "modelId": "grok-4.6",
+      "runtime": "electron",
+      "agent": "orchestrator",
+      "planMode": false,
+      "status": "blocked",
+      "access": "blocked-expired-or-near-expiry-access",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    },
+    {
+      "providerId": "xai",
+      "modelId": "grok-4.6",
+      "runtime": "electron",
+      "agent": "orchestrator",
+      "planMode": true,
+      "status": "blocked",
+      "access": "blocked-expired-or-near-expiry-access",
+      "interactions": {
+        "default": {
+          "status": "blocked"
+        },
+        "high": {
+          "status": "blocked"
+        }
+      },
+      "manualCompaction": {
+        "status": "blocked"
+      },
+      "codingWork": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "natural": [
+    {
+      "providerId": "openai",
+      "modelId": "gpt-5.6-sol",
+      "agent": "builder",
+      "planMode": false,
+      "runtime": "electron",
+      "status": "unverified"
+    },
+    {
+      "providerId": "openai",
+      "modelId": "gpt-5.6-sol",
+      "agent": "builder",
+      "planMode": true,
+      "runtime": "electron",
+      "status": "unverified"
+    },
+    {
+      "providerId": "openai",
+      "modelId": "gpt-5.6-sol",
+      "agent": "orchestrator",
+      "planMode": false,
+      "runtime": "electron",
+      "status": "unverified"
+    },
+    {
+      "providerId": "openai",
+      "modelId": "gpt-5.6-sol",
+      "agent": "orchestrator",
+      "planMode": true,
+      "runtime": "electron",
+      "status": "unverified",
+      "attempts": [
+        {
+          "result": ".cache/qa/finish-r4-MtRhNn/natural-evidence/finish-MtRhNn-natural-openai-electron-orchestrator-plan-default-compaction-natural-1/finish-MtRhNn-natural-openai-electron-orchestrator-plan-default-compaction-natural-1-Q2L8NQ/result.json",
+          "outcome": "failed",
+          "boundaries": 1,
+          "error": "The investigation does not match its planned phase marker\n+ actual - expected\n\n+ null\n- '[REDACTED]:high_entropy'\n"
+        },
+        {
+          "result": ".cache/qa/finish-r4-MtRhNn/natural-marker-retry-evidence/finish-MtRhNn-natural-marker-retry-openai-electron-orchestrator-plan-default-compaction-natural-1/finish-MtRhNn-natural-marker-retry-openai-electron-orchestrator-plan-default-compaction-natural-1-rnFZtg/result.json",
+          "outcome": "failed",
+          "boundaries": 1,
+          "error": "Timed out: visible control Send Message"
+        }
+      ]
+    },
+    {
+      "providerId": "anthropic",
+      "modelId": "claude-sonnet-4-6",
+      "agent": "builder",
+      "planMode": false,
+      "runtime": "electron",
+      "status": "blocked"
+    },
+    {
+      "providerId": "anthropic",
+      "modelId": "claude-sonnet-4-6",
+      "agent": "builder",
+      "planMode": true,
+      "runtime": "electron",
+      "status": "blocked"
+    },
+    {
+      "providerId": "anthropic",
+      "modelId": "claude-sonnet-4-6",
+      "agent": "orchestrator",
+      "planMode": false,
+      "runtime": "electron",
+      "status": "blocked"
+    },
+    {
+      "providerId": "anthropic",
+      "modelId": "claude-sonnet-4-6",
+      "agent": "orchestrator",
+      "planMode": true,
+      "runtime": "electron",
+      "status": "blocked"
+    },
+    {
+      "providerId": "xai",
+      "modelId": "grok-4.6",
+      "agent": "builder",
+      "planMode": false,
+      "runtime": "electron",
+      "status": "blocked"
+    },
+    {
+      "providerId": "xai",
+      "modelId": "grok-4.6",
+      "agent": "builder",
+      "planMode": true,
+      "runtime": "electron",
+      "status": "blocked"
+    },
+    {
+      "providerId": "xai",
+      "modelId": "grok-4.6",
+      "agent": "orchestrator",
+      "planMode": false,
+      "runtime": "electron",
+      "status": "blocked"
+    },
+    {
+      "providerId": "xai",
+      "modelId": "grok-4.6",
+      "agent": "orchestrator",
+      "planMode": true,
+      "runtime": "electron",
+      "status": "blocked"
+    }
+  ],
+  "broaderJourneyStopReason": "Manual/native representative has scoped independent proof; the natural representative failed twice through QA prerequisites without a second boundary. Broad coding/manual/natural execution remains unrun behind the approved representative gate. Core interactions were continued independently until their own scoped stopping rule applied.",
+  "other": {
+    "responsiveWeb": "verified-direct-fixture-9-checks-91-reviewed-images",
+    "typing": "verified-3-baseline-and-3-candidate-no-clear-change",
+    "sessionMemory": "unverified-pagination-prerequisite-failed",
+    "remainingInteractionTimings": "unverified",
+    "physicalDeviceKeyboard": "unverified",
+    "persistentMemory": "not-added"
+  }
+}

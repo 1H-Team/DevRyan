@@ -40,6 +40,103 @@ const codexCatalogModel = (id, limit = {}) => ({
 });
 
 describe("OpenAI GPT-5.6 provider model normalization", () => {
+  for (const authType of ["oauth", "api"]) {
+    test(`omits unsupported Spark summaries from ${authType} catalog options and variants without lowering effort`, async () => {
+      const hooks = await OpenAIGpt56ModelsPlugin();
+      const ids = ["gpt-5.3-codex-spark", "gpt-5.3-codex-spark-fast", "custom-spark-alias"];
+      const source = Object.fromEntries(ids.map(id => [id, {
+        ...model(id, {
+          high: { ...reasoningVariant("high"), reasoningSummary: "detailed" },
+          low: { ...reasoningVariant("low"), reasoningSummary: "concise" },
+          inherited: { reasoningSummary: "auto", providerMetadata: "preserve-variant" },
+        }),
+        ...(id === "custom-spark-alias" ? { api: { id: "gpt-5.3-codex-spark" } } : {}),
+        options: { reasoningSummary: "auto", providerMetadata: "preserve-options" },
+      }]));
+      const normalized = await hooks.provider.models({ models: source }, { auth: { type: authType } });
+
+      for (const id of ids) {
+        expect(normalized[id].options).toEqual({ providerMetadata: "preserve-options" });
+        expect(normalized[id].variants.high).toEqual({ reasoningEffort: "high", include: ["reasoning.encrypted_content"] });
+        expect(normalized[id].variants.low).toEqual({ reasoningEffort: "low", include: ["reasoning.encrypted_content"] });
+        expect(normalized[id].variants.inherited).toEqual({ providerMetadata: "preserve-variant" });
+        expect(source[id].options.reasoningSummary).toBe("auto");
+        expect(source[id].variants.high.reasoningSummary).toBe("detailed");
+      }
+    });
+  }
+
+  test("removes a reintroduced summary at the final Spark request hook for exact IDs and API aliases", async () => {
+    const hooks = await OpenAIGpt56ModelsPlugin();
+    const identities = [
+      { id: "gpt-5.3-codex-spark" },
+      { id: "gpt-5.3-codex-spark-fast" },
+      { id: "custom-spark-alias", api: { id: "gpt-5.3-codex-spark" } },
+      { id: "custom-fast-alias", api: { id: "gpt-5.3-codex-spark-fast" } },
+    ];
+    for (const identity of identities) {
+      for (const reasoningSummary of ["auto", "concise", "detailed", null, undefined]) {
+        const options = { reasoningEffort: "high", reasoningSummary,
+          include: ["reasoning.encrypted_content"], providerMetadata: "preserve-request" };
+        const output = { options };
+        await hooks["chat.params"]({ model: { ...identity, providerID: "openai", capabilities: { reasoning: true } } }, output);
+        expect(output.options).toEqual({ reasoningEffort: "high",
+          include: ["reasoning.encrypted_content"], providerMetadata: "preserve-request" });
+        expect(Object.hasOwn(output.options, "reasoningSummary")).toBe(false);
+        expect(Object.hasOwn(options, "reasoningSummary")).toBe(true);
+        expect(options.reasoningSummary).toBe(reasoningSummary);
+      }
+    }
+  });
+
+  test("omits Spark summaries even when effort is inherited or disabled", async () => {
+    const hooks = await OpenAIGpt56ModelsPlugin();
+    for (const options of [{ reasoningSummary: "detailed" }, { reasoningEffort: "none", reasoningSummary: "auto" }]) {
+      const output = { options };
+      await hooks["chat.params"]({ model: { id: "gpt-5.3-codex-spark", providerID: "openai", capabilities: { reasoning: true } } }, output);
+      expect(Object.hasOwn(output.options, "reasoningSummary")).toBe(false);
+      expect(output.options.reasoningEffort).toBe(options.reasoningEffort);
+    }
+  });
+
+  test("preserves references when Spark summaries are already absent and ignores other providers", async () => {
+    const hooks = await OpenAIGpt56ModelsPlugin();
+    const options = { reasoningEffort: "high", include: ["reasoning.encrypted_content"] };
+    const spark = { id: "gpt-5.3-codex-spark", options, variants: { high: options } };
+    const source = { [spark.id]: spark };
+    expect(await hooks.provider.models({ models: source }, { auth: { type: "api" } })).toBe(source);
+    const output = { options };
+    await hooks["chat.params"]({ model: { ...spark, providerID: "openai", capabilities: { reasoning: true } } }, output);
+    expect(output.options).toBe(options);
+    const empty = {};
+    await hooks["chat.params"]({ model: { ...spark, providerID: "openai", capabilities: { reasoning: true } } }, empty);
+    expect(empty).toEqual({});
+
+    const otherOptions = { reasoningEffort: "high", reasoningSummary: "auto" };
+    const otherOutput = { options: otherOptions };
+    await hooks["chat.params"]({ model: { ...spark, providerID: "other", capabilities: { reasoning: true } } }, otherOutput);
+    expect(otherOutput.options).toBe(otherOptions);
+  });
+
+  test("keeps supported model summaries detailed at low, high and inherited effort using the actual API identity", async () => {
+    const hooks = await OpenAIGpt56ModelsPlugin();
+    for (const identity of [
+      { id: "gpt-5.6-sol" },
+      { id: "gpt-5.3-codex" },
+      { id: "gpt-5.3-codex-spark", api: { id: "gpt-5.6-sol" } },
+    ]) {
+      for (const reasoningEffort of ["low", "high", undefined]) {
+        const output = { options: { ...(reasoningEffort ? { reasoningEffort } : {}), reasoningSummary: "auto", keep: true } };
+        await hooks["chat.params"]({ model: { ...identity, providerID: "openai", capabilities: { reasoning: true } } }, output);
+        expect(output.options).toEqual({ ...(reasoningEffort ? { reasoningEffort } : {}), reasoningSummary: "detailed", keep: true });
+      }
+    }
+    const detailed = { reasoningEffort: "high", reasoningSummary: "detailed" };
+    const output = { options: detailed };
+    await hooks["chat.params"]({ model: { id: "gpt-5.6-sol", providerID: "openai", capabilities: { reasoning: true } } }, output);
+    expect(output.options).toBe(detailed);
+  });
+
   test("pins official Codex OAuth context windows and 256k compaction for supported models and fast rows", async () => {
     const hooks = await OpenAIGpt56ModelsPlugin();
     await hooks.config({});

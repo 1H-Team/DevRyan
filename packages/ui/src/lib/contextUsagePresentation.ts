@@ -21,8 +21,8 @@ export const resolveContextUsageAvailability = ({
 
 export const shouldShowComposerContextUsage = ({
     isMobile,
-    isVSCode,
+
 }: {
     isMobile: boolean;
-    isVSCode: boolean;
-}): boolean => !isMobile && !isVSCode;
+
+}): boolean => !isMobile;

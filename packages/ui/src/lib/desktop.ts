@@ -432,14 +432,8 @@ export const startDesktopWindowDrag = async (): Promise<boolean> => {
   }
 };
 
-export const isVSCodeRuntime = (): boolean => {
-  if (typeof window === "undefined") return false;
-  const apis = (window as { __OPENCHAMBER_RUNTIME_APIS__?: { runtime?: { isVSCode?: boolean } } }).__OPENCHAMBER_RUNTIME_APIS__;
-  return apis?.runtime?.isVSCode === true;
-};
-
 export const isLoopbackStandaloneWebRuntime = (): boolean => {
-  if (typeof window === 'undefined' || isDesktopShell() || isVSCodeRuntime()) return false;
+  if (typeof window === 'undefined' || isDesktopShell()) return false;
   if (getAuthPrincipal().scope === 'managed') return false;
   const current = parseUrl(window.location.href);
   return Boolean(
@@ -450,7 +444,7 @@ export const isLoopbackStandaloneWebRuntime = (): boolean => {
 };
 
 export const isStandaloneWebRuntime = (): boolean => {
-  if (typeof window === 'undefined' || isDesktopShell() || isVSCodeRuntime()) return false;
+  if (typeof window === 'undefined' || isDesktopShell()) return false;
   const current = parseUrl(window.location.href);
   return Boolean(
     current
@@ -466,11 +460,11 @@ export const isWebRuntime = (): boolean => {
   if (platform === 'web') {
     return true;
   }
-  if (platform === 'desktop' || platform === 'vscode') {
+  if (platform === 'desktop') {
     return false;
   }
-  // Default: anything that's not VSCode behaves like web (HTTP UI).
-  return !isVSCodeRuntime();
+
+  return true;
 };
 
 export const getDesktopHomeDirectory = async (): Promise<string | null> => {

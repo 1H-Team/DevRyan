@@ -22,7 +22,10 @@ Plan View reads and updates instead of rebuilding it from the session's current
 directory.
 
 The server derives each path below
-`<data-dir>/projects/<project-id>/plans`. For a managed principal, the project
+`<data-dir>/projects/<project-id>/plans`. The project ID storage component is
+unchanged up to 255 ASCII characters; longer IDs use `path_sha256_<full SHA-256
+of the ID>` from the shared runtime helper. Public project IDs stay unchanged,
+and previously writable plan paths are preserved. For a managed principal, the project
 root comes from the active session-ownership row and its current project/branch
 assignment. A session may execute from an OpenCode worktree, but its plan
 revision remains keyed to the registered repository root. The submitted

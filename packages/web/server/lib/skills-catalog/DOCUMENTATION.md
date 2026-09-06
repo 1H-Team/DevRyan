@@ -16,7 +16,7 @@ This module provides skill discovery, scanning, and installation capabilities fo
     - `scan.js`: Scanning ClawdHub registry with pagination.
     - `install.js`: Installation from ClawdHub (ZIP download).
     - `api.js`: ClawdHub API client with rate limiting.
-- `@openchamber/shared-runtime/lib/safe-archive.js`: shared web/VS Code ZIP download, preflight, extraction audit, and transactional target replacement.
+- `@openchamber/shared-runtime/lib/safe-archive.js`: shared web ZIP download, preflight, extraction audit, and transactional target replacement.
 
 ## Public API
 

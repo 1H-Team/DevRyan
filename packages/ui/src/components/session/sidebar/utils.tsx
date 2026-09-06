@@ -501,7 +501,6 @@ export const buildSessionProjectOwnership = (
   projects: readonly ProjectOwnershipInput[],
   availableWorktreesByProject: ReadonlyMap<string, readonly { path: string }[]>,
   sessions: readonly Session[],
-  isVSCode: boolean,
 ): Map<string, string> => {
   const ownerByDirectory = new Map<string, ProjectDirectoryOwner>();
 
@@ -515,7 +514,6 @@ export const buildSessionProjectOwnership = (
     });
   }
 
-  if (!isVSCode) {
     for (const [rawProjectRoot, worktrees] of availableWorktreesByProject.entries()) {
       const projectRoot = normalizePath(rawProjectRoot);
       if (!projectRoot || !ownerByDirectory.has(projectRoot)) continue;
@@ -531,7 +529,6 @@ export const buildSessionProjectOwnership = (
         });
       }
     }
-  }
 
   const directoryOwners = [...ownerByDirectory.values()].sort((left, right) => (
     right.directory.length - left.directory.length

@@ -6,7 +6,6 @@ import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLay
 import { SettingsSection } from '@/components/sections/shared/SettingsSection';
 import { GitHubSettings } from '@/components/sections/openchamber/GitHubSettings';
 import { retryAuthSession, useAuthOfflineGrace, useAuthPrincipal } from '@/lib/authSession';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useSettingsPagePermission } from '@/lib/settings/permission-state';
 import { AccessLinksSection } from './AccessLinksSection';
@@ -26,14 +25,7 @@ const LocalUserManagementPage: React.FC = () => (
       <p className="typography-ui text-muted-foreground">Manage the GitHub accounts available to this DevRyan installation.</p>
     </div>
 
-    {isVSCodeRuntime() ? (
-      <SettingsSection
-        title="Local Account Management"
-        description="GitHub account management is available in the DevRyan web and desktop apps."
-      >
-        <p className="typography-ui text-muted-foreground">Open User Management in a supported runtime to connect or switch accounts.</p>
-      </SettingsSection>
-    ) : (
+    {(
       <GitHubSettings />
     )}
   </SettingsPageLayout>

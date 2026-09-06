@@ -180,7 +180,7 @@ describe('applyDraftAwareAgentChange', () => {
         expect(useConfigStore.getState().currentAgentName).toBe('Orchestrator');
         expect(useConfigStore.getState().currentProviderId).toBe('opencode');
         expect(useConfigStore.getState().currentModelId).toBe('small');
-        expect(useConfigStore.getState().currentVariant).toBe(undefined);
+        expect(useConfigStore.getState().currentVariant).toBeNull();
     });
 
     test('applies the selected agent configured model when no draft model was saved', () => {
@@ -239,7 +239,7 @@ describe('applyDraftAwareAgentChange', () => {
         );
 
         expect(useConfigStore.getState().currentModelId).toBe('small');
-        expect(useConfigStore.getState().currentVariant).toBe(undefined);
+        expect(useConfigStore.getState().currentVariant).toBeNull();
         expect(resolveCurrentDraftSendConfig(DRAFT_ID)?.modelID).toBe('small');
     });
 
@@ -250,7 +250,7 @@ describe('applyDraftAwareAgentChange', () => {
                 providerID?: string;
                 modelID?: string;
                 agent?: string;
-                variant?: string;
+                variant?: string | null;
             };
         }> = [];
 
@@ -312,7 +312,7 @@ describe('applyDraftAwareAgentChange', () => {
             providerID: 'anthropic',
             modelID: 'claude',
             agent: 'Builder',
-            variant: undefined,
+            variant: null,
             planMode: false,
         });
     });
@@ -381,7 +381,7 @@ describe('applyDraftAwareAgentChange', () => {
         expect(useConfigStore.getState().currentAgentName).toBe('Builder');
         expect(useConfigStore.getState().currentProviderId).toBe('opencode');
         expect(useConfigStore.getState().currentModelId).toBe('small');
-        expect(useConfigStore.getState().currentVariant).toBe(undefined);
+        expect(useConfigStore.getState().currentVariant).toBeNull();
     });
 
     test('treats variant-only manual selection as explicit intent across agents', () => {
@@ -465,7 +465,7 @@ describe('applyDraftAwareAgentChange', () => {
             currentAgentName: 'Builder',
             currentProviderId: 'anthropic',
             currentModelId: 'claude',
-            currentVariant: undefined,
+            currentVariant: null,
         });
         expect(useSessionUIStore.getState().newSessionDraft.sendConfig?.modelProvenance).toBe('explicit');
     });
@@ -478,7 +478,7 @@ describe('applyDraftAwareAgentChange', () => {
                 providerID?: string;
                 modelID?: string;
                 agent?: string;
-                variant?: string;
+                variant?: string | null;
                 modelProvenance?: string;
             };
         }> = [];
@@ -550,7 +550,7 @@ describe('applyDraftAwareAgentChange', () => {
             providerID: 'anthropic',
             modelID: 'claude',
             agent: 'Builder',
-            variant: undefined,
+            variant: null,
             planMode: false,
         });
         expect(useSessionUIStore.getState().newSessionDraft.sendConfig?.modelProvenance).toBe('explicit');

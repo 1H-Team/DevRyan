@@ -20,7 +20,7 @@ describe('web RuntimeAPIs adapter contract', () => {
     expect(apis.runtime).toEqual({
       platform: 'web',
       isDesktop: false,
-      isVSCode: false,
+
       label: 'web',
     });
     for (const capability of REQUIRED_RUNTIME_APIS) {
@@ -32,6 +32,5 @@ describe('web RuntimeAPIs adapter contract', () => {
     expect(apis.evidence).toBeDefined();
     expect(apis.contextUsage).toBeDefined();
     expect(apis.editor).toBeUndefined();
-    expect(apis.vscode).toBeUndefined();
   });
 });

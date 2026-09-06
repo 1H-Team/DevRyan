@@ -73,7 +73,7 @@ message replayed into an empty or newer cache does not clear the guard.
   ordinary premature idle events keep their current behavior.
 - The existing three-attempt and one-second debounce limits remain unchanged.
 - A user message that advances the cached turn clears the guard before later
-  statuses are reduced, so web, Electron, VS Code, and another browser surface
+  statuses are reduced, so web and Electronanother browser surface
   share the same new-turn escape hatch without treating historical replay as
   current work.
 - Reconnect snapshots continue through the same filter and therefore inherit

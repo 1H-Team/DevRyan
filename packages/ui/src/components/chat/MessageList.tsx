@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Part } from '@opencode-ai/sdk/v2';
-import { measureElement as measureVirtualElement, type VirtualItem, useVirtualizer } from '@tanstack/react-virtual';
+import { measureElement as measureVirtualElement, observeElementOffset, type VirtualItem, useVirtualizer } from '@tanstack/react-virtual';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 
 import ChatMessage from './ChatMessage';
@@ -27,6 +27,7 @@ import { getToolActivityGroupInfo, normalizeToolName } from './message/parts/too
 import { normalizeToolStatus } from '@/lib/toolStatus';
 import { useEnsureSessionChildren, useSessionChildren } from '@/sync/sync-context';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { resolveUserMessageVariant } from '@/sync/subtask-agent';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { isPlanModeUserMessage } from '@/lib/messages/actionablePlan';
 import { projectSubtaskBridgeMessage } from './lib/subtaskBridge';
@@ -76,6 +77,13 @@ const nowMs = (): number => {
         return performance.now();
     }
     return Date.now();
+};
+
+// A user message can be held at the viewport edge by its sticky ancestor.
+// Its owning turn stays in normal flow and gives an unconstrained scroll anchor.
+const getViewportAnchorElement = (messageElement: HTMLElement): HTMLElement => {
+    const turn = messageElement.closest<HTMLElement>('[data-user-message-id]');
+    return turn && turn.dataset.userMessageId === messageElement.dataset.messageId ? turn : messageElement;
 };
 
 const estimateHistoryEntryHeight = (entry: RenderEntry | undefined): number => {
@@ -698,13 +706,7 @@ const TurnBlock = React.memo(({
 
     const turnGroupingContextBase = React.useMemo(() => {
         const userCreatedAt = (turn.userMessage.info.time as { created?: number } | undefined)?.created;
-        // OpenCode 1.4.0 moved variant from top-level to model.variant on UserMessage.
-        // Prefer the new location, fall back to the legacy one for older servers.
-        const info = turn.userMessage.info as { variant?: unknown; model?: { variant?: unknown } } | undefined;
-        const rawVariant = info?.model?.variant ?? info?.variant;
-        const userMessageVariant = typeof rawVariant === 'string' && rawVariant.trim().length > 0
-            ? rawVariant
-            : undefined;
+        const userMessageVariant = resolveUserMessageVariant(turn.userMessage.info);
         // Turn's final todowrite/todoread part id: lets every message in the turn collapse its
         // redundant todo rows down to the single surviving snapshot (see collapseSupersededTodoWrites).
         let lastTodoToolPartId: string | null = null;
@@ -1072,7 +1074,9 @@ const StaticHistoryList: React.FC<{
     const paddingTop = shouldVirtualize && virtualRows.length > 0
         ? virtualRows[0]?.start ?? 0
         : 0;
-    const paddingBottom = shouldVirtualize && virtualRows.length > 0
+    // Keep the estimated scroll extent during the first measurement commit;
+    // collapsing it to zero would clamp a pending history anchor to the top.
+    const paddingBottom = shouldVirtualize
         ? Math.max(0, totalSize - (virtualRows[virtualRows.length - 1]?.end ?? 0))
         : 0;
 
@@ -1329,6 +1333,15 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
     const historyContentRef = React.useRef<HTMLDivElement | null>(null);
     const pendingVirtualMeasureFrameRef = React.useRef<number | null>(null);
+    const historyOffsetObserverRef = React.useRef<((offset: number, isScrolling: boolean) => void) | null>(null);
+    const observeHistoryOffset = React.useCallback<typeof observeElementOffset>((instance, onOffset) => {
+        historyOffsetObserverRef.current = onOffset;
+        const cleanup = observeElementOffset(instance, onOffset);
+        return () => {
+            if (historyOffsetObserverRef.current === onOffset) historyOffsetObserverRef.current = null;
+            cleanup?.();
+        };
+    }, []);
     const resolveScrollContainer = React.useCallback((): HTMLDivElement | null => {
         if (scrollRef?.current) {
             return scrollRef.current;
@@ -1481,17 +1494,14 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         estimateSize: (index) => estimateHistoryEntryHeight(historyEntries[index]),
         getItemKey: (index) => `${historyMeasurementScopeKey}:${historyEntries[index]?.key ?? index}`,
         measureElement: measureVirtualElement,
+        observeElementOffset: observeHistoryOffset,
         useAnimationFrameWithResizeObserver: true,
         overscan: MESSAGE_LIST_OVERSCAN,
         enabled: shouldVirtualizeHistory,
     });
 
-    React.useEffect(() => {
-        if (!shouldVirtualizeHistory || historyWidthPx === null) {
-            return;
-        }
-        historyVirtualizer.measure();
-    }, [historyVirtualizer, historyWidthPx, shouldVirtualizeHistory]);
+    // Width-scoped item keys already invalidate stale measurements. A second
+    // post-commit measure() would discard the freshly measured restored rows.
 
     const scheduleVirtualMeasure = React.useCallback(() => {
         if (!shouldVirtualizeHistory) {
@@ -1518,10 +1528,10 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         };
     }, []);
 
-    const historyVirtualRows = React.useMemo(
-        () => (shouldVirtualizeHistory ? historyVirtualizer.getVirtualItems() : []),
-        [historyVirtualizer, shouldVirtualizeHistory],
-    );
+    // The virtualizer instance is stable while measurements and the visible
+    // range change. Read its internally memoized items on every notified render;
+    // memoizing by instance retains the empty range when pagination enables it.
+    const historyVirtualRows = shouldVirtualizeHistory ? historyVirtualizer.getVirtualItems() : [];
 
     const allEntries = React.useMemo(() => {
         return trailingStreamingEntry ? [...historyEntries, trailingStreamingEntry] : historyEntries;
@@ -1618,6 +1628,41 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         return container.querySelector(`[data-message-id="${messageId}"]`);
     }, [resolveScrollContainer]);
 
+    const pendingViewportAnchorRef = React.useRef<{
+        sessionKey: string;
+        anchor: { messageId: string; offsetTop: number };
+    } | null>(null);
+    const [, requestViewportAnchorRender] = React.useReducer((value: number) => value + 1, 0);
+    const applyViewportAnchor = React.useCallback((anchor: { messageId: string; offsetTop: number }): boolean => {
+        const container = resolveScrollContainer();
+        const messageElement = findMessageElement(anchor.messageId);
+        if (!container || !messageElement) return false;
+        const element = getViewportAnchorElement(messageElement);
+        const targetTop = element.getBoundingClientRect().top - container.getBoundingClientRect().top;
+        const delta = targetTop - anchor.offsetTop;
+        if (delta !== 0) {
+            container.scrollTop += delta;
+            // Native scroll events arrive after layout. Update the virtualizer
+            // now so React mounts the restored range before the browser paints.
+            historyOffsetObserverRef.current?.(container.scrollTop, false);
+        }
+        return true;
+    }, [findMessageElement, resolveScrollContainer]);
+
+    React.useLayoutEffect(() => {
+        const pending = pendingViewportAnchorRef.current;
+        if (!pending) return;
+        if (pending.sessionKey !== sessionKey) {
+            pendingViewportAnchorRef.current = null;
+            return;
+        }
+        if (shouldVirtualizeHistory && historyWidthPx === null) return;
+        // Restoration owns only this commit; a later user scroll must never be
+        // pulled back by an anchor whose message was removed in the meantime.
+        pendingViewportAnchorRef.current = null;
+        applyViewportAnchor(pending.anchor);
+    });
+
     const scrollHistoryIndexIntoView = React.useCallback((index: number, behavior: ScrollBehavior = 'auto') => {
         if (!shouldVirtualizeHistory || index < 0 || index >= historyEntries.length) {
             return false;
@@ -1646,7 +1691,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         return true;
     }, [findMessageElement, resolveScrollContainer]);
 
-    React.useEffect(() => {
+    React.useLayoutEffect(() => {
         if (!ref) {
             return;
         }
@@ -1706,12 +1751,9 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                         return false;
                     }
 
-                    if (typeof window === 'undefined') {
-                        return true;
-                    }
-
-                    const computed = window.getComputedStyle(node);
-                    const isStuckSticky = computed.position === 'sticky' && rect.top <= containerRect.top + 1;
+                    const anchorElement = getViewportAnchorElement(node);
+                    const isStuckSticky = anchorElement !== node
+                        && anchorElement.getBoundingClientRect().top < rect.top - 1;
                     return !isStuckSticky;
                 }) ?? nodes.find((node) => node.getBoundingClientRect().bottom > containerRect.top + 1);
                 if (!firstVisible) {
@@ -1725,7 +1767,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
                 return {
                     messageId,
-                    offsetTop: firstVisible.getBoundingClientRect().top - containerRect.top,
+                    offsetTop: getViewportAnchorElement(firstVisible).getBoundingClientRect().top - containerRect.top,
                 };
             },
 
@@ -1739,28 +1781,20 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                     return false;
                 }
 
-                const applyAnchor = (): boolean => {
-                    const element = findMessageElement(anchor.messageId);
-                    if (!element) {
-                        return false;
-                    }
-                    const containerRect = container.getBoundingClientRect();
-                    const targetTop = element.getBoundingClientRect().top - containerRect.top;
-                    const delta = targetTop - anchor.offsetTop;
-                    if (delta !== 0) {
-                        container.scrollTop += delta;
-                    }
+                if (applyViewportAnchor(anchor) && (!shouldVirtualizeHistory || historyWidthPx !== null)) {
+                    pendingViewportAnchorRef.current = null;
                     return true;
-                };
-
-                if (!applyAnchor()) {
-                    const index = messageIndexMap.get(anchor.messageId);
-                    if (typeof index === 'number' && index < historyEntries.length) {
-                        scrollHistoryIndexIntoView(index, 'auto');
-                    }
                 }
 
-                return applyAnchor();
+                const index = messageIndexMap.get(anchor.messageId);
+                if (!shouldVirtualizeHistory || typeof index !== 'number' || index >= historyEntries.length) return false;
+                const target = historyVirtualizer.getOffsetForIndex(index, 'start');
+                if (!target) return false;
+                pendingViewportAnchorRef.current = { sessionKey, anchor };
+                historyVirtualizer.scrollToOffset(target[0], { behavior: 'auto' });
+                historyOffsetObserverRef.current?.(container.scrollTop, false);
+                requestViewportAnchorRender();
+                return true;
             },
         };
 
@@ -1776,7 +1810,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         return () => {
             objectRef.current = null;
         };
-    }, [findMessageElement, historyEntries.length, messageIndexMap, resolveScrollContainer, scrollHistoryIndexIntoView, scrollMessageElementIntoView, trailingStreamingEntry, turnIndexMap, ref]);
+    }, [applyViewportAnchor, historyEntries.length, historyVirtualizer, historyWidthPx, messageIndexMap, resolveScrollContainer, scrollHistoryIndexIntoView, scrollMessageElementIntoView, sessionKey, shouldVirtualizeHistory, trailingStreamingEntry, turnIndexMap, ref]);
 
     const disableFadeIn = false;
 

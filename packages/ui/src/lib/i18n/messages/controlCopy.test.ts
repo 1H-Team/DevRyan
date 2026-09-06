@@ -205,26 +205,22 @@ type ProductionSourceFile = {
   sourceFile: ts.SourceFile;
 };
 
-let productionSourceFiles: ProductionSourceFile[] | undefined;
 const CONTROL_SOURCE_PATTERN = /(?:aria-label|title)\s*=|<(?:button|label)\b|<[A-Z][A-Za-z0-9.]*(?:Button|Item|Trigger|Checkbox|Radio|Toggle|Label)\b/;
 
-function getProductionSourceFiles(): ProductionSourceFile[] {
-  if (productionSourceFiles) {
-    return productionSourceFiles;
-  }
+function* getProductionSourceFiles(): Generator<ProductionSourceFile> {
 
   const srcRoot = resolve(testDirectory, '../../..');
   const files = readdirSync(srcRoot, { recursive: true, encoding: 'utf8' })
     .filter((filePath) => filePath.endsWith('.tsx') && !filePath.endsWith('.test.tsx'));
 
-  productionSourceFiles = files.flatMap((relativePath) => {
+  for (const relativePath of files) {
     const absolutePath = resolve(srcRoot, relativePath);
     const source = readFileSync(absolutePath, 'utf8');
     if (!CONTROL_SOURCE_PATTERN.test(source)) {
-      return [];
+      continue;
     }
 
-    return [{
+    yield {
       relativePath,
       sourceFile: ts.createSourceFile(
         absolutePath,
@@ -233,16 +229,14 @@ function getProductionSourceFiles(): ProductionSourceFile[] {
         true,
         ts.ScriptKind.TSX,
       ),
-    }];
-  });
-
-  return productionSourceFiles;
+    };
+  }
 }
 
-function findHardcodedControlCopyViolations(): string[] {
+function findHardcodedControlCopyViolations(files: readonly ProductionSourceFile[]): string[] {
   const violations: string[] = [];
 
-  for (const { relativePath, sourceFile } of getProductionSourceFiles()) {
+  for (const { relativePath, sourceFile } of files) {
     const visit = (node: ts.Node): void => {
       if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) {
         const openingElement = ts.isJsxElement(node) ? node.openingElement : node;
@@ -319,10 +313,10 @@ function findHardcodedControlCopyViolations(): string[] {
   return violations;
 }
 
-function findTranslatedControlCopyViolations(): string[] {
+function findTranslatedControlCopyViolations(files: readonly ProductionSourceFile[]): string[] {
   const violations: string[] = [];
 
-  for (const { relativePath, sourceFile } of getProductionSourceFiles()) {
+  for (const { relativePath, sourceFile } of files) {
     const visit = (node: ts.Node): void => {
       if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) {
         const openingElement = ts.isJsxElement(node) ? node.openingElement : node;
@@ -386,6 +380,20 @@ function findTranslatedControlCopyViolations(): string[] {
   return violations;
 }
 
+// Retain only findings between checks, not every parsed UI syntax tree.
+let controlCopyFindings: { hardcoded: string[]; translated: string[] } | undefined;
+function getControlCopyFindings() {
+  if (controlCopyFindings) return controlCopyFindings;
+  const hardcoded: string[] = [];
+  const translated: string[] = [];
+  for (const file of getProductionSourceFiles()) {
+    hardcoded.push(...findHardcodedControlCopyViolations([file]));
+    translated.push(...findTranslatedControlCopyViolations([file]));
+  }
+  controlCopyFindings = { hardcoded, translated };
+  return controlCopyFindings;
+}
+
 describe('control copy', () => {
   test('keeps the requested project and tunnel actions in title case', () => {
     expect(dict['sessions.sidebar.header.actions.addProject']).toBe('Add Project');
@@ -426,10 +434,10 @@ describe('control copy', () => {
   });
 
   test('uses editorial title case for hard-coded JSX control labels', () => {
-    expect(findHardcodedControlCopyViolations()).toEqual([]);
+    expect(getControlCopyFindings().hardcoded).toEqual([]);
   });
 
   test('uses editorial title case for translated JSX control labels', () => {
-    expect(findTranslatedControlCopyViolations()).toEqual([]);
+    expect(getControlCopyFindings().translated).toEqual([]);
   });
 });

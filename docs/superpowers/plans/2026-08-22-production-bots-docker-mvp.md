@@ -219,7 +219,7 @@ export const resolveComputerScopeKey = ({ botId, tenancy, ownerUserId }) =>
 export const resolveReasoningScopeKey = ({ channelId }) => `channel:${channelId}`;
 ```
 
-- [ ] Add the package to the root full/affected validation gates and package-version scripts; prove a Bots core change runs Bots, web, Electron, and UI dependents.
+- [ ] Add the package to the root full/affected validation gates and package-version scripts; prove a Bots core change runs Bots, web and ElectronUI dependents.
 - [ ] Run `bun run --cwd packages/bots-runtime test` and `bun run test:scripts`; expect PASS.
 - [ ] Commit `feat(bots): add runtime contracts and state machines`.
 
@@ -579,7 +579,6 @@ Expected: migration applies from zero, pgTAP passes, and the compatibility test 
 - Modify: `packages/ui/src/components/layout/MainLayout.tsx`
 - Modify: `packages/ui/src/components/layout/RightSidebarTabs.tsx`
 - Modify: `packages/ui/src/components/layout/Header.tsx`
-- Modify: `packages/ui/src/components/layout/VSCodeLayout.tsx`
 - Modify: `packages/ui/src/lib/i18n/messages/en.ts`
 - Modify: `packages/ui/codemap.md`
 - Modify: `packages/ui/src/components/session/sidebar/codemap.md`

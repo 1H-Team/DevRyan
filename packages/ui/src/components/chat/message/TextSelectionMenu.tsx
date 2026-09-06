@@ -13,7 +13,6 @@ import { getProjectNotesAndTodos, saveProjectNotesAndTodos } from '@/lib/opencha
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { summarizeText } from '@/lib/voice/summarize';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import {
   rangeToMarkdown,
@@ -36,7 +35,6 @@ interface SelectionPayload {
   markdownText: string;
   rect: DOMRect;
 }
-
 
 const appendDistilledInsightToNotes = (existingNotes: string, insight: string): string => {
   const trimmedInsight = insight.trim().replace(/^[-*+]\s+/, '');
@@ -218,7 +216,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
 
     // Check if selection is within the container
     const range = selection.getRangeAt(0);
-    
+
     if (!container.contains(range.commonAncestorContainer)) {
       if (!isDraggingRef.current) {
         hideMenu();
@@ -275,7 +273,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
 
     // Listen for selection changes during drag
     document.addEventListener('selectionchange', handleSelectionChange);
-    
+
     container.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mouseup', handleMouseUp);
 
@@ -309,9 +307,9 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
 
     const markdownBlock = wrapSelectionMarkdownForComposer(selectedTextMarkdown);
     setPendingInputText(markdownBlock, 'append');
-    
+
     hideMenu();
-    
+
     // Clear selection
     window.getSelection()?.removeAllRanges();
   }, [selectedTextMarkdown, setPendingInputText, hideMenu]);
@@ -465,7 +463,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
             <span className="min-w-0 whitespace-normal">{t('chat.textSelection.actions.copy')}</span>
           </button>
 
-          {!isVSCodeRuntime() ? (
+          {(
             <button
               onClick={handleAddToNotes}
               disabled={isAddingToNotes}
@@ -482,7 +480,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
               {isAddingToNotes ? <RiLoader4Line className="h-5 w-5 flex-shrink-0 animate-spin" /> : <RiBookletLine className="h-5 w-5 flex-shrink-0" />}
               <span className="min-w-0 whitespace-normal">{t('chat.textSelection.actions.addToNotes')}</span>
             </button>
-          ) : null}
+          )}
         </div>
       </div>,
       document.body
@@ -525,9 +523,9 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
           <RiAddLine className="h-4 w-4" />
           <span className="whitespace-nowrap">{t('chat.textSelection.actions.addToChat')}</span>
         </button>
-      
+
         <div className="w-px h-4 bg-[var(--interactive-border)]" />
-      
+
         <button
           onClick={handleCreateNewSession}
           className={cn(
@@ -544,7 +542,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
           <span className="whitespace-nowrap">{t('chat.textSelection.actions.newSession')}</span>
         </button>
 
-        {!isVSCodeRuntime() ? (
+        {(
           <>
             <div className="w-px h-4 bg-[var(--interactive-border)]" />
 
@@ -565,7 +563,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
               <span className="whitespace-nowrap">{t('chat.textSelection.actions.addToNotes')}</span>
             </button>
           </>
-        ) : null}
+        )}
       </div>
     </div>,
     document.body

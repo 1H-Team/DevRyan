@@ -1,5 +1,10 @@
 export const FEATURE_TEST_MATRIX = Object.freeze([
   {
+    id: 'isolated-web-electron-qa',
+    sourcePaths: ['scripts/qa/run.mjs', 'scripts/qa/cdp.mjs', 'scripts/qa/process.mjs', 'scripts/perf/loopback-opencode-fixture.mjs'],
+    testPaths: ['scripts/qa/run.test.mjs', 'scripts/qa/cdp.test.mjs', 'scripts/qa/process.test.mjs', 'scripts/perf/loopback-opencode-fixture.test.mjs'],
+  },
+  {
     id: 'ui-session-chat-sync',
     sourcePaths: ['packages/ui/src/sync/sync-context.tsx', 'packages/ui/src/sync/session-ui-store.ts'],
     testPaths: ['packages/ui/src/sync/sync-context.plan-lifecycle.test.ts', 'packages/ui/src/sync/session-ui-store.send.test.ts'],
@@ -27,11 +32,6 @@ export const FEATURE_TEST_MATRIX = Object.freeze([
     id: 'electron-native-shell',
     sourcePaths: ['packages/electron/main.mjs', 'packages/electron/preload.mjs'],
     testPaths: ['packages/electron/tests/origin-policy.test.mjs', 'packages/electron/tests/quit-cleanup.test.mjs'],
-  },
-  {
-    id: 'vscode-extension-and-bridge',
-    sourcePaths: ['packages/vscode/src/bridge.ts', 'packages/vscode/webview/api/index.ts'],
-    testPaths: ['packages/vscode/src/bridge-system-runtime.test.js', 'packages/vscode/webview/api/index.test.ts'],
   },
   {
     id: 'legacy-tauri-compatibility',
@@ -290,7 +290,6 @@ export const FEATURE_TEST_MATRIX = Object.freeze([
       'packages/ui/src/components/chat/message/parts/taskToolUtils.test.ts',
       'packages/ui/src/components/chat/ManagedTaskList.test.tsx',
       'packages/web/src/api/tools.test.ts',
-      'packages/vscode/webview/api/tools.test.ts',
     ],
   },
   {

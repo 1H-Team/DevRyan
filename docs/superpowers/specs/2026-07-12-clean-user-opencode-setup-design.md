@@ -40,7 +40,7 @@ Arbitrary user-owned files and configuration fields are not deleted.
 
 ## Provisioning lifecycle
 
-One shared provisioning runtime owns clean-user setup for web/Electron and VS Code.
+One shared provisioning runtime owns clean-user setup for web/Electron.
 
 On managed OpenCode startup it:
 
@@ -113,10 +113,10 @@ Implementation follows test-driven development. Focused tests cover:
 - external OpenCode mode performs no local provisioning;
 - generic plugin pages do not render Slim installation controls;
 - the Slim page shows install only when setup is missing and repair when appropriate;
-- web/Electron and VS Code produce equivalent clean-profile state.
+- web/Electron produce equivalent clean-profile state.
 
 Validation includes the affected package tests, `bun run validate:affected`, and a build when packaging or bundled-resource paths change.
 
 ## Documentation
 
-Implementation updates the root codemap only if entrypoints or ownership change. It updates `packages/web/server/default-config/codemap.md`, the OpenCode module documentation, the Plugins section codemap, and VS Code documentation when their provisioning responsibilities change.
+Implementation updates the root codemap only if entrypoints or ownership change. It updates `packages/web/server/default-config/codemap.md`, the OpenCode module documentation, the Plugins section codemap, documentation when their provisioning responsibilities change.

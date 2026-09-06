@@ -15,7 +15,7 @@ import { DesktopNetworkSettings } from './DesktopNetworkSettings';
 import { KeyboardShortcutsSettings } from './KeyboardShortcutsSettings';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useDeviceInfo } from '@/lib/device';
-import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
+import { isDesktopLocalOriginActive, isDesktopShell, isWebRuntime } from '@/lib/desktop';
 import type { OpenChamberSection } from './types';
 
 interface OpenChamberPageProps {
@@ -26,7 +26,7 @@ interface OpenChamberPageProps {
 export const OpenChamberPage: React.FC<OpenChamberPageProps> = ({ section }) => {
     const { isMobile } = useDeviceInfo();
     const showAbout = isMobile && isWebRuntime();
-    const isVSCode = isVSCodeRuntime();
+
     const showDesktopNetworkSettings = isDesktopShell() && isDesktopLocalOriginActive();
 
     // If no section specified, show all (mobile/legacy behavior)
@@ -42,7 +42,7 @@ export const OpenChamberPage: React.FC<OpenChamberPageProps> = ({ section }) => 
                         <DefaultsSettings />
                     </div>
                     <AgentModelDefaultsSettings />
-                    {!isVSCode && (
+                    {(
                         <div className="border-t border-border/40 pt-6">
                             <OpenCodeCliSettings />
                         </div>
@@ -109,7 +109,7 @@ const ShortcutsSectionContent: React.FC = () => {
 
 // Visual section: Theme Mode, Font Size, Spacing, Input Bar Offset (mobile), Nav Rail
 const VisualSectionContent: React.FC = () => {
-    const isVSCode = isVSCodeRuntime();
+
     return <OpenChamberVisualSettings visibleSettings={[
         'theme',
         'userMessageRendering',
@@ -135,7 +135,7 @@ const VisualSectionContent: React.FC = () => {
         'terminalFontSize',
         'spacing',
         'inputBarOffset',
-        ...(!isVSCode ? ['terminalQuickKeys' as const] : []),
+        ...(['terminalQuickKeys' as const]),
     ]} />;
 };
 
@@ -146,13 +146,13 @@ const ChatSectionContent: React.FC = () => {
 
 // Sessions section: Default model & agent
 const SessionsSectionContent: React.FC = () => {
-    const isVSCode = isVSCodeRuntime();
+
     const showDesktopNetworkSettings = isDesktopShell() && isDesktopLocalOriginActive();
     return (
         <div className="space-y-6">
             <DefaultsSettings />
             <AgentModelDefaultsSettings />
-            {!isVSCode && (
+            {(
                 <div className="border-t border-border/40 pt-6">
                     <OpenCodeCliSettings />
                 </div>
@@ -184,15 +184,11 @@ const NotificationSectionContent: React.FC = () => {
 
 // Voice section: Language selection and voice settings
 const VoiceSectionContent: React.FC = () => {
-    if (isVSCodeRuntime()) {
-        return null;
-    }
+
     return <VoiceSettings />;
 };
 
 const TunnelSectionContent: React.FC = () => {
-    if (isVSCodeRuntime()) {
-        return null;
-    }
+
     return <TunnelSettings />;
 };

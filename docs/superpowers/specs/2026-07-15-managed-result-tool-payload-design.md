@@ -25,7 +25,7 @@ contract violation remains visible instead of hiding data.
 
 The scheduler record, durable ledger, private RPC response, UI snapshot/events,
 and acknowledgement contract remain unchanged. The bundled plugin is shared by
-managed web, Electron, and VS Code OpenCode runtimes, so one serialization rule
+managed web and Electron OpenCode runtimes, so one serialization rule
 preserves runtime parity and does not alter provider prompts, models, tools, or
 execution.
 

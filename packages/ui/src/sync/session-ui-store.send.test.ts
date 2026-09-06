@@ -11,6 +11,7 @@ const optimisticCalls: Array<{
   providerID: string
   modelID: string
   agent?: string
+  variant?: string | null
 }> = []
 const sendMessageCalls: Array<Record<string, unknown>> = []
 const sendImmediateSubtaskPromptCalls: Array<Record<string, unknown>> = []
@@ -216,6 +217,7 @@ mock.module("./session-actions", () => ({
     providerID: string
     modelID: string
     agent?: string
+    variant?: string | null
     send: (messageID: string) => Promise<void>
     onMessageID?: (messageID: string) => void
     onMessageRollback?: (messageID: string) => void
@@ -227,6 +229,7 @@ mock.module("./session-actions", () => ({
       providerID: params.providerID,
       modelID: params.modelID,
       agent: params.agent,
+      ...(params.variant !== undefined ? { variant: params.variant } : {}),
     })
     const messageID = params.messageID ?? `message-${optimisticCalls.length}`
     params.onMessageID?.(messageID)
@@ -1244,6 +1247,7 @@ describe("session-ui-store send routing", () => {
             providerID: "cursor-acp",
             modelID: "composer-2.5-fast",
             agent: "builder",
+            variant: null,
             modelProvenance: "explicit",
           },
         },
@@ -1259,10 +1263,13 @@ describe("session-ui-store send routing", () => {
       providerID: "cursor-acp",
       modelID: "composer-2.5-fast",
       agent: "builder",
+      variant: null,
       modelProvenance: "explicit",
     })
     expect(state.draftOrder).toContain("draft-reloaded")
-    expect(getSafeStorage().getItem(CHAT_DRAFTS_STORAGE_KEY)).toContain("draft-reloaded")
+    const serialized = getSafeStorage().getItem(CHAT_DRAFTS_STORAGE_KEY)
+    expect(serialized).toContain("draft-reloaded")
+    expect(serialized).toContain('"variant":null')
   })
 
   test("opening another draft preserves an attachment-only draft", () => {
@@ -2353,6 +2360,7 @@ describe("session-ui-store send routing", () => {
       providerID: "cursor-acp",
       modelID: "composer-2.5",
       agent: "builder",
+      variant: "high",
     })
     expect(sendMessageCalls[0]?.id).toBe("session-created")
     expect(sendMessageCalls[0]?.providerID).toBe("cursor-acp")
@@ -2940,6 +2948,37 @@ describe("session-ui-store send routing", () => {
     expect(useSessionUIStore.getState().starterAssistantMessages.get("session-a")?.pendingContext).toBe(true)
   })
 
+  test("restores canonical provider default and sends it over a conflicting High agent default", async () => {
+    mockConfigState = {
+      currentAgentName: "Builder",
+      currentProviderId: "openai",
+      currentModelId: "gpt",
+      currentVariant: "high",
+      providers: [{ id: "openai", models: [{ id: "gpt", variants: { low: {}, high: {} } }] }],
+      agents: [{ name: "Builder", mode: "primary", model: { providerID: "openai", modelID: "gpt" }, variant: "high" }],
+    }
+    mockSyncMessages = [
+      { id: "msg_previous", role: "user", agent: "Builder", model: { providerID: "openai", modelID: "gpt", variant: "high" } },
+      { id: "msg_default", role: "user", agent: "Builder", model: { providerID: "openai", modelID: "gpt", variant: "" }, variant: "high" },
+      { id: "msg_response", role: "assistant" },
+      { id: "msg_compaction", role: "user", agent: "Builder", model: { providerID: "openai", modelID: "gpt" } },
+      { id: "msg_summary", role: "assistant", agent: "compaction", summary: true },
+    ]
+    mockPartsByMessage.set("msg_compaction", [{ type: "compaction" }])
+    const restored = useSessionUIStore.getState().getLastUserChoice("session-a")
+    expect(restored).toEqual({ agent: "Builder", providerID: "openai", modelID: "gpt", variant: null })
+    if (!restored?.providerID || !restored.modelID) throw new Error("Expected restored model selection")
+
+    await useSessionUIStore.getState().sendMessageToSession(
+      "session-a", "continue restored work", restored.providerID, restored.modelID, restored.agent,
+      undefined, undefined, undefined, restored.variant, "normal",
+    )
+
+    expect(sendMessageCalls[0]?.variant).toBeNull()
+    expect(optimisticCalls[0]?.variant).toBeNull()
+    expect(mockConfigState.currentVariant).toBe("high")
+  })
+
   test("sendMessageToSession sends to the queued session even when another session is current", async () => {
     useSessionUIStore.setState({ currentSessionId: "session-b" })
     mockConfigState = {
@@ -2978,6 +3017,7 @@ describe("session-ui-store send routing", () => {
       providerID: "provider-a",
       modelID: "model-a",
       agent: "agent-a",
+      variant: "variant-a",
     })
     expect(sendMessageCalls[0]?.id).toBe("session-a")
     expect(sendMessageCalls[0]?.text).toBe("queued for A")
@@ -3569,6 +3609,28 @@ describe("session-ui-store send routing", () => {
     expect(sendCommandCalls[0]?.id).toBe("session-b")
     expect(unarchiveCalls).toEqual(["session-b"])
   })
+
+  for (const variant of ["low", null] as const) {
+    test(`passes captured ${variant ?? "provider default"} to slash-command optimism and transport`, async () => {
+      mockDirectoryState = { command: [{ name: "help" }] }
+      mockConfigState = {
+        currentVariant: "high",
+        providers: [{ id: "fixture", models: [{ id: "fixture-model", variants: { low: {}, high: {} } }] }],
+      }
+
+      await useSessionUIStore.getState().sendMessageToSession(
+        "session-a", "/help", "fixture", "fixture-model", "Builder",
+        undefined, undefined, undefined, variant, "normal",
+      )
+
+      expect(optimisticCalls).toHaveLength(1)
+      expect(optimisticCalls[0]?.variant).toBe(variant)
+      expect(sendCommandCalls).toHaveLength(1)
+      expect(sendCommandCalls[0]?.variant).toBe(variant)
+      expect(sendMessageCalls).toHaveLength(0)
+      expect(mockConfigState.currentVariant).toBe("high")
+    })
+  }
 
   test("routes a known skill through command transport when command snapshots are empty", async () => {
     mockDirectoryState = { command: [] }
@@ -4580,7 +4642,7 @@ describe("session-ui-store send routing", () => {
     expect(sendMessageCalls[0]?.agent).toBe("builder")
     expect(sendMessageCalls[0]?.providerID).toBe("provider-selected")
     expect(sendMessageCalls[0]?.modelID).toBe("model-selected")
-    expect(sendMessageCalls[0]?.variant).toBe(undefined)
+    expect(sendMessageCalls[0]?.variant).toBeNull()
     expect(savedSessionAgents.some((entry) =>
       entry.sessionId === "session-new"
       && entry.agent === "builder"
@@ -4602,7 +4664,7 @@ describe("session-ui-store send routing", () => {
       && entry.agent === "builder"
       && entry.providerID === "provider-selected"
       && entry.modelID === "model-selected"
-      && entry.variant === undefined
+      && entry.variant === null
     )).toBe(true)
   })
 
@@ -4658,7 +4720,7 @@ describe("session-ui-store send routing", () => {
     expect(sendMessageCalls[0]?.agent).toBe("builder")
     expect(sendMessageCalls[0]?.providerID).toBe("provider-selected")
     expect(sendMessageCalls[0]?.modelID).toBe("model-selected")
-    expect(sendMessageCalls[0]?.variant).toBe(undefined)
+    expect(sendMessageCalls[0]?.variant).toBeNull()
     expect(savedSessionModels.some((entry) =>
       entry.sessionId === "session-new"
       && entry.providerID === "provider-selected"

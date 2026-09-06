@@ -11,7 +11,7 @@ Managed callers are additionally constrained by the multi-user layer: worktree c
   - `routes.js`: Express route registration for `/api/git/*` endpoints.
   - `template-routes.js`: Conventional commit template and global `commit-msg` hook setup routes.
   - `service.js`: Core Git operations (repository, branch, worktree, commit, merge/rebase, status/diff, log).
-  - `@openchamber/harness-runtime/lib/git-post-checkout-hook.js`: Shared bounded post-checkout hook execution used by web/Electron and VS Code.
+  - `@openchamber/harness-runtime/lib/git-post-checkout-hook.js`: Shared bounded post-checkout hook execution used by web/Electron.
   - `integrate.js`: Server-owned commit reintegration, temporary worktree lifecycle, conflict continuation, and the `isIntegrateTempPath` predicate that keeps those worktrees out of managed-project registration.
   - `commit-message.js`: Session-free commit-subject prompt, normalization, validation, and direct Zen utility-model generation.
   - `commit-message-context.js`: Bounded host-side status, history, and selected-file diff collection for commit-message drafts.
@@ -67,7 +67,7 @@ The following functions are exported and used by the web server:
 - `getWorktreeBootstrapOperation(operationId)`,
   `listActiveWorktreeBootstrapOperations()`, and
   `retryWorktreeBootstrapOperation(operationId)`: durable reconnect/retry
-  operations mirrored by VS Code.
+  operations.
 - `removeWorktree(directory, input)`: Remove a worktree (optionally delete local branch). Removal reserves the directory and fails with `409 WORKTREE_DIRECTORY_BUSY` while setup or another maintenance operation is active.
 - `isLinkedWorktree(directory)`: Check if directory is a linked worktree (not primary).
 
@@ -207,7 +207,7 @@ lock is already gone, the stage still retries once because the competing writer
 may have just completed. Before replaying population, the stage checks `HEAD`,
 status, and the Git index: populated worktrees are preserved rather than reset
 destructively, while a fresh `--no-checkout` worktree with an empty index still
-receives its initial checkout. Web/Electron and VS Code use the same policy.
+receives its initial checkout. Web/Electron use the same policy.
 
 Terminal bootstrap receipts replay only when the idempotency key and request
 fingerprint still match. Reusing that key for a changed request supersedes the

@@ -30,10 +30,9 @@ describe('Header usage dropdown', () => {
   test('surfaces refresh failures without removing retained usage rows', () => {
     const source = headerSource();
     const desktopSource = readFileSync(resolve(testDir, 'DesktopRightChromeActions.tsx'), 'utf8');
-    const vscodeSource = readFileSync(resolve(testDir, 'VSCodeLayout.tsx'), 'utf8');
     const panelSource = readFileSync(resolve(testDir, 'usage/UsageProviderPanel.tsx'), 'utf8');
 
-    for (const layoutSource of [source, desktopSource, vscodeSource]) {
+    for (const layoutSource of [source, desktopSource]) {
       expect(layoutSource).toContain('providerRefreshState');
       expect(layoutSource).toContain('refreshError');
     }

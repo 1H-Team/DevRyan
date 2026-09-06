@@ -7,7 +7,7 @@ Web runtime package that ships the main app plus mini-chat and detachable-browse
 - **Split runtime model**: UI bootstrap in `src/`, server orchestration in `server/`, operator/automation UX in `bin/`.
 - **Adapter boundary**: `src/api/*` implements `@openchamber/ui` runtime API contracts over HTTP/WebSocket endpoints.
 - **Composable server internals**: `server/index.js` delegates to focused runtime factories under `server/lib/*` instead of keeping route logic inline.
-- **Deterministic browser chunking**: `vite-chunking.ts` strips query/hash suffixes before resolving the innermost `node_modules` package across npm, Bun, pnpm, and Windows IDs; `vite.config.ts` assigns only the intentional React/Zustand/OpenCode/Markdown/Base UI/syntax vendor groups and emits a Vite manifest for startup-budget checks.
+- **Deterministic browser chunking**: `vite-chunking.ts` strips query/hash suffixes before resolving the innermost `node_modules` package across npm, Bun, pnpm, and Windows IDs; `vite.config.ts` assigns the intentional React/Zustand/OpenCode/Markdown/Base UI/syntax vendor groups and emits a Vite manifest for startup-budget checks. The small markup utilities shared by eager consumers and lazy Markdown live separately in `vendor-markup-utils`, preventing an eager import of the full Markdown dependency group.
 
 ## Flow
 1. `bin/cli.js serve` (or Electron import) calls server bootstrap in `server/index.js`.

@@ -8,7 +8,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { RiArrowDownSLine, RiFolderLine } from '@remixicon/react';
 import { sortProjectsAlphabetically, useProjectsStore } from '@/stores/useProjectsStore';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { resolveProjectDisplayName } from '@/lib/projectDisplayName';
@@ -18,8 +17,6 @@ export const SettingsProjectSelector: React.FC<{ className?: string }> = ({ clas
   const projects = useProjectsStore((state) => state.projects);
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const setActiveProject = useProjectsStore((state) => state.setActiveProject);
-
-  const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
 
   const sortedProjects = React.useMemo(() => {
     return sortProjectsAlphabetically(projects);
@@ -32,7 +29,7 @@ export const SettingsProjectSelector: React.FC<{ className?: string }> = ({ clas
     return sortedProjects.find((p) => p.id === activeProjectId) ?? sortedProjects[0];
   }, [activeProjectId, sortedProjects]);
 
-  if (isVSCode || sortedProjects.length === 0) {
+  if (sortedProjects.length === 0) {
     return null;
   }
 

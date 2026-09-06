@@ -88,6 +88,31 @@ const implementationUser = (id: string, createdAt: number, sourceMessageId: stri
 );
 
 describe('projectPlanTurnTraceIndex plan revisions', () => {
+    test('managed maintenance cannot supersede the saved Plan or become a new actionable card', () => {
+        const messages = [
+            createMessageEntry({ id: 'human', role: 'user', createdAt: 1, planMode: true, parts: [createTextPart('human', 'Create the plan.')] }),
+            createMessageEntry({ id: 'plan', role: 'assistant', parentID: 'human', createdAt: 2, completedAt: 3, parts: [createTextPart('plan', planText('Original Plan'))] }),
+            createMessageEntry({ id: 'wake', role: 'user', createdAt: 4, planMode: true, parts: [
+                createTextPart('wake', 'User has requested to enter plan mode.\nProduce an implementation plan only.', true),
+                { ...createTextPart('wake', '[devryan-provider-recovery:v1:task_fixture]\nCollect completed result.', true), id: 'wake-marker' },
+            ] }),
+            createMessageEntry({ id: 'collection', role: 'assistant', parentID: 'wake', createdAt: 5, completedAt: 6, parts: [createTextPart('collection', planText('Automatic Collection'))] }),
+        ];
+        const index = projectTurnRecords(messages).planTraceIndex;
+        expect(index.entries).toHaveLength(1);
+        expect(index.latestPlanSourceMessageId).toBe('plan');
+        expect(index.byTurnId.has('wake')).toBe(false);
+        expect(index.bySourceMessageId.has('collection')).toBe(false);
+        expect(index.turnIntentById.get('wake')).toBe('maintenance');
+        expect(index.suppressedTurnIds.has('wake')).toBe(false);
+        const fresh = projectTurnRecords([...messages,
+            createMessageEntry({ id: 'revision-user', role: 'user', createdAt: 7, planMode: true, parts: [createTextPart('revision-user', 'Revise the plan.')] }),
+            createMessageEntry({ id: 'revision-plan', role: 'assistant', parentID: 'revision-user', createdAt: 8, completedAt: 9, parts: [createTextPart('revision-plan', planText('Explicit Revised Plan'))] }),
+        ]).planTraceIndex;
+        expect(fresh.entries).toHaveLength(2);
+        expect(fresh.latestPlanSourceMessageId).toBe('revision-plan');
+        expect(fresh.byTurnId.get('revision-user')?.isActionable).toBe(true);
+    });
     test('folds compaction and synthetic continuation turns into one revision with a single source', () => {
         // Regression fixture for the observed history: a user-authored plan
         // request, compaction, two synthetic continuation turns, three plan

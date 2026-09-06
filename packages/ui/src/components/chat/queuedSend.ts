@@ -20,7 +20,7 @@ export type QueuedSendConfig = {
   providerID: string
   modelID: string
   agent?: string
-  variant?: string
+  variant?: string | null
   planMode?: boolean
 }
 
@@ -41,7 +41,7 @@ export type SendQueuedMessageToSession = (
   attachments?: AttachedFile[],
   agentMentionName?: string,
   additionalParts?: undefined,
-  variant?: string,
+  variant?: string | null,
   inputMode?: "normal",
   planMode?: boolean,
   lifecycleCallbacks?: QueuedSendLifecycleCallbacks,
@@ -97,7 +97,9 @@ const resolveSendConfig = (
   providerID: queuedMessage.sendConfig?.providerID ?? fallbackSendConfig.providerID,
   modelID: queuedMessage.sendConfig?.modelID ?? fallbackSendConfig.modelID,
   agent: queuedMessage.sendConfig?.agent ?? fallbackSendConfig.agent,
-  variant: queuedMessage.sendConfig?.variant ?? fallbackSendConfig.variant,
+  variant: queuedMessage.sendConfig?.variant !== undefined
+    ? queuedMessage.sendConfig.variant
+    : fallbackSendConfig.variant,
   planMode: typeof queuedMessage.sendConfig?.planMode === "boolean"
     ? queuedMessage.sendConfig.planMode
     : fallbackSendConfig.planMode,

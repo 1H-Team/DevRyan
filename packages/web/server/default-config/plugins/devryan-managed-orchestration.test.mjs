@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createOpencodeClient } from '@opencode-ai/sdk';
 
 vi.mock('@opencode-ai/plugin', () => {
   const makeSchema = () => {
@@ -110,6 +111,438 @@ const toolCallRecord = (callID, mode, overrides = {}) => ({
     callID,
     messageID: `msg_${callID}`,
   }],
+});
+
+const PLAN_INSTRUCTION = 'User has requested to enter plan mode.\nInspect and plan only. Do not edit files, run mutating commands, or dispatch implementation. Ask for approval before implementation.';
+const LEGACY_OPEN_TODO_PROMPT = 'Your turn ended with open todos. If a plan deviation stopped you, classify it (Class 1: note it and continue; Class 2: ask with the question tool) and continue from the first open todo. If everything is done, mark the todos complete and give the final summary.';
+const OPEN_TODO_MARKER = '[devryan-open-todo-continuation:v1]';
+const planUser = () => ({
+  info: {
+    id: 'msg_001', sessionID: 'ses_root', role: 'user', agent: 'orchestrator',
+    model: { providerID: 'openai', modelID: 'gpt-5.6-sol', variant: 'high' },
+  },
+  parts: [
+    { type: 'text', text: 'Plan this change.' },
+    { type: 'text', text: PLAN_INSTRUCTION, synthetic: true },
+  ],
+});
+const maintenanceUser = (id, parts) => ({
+  info: {
+    id, sessionID: 'ses_root', role: 'user', agent: 'orchestrator',
+    model: { providerID: 'openai', modelID: 'gpt-5.6-sol', variant: 'low' },
+  },
+  parts,
+});
+const replyingAssistant = (id, parentID) => ({
+  info: {
+    id, parentID, sessionID: 'ses_root', role: 'assistant', agent: 'orchestrator',
+    providerID: 'openai', modelID: 'gpt-5.6-sol',
+  },
+  parts: [{ type: 'text', text: 'Inspected the requested scope.' }],
+});
+
+describe('Plan authority across managed maintenance', () => {
+  // Use the installed legacy SDK injected into native plugins. Its generated
+  // method accepts path.id and passes query.before through, despite the older
+  // declaration omitting it. The fetch adapter never makes network requests.
+  // Native 1.18.29 was separately checked on 2026-09-06 with noReply users:
+  // chronological tail [5,6], then [3,4], then [1,2]; only x-next-cursor advances
+  // the pages. Deliberately use opaque fixture cursors, never ID arithmetic.
+  const paginatedMessages = (records, requests) => {
+    const cursors = new Map();
+    const sdk = createOpencodeClient({
+      baseUrl: 'http://native-pagination.invalid',
+      fetch: async (request) => {
+        const url = new URL(request.url);
+        requests.push(url);
+        const before = url.searchParams.get('before');
+        const end = before ? cursors.get(before) : records.length;
+        if (!Number.isInteger(end)) return new Response('{}', { status: 400 });
+        const start = Math.max(0, end - Number(url.searchParams.get('limit')));
+        const next = `opaque-cursor/${start}+native=`;
+        if (start > 0) cursors.set(next, start);
+        return new Response(JSON.stringify(records.slice(start, end)), {
+          headers: { 'content-type': 'application/json', ...(start > 0 ? { 'x-next-cursor': next } : {}) },
+        });
+      },
+    });
+    return vi.fn((request) => sdk.session.messages(request));
+  };
+
+  const maintenanceTail = (count, start = 2) => Array.from({ length: count }, (_, index) => {
+    const numericId = start + index;
+    const id = `msg_${String(numericId).padStart(3, '0')}`;
+    return index % 2 === 0
+      ? maintenanceUser(id, [{ type: 'text', text: `${OPEN_TODO_MARKER}\n${LEGACY_OPEN_TODO_PROMPT}`, synthetic: true }])
+      : replyingAssistant(id, `msg_${String(numericId - 1).padStart(3, '0')}`);
+  });
+  const createWakeHarness = async ({ records, onClaim } = {}) => {
+    const scheduled = [];
+    const requests = [];
+    let taskId = 'dvr_task_plan_1';
+    const client = { session: {
+      messages: vi.fn(async () => ({ data: records })),
+      message: vi.fn(async ({ path }) => {
+        const record = records.find((entry) => entry.info.id === path.messageID);
+        return record ? { data: record } : { error: { statusCode: 404 } };
+      }),
+      status: vi.fn(async () => ({ data: {} })),
+      promptAsync: vi.fn(async ({ body }) => {
+        records.push({
+          info: {
+            id: body.messageID, sessionID: 'ses_root', role: 'user', agent: body.agent,
+            model: { ...body.model, variant: body.variant },
+          },
+          parts: body.parts,
+        });
+        records.push(replyingAssistant(`${body.messageID}_reply`, body.messageID));
+        return { data: true };
+      }),
+    } };
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      if (request.method === 'list_provider_recovery_continuations') return rpcResponse({
+        continuations: [{ taskId, rootSessionId: 'ses_root', directory: '/workspace', kind: 'collect' }],
+      });
+      if (request.method === 'status') return rpcResponse(collectableTaskResult(taskId));
+      if (request.method === 'claim_provider_recovery_continuation') {
+        onClaim?.();
+        return rpcResponse({ claimed: true });
+      }
+      if (request.method === 'submit') return rpcResponse({ task: { taskId: 'dvr_task_next' } });
+      return rpcResponse({});
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin({
+      client,
+      scheduleTimeout(callback) {
+        scheduled.push(callback);
+        return { unref() {} };
+      },
+    });
+    return {
+      client, plugin, requests,
+      async scan(nextTaskId) {
+        if (nextTaskId) taskId = nextTaskId;
+        if (scheduled.length === 0) {
+          plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'ses_root' } } });
+        }
+        scheduled.shift()();
+        for (let index = 0; index < 5; index += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      },
+      dispatch(agent = 'explorer', messageID = records.at(-1).info.id) {
+        return plugin.tool.devryan_task.execute({
+          action: 'start', agent, prompt: 'Inspect the implementation.',
+          provider_id: 'openai', model_id: 'gpt-5.6-sol',
+        }, context({ messageID }));
+      },
+    };
+  };
+
+  it('preserves the full Plan instruction across native compaction into an echoed result wake', async () => {
+    const records = [
+      planUser(),
+      replyingAssistant('msg_002', 'msg_001'),
+      maintenanceUser('msg_003', [{ type: 'compaction', auto: true }]),
+      replyingAssistant('msg_004', 'msg_003'),
+      maintenanceUser('msg_005', [{ type: 'text', text: 'Continue if you have next steps.', synthetic: true, metadata: { compaction_continue: true } }]),
+    ];
+    const harness = await createWakeHarness({ records });
+    await harness.scan();
+
+    expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(1);
+    const wake = harness.client.session.promptAsync.mock.calls[0][0].body;
+    expect(wake.parts).toContainEqual({ type: 'text', text: PLAN_INSTRUCTION, synthetic: true });
+    // Execution selection stays independent from the preceding Plan authority.
+    expect(wake.variant).toBe('low');
+    await harness.dispatch();
+    expect(harness.requests.find(({ method }) => method === 'submit').params.readOnly).toBe(true);
+    await expect(harness.dispatch('designer')).rejects.toMatchObject({ code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED' });
+  });
+
+  it('round-trips opaque native pagination cursors through the installed legacy plugin SDK', async () => {
+    const records = [planUser(), ...maintenanceTail(100)];
+    const urls = [];
+    const messages = paginatedMessages(records, urls);
+    const first = await messages({ path: { id: 'ses_root' }, query: { directory: '/workspace', limit: 100 } });
+    const cursor = first.response.headers.get('x-next-cursor');
+    const second = await messages({ path: { id: 'ses_root' }, query: { directory: '/workspace', limit: 100, before: cursor } });
+    expect(urls[1].pathname).toBe('/session/ses_root/message');
+    expect(urls[1].searchParams.get('directory')).toBe('/workspace');
+    expect(urls[1].searchParams.get('before')).toBe(cursor);
+    expect(first.data.map((record) => record.info.id)).toEqual(records.slice(1).map((record) => record.info.id));
+    expect(second.data).toEqual([records[0]]);
+    expect(second.response.headers.get('x-next-cursor')).toBeNull();
+  });
+
+  it('retrieves Plan authority just outside the newest 100 records for the wake and echoed dispatch', async () => {
+    const records = [planUser(), ...maintenanceTail(100)];
+    const harness = await createWakeHarness({ records });
+    const urls = [];
+    harness.client.session.messages = paginatedMessages(records, urls);
+    await harness.scan();
+    expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(1);
+    expect(harness.client.session.promptAsync.mock.calls[0][0].body.parts).toContainEqual({
+      type: 'text', text: PLAN_INSTRUCTION, synthetic: true,
+    });
+    await harness.dispatch();
+    expect(harness.requests.find(({ method }) => method === 'submit').params.readOnly).toBe(true);
+    expect(urls.some((url) => url.searchParams.has('before'))).toBe(true);
+  });
+
+  it('retrieves authority before an exact maintenance parent at the 100-record edge without applying later approval', async () => {
+    const records = [planUser(), ...maintenanceTail(100)];
+    records[100] = maintenanceUser('msg_101', [{ type: 'text', text: 'Implementation approved.' }]);
+    const harness = await createWakeHarness({ records });
+    const urls = [];
+    harness.client.session.messages = paginatedMessages(records, urls);
+    await expect(harness.dispatch('designer', 'msg_003')).rejects.toMatchObject({ code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED' });
+    expect(urls.some((url) => url.searchParams.has('before'))).toBe(true);
+    expect(harness.requests).toHaveLength(0);
+  });
+
+  it('uses the nearest earlier ordinary synthetic OFF outside the first page instead of older Plan', async () => {
+    const records = [
+      planUser(), maintenanceUser('msg_002', [{ type: 'text', text: 'Proceed with implementation.', synthetic: true }]),
+      ...maintenanceTail(100, 3),
+    ];
+    const harness = await createWakeHarness({ records });
+    harness.client.session.messages = paginatedMessages(records, []);
+    await harness.scan();
+    expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(1);
+    expect(harness.client.session.promptAsync.mock.calls[0][0].body.parts).toHaveLength(1);
+    await harness.dispatch('designer');
+    expect(harness.requests.find(({ method }) => method === 'submit').params.readOnly).toBe(false);
+  });
+
+  it('finds an older exact parent before inspecting authority despite newer approved turns', async () => {
+    const records = [planUser(), ...maintenanceTail(200)];
+    records[180] = maintenanceUser('msg_181', [{ type: 'text', text: 'Proceed with implementation.' }]);
+    const harness = await createWakeHarness({ records });
+    const urls = [];
+    harness.client.session.messages = paginatedMessages(records, urls);
+    await expect(harness.dispatch('designer', 'msg_003')).rejects.toMatchObject({ code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED' });
+    expect(urls).toHaveLength(3);
+    expect(harness.requests).toHaveLength(0);
+  });
+
+  it('fails explicitly when the exact parent is absent from every returned page', async () => {
+    const records = [planUser(), ...maintenanceTail(200)];
+    const harness = await createWakeHarness({ records });
+    const urls = [];
+    harness.client.session.messages = paginatedMessages(records.filter((record) => record.info.id !== 'msg_002'), urls);
+    await expect(harness.dispatch('designer', 'msg_003')).rejects.toThrow('parent anchor is missing from canonical history');
+    expect(urls).toHaveLength(2);
+    expect(harness.requests).toHaveLength(0);
+  });
+
+  it('stops after ten pages rather than scanning unbounded maintenance history', async () => {
+    const records = [planUser(), ...maintenanceTail(1_000)];
+    const harness = await createWakeHarness({ records });
+    const urls = [];
+    harness.client.session.messages = paginatedMessages(records, urls);
+    await expect(harness.dispatch()).rejects.toThrow('bounded page limit');
+    expect(urls).toHaveLength(10);
+    expect(harness.requests).toHaveLength(0);
+  });
+
+  it('bounds aggregate history bytes even when individual pages fit', async () => {
+    const records = [planUser(), ...maintenanceTail(200)];
+    const padding = 'x'.repeat(45_000);
+    for (const record of records.slice(1)) record.parts[0].text += padding;
+    const harness = await createWakeHarness({ records });
+    const urls = [];
+    harness.client.session.messages = paginatedMessages(records, urls);
+    await expect(harness.dispatch()).rejects.toThrow('bounded record or byte limit');
+    expect(urls).toHaveLength(2);
+    expect(harness.requests).toHaveLength(0);
+  });
+
+  it('rejects a server that ignores the per-page record bound', async () => {
+    const records = [planUser(), ...maintenanceTail(100)];
+    const harness = await createWakeHarness({ records });
+    await expect(harness.dispatch()).rejects.toThrow('bounded record or byte limit');
+    expect(harness.client.session.messages).toHaveBeenCalledTimes(1);
+    expect(harness.requests).toHaveLength(0);
+  });
+
+  it.each(['repeated cursor', 'repeated page', 'empty page with cursor'])(
+    'fails on pagination without progress: %s', async (failure) => {
+      const records = [planUser(), ...maintenanceTail(200)];
+      const harness = await createWakeHarness({ records });
+      const response = (data, cursor) => ({ data, response: { headers: new Headers({ 'x-next-cursor': cursor }) } });
+      harness.client.session.messages
+        .mockResolvedValueOnce(response(records.slice(-100), 'first-cursor'))
+        .mockResolvedValueOnce(response(
+          failure === 'empty page with cursor' ? [] : failure === 'repeated page' ? records.slice(-100) : records.slice(1, 101),
+          failure === 'repeated cursor' ? 'first-cursor' : 'different-cursor',
+        ));
+      await expect(harness.dispatch()).rejects.toThrow('pagination made no progress');
+      expect(harness.client.session.messages).toHaveBeenCalledTimes(2);
+      expect(harness.requests).toHaveLength(0);
+    },
+  );
+
+  it('fails explicitly when a backward page is unavailable instead of using an inherited wake marker', async () => {
+    const records = [planUser(), ...maintenanceTail(100)];
+    // The canonical wake may carry Plan, but only canonical earlier authority
+    // decides whether that instruction remains current.
+    records[99].parts.push({ type: 'text', text: PLAN_INSTRUCTION, synthetic: true });
+    const harness = await createWakeHarness({ records });
+    harness.client.session.messages
+      .mockResolvedValueOnce({ data: records.slice(1), response: { headers: new Headers({ 'x-next-cursor': 'older' }) } })
+      .mockRejectedValueOnce(new Error('history unavailable'));
+    await expect(harness.dispatch()).rejects.toThrow('Cannot verify Plan authority: history unavailable');
+    expect(harness.requests).toHaveLength(0);
+  });
+
+  it('preserves Plan across repeated result wakes without reusing child policy', async () => {
+    const records = [planUser(), replyingAssistant('msg_002', 'msg_001')];
+    const harness = await createWakeHarness({ records });
+    await harness.scan();
+    await harness.scan('dvr_task_plan_2');
+    expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(2);
+    for (const [{ body }] of harness.client.session.promptAsync.mock.calls) {
+      expect(body.parts).toEqual([
+        { type: 'text', text: PLAN_INSTRUCTION, synthetic: true },
+        { type: 'text', text: expect.stringContaining('[devryan-provider-recovery:v1:'), synthetic: true },
+      ]);
+    }
+    await harness.dispatch();
+    expect(harness.requests.find(({ method }) => method === 'submit').params.readOnly).toBe(true);
+  });
+
+  it.each([
+    ['result recovery', { type: 'text', text: '[devryan-provider-recovery:v1:task] Collect the result.', synthetic: true }],
+    ['legacy open todo', { type: 'text', text: LEGACY_OPEN_TODO_PROMPT, synthetic: true }],
+    ['marked open todo', { type: 'text', text: `${OPEN_TODO_MARKER}\n${LEGACY_OPEN_TODO_PROMPT}`, synthetic: true }],
+    ['native compaction', { type: 'compaction', auto: true }],
+    ['native continuation', { type: 'text', text: 'Continue if you have next steps.', synthetic: true, metadata: { compaction_continue: true } }],
+  ])('resolves an uncorrected %s parent through canonical history', async (_label, part) => {
+    const records = [
+      planUser(), replyingAssistant('msg_002', 'msg_001'),
+      maintenanceUser('msg_003', [part]), replyingAssistant('msg_004', 'msg_003'),
+    ];
+    const harness = await createWakeHarness({ records });
+    await harness.dispatch();
+    expect(harness.requests.find(({ method }) => method === 'submit').params.readOnly).toBe(true);
+    await expect(harness.dispatch('designer')).rejects.toMatchObject({ code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED' });
+    expect(harness.client.session.messages).toHaveBeenCalledWith({
+      path: { id: 'ses_root' }, query: { directory: '/workspace', limit: 100 },
+    });
+  });
+
+  const implementationPart = (overrides = {}) => ({
+    type: 'text', synthetic: true,
+    text: `[openchamber-plan-action:v1] ${JSON.stringify({
+      action: 'implement', sourceSessionId: 'ses_root', sourceMessageId: 'msg_002', planIndex: 0, ...overrides,
+    })}`,
+  });
+
+  it('honors an Implement approval arriving during the task claim despite stale Plan flags and prefix', async () => {
+    const records = [planUser(), replyingAssistant('msg_002', 'msg_001')];
+    const approval = maintenanceUser('msg_003', [
+      { type: 'text', text: PLAN_INSTRUCTION, synthetic: true },
+      implementationPart(),
+      { type: 'text', text: '[devryan-provider-recovery:v1:old] Historical context.', synthetic: true },
+    ]);
+    approval.info.mode = 'plan';
+    approval.info.metadata = { openchamberPlanMode: true };
+    const harness = await createWakeHarness({ records, onClaim: () => records.push(approval) });
+    await harness.scan();
+    expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(1);
+    expect(harness.client.session.promptAsync.mock.calls[0][0].body.parts).toHaveLength(1);
+    await harness.dispatch('designer');
+    expect(harness.requests.find(({ method }) => method === 'submit').params.readOnly).toBe(false);
+    await expect(harness.dispatch('designer', 'msg_002')).rejects.toMatchObject({ code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED' });
+  });
+
+  it.each([
+    ['human Plan OFF', { type: 'text', text: 'Proceed with implementation.' }],
+    ['ordinary synthetic request', { type: 'text', text: 'Proceed with implementation.', synthetic: true }],
+    ['human recovery marker', { type: 'text', text: '[devryan-provider-recovery:v1:task] Proceed.' }],
+    ['human open-todo text', { type: 'text', text: LEGACY_OPEN_TODO_PROMPT }],
+    ['legacy text with extra prose', { type: 'text', text: `${LEGACY_OPEN_TODO_PROMPT} New request.`, synthetic: true }],
+    ['different recovery version', { type: 'text', text: '[devryan-provider-recovery:v2:task] Proceed.', synthetic: true }],
+    ['human native-continuation metadata', { type: 'text', text: 'Proceed.', metadata: { compaction_continue: true } }],
+  ])('treats %s as authoritative OFF for the wake and new child dispatch', async (_label, part) => {
+    const records = [
+      planUser(), replyingAssistant('msg_002', 'msg_001'),
+      maintenanceUser('msg_003', [part]), replyingAssistant('msg_004', 'msg_003'),
+    ];
+    const harness = await createWakeHarness({ records });
+    await harness.scan();
+    expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(1);
+    expect(harness.client.session.promptAsync.mock.calls[0][0].body.parts).toHaveLength(1);
+    await harness.dispatch('designer');
+    expect(harness.requests.find(({ method }) => method === 'submit').params.readOnly).toBe(false);
+  });
+
+  it.each([
+    ['negative index', implementationPart({ planIndex: -1 })],
+    ['fractional index', implementationPart({ planIndex: 0.5 })],
+    ['missing source', implementationPart({ sourceMessageId: '' })],
+    ['wrong action', implementationPart({ action: 'approve' })],
+    ['human marker', { ...implementationPart(), synthetic: false }],
+    ['malformed JSON', { type: 'text', synthetic: true, text: '[openchamber-plan-action:v1] {' }],
+  ])('does not let an invalid Implement marker (%s) clear Plan policy', async (_label, part) => {
+    const user = planUser();
+    user.parts.push(part);
+    const harness = await createWakeHarness({ records: [user, replyingAssistant('msg_002', 'msg_001')] });
+    await expect(harness.dispatch('designer')).rejects.toMatchObject({ code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED' });
+    expect(harness.requests).toHaveLength(0);
+  });
+
+  it('does not use a later human approval to authorize an older maintenance assistant', async () => {
+    const records = [
+      planUser(), replyingAssistant('msg_002', 'msg_001'),
+      maintenanceUser('msg_003', [{ type: 'text', text: LEGACY_OPEN_TODO_PROMPT, synthetic: true }]),
+      replyingAssistant('msg_004', 'msg_003'),
+      maintenanceUser('msg_005', [implementationPart()]), replyingAssistant('msg_006', 'msg_005'),
+    ];
+    const harness = await createWakeHarness({ records });
+    await expect(harness.dispatch('designer', 'msg_004')).rejects.toMatchObject({ code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED' });
+    await harness.dispatch('designer', 'msg_006');
+    expect(harness.requests.find(({ method }) => method === 'submit').params.readOnly).toBe(false);
+  });
+
+  it.each(['outside history', 'history unavailable', 'missing authority', 'missing user parts'])(
+    'fails closed for an old maintenance assistant with %s', async (failure) => {
+      const records = [
+        planUser(), replyingAssistant('msg_002', 'msg_001'),
+        maintenanceUser('msg_003', [{ type: 'text', text: LEGACY_OPEN_TODO_PROMPT, synthetic: true }]),
+        replyingAssistant('msg_004', 'msg_003'),
+      ];
+      const harness = await createWakeHarness({ records });
+      if (failure === 'outside history') harness.client.session.messages.mockResolvedValue({ data: records.slice(3) });
+      if (failure === 'history unavailable') harness.client.session.messages.mockRejectedValue(new Error('offline'));
+      if (failure === 'missing authority') harness.client.session.messages.mockResolvedValue({ data: records.slice(2) });
+      if (failure === 'missing user parts') delete records[0].parts;
+      await expect(harness.dispatch('designer')).rejects.toThrow(/Cannot verify/);
+      expect(harness.requests).toHaveLength(0);
+    },
+  );
+
+  it.each([
+    ['metadata-only Plan', { mode: 'plan' }, [{ type: 'text', text: 'Inspect only.' }]],
+    ['prefix-only Plan', {}, [{ type: 'text', text: 'User has requested to enter plan mode.', synthetic: true }]],
+    ['truncated authority', {}, [{ type: 'text', text: LEGACY_OPEN_TODO_PROMPT, synthetic: true }]],
+  ])('reports %s instead of sending a writable automatic wake', async (_label, info, parts) => {
+    const user = maintenanceUser('msg_003', parts);
+    Object.assign(user.info, info);
+    const harness = await createWakeHarness({ records: [user, replyingAssistant('msg_004', 'msg_003')] });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await harness.scan();
+      expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/Cannot (continue Plan Mode|verify Plan authority)/));
+      expect(harness.requests.map(({ method }) => method)).toContain('release_provider_recovery_continuation');
+    } finally {
+      log.mockRestore();
+    }
+  });
 });
 
 describe('DevRyan managed orchestration plugin', () => {
@@ -3599,7 +4032,7 @@ describe('open-todo continuation safety net', () => {
         agent: 'orchestrator',
         model: { providerID: 'openai', modelID: 'gpt-5.5' },
         variant: 'medium',
-        parts: [{ type: 'text', synthetic: true, text: OPEN_TODO_PROMPT }],
+        parts: [{ type: 'text', synthetic: true, text: `${OPEN_TODO_MARKER}\n${OPEN_TODO_PROMPT}` }],
       },
     }, { throwOnError: false });
     expect(client.session.todo).toHaveBeenCalledWith({
@@ -3725,5 +4158,66 @@ describe('open-todo continuation safety net', () => {
     await drainScans(scheduled);
 
     expect(client.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it('preserves the complete Plan instruction through repeated open-todo wakes and compaction', async () => {
+    stubOpenTodoRpc();
+    const records = [
+      planUser(), replyingAssistant('msg_002', 'msg_001'),
+      maintenanceUser('msg_003', [{ type: 'compaction', auto: true }]),
+      replyingAssistant('msg_004', 'msg_003'),
+      maintenanceUser('msg_005', [{ type: 'text', text: '[devryan-provider-recovery:v1:prior] Collect the result.', synthetic: true }]),
+      replyingAssistant('msg_006', 'msg_005'),
+    ];
+    const client = createOpenTodoClient({ records });
+    const { plugin, scheduled } = await startPlugin(client);
+    let now = 1_700_000_000_000;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      for (const expected of [1, 2, 3, 3]) {
+        idle(plugin);
+        await drainScans(scheduled);
+        expect(client.session.promptAsync).toHaveBeenCalledTimes(expected);
+        now += 61_000;
+      }
+      for (const [{ body }] of client.session.promptAsync.mock.calls) {
+        expect(body.parts).toEqual([
+          { type: 'text', text: PLAN_INSTRUCTION, synthetic: true },
+          { type: 'text', text: `${OPEN_TODO_MARKER}\n${OPEN_TODO_PROMPT}`, synthetic: true },
+        ]);
+      }
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it.each([0, 3])('retrieves an open-todo Plan anchor outside 100 records and retains %s prior nudges in its cap', async (priorNudges) => {
+    stubOpenTodoRpc();
+    const records = [planUser()];
+    for (let index = 0; index < priorNudges; index += 1) {
+      records.push(maintenanceUser(`msg_old_nudge_${index}`, [{ type: 'text', text: OPEN_TODO_PROMPT, synthetic: true }]));
+    }
+    const parentID = records.at(-1).info.id;
+    for (let index = 0; index < 100; index += 1) {
+      records.push(replyingAssistant(`msg_inspection_step_${index}`, parentID));
+    }
+    // Preserve the current execution selection in the existing latest-page
+    // path, while Plan authority and older cap entries require pagination.
+    records[records.length - 50] = maintenanceUser('msg_native_compaction', [{ type: 'compaction', auto: true }]);
+    const client = createOpenTodoClient({ records });
+    client.session.messages.mockImplementation(async ({ query }) => ({
+      data: query.before ? records.slice(0, -100) : records.slice(-100),
+      response: { headers: new Headers(query.before ? {} : { 'x-next-cursor': 'native-older-page' }) },
+    }));
+    const { plugin, scheduled } = await startPlugin(client);
+    idle(plugin);
+    await drainScans(scheduled);
+    expect(client.session.messages.mock.calls.some(([request]) => request.query.before === 'native-older-page')).toBe(true);
+    if (priorNudges === 3) {
+      expect(client.session.promptAsync).not.toHaveBeenCalled();
+    } else {
+      expect(client.session.promptAsync).toHaveBeenCalledTimes(1);
+      expect(client.session.promptAsync.mock.calls[0][0].body.parts).toContainEqual({ type: 'text', text: PLAN_INSTRUCTION, synthetic: true });
+    }
   });
 });

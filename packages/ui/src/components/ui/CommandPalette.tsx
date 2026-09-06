@@ -47,7 +47,7 @@ import {
   getEffectiveShortcutCombo,
   isShortcutActionAvailable,
 } from '@/lib/shortcuts';
-import { canUseElectronDesktopIPC, invokeDesktop, isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
+import { canUseElectronDesktopIPC, invokeDesktop, isDesktopShell, isWebRuntime } from '@/lib/desktop';
 import { SETTINGS_PAGE_METADATA, type SettingsRuntimeContext } from '@/lib/settings/metadata';
 import { getSettingsNavIcon } from '@/lib/settings/navigation-icons';
 import { scoreByFuzzyQuery } from '@/lib/search/fuzzySearch';
@@ -296,7 +296,7 @@ export const CommandPalette: React.FC = () => {
   const settingsRuntimeCtx = React.useMemo<SettingsRuntimeContext>(() => {
     const isDesktop = isDesktopShell();
     return {
-      isVSCode: isVSCodeRuntime(),
+
       isWeb: !isDesktop && isWebRuntime(),
       isDesktop,
       isManaged: authPrincipal.scope === 'managed',

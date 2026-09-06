@@ -12,8 +12,8 @@ describe('project identity', () => {
     );
   });
 
-  it('resolves the canonical active-project plan directory', () => {
-    expect(resolveProjectPlansDirectory(
+  it('resolves the canonical active-project plan directory', async () => {
+    expect(await resolveProjectPlansDirectory(
       '/Users/zoubair/Repositories/onehealth-connector/',
       '/Users/zoubair/',
     )).toBe(
@@ -22,8 +22,8 @@ describe('project identity', () => {
     );
   });
 
-  it('returns no directory for an incomplete identity', () => {
-    expect(resolveProjectPlansDirectory('', '/Users/example')).toBe('');
-    expect(resolveProjectPlansDirectory('/Users/example/project', '')).toBe('');
+  it('returns no directory for an incomplete identity', async () => {
+    expect(await resolveProjectPlansDirectory('', '/Users/example')).toBe('');
+    expect(await resolveProjectPlansDirectory('/Users/example/project', '')).toBe('');
   });
 });

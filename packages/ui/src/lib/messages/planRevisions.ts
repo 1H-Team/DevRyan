@@ -2,6 +2,7 @@ import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 
 import {
     hasPlanImplementationRequestPart,
+    isManagedPlanMaintenanceMessage,
     resolveMessagePlanCard,
     resolvePlanTurnIntent,
     type PlanTurnIntent,
@@ -89,6 +90,7 @@ export const isContinuationTurnUserMessage = (
     parts: readonly Part[],
     isRecordedPlanMode: boolean,
 ): boolean => {
+    if (isManagedPlanMaintenanceMessage(parts)) return false;
     if (isRecordedPlanMode) return false;
     if (hasPlanImplementationRequestPart(parts)) return false;
     if (hasCompactionSignal(parts)) return true;
@@ -120,10 +122,10 @@ const projectGroup = (group: TurnGroup): PlanRevision | null => {
         root.userParts,
         root.isRecordedPlanMode,
     );
-    // An implementation turn is never a plan revision: its assistants must not
+    // An implementation or managed maintenance turn is never a plan revision: its assistants must not
     // become a plan source (even when they echo plan-shaped headings) and must
     // never be role-tagged relative to a source, so they render as normal work.
-    if (intent === 'implement') {
+    if (intent === 'implement' || intent === 'maintenance') {
         return null;
     }
     const isPlanModeRevision = intent === 'plan';

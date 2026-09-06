@@ -1,6 +1,9 @@
 const PLAN_CARD_SENTINEL = '<!--plan-->';
 const PLAN_MODE_INSTRUCTION_PREFIX = 'User has requested to enter plan mode';
 const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
+const PROVIDER_RECOVERY_PREFIX = '[devryan-provider-recovery:v1:';
+const OPEN_TODO_CONTINUATION_PREFIX = '[devryan-open-todo-continuation:v1]\n';
+const LEGACY_OPEN_TODO_CONTINUATION_PROMPT = 'Your turn ended with open todos. If a plan deviation stopped you, classify it (Class 1: note it and continue; Class 2: ask with the question tool) and continue from the first open todo. If everything is done, mark the todos complete and give the final summary.';
 const COMPACT_COMMAND_TEXT = '/compact';
 
 const PLAN_MODE_SECTION_HEADINGS = new Set([
@@ -91,6 +94,7 @@ const resolveMessagePlan = (parts, isPlanModeSource) => {
 const isPlanModeUserMessage = (message) => {
   const info = message?.info;
   if (!info || info.role !== 'user') return false;
+  if (isPlanReadySuppressedUserMessage(message)) return false;
   if (typeof info.mode === 'string' && info.mode.trim().toLowerCase() === 'plan') return true;
   if (info.metadata?.openchamberPlanMode === true) return true;
   return Array.isArray(message.parts) && message.parts.some((part) => (
@@ -100,13 +104,37 @@ const isPlanModeUserMessage = (message) => {
 };
 
 const isImplementationRequest = (message) => Array.isArray(message?.parts)
-  && message.parts.some((part) => (
-    part?.type === 'text'
-    && part?.synthetic === true
-    && getPartText(part).trim().startsWith(PLAN_IMPLEMENTATION_REQUEST_PREFIX)
-  ));
+  && message.parts.some((part) => {
+    if (part?.type !== 'text' || part.synthetic !== true) return false;
+    const text = getPartText(part).trim();
+    if (!text.startsWith(PLAN_IMPLEMENTATION_REQUEST_PREFIX)) return false;
+    try {
+      const request = JSON.parse(text.slice(PLAN_IMPLEMENTATION_REQUEST_PREFIX.length));
+      return request?.action === 'implement'
+        && typeof request.sourceSessionId === 'string' && request.sourceSessionId.trim().length > 0
+        && typeof request.sourceMessageId === 'string' && request.sourceMessageId.trim().length > 0
+        && Number.isSafeInteger(request.planIndex) && request.planIndex >= 0;
+    } catch {
+      return false;
+    }
+  });
+
+// Keep the exact maintenance and Implement predicates aligned with the UI
+// plan-intent reader and the standalone managed orchestration plugin.
+export const isPlanReadySuppressedUserMessage = (message) => {
+  if (message?.info?.role !== 'user' || !Array.isArray(message.parts)) return false;
+  if (isImplementationRequest(message)) return true;
+  return message.parts.some((part) => {
+    if (part?.type !== 'text' || part.synthetic !== true) return false;
+    const text = getPartText(part);
+    return text.startsWith(PROVIDER_RECOVERY_PREFIX)
+      || text.startsWith(OPEN_TODO_CONTINUATION_PREFIX)
+      || text === LEGACY_OPEN_TODO_CONTINUATION_PROMPT;
+  });
+};
 
 const isContinuationUserMessage = (message) => {
+  if (isPlanReadySuppressedUserMessage(message)) return false;
   const parts = Array.isArray(message?.parts) ? message.parts : [];
   if (parts.some((part) => part?.type === 'compaction')) return true;
   if (parts.some((part) => part?.type === 'text' && getPartText(part).trim() === COMPACT_COMMAND_TEXT)) return true;
@@ -171,6 +199,8 @@ export const detectPlanReadyRevision = (messages) => {
   const normalized = messages.filter((message) => message?.info && Array.isArray(message.parts));
   const tail = normalized[normalized.length - 1];
   if (!tail || tail.info?.role !== 'assistant' || !isAssistantComplete(tail.info)) return null;
+  const parent = normalized.find((message) => message.info.id === tail.info.parentID);
+  if (isPlanReadySuppressedUserMessage(parent)) return null;
 
   // A terminal event can carry the complete assistant parts before the
   // authoritative history endpoint exposes its parent user message. The
@@ -188,7 +218,7 @@ export const detectPlanReadyRevision = (messages) => {
   const groups = groupTurns(buildTurns(normalized));
   const group = groups[groups.length - 1];
   if (!group || group.length === 0) return null;
-  if (isImplementationRequest(group[group.length - 1]?.user)) return null;
+  if (isPlanReadySuppressedUserMessage(group[group.length - 1]?.user)) return null;
 
   const isPlanModeRevision = isPlanModeUserMessage(group[0].user);
   let source = null;

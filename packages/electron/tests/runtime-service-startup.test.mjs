@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { prepareAutomaticRuntimeService } from '../runtime-service-startup.mjs';
+import { prepareAutomaticRuntimeService, createRuntimeOwnerAcquirer, recoverAppBoundRuntime } from '../runtime-service-startup.mjs';
+import { createRuntimeServiceRegistration } from '../runtime-service-registration.mjs';
 
 const run = async ({ currentMode = 'app_bound', status, register } = {}) => {
   const modes = [];
@@ -93,4 +94,118 @@ describe('automatic background runtime startup', () => {
     assert.equal(result.mode, 'disabled');
     assert.equal(inspected, false);
   });
+});
+
+describe('transactional foreground recovery', () => {
+  for (const connectionCode of ['runtime_service_descriptor_missing', 'smappservice_registration_failed', 'runtime_service_approval_required']) {
+    test(`recovers stale service mode or post-update failure: ${connectionCode}`, async () => {
+      const calls = [];
+      const logs = [];
+      const registration = createRuntimeServiceRegistration({
+        platform: 'darwin', macosMajor: 15, isPackaged: true,
+        executablePath: '/test/DevRyan.app/Contents/MacOS/DevRyan',
+        dataDirectory: '/test/data', homeDirectory: '/test/home',
+        fsPromises: { stat: async () => { throw Object.assign(new Error('absent'), { code: 'ENOENT' }); } },
+        nativeControl: { unregister: async () => {
+          calls.push('unregister');
+          return { ok: false, state: 'not_found', code: 'smappservice_unregistration_failed' };
+        } },
+      });
+      const { result } = await run({ currentMode: 'service' });
+      assert.equal(result.mode, 'service');
+      await recoverAppBoundRuntime({
+        connectionError: Object.assign(new Error('connection failed'), { code: connectionCode }),
+        unregister: () => registration.unregister(),
+        waitForStopped: async () => { calls.push('wait'); return true; },
+        acquire: async () => { calls.push('acquire'); },
+        setMode: async () => { calls.push('persist'); },
+        release: async () => { calls.push('release'); },
+        log: { warn: (_message, detail) => logs.push(detail) },
+      });
+      assert.deepEqual(calls, ['unregister', 'wait', 'acquire', 'persist']);
+      assert.deepEqual(logs[0], {
+        phase: 'app_bound_acquired', code: 'runtime_service_startup_recovered',
+        registrationState: 'not_found', registrationCode: 'smappservice_unregistration_failed',
+        connectionCode,
+      });
+    });
+  }
+
+  test('failure diagnostics retain only allowlisted states and bounded machine codes', async () => {
+    const logs = [];
+    const connectionError = Object.assign(new Error('original'), { code: 'private/path' });
+    await assert.rejects(recoverAppBoundRuntime({
+      connectionError,
+      unregister: async () => ({ ok: false, state: 'private data', code: `runtime_service_${'a'.repeat(101)}` }),
+      log: { warn: (_message, detail) => logs.push(detail) },
+    }), (error) => error.cause === connectionError && error.code === 'runtime_service_unregister_failed');
+    assert.deepEqual(logs[0], {
+      phase: 'unregister', code: 'runtime_service_unregister_failed',
+      registrationState: null, registrationCode: null, connectionCode: 'runtime_service_connection_failed',
+    });
+  });
+
+  test('failed acquisition is never cached, retries reacquire, and concurrent attempts share a claim', async () => {
+    let coordinator = null;
+    let attempts = 0;
+    const acquire = createRuntimeOwnerAcquirer({
+      getCoordinator: () => coordinator,
+      setCoordinator: (value) => { coordinator = value; },
+      createCoordinator: async () => ({
+        acquire: async () => {
+          attempts += 1;
+          if (attempts === 1) throw Object.assign(new Error('invalid'), { code: 'runtime_service_owner_invalid' });
+        },
+        getOwner: () => ({ mode: 'app_bound' }),
+      }),
+    });
+    await assert.rejects(acquire('app_bound'), { code: 'runtime_service_owner_invalid' });
+    assert.equal(coordinator, null);
+    const results = await Promise.all([acquire('app_bound'), acquire('app_bound')]);
+    assert.equal(attempts, 2);
+    assert.equal(results[0], results[1]);
+    await acquire('app_bound');
+    assert.equal(attempts, 2);
+  });
+
+  const scenario = async (failure) => {
+    const calls = [];
+    const connectionError = Object.assign(new Error('connection failed'), { code: 'runtime_service_start_timeout' });
+    let error;
+    try {
+      await recoverAppBoundRuntime({
+        connectionError,
+        unregister: async () => { calls.push('unregister'); return { ok: failure !== 'unregister' }; },
+        waitForStopped: async () => {
+          calls.push('wait');
+          if (failure === 'corrupt') throw Object.assign(new Error('damaged'), { code: 'runtime_service_owner_invalid' });
+          return failure !== 'active';
+        },
+        acquire: async () => {
+          calls.push('acquire');
+          if (failure === 'acquire') throw Object.assign(new Error('competing owner'), { code: 'runtime_service_owner_exists' });
+        },
+        setMode: async () => { calls.push('persist'); if (failure === 'persist') throw new Error('disk full'); },
+        release: async () => { calls.push('release'); },
+      });
+    } catch (caught) { error = caught; }
+    return { calls, error, connectionError };
+  };
+
+  test('fallback acquires ownership before persisting mode', async () => {
+    const { calls, error } = await scenario();
+    assert.equal(error, undefined);
+    assert.deepEqual(calls, ['unregister', 'wait', 'acquire', 'persist']);
+  });
+  for (const failure of ['unregister', 'active', 'corrupt', 'acquire', 'persist']) {
+    test(`${failure} failure stops fallback and retains the original connection error`, async () => {
+      const { calls, error, connectionError } = await scenario(failure);
+      assert.equal(error.cause, connectionError);
+      assert.match(error.code, /^runtime_service_/);
+      if (failure === 'persist') assert.deepEqual(calls, ['unregister', 'wait', 'acquire', 'persist', 'release']);
+      else assert.equal(calls.includes('persist'), false);
+      if (failure === 'unregister') assert.deepEqual(calls, ['unregister']);
+      if (failure === 'active' || failure === 'corrupt') assert.deepEqual(calls, ['unregister', 'wait']);
+    });
+  }
 });

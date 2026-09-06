@@ -35,7 +35,11 @@ const PROVIDER_RECOVERY_RETRY_DELAY_MS = 1_000;
 const PROVIDER_RECOVERY_SETTLE_RETRY_COUNT = 2;
 const PROVIDER_RECOVERY_MESSAGE_LIMIT = 100;
 const INVOCATION_POLICY_MESSAGE_LIMIT = 100;
+const PLAN_AUTHORITY_MAX_PAGES = 10;
+const PLAN_AUTHORITY_MAX_RECORDS = PLAN_AUTHORITY_MAX_PAGES * INVOCATION_POLICY_MESSAGE_LIMIT;
+const PLAN_AUTHORITY_MAX_BYTES = 8 * 1024 * 1024;
 const PLAN_MODE_INSTRUCTION_PREFIX = 'User has requested to enter plan mode';
+const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
 const MANAGED_READ_ONLY_AGENT_UNSUPPORTED = 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED';
 const MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE = 'Designer is implementation-only and cannot be dispatched from Plan Mode. Orchestrator owns design planning and may use Explorer for read-only discovery.';
 const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED = 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED';
@@ -57,6 +61,7 @@ const OPEN_TODO_CONTINUATION_MAX_PER_TURN = 3;
 const OPEN_TODO_CONTINUATION_DEDUPE_MS = 60_000;
 const OPEN_TODO_CONTINUATION_MAP_MAX_ENTRIES = 256;
 const OPEN_TODO_STATUSES = new Set(['pending', 'in_progress']);
+const OPEN_TODO_CONTINUATION_MARKER = '[devryan-open-todo-continuation:v1]';
 const OPEN_TODO_CONTINUATION_PROMPT = 'Your turn ended with open todos. If a plan deviation stopped you, classify it (Class 1: note it and continue; Class 2: ask with the question tool) and continue from the first open todo. If everything is done, mark the todos complete and give the final summary.';
 
 const resolveMinimumTimeoutSeconds = (agent) => {
@@ -281,18 +286,163 @@ const readSessionMessage = async (client, { sessionId, messageId, directory }) =
   return { available: true, record };
 };
 
+// Keep these predicates aligned with the shared UI's actionablePlan and
+// maintenance-turn readers. This provisioned plugin must remain standalone.
+const readPartText = (part) => [part?.text, part?.content, part?.value]
+  .reduce((longest, candidate) => (
+    typeof candidate === 'string' && candidate.length > longest.length ? candidate : longest
+  ), '');
+
+const isPlanInstructionPart = (part) => (
+  part?.type === 'text'
+  && part.synthetic === true
+  && readPartText(part).trim().startsWith(PLAN_MODE_INSTRUCTION_PREFIX)
+);
+
+const isPlanImplementationPart = (part) => {
+  if (part?.type !== 'text' || part.synthetic !== true) return false;
+  const text = readPartText(part).trim();
+  if (!text.startsWith(PLAN_IMPLEMENTATION_REQUEST_PREFIX)) return false;
+  try {
+    const request = JSON.parse(text.slice(PLAN_IMPLEMENTATION_REQUEST_PREFIX.length));
+    return request?.action === 'implement'
+      && typeof request.sourceSessionId === 'string' && request.sourceSessionId.trim().length > 0
+      && typeof request.sourceMessageId === 'string' && request.sourceMessageId.trim().length > 0
+      && Number.isSafeInteger(request.planIndex) && request.planIndex >= 0;
+  } catch {
+    return false;
+  }
+};
+
+const hasPlanImplementationRequest = (record) => (
+  Array.isArray(record?.parts) && record.parts.some(isPlanImplementationPart)
+);
+
+const isOpenTodoContinuationPart = (part) => {
+  if (part?.type !== 'text' || part.synthetic !== true) return false;
+  const text = readPartText(part);
+  return text === OPEN_TODO_CONTINUATION_PROMPT
+    || text.startsWith(`${OPEN_TODO_CONTINUATION_MARKER}\n`);
+};
+
+const isPlanMaintenanceRecord = (record) => (
+  record?.info?.role === 'user'
+  && !hasPlanImplementationRequest(record)
+  && Array.isArray(record.parts)
+  && record.parts.some((part) => (
+    part?.type === 'compaction'
+    || (part?.type === 'text' && part.synthetic === true && (
+      part.metadata?.compaction_continue === true
+      || readPartText(part).startsWith(`[devryan-provider-recovery:${PROVIDER_RECOVERY_MARKER_VERSION}:`)
+    ))
+    || isOpenTodoContinuationPart(part)
+  ))
+);
+
 const isPlanModeUserRecord = (record) => {
   if (record?.info?.role !== 'user') return false;
+  if (hasPlanImplementationRequest(record)) return false;
   const mode = typeof record.info.mode === 'string'
     ? record.info.mode.trim().toLowerCase()
     : '';
   if (mode === 'plan' || record.info.metadata?.openchamberPlanMode === true) return true;
-  return Array.isArray(record.parts) && record.parts.some((part) => (
-    part?.type === 'text'
-    && part.synthetic === true
-    && typeof part.text === 'string'
-    && part.text.trim().startsWith(PLAN_MODE_INSTRUCTION_PREFIX)
-  ));
+  return Array.isArray(record.parts) && record.parts.some(isPlanInstructionPart);
+};
+
+const readPlanHistoryPage = async (client, { sessionId, directory, before }) => {
+  if (typeof client?.session?.messages !== 'function') {
+    throw new Error('Cannot verify Plan authority: parent history is unavailable');
+  }
+  let response;
+  try {
+    // The injected legacy SDK accepts path.id and forwards query unchanged.
+    // Only use the native x-next-cursor value; message IDs are not cursors.
+    response = await client.session.messages({
+      path: { id: sessionId },
+      query: { directory, limit: INVOCATION_POLICY_MESSAGE_LIMIT, ...(before ? { before } : {}) },
+    });
+  } catch (error) {
+    throw new Error(`Cannot verify Plan authority: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const records = unwrapResponseData(response);
+  if (response?.error || !Array.isArray(records)) {
+    throw new Error('Cannot verify Plan authority: parent history is unavailable or malformed');
+  }
+  const cursor = response?.response?.headers?.get?.('x-next-cursor') ?? null;
+  if (cursor !== null && typeof cursor !== 'string') {
+    throw new Error('Cannot verify Plan authority: pagination cursor is malformed');
+  }
+  return { records, cursor: cursor || null };
+};
+
+const resolvePlanAuthority = async (client, { sessionId, directory, throughRecord, firstPage, onMaintenanceRecord }) => {
+  const seenIds = new Set();
+  const seenCursors = new Set();
+  let count = 0;
+  let bytes = 0;
+  let anchorFound = !throughRecord;
+  let before;
+  for (let pageIndex = 0; pageIndex < PLAN_AUTHORITY_MAX_PAGES; pageIndex += 1) {
+    const page = pageIndex === 0 && firstPage
+      ? firstPage
+      : await readPlanHistoryPage(client, { sessionId, directory, before });
+    const { records, cursor } = page;
+    count += records.length;
+    bytes += Buffer.byteLength(JSON.stringify(records), 'utf8');
+    if (records.length > INVOCATION_POLICY_MESSAGE_LIMIT || count > PLAN_AUTHORITY_MAX_RECORDS || bytes > PLAN_AUTHORITY_MAX_BYTES) {
+      throw new Error('Cannot verify Plan authority: history exceeds the bounded record or byte limit');
+    }
+    for (const record of records) {
+      if (!isRecord(record?.info) || typeof record.info.id !== 'string' || !record.info.id.trim()
+        || (record.info.role !== 'user' && record.info.role !== 'assistant')
+        || (record.info.sessionID && record.info.sessionID !== sessionId)) {
+        throw new Error('Cannot verify Plan authority: parent history is malformed');
+      }
+      if (seenIds.has(record.info.id)) throw new Error('Cannot verify Plan authority: pagination made no progress');
+      seenIds.add(record.info.id);
+    }
+    const anchorIndex = !anchorFound
+      ? records.findIndex((record) => record.info.id === throughRecord.info.id)
+      : -1;
+    if (anchorIndex >= 0) anchorFound = true;
+    if (anchorFound) {
+      // Native pages are chronological; older pages are reached only through
+      // their returned cursor. Never reconstruct a missing anchor by sorting.
+      for (let index = anchorIndex >= 0 ? anchorIndex : records.length - 1; index >= 0; index -= 1) {
+        const record = index === anchorIndex ? throughRecord : records[index];
+        if (record.info.role !== 'user') continue;
+        if (!Array.isArray(record.parts)) throw new Error('Cannot verify Plan authority: user parts are unavailable');
+        if (isPlanMaintenanceRecord(record)) {
+          onMaintenanceRecord?.(record);
+          continue;
+        }
+        return record;
+      }
+    }
+    if (!cursor) {
+      throw new Error(anchorFound
+        ? 'Cannot verify Plan authority: no authoritative user before history exhaustion'
+        : 'Cannot verify Plan authority: parent anchor is missing from canonical history');
+    }
+    if (records.length === 0 || seenCursors.has(cursor)) {
+      throw new Error('Cannot verify Plan authority: pagination made no progress');
+    }
+    seenCursors.add(cursor);
+    before = cursor;
+  }
+  throw new Error('Cannot verify Plan authority: history exceeds the bounded page limit');
+};
+
+const resolveContinuationPlanParts = (authority) => {
+  if (!isPlanModeUserRecord(authority)) return [];
+  const instruction = authority.parts.find(isPlanInstructionPart);
+  const text = readPartText(instruction);
+  // A marker alone can enforce child readOnly, but cannot restore the root's
+  // prompt-based Plan instructions after compaction. Never invent that body.
+  if (!instruction || !text.trim().slice(PLAN_MODE_INSTRUCTION_PREFIX.length).replace(/^[.\s]+/, '')) {
+    throw new Error('Cannot continue Plan Mode: the full authoritative Plan instruction is unavailable');
+  }
+  return [{ type: 'text', text, synthetic: true }];
 };
 
 const resolveMessageExecution = (assistant, parent) => {
@@ -397,29 +547,18 @@ const resolveInvocationPolicy = async (context, client) => {
   }
 
   let records = [];
+  let policyHistoryPage;
+  const readPolicyHistory = async () => {
+    policyHistoryPage = await readPlanHistoryPage(client, { sessionId: rootSessionId, directory });
+    return policyHistoryPage.records;
+  };
   let fallback = null;
   let assistant = directAssistant.record;
   if (!assistant) {
     if (typeof client.session.messages !== 'function') {
       throw new Error('Cannot verify the invoking assistant for managed dispatch');
     }
-    let response;
-    try {
-      response = await client.session.messages({
-        path: { id: rootSessionId },
-        query: { directory, limit: INVOCATION_POLICY_MESSAGE_LIMIT },
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Cannot verify parent plan-mode policy before managed dispatch: ${message}`);
-    }
-    if (response?.error) {
-      throw new Error('Cannot verify parent plan-mode policy before managed dispatch');
-    }
-    records = unwrapResponseData(response);
-    if (!Array.isArray(records)) {
-      throw new Error('Cannot verify parent plan-mode policy before managed dispatch');
-    }
+    records = await readPolicyHistory();
     const exactAssistant = records.find((record) => (
       record?.info?.role === 'assistant' && record.info.id === messageId
     ));
@@ -449,13 +588,24 @@ const resolveInvocationPolicy = async (context, client) => {
     !parent
     || parent.info?.role !== 'user'
     || parent.info?.id !== parentId
+    || !Array.isArray(parent.parts)
     || directParentMismatch
     || (parent.info?.sessionID && parent.info.sessionID !== rootSessionId)
   ) {
     throw new Error('Cannot verify the parent turn for managed dispatch');
   }
+  // A maintenance assistant inherits only preceding authority through its
+  // exact canonical parent. Later approval cannot authorize this older turn.
+  const authority = isPlanMaintenanceRecord(parent)
+    ? await resolvePlanAuthority(client, {
+      sessionId: rootSessionId,
+      directory,
+      throughRecord: parent,
+      firstPage: policyHistoryPage,
+    })
+    : parent;
   return {
-    readOnly: isPlanModeUserRecord(parent),
+    readOnly: isPlanModeUserRecord(authority),
     parentExecution: resolveMessageExecution(assistant, parent),
   };
 };
@@ -1231,6 +1381,11 @@ export const DevRyanManagedOrchestrationPlugin = async ({
   // Shared by provider-recovery wakes and the open-todo continuation so both
   // use the same identity and primary-host pre-registration.
   const promptSessionSynthetic = async ({ rootSessionId, directory, execution, text }) => {
+    // Resolve current Plan authority after the task claim, independent of the
+    // child policy and execution selection captured by the recovery scan.
+    const planParts = resolveContinuationPlanParts(
+      await resolvePlanAuthority(client, { sessionId: rootSessionId, directory }),
+    );
     // Use a fresh sortable ID, never a content-derived hash. OpenCode ignores
     // a wake whose identity sorts before the session's current tail, and a
     // time-sortable identity lets the primary host serialize this managed
@@ -1252,7 +1407,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
           modelID: execution.modelId,
         },
         ...(execution.variant ? { variant: execution.variant } : {}),
-        parts: [{ type: 'text', text, synthetic: true }],
+        parts: [...planParts, { type: 'text', text, synthetic: true }],
       },
     }, { throwOnError: false });
     if (response?.error) {
@@ -1362,12 +1517,9 @@ export const DevRyanManagedOrchestrationPlugin = async ({
 
   const isOpenTodoContinuationRecord = (record) => (
     record?.info?.role === 'user'
+    && !hasPlanImplementationRequest(record)
     && Array.isArray(record.parts)
-    && record.parts.some((part) => (
-      part?.type === 'text'
-      && typeof part.text === 'string'
-      && part.text.startsWith(OPEN_TODO_CONTINUATION_PROMPT)
-    ))
+    && record.parts.some(isOpenTodoContinuationPart)
   );
 
   const readRecordText = (record) => (
@@ -1417,7 +1569,8 @@ export const DevRyanManagedOrchestrationPlugin = async ({
 
     if (!await isSessionIdle(rootSessionId, directory)) return false;
 
-    const records = await readSessionMessages(rootSessionId, directory);
+    const historyPage = await readPlanHistoryPage(client, { sessionId: rootSessionId, directory });
+    const records = historyPage.records;
     const last = records[records.length - 1];
     if (last?.info?.role !== 'assistant') return false;
     const lastAgent = typeof last.info.agent === 'string' && last.info.agent.trim()
@@ -1431,28 +1584,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       return false;
     }
 
-    // The cap is keyed by the user message that started this turn; our own
-    // continuations are skipped so they cannot reset it, and the transcript
-    // count keeps the cap honest across plugin restarts.
-    let anchorUserMessageId = '';
-    let transcriptContinuations = 0;
-    for (let index = records.length - 1; index >= 0; index -= 1) {
-      const record = records[index];
-      if (record?.info?.role !== 'user') continue;
-      if (isOpenTodoContinuationRecord(record)) {
-        transcriptContinuations += 1;
-        continue;
-      }
-      anchorUserMessageId = typeof record.info.id === 'string' ? record.info.id.trim() : '';
-      break;
-    }
-    if (!anchorUserMessageId) return false;
-    const continuationKey = `${rootSessionId}\u0000${anchorUserMessageId}`;
-    const sent = openTodoContinuations.get(continuationKey) ?? { count: 0, lastSentAt: 0 };
-    const count = Math.max(sent.count, transcriptContinuations);
-    if (count >= OPEN_TODO_CONTINUATION_MAX_PER_TURN) return false;
-    if (sent.lastSentAt && Date.now() - sent.lastSentAt < OPEN_TODO_CONTINUATION_DEDUPE_MS) return false;
-
+    // Avoid backward policy reads on settled turns with no remaining work.
     const todoResponse = await client.session.todo({
       path: { id: rootSessionId },
       query: { directory },
@@ -1465,6 +1597,26 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       && OPEN_TODO_STATUSES.has(todo.status.trim().toLowerCase())
     ));
     if (!hasOpenTodo) return false;
+
+    // The cap is keyed by the user message that started this turn; our own
+    // continuations are skipped so they cannot reset it, and the transcript
+    // count keeps the cap honest across plugin restarts.
+    let transcriptContinuations = 0;
+    const anchor = await resolvePlanAuthority(client, {
+      sessionId: rootSessionId,
+      directory,
+      firstPage: historyPage,
+      onMaintenanceRecord(record) {
+        if (isOpenTodoContinuationRecord(record)) transcriptContinuations += 1;
+      },
+    });
+    const anchorUserMessageId = anchor.info.id.trim();
+    if (!anchorUserMessageId) return false;
+    const continuationKey = `${rootSessionId}\u0000${anchorUserMessageId}`;
+    const sent = openTodoContinuations.get(continuationKey) ?? { count: 0, lastSentAt: 0 };
+    const count = Math.max(sent.count, transcriptContinuations);
+    if (count >= OPEN_TODO_CONTINUATION_MAX_PER_TURN) return false;
+    if (sent.lastSentAt && Date.now() - sent.lastSentAt < OPEN_TODO_CONTINUATION_DEDUPE_MS) return false;
 
     let barrier;
     try {
@@ -1495,7 +1647,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         rootSessionId,
         directory,
         execution,
-        text: OPEN_TODO_CONTINUATION_PROMPT,
+        text: `${OPEN_TODO_CONTINUATION_MARKER}\n${OPEN_TODO_CONTINUATION_PROMPT}`,
       });
     } catch (error) {
       // Keep the dedupe timestamp so a failing host cannot be hammered, but do

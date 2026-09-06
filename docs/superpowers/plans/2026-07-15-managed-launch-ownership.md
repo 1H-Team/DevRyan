@@ -6,6 +6,6 @@
    workspace TypeScript contract.
 3. Make the shared executor stop stale launches and clean up fresh children; add focused
    tests for the pre-prompt and post-prompt ownership boundaries.
-4. Add web/Electron and VS Code child-session deletion transport parity and focused tests.
+4. Add web/Electron child-session deletion transport parity and focused tests.
 5. Update orchestration documentation/codemap and run focused, affected, full, and build
    verification appropriate to the cross-runtime contract change.

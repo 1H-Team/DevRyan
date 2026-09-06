@@ -3883,13 +3883,13 @@ export function SyncProvider(props: {
   useEffect(() => {
     setSyncRefs(props.sdk, childStores, props.directory, (sessionID, dir) => {
       setIndexedSessionDirectory(routingIndex, sessionID, dir)
-    })
+    }, messageLoader)
     setActionRefs(
       props.sdk,
       childStores,
       () => opencodeClient.getDirectory() || props.directory,
     )
-  }, [props.sdk, props.directory, childStores, routingIndex])
+  }, [props.sdk, props.directory, childStores, routingIndex, messageLoader])
 
   // Subscribe to child store for streaming state derivation
   useEffect(() => {

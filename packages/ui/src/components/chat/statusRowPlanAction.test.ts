@@ -20,7 +20,7 @@ describe('getStatusRowPlanActionState', () => {
     expect(getStatusRowPlanActionState({
       showTodos: true,
       isPlanAvailable: true,
-      isVSCode: false,
+
       record: {
         sourceMessageId: 'msg-1',
         path: null,
@@ -33,7 +33,7 @@ describe('getStatusRowPlanActionState', () => {
     expect(getStatusRowPlanActionState({
       showTodos: true,
       isPlanAvailable: true,
-      isVSCode: false,
+
       record: {
         sourceMessageId: 'msg-1',
         path: null,
@@ -50,7 +50,7 @@ describe('getStatusRowPlanActionState', () => {
     expect(getStatusRowPlanActionState({
       showTodos: true,
       isPlanAvailable: true,
-      isVSCode: false,
+
       record: {
         sourceMessageId: 'msg-1',
         path: '/plans/a.md',
@@ -61,17 +61,11 @@ describe('getStatusRowPlanActionState', () => {
     })).toEqual({ visible: true, enabled: true, disabledReason: null });
   });
 
-  test('does not add the right-panel action to VS Code or non-composer rows', () => {
-    expect(getStatusRowPlanActionState({
-      showTodos: true,
-      isPlanAvailable: true,
-      isVSCode: true,
-      record: undefined,
-    }).visible).toBe(false);
+  test('does not add the right-panel action to non-composer rows', () => {
     expect(getStatusRowPlanActionState({
       showTodos: false,
       isPlanAvailable: true,
-      isVSCode: false,
+
       record: undefined,
     }).visible).toBe(false);
   });
@@ -80,7 +74,7 @@ describe('getStatusRowPlanActionState', () => {
     expect(getStatusRowPlanActionState({
       showTodos: true,
       isPlanAvailable: false,
-      isVSCode: false,
+
       record: {
         sourceMessageId: 'msg-1',
         path: '/plans/a.md',
@@ -185,8 +179,7 @@ describe('getStatusRowPlanActionState', () => {
 
 describe('shouldAutoRevealPlanInMainTab', () => {
   test('keeps desktop plan opening manual while preserving compact-runtime navigation', () => {
-    expect(shouldAutoRevealPlanInMainTab({ isMobile: false, isVSCode: false })).toBe(false);
-    expect(shouldAutoRevealPlanInMainTab({ isMobile: true, isVSCode: false })).toBe(true);
-    expect(shouldAutoRevealPlanInMainTab({ isMobile: false, isVSCode: true })).toBe(true);
+    expect(shouldAutoRevealPlanInMainTab({ isMobile: false, })).toBe(false);
+    expect(shouldAutoRevealPlanInMainTab({ isMobile: true, })).toBe(true);
   });
 });

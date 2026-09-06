@@ -27,6 +27,10 @@ Active root rows and automatic worktree groups consume the low-frequency latest
 visible user-prompt projection. Pinned and manual ordering remain authoritative;
 assistant streaming, status, title, and `session.time.updated` churn never move
 active rows. Elapsed-time labels and row-local clocks remain absent.
+`sortableItems.tsx` exposes the number of rendered project-header actions so
+`mobile.css` reserves their full touch targets and separates the trailing New
+Draft Session button from the other actions, including inside mobile drawers.
+Fine-pointer and Electron headers retain their existing spacing.
 
 ## Flow
 Session entities from stores become sidebar rows; user actions dispatch store/API updates.

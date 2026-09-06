@@ -1190,13 +1190,15 @@ describe('DevRyan loopback evaluation client', () => {
   });
 
   test('marks cycles and over-cap trees incomplete while aborting every known session deepest-first', async () => {
+    // This checks graph integrity and abort ordering. Deadline behavior is
+    // exercised by the dedicated hung-discovery test below.
     const cycleAborts = [];
     const cycleCleanup = await abortSessionTree({
       async getChildren(sessionId) {
         return sessionId === 'ses_parent' ? [{ id: 'ses_child' }] : [{ id: 'ses_parent' }];
       },
       async abortSession(sessionId) { cycleAborts.push(sessionId); },
-    }, 'ses_parent', '/tmp/fixture', { timeoutMs: 100, maximum: 10 });
+    }, 'ses_parent', '/tmp/fixture', { timeoutMs: 1000, maximum: 10 });
     assert.equal(cycleCleanup.complete, false);
     assert.deepEqual(cycleCleanup.reasonCodes, ['cycle_detected']);
     assert.deepEqual(cycleAborts, ['ses_child', 'ses_parent']);
@@ -1207,7 +1209,7 @@ describe('DevRyan loopback evaluation client', () => {
         return sessionId === 'ses_parent' ? [{ id: 'ses_a' }, { id: 'ses_b' }] : [];
       },
       async abortSession(sessionId) { capAborts.push(sessionId); },
-    }, 'ses_parent', '/tmp/fixture', { timeoutMs: 100, maximum: 2 });
+    }, 'ses_parent', '/tmp/fixture', { timeoutMs: 1000, maximum: 2 });
     assert.equal(capCleanup.complete, false);
     assert.deepEqual(capCleanup.reasonCodes, ['session_tree_limit']);
     assert.deepEqual(new Set(capAborts), new Set(['ses_parent', 'ses_a', 'ses_b']));

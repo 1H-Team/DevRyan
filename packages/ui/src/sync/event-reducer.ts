@@ -313,30 +313,14 @@ function findMessage(draft: State, sessionID: string | undefined, messageID: str
   return undefined
 }
 
-function isAssistantMessage(draft: State, sessionID: string | undefined, messageID: string): boolean {
-  return findMessage(draft, sessionID, messageID)?.role === "assistant"
-}
-
-function isAssistantMessageActivelyStreaming(draft: State, sessionID: string | undefined, messageID: string): boolean {
-  if (!isAssistantMessage(draft, sessionID, messageID)) {
-    return false
-  }
-
-  const message = findMessage(draft, sessionID, messageID)
-  const completed = (message?.time as { completed?: number } | undefined)?.completed
-  if (typeof completed === "number" && Number.isFinite(completed) && completed > 0) {
-    return false
-  }
-
-  return sessionID !== undefined && draft.session_status?.[sessionID]?.type === "busy"
-}
-
-function shouldNormalizeAssistantPartDuringUpdate(
-  draft: State,
-  sessionID: string | undefined,
-  messageID: string,
+function shouldNormalizeAssistantPart(
+  message: Message | undefined,
+  status: SessionStatus | undefined,
 ): boolean {
-  return !isAssistantMessageActivelyStreaming(draft, sessionID, messageID)
+  if (message?.role !== "assistant") return false
+  const completed = message.time?.completed
+  return (typeof completed === "number" && Number.isFinite(completed) && completed > 0)
+    || status?.type !== "busy"
 }
 
 function getPartStartTime(part: Part): number | undefined {
@@ -387,11 +371,7 @@ function insertProvisionalAssistantMessageForLivePart(draft: State, part: Part):
     return true
   }
 
-  const next = [...messages]
-  if (findMessageIndex(next, messageID) >= 0) {
-    return false
-  }
-  draft.message[sessionID] = insertMessageChronologically(next, provisionalMessage)
+  draft.message[sessionID] = insertMessageChronologically(messages, provisionalMessage)
   return true
 }
 
@@ -724,9 +704,16 @@ export function applyDirectoryEvent(
       ) {
         return false
       }
-      const missingOwningMessage = !hasMessage(draft, sessionID, messageID)
-      const incomingPart = isAssistantMessage(draft, sessionID, messageID)
-        && shouldNormalizeAssistantPartDuringUpdate(draft, sessionID, messageID)
+      // Resolve once: repeated role/streaming wrappers used to rescan the same
+      // history four times for each snapshot. Keep the legacy unscoped fallback
+      // separate from the exact-session presence check used for recovery.
+      const messages = sessionID ? draft.message[sessionID] : undefined
+      const owningIndex = messages ? findMessageIndex(messages, messageID) : -1
+      const missingOwningMessage = owningIndex < 0
+      const owningMessage = messages && owningIndex >= 0
+        ? messages[owningIndex]
+        : findMessage(draft, sessionID, messageID)
+      const incomingPart = shouldNormalizeAssistantPart(owningMessage, sessionID ? draft.session_status?.[sessionID] : undefined)
         ? normalizeAssistantTextPart(part)
         : part
       if (missingOwningMessage) {
@@ -856,8 +843,10 @@ export function applyDirectoryEvent(
       const dedupeFields = (existing as DedupeMetadata).__dedupeNextDeltaFields ?? []
       const shouldDedupe = dedupeFields.includes(props.field)
       const shouldSanitizeAssistantText = props.field === "text"
-        && isAssistantMessage(draft, sessionID, props.messageID)
-        && shouldNormalizeAssistantPartDuringUpdate(draft, sessionID, props.messageID)
+        && shouldNormalizeAssistantPart(
+          findMessage(draft, sessionID, props.messageID),
+          sessionID ? draft.session_status?.[sessionID] : undefined,
+        )
       // Create new Part object + new array so React detects the change
       const next = [...parts]
       const appendedValue = shouldDedupe

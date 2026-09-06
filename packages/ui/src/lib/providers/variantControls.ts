@@ -89,7 +89,7 @@ export const getOrderedThinkingVariants = (
 };
 
 export const resolveThinkingVariant = (
-    variant: string | undefined,
+    variant: string | null | undefined,
     variants: readonly string[],
     context?: ThinkingVariantContext,
 ): string | undefined => {
@@ -114,7 +114,9 @@ export const resolveThinkingVariant = (
         }
     }
 
-    return variants.find((entry) => normalizeVariantKey(entry) === 'medium') ?? variants[0];
+    // Absence means provider default. Unknown values are rejected, never replaced
+    // with an app-selected effort.
+    return undefined;
 };
 
 export const getFastModelBaseId = (modelId: string): string => (
@@ -131,7 +133,7 @@ const hasFastVariant = (model: ProviderModelLike | undefined): boolean => (
 
 const findVariantKey = (
     variants: Record<string, unknown> | undefined,
-    variant: string | undefined,
+    variant: string | null | undefined,
 ): string | undefined => {
     const normalizedVariant = typeof variant === 'string' ? normalizeVariantKey(variant) : '';
     if (!variants || !normalizedVariant) {
@@ -176,7 +178,7 @@ export const shouldHidePairedFastModel = <Model extends ProviderModelLike>(
 export const getModelVariantControlState = (
     provider: ProviderLike | undefined,
     modelId: string | undefined,
-    variant?: string,
+    variant?: string | null,
 ): ModelVariantControlState | null => {
     if (!provider || !modelId) {
         return null;
@@ -270,7 +272,7 @@ export const resolveProviderModelVariant = (
 export const getModelVariantDisplayState = (
     provider: ProviderLike | undefined,
     modelId: string | undefined,
-    variant?: string,
+    variant?: string | null,
 ): ModelVariantDisplayState | null => {
     if (!provider || !modelId) {
         return null;
@@ -308,12 +310,12 @@ export const getModelVariantDisplayState = (
 export const resolveModelVariantSelection = (
     provider: ProviderLike | undefined,
     modelId: string,
-    variant: string | undefined,
+    variant: string | null | undefined,
     updates: { fastEnabled?: boolean; variant?: string },
 ): { modelId: string; variant?: string } => {
     const currentState = getModelVariantControlState(provider, modelId, variant);
     if (!currentState) {
-        return { modelId, variant };
+        return { modelId, variant: variant ?? undefined };
     }
 
     const pairedFastAvailable = Boolean(currentState.fastModelId);

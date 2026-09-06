@@ -11,7 +11,7 @@ This module fetches quota and usage signals for supported providers in the web s
 - `packages/web/server/lib/quota/credentials/`: allowlisted managed-credential normalization, private atomic storage, and explicit Cursor import.
 - `packages/web/server/lib/quota/providers/google/`: Google/Gemini and Antigravity auth-source-specific API and transform modules.
 - `packages/web/server/lib/quota/utils/`: shared auth, transform, and formatting helpers.
-- `@openchamber/shared-runtime/lib/quota-adapters.js`: injected request/parsing contract shared with the VS Code host for OpenCode Zen, z.ai, Kimi, Codex, xAI, and DeepSeek.
+- `@openchamber/shared-runtime/lib/quota-adapters.js`: injected request/parsing contract  for OpenCode Zen, z.ai, Kimi, Codex, xAI, and DeepSeek.
 
 ## Supported provider IDs (dispatcher)
 
@@ -49,7 +49,7 @@ The reset-credit endpoint is undocumented and can change independently of the st
 
 ## Shared provider adapters
 
-OpenCode Zen, z.ai, Kimi, Codex, xAI, DeepSeek, and OpenCode Go host modules are deliberately thin: credential discovery and persistence stay in the host, while requests and payload normalization live in `@openchamber/shared-runtime`. This keeps web/Electron and VS Code output equivalent and makes adapters independently testable with injected `fetch` and clock functions.
+OpenCode Zen, z.ai, Kimi, Codex, xAI, DeepSeek, and OpenCode Go host modules are deliberately thin: credential discovery and persistence stay in the host, while requests and payload normalization live in `@openchamber/shared-runtime`. This keeps web/Electron output equivalent and makes adapters independently testable with injected `fetch` and clock functions.
 
 xAI requests the pinned CLI billing endpoint with manual redirect handling. Redirects are rejected, and an HTTP 401 permits one refresh-and-retry when a refresh token and host persistence callback are available; otherwise the result asks the user to re-authenticate. A recognized weekly or monthly period with a valid reset timestamp and an omitted percentage is normalized as zero usage to account for protobuf default-value omission; an explicitly malformed percentage remains a warning. After billing succeeds, the shared adapter uses the effective OAuth access token for a bounded, best-effort request to the private `https://grok.com/prod_mc_billing.ConsumerUiSvc/GetRemainingResets` gRPC-Web method. It exposes only the number and expiry dates of valid banked resets through the existing reset-credit contract; provider token IDs remain private and redemption is intentionally unsupported. Empty inventories are omitted. Authentication, protocol, redirect, timeout, oversized-body, and parse failures preserve the successful billing result and add a sanitized warning. DeepSeek maps available currency balances to value-only rows because the API does not expose a percentage window.
 
@@ -136,7 +136,7 @@ and state/transport to `packages/ui/src/stores/useQuotaStore.ts`.
 - The mandatory baseline cadence is 30 minutes. The existing optional
   auto-refresh preference may choose a faster 30-second to 5-minute cadence,
   but it does not disable the baseline refresh.
-- Header, desktop chrome, VS Code, and Usage settings surfaces can request a
+- Header, desktop chrome, and Usage settings surfaces can request a
   manual refresh but do not own timers.
 - Managed non-administrator requests derive their directory hint from the
   accepted principal's assignments at request time. The active assignment is

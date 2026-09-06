@@ -4,9 +4,9 @@ Date: 2026-06-05
 
 ## Result
 
-- `@opencode-ai/sdk` is declared as `^1.16.0` in the root, web, UI, and VS Code package manifests.
+- `@opencode-ai/sdk` is declared as `^1.16.0` in the root, web, UI, package manifests.
 - `bun.lock` now resolves `@opencode-ai/sdk` to `1.16.0` with integrity `sha512-S4H2e9j4rdHs5BQOCjmVEdqdXmKwPFKjXPbPUaWiRJpAjBcZ/uIBpoZkmV+x9BLzc+vrE6WAffMZieQgukt4DA==`.
-- Web and VS Code OpenCode runtime policy now target `1.16.0`.
+- Web OpenCode runtime policy now target `1.16.0`.
 - `/api/config/opencode-resolution` now advertises `targetVersion: "1.16.0"` and install command `curl -fsSL https://opencode.ai/install | bash -s -- --version 1.16.0 --no-modify-path`.
 - No DevRyan API endpoint changes were needed.
 
@@ -19,11 +19,9 @@ Date: 2026-06-05
 ## Validation
 
 - Focused web resolution test: `bun run --cwd packages/web test -- server/lib/opencode/opencode-resolution-runtime.test.js` passed, 1 test file and 1 test.
-- Focused VS Code bridge runtime tests: `bun run --cwd packages/vscode test -- packages/vscode/src/bridge-config-runtime.test.js` passed, 5 test files and 21 tests, plus 4 quota provider tests.
 - Focused SDK-sensitive UI sync tests passed: event pipeline, reconnect recovery, session actions, message fetch, bootstrap global/session-list, and plan lifecycle detection/settlement suites.
 - `bun run validate:affected` passed. It expanded to full validation because dependency and shared validation files changed: lint, workspace type-check, full UI tests, full web tests, full VS Code tests, and quota provider tests all passed.
 - `bun run --cwd packages/web test` passed, 70 test files and 524 tests.
-- `bun run vscode:build` passed. It emitted existing Vite/esbuild warnings for bundle size, dynamic import/static import overlap, ONNX eval, and Cursor SDK `import.meta` in CJS output.
 - `bun run electron:build` passed after rerunning with approval so electron-builder could write its cache under `~/Library/Caches`. The first sandboxed attempt reached DMG creation and failed only on that cache lock path. The approved run produced the macOS arm64 zip and DMG block maps. Local notarization was skipped because notarization options were unavailable.
 
 ## Runtime Smoke

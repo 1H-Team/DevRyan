@@ -21,6 +21,42 @@ const temporaryDirectory = async () => {
 };
 
 describe('background runtime registration', () => {
+  for (const state of ['not_found', 'not_registered', 'enabled', 'requires_approval', 'unknown', 'unavailable']) {
+    test(`unregister is idempotent only for absent registrations: ${state}`, async () => {
+      const root = await temporaryDirectory();
+      let calls = 0;
+      const registration = createRuntimeServiceRegistration({
+        platform: 'darwin', macosMajor: 15, isPackaged: true,
+        executablePath: path.join(root, 'DevRyan.app/Contents/MacOS/DevRyan'),
+        dataDirectory: path.join(root, 'data'), homeDirectory: root,
+        nativeControl: {
+          unregister: async () => {
+            calls += 1;
+            return { ok: false, state, code: 'smappservice_unregistration_failed' };
+          },
+        },
+      });
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        assert.deepEqual(await registration.unregister(), {
+          ok: state === 'not_found' || state === 'not_registered',
+          state, code: 'smappservice_unregistration_failed',
+        });
+      }
+      assert.equal(calls, 2);
+    });
+  }
+
+  test('unregister rejects malformed absent-state responses before normalization', async () => {
+    const root = await temporaryDirectory();
+    const registration = createRuntimeServiceRegistration({
+      platform: 'darwin', macosMajor: 15, isPackaged: true,
+      executablePath: path.join(root, 'DevRyan.app/Contents/MacOS/DevRyan'),
+      dataDirectory: path.join(root, 'data'), homeDirectory: root,
+      nativeControl: { unregister: async () => ({ state: 'not_found', ok: 'false' }) },
+    });
+    await assert.rejects(registration.unregister(), { code: 'runtime_service_native_bridge_invalid' });
+  });
+
   test('uses the in-process SMAppService bridge on macOS 13+ and reports approval state', async () => {
     const calls = [];
     const registration = createRuntimeServiceRegistration({

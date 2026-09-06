@@ -1,6 +1,6 @@
 import { downloadAsMarkdown } from '@/lib/exportSession';
 import {
-  isVSCodeRuntime,
+
   saveDesktopMarkdownFile,
   type DesktopMarkdownSaveResult,
 } from '@/lib/desktop';
@@ -38,7 +38,7 @@ export type BrowserFilePickerHost = {
 
 export type SessionExportSaveDependencies = {
   saveDesktop: (defaultFileName: string, content: SessionExportContent) => Promise<DesktopMarkdownSaveResult>;
-  isVSCode: () => boolean;
+
   fetchRequest: typeof fetch;
   pickBrowserFile: (content: SessionExportContent, filename: string) => Promise<BrowserSaveResult>;
   download: (content: string, filename: string) => void;
@@ -83,7 +83,7 @@ export async function saveWithBrowserFilePicker(
 
 const defaultDependencies: SessionExportSaveDependencies = {
   saveDesktop: saveDesktopMarkdownFile,
-  isVSCode: isVSCodeRuntime,
+
   fetchRequest: (...args) => fetch(...args),
   pickBrowserFile: saveWithBrowserFilePicker,
   download: downloadAsMarkdown,
@@ -107,32 +107,6 @@ export async function saveSessionExportMarkdown(
 
   if (desktopResult.status === 'canceled') {
     return desktopResult;
-  }
-
-  if (dependencies.isVSCode()) {
-    const resolvedContent = await content;
-    const response = await dependencies.fetchRequest('/api/vscode/save-markdown', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileName: filename, content: resolvedContent }),
-    });
-    if (!response.ok) {
-      throw new Error('VS Code could not save the exported session');
-    }
-
-    const payload = await response.json() as {
-      saved?: boolean;
-      canceled?: boolean;
-      path?: string;
-    };
-    if (payload.saved === true) {
-      const path = typeof payload.path === 'string' ? payload.path.trim() : '';
-      return path ? { status: 'saved', path } : { status: 'saved' };
-    }
-    if (payload.canceled === true) {
-      return { status: 'canceled' };
-    }
-    throw new Error('VS Code returned an invalid export result');
   }
 
   const browserResult = await dependencies.pickBrowserFile(content, filename);

@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { Message, TextPart } from "@opencode-ai/sdk/v2/client"
 import { opencodeClient } from "@/lib/opencode/client"
 import { useFeatureFlagsStore } from "@/stores/useFeatureFlagsStore"
 import { ChildStoreManager } from "./child-store"
 import { SessionMessageLoader } from "./session-message-loader"
+import { createSessionPlanSelectionSelector } from "./session-plan-selection"
+import { useSelectionStore } from "./selection-store"
+import { resolveCurrentSendConfig } from "./send-config"
 
 const originalGetScopedSdkClient = opencodeClient.getScopedSdkClient
 
@@ -30,6 +33,64 @@ describe("SessionMessageLoader", () => {
       value: originalGetScopedSdkClient,
     })
   })
+
+  for (const mode of ["cold", "prefetched"] as const) {
+  test(`selected ${mode} history retrieves human Plan authority beyond a maintenance-only first page`, async () => {
+    const sessionID = `session-plan-page-${mode}`
+    const target = { directory: "/repo/plan-page", sessionID }
+    const calls: Array<{ limit: number; before?: string }> = []
+    const record = (index: number, role: "user" | "assistant", text: string, synthetic = false) => {
+      const id = `msg_plan_${String(index).padStart(4, "0")}`
+      const info: Message = { ...message(id, role), sessionID, time: { created: index + 1 } }
+      const part: TextPart = { id: `${id}-part`, sessionID, messageID: id, type: "text", text, synthetic }
+      return { info, parts: [part] }
+    }
+    const records = [
+      record(0, "user", "User has requested to enter plan mode.\nProduce an implementation plan only.", true),
+      record(1, "assistant", "Saved Plan."),
+      record(2, "user", "[devryan-provider-recovery:v1:task_fixture]\nCollect completed result.", true),
+      ...Array.from({ length: 49 }, (_, index) => record(index + 3, "assistant", "Collected result.")),
+    ]
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+      configurable: true,
+      value: () => ({ session: { messages: async ({ limit, before }: { limit: number; before?: string }) => {
+        calls.push({ limit, ...(before ? { before } : {}) })
+        const end = before ? records.findIndex(row => row.info.id === before) : records.length
+        const page = records.slice(Math.max(0, end - limit), end)
+        const cursor = end > limit ? page[0].info.id : null
+        return { data: page, response: { headers: { get: (name: string) => name === "x-next-cursor" ? cursor : null } } }
+      } } }),
+    })
+    const stores = new ChildStoreManager()
+    const loader = new SessionMessageLoader(stores)
+    useSelectionStore.getState().clearSessionSelection(sessionID)
+    const selectPlan = createSessionPlanSelectionSelector(sessionID, id => id === records[0].info.id)
+    try {
+      if (mode === "prefetched") {
+        loader.setActivePrefetchDirectory(target.directory)
+        await loader.prefetch(target)
+        expect(calls).toEqual([{ limit: 50 }])
+      }
+      await loader.ensure(target, { reason: "selected" })
+      const state = stores.getChild(target.directory)!.getState()
+      const choice = selectPlan(state)
+      if (choice) useSelectionStore.getState().restoreSessionPlanMode(sessionID, choice.enabled)
+
+      // Uses the actual loader/materializer, Plan selection store and captured
+      // send resolver. Only the local page transport is replaced in this test.
+      expect(resolveCurrentSendConfig(sessionID).planMode).toBe(true)
+      expect(choice).toEqual({ messageID: records[0].info.id, enabled: true })
+      expect(state.message[sessionID].some(info => info.id === records[0].info.id)).toBe(true)
+      const requestCount = calls.length
+      await loader.ensure(target, { reason: "selected" })
+      expect(calls).toHaveLength(requestCount)
+    } finally {
+      useSelectionStore.getState().clearSessionSelection(sessionID)
+      loader.dispose()
+      stores.disposeDirectory(target.directory)
+    }
+  })
+  }
 
   test("deduplicates callers and adaptively expands until a user boundary", async () => {
     const limits: number[] = []

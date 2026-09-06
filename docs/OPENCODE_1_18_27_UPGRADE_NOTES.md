@@ -1,6 +1,6 @@
 # OpenCode 1.18.27 upgrade
 
-DevRyan's web/Electron host recommendation and VS Code runtime target move from
+DevRyan's web/Electron host recommendation runtime target move from
 1.18.26 to 1.18.27. All four workspace SDK declarations use `^1.18.27`, and
 `bun.lock` resolves that exact release. The managed profile, document-reader
 dependency manifest, and packaged-config smoke gate pin the matching plugin.

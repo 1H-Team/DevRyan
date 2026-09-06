@@ -19,6 +19,14 @@ const packageVerifierSource = fs.readFileSync(
 );
 
 describe('runtime-service desktop bootstrap source contract', () => {
+  test('post-update registration and connection failures share guarded startup recovery', () => {
+    const preparation = mainSource.slice(
+      mainSource.indexOf('const prepareForegroundRuntime = async () => {'),
+      mainSource.indexOf('const startDesktopRuntime = () => {'),
+    );
+    assert.match(preparation, /try \{\s+await resumeBackgroundRuntimeAfterAppUpdate\(\);\s+await waitForRuntimeServiceConnection\(\);\s+\} catch \(error\) \{\s+await recoverStartupToAppBound\(error\);/);
+  });
+
   test('background mode owns the server and returns before creating a window', () => {
     const readyBranch = mainSource.slice(
       mainSource.indexOf('app.whenReady().then(async () => {'),
@@ -26,7 +34,7 @@ describe('runtime-service desktop bootstrap source contract', () => {
     );
 
     assert.match(readyBranch, /if \(isRuntimeServiceMode\)/);
-    assert.match(readyBranch, /acquire\(\{ mode: 'service' \}\)/);
+    assert.match(readyBranch, /acquireRuntimeOwner\('service'\)/);
     assert.match(readyBranch, /await spawnLocalServer\(\)/);
     assert.match(readyBranch, /prepareBotRuntimeInBackground\(\)/);
     assert.match(readyBranch, /return;/);
@@ -55,8 +63,8 @@ describe('runtime-service desktop bootstrap source contract', () => {
     const readyBranch = mainSource.slice(
       mainSource.indexOf('app.whenReady().then(async () => {'),
     );
-    assert.match(readyBranch, /const automaticRuntime = await autoEnableBackgroundRuntimeOnFirstLaunch\(\)/);
-    assert.match(readyBranch, /if \(automaticRuntime\.mode === 'service'\)/);
+    assert.match(mainSource, /const automaticRuntime = await autoEnableBackgroundRuntimeOnFirstLaunch\(\)/);
+    assert.match(mainSource, /if \(automaticRuntime\.mode === 'service'\)/);
     assert.doesNotMatch(readyBranch, /await clearElectronRuntimeCaches\(/);
     assert.match(mainSource, /deferOpenCodeStartup: true/);
   });

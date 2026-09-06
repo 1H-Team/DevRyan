@@ -95,8 +95,6 @@ Run: `bun run bundle:check`
 
 Run: `bun run electron:build`
 
-Run: `bun run vscode:build`
-
 Expected: every command exits zero; Electron may retain the documented local notarization limitation while deep signature verification succeeds.
 
 - [ ] **Step 3: Update sanitized evidence and commit separately**

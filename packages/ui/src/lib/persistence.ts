@@ -54,8 +54,8 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
   if (settings.homeDirectory) {
     getSafeStorage().setItem('homeDirectory', settings.homeDirectory);
     // Electron's preload exposes __OPENCHAMBER_HOME__ as a read-only
-    // contextBridge property; assignment throws TypeError there. In VSCode
-    // webview and plain web runtime the property is writable. Swallow the
+    // contextBridge property; assignment throws TypeError there. In the
+    // plain web runtime the property is writable. Swallow the
     // error in Electron — preload already seeded the value correctly.
     try {
       window.__OPENCHAMBER_HOME__ = settings.homeDirectory;

@@ -120,7 +120,7 @@ const AssistantImageGallery: React.FC<AssistantImageGalleryProps> = ({
             candidates,
             sessionId,
             directory,
-            isVSCode: runtime?.runtime.isVSCode === true,
+
             signal: controller.signal,
         }).then(async (preparations) => {
             await Promise.all(preparations.map(loadPreparation));
@@ -137,7 +137,7 @@ const AssistantImageGallery: React.FC<AssistantImageGalleryProps> = ({
             controller.abort();
             objectUrls.revokeAll();
         };
-    }, [candidates, directory, isNearViewport, runtime?.runtime.isVSCode, sessionId]);
+    }, [candidates, directory, isNearViewport, sessionId]);
 
     const openPreview = React.useCallback((candidate: AssistantImageCandidate, state: ReadyAssistantImageTileState) => {
         if (!onShowPopup) return;

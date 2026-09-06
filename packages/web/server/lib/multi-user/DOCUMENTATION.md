@@ -439,7 +439,7 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 
 - The canonical `bug-reports` settings permission defaults to Read/Edit for
   every managed role and remains subject to normal role and sparse user
-  overrides. The page is not available to local-only or VS Code runtimes.
+  overrides. The page is not available to local-only runtimes.
 - `POST /api/bug-reports` accepts exactly a client UUID, title (1–200
   characters), and description (1–20,000 characters). Identity snapshots and
   the initial `submitted` status come from the authenticated server principal.

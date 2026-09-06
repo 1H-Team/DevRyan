@@ -2,9 +2,9 @@
 
 > Execution plan for Workstreams 6–8 of the approved DevRyan reliability design. Implement each task test-first and keep every commit independently green.
 
-**Goal:** Add a durable, provider-agnostic DevRyan-owned sub-agent scheduler with a hard three-task runtime limit, deterministic queueing, isolated cancellation, partial-result recovery, web/Electron and VS Code parity, and a narrow user-visible task surface.
+**Goal:** Add a durable, provider-agnostic DevRyan-owned sub-agent scheduler with a hard three-task runtime limit, deterministic queueing, isolated cancellation, partial-result recovery, web/Electron parity, and a narrow user-visible task surface.
 
-**Architecture:** A dependency-free workspace package, `@openchamber/orchestration-runtime`, exclusively owns task identity, transitions, admission, leases, idempotency, recovery, compaction, and result envelopes. Web/Electron and VS Code each own one scheduler instance and inject OpenCode session operations, atomic persistence, a private authenticated loopback host for packaged OpenCode tools, and event publication. Provider-native task events remain observational and never enter the managed scheduler. The shared UI consumes JSON-compatible records through a dedicated store instead of the hot sync store.
+**Architecture:** A dependency-free workspace package, `@openchamber/orchestration-runtime`, exclusively owns task identity, transitions, admission, leases, idempotency, recovery, compaction, and result envelopes. Web/Electron each own one scheduler instance and inject OpenCode session operations, atomic persistence, a private authenticated loopback host for packaged OpenCode tools, and event publication. Provider-native task events remain observational and never enter the managed scheduler. The shared UI consumes JSON-compatible records through a dedicated store instead of the hot sync store.
 
 **Constraints:** No new third-party dependencies. Never count or cancel opaque provider-native workers. Persist enough bounded input to dispatch queued work after restart, but do not duplicate full child output or provider transcripts in the ledger. Treat locally present Slim files and tests as authoritative; do not assign undocumented scheduling behavior to Slim.
 
@@ -35,7 +35,7 @@
    - JSON round trips without functions, errors, or provider-native objects; and
    - rejection of provider-native records or identifiers at the managed boundary.
 2. Define stable JSDoc-backed runtime shapes and matching declarations. Queue-time input is capped because queued tasks must survive restart; prompt content is never included in broadcast events or routine logs.
-3. Add the new package suite to `test:full`. Teach affected validation that core changes run the orchestration suite and validate web, UI, and VS Code dependents.
+3. Add the new package suite to `test:full`. Teach affected validation that core changes run the orchestration suite and validate web, UI, dependents.
 4. Run the focused package tests and validation-planner tests before proceeding.
 
 ## Task 2: Implement transitions, deterministic admission, and mode ownership
@@ -139,20 +139,6 @@
 
 **Files:**
 
-- Add: `packages/vscode/src/managedOrchestrationRuntime.ts`
-- Add: `packages/vscode/src/bridge-orchestration-runtime.ts`
-- Add: `packages/vscode/src/managedOrchestrationRuntime.test.ts`
-- Add: `packages/vscode/src/bridge-orchestration-runtime.test.ts`
-- Modify: `packages/vscode/package.json`
-- Modify: `packages/vscode/src/extension.ts`
-- Modify: `packages/vscode/src/bridge.ts`
-- Modify: `packages/vscode/src/opencode.ts`
-- Modify: `packages/vscode/src/opencodeConfig.ts`
-- Modify: `packages/vscode/src/DOCUMENTATION.md`
-- Modify: `packages/vscode/src/codemap.md`
-- Modify: `packages/vscode/webview/main.tsx`
-- Modify: `packages/vscode/webview/codemap.md`
-
 1. Instantiate exactly one scheduler per extension host. Store the ledger atomically under `ExtensionContext.globalStorageUri`; dispose timers, private host, and observation requests on extension shutdown.
 2. Reuse the same OpenCode executor semantics and private authenticated tool protocol. Inject the bridge environment only into DevRyan-managed OpenCode, never a configured external server.
 3. Add bridge handlers matching the web route actions and error shape. Route `/api/orchestration/*` fetches from the webview to those handlers.
@@ -208,7 +194,7 @@
 1. Use `/Users/zoubair/Repositories/Test` only after confirming it is still the clean initialized fixture.
 2. Exercise one, three, and at least five managed tasks; verify exactly three OpenCode child sessions are starting/running and queued order is stable.
 3. Run builder/orchestrator lease conflicts, sibling cancellation, parent cascade, timeout, provider error after partial output, manual abort, retry, resume without prompt replay, and explicit abandon.
-4. Restart web and VS Code owners with queued/running fixtures. Confirm live children reconcile, terminal children settle, missing children become interrupted, and no prompt duplicates.
+4. Restart web owners with queued/running fixtures. Confirm live children reconcile, terminal children settle, missing children become interrupted, and no prompt duplicates.
 5. Repeat create/run/delete cycles while measuring scheduler record counts, timers, listeners, process topology, RSS, and post-settlement cleanup. Provider-native nested activity must not change the three managed slots.
 6. Run ordinary/long/tool-heavy Copilot and Cursor checks again; record OpenAI as blocked if the account usage limit remains authoritative. Do not manufacture unsupported provider-native activity.
 
@@ -224,12 +210,11 @@
    ```bash
    /usr/bin/time -l bun run validate:full
    /usr/bin/time -l bun run build
-   bun run vscode:build
    bun run electron:build
    ```
 
 2. Inspect the complete branch diff, run `git diff --check`, and scan only added/changed content for credentials, provider transcripts, forbidden-upstream references, and accidental fixture changes.
-3. Verify Electron and VS Code shutdown leave no scheduler listener, timer, child session observer, OpenCode child, or shell process owned by the tested runtime.
+3. Verify Electron shutdown leave no scheduler listener, timer, child session observer, OpenCode child, or shell process owned by the tested runtime.
 4. Finish the audit ledger with exact test counts, runtime scenario results, before/after measurements where methods are comparable, provider limitations, changed files, and architectural decisions.
 
 ## Non-negotiable acceptance checks
@@ -240,6 +225,6 @@
 - Failed/aborted/interrupted tasks keep partial output and never render completed.
 - Restart recovery never blindly replays a prompt.
 - Builder and orchestrator cannot concurrently mutate one managed root graph.
-- Web, Electron, and VS Code use the same core scheduler semantics.
+- Web, Electron, use the same core scheduler semantics.
 - High-frequency provider output remains in existing child-session stores, outside the managed-task store.
 - Slim compatibility claims are limited to locally verified wrapper/preset/tool behavior.

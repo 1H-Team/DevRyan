@@ -22,13 +22,13 @@ const DEFAULT_VARIANT = '__default__';
 type DraftSelection = {
   providerId: string;
   modelId: string;
-  variant?: string;
+  variant?: string | null;
 };
 
 const sameSelection = (left: DraftSelection | null, right: DraftSelection | null) => (
   left?.providerId === right?.providerId
   && left?.modelId === right?.modelId
-  && left?.variant === right?.variant
+  && (left?.variant ?? null) === (right?.variant ?? null)
 );
 
 const AgentDefaultRow: React.FC<{
@@ -91,7 +91,7 @@ const AgentDefaultRow: React.FC<{
   const handleSave = async () => {
     setBusy('save');
     try {
-      await persistSelection(agent.name, draft.providerId, draft.modelId, draft.variant);
+      await persistSelection(agent.name, draft.providerId, draft.modelId, draft.variant ?? undefined);
       applyDefaultsToCurrent();
       toast.success(`${formatAgentDisplayName(agent.name)} default saved`);
     } catch (error) {

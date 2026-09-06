@@ -190,7 +190,7 @@ export interface TurnGroupingContext {
     hasReasoning: boolean;
     diffStats?: TurnDiffStats;
     userMessageCreatedAt?: number;
-    userMessageVariant?: string;
+    userMessageVariant?: string | null;
     isPlanModeSource?: boolean;
     // Part id of the turn's final todowrite/todoread snapshot, used to collapse redundant todo
     // rows across all messages in the turn to a single up-to-date widget.

@@ -2,7 +2,7 @@
 
 ## Scope
 
-- Shared web runtime used by standalone web, Electron, and responsive/mobile layouts.
+- Shared web runtime used by standalone web and Electronresponsive/mobile layouts.
 - Provider models: `openai/gpt-5.6-sol`, `anthropic/claude-sonnet-4-5-20250929`, and `xai/grok-4.6`.
 - Builder and Orchestrator agents, with Plan mode both off and on.
 - VS Code was explicitly excluded because its extension-host title runtime is separate from these surfaces.

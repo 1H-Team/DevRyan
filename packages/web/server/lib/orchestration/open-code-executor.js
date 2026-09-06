@@ -104,6 +104,8 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
       modelID: input.modelId,
     },
     ...(input.variant ? { variant: input.variant } : {}),
+    // Native OpenCode's empty variant clears an agent-configured effort.
+    ...(input.variant === null && input.providerId !== CURSOR_PROVIDER_ID ? { variant: '' } : {}),
     ...(input.tools ? { tools: input.tools } : {}),
     parts: [{ type: 'text', text: input.prompt }],
   });

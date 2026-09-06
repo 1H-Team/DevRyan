@@ -5,7 +5,6 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { useAuthPrincipal } from '@/lib/authSession';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import { useSettingsPagePermission } from '@/lib/settings/permission-state';
 
@@ -50,7 +49,7 @@ export const BugReportsPage: React.FC = () => {
   const [activeTab, setActiveTab] = React.useState<BugReportsTab>(initialTab);
   const [visitedTabs, setVisitedTabs] = React.useState<ReadonlySet<BugReportsTab>>(() => new Set([initialTab]));
 
-  if (principal.scope !== 'managed' || isVSCodeRuntime()) return null;
+  if (principal.scope !== 'managed') return null;
 
   const selectTab = (value: string): void => {
     const tab = value as BugReportsTab;

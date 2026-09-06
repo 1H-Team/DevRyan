@@ -33,3 +33,8 @@ Integrated with views, lib adapters, and settings/auth stores. Personal model
 selections are persisted in the principal's managed settings overrides and are
 also surfaced in the Sessions settings editor under the same authorization
 gate.
+
+Thinking controls include Default explicitly. Opening and saving a model-only
+agent setting preserves provider default; an advertised explicit effort remains
+unchanged. Personal rows without a variant mean provider default, while removing
+the personal row restores inheritance from the host.

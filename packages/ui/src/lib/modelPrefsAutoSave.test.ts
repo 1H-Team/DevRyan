@@ -19,7 +19,6 @@ mock.module('@/lib/persistence', () => ({
 }));
 
 mock.module('@/lib/desktop', () => ({
-  isVSCodeRuntime: () => false,
   isTauriShell: () => false,
 }));
 

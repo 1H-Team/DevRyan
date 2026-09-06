@@ -39,7 +39,7 @@ afterEach(() => {
 describe('managed plugin manifest', () => {
   it('pins every dependency plugin and registers managed defaults by local path', () => {
     expect(DEVRYAN_MANAGED_PROFILE_DEPENDENCIES).toEqual({
-      '@opencode-ai/plugin': '1.18.27',
+      '@opencode-ai/plugin': '1.18.29',
       'adm-zip': '0.6.0',
       'mammoth': '1.12.1',
       'unpdf': '1.8.0',
@@ -109,11 +109,12 @@ describe('managed plugin manifest', () => {
       }
     }
 
-    for (const fileName of ['devryan-oh-my-opencode-slim.mjs']) {
-      expect(fs.readFileSync(path.join(tauriDefaultConfigRoot, 'plugins', fileName), 'utf8')).toBe(
-        fs.readFileSync(path.join(webDefaultConfigRoot, 'plugins', fileName), 'utf8'),
-      );
-    }
+    // Tauri retains Slim 2.0.5 and its legacy loader; the forward profile also
+    // supports the server descriptor exported by its pinned Slim 2.2.15.
+    expect(fs.readFileSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'), 'utf8'))
+      .toContain('exported.server');
+    expect(fs.readFileSync(path.join(tauriDefaultConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'), 'utf8'))
+      .not.toContain('exported.server');
     expect(fs.readFileSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-superpowers.mjs'), 'utf8'))
       .not.toContain('experimental.chat.messages.transform');
     expect(fs.readFileSync(path.join(tauriDefaultConfigRoot, 'plugins', 'devryan-superpowers.mjs'), 'utf8'))

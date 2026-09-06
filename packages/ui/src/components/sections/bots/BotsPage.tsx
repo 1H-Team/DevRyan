@@ -27,7 +27,6 @@ import {
   type BotsApi,
 } from '@/lib/botsApi';
 import { botsDesktopApi, type BotsDesktopApi } from '@/lib/botsDesktopApi';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { useAuthPrincipal } from '@/lib/authSession';
 import { useI18n } from '@/lib/i18n';
 import { botChannelSelectors, useBotChannelStore } from '@/stores/useBotChannelStore';
@@ -47,7 +46,7 @@ export type BotsPageProps = {
   initialCatalog?: readonly BotSummary[];
   initialDetail?: BotManagementDetail | null;
   initialCanCreateBot?: boolean;
-  vscodeRuntime?: boolean;
+
   desktopApi?: BotsDesktopApi;
 };
 
@@ -60,7 +59,7 @@ export const BotsPage: React.FC<BotsPageProps> = ({
   initialCatalog = [],
   initialDetail = null,
   initialCanCreateBot = false,
-  vscodeRuntime = isVSCodeRuntime(),
+
   desktopApi = botsDesktopApi,
 }) => {
   const { t } = useI18n();
@@ -70,7 +69,7 @@ export const BotsPage: React.FC<BotsPageProps> = ({
     initialDetail?.bot.id || initialCatalog[0]?.id || null,
   );
   const [detail, setDetail] = React.useState<BotManagementDetail | null>(initialDetail);
-  const [loadingCatalog, setLoadingCatalog] = React.useState(initialCatalog.length === 0 && !vscodeRuntime);
+  const [loadingCatalog, setLoadingCatalog] = React.useState(initialCatalog.length === 0);
   const [loadingDetail, setLoadingDetail] = React.useState(false);
   const [pendingBotMutations, setPendingBotMutations] = React.useState<Readonly<Record<string, PendingBotMutation>>>({});
   const [creating, setCreating] = React.useState(false);
@@ -159,7 +158,7 @@ export const BotsPage: React.FC<BotsPageProps> = ({
   }, []);
 
   const loadCatalog = React.useCallback(async () => {
-    if (vscodeRuntime) return;
+
     const request = catalogRequest.current + 1;
     catalogRequest.current = request;
     setLoadingCatalog(true);
@@ -183,7 +182,7 @@ export const BotsPage: React.FC<BotsPageProps> = ({
     } finally {
       if (catalogRequest.current === request) setLoadingCatalog(false);
     }
-  }, [api, vscodeRuntime]);
+  }, [api]);
 
   const loadDetail = React.useCallback(async (botId: string) => {
     const request = detailRequest.current + 1;
@@ -225,12 +224,12 @@ export const BotsPage: React.FC<BotsPageProps> = ({
   }, [api]);
 
   React.useEffect(() => {
-    if (vscodeRuntime || initialCatalog.length > 0) return;
+    if (initialCatalog.length > 0) return;
     void loadCatalog();
-  }, [initialCatalog.length, loadCatalog, vscodeRuntime]);
+  }, [initialCatalog.length, loadCatalog]);
 
   React.useEffect(() => {
-    if (vscodeRuntime) return;
+
     const refreshOnFocus = () => void loadCatalog();
     const refreshOnVisibility = () => {
       if (document.visibilityState === 'visible') void loadCatalog();
@@ -241,7 +240,7 @@ export const BotsPage: React.FC<BotsPageProps> = ({
       window.removeEventListener('focus', refreshOnFocus);
       document.removeEventListener('visibilitychange', refreshOnVisibility);
     };
-  }, [loadCatalog, vscodeRuntime]);
+  }, [loadCatalog]);
 
   React.useEffect(() => {
     if (selectedBotId || catalog.length === 0) return;
@@ -253,17 +252,16 @@ export const BotsPage: React.FC<BotsPageProps> = ({
   }, [selectedBotId]);
 
   React.useEffect(() => {
-    if (vscodeRuntime || capabilityCanCreateBot !== undefined) return;
+    if (capabilityCanCreateBot !== undefined) return;
     void loadCapabilities();
-  }, [capabilityCanCreateBot, loadCapabilities, vscodeRuntime]);
+  }, [capabilityCanCreateBot, loadCapabilities]);
 
   React.useEffect(() => {
-    if (vscodeRuntime
-      || !selectedBotId
+    if (!selectedBotId
       || initialDetail?.bot.id === selectedBotId
       || detail?.bot.id === selectedBotId) return;
     void loadDetail(selectedBotId);
-  }, [detail?.bot.id, initialDetail?.bot.id, loadDetail, selectedBotId, vscodeRuntime]);
+  }, [detail?.bot.id, initialDetail?.bot.id, loadDetail, selectedBotId]);
 
   React.useEffect(() => {
     if (!detail?.canManage) {
@@ -325,20 +323,6 @@ export const BotsPage: React.FC<BotsPageProps> = ({
       setCreating(false);
     }
   }, [recordError]);
-
-  if (vscodeRuntime) {
-    return (
-      <div className="flex h-full items-center justify-center bg-background p-6">
-        <div className="max-w-md text-center">
-          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-[var(--surface-elevated)] text-muted-foreground">
-            <RiRobot2Line className="h-5 w-5" aria-hidden />
-          </span>
-          <h1 className="mt-3 typography-ui-header font-semibold text-foreground">{t('settings.page.bots.title')}</h1>
-          <p className="mt-1 typography-ui text-muted-foreground">Bots require the DevRyan macOS app. VS Code never starts or mutates Docker resources.</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="app-region-no-drag relative flex h-full min-h-0 flex-col overflow-hidden bg-background md:flex-row">

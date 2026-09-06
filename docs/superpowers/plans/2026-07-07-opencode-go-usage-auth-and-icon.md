@@ -14,8 +14,6 @@
 
 - Modify `packages/web/server/lib/opencode/routes.js`: add OpenCode Go usage-auth validation helpers and `GET`/`PUT`/`DELETE` routes next to Cursor usage-auth routes.
 - Modify `packages/web/server/lib/opencode/provider-routes.test.js`: add route tests for saving, clearing, preserving API auth, and rejecting invalid OpenCode Go usage credentials.
-- Modify `packages/vscode/src/bridge-system-runtime.ts`: add matching VS Code bridge handlers that read/write `auth["opencode-go"].usageWorkspaceId` and `.usageAuthCookie`.
-- Modify `packages/vscode/webview/main.tsx`: intercept the same `/api/provider/opencode-go/usage-auth*` requests and forward them to bridge handlers.
 - Modify `packages/ui/src/components/sections/providers/ProvidersPage.tsx`: add OpenCode Go usage-tracking state and controls modeled after Cursor, with two inputs: workspace ID and dashboard auth cookie.
 - Modify `packages/ui/src/lib/i18n/messages/en.settings.ts`: add OpenCode Go labels, instructions, placeholders, and toast text.
 - Modify `packages/ui/src/hooks/useProviderLogo.ts`: remove the `['opencode-go', 'gocode']` alias so `opencode-go` resolves to the previous remote `https://models.dev/logos/opencode-go.svg`.
@@ -232,13 +230,8 @@ Expected: the new OpenCode Go usage-auth route tests pass.
 ### Task 2: Add VS Code Bridge Parity
 
 **Files:**
-- Modify: `packages/vscode/src/bridge-system-runtime.ts`
-- Modify: `packages/vscode/webview/main.tsx`
-- Test: `packages/vscode/tests/quotaProviders.test.ts`
 
 - [ ] **Step 1: Add constants and helpers**
-
-In `packages/vscode/src/bridge-system-runtime.ts`, add constants near `CURSOR_ACP_PROVIDER_ID`:
 
 ```ts
 const OPENCODE_GO_PROVIDER_ID = 'opencode-go';
@@ -348,8 +341,6 @@ In the `switch` inside `handleSystemBridgeMessage`, add:
 
 - [ ] **Step 3: Add webview fetch intercepts**
 
-In `packages/vscode/webview/main.tsx`, add these before the final `return null` in `handleSystemApiFetch`:
-
 ```ts
   if (pathname === '/api/provider/opencode-go/usage-auth/status' && (init?.method || 'GET').toUpperCase() === 'GET') {
     try {
@@ -388,8 +379,6 @@ In `packages/vscode/webview/main.tsx`, add these before the final `return null` 
 Run:
 
 ```bash
-bun run --cwd packages/vscode test
-bun run --cwd packages/vscode type-check
 ```
 
 Expected: existing OpenCode Go quota tests still pass and TypeScript accepts the new bridge handlers.
@@ -744,7 +733,7 @@ Expected: the logo regression test passes.
 
 **Files:**
 - No new files.
-- Validate all modified web, UI, and VS Code surfaces.
+- Validate all modified web, UI, surfaces.
 
 - [ ] **Step 1: Run focused package tests**
 
@@ -753,7 +742,6 @@ Run:
 ```bash
 bun run --cwd packages/web test -- server/lib/opencode/provider-routes.test.js server/lib/quota/providers/opencode-go.test.js
 bun run --cwd packages/ui test -- UsagePage.test.ts
-bun run --cwd packages/vscode test
 ```
 
 Expected: all focused tests pass.
@@ -766,7 +754,7 @@ Run:
 bun run validate:affected
 ```
 
-Expected: changed-file-aware lint/type/test validation passes for UI, web, and VS Code.
+Expected: changed-file-aware lint/type/test validation passes for UI, web,.
 
 - [ ] **Step 3: Manual runtime check**
 
@@ -790,6 +778,6 @@ Manual checks:
 ## Self-Review
 
 - Spec coverage: The plan fixes the reported setup error by adding a UI/API path to save the credentials the quota provider already requires, and fixes the icon regression by reverting the v1.0.6 alias change.
-- Cross-runtime parity: Web/Electron routes and VS Code bridge/webview routes expose the same HTTP contract.
+- Cross-runtime parity: Web/Electron routes bridge/webview routes expose the same HTTP contract.
 - Safety: Usage auth fields are stored under the existing `auth["opencode-go"]` object and clearing usage auth preserves API auth fields.
 - Validation: Focused tests cover route behavior, UI wiring, and icon mapping, followed by `validate:affected`.

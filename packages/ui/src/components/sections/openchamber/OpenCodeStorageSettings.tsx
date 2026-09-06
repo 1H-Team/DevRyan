@@ -140,7 +140,6 @@ export const OpenCodeStorageSettingsView: React.FC<OpenCodeStorageSettingsViewPr
 /**
  * Settings → Data Retention → OpenCode Storage. Rendered only when the
  * runtime's diagnostics API exposes the storage members (web/Electron); the
- * VS Code runtime has neither, so the section is absent there.
  */
 export const OpenCodeStorageSettings: React.FC = () => {
   const { t } = useI18n();
