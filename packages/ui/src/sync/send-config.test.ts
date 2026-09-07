@@ -4,6 +4,7 @@ import { useConfigStore } from "@/stores/useConfigStore"
 import { useSelectionStore } from "./selection-store"
 import {
   resolveCurrentSendConfig,
+  normalizeNewChatSendConfig,
   resolveDraftSendSelection,
   resolveSessionSendConfig,
   resolveSessionSendConfigSnapshot,
@@ -928,5 +929,26 @@ describe("send config resolution", () => {
       variant: "high",
       planMode: true,
     })
+  })
+})
+
+
+describe("new chat thinking captures", () => {
+  test("freezes Medium without mutating provider defaults or an existing queue snapshot", () => {
+    const state = snapshot()
+    const legacy = Object.freeze({ providerID: "openai", modelID: "gpt-5.5", agent: "builder", variant: null, planMode: false })
+    const captured = normalizeNewChatSendConfig(legacy, state.providers)
+    expect(captured.variant).toBe("medium")
+    expect(legacy.variant).toBeNull()
+    expect(resolveSessionSendConfigSnapshot(state, legacy).variant).toBeNull()
+    state.currentVariant = "high"
+    expect(captured.variant).toBe("medium")
+    expect(resolveSessionSendConfigSnapshot(state, captured).variant).toBe("medium")
+  })
+  test("keeps explicit effort and native no-thinking models unchanged", () => {
+    const state = snapshot()
+    const explicit = { providerID: "openai", modelID: "gpt-5.5", variant: "high" }
+    expect(normalizeNewChatSendConfig(explicit, state.providers)).toBe(explicit)
+    expect(normalizeNewChatSendConfig({ providerID: "fixture", modelID: "plain", variant: null }, [{ id: "fixture", models: [{ id: "plain" }] }]).variant).toBeNull()
   })
 })

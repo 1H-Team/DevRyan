@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createGitWorktree, getGitLog, getGitStatus, getGitWorktreeBootstrapStatus, getPrimaryWorktreeRoot, gitFetch, resolveGitApiBaseOrigin, retryGitWorktreeBootstrapOperation } from "./gitApiHttp"
+import { continueRebase, createGitWorktree, getGitLog, getGitStatus, getGitWorktreeBootstrapStatus, getPrimaryWorktreeRoot, gitFetch, resolveGitApiBaseOrigin, retryGitWorktreeBootstrapOperation } from "./gitApiHttp"
 
 type TestWindow = {
   location: { origin: string }
@@ -316,6 +316,32 @@ describe("gitApiHttp URL routing", () => {
       const cachedAfter = await getGitStatus(directory)
       expect(cachedAfter.ahead).toBe(0)
       expect(requestedUrls.filter((url) => url.includes("/api/git/status"))).toHaveLength(2)
+    } finally {
+      restoreGlobals()
+    }
+  })
+})
+
+
+describe('rebase status invalidation', () => {
+  test('refreshes cached operation state even when continuation returns an error', async () => {
+    try {
+      setTestWindow({ location: { origin: 'http://127.0.0.1:5173' } })
+      let reads = 0
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        if (String(input).includes('/rebase/continue')) {
+          return new Response(JSON.stringify({ error: 'Rebase is still in progress' }), { status: 409 })
+        }
+        reads++
+        return new Response(JSON.stringify({
+          current: 'HEAD', tracking: null, ahead: 0, behind: 0, files: [], isClean: true,
+          rebaseInProgress: { headName: 'Dev', onto: reads === 1 ? '' : 'abc1234' },
+        }), { status: 200 })
+      }) as typeof fetch
+      await getGitStatus('/rebase-cache-invalidation')
+      await expect(continueRebase('/rebase-cache-invalidation')).rejects.toThrow('Rebase is still in progress')
+      expect((await getGitStatus('/rebase-cache-invalidation')).rebaseInProgress?.onto).toBe('abc1234')
+      expect(reads).toBe(2)
     } finally {
       restoreGlobals()
     }

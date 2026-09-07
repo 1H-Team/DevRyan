@@ -1,4 +1,5 @@
 import simpleGit from 'simple-git';
+import { readGitOperationState, assertGitRemoteReady, gitStateError } from './operation-state.js';
 import crypto from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
@@ -406,7 +407,10 @@ const createGit = async (directory, options = {}) => {
   const spawnOptions = { windowsHide: true };
   const binary = getGitBinary();
   const hasCustomBinary = typeof binary === 'string' && binary.trim() && binary !== 'git' && binary !== 'git.exe';
-  const unsafe = hasCustomBinary ? { allowUnsafeCustomBinary: true } : undefined;
+  const unsafe = {
+    ...(hasCustomBinary ? { allowUnsafeCustomBinary: true } : {}),
+    ...(options.nonInteractiveEditor ? { allowUnsafeEditor: true } : {}),
+  };
   return simpleGit({
     baseDir: directoryPath,
     env,
@@ -1712,60 +1716,11 @@ export async function getStatus(directory, options = {}) {
       }
     }
 
-    // Check for in-progress operations
-    let mergeInProgress = null;
-    let rebaseInProgress = null;
-
-    try {
-      // Check MERGE_HEAD for merge in progress
-      const mergeHeadExists = await git
-        .raw(['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'])
-        .then(() => true)
-        .catch(() => false);
-      
-      if (mergeHeadExists) {
-        const mergeHead = await git.raw(['rev-parse', 'MERGE_HEAD']).catch(() => '');
-        const headSha = mergeHead.trim().slice(0, 7);
-        // Only set mergeInProgress if we actually have a valid head SHA
-        if (headSha) {
-          const mergeMsg = await fsp.readFile(path.join(directoryPath, '.git', 'MERGE_MSG'), 'utf8').catch(() => '');
-          mergeInProgress = {
-            head: headSha,
-            message: mergeMsg.split('\n')[0] || '',
-          };
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    try {
-      // Check for rebase in progress (.git/rebase-merge or .git/rebase-apply)
-      const rebaseMergeExists = await fsp.stat(path.join(directoryPath, '.git', 'rebase-merge')).then(() => true).catch(() => false);
-      const rebaseApplyExists = await fsp.stat(path.join(directoryPath, '.git', 'rebase-apply')).then(() => true).catch(() => false);
-      
-      if (rebaseMergeExists || rebaseApplyExists) {
-        const rebaseDir = rebaseMergeExists ? 'rebase-merge' : 'rebase-apply';
-        const headName = await fsp.readFile(path.join(directoryPath, '.git', rebaseDir, 'head-name'), 'utf8').catch(() => '');
-        const onto = await fsp.readFile(path.join(directoryPath, '.git', rebaseDir, 'onto'), 'utf8').catch(() => '');
-        
-        const headNameTrimmed = headName.trim().replace('refs/heads/', '');
-        const ontoTrimmed = onto.trim().slice(0, 7);
-        
-        // Only set rebaseInProgress if we have valid data
-        if (headNameTrimmed || ontoTrimmed) {
-          rebaseInProgress = {
-            headName: headNameTrimmed,
-            onto: ontoTrimmed,
-          };
-        }
-      }
-    } catch {
-      // ignore
-    }
+    const { mergeInProgress, rebaseInProgress, headState } = await readGitOperationState(git);
 
     return {
       current: status.current,
+      headState,
       tracking,
       ahead,
       behind,
@@ -2239,6 +2194,7 @@ export async function collectDiffs(directory, files = []) {
 
 export async function pull(directory, options = {}) {
   const git = await createGit(directory, { includeCredentials: true });
+  await assertGitRemoteReady(git);
   const { principal, assignment } = resolveManagedGitAssignment(directory);
   if (principal) {
     await assertManagedMutationBranch(directory, git);
@@ -2386,6 +2342,7 @@ export async function stashPop(directory, options = {}) {
 
 export async function push(directory, options = {}) {
   const git = await createGit(directory, { includeCredentials: true });
+  await assertGitRemoteReady(git);
   const { principal, assignment } = resolveManagedGitAssignment(directory);
   if (principal) {
     await assertManagedMutationBranch(directory, git);
@@ -3722,9 +3679,6 @@ export async function canonicalizeWorktreeState(directory) {
 
   let worktreeRoot = null;
   let worktreeStatus = 'ready';
-  let headState = /** @type {'branch' | 'detached' | 'unborn'} */ ('branch');
-  let branch = null;
-  let attentionReason = /** @type {'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'bisect' | null} */ (null);
 
   try {
     const context = await resolveWorktreeProjectContext(directoryPath);
@@ -3741,46 +3695,11 @@ export async function canonicalizeWorktreeState(directory) {
     }
   }
 
-  try {
-    const symbolicRef = await git.raw(['symbolic-ref', '-q', 'HEAD']).catch(() => '');
-    if (symbolicRef.trim()) {
-      headState = 'branch';
-      branch = cleanBranchName(symbolicRef.trim());
-    } else {
-      const revParse = await git.raw(['rev-parse', 'HEAD']).catch(() => '');
-      if (!revParse.trim()) {
-        headState = 'unborn';
-        branch = null;
-      } else {
-        headState = 'detached';
-        branch = revParse.trim().slice(0, 7);
-      }
-    }
-  } catch {
-    headState = 'unborn';
-    branch = null;
-  }
-
-  // Detect attention reasons from getStatus side-effects
-  try {
-    const status = await git.status(['-uall']);
-    if (status.current && (await git.raw(['rev-parse', '--verify', 'MERGE_HEAD']).then(() => true).catch(() => false))) {
-      attentionReason = 'merge';
-    } else {
-      const rebaseMerge = await fsp.stat(path.join(directoryPath, '.git', 'rebase-merge')).then(() => true).catch(() => false);
-      const rebaseApply = await fsp.stat(path.join(directoryPath, '.git', 'rebase-apply')).then(() => true).catch(() => false);
-      if (rebaseMerge || rebaseApply) {
-        attentionReason = 'rebase';
-      } else if (status.conflicted && status.conflicted.length > 0) {
-        const cherryPickHead = await fsp.stat(path.join(directoryPath, '.git', 'CHERRY_PICK_HEAD')).then(() => true).catch(() => false);
-        const revertHead = await fsp.stat(path.join(directoryPath, '.git', 'REVERT_HEAD')).then(() => true).catch(() => false);
-        if (cherryPickHead) attentionReason = 'cherry-pick';
-        else if (revertHead) attentionReason = 'revert';
-      }
-    }
-  } catch {
-    // Status check failed — ignore
-  }
+  const operationState = await readGitOperationState(git);
+  const { headState, attentionReason } = operationState;
+  const branch = headState === 'detached'
+    ? operationState.head?.slice(0, 7) ?? null
+    : operationState.branch;
 
   return {
     worktreeRoot,
@@ -3978,7 +3897,11 @@ export async function rebase(directory, options = {}) {
     const assignment = await assertManagedMutationBranch(directory, git);
     if (assignment) onto = await validateManagedSourceRef(directory, onto);
 
+    await assertGitRemoteReady(git);
     await git.rebase([onto]);
+    if ((await readGitOperationState(git)).rebaseInProgress) {
+      throw gitStateError('GIT_REBASE_IN_PROGRESS', 'The rebase is still in progress. Review its current step before continuing.');
+    }
 
     return {
       success: true,
@@ -4044,42 +3967,23 @@ export async function abortMerge(directory) {
 }
 
 export async function continueRebase(directory) {
-  const directoryPath = normalizeDirectoryPath(directory);
-  const git = await createGit(directoryPath);
-
+  const git = await createGit(normalizeDirectoryPath(directory), { nonInteractiveEditor: true });
+  await assertManagedMutationBranch(directory, git);
   try {
-    await assertManagedMutationBranch(directoryPath, git);
-    // Set GIT_EDITOR to prevent editor prompts
     await git.env('GIT_EDITOR', 'true').rebase(['--continue']);
-    return { success: true, conflict: false };
   } catch (error) {
-    const errorMessage = String(error?.message || error || '').toLowerCase();
-    const isConflict = isGitConflictError(error);
-
-    if (isConflict) {
-      const status = await git.status().catch(() => ({ conflicted: [] }));
-      return {
-        success: false,
-        conflict: true,
-        conflictFiles: status.conflicted || []
-      };
-    }
-
-    // Check for "nothing to commit" which means rebase step is complete
-    if (errorMessage.includes('nothing to commit') || errorMessage.includes('no changes')) {
-      // Skip this commit and continue
-      try {
-        await git.env('GIT_EDITOR', 'true').rebase(['--skip']);
-        return { success: true, conflict: false };
-      } catch {
-        // If skip also fails, the rebase may be complete
-        return { success: true, conflict: false };
-      }
-    }
-
-    console.error('Failed to continue rebase:', error);
+    if (isGitConflictError(error)) return readConflictResult(git);
+    // Empty commits require an explicit user decision; never silently skip a
+    // patch or reinterpret a failed Git command as successful completion.
     throw error;
   }
+  const state = await readGitOperationState(git);
+  if (state.rebaseInProgress) {
+    const status = await git.status();
+    if (status.conflicted.length > 0) return readConflictResult(git);
+    throw gitStateError('GIT_REBASE_IN_PROGRESS', 'The rebase is still in progress. Review its current step before continuing.');
+  }
+  return { success: true, conflict: false };
 }
 
 export async function continueMerge(directory) {
@@ -4144,35 +4048,15 @@ export async function getConflictDetails(directory) {
     // Get current diff
     const diff = await git.raw(['diff']).catch(() => '');
 
-    // Detect operation type and get head info
-    let operation = 'merge';
+    const state = await readGitOperationState(git);
+    const operation = state.rebaseInProgress ? 'rebase' : 'merge';
     let headInfo = '';
-
-    // Check for MERGE_HEAD (merge in progress)
-    const mergeHeadExists = await git
-      .raw(['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'])
-      .then(() => true)
-      .catch(() => false);
-
-    if (mergeHeadExists) {
-      operation = 'merge';
-      const mergeHead = await git.raw(['rev-parse', 'MERGE_HEAD']).catch(() => '');
-      const mergeMsg = await fsp
-        .readFile(path.join(directoryPath, '.git', 'MERGE_MSG'), 'utf8')
-        .catch(() => '');
-      headInfo = `MERGE_HEAD: ${mergeHead.trim()}\n${mergeMsg}`;
-    } else {
-      // Check for REBASE_HEAD (rebase in progress)
-      const rebaseHeadExists = await git
-        .raw(['rev-parse', '--verify', '--quiet', 'REBASE_HEAD'])
-        .then(() => true)
-        .catch(() => false);
-
-      if (rebaseHeadExists) {
-        operation = 'rebase';
-        const rebaseHead = await git.raw(['rev-parse', 'REBASE_HEAD']).catch(() => '');
-        headInfo = `REBASE_HEAD: ${rebaseHead.trim()}`;
-      }
+    if (state.rebaseInProgress) {
+      headInfo = state.rebaseHead
+        ? `REBASE_HEAD: ${state.rebaseHead}`
+        : `Rebasing ${state.rebaseInProgress.headName} onto ${state.rebaseInProgress.onto}`;
+    } else if (state.mergeInProgress) {
+      headInfo = `MERGE_HEAD: ${state.mergeHead}\n${state.mergeMessage}`;
     }
 
     return {

@@ -529,14 +529,19 @@ The operations have fixed meanings:
 - **Repair** reasserts the same desired signed manifest and fixed topology. It
   replaces unhealthy owned containers but retains named profiles, workspaces,
   and the index unless an explicit reset is separately confirmed.
-- **Foreign deployment guard.** Every DevRyan installation on a machine uses
-  the same Compose project and resource names, but each labels its containers
-  with its own `devryan.deployment` id. When the containers attached to the
-  host-control bridge carry another installation's id (for example a
-  source-development app started with a different `OPENCHAMBER_DATA_DIR`),
-  status reports `bot_runtime_foreign_deployment` and Setup, Repair, Update and
-  Rollback refuse before stopping, removing or recreating anything. Stop Bots
-  in the other installation first, then repair here.
+- **Foreign deployment guard.** Installations share fixed Compose resource
+  names, but the OS-sealed deployment key determines `devryan.deployment`.
+  Status and lifecycle preflight inspect all managed containers, including
+  stopped containers and those outside the host-control network. A different
+  identity reports `bot_runtime_foreign_deployment`; Setup, Repair, Update and
+  Rollback refuse before pulling images, writing installation state, or changing
+  containers. Setup/Repair/Update/Rollback controls are unavailable for this
+  conflict. Docker inspection failures report `bot_runtime_ownership_unavailable`
+  instead of claiming healthy or unowned resources. Opaque deployment IDs,
+  allowlisted service names, and Docker states are exposed as at most 32 distinct
+  `conflicts` entries with `conflictsTruncated`; this is container inventory,
+  not evidence that another app process is alive. Stopping containers does not
+  change their ownership.
 - **Update** stages the desired signed manifest, verifies replacement services,
   and commits it only after health succeeds. Existing runs remain revision- and
   digest-pinned until the controlled replacement boundary.
@@ -803,6 +808,62 @@ container, profile, workspace, and index cleanup completes as an explicit
 no-op; other runtime failures remain retryable. Capability bindings are deleted
 before dependent encrypted Skill objects and credentials.
 
+## Installation identity handoff
+
+To keep existing Bots, credentials, workspace data, and Chromium sessions usable
+when an installation reports a foreign deployment:
+
+1. Locate the original `OPENCHAMBER_DATA_DIR` and its runtime-service owner
+   record. Use the Electron secret store to read an **existing** sealed key and
+   derive only its deployment ID for comparison with Docker labels. Never create
+   a key during discovery, print key material, or infer identity from a Compose
+   working-directory label alone. A matching container key is not proof that it
+   can decrypt existing Bot data: check an existing encrypted object through the
+   normal authenticated app API before switching directories. Verification
+   installations may share the database but have a different key.
+2. Keep both data directories intact. Check that the original directory uses the
+   intended Supabase control plane. Do not copy a sealed key into a different
+   directory, merge settings/vaults, relabel containers, or delete volumes.
+   Missing/unreadable keys, object-integrity failures, or a mismatched database
+   stop the directory switch; they are not permission to initialize a replacement
+   identity. Restore the previous launch configuration if continuity fails.
+3. Checkpoint and drain a live original dispatcher using normal app/service
+   shutdown. A running Docker service alone does not establish a live host
+   owner. Retain the runtime-service owner record: normal fenced acquisition
+   checks process identity and reclaims a stopped owner. Never delete the lock
+   to force startup. Stop the destination app normally before changing its
+   launch configuration; preserve that configuration for rollback.
+4. Launch the destination app with `OPENCHAMBER_DATA_DIR` pointing to the
+   original directory. Use the existing registration and owner-acquisition
+   flow for app-bound/service mode; do not register a second competing owner.
+   An environment override must also be supplied on subsequent launches by
+   the operator's launcher. An ordinary Finder launch without that override
+   still selects the default data directory.
+5. Let normal readiness verify the current image manifest and repair/update
+   owned infrastructure. Verify Bot history, credential-backed operations,
+   workspace files, and existing browser sessions. Keep routines checkpointed
+   until ownership is confirmed; do not duplicate a run to test continuity.
+6. If handoff fails, shut down the destination owner normally and restore its
+   prior launch configuration. Leave the original directory and volumes intact
+   and report the failed phase. Do not run both dispatchers concurrently.
+
+If the normal data directory already decrypts the existing Bots and the
+conflicting deployment is abandoned verification infrastructure, keep the normal
+directory. After checkpointing and stopping the conflicting host owner, an
+operator may inspect and gracefully stop/remove **only** containers with the
+exact verified deployment and `devryan.runtime=production-bots` labels and known
+service/kind. Record the container and named-volume inventory first, refuse if
+any owner remains live or ownership changes, and never use volume deletion,
+prune, bulk Compose cleanup, relabeling, or key replacement. Reopen the normal
+installation and let readiness recreate its infrastructure with its own existing
+identity and named workspace/profile volumes. Verify encrypted objects and
+volume continuity before calling the handoff complete. This owner-side release
+is an operator recovery procedure, not a force-takeover API or automatic repair.
+
+This handoff reuses a complete deployment identity; it does not import Bots into
+a fresh identity. Recovery bundles below have separate collision, secret-section,
+and compatibility requirements.
+
 ## Recovery bundles
 
 Recovery exports are `.drbr` files with a clear, non-sensitive format header and
@@ -915,6 +976,23 @@ navigation remains stable for one minute; lifecycle/control resets clear stale
 diagnostics. Dialogs are handled automatically. The managed root plus at most
 three popups form a stack, and viewing/input follow the active popup until it
 closes and returns to its opener.
+
+Large accessibility snapshots use bounded pages. Start with empty `snapshot`
+args, then use the returned `snapshotId` and `nextOffset` as the next request's
+`offset`. References remain valid across those pages. Explicit node/text
+omissions require narrowing the website view before claiming a complete read;
+an oversized tool result is not evidence of a lost login. Browser network
+diagnostics continue without an open viewer, using bounded per-process
+sequences and explicit retention/unavailable-status gaps. The journal retains
+the original observation time, stream identity, generation, and masked origin.
+
+Graceful shutdown sends `Browser.close` before waiting for renderer cleanup,
+has a 25-second whole-service deadline, and gives Docker a 30-second grace
+period. Its stop request has at least 45 seconds; enclosing host lifecycle
+calls allow 90 seconds. A failed egress refresh records whether the resulting
+computer stop completed or remains unconfirmed. Ensure never reuses a running
+container after an unresolved stop. Ordinary command failures and control
+handoffs preserve the healthy browser process and profile.
 
 Take Control remains a human-only, Operator-authorized lease. The canvas maps
 coordinates through its actual contain rectangle and rejects letterbox input.

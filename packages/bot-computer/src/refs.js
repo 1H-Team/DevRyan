@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 
 const MAX_NODES = 5_000;
+const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
+const SNAPSHOT_PAGE_BYTES = 96 * 1024;
 const REF_PATTERN = /^ref_(\d+)_([a-f0-9]{16})$/;
 
 export class ComputerRefError extends Error {
@@ -29,16 +31,21 @@ const sanitizeNode = (node) => {
     value: text(node.value, 4_096),
     disabled: node.disabled === true,
     focused: node.focused === true,
+    ...((node.textTruncated === true || node.name?.length > 2_048 || node.value?.length > 4_096)
+      ? { textTruncated: true } : {}),
   });
 };
 
 export function createAccessibilityRefStore({ randomBytes = crypto.randomBytes } = {}) {
   let generation = 0;
   const refs = new Map();
+  let captured = null;
+  let snapshotSequence = 0;
 
   const beginPage = () => {
     generation += 1;
     refs.clear();
+    captured = null;
     return generation;
   };
 
@@ -47,6 +54,7 @@ export function createAccessibilityRefStore({ randomBytes = crypto.randomBytes }
       fail('Accessibility snapshot is too large', 'DEVRYAN_BOT_SNAPSHOT_INVALID');
     }
     if (generation === 0) beginPage();
+    captured = null;
     refs.clear();
     return Object.freeze(nodes.map((raw) => {
       const node = sanitizeNode(raw);
@@ -58,6 +66,51 @@ export function createAccessibilityRefStore({ randomBytes = crypto.randomBytes }
       const { backendNodeId: _privateNodeId, ...publicNode } = node;
       return Object.freeze({ ref, ...publicNode });
     }));
+  };
+
+  const pageSnapshot = ({ snapshotId, offset = 0 } = {}) => {
+    if (!captured || snapshotId !== captured.snapshotId) {
+      fail('Snapshot expired; take a new snapshot with empty args', 'DEVRYAN_BOT_SNAPSHOT_STALE');
+    }
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > captured.nodes.length) {
+      fail('Snapshot offset is invalid', 'DEVRYAN_BOT_SNAPSHOT_INVALID');
+    }
+    const nodes = [];
+    let bytes = 0;
+    for (let index = offset; index < captured.nodes.length; index += 1) {
+      const node = captured.nodes[index];
+      const size = Buffer.byteLength(JSON.stringify(node), 'utf8') + 1;
+      if (bytes + size > SNAPSHOT_PAGE_BYTES) break;
+      nodes.push(node);
+      bytes += size;
+    }
+    const nextOffset = offset + nodes.length;
+    const hasMore = nextOffset < captured.nodes.length;
+    return Object.freeze({
+      nodes: Object.freeze(nodes), generation, count: nodes.length,
+      snapshotId, offset, totalNodes: captured.totalNodes,
+      omittedNodes: captured.totalNodes - captured.nodes.length,
+      nextOffset: hasMore ? nextOffset : null,
+      ...(hasMore ? { continuation: 'Call snapshot with args { snapshotId, offset: nextOffset } to read the next page. Refs from all pages remain valid until a new snapshot or navigation.' } : {}),
+    });
+  };
+
+  const captureSnapshot = (nodes) => {
+    if (!Array.isArray(nodes)) fail('Snapshot is invalid', 'DEVRYAN_BOT_SNAPSHOT_INVALID');
+    const bounded = [];
+    let bytes = 0;
+    for (const raw of nodes) {
+      const node = sanitizeNode(raw);
+      bytes += Buffer.byteLength(JSON.stringify(node), 'utf8') + 128;
+      if (bounded.length >= MAX_NODES || bytes > MAX_SNAPSHOT_BYTES) break;
+      bounded.push(node);
+    }
+    const publicNodes = recordSnapshot(bounded);
+    captured = {
+      snapshotId: `snapshot_${generation}_${++snapshotSequence}`,
+      nodes: publicNodes, totalNodes: nodes.length,
+    };
+    return pageSnapshot({ snapshotId: captured.snapshotId });
   };
 
   const resolve = (ref) => {
@@ -74,6 +127,8 @@ export function createAccessibilityRefStore({ randomBytes = crypto.randomBytes }
   return Object.freeze({
     beginPage,
     recordSnapshot,
+    captureSnapshot,
+    pageSnapshot,
     resolve,
     snapshot: () => Object.freeze({ generation, count: refs.size }),
   });

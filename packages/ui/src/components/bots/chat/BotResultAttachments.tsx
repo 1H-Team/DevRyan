@@ -71,7 +71,7 @@ export const BotResultImage: React.FC<{ image: ResultImage }> = ({ image }) => {
   return (
     <div
       ref={targetRef}
-      className="relative mt-2 aspect-[4/3] w-full max-w-2xl overflow-hidden rounded-xl border border-border/60 bg-muted/30"
+      className="relative mt-2 aspect-[4/3] w-full max-w-2xl min-w-[min(16rem,60vw)] overflow-hidden rounded-xl border border-border/60 bg-muted/30"
       data-bot-image-state={state}
     >
       {state === 'ready' && url ? (

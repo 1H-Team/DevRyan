@@ -130,9 +130,11 @@ value. An imperative marker distinguishes inferred values from explicit on/off
 toggles and promoted draft choices, which remain authoritative through remounts
 until that session is disposed or the UI reloads. The shared plan-intent resolver
 gives valid Implement Plan markers precedence over maintenance and stale Plan
-metadata. Managed wakes carrying inherited Plan instructions cannot become new
-Plan revisions, cards, or proposal notifications; native continuation revisions
-retain their existing presentation.
+metadata. Managed wakes carrying inherited Plan instructions cannot open new Plan revisions.
+Provider-recovery wakes following a human Plan request continue that same revision,
+including its canonical card source, saved Markdown and proposal notification.
+Open-todo maintenance and recovery after a later implementation or ordinary human
+request remain excluded; native continuation revisions retain their presentation.
 The selected-session projection preserves its reference through assistant
 streaming updates and does not subscribe a provider root to message parts.
 If the initial tail contains only maintenance/assistant records, the shared
@@ -832,8 +834,11 @@ Coding Agents keep three internal values: `undefined` inherits the agent setting
 explicit effort. Send resolution freezes inheritance before enqueue or transport;
 draft JSON, draft-to-session promotion, context selection maps, queued rollback,
 and manual retry preserve `null`. Only missing legacy queue configuration may
-use a current fallback. Provider-default selections never manufacture `medium`
-or the first advertised effort.
+use a current fallback. New chat captures (`captureCurrentSendConfig` and `resolveCurrentDraftSendConfig`)
+apply the chat-only native-level policy after inheritance: Medium when supported,
+otherwise the lower middle level. Stored defaults, canonical restoration and
+already-captured queue/retry configurations keep their existing semantics; the
+normalizer never rewrites historical messages or previously captured rows.
 
 The native OpenCode transport maps captured `null` to its verified empty-variant
 wire contract, while missing values remain omitted. Restoring a canonical empty

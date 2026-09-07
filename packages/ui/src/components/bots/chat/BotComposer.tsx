@@ -274,30 +274,62 @@ export const BotComposer: React.FC<BotComposerProps> = ({
               </div>
             </div>
           ) : null}
-          <label htmlFor={`bot-composer-${channel.id}`} className="sr-only">{t('bots.composer.label')}</label>
-          <Textarea
-            ref={inputRef}
-            id={`bot-composer-${channel.id}`}
-            simple
-            rows={2}
-            value={draft.text}
-            disabled={!hasWriteAccess || accepting}
-            placeholder={hasWriteAccess ? t('bots.composer.placeholder') : t('bots.composer.readOnly')}
-            className="min-h-[72px] w-full resize-none bg-transparent px-3.5 pb-2 pt-3 typography-body text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
-            onChange={(event) => {
-              onRuntimeIntent?.();
-              updateDraft({ text: event.target.value, attachmentIds: draft.attachmentIds });
-            }}
-            onKeyDown={(event) => {
-              if (!shouldSubmitBotComposerKey({
-                key: event.key,
-                shiftKey: event.shiftKey,
-                isComposing: event.nativeEvent.isComposing,
-              })) return;
-              event.preventDefault();
-              void submit();
-            }}
-          />
+
+          <div className="flex items-end gap-2 p-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={BOT_ATTACHMENT_ACCEPT}
+              disabled={!hasWriteAccess || accepting || uploading}
+              className="sr-only"
+              tabIndex={-1}
+              onChange={async (event) => {
+                const files = Array.from(event.target.files ?? []);
+                event.target.value = '';
+                await attachFiles(files);
+              }}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-9 shrink-0"
+              disabled={!hasWriteAccess || accepting || uploading}
+              aria-label={t('bots.composer.attachAria')}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {uploading ? <RiLoader4Line className="animate-spin motion-reduce:animate-none" /> : <RiAttachment2 />}
+            </Button>
+            <label htmlFor={`bot-composer-${channel.id}`} className="sr-only">{t('bots.composer.label')}</label>
+            <Textarea
+              ref={inputRef}
+              id={`bot-composer-${channel.id}`}
+              simple
+              rows={1}
+              value={draft.text}
+              disabled={!hasWriteAccess || accepting}
+              placeholder={hasWriteAccess ? t('bots.composer.placeholder') : t('bots.composer.readOnly')}
+              outerClassName="min-w-0 flex-1"
+              className="min-h-9 max-h-48 w-full resize-none bg-transparent px-1 py-2 typography-body leading-5 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+              onChange={(event) => {
+                onRuntimeIntent?.();
+                updateDraft({ text: event.target.value, attachmentIds: draft.attachmentIds });
+              }}
+              onKeyDown={(event) => {
+                if (!shouldSubmitBotComposerKey({
+                  key: event.key,
+                  shiftKey: event.shiftKey,
+                  isComposing: event.nativeEvent.isComposing,
+                })) return;
+                event.preventDefault();
+                void submit();
+              }}
+            />
+            <Button type="submit" size="icon" className="size-9 shrink-0" disabled={submitDisabled} aria-label={t('bots.composer.sendAria')}>
+              {pendingMessageId ? <RiLoader4Line className="animate-spin motion-reduce:animate-none" /> : <RiSendPlane2Line />}
+            </Button>
+          </div>
 
           {draft.attachmentIds.length > 0 ? (
             <ul className="flex flex-wrap gap-1.5 px-3 pb-2" aria-label={t('bots.chat.attachments.label')}>
@@ -332,44 +364,15 @@ export const BotComposer: React.FC<BotComposerProps> = ({
             </ul>
           ) : null}
 
-          <div className="flex items-center gap-2 border-t border-border/50 px-2 py-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept={BOT_ATTACHMENT_ACCEPT}
-              disabled={!hasWriteAccess || accepting || uploading}
-              className="sr-only"
-              tabIndex={-1}
-              onChange={async (event) => {
-                const files = Array.from(event.target.files ?? []);
-                event.target.value = '';
-                await attachFiles(files);
-              }}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              disabled={!hasWriteAccess || accepting || uploading}
-              aria-label={t('bots.composer.attachAria')}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {uploading ? <RiLoader4Line className="animate-spin motion-reduce:animate-none" /> : <RiAttachment2 />}
-              <span className="hidden sm:inline">{t('bots.composer.attach')}</span>
-            </Button>
-            <span className="min-w-0 flex-1 truncate typography-micro text-muted-foreground" aria-live="polite">
+          {!hasWriteAccess || sendError ? (
+            <span className="block px-3 pb-2 typography-micro text-muted-foreground" aria-live="polite">
               {!hasWriteAccess
                 ? t(`bots.composer.access.${channel.accessRole}`)
                 : sendError
                   ? t('bots.composer.retainedAfterError')
                   : null}
             </span>
-            <Button type="submit" size="sm" disabled={submitDisabled} aria-label={t('bots.composer.sendAria')}>
-              {pendingMessageId ? <RiLoader4Line className="animate-spin motion-reduce:animate-none" /> : <RiSendPlane2Line />}
-              <span className="hidden sm:inline">{pendingMessageId ? t('bots.composer.accepting') : t('bots.composer.send')}</span>
-            </Button>
-          </div>
+          ) : null}
         </form>
       </div>
     </div>

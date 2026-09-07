@@ -8,16 +8,16 @@ const modelControlsSource = readFileSync(
 );
 
 describe('ModelControls composer alignment', () => {
-    test('bottom-aligns both desktop web thinking-label paths without changing shell alignment', () => {
+    test('bottom-aligns the shared thinking-label path without changing shell alignment', () => {
         const selectorStart = modelControlsSource.indexOf('const renderVariantSelector = () => {');
         const selectorEnd = modelControlsSource.indexOf('const renderAgentSelector = () => {', selectorStart);
         const selectorSource = modelControlsSource.slice(selectorStart, selectorEnd);
-        const thinkingLabelClass = 'inline-flex items-center gap-1 text-[10px] leading-[14px] -my-[2px] py-[2px] font-medium min-w-0 truncate text-muted-foreground';
+        const thinkingLabelClass = 'model-controls__variant-label truncate text-[10px] font-medium leading-[14px] -my-[2px] py-[2px]';
 
         expect(selectorStart).toBeGreaterThan(-1);
         expect(selectorEnd).toBeGreaterThan(selectorStart);
-        expect(selectorSource.match(new RegExp(thinkingLabelClass.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))).toHaveLength(2);
-        expect(selectorSource.match(/variantLabelAlignmentClass/g)).toHaveLength(2);
+        expect(selectorSource.match(new RegExp(thinkingLabelClass.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))).toHaveLength(1);
+        expect(selectorSource.match(/variantLabelAlignmentClass/g)).toHaveLength(1);
         expect(modelControlsSource).toContain("? 'translate-y-[3px]'\n        : 'translate-y-[2px]';");
         expect(modelControlsSource).toContain("const variantGroupSpacingClass = '-ml-1';");
         expect(modelControlsSource).toContain("className={cn('flex min-w-0 shrink-0', variantGroupSpacingClass)}");

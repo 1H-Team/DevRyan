@@ -5,9 +5,10 @@ import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyMeridianHttpHotfix, MERIDIAN_HTTP_SERVER_ORIGINAL } from './meridian-http-hotfix.js';
 import { serveMeridianHttp } from './meridian-http-server.js';
+import { MERIDIAN_HANDOFF_EDITS, MERIDIAN_HANDOFF_HELPER, stripMeridianHandoffPatch } from './meridian-passthrough-hotfix.js';
 
 const roots = [];
-const source = `async function start() {\n${MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;\n}`;
+const source = `async function start() {\n${MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;\n}\n${MERIDIAN_HANDOFF_EDITS.map(([before]) => before).join('\n')}`;
 const sha256 = text => crypto.createHash('sha256').update(text).digest('hex');
 const fixture = (version = '1.62.6') => {
   const cache = path.resolve(import.meta.dirname, '../../../../../.cache/qa');
@@ -29,10 +30,24 @@ describe('Meridian native HTTP cancellation compatibility', () => {
     const patched = fs.readFileSync(path.join(dist, 'cli-wxk8xvd3.js'), 'utf8');
     expect(patched).toContain('serveMeridianHttp({');
     expect(patched).toContain('}, serve);');
+    expect(patched).toContain('settlePassthroughQuery(sdkQuery');
+    expect(fs.existsSync(path.join(dist, MERIDIAN_HANDOFF_HELPER))).toBe(true);
     expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: true, changed: false });
     fs.appendFileSync(path.join(dist, 'cli-wxk8xvd3.js'), '\n// unreviewed change');
     expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: false, code: 'MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE' });
     expect(fs.readFileSync(path.join(dist, 'cli-wxk8xvd3.js'), 'utf8')).toContain('unreviewed change');
+  });
+
+  it('upgrades an existing HTTP-only patch and rejects a partially installed handoff', () => {
+    const { options, dist } = fixture();
+    const entry = path.join(dist, 'cli-wxk8xvd3.js');
+    expect(applyMeridianHttpHotfix(options).ok).toBe(true);
+    const complete = fs.readFileSync(entry, 'utf8');
+    fs.writeFileSync(entry, stripMeridianHandoffPatch(complete));
+    expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: true, changed: true });
+    expect(fs.readFileSync(entry, 'utf8')).toBe(complete);
+    fs.writeFileSync(entry, complete.replace(MERIDIAN_HANDOFF_EDITS[0][1], MERIDIAN_HANDOFF_EDITS[0][0]));
+    expect(applyMeridianHttpHotfix(options).ok).toBe(false);
   });
 
   it('rejects unsupported package versions without creating a helper', () => {

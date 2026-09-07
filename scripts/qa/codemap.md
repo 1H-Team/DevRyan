@@ -40,3 +40,10 @@ Repository-only Electron/web QA and shared CDP inspection helpers. No file in th
 - `*.test.mjs`: transport failure, argument validation and owned-process cleanup contracts, recursively discovered by `scripts/test-scripts.mjs`.
 
 Commands, prerequisites, coverage limits and journal investigation: `docs/QA.md`. Deterministic provider transport: `../perf/loopback-opencode-fixture.mjs`.
+
+- `recovery-cards.mjs`: opt-in `DEVRYAN_QA_SCENARIO=recovery` web/Electron replay of a failed dispatch, six attempts with removed ancestors, canonical child navigation, recovered Plan persistence, reload and narrow viewport acceptance. Also verifies generic Explorer/Designer titles summarize task briefs, persist after idle, and survive reload. Uses deterministic HTTP/SSE records and scoped task snapshots; it does not execute a live provider.
+- `meridian-designer-continuity.mjs`: opt-in live control/candidate comparison using copied Meridian packages, one fixed Opus/high brief and cache-owned tools. Reuses OAuth in memory, isolates native session directories, bounds requests/time, and records acceptance, first edit, completion and session continuity without restarting the user's runtime.
+
+- `thinking-slider.mjs`: opt-in `thinking` scenario, real shared-UI 0–5-stop
+  catalog checks, pointer resistance and commit, touch cancellation, keyboard
+  focus, light/dark/narrow screenshots, reduced motion, and native submission.

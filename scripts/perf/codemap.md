@@ -9,7 +9,9 @@ behavior.
 ## Design
 
 - `loopback-opencode-fixture.mjs` serves one selected parent and three child
-  sessions with deterministic message/status/SSE fixtures on loopback.
+  sessions with deterministic message/status/SSE fixtures on loopback. Its bounded
+  `replayRecoveryVisual` helper replaces fixture-owned canonical rows and publishes
+  validated task events for the recovery-card QA scenario.
   Seeded responses use numbered ASCII segments and retain their configured byte
   size through the production fetched-text normalizer, so history workloads
   measure the full payload instead of deduplicated repeated filler.
@@ -248,3 +250,6 @@ it reads the live database read-only and is safe while the app is running.
 The shared fixture now models directory-scoped sessions, distinct provider catalog/config contracts, valid host session IDs, and prompt/abort/reconnect behavior. Historical resource summaries made with the older fixture are not comparable without a fresh baseline using this fixture version.
 
 QA controls also seed paginated histories and configure the next prompt's rejection, hold/release, delayed or empty reasoning, and completed/failed tool output. Permission/question requests use SDK-shaped list/reply routes, todos use canonical snapshots/events, and captured sends retain explicit model/agent/variant/tool policy. Unknown routes fail with 404 and remain visible in `getState().unknownRoutes`; these transport fixtures do not simulate managed scheduler acceptance. Preserve one fixture hash across resource baseline/candidate runs, including its catalog.
+
+The optional `thinkingModels` fixture catalog is used only by the thinking-slider
+QA scenario; ordinary performance and mobile fixture catalogs remain unchanged.

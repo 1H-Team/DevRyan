@@ -18,12 +18,12 @@ const RECORD_FIELDS = Object.freeze({
     'type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'turnID', 'checkpointID',
     'status', 'payload',
   ]),
-  connection: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'status', 'attempt', 'payload']),
+  connection: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'event', 'status', 'attempt', 'payload']),
   timing: new Set([
     'type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'messageID', 'mark', 'payload',
   ]),
   log: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'level', 'source', 'message', 'payload']),
-  gap: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'reason', 'count', 'source', 'payload']),
+  gap: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'event', 'reason', 'count', 'source', 'payload']),
 });
 
 const NESTED_FIELDS = new Set([
@@ -49,6 +49,8 @@ const NESTED_FIELDS = new Set([
   'projectDirectory', 'idempotencyKey', 'fingerprint', 'tombstone', 'result',
   'contended', 'gapReason', 'ref', 'commit', 'tree', 'parent', 'reusedTree',
   'model', 'system', 'noReply', 'tools', 'tokens', 'cost', 'snapshot',
+  'streamId', 'sequence', 'generation', 'observedAt', 'origin', 'requestType',
+  'firstMissingSequence', 'lastMissingSequence', 'failureCode',
 ]);
 
 const TOKEN_FIELDS = new Set(['total', 'input', 'output', 'reasoning', 'cache']);
@@ -61,6 +63,13 @@ const STABLE_IDENTIFIER_FIELDS = new Set([
   'operationID', 'operationId', 'checkpointID', 'checkpointId', 'turnID', 'turnId',
   'userMessageID', 'assistantMessageID', 'idempotencyKey', 'fingerprint',
   'sha256', 'hash', 'head', 'commit', 'tree', 'ref', 'parent',
+  'streamId',
+]);
+
+const BROWSER_NETWORK_FIELDS = new Set([
+  'botId', 'streamId', 'sequence', 'generation', 'observedAt', 'kind', 'origin',
+  'path', 'requestType', 'statusCode', 'reason', 'failureCode',
+  'firstMissingSequence', 'lastMissingSequence',
 ]);
 
 const SECRET_PATTERNS = [
@@ -242,7 +251,18 @@ export const createDiagnosticSanitizer = (options = {}) => {
         report.droppedFields += 1;
         continue;
       }
-      output[key] = sanitizeNested(value, new WeakSet(), key);
+      const browserNetwork = key === 'payload'
+        && ['bot.computer.network', 'bot.computer.network_gap'].includes(object.event)
+        && ['connection', 'gap'].includes(type);
+      // Browser diagnostics have a narrower contract than ordinary execution
+      // records: even otherwise permitted headers/body/input fields are dropped.
+      const projected = browserNetwork && asObject(value)
+        ? Object.fromEntries(Object.entries(value).filter(([field, nested]) => (
+          BROWSER_NETWORK_FIELDS.has(field)
+          && (typeof nested === 'string' || (typeof nested === 'number' && Number.isFinite(nested)))
+        )))
+        : value;
+      output[key] = sanitizeNested(projected, new WeakSet(), key);
     }
     output.type = type;
     output.at = Number.isFinite(output.at) ? output.at : Date.now();

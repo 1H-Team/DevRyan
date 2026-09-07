@@ -16,7 +16,7 @@ DevRyan forwards OpenCode's provider-reported assistant token payloads without a
 - `packages/web/server/lib/opencode/routes.js`: OpenCode/provider settings and auth-related route registration.
 - `packages/web/server/lib/opencode/question-routes.js`: focused pre-proxy question routes. Pending lists merge OpenCode and Cursor by session/request identity with directory filtering; Cursor replies and rejects settle locally while unknown IDs continue to the generic OpenCode proxy. A Skip request for a verified OpenCode question is translated into one ordered successful reply per question instructing the active turn to use best judgment and state its assumption, because native OpenCode rejection terminates the tool call instead of resuming it. OpenCode listing is bounded by a short abort timeout. When it fails or stalls but Cursor has live cards, the route returns those cards with `X-DevRyan-Question-Partial: opencode` so clients preserve both sources and retry upstream discovery.
 - `packages/web/server/lib/opencode/cursor-session-title-runtime.js`: Cursor-only session title coordination for intercepted SDK prompts, including eligibility checks, in-flight deduplication, compare-before-update rename protection, and retryable failure handling.
-- `packages/web/server/lib/opencode/standard-session-title-runtime.js`: Provider-neutral title coordination for proxied non-Cursor prompts. It summarizes the earliest visible, non-synthetic user text by trying every live served-and-zero-cost Zen model sequentially, with 4.5 seconds and 32 output tokens per model and no shorter pool deadline. When the free catalog is exhausted, an isolated hidden no-tools helper uses the selected session provider/model without inheriting its reasoning variant. Invalid results keep the placeholder and retry later; prompt-derived local fallbacks are never projected or persisted. Valid candidates are durably recorded before projection, then PATCHed only after canonical idle or completed-turn recovery; a verifying read removes the job only after OpenCode stores the same title. Startup, reconnect, session-list, placeholder-update, idle, and directory-watchdog reconciliation retain bounded concurrency and manual/external titles win every comparison.
+- `packages/web/server/lib/opencode/standard-session-title-runtime.js`: Provider-neutral title coordination for non-Cursor sessions. It immediately derives a local summary from the earliest visible, non-synthetic user text, then optionally upgrades it through an isolated no-tools helper on the selected session provider/model with a ten-second budget and one delayed retry. Anthropic-routed sessions keep the derived summary. Generic `Managed <agent> Task` child titles are eligible only when canonical parent/agent metadata matches; known initial agent-contract, Context Mode, and read-only prefix blocks are excluded from the task brief. Existing placeholder children recover through session updates or list/watchdog reconciliation, including after restart. Candidates are durably recorded before projection, then PATCHed only after canonical idle or completed-turn recovery; a verifying read retires the job. Custom labels and manual renames remain authoritative.
 - `packages/web/server/lib/opencode/session-title-outbox.js`: Atomic versioned persistence for pending standard-title jobs. Web/Electron store `session-title-outbox.json` under `OPENCHAMBER_DATA_DIR`. Entries contain directory/session identity, a one-way prompt fingerprint, candidate/source, lifecycle state, retry counters, and timestamps—never raw prompt text. Malformed files are quarantined and rebuilt without blocking startup.
 - `packages/web/server/lib/opencode/providers.js`: provider source detection, Anthropic OAuth proxy config helpers, default Cursor provider bootstrap, and selective Antigravity model cleanup inside the shared Google provider config. DevRyan-created Anthropic proxy configs register the reviewed installed `opencode-with-claude` entrypoint by local path; known legacy managed entries migrate to it, while explicit user version pins remain authoritative. Google auth discovery and disconnect treat `google` and `google.oauth` as aliases. Antigravity source detection recognizes its account pool and models nested under Google configuration; disconnect removes those sources without removing regular Google models.
 - `packages/web/server/lib/opencode/anthropic-oauth-plugin.js`: manifest-backed `opencode-with-claude` matching and local-registration policy shared by config, quota discovery, and managed-runtime overlays.
@@ -204,7 +204,7 @@ Do not run a second independent refresh owner against the shared login.
 - `GET /api/provider/cursor-acp/runtime-status` reports Cursor SDK execution auth and dashboard usage-token status independently as `sdkAuthConfigured` and `usageAuthConfigured`, plus Cursor worker mode/readiness/restart diagnostics.
 - `GET /api/session/status` merges Cursor SDK runtime busy/idle status into the proxied OpenCode session status payload, falling back to Cursor-only status when upstream status is unavailable.
 - Every `POST /api/session/:sessionID/prompt_async` applies the shared provider/agent tool policy before Cursor interception or generic proxying. Packaged Orchestrator sends merge `task: false` with any provider-specific restriction, including Copilot's optional Resend namespace limits, so web and Electron forwarding preserve the same managed-only contract as the shared UI runtime overlay.
-- Accepted non-Cursor `POST /api/session/:sessionID/prompt_async` requests schedule non-blocking provider-neutral title generation with the directory and visible non-synthetic text captured at acceptance. A valid free-Zen or isolated selected-model candidate is atomically enqueued before its synthetic `session.updated` projection. Every provider waits for authoritative idle or completed-turn recovery before compare/PATCH/read verification; canonical idle, update, and delete events plus successful session-list loads drive durable reconciliation and complete bounded-concurrency placeholder recovery. This changes no public HTTP or SSE contract. Cached schema-verified Grok duplicate-tool disables merge synchronously, while discovery and refresh never block the prompt.
+- Accepted non-Cursor `POST /api/session/:sessionID/prompt_async` requests schedule non-blocking provider-neutral title generation with the directory and visible non-synthetic text captured at acceptance. Derived and selected-model candidates are atomically enqueued before their synthetic `session.updated` projection. Every provider waits for authoritative idle or completed-turn recovery before compare/PATCH/read verification; canonical idle, update, and delete events plus successful session-list loads drive durable reconciliation and bounded-concurrency placeholder recovery. Managed children that bypass the public prompt proxy recover from their canonical session updates and lists. This changes no public HTTP or SSE contract. Cached schema-verified Grok duplicate-tool disables merge synchronously, while discovery and refresh never block the prompt.
 - Intercepted `cursor-acp` prompts schedule a non-blocking Cursor Auto title request after acceptance. Only default, generated, provider-error, or legacy raw-prompt titles are eligible, and the upstream session is re-read before PATCH so manual names are never overwritten.
 - `GET /api/config/providers` normalizes configured GitHub Copilot aliases to `github-copilot`, preserves upstream OpenCode model metadata when present, adds selectable Copilot Auto, discovers account-specific Copilot models when upstream omits or empties them, and exposes a minimal fallback model list only when authenticated discovery is unavailable. Managed OpenAI entries also include sanitized `authType` metadata; OAuth-incompatible models remain present internally with `available: false`, `unavailableReason`, and `requiredAuthType` so clients can filter them and prevent invalid sends. External OpenCode responses are not annotated.
 
@@ -675,3 +675,39 @@ in `docs/PROVIDER_RECOVERY.md`.
 ## Session change summaries
 
 The revisioned summary and card Undo/Redo routes are owned by the shared harness session-change host, composed in `server/index.js`. `computeScopedSessionChanges` is only a conservative legacy fallback: it returns incomplete historical coverage and never adopts worktree-wide turn diffs. Existing per-message conversation revert remains in `session-scoped-revert.js`; native rewind makes whole-session captured Undo unavailable until restored. See `docs/SESSION_CHANGES.md` for the shared contract.
+
+### Meridian passthrough continuity and default thinking metadata
+
+The source-gated Meridian installer also owns `meridian-passthrough-hotfix.js`
+and its standalone `meridian-passthrough-handoff.js` helper. It accepts only the
+reviewed 1.62.6 original bundle hash, the previous HTTP-only patch, or the complete
+combined patch. Helper files are installed before the atomic entrypoint rename.
+Existing managed provisioning owns application; external/custom runtimes remain
+outside that mutation path. No live process is restarted by this patch.
+
+At a complete passthrough boundary, Meridian must have consumed the assistant
+UUID and every expected tool result and closed the outgoing blocks. The helper
+requests an SDK control interrupt, then drains the query. A real SDK terminal
+remains the normal proof. SDK 0.2.141 can instead throw its tool-boundary diagnostic
+or max-turn error after that interrupt; only those local exits can use a verified
+native JSONL checkpoint. Verification requires the same session, canonical cwd,
+exact assistant message/parent chain, exact tool IDs and complete associated
+results. Reads are capped at 4 MiB/4096 rows and fail closed. It never fabricates
+a terminal event. Client cancellation, timeout, transport failure, duplicate
+tool-use, independent-session and incomplete-result protections remain active;
+stream and non-stream storage gates explicitly reject cancellation.
+The bounded diagnostic ring records settling, retained, rejected and replay
+reasons with tool counts, without prompts, tool arguments or credentials.
+
+`model-default-thinking.js` adds optional display-only `defaultThinkingLevel`
+to provider model metadata. Explicit supported adapter configuration wins;
+otherwise only verified OpenCode runtime defaults are annotated. Unknown
+defaults, including inherited Meridian SDK/profile policy, remain unspecified.
+ModelControls renders a known level or “Provider-controlled,” explains the default,
+and keeps selection/send/queue variant values unchanged. Catalog enrichment
+preserves unchanged object references and never merges metadata into options.
+
+Regression coverage lives in the handoff, HTTP-hotfix, model-default-thinking and
+mounted ModelControls hydration tests. The opt-in isolated live comparison is
+`scripts/qa/meridian-designer-continuity.mjs`; see
+`docs/audits/2026-09-06-designer-continuity.md` for evidence and limitations.

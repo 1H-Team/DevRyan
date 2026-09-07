@@ -17,6 +17,8 @@ Each run creates a private `.cache/qa/<runtime>-<scenario>-<random>/runtime/` wi
 
 The runner records revision, dirty state, runtime/scenario, check timings, sanitized errors, screenshot paths, fixture request counts/canonical IDs, diagnostic health when available, and cleanup errors in `result.json`. `process-logs.json` keeps bounded sanitized child logs. The sanitized journal is preserved as `journal/` before temporary runtime data is removed. Only children created by this invocation are stopped; shutdown failures retain temporary data and fail the run. A missing build, executable, connection, or assertion is a failure with evidence, not a skipped success.
 
+The opt-in `DEVRYAN_QA_SCENARIO=recovery bun run qa` adds recovery-card acceptance after the chat smoke; set `DEVRYAN_QA_RUNTIME=electron` for the actual desktop host. It replays canonical failure/recovery records, prunes the original attempts, checks the current child and model, verifies the saved Plan Markdown through the real host API, reloads, expands the card and captures narrow layouts (390px touch web and 600px Electron content). It also verifies generic Explorer/Designer titles summarize their task briefs, persist only on idle, and survive reload. Task snapshots and provider events are deterministic fixtures; this does not establish live-provider acceptance. Electron QA rejects a stale staged UI; run `bun run --cwd packages/electron build:web-assets` after rebuilding web assets. See the [reviewed recovery and title evidence](audits/2026-09-06-recovery-cards/README.md).
+
 Current coverage: select a fixture session; connect event transport; receive four concurrent streams; preserve typed composer text; submit through the composer and reconcile; cancel a second active prompt; reconnect/reload without resubmission or lost completed text. The mobile scenario captures 390×844, 844×390, and 768×1024 in both themes before the stream journey and checks composer/viewport bounds plus touch-driven session drawer open/close at the mobile breakpoints. `passed` describes these automated checks only. A human or agent must inspect every PNG and write a reviewed summary under `docs/audits/`; screenshot creation alone is not visual acceptance. Reviewed results and missing journeys are tracked in the September audit register.
 
 The default smoke does not cover new-session creation, attachments, queue policy, permission dialogs, tool expansion or old-history anchoring; use the matrix fixture for those journeys. Drawer swipes, native dialogs, long idle recovery and closed-session memory still need separate verification. Physical-device keyboard behavior remains unverified until exercised on a device.
@@ -377,3 +379,21 @@ JS
 ~~~
 
 Inspect every captured PNG and the exact claim/read/question evidence. The pair report separates comparable and incomparable states, generic interruptions and compacted-only/control-only/both/neither retrieval candidates. It preserves differing plans and failed matrix outcomes. Its three acceptance flags always remain false, including when all observation checks pass. Human classification is required before attributing any loss to compaction or proposing a retrieval or memory change.
+
+## Thinking slider acceptance
+
+After building and staging the shared UI, run
+`DEVRYAN_QA_SCENARIO=thinking bun run qa` and
+`DEVRYAN_QA_RUNTIME=electron DEVRYAN_QA_SCENARIO=thinking bun run qa`.
+The isolated scenario checks zero through five native levels, the circular thumb,
+60% detent/release behavior, keyboard/focus restoration, light/dark desktop and
+390px touch web, cancelled touch, reduced motion, and an explicit Medium prompt
+plus canonical reload. Screenshots and results are written to the reported
+`.cache/qa/` directory. This verifies fixture transport, not live provider billing
+or physical touch hardware.
+
+Set `DEVRYAN_QA_BACKGROUND=1` to keep the web QA Chromium window hidden during
+scripted interaction; screenshots still capture the real renderer. The thinking
+scenario also verifies the supported header Fast toggle and focus restoration.
+
+Recorded acceptance evidence: [2026-09-07 thinking slider](audits/2026-09-07-thinking-slider/README.md).

@@ -750,6 +750,7 @@ export const MANAGED_RESULT_PAGE_MAX_BYTES: number;
 export const MANAGED_RESULT_MODES: readonly ManagedResultMode[];
 
 export function formatManagedTaskDisplayName(label: string): string;
+export function isManagedTaskPlaceholderSession(session: unknown): boolean;
 export function resolveManagedResultMode(value?: unknown): ManagedResultMode;
 export function managedResultPayloadMatches(
   task: Partial<ManagedTaskRecord> | ManagedTaskEventRecord,

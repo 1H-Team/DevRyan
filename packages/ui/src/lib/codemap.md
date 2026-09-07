@@ -7,6 +7,7 @@ Shared non-React application logic for the UI package: API clients, routing/seri
 - **Domain-partitioned utility modules**: subfolders (`opencode`, `router`, `theme`, `git`, `messages`, `permissions`, `quota`, `startup`, `terminal`, `tools`, `worktrees`) isolate contracts per concern.
 - **Client abstraction**: `opencode/client.ts` wraps SDK usage, directory scoping, retries/circuit checks, and path normalization so features avoid direct transport logic.
 - **Pure helper bias**: many modules expose deterministic transforms/serializers to keep component/store code thin.
+- **Session title reconciliation**: `sessionTitles.ts` preserves meaningful projected titles across placeholder events and snapshots, including generated managed-child names identified by the shared orchestration contract's canonical parent/agent predicate.
 - **Managed workspace hydration**: `directoryPersistence.ts` validates persisted directories against the accepted principal, `managedProjectsApi.ts` persists administrator-owned metadata, and `worktrees/managedBranches.ts` filters discovered real worktrees and draft local-branch choices against assignment-backed visibility without replacing server UUIDs.
 - **Shared byte presentation**: `formatBytes.ts` is the single 1024-based formatter used by diagnostic-journal and Electron-cache status UI.
 - **Authoritative session-change projection**: `sessionChangeAttribution.ts` derives repository-relative paths only from completed successful file-tool parts, records successful shell mutations as explicitly unattributed, and ignores shared-working-tree message summaries and patch snapshots.
@@ -30,3 +31,7 @@ Shared non-React application logic for the UI package: API clients, routing/seri
 - Heavy consumers: `components/chat/*`, `components/views/SettingsView.tsx`, and `stores/*`.
 - Bridges to backend through `/api/*` and `@opencode-ai/sdk/v2`.
 - Provides foundational contracts for `hooks/*` and `sync/*` (routing, message/session helpers, runtime/platform checks).
+
+`providers/variantControls.ts` also exposes optional display-only
+`defaultThinkingLevel` catalog lookup for ModelControls; it does not resolve or
+override the variant sent to the provider.

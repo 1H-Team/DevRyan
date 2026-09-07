@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -321,6 +322,25 @@ const createFixture = (docker = new FakeDocker()) => ({
 });
 
 describe('restricted Bot Docker supervisor', () => {
+  test('allows Docker its full stop grace period even when ordinary requests have shorter deadlines', async () => {
+    const timeouts = [];
+    const paths = [];
+    const client = createDockerSocketClient({ timeoutMs: 100, request: (options, respond) => {
+      paths.push(options.path);
+      const request = new EventEmitter();
+      request.setTimeout = (milliseconds) => timeouts.push(milliseconds);
+      request.end = () => {
+        const response = new EventEmitter();
+        response.statusCode = 204;
+        respond(response);
+        response.emit('end');
+      };
+      return request;
+    } });
+    await client.stopContainer('owned-computer');
+    expect(paths).toEqual(['/v1.44/containers/owned-computer/stop?t=30']);
+    expect(timeouts).toEqual([45_000]);
+  });
   test('exposes fixed verbs and keeps reasoning on the internal network', async () => {
     const { docker, supervisor } = createFixture();
     expect(Object.keys(supervisor).sort()).toEqual([
@@ -971,6 +991,19 @@ describe('restricted Bot Docker supervisor', () => {
     expect(reset.removed).toEqual(['scratch']);
     expect([...docker.volumes.keys()].some((name) => name.endsWith('-profile'))).toBe(true);
     expect([...docker.volumes.keys()].some((name) => name.endsWith('-scratch'))).toBe(false);
+  });
+
+  test('does not reuse a running container after a stop request times out', async () => {
+    const { docker, supervisor } = createFixture();
+    await supervisor.ensureComputer(computerRequest());
+    const stop = docker.stopContainer.bind(docker);
+    docker.stopContainer = async () => { throw new Error('stop timed out'); };
+    const target = { kind: 'computer', botId: computerRequest().botId, scopeKey: computerRequest().scopeKey };
+    await expect(supervisor.stop(target)).rejects.toThrow('stop timed out');
+    await expect(supervisor.ensureComputer(computerRequest())).rejects.toMatchObject({ code: 'bot_supervisor_stop_unconfirmed' });
+    docker.stopContainer = stop;
+    await supervisor.stop(target);
+    await expect(supervisor.ensureComputer(computerRequest())).resolves.toMatchObject({ state: 'running' });
   });
 
   test('reports owned containers without exposing an arbitrary Docker operation', async () => {

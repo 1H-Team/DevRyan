@@ -57,6 +57,15 @@ describe('managed orchestration contract', () => {
     expect(task.label).toBe('workspace-surface_map');
   });
 
+  test('recognizes managed title placeholders only with matching child and agent identity', () => {
+    const child = { parentID: 'ses_root', agent: 'explorer', title: 'Managed Explorer Task' };
+    expect(contract.isManagedTaskPlaceholderSession(child)).toBe(true);
+    expect(contract.isManagedTaskPlaceholderSession({ ...child, parentID: '' })).toBe(false);
+    expect(contract.isManagedTaskPlaceholderSession({ ...child, agent: 'designer' })).toBe(false);
+    expect(contract.isManagedTaskPlaceholderSession({ ...child, title: 'Inspect Calendar Layout' })).toBe(false);
+    expect(contract.isManagedTaskPlaceholderSession(null)).toBe(false);
+  });
+
   test('defines a distinct DevRyan owner and the complete status set', () => {
     expect(MANAGED_TASK_OWNER).toBe('devryan');
     expect(MANAGED_TASK_STATUSES).toEqual([

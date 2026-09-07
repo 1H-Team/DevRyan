@@ -35,7 +35,7 @@ export const InProgressOperationBanner: React.FC<InProgressOperationBannerProps>
 
   // Only show banner if we have actual in-progress operation data
   const hasMergeInProgress = mergeInProgress && mergeInProgress.head;
-  const hasRebaseInProgress = rebaseInProgress && (rebaseInProgress.headName || rebaseInProgress.onto);
+  const hasRebaseInProgress = Boolean(rebaseInProgress);
   const operation = hasMergeInProgress ? 'merge' : hasRebaseInProgress ? 'rebase' : null;
   
   if (!operation) {

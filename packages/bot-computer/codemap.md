@@ -26,7 +26,9 @@ browser panel or OpenCode browser tools.
 - `browser-diagnostics.js` — memory-only navigation trail and sticky verdict
   aggregation with masked pathnames, separate main-frame identity, bounded
   cookie/dialog data, reset/decay behavior, and no queries, headers, cookie
-  values, page content, or input data.
+  values, page content, or input data. Also owns the independent five-minute,
+  100-entry/64-KiB network/lifecycle trail with process stream identity and
+  monotonic sequences for host journal deduplication.
 - `managed-policy.js` — startup verification for the exact root-owned mandatory
   JavaScript/cookie policy.
 - `chromium-policies/managed/devryan-browser.json` — root-owned image policy
@@ -35,7 +37,8 @@ browser panel or OpenCode browser tools.
   relaunches) without mutating persistent Bot profiles.
 - `egress-proxy.js` — loopback authenticated relay into bot-egress with
   runtime-token rotation and no direct fallback.
-- `refs.js` — page-generation-fenced opaque accessibility references.
+- `refs.js` — page-generation-fenced opaque accessibility references and
+  byte-bounded snapshot pages with stable cursors and explicit truncation.
 - `control.js` — actor-attributed renewable human-control leases plus the
   immediate agent pre-execution fence used by durable host wait/resume. Return
   and expiry retain the fence until the driver's registered input-release hook

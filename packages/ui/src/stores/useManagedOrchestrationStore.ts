@@ -1464,6 +1464,31 @@ export const managedOrchestrationSelectors = {
     });
   },
   task: (taskId: string) => (state: ManagedOrchestrationStore) => state.tasksById[taskId],
+  /** Resolve a dispatch's current same-child attempt even after its old hops were pruned. */
+  taskIdForRecovery: (taskId: string, fallback?: {
+    rootSessionId: string;
+    dispatchCallId: string | null;
+    childSessionId: string | null;
+    directory: string;
+  }) => (state: ManagedOrchestrationStore): string | undefined => {
+    const original = state.tasksById[taskId];
+    const identity = original ?? fallback;
+    if (!identity) return undefined;
+    const childSessionId = identity.childSessionId;
+    const latestId = childSessionId ? state.latestTaskIdByChildSessionId[childSessionId] : undefined;
+    const latest = latestId ? state.tasksById[latestId] : undefined;
+    if (
+      latest && latest.rootSessionId === identity.rootSessionId
+      && latest.directory === identity.directory
+      && (latest.taskId === taskId || (
+        (latest.executionKind === 'resume' || latest.executionKind === 'recover_in_place' || latest.executionKind === 'retry_in_place')
+        && Boolean(identity.dispatchCallId)
+        && latest.dispatchCallId === identity.dispatchCallId
+        && (!original || latest.sequence > original.sequence)
+      ))
+    ) return latest.taskId;
+    return original?.taskId;
+  },
   resultEnvelope: (taskId: string) => (state: ManagedOrchestrationStore) => (
     state.resultEnvelopesByTaskId[taskId]
   ),

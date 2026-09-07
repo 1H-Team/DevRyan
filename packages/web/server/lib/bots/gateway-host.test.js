@@ -66,6 +66,26 @@ const validBody = (overrides = {}) => ({
 });
 
 describe('private Docker Bot gateway host', () => {
+  it('reports a reviewed result-size failure without leaking arbitrary server errors', async () => {
+    let error = Object.assign(new Error('private upstream detail'), {
+      code: 'bot_action_result_too_large', statusCode: 502,
+    });
+    const gateway = createBotGatewayHost({ handleOperation: async () => { throw error; }, logger: { warn() {} } });
+    gateways.push(gateway);
+    await gateway.start();
+    const call = () => request({ address: gateway.getAddress(), token: issue(gateway).token, body: validBody() });
+    const result = await call();
+    expect(result.body.error.message).toContain('paginated browser snapshot');
+    expect(result.body.error.message).not.toContain('private upstream detail');
+    error = Object.assign(new Error('private upstream detail'), {
+      code: 'bot_browser_command_incomplete', statusCode: 504,
+    });
+    const incomplete = await call();
+    expect(incomplete.body.error.message).toContain('Inspect the current page with a snapshot');
+    expect(incomplete.body.error.message).not.toContain('private upstream detail');
+    error = Object.assign(new Error('private upstream detail'), { statusCode: 502 });
+    expect((await call()).body.error.message).toBe('Bot gateway is temporarily unavailable');
+  });
   it('keeps OAuth out of tool operations and rejects caller-selected scope, browser and computer requests', async () => {
     const handleOAuth = vi.fn(async (claims) => ({ generation: claims.runId, accessToken: 'fixture-short-lived' }));
     const handleOperation = vi.fn();

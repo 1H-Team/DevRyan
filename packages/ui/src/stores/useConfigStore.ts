@@ -1,3 +1,5 @@
+import { getChatThinkingState, resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
+import { getCursorAcpVariantState, resolveCursorAcpVariantSelection } from '@/lib/providers/cursorThinking';
 import { useMemo } from "react";
 import { create } from "zustand";
 import type { StoreApi, UseBoundStore } from "zustand";
@@ -1409,19 +1411,16 @@ export const useConfigStore = create<ConfigStore>()(
                 },
 
                 cycleCurrentVariant: () => {
-                    const variantKeys = get().getCurrentModelVariants();
-                    if (variantKeys.length === 0) {
-                        return;
-                    }
-
-                    const current = get().currentVariant;
-                    if (!current || !variantKeys.includes(current)) {
-                        get().setCurrentVariant(variantKeys[0]);
-                        return;
-                    }
-
-                    const index = variantKeys.indexOf(current);
-                    get().setCurrentVariant(index + 1 < variantKeys.length ? variantKeys[index + 1] : null);
+                    const state = get();
+                    const provider = state.providers.find((entry) => entry.id === state.currentProviderId);
+                    const { levels, selected } = getChatThinkingState(provider, state.currentModelId, state.currentVariant);
+                    if (!levels.length) return;
+                    const effort = levels[(levels.indexOf(selected ?? '') + 1) % levels.length];
+                    const cursor = getCursorAcpVariantState(provider, state.currentModelId, state.currentVariant);
+                    const variant = cursor
+                        ? resolveCursorAcpVariantSelection(provider, state.currentModelId, state.currentVariant, { effort }).variant
+                        : resolveChatThinkingVariant(provider, state.currentModelId, effort);
+                    state.setCurrentVariant(variant);
                 },
  
                 setSelectedProvider: (providerId: string) => {

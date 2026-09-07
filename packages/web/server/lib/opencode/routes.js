@@ -15,6 +15,7 @@ import {
   mergeGitHubCopilotProvider,
 } from './provider-integrations.js';
 import { annotateOpenAIModelAvailability } from './openai-model-availability.js';
+import { annotateModelDefaultThinking } from './model-default-thinking.js';
 import { stripMessageDiffContent } from './diff-summary.js';
 import { discoverGitHubCopilotModels } from './github-copilot-models.js';
 import { createCursorSessionTitleRuntime } from './cursor-session-title-runtime.js';
@@ -810,13 +811,13 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
 
     try {
-      return res.json(await mergeProviderIntegrations(upstreamPayload, req));
+      return res.json(annotateModelDefaultThinking(await mergeProviderIntegrations(upstreamPayload, req)));
     } catch (error) {
       // Provider integrations (Copilot/Cursor discovery, auth reads) are best-effort.
       // If merging fails, still return the upstream provider list so the UI never
       // blanks the entire provider list or persists an empty snapshot.
       console.error('Failed to merge provider integrations:', error);
-      return res.json(upstreamPayload);
+      return res.json(annotateModelDefaultThinking(upstreamPayload));
     }
   });
 

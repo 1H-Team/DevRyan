@@ -1,3 +1,4 @@
+import { getChatThinkingState } from "@/lib/providers/chatThinking"
 import { beforeEach, describe, expect, mock, test } from "bun:test"
 import type { Model } from "@opencode-ai/sdk/v2"
 
@@ -160,7 +161,7 @@ describe("useConfigStore startup load status", () => {
     expect(useConfigStore.getState().responseStyleInstructionLoaded).toBe(true)
   })
 
-  test("a late agent catalog keeps draft controls aligned with the actual Default send selection", async () => {
+  test("a late agent catalog keeps displayed native thinking aligned with the new send capture", async () => {
     prepareSelectionCatalog()
     const catalog = useConfigStore.getState().agents
     let finishLoad!: (value: unknown) => void
@@ -179,7 +180,7 @@ describe("useConfigStore startup load status", () => {
     expect(state.currentAgentName).toBe("builder")
     expect(state.currentModelId).toBe(send.modelID)
     expect(state.currentModelId).toBe("builder-model")
-    expect(state.currentVariant).toBe(send.variant)
+    expect(getChatThinkingState(state.providers.find(provider => provider.id === state.currentProviderId), state.currentModelId, state.currentVariant).selected).toBe(send.variant)
     expect(state.currentVariant).toBe(null)
   })
 

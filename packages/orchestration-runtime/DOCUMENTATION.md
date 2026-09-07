@@ -62,6 +62,8 @@ When a hard deadline expires, the deadline remains the task's primary failure re
 
 `formatManagedTaskDisplayName(label)` is the shared presentation boundary for durable task labels. It trims and normalizes whitespace, hyphens, and underscores; collapses adjacent duplicate words; title-cases ordinary lowercase words; keeps internal short articles and conjunctions lowercase; canonicalizes known technical initialisms (API, CLI, CSS, HTML, HTTP, JSON, MCP, PDF, PR, SDK, SSE, UI, URL, and UX); and preserves intentional mixed or all-uppercase token casing. The raw label remains immutable in the ledger and safe event projection, while both canonical child-session creation and Agent Dispatch rows use the same display name.
 
+`isManagedTaskPlaceholderSession(session)` recognizes the generated `Managed <agent> Task` session title only with a non-empty parent ID and matching canonical agent. The server title coordinator and shared UI session merges use this same predicate, so a summarized child title survives late placeholder events and snapshots while explicit child labels and root titles retain normal rename semantics.
+
 On restart, queued tasks retain order. Starting/running children are reconciled: live children resume observation, an unaccepted `resume` relaunches only when its transcript continuation marker is absent, terminal children otherwise settle without another prompt, transient runtime/transport unavailability retries reconciliation without replaying the prompt, and only an authoritatively missing child becomes interrupted while preserving recoverable output. Shutdown clears owned timers/waiters, including reconciliation retries, while leaving nonterminal records durable for the next owner.
 
 ### Automatic resume after a provider usage limit

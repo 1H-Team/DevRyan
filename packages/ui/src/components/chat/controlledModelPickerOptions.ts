@@ -41,3 +41,8 @@ export function getControlledModelOptions(
     })).filter((option) => Boolean(option.modelId))
   ));
 }
+
+/** Keep native capability metadata even when paired Fast rows are hidden in the picker. */
+export function findControlledModelProvider(providers: ControlledModelPickerProvider[], providerId: string, modelId: string) {
+  return providers.find(provider => provider.models?.some(model => model.id === modelId && getExecutionProviderId(provider.id, model) === providerId));
+}

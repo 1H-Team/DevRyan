@@ -253,7 +253,8 @@ Ownership and safety rules:
    Provisional dispatch rows use the exact call selector, which returns only a
    stable task ID and never reconciles by mutable label or agent text. Once a
    completed start output exposes a task ID, its fallback row subscribes to that
-   exact task leaf and may immediately request one root-scoped snapshot if the
+   exact task leaf, resolving the latest same-child recovery by root, directory and
+   dispatch call when older attempts were compacted, and may request one root-scoped snapshot if the
    live event was missed. Once the shared sync layer receives the root session's
    authoritative idle event, it makes one final scoped request if the managed
    projection is still active, so a missed terminal event cannot strand
@@ -418,6 +419,7 @@ Important properties:
 - `ensureStatus()` and `ensureAll()` are the preferred entry points for consumers
 - in-flight dedupe exists for status and `ensureAll()`
 - diff data is separately cached and capped with size + count limits
+- status equality includes HEAD and merge/rebase metadata, so operation-only transitions publish without inventing file changes; identical metadata preserves the previous status reference
 
 ### `useGitHubPrStatusStore.ts`
 
@@ -573,3 +575,9 @@ After meaningful Git/PR store changes, verify manually:
 4. Worktree sessions still show branch labels in header.
 5. Expanded sidebar projects/worktrees can show PR state without requiring prior selection.
 6. Hidden surfaces do not reintroduce live background work.
+
+## Chat thinking keyboard cycle
+
+`useConfigStore.cycleCurrentVariant` cycles only native thinking stops using the
+same displayed fallback as the chat slider; it never inserts a Default stop.
+Cursor compound values are encoded through the shared dimension adapter.

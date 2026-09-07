@@ -3,7 +3,24 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'bun:test';
-import { closeComputerHttpServer, createComputerHttpServer, startComputerService } from './server.js';
+import { closeComputerHttpServer, closeComputerService, createComputerHttpServer, startComputerService } from './server.js';
+
+test('computer shutdown has an overall deadline and never closes the display before the browser', async () => {
+  const calls = [];
+  let release;
+  const closing = closeComputerService({
+    browser: { close: (options) => {
+      calls.push(['browser', options]);
+      return new Promise((resolve) => { release = resolve; });
+    } },
+    virtualDisplay: { close: async () => { calls.push(['display']); } },
+    server: { close: (callback) => callback(), closeAllConnections() {} },
+    egressRelay: { close: async () => { calls.push(['relay']); } },
+  }, 20);
+  await expect(closing).rejects.toMatchObject({ code: 'DEVRYAN_BOT_COMPUTER_SHUTDOWN_TIMEOUT' });
+  expect(calls).toEqual([['browser', { shutdown: true }]]);
+  release();
+});
 import { createControlLeaseManager } from './control.js';
 import { createScreencastBroker } from './screencast.js';
 

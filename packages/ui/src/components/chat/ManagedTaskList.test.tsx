@@ -1253,7 +1253,7 @@ describe('managed task presentation', () => {
     expect(messageBodySource).toContain("shouldRecoverMissingManagedDispatches = streamPhase === 'completed'");
     expect(messageBodySource).toContain('recoverMissingDispatches={shouldRecoverMissingManagedDispatches}');
     expect(messageBodySource).not.toContain('recoverMissingDispatches={isMessageCompleted}');
-    expect(managedTaskListSource).toContain('managedOrchestrationSelectors.task(task.taskId)');
+    expect(managedTaskListSource).toContain('managedOrchestrationSelectors.taskIdForRecovery(task.taskId');
     expect(managedTaskListSource).toContain('<ManagedTaskReconciledFallbackRow');
     expect(managedTaskListSource).toContain('managedOrchestrationSelectors.taskIdForDispatchCall');
     expect(managedTaskListSource).toContain('fallbackTasksByDispatchCallId.get(dispatch.dispatchCallId)');

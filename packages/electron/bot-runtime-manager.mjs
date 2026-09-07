@@ -397,9 +397,9 @@ const baseStatus = ({ state, code, currentState, desiredManifest, issues = [], w
   desiredManifest: publicManifest(desiredManifest),
   updateStaged: Boolean(currentState?.staged),
   canSetup: state === 'setup_required',
-  canRepair: ['degraded', 'runtime_update_required'].includes(state),
+  canRepair: code !== 'bot_runtime_foreign_deployment' && ['degraded', 'runtime_update_required'].includes(state),
   canUpdate: state === 'runtime_update_required',
-  canRollback: Boolean(currentState?.previous || currentState?.staged),
+  canRollback: code !== 'bot_runtime_foreign_deployment' && Boolean(currentState?.previous || currentState?.staged),
 });
 
 const dockerNotInstalledStatus = () => ({
@@ -573,7 +573,7 @@ const parseBrowserProfileArchive = (botId, bytes) => {
   }
 };
 
-const parseComposeRows = (stdout) => {
+const parseComposeRows = (stdout, { strict = false } = {}) => {
   const trimmed = String(stdout || '').trim();
   if (!trimmed) return [];
   try {
@@ -585,6 +585,7 @@ const parseComposeRows = (stdout) => {
       try {
         rows.push(JSON.parse(line));
       } catch {
+        if (strict) fail('Unable to inspect Bot container ownership', 'bot_runtime_ownership_unavailable');
         return [];
       }
     }
@@ -608,21 +609,24 @@ const DEPLOYMENT_LABEL = 'devryan.deployment';
 // id. A container labelled with another id belongs to another installation:
 // its secrets differ, so adopting or removing it can only break that side.
 const foreignDeploymentMessage = (deployment) => (
-  `Another DevRyan installation (${deployment}) owns the Bot runtime on this machine. `
-  + 'Stop Bots in that installation, then retry.'
+  `Bot containers on this machine belong to a different deployment (${deployment}). `
+  + 'Keep the data directory and key used by your existing Bots. '
+  + 'Reopen that installation, or release the conflicting runtime after its owner has stopped. '
+  + 'Stopping containers alone does not change their ownership.'
 );
 
-const foreignDeploymentIssue = (deployment) => ({
+const foreignDeploymentIssue = (deployment, conflicts) => ({
   code: 'foreign_deployment',
   deployment,
+  ...conflicts,
   message: foreignDeploymentMessage(deployment),
 });
 
-const failForeignDeployment = (deployment) => {
+const failForeignDeployment = (deployment, conflicts) => {
   throw new BotRuntimeManagerError(
     foreignDeploymentMessage(deployment),
     'bot_runtime_foreign_deployment',
-    { foreignDeployment: deployment },
+    { foreignDeployment: deployment, ...conflicts },
   );
 };
 
@@ -1458,12 +1462,18 @@ export function createBotRuntimeManager({
       baseEnvironment,
       deadlineAt,
     );
-    if (result.exitCode !== 0) return { exists: false, stale: false };
+    if (result.exitCode !== 0) {
+      if (/network .* not found|no such network/i.test(result.stderr || '')) return { exists: false, stale: false };
+      fail('Unable to inspect the Bot host-control network', 'bot_runtime_ownership_unavailable');
+    }
     let network;
     try {
       network = JSON.parse(String(result.stdout || '').trim());
     } catch {
-      return { exists: false, stale: false };
+      fail('Unable to inspect the Bot host-control network', 'bot_runtime_ownership_unavailable');
+    }
+    if (!network || typeof network !== 'object' || Array.isArray(network) || network.Name !== HOST_CONTROL_NETWORK) {
+      fail('Unable to inspect the Bot host-control network', 'bot_runtime_ownership_unavailable');
     }
     const options = network?.Options && typeof network.Options === 'object' ? network.Options : {};
     return { exists: true, stale: options[HOST_CONTROL_MASQUERADE_OPTION] === 'false' };
@@ -1473,18 +1483,21 @@ export function createBotRuntimeManager({
     (await composeEnvironment(manifest)).DEVRYAN_BOT_DEPLOYMENT_ID
   );
 
-  // Every fixed service of an installation is attached to the host-control
-  // bridge, so this one listing also reveals whether another installation's
-  // deployment currently owns the shared Compose project.
-  const listHostControlContainers = async (dockerPath, deploymentId, deadlineAt = null) => {
+  // Topology repair inspects network attachments; ownership preflight inspects
+  // all managed containers so stopped or off-network resources remain protected.
+  const listRuntimeContainers = async (dockerPath, deploymentId, deadlineAt = null, allManaged = false) => {
     const result = await run(
       dockerPath,
-      ['ps', '--all', '--no-trunc', '--filter', `network=${HOST_CONTROL_NETWORK}`, '--format', '{{json .}}'],
+      ['ps', '--all', '--no-trunc', '--filter', allManaged ? `label=${BOT_RUNTIME_LABEL}=${BOT_RUNTIME_LABEL_VALUE}` : `network=${HOST_CONTROL_NETWORK}`, '--format', '{{json .}}'],
       baseEnvironment,
       deadlineAt,
     );
-    if (result.exitCode !== 0) return null;
-    return parseComposeRows(result.stdout).map((row) => {
+    if (result.exitCode !== 0) fail('Unable to inspect Bot container ownership', 'bot_runtime_ownership_unavailable');
+    return parseComposeRows(result.stdout, { strict: true }).map((row) => {
+      if (!row || typeof row.ID !== 'string' || !row.ID || typeof row.Labels !== 'string'
+        || typeof row.State !== 'string' || !row.State) {
+        fail('Unable to inspect Bot container ownership', 'bot_runtime_ownership_unavailable');
+      }
       const labels = parseContainerLabels(row?.Labels);
       const service = labels[COMPOSE_PROJECT_LABEL] === BOT_RUNTIME_COMPOSE_PROJECT
         && FIXED_SERVICES.includes(labels[COMPOSE_SERVICE_LABEL])
@@ -1497,7 +1510,9 @@ export function createBotRuntimeManager({
       return {
         id: typeof row?.ID === 'string' ? row.ID : '',
         name: typeof row?.Names === 'string' ? row.Names : '',
-        running: String(row?.State || '').toLowerCase() === 'running',
+        state: ['created', 'running', 'paused', 'restarting', 'removing', 'exited', 'dead'].includes(row.State.toLowerCase())
+          ? row.State.toLowerCase() : 'unknown',
+        running: row.State.toLowerCase() === 'running',
         managed,
         service,
         deployment,
@@ -1510,6 +1525,33 @@ export function createBotRuntimeManager({
     (attached || []).find((container) => container.foreign)?.deployment ?? null
   );
 
+  // Inspect all managed containers, including stopped ones and containers off
+  // the host-control bridge. Docker state does not prove a host app is alive.
+  const inspectDeploymentOwnership = async (dockerPath, manifest, deadlineAt = null) => {
+    const containers = await listRuntimeContainers(
+      dockerPath, await resolveDeploymentId(manifest), deadlineAt, true,
+    );
+    const unique = new Map();
+    for (const container of containers) {
+      if (!container.foreign) continue;
+      const conflict = { deployment: container.deployment, service: container.service, state: container.state };
+      unique.set(JSON.stringify(conflict), conflict);
+    }
+    const conflicts = [...unique.values()].sort((a, b) => (
+      JSON.stringify(a).localeCompare(JSON.stringify(b))
+    ));
+    return {
+      foreignDeployment: conflicts[0]?.deployment ?? null,
+      conflicts: conflicts.slice(0, 32),
+      conflictsTruncated: conflicts.length > 32,
+    };
+  };
+
+  const requireDeploymentOwnership = async (dockerPath, manifest, deadlineAt = null) => {
+    const ownership = await inspectDeploymentOwnership(dockerPath, manifest, deadlineAt);
+    if (ownership.foreignDeployment) failForeignDeployment(ownership.foreignDeployment, ownership);
+  };
+
   // Two retired topologies need a repair: a bridge Docker Desktop cannot route,
   // and a reasoning or computer container that still holds an attachment to it
   // and with it a route to the host and the public internet. A foreign
@@ -1518,7 +1560,7 @@ export function createBotRuntimeManager({
     const network = await inspectHostControlNetwork(dockerPath, deadlineAt);
     if (!network.exists) return { staleNetwork: false, retiredAttachments: false, foreignDeployment: null };
     if (network.stale) return { staleNetwork: true, retiredAttachments: false, foreignDeployment: null };
-    const attached = await listHostControlContainers(dockerPath, await resolveDeploymentId(manifest), deadlineAt);
+    const attached = await listRuntimeContainers(dockerPath, await resolveDeploymentId(manifest), deadlineAt);
     return {
       staleNetwork: false,
       retiredAttachments: (attached || [])
@@ -1558,13 +1600,10 @@ export function createBotRuntimeManager({
   // to the host and the public internet. It is removed even when the bridge
   // itself is current; the supervisor recreates it on internal networks only.
   const migrateHostControlTopology = async (dockerPath, manifest, failureCode, deadlineAt = null) => {
+    await requireDeploymentOwnership(dockerPath, manifest, deadlineAt);
     const network = await inspectHostControlNetwork(dockerPath, deadlineAt);
     if (!network.exists) return;
-    const attached = await listHostControlContainers(dockerPath, await resolveDeploymentId(manifest), deadlineAt);
-    if (attached === null) {
-      if (!network.stale) return;
-      fail('Unable to inspect the Bot host-control network attachments', failureCode);
-    }
+    const attached = await listRuntimeContainers(dockerPath, await resolveDeploymentId(manifest), deadlineAt);
     // Compose "up" would adopt and recreate the other installation's services;
     // refuse before anything is stopped, removed or recreated.
     const foreignDeployment = findForeignDeployment(attached);
@@ -2254,6 +2293,12 @@ export function createBotRuntimeManager({
 
   const postSupervisor = async (context, pathname, input) => {
     let response;
+    const transfer = [SUPERVISOR_OPERATIONS.importSharedFile, SUPERVISOR_OPERATIONS.exportWorkspaceImage].includes(pathname);
+    const lifecycle = [SUPERVISOR_OPERATIONS.ensureComputer, SUPERVISOR_OPERATIONS.ensureReasoning,
+      SUPERVISOR_OPERATIONS.stop, SUPERVISOR_OPERATIONS.reset].includes(pathname);
+    let timeoutMs = 30_000;
+    if (lifecycle) timeoutMs = 90_000;
+    if (transfer) timeoutMs = 120_000;
     try {
       response = await fetchImpl(`${context.endpoint}${pathname}`, {
         method: 'POST',
@@ -2263,10 +2308,7 @@ export function createBotRuntimeManager({
         },
         body: JSON.stringify(input),
         redirect: 'error',
-        signal: AbortSignal.timeout([
-          SUPERVISOR_OPERATIONS.importSharedFile,
-          SUPERVISOR_OPERATIONS.exportWorkspaceImage,
-        ].includes(pathname) ? 120_000 : 30_000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
       const transportCode = error?.cause?.code || error?.code;
@@ -2437,12 +2479,22 @@ export function createBotRuntimeManager({
           egressToken: supervisorInput.egressToken,
         });
       } catch (error) {
-        await postSupervisor(context, SUPERVISOR_OPERATIONS.stop, {
-          kind: 'computer',
-          botId: input.botId,
-          scopeKey: input.scopeKey,
-        }).catch(() => undefined);
-        throw error;
+        try {
+          const stopped = await postSupervisor(context, SUPERVISOR_OPERATIONS.stop, {
+            kind: 'computer', botId: input.botId, scopeKey: input.scopeKey,
+          });
+          if (!['stopped', 'absent'].includes(stopped?.state)) {
+            fail('Computer stop response is invalid', 'bot_runtime_supervisor_response_invalid');
+          }
+        } catch {
+          fail('Browser network capability refresh failed and the computer stop could not be confirmed',
+            'bot_runtime_computer_stop_unconfirmed');
+        }
+        throw new BotRuntimeManagerError(
+          'Browser network capability refresh failed; the computer was stopped with its profile preserved',
+          'bot_runtime_browser_refresh_failed',
+          { code: error?.code || 'bot_runtime_egress_unavailable' },
+        );
       }
     }
     if (operation === 'writeWorkspace') {
@@ -2643,6 +2695,16 @@ export function createBotRuntimeManager({
     changed,
     deadlineAt = null,
   }) => {
+    const ownership = await inspectDeploymentOwnership(dockerPath, currentState.current, deadlineAt);
+    if (ownership.foreignDeployment) {
+      return {
+        ...baseStatus({
+          state: 'degraded', code: 'bot_runtime_foreign_deployment', currentState, desiredManifest,
+          issues: [foreignDeploymentIssue(ownership.foreignDeployment, ownership)],
+        }),
+        changed,
+      };
+    }
     publishProgress({ phase: 'verifying_images' });
     const imageIssues = await inspectImages(dockerPath, currentState.current, deadlineAt);
     if (imageIssues.some((issue) => issue.code === 'image_digest_mismatch')) {
@@ -2777,6 +2839,7 @@ export function createBotRuntimeManager({
   const setupInternal = async ({ deadlineAt = null } = {}) => {
     const dockerPath = await requireDocker(deadlineAt);
     const desiredManifest = await loadManifest();
+    await requireDeploymentOwnership(dockerPath, desiredManifest, deadlineAt);
     const existing = await readInstallationState(desiredManifest);
     if (existing?.current) {
       const result = await runtimeStatus({
@@ -2823,6 +2886,7 @@ export function createBotRuntimeManager({
   const repairInternal = async ({ deadlineAt = null } = {}) => {
     const dockerPath = await requireDocker(deadlineAt);
     const desiredManifest = await loadManifest();
+    await requireDeploymentOwnership(dockerPath, desiredManifest, deadlineAt);
     const currentState = await readInstallationState(desiredManifest);
     if (!currentState?.current) return setupInternal({ deadlineAt });
     publishProgress({ phase: 'verifying_images' });
@@ -2877,6 +2941,7 @@ export function createBotRuntimeManager({
   const updateInternal = async ({ deadlineAt = null } = {}) => {
     const dockerPath = await requireDocker(deadlineAt);
     const desiredManifest = await loadManifest();
+    await requireDeploymentOwnership(dockerPath, desiredManifest, deadlineAt);
     const currentState = await readInstallationState(desiredManifest);
     if (!currentState?.current) return setupInternal({ deadlineAt });
     if (currentState.current.fingerprint === desiredManifest.fingerprint) {
@@ -2913,6 +2978,7 @@ export function createBotRuntimeManager({
   const rollbackInternal = async ({ deadlineAt = null } = {}) => {
     const dockerPath = await requireDocker(deadlineAt);
     const desiredManifest = await loadManifest();
+    await requireDeploymentOwnership(dockerPath, desiredManifest, deadlineAt);
     const currentState = await readInstallationState(desiredManifest);
     if (!currentState?.current || (!currentState.previous && !currentState.staged)) {
       fail('No prior Bot runtime release is available', 'bot_runtime_rollback_unavailable');
@@ -2968,6 +3034,14 @@ export function createBotRuntimeManager({
       });
     }
     const currentState = await readInstallationState(desiredManifest);
+    const ownership = await inspectDeploymentOwnership(probe.dockerPath, desiredManifest, deadlineAt);
+    if (ownership.foreignDeployment) {
+      return baseStatus({
+        state: 'degraded', code: 'bot_runtime_foreign_deployment', currentState, desiredManifest,
+        issues: [foreignDeploymentIssue(ownership.foreignDeployment, ownership)],
+      });
+    }
+
     if (!currentState?.current) {
       return baseStatus({
         state: 'setup_required',

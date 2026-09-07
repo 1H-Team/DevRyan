@@ -37,6 +37,7 @@ const renderComposer = (
   runtimeState = 'healthy',
   runtimeAvailable = true,
   runtimeWarnings: readonly BotRuntimeWarning[] = [],
+  runtimeCode: string | null = null,
 ) => {
   const channelStore = createBotChannelStore({ getPrincipalId: () => USER_ID });
   channelStore.getState().resetPrincipal(USER_ID);
@@ -53,6 +54,7 @@ const renderComposer = (
         botId={BOT_ID}
         channel={value}
         runtimeState={runtimeState}
+        runtimeCode={runtimeCode}
         runtimeAvailable={runtimeAvailable}
         runtimeWarnings={runtimeWarnings}
         channelStore={channelStore}
@@ -83,7 +85,13 @@ describe('BotComposer', () => {
     expect(resolveBotRuntimeMessageKey('runtime_degraded')).toBe('bots.runtime.needsRepair');
   });
 
-  test('names another installation instead of offering a repair that would refuse to run', () => {
+  test('explains conflicting container identity without claiming another app is running', () => {
+    const markup = renderComposer(channel('owner', true), 'runtime_degraded', false, [], 'bot_runtime_foreign_deployment');
+    expect(markup).toContain('Keep the data directory and key used by your existing Bots');
+    expect(markup).toContain('after its owner has stopped');
+    expect(markup).toContain('Stopping containers alone does not change their ownership');
+    expect(markup).not.toContain('>Repair<');
+    expect(markup).not.toContain('needs repair');
     expect(resolveBotRuntimeMessageKey('runtime_degraded', 'bot_runtime_foreign_deployment'))
       .toBe('bots.runtime.foreignDeployment');
     expect(resolveBotRuntimeMessageKey('runtime_degraded', 'bot_runtime_degraded')).toBe('bots.runtime.needsRepair');

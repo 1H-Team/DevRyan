@@ -1,4 +1,15 @@
+import { randomUUID } from 'node:crypto';
+
 const MAX_REQUESTS = 128;
+const NETWORK_TYPES = new Set(['Document', 'Fetch', 'XHR']);
+const NETWORK_MAX_ENTRIES = 100;
+const NETWORK_MAX_BYTES = 64 * 1024;
+const NETWORK_TTL_MS = 5 * 60 * 1000;
+const TRANSITIONS = new Set([
+  'control_taken', 'control_returned', 'control_expired', 'control_release_failed',
+  'navigate', 'relaunch', 'page_reset', 'browser_closed', 'profile_reset',
+  'egress_token_rotated', 'target_changed',
+]);
 const MAX_NAVIGATIONS = 20;
 const LOOP_WINDOW_MS = 15_000;
 const LOOP_THRESHOLD = 3;
@@ -34,7 +45,8 @@ const publicPath = (url) => {
 const publicTarget = (value) => {
   try {
     const url = new URL(value);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password
+      || url.hostname.length > 253) return null;
     return Object.freeze({
       origin: url.origin,
       host: url.hostname.toLowerCase(),
@@ -73,6 +85,7 @@ const ACTIONABLE_COOKIE_BLOCK_REASONS = new Set(['UserPreferences']);
 
 export function createBrowserDiagnostics({ now = Date.now } = {}) {
   const requests = new Map();
+  const networkRequests = new Map();
   const mainFrameRequests = new Map();
   const navigations = [];
   const trail = [];
@@ -81,6 +94,34 @@ export function createBrowserDiagnostics({ now = Date.now } = {}) {
   let revision = 0;
   let latest = null;
   let healthyAfterLoop = null;
+  const streamId = randomUUID();
+  const network = [];
+  let networkBytes = Buffer.byteLength(JSON.stringify({ streamId, entries: [] }), 'utf8');
+  let sequence = 0;
+  let generation = 0;
+
+  const pruneNetwork = () => {
+    const cutoff = now() - NETWORK_TTL_MS;
+    while (network.length && (network.length > NETWORK_MAX_ENTRIES
+      || networkBytes > NETWORK_MAX_BYTES || network[0].entry.observedAt <= cutoff)) {
+      networkBytes -= network.shift().bytes;
+    }
+  };
+  const recordNetwork = (fields) => {
+    const entry = Object.freeze({ sequence: ++sequence, observedAt: now(), generation, ...fields });
+    const bytes = Buffer.byteLength(JSON.stringify(entry), 'utf8') + 1;
+    network.push({ entry, bytes });
+    networkBytes += bytes;
+    pruneNetwork();
+  };
+  const recordTransition = (reason, nextGeneration = generation, failureCode) => {
+    if (!TRANSITIONS.has(reason)) return;
+    if (Number.isSafeInteger(nextGeneration) && nextGeneration >= 0) generation = nextGeneration;
+    recordNetwork({ kind: 'lifecycle', reason,
+      ...(typeof failureCode === 'string' && /^DEVRYAN_BOT_[A-Z0-9_]{1,96}$/u.test(failureCode)
+        ? { failureCode } : {}),
+    });
+  };
 
   const publish = (diagnostic) => {
     revision += 1;
@@ -110,6 +151,12 @@ export function createBrowserDiagnostics({ now = Date.now } = {}) {
   };
 
   const requestFor = (requestId) => mainFrameRequests.get(requestId) || requests.get(requestId) || null;
+  const networkRequestFor = (requestId) => {
+    const request = networkRequests.get(requestId);
+    if (request && request.observedAt > now() - NETWORK_TTL_MS) return request;
+    networkRequests.delete(requestId);
+    return null;
+  };
   const targetFor = (requestId, url) => publicTarget(url) || requestFor(requestId)?.target || null;
 
   const publicSnapshot = () => {
@@ -148,11 +195,20 @@ export function createBrowserDiagnostics({ now = Date.now } = {}) {
         redirectHops: Object.freeze(redirectHops.slice(-MAX_NAVIGATIONS)),
       });
       remember(requests, requestId, request, MAX_REQUESTS);
+      if (NETWORK_TYPES.has(request.type)) {
+        remember(networkRequests, requestId, { type: request.type, target, observedAt: now() }, MAX_REQUESTS);
+      }
       if (request.mainFrame) remember(mainFrameRequests, requestId, request, MAX_MAIN_FRAME_REQUESTS);
     },
     recordResponse({ requestId, url, statusCode } = {}) {
-      const request = mainFrameRequests.get(requestId);
-      const target = targetFor(requestId, url);
+      const request = requestFor(requestId);
+      const networkRequest = networkRequestFor(requestId);
+      const target = targetFor(requestId, url) || networkRequest?.target;
+      if (target && networkRequest && Number.isInteger(statusCode)
+        && statusCode >= 100 && statusCode <= 599) {
+        recordNetwork({ kind: 'response', origin: target.origin, path: target.path,
+          requestType: networkRequest.type, statusCode });
+      }
       if (!target || !request?.mainFrame) return;
       const observedAt = now();
       const navigation = Object.freeze({ origin: target.origin, path: target.path, timestamp: observedAt });
@@ -191,11 +247,18 @@ export function createBrowserDiagnostics({ now = Date.now } = {}) {
       publish({ ...diagnostic, kind: 'healthy', reason: 'navigation_completed' });
     },
     recordCookieBlock({ requestId, url, reasons } = {}) {
-      const request = mainFrameRequests.get(requestId);
-      if (!request?.mainFrame) return;
-      const target = targetFor(requestId, url);
+      const request = requestFor(requestId);
+      const networkRequest = networkRequestFor(requestId);
+      const target = targetFor(requestId, url) || networkRequest?.target;
       if (!target || !Array.isArray(reasons)) return;
       const normalized = [...new Set(reasons.map(boundedReason).filter((reason) => reason !== 'unknown'))];
+      if (networkRequest) {
+        for (const reason of normalized.slice(0, MAX_COOKIE_BLOCKS)) {
+          recordNetwork({ kind: 'cookie_block', origin: target.origin, path: target.path,
+            requestType: networkRequest.type, reason });
+        }
+      }
+      if (!request?.mainFrame) return;
       for (const reason of normalized.filter((candidate) => !ACTIONABLE_COOKIE_BLOCK_REASONS.has(candidate))) {
         pushBounded(cookieBlocks, {
           origin: target.origin,
@@ -214,12 +277,17 @@ export function createBrowserDiagnostics({ now = Date.now } = {}) {
     },
     recordFailure({ requestId, url, errorText, blockedReason } = {}) {
       const request = requestFor(requestId);
-      if (request?.mainFrame && errorText === 'net::ERR_ABORTED' && !blockedReason) return;
-      const target = targetFor(requestId, url);
+      const networkRequest = networkRequestFor(requestId);
+      const target = targetFor(requestId, url) || networkRequest?.target;
       if (!target) return;
       const reason = blockedReason
         ? `blocked_${boundedReason(blockedReason)}`
         : `network_${boundedReason(errorText)}`;
+      if (networkRequest) {
+        recordNetwork({ kind: 'failure', origin: target.origin, path: target.path,
+          requestType: networkRequest.type, reason });
+      }
+      if (errorText === 'net::ERR_ABORTED' && !blockedReason) return;
       pushBounded(trail, {
         kind: 'failure',
         origin: target.origin,
@@ -261,8 +329,17 @@ export function createBrowserDiagnostics({ now = Date.now } = {}) {
       }, MAX_TRAIL);
       touchRevision();
     },
+    recordProxyFailure({ host, statusCode, reason } = {}) {
+      if (typeof host !== 'string' || !/^(?=.{1,253}$)[A-Za-z0-9.-]+$/u.test(host)) return;
+      recordNetwork({ kind: 'proxy_failure', origin: `https://${host.toLowerCase()}`,
+        reason: boundedReason(reason),
+        ...(Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599 ? { statusCode } : {}),
+      });
+    },
     recordEgressDenied({ host, statusCode } = {}) {
       if (typeof host !== 'string' || !/^(?=.{1,253}$)[A-Za-z0-9.-]+$/u.test(host)) return;
+      recordNetwork({ kind: 'proxy_failure', origin: `https://${host.toLowerCase()}`,
+        reason: 'egress_policy_denied', statusCode: 403 });
       publish({
         origin: null,
         statusCode,
@@ -271,7 +348,14 @@ export function createBrowserDiagnostics({ now = Date.now } = {}) {
         blockedHost: host.toLowerCase(),
       });
     },
-    reset() {
+    recordTransition,
+    networkSnapshot() {
+      pruneNetwork();
+      return Object.freeze({ streamId, entries: Object.freeze(network.map(({ entry }) => entry)) });
+    },
+    reset(reason, nextGeneration) {
+      recordTransition(reason, nextGeneration);
+      if (reason === 'relaunch' || reason === 'profile_reset') networkRequests.clear();
       requests.clear();
       mainFrameRequests.clear();
       navigations.length = 0;

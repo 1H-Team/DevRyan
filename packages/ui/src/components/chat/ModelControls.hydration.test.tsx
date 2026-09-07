@@ -40,7 +40,7 @@ const { useContextStore } = await import('@/stores/contextStore');
 const { useUIStore } = await import('@/stores/useUIStore');
 const { useSessionUIStore } = await import('@/sync/session-ui-store');
 const { useSelectionStore } = await import('@/sync/selection-store');
-const { resolveCurrentSendConfig } = await import('@/sync/send-config');
+const { resolveCurrentSendConfig, normalizeNewChatSendConfig } = await import('@/sync/send-config');
 const { optimisticSend, setActionRefs, setOptimisticRefs, clearActionRefs } = await import('@/sync/session-actions');
 const { applyOptimisticAdd, applyOptimisticRemove } = await import('@/sync/optimistic');
 const { opencodeClient } = await import('@/lib/opencode/client');
@@ -60,7 +60,7 @@ const model: Model = {
   },
   cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
   limit: { context: 1000, output: 100 }, status: 'active',
-  options: {}, headers: {}, release_date: '2026-01-01', variants: { low: {}, high: {} },
+  options: {}, headers: {}, release_date: '2026-01-01', variants: { low: {}, medium: {}, high: {} },
 };
 
 const user = (id: string, variant: string): UserMessage => ({
@@ -151,13 +151,16 @@ const deliverPendingParts = () => directoryStore.setState(state => ({
 }));
 
 const choose = async (container: HostElement, label: string) => {
-  const button = container.find(node => node.tagName === 'BUTTON' && node.textContent === label);
-  expect(button).not.toBeNull();
-  await act(async () => { button!.click(); });
+  const slider = container.find(node => node.getAttribute('role') === 'slider');
+  expect(slider).not.toBeNull();
+  const key = label === 'Low' ? 'Home' : label === 'High' ? 'End' : 'ArrowRight';
+  if (label === 'Medium') await choose(container, 'Low');
+  const event = { type: 'keydown', target: slider, key, bubbles: true, preventDefault() {}, stopPropagation() {} };
+  await act(async () => { for (const listener of container.listeners.get('keydown') ?? []) listener(event); });
 };
 
 const currentChoice = () => {
-  const choice = resolveCurrentSendConfig(sessionID);
+  const choice = normalizeNewChatSendConfig(resolveCurrentSendConfig(sessionID), useConfigStore.getState().providers);
   if (!choice.providerID || !choice.modelID) throw new Error('Fixture send choice is unavailable');
   return { ...choice, providerID: choice.providerID, modelID: choice.modelID };
 };
@@ -228,10 +231,8 @@ describe('ModelControls delayed user-part hydration', () => {
   }));
 
   test('preserves a newer unsent Low selection when older High user parts arrive', async () => withControls(async container => {
-    expect(variantTrigger(container).textContent).toBe('Default');
-    const low = container.find(node => node.tagName === 'BUTTON' && node.textContent === 'Low');
-    expect(low).not.toBeNull();
-    await act(async () => { low!.click(); });
+    expect(variantTrigger(container).textContent).toBe('Medium');
+    await choose(container, 'Low');
     expect(variantTrigger(container).textContent).toBe('Low');
     expect(resolveCurrentSendConfig(sessionID).variant).toBe('low');
 
@@ -253,7 +254,7 @@ describe('ModelControls delayed user-part hydration', () => {
   }));
 
   test('restores High on delayed user parts when no newer manual selection exists', async () => withControls(async container => {
-    expect(variantTrigger(container).textContent).toBe('Default');
+    expect(variantTrigger(container).textContent).toBe('Medium');
 
     await act(async () => { deliverPendingParts(); });
 
@@ -339,10 +340,10 @@ describe('ModelControls delayed user-part hydration', () => {
     expect(useSelectionStore.getState().getSessionModelSelectionIntent(sessionID)).toBe(latestIntent);
   }));
 
-  test('keeps unsent Default across a session switch, delayed hydration and a component remount', async () => withControls(async (container, remount) => {
+  test('keeps unsent Medium across a session switch, delayed hydration and a component remount', async () => withControls(async (container, remount) => {
     await choose(container, 'Low');
-    await choose(container, 'Default');
-    expect(currentChoice().variant).toBeNull();
+    await choose(container, 'Medium');
+    expect(currentChoice().variant).toBe('medium');
     const secondSessionID = 'ses_choice_b';
     const secondUser: UserMessage = { ...user('msg_second_session', 'high'), sessionID: secondSessionID };
     useSessionUIStore.getState().setSessionDirectory(secondSessionID, directory);
@@ -358,8 +359,8 @@ describe('ModelControls delayed user-part hydration', () => {
 
     await act(async () => { deliverPendingParts(); useSessionUIStore.setState({ currentSessionId: sessionID }); });
     await remount();
-    expect(variantTrigger(container).textContent).toBe('Default');
-    expect(currentChoice().variant).toBeNull();
+    expect(variantTrigger(container).textContent).toBe('Medium');
+    expect(currentChoice().variant).toBe('medium');
 
     await act(async () => { await dispatch(); });
     expect(useSelectionStore.getState().getSessionModelSelectionIntent(sessionID)).toBeUndefined();
@@ -367,3 +368,23 @@ describe('ModelControls delayed user-part hydration', () => {
     expect(variantTrigger(container).textContent).toBe('High');
   }));
 });
+
+test('chat fallback ignores display-only provider metadata and preserves a legacy captured queue', async () => withControls(async (container, remount) => {
+  expect(variantTrigger(container).textContent).toBe('Medium');
+  const queued = { ...currentChoice(), variant: null };
+  await choose(container, 'Medium');
+  await remount();
+  expect(variantTrigger(container).textContent).toBe('Medium');
+  expect(currentChoice().variant).toBe('medium');
+  await choose(container, 'Low');
+  let sentVariant: string | null | undefined = 'unexpected';
+  await act(async () => { await dispatch(queued, async () => { sentVariant = queued.variant; }); });
+  expect(sentVariant).toBeNull();
+  expect(currentChoice().variant).toBe('low');
+}, () => {
+  useConfigStore.setState(state => ({
+    providers: state.providers.map(provider => ({
+      ...provider, models: provider.models.map(item => ({ ...item, defaultThinkingLevel: 'high' })),
+    })),
+  }));
+}));

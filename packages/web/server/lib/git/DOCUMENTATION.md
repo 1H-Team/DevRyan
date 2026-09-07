@@ -10,6 +10,7 @@ Managed callers are additionally constrained by the multi-user layer: worktree c
   - `index.js`: Public API entry point imported by `packages/web/server/index.js`.
   - `routes.js`: Express route registration for `/api/git/*` endpoints.
   - `template-routes.js`: Conventional commit template and global `commit-msg` hook setup routes.
+  - `operation-state.js`: Shared per-worktree Git operation and HEAD state reader, plus remote-operation preconditions.
   - `service.js`: Core Git operations (repository, branch, worktree, commit, merge/rebase, status/diff, log).
   - `@openchamber/harness-runtime/lib/git-post-checkout-hook.js`: Shared bounded post-checkout hook execution used by web/Electron.
   - `integrate.js`: Server-owned commit reintegration, temporary worktree lifecycle, conflict continuation, and the `isIntegrateTempPath` predicate that keeps those worktrees out of managed-project registration.
@@ -273,3 +274,23 @@ mutation lock as Git operations so API-driven edits cannot race a merge.
 ### Testing
 - Run `bun run type-check`, `bun run lint`, and `bun run build` before finalizing changes.
 - Consider edge cases: non-Git directories, missing remotes, conflict states, concurrent worktree operations.
+
+### Rebase recovery and remote preconditions
+
+Status, conflict details, and worktree attention use Git's `--absolute-git-dir`
+to read per-worktree metadata, including linked worktrees whose `.git` is a file.
+Both `rebase-merge` and `rebase-apply` count as active even when optional branch
+or target metadata is absent. Status adds `headState` (`branch`, `detached`, or
+`unborn`) without replacing `current`, `mergeInProgress`, or `rebaseInProgress`.
+
+Push and pull reject an active rebase with HTTP 409 `GIT_REBASE_IN_PROGRESS`,
+and a detached HEAD without a rebase with HTTP 409 `GIT_DETACHED_HEAD`, before
+remote commands. Managed credential and branch restrictions remain in place.
+Rebase continuation enables only the fixed noninteractive editor, propagates
+failed commands, never implicitly skips an empty patch, and checks that rebase
+metadata is gone before returning completion. The UI invalidates cached status
+after operation attempts and guards push synchronization before fetch and after
+pull, including a pull conflict paired with a stale status response.
+
+Regression tests: `operation-state.test.js` (real Git and routes), UI
+`gitApi.test.ts`, and the `tests/visual-git-rebase/` presentation fixture.

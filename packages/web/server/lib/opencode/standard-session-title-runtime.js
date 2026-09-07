@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { isManagedTaskPlaceholderSession as isManagedPlaceholderSession } from '@openchamber/orchestration-runtime';
 
 import {
   buildSummarizationInput,
@@ -45,7 +46,17 @@ const titleCaseWord = (word, index) => {
   return `${word.charAt(0).toLocaleUpperCase()}${word.slice(1).toLocaleLowerCase()}`;
 };
 
-const getFirstUserContext = (records) => {
+const stripManagedTaskPreamble = (text) => {
+  // Only the known initial runtime blocks are metadata. Keep the delegated
+  // brief verbatim and never strip an arbitrary instruction from its body.
+  const blocks = trimString(text).split(/\n\s*\n/);
+  while (blocks.length > 1 && /^\[devryan-(?:agent-contract|context-mode-routing|context-mode-read-only-routing|managed-read-only):v1\]/.test(blocks[0])) {
+    blocks.shift();
+  }
+  return blocks.join('\n\n');
+};
+
+const getFirstUserContext = (records, { managed = false } = {}) => {
   if (!Array.isArray(records)) return null;
   for (const record of records) {
     if (record?.info?.role !== 'user') continue;
@@ -57,7 +68,7 @@ const getFirstUserContext = (records) => {
     if (!text) continue;
     const model = record?.info?.model;
     return {
-      text: normalizeWhitespace(text),
+      text: normalizeWhitespace(managed ? stripManagedTaskPreamble(text) : text),
       providerID: trimString(model?.providerID ?? record?.info?.providerID),
       modelID: trimString(model?.modelID ?? record?.info?.modelID),
       variant: trimString(record?.info?.variant),
@@ -89,6 +100,10 @@ const isEligibleStandardTitle = (title) => {
     || isPlanControlTitle(normalized);
 };
 
+const isEligibleStandardSession = (session) => (
+  isEligibleStandardTitle(session?.title) || isManagedPlaceholderSession(session)
+);
+
 // A job owns its pending candidate and the derived title it is upgrading, so
 // neither reads as a manual rename during reconciliation.
 const ownsTitle = (job, title) => {
@@ -96,7 +111,7 @@ const ownsTitle = (job, title) => {
   if (!normalized) return false;
   return normalized === job?.candidateTitle || normalized === trimString(job?.replacesTitle);
 };
-const isManualTitle = (job, title) => !isEligibleStandardTitle(title) && !ownsTitle(job, title);
+const isManualTitle = (job, session) => !isEligibleStandardSession(session) && !ownsTitle(job, session?.title);
 
 export const normalizeGeneratedSessionTitle = (value, sourceText = '', { rejectSourceMatch = true } = {}) => {
   const raw = trimString(value);
@@ -577,7 +592,7 @@ export const createStandardSessionTitleRuntime = ({
         emitDiagnostic({ ...job, stage: 'persistence', outcome: 'complete' });
         return true;
       }
-      if (isManualTitle(job, currentTitle)) {
+      if (isManualTitle(job, currentResult.data)) {
         await removeJob(job.key);
         emitDiagnostic({ ...job, stage: 'manual_title', outcome: 'won' });
         return true;
@@ -635,7 +650,7 @@ export const createStandardSessionTitleRuntime = ({
         emitDiagnostic({ ...job, stage: 'persistence', outcome: 'complete' });
         return true;
       }
-      if (isManualTitle(job, authoritativeTitle)) {
+      if (isManualTitle(job, authoritative)) {
         await removeJob(job.key);
         emitDiagnostic({ ...job, stage: 'manual_title', outcome: 'won' });
         return true;
@@ -660,7 +675,7 @@ export const createStandardSessionTitleRuntime = ({
         emitDiagnostic({ ...job, stage: 'persistence', outcome: 'complete', attempts: job.attemptCount });
         return true;
       }
-      if (verified && isManualTitle(job, verifiedTitle)) {
+      if (verified && isManualTitle(job, verified)) {
         await removeJob(job.key);
         idleSignals.delete(job.key);
         emitDiagnostic({ ...job, stage: 'manual_title', outcome: 'won' });
@@ -776,7 +791,7 @@ export const createStandardSessionTitleRuntime = ({
       await removeJob(job.key);
       return 'persisted';
     }
-    if (isManualTitle(job, projectionTitle)) {
+    if (isManualTitle(job, projectionResult.data)) {
       await removeJob(job.key);
       emitDiagnostic({ ...job, stage: 'manual_title', outcome: 'won' });
       return 'manual';
@@ -864,14 +879,14 @@ export const createStandardSessionTitleRuntime = ({
     await ensureLoaded();
     const key = makeJobKey(directory, sessionID);
     const records = await readJson(buildSessionUrl(sessionID, directory, '/message'));
-    const firstUserContext = getFirstUserContext(records);
+    const current = await readJson(buildSessionUrl(sessionID, directory));
+    if (!current) return false;
+    const firstUserContext = getFirstUserContext(records, { managed: Boolean(trimString(current.parentID) && trimString(current.agent)) });
     const firstUserText = firstUserContext?.text || normalizeWhitespace(text);
     if (!firstUserText) {
       emitDiagnostic({ sessionID, directory, providerID, modelID, stage: 'input', outcome: 'failed' });
       return false;
     }
-    const current = await readJson(buildSessionUrl(sessionID, directory));
-    if (!current) return false;
     const currentTitle = trimString(current.title);
     const derivedTitle = deriveLocalSessionTitle(firstUserText);
     const existing = jobsByKey.get(key);
@@ -879,7 +894,7 @@ export const createStandardSessionTitleRuntime = ({
     // carrying it (or a pending candidate) is still this runtime's and stays
     // upgradeable; any other real title is a manual rename that wins.
     const ownsCurrentTitle = currentTitle === derivedTitle || (existing ? ownsTitle(existing, currentTitle) : false);
-    if (!isEligibleStandardTitle(currentTitle) && !ownsCurrentTitle) {
+    if (!isEligibleStandardSession(current) && !ownsCurrentTitle) {
       if (existing) await removeJob(key);
       abandonUpgrade(key);
       return true;
@@ -892,7 +907,7 @@ export const createStandardSessionTitleRuntime = ({
       await projectGeneratedTitle(existing, current, { force: true });
       void attemptPersist(existing);
       ensureWatchdog();
-    } else if (isEligibleStandardTitle(currentTitle)) {
+    } else if (isEligibleStandardSession(current)) {
       // Stage derived: shown instantly, persisted like any other candidate.
       retiredKeys.delete(key);
       abandonUpgrade(key);
@@ -1027,8 +1042,7 @@ export const createStandardSessionTitleRuntime = ({
       for (const job of [...jobsByKey.values()].filter((candidate) => candidate.directory === directory)) {
         const session = sessionByID.get(job.sessionID);
         if (!session) continue;
-        const title = trimString(session.title);
-        if (isManualTitle(job, title)) {
+        if (isManualTitle(job, session)) {
           await removeJob(job.key);
           continue;
         }
@@ -1040,7 +1054,7 @@ export const createStandardSessionTitleRuntime = ({
         .filter((session) => (
           trimString(session?.id)
           && trimString(session?.title) !== SESSION_TITLE_HELPER_SESSION_TITLE
-          && isEligibleStandardTitle(session?.title)
+          && isEligibleStandardSession(session)
           && !restoredSessionIDs.has(trimString(session?.id))
         ))
         .sort((left, right) => Number(right?.time?.updated ?? 0) - Number(left?.time?.updated ?? 0));
@@ -1084,7 +1098,7 @@ export const createStandardSessionTitleRuntime = ({
       if (!sessionID) return false;
       const jobs = currentJobsForSession(sessionID);
       const updatedTitle = trimString(info?.title);
-      if (updatedTitle && !isEligibleStandardTitle(updatedTitle)) {
+      if (updatedTitle && !isEligibleStandardSession(info)) {
         // The runtime's own derived/candidate titles flow back here too; only
         // a title it does not own is a manual rename that ends the pipeline.
         for (const [key, scheduled] of generationRetryTimers) {
@@ -1100,7 +1114,7 @@ export const createStandardSessionTitleRuntime = ({
         ensureWatchdog();
         return true;
       }
-      if (isEligibleStandardTitle(updatedTitle)) {
+      if (isEligibleStandardSession(info)) {
         const directory = trimString(info?.directory ?? payload?.properties?.directory);
         if (!directory) return false;
         void schedule({

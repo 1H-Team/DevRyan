@@ -41,8 +41,8 @@ describe('thinking variant labels', () => {
     const statusChip = readSource('../chat/StatusChip.tsx');
     const agentsPage = readSource('../sections/agents/AgentsPage.tsx');
 
-    expect(modelControls).toContain('getCursorAcpVariantDisplayLabel(cursorVariantState, { providerId })');
-    expect(modelControls).toContain('{formatEffortLabel(variantOption, { providerId })}');
+    expect(modelControls).toContain('getChatThinkingState(provider, modelId, resolvedVariant)');
+    expect(modelControls).toContain('formatEffortLabel(chatLevel, { providerId })');
     expect(statusChip).toContain('{ providerId: currentProvider?.id }');
     expect(agentsPage).toContain('{ providerId: parsedRowModel?.providerId }');
   });

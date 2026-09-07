@@ -255,12 +255,15 @@ Electron shell.
   unknown-write quarantine, and explicit Operator reconciliation without replay.
   `conversation.ask` bypasses all of that: it is conversation, recorded on the
   active run through the dispatcher and carried in the final message.
+- `browser-network-diagnostics.js`: independently allowlisted, bounded network
+  status projection and per-stream journal cursors with explicit retention gaps.
 - `browser-service.js`: scoped computer lifecycle, reviewed agent commands,
   transient screencast proxy, view-bound full human input, and attributed
   human-control leases, plus the allowlisted privacy-safe browser-status
-  projection used by diagnostic polling.
+  projection and viewer-independent bounded diagnostic polling.
 - `computer-runtime-manager.js`: one continuously supervised computer per
-  Active Bot, isolated health recovery with backoff, and lifecycle/shutdown stops.
+  Active Bot, isolated health recovery with backoff, lifecycle/shutdown stops,
+  and content-free provisioning/egress-refresh outcome records.
 - `evidence-service.js`: policy-selected PNG crop/redaction, expiring encrypted
   evidence, and exact Manager-only retrieval.
 

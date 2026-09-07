@@ -220,4 +220,28 @@ describe('computer-local browser egress relay', () => {
       token: 'weak',
     })).toThrow(BrowserEgressRelayError);
   });
+
+  test('records proxy authentication failures without recording capabilities or headers', async () => {
+    const diagnostics = [];
+    const requestImpl = () => {
+      const request = new PassThrough();
+      request.setTimeout = () => request;
+      const end = request.end.bind(request);
+      request.end = (...args) => {
+        const result = end(...args);
+        queueMicrotask(() => request.emit('connect', { statusCode: 407,
+          headers: { authorization: TOKEN_A } }, new PassThrough(), Buffer.alloc(0)));
+        return result;
+      };
+      return request;
+    };
+    const relay = await startBrowserEgressRelay({ upstreamUrl: 'http://egress:43121', token: TOKEN_A,
+      requestImpl, onDiagnostic: (event) => diagnostics.push(event) });
+    servers.push(relay.server);
+    expect(await connectThrough({ port: relay.server.address().port, target: 'App.Example:443' }))
+      .toStartWith('HTTP/1.1 407');
+    expect(diagnostics).toEqual([{ kind: 'proxy_failure', host: 'app.example', statusCode: 407,
+      reason: 'proxy_connection_failed' }]);
+    expect(JSON.stringify(diagnostics)).not.toContain(TOKEN_A);
+  });
 });

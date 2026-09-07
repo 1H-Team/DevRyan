@@ -360,6 +360,32 @@ const createHarness = (overrides = {}) => {
 };
 
 describe('Production Bots capabilities and routes', () => {
+  it('preserves only bounded allowlisted ownership diagnostics in capabilities', async () => {
+    const deployment = 'deployment-ffffffffffffffffffffffff';
+    const conflict = { deployment, service: 'supervisor', state: 'exited', environment: 'private' };
+    const result = await resolveBotCapabilities({
+      hasSupabase: true,
+      encryption: { getKey: () => Buffer.alloc(32) },
+      botHost: host('degraded', {
+        code: 'bot_runtime_foreign_deployment',
+        issues: [{
+          code: 'foreign_deployment', message: 'Different deployment', deployment,
+          conflicts: [conflict, { deployment, service: 'private', state: 'private' },
+            { deployment: 'private' }, ...Array(35).fill(conflict)],
+          environment: 'private',
+        }],
+      }),
+    });
+    expect(result).toMatchObject({ available: false, code: 'bot_runtime_foreign_deployment' });
+    const issue = result.runtime.issues[0];
+    expect(issue.deployment).toBe(deployment);
+    expect(issue.conflicts[0]).toEqual({ deployment, service: 'supervisor', state: 'exited' });
+    expect(issue.conflicts[1]).toEqual({ deployment, service: null, state: 'unknown' });
+    expect(issue.conflicts.length).toBeLessThanOrEqual(32);
+    expect(issue.conflictsTruncated).toBe(true);
+    expect(JSON.stringify(result)).not.toContain('private');
+  });
+
   it('serves Bot audit reads outside execution-health middleware', async () => {
     const auditQuery = {
       clear: vi.fn(async () => ({ clearedCount: 3 })),

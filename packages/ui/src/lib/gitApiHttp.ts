@@ -779,11 +779,11 @@ export async function gitPush(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(options),
   });
+  invalidateGitStatusCache(directory);
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to push');
   }
-  invalidateGitStatusCache(directory);
   return response.json();
 }
 
@@ -796,11 +796,11 @@ export async function gitPull(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(options),
   });
+  invalidateGitStatusCache(directory);
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to pull');
   }
-  invalidateGitStatusCache(directory);
   return response.json();
 }
 
@@ -1097,6 +1097,7 @@ export async function rebase(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(options),
   });
+  invalidateGitStatusCache(directory);
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to rebase');
@@ -1108,6 +1109,7 @@ export async function abortRebase(directory: string): Promise<{ success: boolean
   const response = await fetch(buildUrl(`${API_BASE}/rebase/abort`, directory), {
     method: 'POST',
   });
+  invalidateGitStatusCache(directory);
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to abort rebase');
@@ -1124,6 +1126,7 @@ export async function merge(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(options),
   });
+  invalidateGitStatusCache(directory);
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to merge');
@@ -1135,6 +1138,7 @@ export async function abortMerge(directory: string): Promise<{ success: boolean 
   const response = await fetch(buildUrl(`${API_BASE}/merge/abort`, directory), {
     method: 'POST',
   });
+  invalidateGitStatusCache(directory);
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to abort merge');
@@ -1146,6 +1150,7 @@ export async function continueRebase(directory: string): Promise<{ success: bool
   const response = await fetch(buildUrl(`${API_BASE}/rebase/continue`, directory), {
     method: 'POST',
   });
+  invalidateGitStatusCache(directory);
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to continue rebase');
@@ -1157,6 +1162,7 @@ export async function continueMerge(directory: string): Promise<{ success: boole
   const response = await fetch(buildUrl(`${API_BASE}/merge/continue`, directory), {
     method: 'POST',
   });
+  invalidateGitStatusCache(directory);
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to continue merge');

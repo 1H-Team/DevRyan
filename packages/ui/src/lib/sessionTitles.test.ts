@@ -142,4 +142,17 @@ describe("session title helpers", () => {
       updated: 3,
     }).title).toBe("My Manual Session Name")
   })
+
+  test("preserves summarized managed child titles across stale events and later placeholder snapshots", () => {
+    for (const agent of ['explorer', 'designer']) {
+      const projected = { id: 'child', parentID: 'root', agent, title: 'Profile Reviews and Navigation', updated: 1 }
+      const placeholder = { ...projected, title: `Managed ${agent} task`, updated: 2 }
+      expect(mergeSessionPreservingMeaningfulTitle(projected, placeholder)).toEqual({ ...placeholder, title: projected.title })
+      expect(mergeSessionPreservingMeaningfulTitle(placeholder, projected)).toBe(projected)
+      const custom = { ...placeholder, title: 'My Custom Child Name' }
+      expect(mergeSessionPreservingMeaningfulTitle(projected, custom)).toBe(custom)
+      const root = { ...placeholder, parentID: '' }
+      expect(mergeSessionPreservingMeaningfulTitle(projected, root)).toBe(root)
+    }
+  })
 })

@@ -59,6 +59,7 @@ export const CommitSection: React.FC<CommitSectionProps> = ({
   commitGenerationDisabled,
   gitmojiEnabled,
   onOpenGitmojiPicker,
+  syncDisabled,
 }) => {
   const { t } = useI18n();
   const hasScopedChanges = selectedCount > 0;
@@ -164,10 +165,10 @@ export const CommitSection: React.FC<CommitSectionProps> = ({
               <DropdownMenuItem onSelect={onCommitAmend}>
                 {t('gitView.commit.amend')}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onCommitAndPush}>
+              <DropdownMenuItem onSelect={onCommitAndPush} disabled={syncDisabled}>
                 {t('gitView.commit.commitPush')}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onCommitAndSync}>
+              <DropdownMenuItem onSelect={onCommitAndSync} disabled={syncDisabled}>
                 {t('gitView.commit.commitSync')}
               </DropdownMenuItem>
             </DropdownMenuContent>

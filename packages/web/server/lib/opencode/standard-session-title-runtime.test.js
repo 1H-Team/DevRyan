@@ -202,6 +202,58 @@ afterEach(async () => {
 });
 
 describe('standard session title runtime', () => {
+  it.each(['explorer', 'designer'])('recovers the reserved %s child placeholder using the brief, then persists on idle', async (agent) => {
+    const placeholder = `Managed ${agent} task`;
+    const fake = createFakeOpenCode({ sessions: [{ id: 'ses_1', parentID: 'ses_root', agent, title: placeholder }] });
+    const brief = 'Fix profile review summaries and return navigation';
+    fake.state.messages.set('ses_1', [userMessage([
+      '[devryan-agent-contract:v1] Runtime instructions.\nDo not summarize these rules.',
+      '[devryan-context-mode-routing:v1] Tool routing instructions.',
+      '[devryan-managed-read-only:v1] Inspect only.',
+      brief,
+    ].join('\n\n'))]);
+    const generateSessionModelTitle = vi.fn(async () => 'Profile Reviews and Return Navigation');
+    const projected = [];
+    const outbox = createMemorySessionTitleOutbox();
+    const runtime = createRuntime({ fake, projected, outbox, generateSessionModelTitle });
+    await runtime.schedulePlaceholderRecovery({ directory: '/tmp/project' });
+    expect(generateSessionModelTitle).toHaveBeenCalledWith(expect.objectContaining({ text: brief }));
+    expect(projected.at(-1).title).toBe('Profile Reviews and Return Navigation');
+    expect(fake.state.patches).toEqual([]);
+    // The original placeholder remains canonical while busy, including restart.
+    const persisted = await outbox.list();
+    await runtime.dispose();
+    const restored = createRuntime({ fake, outbox: createMemorySessionTitleOutbox({ initialJobs: persisted }) });
+    await restored.processOpenCodeEvent(idleEvent());
+    expect(fake.state.sessions.get('ses_1').title).toBe('Profile Reviews and Return Navigation');
+    await restored.dispose();
+  });
+
+  it('does not classify root titles, explicit child labels, or another agent name as generated placeholders', async () => {
+    const fake = createFakeOpenCode({ sessions: [
+      { id: 'root', title: 'Managed Explorer Task', agent: 'explorer' },
+      { id: 'custom', title: 'Review Profile Navigation', agent: 'designer', parentID: 'root' },
+      { id: 'mismatch', title: 'Managed Explorer Task', agent: 'designer', parentID: 'root' },
+    ] });
+    const generateSessionModelTitle = vi.fn();
+    const runtime = createRuntime({ fake, generateSessionModelTitle });
+    await runtime.schedulePlaceholderRecovery({ directory: '/tmp/project' });
+    expect(generateSessionModelTitle).not.toHaveBeenCalled();
+    expect(fake.state.patches).toEqual([]);
+    await runtime.dispose();
+  });
+
+  it('preserves a managed child renamed manually while its title is pending', async () => {
+    const fake = createFakeOpenCode({ sessions: [{ id: 'ses_1', parentID: 'ses_root', agent: 'explorer', title: 'Managed Explorer Task' }] });
+    const runtime = createRuntime({ fake });
+    await runtime.schedulePlaceholderRecovery({ directory: '/tmp/project' });
+    fake.state.sessions.get('ses_1').title = 'My Deliberate Child Name';
+    await runtime.processOpenCodeEvent(idleEvent());
+    expect(fake.state.sessions.get('ses_1').title).toBe('My Deliberate Child Name');
+    expect(fake.state.patches).toEqual([]);
+    await runtime.dispose();
+  });
+
   it.each(['openai', 'anthropic', 'xai'])('uses the same idle-only persistence flow for %s', async (providerID) => {
     const fake = createFakeOpenCode();
     const projected = [];

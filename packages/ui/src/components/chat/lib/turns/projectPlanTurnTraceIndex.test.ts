@@ -88,13 +88,28 @@ const implementationUser = (id: string, createdAt: number, sourceMessageId: stri
 );
 
 describe('projectPlanTurnTraceIndex plan revisions', () => {
-    test('managed maintenance cannot supersede the saved Plan or become a new actionable card', () => {
+    test('recovered planning keeps one actionable revision and effective rendering intent', () => {
+        const messages = [
+            createMessageEntry({ id: 'human', role: 'user', createdAt: 1, planMode: true }),
+            createMessageEntry({ id: 'waiting', role: 'assistant', parentID: 'human', createdAt: 2, completedAt: 3, parts: [createTextPart('waiting', 'Waiting for discovery.')] }),
+            createMessageEntry({ id: 'wake', role: 'user', createdAt: 4, parts: [createTextPart('wake', '[devryan-provider-recovery:v1:task_fixture]\nCollect result.', true)] }),
+            createMessageEntry({ id: 'recovered', role: 'assistant', parentID: 'wake', createdAt: 5, completedAt: 6, parts: [createTextPart('recovered', planText('Recovered Plan'))] }),
+        ];
+        const index = projectTurnRecords(messages).planTraceIndex;
+        expect(index.entries).toHaveLength(1);
+        expect(index.byTurnId.get('wake')).toBe(index.byTurnId.get('human'));
+        expect(index.byTurnId.get('wake')).toMatchObject({ isActionable: true, userMessageId: 'human' });
+        expect(index.turnIntentById.get('wake')).toBe('plan');
+        expect(index.messageRoleById.get('recovered')).toBe('source');
+        expect(projectTurnRecords(structuredClone(messages)).planTraceIndex.latestPlanSourceMessageId).toBe('recovered');
+    });
+    test('open-todo maintenance cannot supersede the saved Plan or become a new actionable card', () => {
         const messages = [
             createMessageEntry({ id: 'human', role: 'user', createdAt: 1, planMode: true, parts: [createTextPart('human', 'Create the plan.')] }),
             createMessageEntry({ id: 'plan', role: 'assistant', parentID: 'human', createdAt: 2, completedAt: 3, parts: [createTextPart('plan', planText('Original Plan'))] }),
             createMessageEntry({ id: 'wake', role: 'user', createdAt: 4, planMode: true, parts: [
                 createTextPart('wake', 'User has requested to enter plan mode.\nProduce an implementation plan only.', true),
-                { ...createTextPart('wake', '[devryan-provider-recovery:v1:task_fixture]\nCollect completed result.', true), id: 'wake-marker' },
+                { ...createTextPart('wake', '[devryan-open-todo-continuation:v1]\nContinue open todos.', true), id: 'wake-marker' },
             ] }),
             createMessageEntry({ id: 'collection', role: 'assistant', parentID: 'wake', createdAt: 5, completedAt: 6, parts: [createTextPart('collection', planText('Automatic Collection'))] }),
         ];

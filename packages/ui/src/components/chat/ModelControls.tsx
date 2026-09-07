@@ -1,3 +1,5 @@
+import { ThinkingSlider, ThinkingSliderPopover } from './ThinkingSlider';
+import { getChatThinkingState, resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
 import React from 'react';
 import type { ComponentType } from 'react';
 import {
@@ -14,7 +16,6 @@ import {
     RiAddLine,
     RiAiAgentLine,
     RiArrowDownSLine,
-    RiArrowGoBackLine,
     RiArrowRightSLine,
     RiBrainAi3Line,
     RiCheckLine,
@@ -108,8 +109,6 @@ import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
 import {
     formatAgentLabel,
     formatEffortLabel,
-    formatVisibleEffortLabel,
-    getCursorAcpVariantDisplayLabel,
     getCursorAcpVariantState,
     getCycledPrimaryAgentName,
     isPrimaryMode,
@@ -125,7 +124,7 @@ import {
     resolveSelectableAgentOptions,
 } from './modelControlAgentOptions';
 import { applyDraftAwareAgentChange } from './draftAwareAgentChange';
-import { resolveCurrentSendConfig, type SendConfigModelProvenance } from '@/sync/send-config';
+import { normalizeNewChatSendConfig, resolveCurrentSendConfig, type SendConfigModelProvenance } from '@/sync/send-config';
 import { useI18n } from '@/lib/i18n';
 import { useOpenCodeReadiness } from '@/hooks/useOpenCodeReadiness';
 import { useAgentHandoffGuard } from './agentHandoffGuardContext';
@@ -148,10 +147,8 @@ type SortableFavoriteHandleProps = {
     setActivatorNodeRef: ReturnType<typeof useSortable>['setActivatorNodeRef'];
     isDragging: boolean;
 };
-type MobileVariantTarget = { providerId: string; modelId: string };
 
 const buildModelRefKey = (providerID: string, modelID: string) => `${providerID}:${modelID}`;
-const MAX_INLINE_MOBILE_VARIANT_OPTIONS = 6;
 const PLAN_MODE_AGENT_STYLE: React.CSSProperties = { color: 'var(--plan-mode-icon-color)' };
 
 const getCursorAcpFastBaseModelId = (modelId?: string) => (
@@ -515,7 +512,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const [mobileTooltipOpen, setMobileTooltipOpen] = React.useState<'model' | 'agent' | null>(null);
     const [mobileModelQuery, setMobileModelQuery] = React.useState('');
     const [expandedMobileModelKey, setExpandedMobileModelKey] = React.useState<string | null>(null);
-    const [mobileVariantTarget, setMobileVariantTarget] = React.useState<MobileVariantTarget | null>(null);
     const manualVariantSelectionRef = React.useRef(false);
     const closeMobilePanel = React.useCallback(() => setActiveMobilePanel(null), [setActiveMobilePanel]);
     const closeMobileTooltip = React.useCallback(() => setMobileTooltipOpen(null), []);
@@ -596,9 +592,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     React.useEffect(() => {
         if (activeMobilePanel === null) {
             setExpandedMobileModelKey(null);
-        }
-        if (activeMobilePanel !== 'variant') {
-            setMobileVariantTarget(null);
         }
     }, [activeMobilePanel]);
 
@@ -888,7 +881,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     // Compute from current model each render to avoid stale variants
     // in draft/session transitions.
     const availableVariants = getCurrentModelVariants();
-    const hasVariants = availableVariants.length > 0;
 
     const costRows = [
         { label: 'Input', value: formatCost(currentMetadata?.cost?.input) },
@@ -1123,11 +1115,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         const variantOptions = getModelVariantOptions(providerId, modelId);
         const cursorVariantState = getCursorAcpVariantState(provider, modelId, variant);
         const variantControlState = getGenericModelVariantControlState(provider, modelId, variant);
-        const resolvedVariant = cursorVariantState
-            ? variant
-            : resolveProviderModelVariant(provider, modelId, variant);
+        const resolvedVariant = resolveChatThinkingVariant(provider, modelId, variant);
         const effectiveAgentName = agentNameOverride ?? resolveLiveAgentName();
-        const concreteVariant = cursorVariantState ? variant : resolvedVariant ?? null;
+        const concreteVariant = resolvedVariant ?? null;
         if (currentSessionId && options?.modelProvenance === 'explicit') {
             useSelectionStore.getState().markSessionModelSelectionIntent(currentSessionId, {
                 providerID: providerId, modelID: modelId, agent: effectiveAgentName ?? undefined, variant: concreteVariant,
@@ -1179,6 +1169,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             preserveSelectedProvider?: boolean;
         },
     ) => {
+        variant = resolveChatThinkingVariant(providers.find((entry) => entry.id === providerId), modelId, variant) ?? null;
         const effectiveAgentName = agentNameOverride ?? resolveLiveAgentName() ?? undefined;
         const result = tryApplyModelSelection(providerId, modelId, effectiveAgentName, variant, options);
         if (result !== 'applied') {
@@ -1187,7 +1178,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
         commitVariantSelectionForModel(providerId, modelId, variant, effectiveAgentName, options);
         return 'applied';
-    }, [commitVariantSelectionForModel, resolveLiveAgentName, tryApplyModelSelection]);
+    }, [commitVariantSelectionForModel, providers, resolveLiveAgentName, tryApplyModelSelection]);
 
     const firstVisibleModelSelection = React.useMemo(() => {
         for (const provider of visibleProviders) {
@@ -1573,12 +1564,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         manualVariantSelectionRef.current = false;
     }, [currentProviderId, currentModelId]);
 
-    const handleVariantSelect = React.useCallback((variant: string | null | undefined) => {
-        if (currentProviderId && currentModelId) {
-            commitVariantSelectionForModel(currentProviderId, currentModelId, variant, undefined, { modelProvenance: 'explicit' });
-        }
-    }, [commitVariantSelectionForModel, currentModelId, currentProviderId]);
-
     const handleAgentChange = React.useCallback((agentName: string, options?: { closeModelSelector?: boolean }) => {
         void requestAgentChange({
             sessionId: currentSessionId,
@@ -1603,7 +1588,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         },
                     );
                     if (currentSessionId && useSelectionStore.getState().getSessionModelSelectionIntent(currentSessionId)) {
-                        const choice = resolveCurrentSendConfig(currentSessionId);
+                        const choice = normalizeNewChatSendConfig(resolveCurrentSendConfig(currentSessionId), useConfigStore.getState().providers);
                         if (choice.providerID && choice.modelID) {
                             useSelectionStore.getState().markSessionModelSelectionIntent(currentSessionId, {
                                 providerID: choice.providerID, modelID: choice.modelID, agent: choice.agent, variant: choice.variant,
@@ -2097,7 +2082,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             });
         };
 
-        const handleMobileModelApply = (providerId: string, modelId: string, variant: string | null | undefined) => {
+        const handleMobileModelApply = (providerId: string, modelId: string, variant: string | null | undefined, keepOpen = false) => {
             const result = applyModelSelectionWithVariant(providerId, modelId, variant, undefined, { modelProvenance: 'explicit' });
             if (result !== 'applied') {
                 if (result === 'provider-missing') {
@@ -2108,14 +2093,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 return;
             }
 
-            setExpandedMobileModelKey(null);
-            closeMobilePanel();
-            focusMobileComposer();
-        };
-
-        const openMobileVariantOverflow = (providerId: string, modelId: string) => {
-            setMobileVariantTarget({ providerId, modelId });
-            setActiveMobilePanel('variant');
+            if (!keepOpen) {
+                setExpandedMobileModelKey(null);
+                closeMobilePanel();
+                focusMobileComposer();
+            }
         };
 
         const renderMobileModelRow = ({
@@ -2136,34 +2118,23 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 || isCursorAcpSelectedModelMatch(providerId, modelId, currentProviderId, currentModelId)
             );
             const metadata = getModelMetadata(providerId, modelId);
-            const variantOptions = getModelVariantOptions(providerId, modelId);
             const resolvedVariant = resolveModelVariantSelection(providerId, modelId);
             const provider = providers.find((entry) => entry.id === providerId);
             const cursorVariantState = getCursorAcpVariantState(provider, modelId, resolvedVariant);
             const genericVariantState = cursorVariantState ? null : getGenericModelVariantControlState(provider, modelId, resolvedVariant);
             const genericVariantDisplayState = cursorVariantState ? null : getModelVariantDisplayState(provider, modelId, resolvedVariant);
-            const visibleVariantOptions = cursorVariantState?.visibleVariantOptions ?? genericVariantDisplayState?.visibleVariantOptions ?? genericVariantState?.visibleVariantOptions ?? variantOptions;
+            const visibleVariantOptions = getChatThinkingState(provider, modelId, resolvedVariant).levels;
             const hasVariants = cursorVariantState
-                ? visibleVariantOptions.length > 0 || cursorVariantState.canToggleFast || cursorVariantState.canToggleThinking
+                ? visibleVariantOptions.length > 0 || cursorVariantState.canToggleFast
                 : visibleVariantOptions.length > 0 || Boolean(genericVariantState?.canToggleFast);
-            const variantLabel = cursorVariantState
-                ? getCursorAcpVariantDisplayLabel(cursorVariantState, { providerId })
-                : formatVisibleEffortLabel(
-                    genericVariantDisplayState?.selectedVariant ?? genericVariantState?.selectedVariant ?? resolvedVariant,
-                    visibleVariantOptions,
-                    { providerId },
-                );
+            const chatLevel = getChatThinkingState(provider, modelId, resolvedVariant).selected;
+            const variantLabel = chatLevel ? formatEffortLabel(chatLevel, { providerId }) : 'Fast';
             const variantFastIcon = (cursorVariantState?.fastEnabled || genericVariantDisplayState?.fastEnabled || genericVariantState?.fastEnabled) ? (
                 <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center" aria-label="Fast Mode" title="Fast Mode">
                     <RiFlashlightFill className="h-3.5 w-3.5 text-[var(--status-warning)]" />
                 </span>
             ) : null;
             const isExpanded = expandedMobileModelKey === rowKey;
-            const inlineVariantOptions = cursorVariantState
-                ? visibleVariantOptions.slice(0, MAX_INLINE_MOBILE_VARIANT_OPTIONS)
-                : visibleVariantOptions.slice(0, MAX_INLINE_MOBILE_VARIANT_OPTIONS);
-            const totalInlineVariantOptions = visibleVariantOptions.length;
-            const hasVariantOverflow = inlineVariantOptions.length < totalInlineVariantOptions;
             const capabilityIcons = getCapabilityIcons(metadata).map((icon) => ({
                 ...icon,
                 label: localizeMetaLabel(icon.label),
@@ -2238,6 +2209,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 onClick={() => setExpandedMobileModelKey((prev) => prev === rowKey ? null : rowKey)}
                                 className="flex items-center gap-1 rounded-lg border border-border/40 px-2 py-1 typography-micro font-medium text-muted-foreground hover:bg-interactive-hover/50 flex-shrink-0"
                                 aria-expanded={isExpanded}
+
                                 aria-label={isExpanded ? t('chat.modelControls.hideThinkingModes') : t('chat.modelControls.showThinkingModes')}
                             >
                                 <span className="whitespace-nowrap">{variantLabel}</span>
@@ -2274,88 +2246,22 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     </div>
                     {isExpanded && hasVariants ? (
                         <div className="border-t border-border/30 px-2 py-2">
-                            {cursorVariantState?.canToggleFast && provider ? (
-                                <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-border/40 px-2 py-1.5">
-                                    <span className="typography-meta font-medium text-foreground">Fast</span>
-                                    <Switch
-                                        checked={cursorVariantState.fastEnabled}
-                                        onCheckedChange={(checked) => {
-                                            const selection = resolveCursorAcpVariantSelection(provider, modelId, resolvedVariant, { fastEnabled: checked });
-                                            handleMobileModelApply(providerId, selection.modelId, selection.variant);
-                                        }}
-                                        aria-label="Fast"
-                                    />
-                                </div>
-                            ) : null}
-                            {genericVariantState?.canToggleFast && provider ? (
-                                <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-border/40 px-2 py-1.5">
-                                    <span className="typography-meta font-medium text-foreground">Fast</span>
-                                    <Switch
-                                        checked={genericVariantState.fastEnabled}
-                                        onCheckedChange={(checked) => {
-                                            const selection = resolveGenericModelVariantSelection(provider, modelId, resolvedVariant, { fastEnabled: checked });
-                                            handleMobileModelApply(providerId, selection.modelId, selection.variant);
-                                        }}
-                                        aria-label="Fast"
-                                    />
-                                </div>
-                            ) : null}
-                            <div className="flex flex-wrap gap-2">
-                                {!cursorVariantState ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => handleMobileModelApply(providerId, modelId, null)}
-                                        className={cn(
-                                            'inline-flex items-center rounded-full border px-2.5 py-1 typography-meta font-medium',
-                                            resolvedVariant == null
-                                                ? 'border-primary/30 bg-primary/10 text-foreground'
-                                                : 'border-border/40 text-muted-foreground hover:bg-interactive-hover/50'
-                                        )}
-                                        aria-pressed={resolvedVariant == null}
-                                    >
-                                        {formatEffortLabel(undefined)}
-                                    </button>
-                                ) : null}
-                                {inlineVariantOptions.map((variantOption) => {
-                                    const cursorSelection = cursorVariantState && provider
-                                        ? resolveCursorAcpVariantSelection(provider, modelId, resolvedVariant, { effort: variantOption })
-                                        : null;
-                                    const genericSelection = !cursorVariantState && provider
-                                        ? resolveGenericModelVariantSelection(provider, modelId, resolvedVariant, { variant: variantOption })
-                                        : null;
-                                    const effectiveVariantOption = cursorSelection?.variant ?? genericSelection?.variant ?? variantOption;
-                                    const effectiveModelOption = cursorSelection?.modelId ?? genericSelection?.modelId ?? modelId;
-                                    const isVariantSelected = cursorVariantState
-                                        ? cursorVariantState.selectedEffort === variantOption
-                                        : genericVariantState?.selectedVariant === variantOption || resolvedVariant === variantOption;
-                                    return (
-                                        <button
-                                            key={`${rowKey}-variant-${variantOption}`}
-                                            type="button"
-                                            onClick={() => handleMobileModelApply(providerId, effectiveModelOption, effectiveVariantOption)}
-                                            className={cn(
-                                                'inline-flex items-center rounded-full border px-2.5 py-1 typography-meta font-medium',
-                                                isVariantSelected
-                                                    ? 'border-primary/30 bg-primary/10 text-foreground'
-                                                    : 'border-border/40 text-muted-foreground hover:bg-interactive-hover/50'
-                                            )}
-                                            aria-pressed={isVariantSelected}
-                                        >
-                                            {formatEffortLabel(variantOption, { providerId })}
-                                        </button>
-                                    );
-                                })}
-                                {hasVariantOverflow ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => openMobileVariantOverflow(providerId, modelId)}
-                                        className="inline-flex items-center rounded-full border border-border/40 px-2.5 py-1 typography-meta font-medium text-muted-foreground hover:bg-interactive-hover/50"
-                                        aria-label={t('chat.modelControls.moreThinkingModes')}
-                                    >
-                                        {t('inlineComment.actions.showMore')}
-                                    </button>
-                                ) : null}
-                            </div>
+                            <ThinkingSlider levels={visibleVariantOptions} value={getChatThinkingState(provider, modelId, resolvedVariant).selected} providerId={providerId}
+                                fastMode={(cursorVariantState ?? genericVariantState)?.canToggleFast ? {
+                                    enabled: (cursorVariantState ?? genericVariantState)?.fastEnabled ?? false,
+                                    onChange: (fastEnabled) => {
+                                        const selection = cursorVariantState
+                                            ? resolveCursorAcpVariantSelection(provider, modelId, resolvedVariant, { fastEnabled })
+                                            : resolveGenericModelVariantSelection(provider, modelId, resolvedVariant, { fastEnabled });
+                                        handleMobileModelApply(providerId, selection.modelId, selection.variant, true);
+                                    },
+                                } : undefined}
+                                onChange={(effort) => {
+                                    const selection = cursorVariantState
+                                        ? resolveCursorAcpVariantSelection(provider, modelId, resolvedVariant, { effort })
+                                        : resolveGenericModelVariantSelection(provider, modelId, resolvedVariant, { variant: effort });
+                                    handleMobileModelApply(providerId, selection.modelId, selection.variant, true);
+                                }} />
                         </div>
                     ) : null}
                 </div>
@@ -2484,31 +2390,22 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const renderMobileVariantPanel = () => {
         if (!isCompact) return null;
 
-        const targetProviderId = mobileVariantTarget?.providerId ?? currentProviderId;
-        const targetModelId = mobileVariantTarget?.modelId ?? currentModelId;
+        const targetProviderId = currentProviderId;
+        const targetModelId = currentModelId;
         if (!targetProviderId || !targetModelId) return null;
 
-        const targetVariants = getModelVariantOptions(targetProviderId, targetModelId);
         const selectedVariant = resolveModelVariantSelection(targetProviderId, targetModelId);
         const targetProvider = providers.find((entry) => entry.id === targetProviderId);
+        const targetVariants = getChatThinkingState(targetProvider, targetModelId, selectedVariant).levels;
         const cursorVariantState = getCursorAcpVariantState(targetProvider, targetModelId, selectedVariant);
         const genericVariantState = cursorVariantState ? null : getGenericModelVariantControlState(targetProvider, targetModelId, selectedVariant);
         if (targetVariants.length === 0 && !cursorVariantState && !genericVariantState) return null;
-        const handleBack = () => {
-            setActiveMobilePanel('model');
-        };
 
         const handleSelect = (variant: string | null | undefined) => {
             const result = applyModelSelectionWithVariant(targetProviderId, targetModelId, variant, undefined, { modelProvenance: 'explicit' });
             if (result !== 'applied') {
                 return;
             }
-
-            closeMobilePanel();
-            requestAnimationFrame(() => {
-                const textarea = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input="true"]');
-                textarea?.focus();
-            });
         };
 
         const handleCursorSelect = (updates: { fastEnabled?: boolean; thinkingEnabled?: boolean; effort?: string }) => {
@@ -2520,11 +2417,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             if (result !== 'applied') {
                 return;
             }
-            closeMobilePanel();
-            requestAnimationFrame(() => {
-                const textarea = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input="true"]');
-                textarea?.focus();
-            });
         };
 
         const handleGenericSelect = (updates: { fastEnabled?: boolean; variant?: string }) => {
@@ -2536,11 +2428,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             if (result !== 'applied') {
                 return;
             }
-            closeMobilePanel();
-            requestAnimationFrame(() => {
-                const textarea = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input="true"]');
-                textarea?.focus();
-            });
         };
 
         return (
@@ -2548,98 +2435,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 open={activeMobilePanel === 'variant'}
                 onClose={closeMobilePanel}
                 title=""
-                renderHeader={mobileVariantTarget ? ((closeButton) => (
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-border/40">
-                        <button
-                            type="button"
-                            onClick={handleBack}
-                            className="flex items-center gap-1 rounded-lg px-1.5 py-1 typography-meta text-muted-foreground hover:bg-interactive-hover"
-                        >
-                            <RiArrowGoBackLine className="h-4 w-4" />
-                            <span>{t('onboarding.common.actions.back')}</span>
-                        </button>
-                        <span aria-hidden="true" />
-                        {closeButton}
-                    </div>
-                )) : undefined}
-            >
-                {cursorVariantState ? (
-                    <div className="flex flex-col gap-2">
-                        {cursorVariantState.canToggleFast ? (
-                            <div className="flex flex-col gap-1 rounded-xl border border-border/40 p-1">
-                                <div className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5">
-                                    <span className="typography-meta font-medium text-foreground">Fast</span>
-                                    <Switch
-                                        checked={cursorVariantState.fastEnabled}
-                                        onCheckedChange={(checked) => handleCursorSelect({ fastEnabled: checked })}
-                                        aria-label="Fast"
-                                    />
-                                </div>
-                            </div>
-                        ) : null}
-                        <div className="flex flex-col gap-1.5">
-                            {cursorVariantState.visibleVariantOptions.map((effort) => {
-                                const selected = cursorVariantState.selectedEffort === effort;
-                                return (
-                                    <button
-                                        key={effort}
-                                        type="button"
-                                        className={cn(
-                                            'flex w-full items-center justify-between gap-2 rounded-xl border px-2 py-1.5 text-left',
-                                            'focus:outline-none focus-visible:ring-1 focus-visible:ring-primary',
-                                            selected ? 'border-primary/30 bg-primary/10' : 'border-border/40'
-                                        )}
-                                        onClick={() => handleCursorSelect({ effort })}
-                                    >
-                                        <span className="typography-meta font-medium text-foreground">{formatEffortLabel(effort, { providerId: targetProviderId })}</span>
-                                        {selected && <RiCheckLine className="h-4 w-4 text-primary flex-shrink-0" />}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-                ) : (
-                    <div className="flex flex-col gap-1.5">
-                        {genericVariantState?.canToggleFast ? (
-                            <div className="flex items-center justify-between gap-3 rounded-xl border border-border/40 px-2 py-1.5">
-                                <span className="typography-meta font-medium text-foreground">Fast</span>
-                                <Switch
-                                    checked={genericVariantState.fastEnabled}
-                                    onCheckedChange={(checked) => handleGenericSelect({ fastEnabled: checked })}
-                                    aria-label="Fast"
-                                />
-                            </div>
-                        ) : null}
-                        <button
-                            type="button"
-                            className="flex w-full items-center justify-between gap-2 rounded-xl border border-border/40 px-2 py-1.5 text-left focus-visible:ring-1 focus-visible:ring-primary"
-                            onClick={() => handleSelect(null)}
-                        >
-                            <span className="typography-meta font-medium text-foreground">{formatEffortLabel(undefined)}</span>
-                            {selectedVariant == null && <RiCheckLine className="h-4 w-4 text-primary" />}
-                        </button>
-                        {targetVariants.map((variant) => {
-                            const selected = genericVariantState?.selectedVariant === variant || selectedVariant === variant;
-                            const label = formatEffortLabel(variant, { providerId: targetProviderId });
 
-                            return (
-                                <button
-                                    key={variant}
-                                    type="button"
-                                    className={cn(
-                                        'flex w-full items-center justify-between gap-2 rounded-xl border px-2 py-1.5 text-left',
-                                        'focus:outline-none focus-visible:ring-1 focus-visible:ring-primary',
-                                        selected ? 'border-primary/30 bg-primary/10' : 'border-border/40'
-                                    )}
-                                    onClick={() => genericVariantState ? handleGenericSelect({ variant }) : handleSelect(variant)}
-                                >
-                                    <span className="typography-meta font-medium text-foreground">{label}</span>
-                                    {selected && <RiCheckLine className="h-4 w-4 text-primary flex-shrink-0" />}
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
+            >
+                <ThinkingSlider levels={targetVariants} value={getChatThinkingState(targetProvider, targetModelId, selectedVariant).selected} providerId={targetProviderId}
+                    onChange={(effort) => cursorVariantState ? handleCursorSelect({ effort }) : genericVariantState ? handleGenericSelect({ variant: effort }) : handleSelect(effort)}
+                    fastMode={(cursorVariantState ?? genericVariantState)?.canToggleFast ? {
+                        enabled: (cursorVariantState ?? genericVariantState)?.fastEnabled ?? false,
+                        onChange: (fastEnabled) => cursorVariantState ? handleCursorSelect({ fastEnabled }) : handleGenericSelect({ fastEnabled }),
+                    } : undefined} />
             </MobileOverlayPanel>
         );
     };
@@ -2844,13 +2647,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         // Build thinking variant display - only show for models that were adjusted with arrow keys
         let thinkingDisplay: React.ReactNode = null;
         if (hasThinkingVariants && wasAdjusted && (isHighlighted || isSelected)) {
-            const displayLabel = cursorRowVariantState
-                ? getCursorAcpVariantDisplayLabel(cursorRowVariantState, { providerId: providerID }) ?? ''
-                : formatVisibleEffortLabel(
-                    genericRowVariantDisplayState?.selectedVariant ?? genericRowVariantState?.selectedVariant ?? effectiveVariant,
-                    genericRowVariantDisplayState?.visibleVariantOptions ?? genericRowVariantState?.visibleVariantOptions ?? [],
-                    { providerId: providerID },
-                ) ?? '';
+            const level = getChatThinkingState(rowProvider, modelID, effectiveVariant).selected;
+            const displayLabel = level ? formatEffortLabel(level, { providerId: providerID }) : 'Fast';
             const rowFastIcon = (cursorRowVariantState?.fastEnabled || genericRowVariantDisplayState?.fastEnabled || genericRowVariantState?.fastEnabled) ? (
                 <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center" aria-label="Fast Mode" title="Fast Mode">
                     <RiFlashlightFill className="h-3.5 w-3.5 text-[var(--status-warning)]" />
@@ -3101,7 +2899,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             const cursorVariantState = getCursorAcpVariantState(highlightedProvider, highlightedItem.modelID, undefined);
             const genericVariantState = cursorVariantState ? null : getGenericModelVariantControlState(highlightedProvider, highlightedItem.modelID, undefined);
             return cursorVariantState
-                ? cursorVariantState.visibleVariantOptions.length > 0 || cursorVariantState.canToggleThinking
+                ? cursorVariantState.visibleVariantOptions.length > 0
                 : genericVariantState
                     ? genericVariantState.visibleVariantOptions.length > 0 || genericVariantState.canToggleFast
                     : modelVariants && getOrderedThinkingVariants(
@@ -3155,9 +2953,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     const effortOptions = cursorVariantState.visibleVariantOptions;
                     if (effortOptions.length === 0) return;
 
-                    const currentEffortIndex = cursorVariantState.selectedEffort
-                        ? effortOptions.indexOf(cursorVariantState.selectedEffort)
-                        : -1;
+                    const currentEffortIndex = effortOptions.indexOf(getChatThinkingState(provider, modelID, activeModelVariant).selected ?? '');
                     const safeCurrentEffortIndex = currentEffortIndex >= 0 ? currentEffortIndex : 0;
                     const direction = e.key === 'ArrowRight' ? 1 : -1;
                     const nextEffortIndex = Math.min(
@@ -3184,11 +2980,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 const variantKeys = getOrderedThinkingVariants(modelVariants, { providerId: providerID });
                 if (variantKeys.length === 0) return;
 
-                const resolvedActiveVariant = resolveThinkingVariant(
-                    activeModelVariant,
-                    variantKeys,
-                    { providerId: providerID },
-                );
+                const resolvedActiveVariant = getChatThinkingState(provider, modelID, activeModelVariant).selected;
                 const currentVariantIndex = resolvedActiveVariant ? variantKeys.indexOf(resolvedActiveVariant) : -1;
                 const safeCurrentIndex = currentVariantIndex >= 0 ? currentVariantIndex : 0;
                 const direction = e.key === 'ArrowRight' ? 1 : -1;
@@ -3697,238 +3489,32 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     };
 
     const renderVariantSelector = () => {
-        if (!isReady) {
-            return null;
-        }
-
-        const currentProvider = providers.find((entry) => entry.id === currentProviderId);
-        const cursorVariantState = getCursorAcpVariantState(currentProvider, currentModelId, currentVariant);
-        const genericVariantState = cursorVariantState ? null : getGenericModelVariantControlState(currentProvider, currentModelId, currentVariant);
-        const genericVariantDisplayState = cursorVariantState ? null : getModelVariantDisplayState(currentProvider, currentModelId, currentVariant);
-        if (!cursorVariantState && !genericVariantState && !hasVariants) {
-            return null;
-        }
-
-        const displayVariant = cursorVariantState
-            ? getCursorAcpVariantDisplayLabel(cursorVariantState, { providerId: currentProviderId }) ?? ''
-            : formatVisibleEffortLabel(
-                genericVariantDisplayState?.selectedVariant ?? genericVariantState?.selectedVariant ?? currentVariant,
-                genericVariantDisplayState?.visibleVariantOptions ?? availableVariants,
-                { providerId: currentProviderId },
-            ) ?? '';
-        const fastEnabled = Boolean(cursorVariantState?.fastEnabled || genericVariantDisplayState?.fastEnabled || genericVariantState?.fastEnabled);
-        const colorClass = displayVariant ? 'text-[color:var(--status-info)]' : 'text-muted-foreground';
-        const fastIcon = fastEnabled ? (
-                <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center" aria-label="Fast Mode" title="Fast Mode">
-                    <RiFlashlightFill className="h-3.5 w-3.5 text-[var(--status-warning)]" />
-            </span>
-        ) : null;
-
-        const handleCursorVariantUpdate = (updates: { fastEnabled?: boolean; thinkingEnabled?: boolean; effort?: string }) => {
-            if (!currentProviderId || !currentModelId || !currentProvider || !cursorVariantState) {
-                return;
-            }
-            const selection = resolveCursorAcpVariantSelection(currentProvider, currentModelId, currentVariant, updates);
+        if (!isReady) return null;
+        const provider = providers.find((entry) => entry.id === currentProviderId);
+        const normalized = resolveChatThinkingVariant(provider, currentModelId, currentVariant);
+        const cursor = getCursorAcpVariantState(provider, currentModelId, normalized);
+        const generic = cursor ? null : getGenericModelVariantControlState(provider, currentModelId, normalized);
+        const { levels, selected } = getChatThinkingState(provider, currentModelId, normalized);
+        const fastState = cursor ?? generic;
+        if (!levels.length && !fastState?.canToggleFast) return null;
+        const display = selected ? formatEffortLabel(selected, { providerId: currentProviderId }) : 'Fast';
+        const apply = (updates: { effort?: string; fastEnabled?: boolean }) => {
+            const selection = cursor
+                ? resolveCursorAcpVariantSelection(provider, currentModelId, normalized, updates)
+                : resolveGenericModelVariantSelection(provider, currentModelId, normalized, { variant: updates.effort, fastEnabled: updates.fastEnabled });
             applyModelSelectionWithVariant(currentProviderId, selection.modelId, selection.variant, undefined, { modelProvenance: 'explicit' });
         };
-
-        const handleGenericVariantUpdate = (updates: { fastEnabled?: boolean; variant?: string }) => {
-            if (!currentProviderId || !currentModelId || !currentProvider || !genericVariantState) {
-                return;
-            }
-            const selection = resolveGenericModelVariantSelection(currentProvider, currentModelId, currentVariant, updates);
-            applyModelSelectionWithVariant(currentProviderId, selection.modelId, selection.variant, undefined, { modelProvenance: 'explicit' });
-        };
-
-        if (isCompact) {
-            return (
-                <button
-                    type="button"
-                    onClick={() => setActiveMobilePanel('variant')}
-                    className={cn(
-                        'model-controls__variant-trigger flex items-center gap-1.5 transition-opacity min-w-0 focus:outline-none',
-                        buttonHeight,
-                        'cursor-pointer hover:bg-transparent hover:opacity-70',
-                    )}
-                >
-                    <RiBrainAi3Line className={cn(controlIconSize, 'flex-shrink-0', colorClass)} />
-                    <span className={cn(
-                        'model-controls__variant-label',
-                        controlTextSize,
-                        'font-medium truncate min-w-0',
-                        isMobile && 'max-w-[60px]',
-                        colorClass
-                    )}>
-                        {displayVariant}
-                    </span>
-                    {fastIcon}
-                </button>
-            );
-        }
-
-        if (cursorVariantState) {
-            return (
-                <Tooltip delayDuration={600}>
-                    <DropdownMenu>
-                        <TooltipTrigger asChild>
-                            <DropdownMenuTrigger asChild>
-                                <button
-                                    type="button"
-                                    className={cn(
-                                        'model-controls__variant-trigger flex items-center border-0 bg-transparent p-0 text-left transition-colors cursor-pointer hover:bg-transparent hover:opacity-70 min-w-0 shrink-0',
-                                        buttonHeight,
-                                    )}
-                                >
-                                    <span
-                                        className={cn(
-                                            'model-controls__variant-label',
-                                            'inline-flex items-center gap-1 text-[10px] leading-[14px] -my-[2px] py-[2px] font-medium min-w-0 truncate text-muted-foreground',
-                                            variantLabelAlignmentClass,
-                                            isDesktop ? 'max-w-[90px]' : undefined,
-                                        )}
-                                    >
-                                        <span className="min-w-0 truncate leading-[14px] -my-[2px] py-[2px]">{displayVariant}</span>
-                                        {fastIcon}
-                                    </span>
-                                </button>
-                            </DropdownMenuTrigger>
-                        </TooltipTrigger>
-                        <DropdownMenuContent align="end" alignOffset={-40} className="w-[min(210px,calc(100vw-2rem))]">
-                            {cursorVariantState.canToggleFast ? (
-                                <div
-                                    role="button"
-                                    tabIndex={0}
-                                    className="flex items-center justify-between gap-3 rounded-lg px-2 py-1 typography-meta hover:bg-interactive-hover"
-                                    onClick={() => handleCursorVariantUpdate({ fastEnabled: !cursorVariantState.fastEnabled })}
-                                    onKeyDown={(event) => {
-                                        if (event.key === 'Enter' || event.key === ' ') {
-                                            event.preventDefault();
-                                            handleCursorVariantUpdate({ fastEnabled: !cursorVariantState.fastEnabled });
-                                        }
-                                    }}
-                                >
-                                    <span className="font-medium text-foreground">Fast</span>
-                                    <Switch
-                                        checked={cursorVariantState.fastEnabled}
-                                        onClick={(event) => event.stopPropagation()}
-                                        onCheckedChange={(checked) => handleCursorVariantUpdate({ fastEnabled: checked })}
-                                        aria-label="Fast"
-                                    />
-                                </div>
-                            ) : null}
-                            {cursorVariantState.visibleVariantOptions.length > 0 ? (
-                                <>
-                                    {cursorVariantState.canToggleFast ? <DropdownMenuSeparator /> : null}
-                                    <DropdownMenuLabel className="typography-meta text-muted-foreground">Effort</DropdownMenuLabel>
-                                    {cursorVariantState.visibleVariantOptions.map((effort) => {
-                                        const selected = cursorVariantState.selectedEffort === effort;
-                                        return (
-                                            <DropdownMenuItem
-                                                key={effort}
-                                                className="typography-meta"
-                                                onSelect={() => handleCursorVariantUpdate({ effort })}
-                                            >
-                                                <div className="flex items-center justify-between gap-2 w-full min-w-0">
-                                                    <span className="typography-meta font-medium text-foreground truncate min-w-0">{formatEffortLabel(effort, { providerId: currentProviderId })}</span>
-                                                    {selected && <RiCheckLine className="h-4 w-4 text-primary flex-shrink-0" />}
-                                                </div>
-                                            </DropdownMenuItem>
-                                        );
-                                    })}
-                                </>
-                            ) : null}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                    <TooltipContent side="top">
-                        <p className="typography-meta">{displayVariant || 'Fast mode'}</p>
-                    </TooltipContent>
-                </Tooltip>
-            );
-        }
-
-        return (
-            <Tooltip delayDuration={600}>
-                <DropdownMenu>
-                    <TooltipTrigger asChild>
-                        <DropdownMenuTrigger asChild>
-                            <button
-                                type="button"
-                                className={cn(
-                                    'model-controls__variant-trigger flex items-center border-0 bg-transparent p-0 text-left transition-colors cursor-pointer hover:bg-transparent hover:opacity-70 min-w-0 shrink-0',
-                                    buttonHeight,
-                                )}
-                            >
-                                {/* Desktop intentionally mirrors the compact screenshot: effort text next to the model. */}
-                                <span
-                                    className={cn(
-                                        'model-controls__variant-label',
-                                        'inline-flex items-center gap-1 text-[10px] leading-[14px] -my-[2px] py-[2px] font-medium min-w-0 truncate text-muted-foreground',
-                                        variantLabelAlignmentClass,
-                                        isDesktop ? 'max-w-[90px]' : undefined,
-                                    )}
-                                >
-                                    <span className="min-w-0 truncate leading-[14px] -my-[2px] py-[2px]">{displayVariant}</span>
-                                    {fastIcon}
-                                </span>
-                            </button>
-                        </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <DropdownMenuContent align="end" alignOffset={-40} className="w-[min(210px,calc(100vw-2rem))]">
-                        {genericVariantState?.canToggleFast ? (
-                            <div
-                                role="button"
-                                tabIndex={0}
-                                className="flex items-center justify-between gap-3 rounded-lg px-2 py-1 typography-meta hover:bg-interactive-hover"
-                                onClick={() => handleGenericVariantUpdate({ fastEnabled: !genericVariantState.fastEnabled })}
-                                onKeyDown={(event) => {
-                                    if (event.key === 'Enter' || event.key === ' ') {
-                                        event.preventDefault();
-                                        handleGenericVariantUpdate({ fastEnabled: !genericVariantState.fastEnabled });
-                                    }
-                                }}
-                            >
-                                <span className="font-medium text-foreground">Fast</span>
-                                <Switch
-                                    checked={genericVariantState.fastEnabled}
-                                    onClick={(event) => event.stopPropagation()}
-                                    onCheckedChange={(checked) => handleGenericVariantUpdate({ fastEnabled: checked })}
-                                    aria-label="Fast"
-                                />
-                            </div>
-                        ) : null}
-                        {genericVariantState?.canToggleFast && availableVariants.length > 0 ? <DropdownMenuSeparator /> : null}
-                        <DropdownMenuItem
-                            className="typography-meta"
-                            onSelect={() => applyModelSelectionWithVariant(currentProviderId, currentModelId, null, undefined, { modelProvenance: 'explicit' })}
-                        >
-                            <div className="flex w-full items-center justify-between gap-2">
-                                <span>{formatEffortLabel(undefined)}</span>
-                                {currentVariant == null && <RiCheckLine className="h-4 w-4 text-primary" />}
-                            </div>
-                        </DropdownMenuItem>
-                        {availableVariants.map((variant) => {
-                            const selected = genericVariantState?.selectedVariant === variant || currentVariant === variant;
-                            const label = formatEffortLabel(variant, { providerId: currentProviderId });
-                            return (
-                                <DropdownMenuItem
-                                    key={variant}
-                                    className="typography-meta"
-                                    onSelect={() => genericVariantState ? handleGenericVariantUpdate({ variant }) : handleVariantSelect(variant)}
-                                >
-                                    <div className="flex items-center justify-between gap-2 w-full min-w-0">
-                                        <span className="typography-meta font-medium text-foreground truncate min-w-0">{label}</span>
-                                        {selected && <RiCheckLine className="h-4 w-4 text-primary flex-shrink-0" />}
-                                    </div>
-                                </DropdownMenuItem>
-                            );
-                        })}
-                    </DropdownMenuContent>
-                </DropdownMenu>
-                <TooltipContent side="top">
-                    <p className="typography-meta">{displayVariant || 'Fast mode'}</p>
-                </TooltipContent>
-            </Tooltip>
-        );
+        const trigger = <button type="button" aria-label={t('chat.modelControls.thinking')}
+            onClick={isCompact ? () => setActiveMobilePanel('variant') : undefined}
+            className={cn('model-controls__variant-trigger flex min-w-0 shrink-0 items-center gap-1 border-0 bg-transparent p-0 text-left text-muted-foreground hover:opacity-70', buttonHeight)}>
+            <span className={cn('model-controls__variant-label truncate text-[10px] font-medium leading-[14px] -my-[2px] py-[2px]', variantLabelAlignmentClass, isDesktop && 'max-w-[90px]')}>{display}</span>
+            {fastState?.fastEnabled ? <RiFlashlightFill aria-label="Fast Mode" className="h-3.5 w-3.5 text-[var(--status-warning)]" /> : null}
+        </button>;
+        if (isCompact) return trigger;
+        return <ThinkingSliderPopover trigger={trigger}>
+            <ThinkingSlider levels={levels} value={selected} providerId={currentProviderId} onChange={(effort) => apply({ effort })}
+                fastMode={fastState?.canToggleFast ? { enabled: fastState.fastEnabled, onChange: (fastEnabled) => apply({ fastEnabled }) } : undefined} />
+        </ThinkingSliderPopover>;
     };
 
     const renderAgentSelector = () => {

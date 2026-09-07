@@ -51,6 +51,7 @@ export const BOT_CONVERSATIONAL_RESPONSE_INSTRUCTION = [
 export const BOT_COMPUTER_CONNECTOR_INSTRUCTION = [
   '<devryan_bot_computer>',
   'This Active Bot has a persistent browser connector through the devryan_bot tool (operation "computer.command"; the tool description carries the payload shape and the navigate/snapshot-first flow). Do not claim that a browser connector is missing.',
+  'Browser snapshot starts with args {}. If nextOffset is non-null, continue with args { snapshotId, offset: nextOffset }; refs from every page remain valid until a new snapshot or navigation. omittedNodes or textTruncated explicitly indicate incomplete content: narrow the website view before claiming a complete read. Use observed links and element refs; do not guess account-specific routes. A snapshot size error is not evidence of sign-out or network failure.',
   '</devryan_bot_computer>',
 ].join('\n');
 

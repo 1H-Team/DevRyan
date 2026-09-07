@@ -175,6 +175,7 @@ export function createDockerSocketClient({
     contentType = 'application/json',
     expected = [200],
     responseType = 'json',
+    requestTimeoutMs = timeoutMs,
   }) => new Promise((resolve, reject) => {
     const search = query ? `?${new URLSearchParams(query).toString()}` : '';
     if (body !== undefined && rawBody !== undefined) {
@@ -242,7 +243,7 @@ export function createDockerSocketClient({
         }
       });
     });
-    req.setTimeout(timeoutMs, () => req.destroy(Object.assign(new Error('Docker request timed out'), {
+    req.setTimeout(requestTimeoutMs, () => req.destroy(Object.assign(new Error('Docker request timed out'), {
       code: 'ETIMEDOUT',
     })));
     req.on('error', (error) => {
@@ -338,7 +339,8 @@ export function createDockerSocketClient({
     stopContainer: (id) => call({
       method: 'POST',
       pathname: `/containers/${encodeURIComponent(id)}/stop`,
-      query: { t: '15' },
+      query: { t: '30' },
+      requestTimeoutMs: Math.max(timeoutMs, 45_000),
       expected: [204, 304],
     }),
     waitContainer: (id) => call({
@@ -903,6 +905,16 @@ export function createBotDockerSupervisor({
   }
 
   const locks = new Map();
+  const unconfirmedStops = new Set();
+  const stopContainer = async (id) => {
+    try {
+      await docker.stopContainer(id);
+      unconfirmedStops.delete(id);
+    } catch (error) {
+      unconfirmedStops.add(id);
+      throw error;
+    }
+  };
 
   const withLock = (key, operation) => {
     const previous = locks.get(key) || Promise.resolve();
@@ -1022,6 +1034,13 @@ export function createBotDockerSupervisor({
       } : {}),
     };
     let existing = await inspectOwnedContainer(identity, names);
+    if (existing && unconfirmedStops.has(containerId(existing))) {
+      if (containerRunning(existing)) {
+        fail('The previous container stop is not confirmed; retry stop before ensuring this computer',
+          'bot_supervisor_stop_unconfirmed', { statusCode: 503 });
+      }
+      unconfirmedStops.delete(containerId(existing));
+    }
     await ensureVolumes(identity, names);
     let replaced = false;
 
@@ -1044,7 +1063,7 @@ export function createBotDockerSupervisor({
       (label) => existing.Config?.Labels?.[label] !== labels[label],
     );
     if (replacementRequired) {
-      if (containerRunning(existing)) await docker.stopContainer(containerId(existing));
+      if (containerRunning(existing)) await stopContainer(containerId(existing));
       await docker.removeContainer(containerId(existing));
       existing = null;
       replaced = true;
@@ -1132,7 +1151,7 @@ export function createBotDockerSupervisor({
     return withLock(names.container, async () => {
       const existing = await inspectOwnedContainer(identity, names);
       if (!existing) return Object.freeze({ state: 'absent', name: names.container });
-      if (containerRunning(existing)) await docker.stopContainer(containerId(existing));
+      if (containerRunning(existing)) await stopContainer(containerId(existing));
       return Object.freeze({ state: 'stopped', name: names.container });
     });
   };
@@ -1524,7 +1543,7 @@ export function createBotDockerSupervisor({
         ownedVolumes.push({ name, role });
       }
       if (existing) {
-        if (containerRunning(existing)) await docker.stopContainer(containerId(existing));
+        if (containerRunning(existing)) await stopContainer(containerId(existing));
         await docker.removeContainer(containerId(existing));
       }
       const removed = [];

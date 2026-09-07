@@ -134,6 +134,25 @@ const createApp = (overrides = {}) => {
 };
 
 describe('OpenCode provider routes', () => {
+  it('returns display-only default thinking metadata without changing model options', async () => {
+    const options = { reasoningEffort: 'high' };
+    const original = { id: 'gpt-5.5', api: { id: 'gpt-5.5', npm: '@ai-sdk/openai' }, variants: { low: {}, medium: {}, high: {} }, options };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ providers: [{ id: 'openai', models: { 'gpt-5.5': original } }], default: { openai: 'gpt-5.5' } }),
+    });
+    const { app } = createApp({
+      buildOpenCodeUrl: requestPath => 'http://opencode.test' + requestPath,
+      cursorSdkRuntime: null,
+    });
+    const response = await request(app).get('/api/config/providers').expect(200);
+    const returned = response.body.providers.find(provider => provider.id === 'openai').models['gpt-5.5'];
+    expect(returned.defaultThinkingLevel).toBe('high');
+    expect(returned.options).toEqual(options);
+    expect(original).not.toHaveProperty('defaultThinkingLevel');
+    expect(response.body.default).toEqual({ openai: 'gpt-5.5' });
+  });
+
   let tempDir = null;
 
   afterEach(() => {

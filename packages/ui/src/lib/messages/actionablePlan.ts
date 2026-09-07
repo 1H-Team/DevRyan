@@ -208,6 +208,13 @@ export const hasPlanImplementationRequestPart = (parts: readonly Part[] | undefi
   (parts ?? []).some((part) => parsePlanImplementationRequestPart(part) !== null)
 );
 
+/** A host recovery wake may finish the human's existing planning turn. */
+export const isManagedPlanRecoveryMessage = (parts: readonly Part[] | undefined): boolean => (
+  !hasPlanImplementationRequestPart(parts) && (parts ?? []).some((part) => (
+    part.type === 'text' && part.synthetic === true && getPartText(part).startsWith(PROVIDER_RECOVERY_PREFIX)
+  ))
+);
+
 /** Managed collection/recovery wakes preserve policy but never request a new plan. */
 export const isManagedPlanMaintenanceMessage = (parts: readonly Part[] | undefined): boolean => {
   if (hasPlanImplementationRequestPart(parts)) return false;

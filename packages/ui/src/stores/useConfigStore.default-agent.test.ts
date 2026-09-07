@@ -222,7 +222,7 @@ describe("useConfigStore default agent selection", () => {
     })
   })
 
-  test("managed fresh drafts preserve a personal model-only provider default", () => {
+  test("managed fresh drafts retain settings default while new chat captures use Medium", () => {
     setManagedDeveloper()
     useSessionUIStore.setState({
       currentSessionId: null,
@@ -289,7 +289,7 @@ describe("useConfigStore default agent selection", () => {
       modelID: "gpt-5.6-sol",
       variant: null,
     })
-    expect(send.variant).toBeNull()
+    expect(send.variant).toBe("medium")
   })
 
   test("fresh drafts show a managed account's personal thinking default", () => {
@@ -694,46 +694,16 @@ describe("useConfigStore default agent selection", () => {
     expect(useConfigStore.getState().currentVariant).toBe(undefined)
   })
 
-  test("cycles through concrete thinking variants and provider default", () => {
+  test("cycles only native thinking levels, starting from the displayed Medium fallback", () => {
     useConfigStore.setState({
-      currentProviderId: "opencode",
-      currentModelId: "builder-model",
-      currentVariant: undefined,
-      providers: [{
-        id: "opencode",
-        name: "OpenCode",
-        source: "custom",
-        options: {},
-        env: [],
-        models: [
-          createModel("opencode", "builder-model", {
-            low: {},
-            medium: {},
-            high: {},
-            xhigh: {},
-            ultra: {},
-          }),
-        ],
-      }],
+      currentProviderId: "opencode", currentModelId: "builder-model", currentVariant: undefined,
+      providers: [{ id: "opencode", name: "OpenCode", source: "custom", options: {}, env: [],
+        models: [createModel("opencode", "builder-model", { low: {}, medium: {}, high: {}, xhigh: {}, ultra: {} })] }],
     })
-
-    useConfigStore.getState().cycleCurrentVariant()
-    expect(useConfigStore.getState().currentVariant).toBe("low")
-
-    useConfigStore.getState().cycleCurrentVariant()
-    expect(useConfigStore.getState().currentVariant).toBe("medium")
-
-    useConfigStore.getState().cycleCurrentVariant()
-    expect(useConfigStore.getState().currentVariant).toBe("high")
-
-    useConfigStore.getState().cycleCurrentVariant()
-    expect(useConfigStore.getState().currentVariant).toBe("xhigh")
-
-    useConfigStore.getState().cycleCurrentVariant()
-    expect(useConfigStore.getState().currentVariant).toBe("ultra")
-
-    useConfigStore.getState().cycleCurrentVariant()
-    expect(useConfigStore.getState().currentVariant).toBeNull()
+    for (const expected of ["high", "xhigh", "ultra", "low", "medium", "high"]) {
+      useConfigStore.getState().cycleCurrentVariant()
+      expect(useConfigStore.getState().currentVariant).toBe(expected)
+    }
   })
 
   test("leaves an active session selection unchanged when the configured default agent changes", () => {

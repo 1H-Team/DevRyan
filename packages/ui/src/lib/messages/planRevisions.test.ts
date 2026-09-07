@@ -74,6 +74,47 @@ describe('isContinuationTurnUserMessage', () => {
 });
 
 describe('projectPlanRevisions', () => {
+    test('recovery completes the original planning revision across repeated wakes and reload', () => {
+        const turns = [
+            turn('u1', [textPart('u1', 'Plan the fix'), textPart('u1', 'User has requested to enter plan mode.', true)], [assistant('a1', 'Waiting for discovery.')]),
+            turn('wake1', [textPart('wake1', '[devryan-provider-recovery:v1:task_1]\nCollect result.', true)], [assistant('a2', 'Still recovering.')]),
+            turn('wake2', [textPart('wake2', '[devryan-provider-recovery:v1:task_2]\nCollect result.', true)], [assistant('a3', planText('Recovered Plan'))]),
+        ];
+        for (const history of [turns, structuredClone(turns)]) {
+            const revisions = projectPlanRevisions(history);
+            expect(revisions).toHaveLength(1);
+            expect(revisions[0]).toMatchObject({ rootUserMessageId: 'u1', memberTurnIds: ['u1', 'wake1', 'wake2'], sourceMessageId: 'a3', isSettled: true, isPlanModeRevision: true });
+        }
+    });
+
+    test('recovery cannot borrow planning intent across implementation or a later ordinary user request', () => {
+        for (const parts of [implementationParts('u2', 'a1'), [textPart('u2', 'Now investigate something else.')]]) {
+            const revisions = projectPlanRevisions([
+                turn('u1', [textPart('u1', 'Plan the fix')], [assistant('a1', planText('Plan'))], { recordedPlanMode: true }),
+                turn('u2', parts, [assistant('a2', 'Working.')]),
+                turn('wake', [textPart('wake', '[devryan-provider-recovery:v1:task_1]\nCollect result.', true)], [assistant('a3', planText('Not a new plan'))]),
+            ]);
+            expect(revisions).toHaveLength(1);
+            expect(revisions[0]?.memberTurnIds).toEqual(['u1']);
+        }
+    });
+    test('recovered split text excludes reasoning and stays unsettled until the final sibling completes', () => {
+        const recovered = assistant('a2', '', null);
+        recovered.parts = [
+            textPart('a2', 'Recovered investigation.\n<!--plan-->\n# Recovered Plan\n\n'),
+            { id: 'reasoning', messageID: 'a2', sessionID: 'session-1', type: 'reasoning', text: 'Private intermediate reasoning.', time: { start: 1, end: 2 } },
+            textPart('a2', '## Implementation\n\n1. Restore the card.\n\n## Verification\n\nReload.'),
+        ];
+        const turns = [
+            turn('u1', [textPart('u1', 'Plan the fix')], [assistant('a1', 'Waiting.')], { recordedPlanMode: true }),
+            turn('wake', [textPart('wake', '[devryan-provider-recovery:v1:task_1]\nCollect result.', true)], [recovered]),
+        ];
+        expect(projectPlanRevisions(turns)[0]).toMatchObject({ isSettled: false, sourceMessageId: 'a2' });
+        recovered.completedAt = 20;
+        const [revision] = projectPlanRevisions(structuredClone(turns));
+        expect(revision).toMatchObject({ isSettled: true, rootUserMessageId: 'u1' });
+        expect(revision?.planText).toBe('# Recovered Plan\n## Implementation\n\n1. Restore the card.\n\n## Verification\n\nReload.');
+    });
     test('a plan turn followed by an implementation turn yields one plan revision, and the implementation turn opens its own group', () => {
         const revisions = projectPlanRevisions([
             turn('u1', [textPart('u1', 'Plan the fix')], [assistant('a1', planText('Plan'))], { recordedPlanMode: true }),

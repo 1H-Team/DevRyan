@@ -22,7 +22,9 @@ mock.module('@/components/ui/ProviderLogo', () => ({
 // The connected row reads the child's live status; there is no sync provider in these tests.
 // `session-ui-store` (imported by the row) also binds `setActiveSession`, so the
 // mock must export it or the store fails to link against the mocked module.
+const syncModule = { ...(await import('@/sync/sync-context')) };
 mock.module('@/sync/sync-context', () => ({
+  ...syncModule,
   useSessionStatus: () => undefined,
   setActiveSession: () => undefined,
 }));
@@ -69,6 +71,7 @@ mock.module('@/stores/useManagedOrchestrationStore', () => ({
 }));
 
 const { ManagedTaskRow, ManagedTaskRowView } = await import('./ManagedTaskRow');
+const { ManagedTaskList } = await import('./ManagedTaskList');
 
 const record = (
   taskId: string,
@@ -171,6 +174,25 @@ afterEach(() => {
 });
 
 describe('ManagedTaskRow', () => {
+  test('a historical failed dispatch renders its retained sixth attempt after original and intermediate tasks are pruned', () => {
+    const active = record('dvr_task_six', 'running', {
+      sequence: 6, attempt: 6, priorTaskId: 'dvr_task_pruned', executionKind: 'retry_in_place',
+      dispatchCallId: 'call_original', modelId: 'deepseek-v4-flash',
+    });
+    ingest(toManagedTaskEvent(active).properties.task);
+    const render = () => renderToStaticMarkup(<I18nProvider><ManagedTaskList
+      rootSessionId="ses_root" taskIds={['dvr_task_original']}
+      fallbackTasks={[{ partId: 'part_original', taskId: 'dvr_task_original', dispatchCallId: 'call_original', agent: 'explorer',
+        label: 'Map the workspace', status: 'failed', childSessionId: 'ses_child', directory: '/workspace' }]}
+    /></I18nProvider>);
+    expect(render()).toContain('data-managed-task-id="dvr_task_six"');
+    expect(render()).toContain('Running...');
+    expect(render()).not.toContain('data-managed-task-fallback-id');
+    expect(render()).not.toContain('>Error<');
+    ingest(toManagedTaskEvent({ ...active, status: 'completed', finishedAt: 3_000 }).properties.task);
+    expect(render()).toContain('Complete');
+    expect(render()).not.toContain('>Error<');
+  });
   test('shows Starting model… between the child prompt and the first assistant part', () => {
     const running = toManagedTaskEvent(record('dvr_task_run', 'running')).properties.task;
 
@@ -194,6 +216,25 @@ describe('ManagedTaskRow', () => {
 
     const legacy = renderView(<ManagedTaskRowView task={running} onOpenChild={() => undefined} />);
     expect(legacy).toContain('Running...');
+  });
+
+  test('routes recovery controls to the latest failed attempt from an older dispatch row', () => {
+    const original = record('dvr_task_original', 'failed', { dispatchCallId: 'call_original', failureReason: 'usage limit reached' });
+    const current = record('dvr_task_current', 'failed', {
+      sequence: 6, attempt: 6, priorTaskId: 'dvr_task_pruned', executionKind: 'retry_in_place',
+      dispatchCallId: 'call_original', failureReason: 'usage limit reached',
+    });
+    const envelope = createManagedTaskResultEnvelope(current, { sequence: 6, createdAt: 2_000, resumable: true });
+    ingest(toManagedTaskEvent(original).properties.task);
+    ingest(toManagedTaskEvent(current, envelope).properties.task, envelope);
+    const calls: Array<[string, boolean]> = [];
+    store.setState({ setAutoResume: async (taskId: string, enabled: boolean) => { calls.push([taskId, enabled]); } });
+    const html = renderView(<ManagedTaskRow taskId="dvr_task_original" />);
+    expect(html).toContain('data-managed-task-id="dvr_task_current"');
+    expect(html).toContain('Try Again');
+    expect(html).toContain('>Error<');
+    latestCheckboxChange?.(true);
+    expect(calls).toEqual([['dvr_task_current', true]]);
   });
 
   test('announces the automatic continuation on the attempt the prior envelope launched', () => {

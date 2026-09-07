@@ -15,7 +15,8 @@ authenticated `bot-engine-proxy` is the sole socket process.
   administrator container listings, secure workspace-image export, fixed Shared
   import, and `list owned`, plus the in-memory,
   capability-scoped reasoning data-plane tunnel.
-- `src/docker.js`: fixed Docker Engine adapter and lifecycle implementation.
+- `src/docker.js`: fixed Docker Engine adapter, bounded graceful stops, and
+  lifecycle implementation with an unresolved-stop fence before ensure.
 - `src/engine-proxy-client.js`: exact internal protocol/version/auth client for
   the sole-socket engine proxy; no direct fallback exists.
 - `src/workspace-archive.js`: strict single-file ustar encoder used by the

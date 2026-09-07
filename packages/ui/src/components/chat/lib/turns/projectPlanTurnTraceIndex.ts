@@ -179,6 +179,9 @@ export const projectPlanTurnTraceIndex = (
         entries.push(entry);
         for (const memberTurnId of revision.memberTurnIds) {
             byTurnId.set(memberTurnId, entry);
+            // The shared revision resolver is also the authority for recovered
+            // planning intent; raw maintenance intent must not veto its card.
+            if (revision.isPlanModeRevision) turnIntentById.set(memberTurnId, 'plan');
         }
         if (entry.assistantSourceMessageId) {
             bySourceMessageId.set(entry.assistantSourceMessageId, entry);
