@@ -1,0 +1,68 @@
+{
+  "runtime": "production-web-components-in-electron-chromium",
+  "outcome": "passed",
+  "checks": [
+    {
+      "name": "bounded real tool previews bypass rich renderer",
+      "outcome": "passed"
+    },
+    {
+      "name": "exact full source download and object URL release",
+      "outcome": "passed"
+    },
+    {
+      "name": "rich renderer failure uses bounded raw fallback",
+      "outcome": "passed"
+    },
+    {
+      "name": "question explanation visible once while pending, answered, failed and after late arrival",
+      "outcome": "passed"
+    },
+    {
+      "name": "clipboard abstraction preserves Markdown and reports denied copy",
+      "outcome": "passed"
+    },
+    {
+      "name": "history has zero commits across 120 separately flushed assistant updates",
+      "outcome": "passed"
+    }
+  ],
+  "consoleErrors": [],
+  "cleanupErrors": [],
+  "sourceHashes": {
+    "sync/user-message-history.ts": "6c43170cbc8ac5fefe735123d3263499dd2194d41dab8aa06f68164c69237308",
+    "sync/sync-context.tsx": "8fd32dfed494d52076993bb62ea1ab10cffc37ef82041264ad62f5b83c8d2ae3",
+    "components/chat/message/MessageBody.tsx": "fec8192b81d79b2b63db3717354562e3f4cbd0098fdf4a99a187df8d92889c25",
+    "components/chat/message/parts/ToolPart.tsx": "b9c383c84e98c740a27e1228530a40541620bf1ed8337a90b2c377278f0a71fe",
+    "components/chat/message/parts/toolDiffPreview.ts": "34e0b430b0da259e9c5be2eba156a57e6e3b4cc79f81ecf4d530ab88132b4a29",
+    "lib/messages/messageCopyText.ts": "2f802b828c91fe27f1adff4de83753422c021686202501ef5ae60b2ca41e3831",
+    "components/chat/message/parts/tool-activity/targets.ts": "37d0136e90619d994f9f9267a9b44b979291fa0916b7a89960cc16751d71c4aa",
+    "components/chat/message/parts/RawPatchFallback.tsx": "6a3c0abdd61d5276faa3c6da869da1aa2de4fa0f2e45a57392af082223a42c29",
+    "components/chat/message/parts/toolDiffDownload.ts": "35a5d5e32c29d88b5284ed295ae03eeffdc4dfac17954cfe528cea25da8e215d",
+    "components/chat/message/parts/toolPartDiffEntries.ts": "3e689f5596b506ee974987e06ff72f8d9a076297392fc88b97eea530950dc391",
+    "components/chat/message/questionContext.ts": "53d36cd94b0395efae3375c56cd4d23ce82b39ce1eefa388a5f8553b03b499f0"
+  },
+  "screenshots": [
+    "desktop-composer.png",
+    "desktop-preview.png",
+    "mobile-preview.png"
+  ],
+  "limitations": [
+    "Synthetic sync context; no installed app or provider",
+    "Clipboard permission and storage simulated in renderer; system clipboard untouched",
+    "Development Chromium host; packaged native Electron not checked"
+  ],
+  "startedAt": "2026-09-07T12:59:55.125Z",
+  "initialSourceOperations": {
+    "split": 0,
+    "replace": 0,
+    "trim": 0
+  },
+  "renderCounts": {
+    "updates": 120,
+    "historyCommits": 0,
+    "broadBaselineCommits": 120
+  },
+  "expectedRendererErrors": [],
+  "finishedAt": "2026-09-07T13:00:09.972Z"
+}

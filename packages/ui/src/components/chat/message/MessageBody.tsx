@@ -24,6 +24,7 @@ import { SimpleMarkdownRenderer } from '../MarkdownRenderer';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
+import { hasQuestionTool } from './questionContext';
 import { findPlanCardReasoningPartIndex, resolveMessagePlanCard, splitReasoningPartPlan } from '@/lib/messages/actionablePlan';
 import {
     buildPlanCardRenderSegments,
@@ -1332,7 +1333,8 @@ const AssistantMessageBody = React.memo(({
         && hasAnchoredActivitySegments
         && Boolean(toggleActivityGroup);
 
-    const shouldDeferSortedInlineText = isSortedRenderMode && !hasStopFinish;
+    const messageHasQuestion = React.useMemo(() => hasQuestionTool(toolParts), [toolParts]);
+    const shouldDeferSortedInlineText = isSortedRenderMode && !hasStopFinish && !messageHasQuestion;
     const showErrorMessage = Boolean(errorMessage);
     const ErrorIcon = errorVariant === 'info' ? RiInformationLine : RiErrorWarningLine;
     const shouldShowMessageActions = hasCopyableText;

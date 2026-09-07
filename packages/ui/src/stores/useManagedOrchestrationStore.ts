@@ -378,6 +378,8 @@ export const parseManagedTaskAutoResume = (value: unknown): ManagedTaskAutoResum
       value.resetSource === null
       || MANAGED_TASK_AUTO_RESUME_RESET_SOURCES.has(value.resetSource as ManagedTaskAutoResumeResetSource)
     )
+    && isNullableString(value.recoveryCycleTaskId ?? null)
+    && isNullableString(value.backupAttemptTaskId ?? null)
     && isNullableString(value.lastAttemptTaskId)
     && isNullableTimestamp(value.lastAttemptAt)
     && isCount(value.hostFailures)
@@ -398,6 +400,10 @@ export const parseManagedTaskAutoResume = (value: unknown): ManagedTaskAutoResum
     resetAt: value.resetAt as number | null,
     resetSource: value.resetSource as ManagedTaskAutoResumeResetSource | null,
     target,
+    recoveryCycleTaskId: typeof value.recoveryCycleTaskId === 'string'
+      ? truncateManagedText(value.recoveryCycleTaskId, 1_024) : null,
+    backupAttemptTaskId: typeof value.backupAttemptTaskId === 'string'
+      ? truncateManagedText(value.backupAttemptTaskId, 1_024) : null,
     lastAttemptTaskId: value.lastAttemptTaskId === null
       ? null
       : truncateManagedText(value.lastAttemptTaskId, 1_024),

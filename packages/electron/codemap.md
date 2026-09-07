@@ -15,7 +15,7 @@ and desktop-host broker bridges.
   HttpOnly/SameSite runtime cookie and becomes a client instead of starting a
   second server.
 - **Bridge/shim pattern**: `preload.mjs` exposes `__OPENCHAMBER_ELECTRON__` and a `__TAURI__` compatibility surface so shared UI code can run on both Electron and legacy Tauri.
-- **Isolated QA packaging**: `scripts/bundle-main.mjs` exports `bundleElectronMain({ outdir })` with the same production external-module and release-manifest checks. Repository-only `scripts/qa/package-electron.mjs` reuses it to build a separate unsigned app from current main/server/preload and a selected UI artifact; its private test bootstrap and native-integration exclusions are documented in `docs/QA.md`.
+- **Isolated QA packaging**: `scripts/bundle-main.mjs` exports `bundleElectronMain({ outdir })` with the production external-module boundaries; production manifest checks are enforced by `scripts/package-prepared.mjs`. Repository-only `scripts/qa/package-electron.mjs` reuses it to build a separate unsigned app from current main/server/preload and a selected UI artifact; its private test bootstrap and native-integration exclusions are documented in `docs/QA.md`.
 - **Origin policy**: `origin-policy.mjs` centralizes privileged-local vs allowed-content origin rules used by `main.mjs`, `preload.mjs`, init-script injection, navigation handlers, and IPC gates.
 - **Capability gating**: sensitive commands are enforced in main-process handlers (`openchamber:invoke`), with remote/local origin checks.
   The preload keeps an early Bot-runtime rejection when its immutable local-origin
@@ -256,3 +256,6 @@ and desktop-host broker bridges.
   Run it explicitly with `bun run electron:test:native-pointer` on an
   interactive, Accessibility-authorized macOS verification host; it is not a
   skipped substitute in the platform-neutral unit suite.
+
+- **Extracted native boundaries**: `desktop-settings.mjs` owns serialized settings and host/window persistence with live data-root/window access; `desktop-menu.mjs` owns menu templates and dispatch; `native-notifications.mjs` owns focus-aware notification lifetime/click behavior. Factories receive services and callbacks; main preserves startup/IPC ordering.
+- **Prepared packaging**: `scripts/stage-bot-manifest.mjs` stages/verifies the required release manifest. `scripts/package-prepared.mjs` enforces it before the builder and checks runtime-service artifacts after success. `prepare:native` can run before release images finish. See [release pipeline](../../docs/RELEASE_PIPELINE.md).

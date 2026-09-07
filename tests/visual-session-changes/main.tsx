@@ -12,6 +12,9 @@ opencodeClient.getSessionChangesDiff = async (_session, _directory, _revision, f
 function Fixture() {
     const [session, setSession] = React.useState('A');
     const [undone, setUndone] = React.useState(false);
+    const [summaryState, setSummaryState] = React.useState<'ready' | 'loading' | 'failed' | 'empty-partial'>('ready');
+    const [contentChanges, setContentChanges] = React.useState(0);
+    const onContentChange = React.useCallback(() => setContentChanges((count) => count + 1), []);
     const [partial, setPartial] = React.useState(false);
     const [selected, setSelected] = React.useState<string | null>(null);
     const [mobile, setMobile] = React.useState(false);
@@ -23,13 +26,20 @@ function Fixture() {
         <nav className="mb-8 flex flex-wrap gap-4">
             <button onClick={() => { setSession(session === 'A' ? 'B' : 'A'); setSelected(null); setUndone(false); }}>Switch session</button>
             <button onClick={() => setPartial(!partial)}>Toggle incomplete</button>
+            <button onClick={() => setSummaryState('loading')}>Loading summary</button>
+            <button onClick={() => setSummaryState('failed')}>Failed summary</button>
+            <button onClick={() => setSummaryState('empty-partial')}>Empty incomplete summary</button>
+            <button onClick={() => setSummaryState('ready')}>Complete capture</button>
             <button onClick={() => setMobile(!mobile)}>Toggle mobile</button>
         </nav>
         <p>Implementation completed for session {session}.</p>
-        <SessionChangesCardView key={session} directory="/fixture" files={undone ? [] : files} subagentCount={session === 'A' ? 1 : 0}
-            mode={undone ? 'undone' : 'changes'} undoDisabled={partial} disabledReason={partial ? 'Overlapping owners' : null} busy={null} isMobile={mobile}
-            statusMessage={partial ? 'Some changes have overlapping owners and remain unassigned.' : null}
+        <SessionChangesCardView key={session} directory="/fixture" files={undone || summaryState !== 'ready' ? [] : files} subagentCount={session === 'A' ? 1 : 0}
+            mode={undone ? 'undone' : 'changes'} undoDisabled={partial || summaryState !== 'ready'} disabledReason={partial ? 'Overlapping owners' : null} busy={null} isMobile={mobile}
+            onContentChange={onContentChange}
+            onRetry={summaryState === 'failed' ? () => setSummaryState('ready') : undefined}
+            statusMessage={summaryState === 'loading' ? 'Loading session changes…' : summaryState === 'failed' ? 'Session changes could not be loaded.' : summaryState === 'empty-partial' ? 'Some session changes could not be captured.' : partial ? 'Some changes have overlapping owners and remain unassigned.' : null}
             onUndo={() => setUndone(true)} onRedo={() => setUndone(false)} onOpenFile={(file) => setSelected(file.path.replace('/fixture/', ''))} />
+        <output className="mt-4 block text-sm">Structural updates: {contentChanges}</output>
         {selected ? <SessionChangesDiffDialog rootSessionID={session} directory="/fixture" revision="fixture-revision" file={selected} onClose={() => setSelected(null)} /> : null}
     </main>;
 }

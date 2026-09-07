@@ -125,6 +125,8 @@ describe('auto-resume state bookkeeping', () => {
       resetAt: NOW + MINUTE,
       resetSource: 'opencode_status',
       target: null,
+      recoveryCycleTaskId: null,
+      backupAttemptTaskId: null,
       lastAttemptTaskId: null,
       lastAttemptAt: null,
       lastError: null,
@@ -241,12 +243,12 @@ describe('auto-resume attempt planning', () => {
       now: NOW + AUTO_RESUME_MAX_LINEAGE_MS, task, state: freshState(), backup,
     })).toEqual({ state: 'exhausted', reason: 'time_cap' });
     expect(planAutoResumeAttempt({
-      now: NOW, task, state: freshState({ rejectionsInWindow: 3, windowResetAt: NOW + MINUTE }), backup,
+      now: NOW, task, state: freshState({ rejectionsInWindow: 3, windowResetAt: NOW + MINUTE, backupAttemptTaskId: 'dvr_task_backup' }), backup,
     })).toEqual({ state: 'exhausted', reason: 'window_rejections' });
   });
 
   test('waits for the reset window on the original after two rejections in one window', () => {
-    const state = freshState({ rejectionsInWindow: 2, windowResetAt: NOW + 20 * MINUTE });
+    const state = freshState({ rejectionsInWindow: 2, windowResetAt: NOW + 20 * MINUTE, backupAttemptTaskId: 'dvr_task_backup' });
     expect(planAutoResumeAttempt({ now: NOW, task, state, backup })).toEqual({
       state: 'scheduled',
       nextAttemptAt: NOW + 20 * MINUTE + AUTO_RESUME_RESET_JITTER_MS,
@@ -254,10 +256,26 @@ describe('auto-resume attempt planning', () => {
       resetAt: NOW + 20 * MINUTE,
       resetSource: 'opencode_status',
     });
-    // A window that already reset no longer blocks the backup.
+    // The backup remains consumed until a new primary attempt starts a cycle.
     expect(planAutoResumeAttempt({
-      now: NOW + 21 * MINUTE, task, state, backup,
+      now: NOW + 21 * MINUTE, task, state: { ...state, backupAttemptTaskId: null }, backup,
     })).toMatchObject({ target: { kind: 'backup' } });
+  });
+
+  test('primary rejection windows never bypass an untried backup', () => {
+    for (const rejectionsInWindow of [2, 3]) {
+      expect(planAutoResumeAttempt({
+        now: NOW, task, backup,
+        state: freshState({ rejectionsInWindow, windowResetAt: NOW + MINUTE }),
+      })).toMatchObject({ nextAttemptAt: NOW, target: { kind: 'backup' } });
+    }
+  });
+
+  test('a consumed backup cannot loop without a reset hint', () => {
+    expect(planAutoResumeAttempt({
+      now: NOW, task, backup,
+      state: freshState({ backupAttemptTaskId: 'dvr_task_backup' }),
+    })).toMatchObject({ nextAttemptAt: NOW + 15 * MINUTE, target: { kind: 'original' } });
   });
 
   test('tries a distinct, compatible, unbroken backup immediately', () => {

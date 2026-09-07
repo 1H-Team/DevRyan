@@ -502,6 +502,11 @@ Plan title: {{plan_title}}
 This plan is stored in the file: {{plan_path}}
 Read that file first and treat its current contents as the source of truth for the plan. The plan is already agreed; implement it end-to-end without deviating from it.
 
+Implementation startup, before the first sub-agent dispatch:
+1. Read the approved plan, then load the available Executing Plans workflow skill through the skill tool. Resolve its registered name from the skill catalog. Reuse its completed full content if it is already in the active context; reload only if that content was compacted away or changed.
+2. Write one brief, visible assistant sentence stating the implementation outcome and verification intent before calling any sub-agent start tool. Skill activity does not replace this implementation statement. If the execution skill is unavailable, continue with the plan and the available tools.
+3. Dispatch with a concise outcome-based label, without procedural prefixes such as "Approved plan:" or generic labels such as "Managed designer task". Implementation-specific skills remain the responsibility of the specialist doing that work.
+
 Before and during implementation, build a deep understanding of the project — relevant files, module docs, existing patterns, nearby code, conventions — so your choices fit the repo's style.
 
 Task tracking is part of the implementation contract:

@@ -1,5 +1,11 @@
 # Sync architecture, event handling & store update rules
 
+## Composer history snapshot
+
+`useUserMessageHistory` binds `user-message-history.ts` to the selected directory's child store. The selector caches the session message array, relevant user-part arrays, and effective revert marker. Assistant part updates do not rebuild the history, and unchanged user text returns the same array even if user metadata changes. Each hook/store/session owns its cache; there is no persisted history or global selector store.
+
+History retains transcript order reversed (newest first), the first nonempty text part of each user message, and the effective local/server revert boundary. Late user parts, older pages, rollback, deletion, and store/session switches refresh the snapshot. The isolated `tests/visual-chat-improvements/` fixture measures committed history-consumer renders against a broad-subscription control.
+
 ## Scope
 
 This document covers the current client-side session/data architecture in `packages/ui/src/sync` and the rules for updating stores safely.

@@ -4,6 +4,8 @@
 Utilities for message shaping, formatting, and cross-component message semantics.
 
 ## Design
+
+`messageCopyText.ts` is the clipboard-only projection: it preserves source whitespace and line endings, joins nonblank parts with two newlines, and honors user shell-output/command/text precedence. `messageText.ts` keeps its existing plan and implementation normalization contract.
 Pure transform helpers keep message logic reusable outside React components.
 - `actionablePlan.ts` detects plan-mode prompts, explicit plan sentinels, and structured plan fallbacks. Its exact synthetic managed-maintenance predicates separate inherited Plan policy from new Plan requests; valid Implement markers remain authoritative. Provider-recovery wakes can inherit planning intent only through an existing human Plan revision.
 - `planRevisions.ts` groups turns into logical plan revisions: a user-authored plan request plus any compaction/synthetic continuation turns the runtime injects. Provider-recovery wakes fold into the originating human Plan revision; open-todo maintenance and recovery after an implementation or ordinary human turn remain excluded. It selects the last canonical assistant plan as the revision's single source, tracks settledness across sibling assistants, and assigns before/source/after roles so rendering and background detection agree on one card per revision.

@@ -69,6 +69,10 @@ const packages = {
     prefix: 'packages/orchestration-runtime/',
     test: ['bun', ['test', 'packages/orchestration-runtime']],
   },
+  shared: {
+    prefix: 'packages/shared-runtime/',
+    test: ['bun', ['run', '--cwd', 'packages/shared-runtime', 'test']],
+  },
   harness: {
     prefix: 'packages/harness-runtime/',
     test: ['bun', ['test', 'packages/harness-runtime']],
@@ -81,6 +85,7 @@ const fullValidationFiles = new Set([
   'eslint.config.js',
   'tsconfig.json',
   'vite-theme-plugin.ts',
+  '.opencode/opencode.json',
   'scripts/validate.mjs',
 ]);
 
@@ -89,7 +94,7 @@ const fullValidationPrefixes = [
   'scripts/',
 ];
 
-const docsOnlyExtensions = new Set(['.md', '.txt']);
+const docsOnlyExtensions = new Set(['.md', '.mdx', '.txt']);
 
 function runGit(args, options = {}) {
   const result = spawnSync('git', args, {
@@ -133,10 +138,17 @@ function packageForFile(file) {
 }
 
 function isFullValidationFile(file) {
-  return fullValidationFiles.has(file) || fullValidationPrefixes.some((prefix) => file.startsWith(prefix));
+  return /(?:^|\/)(?:package\.json|package-lock\.json|bun\.lock|Cargo\.toml|Cargo\.lock)$/.test(file) || fullValidationFiles.has(file) || fullValidationPrefixes.some((prefix) => file.startsWith(prefix));
+}
+
+function isRuntimeGuidance(file) {
+  return /\.md$/.test(file) && (file.startsWith('.opencode/agents/')
+    || file.startsWith('packages/web/server/default-config/agents/')
+    || file.startsWith('packages/web/server/lib/agent-browser/assets/'));
 }
 
 function isDocsOnlyFile(file) {
+  if (isRuntimeGuidance(file)) return false;
   return docsOnlyExtensions.has(path.extname(file)) || file.startsWith('docs/');
 }
 
@@ -162,6 +174,7 @@ function isUiTestRelevant(file, quick) {
 
 function isWebTestRelevant(file, quick) {
   if (!file.startsWith('packages/web/')) return false;
+  if (isRuntimeGuidance(file)) return true;
   if (testFilePattern.test(file)) return true;
   if (quick) return false;
 
@@ -248,6 +261,7 @@ function affectedTypeCheckPackages(changedPackages, includeDependents) {
     result.add('ui');
     result.add('web');
   }
+  if (includeDependents && changedPackages.has('shared')) result.add('web');
   if (includeDependents && changedPackages.has('harness')) {
     result.add('web');
   }
@@ -271,6 +285,7 @@ function fullCommands() {
   return [
     command('lint:full', 'bun', ['run', 'lint']),
     command('type-check:full', 'bun', ['run', 'type-check']),
+    command('docs:validate', 'bun', ['run', 'docs:validate']),
     command('test:full', 'bun', ['run', 'test:full']),
   ];
 }
@@ -295,6 +310,7 @@ export function buildPlan(requestedMode, providedFiles) {
   }
 
   if (requestedMode === 'test-affected') {
+    if (fullRequired) return { files, commands: [command('test:full', 'bun', ['run', 'test:full'])], reason: 'shared configuration requires full test coverage' };
     const tests = new Set();
     for (const file of files) {
       if (isUiTestRelevant(file, false)) tests.add('ui');
@@ -309,6 +325,7 @@ export function buildPlan(requestedMode, providedFiles) {
       if (isBotServiceTestRelevant(file, 'packages/bot-indexer/')) tests.add('botIndexer');
       if (isCursorTestRelevant(file)) tests.add('cursor');
       if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
+      if (file.startsWith('packages/shared-runtime/')) tests.add('shared');
       if (isHarnessTestRelevant(file)) tests.add('harness');
     }
     if (tests.has('cursor')) tests.add('web');
@@ -325,10 +342,13 @@ export function buildPlan(requestedMode, providedFiles) {
       tests.add('ui');
       tests.add('web');
     }
+    if (tests.has('shared')) tests.add('web');
     if (tests.has('harness')) {
       tests.add('web');
     }
-    return { files, commands: packageCommands(tests, 'test'), reason: 'affected tests requested' };
+    const commands = packageCommands(tests, 'test');
+    if (files.some(file => file.startsWith('.opencode/agents/') || file.startsWith('.opencode/plugins/'))) commands.push(command('test:scripts', 'bun', ['run', 'test:scripts']));
+    return { files, commands, reason: 'affected tests requested' };
   }
 
   if (requestedMode !== 'quick' && requestedMode !== 'affected') {
@@ -336,7 +356,7 @@ export function buildPlan(requestedMode, providedFiles) {
   }
 
   if (files.length === 0 || codeFiles.length === 0) {
-    return { files, commands: [], reason: files.length === 0 ? 'no changed files detected' : 'docs-only changes detected' };
+    return { files, commands: files.length === 0 ? [] : [command('docs:validate', 'bun', ['run', 'docs:validate'])], reason: files.length === 0 ? 'no changed files detected' : 'docs-only changes detected' };
   }
 
   if (fullRequired) {
@@ -344,6 +364,8 @@ export function buildPlan(requestedMode, providedFiles) {
   }
 
   const commands = [];
+  if (files.some(file => /\.mdx?$/.test(file))) commands.push(command('docs:validate', 'bun', ['run', 'docs:validate']));
+  if (files.some(file => file.startsWith('.opencode/agents/') || file.startsWith('.opencode/plugins/'))) commands.push(command('test:scripts', 'bun', ['run', 'test:scripts']));
   const quick = requestedMode === 'quick';
 
   if (quick) {
@@ -369,6 +391,7 @@ export function buildPlan(requestedMode, providedFiles) {
     if (isBotServiceTestRelevant(file, 'packages/bot-indexer/')) tests.add('botIndexer');
     if (isCursorTestRelevant(file)) tests.add('cursor');
     if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
+    if (file.startsWith('packages/shared-runtime/')) tests.add('shared');
     if (isHarnessTestRelevant(file)) tests.add('harness');
   }
   if (!quick && tests.has('cursor')) tests.add('web');
@@ -385,6 +408,7 @@ export function buildPlan(requestedMode, providedFiles) {
     tests.add('ui');
     tests.add('web');
   }
+  if (!quick && tests.has('shared')) tests.add('web');
   if (!quick && tests.has('harness')) {
     tests.add('web');
   }

@@ -803,6 +803,30 @@ export const createManagedTaskScheduler = (options = {}) => {
     return { providerId: current.providerId, modelId: current.modelId, variant: current.variant };
   };
 
+  // Derive legacy bookkeeping from acknowledged automatic lineage. A primary
+  // continuation starts a new cycle; one backup child consumes that cycle's fallback.
+  const resolveAutoResumeCycleLocked = (task, origin) => {
+    let current = task;
+    let backupAttemptTaskId = null;
+    const seen = new Set();
+    while (current && !seen.has(current.taskId)) {
+      seen.add(current.taskId);
+      if (current.providerId === origin.providerId && current.modelId === origin.modelId) {
+        return { recoveryCycleTaskId: current.taskId, backupAttemptTaskId };
+      }
+      backupAttemptTaskId ??= current.taskId;
+      const saved = resultEnvelopes.get(current.taskId)?.autoResume;
+      if (saved?.recoveryCycleTaskId) {
+        return { recoveryCycleTaskId: saved.recoveryCycleTaskId, backupAttemptTaskId };
+      }
+      const prior = current.priorTaskId ? tasks.get(current.priorTaskId) : null;
+      const priorState = prior ? resultEnvelopes.get(prior.taskId)?.autoResume : null;
+      if (!prior || priorState?.lastAttemptTaskId !== current.taskId) break;
+      current = prior;
+    }
+    return { recoveryCycleTaskId: task.taskId, backupAttemptTaskId };
+  };
+
   const autoResumeAttemptKey = (taskId, state) => (
     `auto-resume:${taskId}:${state.cancelGeneration}:${state.attemptCount}`
   );
@@ -909,17 +933,21 @@ export const createManagedTaskScheduler = (options = {}) => {
     const origin = resolveAutoResumeOriginLocked(task);
     // The reset hint only describes the provider that just rejected the task. When
     // that was the backup, the lineage keeps what it knew about the origin.
-    const originReset = task.providerId === origin.providerId
+    const isPrimary = task.providerId === origin.providerId && task.modelId === origin.modelId;
+    const originReset = isPrimary
       ? envelope.providerResetAt
       : (continuesAutoAttempt ? priorState.resetAt : null);
     const initial = initialAutoResumeState({
       now: at,
       enabled: priorState ? priorState.enabled : autoResumeDefaultEnabled,
       providerResetAt: originReset,
-      prior: continuesAutoAttempt ? { ...priorState, lastAttemptTaskId: task.taskId } : null,
+      prior: continuesAutoAttempt ? { ...priorState, state: 'attempting', lastAttemptTaskId: task.taskId } : null,
       taskId: task.taskId,
     });
-    const state = recordProviderRejection(initial, { now: at, providerResetAt: originReset });
+    const state = {
+      ...(isPrimary ? recordProviderRejection(initial, { now: at, providerResetAt: originReset }) : initial),
+      ...resolveAutoResumeCycleLocked(task, origin),
+    };
     await commitEnvelopeUpdateLocked(envelope, {
       ...envelope,
       autoResume: { ...state, state: 'planning', revision: 1 },
@@ -960,7 +988,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       const current = tasks.get(taskId);
       const previous = resultEnvelopes.get(taskId);
       if (!current || !previous || previous.action !== null || !isAutoResumeActive(previous)) return;
-      const state = previous.autoResume;
+      const state = { ...previous.autoResume, ...resolveAutoResumeCycleLocked(current, origin) };
       if (
         state.cancelGeneration !== generation
         || (state.state !== 'planning' && state.state !== 'scheduled')
@@ -992,6 +1020,8 @@ export const createManagedTaskScheduler = (options = {}) => {
         return;
       }
       await commitAutoResumeStateLocked(previous, {
+        recoveryCycleTaskId: state.recoveryCycleTaskId,
+        backupAttemptTaskId: state.backupAttemptTaskId,
         state: 'scheduled',
         nextAttemptAt: plan.nextAttemptAt,
         target: plan.target,
@@ -1024,6 +1054,11 @@ export const createManagedTaskScheduler = (options = {}) => {
       };
       const breaker = getProviderBreakerLocked(targetProviderId, ownerKey);
       if (breaker && breaker.until !== null && breaker.until > at) {
+        if (state.target.kind === 'backup') {
+          await commitAutoResumeStateLocked(previous, { state: 'planning', nextAttemptAt: null });
+          scheduleAutoResumePlanning(taskId, generation, 0);
+          return;
+        }
         await rearmAt(breaker.until);
         return;
       }
@@ -1554,6 +1589,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       }
       if (
         state.state === 'planning'
+        || !state.recoveryCycleTaskId
         || state.nextAttemptAt === null
         || state.nextAttemptAt <= at + autoResumeStartupGraceMs
       ) {

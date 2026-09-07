@@ -1,3 +1,5 @@
+import { getPatchText, isToolDiffPreviewOversized } from './toolDiffPreview'
+
 export type DiffPatchEntry = {
   id: string
   title: string
@@ -17,23 +19,6 @@ const getUnifiedDiffPath = (patch: string, fallbackTitle: string): string => {
 
 const isUnifiedFileHeaderPair = (line: string, nextLine: string): boolean => {
   return /^---\s+\S+/.test(line) && /^\+\+\+\s+\S+/.test(nextLine)
-}
-
-const getPatchText = (value: unknown): string | undefined => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    return trimmed.length > 0 ? trimmed : undefined
-  }
-
-  if (value && typeof value === 'object') {
-    const patch = (value as { patch?: unknown }).patch
-    if (typeof patch === 'string') {
-      const trimmed = patch.trim()
-      return trimmed.length > 0 ? trimmed : undefined
-    }
-  }
-
-  return undefined
 }
 
 const normalizeDisplayPath = (value: string): string => {
@@ -69,6 +54,7 @@ const getRelativePath = (absolutePath: string, currentDirectory: string): string
 }
 
 export const splitUnifiedDiffPatch = (patch: string): DiffPatchEntry[] => {
+  if (isToolDiffPreviewOversized(patch)) return [{ id: 'oversized-0', title: 'Diff 1', patch }]
   const normalized = patch.replace(/\r\n/g, '\n').trim()
   if (!normalized) {
     return []
@@ -118,9 +104,9 @@ export const getDiffPatchEntries = (
         return []
       }
 
-      const record = file as { relativePath?: unknown; filePath?: unknown; patch?: unknown; diff?: unknown }
-      const patch = getPatchText(record.patch) ?? getPatchText(record.diff) ?? ''
-      if (!patch || !hasUnifiedDiffHunk(patch)) {
+      const record = file as { relativePath?: unknown; filePath?: unknown; patch?: unknown; patchText?: unknown; diff?: unknown; changes?: unknown }
+      const patch = getPatchText(record.patch) ?? getPatchText(record.patchText) ?? getPatchText(record.diff) ?? getPatchText(record.changes) ?? ''
+      if (!patch) {
         return []
       }
 
@@ -133,6 +119,9 @@ export const getDiffPatchEntries = (
       const title = typeof rawPath === 'string'
         ? getRelativePath(rawPath, currentDirectory)
         : `File ${index + 1}`
+
+      if (isToolDiffPreviewOversized(patch)) return [{ id: `oversized-${index}`, title, patch }]
+      if (!hasUnifiedDiffHunk(patch)) return []
 
       const splitEntries = splitUnifiedDiffPatch(patch)
       if (splitEntries.length > 1) {
@@ -179,6 +168,7 @@ export const resolveRawPatchFallback = (
     return null
   }
 
+  if (isToolDiffPreviewOversized(patch)) return patch
   const trimmed = patch.trim()
   return trimmed.length > 0 ? trimmed : null
 }

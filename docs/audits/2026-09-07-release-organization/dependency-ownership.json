@@ -1,0 +1,98 @@
+{
+  "rootRuntimeDependencies": {
+    "@opencode-ai/sdk": "^1.18.29",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^4.5.4"
+  },
+  "rootRemovals": [
+    "@codemirror/autocomplete",
+    "@codemirror/commands",
+    "@codemirror/lang-css",
+    "@codemirror/lang-html",
+    "@codemirror/lang-javascript",
+    "@codemirror/lang-json",
+    "@codemirror/lang-markdown",
+    "@codemirror/lang-python",
+    "@codemirror/lang-rust",
+    "@codemirror/lang-cpp",
+    "@codemirror/lang-go",
+    "@codemirror/lang-sql",
+    "@codemirror/lang-xml",
+    "@codemirror/lang-yaml",
+    "@codemirror/language",
+    "@codemirror/lint",
+    "@codemirror/search",
+    "@codemirror/state",
+    "@codemirror/view",
+    "@fontsource/ibm-plex-mono",
+    "@fontsource/ibm-plex-sans",
+    "@lezer/highlight",
+    "@octokit/rest",
+    "@base-ui/react",
+    "@remixicon/react",
+    "@types/react-syntax-highlighter",
+    "@xenova/transformers",
+    "bun-pty",
+    "class-variance-authority",
+    "clsx",
+    "cmdk",
+    "express",
+    "http-proxy-middleware",
+    "node-pty",
+    "react-markdown",
+    "react-syntax-highlighter",
+    "remark-gfm",
+    "simple-git",
+    "sonner",
+    "tailwind-merge",
+    "zustand"
+  ],
+  "rootDevelopmentRetentions": {
+    "ghostty-web": "Pinned 0.3.0 patch-package target, distinct from UI 0.4.0",
+    "yaml": "Root workflow-contract tests",
+    "electron": "Root QA browser-shell and host helpers"
+  },
+  "newExplicitConsumers": {
+    "packages/ui": [
+      "react-markdown",
+      "remark-gfm",
+      "@xenova/transformers",
+      "@types/dom-speech-recognition"
+    ],
+    "packages/electron": [
+      "vitest"
+    ],
+    "packages/web": [
+      "@openchamber/ui (build dependency)"
+    ]
+  },
+  "retainedExceptions": [
+    "Embedded Slim plugin source imports resolve from generated user profiles, not host dependencies.",
+    "Electron bundle external-module names are not direct runtime imports.",
+    "Root-owned visual fixtures retain React, React DOM and OpenCode SDK.",
+    "Container-local lockfiles and pins are unchanged."
+  ],
+  "rootConsumerEvidence": {
+    "@opencode-ai/sdk": [
+      "tests/visual-reasoning/main.tsx"
+    ],
+    "react": [
+      "tests/visual-git-rebase/main.tsx",
+      "tests/visual-provider-recovery/main.tsx",
+      "tests/visual-reasoning/main.tsx",
+      "tests/visual-session-changes/main.tsx",
+      "tests/visual-session-creation/main.tsx"
+    ],
+    "react-dom": [
+      "tests/visual-git-rebase/main.tsx",
+      "tests/visual-provider-recovery/main.tsx",
+      "tests/visual-reasoning/main.tsx",
+      "tests/visual-session-changes/main.tsx",
+      "tests/visual-session-creation/main.tsx"
+    ],
+    "zod": [
+      "scripts/generate-schema.ts"
+    ]
+  }
+}

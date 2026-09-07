@@ -17,7 +17,7 @@ Monorepo package boundary for DevRyan runtimes. It organizes shared UI/runtime i
   - `bot-computer/`: persistent Chromium profile, accessibility-ref command API, human-control lease, ephemeral screencast, and private artifact staging for Bot computer scopes.
   - `bot-indexer/`: authenticated Docker-local SQLite FTS/vector projection for rebuildable Bot retrieval with exact scope namespaces.
   - `harness-runtime/`: dependency-free durable operation, diagnostic, lifecycle, and turn-evidence primitives shared by web/Electron.
-  - `ui/` and `web/` (outside this task scope) provide shared renderer/server layers consumed by runtimes.
+  - `ui/` and `web/` provide shared renderer/server layers consumed by runtimes.
 - **Compatibility-first API contracts**: runtime shells expose equivalent command/event semantics so shared UI remains mostly shell-agnostic.
 
 ## Flow

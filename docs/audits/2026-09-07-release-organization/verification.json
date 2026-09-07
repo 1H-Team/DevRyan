@@ -1,0 +1,149 @@
+{
+  "date": "2026-09-07",
+  "checks": [
+    {
+      "log": "full.log",
+      "outcome": "passed",
+      "sha256": "f74d78c078bc7565cebb9f45525c2a56dc98343e8a683e3d448466f1a797245f"
+    },
+    {
+      "log": "final-build.log",
+      "outcome": "passed",
+      "sha256": "8e8e4e0947ee8dcf7a6a6ff01a1aa940f1cf64dd63c65602c8d937830f1e2b0d"
+    },
+    {
+      "log": "final-bundle.log",
+      "outcome": "passed",
+      "sha256": "d613a3901d82a83a8ae7db6283cf75805392819200079ee136733c9e2ca06a95"
+    },
+    {
+      "log": "clean-install.log",
+      "outcome": "passed",
+      "sha256": "f8c8c10c8e1f6c98a91296c53a14849cb810ce823f1e3e4f649da0aa50bc19b8"
+    },
+    {
+      "log": "clean-build.log",
+      "outcome": "passed",
+      "sha256": "926efc4ecc21884278b0f01412f9457094d8e9d6ad594b968cc55c04ce834f42"
+    },
+    {
+      "log": "clean-bundle.log",
+      "outcome": "passed",
+      "sha256": "0b868bcd6b7d724725ac9514ecb4f058380b9053a0cd9d03e2c40f929f573730"
+    },
+    {
+      "log": "final-focused.log",
+      "outcome": "passed",
+      "sha256": "7b9e45ab3bc64bd5c11f5d45ea6b3d83600bf2fa49b82ba9bcb8607c6cd0a464"
+    },
+    {
+      "log": "electron-tests.log",
+      "outcome": "passed",
+      "sha256": "52b2ab0beb0e4a84e6866001450e9f7249462d1f1b6ed82a541924a6625866ce"
+    },
+    {
+      "log": "server-focused.log",
+      "outcome": "passed",
+      "sha256": "059c73c8cc28ad3a918a1a13f4ac419038ef4dffe18fe6bd141b8abc2a6a22a0"
+    },
+    {
+      "log": "npm-install.log",
+      "outcome": "passed",
+      "sha256": "7d215096b04ef848744cf50352386ed2b30c221107d95961dac04b49c254b017"
+    },
+    {
+      "log": "npm-closure.log",
+      "outcome": "passed",
+      "sha256": "ab29cd88cd8bda110e16e2d6dd2b7b08165d069406d1cdfe4788f3749564f8e0"
+    },
+    {
+      "log": "npm-config.log",
+      "outcome": "passed",
+      "sha256": "bfd21956345bfb18b736ff4211f0bf48ae90c663b3c880de1756bdab1f358094"
+    },
+    {
+      "log": "npm-smoke.log",
+      "outcome": "passed",
+      "sha256": "9246a370dacad57f5dddcbac62f3049485ce208fd24bee7f4843c898bb34e4f5"
+    },
+    {
+      "log": "arm64-prepare.log",
+      "outcome": "passed",
+      "sha256": "c2d46c2689134f5e54060987c462a8a62dd0ce2eb6c882ac1abdac0b3d92a6f6"
+    },
+    {
+      "log": "arm64-import.log",
+      "outcome": "passed",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "log": "x64-prepare.log",
+      "outcome": "passed",
+      "sha256": "121ed8d947fceb441cb1d023f79c6d17de5da56605143fc08a8247f8cb8839b7"
+    },
+    {
+      "log": "x64-import.log",
+      "outcome": "passed",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "log": "qa-web.log",
+      "outcome": "passed",
+      "sha256": "a9ac3ecf5566d3ae59b2f9055d0718b36229fac44a0121356ad101148bdcb30c"
+    },
+    {
+      "log": "qa-electron.log",
+      "outcome": "passed",
+      "sha256": "4002fed5e28264bd4afad140ca86a5101252c1dc182cab8e99d8b5aaae8e45d7"
+    },
+    {
+      "log": "docs.log",
+      "outcome": "passed",
+      "sha256": "664fcdc0098d5092fa35e4ad5a127df674237ed5f7c28c7c50261bdc0c0048f8"
+    },
+    {
+      "log": "image-final.log",
+      "outcome": "passed",
+      "sha256": "3b838f6bb35e9c8a9fba05731bbf37bd70e0d55eb394ac95a40b7494f6d1af80"
+    },
+    {
+      "log": "ci-pack.log",
+      "outcome": "passed",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "log": "npm-rebuild.log",
+      "outcome": "passed",
+      "sha256": "5fea06889844726ffbf8e27f38feb7a12898a3d5a295ed2d1284ad720672f18e"
+    },
+    {
+      "log": "npm-cli-help.log",
+      "outcome": "passed",
+      "sha256": "c1795b9fe9b1fe1648362672e918cf7c218d4783136d1c8fa70b846e2221867d"
+    },
+    {
+      "log": "workflow-final.log",
+      "outcome": "passed",
+      "sha256": "89c4309dcbff8a7be021579e671340f7c887c2457b402e20801807e12a38d666"
+    },
+    {
+      "log": "local-assets.log",
+      "outcome": "passed",
+      "sha256": "bf5a9cc04d70b5be0f7eb50c7d925a1b3c47d3fc4dadfd4ebcfbd968a40b99d2"
+    },
+    {
+      "log": "local-bundle.log",
+      "outcome": "passed",
+      "sha256": "83008f9a52aeebf740c2fe4d66aa8f747eb2d0080a8e3b2400b7bb38fad20670"
+    }
+  ],
+  "releaseBaseline": {
+    "run": 34078123768,
+    "seconds": 1208,
+    "targetWarmCacheSeconds": 846
+  },
+  "releaseSpeedMeasured": false,
+  "manifestMismatchRejection": "passed",
+  "fullReleasePackaging": "unavailable: published manifest revision differs from working source",
+  "dockerCacheAndSigningCI": "unavailable locally; no images or releases published"
+}

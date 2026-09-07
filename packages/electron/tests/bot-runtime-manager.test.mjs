@@ -2112,15 +2112,9 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     expect(mainSource).toContain(
       'if (!isLocalSender(event.sender) && !COMMANDS_SAFE_FOR_REMOTE.has(command))',
     );
-    expect(packageJson.scripts.package).toStartWith(
-      'DEVRYAN_BOT_RUNTIME_REQUIRE_RELEASE_MANIFEST=1 bun run build:web-assets',
-    );
-    expect(packageJson.scripts.package).toContain(
-      'node ../../scripts/verify-bot-runtime-images.mjs --manifest ./resources/bot-runtime/images.release.json',
-    );
-    expect(packageJson.scripts.package).toContain(
-      'DEVRYAN_BOT_RUNTIME_REQUIRE_RELEASE_MANIFEST=1 bun run bundle:main',
-    );
+    expect(packageJson.scripts.package).toBe('bun run prepare && bun run package:prepared');
+    expect(packageJson.scripts['package:prepared']).toBe('node ./scripts/package-prepared.mjs');
+    // Manifest-before-builder behavior is exercised by release-artifacts.test.mjs.
     const compose = await fs.readFile(
       new URL('../../../docker/bots/compose.yml', import.meta.url),
       'utf8',

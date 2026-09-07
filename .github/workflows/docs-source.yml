@@ -57,15 +57,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Trigger openchamber-website docs sync (optional)
+      - name: Trigger configured website docs sync (optional)
         if: ${{ github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
         env:
-          WEBSITE_REPO: openchamber/openchamber-website
+          WEBSITE_REPO: ${{ vars.DEVRYAN_DOCS_WEBSITE_REPO }}
           WEBSITE_TOKEN: ${{ secrets.OPENCHAMBER_WEBSITE_REPO_TOKEN }}
           SOURCE_REF: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
         run: |
-          if [ -z "$WEBSITE_TOKEN" ]; then
-            echo "OPENCHAMBER_WEBSITE_REPO_TOKEN not set; skip dispatch."
+          if [ -z "$WEBSITE_REPO" ] || [ -z "$WEBSITE_TOKEN" ]; then
+            echo "Docs website destination or token not set; skip dispatch."
             exit 0
           fi
 

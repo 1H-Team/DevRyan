@@ -1,6 +1,5 @@
 import React from 'react';
 import { RiAiAgentLine, RiExternalLinkLine, RiGitBranchLine, RiRefreshLine } from '@remixicon/react';
-import { formatManagedTaskDisplayName } from '@openchamber/orchestration-runtime';
 
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
@@ -12,6 +11,7 @@ import {
 } from '@/stores/useManagedOrchestrationStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { ManagedTaskRow } from './ManagedTaskRow';
+import { ManagedTaskReadiness, type ManagedTaskCandidate, type ManagedTaskPresentation } from './ManagedTaskReadiness';
 import { CursorNativeTaskRows } from './CursorNativeTaskRows';
 import type { CursorNativeTaskDispatch } from './cursorNativeTaskDispatch';
 import type {
@@ -29,7 +29,6 @@ import {
 const EMPTY_PENDING_DISPATCHES: readonly PendingManagedTaskDispatch[] = [];
 const EMPTY_FALLBACK_TASKS: readonly ManagedTaskDispatchFallback[] = [];
 const EMPTY_CURSOR_NATIVE_TASKS: readonly CursorNativeTaskDispatch[] = [];
-const MISSING_DISPATCH_RECOVERY_DELAY_MS = 500;
 const MANAGED_TASK_CARD_STYLE: React.CSSProperties & Record<'--managed-task-card-border', string> = {
   '--managed-task-card-border': 'color-mix(in srgb, var(--primary-base) 16%, var(--border))',
 };
@@ -40,34 +39,12 @@ export const ManagedTaskPreparingRow = React.memo(({
   dispatch: PendingManagedTaskDispatch;
 }) => {
   const { t } = useI18n();
+  if (dispatch.status !== 'error') return null;
   return (
-    <article data-managed-task-pending-id={dispatch.partId}>
-      <div className="flex min-w-0 items-center gap-3 px-3 py-2.5">
-        <div className="min-w-0 flex-1">
-          <h4 className="line-clamp-2 break-words typography-ui-label font-medium text-foreground sm:line-clamp-1">
-            {formatManagedTaskDisplayName(dispatch.label)}
-          </h4>
-          <p
-            role={dispatch.status === 'error' ? 'alert' : 'status'}
-            className={cn(
-              'typography-meta',
-              dispatch.status === 'error'
-                ? 'text-[var(--status-error)]'
-                : 'truncate text-muted-foreground',
-            )}
-          >
-            {dispatch.status === 'error'
-              ? t('chat.managedTasks.summary.startError')
-              : t('chat.managedTasks.summary.preparing')}
-          </p>
-          {dispatch.status === 'error' && dispatch.errorMessage ? (
-            <p className="mt-1 line-clamp-2 break-words typography-micro text-muted-foreground">
-              {dispatch.errorMessage}
-            </p>
-          ) : null}
-        </div>
-      </div>
-    </article>
+    <p role="alert" data-managed-task-pending-id={dispatch.partId} className="typography-meta text-[var(--status-error)]">
+      {t('chat.managedTasks.summary.startError')}
+      {dispatch.errorMessage ? ` ${dispatch.errorMessage}` : ''}
+    </p>
   );
 });
 
@@ -75,8 +52,10 @@ ManagedTaskPreparingRow.displayName = 'ManagedTaskPreparingRow';
 
 const ManagedTaskFallbackRow = React.memo(({
   task,
+  title,
 }: {
   task: ManagedTaskDispatchFallback;
+  title: string;
 }) => {
   const { t } = useI18n();
   const status = task.status === 'completed'
@@ -93,7 +72,7 @@ const ManagedTaskFallbackRow = React.memo(({
       <div className="flex min-w-0 flex-col items-start gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 flex-1">
           <h4 className="line-clamp-2 break-words typography-ui-label font-medium text-foreground sm:line-clamp-1">
-            {formatManagedTaskDisplayName(task.label)}
+            {title}
           </h4>
           <p className={`truncate typography-meta ${status.className}`}>{status.label}</p>
         </div>
@@ -118,106 +97,6 @@ const ManagedTaskFallbackRow = React.memo(({
 });
 
 ManagedTaskFallbackRow.displayName = 'ManagedTaskFallbackRow';
-
-const ManagedTaskReconciledFallbackRow = React.memo(({
-  rootSessionId,
-  task,
-  onContentChange,
-}: {
-  rootSessionId?: string;
-  task: ManagedTaskDispatchFallback;
-  onContentChange?: () => void;
-}) => {
-  const authoritativeTaskId = useManagedOrchestrationStore(React.useMemo(
-    () => managedOrchestrationSelectors.taskIdForRecovery(task.taskId, {
-      rootSessionId: rootSessionId ?? '',
-      dispatchCallId: task.dispatchCallId,
-      childSessionId: task.childSessionId,
-      directory: task.directory,
-    }),
-    [rootSessionId, task.taskId, task.dispatchCallId, task.childSessionId, task.directory],
-  ));
-  const recoveryRequestedRef = React.useRef(false);
-
-  React.useEffect(() => {
-    if (!rootSessionId || authoritativeTaskId || recoveryRequestedRef.current) return;
-
-    const timer = window.setTimeout(() => {
-      recoveryRequestedRef.current = true;
-      void useManagedOrchestrationStore.getState().loadSnapshot({ rootSessionId });
-    }, MISSING_DISPATCH_RECOVERY_DELAY_MS);
-    return () => window.clearTimeout(timer);
-  }, [authoritativeTaskId, rootSessionId]);
-
-  if (authoritativeTaskId) {
-    return <ManagedTaskRow taskId={authoritativeTaskId} onContentChange={onContentChange} />;
-  }
-  return <ManagedTaskFallbackRow task={task} />;
-});
-
-ManagedTaskReconciledFallbackRow.displayName = 'ManagedTaskReconciledFallbackRow';
-
-const ManagedTaskReconciledPendingRow = React.memo(({
-  rootSessionId,
-  dispatch,
-  fallbackTask,
-  recoverMissingDispatch,
-  onContentChange,
-}: {
-  rootSessionId?: string;
-  dispatch: PendingManagedTaskDispatch;
-  fallbackTask?: ManagedTaskDispatchFallback;
-  recoverMissingDispatch: boolean;
-  onContentChange?: () => void;
-}) => {
-  const taskId = useManagedOrchestrationStore(React.useMemo(
-    () => managedOrchestrationSelectors.taskIdForDispatchCall(
-      rootSessionId ?? '',
-      dispatch.dispatchCallId ?? '',
-    ),
-    [dispatch.dispatchCallId, rootSessionId],
-  ));
-  const recoveryRequestedRef = React.useRef(false);
-
-  React.useEffect(() => {
-    if (
-      !recoverMissingDispatch
-      || !rootSessionId
-      || !dispatch.dispatchCallId
-      || taskId
-      || fallbackTask
-      || recoveryRequestedRef.current
-    ) return;
-
-    const timer = window.setTimeout(() => {
-      recoveryRequestedRef.current = true;
-      void useManagedOrchestrationStore.getState().loadSnapshot({ rootSessionId });
-    }, MISSING_DISPATCH_RECOVERY_DELAY_MS);
-    return () => window.clearTimeout(timer);
-  }, [
-    dispatch.dispatchCallId,
-    fallbackTask,
-    recoverMissingDispatch,
-    rootSessionId,
-    taskId,
-  ]);
-
-  if (taskId) {
-    return <ManagedTaskRow taskId={taskId} onContentChange={onContentChange} />;
-  }
-  if (fallbackTask) {
-    return (
-      <ManagedTaskReconciledFallbackRow
-        rootSessionId={rootSessionId}
-        task={fallbackTask}
-        onContentChange={onContentChange}
-      />
-    );
-  }
-  return <ManagedTaskPreparingRow dispatch={dispatch} />;
-});
-
-ManagedTaskReconciledPendingRow.displayName = 'ManagedTaskReconciledPendingRow';
 
 export const ManagedTaskList = React.memo(({
   rootSessionId,
@@ -276,96 +155,112 @@ export const ManagedTaskList = React.memo(({
     ? visibility.limit
     : MANAGED_TASK_ROW_BATCH;
 
-  const { hiddenCount, agentGroups = [] } = getManagedTaskWindow(
-    visibleTaskIds,
-    visibleLimit,
-    (taskId) => useManagedOrchestrationStore.getState().tasksById[taskId]?.agent,
+  const { hiddenCount, visibleTaskIds: windowTaskIds } = React.useMemo(
+    () => getManagedTaskWindow(visibleTaskIds, visibleLimit), [visibleTaskIds, visibleLimit],
   );
+  const candidates = React.useMemo<ManagedTaskCandidate[]>(() => [
+    ...windowTaskIds.map((taskId) => ({ key: taskId, taskId, fallback: fallbackTasksById.get(taskId) })),
+    ...pendingDispatches.map((pending) => ({
+      key: pending.partId,
+      pending,
+      fallback: pending.dispatchCallId ? fallbackTasksByDispatchCallId.get(pending.dispatchCallId) : undefined,
+    })),
+  ], [windowTaskIds, fallbackTasksById, pendingDispatches, fallbackTasksByDispatchCallId]);
+  const [presentations, setPresentations] = React.useState<Record<string, ManagedTaskPresentation>>({});
+  const onPresentationChange = React.useCallback((key: string, value: ManagedTaskPresentation | null) => {
+    setPresentations((current) => {
+      const previous = current[key];
+      if (!value) {
+        if (!previous) return current;
+        const next = { ...current };
+        delete next[key];
+        return next;
+      }
+      if (previous && Object.keys(value).every((field) => (
+        previous[field as keyof ManagedTaskPresentation] === value[field as keyof ManagedTaskPresentation]
+      ))) return current;
+      return { ...current, [key]: value };
+    });
+  }, []);
   const displayGroups = React.useMemo(() => {
-    const groups = new Map<string, {
-      agent: string;
-      taskIds: string[];
-      fallbackTasks: ManagedTaskDispatchFallback[];
-      pendingDispatches: PendingManagedTaskDispatch[];
-    }>();
-
-    for (const group of agentGroups) {
-      groups.set(group.agent.toLocaleLowerCase(), {
-        agent: group.agent,
-        taskIds: group.taskIds,
-        fallbackTasks: [],
-        pendingDispatches: [],
-      });
+    const groups = new Map<string, { agent: string; items: Array<{ candidate: ManagedTaskCandidate; presentation: ManagedTaskPresentation }> }>();
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+      const presentation = presentations[candidate.key];
+      if (!presentation?.title) continue;
+      const taskId = presentation.taskId ?? candidate.fallback?.taskId;
+      if (!taskId || seen.has(taskId)) continue;
+      seen.add(taskId);
+      const key = presentation.agent.toLocaleLowerCase();
+      const group = groups.get(key) ?? { agent: presentation.agent, items: [] };
+      group.items.push({ candidate, presentation });
+      groups.set(key, group);
     }
-
-    for (const taskId of visibleTaskIds) {
-      if (useManagedOrchestrationStore.getState().tasksById[taskId]) continue;
-      const fallback = fallbackTasksById.get(taskId);
-      if (!fallback) continue;
-      const key = fallback.agent.toLocaleLowerCase();
-      const existing = groups.get(key);
-      if (existing) {
-        existing.fallbackTasks.push(fallback);
-      } else {
-        groups.set(key, {
-          agent: fallback.agent,
-          taskIds: [],
-          fallbackTasks: [fallback],
-          pendingDispatches: [],
-        });
-      }
-    }
-
-    for (const dispatch of pendingDispatches) {
-      const key = dispatch.agent.toLocaleLowerCase();
-      const existing = groups.get(key);
-      if (existing) {
-        existing.pendingDispatches.push(dispatch);
-      } else {
-        groups.set(key, {
-          agent: dispatch.agent,
-          taskIds: [],
-          fallbackTasks: [],
-          pendingDispatches: [dispatch],
-        });
-      }
-    }
-
-    return Array.from(groups.values());
-  }, [agentGroups, fallbackTasksById, pendingDispatches, visibleTaskIds]);
+    return [...groups.values()];
+  }, [candidates, presentations]);
+  const errorCandidates = React.useMemo(() => {
+    const seen = new Set<string>();
+    return candidates.filter((candidate) => {
+      const taskId = presentations[candidate.key]?.taskId ?? candidate.fallback?.taskId;
+      if (!taskId) return true;
+      if (seen.has(taskId)) return false;
+      seen.add(taskId);
+      return true;
+    });
+  }, [candidates, presentations]);
   const showRuntimeWarnings = rootSessionId !== undefined && explicitTaskIds === undefined;
 
   React.useLayoutEffect(() => {
-    if (visibleTaskIds.length > 0 || pendingDispatches.length > 0 || cursorNativeTasks.length > 0 || recoveryWarning || snapshotError) {
-      onContentChange?.();
-    }
-  }, [cursorNativeTasks, onContentChange, pendingDispatches, recoveryWarning, snapshotError, visibleTaskIds, visibleLimit]);
+    onContentChange?.();
+  }, [cursorNativeTasks, onContentChange, presentations, recoveryWarning, snapshotError, visibleLimit]);
 
   const shouldRenderManagedTasks = shouldRenderManagedTaskList({
     available,
-    taskCount: visibleTaskIds.length + pendingDispatches.length,
+    taskCount: displayGroups.length,
     recoveryWarning: showRuntimeWarnings ? recoveryWarning : null,
     snapshotError: showRuntimeWarnings ? snapshotError : null,
   });
-  if (!shouldRenderManagedTasks && cursorNativeTasks.length === 0) return null;
+  const showCard = (shouldRenderManagedTasks && displayGroups.length > 0) || cursorNativeTasks.length > 0;
+  const showContent = showCard || hiddenCount > 0
+    || (showRuntimeWarnings && Boolean(recoveryWarning || snapshotError))
+    || candidates.some((candidate) => presentations[candidate.key]?.error || candidate.pending?.status === 'error');
   return (
+    <>
+      {candidates.map((candidate) => (
+        <ManagedTaskReadiness key={candidate.key} candidate={candidate} rootSessionId={rootSessionId}
+          recoverMissingDispatch={recoverMissingDispatches} onChange={onPresentationChange} />
+      ))}
+      {showContent ? (
     <section
-      aria-label={t('chat.managedTasks.title')}
-      className={cn(
-        isMobile ? 'w-full px-0' : 'chat-message-column px-4',
-      )}
+      aria-label={showCard ? t('chat.managedTasks.title') : undefined}
+      className={cn(isMobile ? 'w-full px-0' : 'chat-message-column px-4')}
     >
-      <div
-        data-managed-task-card="true"
-        className="relative isolate overflow-hidden rounded-xl border border-[color:var(--managed-task-card-border)] bg-[color-mix(in_srgb,var(--primary-base)_3%,var(--surface-background))]"
-        style={MANAGED_TASK_CARD_STYLE}
-      >
-        <header className="flex items-center gap-2 border-b border-border/70 px-3 py-2">
-          <RiGitBranchLine className="size-3.5 text-[var(--primary-base)]" aria-hidden="true" />
-          <h3 className="typography-ui-label font-semibold text-foreground">
-            {t('chat.managedTasks.title')}
-          </h3>
-        </header>
+      {errorCandidates.map((candidate) => {
+        const presentation = presentations[candidate.key];
+        if (!presentation?.error) return candidate.pending && !presentation?.taskId && !candidate.fallback
+          ? <ManagedTaskPreparingRow key={candidate.key} dispatch={candidate.pending} /> : null;
+        if (presentation.taskId) return (
+          <div key={candidate.key} data-managed-task-start-error={candidate.key}>
+            <ManagedTaskRow taskId={presentation.taskId}
+              displayTitle={t(presentation.error === 'title' ? 'chat.managedTasks.titleUnavailable' : 'chat.managedTasks.summary.startError')}
+              onContentChange={onContentChange} />
+            {presentation.errorMessage ? <p role="alert" className="typography-meta text-[var(--status-error)]">{presentation.errorMessage}</p> : null}
+          </div>
+        );
+        return (
+          <div key={candidate.key} data-managed-task-start-error={candidate.key} className="flex items-center gap-2 py-2">
+            <p role="alert" className="min-w-0 flex-1 typography-meta text-[var(--status-error)]">
+              {t(presentation.error === 'title' ? 'chat.managedTasks.titleUnavailable' : 'chat.managedTasks.summary.startError')}
+              {presentation.errorMessage ? ` ${presentation.errorMessage}` : ''}
+            </p>
+            {presentation.childSessionId ? (
+              <Button type="button" size="xs" variant="ghost" onClick={() => {
+                if (presentation.childSessionId) useSessionUIStore.getState().setCurrentSession(presentation.childSessionId, presentation.directory);
+              }}>{t('chat.managedTasks.child.open')}</Button>
+            ) : null}
+          </div>
+        );
+      })}
         {showRuntimeWarnings && recoveryWarning ? (
           <p role="alert" className="border-b border-border/70 px-3 py-2 typography-micro text-[var(--status-warning)]">
             {t('chat.managedTasks.recoveryWarning', { message: recoveryWarning })}
@@ -402,6 +297,18 @@ export const ManagedTaskList = React.memo(({
             </Button>
           </div>
         ) : null}
+      {showCard ? (
+      <div
+        data-managed-task-card="true"
+        className="relative isolate overflow-hidden rounded-xl border border-[color:var(--managed-task-card-border)] bg-[color-mix(in_srgb,var(--primary-base)_3%,var(--surface-background))]"
+        style={MANAGED_TASK_CARD_STYLE}
+      >
+        <header className="flex items-center gap-2 border-b border-border/70 px-3 py-2">
+          <RiGitBranchLine className="size-3.5 text-[var(--primary-base)]" aria-hidden="true" />
+          <h3 className="typography-ui-label font-semibold text-foreground">
+            {t('chat.managedTasks.title')}
+          </h3>
+        </header>
         <div className="divide-y divide-border/70">
           {displayGroups.map((group) => {
             const agentLabel = formatAgentLabel(group.agent);
@@ -418,29 +325,12 @@ export const ManagedTaskList = React.memo(({
                   </span>
                 </div>
                 <div className="divide-y divide-border/60">
-                  {group.taskIds.map((taskId) => (
-                    <ManagedTaskRow key={taskId} taskId={taskId} onContentChange={onContentChange} />
-                  ))}
-                  {group.fallbackTasks.map((task) => (
-                    <ManagedTaskReconciledFallbackRow
-                      key={task.taskId}
-                      rootSessionId={rootSessionId}
-                      task={task}
-                      onContentChange={onContentChange}
-                    />
-                  ))}
-                  {group.pendingDispatches.map((dispatch) => (
-                    <ManagedTaskReconciledPendingRow
-                      key={dispatch.partId}
-                      rootSessionId={rootSessionId}
-                      dispatch={dispatch}
-                      fallbackTask={dispatch.dispatchCallId
-                        ? fallbackTasksByDispatchCallId.get(dispatch.dispatchCallId)
-                        : undefined}
-                      recoverMissingDispatch={recoverMissingDispatches}
-                      onContentChange={onContentChange}
-                    />
-                  ))}
+                  {group.items.map(({ candidate, presentation }) => presentation.taskId ? (
+                    <ManagedTaskRow key={candidate.key} taskId={presentation.taskId}
+                      displayTitle={presentation.title ?? undefined} onContentChange={onContentChange} />
+                  ) : candidate.fallback && presentation.title ? (
+                    <ManagedTaskFallbackRow key={candidate.key} task={candidate.fallback} title={presentation.title} />
+                  ) : null)}
                 </div>
               </section>
             );
@@ -459,7 +349,10 @@ export const ManagedTaskList = React.memo(({
           ) : null}
         </div>
       </div>
+      ) : null}
     </section>
+      ) : null}
+    </>
   );
 });
 

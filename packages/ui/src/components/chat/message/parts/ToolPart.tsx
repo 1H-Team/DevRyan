@@ -62,6 +62,8 @@ import {
     type TaskToolSummaryEntry,
 } from './taskToolUtils';
 import { getDiffPatchEntries, resolveRawPatchFallback } from './toolPartDiffEntries';
+import { getPatchText, getToolDiffPreview, getWriteDiffPreview, isToolDiffPreviewOversized } from './toolDiffPreview';
+import { RawPatchFallback } from './RawPatchFallback';
 import { resolveToolExpandedDetails } from './toolExpandedFallback';
 import { coerceRuntimeText } from './runtimeText';
 
@@ -187,52 +189,9 @@ const parseWriteLineCount = (input?: Record<string, unknown>): number | null => 
         : typeof input?.fileText === 'string'
             ? input.fileText
             : undefined;
-    if (!content) return null;
+    if (!content || isToolDiffPreviewOversized(content)) return null;
     const lines = content.split('\n');
     return lines.length;
-};
-
-const getPatchText = (value: unknown): string | undefined => {
-    if (typeof value === 'string') {
-        const trimmed = value.trim();
-        return trimmed.length > 0 ? trimmed : undefined;
-    }
-
-    if (value && typeof value === 'object') {
-        const patch = (value as { patch?: unknown }).patch;
-        if (typeof patch === 'string') {
-            const trimmed = patch.trim();
-            return trimmed.length > 0 ? trimmed : undefined;
-        }
-    }
-
-    return undefined;
-};
-
-const buildWritePreviewPatch = (filePath: string | undefined, content: string): string | undefined => {
-    const normalizedContent = content.replace(/\r\n/g, '\n');
-    if (!normalizedContent.trim()) {
-        return undefined;
-    }
-
-    const normalizedPath = (() => {
-        const candidate = (filePath ?? '').trim();
-        if (!candidate) {
-            return 'new-file';
-        }
-        return candidate.startsWith('/') ? candidate.slice(1) : candidate;
-    })();
-
-    const lines = normalizedContent.split('\n');
-    const hunkSize = lines.length;
-    const body = lines.map((line) => `+${line}`).join('\n');
-
-    return [
-        '--- /dev/null',
-        `+++ b/${normalizedPath}`,
-        `@@ -0,0 +1,${hunkSize} @@`,
-        body,
-    ].join('\n');
 };
 
 const getFirstToolPath = (...records: Array<Record<string, unknown> | undefined>): string | undefined => {
@@ -265,7 +224,7 @@ const getFirstChangedLineFromMetadata = (tool: string, metadata?: Record<string,
         ?? getPatchText(metadata.diff)
         ?? getPatchText(metadata.changes);
     if (topLevelPatch) {
-        const line = getFirstChangedModifiedLineFromPatch(topLevelPatch);
+        const line = getFirstChangedModifiedLineFromPatch(getToolDiffPreview(topLevelPatch).text);
         if (line !== null) {
             return line;
         }
@@ -278,7 +237,7 @@ const getFirstChangedLineFromMetadata = (tool: string, metadata?: Record<string,
         ?? getPatchText(firstFile?.diff)
         ?? getPatchText(firstFile?.changes);
     if (filePatch) {
-        const line = getFirstChangedModifiedLineFromPatch(filePatch);
+        const line = getFirstChangedModifiedLineFromPatch(getToolDiffPreview(filePatch).text);
         if (line !== null) {
             return line;
         }
@@ -785,12 +744,6 @@ const TOOL_NORMAL_ICON_STYLE: React.CSSProperties = { color: 'var(--tools-icon)'
 const TOOL_ERROR_TITLE_STYLE: React.CSSProperties = { color: 'var(--status-error)' };
 const TOOL_NORMAL_TITLE_STYLE: React.CSSProperties = { color: 'var(--tools-title)' };
 
-const RawPatchFallback: React.FC<{ patch: string }> = ({ patch }) => (
-    <pre className="tool-output-surface m-0 rounded-lg p-2 whitespace-pre-wrap break-words typography-code text-muted-foreground/90">{patch}</pre>
-);
-
-RawPatchFallback.displayName = 'RawPatchFallback';
-
 type DiffPreviewBoundaryProps = {
     fallback: React.ReactNode;
     resetKey: string;
@@ -904,7 +857,7 @@ const renderAnimatedPathWithIcon = (path: string, _animate = true, grow = true, 
     );
 };
 
-const DiffPreview: React.FC<DiffPreviewProps> = React.memo(({ diff, pierreTheme, pierreThemeType, diffViewMode }) => {
+const RichDiffPreview: React.FC<DiffPreviewProps> = React.memo(({ diff, pierreTheme, pierreThemeType, diffViewMode }) => {
     const terminalFontSize = useUIStore((state) => state.terminalFontSize);
     const options = React.useMemo(
         () => ({
@@ -948,7 +901,13 @@ const DiffPreview: React.FC<DiffPreviewProps> = React.memo(({ diff, pierreTheme,
     );
 });
 
-DiffPreview.displayName = 'DiffPreview';
+RichDiffPreview.displayName = 'RichDiffPreview';
+
+const DiffPreview: React.FC<DiffPreviewProps> = (props) => (
+    isToolDiffPreviewOversized(props.diff)
+        ? <RawPatchFallback patch={props.diff} />
+        : <RichDiffPreview {...props} />
+);
 
 interface ToolExpandedContentProps {
     part: ToolPartType;
@@ -1020,7 +979,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     );
 
     const inputTextContent = React.useMemo(() => {
-        if (!input || typeof input !== 'object' || Object.keys(input).length === 0) {
+        if (hideToolInputPreview || !input || typeof input !== 'object' || Object.keys(input).length === 0) {
             return '';
         }
 
@@ -1037,25 +996,25 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
         }
 
         return formatInputForDisplay(input, part.tool);
-    }, [input, part.tool]);
-    const hasInputText = !hideToolInputPreview && inputTextContent.trim().length > 0;
+    }, [hideToolInputPreview, input, part.tool]);
+    const hasInputText = !hideToolInputPreview && Boolean(getPatchText(inputTextContent));
     const isWriteLikeTool = part.tool === 'write' || part.tool === 'create' || part.tool === 'file_write';
     const writeLikeInputPatch = React.useMemo(() => {
         if (!isWriteLikeTool || !hasInputText) {
             return undefined;
         }
         const filePath = getFirstToolPath(input, metadata);
-        return buildWritePreviewPatch(filePath, inputTextContent);
+        return getWriteDiffPreview(filePath, inputTextContent);
     }, [hasInputText, input, inputTextContent, isWriteLikeTool, metadata]);
     const hasStructuredDetails = diffEntries.length > 0 || Boolean(rawPatchFallback) || Boolean(diagnosticSection);
     const expandedDetails = React.useMemo(() => resolveToolExpandedDetails({
         hasStructuredDetails,
-        inputText: hasInputText ? inputTextContent : '',
+        inputText: hasInputText ? 'input' : '',
         output: rawOutput,
         error: stateWithData.error,
         status: lifecycle.status,
         isFinalized: lifecycle.isFinalized,
-    }), [hasInputText, hasStructuredDetails, inputTextContent, lifecycle.isFinalized, lifecycle.status, rawOutput, stateWithData.error]);
+    }), [hasInputText, hasStructuredDetails, lifecycle.isFinalized, lifecycle.status, rawOutput, stateWithData.error]);
     const failureDisplayText = expandedDetails.failureReason
         ?? t('chat.toolPart.endedWithStatus', { status: expandedDetails.failureStatus ?? lifecycle.status ?? 'unknown' });
 
@@ -1299,8 +1258,10 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                                         {inputTextContent}
                                     </pre>
                                 ) : isWriteLikeTool && writeLikeInputPatch ? (
-                                    <DiffPreview
-                                        diff={writeLikeInputPatch}
+                                    writeLikeInputPatch.truncated ? (
+                                        <RawPatchFallback patch={writeLikeInputPatch.patch} truncated getFullPatch={writeLikeInputPatch.getFullPatch} />
+                                    ) : <DiffPreview
+                                        diff={writeLikeInputPatch.patch}
                                         pierreTheme={pierreTheme}
                                         pierreThemeType={pierreThemeType}
                                         diffViewMode={diffViewMode}

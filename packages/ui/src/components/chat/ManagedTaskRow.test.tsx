@@ -11,6 +11,7 @@ import {
 } from '@openchamber/orchestration-runtime';
 
 import { I18nProvider } from '@/lib/i18n';
+import { managedTitleFixture, renderManagedTaskMarkup } from './managedTaskTestFixture';
 import type {
   ManagedTaskAutoResume,
   ManagedTaskProjectedEnvelope,
@@ -26,6 +27,8 @@ const syncModule = { ...(await import('@/sync/sync-context')) };
 mock.module('@/sync/sync-context', () => ({
   ...syncModule,
   useSessionStatus: () => undefined,
+  useDirectoryStore: () => managedTitleFixture,
+  useSyncResyncSession: () => async () => undefined,
   setActiveSession: () => undefined,
 }));
 // Static markup cannot receive clicks, so capture the checkbox's change handler instead.
@@ -120,6 +123,8 @@ const autoResumeBlock = (overrides: Partial<ManagedTaskAutoResume> = {}): Manage
   resetAt: 9_000,
   resetSource: 'opencode_status',
   target: { kind: 'backup', providerId: 'anthropic', modelId: 'claude-sonnet-5', variant: null },
+  recoveryCycleTaskId: null,
+  backupAttemptTaskId: null,
   lastAttemptTaskId: null,
   lastAttemptAt: null,
   lastError: null,
@@ -174,24 +179,26 @@ afterEach(() => {
 });
 
 describe('ManagedTaskRow', () => {
-  test('a historical failed dispatch renders its retained sixth attempt after original and intermediate tasks are pruned', () => {
+  test('a historical failed dispatch renders its retained sixth attempt after original and intermediate tasks are pruned', async () => {
     const active = record('dvr_task_six', 'running', {
       sequence: 6, attempt: 6, priorTaskId: 'dvr_task_pruned', executionKind: 'retry_in_place',
       dispatchCallId: 'call_original', modelId: 'deepseek-v4-flash',
     });
     ingest(toManagedTaskEvent(active).properties.task);
-    const render = () => renderToStaticMarkup(<I18nProvider><ManagedTaskList
+    const render = () => renderManagedTaskMarkup(<I18nProvider><ManagedTaskList
       rootSessionId="ses_root" taskIds={['dvr_task_original']}
       fallbackTasks={[{ partId: 'part_original', taskId: 'dvr_task_original', dispatchCallId: 'call_original', agent: 'explorer',
         label: 'Map the workspace', status: 'failed', childSessionId: 'ses_child', directory: '/workspace' }]}
     /></I18nProvider>);
-    expect(render()).toContain('data-managed-task-id="dvr_task_six"');
-    expect(render()).toContain('Running...');
-    expect(render()).not.toContain('data-managed-task-fallback-id');
-    expect(render()).not.toContain('>Error<');
+    const runningMarkup = await render();
+    expect(runningMarkup).toContain('data-managed-task-id="dvr_task_six"');
+    expect(runningMarkup).toContain('Running...');
+    expect(runningMarkup).not.toContain('data-managed-task-fallback-id');
+    expect(runningMarkup).not.toContain('>Error<');
     ingest(toManagedTaskEvent({ ...active, status: 'completed', finishedAt: 3_000 }).properties.task);
-    expect(render()).toContain('Complete');
-    expect(render()).not.toContain('>Error<');
+    const completedMarkup = await render();
+    expect(completedMarkup).toContain('Complete');
+    expect(completedMarkup).not.toContain('>Error<');
   });
   test('shows Starting model… between the child prompt and the first assistant part', () => {
     const running = toManagedTaskEvent(record('dvr_task_run', 'running')).properties.task;

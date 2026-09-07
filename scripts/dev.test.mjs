@@ -175,8 +175,10 @@ describe('affected validation planning', () => {
       'test:desktop',
     ]);
     assert.deepEqual(quick.commands.map((entry) => entry.label), [
-      'typeCheck:desktop',
-      'test:desktop',
+      'lint:full',
+      'type-check:full',
+      'docs:validate',
+      'test:full',
     ]);
   });
 

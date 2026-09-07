@@ -481,12 +481,12 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('If Explorer remains unavailable after the one managed recovery');
   });
 
-  it('keeps Explorer discovery speed-bounded and Orchestrator prompts compact', () => {
+  it('keeps Explorer discovery scoped to the request and Orchestrator prompts compact', () => {
     const explorer = listPackagedAgents().find((agent) => agent.name === 'explorer');
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
-    expect(explorer?.prompt).toContain('at most two search passes');
-    expect(explorer?.prompt).toContain('strong candidates, not exhaustive coverage');
+    expect(explorer?.prompt).toContain('explicitly requested full usage map');
+    expect(explorer?.prompt).toContain('continue until the requested scope is covered');
     expect(explorer?.prompt).toContain('smallest needed file slices');
     expect(orchestrator?.prompt).toContain('Find:');
     expect(orchestrator?.prompt).toContain('Scope:');

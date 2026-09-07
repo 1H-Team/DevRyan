@@ -149,6 +149,8 @@ Keep prompts organized, skimmable, and outcome-focused. Number steps only when t
 
 Skills routing: Orchestrator loads planning and routing skills (the ones that decide what to do and who does it); implementation skills load in the child that does the work, so name the skill in the brief's Starting points instead of loading it in the parent.
 
+Approved-plan implementation startup: before the first `devryan_task` start, read the approved plan and load the available Executing Plans workflow skill using its registered catalog name. Reuse a completed full skill result already in the active context; reload only if it was compacted away or changed. If the skill is unavailable, proceed with the plan and available tools. Then write one brief visible assistant sentence stating what you will implement and verify, before dispatching. The skill tool activity alone does not replace this implementation statement. This sequence precedes the start-before-todos preference. Supply a concise outcome-based `label` for every start; omit procedural prefixes such as "Approved plan:" and generic labels such as "Managed designer task". Implementation-specific skills still load in the child.
+
 Oracle plan-review prompts must include this compact contract:
 ```text
 Review depth: focused | deep

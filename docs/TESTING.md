@@ -5,10 +5,24 @@
 - `bun run test:full` is the deterministic repository test gate. It recursively discovers repository script tests, runs every test-owning workspace package, and includes the locked legacy Tauri Cargo suite.
 - `bun run validate:quick` selects checks from the current changed-file set for fast local feedback.
 - `bun run validate:affected` expands validation to affected packages and shared-runtime dependents.
-- `bun run validate:full` runs workspace lint, type checks, and the full deterministic test gate.
+- `bun run validate:full` runs workspace lint, type checks, documentation validation, and the full deterministic test gate.
 - Release verification also runs `bun run build` and `bun run bundle:check`.
 
 The full gate rejects skipped or todo tests, undiscovered JavaScript/TypeScript test files, test-owning workspace packages omitted from `test:full`, and stale paths in the checked feature matrix.
+
+Documentation-only changes select `docs:validate`. Packaged agent/skill Markdown
+is runtime configuration and also selects its owning contract suite. Manifests
+and lockfiles require full validation even in quick mode; `test:affected` selects
+the full test gate for those inputs. Shared-runtime changes include web tests in
+affected mode. See the command planner in `scripts/validate.mjs`.
+
+The documentation check scans current Markdown/MDX local links, reference-link
+definitions, HTML `src`/`href`, and explicit repository source paths in inline
+code. It ignores code examples, remote URLs, and same-page fragments; it checks
+file existence, not heading anchors. Historical reports under `docs/audits/`,
+saved plans under `docs/superpowers/plans/`, and changelog/backport records report
+missing old targets as warnings. Known generated build/runtime paths are
+reported as unchecked. It does not contact external sites.
 
 ## Suite ownership
 
@@ -112,7 +126,7 @@ Engine merely to satisfy an audit; use an isolated host or record the live case
 as unavailable and retain deterministic test evidence separately.
 
 Live multi-user verification uses the password-free `agent_test` accounts from
-`AGENTS.md`. Build the current UI/server first, then start an isolated data root
+[the runtime verification runbook](AGENT_RUNTIME_VERIFICATION.md). Build the current UI/server first, then start an isolated data root
 on a spare port when the user's app already owns the normal runtime. Confirm the
 target Supabase deployment contains migration `20260830150000` before creating a
 synthetic Bot. If the migration is missing, retain the `migration_required`
@@ -197,3 +211,7 @@ Never use `--linked` or target the production database for this check.
 ## Isolated runtime audit QA
 
 Use [QA.md](QA.md) for the web/Electron fixture entrypoint, responsive screenshot review, explicit live-provider HTTP smoke and journal correlation workflow. This audit excludes VS Code runtime acceptance; the ordinary full validation contract remains unchanged.
+
+## Release handoff verification
+
+See [Release pipeline](RELEASE_PIPELINE.md) for separate compilation/preparation/packaging commands and artifact invariants. `scripts/release-artifacts.test.mjs` covers stale/corrupt inputs and packaging gates; `scripts/release-workflow.test.mjs` checks shared-build and prerequisite wiring. Bot image aggregation/signing cases extend the existing image verifier suite. Root `build` now compiles web and Electron JavaScript explicitly; source-only UI validation remains `type-check:ui`.

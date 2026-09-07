@@ -1,5 +1,6 @@
 import { findPlanCardReasoningPartIndex, hasStructuredPlanBody, joinAssistantTextParts, splitPlanCardSentinel } from '@/lib/messages/actionablePlan';
 import { isStandaloneTool } from '../../message/parts/toolRenderUtils';
+import { hasQuestionTool } from '../../message/questionContext';
 import type {
     ChatMessageEntry,
     TurnActivityGroup,
@@ -112,6 +113,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
     input.assistantMessages.forEach((message) => {
         const finish = getMessageFinish(message);
         const messageHasTool = message.parts.some((part) => part.type === 'tool');
+        const messageHasQuestion = hasQuestionTool(message.parts);
 
         // When the plan card is mounted from a reasoning part, that part must not
         // ALSO render as a thought — otherwise the same plan appears twice.
@@ -194,6 +196,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
                 && !isConfirmedSummaryText
                 && !isPlanBearingText
                 && !messagePlanBearing
+                && !messageHasQuestion
                 && (messageHasTool || (typeof finish === 'string' && finish !== 'stop'))
             ) {
                 kind = 'justification';

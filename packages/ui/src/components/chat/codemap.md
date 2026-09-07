@@ -5,7 +5,7 @@ Implements the interactive chat surface: message timeline, composer/input, strea
 
 ## Design
 
-- **Session change ownership**: `sessionChangesController.ts` consumes revisioned session-tree records, with narrow cache subscriptions and scoped review/busy state. `SessionChangesCard.tsx` displays net files and actual capture limitations. `SessionChangesDiffDialog.tsx` reads the selected immutable revision; repository review remains separate. Card Undo/Redo uses the same captured operation set. See `docs/SESSION_CHANGES.md`.
+- **Session change ownership**: `sessionChangesController.ts` consumes revisioned session-tree records, with narrow cache subscriptions and scoped review/busy state. `SessionChangesCard.tsx` displays net files and actual capture limitations, including empty loading/error/partial states after completion and scoped Retry. Complete empty results stay hidden; undone results retain Redo. `SessionChangesDiffDialog.tsx` reads the selected immutable revision; repository review remains separate. Card Undo/Redo uses the same captured operation set. See `docs/SESSION_CHANGES.md`.
 
 - **Container + leaf split**: `ChatContainer.tsx` orchestrates state wiring, while specialized children (`MessageList`, `ChatInput`, `StatusRow*`, cards) handle focused rendering.
 - **Provider-stall recovery**: `StatusRowContainer.tsx` projects a confirmed semantic tool-input stall as an explicit Stop & Retry action. The action refetches and rechecks the exact pending call before a confirmed abort. An exact initial blank inference shell is instead stopped automatically after the watchdog's final recheck. Both hand off to the existing `PrimaryModelRecovery` card, and neither resends automatically.
@@ -51,7 +51,7 @@ Implements the interactive chat surface: message timeline, composer/input, strea
 - `HostPrimaryRecovery.tsx`: shared host-owned recovery status, Stop and explicit continuation controls. `PrimaryModelRecovery.tsx` retains manual fallback when host safeguards are unavailable or observation-only. `usePrimaryRecoveryStore` is a bounded low-frequency per-session projection store.
 
 `ThinkingSlider.tsx` owns the shared chat/recovery slider and Base UI popover.
-`thinkingSliderBehavior.ts` supplies the 60% detent with 18% damped preview;
+`thinkingSliderBehavior.ts` supplies the 55% detent with 45% damped preview;
 pointer previews remain local and commit only on release. Keyboard changes
 commit one native level. Chat selectors expose no synthetic Default choice.
 `lib/providers/chatThinking.ts` resolves the displayed level and new send
@@ -62,7 +62,9 @@ the normalized selection explicitly, without mount-time writes.
 The popup is centered over its text-only trigger; a stationary lightbulb precedes
 the selected effort inside the dropdown. The dropdown label slides and fades
 between levels over 180ms, with a slight blur; reduced motion swaps it immediately.
-Thumb and track are both 20px tall. A local damped spring smooths detent changes
+The track is 26px tall with a 22px thumb inset 2px on every side. A local damped spring smooths detent changes
 and is bypassed for reduced motion. The header lightning button toggles native
 Fast via existing provider adapters; unsupported models show it disabled with an
 explanation. Mobile inline adjustments keep the sheet open.
+
+- `ManagedTaskReadiness.tsx` observes canonical recovery/task identity and bounded child-title recovery while cards are hidden. `managedTaskTitle.ts` owns scalar per-session title subscriptions and the shared sidebar title resolver. `ManagedTaskList.tsx` reveals individually titled rows within their existing dispatch waves; startup/title errors stay outside the hidden card. `ManagedTaskReadiness.test.tsx` and `managedTaskTestFixture.tsx` exercise real mounted subscription ordering; `tests/visual-managed-dispatch` provides an isolated browser fixture. Normal sidebar placeholders retain the prompt preview until the single resolved title arrives.

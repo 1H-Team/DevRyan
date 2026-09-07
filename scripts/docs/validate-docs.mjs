@@ -1,5 +1,8 @@
 import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
+import { execFileSync } from "node:child_process"
+import { existsSync } from "node:fs"
+import { validateRepositoryLinks } from "./repository-links.mjs"
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..")
 const docsRoot = path.join(repoRoot, "packages", "docs")
@@ -71,6 +74,12 @@ async function run() {
     }
   }
 
+  const repositoryFiles = [...new Set(execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: repoRoot, encoding: 'utf8' }).split('\0'))]
+    .filter((file) => /\.mdx?$/.test(file) && !/(?:^|\/)(?:node_modules|dist|dist-bundle|target|\.cache|\.tmp)\//.test(file) && existsSync(path.join(repoRoot, file)))
+  const repository = validateRepositoryLinks(repoRoot, repositoryFiles, { siteRoutes: routeSet })
+  errors.push(...repository.errors)
+  for (const warning of repository.warnings) console.warn(`Docs warning: ${warning}`)
+
   if (errors.length > 0) {
     console.error("Docs validation failed:")
     for (const error of errors) {
@@ -79,7 +88,7 @@ async function run() {
     process.exit(1)
   }
 
-  console.log(`Docs validation passed: ${filePaths.length} pages, ${links.length} sidebar links.`)
+  console.log(`Docs validation passed: ${filePaths.length} pages, ${links.length} sidebar links; ${repositoryFiles.length} repository documents, ${repository.checked} local references.`)
 }
 
 run().catch((error) => {

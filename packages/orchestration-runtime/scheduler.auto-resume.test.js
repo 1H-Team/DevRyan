@@ -227,6 +227,8 @@ const record = (index, overrides = {}) => ({
 });
 
 const persistedState = (overrides = {}) => ({
+  recoveryCycleTaskId: 'dvr_task_1',
+  backupAttemptTaskId: null,
   revision: 3,
   enabled: true,
   state: 'planning',
@@ -326,6 +328,44 @@ describe('managed scheduler auto-resume lifecycle', () => {
     expect(harness.timers.timers.size).toBe(0);
   });
 
+  test.each([null, START + 5 * MINUTE])('backup limit (%s) waits only for primary, then opens a new fallback cycle', async (backupReset) => {
+    const primaryReset = START + 30 * MINUTE;
+    const harness = createHarness({
+      startResult: limited(primaryReset),
+      retryResults: [limited(backupReset), limited(START + 60 * MINUTE)],
+    });
+    const primary = await harness.park();
+    await harness.runDue();
+    expect(harness.attempts).toHaveLength(1);
+    const backupTask = harness.inPlaceRetries[0];
+    expect(harness.state(backupTask.taskId)).toMatchObject({
+      recoveryCycleTaskId: primary.taskId,
+      backupAttemptTaskId: backupTask.taskId,
+      nextAttemptAt: primaryReset + AUTO_RESUME_RESET_JITTER_MS,
+      target: { kind: 'original', providerId: primary.providerId, modelId: primary.modelId },
+    });
+    await harness.advance(10 * MINUTE);
+    expect(harness.attempts).toHaveLength(1);
+    await harness.advance(20 * MINUTE + AUTO_RESUME_RESET_JITTER_MS);
+    expect(harness.attempts.map((attempt) => attempt.modelId)).toEqual([
+      BACKUP.modelId, primary.modelId, BACKUP.modelId,
+    ]);
+    expect(harness.inPlaceRetries.every((task) => task.childSessionId === primary.childSessionId)).toBe(true);
+    await harness.scheduler.shutdown();
+  });
+
+  test('both limits without reset hints back off on primary instead of looping on backup', async () => {
+    const harness = createHarness({ retryResults: [limited()] });
+    const primary = await harness.park();
+    await harness.runDue();
+    expect(harness.attempts).toHaveLength(1);
+    expect(harness.state(harness.inPlaceRetries[0].taskId)).toMatchObject({
+      nextAttemptAt: START + 15 * MINUTE,
+      target: { kind: 'original', modelId: primary.modelId },
+    });
+    await harness.scheduler.shutdown();
+  });
+
   test('waits for the provider reset on the original when there is no backup', async () => {
     const resetAt = START + 30 * MINUTE;
     const harness = createHarness({ backup: null, startResult: limited(resetAt) });
@@ -418,7 +458,7 @@ describe('managed scheduler auto-resume lifecycle', () => {
     expect(late.scheduler.getDiagnostics().pendingAutoResumeCount).toBe(0);
   });
 
-  test('after two rejections in one window it waits for the original reset instead of probing again', async () => {
+  test('after primary and backup rejection it waits for the original reset without charging the primary window twice', async () => {
     const resetAt = START + 30 * MINUTE;
     const harness = createHarness({
       startResult: limited(resetAt),
@@ -433,7 +473,7 @@ describe('managed scheduler auto-resume lifecycle', () => {
     expect(harness.state(original.taskId)).toMatchObject({ state: 'superseded' });
     expect(harness.state(followUpTaskId)).toMatchObject({
       state: 'scheduled',
-      rejectionsInWindow: 2,
+      rejectionsInWindow: 1,
       windowResetAt: resetAt,
       resetAt,
       nextAttemptAt: resetAt + AUTO_RESUME_RESET_JITTER_MS,
@@ -805,6 +845,52 @@ describe('managed scheduler auto-resume restart re-arm', () => {
     };
     return { version: 1, tasks: [task, ...extraTasks], resultEnvelopes: [envelope] };
   };
+
+  test.each([true, false])('restores consumed backup bookkeeping (legacy=%s) before replanning', async (legacy) => {
+    const primary = record(1);
+    const backupTask = record(2, {
+      ...BACKUP, priorTaskId: primary.taskId, executionKind: 'retry_in_place', attempt: 2,
+      childSessionId: primary.childSessionId,
+    });
+    const primaryState = persistedState({
+      state: 'superseded', attemptCount: 1, lastAttemptTaskId: backupTask.taskId,
+      target: { kind: 'backup', ...BACKUP },
+    });
+    const backupState = persistedState({
+      recoveryCycleTaskId: primary.taskId, backupAttemptTaskId: backupTask.taskId,
+      attemptCount: 1, resetAt: START + 30 * MINUTE,
+      resetSource: 'opencode_status', state: 'scheduled',
+      nextAttemptAt: START + 10_000, target: { kind: 'backup', ...BACKUP },
+    });
+    if (legacy) {
+      for (const state of [primaryState, backupState]) {
+        delete state.recoveryCycleTaskId;
+        delete state.backupAttemptTaskId;
+      }
+    }
+    const snapshot = {
+      version: 1, tasks: [primary, backupTask],
+      resultEnvelopes: [
+        { ...createManagedTaskResultEnvelope(primary, { sequence: 1, createdAt: START, resumable: true }),
+          action: 'retry_in_place', acknowledgedAt: START, followUpTaskId: backupTask.taskId, autoResume: primaryState },
+        { ...createManagedTaskResultEnvelope(backupTask, { sequence: 2, createdAt: START, resumable: true }),
+          autoResume: backupState },
+      ],
+    };
+    const harness = createHarness({ persistence: snapshotPersistence(snapshot) });
+    await harness.scheduler.initialize();
+    await harness.advance(15_000);
+    expect(harness.attempts).toHaveLength(0);
+    expect(harness.state(backupTask.taskId)).toMatchObject({
+      recoveryCycleTaskId: primary.taskId, backupAttemptTaskId: backupTask.taskId,
+      target: { kind: 'original', modelId: primary.modelId },
+      nextAttemptAt: START + 30 * MINUTE + AUTO_RESUME_RESET_JITTER_MS,
+    });
+    await harness.advance(30 * MINUTE);
+    expect(harness.attempts).toHaveLength(1);
+    expect(harness.attempts[0].modelId).toBe(primary.modelId);
+    await harness.scheduler.shutdown();
+  });
 
   test('re-plans a planning state after the startup grace', async () => {
     const harness = createHarness({

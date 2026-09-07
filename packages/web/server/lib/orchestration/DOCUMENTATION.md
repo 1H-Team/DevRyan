@@ -108,3 +108,5 @@ verified empty-string wire value that clears configured agent effort. Undefined
 keeps omission, and explicit efforts pass through. Cursor SDK prompts retain
 their existing adapter contract. This applies to starts and same-child
 continuations, using the durable task's captured selection.
+
+Plan-card implementation starts additionally verify the available Executing Plans skill and preceding visible implementation statement in the bundled plugin before creating a pending dispatch barrier or submitting work. Active-context skill reuse is valid until compaction; unavailable/denied skills are skipped, while unreadable history/catalog evidence fails explicitly. The policy is provider-neutral and leaves specialist-specific skills with the child.

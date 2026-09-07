@@ -8,10 +8,10 @@
 
 ## Development
 
-Run the full local stack with:
+Use Node.js 22.13 or newer and the Bun version pinned in `package.json`. Install dependencies with `bun install --frozen-lockfile`, then run the full local stack with:
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 The dev orchestrator keeps the API, web build watcher, and UI typecheck watcher running. If a child process exits unexpectedly, it is restarted automatically. Press **Ctrl+C** in the terminal to stop everything.

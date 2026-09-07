@@ -1,0 +1,59 @@
+{
+  "date": "2026-09-07",
+  "inventoryFiles": 1561,
+  "inventoryHashes": "verified",
+  "checks": [
+    {
+      "log": "baseline.log",
+      "outcome": "passed",
+      "sha256": "91f37db93126c4b97d3ec0bc6a7d675b630a1402f85533ef45b89d597712c834"
+    },
+    {
+      "log": "final-validation.log",
+      "outcome": "passed",
+      "sha256": "61eabf9512dce57d9f658e3bdc20df41a8cad100907c97842a9213ec5f5241ca"
+    },
+    {
+      "log": "focused-final.log",
+      "outcome": "passed",
+      "sha256": "925d43488c60bbc09a658e27a6465567915158d198b5edd2f2fa45cd3056a79b"
+    },
+    {
+      "log": "build.log",
+      "outcome": "passed",
+      "sha256": "b09f5fdb5cc926fe85dc6a1d23e61a3f48bbad53ec898418cfe48a50106ee55e"
+    },
+    {
+      "log": "bundle.log",
+      "outcome": "passed",
+      "sha256": "d613a3901d82a83a8ae7db6283cf75805392819200079ee136733c9e2ca06a95"
+    },
+    {
+      "log": "frozen-install.log",
+      "outcome": "passed",
+      "sha256": "5bf7901ab4c4bd392024781ee8a7fd1c4f5d1c9f969609ef1a620b5cce3d8a7d"
+    },
+    {
+      "log": "artifact-verify.log",
+      "outcome": "passed",
+      "sha256": "bfd21956345bfb18b736ff4211f0bf48ae90c663b3c880de1756bdab1f358094"
+    },
+    {
+      "log": "artifact-smoke.log",
+      "outcome": "passed",
+      "sha256": "9246a370dacad57f5dddcbac62f3049485ce208fd24bee7f4843c898bb34e4f5"
+    },
+    {
+      "log": "docs-final.log",
+      "outcome": "passed",
+      "sha256": "4307327dc1b143ea555fc4006652e1a851aa0b1ed80f8612259e3345d80e2c22"
+    },
+    {
+      "log": "prompt-tests.log",
+      "outcome": "passed",
+      "sha256": "66c98052f9ff313143e24bed1f59be2200edbd9e1ca23051fc4c680d958e1d21"
+    }
+  ],
+  "uiEvidence": "ui-verification.json",
+  "limitations": "See README.md for unavailable release/live/platform acceptance and nonblocking warnings."
+}

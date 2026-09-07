@@ -1,6 +1,6 @@
 ---
 name: agent-browser
-description: Drive DevRyan's in-app browser to inspect, interact with, and visually verify websites. Use when website work needs browser navigation, screenshots, DOM inspection, interaction, or a final visual check.
+description: Inspect and visually verify websites with DevRyan's managed browser tool.
 ---
 
 # Agent Browser
@@ -41,5 +41,5 @@ If animation timing requires custom `eval`, check every `querySelector` result b
 
 - Reuse the same lease throughout one agent turn; do not launch or connect a separate browser.
 - Keep checks focused. Prefer interactive snapshots over repeatedly dumping the full page.
-- Treat the browser as shared-login infrastructure: leases are isolated tabs, but all DevRyan browser tabs deliberately share the `persist:openchamber-browser` cookie partition. Do not sign out, clear cookies, or change account-wide state unless the user asks.
+- Browser leases isolate tabs, not necessarily login state. Ordinary agent leases share a cookie partition; assigned branch previews use an owner-and-origin partition, and manual browsing uses a separate host-and-principal partition. Do not sign out, clear cookies, or change account-wide state unless the user asks.
 - A hidden lease is still live. Closing it promptly releases its webview, CDP connection, and daemon session.

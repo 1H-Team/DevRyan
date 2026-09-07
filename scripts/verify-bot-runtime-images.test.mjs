@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 import {
   BOT_RUNTIME_IMAGE_DEFINITIONS,
+  assembleBotRuntimeImages,
+  signBotRuntimeImage,
   collectBotRuntimeImageMetadata,
   createBotRuntimeImageBuildPlan,
   readBotRuntimeReleaseMetadata,
@@ -342,7 +344,7 @@ describe('Bot runtime release integration', () => {
       bumpScript,
       rootPackageSource,
       electronPackageSource,
-      electronAssetBuild,
+      electronManifestStage,
       electronMainBundle,
     ] = await Promise.all([
       fs.readFile(path.join(repositoryRoot, '.github/workflows/release.yml'), 'utf8'),
@@ -350,7 +352,7 @@ describe('Bot runtime release integration', () => {
       fs.readFile(path.join(repositoryRoot, 'package.json'), 'utf8'),
       fs.readFile(path.join(repositoryRoot, 'packages/electron/package.json'), 'utf8'),
       fs.readFile(
-        path.join(repositoryRoot, 'packages/electron/scripts/build-web-assets.mjs'),
+        path.join(repositoryRoot, 'packages/electron/scripts/stage-bot-manifest.mjs'),
         'utf8',
       ),
       fs.readFile(
@@ -374,12 +376,10 @@ describe('Bot runtime release integration', () => {
     assert.match(workflow, /cosign-installer@v4\.1\.2/);
     assert.match(workflow, /--check-anonymous/);
     assert.match(workflow, /DevRyan-bot-runtime-images-\$\{\{ needs\.create-release\.outputs\.version \}\}\.json/);
-    assert.equal(
-      electronPackage.scripts.package.includes('verify-bot-runtime-images.mjs'),
-      true,
-    );
-    assert.match(electronAssetBuild, /stageVerifiedBotRuntimeImagesManifest/);
-    assert.match(electronMainBundle, /readAndVerifyBotRuntimeImagesManifest/);
+    assert.equal(electronPackage.scripts['package:prepared'], 'node ./scripts/package-prepared.mjs');
+    assert.match(electronManifestStage, /stageVerifiedBotRuntimeImagesManifest/);
+    assert.match(electronManifestStage, /readAndVerifyBotRuntimeImagesManifest/);
+    assert.doesNotMatch(electronMainBundle, /readAndVerifyBotRuntimeImagesManifest/);
 
     for (const invalidVersion of ['1.2.3-RC.1', '1.2.3-release_candidate']) {
       const result = spawnSync(process.execPath, [
@@ -389,4 +389,45 @@ describe('Bot runtime release integration', () => {
       assert.notEqual(result.status, 0);
     }
   });
+});
+
+
+test('aggregation accepts only the six complete matching image results', async () => {
+  const metadata = await readBotRuntimeReleaseMetadata({ root: repositoryRoot, version: currentVersion });
+  const identity = { version: currentVersion, revision: sourceRevision, repositoryPrefix: 'ghcr.io/1h-team' };
+  const results = Object.entries(validManifest().images).map(([key, image]) => ({
+    version: 1, releaseId: currentVersion, sourceRevision, repositoryPrefix: identity.repositoryPrefix,
+    openCodeVersion: metadata.openCodeVersion, schemaVersion: metadata.schemaVersion, pluginHash: metadata.pluginHash, key, image,
+  }));
+  assert.equal(Object.keys((await assembleBotRuntimeImages({ ...identity, results })).images).length, 6);
+  for (const invalid of [results.slice(1), [...results.slice(1), results[1]], results.map((entry, i) => i ? entry : { ...entry, sourceRevision: 'f'.repeat(40) })]) {
+    await assert.rejects(assembleBotRuntimeImages({ ...identity, results: invalid }), { code: 'bot_runtime_image_results_invalid' });
+  }
+  const incomplete = structuredClone(results);
+  delete incomplete[0].image.platforms['linux/arm64'];
+  await assert.rejects(assembleBotRuntimeImages({ ...identity, results: incomplete }));
+});
+
+test('single image signing propagates signing failures and never emits a successful result', async () => {
+  const platform = (architecture, character) => ({ digest: digest(character), platform: { os: 'linux', architecture } });
+  const indexDocument = { mediaType: 'application/vnd.oci.image.index.v1+json', manifests: [
+    platform('amd64', 'a'), platform('arm64', 'b'),
+    ...[['a', 'c'], ['b', 'd']].map(([image, attestation]) => ({ digest: digest(attestation), annotations: {
+      'vnd.docker.reference.type': 'attestation-manifest', 'vnd.docker.reference.digest': digest(image),
+    } })),
+  ] };
+  const attestation = { layers: [
+    { digest: digest('e'), annotations: { 'in-toto.io/predicate-type': 'https://spdx.dev/Document' } },
+    { digest: digest('f'), annotations: { 'in-toto.io/predicate-type': 'https://slsa.dev/provenance/v1' } },
+  ] };
+  const options = { version: currentVersion, revision: sourceRevision, repositoryPrefix: 'ghcr.io/1h-team', key: 'supervisor', indexDigest: digest('9'),
+    environment: { GITHUB_ACTIONS: 'true', ACTIONS_ID_TOKEN_REQUEST_URL: 'fixture', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'fixture' },
+    runner: { capture: (_file, args) => Buffer.from(JSON.stringify(args.at(-1).endsWith(digest('9')) ? indexDocument : attestation)),
+      run: () => { throw new Error('signing failed'); } },
+  };
+  await assert.rejects(signBotRuntimeImage(options), /signing failed/);
+  const signatures = [];
+  const result = await signBotRuntimeImage({ ...options, runner: { ...options.runner, run: (_file, args) => signatures.push(args.at(-1)) } });
+  assert.equal(result.key, 'supervisor');
+  assert.equal(signatures.length, 3);
 });

@@ -378,6 +378,86 @@ const atomicWriteManifest = async (outputPath, manifest, fsPromises = fs) => {
   return resolved;
 };
 
+export async function signBotRuntimeImage({
+  version, revision, repositoryPrefix, key, indexDigest,
+  root = repositoryRoot, runner = defaultCommandRunner, environment = process.env, fsPromises = fs,
+} = {}) {
+  validateBuildIdentity({ version, revision, repositoryPrefix });
+  if (environment.GITHUB_ACTIONS !== 'true' || !environment.ACTIONS_ID_TOKEN_REQUEST_URL
+    || !environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
+    fail('Bot runtime image publication requires GitHub OIDC', 'bot_runtime_image_oidc_required');
+  }
+  const plan = createBotRuntimeImageBuildPlan({ version, revision, repositoryPrefix, root });
+  const build = plan.builds.find((entry) => entry.key === key);
+  if (!build) fail('Unknown Bot image', 'bot_runtime_image_build_input_invalid');
+  requireDigest(indexDigest, 'Bot runtime image index');
+  const metadata = await readBotRuntimeReleaseMetadata({ root, version, fsPromises });
+  const commandOptions = { cwd: root, env: environment };
+      const indexDocument = parseJson(
+        runner.capture('docker', [
+          'buildx',
+          'imagetools',
+          'inspect',
+          '--raw',
+          `${build.repository}@${indexDigest}`,
+        ], commandOptions),
+        `${build.name} image index`,
+      );
+      const imageMetadata = collectBotRuntimeImageMetadata({
+        repository: build.repository,
+        indexDigest,
+        indexDocument,
+        attestationDocuments: loadAttestationDocuments(
+          runner,
+          build.repository,
+          indexDocument,
+          commandOptions,
+        ),
+      });
+      const signedDigests = new Set([
+        imageMetadata.indexDigest,
+        ...Object.values(imageMetadata.platforms).map((platform) => platform.digest),
+      ]);
+      for (const digest of signedDigests) {
+        runner.run('cosign', ['sign', '--yes', `${build.repository}@${digest}`], commandOptions);
+      }
+      const image = {
+        name: build.name,
+        repository: build.repository,
+        indexDigest: imageMetadata.indexDigest,
+        platforms: imageMetadata.platforms,
+      };
+  return { version: 1, releaseId: version, sourceRevision: revision, repositoryPrefix,
+    openCodeVersion: metadata.openCodeVersion, schemaVersion: metadata.schemaVersion,
+    pluginHash: metadata.pluginHash, key, image };
+}
+
+export async function assembleBotRuntimeImages({
+  version, revision, repositoryPrefix, results, root = repositoryRoot,
+}) {
+  validateBuildIdentity({ version, revision, repositoryPrefix });
+  const metadata = await readBotRuntimeReleaseMetadata({ root, version });
+  if (!Array.isArray(results) || results.length !== BOT_RUNTIME_IMAGE_KEYS.length) {
+    fail('Expected every Bot image result', 'bot_runtime_image_results_invalid');
+  }
+  const images = {};
+  for (const result of results) {
+    if (!result || result.version !== 1 || !BOT_RUNTIME_IMAGE_KEYS.includes(result.key)
+      || Object.hasOwn(images, result.key) || result.releaseId !== version
+      || result.sourceRevision !== revision || result.repositoryPrefix !== repositoryPrefix
+      || result.openCodeVersion !== metadata.openCodeVersion
+      || result.schemaVersion !== metadata.schemaVersion || result.pluginHash !== metadata.pluginHash) {
+      fail('Duplicate, stale, or invalid Bot image result', 'bot_runtime_image_results_invalid');
+    }
+    images[result.key] = result.image;
+  }
+  return verifyBotRuntimeImagesManifest({
+    version: BOT_RUNTIME_RELEASE_MANIFEST_VERSION, channel: 'release', releaseId: version,
+    sourceRevision: revision, openCodeVersion: metadata.openCodeVersion,
+    schemaVersion: metadata.schemaVersion, pluginHash: metadata.pluginHash, images,
+  }, { expectedReleaseId: version, expectedRevision: revision, expectedRepositoryPrefix: repositoryPrefix });
+}
+
 export async function buildBotRuntimeImages({
   version,
   revision,
@@ -433,41 +513,13 @@ export async function buildBotRuntimeImages({
         buildMetadata['containerimage.digest'],
         `${build.name} index`,
       );
-      const indexDocument = parseJson(
-        runner.capture('docker', [
-          'buildx',
-          'imagetools',
-          'inspect',
-          '--raw',
-          `${build.repository}@${indexDigest}`,
-        ], commandOptions),
-        `${build.name} image index`,
-      );
-      const imageMetadata = collectBotRuntimeImageMetadata({
-        repository: build.repository,
-        indexDigest,
-        indexDocument,
-        attestationDocuments: loadAttestationDocuments(
-          runner,
-          build.repository,
-          indexDocument,
-          commandOptions,
-        ),
+      const result = await signBotRuntimeImage({
+        version, revision, repositoryPrefix, key: build.key, indexDigest,
+        root, runner, fsPromises, environment: commandOptions.env,
       });
-      const signedDigests = new Set([
-        imageMetadata.indexDigest,
-        ...Object.values(imageMetadata.platforms).map((platform) => platform.digest),
-      ]);
-      for (const digest of signedDigests) {
-        runner.run('cosign', ['sign', '--yes', `${build.repository}@${digest}`], commandOptions);
-      }
-      images[build.key] = {
-        name: build.name,
-        repository: build.repository,
-        indexDigest: imageMetadata.indexDigest,
-        platforms: imageMetadata.platforms,
-      };
+      images[build.key] = result.image;
     }
+
     const manifest = verifyBotRuntimeImagesManifest({
       version: BOT_RUNTIME_RELEASE_MANIFEST_VERSION,
       channel: 'release',

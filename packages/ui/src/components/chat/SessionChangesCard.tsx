@@ -55,6 +55,7 @@ export interface SessionChangesCardViewProps {
     subagentCount: number;
     statusMessage?: string | null;
     onOpenRepository?: () => void;
+    onRetry?: () => void;
     mode: SessionChangesMode;
     undoDisabled: boolean;
     disabledReason: string | null;
@@ -75,6 +76,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
     subagentCount,
     statusMessage,
     onOpenRepository,
+    onRetry,
     mode,
     undoDisabled,
     disabledReason,
@@ -207,7 +209,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                         <RiFileEditLine className="mt-0.5 size-3.5 shrink-0 text-[var(--primary-base)]" aria-hidden="true" />
                         <div className="flex min-w-0 flex-1 flex-col">
                             <h3 className="truncate typography-ui-label font-semibold text-foreground">{title}</h3>
-                            {mode === 'changes' ? (
+                            {mode === 'changes' && fileCount > 0 ? (
                                 <Popover.Root open={isReviewOpen} onOpenChange={setIsReviewOpen}>
                                     <Popover.Trigger
                                         render={
@@ -282,9 +284,10 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                             </Button>
                         </div>
                     ) : null}
-                    {mode === 'changes' && statusMessage ? (
+                    {statusMessage ? (
                         <p className="border-t border-border/70 px-3 py-1.5 typography-meta text-muted-foreground">
                             {statusMessage}
+                            {onRetry ? <button type="button" className="ml-2 underline" data-session-changes-action="retry" onClick={onRetry}>{t('chat.sessionChanges.retry')}</button> : null}
                             {onOpenRepository ? <button type="button" className="ml-2 underline" onClick={onOpenRepository}>{t('chat.sessionChanges.repositoryReview')}</button> : null}
                         </p>
                     ) : null}
@@ -342,6 +345,7 @@ export const SessionChangesCard: React.FC<SessionChangesCardProps> = React.memo(
             files={controller.files}
             subagentCount={controller.subagentCount}
             statusMessage={controller.statusMessage}
+            onRetry={controller.retry}
             onOpenRepository={controller.openRepository}
             mode={controller.state.mode}
             undoDisabled={controller.state.undoDisabled}

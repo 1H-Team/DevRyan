@@ -26,7 +26,7 @@ import type { StreamPhase, ToolPopupContent } from './message/types';
 import { deriveMessageRole } from './message/messageRole';
 import { extractTextContent, filterVisibleParts, normalizeParts } from './message/partUtils';
 import { normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
-import { flattenAssistantTextParts } from '@/lib/messages/messageText';
+import { getMessageCopyText } from '@/lib/messages/messageCopyText';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type {
     ChatMessageEntry,
@@ -774,47 +774,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     const messageTextContent = React.useMemo(() => {
         if (isUser) {
-            const shellOutputs = displayParts
-                .filter((part): part is Part & { type: 'text'; shellAction?: { output?: unknown } } => part.type === 'text')
-                .map((part) => {
-                    const output = part.shellAction?.output;
-                    return typeof output === 'string' ? output.trim() : '';
-                })
-                .filter((output) => output.length > 0);
-
-            if (shellOutputs.length > 0) {
-                return shellOutputs.join('\n\n');
-            }
-
-            const shellCommands = displayParts
-                .filter((part): part is Part & { type: 'text'; shellAction?: { command?: unknown } } => part.type === 'text')
-                .map((part) => {
-                    const command = part.shellAction?.command;
-                    return typeof command === 'string' ? command.trim() : '';
-                })
-                .filter((command) => command.length > 0);
-
-            if (shellCommands.length > 0) {
-                return shellCommands.join('\n');
-            }
-
-            const textParts = displayParts
-                .filter((part): part is Part & { type: 'text'; text?: string; content?: string } => part.type === 'text')
-                .map((part) => {
-                    const text = part.text || part.content || '';
-                    return text.trim();
-                })
-                .filter((text) => text.length > 0);
-
-            const combined = textParts.join('\n');
-            return combined.replace(/\n\s*\n+/g, '\n');
+            return getMessageCopyText(displayParts, 'user');
         }
 
         if (assistantErrorText && assistantErrorText.trim().length > 0) {
             return assistantErrorText;
         }
 
-        return flattenAssistantTextParts(displayParts);
+        return getMessageCopyText(displayParts, 'assistant');
     }, [assistantErrorText, displayParts, isUser]);
 
     const hasTextContent = messageTextContent.length > 0;

@@ -3,7 +3,7 @@
 Run from the repository root using the Node and Bun versions declared in `package.json`. Install the lockfile dependencies with `bun install --frozen-lockfile`. No extra QA dependency is required; the browser driver reuses Electron and `ws` already installed in its workspace.
 
 ```sh
-bun run build:ui
+bun run type-check:ui
 bun run build:web
 bun run --cwd packages/electron build:web-assets
 bun run qa
@@ -43,7 +43,7 @@ Run from the root of a clean, committed DevRyan checkout. Use a separate disposa
 
 ```sh
 bun install --frozen-lockfile --backend=copyfile
-bun run build:ui
+bun run type-check:ui
 bun run build:web
 bun run --cwd packages/electron build:native-helpers
 

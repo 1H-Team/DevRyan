@@ -141,6 +141,150 @@ const replyingAssistant = (id, parentID) => ({
   parts: [{ type: 'text', text: 'Inspected the requested scope.' }],
 });
 
+describe('approved-plan implementation startup', () => {
+  const setup = async ({ model = 'gpt-6-astra', loaded = false, statement = false, skills, permission } = {}) => {
+    const skillPart = {
+      type: 'tool', tool: 'skill', callID: 'call_skill',
+      state: { status: 'completed', input: { name: 'executing-plans' }, output: 'Full execution workflow instructions.', time: {} },
+    };
+    const parent = maintenanceUser('msg_003', [{
+      type: 'text', synthetic: true,
+      text: `${'[openchamber-plan-action:v1] '}${JSON.stringify({ action: 'implement', sourceSessionId: 'ses_root', sourceMessageId: 'msg_002', planIndex: 0 })}`,
+    }]);
+    const assistant = replyingAssistant('msg_004', parent.info.id);
+    assistant.info.modelID = model;
+    assistant.parts = [
+      ...(statement ? [{ type: 'text', text: 'I will implement the feedback change and verify its visible states.' }] : []),
+      { type: 'tool', tool: 'devryan_task', callID: 'call_start', state: { status: 'running', input: { action: 'start' } } },
+    ];
+    const records = [planUser(), { ...replyingAssistant('msg_002', 'msg_001'), parts: loaded ? [skillPart] : [] }, parent, assistant];
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      return rpcResponse(request.method === 'submit'
+        ? { task: { taskId: 'dvr_task_fixture', status: 'starting' } }
+        : { state: 'clear', taskIds: [] });
+    }));
+    const client = {
+      session: { messages: vi.fn(async () => ({ data: records })) },
+      app: {
+        skills: vi.fn(async () => ({ data: skills ?? [{ name: 'Executing Plans', location: '/fixture/skills/executing-plans/SKILL.md' }] })),
+        agents: vi.fn(async () => ({ data: [
+          { name: 'orchestrator', permission },
+          { name: 'designer', model: { providerID: 'openai', modelID: model } },
+        ] })),
+      },
+    };
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client, directory: '/workspace' });
+    const args = { action: 'start', agent: 'designer', label: 'Feedback Chat Greeting and Form', prompt: 'Implement the approved feedback change.', provider_id: 'openai', model_id: model };
+    return {
+      records, assistant, skillPart, requests, client, plugin, args,
+      check: () => plugin['tool.execute.before']({ tool: 'devryan_task', sessionID: 'ses_root', callID: 'call_start' }, { args }),
+      start: () => plugin.tool.devryan_task.execute(args, context({ messageID: 'msg_004' })),
+    };
+  };
+
+  it.each(['gpt-6-astra', 'gpt-5.6-sol'])('requires the workflow and introductory statement for %s before registering dispatch', async (model) => {
+    const f = await setup({ model });
+    await expect(f.check()).rejects.toMatchObject({ details: { skillRequired: true, statementRequired: true } });
+    expect(f.requests).toEqual([]);
+    // Rejection leaves no pending start: a subsequent work hook does not hang.
+    await expect(f.plugin['tool.execute.before']({ tool: 'read', sessionID: 'ses_root', callID: 'call_read' }, { args: {} })).resolves.toBeUndefined();
+    expect(f.requests.map((request) => request.method)).toEqual(['barrier_status']);
+    f.records[1].parts.push(f.skillPart);
+    f.assistant.parts.unshift({ type: 'text', text: 'I will implement the feedback change and verify it.' });
+    await f.check();
+    await f.start();
+    expect(f.requests.filter((request) => request.method === 'submit')).toHaveLength(1);
+    expect(f.requests.at(-1).params.dispatchCallId).toBe('call_start');
+  });
+
+  it('resolves the native skill catalog through the installed legacy SDK transport', async () => {
+    const f = await setup({ statement: true });
+    const requests = [];
+    const native = createOpencodeClient({
+      baseUrl: 'http://native-catalog.invalid',
+      fetch: async (request) => {
+        const url = new URL(request.url);
+        requests.push({ path: url.pathname, directory: url.searchParams.get('directory') });
+        return Response.json(url.pathname === '/skill'
+          ? [{ name: 'Executing Plans', location: '/fixture/executing-plans/SKILL.md' }]
+          : [{ name: 'orchestrator' }]);
+      },
+    });
+    f.client.app = native.app;
+    await expect(f.check()).rejects.toMatchObject({ details: { skillRequired: true, statementRequired: false } });
+    expect(requests).toEqual([
+      { path: '/skill', directory: '/workspace' },
+      { path: '/agent', directory: '/workspace' },
+    ]);
+    expect(f.requests).toEqual([]);
+    f.records[1].parts.push(f.skillPart);
+    await f.check();
+  });
+
+  it('also guards a direct start when a host omits the before hook', async () => {
+    const f = await setup();
+    await expect(f.start()).rejects.toMatchObject({ code: 'DEVRYAN_TOOL_INPUT_INVALID' });
+    expect(f.requests).toEqual([]);
+  });
+
+  it('reuses a full execution skill loaded during planning', async () => {
+    const f = await setup({ loaded: true, statement: true });
+    await f.check();
+    await f.start();
+    expect(f.requests.filter((request) => request.method === 'submit')).toHaveLength(1);
+  });
+
+  it.each(['compacted', 'reuse-marker', 'failed'])('does not mistake %s skill output for full active content', async (kind) => {
+    const f = await setup({ loaded: true, statement: true });
+    if (kind === 'compacted') f.skillPart.state.time.compacted = 123;
+    if (kind === 'reuse-marker') f.skillPart.state.output = '<devryan_skill_reuse>Existing content</devryan_skill_reuse>';
+    if (kind === 'failed') f.skillPart.state.status = 'error';
+    await expect(f.check()).rejects.toMatchObject({ details: { skillRequired: true, statementRequired: false } });
+  });
+
+  it('does not reuse skill content before the active compaction summary', async () => {
+    const f = await setup({ loaded: true, statement: true });
+    f.records.splice(2, 0, { info: { id: 'msg_002_summary', role: 'assistant', summary: true }, parts: [] });
+    await expect(f.check()).rejects.toMatchObject({ details: { skillRequired: true } });
+  });
+
+  it('continues when Executing Plans is not installed', async () => {
+    const f = await setup({ skills: [], statement: true });
+    await f.check();
+    await f.start();
+    expect(f.requests.filter((request) => request.method === 'submit')).toHaveLength(1);
+  });
+
+  it('does not require a workflow that the active agent cannot load', async () => {
+    const f = await setup({ statement: true, permission: [{ permission: 'skill', pattern: '*', action: 'deny' }] });
+    await f.check();
+    await f.start();
+    expect(f.requests.filter((request) => request.method === 'submit')).toHaveLength(1);
+  });
+
+  it('rejects a statement after the dispatch or from an earlier user turn', async () => {
+    const f = await setup({ loaded: true });
+    f.records[1].parts.push({ type: 'text', text: 'I will investigate.' });
+    f.assistant.parts.push({ type: 'text', text: 'I will implement the change.' });
+    await expect(f.check()).rejects.toMatchObject({ details: { skillRequired: false, statementRequired: true } });
+    await expect(f.start()).rejects.toMatchObject({ details: { statementRequired: true } });
+    expect(f.requests).toEqual([]);
+  });
+
+  it('does not reapply startup to a subsequent admitted wave', async () => {
+    const f = await setup();
+    f.records.splice(3, 0, {
+      ...replyingAssistant('msg_003_previous', 'msg_003'),
+      parts: [{ type: 'tool', tool: 'devryan_task', state: { status: 'completed', input: { action: 'start' }, output: '{"dispatched":true}' } }],
+    });
+    await f.check();
+    expect(f.client.app.skills).not.toHaveBeenCalled();
+  });
+});
+
 describe('Plan authority across managed maintenance', () => {
   // Use the installed legacy SDK injected into native plugins. Its generated
   // method accepts path.id and passes query.before through, despite the older
@@ -504,6 +648,7 @@ describe('Plan authority across managed maintenance', () => {
     ];
     const harness = await createWakeHarness({ records });
     await expect(harness.dispatch('designer', 'msg_004')).rejects.toMatchObject({ code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED' });
+    harness.client.app = { skills: async () => ({ data: [] }) };
     await harness.dispatch('designer', 'msg_006');
     expect(harness.requests.find(({ method }) => method === 'submit').params.readOnly).toBe(false);
   });

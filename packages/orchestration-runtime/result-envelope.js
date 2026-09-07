@@ -108,6 +108,11 @@ export const validateManagedTaskAutoResume = (value) => {
   const lastAttemptTaskId = value.lastAttemptTaskId ?? null;
   assertNullableString(lastAttemptTaskId, 'autoResume.lastAttemptTaskId', { prefix: 'dvr_task_' });
 
+  const recoveryCycleTaskId = value.recoveryCycleTaskId ?? null;
+  const backupAttemptTaskId = value.backupAttemptTaskId ?? null;
+  assertNullableString(recoveryCycleTaskId, 'autoResume.recoveryCycleTaskId', { prefix: 'dvr_task_' });
+  assertNullableString(backupAttemptTaskId, 'autoResume.backupAttemptTaskId', { prefix: 'dvr_task_' });
+
   let target = null;
   if (value.target !== null && value.target !== undefined) {
     if (!isRecord(value.target)) {
@@ -156,6 +161,8 @@ export const validateManagedTaskAutoResume = (value) => {
     resetAt,
     resetSource,
     target,
+    recoveryCycleTaskId,
+    backupAttemptTaskId,
     lastAttemptTaskId,
     lastAttemptAt,
     lastError,

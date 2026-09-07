@@ -27,6 +27,16 @@ import {
 import { navigateToManagedTaskChild } from './managedTaskNavigation';
 import { getSameChildFollowUpTaskId } from './managedTaskRetryLineage';
 import type { CursorNativeTaskDispatch } from './cursorNativeTaskDispatch';
+import { managedTitleFixture, renderManagedTaskMarkup } from './managedTaskTestFixture';
+
+const syncModule = { ...(await import('@/sync/sync-context')) };
+mock.module('@/sync/sync-context', () => ({
+  ...syncModule,
+  useDirectoryStore: () => managedTitleFixture,
+  useSessionStatus: () => undefined,
+  useSyncResyncSession: () => async () => undefined,
+  setActiveSession: () => undefined,
+}));
 
 mock.module('@/components/ui/ProviderLogo', () => ({
   ProviderLogo: ({ providerId }: { providerId: string }) => React.createElement('img', { src: `/logos/${providerId}.svg` }),
@@ -643,7 +653,7 @@ describe('managed task presentation', () => {
     expect(source).toContain('const agentLabel = formatAgentLabel(group.agent);');
     expect(source).toContain('aria-label={agentLabel}');
     expect(source).toContain('{agentLabel}</span>');
-    expect(source).toContain('<ManagedTaskRow key={taskId} taskId={taskId}');
+    expect(source).toContain('<ManagedTaskRow key={candidate.key} taskId={presentation.taskId}');
   });
 
   test('collects fresh-child dispatches while omitting same-child resume and wait controls', () => {
@@ -978,7 +988,7 @@ describe('managed task presentation', () => {
     },
   });
 
-  test('wave spanning two assistant messages renders one card grouped by agent', () => {
+  test('wave spanning two assistant messages renders one card grouped by ready agent', async () => {
     const projections = resolveManagedTaskTurnProjection([
       {
         messageId: 'assistant-explorer',
@@ -1016,14 +1026,14 @@ describe('managed task presentation', () => {
     // The still-provisional fixer start joins the open wave's card too.
     expect(projections[0]?.pendingDispatches.map((dispatch) => dispatch.partId)).toEqual(['fixer-start']);
 
-    const html = renderToStaticMarkup(
+    const html = await renderManagedTaskMarkup(
       <I18nProvider>
         <ManagedTaskList
           taskIds={projections[0]!.taskIds}
           pendingDispatches={projections[0]!.pendingDispatches}
           fallbackTasks={projections[0]!.fallbackTasks}
         />
-      </I18nProvider>,
+      </I18nProvider>, projections[0]!.fallbackTasks,
     );
 
     expect(html.match(/data-managed-task-card="true"/g)).toHaveLength(1);
@@ -1031,12 +1041,12 @@ describe('managed task presentation', () => {
     expect(html.match(/data-managed-task-fallback-id=/g)).toHaveLength(2);
     expect(html).toContain('Explorer');
     expect(html).toContain('Designer');
-    expect(html).toContain('Fixer');
+    expect(html).not.toContain('Fixer'); // its child/title is not ready yet
     expect(html).toContain('Inspect Runtime');
     expect(html).toContain('Review Layout');
   });
 
-  test('second wave after acknowledgement renders a second card', () => {
+  test('second wave after acknowledgement renders a second card', async () => {
     const waves: Record<string, string> = {
       dvr_task_explorer: 'dvr_wave_first',
       dvr_task_designer: 'dvr_wave_second',
@@ -1078,7 +1088,7 @@ describe('managed task presentation', () => {
       ['assistant-designer', 'dvr_wave_second', ['dvr_task_designer']],
     ]);
 
-    const html = renderToStaticMarkup(
+    const html = await renderManagedTaskMarkup(
       <I18nProvider>
         {projections.map((projection) => (
           <ManagedTaskList
@@ -1088,7 +1098,7 @@ describe('managed task presentation', () => {
             fallbackTasks={projection.fallbackTasks}
           />
         ))}
-      </I18nProvider>,
+      </I18nProvider>, projections.flatMap((projection) => projection.fallbackTasks),
     );
 
     expect(html.match(/data-managed-task-card="true"/g)).toHaveLength(2);
@@ -1240,6 +1250,7 @@ describe('managed task presentation', () => {
     const messageListSource = readFileSync(fileURLToPath(new URL('./MessageList.tsx', import.meta.url)), 'utf8');
     const messageBodySource = readFileSync(fileURLToPath(new URL('./message/MessageBody.tsx', import.meta.url)), 'utf8');
     const managedTaskListSource = readFileSync(fileURLToPath(new URL('./ManagedTaskList.tsx', import.meta.url)), 'utf8');
+    const readinessSource = readFileSync(fileURLToPath(new URL('./ManagedTaskReadiness.tsx', import.meta.url)), 'utf8');
 
     expect(messageListSource).toContain('resolveManagedTaskTurnProjection');
     expect(messageListSource).toContain('managedTaskProjectionsByMessageId');
@@ -1253,14 +1264,14 @@ describe('managed task presentation', () => {
     expect(messageBodySource).toContain("shouldRecoverMissingManagedDispatches = streamPhase === 'completed'");
     expect(messageBodySource).toContain('recoverMissingDispatches={shouldRecoverMissingManagedDispatches}');
     expect(messageBodySource).not.toContain('recoverMissingDispatches={isMessageCompleted}');
-    expect(managedTaskListSource).toContain('managedOrchestrationSelectors.taskIdForRecovery(task.taskId');
-    expect(managedTaskListSource).toContain('<ManagedTaskReconciledFallbackRow');
-    expect(managedTaskListSource).toContain('managedOrchestrationSelectors.taskIdForDispatchCall');
-    expect(managedTaskListSource).toContain('fallbackTasksByDispatchCallId.get(dispatch.dispatchCallId)');
-    expect(managedTaskListSource).toContain('loadSnapshot({ rootSessionId })');
+    expect(readinessSource).toContain('managedOrchestrationSelectors.taskIdForRecovery(sourceId');
+    expect(managedTaskListSource).toContain('<ManagedTaskReadiness');
+    expect(readinessSource).toContain('managedOrchestrationSelectors.taskIdForDispatchCall');
+    expect(managedTaskListSource).toContain('fallbackTasksByDispatchCallId.get(pending.dispatchCallId)');
+    expect(readinessSource).toContain('loadSnapshot({ rootSessionId })');
   });
 
-  test('renders five same-turn task rows across two agents inside one Agent Dispatch card', () => {
+  test('renders five same-turn task rows across two agents inside one Agent Dispatch card', async () => {
     const fallbacks = [
       {
         partId: 'fixer-start',
@@ -1313,18 +1324,19 @@ describe('managed task presentation', () => {
         directory: '/workspace',
       },
     ];
-    const html = renderToStaticMarkup(
+    const html = await renderManagedTaskMarkup(
       <I18nProvider>
         <ManagedTaskList
           taskIds={fallbacks.map((task) => task.taskId)}
           fallbackTasks={fallbacks}
         />
-      </I18nProvider>,
+      </I18nProvider>, fallbacks,
     );
 
     expect(html.match(/data-managed-task-card="true"/g)).toHaveLength(1);
     expect(html).toContain('relative isolate overflow-hidden rounded-xl border border-[color:var(--managed-task-card-border)]');
-    expect(html).toContain('--managed-task-card-border:color-mix(in srgb, var(--primary-base) 16%, var(--border))');
+    expect(readFileSync(fileURLToPath(new URL('./ManagedTaskList.tsx', import.meta.url)), 'utf8'))
+      .toContain("'--managed-task-card-border': 'color-mix(in srgb, var(--primary-base) 16%, var(--border))'");
     // The card border must be a real box-model border, not an inset-shadow overlay: overflow:hidden
     // (forced on mobile) clips child paint, so an ::after shadow border gets its bottom edge cut off
     // once several sub-agent rows make the card tall enough to land on a fractional pixel height.
@@ -1422,7 +1434,7 @@ describe('managed task presentation', () => {
     });
   });
 
-  test('reconstructs the latest persisted task row from managed tool results after a runtime restart', () => {
+  test('reconstructs the latest persisted task row from managed tool results after a runtime restart', async () => {
     const task = {
       taskId: 'dvr_task_restart',
       dispatchCallId: 'call_restart',
@@ -1466,10 +1478,10 @@ describe('managed task presentation', () => {
       directory: '/workspace',
     }]);
 
-    const html = renderToStaticMarkup(
+    const html = await renderManagedTaskMarkup(
       <I18nProvider>
         <ManagedTaskList taskIds={['dvr_task_restart']} fallbackTasks={fallbacks} />
-      </I18nProvider>,
+      </I18nProvider>, fallbacks,
     );
     expect(html).toContain('Oracle');
     expect(html).toContain('Review Error Precedence Contract');
@@ -1534,7 +1546,7 @@ describe('managed task presentation', () => {
     });
   });
 
-  test('renders a provisional dispatch without exposing child navigation', () => {
+  test('hides a provisional dispatch until the child title is available', () => {
     const html = renderToStaticMarkup(
       <I18nProvider>
         <ManagedTaskPreparingRow dispatch={{
@@ -1547,8 +1559,7 @@ describe('managed task presentation', () => {
       </I18nProvider>,
     );
 
-    expect(html).toContain('Locate Chat UI');
-    expect(html).toContain('Preparing...');
+    expect(html).toBe('');
     expect(html).not.toContain('Open Subtask');
   });
 

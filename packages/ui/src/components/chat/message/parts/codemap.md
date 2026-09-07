@@ -4,6 +4,8 @@
 Contains renderers for individual chat message part types (text, tool, attachments, etc.).
 
 ## Design
+
+`toolDiffPreview.ts` owns the 2,000-line / 262,144 UTF-16-unit raw-source budget and deferred synthetic write patches. `RawPatchFallback.tsx` displays bounded text with localized truncation/download controls; `toolDiffDownload.ts` owns full-source Blob downloads and URL cleanup. The same guard applies before header statistics, file splitting, line navigation, and rich rendering.
 Part-dispatch pattern chooses a specialized renderer per part type.
 Tool diff parsing lives in `toolPartDiffEntries.ts` so `ToolPart.tsx` remains a React-only component module for fast refresh.
 Completed assistant image references and finalized image-tool metadata are projected by `generatedImageResults.ts`. `GeneratedImageResult.tsx` owns the one response-level lazy gallery, `assistantImageGalleryPresentation.ts` owns its pure layout/size/popup projection, `assistantImageLoading.ts` owns runtime-specific preparation/blob lifecycle, and `useNearViewport.ts` gates historical network work. `AssistantTextPart.tsx` removes image-loading syntax and compact tool rows never mount duplicate previews.

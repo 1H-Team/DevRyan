@@ -126,6 +126,8 @@ describe('managed task result envelopes', () => {
       resetAt: null,
       resetSource: null,
       target: null,
+      recoveryCycleTaskId: null,
+      backupAttemptTaskId: null,
       lastAttemptTaskId: null,
       lastAttemptAt: null,
       lastError: null,
@@ -133,6 +135,13 @@ describe('managed task result envelopes', () => {
       reason: null,
     });
     expect(normalized).not.toBe(minimal);
+    expect(validateManagedTaskAutoResume({
+      ...minimal, recoveryCycleTaskId: 'dvr_task_primary', backupAttemptTaskId: 'dvr_task_backup',
+    })).toMatchObject({ recoveryCycleTaskId: 'dvr_task_primary', backupAttemptTaskId: 'dvr_task_backup' });
+    for (const field of ['recoveryCycleTaskId', 'backupAttemptTaskId']) {
+      expect(() => validateManagedTaskAutoResume({ ...minimal, [field]: 'ses_invalid' }))
+        .toThrow(`autoResume.${field} must start with dvr_task_`);
+    }
 
     const full = {
       ...minimal,

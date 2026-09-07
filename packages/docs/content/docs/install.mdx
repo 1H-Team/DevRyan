@@ -1,28 +1,28 @@
 ---
 title: Install
-description: Install OpenChamber for desktop, web,.
+description: Install DevRyan for desktop or run its web interface from source.
 ---
 
 # Install
 
-OpenChamber has three main surfaces:
-
-- desktop app for macOS
-- CLI-hosted web app with installable PWA
-
-## Prerequisite
-
-Install [OpenCode](https://opencode.ai) first.
-
-## Web + PWA
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/openchamber/openchamber/main/scripts/install.sh | bash
-openchamber --ui-password be-creative-here
-```
-
-Then open the URL printed by the CLI (usually `http://localhost:3000`).
+DevRyan supports a macOS desktop app and a CLI-hosted web app with an installable PWA.
 
 ## Desktop
 
-Download the latest desktop build from the GitHub releases page or the OpenChamber download page.
+Download a `DevRyan-*` desktop asset from [DevRyan releases](https://github.com/1H-Team/DevRyan/releases). Electron is the primary desktop runtime; legacy Tauri artifacts support existing-install migration.
+
+## Web from source
+
+Install [OpenCode](https://opencode.ai), Node.js 22.13 or newer, and the Bun version declared in the repository's `package.json`.
+
+```bash
+git clone https://github.com/1H-Team/DevRyan.git
+cd DevRyan
+bun install --frozen-lockfile
+bun run build
+bun run start:web
+```
+
+Open the URL printed by the CLI (usually `http://localhost:3000`). For command options, run `bun packages/web/bin/cli.js --help` from the checkout.
+
+The executable name `openchamber` and package identity `@openchamber/web` are retained for compatibility. Throughout these docs, a global `openchamber` command can be replaced by `bun packages/web/bin/cli.js` from a built checkout. Use DevRyan's own release artifacts or source; upstream OpenChamber installers install a different product.

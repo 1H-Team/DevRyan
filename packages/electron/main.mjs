@@ -1,3 +1,5 @@
+import { createDesktopMenu } from './desktop-menu.mjs';
+import { createNativeNotifications } from './native-notifications.mjs';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, safeStorage, session, shell, systemPreferences, WebContentsView } from 'electron';
 import contextMenu from 'electron-context-menu';
 import log from 'electron-log/main.js';
@@ -53,7 +55,7 @@ import {
   quitConfirmationMessage,
   shouldRequireQuitConfirmation,
 } from './quit-risk.mjs';
-import { persistWindowState } from './window-state-persistence.mjs';
+import { createDesktopSettings } from './desktop-settings.mjs';
 import {
   buildBotStartupAttentionHtml as buildBotStartupAttentionHtmlFromSettings,
   buildStartupErrorHtml as buildStartupErrorHtmlFromSettings,
@@ -252,7 +254,6 @@ const state = {
   unreachableHosts: new Set(),
   windowCounter: 1,
   focusedWindowIds: new Set(),
-  windowGeometryRevisions: new Map(),
   miniChatWindowsBySession: new Map(),
   sshStatuses: new Map(),
   sshLogs: new Map(),
@@ -453,12 +454,10 @@ const refreshQuitRiskFlags = async () => {
   }));
 };
 
-const settingsFilePath = () => {
-  if (typeof process.env.OPENCHAMBER_DATA_DIR === 'string' && process.env.OPENCHAMBER_DATA_DIR.trim()) {
-    return path.join(process.env.OPENCHAMBER_DATA_DIR.trim(), 'settings.json');
-  }
-  return path.join(os.homedir(), '.config', 'openchamber', 'settings.json');
-};
+const { settingsFilePath, readSettingsRoot, mutateSettingsRoot, normalizeHostUrl, readDesktopHostsConfig, writeDesktopHostsConfig, readWindowState, writeWindowState, debounceWindowStatePersist } = createDesktopSettings({
+  fs, fsp, os, process, log, getMainWindow: () => state.mainWindow,
+  minWidth: MIN_WINDOW_WIDTH, minHeight: MIN_WINDOW_HEIGHT, LOCAL_HOST_ID,
+});
 
 const dataRootDirectory = () => path.dirname(settingsFilePath());
 
@@ -526,33 +525,6 @@ const speechManager = new MacosSpeechManager({
   emit: (event, detail) => emitToAllWindows(event, detail),
 });
 
-const readJsonFile = (filePath) => {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch (error) {
-    if (error && error.code === 'ENOENT') return {};
-    // Parse errors can happen if a concurrent writer just truncated the file
-    // and hasn't finished writing yet. Log loudly so we notice, then return
-    // {} as before. Writes are atomic (tmp + rename) so this race is rare.
-    log.warn?.('[electron] failed to read JSON file', filePath, error);
-    return {};
-  }
-};
-
-const writeJsonFile = async (filePath, data) => {
-  await fsp.mkdir(path.dirname(filePath), { recursive: true });
-  // Atomic: write to a temp file then rename. Readers never see a partial
-  // JSON file that could parse-error and get coerced to {}.
-  const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  await fsp.writeFile(tmp, JSON.stringify(data, null, 2));
-  await fsp.rename(tmp, filePath);
-};
-
-const readSettingsRoot = () => {
-  const root = readJsonFile(settingsFilePath());
-  return root && typeof root === 'object' && !Array.isArray(root) ? root : {};
-};
-
 const readDesktopKeepAwakeEnabled = () => readSettingsRoot().desktopKeepAwakeEnabled === true;
 
 const applyDesktopKeepAwake = (enabled) => {
@@ -563,127 +535,6 @@ const applyDesktopKeepAwake = (enabled) => {
 
 const releaseDesktopKeepAwake = () => {
   keepAwakeController.stop();
-};
-
-// Serializes read-modify-write of the settings file within this process.
-// Multiple call sites (spawnLocalServer, writeDesktopHostsConfig, theme
-// preference saves, ssh manager imports, etc.) would otherwise have their
-// RMW pairs interleave across awaits, letting one writer's stale copy
-// overwrite another writer's just-persisted changes.
-let settingsMutationChain = Promise.resolve();
-const mutateSettingsRoot = (mutator) => {
-  const next = settingsMutationChain.then(async () => {
-    const current = readSettingsRoot();
-    const result = await mutator(current);
-    const nextRoot = result ?? current;
-    await writeJsonFile(settingsFilePath(), nextRoot);
-  });
-  // Keep the chain alive even if one mutator throws.
-  settingsMutationChain = next.catch(() => {});
-  return next;
-};
-
-const writeSettingsRoot = async (root) => writeJsonFile(settingsFilePath(), root);
-
-const normalizeHostUrl = (raw) => {
-  const trimmed = typeof raw === 'string' ? raw.trim() : '';
-  if (!trimmed) return null;
-  try {
-    const parsed = new URL(trimmed);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
-    parsed.hash = '';
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-};
-
-const sanitizeHostUrlForStorage = (raw) => normalizeHostUrl(raw);
-
-const readDesktopHostsConfig = () => {
-  const root = readSettingsRoot();
-  const hostsRaw = Array.isArray(root.desktopHosts) ? root.desktopHosts : [];
-  const hosts = hostsRaw
-    .map((entry) => {
-      const id = typeof entry?.id === 'string' ? entry.id.trim() : '';
-      const url = sanitizeHostUrlForStorage(entry?.url);
-      if (!id || id === LOCAL_HOST_ID || !url) return null;
-      const label = typeof entry?.label === 'string' && entry.label.trim() ? entry.label.trim() : url;
-      return { id, label, url };
-    })
-    .filter(Boolean);
-
-  return {
-    hosts,
-    defaultHostId: typeof root.desktopDefaultHostId === 'string' && root.desktopDefaultHostId.trim()
-      ? root.desktopDefaultHostId.trim()
-      : null,
-    initialHostChoiceCompleted: root.desktopInitialHostChoiceCompleted === true,
-  };
-};
-
-const writeDesktopHostsConfig = async (config) => {
-  await mutateSettingsRoot((root) => {
-    root.desktopHosts = Array.isArray(config?.hosts)
-      ? config.hosts
-          .map((entry) => {
-            const id = typeof entry?.id === 'string' ? entry.id.trim() : '';
-            const url = sanitizeHostUrlForStorage(entry?.url);
-            if (!id || id === LOCAL_HOST_ID || !url) return null;
-            return {
-              id,
-              label: typeof entry?.label === 'string' && entry.label.trim() ? entry.label.trim() : url,
-              url,
-            };
-          })
-          .filter(Boolean)
-      : [];
-    root.desktopDefaultHostId = typeof config?.defaultHostId === 'string' && config.defaultHostId.trim()
-      ? config.defaultHostId.trim()
-      : null;
-    if (typeof config?.initialHostChoiceCompleted === 'boolean') {
-      root.desktopInitialHostChoiceCompleted = config.initialHostChoiceCompleted;
-    }
-  });
-};
-
-const readWindowState = () => {
-  const stateValue = readSettingsRoot().desktopWindowState;
-  return stateValue && typeof stateValue === 'object' ? stateValue : null;
-};
-
-const writeWindowState = async (browserWindow) => {
-  await persistWindowState({
-    browserWindow,
-    mainWindowID: state.mainWindow?.id ?? null,
-    minWidth: MIN_WINDOW_WIDTH,
-    minHeight: MIN_WINDOW_HEIGHT,
-    mutateSettingsRoot,
-  });
-};
-
-const debounceWindowStatePersist = (browserWindow, immediate = false) => {
-  if (!browserWindow || browserWindow.isDestroyed()) return;
-  const key = String(browserWindow.id);
-  const revision = (state.windowGeometryRevisions.get(key) || 0) + 1;
-  state.windowGeometryRevisions.set(key, revision);
-
-  const persist = async () => {
-    if (state.windowGeometryRevisions.get(key) !== revision) return;
-    await writeWindowState(browserWindow);
-  };
-  const reportFailure = (error) => {
-    log.warn('[electron] failed to persist window state:', error);
-  };
-
-  if (immediate) {
-    void persist().catch(reportFailure);
-    return;
-  }
-
-  setTimeout(() => {
-    void persist().catch(reportFailure);
-  }, 300);
 };
 
 const buildHealthUrl = (url) => {
@@ -803,85 +654,11 @@ const buildLocalUrl = (port) => `http://127.0.0.1:${port}`;
 const resourceRoot = () => isDev ? path.join(__dirname, 'resources') : process.resourcesPath;
 const resolveWebDistDir = () => path.join(resourceRoot(), 'web-dist');
 
-const normalizeNotificationInput = (raw) => {
-  if (!raw || typeof raw !== 'object') return {};
-  // UI IPC path wraps in { payload: {...} }; sidecar stdout path is flat.
-  if (raw.payload && typeof raw.payload === 'object') {
-    return { ...raw, ...raw.payload };
-  }
-  return raw;
-};
-
-const isAnyWindowFocused = () =>
-  BrowserWindow.getAllWindows().some(
-    (window) => !window.isDestroyed() && window.isFocused(),
-  );
-
-const focusForegroundWindow = () => {
-  const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
-  if (windows.length === 0) return;
-  const target = state.mainWindow && !state.mainWindow.isDestroyed()
-    ? state.mainWindow
-    : windows.find((window) => window.isVisible()) || windows[0];
-  // macOS: bring the app to foreground FIRST. When the window is minimized
-  // to the Dock or hidden via Cmd+H, the app is in the background, and
-  // subsequent window.show/restore/focus calls won't pull it forward
-  // unless app.focus runs first.
-  if (process.platform === 'darwin') app.focus({ steal: true });
-  if (target.isMinimized()) target.restore();
-  target.show();
-  target.focus();
-  if (typeof target.moveTop === 'function') target.moveTop();
-};
-
-// Keep references to live notifications so they aren't garbage-collected
-// before the OS fires click/close. On macOS, losing the JS reference causes
-// click events to silently stop firing after ~1 min.
-// See https://blog.bloomca.me/2025/02/22/electron-mac-notifications
-const activeNotifications = new Set();
-
-const maybeShowNativeNotification = (rawInput) => {
-  const payload = normalizeNotificationInput(rawInput);
-  const requireHidden = Boolean(payload.requireHidden ?? payload.require_hidden);
-
-  if (requireHidden && isAnyWindowFocused()) {
-    return;
-  }
-
-  if (!Notification.isSupported()) {
-    return;
-  }
-
-  const title = typeof payload.title === 'string' && payload.title.trim()
-    ? payload.title.trim()
-    : 'DevRyan';
-  const body = typeof payload.body === 'string' ? payload.body : '';
-  const sessionId = typeof payload.sessionId === 'string' && payload.sessionId.trim()
-    ? payload.sessionId.trim()
-    : null;
-
-  const notification = new Notification({
-    title,
-    body,
-    silent: false,
-    ...(process.platform === 'darwin' ? { sound: 'Glass' } : {}),
-  });
-
-  activeNotifications.add(notification);
-  const release = () => { activeNotifications.delete(notification); };
-
-  notification.on('click', () => {
-    focusForegroundWindow();
-    if (sessionId) {
-      emitToAllWindows('openchamber:open-session', { sessionId });
-    }
-    release();
-  });
-  notification.on('close', release);
-  notification.on('failed', release);
-
-  notification.show();
-};
+const { maybeShowNativeNotification, focusForegroundWindow, isAnyWindowFocused } = createNativeNotifications({
+  BrowserWindow, Notification, app, platform: process.platform,
+  getMainWindow: () => state.mainWindow,
+  emitToAllWindows: (...args) => emitToAllWindows(...args),
+});
 
 const mapUpdaterProgressEvent = (payload) => ({
   event: payload.event,
@@ -2074,37 +1851,13 @@ const handleDeepLinks = (urls) => {
 const extractInitialDeepLinks = () =>
   process.argv.filter((arg) => typeof arg === 'string' && arg.startsWith(`${DEEP_LINK_PROTOCOL}://`));
 
-const dispatchDomEventToWindow = (browserWindow, event, detail) => {
-  if (!browserWindow || browserWindow.isDestroyed()) return;
-
-  const eventLiteral = JSON.stringify(event);
-  const script = detail === undefined
-    ? `window.dispatchEvent(new Event(${eventLiteral}));`
-    : `window.dispatchEvent(new CustomEvent(${eventLiteral}, { detail: ${JSON.stringify(detail)} }));`;
-
-  void browserWindow.webContents.executeJavaScript(script, true).catch(() => {});
-};
-
-const getMenuTargetWindow = () => {
-  const focused = BrowserWindow.getFocusedWindow();
-  if (focused && !focused.isDestroyed()) return focused;
-  if (state.mainWindow && !state.mainWindow.isDestroyed()) return state.mainWindow;
-  const [firstWindow] = BrowserWindow.getAllWindows();
-  return firstWindow && !firstWindow.isDestroyed() ? firstWindow : null;
-};
-
-const dispatchMenuAction = (action) => {
-  const target = getMenuTargetWindow();
-  emitToWindow(target, 'openchamber:menu-action', action);
-  dispatchDomEventToWindow(target, 'openchamber:menu-action', action);
-};
-
-const dispatchCheckForUpdates = () => {
-  emitToAllWindows('openchamber:check-for-updates');
-  for (const browserWindow of BrowserWindow.getAllWindows()) {
-    dispatchDomEventToWindow(browserWindow, 'openchamber:check-for-updates');
-  }
-};
+const { buildMacMenu, dispatchMenuAction, dispatchCheckForUpdates, dispatchDomEventToWindow } = createDesktopMenu({
+  BrowserWindow, Menu, app, shell, log, getMainWindow: () => state.mainWindow,
+  emitToWindow: (...args) => emitToWindow(...args),
+  emitToAllWindows: (...args) => emitToAllWindows(...args),
+  handleInvoke: (...args) => handleInvoke(...args),
+  GITHUB_BUG_REPORT_URL, GITHUB_FEATURE_REQUEST_URL, DISCORD_INVITE_URL,
+});
 
 const nextWindowLabel = () => {
   const value = state.windowCounter++;
@@ -4854,108 +4607,6 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
   }
 };
 
-const buildMacMenu = () => {
-  const dispatchAction = (action) => dispatchMenuAction(action);
-  const handleCopyAction = () => {
-    BrowserWindow.getFocusedWindow()?.webContents.copy();
-    dispatchAction('copy');
-  };
-
-  return Menu.buildFromTemplate([
-    {
-      label: app.name,
-      submenu: [
-        { role: 'about' },
-        {
-          label: 'Check for Updates',
-          click: () => dispatchCheckForUpdates(),
-        },
-        { type: 'separator' },
-        { label: 'Settings', accelerator: 'Cmd+,', click: () => dispatchAction('settings') },
-        { label: 'Command Palette', accelerator: 'Cmd+P', click: () => dispatchAction('command-palette') },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    },
-    {
-      label: 'File',
-      submenu: [
-        { label: 'New Window', accelerator: 'Cmd+Shift+Alt+N', click: () => void handleInvoke(null, 'desktop_new_window') },
-        { type: 'separator' },
-        { label: 'New Session', accelerator: 'Cmd+N', click: () => dispatchAction('new-session') },
-        { label: 'New Worktree', accelerator: 'Cmd+Shift+N', click: () => dispatchAction('new-worktree-session') },
-        { type: 'separator' },
-        { label: 'Add Workspace', click: () => dispatchAction('change-workspace') },
-        { type: 'separator' },
-        { role: 'close' },
-      ],
-    },
-    {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' },
-        { label: 'Copy', accelerator: 'Cmd+C', click: () => handleCopyAction() },
-        { role: 'paste' },
-        { role: 'selectAll' },
-      ],
-    },
-    {
-      label: 'View',
-      submenu: [
-        { label: 'Git', accelerator: 'Cmd+G', click: () => dispatchAction('open-git-tab') },
-        { label: 'Diff', accelerator: 'Cmd+E', click: () => dispatchAction('open-diff-tab') },
-        { label: 'Terminal', accelerator: 'Cmd+T', click: () => dispatchAction('open-terminal-tab') },
-        { type: 'separator' },
-        { label: 'Light Theme', click: () => dispatchAction('theme-light') },
-        { label: 'Dark Theme', click: () => dispatchAction('theme-dark') },
-        { label: 'System Theme', click: () => dispatchAction('theme-system') },
-        { type: 'separator' },
-        { label: 'Toggle Session Sidebar', accelerator: 'Cmd+Alt+L', click: () => dispatchAction('toggle-sidebar') },
-        { label: 'Toggle Memory Debug', accelerator: 'Cmd+Shift+D', click: () => dispatchAction('toggle-memory-debug') },
-        { type: 'separator' },
-        { role: 'togglefullscreen' },
-      ],
-    },
-    {
-      label: 'Window',
-      submenu: [
-        { role: 'minimize' },
-        { role: 'zoom' },
-        { type: 'separator' },
-        { role: 'close' },
-      ],
-    },
-    {
-      label: 'Help',
-      submenu: [
-        { label: 'Keyboard Shortcuts', accelerator: 'Cmd+.', click: () => dispatchAction('help-dialog') },
-        { label: 'Show Diagnostics', accelerator: 'Cmd+Shift+L', click: () => dispatchAction('download-logs') },
-        { type: 'separator' },
-        {
-          label: 'Clear Cache',
-          click: () => {
-            void handleInvoke(null, 'desktop_clear_cache').catch((error) => {
-              log.warn('[electron] failed to clear cache from menu:', error);
-            });
-          },
-        },
-        { type: 'separator' },
-        { label: 'Report a Bug', click: () => shell.openExternal(GITHUB_BUG_REPORT_URL) },
-        { label: 'Request a Feature', click: () => shell.openExternal(GITHUB_FEATURE_REQUEST_URL) },
-        { type: 'separator' },
-        { label: 'Join Discord', click: () => shell.openExternal(DISCORD_INVITE_URL) },
-      ],
-    },
-  ]);
-};
 
 contextMenu({
   showInspectElement: isDev,

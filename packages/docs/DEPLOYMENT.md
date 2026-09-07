@@ -2,7 +2,7 @@
 
 This repo publishes docs **source artifacts**.
 
-Rendering and hosting still happen in `openchamber-website` (`apps/docs`).
+Rendering and hosting are owned by a separately configured website.
 
 ## Workflow
 
@@ -23,11 +23,12 @@ Outputs:
 
 ## Optional cross-repo sync trigger
 
-The workflow can trigger a `repository_dispatch` event in `openchamber-website`.
+The workflow can trigger a `repository_dispatch` event in an explicitly configured destination. No upstream destination is selected by default.
 
-Set secret in this repo:
+Configure this repository:
 
-- `OPENCHAMBER_WEBSITE_REPO_TOKEN` (token with access to `openchamber/openchamber-website`)
+- `DEVRYAN_DOCS_WEBSITE_REPO` repository variable (`owner/repository`).
+- `OPENCHAMBER_WEBSITE_REPO_TOKEN` secret with access to that destination (compatibility secret name).
 
 Event sent:
 
@@ -39,4 +40,4 @@ Payload includes:
 - `source_ref`
 - `archive_name`
 
-`openchamber-website` can listen for this event and pull docs source from release artifacts.
+The configured website can listen for this event and pull docs source from release artifacts.

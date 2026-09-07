@@ -71,12 +71,13 @@ describe('runtime-service desktop bootstrap source contract', () => {
 
   test('packages the in-process service bridge and LaunchAgent template for unsigned releases', () => {
     assert.match(packageManifest.scripts['build:native-helpers'], /build:runtime-service-control/);
-    assert.match(packageManifest.scripts.package, /build:native-helpers/);
-    assert.match(packageManifest.scripts.package, /verify:runtime-service-package/);
+    assert.match(packageManifest.scripts['prepare:native'], /build:native-helpers/);
+    assert.match(packageManifest.scripts.package, /prepare && bun run package:prepared/);
+    assert.match(packageManifest.scripts['package:prepared'], /package-prepared/);
     assert.match(releaseWorkflow, /bun run build:native-helpers/);
     assert.match(
       releaseWorkflow,
-      /bun run verify:runtime-service-package -- --arch "\$\{\{ matrix\.arch \}\}"/,
+      /node scripts\/package-prepared\.mjs --mac --\$\{\{ matrix\.arch \}\}/,
     );
     assert.match(releaseWorkflow, /-c\.mac\.identity=null -c\.mac\.notarize=false -c\.dmg\.sign=false/);
     assert.doesNotMatch(releaseWorkflow, /--require-developer-id/);

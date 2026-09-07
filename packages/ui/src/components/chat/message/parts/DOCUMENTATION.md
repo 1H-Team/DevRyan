@@ -4,6 +4,14 @@ This folder contains renderers for chat message parts (text, tools, reasoning, p
 
 Use this doc when you ask an agent to change tool/header/description behavior.
 
+## Tool diff preview budget
+
+`toolDiffPreview.ts` checks each raw source before normalization, file splitting, rich parsing or highlighting. A preview ends at 2,000 content lines or 262,144 UTF-16 code units, whichever arrives first. LF, CRLF and CR are recognized; a final line terminator does not add a content line, and truncation never bisects CRLF or a surrogate pair. Oversized combined patches remain one plain-text entry. Header counts and line navigation also obey this guard; supplied metadata counts remain authoritative, while unknown full-patch totals stay absent.
+
+`RawPatchFallback.tsx` applies the same policy to malformed patches and renderer failures. Its localized notice and download button precede the preview so the action is immediately discoverable. The source stays unchanged. `toolDiffDownload.ts` downloads the complete source as `DevRyan-tool-diff.patch` and revokes the object URL after one second. Oversized write inputs render only bounded content; clicking Download constructs the complete synthetic patch using the existing write-patch format. There is no unbounded in-app override or persisted setting.
+
+`tests/visual-chat-improvements/` exercises production ToolPart/MessageBody components with isolated sync stores, verifies full download bytes and URL revocation, injects a rich-renderer failure, checks question/plan placement, and counts composer-history commits. Its clipboard endpoint is simulated to leave the system clipboard untouched.
+
 ## High-level flow
 
 - Message parts are rendered from `MessageBody.tsx`.

@@ -59,7 +59,10 @@ session. It validates response identity, fences stale requests, and clears on
 account changes, deletion and directory disposal. It is bounded to 128 entries
 and 8 MiB. Capture notifications use a narrow `session.changes.updated` channel;
 ordinary Git polling does not refresh immutable captured history. Partial,
-failed and loading results are explicit. A successful read-only shell command
+failed and loading results are explicit, including when no files are available.
+Once the root and descendants are idle, the card shows these states and offers
+Retry for failed reads. Complete empty summaries remain hidden; an undone
+summary stays visible for Redo. Busy trees and pending reverts hide the card. A successful read-only shell command
 produces no warning.
 
 ## Undo and Redo

@@ -65,6 +65,8 @@ import {
 import { stopStalledProviderAndOfferRecovery } from "./provider-stall-recovery"
 import { hasMessageRecordInfo, unwrapMessageRecordsResult } from "./message-fetch"
 import { messagesBefore, sortMessagesChronologically } from "./message-order"
+import { useUserMessageHistorySnapshot } from "./user-message-history"
+export { buildUserMessageHistory } from "./user-message-history"
 import {
   addPendingPartDelta,
   applyPendingPartDeltasToState,
@@ -4408,26 +4410,7 @@ const getConcatenatedTextFromParts = (parts: Part[]): string => {
   return text
 }
 
-const getFirstTextFromParts = (parts: Part[]): string => {
-  for (const part of parts) {
-    const text = getPartText(part)
-    if (text.length > 0) return text
-  }
-  return ""
-}
-
 type SessionMessageRecord = { info: Message; parts: Part[] }
-
-export const buildUserMessageHistory = (records: SessionMessageRecord[]): string[] => {
-  const history: string[] = []
-  for (let index = records.length - 1; index >= 0; index -= 1) {
-    const message = records[index]
-    if (message.info.role !== 'user') continue
-    const text = getFirstTextFromParts(message.parts)
-    if (text.length > 0) history.push(text)
-  }
-  return history
-}
 
 type SessionMessageRecordsSnapshot = {
   sessionID: string
@@ -4555,8 +4538,8 @@ export function useSessionTextMessages(sessionID: string, directory?: string): S
 }
 
 export function useUserMessageHistory(sessionID: string, directory?: string): string[] {
-  const records = useSessionMessageRecords(sessionID, directory)
-  return useMemo(() => buildUserMessageHistory(records), [records])
+  const store = useDirectoryStore(directory)
+  return useUserMessageHistorySnapshot(store, sessionID)
 }
 
 /**

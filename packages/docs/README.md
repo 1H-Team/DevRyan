@@ -1,6 +1,6 @@
-# OpenChamber Docs Source
+# DevRyan Docs Source
 
-This package is the source-of-truth for OpenChamber public docs content.
+This package is the source-of-truth for DevRyan public docs content.
 
 ## Layout
 
@@ -21,11 +21,12 @@ This validates:
 
 - frontmatter (`title`, `description`) exists for every MDX page
 - sidebar links resolve to existing MDX routes
+- repository Markdown local links and explicit source-file references resolve (historical and generated targets are reported separately)
 
 ## Deployment model
 
 This repo owns docs content.
 
-Website rendering/deployment happens in `openchamber-website` (`apps/docs`).
+Website rendering and deployment are separate from this source repository. An optional destination must be configured explicitly; see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Use `.github/workflows/docs-source.yml` to package docs source on release or manual trigger.

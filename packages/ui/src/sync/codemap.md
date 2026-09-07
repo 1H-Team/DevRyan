@@ -5,6 +5,8 @@ Implements client-side sync primitives for session/event reconciliation and cach
 
 ## Design
 
+`user-message-history.ts` owns the composer history selector and external-store snapshot hook. Its cache follows the current directory store/session, observes user part references and the effective local/server revert boundary, and preserves the history array during assistant-only updates.
+
 `session-creation.ts` owns captured creation attempts, the overall deadline,
 explicit pre-creation retry policy, persisted unknown outcomes, and bounded
 content-free timing marks. `SessionCreationStatus` is the narrow recovery-only

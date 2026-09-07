@@ -1,3 +1,5 @@
+import { createCompressionPolicy } from './lib/http-compression-policy.js';
+import { createHarnessSkillDiscovery } from './lib/opencode/harness-skill-discovery.js';
 import 'reflect-metadata';
 import { beginSessionCreationTrace, isSessionCreateRequest } from './lib/opencode/session-creation.js';
 import express from 'express';
@@ -199,128 +201,14 @@ const TUNNEL_BOOTSTRAP_TTL_MAX_MS = 24 * 60 * 60 * 1000;
 const TUNNEL_SESSION_TTL_DEFAULT_MS = 8 * 60 * 60 * 1000;
 const TUNNEL_SESSION_TTL_MIN_MS = 5 * 60 * 1000;
 const TUNNEL_SESSION_TTL_MAX_MS = 30 * 24 * 60 * 60 * 1000;
-function parseSkillFrontmatterForHarness(skillMdPath) {
-  try {
-    const content = fs.readFileSync(skillMdPath, 'utf8');
-    const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-    if (!match) {
-      return {
-        name: '',
-        path: skillMdPath,
-        parseOk: false,
-        error: 'Missing YAML frontmatter',
-      };
-    }
-    const frontmatter = yaml.parse(match[1]) || {};
-    const name = typeof frontmatter.name === 'string' ? frontmatter.name.trim() : '';
-    return {
-      name,
-      path: skillMdPath,
-      parseOk: Boolean(name),
-      ...(name ? {} : { error: 'Missing skill name in frontmatter' }),
-    };
-  } catch (error) {
-    return {
-      name: '',
-      path: skillMdPath,
-      parseOk: false,
-      error: error.message || 'Failed to parse skill frontmatter',
-    };
-  }
-}
+const { collectHarnessSkillEntries } = createHarnessSkillDiscovery({
+  fs, os, yaml, discoverSkills, findWorktreeRoot, getAncestors,
+  resolveSkillSearchDirectories, walkSkillMdFiles,
+});
 
-function collectHarnessSkillEntries(directory) {
-  const byPath = new Map();
-  for (const skill of discoverSkills(directory)) {
-    if (!skill?.path) continue;
-    byPath.set(path.resolve(skill.path), {
-      ...skill,
-      parseOk: true,
-    });
-  }
-
-  const roots = [
-    path.join(os.homedir(), '.agents', 'skills'),
-  ];
-
-  if (directory) {
-    const worktreeRoot = findWorktreeRoot(directory) || path.resolve(directory);
-    for (const ancestor of getAncestors(directory, worktreeRoot)) {
-      roots.push(path.join(ancestor, '.agents', 'skills'));
-    }
-  }
-
-  for (const dir of resolveSkillSearchDirectories(directory)) {
-    roots.push(path.join(dir, 'skill'));
-    roots.push(path.join(dir, 'skills'));
-  }
-
-  for (const root of roots) {
-    for (const skillMdPath of walkSkillMdFiles(root)) {
-      const resolved = path.resolve(skillMdPath);
-      if (byPath.has(resolved)) continue;
-      byPath.set(resolved, parseSkillFrontmatterForHarness(skillMdPath));
-    }
-  }
-
-  return [...byPath.values()];
-}
-
-function headerIncludesEventStream(value) {
-  if (typeof value === 'string') {
-    return value.toLowerCase().includes('text/event-stream');
-  }
-
-  if (Array.isArray(value)) {
-    return value.some((entry) => typeof entry === 'string' && entry.toLowerCase().includes('text/event-stream'));
-  }
-
-  return false;
-}
-
-/**
- * SSE endpoint paths that must never be compressed by the compression middleware.
- *
- * The compression middleware filter runs before route handlers, so
- * `res.getHeader('Content-Type')` is still undefined at that point.
- * This means the Accept-header check alone is not sufficient for
- * non-standard clients (e.g. curl, fetch) that omit Accept.
- * Path-based exclusion acts as a deterministic fallback.
- */
-const SSE_PATH_PREFIXES = [
-  '/api/event',
-  '/api/global/event',
-  '/api/notifications/stream',
-  '/api/openchamber/events',
-];
-
-function shouldSkipCompression(req, res) {
-  if (headerIncludesEventStream(req.headers.accept)) {
-    return true;
-  }
-
-  const pathname = req.path || req.url || '';
-  if (
-    pathname.startsWith('/api/browser/agent-leases/')
-    && pathname.endsWith('/stream')
-  ) {
-    return true;
-  }
-  if ((pathname === '/api' || pathname.startsWith('/api/')) && shouldSkipApiCompression()) {
-    return true;
-  }
-
-  if (pathname.startsWith('/api/terminal/') && pathname.endsWith('/stream')) {
-    return true;
-  }
-  for (const prefix of SSE_PATH_PREFIXES) {
-    if (pathname === prefix) {
-      return true;
-    }
-  }
-
-  return headerIncludesEventStream(res.getHeader('Content-Type'));
-}
+const { shouldSkipCompression } = createCompressionPolicy({
+  shouldSkipApiCompression: () => shouldSkipApiCompression(),
+});
 
 const OPENCHAMBER_VERSION = (() => {
   try {

@@ -164,6 +164,8 @@ const autoResumeBlock = (overrides: Partial<ManagedTaskAutoResume> = {}): Manage
   resetAt: 9_000,
   resetSource: 'opencode_status',
   target: { kind: 'backup', providerId: 'anthropic', modelId: 'claude-sonnet-5', variant: null },
+  recoveryCycleTaskId: null,
+  backupAttemptTaskId: null,
   lastAttemptTaskId: null,
   lastAttemptAt: null,
   lastError: null,

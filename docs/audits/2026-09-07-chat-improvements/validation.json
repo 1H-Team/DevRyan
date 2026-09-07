@@ -1,0 +1,40 @@
+{
+  "fullValidation": {
+    "command": "bun run validate:full",
+    "runs": 1,
+    "exitCode": 0,
+    "uiTests": 3539,
+    "webTests": 3731,
+    "historicalDocsWarnings": 17,
+    "log": ".cache/qa/chat-improvements-validation-full.log"
+  },
+  "discovery": {
+    "tests": 17,
+    "failed": 0,
+    "nativeWindows": false,
+    "disposableProbeVerifiedStopped": true
+  },
+  "finalTargetedRegression": {
+    "tests": 79,
+    "failed": 0
+  },
+  "finalChangedFileLint": {
+    "exitCode": 0
+  },
+  "finalTypeCheck": {
+    "exitCode": 0
+  },
+  "finalDocsCheck": {
+    "exitCode": 0
+  },
+  "componentRun": ".cache/qa/chat-improvements-sC04Ud/result.json",
+  "visualReview": {
+    "status": "reviewed",
+    "files": [
+      "desktop-preview.png",
+      "mobile-preview.png",
+      "desktop-composer.png"
+    ]
+  },
+  "latencyMeasurement": "not-performed"
+}

@@ -1,17 +1,17 @@
 # Docs Authoring Guide
 
-This package is docs content source-of-truth for OpenChamber.
+This package is docs content source-of-truth for DevRyan.
 
 ## Add a new docs page
 
 1. Create a new file in `packages/docs/content/docs/`.
-   - Example: `packages/docs/content/docs/remote-access.mdx`
+   - Example: a new `remote-access.mdx` page in that directory
 2. Add frontmatter at top:
 
    ```mdx
    ---
    title: Remote Access
-   description: Access OpenChamber from outside your local network.
+   description: Access DevRyan from outside your local network.
    ---
    ```
 
@@ -44,14 +44,14 @@ Rules:
 - every sidebar link must map to an existing MDX file
 - keep section labels short and task-oriented
 
-## Sync into openchamber-website
+## Package docs source
 
-`openchamber-website` renders/deploys docs via Starlight in `apps/docs`.
+`.github/workflows/docs-source.yml` validates and packages this directory as a
+`DevRyan-docs-source-*.tar.gz` artifact for release or manual distribution.
+A website integration must be configured explicitly for the intended destination;
+this repository does not authorize access to any upstream website checkout.
 
-After docs content updates here:
-
-1. copy `packages/docs/content/docs/*` -> `openchamber-website/apps/docs/src/content/docs/*`
-2. map `packages/docs/sidebar.config.json` into `openchamber-website/apps/docs/astro.config.mjs` sidebar
-3. run docs checks/build in website repo
-
-Automation support exists in `.github/workflows/docs-source.yml` (release/manual packaging of docs source artifact).
+The repository validator also checks Markdown links and explicit source-file
+references outside code examples. Historical audit reports and saved plans emit
+warnings for missing old paths; generated build/runtime targets are reported as
+unchecked. Current documentation must resolve its local references.

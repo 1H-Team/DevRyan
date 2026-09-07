@@ -120,9 +120,7 @@ const createFakeOpenCode = ({
   return { state, fetchImpl };
 };
 
-// The default prompt derives to 'Reliable Session Title Summaries', so a
-// session-model stub returning the same string leaves the upgrade a no-op and
-// the persistence-focused cases see exactly one projection.
+// Persistence cases use one resolved model title; no intermediate title is projected.
 const createRuntime = ({
   fake,
   outbox,
@@ -284,7 +282,7 @@ describe('standard session title runtime', () => {
     await runtime.dispose();
   });
 
-  it('projects the derived placeholder immediately, then upgrades with the session model', async () => {
+  it('publishes only the resolved session-model title', async () => {
     const prompt = 'Repair provider neutral title generation';
     const fake = createFakeOpenCode({ prompt });
     const projected = [];
@@ -296,7 +294,6 @@ describe('standard session title runtime', () => {
     await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project', text: prompt })).resolves.toBe(true);
 
     expect(projected.map(({ source, title }) => ({ source, title }))).toEqual([
-      { source: 'derived', title: 'Provider Neutral Title Generation' },
       { source: 'session_model', title: 'Neutral Title Generation Pipeline' },
     ]);
     expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
@@ -309,10 +306,9 @@ describe('standard session title runtime', () => {
     expect(await outbox.list()).toEqual([expect.objectContaining({
       candidateTitle: 'Neutral Title Generation Pipeline',
       source: 'session_model',
-      replacesTitle: 'Provider Neutral Title Generation',
+      replacesTitle: PLACEHOLDER,
     })]);
     expect(stageOutcomes(diagnostics, 'derived', 'session_model', 'free_zen')).toEqual([
-      'derived:complete',
       'session_model:complete',
     ]);
     await runtime.processOpenCodeEvent(idleEvent());
@@ -321,7 +317,7 @@ describe('standard session title runtime', () => {
     await runtime.dispose();
   });
 
-  it.each(['anthropic', 'opencode-with-claude'])('keeps the derived title for %s sessions without a session-model call', async (providerID) => {
+  it.each(['anthropic', 'opencode-with-claude'])('publishes one model title for %s sessions too', async (providerID) => {
     const fake = createFakeOpenCode();
     const projected = [];
     const outbox = createMemorySessionTitleOutbox();
@@ -335,19 +331,19 @@ describe('standard session title runtime', () => {
       modelID: 'claude-model',
     })).resolves.toBe(true);
 
-    expect(generateSessionModelTitle).not.toHaveBeenCalled();
-    expect(projected).toEqual([expect.objectContaining({ source: 'derived', title: 'Reliable Session Title Summaries' })]);
+    expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
+    expect(projected).toEqual([expect.objectContaining({ source: 'session_model', title: 'Upgraded Session Model Title' })]);
     expect(await outbox.list()).toEqual([expect.objectContaining({
-      candidateTitle: 'Reliable Session Title Summaries',
-      source: 'derived',
+      candidateTitle: 'Upgraded Session Model Title',
+      source: 'session_model',
     })]);
     expect(fake.state.calls.some(({ method }) => method === 'POST')).toBe(false);
     await runtime.processOpenCodeEvent(idleEvent());
-    expect(fake.state.sessions.get('ses_1').title).toBe('Reliable Session Title Summaries');
+    expect(fake.state.sessions.get('ses_1').title).toBe('Upgraded Session Model Title');
     await runtime.dispose();
   });
 
-  it('projects the derived title before the session-model promise resolves', async () => {
+  it('keeps the placeholder until the session-model promise resolves', async () => {
     const fake = createFakeOpenCode();
     const projected = [];
     const outbox = createMemorySessionTitleOutbox();
@@ -363,20 +359,18 @@ describe('standard session title runtime', () => {
     }
 
     expect(resolveGeneration).toBeTypeOf('function');
-    expect(projected).toEqual([expect.objectContaining({ source: 'derived', title: 'Reliable Session Title Summaries' })]);
-    expect(await outbox.list()).toEqual([expect.objectContaining({
-      candidateTitle: 'Reliable Session Title Summaries',
-      source: 'derived',
-    })]);
+    expect(projected).toEqual([]);
+    expect(fake.state.sessions.get('ses_1').title).toBe(PLACEHOLDER);
+    expect(await outbox.list()).toEqual([]);
 
     resolveGeneration('Upgraded Session Model Title');
     await expect(scheduled).resolves.toBe(true);
-    expect(projected).toHaveLength(2);
-    expect(projected[1]).toEqual(expect.objectContaining({ source: 'session_model', title: 'Upgraded Session Model Title' }));
+    expect(projected).toHaveLength(1);
+    expect(projected[0]).toEqual(expect.objectContaining({ source: 'session_model', title: 'Upgraded Session Model Title' }));
     await runtime.dispose();
   });
 
-  it('bounds the session-model upgrade and keeps the derived title when it stalls', async () => {
+  it('bounds stalled generation without publishing an intermediate title', async () => {
     const fake = createFakeOpenCode();
     const projected = [];
     const diagnostics = [];
@@ -389,11 +383,11 @@ describe('standard session title runtime', () => {
     for (let index = 0; index < 20 && !boundTimer(); index += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    expect(projected).toEqual([expect.objectContaining({ source: 'derived' })]);
+    expect(projected).toEqual([]);
 
     boundTimer().callback();
     await expect(scheduled).resolves.toBe(true);
-    expect(projected).toHaveLength(1);
+    expect(projected).toHaveLength(0);
     expect(diagnostics.map(({ payload }) => payload)).toContainEqual(expect.objectContaining({
       stage: 'session_model',
       outcome: 'failed',
@@ -430,14 +424,13 @@ describe('standard session title runtime', () => {
     });
     expect(body.variant).toBeUndefined();
     expect(projected.map(({ source, title }) => ({ source, title }))).toEqual([
-      { source: 'derived', title: 'Reliable Session Title Summaries' },
       { source: 'session_model', title: 'Selected Model Session Title' },
     ]);
     expect(fake.state.sessions.has('ses_helper')).toBe(false);
     await runtime.dispose();
   });
 
-  it('keeps the derived title when the session model fails and retries once after sixty seconds', async () => {
+  it('publishes a final fallback only after both model attempts fail', async () => {
     const fake = createFakeOpenCode();
     const projected = [];
     const diagnostics = [];
@@ -448,11 +441,8 @@ describe('standard session title runtime', () => {
     const retryTimers = () => timers.filter(({ delay }) => delay === 60_000);
 
     await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' })).resolves.toBe(true);
-    expect(projected).toEqual([expect.objectContaining({ source: 'derived', title: 'Reliable Session Title Summaries' })]);
-    expect(await outbox.list()).toEqual([expect.objectContaining({
-      candidateTitle: 'Reliable Session Title Summaries',
-      source: 'derived',
-    })]);
+    expect(projected).toEqual([]);
+    expect(await outbox.list()).toEqual([]);
     expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
     expect(retryTimers()).toHaveLength(1);
 
@@ -467,6 +457,8 @@ describe('standard session title runtime', () => {
 
     await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
     expect(generateSessionModelTitle).toHaveBeenCalledTimes(2);
+    expect(projected.length).toBeGreaterThan(0);
+    expect(new Set(projected.map(({ title }) => title))).toEqual(new Set(['Reliable Session Title Summaries']));
     expect(projected.every(({ source }) => source === 'derived')).toBe(true);
     expect(stageOutcomes(diagnostics, 'session_model', 'generation_retry')).toEqual([
       'session_model:failed',
@@ -478,7 +470,7 @@ describe('standard session title runtime', () => {
     await runtime.dispose();
   });
 
-  it('upgrades its own persisted derived title on retry', async () => {
+  it('publishes only the successful retry title, even when the session is idle', async () => {
     const fake = createFakeOpenCode({ status: 'idle' });
     const outbox = createMemorySessionTitleOutbox();
     const { timers, setTimer, clearTimer } = captureTimers();
@@ -486,17 +478,16 @@ describe('standard session title runtime', () => {
     const runtime = createRuntime({ fake, outbox, generateSessionModelTitle, setTimer, clearTimer });
 
     await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    await settleAfterPatches(fake, 1);
-    expect(fake.state.sessions.get('ses_1').title).toBe('Reliable Session Title Summaries');
+    expect(fake.state.patches).toEqual([]);
+    expect(fake.state.sessions.get('ses_1').title).toBe(PLACEHOLDER);
     expect(await outbox.list()).toEqual([]);
 
     generateSessionModelTitle.mockResolvedValue('Upgraded Session Model Title');
     timers.find(({ delay }) => delay === 60_000).callback();
     await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
     expect(generateSessionModelTitle).toHaveBeenCalledTimes(2);
-    await settleAfterPatches(fake, 2);
+    await settleAfterPatches(fake, 1);
     expect(fake.state.patches).toEqual([
-      { sessionID: 'ses_1', title: 'Reliable Session Title Summaries' },
       { sessionID: 'ses_1', title: 'Upgraded Session Model Title' },
     ]);
     expect(fake.state.sessions.get('ses_1').title).toBe('Upgraded Session Model Title');
@@ -512,14 +503,14 @@ describe('standard session title runtime', () => {
     const runtime = createRuntime({ fake, outbox, generateSessionModelTitle, setTimer, clearTimer });
 
     await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    await settleAfterPatches(fake, 1);
+    expect(fake.state.patches).toEqual([]);
     fake.state.sessions.get('ses_1').title = 'User Typed Session Name';
 
     generateSessionModelTitle.mockResolvedValue('Upgraded Session Model Title');
     timers.find(({ delay }) => delay === 60_000).callback();
     await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
     expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
-    expect(fake.state.patches).toHaveLength(1);
+    expect(fake.state.patches).toHaveLength(0);
     expect(fake.state.sessions.get('ses_1').title).toBe('User Typed Session Name');
     expect(await outbox.list()).toEqual([]);
     await runtime.dispose();
@@ -723,13 +714,13 @@ describe('standard session title runtime', () => {
     for (let index = 0; index < 20 && !resolveGeneration; index += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    expect(projected).toEqual([expect.objectContaining({ source: 'derived' })]);
+    expect(projected).toEqual([]);
     fake.state.sessions.get('ses_1').title = 'Manual Rename During Generation';
     resolveGeneration('Upgraded Session Model Title');
 
     await scheduled;
 
-    expect(projected).toHaveLength(1);
+    expect(projected).toHaveLength(0);
     expect(await outbox.list()).toEqual([]);
     expect(fake.state.patches).toEqual([]);
     expect(fake.state.sessions.get('ses_1').title).toBe('Manual Rename During Generation');
@@ -758,7 +749,7 @@ describe('standard session title runtime', () => {
 
     await scheduled;
 
-    expect(projected).toEqual([expect.objectContaining({ source: 'derived' })]);
+    expect(projected).toEqual([]);
     expect(await outbox.list()).toEqual([]);
     expect(fake.state.patches).toEqual([]);
     await runtime.dispose();
@@ -969,6 +960,14 @@ describe('standard session title runtime', () => {
   });
 
   it('validates model titles and derives safe local Plan-mode fallbacks', () => {
+    const approvedBrief = 'Implement approved plan: Feedback Chat Greeting and Form Reveal. First inspect relevant module docs.';
+    expect(deriveLocalSessionTitle(approvedBrief)).toBe('Feedback Chat Greeting and Form Reveal');
+    expect(normalizeGeneratedSessionTitle('Approved plan: Feedback Chat Greeting and Form', approvedBrief))
+      .toBe('Feedback Chat Greeting and Form');
+    expect(deriveLocalSessionTitle('Approved plan: Feedback Chat Greeting and Form'))
+      .toBe('Feedback Chat Greeting and Form');
+    expect(normalizeGeneratedSessionTitle('Approved Plan Approval Workflow', 'Fix the approved plan approval workflow'))
+      .toBe('Approved Plan Approval Workflow');
     expect(normalizeGeneratedSessionTitle(
       'Plan Reliable Session Title Persistence',
       'Make a plan to fix reliable session title persistence',

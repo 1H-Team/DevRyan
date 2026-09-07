@@ -1,0 +1,464 @@
+[
+  {
+    "name": "@base-ui/react",
+    "version": "1.8.0",
+    "url": "https://registry.npmjs.org/%40base-ui%2Freact/1.8.0",
+    "repository": {
+      "url": "git+https://github.com/mui/base-ui.git",
+      "type": "git",
+      "directory": "packages/react"
+    },
+    "homepage": "https://base-ui.com",
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "peerDependencies": {
+      "react": "^17 || ^18 || ^19",
+      "date-fns": "^4.0.0",
+      "react-dom": "^17 || ^18 || ^19",
+      "@date-fns/tz": "^1.2.0",
+      "@types/react": "^17 || ^18 || ^19"
+    }
+  },
+  {
+    "name": "@clack/prompts",
+    "version": "1.7.0",
+    "url": "https://registry.npmjs.org/%40clack%2Fprompts/1.7.0",
+    "repository": {
+      "url": "git+https://github.com/bombshell-dev/clack.git",
+      "type": "git",
+      "directory": "packages/prompts"
+    },
+    "homepage": "https://github.com/bombshell-dev/clack/tree/main/packages/prompts#readme",
+    "engines": {
+      "node": ">= 20.12.0"
+    }
+  },
+  {
+    "name": "@codemirror/commands",
+    "version": "6.11.0",
+    "url": "https://registry.npmjs.org/%40codemirror%2Fcommands/6.11.0",
+    "repository": {
+      "url": "git+https://code.haverbeke.berlin/codemirror/commands.git",
+      "type": "git"
+    }
+  },
+  {
+    "name": "@codemirror/lang-html",
+    "version": "6.4.12",
+    "url": "https://registry.npmjs.org/%40codemirror%2Flang-html/6.4.12",
+    "repository": {
+      "url": "git+https://code.haverbeke.berlin/codemirror/lang-html.git",
+      "type": "git"
+    }
+  },
+  {
+    "name": "@codemirror/lang-markdown",
+    "version": "6.5.2",
+    "url": "https://registry.npmjs.org/%40codemirror%2Flang-markdown/6.5.2",
+    "repository": {
+      "url": "git+https://code.haverbeke.berlin/codemirror/lang-markdown.git",
+      "type": "git"
+    }
+  },
+  {
+    "name": "@codemirror/legacy-modes",
+    "version": "6.5.4",
+    "url": "https://registry.npmjs.org/%40codemirror%2Flegacy-modes/6.5.4",
+    "repository": {
+      "url": "git+https://code.haverbeke.berlin/codemirror/legacy-modes.git",
+      "type": "git"
+    }
+  },
+  {
+    "name": "@codemirror/search",
+    "version": "6.7.2",
+    "url": "https://registry.npmjs.org/%40codemirror%2Fsearch/6.7.2",
+    "repository": {
+      "url": "git+https://code.haverbeke.berlin/codemirror/search.git",
+      "type": "git"
+    }
+  },
+  {
+    "name": "@tanstack/react-virtual",
+    "version": "3.14.10",
+    "url": "https://registry.npmjs.org/%40tanstack%2Freact-virtual/3.14.10",
+    "repository": {
+      "url": "git+https://github.com/TanStack/virtual.git",
+      "type": "git",
+      "directory": "packages/react-virtual"
+    },
+    "homepage": "https://tanstack.com/virtual",
+    "peerDependencies": {
+      "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0",
+      "react-dom": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0"
+    }
+  },
+  {
+    "name": "@tauri-apps/api",
+    "version": "2.11.1",
+    "url": "https://registry.npmjs.org/%40tauri-apps%2Fapi/2.11.1",
+    "repository": {
+      "url": "git+https://github.com/tauri-apps/tauri.git",
+      "type": "git"
+    },
+    "homepage": "https://github.com/tauri-apps/tauri#readme"
+  },
+  {
+    "name": "@types/adm-zip",
+    "version": "0.5.8",
+    "url": "https://registry.npmjs.org/%40types%2Fadm-zip/0.5.8",
+    "repository": {
+      "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+      "type": "git",
+      "directory": "types/adm-zip"
+    },
+    "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/adm-zip",
+    "peerDependencies": {}
+  },
+  {
+    "name": "@types/react",
+    "version": "19.2.18",
+    "url": "https://registry.npmjs.org/%40types%2Freact/19.2.18",
+    "repository": {
+      "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+      "type": "git",
+      "directory": "types/react"
+    },
+    "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react",
+    "peerDependencies": {}
+  },
+  {
+    "name": "@types/react-dom",
+    "version": "19.2.7",
+    "url": "https://registry.npmjs.org/%40types%2Freact-dom/19.2.7",
+    "repository": {
+      "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+      "type": "git",
+      "directory": "types/react-dom"
+    },
+    "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-dom",
+    "peerDependencies": {
+      "@types/react": "^19.2.0"
+    }
+  },
+  {
+    "name": "@types/supertest",
+    "version": "7.2.1",
+    "url": "https://registry.npmjs.org/%40types%2Fsupertest/7.2.1",
+    "repository": {
+      "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+      "type": "git",
+      "directory": "types/supertest"
+    },
+    "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/supertest",
+    "peerDependencies": {}
+  },
+  {
+    "name": "@zumer/snapdom",
+    "version": "2.24.15",
+    "url": "https://registry.npmjs.org/%40zumer%2Fsnapdom/2.24.15",
+    "repository": {
+      "url": "git+https://github.com/zumerlab/snapdom.git",
+      "type": "git"
+    },
+    "homepage": "https://snapdom.dev/"
+  },
+  {
+    "name": "dompurify",
+    "version": "3.4.15",
+    "url": "https://registry.npmjs.org/dompurify/3.4.15",
+    "repository": {
+      "url": "git://github.com/cure53/DOMPurify.git",
+      "type": "git"
+    },
+    "homepage": "https://github.com/cure53/DOMPurify"
+  },
+  {
+    "name": "electron-builder",
+    "version": "26.15.3",
+    "url": "https://registry.npmjs.org/electron-builder/26.15.3",
+    "repository": {
+      "url": "git+https://github.com/electron-userland/electron-builder.git",
+      "type": "git",
+      "directory": "packages/electron-builder"
+    },
+    "homepage": "https://github.com/electron-userland/electron-builder",
+    "engines": {
+      "node": ">=14.0.0"
+    }
+  },
+  {
+    "name": "electron-log",
+    "version": "5.4.4",
+    "url": "https://registry.npmjs.org/electron-log/5.4.4",
+    "repository": {
+      "url": "git+https://github.com/megahertz/electron-log.git",
+      "type": "git"
+    },
+    "homepage": "https://github.com/megahertz/electron-log#readme",
+    "engines": {
+      "node": ">= 14"
+    }
+  },
+  {
+    "name": "electron-updater",
+    "version": "6.8.9",
+    "url": "https://registry.npmjs.org/electron-updater/6.8.9",
+    "repository": {
+      "url": "git+https://github.com/electron-userland/electron-builder.git",
+      "type": "git",
+      "directory": "packages/electron-updater"
+    },
+    "homepage": "https://github.com/electron-userland/electron-builder"
+  },
+  {
+    "name": "fuse.js",
+    "version": "7.5.0",
+    "url": "https://registry.npmjs.org/fuse.js/7.5.0",
+    "repository": {
+      "url": "git+https://github.com/krisk/Fuse.git",
+      "type": "git"
+    },
+    "homepage": "http://fusejs.io",
+    "engines": {
+      "node": ">=10"
+    }
+  },
+  {
+    "name": "jose",
+    "version": "6.2.12",
+    "url": "https://registry.npmjs.org/jose/6.2.12",
+    "repository": {
+      "url": "git+https://github.com/panva/jose.git",
+      "type": "git"
+    },
+    "homepage": "https://github.com/panva/jose"
+  },
+  {
+    "name": "katex",
+    "version": "0.16.47",
+    "url": "https://registry.npmjs.org/katex/0.16.47",
+    "repository": {
+      "url": "git+https://github.com/KaTeX/KaTeX.git",
+      "type": "git"
+    },
+    "homepage": "https://katex.org"
+  },
+  {
+    "name": "marked",
+    "version": "17.0.6",
+    "url": "https://registry.npmjs.org/marked/17.0.6",
+    "repository": {
+      "url": "git://github.com/markedjs/marked.git",
+      "type": "git"
+    },
+    "homepage": "https://marked.js.org",
+    "engines": {
+      "node": ">= 20"
+    }
+  },
+  {
+    "name": "motion",
+    "version": "12.43.0",
+    "url": "https://registry.npmjs.org/motion/12.43.0",
+    "repository": {
+      "url": "git+https://github.com/motiondivision/motion.git",
+      "type": "git"
+    },
+    "homepage": "https://github.com/motiondivision/motion#readme",
+    "peerDependencies": {
+      "react": "^18.0.0 || ^19.0.0",
+      "react-dom": "^18.0.0 || ^19.0.0",
+      "@emotion/is-prop-valid": "*"
+    }
+  },
+  {
+    "name": "react",
+    "version": "19.2.8",
+    "url": "https://registry.npmjs.org/react/19.2.8",
+    "repository": {
+      "url": "git+https://github.com/react/react.git",
+      "type": "git",
+      "directory": "packages/react"
+    },
+    "homepage": "https://react.dev/",
+    "engines": {
+      "node": ">=0.10.0"
+    }
+  },
+  {
+    "name": "react-dom",
+    "version": "19.2.8",
+    "url": "https://registry.npmjs.org/react-dom/19.2.8",
+    "repository": {
+      "url": "git+https://github.com/react/react.git",
+      "type": "git",
+      "directory": "packages/react-dom"
+    },
+    "homepage": "https://react.dev/",
+    "peerDependencies": {
+      "react": "^19.2.8"
+    }
+  },
+  {
+    "name": "remend",
+    "version": "1.3.1",
+    "url": "https://registry.npmjs.org/remend/1.3.1",
+    "repository": {
+      "url": "git+https://github.com/vercel/streamdown.git",
+      "type": "git",
+      "directory": "packages/remend"
+    },
+    "homepage": "https://streamdown.ai/docs/termination"
+  },
+  {
+    "name": "sonner",
+    "version": "2.0.8",
+    "url": "https://registry.npmjs.org/sonner/2.0.8",
+    "repository": {
+      "url": "git+https://github.com/emilkowalski/sonner.git",
+      "type": "git"
+    },
+    "homepage": "https://sonner.emilkowal.ski/",
+    "peerDependencies": {
+      "react": "^18.0.0 || ^19.0.0 || ^19.0.0-rc",
+      "react-dom": "^18.0.0 || ^19.0.0 || ^19.0.0-rc",
+      "@types/react": "^18.0.0 || ^19.0.0"
+    }
+  },
+  {
+    "name": "tsx",
+    "version": "4.23.13",
+    "url": "https://registry.npmjs.org/tsx/4.23.13",
+    "repository": {
+      "url": "git+https://github.com/privatenumber/tsx.git",
+      "type": "git"
+    },
+    "homepage": "https://tsx.hirok.io",
+    "engines": {
+      "node": ">=18.0.0"
+    }
+  },
+  {
+    "name": "typescript-eslint",
+    "version": "8.69.0",
+    "url": "https://registry.npmjs.org/typescript-eslint/8.69.0",
+    "repository": {
+      "url": "https://github.com/typescript-eslint/typescript-eslint.git",
+      "type": "git",
+      "directory": "packages/typescript-eslint"
+    },
+    "homepage": "https://typescript-eslint.io/packages/typescript-eslint",
+    "engines": {
+      "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+    },
+    "peerDependencies": {
+      "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
+      "typescript": ">=4.8.4 <6.1.0"
+    }
+  },
+  {
+    "name": "vite-plugin-pwa",
+    "version": "1.3.0",
+    "url": "https://registry.npmjs.org/vite-plugin-pwa/1.3.0",
+    "repository": {
+      "url": "git+https://github.com/vite-pwa/vite-plugin-pwa.git",
+      "type": "git"
+    },
+    "homepage": "https://github.com/vite-pwa/vite-plugin-pwa#readme",
+    "engines": {
+      "node": ">=16.0.0"
+    },
+    "peerDependencies": {
+      "vite": "^3.1.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0",
+      "workbox-build": "^7.4.1",
+      "workbox-window": "^7.4.1",
+      "@vite-pwa/assets-generator": "^1.0.0"
+    }
+  },
+  {
+    "name": "vitest",
+    "version": "4.1.11",
+    "url": "https://registry.npmjs.org/vitest/4.1.11",
+    "repository": {
+      "url": "git+https://github.com/vitest-dev/vitest.git",
+      "type": "git",
+      "directory": "packages/vitest"
+    },
+    "homepage": "https://vitest.dev",
+    "engines": {
+      "node": "^20.0.0 || ^22.0.0 || >=24.0.0"
+    },
+    "peerDependencies": {
+      "vite": "^6.0.0 || ^7.0.0 || ^8.0.0",
+      "jsdom": "*",
+      "happy-dom": "*",
+      "@vitest/ui": "4.1.11",
+      "@types/node": "^20.0.0 || ^22.0.0 || >=24.0.0",
+      "@edge-runtime/vm": "*",
+      "@opentelemetry/api": "^1.9.0",
+      "@vitest/coverage-v8": "4.1.11",
+      "@vitest/browser-preview": "4.1.11",
+      "@vitest/coverage-istanbul": "4.1.11",
+      "@vitest/browser-playwright": "4.1.11",
+      "@vitest/browser-webdriverio": "4.1.11"
+    }
+  },
+  {
+    "name": "workbox-window",
+    "version": "7.4.1",
+    "url": "https://registry.npmjs.org/workbox-window/7.4.1",
+    "repository": {
+      "url": "git+https://github.com/googlechrome/workbox.git",
+      "type": "git"
+    },
+    "homepage": "https://github.com/GoogleChrome/workbox"
+  },
+  {
+    "name": "ws",
+    "version": "8.21.3",
+    "url": "https://registry.npmjs.org/ws/8.21.3",
+    "repository": {
+      "url": "git+https://github.com/websockets/ws.git",
+      "type": "git"
+    },
+    "homepage": "https://github.com/websockets/ws",
+    "engines": {
+      "node": ">=10.0.0"
+    },
+    "peerDependencies": {
+      "bufferutil": "^4.0.1",
+      "utf-8-validate": ">=5.0.2"
+    }
+  },
+  {
+    "name": "zod",
+    "version": "4.5.4",
+    "url": "https://registry.npmjs.org/zod/4.5.4",
+    "repository": {
+      "url": "git+https://github.com/colinhacks/zod.git",
+      "type": "git"
+    },
+    "homepage": "https://zod.dev"
+  },
+  {
+    "name": "zustand",
+    "version": "5.0.15",
+    "url": "https://registry.npmjs.org/zustand/5.0.15",
+    "repository": {
+      "url": "git+https://github.com/pmndrs/zustand.git",
+      "type": "git"
+    },
+    "homepage": "https://github.com/pmndrs/zustand",
+    "engines": {
+      "node": ">=12.20.0"
+    },
+    "peerDependencies": {
+      "immer": ">=9.0.6",
+      "react": ">=18.0.0",
+      "@types/react": ">=18.0.0",
+      "use-sync-external-store": ">=1.2.0"
+    }
+  }
+]

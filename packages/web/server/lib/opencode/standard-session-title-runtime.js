@@ -7,7 +7,6 @@ import {
   normalizeIncidentalPlanningTitle,
   sanitizeForTitle,
 } from '../text/summarization.js';
-import { isAnthropicProviderId } from './anthropic-provider-ids.js';
 import {
   createFileSessionTitleOutbox,
   createMemorySessionTitleOutbox,
@@ -17,9 +16,8 @@ const GENERATED_NEW_SESSION_TITLE_PATTERN = /^new session\s*-\s*\d{4}-\d{2}-\d{2
 const DEFAULT_SESSION_TITLE = 'Untitled Session';
 const SESSION_TITLE_MAX_LENGTH = 80;
 const PLACEHOLDER_RECOVERY_CONCURRENCY = 2;
-// The derived title is already visible, so the single session-model upgrade is
-// bounded end to end (helper session, prompt, repair prompt, recovery); the
-// helper's own deadline is derived from the same budget.
+// Title generation is bounded end to end. The UI keeps the submitted prompt
+// until a model title (or the final exhausted-generation fallback) is ready.
 const SESSION_MODEL_TITLE_TIMEOUT_MS = 10_000;
 const SESSION_MODEL_TITLE_MAX_ATTEMPTS = 2;
 const TITLE_HELPER_RECOVERY_TIMEOUT_MS = 2_500;
@@ -104,7 +102,7 @@ const isEligibleStandardSession = (session) => (
   isEligibleStandardTitle(session?.title) || isManagedPlaceholderSession(session)
 );
 
-// A job owns its pending candidate and the derived title it is upgrading, so
+// A job owns its pending candidate and the title it replaces, so
 // neither reads as a manual rename during reconciliation.
 const ownsTitle = (job, title) => {
   const normalized = trimString(title);
@@ -139,6 +137,7 @@ export const deriveLocalSessionTitle = (sourceText) => {
   if (!source) return 'General Session Request';
   source = source
     .replace(/<[^>]+>/g, ' ')
+    .replace(/^(?:implement\s+)?(?:the\s+)?approved\s+plan\s*:\s*/i, '')
     .replace(/^(?:please\s+)?(?:can|could|would)\s+you\s+/i, '')
     .replace(/^(?:please\s+)?i\s+(?:need|want)\s+you\s+to\s+/i, '')
     .replace(/^(?:please\s+)?(?:make|create|write|draft|produce)\s+(?:an?\s+)?(?:implementation\s+)?plan\s+(?:to|for)\s+/i, '')
@@ -236,9 +235,9 @@ export const createStandardSessionTitleRuntime = ({
   const retiredKeys = new Set();
   const projectedKeys = new Set();
   const generationRetryTimers = new Map();
-  // Per-session upgrade bookkeeping (attempt count, whether the single delayed
-  // retry is due, settled). Outlives the derived job, which is retired as soon
-  // as its title is persisted.
+  // Per-session generation bookkeeping (attempt count, whether the single delayed
+  // retry is due, settled). Retained while the prompt preview is visible, until
+  // its final title is persisted.
   const upgradesByKey = new Map();
   let loaded = false;
   let loading = null;
@@ -739,7 +738,6 @@ export const createStandardSessionTitleRuntime = ({
     providerID,
     modelID,
     replacesTitle = '',
-    upgradeable = false,
   }) => {
     const createdAt = now();
     return {
@@ -760,7 +758,6 @@ export const createStandardSessionTitleRuntime = ({
       lastInactiveObservedAt: 0,
       providerID,
       modelID,
-      upgradeable,
     };
   };
 
@@ -840,9 +837,8 @@ export const createStandardSessionTitleRuntime = ({
     emitDiagnostic({ sessionID, directory, providerID, modelID, stage: 'generation_retry', outcome: 'retry_scheduled' });
   };
 
-  const applySessionModelTitle = async ({ key, sessionID, directory, text, providerID, modelID, derivedTitle, title }) => {
-    // Let an in-flight persistence of the derived title settle so its stale
-    // snapshot cannot overwrite the upgraded candidate.
+  const applyResolvedTitle = async ({ key, sessionID, directory, text, providerID, modelID, replacesTitle, title, source = 'session_model' }) => {
+    // Let any recovered persistence settle before replacing its candidate.
     await finalizingByKey.get(key);
     if (disposed) return 'disposed';
     const existing = jobsByKey.get(key);
@@ -850,12 +846,11 @@ export const createStandardSessionTitleRuntime = ({
       ? {
           ...existing,
           candidateTitle: title,
-          source: 'session_model',
-          replacesTitle: derivedTitle,
+          source,
+          replacesTitle,
           state: 'pending_idle',
           attemptCount: 0,
           nextAttemptAt: now(),
-          upgradeable: false,
         }
       : buildJob({
           key,
@@ -863,13 +858,13 @@ export const createStandardSessionTitleRuntime = ({
           directory,
           text,
           candidateTitle: title,
-          source: 'session_model',
+          source,
           providerID,
           modelID,
-          replacesTitle: derivedTitle,
+          replacesTitle,
         });
-    // The derived job may already have been persisted and retired; the
-    // upgraded candidate is a fresh projection over that title.
+    // A retry may follow a retired persistence attempt; project only this
+    // resolved candidate, never an intermediate deterministic title.
     retiredKeys.delete(key);
     projectedKeys.delete(key);
     return persistAndProjectCandidate(candidate);
@@ -888,13 +883,8 @@ export const createStandardSessionTitleRuntime = ({
       return false;
     }
     const currentTitle = trimString(current.title);
-    const derivedTitle = deriveLocalSessionTitle(firstUserText);
     const existing = jobsByKey.get(key);
-    // The derived title is a pure function of the first prompt, so a session
-    // carrying it (or a pending candidate) is still this runtime's and stays
-    // upgradeable; any other real title is a manual rename that wins.
-    const ownsCurrentTitle = currentTitle === derivedTitle || (existing ? ownsTitle(existing, currentTitle) : false);
-    if (!isEligibleStandardSession(current) && !ownsCurrentTitle) {
+    if (!isEligibleStandardSession(current) && !(existing && ownsTitle(existing, currentTitle))) {
       if (existing) await removeJob(key);
       abandonUpgrade(key);
       return true;
@@ -902,47 +892,21 @@ export const createStandardSessionTitleRuntime = ({
 
     const effectiveProviderID = trimString(providerID) || firstUserContext?.providerID || '';
     const effectiveModelID = trimString(modelID) || firstUserContext?.modelID || '';
-
     if (existing) {
+      // A durable candidate is already resolved. Restore it without creating
+      // another intermediate title or repeating its model request.
       await projectGeneratedTitle(existing, current, { force: true });
       void attemptPersist(existing);
       ensureWatchdog();
-    } else if (isEligibleStandardSession(current)) {
-      // Stage derived: shown instantly, persisted like any other candidate.
-      retiredKeys.delete(key);
-      abandonUpgrade(key);
-      const job = buildJob({
-        key,
-        sessionID,
-        directory,
-        text: firstUserText,
-        candidateTitle: derivedTitle,
-        source: 'derived',
-        providerID: effectiveProviderID,
-        modelID: effectiveModelID,
-        // Anthropic/Meridian-routed sessions keep the derived title: a model
-        // title there costs a Claude CLI spawn with a large prompt prefix.
-        upgradeable: !isAnthropicProviderId(effectiveProviderID),
-      });
-      upgradesByKey.set(key, { sessionID, attempts: 0, retryDue: false, settled: !job.upgradeable });
-      const outcome = await persistAndProjectCandidate(job);
-      if (outcome === 'unpersisted' || outcome === 'missing') {
-        upgradesByKey.delete(key);
-        return false;
-      }
-      if (outcome === 'manual') {
-        abandonUpgrade(key);
-        return true;
-      }
-      emitDiagnostic({ ...job, stage: 'derived', outcome: 'complete' });
+      return true;
     }
-    // Otherwise the derived title is already persisted and its job retired;
-    // only the upgrade remains.
 
-    // Stage session_model: one bounded upgrade, retried once after a delay.
-    const upgrade = upgradesByKey.get(key);
-    if (!upgrade || upgrade.settled || !effectiveProviderID || !effectiveModelID) return true;
-    if (upgrade.attempts > 0 && !upgrade.retryDue) return true;
+    let upgrade = upgradesByKey.get(key);
+    if (!upgrade) {
+      upgrade = { sessionID, attempts: 0, retryDue: false, settled: false };
+      upgradesByKey.set(key, upgrade);
+    }
+    if (upgrade.settled || (upgrade.attempts > 0 && !upgrade.retryDue)) return true;
     upgrade.attempts += 1;
     upgrade.retryDue = false;
     const attempt = upgrade.attempts;
@@ -954,7 +918,9 @@ export const createStandardSessionTitleRuntime = ({
       modelID: effectiveModelID,
     };
     const startedAt = now();
-    const { title: modelTitle, reason } = await requestSessionModelTitle(upgradeInput);
+    const { title: modelTitle, reason } = effectiveProviderID && effectiveModelID
+      ? await requestSessionModelTitle(upgradeInput)
+      : { title: null, reason: 'model_unavailable' };
     if (disposed) return true;
     emitDiagnostic({
       ...upgradeInput,
@@ -964,18 +930,22 @@ export const createStandardSessionTitleRuntime = ({
       durationMs: now() - startedAt,
       reason,
     });
-    if (!modelTitle) {
-      if (attempt < SESSION_MODEL_TITLE_MAX_ATTEMPTS) {
-        scheduleSessionModelRetry(key, { ...upgradeInput, candidateTitle: derivedTitle });
-      } else {
-        upgrade.settled = true;
-      }
+    if (!modelTitle && effectiveProviderID && effectiveModelID && attempt < SESSION_MODEL_TITLE_MAX_ATTEMPTS) {
+      scheduleSessionModelRetry(key, { ...upgradeInput, candidateTitle: currentTitle });
       return true;
     }
     upgrade.settled = true;
     clearGenerationRetry(key);
-    if (modelTitle === derivedTitle) return true;
-    await applySessionModelTitle({ key, ...upgradeInput, derivedTitle, title: modelTitle });
+    const outcome = await applyResolvedTitle({
+      key, ...upgradeInput, replacesTitle: currentTitle,
+      title: modelTitle || deriveLocalSessionTitle(firstUserText),
+      source: modelTitle ? 'session_model' : 'derived',
+    });
+    if (outcome === 'unpersisted' || outcome === 'missing') {
+      upgradesByKey.delete(key);
+      return false;
+    }
+
     return true;
   };
 

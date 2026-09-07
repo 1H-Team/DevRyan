@@ -19,11 +19,10 @@ const arch = process.env.ELECTRON_BUILDER_ARCH || process.arch;
 
 console.log(`[electron] rebuilding native modules against Electron ${electronVersion}...`);
 
-// Rebuild the Node PTY declared at the root. Dependencies declared only by a
-// workspace package are rebuilt directly below so Bun's hoisting layout cannot
-// make @electron/rebuild silently skip them.
+// Resolve native dependencies from their owning workspace, independent of hoisting.
+const nodePtyDir = resolveWorkspacePackageDirectory(repoRoot, 'packages/web', 'node-pty');
 await rebuild({
-  buildPath: repoRoot,
+  buildPath: nodePtyDir,
   electronVersion,
   force: true,
   arch,

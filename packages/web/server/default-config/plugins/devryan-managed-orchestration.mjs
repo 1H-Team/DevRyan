@@ -517,7 +517,116 @@ const resolveAdjacentAssistantSibling = (records, messageId) => {
   return { assistant: sibling, parent };
 };
 
-const resolveInvocationPolicy = async (context, client) => {
+// Match the skill tool's catalog aliases (display name or directory slug),
+// without prescribing an installed path or loading skill bodies ourselves.
+const isExecutingPlansName = (value) => typeof value === 'string'
+  && value.toLowerCase().replace(/[^a-z0-9]/g, '') === 'executingplans';
+
+const matchesSkillPattern = (pattern, name) => typeof pattern === 'string'
+  && new RegExp(`^${pattern.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`).test(name);
+
+const executionSkillDenied = (agent, name) => {
+  const permission = agent?.permission;
+  if (Array.isArray(permission)) {
+    const rule = permission.filter((entry) => entry?.permission === 'skill' && matchesSkillPattern(entry.pattern, name)).at(-1);
+    return rule?.action === 'deny';
+  }
+  const rules = permission?.skill;
+  if (rules === 'deny' || rules === false) return true;
+  if (!isRecord(rules)) return false;
+  const rule = Object.entries(rules).filter(([pattern]) => matchesSkillPattern(pattern, name)).at(-1);
+  return rule?.[1] === 'deny';
+};
+
+const resolveExecutionSkill = async (client, directory, agentName) => {
+  // Native plugins still receive the legacy SDK, whose App lacks skills().
+  // Its request options allow a URL override; retain that authenticated
+  // transport while requesting the same native /skill catalog as SDK v2.
+  const response = typeof client?.app?.skills === 'function'
+    ? await client.app.skills({ directory })
+    : typeof client?.app?.agents === 'function'
+      ? await client.app.agents({ url: '/skill', query: { directory } })
+      : null;
+  const skills = unwrapResponseData(response);
+  if (response?.error || !Array.isArray(skills)) {
+    throw new Error('Cannot verify implementation startup: the skill catalog is unavailable. Retry before dispatching.');
+  }
+  const skill = skills.find((entry) => {
+    const segments = typeof entry?.location === 'string' ? entry.location.split(/[\\/]+/).filter(Boolean) : [];
+    const slug = /^skill\.md$/i.test(segments.at(-1) ?? '') ? segments.at(-2) : segments.at(-1)?.replace(/\.mdx?$/i, '');
+    return typeof entry?.name === 'string' && (isExecutingPlansName(entry.name) || isExecutingPlansName(slug));
+  });
+  if (!skill) return null;
+  if (typeof client?.app?.agents === 'function') {
+    const response = await client.app.agents({ directory, query: { directory } });
+    if (response?.error) throw new Error('Cannot verify implementation startup: agent skill permissions are unavailable.');
+    const agents = unwrapResponseData(response);
+    const agent = Array.isArray(agents) ? agents.find((entry) => entry?.name?.toLowerCase() === agentName?.toLowerCase()) : null;
+    if (executionSkillDenied(agent, skill.name)) return null;
+  }
+  return skill.name;
+};
+
+const assertPlanImplementationStartup = async (client, { context, parent, assistant, firstPage, dispatchCallId }) => {
+  if (!hasPlanImplementationRequest(parent)) return;
+  const sessionId = context.sessionID;
+  let page = firstPage ?? await readPlanHistoryPage(client, { sessionId, directory: context.directory });
+  let records = [...page.records];
+  const seenCursors = new Set();
+  // Include active-context skills from planning, but never cross a compaction
+  // summary. Bounded native pagination avoids mistaking an unloaded older page
+  // for a missing skill. The exact assistant bounds out later text/turns.
+  for (let pages = 1; page.cursor && !records.some((record) => record?.info?.summary === true); pages += 1) {
+    if (pages >= PLAN_AUTHORITY_MAX_PAGES || seenCursors.has(page.cursor)
+      || Buffer.byteLength(JSON.stringify(records), 'utf8') > PLAN_AUTHORITY_MAX_BYTES) {
+      throw new Error('Cannot verify implementation startup: active context exceeds the history limit.');
+    }
+    seenCursors.add(page.cursor);
+    page = await readPlanHistoryPage(client, { sessionId, directory: context.directory, before: page.cursor });
+    records = [...page.records, ...records];
+  }
+  const assistantIndex = records.findIndex((record) => record?.info?.id === assistant.info.id);
+  if (assistantIndex >= 0) records = [...records.slice(0, assistantIndex), assistant];
+  else records = [...records.filter((record) => record?.info?.id < assistant.info.id), assistant];
+  const summaryIndex = records.findLastIndex((record) => record?.info?.summary === true);
+  const activeRecords = records.slice(summaryIndex + 1);
+  let hasStatement = false;
+  const loadedSkills = new Set();
+  for (const record of activeRecords) {
+    if (record?.info?.role !== 'assistant') continue;
+    if (record.info.sessionID && record.info.sessionID !== sessionId) continue;
+    for (const part of record.parts ?? []) {
+      if ((dispatchCallId && part?.callID === dispatchCallId)
+        || (!dispatchCallId && record.info.id === assistant.info.id && part?.tool === 'devryan_task'
+          && part.state?.input?.action === 'start' && ['pending', 'running'].includes(part.state.status))) break;
+      if (record.info.parentID === parent.info.id) {
+        if (part?.type === 'text' && part.synthetic !== true && part.ignored !== true && readPartText(part).trim()) hasStatement = true;
+        // Only the first admitted start owns the startup contract. A rejected
+        // start does not count, and subsequent waves do not reload skills.
+        if (part?.tool === 'devryan_task' && part.state?.input?.action === 'start' && part.state.status === 'completed') {
+          try {
+            if (JSON.parse(part.state.output)?.dispatched === true) return;
+          } catch { /* An invalid/failed result cannot prove admission. */ }
+        }
+      }
+      if (part?.tool === 'skill' && part.state?.status === 'completed'
+        && typeof part.state.input?.name === 'string' && typeof part.state.output === 'string'
+        && part.state.output.trim() && !part.state.output.includes('<devryan_skill_reuse>')
+        && !part.state.output.startsWith('Skill "') && !Number.isFinite(part.state.time?.compacted)) {
+        loadedSkills.add(part.state.input.name);
+      }
+    }
+  }
+  const skillName = await resolveExecutionSkill(client, context.directory, context.agent ?? parent.info.agent);
+  const hasSkill = !skillName || [...loadedSkills].some((name) => name === skillName || isExecutingPlansName(name));
+  if (hasSkill && hasStatement) return;
+  throw createToolInputInvalidError(
+    `Implementation has not been dispatched. ${!hasSkill ? `Load the available skill "${skillName}" (or restore its full active-context result), then ` : ''}${!hasStatement ? 'write one brief visible assistant sentence stating what you will implement and verify, then ' : ''}call devryan_task start again. No child was created.`,
+    { state: 'implementation_startup_required', skillRequired: !hasSkill, statementRequired: !hasStatement },
+  );
+};
+
+const resolveInvocationPolicy = async (context, client, dispatchCallId = null) => {
   if (
     !client?.session
     || (
@@ -604,6 +713,7 @@ const resolveInvocationPolicy = async (context, client) => {
       firstPage: policyHistoryPage,
     })
     : parent;
+  await assertPlanImplementationStartup(client, { context, parent, assistant, firstPage: policyHistoryPage, dispatchCallId });
   return {
     readOnly: isPlanModeUserRecord(authority),
     parentExecution: resolveMessageExecution(assistant, parent),
@@ -946,7 +1056,7 @@ const executeAction = async (args, context, client, dispatchCallId = null, resul
     const timeoutSeconds = Number.isFinite(args.timeout_seconds)
       ? Math.min(MAX_TIMEOUT_SECONDS, Math.max(minimumTimeoutSeconds, Math.trunc(args.timeout_seconds)))
       : minimumTimeoutSeconds;
-    const invocationPolicy = await resolveInvocationPolicy(context, client);
+    const invocationPolicy = await resolveInvocationPolicy(context, client, dispatchCallId);
     if (invocationPolicy.readOnly && !supportsManagedReadOnlyAgent(agent)) {
       throw createManagedReadOnlyAgentUnsupportedError();
     }
@@ -1832,6 +1942,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         collectedResults: new Map(),
         knownBarrier: false,
         pendingStarts: [],
+        startupChecks: new Set(),
       };
       sessionStates.set(key, state);
     }
@@ -1875,9 +1986,34 @@ export const DevRyanManagedOrchestrationPlugin = async ({
   };
 
   const drainPendingStarts = async (state) => {
-    while (state.pendingStarts.length > 0) {
-      await Promise.all(state.pendingStarts.map((entry) => entry.promise));
+    while (state.pendingStarts.length > 0 || state.startupChecks.size > 0) {
+      await Promise.allSettled([...state.startupChecks, ...state.pendingStarts.map((entry) => entry.promise)]);
     }
+  };
+
+  const checkStartupBeforeRegistration = async (sessionId, callID) => {
+    if (!pluginDirectory || typeof client?.session?.messages !== 'function') return;
+    const page = await readPlanHistoryPage(client, { sessionId, directory: pluginDirectory });
+    const assistant = page.records.find((record) => record?.info?.role === 'assistant'
+      && record.parts?.some((part) => part?.type === 'tool' && part.callID === callID));
+    if (!assistant) {
+      const latestUser = page.records.findLast((record) => record?.info?.role === 'user');
+      if (hasPlanImplementationRequest(latestUser)) {
+        throw new Error('Cannot verify implementation startup: the invoking tool call is not yet available. Retry the start.');
+      }
+      return;
+    }
+    const parent = page.records.find((record) => record?.info?.id === assistant.info.parentID)
+      ?? (await readSessionMessage(client, {
+        sessionId, messageId: assistant.info.parentID, directory: pluginDirectory,
+      })).record;
+    await assertPlanImplementationStartup(client, {
+      context: { sessionID: sessionId, directory: pluginDirectory, agent: assistant.info.agent },
+      parent,
+      assistant,
+      firstPage: page,
+      dispatchCallId: callID,
+    });
   };
 
   const handleEvent = ({ event } = {}) => {
@@ -1907,7 +2043,21 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     const toolName = requireText(input?.tool, 'tool');
     if (toolName === 'devryan_task') {
       if (output?.args?.action === 'start') {
-        registerPendingStart(rootSessionId, input?.callID, output.args);
+        if (pluginDirectory && typeof client?.session?.messages === 'function') {
+          const state = getSessionState(rootSessionId);
+          const check = checkStartupBeforeRegistration(rootSessionId, input?.callID);
+          // Sibling work waits for validation too, but a rejected start never
+          // registers a pending dispatch and cannot leave an orphan barrier.
+          state.startupChecks.add(check);
+          try {
+            await check;
+            registerPendingStart(rootSessionId, input?.callID, output.args);
+          } finally {
+            state.startupChecks.delete(check);
+          }
+        } else {
+          registerPendingStart(rootSessionId, input?.callID, output.args);
+        }
       }
       return;
     }

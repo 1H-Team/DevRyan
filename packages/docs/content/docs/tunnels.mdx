@@ -1,15 +1,15 @@
 ---
 title: Tunnels
-description: Expose OpenChamber safely for remote and mobile access.
+description: Expose DevRyan safely for remote and mobile access.
 ---
 
 # Tunnels
 
-Use `openchamber tunnel` to expose a running OpenChamber instance.
+Use `openchamber tunnel` to expose a running DevRyan instance.
 
 ## Quick start (Cloudflare quick mode)
 
-1. Start OpenChamber:
+1. Start DevRyan:
 
 ```bash
 openchamber
@@ -27,7 +27,7 @@ openchamber tunnel start --provider cloudflare --mode quick
 openchamber tunnel status
 ```
 
-By default, OpenChamber prints a QR code in interactive TTY sessions. Use `--qr` to force QR output, or `--no-qr` to disable it.
+By default, DevRyan prints a QR code in interactive TTY sessions. Use `--qr` to force QR output, or `--no-qr` to disable it.
 
 ## Managed modes
 
@@ -72,6 +72,6 @@ openchamber tunnel stop --port 3000
 
 ## Behavior notes
 
-- one active tunnel per OpenChamber instance (port)
+- one active tunnel per DevRyan instance (port)
 - starting a new mode/provider on same instance replaces previous tunnel
 - generating a new connect link revokes previous unused one

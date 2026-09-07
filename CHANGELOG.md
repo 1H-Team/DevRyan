@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.15] - 2026-09-07
+
+- Chat: preserve Markdown when copying messages, keep question context visible, narrow prompt-history subscriptions, and bound large tool-diff rendering with downloadable full patches.
+- Session changes: keep incomplete, failed, loading, and undone summaries actionable after a session tree becomes idle, including a scoped Retry path for failed reads.
+- Desktop and server: extract Electron settings, menus, notifications, harness-skill discovery, and HTTP compression into focused modules while preserving web/Electron contracts.
+- Release pipeline: compile web assets once, overlap architecture-specific native preparation with Bot image builds, verify commit-bound artifact handoffs, and package installable web releases with their private runtime closure.
+- Repository quality: strengthen scoped validation, documentation reference checks, release workflow tests, runtime/performance guidance, and retained visual/audit evidence.
+- Dependencies and CI: align workspace dependency ownership and compatible package versions, keep established pins intact, and move applicable pull-request and macOS jobs to the supported Node runtime.
+- Database: deploy and verify all repository migrations and the required Production Bots schema marker before release publication.
+- Release: update all DevRyan package and desktop metadata to 1.1.15.
+
 ## [1.1.14] - 2026-09-07
 
 - Managed orchestration: resolve dispatch cards to the latest same-child recovery attempt after earlier attempts are pruned, keeping current status, model, navigation, and retry controls authoritative across reloads; refine packaged guidance for small reversible frontend corrections discovered during verification.

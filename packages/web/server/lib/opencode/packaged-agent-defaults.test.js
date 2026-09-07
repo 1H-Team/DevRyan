@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 35_236;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 36_076;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -334,6 +334,14 @@ describe('packaged agent defaults', () => {
       afterBytes: EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES,
     });
     expect(new TextEncoder().encode(content).byteLength).toBe(EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES);
+  });
+
+  it('requires execution skill reuse, visible implementation intent and outcome labels before plan dispatch', () => {
+    const { body } = readPackagedAgent('orchestrator');
+    expect(body).toContain('Executing Plans');
+    expect(body).toContain('Reuse a completed full skill result already in the active context');
+    expect(body).toContain('visible assistant');
+    expect(body).toContain('outcome-based');
   });
 
   it('grants managed delegation only to orchestrator and disables its provider-native task tool', () => {

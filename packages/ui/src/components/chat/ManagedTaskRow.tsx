@@ -24,6 +24,7 @@ import { getSameChildFollowUpTaskId } from './managedTaskRetryLineage';
 import { ModelRecoveryCard, type ModelRecoveryAutoResume } from './ModelRecoveryCard';
 import type { ControlledModelPickerProvider } from './ControlledModelPicker';
 import { formatEffortLabel } from './mobileControlsUtils';
+import { useManagedTaskTitle } from './managedTaskTitle';
 
 /** Store records carry the (optional) recovery fields; plain wire records stay accepted. */
 type ManagedTaskRowTask = ManagedTaskProjectedRecord;
@@ -197,6 +198,7 @@ const deriveAutoResume = (
 
 export type ManagedTaskRowViewProps = {
   task: ManagedTaskRowTask;
+  displayTitle?: string;
   recoverySourceTask?: ManagedTaskRowTask;
   /** Envelope of `task.priorTaskId`, when that task is still in the store. */
   priorEnvelope?: ManagedTaskRowEnvelope;
@@ -213,6 +215,7 @@ export type ManagedTaskRowViewProps = {
 
 export const ManagedTaskRowView = React.memo(({
   task,
+  displayTitle,
   recoverySourceTask,
   priorEnvelope,
   onOpenChild,
@@ -268,7 +271,7 @@ export const ManagedTaskRowView = React.memo(({
       <div className="flex min-w-0 flex-col items-start gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 flex-1">
           <h4 className="line-clamp-2 break-words typography-ui-label font-medium text-foreground sm:line-clamp-1">
-            {formatManagedTaskDisplayName(task.label)}
+            {displayTitle ?? formatManagedTaskDisplayName(task.label)}
           </h4>
           <p className={`truncate typography-meta ${status.className}`}>{status.label}</p>
           {providerFailurePresentation && !(showRecovery && task.failureKind === 'deadline_exceeded') ? (
@@ -324,9 +327,11 @@ ManagedTaskRowView.displayName = 'ManagedTaskRowView';
 
 export const ManagedTaskRow = React.memo(({
   taskId: sourceTaskId,
+  displayTitle,
   onContentChange,
 }: {
   taskId: string;
+  displayTitle?: string;
   onContentChange?: () => void;
 }) => {
   const taskId = useManagedOrchestrationStore(React.useMemo(
@@ -337,6 +342,8 @@ export const ManagedTaskRow = React.memo(({
     () => managedOrchestrationSelectors.task(taskId),
     [taskId],
   ));
+  const liveTitle = useManagedTaskTitle(displayTitle === undefined ? task : undefined);
+  const title = displayTitle ?? liveTitle;
   const didMountRef = React.useRef(false);
   const resultEnvelope = useManagedOrchestrationStore(React.useMemo(
     () => managedOrchestrationSelectors.resultEnvelope(taskId),
@@ -373,12 +380,13 @@ export const ManagedTaskRow = React.memo(({
   }, [onContentChange, task]);
 
   if (sameChildFollowUpTaskId) {
-    return <ManagedTaskRow taskId={sameChildFollowUpTaskId} onContentChange={onContentChange} />;
+    return <ManagedTaskRow taskId={sameChildFollowUpTaskId} displayTitle={displayTitle} onContentChange={onContentChange} />;
   }
-  if (!task) return null;
+  if (!task || !title) return null;
   return (
     <ManagedTaskRowView
       task={task}
+      displayTitle={title}
       recoverySourceTask={recoverySourceTask}
       priorEnvelope={priorEnvelope}
       resultEnvelope={resultEnvelope}

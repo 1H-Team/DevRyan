@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import YAML from 'yaml';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -219,13 +220,10 @@ describe('release workflow', () => {
 
   test('installs Electron macOS optional dependencies for runner and package target architectures', () => {
     const workflow = readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8');
-    const electronJobMatch = workflow.match(/  build-desktop-electron-macos:\n(?<job>[\s\S]*?)(?:\n  [a-zA-Z0-9_-]+:\n|\n$)/);
-    assert.ok(electronJobMatch?.groups?.job, 'build-desktop-electron-macos job not found');
+    const preparation = YAML.parse(workflow).jobs['prepare-desktop-electron-macos'];
+    assert.ok(preparation, 'Electron preparation job not found');
+    assert.ok(preparation.steps.some((step) => step.run === "bun install --frozen-lockfile --cpu '*' --os darwin"));
 
-    const installStepMatch = electronJobMatch.groups.job.match(/      - name: Install dependencies\n(?<step>[\s\S]*?)(?:\n      - name: |\n    [a-zA-Z0-9_-]+:|\n$)/);
-    assert.ok(installStepMatch?.groups?.step, 'Electron install dependencies step not found');
-
-    assert.match(installStepMatch.groups.step, /bun install --frozen-lockfile --cpu '\*' --os darwin/);
   });
 
   test('keeps Electron macOS releases permanently unsigned', () => {
@@ -303,5 +301,43 @@ describe('Bots affected validation planning', () => {
       'test:botIndexer',
       'test:botSupervisor',
     ]);
+  });
+});
+
+
+describe('maintenance validation selection', () => {
+  test('checks documentation without running unrelated code suites', () => {
+    assert.deepEqual(buildPlan('quick', ['docs/TESTING.md']).commands.map(c => c.label), ['docs:validate']);
+    assert.deepEqual(buildPlan('quick', []).commands, []);
+  });
+
+  test('treats shipped and project agent prompts as executable configuration', () => {
+    const bundled = buildPlan('quick', ['packages/web/server/default-config/agents/explorer.md']);
+    assert.ok(bundled.commands.some(c => c.label === 'test:web'));
+    const skill = buildPlan('test-affected', ['packages/web/server/lib/agent-browser/assets/agent-browser/SKILL.md']);
+    assert.ok(skill.commands.some(c => c.label === 'test:web'));
+    const project = buildPlan('quick', ['.opencode/agents/explorer.md']);
+    assert.ok(project.commands.some(c => c.label === 'test:scripts'));
+    const plugin = buildPlan('quick', ['.opencode/plugins/orchestrator-autoresume.mjs']);
+    assert.ok(plugin.commands.some(c => c.label === 'test:scripts'));
+    assert.ok(buildPlan('quick', ['.opencode/opencode.json']).commands.some(c => c.label === 'test:full'));
+  });
+
+  test('includes shared-runtime behavior and its web dependent', () => {
+    assert.deepEqual(buildPlan('quick', ['packages/shared-runtime/safe-archive.js']).commands.map(c => c.label), ['test:shared']);
+    for (const mode of ['affected', 'test-affected']) {
+      const labels = buildPlan(mode, ['packages/shared-runtime/safe-archive.js']).commands.map(c => c.label);
+      assert.ok(labels.includes('test:shared'));
+      assert.ok(labels.includes('test:web'));
+    }
+  });
+
+  test('requires full validation for workspace manifests and nested lockfiles', () => {
+    for (const file of ['packages/ui/package.json', 'packages/bot-indexer/package-lock.json', 'packages/desktop/src-tauri/Cargo.lock']) {
+      const labels = buildPlan('quick', [file]).commands.map(c => c.label);
+      assert.ok(labels.includes('test:full'));
+      assert.ok(labels.includes('docs:validate'));
+      assert.deepEqual(buildPlan('test-affected', [file]).commands.map(c => c.label), ['test:full']);
+    }
   });
 });

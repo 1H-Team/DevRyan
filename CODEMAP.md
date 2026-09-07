@@ -86,6 +86,8 @@ DevRyan is a Bun/Node monorepo that provides web and desktop UI runtimes for int
 - **Secure assistant-response images and path-bound grants** → `packages/web/server/lib/image-assets/codemap.md`, `packages/web/server/lib/image-assets/DOCUMENTATION.md`, and `packages/ui/src/components/chat/message/parts/codemap.md`.
 - **Web/Electron managed scheduler ownership, private tool/barrier bridge, ledger, OpenCode transport, or UI routes** → `packages/web/server/lib/orchestration/codemap.md` and `packages/web/server/lib/orchestration/DOCUMENTATION.md`.
 - **Shared managed-task cards, snapshot/event projection, recovery controls, or primary-agent handoff UI** → `packages/ui/src/stores/codemap.md`, `packages/ui/src/stores/DOCUMENTATION.md`, `packages/ui/src/sync/DOCUMENTATION.md`, and `packages/ui/src/components/chat/codemap.md`.
+- **Agent contributor guidance, scoped performance rules, or live verification** → `AGENTS.md`, `docs/AGENT_PERFORMANCE.md`, `docs/AGENT_RUNTIME_VERIFICATION.md`, and `docs/CLI_POLICY.md`.
+
 - **Validation/build/dev scripts** → `scripts/codemap.md` and the specific script file.
 - **Test ownership, discovery, feature coverage, or Production Bots visual acceptance** → `docs/TESTING.md`, `scripts/feature-test-matrix.mjs`, `scripts/test-suite-contract.test.mjs`, and `tests/visual-production-bots/codemap.md`.
 - **Generated/bundled asset folders** → treat their codemaps as ownership pointers; change source packages instead of editing generated output.
@@ -115,3 +117,5 @@ DevRyan is a Bun/Node monorepo that provides web and desktop UI runtimes for int
 - [Production Bots Docker MVP verification](docs/audits/2026-08-22-production-bots-mvp.md): trust-boundary audit, Apple Silicon Docker evidence, multi-user/visual matrix, cross-platform limitations, and final release-gate results.
 - [Agent-agnostic Production Bots visual audit](docs/audits/2026-08-27-agent-agnostic-bots/README.md): 38 reviewed Electron-CDP states covering adapters, Bot-as-code, structured policy, egress/isolation, background runtime, exact Activity focus, narrow layouts, and restricted-role presentation.
 - [Bot failure repair verification](docs/audits/2026-08-30-bot-failure-repair/README.md): memory conflict recovery, durable browser-control waiting, dedicated OAuth image tooling, local migration/Docker/visual evidence, and the hosted-schema prerequisite for remaining live acceptance.
+
+- **Release compilation, shared web/native handoffs, image caching and package commands** → [docs/RELEASE_PIPELINE.md](docs/RELEASE_PIPELINE.md), `scripts/release-artifacts.mjs`, `scripts/release-ci.mjs`, and `.github/workflows/release.yml`.

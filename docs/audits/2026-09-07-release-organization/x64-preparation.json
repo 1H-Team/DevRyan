@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "kind": "electron-prepared",
+  "revision": "76c7cbfb3721610e5760a98e6795724f3334c6c4",
+  "release": "1.1.14",
+  "lockfile": "da61e3cc7c048ee5bf9cb3d0c2853f38c4016a705c76c1fea8a660fc06907f09",
+  "arch": "x64",
+  "archiveHash": "4d3766cd81cb37c3e2fe298362e3dca05864a72372a461e41e3a73a6fe204d29",
+  "archiveBytes": 413712506
+}

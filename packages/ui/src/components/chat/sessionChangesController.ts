@@ -77,9 +77,8 @@ export type SessionChangesFooterState = {
 
 /**
  * Visibility matrix for the session changed-files card. Hidden when the
- * directory is not a git repo, nothing changed (unless the session was just
- * undone), a revert is pending, or the tree is still working. Disabled (with a
- * reason) while a session outside the tree is working in the same project.
+ * directory is not a git repo, a complete summary has no changes (except Undo),
+ * a revert is pending, or the tree is still working. Disabled (with a reason) while a session outside the tree is working in the same project.
  */
 export const resolveSessionChangesFooterState = ({
     isGitRepo,
@@ -88,6 +87,9 @@ export const resolveSessionChangesFooterState = ({
     isTreeWorking,
     isSiblingWorking,
     isUndone,
+    isLoading = false,
+    hasError = false,
+    coverage,
 }: {
     isGitRepo: boolean | null;
     fileCount: number;
@@ -95,12 +97,15 @@ export const resolveSessionChangesFooterState = ({
     isTreeWorking: boolean;
     isSiblingWorking: boolean;
     isUndone: boolean;
+    isLoading?: boolean;
+    hasError?: boolean;
+    coverage?: SessionTreeChangesEntry['coverage'];
 }): SessionChangesFooterState => {
     const mode: SessionChangesMode = isUndone ? 'undone' : 'changes';
     const hidden = isGitRepo !== true
         || isRevertPending
         || isTreeWorking
-        || fileCount === 0;
+        || (fileCount === 0 && !isUndone && !isLoading && !hasError && coverage !== 'partial');
     return {
         visible: !hidden,
         mode,
@@ -156,6 +161,7 @@ export type SessionChangesController = {
     revision: string | null;
     reviewFile: string | null;
     closeReview: () => void;
+    retry: (() => void) | undefined;
     openRepository: () => void;
     state: SessionChangesFooterState;
     /** Localised reason while Undo is disabled, `null` when it is enabled. */
@@ -230,11 +236,14 @@ export const useSessionChangesController = (): SessionChangesController => {
         isTreeWorking,
         isSiblingWorking,
         isUndone,
+        isLoading: entry?.loading,
+        hasError: Boolean(entry?.error),
+        coverage: entry?.coverage,
     });
 
     let statusMessage: string | null = null;
-    if (entry?.error) statusMessage = t('chat.sessionChanges.loadFailed');
-    else if (entry?.loading) statusMessage = t('chat.sessionChanges.loading');
+    if (entry?.loading) statusMessage = t('chat.sessionChanges.loading');
+    else if (entry?.error) statusMessage = t('chat.sessionChanges.loadFailed');
     else if (entry?.coverage === 'partial') {
         const reasons = entry.reasons ?? [];
         if (reasons.some((reason) => ['overlapping_operations', 'interleaved_file_changes'].includes(reason))) statusMessage = t('chat.sessionChanges.overlap');
@@ -243,6 +252,11 @@ export const useSessionChangesController = (): SessionChangesController => {
         else statusMessage = t('chat.sessionChanges.incomplete');
     }
     state.undoDisabled = state.undoDisabled || Boolean(entry?.loading || entry?.error) || entry?.coverage !== 'complete' || !entry?.revision;
+
+    const retry = React.useCallback(() => {
+        if (!rootSessionId || !directory || entry?.loading) return;
+        void refreshSessionTreeChanges(directory, rootSessionId);
+    }, [directory, entry?.loading, rootSessionId]);
 
     const restore = React.useCallback((action: 'undo' | 'redo') => {
         const revision = entry?.revision;
@@ -285,6 +299,7 @@ export const useSessionChangesController = (): SessionChangesController => {
         revision: reviewSelection?.key === entryKey ? reviewSelection.revision : entry?.revision ?? null,
         reviewFile: reviewSelection?.key === entryKey ? reviewSelection.file : null,
         closeReview,
+        retry: entry?.error && !entry.loading ? retry : undefined,
         openRepository,
         state,
         disabledReason: state.disabledReason === 'busy-sibling'

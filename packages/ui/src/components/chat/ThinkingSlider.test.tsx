@@ -12,12 +12,12 @@ const event = async (container: HostElement, target: HostElement, type: string, 
 };
 
 describe('thinking detents', () => {
-    test('resists until 60%, snaps in both directions, and clamps endpoints', () => {
-        expect(getThinkingDetent(1.59, 1, 4).index).toBe(1);
-        expect(Math.abs(getThinkingDetent(1.59, 1, 4).position - 1.1062) < 0.00001).toBe(true);
-        expect(getThinkingDetent(1.61, 1, 4).index).toBe(2);
-        expect(getThinkingDetent(1.41, 2, 4).index).toBe(2);
-        expect(getThinkingDetent(1.39, 2, 4).index).toBe(1);
+    test('resists until 55%, snaps in both directions, and clamps endpoints', () => {
+        expect(getThinkingDetent(1.54, 1, 4).index).toBe(1);
+        expect(Math.abs(getThinkingDetent(1.54, 1, 4).position - 1.243) < 0.00001).toBe(true);
+        expect(getThinkingDetent(1.56, 1, 4).index).toBe(2);
+        expect(getThinkingDetent(1.46, 2, 4).index).toBe(2);
+        expect(getThinkingDetent(1.44, 2, 4).index).toBe(1);
         expect(getThinkingDetent(99, 1, 4)).toEqual({ index: 3, position: 3 });
         expect(getThinkingDetent(-99, 1, 4)).toEqual({ index: 0, position: 0 });
     });
@@ -29,15 +29,15 @@ describe('thinking detents', () => {
             await render();
             const slider = container.find(node => node.getAttribute('role') === 'slider')!;
             Object.assign(slider, { setPointerCapture() {}, releasePointerCapture() {} });
-            // Host geometry is 760px: centers at 10 + index * 740/3.
-            const start = 10 + 740 / 3;
+            // Host geometry is 760px: centers at 13 + index * 734/3.
+            const start = 13 + 734 / 3;
             await event(container, slider, 'pointerdown', { clientX: start });
-            await event(container, slider, 'pointermove', { clientX: start + 740 / 3 * 0.59 });
+            await event(container, slider, 'pointermove', { clientX: start + 734 / 3 * 0.54 });
             expect(slider.getAttribute('aria-valuetext')).toBe('Medium');
-            await event(container, slider, 'pointermove', { clientX: start + 740 / 3 * 0.61 });
+            await event(container, slider, 'pointermove', { clientX: start + 734 / 3 * 0.56 });
             expect(slider.getAttribute('aria-valuetext')).toBe('High');
             expect(changes).toEqual([]);
-            await event(container, slider, 'pointerup', { clientX: start + 740 / 3 * 0.61 });
+            await event(container, slider, 'pointerup', { clientX: start + 734 / 3 * 0.56 });
             expect(changes).toEqual(['high']);
             await event(container, slider, 'pointerdown', { clientX: 750 });
             await event(container, slider, 'pointercancel', {});

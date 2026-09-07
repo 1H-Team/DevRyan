@@ -120,6 +120,8 @@ export interface ManagedTaskAutoResume {
   resetAt: number | null;
   resetSource: ManagedTaskAutoResumeResetSource | null;
   target: ManagedTaskAutoResumeTarget | null;
+  recoveryCycleTaskId: string | null;
+  backupAttemptTaskId: string | null;
   lastAttemptTaskId: string | null;
   lastAttemptAt: number | null;
   lastError: ManagedTaskAutoResumeError | null;

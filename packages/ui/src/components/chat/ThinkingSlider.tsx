@@ -85,10 +85,10 @@ export const ThinkingSlider = React.memo(function ThinkingSlider({ levels, value
                     if (!interactive || event.button !== 0 || drag.current) return;
                     event.preventDefault(); event.currentTarget.focus();
                     const rect = event.currentTarget.getBoundingClientRect();
-                    const left = rect.left + 10;
-                    const width = Math.max(1, rect.width - 20);
+                    const left = rect.left + 13;
+                    const width = Math.max(1, rect.width - 26);
                     const raw = clampThinkingPosition((event.clientX - left) / width * (levels.length - 1), levels.length);
-                    const onThumb = Math.abs(event.clientX - (left + selectedIndex / (levels.length - 1) * width)) <= 14;
+                    const onThumb = Math.abs(event.clientX - (left + selectedIndex / (levels.length - 1) * width)) <= 15;
                     const start = onThumb ? selectedIndex : Math.round(raw);
                     drag.current = { pointerId: event.pointerId, index: start, origin: start, startX: event.clientX, left, width };
                     setPreview({ index: start, position: start });
@@ -111,10 +111,10 @@ export const ThinkingSlider = React.memo(function ThinkingSlider({ levels, value
                 onPointerCancel={() => { drag.current = null; setPreview(null); }}
                 onLostPointerCapture={() => { drag.current = null; setPreview(null); }}
             >
-                <div aria-hidden="true" className="relative h-5 w-full rounded-full bg-foreground/15">
-                    <div className="absolute inset-x-[10px] top-1/2">
+                <div aria-hidden="true" className="relative h-[26px] w-full rounded-full bg-foreground/15">
+                    <div className="absolute inset-x-[13px] top-1/2">
                         {levels.map((level, stop) => <span key={level} className="absolute h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/30" style={{ left: `${levels.length === 1 ? 50 : stop / (levels.length - 1) * 100}%` }} />)}
-                        <motion.span data-thinking-thumb className="absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground shadow-sm" style={{ left }} />
+                        <motion.span data-thinking-thumb className="absolute h-[22px] w-[22px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground shadow-sm" style={{ left }} />
                     </div>
                 </div>
             </div> : null}

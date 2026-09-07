@@ -22,13 +22,6 @@ describe('full test-suite contract', () => {
     assert.deepEqual(files, [...files].sort());
   });
 
-  test('keeps local Tauri release smokes runnable without release signing secrets', () => {
-    const releaseScript = readFileSync(path.join(repositoryRoot, 'scripts/test-release-build.sh'), 'utf8');
-    assert.match(releaseScript, /\[\[ -z "\$\{TAURI_SIGNING_PRIVATE_KEY:-\}" \]\]/);
-    assert.match(releaseScript, /TAURI_ARGS\+=\(--no-sign --config '\{"bundle":\{"createUpdaterArtifacts":false\}\}'\)/);
-    assert.match(releaseScript, /tauri build "\$\{TAURI_ARGS\[@\]\}"/);
-  });
-
   test('discovers Electron tests recursively', () => {
     const files = discoverElectronTestFiles(path.join(repositoryRoot, 'packages/electron'));
     assert.ok(files.includes('startup-splash.test.mjs'));

@@ -32,3 +32,5 @@ Primary backend runtime for DevRyan web/desktop: starts Express, wires OpenCode 
 - Consumed by: `packages/web/bin/cli.js` and Electron main process import path.
 - Depends on: Express, ws, http-proxy-middleware, simple-git, web-push, OAuth/GitHub/OpenCode SDK utilities, `@openchamber/cursor-sdk-runtime`, and `@openchamber/orchestration-runtime`.
 - Publishes HTTP + SSE + WS contracts consumed by `packages/ui` through `packages/web/src/api/*` adapters.
+
+- **Extracted bootstrap policies**: `lib/http-compression-policy.js` preserves streaming exclusions and reads the API compression switch dynamically. `lib/opencode/harness-skill-discovery.js` gathers/deduplicates harness skills and reports invalid frontmatter explicitly; the entrypoint injects filesystem and discovery dependencies.

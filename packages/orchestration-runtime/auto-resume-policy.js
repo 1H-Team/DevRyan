@@ -78,6 +78,8 @@ export const initialAutoResumeState = ({ now, enabled, providerResetAt, prior = 
     lineageStartedAt: inherit ? prior.lineageStartedAt : now,
     expiresAt: inherit ? prior.expiresAt : now + AUTO_RESUME_MAX_LINEAGE_MS,
     attemptCount: inherit ? prior.attemptCount : 0,
+    recoveryCycleTaskId: inherit ? prior.recoveryCycleTaskId ?? null : null,
+    backupAttemptTaskId: inherit ? prior.backupAttemptTaskId ?? null : null,
     noSignalProbes: inherit ? prior.noSignalProbes : 0,
     rejectionsInWindow: inherit ? prior.rejectionsInWindow : 0,
     windowResetAt: inherit ? prior.windowResetAt : null,
@@ -162,18 +164,6 @@ export const planAutoResumeAttempt = ({
       : { state: 'scheduled', nextAttemptAt, target: originalTarget, resetAt, resetSource }
   );
 
-  if (state.rejectionsInWindow > AUTO_RESUME_MAX_REJECTIONS_PER_WINDOW) {
-    return exhausted('window_rejections');
-  }
-  const windowResetAt = futureTimestamp(state.windowResetAt, now);
-  if (state.rejectionsInWindow >= AUTO_RESUME_MAX_REJECTIONS_PER_WINDOW && windowResetAt !== null) {
-    return scheduleOriginal(
-      windowResetAt + AUTO_RESUME_RESET_JITTER_MS,
-      windowResetAt,
-      'opencode_status',
-    );
-  }
-
   const originBreaker = readBreaker(breakerUntil, originExecution.providerId, now);
   const knownResets = [
     [futureTimestamp(state.resetAt, now), state.resetSource ?? 'opencode_status'],
@@ -195,6 +185,7 @@ export const planAutoResumeAttempt = ({
     && (backup.providerId !== originExecution.providerId || backup.modelId !== originExecution.modelId);
   if (
     backupDiffers
+    && !state.backupAttemptTaskId
     && (!task.readOnly || supportsManagedReadOnlyProvider(backup.providerId))
     && readBreaker(breakerUntil, backup.providerId, now).until === null
   ) {
@@ -210,6 +201,18 @@ export const planAutoResumeAttempt = ({
       resetAt: earliestReset?.[0] ?? null,
       resetSource: earliestReset?.[1] ?? null,
     };
+  }
+
+  if (state.rejectionsInWindow > AUTO_RESUME_MAX_REJECTIONS_PER_WINDOW) {
+    return exhausted('window_rejections');
+  }
+  const windowResetAt = futureTimestamp(state.windowResetAt, now);
+  if (state.rejectionsInWindow >= AUTO_RESUME_MAX_REJECTIONS_PER_WINDOW && windowResetAt !== null) {
+    return scheduleOriginal(
+      windowResetAt + AUTO_RESUME_RESET_JITTER_MS,
+      windowResetAt,
+      'opencode_status',
+    );
   }
 
   if (earliestReset) {

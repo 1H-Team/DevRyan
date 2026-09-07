@@ -17,4 +17,4 @@ ClawdHub adapter for the skills catalog: browse registry entries, resolve versio
 
 ## Integration
 - Used by `skills-catalog` runtime as one source implementation alongside git/local sources.
-- Writes into `.opencode/.agents` project skill directories or user-level config skill directories.
+- Writes into project `.agents/skills/` or `.opencode/skills/` directories according to the selected source, or the corresponding user-level config skill directories.

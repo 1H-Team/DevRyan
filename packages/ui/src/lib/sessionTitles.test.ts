@@ -71,12 +71,12 @@ describe("session title helpers", () => {
     })).toBe("regular title")
   })
 
-  test("keeps generated new-session titles neutral while the backend generates a title", () => {
+  test("shows the submitted prompt while the backend generates a title", () => {
     expect(resolveDisplaySessionTitle({
       title: "New session - 2026-05-20T13:18:22.865Z",
       latestUserText: "remove the export pdf button",
       fallback: "Untitled Session",
-    })).toBe("Untitled Session")
+    })).toBe("remove the export pdf button")
   })
 
   test("hides plan control titles behind the requested fallback", () => {
@@ -90,11 +90,11 @@ describe("session title helpers", () => {
     })).toBe("New session")
   })
 
-  test("renders old raw prompt titles using the smarter title form", () => {
+  test("does not introduce a deterministic rewrite of a raw prompt title", () => {
     expect(resolveDisplaySessionTitle({
       title: "in /dashboard/professional/calendar, remove the button to export pdf",
       fallback: "Untitled Session",
-    })).toBe("Remove calendar export PDF button")
+    })).toBe("in /dashboard/professional/calendar, remove the button to export pdf")
   })
 
   test("collapses adjacent duplicate words in provider-created session titles", () => {
@@ -104,17 +104,26 @@ describe("session title helpers", () => {
     })).toBe("Review Privacy")
   })
 
-  test("does not expose user text when the stored title is the untitled placeholder", () => {
+  test("uses the unmodified prompt until the untitled placeholder is replaced", () => {
     expect(resolveDisplaySessionTitle({
       title: "Untitled Session",
       latestUserText: "fix the login bug",
       fallback: "Untitled Session",
-    })).toBe("Untitled Session")
+    })).toBe("fix the login bug")
     expect(resolveDisplaySessionTitle({
       title: "untitled session",
       latestUserText: "fix the login bug",
       fallback: "Untitled Session",
-    })).toBe("Untitled Session")
+    })).toBe("fix the login bug")
+  })
+
+  test("switches directly from prompt preview to the authoritative model title", () => {
+    const latestUserText = 'please fix the login bug and verify it'
+    expect(resolveDisplaySessionTitle({ title: 'Untitled Session', latestUserText })).toBe(latestUserText)
+    expect(resolveDisplaySessionTitle({ title: 'Login Session Recovery', latestUserText })).toBe('Login Session Recovery')
+    expect(resolveDisplaySessionTitle({ title: 'My custom title', latestUserText })).toBe('My custom title')
+    expect(resolveDisplaySessionTitle({ title: 'Untitled Session', latestUserText: 'x'.repeat(100) }))
+      .toBe(`${'x'.repeat(77)}...`)
   })
 
   test("keeps the fallback for the untitled placeholder when no user text is loaded", () => {

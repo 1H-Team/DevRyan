@@ -455,6 +455,15 @@ describe('agent backup models', () => {
     expect(() => normalizeAgentBackupModel({ model: 'openai/gpt-5.5', councillors: [] })).toThrow(/Only model and variant/);
   });
 
+  it('resolves Explorer backup execution independently from its primary', async () => {
+    await writeProjectAgent(projectDirectory, 'explorer', ['mode: subagent', 'model: openai/primary-model']);
+    writeAgentBackupModel('explorer', { model: 'opencode/backup-model', variant: 'fast' }, projectDirectory, { userConfigPath });
+    expect(resolveLocalAgentBackupExecution({ directory: projectDirectory, agent: 'Explorer', options: { userConfigPath } }))
+      .toEqual({ providerId: 'opencode', modelId: 'backup-model', variant: 'fast' });
+    expect(getAgentConfig('explorer', projectDirectory, { userConfigPath }).config.model)
+      .toEqual({ providerID: 'openai', modelID: 'primary-model' });
+  });
+
   it('round-trips a backup model through the sidecar without touching the primary model', async () => {
     await writeProjectAgent(projectDirectory, 'builder', [
       'mode: primary',

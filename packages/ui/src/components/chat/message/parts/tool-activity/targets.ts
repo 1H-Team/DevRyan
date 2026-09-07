@@ -1,3 +1,4 @@
+import { getPatchText, isToolDiffPreviewOversized } from '../toolDiffPreview';
 import type { ToolPart } from '@opencode-ai/sdk/v2';
 import {
     isEditToolName,
@@ -122,20 +123,6 @@ const parseCount = (value: unknown): number | undefined => {
     return undefined;
 };
 
-const getPatchText = (value: unknown): string | undefined => {
-    if (typeof value === 'string') {
-        const trimmed = value.trim();
-        return trimmed.length > 0 ? trimmed : undefined;
-    }
-
-    if (isRecord(value) && typeof value.patch === 'string') {
-        const trimmed = value.patch.trim();
-        return trimmed.length > 0 ? trimmed : undefined;
-    }
-
-    return undefined;
-};
-
 const getPatchTextFromRecord = (record: Record<string, unknown> | undefined): string | undefined => {
     if (!record) {
         return undefined;
@@ -146,10 +133,11 @@ const getPatchTextFromRecord = (record: Record<string, unknown> | undefined): st
         ?? getPatchText(record.changes);
 };
 
-const parsePatchStats = (patch: string): { additions: number; deletions: number } => {
+const parsePatchStats = (patch: string): { additions: number; deletions: number } | undefined => {
+    if (isToolDiffPreviewOversized(patch)) return undefined;
     let additions = 0;
     let deletions = 0;
-    for (const line of patch.split('\n')) {
+    for (const line of patch.trim().split('\n')) {
         if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
         if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
     }
@@ -168,7 +156,8 @@ const normalizeDiffPath = (value: string | undefined): string => {
 };
 
 const parsePatchFileSummaries = (patch: string): Array<{ path: string; additions: number; deletions: number; patch: string }> => {
-    const lines = patch.split('\n');
+    if (isToolDiffPreviewOversized(patch)) return [];
+    const lines = patch.trim().split('\n');
     const summaries: Array<{ path: string; additions: number; deletions: number; patch: string }> = [];
     let current: { oldPath: string; newPath: string; additions: number; deletions: number; lines: string[] } | null = null;
 

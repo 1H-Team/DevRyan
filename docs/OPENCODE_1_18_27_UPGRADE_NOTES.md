@@ -17,10 +17,10 @@ does not replace or restart an installed OpenCode process.
   checked on September 3, 2026. SDK exports and its `cross-spawn` dependency are
   unchanged; the plugin's SDK dependency advances to 1.18.27.
 - Exact source comparisons between the two official release tags found no
-  changes in `packages/plugin/src/index.ts`,
-  `packages/opencode/src/session/llm/request.ts`,
-  `packages/opencode/src/tool/registry.ts`, or
-  `packages/opencode/src/session/processor.ts`.
+  changes in `OpenCode: packages/plugin/src/index.ts`,
+  `OpenCode: packages/opencode/src/session/llm/request.ts`,
+  `OpenCode: packages/opencode/src/tool/registry.ts`, or
+  `OpenCode: packages/opencode/src/session/processor.ts`.
 - The [release comparison](https://github.com/anomalyco/opencode/compare/v1.18.26...v1.18.27)
   changes provider header/chunk timeout defaults to 300,000 ms, handles SSE
   reader-cancellation rejections, and adjusts Anthropic thinking binding.

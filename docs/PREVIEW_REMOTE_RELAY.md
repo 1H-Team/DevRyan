@@ -121,7 +121,7 @@ target type:
 This dispatch boundary is the only invasive change to the existing runtime.
 The factory stays `createPreviewProxyRuntime`; the agent registry, frame
 codec, and response streaming live in a sibling module
-(`packages/web/server/lib/preview/agent-runtime.js`) so the loopback path
+(proposed `agent-runtime.js` in `packages/web/server/lib/preview/`) so the loopback path
 remains readable and individually testable.
 
 ### 3. Browser (UI layer)

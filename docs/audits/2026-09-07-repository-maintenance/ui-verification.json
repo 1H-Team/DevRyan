@@ -1,0 +1,183 @@
+[
+  {
+    "runtime": "web",
+    "outcome": "passed",
+    "checks": [
+      {
+        "name": "selected session and composer",
+        "outcome": "passed",
+        "elapsedMs": 1964.6159999999995
+      },
+      {
+        "name": "four-session stream reaches selected transcript",
+        "outcome": "passed",
+        "elapsedMs": 1508.6248749999995
+      },
+      {
+        "name": "typing survives background streaming",
+        "outcome": "passed",
+        "elapsedMs": 505.0430840000008
+      },
+      {
+        "name": "send and reconcile a real composer submission",
+        "outcome": "passed",
+        "elapsedMs": 2458.6162080000004
+      },
+      {
+        "name": "cancel an active composer submission",
+        "outcome": "passed",
+        "elapsedMs": 243.5363750000015
+      },
+      {
+        "name": "reconnect and reopen without duplicate user messages",
+        "outcome": "passed",
+        "elapsedMs": 1177.4967499999984
+      }
+    ],
+    "cleanupErrors": [],
+    "screenshots": [
+      "visual/web/chat-idle.png"
+    ],
+    "visualReview": "Reviewed every captured PNG: readable text, visible composer and controls, theme contrast and drawer overlay; no blocking overflow in the captured fixture states."
+  },
+  {
+    "runtime": "electron",
+    "outcome": "passed",
+    "checks": [
+      {
+        "name": "selected session and composer",
+        "outcome": "passed",
+        "elapsedMs": 5633.7575
+      },
+      {
+        "name": "four-session stream reaches selected transcript",
+        "outcome": "passed",
+        "elapsedMs": 1511.929250000001
+      },
+      {
+        "name": "typing survives background streaming",
+        "outcome": "passed",
+        "elapsedMs": 507.87645899999916
+      },
+      {
+        "name": "send and reconcile a real composer submission",
+        "outcome": "passed",
+        "elapsedMs": 2364.311416999997
+      },
+      {
+        "name": "cancel an active composer submission",
+        "outcome": "passed",
+        "elapsedMs": 332.9226660000022
+      },
+      {
+        "name": "reconnect and reopen without duplicate user messages",
+        "outcome": "passed",
+        "elapsedMs": 800.1591660000013
+      }
+    ],
+    "cleanupErrors": [],
+    "screenshots": [
+      "visual/electron/chat-idle.png"
+    ],
+    "visualReview": "Reviewed every captured PNG: readable text, visible composer and controls, theme contrast and drawer overlay; no blocking overflow in the captured fixture states."
+  },
+  {
+    "runtime": "mobile",
+    "outcome": "passed",
+    "checks": [
+      {
+        "name": "selected session and composer",
+        "outcome": "passed",
+        "elapsedMs": 2127.375292
+      },
+      {
+        "name": "light 390x844 composer and overflow",
+        "outcome": "passed",
+        "elapsedMs": 0.9671250000001237
+      },
+      {
+        "name": "light 390x844 touch drawer",
+        "outcome": "passed",
+        "elapsedMs": 1003.5509999999995
+      },
+      {
+        "name": "light 844x390 composer and overflow",
+        "outcome": "passed",
+        "elapsedMs": 0.9751669999996011
+      },
+      {
+        "name": "light 768x1024 composer and overflow",
+        "outcome": "passed",
+        "elapsedMs": 0.6293329999998605
+      },
+      {
+        "name": "light 768x1024 touch drawer",
+        "outcome": "passed",
+        "elapsedMs": 963.8429169999999
+      },
+      {
+        "name": "dark 390x844 composer and overflow",
+        "outcome": "passed",
+        "elapsedMs": 0.713791999998648
+      },
+      {
+        "name": "dark 390x844 touch drawer",
+        "outcome": "passed",
+        "elapsedMs": 965.905041
+      },
+      {
+        "name": "dark 844x390 composer and overflow",
+        "outcome": "passed",
+        "elapsedMs": 0.6434590000008029
+      },
+      {
+        "name": "dark 768x1024 composer and overflow",
+        "outcome": "passed",
+        "elapsedMs": 0.7769580000003771
+      },
+      {
+        "name": "dark 768x1024 touch drawer",
+        "outcome": "passed",
+        "elapsedMs": 959.3273329999993
+      },
+      {
+        "name": "four-session stream reaches selected transcript",
+        "outcome": "passed",
+        "elapsedMs": 1508.8108329999995
+      },
+      {
+        "name": "typing survives background streaming",
+        "outcome": "passed",
+        "elapsedMs": 506.2870839999996
+      },
+      {
+        "name": "send and reconcile a real composer submission",
+        "outcome": "passed",
+        "elapsedMs": 2350.5855410000004
+      },
+      {
+        "name": "cancel an active composer submission",
+        "outcome": "passed",
+        "elapsedMs": 346.4202919999989
+      },
+      {
+        "name": "reconnect and reopen without duplicate user messages",
+        "outcome": "passed",
+        "elapsedMs": 906.5483329999988
+      }
+    ],
+    "cleanupErrors": [],
+    "screenshots": [
+      "visual/mobile/light-drawer-open.png",
+      "visual/mobile/light-390x844.png",
+      "visual/mobile/light-844x390.png",
+      "visual/mobile/light-768x1024.png",
+      "visual/mobile/dark-drawer-open.png",
+      "visual/mobile/dark-390x844.png",
+      "visual/mobile/dark-844x390.png",
+      "visual/mobile/dark-768x1024.png",
+      "visual/mobile/chat-idle.png"
+    ],
+    "visualReview": "Reviewed every captured PNG: readable text, visible composer and controls, theme contrast and drawer overlay; no blocking overflow in the captured fixture states."
+  }
+]

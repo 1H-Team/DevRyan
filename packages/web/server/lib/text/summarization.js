@@ -343,6 +343,12 @@ export function normalizeIncidentalPlanningTitle(title, sourceText) {
   const normalizedTitle = typeof title === 'string' ? title.replace(/\s+/g, ' ').trim() : '';
   const normalizedSource = typeof sourceText === 'string' ? sourceText.replace(/\s+/g, ' ').trim() : '';
   if (!normalizedTitle || !normalizedSource) return normalizedTitle;
+  // An approved-plan brief describes implementation, not a subject named
+  // "Approved plan". Restrict cleanup to generated titles of that exact frame.
+  const approvedPlanPrefix = /^(?:implement\s+)?(?:the\s+)?approved\s+plan\s*:\s*/i;
+  if (approvedPlanPrefix.test(normalizedSource)) {
+    return normalizedTitle.replace(approvedPlanPrefix, '').trim() || normalizedTitle;
+  }
   if (!EXPLICIT_PLANNING_REQUEST_PATTERN.test(normalizedSource)) return normalizedTitle;
   if (LITERAL_PLAN_SUBJECT_PATTERN.test(normalizedTitle)) return normalizedTitle;
 

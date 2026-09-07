@@ -4,6 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { mergePathValues } from './path-utils.js';
 
+const SHELL_PROBE_TIMEOUT_MS = 5_000;
+const DISCOVERY_PROBE_BUDGET_MS = 10_000;
+
 export const createOpenCodeEnvRuntime = (deps) => {
   const {
     state,
@@ -12,7 +15,39 @@ export const createOpenCodeEnvRuntime = (deps) => {
     ENV_CONFIGURED_OPENCODE_WSL_DISTRO,
     homeDirectory = os.homedir(),
     environmentPath = process.env.PATH || '',
+    executeProbe = spawnSync,
+    probeNow = () => performance.now(),
+    probeTimeoutMs = SHELL_PROBE_TIMEOUT_MS,
+    probeBudgetMs = DISCOVERY_PROBE_BUDGET_MS,
+    shellCandidates,
+    isExecutable: executableOverride,
   } = deps;
+
+  // A logical discovery owns one runner, including nested WSL probes. The clock
+  // starts at its first subprocess, not while checking configured paths/cache.
+  const createProbeRunner = () => {
+    let deadline;
+    return (executable, args, options = {}) => {
+      const now = probeNow();
+      deadline ??= now + probeBudgetMs;
+      const remaining = Math.floor(deadline - now);
+      if (remaining <= 0) return null;
+      const timeout = Math.max(1, Math.min(options.timeout ?? probeTimeoutMs, remaining));
+      try {
+        const result = executeProbe(executable, args, { ...options, timeout, killSignal: 'SIGKILL' });
+        // An errored/timed-out process can still have stdout. It is never an
+        // authoritative environment or executable discovery result.
+        if (!result || result.error || result.signal || result.status !== 0 || typeof result.stdout !== 'string'
+          || probeNow() - now > timeout) return null;
+        return result;
+      } catch {
+        return null;
+      }
+    };
+  };
+
+  const uniqueShellCandidates = () => [...new Set((shellCandidates ?? [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh'])
+    .filter((candidate) => typeof candidate === 'string' && candidate.length > 0))];
 
   const parseNullSeparatedEnvSnapshot = (raw) => {
     if (typeof raw !== 'string' || raw.length === 0) {
@@ -26,10 +61,10 @@ export const createOpenCodeEnvRuntime = (deps) => {
         continue;
       }
       const idx = entry.indexOf('=');
-      if (idx <= 0) {
-        continue;
-      }
+      if (idx === 0) continue; // CMD can include hidden drive-current-directory entries.
+      if (idx < 0) return null;
       const key = entry.slice(0, idx);
+      if (/[\r\n]/.test(key) || key.trim() !== key) return null;
       const value = entry.slice(idx + 1);
       result[key] = value;
     }
@@ -38,6 +73,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
   };
 
   const isExecutable = (filePath) => {
+    if (executableOverride) return executableOverride(filePath);
     try {
       const stat = fs.statSync(filePath);
       if (!stat.isFile()) return false;
@@ -95,7 +131,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
     process.env.PATH = [trimmed, ...parts].join(path.delimiter);
   };
 
-  const getWindowsShellEnvSnapshot = () => {
+  const getWindowsShellEnvSnapshot = (probe) => {
     const parseResult = (stdout) => parseNullSeparatedEnvSnapshot(typeof stdout === 'string' ? stdout : '');
 
     const psScript =
@@ -107,15 +143,15 @@ export const createOpenCodeEnvRuntime = (deps) => {
       path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
     ];
 
-    for (const shellPath of powershellCandidates) {
+    for (const shellPath of new Set(powershellCandidates)) {
       try {
-        const result = spawnSync(shellPath, ['-NoLogo', '-Command', psScript], {
+        const result = probe(shellPath, ['-NoLogo', '-Command', psScript], {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
           maxBuffer: 10 * 1024 * 1024,
           windowsHide: true,
         });
-        if (result.status !== 0) {
+        if (!result) {
           continue;
         }
         const parsed = parseResult(result.stdout);
@@ -128,13 +164,13 @@ export const createOpenCodeEnvRuntime = (deps) => {
 
     const comspec = process.env.ComSpec || 'cmd.exe';
     try {
-      const result = spawnSync(comspec, ['/d', '/s', '/c', 'set'], {
+      const result = probe(comspec, ['/d', '/s', '/c', 'set'], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
         maxBuffer: 10 * 1024 * 1024,
         windowsHide: true,
       });
-      if (result.status === 0 && typeof result.stdout === 'string' && result.stdout.length > 0) {
+      if (result && result.stdout.length > 0) {
         return parseNullSeparatedEnvSnapshot(result.stdout.replace(/\r?\n/g, '\0'));
       }
     } catch {
@@ -148,28 +184,27 @@ export const createOpenCodeEnvRuntime = (deps) => {
       return state.cachedLoginShellEnvSnapshot;
     }
 
+    const probe = createProbeRunner();
     if (process.platform === 'win32') {
-      const windowsSnapshot = getWindowsShellEnvSnapshot();
+      const windowsSnapshot = getWindowsShellEnvSnapshot(probe);
       state.cachedLoginShellEnvSnapshot = windowsSnapshot;
       return windowsSnapshot;
     }
 
-    const shellCandidates = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh'].filter(Boolean);
-
-    for (const shellPath of shellCandidates) {
+    for (const shellPath of uniqueShellCandidates()) {
       if (!isExecutable(shellPath)) {
         continue;
       }
 
       try {
-        const result = spawnSync(shellPath, ['-lic', 'env -0'], {
+        const result = probe(shellPath, ['-lic', 'env -0'], {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
           maxBuffer: 10 * 1024 * 1024,
           windowsHide: true,
         });
 
-        if (result.status !== 0) {
+        if (!result) {
           continue;
         }
 
@@ -227,7 +262,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
     state.resolvedWslDistro = null;
   };
 
-  const resolveWslExecutablePath = () => {
+  const resolveWslExecutablePath = (probe = createProbeRunner()) => {
     if (process.platform !== 'win32') {
       return null;
     }
@@ -243,12 +278,12 @@ export const createOpenCodeEnvRuntime = (deps) => {
     }
 
     try {
-      const result = spawnSync('where', ['wsl'], {
+      const result = probe('where', ['wsl'], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       });
-      if (result.status === 0) {
+      if (result) {
         const lines = (result.stdout || '')
           .split(/\r?\n/)
           .map((line) => line.trim())
@@ -279,18 +314,18 @@ export const createOpenCodeEnvRuntime = (deps) => {
     return [...prefix, '--exec', ...execArgs];
   };
 
-  const probeWslForOpencode = () => {
+  const probeWslForOpencode = (probe = createProbeRunner()) => {
     if (process.platform !== 'win32') {
       return null;
     }
 
-    const wslBinary = resolveWslExecutablePath();
+    const wslBinary = resolveWslExecutablePath(probe);
     if (!wslBinary) {
       return null;
     }
 
     try {
-      const result = spawnSync(
+      const result = probe(
         wslBinary,
         buildWslExecArgs(['sh', '-lc', 'command -v opencode']),
         {
@@ -301,7 +336,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
         }
       );
 
-      if (result.status !== 0) {
+      if (!result) {
         return null;
       }
 
@@ -310,7 +345,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
         .map((line) => line.trim())
         .filter(Boolean);
       const found = lines[0] || '';
-      if (!found) {
+      if (lines.length !== 1 || !found.startsWith('/') || /[\0\r\n]/.test(found)) {
         return null;
       }
 
@@ -324,8 +359,8 @@ export const createOpenCodeEnvRuntime = (deps) => {
     }
   };
 
-  const applyWslOpencodeResolution = ({ wslBinary, opencodePath, source = 'wsl', distro = null } = {}) => {
-    const resolvedWsl = wslBinary || resolveWslExecutablePath();
+  const applyWslOpencodeResolution = ({ wslBinary, opencodePath, source = 'wsl', distro = null } = {}, probe = createProbeRunner()) => {
+    const resolvedWsl = wslBinary || resolveWslExecutablePath(probe);
     if (!resolvedWsl) {
       return null;
     }
@@ -344,6 +379,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
   };
 
   const resolveOpencodeCliPath = () => {
+    const probe = createProbeRunner();
     const explicit = [
       process.env.OPENCODE_BINARY,
       process.env.OPENCODE_PATH,
@@ -419,12 +455,12 @@ export const createOpenCodeEnvRuntime = (deps) => {
 
     if (process.platform === 'win32') {
       try {
-        const result = spawnSync('where', ['opencode'], {
+        const result = probe('where', ['opencode'], {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
         });
-        if (result.status === 0) {
+        if (result) {
           const lines = (result.stdout || '')
             .split(/\r?\n/)
             .map((line) => line.trim())
@@ -438,7 +474,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
         }
       } catch {
       }
-      const wsl = probeWslForOpencode();
+      const wsl = probeWslForOpencode(probe);
       if (wsl) {
         return applyWslOpencodeResolution({
           wslBinary: wsl.wslBinary,
@@ -450,17 +486,17 @@ export const createOpenCodeEnvRuntime = (deps) => {
       return null;
     }
 
-    const shells = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh'].filter(Boolean);
-    for (const shell of shells) {
+    for (const shell of uniqueShellCandidates()) {
       if (!isExecutable(shell)) continue;
       try {
-        const result = spawnSync(shell, ['-lic', 'command -v opencode'], {
+        const result = probe(shell, ['-lic', 'command -v opencode'], {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
         });
-        if (result.status === 0) {
-          const found = (result.stdout || '').trim().split(/\s+/).pop() || '';
+        if (result) {
+          const found = result.stdout.trim();
+          if (/[\0\r\n]/.test(found)) continue;
           if (found && isExecutable(found)) {
             clearWslOpencodeResolution();
             state.resolvedOpencodeBinarySource = 'shell';
@@ -475,6 +511,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
   };
 
   const resolveNodeCliPath = () => {
+    const probe = createProbeRunner();
     const explicit = [process.env.NODE_BINARY, process.env.OPENCHAMBER_NODE_BINARY]
       .map((v) => (typeof v === 'string' ? v.trim() : ''))
       .filter(Boolean);
@@ -499,12 +536,12 @@ export const createOpenCodeEnvRuntime = (deps) => {
 
     if (process.platform === 'win32') {
       try {
-        const result = spawnSync('where', ['node'], {
+        const result = probe('where', ['node'], {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
         });
-        if (result.status === 0) {
+        if (result) {
           const lines = (result.stdout || '')
             .split(/\r?\n/)
             .map((line) => line.trim())
@@ -517,17 +554,17 @@ export const createOpenCodeEnvRuntime = (deps) => {
       return null;
     }
 
-    const shells = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh'].filter(Boolean);
-    for (const shell of shells) {
+    for (const shell of uniqueShellCandidates()) {
       if (!isExecutable(shell)) continue;
       try {
-        const result = spawnSync(shell, ['-lic', 'command -v node'], {
+        const result = probe(shell, ['-lic', 'command -v node'], {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
         });
-        if (result.status === 0) {
-          const found = (result.stdout || '').trim().split(/\s+/).pop() || '';
+        if (result) {
+          const found = result.stdout.trim();
+          if (/[\0\r\n]/.test(found)) continue;
           if (found && isExecutable(found)) {
             return found;
           }
@@ -540,6 +577,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
   };
 
   const resolveBunCliPath = () => {
+    const probe = createProbeRunner();
     const explicit = [process.env.BUN_BINARY, process.env.OPENCHAMBER_BUN_BINARY]
       .map((v) => (typeof v === 'string' ? v.trim() : ''))
       .filter(Boolean);
@@ -580,12 +618,12 @@ export const createOpenCodeEnvRuntime = (deps) => {
       }
 
       try {
-        const result = spawnSync('where', ['bun'], {
+        const result = probe('where', ['bun'], {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
         });
-        if (result.status === 0) {
+        if (result) {
           const lines = (result.stdout || '')
             .split(/\r?\n/)
             .map((line) => line.trim())
@@ -598,17 +636,17 @@ export const createOpenCodeEnvRuntime = (deps) => {
       return null;
     }
 
-    const shells = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh'].filter(Boolean);
-    for (const shell of shells) {
+    for (const shell of uniqueShellCandidates()) {
       if (!isExecutable(shell)) continue;
       try {
-        const result = spawnSync(shell, ['-lic', 'command -v bun'], {
+        const result = probe(shell, ['-lic', 'command -v bun'], {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
         });
-        if (result.status === 0) {
-          const found = (result.stdout || '').trim().split(/\s+/).pop() || '';
+        if (result) {
+          const found = result.stdout.trim();
+          if (/[\0\r\n]/.test(found)) continue;
           if (found && isExecutable(found)) {
             return found;
           }
@@ -700,7 +738,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
       return null;
     }
 
-    const nodeBinary = ensureNodeCliEnv() || resolveNodeCliPath() || 'node';
+    const nodeBinary = ensureNodeCliEnv() || 'node';
     return {
       binary: nodeBinary,
       args: [launcher],
@@ -812,14 +850,14 @@ export const createOpenCodeEnvRuntime = (deps) => {
       const interpreter = opencodeShimInterpreter(candidate);
       if (interpreter === 'node') {
         return {
-          binary: ensureNodeCliEnv() || resolveNodeCliPath() || 'node',
+          binary: ensureNodeCliEnv() || 'node',
           args: [candidate],
           wrapperType: 'node-shebang',
         };
       }
       if (interpreter === 'bun') {
         return {
-          binary: ensureBunCliEnv() || resolveBunCliPath() || 'bun',
+          binary: ensureBunCliEnv() || 'bun',
           args: [candidate],
           wrapperType: 'bun-shebang',
         };
@@ -954,6 +992,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
 
   const applyOpencodeBinaryFromSettings = async (options = {}) => {
     const strict = options?.strict === true;
+    const discoveryProbe = createProbeRunner();
     try {
       const settings = await readSettingsFromDiskMigrated();
       if (!settings || typeof settings !== 'object') {
@@ -979,13 +1018,13 @@ export const createOpenCodeEnvRuntime = (deps) => {
         : null;
 
       if (explicitWslPath && explicitWslPath[1] && explicitWslPath[1].trim().length > 0) {
-        const probe = probeWslForOpencode();
+        const probe = probeWslForOpencode(discoveryProbe);
         const applied = applyWslOpencodeResolution({
-          wslBinary: probe?.wslBinary || resolveWslExecutablePath(),
+          wslBinary: probe?.wslBinary || resolveWslExecutablePath(discoveryProbe),
           opencodePath: explicitWslPath[1].trim(),
           source: 'settings-wsl-path',
           distro: probe?.distro || ENV_CONFIGURED_OPENCODE_WSL_DISTRO,
-        });
+        }, discoveryProbe);
         if (applied) {
           return applied;
         }
@@ -995,13 +1034,13 @@ export const createOpenCodeEnvRuntime = (deps) => {
       }
 
       if (process.platform === 'win32' && (isWslExecutableValue(raw) || isWslExecutableValue(normalized || ''))) {
-        const probe = probeWslForOpencode();
+        const probe = probeWslForOpencode(discoveryProbe);
         const applied = applyWslOpencodeResolution({
           wslBinary: probe?.wslBinary || normalized || raw || null,
           opencodePath: probe?.opencodePath || 'opencode',
           source: 'settings-wsl',
           distro: probe?.distro || ENV_CONFIGURED_OPENCODE_WSL_DISTRO,
-        });
+        }, discoveryProbe);
         if (applied) {
           return applied;
         }

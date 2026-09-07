@@ -194,11 +194,13 @@ export const resolveDisplaySessionTitle = ({
     return deriveSessionTitleFromUserText(latestUserText, fallback)
   }
   if (isPlaceholderSessionTitle(normalizedTitle)) {
-    return fallback
-  }
-  const smartTitle = deriveSmartTitleFromUserText(normalizedTitle)
-  if (smartTitle && smartTitle !== normalizedTitle) {
-    return smartTitle
+    // A temporary label is the submitted prompt, not another generated title.
+    // Callers supply this only for user sessions, never a managed child brief.
+    const prompt = normalizeTitleWhitespace(latestUserText ?? "")
+    if (!prompt) return fallback
+    return prompt.length > MAX_DERIVED_TITLE_LENGTH
+      ? `${prompt.slice(0, MAX_DERIVED_TITLE_LENGTH - 3).trimEnd()}...`
+      : prompt
   }
   return normalizedTitle
 }

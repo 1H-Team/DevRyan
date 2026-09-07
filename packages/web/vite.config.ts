@@ -62,7 +62,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: [
-      { find: '@opencode-ai/sdk/v2', replacement: path.resolve(__dirname, '../../node_modules/@opencode-ai/sdk/dist/v2/client.js') },
+      { find: /^@opencode-ai\/sdk\/v2$/, replacement: '@opencode-ai/sdk/v2/client' },
       { find: '@openchamber/ui', replacement: path.resolve(__dirname, '../ui/src') },
       { find: '@web', replacement: path.resolve(__dirname, './src') },
       { find: '@', replacement: path.resolve(__dirname, '../ui/src') },

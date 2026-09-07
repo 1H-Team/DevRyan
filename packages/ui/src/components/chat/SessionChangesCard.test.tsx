@@ -2,10 +2,13 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Message, Session, SessionStatus } from '@opencode-ai/sdk/v2/client';
 
+import { opencodeClient, type SessionTreeChanges } from '@/lib/opencode/client';
+import { sessionEvents } from '@/lib/sessionEvents';
+import type { SessionChangesController } from './sessionChangesController';
 import { I18nProvider } from '@/lib/i18n';
 import { dict } from '@/lib/i18n/messages/en';
 import type { RevertTransaction } from '@/sync/revert-transactions';
@@ -57,6 +60,7 @@ mock.module('@/stores/useSessionTreeChangesStore', () => ({
 }));
 
 const {
+  useSessionChangesController,
   resolveRootSessionIdFromList,
   resolveSessionChangesFooterState,
   resolveSessionTreeIds,
@@ -153,9 +157,9 @@ describe('resolveSessionChangesFooterState', () => {
     });
   });
 
-  test('an undone session is hidden with zero files', () => {
+  test('an undone session retains Redo with zero files', () => {
     expect(resolveSessionChangesFooterState({ ...base, fileCount: 0, isUndone: true })).toEqual({
-      visible: false, mode: 'undone', undoDisabled: false, disabledReason: null,
+      visible: true, mode: 'undone', undoDisabled: false, disabledReason: null,
     });
   });
 });
@@ -353,11 +357,115 @@ describe('SessionChangesCard (connected)', () => {
     expect(renderConnected()).toBe('');
   });
 
-  test('hides with zero files regardless of loading, errors, or capture coverage', () => {
-    for (const overrides of [{}, { loading: true }, { error: 'Failed to load' }, { coverage: 'partial' as const }]) {
+  test('hides complete read-only and net-zero summaries', () => {
+    seedEntry('ses_root', { files: [], coverage: 'complete' });
+    expect(renderConnected()).toBe('');
+  });
+
+  test('shows empty loading, failed and incomplete summaries with safe actions', () => {
+    for (const [overrides, label] of [
+      [{ loading: true }, 'chat.sessionChanges.loading'],
+      [{ error: 'Failed to load' }, 'chat.sessionChanges.loadFailed'],
+      [{ coverage: 'partial' }, 'chat.sessionChanges.incomplete'],
+    ] as const) {
       seedEntry('ses_root', { files: [], ...overrides });
-      expect(renderConnected()).toBe('');
+      const markup = renderConnected();
+      expect(markup).toContain(dict[label]);
+      expect(hasDisabledUndo(markup)).toBe(true);
+      expect(markup).not.toContain('data-session-changes-action="review"');
+      expect(markup.includes('data-session-changes-action="retry"')).toBe('error' in overrides);
     }
+  });
+
+  test('shows an empty undone result and restores the files after Redo', () => {
+    seedEntry('ses_root', { files: [], undone: true });
+    expect(renderConnected()).toContain('data-session-changes-action="redo"');
+    seedEntry('ses_root', { undone: false });
+    expect(renderConnected()).toContain('Edited 2 files');
+  });
+
+  afterEach(() => {
+    storeModule.resetSessionTreeChangesForTests();
+    storeModule.setSessionTreeChangesFetcher(null);
+    storeModule.setSessionTreeChangesDebounceForTests(null);
+  });
+
+  const controller = (): SessionChangesController => {
+    let value: SessionChangesController | undefined;
+    function Probe() { value = useSessionChangesController(); return null; }
+    render(React.createElement(Probe));
+    if (!value) throw new Error('Controller did not render');
+    return value;
+  };
+  const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 20));
+  const result = (overrides: Partial<SessionTreeChanges> = {}): SessionTreeChanges => ({
+    rootSessionID: 'ses_root', directory: '/repo', revision: 'rev_2',
+    coverage: 'complete', files: [], sessionCount: 2,
+    hasUnattributedMutations: false, firstUserMessageID: 'msg_1', ...overrides,
+  });
+
+  test('idle refresh and a later capture notification reveal the completed changes', async () => {
+    storeModule.resetSessionTreeChangesForTests();
+    storeModule.setSessionTreeChangesDebounceForTests(0);
+    let response = result({ coverage: 'partial' });
+    storeModule.setSessionTreeChangesFetcher(async () => response);
+    const release = storeModule.subscribeSessionTreeChanges('/repo', 'ses_root');
+    sources = { ...sources, statuses: { ses_child: busy } };
+    storeModule.observeSessionTreeActivity('/repo', 'ses_root', true);
+    await settle();
+    expect(renderConnected()).toBe('');
+    sources = { ...sources, statuses: { ses_child: { type: 'idle' } } };
+    storeModule.observeSessionTreeActivity('/repo', 'ses_root', false);
+    await settle();
+    expect(renderConnected()).toContain(dict['chat.sessionChanges.incomplete']);
+    response = result({ files: [{ path: 'late.ts', status: 'modified', additions: 2, deletions: 1, sessions: ['ses_child'] }] });
+    sessionEvents.requestGitRefresh({ directory: '/repo', sessionChanges: true });
+    await settle();
+    expect(renderConnected()).toContain('Edited 1 file');
+    expect(renderConnected()).toContain('late.ts');
+    release();
+  });
+
+  test('Retry refreshes the selected root and clears the failure on success', async () => {
+    seedEntry('ses_root', { files: [], error: 'offline' });
+    sources = { ...sources, currentSessionId: 'ses_child' };
+    const calls: string[] = [];
+    let finish!: (value: SessionTreeChanges) => void;
+    storeModule.setSessionTreeChangesFetcher((root, directory) => {
+      calls.push(`${directory}:${root}`);
+      return new Promise((resolve) => { finish = resolve; });
+    });
+    controller().retry?.();
+    expect(calls).toEqual(['/repo:ses_root']);
+    expect(renderConnected()).toContain(dict['chat.sessionChanges.loading']);
+    expect(controller().retry).toBeUndefined();
+    finish(result({ files: [{ path: 'recovered.ts', status: 'added', additions: 1, deletions: 0, sessions: ['ses_root'] }] }));
+    await settle();
+    expect(renderConnected()).toContain('recovered.ts');
+    expect(renderConnected()).not.toContain(dict['chat.sessionChanges.loadFailed']);
+  });
+
+  test('Undo and Redo refresh the revision and keep the empty undone card actionable', async () => {
+    const original = opencodeClient.sessionChangesAction;
+    const actions: string[] = [];
+    let undone = false;
+    opencodeClient.sessionChangesAction = async (_root, _directory, _revision, action) => {
+      actions.push(action);
+      undone = action === 'undo';
+    };
+    storeModule.setSessionTreeChangesFetcher(async () => result({ undone, files: undone ? [] : [
+      { path: 'restored.ts', status: 'added', additions: 1, deletions: 0, sessions: ['ses_root'] },
+    ] }));
+    try {
+      controller().undo();
+      await settle();
+      expect(renderConnected()).toContain('data-session-changes-action="redo"');
+      expect(controller().state.undoDisabled).toBe(false);
+      controller().redo();
+      await settle();
+      expect(renderConnected()).toContain('restored.ts');
+      expect(actions).toEqual(['undo', 'redo']);
+    } finally { opencodeClient.sessionChangesAction = original; }
   });
 
   test('hides while a revert is pending anywhere in the tree', () => {

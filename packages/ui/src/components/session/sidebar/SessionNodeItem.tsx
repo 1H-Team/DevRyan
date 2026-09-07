@@ -33,7 +33,7 @@ import {
   RiWindowLine,
 } from '@remixicon/react';
 import { cn } from '@/lib/utils';
-import { isCursorAcpErrorTitle, resolveDisplaySessionTitle } from '@/lib/sessionTitles';
+import { isCursorAcpErrorTitle, isPlaceholderSessionTitle, resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { canUseElectronDesktopIPC, invokeDesktop } from '@/lib/desktop';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
@@ -476,7 +476,8 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const directoryState = sessionDirectory ? directoryStatus.get(sessionDirectory) : null;
   const isMissingDirectory = directoryState === 'missing';
   const isActive = currentSessionId === session.id;
-  const needsDerivedTitle = isCursorAcpErrorTitle(resolvedSession.title);
+  const needsDerivedTitle = isCursorAcpErrorTitle(resolvedSession.title)
+    || (!resolvedSession.parentID && isPlaceholderSessionTitle(resolvedSession.title));
   const firstUserText = useSessionFirstUserText(
     needsDerivedTitle ? session.id : null,
     sessionDirectory ?? undefined,
