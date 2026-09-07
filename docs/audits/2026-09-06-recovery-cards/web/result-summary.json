@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "revision": "0ab667b8c80488b59895268ad9e4bca3e310797f",
+  "dirty": true,
+  "runtime": "web",
+  "scenario": "recovery",
+  "startedAt": "2026-09-06T19:25:55.791Z",
+  "outcome": "passed",
+  "checks": [
+    {
+      "name": "selected session and composer",
+      "outcome": "passed",
+      "elapsedMs": 2029.8831250000003
+    },
+    {
+      "name": "four-session stream reaches selected transcript",
+      "outcome": "passed",
+      "elapsedMs": 1506.296625
+    },
+    {
+      "name": "typing survives background streaming",
+      "outcome": "passed",
+      "elapsedMs": 516.5210829999996
+    },
+    {
+      "name": "send and reconcile a real composer submission",
+      "outcome": "passed",
+      "elapsedMs": 2450.971041999999
+    },
+    {
+      "name": "cancel an active composer submission",
+      "outcome": "passed",
+      "elapsedMs": 315.36329099999966
+    },
+    {
+      "name": "reconnect and reopen without duplicate user messages",
+      "outcome": "passed",
+      "elapsedMs": 1115.7190840000003
+    },
+    {
+      "name": "recovery fixture preserves genuine failure before resumption",
+      "outcome": "passed",
+      "elapsedMs": 900.8057919999992
+    },
+    {
+      "name": "sixth attempt replaces pruned failure live and after reload",
+      "outcome": "passed",
+      "elapsedMs": 1866.9682919999996
+    },
+    {
+      "name": "recovered parent produces one saved actionable plan with completed dispatch",
+      "outcome": "passed",
+      "elapsedMs": 2649.7567499999986
+    },
+    {
+      "name": "narrow viewport keeps the saved plan and recovered row usable",
+      "outcome": "passed",
+      "elapsedMs": 1077.8766250000008
+    },
+    {
+      "name": "generic Explorer and Designer session titles summarize the brief, persist and survive reload",
+      "outcome": "passed",
+      "elapsedMs": 3084.5046249999978
+    }
+  ],
+  "consoleErrors": [],
+  "screenshots": [
+    "recovery-failed.png",
+    "recovery-running-live.png",
+    "recovery-running-reload.png",
+    "recovery-child.png",
+    "recovery-plan-saved.png",
+    "recovery-plan-expanded.png",
+    "recovery-completed-reload.png",
+    "recovery-mobile-saved-file.png",
+    "recovery-narrow-plan.png",
+    "recovery-narrow-dispatch.png",
+    "recovery-explorer-title.png",
+    "recovery-designer-title.png",
+    "chat-idle.png"
+  ],
+  "liveProvider": "not-run",
+  "physicalDevice": "not-run",
+  "visualReview": {
+    "outcome": "reviewed",
+    "method": "Every listed PNG inspected after the completed run.",
+    "coverage": "Recovery state, saved plan collapse/expand/reload, narrow layout, and summarized child titles."
+  },
+  "recoveryCards": {
+    "outcome": "passed",
+    "source": "actual UI with canonical HTTP/SSE recovery replay; no live provider execution",
+    "attempts": 6,
+    "rootSessionID": "ses_perfparent",
+    "childSessionID": "ses_perfchild1",
+    "planMessageID": "msg_1a0782f62a6000plan",
+    "markdown": "# Calendar and booking details\n\n## Context\nRestore consistent appointment details and calendar spacing.\n\n## Implementation\n\n### Phase 1: Shared details\n1. Align the service and patient labels.\n2. Restore the popover spacing.\n\n### Phase 2: Navigation\n1. Preserve the selected appointment when opening its detail page.\n2. Keep the patient name below the service title in both views.\n3. Verify return navigation restores the previous calendar position.\n\n### Phase 3: Responsive presentation\n1. Let the calendar expand without an internal scrollbar.\n2. Match the spacing on clinic and professional popovers.\n3. Verify dismissal animation and keyboard focus.\n\n## Verification\n1. Check clinic and professional calendars.\n2. Reload and verify the full plan remains in its card.",
+    "summarizedChildren": [
+      {
+        "agent": "explorer",
+        "sessionID": "ses_qa3",
+        "title": "Inspect Profile Review Statistics and Navigation"
+      },
+      {
+        "agent": "designer",
+        "sessionID": "ses_qa4",
+        "title": "Compact Reviews Summary and Back Navigation"
+      }
+    ]
+  },
+  "sourceRun": "web-recovery-T74WTc",
+  "cleanup": {
+    "cleanupErrors": []
+  }
+}

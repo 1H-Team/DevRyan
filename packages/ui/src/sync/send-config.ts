@@ -1,3 +1,4 @@
+import { resolveChatThinkingVariant } from "@/lib/providers/chatThinking"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { useContextStore } from "@/stores/contextStore"
 import { useSelectionStore } from "./selection-store"
@@ -437,17 +438,24 @@ export function resolveCurrentSendConfig(sessionId: string | null | undefined): 
   })
 }
 
+/** Normalize only new chat captures; persisted queues and history retain their wire choice. */
+export function normalizeNewChatSendConfig(config: SendConfig, providers: SendConfigProvider[]): SendConfig {
+  const provider = providers.find((entry) => entry.id === config.providerID)
+  const variant = resolveChatThinkingVariant(provider, config.modelID, config.variant) ?? null
+  return variant === config.variant ? config : { ...config, variant }
+}
+
 /** New user/queue captures must not turn missing historical Plan authority into OFF. */
 export function captureCurrentSendConfig(sessionId: string | null | undefined): SendConfig {
   if (sessionId) assertSessionPlanSelectionReady(sessionId)
-  return resolveCurrentSendConfig(sessionId)
+  return normalizeNewChatSendConfig(resolveCurrentSendConfig(sessionId), useConfigStore.getState().providers)
 }
 
 export function resolveCurrentDraftSendConfig(draftId: string | null | undefined, draftSendConfig?: SendConfig | null): SendConfig {
   const config = useConfigStore.getState()
   const selection = useSelectionStore.getState()
   if (!draftId) {
-    return resolveCurrentSendConfig(null)
+    return normalizeNewChatSendConfig(resolveCurrentSendConfig(null), config.providers)
   }
 
   const draftAgent = selection.getDraftAgentSelection(draftId)
@@ -480,7 +488,7 @@ export function resolveCurrentDraftSendConfig(draftId: string | null | undefined
     agentModelSelections: config.agentModelSelections,
   })
 
-  return {
+  return normalizeNewChatSendConfig({
     providerID: resolved.providerID,
     modelID: resolved.modelID,
     agent: resolved.agent,
@@ -488,5 +496,5 @@ export function resolveCurrentDraftSendConfig(draftId: string | null | undefined
     planMode: hasOwn(draftSendConfig, "planMode")
       ? draftSendConfig?.planMode === true
       : selection.getPlanModeSelection(null, draftId),
-  }
+  }, config.providers)
 }

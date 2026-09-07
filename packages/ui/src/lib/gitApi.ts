@@ -1191,6 +1191,15 @@ const isWorkingTreeDirty = (status: GitStatus): boolean => {
   return status.isClean === false || (Array.isArray(status.files) && status.files.length > 0);
 };
 
+export function assertGitSyncReady(status: import('./api/types').GitStatus): void {
+  if (status.rebaseInProgress) {
+    throw new Error('Rebase in progress. Resolve conflicts and continue or abort the rebase before pushing or pulling.');
+  }
+  if (status.headState === 'detached') {
+    throw new Error('HEAD is detached. Check out a branch before pushing or pulling.');
+  }
+}
+
 export async function syncGitBranchForPush(
   directory: string,
   options: { remote?: string; branch?: string; rebase?: boolean } = {},
@@ -1209,11 +1218,13 @@ export async function syncGitBranchForPush(
     gitDeps.getGitStatus(directory),
     gitDeps.getRemotes(directory).catch(() => [] as GitRemote[]),
   ]);
+  assertGitSyncReady(initialStatus);
   const remoteName = getRemoteNameForPushSync(options.remote, initialStatus, remotes);
   const branch = getTrackedBranchForRemote(initialStatus, remoteName, options.branch);
 
   await gitDeps.gitFetch(directory, { remote: remoteName });
   const statusAfterFetch = await gitDeps.getGitStatus(directory);
+  assertGitSyncReady(statusAfterFetch);
 
   let pullResult: GitPullResult | null = null;
   let statusAfterPull = statusAfterFetch;
@@ -1233,6 +1244,10 @@ export async function syncGitBranchForPush(
       rebase: options.rebase ?? true,
     });
     statusAfterPull = await gitDeps.getGitStatus(directory);
+    assertGitSyncReady(statusAfterPull);
+    if (pullResult.conflict || pullResult.success === false) {
+      throw new Error('Pull did not complete. Resolve its conflicts before pushing.');
+    }
   }
 
   const shouldPush = (statusAfterPull.ahead ?? 0) > 0 || !statusAfterPull.tracking;

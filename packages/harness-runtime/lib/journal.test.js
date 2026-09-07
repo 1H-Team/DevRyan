@@ -42,6 +42,30 @@ afterEach(async () => {
 });
 
 describe('session-partitioned diagnostic journal', () => {
+  test('preserves browser network correlation through disk sanitization and drops sensitive extras', async () => {
+    const journal = createJournal(await temporaryDirectory());
+    const payload = {
+      botId: 'b0000000-0000-4000-8000-000000000001',
+      streamId: '26dec025-e222-4fd4-945d-eb6818d12c47',
+      sequence: 17, generation: 2, observedAt: 12345, kind: 'response',
+      origin: 'https://app.example.com', path: '/contacts/', requestType: 'XHR', statusCode: 400,
+    };
+    journal.enqueue({ type: 'connection', event: 'bot.computer.network', payload: {
+      ...payload, headers: { cookie: 'must-not-survive' }, body: 'must-not-survive',
+    } });
+    journal.enqueue({ type: 'gap', event: 'bot.computer.network_gap', payload: {
+      botId: payload.botId, streamId: payload.streamId,
+      firstMissingSequence: 1, lastMissingSequence: 16, reason: 'network_trail_retention',
+    } });
+    await journal.flush();
+    const records = await journal.readRecords();
+    expect(records[0]).toMatchObject({ event: 'bot.computer.network', payload });
+    expect(records[1]).toMatchObject({ event: 'bot.computer.network_gap', payload: {
+      streamId: payload.streamId, firstMissingSequence: 1, lastMissingSequence: 16,
+    } });
+    expect(JSON.stringify(records)).not.toContain('must-not-survive');
+    await journal.close();
+  });
   test('partitions sanitized records by resolved session and stamps the session id', async () => {
     const directory = await temporaryDirectory();
     const journal = createDiagnosticJournal({

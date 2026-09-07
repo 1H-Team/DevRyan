@@ -41,6 +41,11 @@ reveals only the original imported local path through native IPC.
 
 ## Navigation and host behavior
 
+Foreign-deployment runtime errors direct the user to reopen the original data
+directory for Bot/credential/browser continuity. Stopping containers alone does
+not release their identity. Repair is unavailable while this conflict persists;
+the UI does not offer forced adoption or infer a running app from Docker state.
+
 - `shared/ProductAudienceTabs.tsx` and `useMainSidebarAudienceStore` provide the
   session-local **Agents / Bots** sidebar tablist. Cold start is Agents;
   switching audiences does not clear the selected coding session/draft, selected
@@ -301,6 +306,10 @@ informational status while the viewer owns control. The overlay renders managed
 policy/JavaScript/cookie prerequisites as facts, reports handled dialogs, and
 states when screen/input are following an open popup. Popup target changes
 invalidate stale refs without replacing the viewer.
+Generic subresource failures say only that a page resource failed to load;
+they do not imply a verification dependency or explain an authentication loss.
+The optional recent network trail stays in the existing narrow status contract
+and is journaled at the host, without exposing credentials or page content.
 The no-recording guarantee is architectural, not copy: `framesRecorded: false`
 in status, and pixels never enter stores or persistence (above).
 
@@ -355,3 +364,9 @@ Run the focused UI suite with:
 bun test packages/ui/src/components/bots packages/ui/src/stores/useBotChannelStore.test.ts
 bun run type-check:ui
 ```
+
+The Bot composer keeps attachment, a single-line content-sized textarea, and
+send controls in one row. It grows to 12rem, then scrolls internally. Image
+previews reserve width even for image-only replies. Releasing the last preview
+consumer detaches its cache entry before aborting, so immediate remounts start
+a fresh request and stale completion cannot evict the replacement.

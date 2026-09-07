@@ -118,6 +118,7 @@ export interface GitRebaseInProgress {
 }
 
 export interface GitStatus {
+  headState?: 'branch' | 'detached' | 'unborn';
   current: string;
   tracking: string | null;
   ahead: number;

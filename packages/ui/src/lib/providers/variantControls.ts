@@ -2,6 +2,8 @@ export type ProviderModelLike = {
     id?: string;
     name?: string;
     variants?: Record<string, unknown>;
+    /** Display-only effective model default supplied by the host catalog. */
+    defaultThinkingLevel?: string;
 };
 
 export type ProviderLike<Model extends ProviderModelLike = ProviderModelLike> = {
@@ -11,6 +13,15 @@ export type ProviderLike<Model extends ProviderModelLike = ProviderModelLike> = 
 
 export type ThinkingVariantContext = {
     providerId?: string;
+};
+
+export const getModelDefaultThinkingLevel = (
+    provider: ProviderLike | undefined,
+    modelId: string | undefined,
+): string | undefined => {
+    const model = provider?.models?.find(entry => entry.id === modelId);
+    const value = model?.defaultThinkingLevel;
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 };
 
 export type ModelVariantControlState = {
@@ -35,7 +46,8 @@ const FAST_MODEL_SUFFIX = '-fast';
 
 const THINKING_VARIANT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
 const THINKING_VARIANT_RANK = new Map<string, number>(
-    THINKING_VARIANT_ORDER.map((variant, index) => [variant, index]),
+    [...THINKING_VARIANT_ORDER.map((variant, index): [string, number] => [variant, index]),
+        ...['extra-high', 'extra_high', 'extra high'].map((variant): [string, number] => [variant, THINKING_VARIANT_ORDER.indexOf('xhigh')])],
 );
 
 const normalizeVariantKey = (variant: string) => variant.trim().toLowerCase();

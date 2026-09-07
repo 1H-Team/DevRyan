@@ -232,6 +232,13 @@ const hasStatusChanged = (oldStatus: GitStatus | null, newStatus: GitStatus | nu
   if (oldStatus.current !== newStatus.current) return true;
   if (oldStatus.tracking !== newStatus.tracking) return true;
   if (oldStatus.isClean !== newStatus.isClean) return true;
+  if (oldStatus.headState !== newStatus.headState) return true;
+  if (Boolean(oldStatus.rebaseInProgress) !== Boolean(newStatus.rebaseInProgress)) return true;
+  if (oldStatus.rebaseInProgress?.headName !== newStatus.rebaseInProgress?.headName) return true;
+  if (oldStatus.rebaseInProgress?.onto !== newStatus.rebaseInProgress?.onto) return true;
+  if (Boolean(oldStatus.mergeInProgress) !== Boolean(newStatus.mergeInProgress)) return true;
+  if (oldStatus.mergeInProgress?.head !== newStatus.mergeInProgress?.head) return true;
+  if (oldStatus.mergeInProgress?.message !== newStatus.mergeInProgress?.message) return true;
 
   const oldPaths = new Set(oldFiles.map(f => `${f.path}:${f.index}:${f.working_dir}`));
   for (const file of newFiles) {

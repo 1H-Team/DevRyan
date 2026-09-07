@@ -14,7 +14,7 @@ Transport-neutral DevRyan-managed task contracts and scheduler policy shared by 
 ## Entrypoints
 
 - `index.js` / `index.d.ts`: runtime exports and JSON-compatible TypeScript contract.
-- `contract.js`: task validation, bounds, status helpers, safe task projection, and identity-only compaction removal projection.
+- `contract.js`: task validation, bounds, status helpers, safe task projection, identity-only compaction removal projection, and canonical parent/agent recognition of generated child-title placeholders shared by server/UI.
 - `single-flight.js`: dependency-free pending-only keyed request coalescing, instantiated by each host executor rather than shared globally.
 - `managed-result-projection.js`: pure eager/reference projection plus stateless UTF-8 result paging and cursor validation; it never mutates scheduler records or durable envelopes.
 - `open-code-executor.js`: injected canonical child create/prompt/observe/abort/delete/reconcile state machine, including lease-ownership checkpoints, stale fresh-child cleanup, live provider-retry observation, transient polling and reconciliation recovery, retained interruption output, bounded same-child recovery after normalized transport failures or missing final output, same-child manual model continuation, exact shared recognition of its transcript-recorded transport continuation prompts, and an initial-only writable/read-only Context Mode routing contract that is never repeated on continuations.

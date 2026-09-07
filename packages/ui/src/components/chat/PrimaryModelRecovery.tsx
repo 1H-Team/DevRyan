@@ -56,12 +56,12 @@ export const PrimaryModelRecovery = React.memo(({
   const setSelection = (selection: ProviderRecoverySelection) => {
     useProviderRecoveryStore.getState().setSelection(sessionId, selection);
   };
-  const retry = async () => {
+  const retry = async (selection: ProviderRecoverySelection) => {
     const current = useProviderRecoveryStore.getState().recoveriesBySessionId[sessionId];
     if (!current || current.pending) return;
     useProviderRecoveryStore.getState().setActionState(sessionId, true, null);
     try {
-      const sent = await executeClaudeAwareProviderRecovery(current, executeProviderRecovery);
+      const sent = await executeClaudeAwareProviderRecovery({ ...current, selection }, executeProviderRecovery);
       if (!sent) throw new Error('The failed turn could not be retried.');
       useProviderRecoveryStore.getState().clearRecovery(sessionId, current);
     } catch (error) {

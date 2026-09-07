@@ -7,6 +7,7 @@ Git service layer for repository operations, direct commit-message and PR-descri
 - **Facade export**: `index.js` re-exports service, credential, and identity modules as a single API.
 - **Separation of concerns**:
   - `service.js`: operational git commands
+  - `operation-state.js`: Git-resolved per-worktree operation metadata, HEAD state, and remote preconditions
   - `integrate.js`: server-owned commit reintegration planning, temporary
     worktree lifecycle, conflict continuation, cleanup, and the
     `isIntegrateTempPath` predicate used to keep those worktrees out of the

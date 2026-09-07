@@ -29,6 +29,13 @@ Management requests require the deployment-scoped
 unknown fields, query widening, duplicate authentication headers, and
 unreviewed paths fail closed.
 
+Container stop requests use Docker's 30-second grace period and a minimum
+45-second socket timeout. The same per-container lock serializes stop, ensure,
+replacement, and reset. After an uncertain stop failure, ensure refuses to
+reuse that running container until a stop succeeds or inspection confirms it
+has exited. Removal remains non-forced and retains volumes. The Electron host
+allows 90 seconds for lifecycle calls; the internal engine client allows 120.
+
 `workspace/write` accepts only an owned reasoning identity, a single bounded
 top-level filename, and at most 48 KiB of content. The supervisor rejects
 links, special files, reserved runtime directories, and traversal, then writes

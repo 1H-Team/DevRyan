@@ -16,3 +16,9 @@ Integrated with provider sections, agent manager, and opencode client config.
 default unset. It never chooses an effort from catalog order. Captured default
 intent (`null`) is owned by send/selection state; provider helpers expose no
 invented default variant key.
+
+`cursorThinking.ts` owns native Cursor effort/thinking/Fast dimension adapters,
+re-exported by `mobileControlsUtils.ts` for existing callers. `chatThinking.ts`
+owns chat-only fallback (Medium, otherwise the lower middle supported level),
+without changing the general provider-default resolver. Native Fast-only variants
+remain a separate mutually exclusive mode; paired Fast models retain efforts.

@@ -123,3 +123,27 @@ describe("syncGitBranchForPush", () => {
     expect(calls).toEqual(["fetch"])
   })
 })
+
+describe('rebase push guards', () => {
+  test('blocks before fetch even when rebase metadata is empty', async () => {
+    let fetched = false
+    await expect(syncGitBranchForPush('/repo', {}, {
+      getGitStatus: async () => ({ ...status, rebaseInProgress: { headName: '', onto: '' } }),
+      getRemotes: async () => [],
+      gitFetch: async () => { fetched = true; return { success: true } },
+    })).rejects.toThrow('Rebase in progress')
+    expect(fetched).toBe(false)
+  })
+
+  test('never pushes after pull returns conflicts, including a stale status response', async () => {
+    let pushed = false
+    await expect(syncGitBranchForPush('/repo', {}, {
+      getGitStatus: async () => ({ ...status, tracking: 'origin/main', ahead: 1, behind: 1 }),
+      getRemotes: async () => [],
+      gitFetch: async () => ({ success: true }),
+      gitPull: async () => ({ success: false, conflict: true, conflictFiles: ['file'], files: [], insertions: 0, deletions: 0, summary: { changes: 0, insertions: 0, deletions: 0 } }),
+      gitPush: async () => { pushed = true; return { success: true, pushed: [], repo: "/repo", ref: null } },
+    })).rejects.toThrow('Pull did not complete')
+    expect(pushed).toBe(false)
+  })
+})

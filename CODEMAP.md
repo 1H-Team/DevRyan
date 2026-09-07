@@ -50,6 +50,8 @@ DevRyan is a Bun/Node monorepo that provides web and desktop UI runtimes for int
 
 ## Where To Change Things
 
+- **Git rebase recovery and detached-HEAD push errors** → `packages/web/server/lib/git/operation-state.js`, Git service/routes, and `packages/ui/src/components/views/GitView.tsx`; presentation fixture: `tests/visual-git-rebase/`.
+
 - **Session change summaries, capture, revision review and card Undo/Redo** → `packages/harness-runtime/lib/session-changes*.js`, `packages/web/server/default-config/plugins/devryan-session-changes.mjs`, and `packages/ui/src/components/chat/sessionChangesController.ts`. Contract and limits: `docs/SESSION_CHANGES.md`; real-component fixture: `tests/visual-session-changes/`.
 
 - **Session creation latency/cancellation** → `packages/ui/src/sync/session-creation.ts`, `session-actions.ts`, `session-ui-store.ts`, `packages/web/server/lib/opencode/session-creation.js`, and `context-mode-native-hotfix.js`. Isolated benchmarks: `scripts/benchmark-session-creation.mjs`; real-worker checks: `scripts/verify-context-mode-workers.mjs`; packaged-renderer fixture: `tests/visual-session-creation/codemap.md`; results: `docs/SESSION_CREATION_VERIFICATION.md`.

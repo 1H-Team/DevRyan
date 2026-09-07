@@ -54,13 +54,13 @@ describe('getCycledPrimaryAgentName', () => {
 });
 
 describe('formatVisibleEffortLabel', () => {
-    test('shows default when no effort is selected', () => {
-        expect(formatVisibleEffortLabel(undefined, ['minimal', 'low', 'medium', 'high'])).toBe('Default');
+    test('shows the reported default when no effort is selected', () => {
+        expect(formatVisibleEffortLabel(undefined, ['minimal', 'low', 'medium', 'high'], { defaultThinkingLevel: 'medium' })).toBe('Medium');
     });
 
     test('does not select the first advertised effort for provider default', () => {
-        expect(formatVisibleEffortLabel(undefined, ['low', 'high'])).toBe('Default');
-        expect(formatVisibleEffortLabel(undefined, ['low', 'high'], { providerId: 'openai' })).toBe('Default');
+        expect(formatVisibleEffortLabel(undefined, ['low', 'high'])).toBe('Provider-controlled');
+        expect(formatVisibleEffortLabel(undefined, ['low', 'high'], { providerId: 'openai' })).toBe('Provider-controlled');
     });
 
     test('shows the selected thinking level when an explicit variant is selected', () => {
@@ -101,11 +101,12 @@ describe('getModelThinkingLevelLabel', () => {
             models: [{
                 id: 'gpt-5',
                 name: 'GPT-5',
+                defaultThinkingLevel: 'medium',
                 variants: { low: {}, medium: {}, high: {} },
             }],
         };
 
-        expect(getModelThinkingLevelLabel(provider, 'gpt-5', undefined)).toBe('Default');
+        expect(getModelThinkingLevelLabel(provider, 'gpt-5', undefined)).toBe('Medium');
         expect(getModelThinkingLevelLabel(provider, 'gpt-5', 'low')).toBe('Light');
     });
 

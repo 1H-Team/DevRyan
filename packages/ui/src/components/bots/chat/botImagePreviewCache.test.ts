@@ -47,6 +47,48 @@ describe('Bot image preview cache', () => {
     ).catch((error) => error.message)).toBe('unsupported_image');
   });
 
+  test('reacquires immediately after release without reusing an aborted fetch', async () => {
+    let rejectOld: (reason: Error) => void = () => {};
+    let resolveNew: (blob: Blob) => void = () => {};
+    const revoked: string[] = [];
+    const cache = createBotImagePreviewCache({
+      createObjectURL: () => 'blob:new',
+      revokeObjectURL: (url) => { revoked.push(url); },
+    });
+    const old = cache.acquire('same', () => new Promise<Blob>((_resolve, reject) => {
+      rejectOld = reject;
+    })).catch((error: Error) => error.message);
+    cache.release('same');
+    const fresh = cache.acquire('same', () => new Promise<Blob>((resolve) => {
+      resolveNew = resolve;
+    }));
+    rejectOld(new Error('aborted'));
+    expect(await old).toBe('aborted');
+    expect(cache.size).toBe(1);
+    resolveNew(new Blob(['png'], { type: 'image/png' }));
+    expect(await fresh).toBe('blob:new');
+    cache.release('same');
+    expect(revoked).toEqual(['blob:new']);
+    expect(cache.bytes).toBe(0);
+  });
+
+  test('discards late bytes from a released loader that ignores abort', async () => {
+    let finish: (blob: Blob) => void = () => {};
+    let created = 0;
+    const cache = createBotImagePreviewCache({
+      createObjectURL: () => { created += 1; return 'blob:stale'; },
+    });
+    const pending = cache.acquire('old', () => new Promise<Blob>((resolve) => {
+      finish = resolve;
+    })).catch((error: Error) => error.message);
+    cache.release('old');
+    finish(new Blob(['png'], { type: 'image/png' }));
+    expect(await pending).toBe('preview_aborted');
+    expect(created).toBe(0);
+    expect(cache.size).toBe(0);
+    expect(cache.bytes).toBe(0);
+  });
+
   test('enforces its byte bound before creating an object URL', async () => {
     let createCalls = 0;
     const cache = createBotImagePreviewCache({

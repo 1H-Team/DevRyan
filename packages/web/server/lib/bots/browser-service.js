@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { createBotFailureRecorder } from './failure-diagnostics.js';
+import { createBrowserNetworkJournal, projectBrowserNetworkTrail } from './browser-network-diagnostics.js';
 import { createBotComputerActivity } from './computer-activity.js';
 
 import {
@@ -16,6 +17,9 @@ import { botErrorLogFields } from './error-normalization.js';
 
 const COMPUTER_RESPONSE_LIMIT = 5 * 1024 * 1024;
 const COMPUTER_REQUEST_TIMEOUT_MS = 35_000;
+// A cold command includes Chromium startup, CDP attachment, and navigation.
+// Keep this below the tool gateway's 120-second enclosing deadline.
+const COMPUTER_COMMAND_TIMEOUT_MS = 90_000;
 const VIEW_ATTACH_TTL_MS = 15_000;
 const ACTIVE_RUN_STATES = new Set([
   'starting',
@@ -290,8 +294,10 @@ const readBoundedBody = async (response, maximumBytes = COMPUTER_RESPONSE_LIMIT)
 const defaultTransport = Object.freeze({
   async request({ runtime, path, method = 'POST', body = null, headers = {}, signal }) {
     let response;
+    let payload;
     try {
-      const timeout = AbortSignal.timeout(COMPUTER_REQUEST_TIMEOUT_MS);
+      const timeout = AbortSignal.timeout(path === '/v1/command'
+        ? COMPUTER_COMMAND_TIMEOUT_MS : COMPUTER_REQUEST_TIMEOUT_MS);
       response = await fetch(`${runtime.endpoint.baseUrl}${path}`, {
         method,
         headers: {
@@ -303,7 +309,9 @@ const defaultTransport = Object.freeze({
         redirect: 'error',
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       });
+      payload = await readBoundedBody(response);
     } catch (error) {
+      if (error instanceof BotBrowserServiceError) throw error;
       throw new BotBrowserServiceError(
         'Bot computer transport failed',
         'bot_browser_transport_failed',
@@ -314,7 +322,6 @@ const defaultTransport = Object.freeze({
         },
       );
     }
-    const payload = await readBoundedBody(response);
     if (!response.ok || payload?.ok !== true) {
       const remoteCode = payload?.error?.code || null;
       const classification = classifyBotBrowserRemoteFailure({
@@ -452,7 +459,7 @@ const projectCookieBlock = (value) => {
   });
 };
 
-export const publicBotComputerBrowserStatus = (value) => {
+export const publicBotComputerBrowserStatus = (value, { now = Date.now() } = {}) => {
   const browser = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const capabilities = browser.webCapabilities && typeof browser.webCapabilities === 'object'
     && !Array.isArray(browser.webCapabilities) ? browser.webCapabilities : {};
@@ -510,6 +517,9 @@ export const publicBotComputerBrowserStatus = (value) => {
   const generation = statusInteger(browser.generation);
   const screencastSubscribers = statusInteger(browser.screencastSubscribers, 10_000);
   const activeTargetCount = statusInteger(browser.activeTargetCount, 8);
+  const recentNetworkTrail = projectBrowserNetworkTrail(browser.recentNetworkTrail, {
+    projectOrigin: statusOrigin, projectPath: statusPath, now,
+  });
   return Object.freeze({
     ...(typeof browser.running === 'boolean' ? { running: browser.running } : {}),
     ...(typeof browser.healthy === 'boolean' ? { healthy: browser.healthy } : {}),
@@ -530,6 +540,7 @@ export const publicBotComputerBrowserStatus = (value) => {
       thirdPartyCookies: capabilityState(capabilities.thirdPartyCookies),
     }),
     lastNavigationDiagnostic: diagnostic,
+    ...(recentNetworkTrail ? { recentNetworkTrail } : {}),
   });
 };
 
@@ -549,6 +560,7 @@ export function createBotBrowserService({
   now = Date.now,
   randomBytesImpl = randomBytes,
   viewAttachTtlMs = VIEW_ATTACH_TTL_MS,
+  networkPollIntervalMs = 2_000,
   logger = console,
 } = {}) {
   const recordFailure = createBotFailureRecorder(recordDiagnostic);
@@ -565,7 +577,8 @@ export function createBotBrowserService({
     || typeof audit !== 'function' || typeof transport?.request !== 'function'
     || typeof transport?.stream !== 'function' || typeof now !== 'function'
     || typeof randomBytesImpl !== 'function' || !Number.isInteger(viewAttachTtlMs)
-    || viewAttachTtlMs < 1_000 || viewAttachTtlMs > 60_000) {
+    || viewAttachTtlMs < 1_000 || viewAttachTtlMs > 60_000
+    || !Number.isInteger(networkPollIntervalMs) || networkPollIntervalMs < 10) {
     throw new TypeError('Bot browser service is misconfigured');
   }
   const runtimes = new Map();
@@ -573,6 +586,33 @@ export function createBotBrowserService({
   const viewSessions = new Map();
   const humanSessions = new Map();
   const auditedLoops = new Map();
+  const networkJournal = createBrowserNetworkJournal({ recordDiagnostic, now });
+  const observedComputers = new Map();
+  const failedNetworkPolls = new Set();
+  let networkPoll = null;
+  let networkStopped = false;
+  const networkTimer = setInterval(() => {
+    if (networkPoll || networkStopped || !observedComputers.size) return;
+    networkPoll = Promise.all([...observedComputers].map(async ([botId, runtime]) => {
+      try {
+        const status = await transport.request({ runtime, path: '/v1/status', method: 'GET', signal: AbortSignal.timeout(5_000) });
+        if (networkStopped || observedComputers.get(botId) !== runtime) return;
+        const browser = publicBotComputerBrowserStatus(status.browser, { now: now() });
+        networkJournal.observe(botId, browser.recentNetworkTrail);
+        failedNetworkPolls.delete(botId);
+      } catch {
+        // No provisioning or recovery from diagnostics. A later authorized
+        // access refreshes the runtime; sequence gaps expose missed evidence.
+        if (!networkStopped && observedComputers.get(botId) === runtime && !failedNetworkPolls.has(botId)) {
+          failedNetworkPolls.add(botId);
+          recordDiagnostic({ type: 'gap', event: 'bot.computer.network_gap', payload: {
+            botId, reason: 'network_status_unavailable',
+          } });
+        }
+      }
+    })).finally(() => { networkPoll = null; });
+  }, networkPollIntervalMs);
+  networkTimer.unref?.();
 
   const flushHumanSession = async (leaseId, endedBy) => {
     const session = humanSessions.get(leaseId);
@@ -709,6 +749,13 @@ export function createBotBrowserService({
     if (!runtime?.endpoint || typeof runtime.token !== 'string') {
       fail('Bot computer runtime is unavailable', 'bot_computer_runtime_unavailable', 503);
     }
+    observedComputers.delete(bot.id);
+    observedComputers.set(bot.id, runtime);
+    if (observedComputers.size > 256) {
+      const oldest = observedComputers.keys().next().value;
+      observedComputers.delete(oldest);
+      failedNetworkPolls.delete(oldest);
+    }
     return runtime;
   };
 
@@ -739,11 +786,28 @@ export function createBotBrowserService({
     },
   );
 
-  const recoverRuntime = ({ run, bot, ownerUserId, failedRuntime }) => withScopeLock(
+  const recoverRuntime = ({ run, bot, ownerUserId, failedRuntime, signal }) => withScopeLock(
     run.computer_scope_key,
     async () => {
       const current = runtimes.get(run.computer_scope_key);
       if (current && current !== failedRuntime) return current;
+      // A lost command response does not establish that Chromium died. Probe
+      // outside its command queue before disrupting the persistent login.
+      const probeTimeout = AbortSignal.timeout(5_000);
+      const status = await transport.request({
+        runtime: failedRuntime, path: '/v1/status', method: 'GET',
+        signal: signal ? AbortSignal.any([signal, probeTimeout]) : probeTimeout,
+      }).catch(() => null);
+      if (signal?.aborted) {
+        fail('Bot browser command was cancelled', 'bot_run_cancelled', 409);
+      }
+      if ((status?.browser?.running === true && status.browser.healthy === true)
+        || status?.browser?.launching === true) {
+        // Do not replay an operation that may still be in flight. The caller
+        // can inspect the current page with a subsequent snapshot.
+        fail('Browser is still running or starting; inspect the current page with a snapshot before retrying',
+          'bot_browser_command_incomplete', 504);
+      }
       if (current?.gatewayToken) gatewayHost.revokeCapability(current.gatewayToken);
       runtimes.delete(run.computer_scope_key);
       const computer = await computerRuntimeManager.restartBot(requireActiveBot(bot));
@@ -1015,11 +1079,12 @@ export function createBotBrowserService({
             stage: 'command_failed', error,
           });
           try {
-            runtime = await recoverRuntime({ run, bot, ownerUserId, failedRuntime: runtime });
+            runtime = await recoverRuntime({ run, bot, ownerUserId, failedRuntime: runtime, signal });
           } catch (recoveryError) {
             recordFailure({
               event: 'bot.browser.recovery', run, operationId: actionAttemptId,
-              stage: 'runtime_restart_failed', error: recoveryError,
+              stage: recoveryError?.code === 'bot_browser_command_incomplete'
+                ? 'runtime_preserved' : 'runtime_restart_failed', error: recoveryError,
             });
             throw recoveryError;
           }
@@ -1100,7 +1165,7 @@ export function createBotBrowserService({
         result = await requestScreenshot();
       } catch (error) {
         if (!shouldRecoverRead(error, signal)) throw error;
-        runtime = await recoverRuntime({ run, bot, ownerUserId, failedRuntime: runtime });
+        runtime = await recoverRuntime({ run, bot, ownerUserId, failedRuntime: runtime, signal });
         try {
           result = await requestScreenshot();
         } catch (recoveryError) {
@@ -1126,7 +1191,8 @@ export function createBotBrowserService({
       const { bot } = await authorizedBotContext(principal, botId);
       const runtime = await runtimeForBot(bot);
       const status = await transport.request({ runtime, path: '/v1/status', method: 'GET' });
-      const browser = publicBotComputerBrowserStatus(status.browser);
+      const browser = publicBotComputerBrowserStatus(status.browser, { now: now() });
+      networkJournal.observe(bot.id, browser.recentNetworkTrail);
       const control = publicControl(status.control);
       const diagnostic = browser.lastNavigationDiagnostic;
       if (diagnostic?.kind === 'site_rejection' && diagnostic.reason === 'navigation_loop') {
@@ -1456,6 +1522,11 @@ export function createBotBrowserService({
     },
 
     async shutdown() {
+      networkStopped = true;
+      clearInterval(networkTimer);
+      observedComputers.clear();
+      failedNetworkPolls.clear();
+      if (networkPoll) await networkPoll;
       computerActivity.clear();
       await Promise.all([...humanSessions.keys()].map((leaseId) => (
         flushHumanSession(leaseId, 'shutdown').catch((error) => logger?.warn?.(
@@ -1465,6 +1536,7 @@ export function createBotBrowserService({
       )));
       for (const view of viewSessions.values()) deleteViewSession(view);
       auditedLoops.clear();
+      networkJournal.clear();
       const entries = [...runtimes.values()];
       runtimes.clear();
       for (const runtime of entries) {

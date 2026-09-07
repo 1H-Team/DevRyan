@@ -370,6 +370,7 @@ export function createBotsRuntime({
     computerBackend,
     gatewayHost,
     encryption,
+    recordDiagnostic,
   });
   const browserService = createBotBrowserService({
     store,

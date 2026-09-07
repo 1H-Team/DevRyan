@@ -111,11 +111,13 @@ and desktop-host broker bridges.
   cap on each Docker command. After Compose starts the fixed topology, it polls
   for up to 90 seconds of service-health convergence without recreating
   containers and commits installation state only after health succeeds; failed
-  updates retain the prior manifest plus staged candidate. Health also checks
-  the `devryan-bots-host-control` bridge for two retired topologies and for
-  containers labelled with another installation's `devryan.deployment` id
-  (status `bot_runtime_foreign_deployment`; Setup, Repair, Update and Rollback
-  refuse before stopping, removing or recreating anything). A bridge
+  updates retain the prior manifest plus staged candidate. Ownership preflight
+  checks all managed containers, including stopped/off-network ones, before
+  lifecycle mutation; foreign deployment status includes bounded, allowlisted
+  deployment/service/state conflicts, never an inferred live app owner.
+  Failed inventory/network inspection reports `bot_runtime_ownership_unavailable`.
+  Health also checks the `devryan-bots-host-control` bridge for two retired
+  topologies. A bridge
   still carrying the no-masquerade policy (unroutable on Docker Desktop after a
   VM restart) marks the runtime degraded, and repair recreates it by removing
   the attached fixed services, gracefully stopping and removing the
@@ -169,6 +171,9 @@ and desktop-host broker bridges.
   exact-host allowlist policy and rotate through the computer's loopback relay,
   reached over the supervisor's scoped runtime proxy because the computer
   publishes no host port of its own.
+  Lifecycle calls allow 90 seconds around the 30-second Docker stop and its
+  45-second request deadline. Failed browser refreshes report a confirmed stop
+  separately from an unconfirmed stop; neither retains stale egress authority.
   `runsc` activation requires both a declared Docker runtime and a disposable
   owned smoke container; failure blocks publication/startup with no downgrade.
 - **Quit-risk projection**: `quit-risk.mjs` converts server scheduler, tunnel,

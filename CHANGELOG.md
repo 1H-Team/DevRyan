@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.14] - 2026-09-07
+
+- Managed orchestration: resolve dispatch cards to the latest same-child recovery attempt after earlier attempts are pruned, keeping current status, model, navigation, and retry controls authoritative across reloads; refine packaged guidance for small reversible frontend corrections discovered during verification.
+- Plans: fold provider-recovery wakes into the originating human Plan revision so recovered plans persist as one complete actionable card without borrowing intent across later implementation or ordinary user turns.
+- Session titles: summarize exact generated Explorer and Designer child placeholders from their task briefs, persist the result only when idle, and protect meaningful or manually renamed titles from late placeholder snapshots.
+- Meridian continuity: settle complete passthrough tool boundaries through the reviewed SDK handoff path, with exact persisted-checkpoint verification for narrowly classified interrupt and max-turn exits and unchanged rejection behavior for incomplete, cancelled, or ambiguous runs.
+- Model controls: replace the effort menu with one native-level thinking slider, support damped pointer detents and keyboard selection, keep Fast independent, and preserve explicit, default, queued, recovered, and historical thinking choices across provider hydration.
+- Git safety: expose authoritative branch/detached/unborn and merge/rebase state, block remote actions from unsafe states, keep conflict and empty-commit decisions explicit, and make rebase continuation non-interactive without silently skipping work.
+- Quality tooling: add deterministic web and Electron recovery-card acceptance, narrow-layout evidence, child-title coverage, thinking-control interaction and visual verification, Git rebase fixtures, and an isolated live Meridian continuity comparison.
+- Database: deploy and verify all repository migrations and the required Production Bots schema marker before release publication.
+- Release: update all DevRyan package and desktop metadata to 1.1.14.
+
 ## [1.1.13] - 2026-09-06
 
 - Plans and drafts: restore authoritative Plan mode across delayed history, reloads, session switches, draft promotion, queued sends, and native compaction without letting maintenance turns or later approvals rewrite earlier execution policy.

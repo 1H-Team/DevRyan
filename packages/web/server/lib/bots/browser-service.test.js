@@ -124,7 +124,9 @@ it('projects only the typed privacy-safe Bot browser status contract', () => {
 
 const createHarness = ({
   now,
+  useDefaultTransport = false,
   viewAttachTtlMs,
+  networkPollIntervalMs,
   recordDiagnostic = vi.fn(),
   computerRuntimeManager: managerOverride = null,
   transport: transportOverride = null,
@@ -199,10 +201,11 @@ const createHarness = ({
     eventStream,
     audit,
     recordDiagnostic,
-    transport,
+    ...(useDefaultTransport ? {} : { transport }),
     logger,
     ...(now ? { now } : {}),
     ...(viewAttachTtlMs ? { viewAttachTtlMs } : {}),
+    ...(networkPollIntervalMs ? { networkPollIntervalMs } : {}),
   });
   return {
     service,
@@ -727,6 +730,73 @@ describe('Bot governed browser service', () => {
     expect(harness.computerRuntimeManager.restartBot).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { running: true, healthy: true, launching: false },
+    { running: false, healthy: false, launching: true },
+  ])('preserves a live browser after a lost response: %j', async (browser) => {
+    const harness = createHarness();
+    harness.transport.request
+      .mockRejectedValueOnce(new BotBrowserServiceError(
+        'timeout', 'bot_browser_transport_failed', 502, { transportUncertain: true },
+      ))
+      .mockResolvedValueOnce({ browser });
+    await expect(harness.service.executeAction({
+      run: run(), bot: bot(), ownerUserId: USER_ID,
+      command: 'navigate', args: { url: 'https://example.com' }, target: {}, limits: {},
+      decision: { actionHash: 'sha256:action', effect: 'allow', expiresAt: new Date(Date.now() + 120_000).toISOString() },
+    })).rejects.toMatchObject({ code: 'bot_browser_command_incomplete', transportUncertain: false });
+    expect(harness.computerRuntimeManager.restartBot).not.toHaveBeenCalled();
+    expect(harness.transport.request).toHaveBeenCalledTimes(2);
+    expect(harness.transport.request.mock.calls[1][0]).toMatchObject({ path: '/v1/status', method: 'GET' });
+    expect(harness.recordDiagnostic.mock.calls.map(([record]) => record.payload.stage))
+      .toEqual(['command_failed', 'runtime_preserved']);
+  });
+
+  it('does not restart a healthy browser when screenshot transport times out', async () => {
+    const harness = createHarness();
+    harness.transport.request
+      .mockRejectedValueOnce(new BotBrowserServiceError(
+        'timeout', 'bot_browser_transport_failed', 502, { transportUncertain: true },
+      ))
+      .mockResolvedValueOnce({ browser: { running: true, healthy: true } });
+    await expect(harness.service.capturePng({ run: run(), bot: bot(), ownerUserId: USER_ID }))
+      .rejects.toMatchObject({ code: 'bot_browser_command_incomplete', transportUncertain: false });
+    expect(harness.computerRuntimeManager.restartBot).not.toHaveBeenCalled();
+    expect(harness.transport.request).toHaveBeenCalledTimes(2);
+  });
+
+  it('allows a cold command to exceed the former 35-second host deadline', async () => {
+    vi.useFakeTimers();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation((milliseconds) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), milliseconds);
+      return controller.signal;
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, { signal }) => {
+      await new Promise((resolve, reject) => {
+        setTimeout(resolve, 55_000);
+        signal.addEventListener('abort', () => reject(new Error('timeout')), { once: true });
+      });
+      return Response.json({ ok: true, result: { loaded: true } });
+    });
+    try {
+      const harness = createHarness({ useDefaultTransport: true, networkPollIntervalMs: 120_000 });
+      const operation = harness.service.executeAction({
+        run: run(), bot: bot(), ownerUserId: USER_ID,
+        command: 'navigate', args: { url: 'https://example.com' }, target: {}, limits: {},
+        decision: { actionHash: 'sha256:action', effect: 'allow', expiresAt: new Date(Date.now() + 120_000).toISOString() },
+      });
+      await vi.advanceTimersByTimeAsync(55_001);
+      await expect(operation).resolves.toMatchObject({ result: { loaded: true } });
+      expect(harness.computerRuntimeManager.restartBot).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchMock.mockRestore();
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('recreates the persistent computer once when a safe read exhausts in-container recovery', async () => {
     const harness = createHarness();
     harness.transport.request.mockRejectedValueOnce(new BotBrowserServiceError(
@@ -750,8 +820,8 @@ describe('Bot governed browser service', () => {
 
     expect(result).toMatchObject({ operationKind: 'read', writeGuarantee: 'safe_to_retry' });
     expect(harness.computerRuntimeManager.restartBot).toHaveBeenCalledTimes(1);
-    expect(harness.transport.request).toHaveBeenCalledTimes(2);
-    expect(harness.transport.request.mock.calls[1][0].runtime.endpoint.port).toBe(45102);
+    expect(harness.transport.request).toHaveBeenCalledTimes(3);
+    expect(harness.transport.request.mock.calls[2][0].runtime.endpoint.port).toBe(45102);
   });
 
   it('journals recovery and supervisor failure stages with the action identity', async () => {
@@ -800,7 +870,7 @@ describe('Bot governed browser service', () => {
       transportUncertain: false,
     });
     expect(harness.computerRuntimeManager.restartBot).toHaveBeenCalledTimes(1);
-    expect(harness.transport.request).toHaveBeenCalledTimes(2);
+    expect(harness.transport.request).toHaveBeenCalledTimes(3);
   });
 
   it('proxies attributed take/return control and never reports retained frames', async () => {
@@ -879,6 +949,48 @@ describe('Bot governed browser service', () => {
     ))).toHaveLength(2));
     expect(recordDiagnostic).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(harness.audit.mock.calls)).not.toContain('?');
+  });
+
+  it('journals sanitized network entries once after membership authorization', async () => {
+    const recordDiagnostic = vi.fn();
+    const harness = createHarness({ recordDiagnostic, now: () => 1000 });
+    const principal = { id: USER_ID, role: 'developer', scope: 'managed' };
+    harness.transport.request.mockResolvedValue({ browser: { recentNetworkTrail: {
+      streamId: '00000000-0000-4000-8000-000000000001',
+      entries: [{ sequence: 1, observedAt: 1000, generation: 1, kind: 'response',
+        origin: 'https://example.com', path: '/auth', requestType: 'Fetch', statusCode: 401,
+        headers: { cookie: 'secret' }, body: 'secret' }],
+    } } });
+    await harness.service.status({ principal, botId: BOT_ID });
+    await harness.service.status({ principal, botId: BOT_ID });
+    expect(recordDiagnostic).toHaveBeenCalledTimes(1);
+    expect(recordDiagnostic).toHaveBeenCalledWith(expect.objectContaining({ event: 'bot.computer.network',
+      payload: expect.objectContaining({ botId: BOT_ID, statusCode: 401 }) }));
+    expect(JSON.stringify(recordDiagnostic.mock.calls)).not.toContain('secret');
+    harness.authorization.requireActiveMembership.mockRejectedValue(new Error('Membership denied'));
+    await expect(harness.service.status({ principal, botId: BOT_ID })).rejects.toThrow('Membership denied');
+    expect(harness.transport.request).toHaveBeenCalledTimes(2);
+    expect(recordDiagnostic).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues bounded network collection with the viewer closed and stops on shutdown', async () => {
+    const harness = createHarness({ networkPollIntervalMs: 10, now: () => 1000 });
+    const response = (sequence) => ({ browser: { recentNetworkTrail: {
+      streamId: '00000000-0000-4000-8000-000000000001',
+      entries: [{ sequence, observedAt: 1000, generation: 1, kind: 'response',
+        origin: 'https://example.com', path: '/contacts', requestType: 'XHR', statusCode: 200 }],
+    } } });
+    harness.transport.request.mockResolvedValue(response(1));
+    await harness.service.status({ principal: { id: USER_ID }, botId: BOT_ID });
+    harness.transport.request.mockResolvedValue(response(2));
+    await vi.waitFor(() => expect(harness.recordDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'bot.computer.network', payload: expect.objectContaining({ sequence: 2 }),
+    })), { interval: 10, timeout: 500 });
+    await harness.service.shutdown();
+    const count = harness.transport.request.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(harness.transport.request).toHaveBeenCalledTimes(count);
+    expect(harness.computerRuntimeManager.ensureBot).toHaveBeenCalledTimes(1);
   });
 
   it('ensures the persistent Active Bot computer when creating a viewer without a run', async () => {

@@ -1,3 +1,5 @@
+import { isManagedTaskPlaceholderSession } from '@openchamber/orchestration-runtime'
+
 const CURSOR_ACP_ERROR_TITLE_PATTERN = /^cursor-acp\s+error\s*:/i
 const GENERATED_NEW_SESSION_TITLE_PATTERN = /^new session\s*-\s*\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z$/i
 const PLAN_CONTROL_TITLE_PATTERN = /^<(?:!|--)[!-]*plan-+>$/i
@@ -168,7 +170,8 @@ export const mergeSessionPreservingMeaningfulTitle = <T extends { title?: string
   if (
     !current
     || isPlaceholderSessionTitle(current.title)
-    || !isPlaceholderSessionTitle(incoming.title)
+    || isManagedTaskPlaceholderSession(current)
+    || (!isPlaceholderSessionTitle(incoming.title) && !isManagedTaskPlaceholderSession(incoming))
   ) {
     return incoming
   }

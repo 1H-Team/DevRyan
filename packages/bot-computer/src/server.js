@@ -315,6 +315,27 @@ export const closeComputerHttpServer = (server) => new Promise((resolve, reject)
   server.closeAllConnections?.();
 });
 
+export const closeComputerService = async ({ browser, virtualDisplay, server, egressRelay }, timeoutMs = 25_000) => {
+  let timer;
+  try {
+    await Promise.race([
+      (async () => {
+        await browser.close({ shutdown: true });
+        await virtualDisplay.close();
+        await closeComputerHttpServer(server);
+        await egressRelay.close();
+      })(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Object.assign(new Error('Computer shutdown exceeded its deadline'), {
+          code: 'DEVRYAN_BOT_COMPUTER_SHUTDOWN_TIMEOUT',
+        })), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 export async function startComputerService({
   token,
   runId,
@@ -338,6 +359,7 @@ export async function startComputerService({
     token: egressToken,
     onDiagnostic: (event) => {
       if (event?.kind === 'egress_denied') diagnostics.recordEgressDenied(event);
+      if (event?.kind === 'proxy_failure') diagnostics.recordProxyFailure?.(event);
     },
   });
   const profiles = createProfileManager({ profileDirectory, scratchDirectory, scopeMode });
@@ -360,6 +382,7 @@ export async function startComputerService({
   const control = createControlLeaseManager({
     onEvent: (event) => {
       if (event?.type === 'taken') diagnostics.reset?.('control_taken');
+      else diagnostics.recordTransition?.(`control_${event?.type}`);
       onControlEvent?.(event);
     },
   });
@@ -369,13 +392,14 @@ export async function startComputerService({
     gatewayUrl,
   });
   const browser = createBrowserController({
-    launchDriver: launchDriver || (() => launchChromiumDriver({
+    launchDriver: launchDriver || (({ signal }) => launchChromiumDriver({
       executablePath,
       profileDirectory,
       scratchDirectory,
       proxyUrl: egressRelay.proxyUrl,
       display: virtualDisplay.display,
       diagnostics,
+      signal,
     })),
     refs,
     control,
@@ -398,7 +422,10 @@ export async function startComputerService({
     browser,
     control,
     screencast,
-    rotateEgressToken: (nextToken) => egressRelay.rotateToken(nextToken),
+    rotateEgressToken: (nextToken) => {
+      egressRelay.rotateToken(nextToken);
+      diagnostics.recordTransition?.('egress_token_rotated');
+    },
     readiness: () => (
       virtualDisplay.status().ready
       && webCapabilities.managedPolicy === 'enforced'
@@ -415,6 +442,7 @@ export async function startComputerService({
     await egressRelay.close().catch(() => undefined);
     throw error;
   }
+  let closePromise = null;
   return Object.freeze({
     server,
     browser,
@@ -423,11 +451,9 @@ export async function startComputerService({
     egressRelay,
     virtualDisplay,
     address: server.address(),
-    async close() {
-      await browser.close();
-      await virtualDisplay.close();
-      await closeComputerHttpServer(server);
-      await egressRelay.close();
+    close() {
+      closePromise ||= closeComputerService({ browser, virtualDisplay, server, egressRelay });
+      return closePromise;
     },
   });
 }
@@ -452,8 +478,13 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
     const stop = async () => {
       if (stopping) return;
       stopping = true;
-      await runtime.close().catch(() => undefined);
-      process.exit(0);
+      try {
+        await runtime.close();
+        process.exit(0);
+      } catch {
+        console.error('[bot-computer] shutdown did not complete cleanly');
+        process.exit(1);
+      }
     };
     process.once('SIGTERM', stop);
     process.once('SIGINT', stop);

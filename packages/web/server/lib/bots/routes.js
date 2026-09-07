@@ -13,7 +13,26 @@ import {
   validateUuid,
 } from './validation.js';
 
+// Ownership diagnostics expose fixed service/state names and opaque deployment
+// IDs only. Never forward raw Docker labels, paths, names or environment values.
+const publicOwnershipIssue = (issue) => {
+  if (issue?.code !== 'foreign_deployment') return {};
+  const validDeployment = (value) => typeof value === 'string' && /^deployment-[0-9a-f]{24}$/.test(value);
+  const entries = Array.isArray(issue.conflicts) ? issue.conflicts : [];
+  return {
+    ...(validDeployment(issue.deployment) ? { deployment: issue.deployment } : {}),
+    conflicts: entries.slice(0, 32).filter((entry) => validDeployment(entry?.deployment)).map((entry) => ({
+      deployment: entry.deployment,
+      service: ['supervisor', 'engine-proxy', 'egress', 'indexer'].includes(entry.service) ? entry.service : null,
+      state: ['created', 'running', 'paused', 'restarting', 'removing', 'exited', 'dead'].includes(entry.state)
+        ? entry.state : 'unknown',
+    })),
+    conflictsTruncated: issue.conflictsTruncated === true || entries.length > 32,
+  };
+};
+
 const publicIssues = (issues) => (Array.isArray(issues) ? issues.slice(0, 20).map((issue) => ({
+  ...publicOwnershipIssue(issue),
   code: typeof issue?.code === 'string' ? issue.code.slice(0, 120) : 'bot_runtime_issue',
   message: typeof issue?.message === 'string'
     ? issue.message.replace(/[\r\n\0]/g, ' ').slice(0, 500)

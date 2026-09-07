@@ -334,3 +334,28 @@ describe('useGitStore', () => {
     expect(identityCalls).toBe(1);
   });
 });
+
+
+describe('Git operation-only status changes', () => {
+  test('publishes rebase start, metadata changes and completion without changing files', async () => {
+    const directory = '/rebase-state';
+    useGitStore.setState({ directories: new Map(), activeDirectory: null });
+    let status = createStatus();
+    const git = createGitApi(async () => status);
+    const refresh = () => useGitStore.getState().fetchStatus(directory, git, { silent: true, force: true });
+    await refresh();
+    status = { ...status, rebaseInProgress: { headName: '', onto: '' } };
+    await refresh();
+    expect(useGitStore.getState().directories.get(directory)?.status?.rebaseInProgress).toEqual({ headName: '', onto: '' });
+    status = { ...status, headState: 'detached', rebaseInProgress: { headName: 'Dev', onto: 'abc1234' } };
+    await refresh();
+    expect(useGitStore.getState().directories.get(directory)?.status).toBe(status);
+    const previousStatus = status;
+    status = { ...status, rebaseInProgress: { ...status.rebaseInProgress! } };
+    await refresh();
+    expect(useGitStore.getState().directories.get(directory)?.status).toBe(previousStatus);
+    status = { ...status, headState: 'branch', rebaseInProgress: null };
+    await refresh();
+    expect(useGitStore.getState().directories.get(directory)?.status).toBe(status);
+  });
+});

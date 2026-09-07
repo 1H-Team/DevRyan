@@ -40,6 +40,7 @@ interface SyncActionsProps {
   onPush?: () => void;
   onRefresh?: () => void;
   disabled: boolean;
+  remoteActionsDisabled?: boolean;
   iconOnly?: boolean;
   isRefreshing?: boolean;
   aheadCount?: number;
@@ -108,6 +109,7 @@ export const SyncActions: React.FC<SyncActionsProps> = ({
   onPush,
   onRefresh,
   disabled,
+  remoteActionsDisabled = false,
   isRefreshing = false,
   aheadCount = 0,
   behindCount = 0,
@@ -116,9 +118,9 @@ export const SyncActions: React.FC<SyncActionsProps> = ({
   const { t } = useI18n();
   const trackingRemote = remotes.find((remote) => remote.name === trackingRemoteName) ?? remotes[0];
   const isBusy = syncAction !== null;
-  const isRemoteActionDisabled = disabled || isBusy || !trackingRemote;
+  const isRemoteActionDisabled = disabled || remoteActionsDisabled || isBusy || !trackingRemote;
   const isPullDisabled = isRemoteActionDisabled || behindCount <= 0;
-  const isPushDisabled = disabled || isBusy || aheadCount <= 0;
+  const isPushDisabled = disabled || remoteActionsDisabled || isBusy || aheadCount <= 0;
   const isRefreshDisabled = disabled || isBusy || isRefreshing;
 
   const handleRemoteAction = (action: (remote: GitRemote) => void) => {

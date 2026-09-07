@@ -52,6 +52,14 @@ session cookies survive Chromium relaunches; a single CDP command timeout
 replaces only the page target and keeps the process. Snapshots turn backend DOM
 node IDs into opaque refs bound to a page generation. Navigation, a page reset,
 or a relaunch invalidates all earlier refs.
+`snapshot` with empty args captures a bounded tree and returns its first page.
+Continue with `{ snapshotId, offset: nextOffset }` until `nextOffset` is null;
+reading another page preserves every ref from that snapshot. A new snapshot
+invalidates the old cursor and refs. Pages contain at most 96 KiB of serialized
+nodes, below the host's 192-KiB action-result budget. The cache holds at most
+5,000 nodes or 8 MiB; `omittedNodes` reports cache limits and `textTruncated`
+reports bounded node text. Callers must narrow the website view when complete
+content is required. No cookie or arbitrary DOM/JavaScript API is added.
 Chromium is stabilized at a 1280×720 viewport with device scale factor 1, and
 screenshot/screencast metadata carries those verified dimensions.
 
@@ -70,6 +78,12 @@ Profile reset requires an explicit confirmation and closes Chromium before
 deleting profile contents. Normal shutdown asks Chromium to close through CDP,
 then uses bounded TERM/KILL fallback so the profile receives a graceful flush
 whenever Chromium is responsive.
+Shutdown sends `Browser.close` immediately, without awaiting renderer-dependent
+screencast cleanup. The controller fences late launches, commands, frames, and
+subscriptions. Chromium gets 10 seconds before TERM and another 5 before KILL;
+the whole service has a 25-second deadline and reports failure instead of a
+clean exit if that deadline expires. Docker stop uses 30 seconds, with a
+45-second minimum transport timeout and a 90-second host lifecycle timeout.
 
 The controller owns a generation-fenced Chromium handle. Unexpected process
 exit or CDP closure immediately invalidates the exact dead generation and its
@@ -146,6 +160,24 @@ sticky until a newer healthy navigation remains stable for one minute. Taking
 control, explicit navigation, relaunch, and profile reset clear prior diagnostic
 state. JavaScript dialogs are dismissed (beforeunload is accepted) and recorded
 without blocking the shared browser.
+
+`recentNetworkTrail` is independent of that sticky warning. Its process-random
+stream ID and monotonically increasing entry sequences survive navigation and
+control changes; it retains at most 100 entries, 64 KiB of serialized data, and
+five minutes. Document/Fetch/XHR response statuses (including redirect hops),
+network errors and cookie-block reasons are reduced before retention. Entries
+include only time, generation, sanitized origin/path, request type, status or
+standardized reason. Reviewed control, token-rotation, target, and browser
+lifecycle transitions also enter this trail; no actor/input, cookies, headers,
+bodies, query/hash, or console content is captured. Aborted requests remain
+available for chronology but do not produce resource warnings. The host
+revalidates the optional field and journals unseen sequences; retention losses
+are explicit gaps. The service process restarting creates a new stream ID.
+
+Ordinary navigation, target, and input failures preserve a healthy Chromium
+driver. They must never force-close the process: doing so discards the current
+page/session storage and can lose recently issued cookies before their disk
+flush. Only reviewed transport failures or an unhealthy driver enter recovery.
 
 Page targets form a bounded stack: the root plus at most three popups opened by
 one of its managed pages. Accessibility commands, human input, diagnostics, and

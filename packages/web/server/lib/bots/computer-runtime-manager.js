@@ -14,6 +14,7 @@ export function createBotComputerRuntimeManager({
   computerBackend,
   gatewayHost,
   encryption = null,
+  recordDiagnostic = () => {},
   sweepIntervalMs = DEFAULT_SWEEP_INTERVAL_MS,
   randomBytesImpl = randomBytes,
   logger = console,
@@ -132,19 +133,39 @@ export function createBotComputerRuntimeManager({
       });
     }
     const policy = await revisionComputerPolicy(bot);
-    const ensured = await computerBackend.ensure({
-      botId: bot.id,
-      runId: bot.id,
-      channelId: bot.id,
-      revisionId: policy.revisionId,
-      runtimeToken: token,
-      tenancy: 'team',
-      ownerUserId: bot.created_by,
-      gatewayUrl: gateway.dockerGatewayUrl,
-      browserNetworkMode: policy.browserNetworkMode,
-      browserEgressHosts: policy.browserEgressHosts,
-      isolationTier: policy.isolationTier,
+    const reason = runtimes.has(bot.id) ? 'refresh' : 'provision';
+    const diagnostic = (phase, code = null) => recordDiagnostic({
+      type: 'lifecycle', event: 'bot.computer.provision',
+      payload: { botId: bot.id, phase, reason, ...(code ? { code } : {}) },
     });
+    diagnostic('started');
+    let ensured;
+    try {
+      ensured = await computerBackend.ensure({
+        botId: bot.id,
+        runId: bot.id,
+        channelId: bot.id,
+        revisionId: policy.revisionId,
+        runtimeToken: token,
+        tenancy: 'team',
+        ownerUserId: bot.created_by,
+        gatewayUrl: gateway.dockerGatewayUrl,
+        browserNetworkMode: policy.browserNetworkMode,
+        browserEgressHosts: policy.browserEgressHosts,
+        isolationTier: policy.isolationTier,
+      });
+    } catch (error) {
+      diagnostic('failed', typeof error?.code === 'string' && /^bot_[a-z0-9_]{1,96}$/u.test(error.code)
+        ? error.code : 'bot_computer_provision_failed');
+      if (['bot_runtime_browser_refresh_failed', 'bot_runtime_computer_stop_unconfirmed'].includes(error?.code)) {
+        recordDiagnostic({ type: 'lifecycle', event: 'bot.computer.stop', payload: {
+          botId: bot.id, reason: 'egress_refresh_failed',
+          status: error.code === 'bot_runtime_browser_refresh_failed' ? 'completed' : 'unconfirmed',
+        } });
+      }
+      throw error;
+    }
+    diagnostic('completed');
     const runtime = Object.freeze({
       botId: bot.id,
       scopeKey: `bot:${bot.id}`,

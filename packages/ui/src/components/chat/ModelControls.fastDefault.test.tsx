@@ -7,18 +7,18 @@ const testDir = dirname(fileURLToPath(import.meta.url));
 const source = () => readFileSync(resolve(testDir, 'ModelControls.tsx'), 'utf8');
 
 describe('ModelControls Cursor fast-only controls', () => {
-    test('uses the Cursor display label helper for the model-adjacent variant trigger', () => {
+    test('uses the shared native thinking resolver for the trigger and picker rows', () => {
         const code = source();
 
-        expect(code).toContain('getCursorAcpVariantDisplayLabel(cursorVariantState, { providerId');
-        expect(code).toContain('getCursorAcpVariantDisplayLabel(cursorRowVariantState, { providerId');
+        expect(code).toContain('getChatThinkingState(provider, currentModelId, normalized)');
+        expect(code).toContain('getChatThinkingState(rowProvider, modelID, effectiveVariant)');
     });
 
-    test('renders a Cursor Fast switch in the mobile expanded model row', () => {
+    test('routes the mobile slider Fast action through the Cursor adapter', () => {
         const code = source();
 
-        expect(code).toContain('cursorVariantState?.canToggleFast && provider');
-        expect(code).toContain('resolveCursorAcpVariantSelection(provider, modelId, resolvedVariant, { fastEnabled: checked })');
+        expect(code).toContain('(cursorVariantState ?? genericVariantState)?.canToggleFast');
+        expect(code).toContain('resolveCursorAcpVariantSelection(provider, modelId, resolvedVariant, { fastEnabled })');
     });
 
     test('does not render visible Thinking headers or labels in variant controls', () => {
@@ -38,11 +38,8 @@ describe('ModelControls Cursor fast-only controls', () => {
         expect(code).toContain('RiFlashlightFill className="h-3.5 w-3.5 text-[var(--status-warning)]"');
     });
 
-    test('keeps descenders visible in both model-adjacent thinking labels', () => {
-        const code = source();
-
-        expect(code.match(/inline-flex items-center gap-1 text-\[10px\] leading-\[14px\] -my-\[2px\] py-\[2px\] font-medium min-w-0 truncate text-muted-foreground/g)).toHaveLength(2);
-        expect(code.match(/<span className="min-w-0 truncate leading-\[14px\] -my-\[2px\] py-\[2px\]">\{displayVariant\}<\/span>/g)).toHaveLength(2);
+    test('keeps descenders visible in the shared model-adjacent thinking label', () => {
+        expect(source()).toContain('leading-[14px] -my-[2px] py-[2px]');
     });
 
     test('does not render compact price text in model picker rows', () => {

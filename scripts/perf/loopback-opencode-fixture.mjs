@@ -91,7 +91,7 @@ const assistantPart = (sessionID, text, terminal) => ({
   },
 });
 
-export const createLoopbackOpenCodeFixture = async ({ directory, agentVariant }) => {
+export const createLoopbackOpenCodeFixture = async ({ directory, agentVariant, thinkingModels }) => {
   if (agentVariant !== undefined && !['low','high'].includes(agentVariant)) throw new Error('Invalid fixture agent variant');
   const sessions = ALL_SESSION_IDS.map((id) => (
     createSession(id, directory, id === PERF_PARENT_SESSION_ID ? undefined : PERF_PARENT_SESSION_ID)
@@ -473,7 +473,7 @@ export const createLoopbackOpenCodeFixture = async ({ directory, agentVariant })
         [pathname === '/config/providers' ? 'providers' : 'all']: [{
           id: 'fixture',
           name: 'Fixture',
-          models: {
+          models: thinkingModels ?? {
             'fixture-model': {
               id: 'fixture-model',
               name: 'Fixture model',
@@ -775,6 +775,34 @@ export const createLoopbackOpenCodeFixture = async ({ directory, agentVariant })
     startScenario,
     stopScenario,
     seedHistory,
+    // Bounded canonical replay for recovery UI acceptance; never invokes a provider.
+    replayRecoveryVisual: ({ sessionID, rows, taskEvents = [], status = 'idle', agent = null }) => {
+      requireSession(sessionID);
+      if (promptTimers.has(sessionID) || !Array.isArray(rows) || rows.length > 32
+        || !['idle', 'busy'].includes(status)
+        || (agent !== null && !['explorer', 'designer'].includes(agent))
+        || rows.some(row => row.info?.sessionID !== sessionID || !['user', 'assistant'].includes(row.info.role)
+          || !Array.isArray(row.parts) || row.parts.some(part => part.sessionID !== sessionID || part.messageID !== row.info.id))) {
+        throw new Error('Invalid recovery visual replay');
+      }
+      for (const { task, resultEnvelope = null } of taskEvents) {
+        validateManagedTaskRecord(task);
+        if (task.rootSessionId !== sessionID || task.directory !== directory) throw new Error('Recovery visual task outside fixture root');
+        if (resultEnvelope) assertManagedTaskResultEnvelopeMatchesTask(task, resultEnvelope);
+      }
+      promptRows.set(sessionID, structuredClone(rows));
+      for (const row of rows) {
+        sendEvent(directory, { type: 'message.updated', properties: { info: row.info } });
+        for (const part of row.parts) sendEvent(directory, { type: 'message.part.updated', properties: { part } });
+      }
+      for (const { task, resultEnvelope = null } of taskEvents) sendEvent(directory, toManagedTaskEvent(task, resultEnvelope));
+      if (agent) {
+        const session = sessionByID.get(sessionID);
+        session.agent = agent;
+        sendEvent(directory, { type: 'session.updated', properties: { info: session } });
+      }
+      emitStatus(sessionID, { type: status });
+    },
     appendCompactionBoundary,
     configureNextPrompt,
     configureNextCreatedSessionPrompt: (options) => {

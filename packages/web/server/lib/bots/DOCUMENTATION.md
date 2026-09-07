@@ -49,7 +49,10 @@ mount, network, Docker argument, or Engine request. A reasoning ensure/inspect
 returns a validated loopback supervisor endpoint with an unguessable scoped
 path; the reasoning container itself has no published host port, and the
 endpoint never enters a browser projection. Docker setup, repair,
-update, and rollback remain local Electron commands. `encryption.getKey`
+update, and rollback remain local Electron commands. Capability ownership issues
+retain only validated deployment IDs, fixed service names, and allowlisted Docker
+states (at most 32 conflicts plus a truncation flag); raw Docker metadata is never
+forwarded. These states describe containers, not host-process liveness. `encryption.getKey`
 returns a defensive copy of the OS-sealed deployment key across an in-process
 callback. Recovery may call the separate atomic `encryption.installKey`
 callback only after compatibility and collision validation. Neither operation
@@ -666,6 +669,16 @@ before activation/resume commits, performs a single-flight health sweep, and
 restarts failures independently. Pause, retirement, purge, and shutdown stop
 the service without deleting the persistent workspace. Browser artifact
 transfers receive separate short-lived durable-run gateway capabilities.
+Provision/refresh start, completion, and failure are content-free lifecycle
+records. The browser service polls known computer runtimes every two seconds
+without needing an open viewer or human lease; polls never provision or recover
+a computer, overlap, or retain more than 256 runtime handles. Shutdown cancels
+the collector. The optional network trail is projected before journal capture,
+deduplicated by process stream and sequence, and reports retention gaps.
+Snapshots are byte-bounded pages; per-turn instructions explain stable cursor
+continuation, explicit omissions, and using observed account-specific links.
+The gateway's reviewed result-size error explains the limit without exposing
+upstream messages or incorrectly claiming a browser/network outage.
 
 `model-catalog.js` obtains `/config/providers` from the authenticated host
 OpenCode runtime with a five-second deadline and a streaming 4 MiB ceiling.
@@ -1095,7 +1108,12 @@ operation, revision, run, and short-lived capability. They follow the compiled
 policy default unless a hard gate or matching rule narrows it. Arbitrary websites cannot provide native exactly-once
 write receipts, which remains explicit in the durable action receipt and audit.
 The computer first relaunches a dead Chromium/CDP driver in place. If that
-bounded recovery is exhausted, the host recreates only that Bot's computer once
+bounded recovery is exhausted, the host probes live status with a five-second
+deadline. A healthy or launching browser is preserved and the read returns an
+explicit incomplete-command error without replay; the caller can inspect the
+current page with a snapshot. Cold commands have a 90-second transport deadline
+to cover startup plus navigation within the tool gateway's 120-second limit.
+Only an unhealthy or unreachable computer is recreated once
 for a safe read while retaining its named profile, workspace, and Shared
 volumes. Browser writes are never replayed: CDP closure or command timeout after
 dispatch remains an unknown outcome requiring reconciliation. Navigation, DNS,
@@ -1118,6 +1136,15 @@ pathnames are revalidated/masked; query/hash/userinfo, headers, cookie values,
 page content, and input data cannot cross into the renderer. A genuine
 same-path/redirect loop writes one content-free partial audit row per browser
 generation/diagnostic revision and a matching journal lifecycle record.
+The optional `recentNetworkTrail` status field is revalidated independently by
+`browser-network-diagnostics.js` (100 entries, 64 KiB, five minutes). It contains
+Document/Fetch/XHR statuses and failure reasons plus reviewed lifecycle changes,
+not request/response bodies or credentials. Authorized status reads submit each
+unseen stream/sequence once to the existing sanitized journal as
+`bot.computer.network`; missing sequences become `bot.computer.network_gap`
+records. Cursors are process-local and bounded to 256 streams/five minutes;
+host restart can replay the surviving short trail, identifiable by stream and
+sequence. No new route or expanded membership permission is introduced.
 An agent command encounters human control as the explicit pre-execution
 `DEVRYAN_BOT_CONTROL_HELD` fence. The gateway persists both the run and the same
 action attempt as `waiting_control`, polls the authoritative renewable lease,

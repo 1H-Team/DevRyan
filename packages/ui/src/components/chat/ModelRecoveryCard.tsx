@@ -1,3 +1,4 @@
+import { resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
 import React from 'react';
 import { RiErrorWarningLine, RiRefreshLine } from '@remixicon/react';
 
@@ -76,7 +77,7 @@ export function ModelRecoveryCard({
   actionError: string | null;
   failureMessage?: string | null;
   onSelectionChange(selection: ProviderRecoverySelection): void;
-  onRetry(): void | Promise<void>;
+  onRetry(selection: ProviderRecoverySelection): void | Promise<void>;
   retryLabel?: string;
   retryingLabel?: string;
   embedded?: boolean;
@@ -203,7 +204,7 @@ export function ModelRecoveryCard({
               variant="default"
               className="h-auto max-w-full whitespace-normal py-2 text-center leading-snug normal-case"
               disabled={pending}
-              onClick={() => void onRetry()}
+              onClick={() => void onRetry({ ...selection, variant: resolveChatThinkingVariant(providers.find((provider) => provider.id === selection.providerId), selection.modelId, selection.variant) ?? null })}
             >
               <RiRefreshLine className={pending ? 'size-3.5 animate-spin' : 'size-3.5'} />
               {pending

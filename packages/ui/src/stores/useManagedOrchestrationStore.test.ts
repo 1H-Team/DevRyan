@@ -99,6 +99,40 @@ const emptySnapshot = (overrides: Partial<ManagedOrchestrationSnapshot> = {}): M
   ...overrides,
 });
 
+describe('dispatch recovery identity', () => {
+  test('follows six attempts after ancestor removal, reload, and stale replay without changing roots or children', async () => {
+    const tasks = Array.from({ length: 6 }, (_, index) => projectedTask(index + 1, index === 5 ? 'running' : 'failed', {
+      childSessionId: 'ses_child', dispatchCallId: 'call_original',
+      priorTaskId: index ? `dvr_task_${index}` : null,
+      executionKind: index ? 'retry_in_place' : 'start', attempt: index + 1,
+      providerId: index === 5 ? 'opencode' : 'openai', modelId: index === 5 ? 'deepseek-v4-flash' : 'spark',
+    }));
+    const selector = managedOrchestrationSelectors.taskIdForRecovery('dvr_task_1', {
+      rootSessionId: 'ses_root', dispatchCallId: 'call_original', childSessionId: 'ses_child', directory: '/workspace',
+    });
+    const store = createManagedOrchestrationStore({ api: fakeApi({ async getSnapshot() { return emptySnapshot({ tasks: tasks.slice(2) }); } }) });
+    tasks.forEach(task => store.getState().ingestEvent(taskEvent(withRecoveryDefaults(task))));
+    expect(selector(store.getState())).toBe('dvr_task_6');
+    store.getState().ingestEvent(removalEvent(tasks[0]!));
+    store.getState().ingestEvent(removalEvent(tasks[1]!));
+    expect(selector(store.getState())).toBe('dvr_task_6');
+    await store.getState().loadSnapshot({ rootSessionId: 'ses_root' });
+    expect(selector(store.getState())).toBe('dvr_task_6');
+    store.getState().ingestEvent(taskEvent(withRecoveryDefaults(tasks[2]!)));
+    expect(selector(store.getState())).toBe('dvr_task_6');
+    const completed = { ...tasks[5]!, status: 'completed' as const, finishedAt: 9_000 };
+    store.getState().ingestEvent(taskEvent(withRecoveryDefaults(completed)));
+    store.getState().ingestEvent(taskEvent(withRecoveryDefaults(tasks[5]!)));
+    expect(store.getState().tasksById[selector(store.getState())!]?.status).toBe('completed');
+    expect(store.getState().tasksById[selector(store.getState())!]?.modelId).toBe('deepseek-v4-flash');
+    const freshChild = projectedTask(7, 'running', { dispatchCallId: 'call_original', childSessionId: 'ses_new_child', executionKind: 'retry', priorTaskId: 'dvr_task_6', attempt: 7 });
+    store.getState().ingestEvent(taskEvent(withRecoveryDefaults(freshChild)));
+    expect(selector(store.getState())).toBe('dvr_task_6');
+    expect(managedOrchestrationSelectors.taskIdForRecovery('missing', { rootSessionId: 'ses_other', dispatchCallId: 'call_original', childSessionId: 'ses_child', directory: '/workspace' })(store.getState())).toBeUndefined();
+    expect(managedOrchestrationSelectors.taskIdForRecovery('missing', { rootSessionId: 'ses_root', dispatchCallId: 'another_call', childSessionId: 'ses_child', directory: '/workspace' })(store.getState())).toBeUndefined();
+  });
+});
+
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((nextResolve) => { resolve = nextResolve; });

@@ -71,3 +71,7 @@ Bridges lib/opencode streams with Zustand stores and session/chat components.
 `event-pipeline.ts` routes `session.changes.updated` directly to the narrow session-change refresh channel without adding high-frequency shared state. `sync-context.tsx` clears summaries on permanent session deletion and directory disposal. The summary store fences late responses independently of event timing.
 
 `event-reducer.ts` resolves the owning message once per part update/delta and reuses it for role/completion normalization. Exact-session presence still controls provisional recovery, independently of the legacy unscoped lookup. `session-selectors.test.ts` verifies the session-branch subscription against a real Zustand store.
+
+New chat capture boundaries use `normalizeNewChatSendConfig` to freeze the same
+native thinking level displayed by the slider. The lower-level historical and
+queue/retry resolvers continue preserving explicit `null` defaults.

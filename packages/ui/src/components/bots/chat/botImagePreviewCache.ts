@@ -51,6 +51,8 @@ export const createBotImagePreviewCache = ({
         bytes: 0,
       };
       entry.promise = load(controller.signal).then((loaded) => {
+        // A released fetch can settle after a new consumer acquired the same key.
+        if (controller.signal.aborted) throw new Error('preview_aborted');
         const blob = verifyBotImageBlob(loaded, expectedType);
         if (blob.size > maxBytes || totalBytes + blob.size > maxBytes) {
           throw new Error('preview_capacity');
@@ -65,7 +67,7 @@ export const createBotImagePreviewCache = ({
         }
         return entry.url;
       }).catch((error) => {
-        entries.delete(key);
+        if (entries.get(key) === entry) entries.delete(key);
         throw error;
       });
       entries.set(key, entry);
@@ -77,6 +79,8 @@ export const createBotImagePreviewCache = ({
       if (!entry) return;
       entry.refs = Math.max(0, entry.refs - 1);
       if (entry.refs > 0) return;
+      // Detach synchronously so a remount never reuses the aborted promise.
+      entries.delete(key);
       entry.controller.abort();
       if (entry.url) {
         revokeObjectURL(entry.url);

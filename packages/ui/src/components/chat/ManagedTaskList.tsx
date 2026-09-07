@@ -128,24 +128,29 @@ const ManagedTaskReconciledFallbackRow = React.memo(({
   task: ManagedTaskDispatchFallback;
   onContentChange?: () => void;
 }) => {
-  const authoritativeTask = useManagedOrchestrationStore(React.useMemo(
-    () => managedOrchestrationSelectors.task(task.taskId),
-    [task.taskId],
+  const authoritativeTaskId = useManagedOrchestrationStore(React.useMemo(
+    () => managedOrchestrationSelectors.taskIdForRecovery(task.taskId, {
+      rootSessionId: rootSessionId ?? '',
+      dispatchCallId: task.dispatchCallId,
+      childSessionId: task.childSessionId,
+      directory: task.directory,
+    }),
+    [rootSessionId, task.taskId, task.dispatchCallId, task.childSessionId, task.directory],
   ));
   const recoveryRequestedRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (!rootSessionId || authoritativeTask || recoveryRequestedRef.current) return;
+    if (!rootSessionId || authoritativeTaskId || recoveryRequestedRef.current) return;
 
     const timer = window.setTimeout(() => {
       recoveryRequestedRef.current = true;
       void useManagedOrchestrationStore.getState().loadSnapshot({ rootSessionId });
     }, MISSING_DISPATCH_RECOVERY_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [authoritativeTask, rootSessionId]);
+  }, [authoritativeTaskId, rootSessionId]);
 
-  if (authoritativeTask) {
-    return <ManagedTaskRow taskId={task.taskId} onContentChange={onContentChange} />;
+  if (authoritativeTaskId) {
+    return <ManagedTaskRow taskId={authoritativeTaskId} onContentChange={onContentChange} />;
   }
   return <ManagedTaskFallbackRow task={task} />;
 });

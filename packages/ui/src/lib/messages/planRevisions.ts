@@ -3,6 +3,7 @@ import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import {
     hasPlanImplementationRequestPart,
     isManagedPlanMaintenanceMessage,
+    isManagedPlanRecoveryMessage,
     resolveMessagePlanCard,
     resolvePlanTurnIntent,
     type PlanTurnIntent,
@@ -106,7 +107,12 @@ const groupTurnsIntoRevisions = (turns: readonly PlanRevisionTurnInput[]): TurnG
     const groups: TurnGroup[] = [];
     for (const turn of turns) {
         const openGroup = groups[groups.length - 1];
-        if (openGroup && isContinuationTurnUserMessage(turn.userParts, turn.isRecordedPlanMode)) {
+        // Recovery resumes the originating human's Plan request. It does not
+        // open a new revision or borrow intent across a later human turn.
+        const resumesPlanning = openGroup
+            && isManagedPlanRecoveryMessage(turn.userParts)
+            && resolvePlanTurnIntent(openGroup.root.userInfo, openGroup.root.userParts, openGroup.root.isRecordedPlanMode) === 'plan';
+        if (openGroup && (resumesPlanning || isContinuationTurnUserMessage(turn.userParts, turn.isRecordedPlanMode))) {
             openGroup.members.push(turn);
             continue;
         }

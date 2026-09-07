@@ -573,6 +573,7 @@ export async function launchChromiumDriver({
   fsPromises = fs,
   WebSocketImpl = globalThis.WebSocket,
   connectionFactory = createCdpConnection,
+  signal,
 } = {}) {
   if (typeof executablePath !== 'string' || !path.isAbsolute(executablePath)
     || !['chromium', 'chromium-browser'].includes(path.basename(executablePath))
@@ -591,6 +592,7 @@ export async function launchChromiumDriver({
   await fsPromises.mkdir(profileDirectory, { recursive: true, mode: 0o700 });
   await fsPromises.mkdir(scratchDirectory, { recursive: true, mode: 0o700 });
   await clearStaleChromiumStartupArtifacts({ profileDirectory, fsPromises });
+  signal?.throwIfAborted();
   const child = spawnImpl(executablePath, chromiumLaunchArguments({
     profileDirectory,
     proxyUrl,
@@ -608,479 +610,514 @@ export async function launchChromiumDriver({
   });
   let childSpawnError = null;
   child.once('error', (error) => { childSpawnError = error; });
-  const connection = connectionFactory(await waitForDevToolsEndpoint({
-    profileDirectory,
-    child,
-    fsPromises,
-    spawnError: () => childSpawnError,
-  }), { WebSocketImpl });
-  await connection.ready;
-  const version = await connection.send('Browser.getVersion');
-  const engineVersion = typeof version.product === 'string' && version.product.length <= 128
-    ? version.product
-    : null;
-  let terminated = false;
-  const terminationListeners = new Set();
-  const markTerminated = (code = 'DEVRYAN_BOT_BROWSER_CLOSED') => {
-    if (terminated) return;
-    terminated = true;
-    for (const callback of terminationListeners) callback(code);
-    terminationListeners.clear();
+  let abortTimer;
+  const abortStartup = () => {
+    if (child.exitCode !== null) return;
+    child.kill('SIGTERM');
+    abortTimer = setTimeout(() => {
+      if (child.exitCode === null) child.kill('SIGKILL');
+    }, BROWSER_TERMINATE_GRACE_MS);
+    abortTimer.unref?.();
   };
-  connection.onClose(() => markTerminated());
-  child.once('exit', () => markTerminated());
-
-  let pageChangeHandler = () => undefined;
-  const targets = [];
-  const targetForSession = (sessionId) => targets.find((target) => target.sessionId === sessionId) || null;
-  const active = () => targets.at(-1) || null;
-  const sendTo = (target, method, params = {}) => {
-    if (!target) fail('Chromium page target is unavailable', 'DEVRYAN_BOT_BROWSER_CLOSED', 503);
-    return connection.send(method, params, target.sessionId);
+  signal?.addEventListener('abort', abortStartup, { once: true });
+  const finishStartup = () => {
+    signal?.removeEventListener('abort', abortStartup);
+    clearTimeout(abortTimer);
   };
-  const send = (method, params = {}) => sendTo(active(), method, params);
-  const attachPage = async (targetId) => {
-    const attached = await connection.send('Target.attachToTarget', { targetId, flatten: true });
-    if (typeof attached?.sessionId !== 'string' || !attached.sessionId) {
-      fail('Chromium page target attachment failed', 'DEVRYAN_BOT_BROWSER_START_FAILED', 500);
-    }
-    const target = { targetId, sessionId: attached.sessionId, mainFrameId: null, url: null };
-    await Promise.all([
-      sendTo(target, 'Page.enable'),
-      sendTo(target, 'DOM.enable'),
-      sendTo(target, 'Accessibility.enable'),
-      sendTo(target, 'Network.enable'),
-      sendTo(target, 'Emulation.setDeviceMetricsOverride', {
-        width: HUMAN_VIEWPORT_WIDTH,
-        height: HUMAN_VIEWPORT_HEIGHT,
-        deviceScaleFactor: HUMAN_DEVICE_SCALE_FACTOR,
-        mobile: false,
-      }),
-    ]);
-    const frameTree = await sendTo(target, 'Page.getFrameTree');
-    target.mainFrameId = frameTree.frameTree?.frame?.id || null;
-    target.url = frameTree.frameTree?.frame?.url || null;
-    return target;
-  };
-
-  const { targetId: rootTargetId } = await connection.send('Target.createTarget', { url: 'about:blank' });
-  const rootTarget = await attachPage(rootTargetId);
-  targets.push(rootTarget);
-  await connection.send('Browser.setDownloadBehavior', {
-    behavior: 'allow',
-    downloadPath: scratchDirectory,
-    eventsEnabled: true,
-  });
-
-  let humanInput = createHumanInputDispatcher({
-    send: (method, params) => sendTo(rootTarget, method, params),
-  });
-  let screencastState = null;
-
-  const stopScreencastOn = async (target) => {
-    const state = screencastState;
-    if (!state || state.sessionId !== target?.sessionId) return;
-    state.sessionId = null;
-    await sendTo(target, 'Page.stopScreencast').catch(() => undefined);
-  };
-
-  const startScreencastOn = async (target, { seed = false } = {}) => {
-    const state = screencastState;
-    if (!state || state.closed || !target) return;
-    await sendTo(target, 'Page.startScreencast', {
-      format: 'jpeg', quality: 60, maxWidth: 1280, maxHeight: 720, everyNthFrame: 1,
-    });
-    if (screencastState !== state || state.closed) {
-      await sendTo(target, 'Page.stopScreencast').catch(() => undefined);
-      return;
-    }
-    state.sessionId = target.sessionId;
-    if (!seed) return;
-    const result = await sendTo(target, 'Page.captureScreenshot', {
-      format: 'jpeg', quality: 60, fromSurface: true,
-    });
-    if (screencastState !== state || state.sessionId !== target.sessionId) return;
-    try {
-      state.onFrame(Buffer.from(result.data || '', 'base64'), {
-        width: HUMAN_VIEWPORT_WIDTH,
-        height: HUMAN_VIEWPORT_HEIGHT,
-        deviceScaleFactor: HUMAN_DEVICE_SCALE_FACTOR,
-      });
-    } catch {
-      // A malformed/oversized seed frame is dropped without stopping capture.
-    }
-  };
-
-  const activateTop = async ({ add = null, removeIndex = null } = {}) => {
-    const previous = active();
-    await humanInput.release().catch(() => undefined);
-    await stopScreencastOn(previous);
-    if (Number.isInteger(removeIndex)) targets.splice(removeIndex, 1);
-    if (add) targets.push(add);
-    const next = active();
-    if (!next) {
-      markTerminated();
-      return;
-    }
-    humanInput = createHumanInputDispatcher({
-      send: (method, params) => sendTo(next, method, params),
-    });
-    pageChangeHandler();
-    await startScreencastOn(next, { seed: true }).catch(() => undefined);
-  };
-
-  let targetTransition = Promise.resolve();
-  const queueTargetTransition = (operation) => {
-    targetTransition = targetTransition.catch(() => undefined).then(operation);
-    return targetTransition;
-  };
-
-  const removeTarget = async ({ targetId, sessionId } = {}) => {
-    const index = targets.findIndex((target) => (
-      (typeof targetId === 'string' && target.targetId === targetId)
-      || (typeof sessionId === 'string' && target.sessionId === sessionId)
-    ));
-    if (index < 0) return;
-    if (index === 0) {
-      markTerminated();
-      return;
-    }
-    if (index !== targets.length - 1) {
-      targets.splice(index, 1);
-      return;
-    }
-    await activateTop({ removeIndex: index });
-  };
-
-  connection.on('Page.frameNavigated', (event, eventSessionId) => {
-    const target = targetForSession(eventSessionId);
-    if (!target || event.frame?.parentId) return;
-    target.mainFrameId = event.frame?.id || target.mainFrameId;
-    target.url = event.frame?.url || target.url;
-    if (target === active()) pageChangeHandler();
-  });
-  connection.on('Network.requestWillBeSent', (event, eventSessionId) => {
-    const target = targetForSession(eventSessionId);
-    if (!target || target !== active()) return;
-    diagnostics?.recordRequest({
-      requestId: event.requestId,
-      url: event.request?.url,
-      type: event.type,
-      mainFrame: event.type === 'Document' && event.frameId === target.mainFrameId,
-      redirected: Boolean(event.redirectResponse),
-    });
-  });
-  connection.on('Network.responseReceived', (event, eventSessionId) => {
-    const target = targetForSession(eventSessionId);
-    if (!target || target !== active()) return;
-    diagnostics?.recordResponse({
-      requestId: event.requestId,
-      url: event.response?.url,
-      statusCode: event.response?.status,
-    });
-  });
-  connection.on('Network.requestWillBeSentExtraInfo', (event, eventSessionId) => {
-    const target = targetForSession(eventSessionId);
-    if (!target || target !== active()) return;
-    const reasons = (event.associatedCookies || []).flatMap((entry) => entry.blockedReasons || []);
-    diagnostics?.recordCookieBlock({ requestId: event.requestId, reasons });
-  });
-  connection.on('Network.responseReceivedExtraInfo', (event, eventSessionId) => {
-    const target = targetForSession(eventSessionId);
-    if (!target || target !== active()) return;
-    const reasons = (event.blockedCookies || []).flatMap((entry) => entry.blockedReasons || []);
-    diagnostics?.recordCookieBlock({ requestId: event.requestId, reasons });
-  });
-  connection.on('Network.loadingFailed', (event, eventSessionId) => {
-    const target = targetForSession(eventSessionId);
-    if (!target || target !== active()) return;
-    diagnostics?.recordFailure({
-      requestId: event.requestId,
-      errorText: event.errorText,
-      blockedReason: event.blockedReason,
-    });
-  });
-  connection.on('Page.javascriptDialogOpening', (event, eventSessionId) => {
-    const target = targetForSession(eventSessionId);
-    if (!target || target !== active()) return;
-    void sendTo(target, 'Page.handleJavaScriptDialog', {
-      accept: event.type === 'beforeunload',
-    }).catch(() => undefined);
-    diagnostics?.recordDialog?.({
-      url: event.url || target.url,
-      type: event.type,
-      message: event.message,
-    });
-  });
-  connection.on('Page.screencastFrame', (event, eventSessionId) => {
-    const target = targetForSession(eventSessionId);
-    const state = screencastState;
-    if (!target || target !== active() || !state || state.sessionId !== eventSessionId) return;
-    try {
-      state.onFrame(Buffer.from(event.data || '', 'base64'), {
-        width: Math.round(event.metadata?.deviceWidth || HUMAN_VIEWPORT_WIDTH),
-        height: Math.round(event.metadata?.deviceHeight || HUMAN_VIEWPORT_HEIGHT),
-        deviceScaleFactor: HUMAN_DEVICE_SCALE_FACTOR,
-      });
-    } catch {
-      // A malformed/oversized frame is dropped without crashing the browser service.
-    }
-    void sendTo(target, 'Page.screencastFrameAck', { sessionId: event.sessionId })
-      .catch(() => undefined);
-  });
-  connection.on('Target.targetCreated', (event) => {
-    const targetInfo = event.targetInfo;
-    if (targetInfo?.type !== 'page'
-      || targets.some((target) => target.targetId === targetInfo.targetId)) return;
-    void queueTargetTransition(async () => {
-      if (targets.some((target) => target.targetId === targetInfo.targetId)) return;
-      if (!targets.some((target) => target.targetId === targetInfo.openerId)) {
-        // Pages no driven page opened (session-restored or startup tabs) are
-        // closed so each relaunch drives exactly one page. Only the tab goes
-        // away; the browser process and its persistent profile stay up.
-        await connection.send('Target.closeTarget', { targetId: targetInfo.targetId }).catch(() => undefined);
-        return;
-      }
-      if (targets.length >= MAX_POPUPS + 1) {
-        diagnostics?.recordPopupLimit?.({ url: targetInfo.url });
-        await connection.send('Target.closeTarget', { targetId: targetInfo.targetId }).catch(() => undefined);
-        return;
-      }
-      try {
-        const target = await attachPage(targetInfo.targetId);
-        await activateTop({ add: target });
-      } catch {
-        await connection.send('Target.closeTarget', { targetId: targetInfo.targetId }).catch(() => undefined);
-      }
-    });
-  });
-  connection.on('Target.targetDestroyed', (event) => {
-    void queueTargetTransition(() => removeTarget({ targetId: event.targetId }));
-  });
-  connection.on('Target.detachedFromTarget', (event) => {
-    void queueTargetTransition(() => removeTarget({
-      targetId: event.targetId,
-      sessionId: event.sessionId,
-    }));
-  });
-  await connection.send('Target.setDiscoverTargets', { discover: true });
-
-  const waitForPageLoad = (target) => {
-    let settled = false;
-    let timer;
-    let unsubscribe = () => undefined;
-    const promise = new Promise((resolve, reject) => {
-      const finish = (error) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        unsubscribe();
-        if (error) reject(error);
-        else resolve();
-      };
-      unsubscribe = connection.on('Page.loadEventFired', (_event, eventSessionId) => {
-        if (eventSessionId === target.sessionId) finish();
-      });
-      timer = setTimeout(() => finish(new ComputerBrowserError(
-        'Navigation timed out',
-        'DEVRYAN_BOT_NAVIGATION_FAILED',
-        504,
-      )), 30_000);
-    });
-    return Object.freeze({
-      promise,
-      cancel: () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        unsubscribe();
-      },
-    });
-  };
-
-  const pointForNode = async (node, target) => {
-    const box = await sendTo(target, 'DOM.getBoxModel', {
-      backendNodeId: node.backendNodeId,
-    });
-    const quad = box.model?.content || box.model?.border;
-    if (!Array.isArray(quad) || quad.length !== 8) {
-      fail('Accessibility target is not visible', 'DEVRYAN_BOT_TARGET_NOT_VISIBLE', 409);
-    }
-    return {
-      x: (quad[0] + quad[2] + quad[4] + quad[6]) / 4,
-      y: (quad[1] + quad[3] + quad[5] + quad[7]) / 4,
+  try {
+    const connection = connectionFactory(await waitForDevToolsEndpoint({
+      profileDirectory,
+      child,
+      fsPromises,
+      spawnError: () => childSpawnError,
+    }), { WebSocketImpl });
+    await connection.ready;
+    const version = await connection.send('Browser.getVersion');
+    const engineVersion = typeof version.product === 'string' && version.product.length <= 128
+      ? version.product
+      : null;
+    let terminated = false;
+    const terminationListeners = new Set();
+    const markTerminated = (code = 'DEVRYAN_BOT_BROWSER_CLOSED') => {
+      if (terminated) return;
+      terminated = true;
+      for (const callback of terminationListeners) callback(code);
+      terminationListeners.clear();
     };
-  };
+    connection.onClose(() => markTerminated());
+    child.once('exit', () => markTerminated());
 
-  const clickPoint = async ({ x, y }, target) => {
-    await sendTo(target, 'Input.dispatchMouseEvent', {
-      type: 'mousePressed', x, y, button: 'left', clickCount: 1,
-    });
-    await sendTo(target, 'Input.dispatchMouseEvent', {
-      type: 'mouseReleased', x, y, button: 'left', clickCount: 1,
-    });
-  };
-
-  const dispatchKey = async (key, modifiers = 0, target = active()) => {
-    await sendTo(target, 'Input.dispatchKeyEvent', { type: 'keyDown', key, modifiers });
-    await sendTo(target, 'Input.dispatchKeyEvent', { type: 'keyUp', key, modifiers });
-  };
-
-  return Object.freeze({
-    status: () => Object.freeze({
-      mode: 'headed_virtual',
-      engineVersion,
-      activeTargetCount: targets.length,
-      popupOpen: targets.length > 1,
-    }),
-    isHealthy: () => !terminated && child.exitCode === null && !connection.isClosed(),
-    onTerminated(callback) {
-      if (typeof callback !== 'function') return () => undefined;
-      if (terminated) {
-        queueMicrotask(() => callback('DEVRYAN_BOT_BROWSER_CLOSED'));
-        return () => undefined;
+    let pageChangeHandler = () => undefined;
+    const targets = [];
+    const targetForSession = (sessionId) => targets.find((target) => target.sessionId === sessionId) || null;
+    const active = () => targets.at(-1) || null;
+    const sendTo = (target, method, params = {}) => {
+      if (!target) fail('Chromium page target is unavailable', 'DEVRYAN_BOT_BROWSER_CLOSED', 503);
+      return connection.send(method, params, target.sessionId);
+    };
+    const send = (method, params = {}) => sendTo(active(), method, params);
+    const attachPage = async (targetId) => {
+      const attached = await connection.send('Target.attachToTarget', { targetId, flatten: true });
+      if (typeof attached?.sessionId !== 'string' || !attached.sessionId) {
+        fail('Chromium page target attachment failed', 'DEVRYAN_BOT_BROWSER_START_FAILED', 500);
       }
-      terminationListeners.add(callback);
-      return () => terminationListeners.delete(callback);
-    },
-    setPageChangeHandler(callback) {
-      pageChangeHandler = typeof callback === 'function' ? callback : () => undefined;
-    },
-    async navigate(url) {
-      const target = active();
-      const load = waitForPageLoad(target);
+      const target = { targetId, sessionId: attached.sessionId, mainFrameId: null, url: null };
+      await Promise.all([
+        sendTo(target, 'Page.enable'),
+        sendTo(target, 'DOM.enable'),
+        sendTo(target, 'Accessibility.enable'),
+        sendTo(target, 'Network.enable'),
+        sendTo(target, 'Emulation.setDeviceMetricsOverride', {
+          width: HUMAN_VIEWPORT_WIDTH,
+          height: HUMAN_VIEWPORT_HEIGHT,
+          deviceScaleFactor: HUMAN_DEVICE_SCALE_FACTOR,
+          mobile: false,
+        }),
+      ]);
+      const frameTree = await sendTo(target, 'Page.getFrameTree');
+      target.mainFrameId = frameTree.frameTree?.frame?.id || null;
+      target.url = frameTree.frameTree?.frame?.url || null;
+      return target;
+    };
+
+    const { targetId: rootTargetId } = await connection.send('Target.createTarget', { url: 'about:blank' });
+    const rootTarget = await attachPage(rootTargetId);
+    targets.push(rootTarget);
+    await connection.send('Browser.setDownloadBehavior', {
+      behavior: 'allow',
+      downloadPath: scratchDirectory,
+      eventsEnabled: true,
+    });
+
+    let humanInput = createHumanInputDispatcher({
+      send: (method, params) => sendTo(rootTarget, method, params),
+    });
+    let screencastState = null;
+
+    const stopScreencastOn = async (target) => {
+      const state = screencastState;
+      if (!state || state.sessionId !== target?.sessionId) return;
+      state.sessionId = null;
+      await sendTo(target, 'Page.stopScreencast').catch(() => undefined);
+    };
+
+    const startScreencastOn = async (target, { seed = false } = {}) => {
+      const state = screencastState;
+      if (!state || state.closed || !target) return;
+      await sendTo(target, 'Page.startScreencast', {
+        format: 'jpeg', quality: 60, maxWidth: 1280, maxHeight: 720, everyNthFrame: 1,
+      });
+      if (screencastState !== state || state.closed) {
+        await sendTo(target, 'Page.stopScreencast').catch(() => undefined);
+        return;
+      }
+      state.sessionId = target.sessionId;
+      if (!seed) return;
+      const result = await sendTo(target, 'Page.captureScreenshot', {
+        format: 'jpeg', quality: 60, fromSurface: true,
+      });
+      if (screencastState !== state || state.sessionId !== target.sessionId) return;
       try {
-        const result = await sendTo(target, 'Page.navigate', { url });
-        if (result.errorText) fail('Navigation failed', 'DEVRYAN_BOT_NAVIGATION_FAILED', 502);
-        await load.promise;
-        return { frameId: result.frameId || null };
-      } finally {
-        load.cancel();
+        state.onFrame(Buffer.from(result.data || '', 'base64'), {
+          width: HUMAN_VIEWPORT_WIDTH,
+          height: HUMAN_VIEWPORT_HEIGHT,
+          deviceScaleFactor: HUMAN_DEVICE_SCALE_FACTOR,
+        });
+      } catch {
+        // A malformed/oversized seed frame is dropped without stopping capture.
       }
-    },
-    // Replaces every driven page with one fresh about:blank target while the
-    // Chromium process, its cookies and its storage stay intact. Used after a
-    // single CDP command timeout, where the page (not the browser) is stuck, so
-    // nothing here awaits a command sent to the possibly hung renderer.
-    async resetPage() {
-      return queueTargetTransition(async () => {
-        const { targetId } = await connection.send('Target.createTarget', { url: 'about:blank' });
-        let fresh;
+    };
+
+    const activateTop = async ({ add = null, removeIndex = null } = {}) => {
+      const previous = active();
+      await humanInput.release().catch(() => undefined);
+      await stopScreencastOn(previous);
+      if (Number.isInteger(removeIndex)) targets.splice(removeIndex, 1);
+      if (add) targets.push(add);
+      diagnostics?.recordTransition?.('target_changed');
+      const next = active();
+      if (!next) {
+        markTerminated();
+        return;
+      }
+      humanInput = createHumanInputDispatcher({
+        send: (method, params) => sendTo(next, method, params),
+      });
+      pageChangeHandler();
+      await startScreencastOn(next, { seed: true }).catch(() => undefined);
+    };
+
+    let targetTransition = Promise.resolve();
+    const queueTargetTransition = (operation) => {
+      targetTransition = targetTransition.catch(() => undefined).then(operation);
+      return targetTransition;
+    };
+
+    const removeTarget = async ({ targetId, sessionId } = {}) => {
+      const index = targets.findIndex((target) => (
+        (typeof targetId === 'string' && target.targetId === targetId)
+        || (typeof sessionId === 'string' && target.sessionId === sessionId)
+      ));
+      if (index < 0) return;
+      if (index === 0) {
+        markTerminated();
+        return;
+      }
+      if (index !== targets.length - 1) {
+        targets.splice(index, 1);
+        return;
+      }
+      await activateTop({ removeIndex: index });
+    };
+
+    connection.on('Page.frameNavigated', (event, eventSessionId) => {
+      const target = targetForSession(eventSessionId);
+      if (!target || event.frame?.parentId) return;
+      target.mainFrameId = event.frame?.id || target.mainFrameId;
+      target.url = event.frame?.url || target.url;
+      if (target === active()) pageChangeHandler();
+    });
+    connection.on('Network.requestWillBeSent', (event, eventSessionId) => {
+      const target = targetForSession(eventSessionId);
+      if (!target || target !== active()) return;
+      if (event.redirectResponse) {
+        diagnostics?.recordResponse({ requestId: event.requestId,
+          url: event.redirectResponse.url, statusCode: event.redirectResponse.status });
+      }
+      diagnostics?.recordRequest({
+        requestId: event.requestId,
+        url: event.request?.url,
+        type: event.type,
+        mainFrame: event.type === 'Document' && event.frameId === target.mainFrameId,
+        redirected: Boolean(event.redirectResponse),
+      });
+    });
+    connection.on('Network.responseReceived', (event, eventSessionId) => {
+      const target = targetForSession(eventSessionId);
+      if (!target || target !== active()) return;
+      diagnostics?.recordResponse({
+        requestId: event.requestId,
+        url: event.response?.url,
+        statusCode: event.response?.status,
+      });
+    });
+    connection.on('Network.requestWillBeSentExtraInfo', (event, eventSessionId) => {
+      const target = targetForSession(eventSessionId);
+      if (!target || target !== active()) return;
+      const reasons = (event.associatedCookies || []).flatMap((entry) => entry.blockedReasons || []);
+      diagnostics?.recordCookieBlock({ requestId: event.requestId, reasons });
+    });
+    connection.on('Network.responseReceivedExtraInfo', (event, eventSessionId) => {
+      const target = targetForSession(eventSessionId);
+      if (!target || target !== active()) return;
+      const reasons = (event.blockedCookies || []).flatMap((entry) => entry.blockedReasons || []);
+      diagnostics?.recordCookieBlock({ requestId: event.requestId, reasons });
+    });
+    connection.on('Network.loadingFailed', (event, eventSessionId) => {
+      const target = targetForSession(eventSessionId);
+      if (!target || target !== active()) return;
+      diagnostics?.recordFailure({
+        requestId: event.requestId,
+        errorText: event.errorText,
+        blockedReason: event.blockedReason,
+      });
+    });
+    connection.on('Page.javascriptDialogOpening', (event, eventSessionId) => {
+      const target = targetForSession(eventSessionId);
+      if (!target || target !== active()) return;
+      void sendTo(target, 'Page.handleJavaScriptDialog', {
+        accept: event.type === 'beforeunload',
+      }).catch(() => undefined);
+      diagnostics?.recordDialog?.({
+        url: event.url || target.url,
+        type: event.type,
+        message: event.message,
+      });
+    });
+    connection.on('Page.screencastFrame', (event, eventSessionId) => {
+      const target = targetForSession(eventSessionId);
+      const state = screencastState;
+      if (!target || target !== active() || !state || state.sessionId !== eventSessionId) return;
+      try {
+        state.onFrame(Buffer.from(event.data || '', 'base64'), {
+          width: Math.round(event.metadata?.deviceWidth || HUMAN_VIEWPORT_WIDTH),
+          height: Math.round(event.metadata?.deviceHeight || HUMAN_VIEWPORT_HEIGHT),
+          deviceScaleFactor: HUMAN_DEVICE_SCALE_FACTOR,
+        });
+      } catch {
+        // A malformed/oversized frame is dropped without crashing the browser service.
+      }
+      void sendTo(target, 'Page.screencastFrameAck', { sessionId: event.sessionId })
+        .catch(() => undefined);
+    });
+    connection.on('Target.targetCreated', (event) => {
+      const targetInfo = event.targetInfo;
+      if (targetInfo?.type !== 'page'
+        || targets.some((target) => target.targetId === targetInfo.targetId)) return;
+      void queueTargetTransition(async () => {
+        if (targets.some((target) => target.targetId === targetInfo.targetId)) return;
+        if (!targets.some((target) => target.targetId === targetInfo.openerId)) {
+          // Pages no driven page opened (session-restored or startup tabs) are
+          // closed so each relaunch drives exactly one page. Only the tab goes
+          // away; the browser process and its persistent profile stay up.
+          await connection.send('Target.closeTarget', { targetId: targetInfo.targetId }).catch(() => undefined);
+          return;
+        }
+        if (targets.length >= MAX_POPUPS + 1) {
+          diagnostics?.recordPopupLimit?.({ url: targetInfo.url });
+          await connection.send('Target.closeTarget', { targetId: targetInfo.targetId }).catch(() => undefined);
+          return;
+        }
         try {
-          fresh = await attachPage(targetId);
+          const target = await attachPage(targetInfo.targetId);
+          await activateTop({ add: target });
+        } catch {
+          await connection.send('Target.closeTarget', { targetId: targetInfo.targetId }).catch(() => undefined);
+        }
+      });
+    });
+    connection.on('Target.targetDestroyed', (event) => {
+      void queueTargetTransition(() => removeTarget({ targetId: event.targetId }));
+    });
+    connection.on('Target.detachedFromTarget', (event) => {
+      void queueTargetTransition(() => removeTarget({
+        targetId: event.targetId,
+        sessionId: event.sessionId,
+      }));
+    });
+    await connection.send('Target.setDiscoverTargets', { discover: true });
+
+    const waitForPageLoad = (target) => {
+      let settled = false;
+      let timer;
+      let unsubscribe = () => undefined;
+      const promise = new Promise((resolve, reject) => {
+        const finish = (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          unsubscribe();
+          if (error) reject(error);
+          else resolve();
+        };
+        unsubscribe = connection.on('Page.loadEventFired', (_event, eventSessionId) => {
+          if (eventSessionId === target.sessionId) finish();
+        });
+        timer = setTimeout(() => finish(new ComputerBrowserError(
+          'Navigation timed out',
+          'DEVRYAN_BOT_NAVIGATION_FAILED',
+          504,
+        )), 30_000);
+      });
+      return Object.freeze({
+        promise,
+        cancel: () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          unsubscribe();
+        },
+      });
+    };
+
+    const pointForNode = async (node, target) => {
+      const box = await sendTo(target, 'DOM.getBoxModel', {
+        backendNodeId: node.backendNodeId,
+      });
+      const quad = box.model?.content || box.model?.border;
+      if (!Array.isArray(quad) || quad.length !== 8) {
+        fail('Accessibility target is not visible', 'DEVRYAN_BOT_TARGET_NOT_VISIBLE', 409);
+      }
+      return {
+        x: (quad[0] + quad[2] + quad[4] + quad[6]) / 4,
+        y: (quad[1] + quad[3] + quad[5] + quad[7]) / 4,
+      };
+    };
+
+    const clickPoint = async ({ x, y }, target) => {
+      await sendTo(target, 'Input.dispatchMouseEvent', {
+        type: 'mousePressed', x, y, button: 'left', clickCount: 1,
+      });
+      await sendTo(target, 'Input.dispatchMouseEvent', {
+        type: 'mouseReleased', x, y, button: 'left', clickCount: 1,
+      });
+    };
+
+    const dispatchKey = async (key, modifiers = 0, target = active()) => {
+      await sendTo(target, 'Input.dispatchKeyEvent', { type: 'keyDown', key, modifiers });
+      await sendTo(target, 'Input.dispatchKeyEvent', { type: 'keyUp', key, modifiers });
+    };
+
+    signal?.throwIfAborted();
+    finishStartup();
+    let closing = null;
+    return Object.freeze({
+      status: () => Object.freeze({
+        mode: 'headed_virtual',
+        engineVersion,
+        activeTargetCount: targets.length,
+        popupOpen: targets.length > 1,
+      }),
+      isHealthy: () => !terminated && child.exitCode === null && !connection.isClosed(),
+      onTerminated(callback) {
+        if (typeof callback !== 'function') return () => undefined;
+        if (terminated) {
+          queueMicrotask(() => callback('DEVRYAN_BOT_BROWSER_CLOSED'));
+          return () => undefined;
+        }
+        terminationListeners.add(callback);
+        return () => terminationListeners.delete(callback);
+      },
+      setPageChangeHandler(callback) {
+        pageChangeHandler = typeof callback === 'function' ? callback : () => undefined;
+      },
+      async navigate(url) {
+        const target = active();
+        const load = waitForPageLoad(target);
+        try {
+          const result = await sendTo(target, 'Page.navigate', { url });
+          if (result.errorText) fail('Navigation failed', 'DEVRYAN_BOT_NAVIGATION_FAILED', 502);
+          await load.promise;
+          return { frameId: result.frameId || null };
+        } finally {
+          load.cancel();
+        }
+      },
+      // Replaces every driven page with one fresh about:blank target while the
+      // Chromium process, its cookies and its storage stay intact. Used after a
+      // single CDP command timeout, where the page (not the browser) is stuck, so
+      // nothing here awaits a command sent to the possibly hung renderer.
+      async resetPage() {
+        return queueTargetTransition(async () => {
+          const { targetId } = await connection.send('Target.createTarget', { url: 'about:blank' });
+          let fresh;
+          try {
+            fresh = await attachPage(targetId);
+          } catch (error) {
+            void connection.send('Target.closeTarget', { targetId }).catch(() => undefined);
+            throw error;
+          }
+          const stale = targets.splice(0, targets.length, fresh);
+          void humanInput.release().catch(() => undefined);
+          const state = screencastState;
+          const streamed = stale.find((target) => state && target.sessionId === state.sessionId);
+          if (streamed) {
+            state.sessionId = null;
+            void sendTo(streamed, 'Page.stopScreencast').catch(() => undefined);
+          }
+          humanInput = createHumanInputDispatcher({
+            send: (method, params) => sendTo(fresh, method, params),
+          });
+          pageChangeHandler();
+          for (const target of stale) {
+            void connection.send('Target.closeTarget', { targetId: target.targetId }).catch(() => undefined);
+          }
+          await startScreencastOn(fresh, { seed: true }).catch(() => undefined);
+          return Object.freeze({ targetId: fresh.targetId, closedTargets: stale.length });
+        });
+      },
+      async snapshot() {
+        const target = active();
+        const { nodes = [] } = await sendTo(target, 'Accessibility.getFullAXTree');
+        return nodes.filter((node) => Number.isInteger(node.backendDOMNodeId) && node.backendDOMNodeId > 0)
+          .map((node) => ({
+            backendNodeId: node.backendDOMNodeId,
+            role: cdpValue(node.role),
+            name: cdpValue(node.name),
+            value: cdpValue(node.value),
+            disabled: propertyBoolean(node, 'disabled'),
+            focused: propertyBoolean(node, 'focused'),
+          }));
+      },
+      async click(node) {
+        const target = active();
+        await clickPoint(await pointForNode(node, target), target);
+      },
+      async fill(node, text) {
+        const target = active();
+        await clickPoint(await pointForNode(node, target), target);
+        await dispatchKey('a', 2, target);
+        await dispatchKey('Backspace', 0, target);
+        await sendTo(target, 'Input.insertText', { text });
+      },
+      async select(node, value) {
+        const target = active();
+        await clickPoint(await pointForNode(node, target), target);
+        await dispatchKey('Home', 0, target);
+        await sendTo(target, 'Input.insertText', { text: value });
+        await dispatchKey('Enter', 0, target);
+      },
+      key: (key) => dispatchKey(key === 'Space' ? ' ' : key),
+      scroll: ({ deltaX, deltaY }) => send('Input.dispatchMouseEvent', {
+        type: 'mouseWheel', x: 0, y: 0, deltaX, deltaY,
+      }),
+      input: (events, options) => humanInput.dispatch(events, options),
+      releaseInput: () => humanInput.release(),
+      upload: (node, filePath) => send('DOM.setFileInputFiles', {
+        backendNodeId: node.backendNodeId,
+        files: [filePath],
+      }),
+      async screenshot({ format, quality }) {
+        const result = await send('Page.captureScreenshot', {
+          format,
+          ...(format === 'jpeg' ? { quality } : {}),
+          fromSurface: true,
+        });
+        return Buffer.from(result.data || '', 'base64');
+      },
+      async startScreencast(onFrame) {
+        if (screencastState) return screencastState.stop;
+        const state = {
+          onFrame,
+          sessionId: null,
+          closed: false,
+          stop: null,
+        };
+        state.stop = async () => {
+          if (state.closed) return;
+          state.closed = true;
+          const target = targetForSession(state.sessionId);
+          if (screencastState === state) screencastState = null;
+          if (target) await sendTo(target, 'Page.stopScreencast').catch(() => undefined);
+        };
+        screencastState = state;
+        try {
+          await startScreencastOn(active());
         } catch (error) {
-          void connection.send('Target.closeTarget', { targetId }).catch(() => undefined);
+          if (screencastState === state) screencastState = null;
+          state.closed = true;
           throw error;
         }
-        const stale = targets.splice(0, targets.length, fresh);
-        void humanInput.release().catch(() => undefined);
-        const state = screencastState;
-        const streamed = stale.find((target) => state && target.sessionId === state.sessionId);
-        if (streamed) {
-          state.sessionId = null;
-          void sendTo(streamed, 'Page.stopScreencast').catch(() => undefined);
-        }
-        humanInput = createHumanInputDispatcher({
-          send: (method, params) => sendTo(fresh, method, params),
-        });
-        pageChangeHandler();
-        for (const target of stale) {
-          void connection.send('Target.closeTarget', { targetId: target.targetId }).catch(() => undefined);
-        }
-        await startScreencastOn(fresh, { seed: true }).catch(() => undefined);
-        return Object.freeze({ targetId: fresh.targetId, closedTargets: stale.length });
-      });
-    },
-    async snapshot() {
-      const target = active();
-      const { nodes = [] } = await sendTo(target, 'Accessibility.getFullAXTree');
-      return nodes.filter((node) => Number.isInteger(node.backendDOMNodeId) && node.backendDOMNodeId > 0)
-        .slice(0, 5_000)
-        .map((node) => ({
-          backendNodeId: node.backendDOMNodeId,
-          role: cdpValue(node.role),
-          name: cdpValue(node.name),
-          value: cdpValue(node.value),
-          disabled: propertyBoolean(node, 'disabled'),
-          focused: propertyBoolean(node, 'focused'),
-        }));
-    },
-    async click(node) {
-      const target = active();
-      await clickPoint(await pointForNode(node, target), target);
-    },
-    async fill(node, text) {
-      const target = active();
-      await clickPoint(await pointForNode(node, target), target);
-      await dispatchKey('a', 2, target);
-      await dispatchKey('Backspace', 0, target);
-      await sendTo(target, 'Input.insertText', { text });
-    },
-    async select(node, value) {
-      const target = active();
-      await clickPoint(await pointForNode(node, target), target);
-      await dispatchKey('Home', 0, target);
-      await sendTo(target, 'Input.insertText', { text: value });
-      await dispatchKey('Enter', 0, target);
-    },
-    key: (key) => dispatchKey(key === 'Space' ? ' ' : key),
-    scroll: ({ deltaX, deltaY }) => send('Input.dispatchMouseEvent', {
-      type: 'mouseWheel', x: 0, y: 0, deltaX, deltaY,
-    }),
-    input: (events, options) => humanInput.dispatch(events, options),
-    releaseInput: () => humanInput.release(),
-    upload: (node, filePath) => send('DOM.setFileInputFiles', {
-      backendNodeId: node.backendNodeId,
-      files: [filePath],
-    }),
-    async screenshot({ format, quality }) {
-      const result = await send('Page.captureScreenshot', {
-        format,
-        ...(format === 'jpeg' ? { quality } : {}),
-        fromSurface: true,
-      });
-      return Buffer.from(result.data || '', 'base64');
-    },
-    async startScreencast(onFrame) {
-      if (screencastState) return screencastState.stop;
-      const state = {
-        onFrame,
-        sessionId: null,
-        closed: false,
-        stop: null,
-      };
-      state.stop = async () => {
-        if (state.closed) return;
-        state.closed = true;
-        const target = targetForSession(state.sessionId);
-        if (screencastState === state) screencastState = null;
-        if (target) await sendTo(target, 'Page.stopScreencast').catch(() => undefined);
-      };
-      screencastState = state;
-      try {
-        await startScreencastOn(active());
-      } catch (error) {
-        if (screencastState === state) screencastState = null;
-        state.closed = true;
-        throw error;
-      }
-      return state.stop;
-    },
-    async close({ force = false } = {}) {
-      await screencastState?.stop?.().catch(() => undefined);
-      // Browser.close lets Chromium flush the persistent profile (cookie DB,
-      // session state). Its reply is not awaited so a stuck browser cannot stall
-      // shutdown past the container stop timeout; SIGTERM and then SIGKILL come
-      // only after the exit grace periods elapse.
-      if (!force) void connection.send('Browser.close').catch(() => undefined);
-      if (force && child.exitCode === null) child.kill('SIGTERM');
-      if (!await waitForExit(child, force ? BROWSER_FORCED_EXIT_GRACE_MS : BROWSER_EXIT_GRACE_MS)) {
-        child.kill('SIGTERM');
-      }
-      if (!await waitForExit(child, BROWSER_TERMINATE_GRACE_MS)) child.kill('SIGKILL');
-      connection.close();
-    },
-  });
+        return state.stop;
+      },
+      close({ force = false } = {}) {
+        if (closing) return closing;
+        // Browser.close tears down the screencast too. Waiting for a renderer's
+        // Page.stopScreencast acknowledgment here can consume Docker's entire
+        // grace period before Chromium gets a chance to flush its profile.
+        if (screencastState) screencastState.closed = true;
+        screencastState = null;
+        closing = (async () => {
+          // Browser.close lets Chromium flush the persistent profile (cookie DB,
+          // session state). Its reply is not awaited so a stuck browser cannot stall
+          // shutdown past the container stop timeout; SIGTERM and then SIGKILL come
+          // only after the exit grace periods elapse.
+          if (!force) void connection.send('Browser.close').catch(() => undefined);
+          if (force && child.exitCode === null) child.kill('SIGTERM');
+          if (!await waitForExit(child, force ? BROWSER_FORCED_EXIT_GRACE_MS : BROWSER_EXIT_GRACE_MS)) {
+            child.kill('SIGTERM');
+          }
+          if (!await waitForExit(child, BROWSER_TERMINATE_GRACE_MS)) child.kill('SIGKILL');
+          connection.close();
+        })();
+        return closing;
+      },
+    });
+  } catch (error) {
+    signal?.removeEventListener('abort', abortStartup);
+    if (!signal?.aborted) abortStartup();
+    throw error;
+  }
 }
 
 export function createBrowserController({
@@ -1118,15 +1155,24 @@ export function createBrowserController({
   let screencastTransition = Promise.resolve();
   let generation = 0;
   let lastFailureCode = null;
+  let closing = null;
+  let shuttingDown = false;
+  let lifecycleEpoch = 0;
+  let launchAbort = null;
+  const assertOpen = () => {
+    if (closing || shuttingDown) fail('Browser is closing', 'DEVRYAN_BOT_BROWSER_CLOSED', 503);
+  };
   control.setInputReleaseHandler(() => driver?.releaseInput?.());
 
-  const publishScreencast = (frame, metadata) => {
+  const publishScreencast = (active, frame, metadata) => {
+    if (driver !== active || closing || shuttingDown) return;
     screencast.publishJpeg(frame, metadata);
   };
 
   const clearDriver = (active, code) => {
     if (!active || driver !== active) return false;
     driver = null;
+    diagnostics?.recordTransition?.('browser_closed', generation, code);
     lastFailureCode = typeof code === 'string' ? code : 'DEVRYAN_BOT_BROWSER_CLOSED';
     const stop = stopScreencast;
     stopScreencast = null;
@@ -1160,6 +1206,7 @@ export function createBrowserController({
   };
 
   const ensureDriver = async () => {
+    assertOpen();
     const environment = environmentStatus();
     if (environment?.displayReady !== true) {
       fail('Virtual display is unavailable', 'DEVRYAN_BOT_DISPLAY_CLOSED', 503);
@@ -1169,12 +1216,20 @@ export function createBrowserController({
     }
     if (driver && driver.isHealthy()) return driver;
     if (driver) await retireDriver(driver, 'DEVRYAN_BOT_BROWSER_CLOSED');
+    assertOpen();
     if (launching) return launching;
+    const epoch = lifecycleEpoch;
+    const abort = new AbortController();
+    launchAbort = abort;
     launching = (async () => {
-      const next = await launchDriver();
+      const next = await launchDriver({ signal: abort.signal });
       if (!next || typeof next.navigate !== 'function' || typeof next.close !== 'function'
         || typeof next.isHealthy !== 'function' || typeof next.onTerminated !== 'function') {
         fail('Chromium driver is invalid', 'DEVRYAN_BOT_BROWSER_START_FAILED', 500);
+      }
+      if (epoch !== lifecycleEpoch || closing || shuttingDown) {
+        await next.close().catch(() => undefined);
+        fail('Browser closed during startup', 'DEVRYAN_BOT_BROWSER_CLOSED', 503);
       }
       next.setPageChangeHandler?.(() => refs.beginPage());
       next.onTerminated((code) => clearDriver(next, code));
@@ -1185,13 +1240,19 @@ export function createBrowserController({
       driver = next;
       generation += 1;
       lastFailureCode = null;
-      diagnostics?.reset?.('relaunch');
+      diagnostics?.reset?.('relaunch', generation);
       if (screencastSubscriberCount > 0 && !stopScreencast) {
-        stopScreencast = await next.startScreencast?.(publishScreencast);
+        const stop = await next.startScreencast?.((frame, metadata) => publishScreencast(next, frame, metadata));
+        if (driver !== next || epoch !== lifecycleEpoch) {
+          void stop?.().catch(() => undefined);
+          fail('Browser closed during startup', 'DEVRYAN_BOT_BROWSER_CLOSED', 503);
+        }
+        stopScreencast = stop;
       }
       return next;
     })().finally(() => {
       launching = null;
+      if (launchAbort === abort) launchAbort = null;
     });
     return launching;
   };
@@ -1206,20 +1267,35 @@ export function createBrowserController({
     }
   };
 
-  const close = async () => {
-    await screencastTransition.catch(() => undefined);
-    const active = driver || (launching ? await launching.catch(() => null) : null);
+  const close = ({ shutdown = false } = {}) => {
+    if (shutdown) shuttingDown = true;
+    if (closing) return closing;
+    lifecycleEpoch += 1;
+    launchAbort?.abort();
+    const active = driver;
+    const pendingLaunch = launching;
     driver = null;
-    const stop = stopScreencast;
     stopScreencast = null;
     screencastSubscriberCount = 0;
-    await stop?.().catch(() => undefined);
-    await active?.close();
+    screencastTransition = Promise.resolve();
     refs.beginPage();
-    return Object.freeze({ closed: true });
+    // Do not join renderer-dependent screencast work. Late continuations are
+    // fenced below; the driver sends Browser.close without waiting for them.
+    closing = Promise.resolve().then(async () => {
+      await active?.close();
+      // A confirmed profile reset must not delete files while an aborted
+      // startup still owns them. Service shutdown has its own deadline and
+      // aborts the child without joining stalled renderer work.
+      if (!shutdown && !active && pendingLaunch) await pendingLaunch.catch(() => undefined);
+    }).then(() => {
+      if (active) diagnostics?.recordTransition?.('browser_closed');
+      return Object.freeze({ closed: true });
+    }).finally(() => { closing = null; });
+    return closing;
   };
 
   const executeCommand = async (command, args, { signal, human = false, gatewayToken = null, assertAuthorized = () => undefined } = {}) => {
+    assertOpen();
     const isHumanInput = human && command === 'input';
     if (!COMMANDS.has(command) && !isHumanInput) {
       fail('Browser command is not reviewed', 'DEVRYAN_BOT_BROWSER_COMMAND_DENIED');
@@ -1255,6 +1331,8 @@ export function createBrowserController({
       return workspace.publishDownload({ filename: args.filename, runtimeToken: gatewayToken });
     }
     const perform = async (active) => {
+      assertOpen();
+      if (driver !== active) fail('Browser changed before execution', 'DEVRYAN_BOT_BROWSER_CLOSED', 503);
       if (human) assertAuthorized();
       else control.assertAgentAvailable();
       if (isHumanInput) {
@@ -1269,8 +1347,15 @@ export function createBrowserController({
         return Object.freeze({ navigated: true });
       }
       if (command === 'snapshot') {
+        if (args && Object.keys(args).length) {
+          exactKeys(args, ['snapshotId', 'offset']);
+          return refs.pageSnapshot(args);
+        }
         exactKeys(args, []);
-        return Object.freeze({ nodes: refs.recordSnapshot(await active.snapshot()), ...refs.snapshot() });
+        const nodes = await active.snapshot();
+        assertOpen();
+        if (driver !== active) fail('Browser changed during snapshot', 'DEVRYAN_BOT_BROWSER_CLOSED', 503);
+        return refs.captureSnapshot(nodes);
       }
       if (command === 'click') {
         exactKeys(args, ['ref']);
@@ -1308,6 +1393,8 @@ export function createBrowserController({
           filename: args.filename,
           runtimeToken: gatewayToken,
         });
+        assertOpen();
+        if (driver !== active) fail('Browser changed during upload', 'DEVRYAN_BOT_BROWSER_CLOSED', 503);
         await active.upload(refs.resolve(args.ref), staged.path);
         return Object.freeze({ uploaded: true, filename: staged.filename, size: staged.size });
       }
@@ -1337,10 +1424,14 @@ export function createBrowserController({
         active = await ensureDriver();
         return await perform(active);
       } catch (error) {
+        if (closing || shuttingDown) throw error;
         if (error?.code?.startsWith('DEVRYAN_BOT_CONTROL_')) throw error;
         const recoverable = RECOVERABLE_BROWSER_CODES.has(error?.code);
         if (active && error?.code === 'DEVRYAN_BOT_BROWSER_COMMAND_TIMEOUT') await resetPage(active, error.code);
-        else if (active) await retireDriver(active, error?.code);
+        // A failed site navigation, stale element, or rejected input says
+        // nothing about Chromium's health. Killing it here also destroys the
+        // current page/session storage and can discard unflushed login cookies.
+        else if (active && (recoverable || !active.isHealthy())) await retireDriver(active, error?.code);
         else if (recoverable) lastFailureCode = error.code;
         if (!recoverable || attempt === maximumAttempts) throw error;
         active = null;
@@ -1356,16 +1447,31 @@ export function createBrowserController({
   };
 
   const subscribeScreencast = async (subscriber) => {
+    assertOpen();
     if (typeof subscriber !== 'function') {
       fail('Screencast subscriber is invalid', 'DEVRYAN_BOT_SCREENCAST_INVALID');
     }
     let unsubscribe = null;
+    const epoch = lifecycleEpoch;
+    const assertCurrent = (active) => {
+      assertOpen();
+      if (epoch !== lifecycleEpoch || driver !== active) {
+        fail('Browser changed during screencast attachment', 'DEVRYAN_BOT_BROWSER_CLOSED', 503);
+      }
+    };
     screencastTransition = screencastTransition.catch(() => undefined).then(async () => {
+      if (epoch !== lifecycleEpoch) fail('Browser closed before screencast attachment', 'DEVRYAN_BOT_BROWSER_CLOSED', 503);
       const active = await ensureDriverForRead();
+      assertCurrent(active);
       unsubscribe = screencast.subscribe(subscriber);
       try {
         if (screencastSubscriberCount === 0) {
-          stopScreencast = await active.startScreencast?.(publishScreencast);
+          const stop = await active.startScreencast?.((frame, metadata) => publishScreencast(active, frame, metadata));
+          if (epoch !== lifecycleEpoch || driver !== active) {
+            void stop?.().catch(() => undefined);
+            assertCurrent(active);
+          }
+          stopScreencast = stop;
         }
         // CDP only emits screencast frames when the page is damaged. A viewer
         // joining an already-running screencast would otherwise remain blank
@@ -1373,7 +1479,8 @@ export function createBrowserController({
         // subscriber and fan it out transiently through the existing broker.
         // The broker deliberately retains no frame bytes.
         const firstFrame = await active.screenshot({ format: 'jpeg', quality: 60 });
-        publishScreencast(firstFrame, {
+        assertCurrent(active);
+        publishScreencast(active, firstFrame, {
           width: HUMAN_VIEWPORT_WIDTH,
           height: HUMAN_VIEWPORT_HEIGHT,
           deviceScaleFactor: HUMAN_DEVICE_SCALE_FACTOR,
@@ -1382,7 +1489,7 @@ export function createBrowserController({
       } catch (error) {
         unsubscribe();
         unsubscribe = null;
-        if (screencastSubscriberCount === 0) {
+        if (epoch === lifecycleEpoch && screencastSubscriberCount === 0) {
           const stop = stopScreencast;
           stopScreencast = null;
           await stop?.().catch(() => undefined);
@@ -1398,6 +1505,7 @@ export function createBrowserController({
       screencastTransition = screencastTransition.catch(() => undefined).then(async () => {
         unsubscribe?.();
         unsubscribe = null;
+        if (epoch !== lifecycleEpoch) return;
         screencastSubscriberCount = Math.max(0, screencastSubscriberCount - 1);
         if (screencastSubscriberCount !== 0) return;
         const stop = stopScreencast;
@@ -1428,6 +1536,7 @@ export function createBrowserController({
       ...environmentStatus(),
       ...driver?.status?.(),
       lastNavigationDiagnostic: diagnostics?.snapshot?.() || null,
+      recentNetworkTrail: diagnostics?.networkSnapshot?.(),
     }),
   });
 }

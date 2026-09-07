@@ -276,6 +276,11 @@ export const ManagedTaskRowView = React.memo(({
               {providerFailurePresentation.message}
             </p>
           ) : null}
+          {!providerFailurePresentation && (task.executionKind === 'retry_in_place' || task.executionKind === 'recover_in_place' || task.executionKind === 'resume') ? (
+            <p className="mt-1 typography-micro text-muted-foreground">
+              {providerModelLabel(task, providers).combined} · {formatEffortLabel(task.variant ?? undefined, { providerId: task.providerId })}
+            </p>
+          ) : null}
         </div>
         {task.childSessionId ? (
           <Button
@@ -305,7 +310,7 @@ export const ManagedTaskRowView = React.memo(({
           pending={pending}
           actionError={actionError}
           onSelectionChange={setSelection}
-          onRetry={() => onRetryInPlace?.(selection)}
+          onRetry={(nextSelection) => onRetryInPlace?.(nextSelection)}
           autoResume={autoResume}
           onAutoResumeChange={onAutoResumeChange}
           autoResumePending={autoResumePending}
@@ -318,12 +323,16 @@ export const ManagedTaskRowView = React.memo(({
 ManagedTaskRowView.displayName = 'ManagedTaskRowView';
 
 export const ManagedTaskRow = React.memo(({
-  taskId,
+  taskId: sourceTaskId,
   onContentChange,
 }: {
   taskId: string;
   onContentChange?: () => void;
 }) => {
+  const taskId = useManagedOrchestrationStore(React.useMemo(
+    () => managedOrchestrationSelectors.taskIdForRecovery(sourceTaskId),
+    [sourceTaskId],
+  )) ?? sourceTaskId;
   const task = useManagedOrchestrationStore(React.useMemo(
     () => managedOrchestrationSelectors.task(taskId),
     [taskId],

@@ -106,6 +106,13 @@ export function createBrowserEgressRelay({
     fail('Browser egress relay token is invalid');
   }
   let activeToken = token;
+  const reportFailure = (host, statusCode, error) => {
+    onDiagnostic({ kind: 'proxy_failure', host,
+      ...(Number.isInteger(statusCode) ? { statusCode } : {}),
+      reason: typeof error?.code === 'string' && /^[A-Z0-9_]{1,64}$/u.test(error.code)
+        ? error.code : 'proxy_connection_failed',
+    });
+  };
 
   const server = http.createServer((request, response) => {
     let target;
@@ -142,7 +149,10 @@ export function createBrowserEgressRelay({
       upstreamResponse.pipe(response);
     });
     forwarded.setTimeout(30_000, () => forwarded.destroy());
-    forwarded.once('error', () => sendFailure(response));
+    forwarded.once('error', (error) => {
+      reportFailure(target.hostname.toLowerCase(), 502, error);
+      sendFailure(response);
+    });
     request.once('aborted', () => forwarded.destroy());
     request.pipe(forwarded);
   });
@@ -174,6 +184,7 @@ export function createBrowserEgressRelay({
             statusCode: 403,
           });
         }
+        else reportFailure(authority.hostname, upstreamResponse.statusCode || 502);
         upstreamSocket.destroy();
         sendConnectFailure(clientSocket, upstreamResponse.statusCode || 502);
         return;
@@ -186,7 +197,10 @@ export function createBrowserEgressRelay({
       clientSocket.pipe(upstreamSocket);
       upstreamSocket.pipe(clientSocket);
     });
-    tunnel.once('error', () => sendConnectFailure(clientSocket));
+    tunnel.once('error', (error) => {
+      reportFailure(authority.hostname, 502, error);
+      sendConnectFailure(clientSocket);
+    });
     tunnel.end();
   });
 

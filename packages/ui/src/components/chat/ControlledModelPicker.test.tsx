@@ -8,7 +8,7 @@ mock.module('@/components/ui/ProviderLogo', () => ({
 }));
 
 const { ControlledModelPicker, ControlledVariantPicker } = await import('./ControlledModelPicker');
-const { getControlledModelOptions } = await import('./controlledModelPickerOptions');
+const { getControlledModelOptions, findControlledModelProvider } = await import('./controlledModelPickerOptions');
 
 const providers = [{
   id: 'opencode-go',
@@ -70,4 +70,16 @@ describe('ControlledModelPicker', () => {
     expect(html).toContain('-my-[2px]');
     expect(html).toContain('py-[2px]');
   });
+});
+
+test('recovery controls retain paired Fast capability and display the base model name', () => {
+  const catalog = [{ id: 'fixture', models: [
+    { id: 'model', name: 'Fixture model', variants: { low: {}, medium: {}, high: {} } },
+    { id: 'model-fast', name: 'Fixture model Fast', variants: { low: {}, medium: {}, high: {} } },
+  ] }];
+  expect(getControlledModelOptions(catalog, [])).toHaveLength(1);
+  expect(findControlledModelProvider(catalog, 'fixture', 'model-fast')).toBe(catalog[0]);
+  const html = renderToStaticMarkup(<I18nProvider><ControlledModelPicker providers={catalog} value={{ providerId: 'fixture', modelId: 'model-fast', variant: 'medium' }} onChange={() => {}} /></I18nProvider>);
+  expect(html).toContain('Fixture model');
+  expect(html).not.toContain('>model-fast<');
 });

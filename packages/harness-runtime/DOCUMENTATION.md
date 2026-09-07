@@ -85,6 +85,12 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   only the numeric `total`, `input`, `output`, `reasoning`, `cache.read`, and
   `cache.write` fields so context-usage counts remain auditable without widening
   the general nested-field allowlist.
+  Bot browser network/gap records retain the event, Bot/process stream,
+  sequence, generation, observation time, masked origin/path, request type,
+  status/reason, and missing-sequence bounds. Their dedicated payload projection
+  drops headers, bodies, and input even though ordinary execution records may
+  permit those fields. A real journal write/read regression verifies this
+  contract after sanitization, rather than testing only a recorder mock.
 - `export.js`: task/runtime export selection and second-pass redaction. Bundle
   version 2 streams one plain NDJSON entry per session plus `runtime.ndjson`,
   an included-manifest index, and decompressed plain-text blobs.

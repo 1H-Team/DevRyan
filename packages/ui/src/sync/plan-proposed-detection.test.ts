@@ -60,13 +60,28 @@ const detect = (
 })
 
 describe("detectPlanProposedCandidate", () => {
+  test("persists the recovered plan under its original human request only after the recovery settles", () => {
+    const markdown = "# Recovered Plan\n\n## Context\nRestore cards.\n\n## Verification\nReload and inspect."
+    const state = buildState({
+      message: { [SESSION_ID]: [userMessage("human"), assistantMessage("waiting"), userMessage("wake"), assistantMessage("recovered", { time: { created: 4 } })] },
+      part: {
+        human: [textPart("human", "Plan the fix."), textPart("human", "User has requested to enter plan mode.", true)],
+        waiting: [textPart("waiting", "Waiting for the recovered child.")],
+        wake: [textPart("wake", "[devryan-provider-recovery:v1:task_fixture]\nCollect completed result.", true)],
+        recovered: [textPart("recovered", `Preamble\n<!--plan-->\n${markdown}`)],
+      },
+    })
+    expect(detect(state)).toBeNull()
+    state.message[SESSION_ID][3] = assistantMessage("recovered")
+    expect(detect(structuredClone(state))).toMatchObject({ sourceMessageId: "recovered", originatingUserMessageId: "human", markdown })
+  })
   test("managed collection with inherited Plan instructions cannot propose a replacement Plan", () => {
     const state = buildState({
       message: { [SESSION_ID]: [userMessage("human"), assistantMessage("plan"), userMessage("wake"), assistantMessage("collection")] },
       part: {
         human: [textPart("human", "Create the plan."), textPart("human", "User has requested to enter plan mode.", true)],
         plan: [textPart("plan", "<!--plan-->\n# Original Plan")],
-        wake: [textPart("wake", "User has requested to enter plan mode.\nProduce an implementation plan only.", true), textPart("wake", "[devryan-provider-recovery:v1:task_fixture]\nCollect completed result.", true)],
+        wake: [textPart("wake", "User has requested to enter plan mode.\nProduce an implementation plan only.", true), textPart("wake", "[devryan-open-todo-continuation:v1]\nContinue open todos.", true)],
         collection: [textPart("collection", "<!--plan-->\n# Automatic Collection")],
       },
     })

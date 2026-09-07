@@ -651,7 +651,7 @@ export function registerGitRoutes(app, {
       res.json(result);
     } catch (error) {
       console.error('Failed to push:', error);
-      res.status(500).json({ error: error.message || 'Failed to push to remote' });
+      sendGitError(res, error, 'Failed to push to remote');
     }
   });
 
@@ -856,7 +856,7 @@ export function registerGitRoutes(app, {
       res.json(result);
     } catch (error) {
       console.error('Failed to continue rebase:', error);
-      res.status(500).json({ error: error.message || 'Failed to continue rebase' });
+      sendGitError(res, error, 'Failed to continue rebase');
     }
   });
 

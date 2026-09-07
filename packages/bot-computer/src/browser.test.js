@@ -260,10 +260,35 @@ const createCdpHarness = async () => {
     }
     throw new Error(`Timed out waiting for ${count} targets`);
   };
-  return { driver, calls, emit, waitForTargets, sessionByTarget };
+  return { driver, calls, emit, waitForTargets, sessionByTarget, connection, child };
 };
 
 describe('active Chromium page targets', () => {
+  test('sends Browser.close even when a renderer never acknowledges screencast stop', async () => {
+    const harness = await createCdpHarness();
+    const send = harness.connection.send.bind(harness.connection);
+    let releaseStop;
+    const stalled = new Promise((resolve) => { releaseStop = resolve; });
+    harness.connection.send = async (method, params, sessionId) => {
+      const result = await send(method, params, sessionId);
+      if (method === 'Page.stopScreencast') await stalled;
+      if (method === 'Browser.close') harness.child.kill();
+      return result;
+    };
+    const stop = await harness.driver.startScreencast(() => {});
+    const pendingStop = stop();
+    try {
+      await Promise.race([
+        harness.driver.close(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Browser.close was blocked by the renderer')), 250)),
+      ]);
+      expect(harness.calls.filter((call) => call.method === 'Browser.close')).toHaveLength(1);
+    } finally {
+      releaseStop();
+      await pendingStop;
+      await harness.driver.close({ force: true });
+    }
+  });
   test('follows bounded popup targets and returns input and screencast to each opener', async () => {
     const harness = await createCdpHarness();
     let pageChanges = 0;
@@ -537,6 +562,40 @@ const recoveryFixture = () => {
 };
 
 describe('reviewed computer browser commands', () => {
+  test('shutdown fences a late launch without adopting it or launching another browser', async () => {
+    const fixture = recoveryFixture();
+    await fixture.controller.execute('snapshot', {});
+    fixture.holdSecondLaunch();
+    fixture.drivers[0].terminate();
+    const pending = fixture.controller.execute('snapshot', {}).catch((error) => error);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await fixture.controller.close({ shutdown: true });
+    fixture.releaseSecondLaunch();
+    expect(await pending).toMatchObject({ code: 'DEVRYAN_BOT_BROWSER_CLOSED' });
+    expect(fixture.controller.status().running).toBe(false);
+    expect(fixture.calls.filter(([kind]) => kind === 'launch')).toHaveLength(2);
+    expect(fixture.calls).toContainEqual(['close', 2]);
+    await expect(fixture.controller.execute('navigate', { url: 'https://example.com' }))
+      .rejects.toMatchObject({ code: 'DEVRYAN_BOT_BROWSER_CLOSED' });
+  });
+
+  test('shutdown closes the browser without waiting for a pending screencast attachment', async () => {
+    const fixture = recoveryFixture();
+    await fixture.controller.execute('snapshot', {});
+    let release;
+    fixture.drivers[0].startScreencast = () => new Promise((resolve) => { release = resolve; });
+    const attaching = fixture.controller.subscribeScreencast(() => {}).catch((error) => error);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.race([
+      fixture.controller.close({ shutdown: true }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Shutdown waited for renderer')), 250)),
+    ]);
+    release(async () => {});
+    expect(await attaching).toMatchObject({ code: 'DEVRYAN_BOT_BROWSER_CLOSED' });
+    expect(fixture.controller.status()).toMatchObject({ running: false, screencastSubscribers: 0 });
+    expect(fixture.calls).toContainEqual(['close', 1]);
+  });
+
   test('exposes the exact reviewed command inventory and no JavaScript evaluation', () => {
     expect(REVIEWED_BROWSER_COMMANDS).toEqual([
       'navigate', 'snapshot', 'click', 'fill', 'select', 'key', 'scroll', 'wait',
@@ -614,6 +673,22 @@ describe('reviewed computer browser commands', () => {
     expect(resets).toEqual(['relaunch', 'navigate', 'profile_reset']);
   });
 
+  test.each([
+    ['DEVRYAN_BOT_NAVIGATION_FAILED', 'Navigation timed out', 504],
+    ['DEVRYAN_BOT_TARGET_NOT_VISIBLE', 'Target is not visible', 409],
+    ['DEVRYAN_BOT_BROWSER_INPUT_INVALID', 'Invalid input', 400],
+  ])('preserves the live browser after an ordinary command error: %s', async (code, message, statusCode) => {
+    const harness = recoveryFixture();
+    await harness.controller.execute('snapshot', {});
+    harness.drivers[0].navigate = async () => { throw new ComputerBrowserError(message, code, statusCode); };
+    await expect(harness.controller.execute('navigate', { url: 'https://example.com/contacts' }))
+      .rejects.toMatchObject({ code });
+    expect(harness.controller.status()).toMatchObject({ running: true, generation: 1 });
+    await harness.controller.execute('snapshot', {});
+    expect(harness.calls.filter(([operation]) => operation === 'close' || operation === 'resetPage')).toEqual([]);
+    expect(harness.drivers).toHaveLength(1);
+  });
+
   test('dispatches bounded full-fidelity input only for a human controller', async () => {
     const { controller, control, calls } = fixture();
     control.take({ actorId: 'user-01', actorType: 'user' });
@@ -645,6 +720,19 @@ describe('reviewed computer browser commands', () => {
       events: [{ ...events[0], x: 1281 }],
     })).toThrow(/Pointer x/i);
     expect(REVIEWED_BROWSER_COMMANDS).not.toContain('input');
+  });
+
+  test('keeps the same browser after rejected human input and return to agent control', async () => {
+    const { controller, control, calls } = fixture();
+    await controller.execute('snapshot', {});
+    const lease = control.take({ actorId: 'user-01', actorType: 'user' });
+    await expect(controller.executeHuman('input', { events: [{ type: 'unreviewed' }] }))
+      .rejects.toMatchObject({ code: 'DEVRYAN_BOT_BROWSER_INPUT_INVALID' });
+    expect(controller.status()).toMatchObject({ running: true, healthy: true, generation: 1 });
+    await control.returnControl({ actorId: 'user-01', actorType: 'user', leaseId: lease.leaseId });
+    await controller.execute('snapshot', {});
+    expect(calls.filter(([operation]) => operation === 'close')).toEqual([]);
+    expect(calls.filter(([operation]) => operation === 'launch')).toHaveLength(1);
   });
 
   test('maps ordered human batches to Chromium CDP input events', async () => {
@@ -911,11 +999,24 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
     return Buffer.concat(chunks);
   };
 
+  const closeFixtureServer = (server) => new Promise((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+    server.closeAllConnections?.();
+  });
+
   const startFixtureSite = async () => {
     let publishedDownload = null;
     const server = http.createServer(async (request, response) => {
       const target = new URL(request.url, 'http://fixture.invalid');
       const authorized = request.headers.authorization === `Bearer ${integrationToken}`;
+      if (target.pathname === '/disconnect') {
+        request.socket.destroy();
+        return;
+      }
+      if (target.pathname === '/auth/failure') {
+        response.writeHead(401).end();
+        return;
+      }
       if (request.method === 'GET'
         && target.pathname === '/api/bots/private/artifacts/artifact-upload/content') {
         if (!authorized) {
@@ -959,18 +1060,25 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
           ...(signedIn ? {} : { location: '/login' }),
         });
         response.end(signedIn
-          ? `<!doctype html><title>Private</title><h1>Signed in</h1>${sessionCookieKept ? '<h2>Session cookie kept</h2>' : ''}`
+          ? `<!doctype html><title>Private</title><h1>Signed in</h1>${sessionCookieKept ? '<h2>Session cookie kept</h2>' : ''}
+            <script>if(sessionStorage.getItem('fixture-tab')==='kept')document.body.insertAdjacentHTML('beforeend','<h2>Tab session kept</h2>');fetch('/auth/failure?token=fixture-private-query');</script>`
           : '');
         return;
       }
       if (request.method === 'GET' && target.pathname === '/login') {
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-        response.end('<!doctype html><title>Login</title><form method="post" action="/login"><label for="username">Username</label><input id="username" name="username" autocomplete="username"><button type="submit">Sign in</button></form>');
+        response.end('<!doctype html><title>Login</title><script>sessionStorage.setItem("fixture-tab","kept")</script><form method="post" action="/login"><label for="username">Username</label><input id="username" name="username" autocomplete="username"><button type="submit">Sign in</button></form>');
         return;
       }
       if (request.method === 'GET' && target.pathname === '/next') {
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
         response.end('<!doctype html><title>Next</title><h1>Next page</h1>');
+        return;
+      }
+      if (request.method === 'GET' && target.pathname === '/large-contacts') {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end('<!doctype html><title>Large contacts fixture</title>'
+          + Array.from({ length: 1_200 }, (_, index) => `<a href="/next">Contact ${index} ${'Long label '.repeat(15)}</a>`).join('<br>'));
         return;
       }
       if (request.method === 'GET' && target.pathname === '/popup-parent') {
@@ -1121,9 +1229,7 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
       gatewayUrl: `http://host.docker.internal:${address.port}`,
       thirdPartyUrl: `http://127.0.0.1:${address.port}/third-party-top`,
       publishedDownload: () => publishedDownload,
-      close: () => new Promise((resolve, reject) => server.close((error) => (
-        error ? reject(error) : resolve()
-      ))),
+      close: () => closeFixtureServer(server),
     });
   };
 
@@ -1190,9 +1296,7 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
       });
     });
     return Object.freeze({
-      close: () => new Promise((resolve, reject) => server.close((error) => (
-        error ? reject(error) : resolve()
-      ))),
+      close: () => closeFixtureServer(server),
     });
   };
 
@@ -1410,6 +1514,31 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         volumesExist = true;
 
         let baseUrl = await startContainer('run-fixture-01');
+        await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/large-contacts` });
+        let contactsPage = (await commandComputer(baseUrl, 'snapshot', {})).payload.result;
+        const contacts = [];
+        do {
+          expect(Buffer.byteLength(JSON.stringify(contactsPage))).toBeLessThan(192 * 1024);
+          contacts.push(...contactsPage.nodes.filter((node) => node.role === 'link'));
+          if (contactsPage.nextOffset === null) break;
+          contactsPage = (await commandComputer(baseUrl, 'snapshot', {
+            snapshotId: contactsPage.snapshotId, offset: contactsPage.nextOffset,
+          })).payload.result;
+        } while (true);
+        expect(contacts).toHaveLength(1_200);
+        // Reading subsequent pages must not invalidate earlier references.
+        expect((await commandComputer(baseUrl, 'click', { ref: contacts[0].ref })).response.status).toBe(200);
+        const nextPageDeadline = Date.now() + 5_000;
+        let nextPageReady = false;
+        while (Date.now() < nextPageDeadline) {
+          const nextPage = (await commandComputer(baseUrl, 'snapshot', {})).payload.result;
+          if (nextPage?.nodes.some((node) => node.name === 'Next page')) {
+            nextPageReady = true;
+            break;
+          }
+          await commandComputer(baseUrl, 'wait', { milliseconds: 100 });
+        }
+        expect(nextPageReady).toBe(true);
         await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/web-capabilities` });
         const webCapabilities = await commandComputer(baseUrl, 'snapshot', {});
         expect(webCapabilities.payload.result.nodes.some(
@@ -1431,6 +1560,20 @@ if (process.env.DEVRYAN_RUN_BROWSER_TESTS === '1') {
         expect(signedIn.payload.result.nodes.some((node) => node.name === 'Signed in')).toBe(true);
         expect(signedIn.payload.result.nodes.some((node) => node.name === 'Session cookie kept'))
           .toBe(true);
+        // A site/network failure must not retire Chromium or discard a valid
+        // login. Exercise a real failed navigation, then return to the same site.
+        const failedNavigation = await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/disconnect` });
+        expect(failedNavigation.payload.error.code).toBe('DEVRYAN_BOT_NAVIGATION_FAILED');
+        expect((await computerStatus(baseUrl)).browser).toMatchObject({ running: true, healthy: true, generation: 1 });
+        await commandComputer(baseUrl, 'navigate', { url: `${fixtureSite.gatewayUrl}/private` });
+        const afterNavigationFailure = await commandComputer(baseUrl, 'snapshot', {});
+        for (const name of ['Signed in', 'Session cookie kept', 'Tab session kept']) {
+          expect(afterNavigationFailure.payload.result.nodes.some((node) => node.name === name)).toBe(true);
+        }
+        const networkTrail = (await computerStatus(baseUrl)).browser.recentNetworkTrail;
+        expect(networkTrail.entries.some((entry) => entry.kind === 'response'
+          && entry.requestType === 'Fetch' && entry.path === '/auth/failure' && entry.statusCode === 401)).toBe(true);
+        expect(JSON.stringify(networkTrail)).not.toContain('fixture-private-query');
         // The agent can no longer close the persistent browser; the login survives.
         const closeDenied = await commandComputer(baseUrl, 'close', {});
         expect(closeDenied.response.status).toBe(400);

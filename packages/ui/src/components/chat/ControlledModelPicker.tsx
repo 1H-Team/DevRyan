@@ -1,10 +1,13 @@
+import { getModelVariantControlState, getModelVariantDisplayState, resolveModelVariantSelection } from '@/lib/providers/variantControls';
+import { ThinkingSlider, ThinkingSliderPopover } from './ThinkingSlider';
+import { getChatThinkingState, resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
+import { getCursorAcpVariantState, resolveCursorAcpVariantSelection } from '@/lib/providers/cursorThinking';
 import React from 'react';
 import { RiCheckLine, RiSearchLine } from '@remixicon/react';
 
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -13,17 +16,13 @@ import { Input } from '@/components/ui/input';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
-import {
-  getOrderedThinkingVariants,
-  resolveProviderModelVariant,
-  resolveThinkingVariant,
-} from '@/lib/providers/variantControls';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/useUIStore';
 import type { ProviderRecoverySelection } from '@/stores/useProviderRecoveryStore';
 
 import {
   getControlledModelOptions,
+  findControlledModelProvider,
   type ControlledModelOption,
   type ControlledModelPickerProvider,
 } from './controlledModelPickerOptions';
@@ -72,8 +71,10 @@ export function ControlledModelPicker({
     }
     return 0;
   }), [favoriteKeys, filtered]);
+  const nativeProvider = findControlledModelProvider(providers, value.providerId, value.modelId);
+  const displayModelId = getModelVariantDisplayState(nativeProvider, value.modelId, value.variant)?.displayModelId ?? value.modelId;
   const selected = options.find((option) => (
-    option.providerId === value.providerId && option.modelId === value.modelId
+    option.providerId === value.providerId && option.modelId === displayModelId
   ));
   const grouped = React.useMemo(() => {
     const groups = new Map<string, { name: string; options: ControlledModelOption[] }>();
@@ -89,8 +90,8 @@ export function ControlledModelPicker({
     onChange({
       providerId: option.providerId,
       modelId: option.modelId,
-      variant: resolveProviderModelVariant(
-        option.provider,
+      variant: resolveChatThinkingVariant(
+        findControlledModelProvider(providers, option.providerId, option.modelId),
         option.modelId,
         option.providerId === value.providerId && option.modelId === value.modelId
           ? value.variant ?? undefined
@@ -143,7 +144,7 @@ export function ControlledModelPicker({
                   <span className="truncate">{group.name}</span>
                 </DropdownMenuLabel>
                 {group.options.map((option) => {
-                  const active = option.providerId === value.providerId && option.modelId === value.modelId;
+                  const active = option.providerId === value.providerId && option.modelId === displayModelId;
                   return (
                     <button
                       type="button"
@@ -180,62 +181,25 @@ export function ControlledVariantPicker({
   disabled?: boolean;
 }) {
   const { t } = useI18n();
-  const options = React.useMemo(
-    () => getControlledModelOptions(providers, []),
-    [providers],
-  );
-  const selected = options.find((option) => (
-    option.providerId === value.providerId && option.modelId === value.modelId
-  ));
-  const variants = getOrderedThinkingVariants(
-    selected?.model && typeof selected.model.variants === 'object'
-      ? selected.model.variants as Record<string, unknown>
-      : undefined,
-    { providerId: value.providerId },
-  );
-  if (variants.length === 0) return null;
-
-  const activeVariant = resolveThinkingVariant(
-    value.variant ?? undefined,
-    variants,
-    { providerId: value.providerId },
-  );
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label={t('chat.modelControls.thinking')}
-          className="model-controls__variant-trigger flex h-8 min-w-0 shrink-0 items-center border-0 bg-transparent p-0 text-left text-[10px] font-medium leading-[14px] text-muted-foreground hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <span className="max-w-[90px] truncate leading-[14px] -my-[2px] py-[2px]">
-            {formatEffortLabel(activeVariant, { providerId: value.providerId })}
-          </span>
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[min(210px,calc(100vw-2rem))]">
-        <DropdownMenuItem className="typography-meta" onSelect={() => onChange({ ...value, variant: null })}>
-          <div className="flex w-full items-center justify-between gap-2">
-            <span>{formatEffortLabel(undefined)}</span>
-            {activeVariant === undefined ? <RiCheckLine className="h-4 w-4 text-primary" /> : null}
-          </div>
-        </DropdownMenuItem>
-        {variants.map((variant) => (
-          <DropdownMenuItem
-            key={variant}
-            className="typography-meta"
-            onSelect={() => onChange({ ...value, variant })}
-          >
-            <div className="flex w-full min-w-0 items-center justify-between gap-2">
-              <span className="min-w-0 truncate font-medium text-foreground">
-                {formatEffortLabel(variant, { providerId: value.providerId })}
-              </span>
-              {variant === activeVariant ? <RiCheckLine className="h-4 w-4 shrink-0 text-primary" /> : null}
-            </div>
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  const provider = findControlledModelProvider(providers, value.providerId, value.modelId);
+  const { levels, selected: active } = getChatThinkingState(provider, value.modelId, value.variant);
+  const normalized = resolveChatThinkingVariant(provider, value.modelId, value.variant);
+  const cursor = getCursorAcpVariantState(provider, value.modelId, normalized);
+  const fastState = cursor ?? getModelVariantControlState(provider, value.modelId, normalized);
+  if (!levels.length && !fastState?.canToggleFast) return null;
+  const apply = (updates: { effort?: string; fastEnabled?: boolean }) => {
+    const next = cursor
+      ? resolveCursorAcpVariantSelection(provider, value.modelId, normalized, updates)
+      : resolveModelVariantSelection(provider, value.modelId, normalized, { variant: updates.effort, fastEnabled: updates.fastEnabled });
+    onChange({ ...value, modelId: next.modelId, variant: next.variant ?? null });
+  };
+  return <ThinkingSliderPopover disabled={disabled} trigger={
+    <button type="button" disabled={disabled} aria-label={t('chat.modelControls.thinking')}
+      className="model-controls__variant-trigger flex h-8 min-w-0 shrink-0 items-center border-0 bg-transparent p-0 text-left text-[10px] font-medium leading-[14px] text-muted-foreground hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-50">
+      <span className="max-w-[90px] truncate leading-[14px] -my-[2px] py-[2px]">{active ? formatEffortLabel(active, { providerId: value.providerId }) : 'Fast'}</span>
+    </button>
+  }>
+    <ThinkingSlider levels={levels} value={active} providerId={value.providerId} disabled={disabled} onChange={(effort) => apply({ effort })}
+      fastMode={fastState?.canToggleFast ? { enabled: fastState.fastEnabled, onChange: (fastEnabled) => apply({ fastEnabled }) } : undefined} />
+  </ThinkingSliderPopover>;
 }

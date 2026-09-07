@@ -14,6 +14,78 @@ const navigate = (diagnostics, requestId, url, statusCode = 200, redirected = fa
 };
 
 describe('privacy-safe browser diagnostics', () => {
+  test('retains API failures and control transitions independently of navigation warnings', () => {
+    const diagnostics = createBrowserDiagnostics({ now: () => 5_000 });
+    diagnostics.reset('relaunch', 1);
+    diagnostics.recordRequest({ requestId: 'private-id', type: 'Fetch',
+      url: 'https://app.hubspot.com/api/12345678?token=secret#private' });
+    diagnostics.recordResponse({ requestId: 'private-id', statusCode: 401, headers: { cookie: 'secret' } });
+    diagnostics.recordCookieBlock({ requestId: 'private-id', reasons: ['SameSiteStrict'] });
+    diagnostics.recordFailure({ requestId: 'private-id', errorText: 'net::ERR_ABORTED' });
+    diagnostics.reset('control_taken');
+    diagnostics.recordTransition('control_returned');
+    diagnostics.reset('navigate');
+    const trail = diagnostics.networkSnapshot();
+    expect(trail.entries.map((entry) => entry.kind)).toEqual([
+      'lifecycle', 'response', 'cookie_block', 'failure', 'lifecycle', 'lifecycle', 'lifecycle',
+    ]);
+    expect(trail.entries[1]).toMatchObject({ requestType: 'Fetch', statusCode: 401,
+      origin: 'https://app.hubspot.com', path: '/api/*', generation: 1 });
+    expect(trail.entries.map((entry) => entry.sequence)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(diagnostics.snapshot()).toBeNull();
+    const serialized = JSON.stringify(trail);
+    for (const secret of ['secret', '?', '#', 'private-id', '12345678', 'headers']) expect(serialized).not.toContain(secret);
+    expect(createBrowserDiagnostics().networkSnapshot().streamId).not.toBe(trail.streamId);
+  });
+
+  test('records Document, Fetch and XHR statuses, without recording unrelated resource responses', () => {
+    const diagnostics = createBrowserDiagnostics();
+    for (const type of ['Document', 'Fetch', 'XHR', 'Image', 'Script']) {
+      diagnostics.recordRequest({ requestId: type, type, url: 'https://example.com/api' });
+      diagnostics.recordResponse({ requestId: type, statusCode: 503 });
+    }
+    expect(diagnostics.networkSnapshot().entries.map((entry) => entry.requestType)).toEqual(['Document', 'Fetch', 'XHR']);
+  });
+
+  test('caps retained entries by count, serialized bytes and age', () => {
+    let clock = 100;
+    const diagnostics = createBrowserDiagnostics({ now: () => clock });
+    for (let index = 0; index < 120; index += 1) diagnostics.recordTransition('control_taken');
+    expect(diagnostics.networkSnapshot().entries).toHaveLength(100);
+    expect(diagnostics.networkSnapshot().entries[0].sequence).toBe(21);
+    const host = Array(4).fill('a'.repeat(62)).join('.');
+    for (let index = 0; index < 120; index += 1) {
+      diagnostics.recordRequest({ requestId: String(index), type: 'XHR', url: `https://${host}/${'a/'.repeat(99)}` });
+      diagnostics.recordCookieBlock({ requestId: String(index), reasons: ['A'.repeat(128)] });
+    }
+    expect(diagnostics.networkSnapshot().entries.length).toBeLessThan(100);
+    expect(Buffer.byteLength(JSON.stringify(diagnostics.networkSnapshot()), 'utf8')).toBeLessThanOrEqual(64 * 1024);
+    clock += 5 * 60 * 1000;
+    expect(diagnostics.networkSnapshot().entries).toEqual([]);
+    diagnostics.recordTransition('relaunch', 2);
+    expect(diagnostics.networkSnapshot().entries[0]).toMatchObject({ generation: 2, sequence: 241 });
+  });
+
+  test('does not turn a cancelled API request into a misleading warning', () => {
+    const diagnostics = createBrowserDiagnostics();
+    navigate(diagnostics, 'page', 'https://example.com/login');
+    diagnostics.recordRequest({ requestId: 'api', type: 'XHR', url: 'https://example.com/auth' });
+    diagnostics.recordFailure({ requestId: 'api', errorText: 'net::ERR_ABORTED' });
+    expect(diagnostics.snapshot().kind).toBe('healthy');
+    expect(diagnostics.networkSnapshot().entries.at(-1)).toMatchObject({ kind: 'failure', reason: 'network_net::ERR_ABORTED' });
+  });
+
+  test('keeps in-flight API identity across control and navigation diagnostic resets', () => {
+    const diagnostics = createBrowserDiagnostics();
+    diagnostics.recordRequest({ requestId: 'api', type: 'Fetch', url: 'https://example.com/auth' });
+    diagnostics.reset('control_taken');
+    diagnostics.reset('navigate');
+    diagnostics.recordResponse({ requestId: 'api', statusCode: 401 });
+    expect(diagnostics.networkSnapshot().entries.at(-1)).toMatchObject({
+      kind: 'response', requestType: 'Fetch', path: '/auth', statusCode: 401,
+    });
+  });
+
   test('keeps a single-origin login journey healthy', () => {
     let clock = 1_000;
     const diagnostics = createBrowserDiagnostics({ now: () => clock });

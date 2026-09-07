@@ -58,6 +58,15 @@ const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Arra
 
 const utf8ByteLength = (value) => textEncoder.encode(value).byteLength;
 
+/** Only a child with the matching canonical agent owns this generated placeholder. */
+export const isManagedTaskPlaceholderSession = (session) => {
+  if (!isRecord(session) || typeof session.parentID !== 'string' || !session.parentID.trim()
+    || typeof session.agent !== 'string' || !session.agent.trim() || typeof session.title !== 'string'
+    || !/^managed\s/i.test(session.title.trim())) return false;
+  return session.title.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
+    === formatManagedTaskDisplayName(`Managed ${session.agent} task`).toLocaleLowerCase();
+};
+
 export const formatManagedTaskDisplayName = (label) => {
   if (typeof label !== 'string') return '';
   const normalized = label.trim().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();

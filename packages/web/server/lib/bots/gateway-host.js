@@ -214,6 +214,12 @@ const sendJson = (response, statusCode, payload, responseLimit) => {
 const failurePayload = (error) => {
   const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
   const code = typeof error?.code === 'string' ? error.code : 'bot_gateway_internal_error';
+  let safeMessage = null;
+  if (code === 'bot_action_result_too_large') {
+    safeMessage = 'The tool result exceeded its size limit. This does not indicate a browser sign-out or connection failure. Request a smaller result or a paginated browser snapshot.';
+  } else if (code === 'bot_browser_command_incomplete') {
+    safeMessage = 'The command response was lost, but the browser is still running or starting. It was preserved without replaying the command. Inspect the current page with a snapshot before retrying.';
+  }
   return {
     statusCode,
     code,
@@ -221,7 +227,7 @@ const failurePayload = (error) => {
       ok: false,
       error: {
         code: `DEVRYAN_BOT_${code.replace(/^bot_(?:gateway_)?/, '').replace(/[^a-z0-9]+/gi, '_').toUpperCase()}`,
-        message: statusCode >= 500 ? 'Bot gateway is temporarily unavailable' : error.message,
+        message: safeMessage || (statusCode >= 500 ? 'Bot gateway is temporarily unavailable' : error.message),
       },
     },
   };

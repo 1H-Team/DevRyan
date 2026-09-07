@@ -523,6 +523,7 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     });
     expect(runner.calls.map(({ args }) => args)).toEqual([
       ['version', '--format', '{{json .}}'],
+      ['ps', '--all', '--no-trunc', '--filter', 'label=devryan.runtime=production-bots', '--format', '{{json .}}'],
     ]);
   });
 
@@ -549,6 +550,7 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     });
     expect(runner.calls.map(({ args }) => args)).toEqual([
       ['version', '--format', '{{json .}}'],
+      ['ps', '--all', '--no-trunc', '--filter', 'label=devryan.runtime=production-bots', '--format', '{{json .}}'],
     ]);
   });
 
@@ -666,10 +668,12 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     expect(result).toMatchObject({ state: 'healthy', changed: true });
     expect(runner.calls.map(({ args }) => args)).toEqual([
       ['version', '--format', '{{json .}}'],
+      ['ps', '--all', '--no-trunc', '--filter', 'label=devryan.runtime=production-bots', '--format', '{{json .}}'],
       ...BOT_RUNTIME_IMAGE_KEYS.map((key) => ['pull', manifest.images[key].reference]),
       ...BOT_RUNTIME_IMAGE_KEYS.map((key) => [
         'image', 'inspect', '--format', '{{json .RepoDigests}}', manifest.images[key].reference,
       ]),
+      ['ps', '--all', '--no-trunc', '--filter', 'label=devryan.runtime=production-bots', '--format', '{{json .}}'],
       ['network', 'inspect', 'devryan-bots-host-control', '--format', '{{json .}}'],
       ['ps', '--all', '--no-trunc', '--filter', 'network=devryan-bots-host-control', '--format', '{{json .}}'],
       [...composePrefix, 'up', '--detach', '--remove-orphans'],
@@ -740,9 +744,11 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     expect(runner.calls.some(({ args }) => args[0] === 'pull')).toBe(false);
     expect(runner.calls.map(({ args }) => args)).toEqual([
       ['version', '--format', '{{json .}}'],
+      ['ps', '--all', '--no-trunc', '--filter', 'label=devryan.runtime=production-bots', '--format', '{{json .}}'],
       ...BOT_RUNTIME_IMAGE_KEYS.map((key) => [
         'image', 'inspect', '--format', '{{json .RepoDigests}}', manifest.images[key].reference,
       ]),
+      ['ps', '--all', '--no-trunc', '--filter', 'label=devryan.runtime=production-bots', '--format', '{{json .}}'],
       ['network', 'inspect', 'devryan-bots-host-control', '--format', '{{json .}}'],
       ['ps', '--all', '--no-trunc', '--filter', 'network=devryan-bots-host-control', '--format', '{{json .}}'],
       [...composePrefix, 'up', '--detach', '--remove-orphans'],
@@ -915,6 +921,90 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     await expect(fresh.setup()).rejects.toMatchObject({ code: 'bot_runtime_foreign_deployment' });
     expect(setupRunner.calls.some(({ args }) => args[0] === 'compose' && args.includes('up'))).toBe(false);
     expect(setupStore.writes).toEqual([]);
+  });
+
+  test.each(['running', 'exited', 'mixed'])('protects %s foreign containers across every lifecycle verb', async (state) => {
+    const manifest = releaseManifest();
+    const previous = releaseManifest({ releaseId: '1.2.2', digestCharacter: 'b' });
+    for (const operation of ['setup', 'repair', 'update', 'rollback', 'ensureReady']) {
+      const containers = foreignServices().map((row, index) => ({
+        ...row, State: state === 'mixed' ? (index === 0 ? 'running' : 'exited') : state,
+      }));
+      const runner = createFakeRunner({ attachedContainers: containers, hostControlNetwork: null });
+      const stateStore = createMemoryStateStore({ version: 1, current: previous, previous: manifest, staged: null });
+      const { manager } = createManager({ manifest, runner, stateStore });
+      const status = await manager.status();
+      expect(status).toMatchObject({
+        state: 'degraded', code: 'bot_runtime_foreign_deployment', canRepair: false, canRollback: false,
+        issues: [{ code: 'foreign_deployment', conflictsTruncated: false }],
+      });
+      expect(status.issues[0].conflicts).toContainEqual({
+        deployment: FOREIGN_DEPLOYMENT_ID, service: 'supervisor', state: state === 'mixed' ? 'running' : state,
+      });
+      await expect(manager[operation]()).rejects.toMatchObject({
+        code: 'bot_runtime_foreign_deployment', diagnostics: { conflicts: status.issues[0].conflicts },
+      });
+      expect(stateStore.writes).toEqual([]);
+      expect(runner.calls.some(({ args }) => (
+        ['stop', 'rm', 'pull'].includes(args[0])
+        || (args[0] === 'compose' && (args.includes('up') || args.includes('rm')))
+        || (args[0] === 'network' && args[1] === 'rm')
+      ))).toBe(false);
+    }
+  });
+
+  test('bounds and sanitizes conflicting deployment metadata', async () => {
+    const manifest = releaseManifest();
+    const containers = Array.from({ length: 40 }, (_, index) => hostControlContainer(
+      `container-${index}`, 'private-name-not-public', 'untrusted-state',
+      `devryan.deployment=deployment-${index.toString(16).padStart(24, '0')}`,
+    ));
+    const runner = createFakeRunner({ attachedContainers: containers });
+    const { manager } = createManager({ manifest, runner });
+    const status = await manager.status();
+    expect(status.issues[0].conflicts).toHaveLength(32);
+    expect(status.issues[0].conflictsTruncated).toBe(true);
+    expect(status.issues[0].conflicts.every((entry) => entry.service === null && entry.state === 'unknown')).toBe(true);
+    expect(JSON.stringify(status)).not.toContain('private-name');
+    expect(JSON.stringify(status)).not.toContain('untrusted-state');
+  });
+
+  test.each([
+    { exitCode: 1, stdout: '', stderr: 'private Docker error' },
+    { exitCode: 0, stdout: '{broken json', stderr: '' },
+    { exitCode: 0, stdout: '{}', stderr: '' },
+    { exitCode: 0, stdout: 'null', stderr: '' },
+  ])('does not mistake a failed ownership inventory for healthy or unowned', async (response) => {
+    const manifest = releaseManifest();
+    for (const operation of ['status', 'setup', 'repair', 'update', 'rollback', 'ensureReady']) {
+      const runner = createFakeRunner();
+      const run = runner.runProcess;
+      runner.runProcess = (file, args, options) => args[0] === 'ps' ? Promise.resolve(response) : run(file, args, options);
+      const stateStore = createMemoryStateStore({ version: 1, current: manifest, previous: manifest, staged: null });
+      const { manager } = createManager({ manifest, runner, stateStore });
+      await expect(manager[operation]()).rejects.toMatchObject({ code: 'bot_runtime_ownership_unavailable' });
+      expect(stateStore.writes).toEqual([]);
+      expect(runner.calls.some(({ args }) => ['pull', 'stop', 'rm', 'compose'].includes(args[0]))).toBe(false);
+    }
+  });
+
+  test.each([
+    { exitCode: 1, stdout: '', stderr: 'permission denied' },
+    { exitCode: 0, stdout: '{broken json', stderr: '' },
+    { exitCode: 0, stdout: '{}', stderr: '' },
+  ])('fails closed when network inspection is unavailable', async (response) => {
+    const manifest = releaseManifest();
+    const runner = createFakeRunner();
+    const run = runner.runProcess;
+    runner.runProcess = (file, args, options) => args[0] === 'network' && args[1] === 'inspect'
+      ? Promise.resolve(response) : run(file, args, options);
+    const stateStore = createMemoryStateStore({ version: 1, current: manifest, previous: null, staged: null });
+    const { manager } = createManager({ manifest, runner, stateStore });
+    await expect(manager.status()).rejects.toMatchObject({ code: 'bot_runtime_ownership_unavailable' });
+    await expect(manager.repair()).rejects.toMatchObject({ code: 'bot_runtime_ownership_unavailable' });
+    expect(stateStore.writes).toEqual([]);
+    expect(runner.calls.some(({ args }) => ['stop', 'rm'].includes(args[0])
+      || (args[0] === 'compose' && args.includes('up')))).toBe(false);
   });
 
   test('refuses to rebuild a stale host-control network while another installation is attached', async () => {
@@ -1426,6 +1516,7 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     });
     expect(runner.calls.map(({ args }) => args)).toEqual([
       ['version', '--format', '{{json .}}'],
+      ['ps', '--all', '--no-trunc', '--filter', 'label=devryan.runtime=production-bots', '--format', '{{json .}}'],
     ]);
   });
 
@@ -1442,6 +1533,7 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     const requests = [];
     let rejectEgressActivation = false;
     let rejectBrowserRotation = false;
+    let rejectComputerStop = false;
     const fetchImpl = async (url, options) => {
       requests.push({ url, options });
       const pathname = new URL(url).pathname;
@@ -1493,6 +1585,12 @@ describe('Electron-owned Docker Bot runtime manager', () => {
           ok: true,
           result: { origin: JSON.parse(options.body).origin },
         }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (pathname === '/v1/stop') {
+        if (rejectComputerStop) throw new Error('fixture stop transport failed');
+        return new Response(JSON.stringify({ ok: true, result: { state: 'stopped', name: 'fixture' } }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        });
       }
       if (pathname === `/v1/runtime/${'q'.repeat(43)}/v1/egress/rotate`) {
         if (rejectBrowserRotation) {
@@ -1743,13 +1841,21 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       browserNetworkMode: 'public_only',
       browserEgressHosts: [],
       isolationTier: 'standard',
-    })).rejects.toMatchObject({ code: 'DEVRYAN_BOT_BROWSER_EGRESS_TOKEN_INVALID' });
+    })).rejects.toMatchObject({ code: 'bot_runtime_browser_refresh_failed' });
     expect(requests.slice(-4).map(({ url }) => new URL(url).pathname)).toEqual([
       '/v1/gateway/origin',
       '/v1/ensure/computer',
       `${proxyPath}/v1/egress/rotate`,
       '/v1/stop',
     ]);
+    rejectComputerStop = true;
+    await expect(manager.ensureComputer({
+      botId, scopeKey: `bot:${botId}`, runId, channelId, revisionId,
+      runtimeToken: 'u'.repeat(43), scopeMode: 'team',
+      gatewayUrl: 'http://host.docker.internal:55100', browserNetworkMode: 'public_only',
+      browserEgressHosts: [], isolationTier: 'standard',
+    })).rejects.toMatchObject({ code: 'bot_runtime_computer_stop_unconfirmed' });
+    rejectComputerStop = false;
     rejectBrowserRotation = false;
 
     rejectEgressActivation = true;

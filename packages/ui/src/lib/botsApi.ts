@@ -752,6 +752,19 @@ export type BotComputerNavigationDiagnostic = {
   dialogs?: readonly BotComputerBrowserTrailEntry[];
 };
 
+export type BotComputerNetworkEntry = {
+  sequence: number;
+  observedAt: number;
+  generation: number;
+  kind: 'response' | 'failure' | 'cookie_block' | 'proxy_failure' | 'lifecycle';
+  origin?: string;
+  path?: string;
+  requestType?: 'Document' | 'Fetch' | 'XHR';
+  statusCode?: number;
+  reason?: string;
+  failureCode?: string;
+};
+
 export type BotComputerBrowserStatus = {
   running?: boolean;
   healthy?: boolean;
@@ -772,6 +785,10 @@ export type BotComputerBrowserStatus = {
     thirdPartyCookies?: BotComputerWebCapabilityState;
   };
   lastNavigationDiagnostic?: BotComputerNavigationDiagnostic | null;
+  recentNetworkTrail?: {
+    streamId: string;
+    entries: readonly BotComputerNetworkEntry[];
+  };
 };
 
 export type BotComputerStatus = {

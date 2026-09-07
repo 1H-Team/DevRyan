@@ -72,7 +72,7 @@ export function createQaManagedTaskFetchScript({ transport, origin, model }) {
     if(globalThis[key])throw new Error('Managed visual read fixture is already installed');
     const originalFetch=globalThis.fetch.bind(globalThis),model=${JSON.stringify(model)};
     const resolve=${resolveQaManagedTaskRead.toString()};
-    const state={source:'fixture-only scoped fetch transport; no scheduler execution',requests:[],failures:[],closed:false};
+    const state={source:'fixture-only scoped fetch transport; no scheduler execution',model,requests:[],failures:[],closed:false};
     const wrapper=async(input,init) => {
       const isRequest=typeof Request!=='undefined'&&input instanceof Request;
       const url=new URL(isRequest?input.url:String(input),location.href);
@@ -82,7 +82,7 @@ export function createQaManagedTaskFetchScript({ transport, origin, model }) {
       const request={url:url.href,method,postData:hasBody?'[body-present]':null};
       const response=state.requests.length>=128
         ?{accepted:false,reason:'Managed task visual read request bound exceeded',status:501,body:{error:{code:'unsupported_visual_fixture_request',message:'Request bound exceeded'}}}
-        :resolve({model,origin,request});
+        :resolve({model:state.model,origin,request});
       if(state.requests.length<128)state.requests.push({method,url:url.href,requestBody:request.postData,
         accepted:response.accepted,responseStatus:response.status,responseBody:response.body});
       if(!response.accepted&&state.failures.length<128)state.failures.push(response.reason);
@@ -99,7 +99,7 @@ export async function installQaManagedTaskReadModel({ transport, cdp, origin, mo
   assert.equal(await evaluate(cdp, 'location.origin'), origin, 'Task read fixture must target the known isolated page');
   const evidence = { source: 'fixture-only scoped fetch transport installed before the real reload; no scheduler execution',
     requests: [], failures: [], installedAfterReload: false, closed: false };
-  const { identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+  let { identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
     source: createQaManagedTaskFetchScript({ transport, origin, model }),
   });
   const readEvidence = async () => {
@@ -112,6 +112,13 @@ export async function installQaManagedTaskReadModel({ transport, cdp, origin, mo
     return value;
   };
   return { evidence, readEvidence,
+    updateModel: async nextModel => {
+      await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+      ({ identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: createQaManagedTaskFetchScript({ transport, origin, model: nextModel }),
+      }));
+      await evaluate(cdp, `globalThis[${JSON.stringify(FETCH_EVIDENCE_KEY)}].model=${JSON.stringify(nextModel)}`);
+    },
     assertHealthy: async () => {
       await readEvidence();
       assert.equal(evidence.installedAfterReload, true, 'Task read fixture must be installed by a real page reload');
