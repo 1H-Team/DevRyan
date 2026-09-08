@@ -17,7 +17,7 @@ describe('mounted Bot Telegram settings', () => {
     const render = (active: boolean) => root.render(<BotTelegramConnection botId="bot" canManage={false} active={active} api={api} />);
     try {
       await act(async () => { render(true); });
-      expect(container.textContent).toContain('Host: online');
+      expect(container.textContent).toContain('Host online');
       await act(async () => { container.find((node) => node.tagName === 'BUTTON' && node.textContent === 'Create Pairing Link')?.click(); });
       await act(async () => { render(false); }); await act(async () => { render(true); });
       await act(async () => { pending.resolve(link); });

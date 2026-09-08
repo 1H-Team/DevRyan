@@ -210,7 +210,9 @@ describe('Production Bot context assembly', () => {
     expect(result.parts[1].text).toContain('natural conversation');
     expect(result.parts[1].text).toContain('Do not use progress or status headings');
     expect(result.parts[1].text).toContain("configured personality");
-    expect(result.parts[1].text).toContain('exactly one short line in your own voice');
+    expect(result.parts[1].text).toContain('exactly one short, request-specific sentence');
+    expect(result.parts[1].text).toContain("Bot's configured Soul voice");
+    expect(result.parts[1].text).toContain('Never use a fixed receipt');
     expect(result.parts[1].text).toContain('interface shows that you are working');
     expect(result.parts[1].text).toContain('devryan_ask');
     expect(result.parts[0].text).toContain('"turn":');

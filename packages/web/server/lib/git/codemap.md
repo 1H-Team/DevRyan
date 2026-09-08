@@ -17,9 +17,11 @@ Git service layer for repository operations, direct commit-message and PR-descri
   - `credentials.js`: credential retrieval/storage flows
   - `identity-storage.js`: author identity persistence
   - `template-routes.js`: global commit template/hook status, install, uninstall, and content endpoints
-  - `commit-message.js`: session-free direct Zen generation and conventional-subject validation
+  - `commit-message.js`: catalog-based Zen rotation, conventional-subject validation, and post-exhaustion local drafts
   - `commit-message-context.js`: bounded authoritative context collection for the single-request draft route
-  - `pr-description.js`: session-free direct free-Zen PR title/body generation
+  - `zen-text.js`: native OpenCode free-Zen helper transport and serialized cancellation/cleanup
+  - `generation-diagnostics.js`: content-free Git generation timing records using journal-retained fields
+  - `pr-description.js`: free-Zen PR title/body generation
 - **Route adapter**: `routes.js` maps HTTP requests to service operations.
 - **Durable worktree host**: `service.js` injects Git/setup/project effects into
   `@openchamber/harness-runtime`; durable state and retry policy do not live in

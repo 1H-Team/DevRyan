@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyMeridianHttpHotfix, MERIDIAN_HTTP_SERVER_ORIGINAL } from './meridian-http-hotfix.js';
 import { serveMeridianHttp } from './meridian-http-server.js';
-import { MERIDIAN_HANDOFF_EDITS, MERIDIAN_HANDOFF_HELPER, stripMeridianHandoffPatch } from './meridian-passthrough-hotfix.js';
+import { MERIDIAN_HANDOFF_EDITS, MERIDIAN_HANDOFF_HELPER, MERIDIAN_PREFIX_EDITS, stripMeridianHandoffPatch } from './meridian-passthrough-hotfix.js';
 
 const roots = [];
 const source = `async function start() {\n${MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;\n}\n${MERIDIAN_HANDOFF_EDITS.map(([before]) => before).join('\n')}`;
@@ -54,6 +54,24 @@ describe('Meridian native HTTP cancellation compatibility', () => {
     const { options, dist } = fixture('1.62.7');
     expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: false });
     expect(fs.existsSync(path.join(dist, 'devryan-meridian-http-server.js'))).toBe(false);
+  });
+
+  it('upgrades a complete previous handoff revision and rejects an incomplete prefix fix', () => {
+    const { options, dist } = fixture();
+    const entry = path.join(dist, 'cli-wxk8xvd3.js');
+    expect(applyMeridianHttpHotfix(options).ok).toBe(true);
+    const complete = fs.readFileSync(entry, 'utf8');
+    const previous = MERIDIAN_PREFIX_EDITS.reduce((text, [before, after]) => text.replace(after, before), complete);
+    fs.writeFileSync(entry, previous);
+    expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: true, changed: true,
+      prefix: 'native-fork-at-client-tool-checkpoint; git-snapshot-disabled-for-passthrough' });
+    expect(fs.readFileSync(entry, 'utf8')).toBe(complete);
+    for (const [before, after] of MERIDIAN_PREFIX_EDITS) {
+      const partial = complete.replace(after, before);
+      fs.writeFileSync(entry, partial);
+      expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: false });
+      expect(fs.readFileSync(entry, 'utf8')).toBe(partial);
+    }
   });
 
   it('keeps the existing Node adapter and options authoritative outside Bun', () => {

@@ -20,6 +20,31 @@ const binding = (overrides = {}) => ({
 });
 
 describe('Production Bot warm runtime leases', () => {
+  it('reserves once without waiting and joins invalidation cleanup before a cold fallback', async () => {
+    let finish, finishStop;
+    let index = 0;
+    const stop = vi.fn(() => new Promise((resolve) => { finishStop = resolve; }));
+    const leases = createBotWarmRuntimeLeases({ uuid: () => ids[index++], prepare: () => new Promise((resolve) => { finish = resolve; }), stop });
+    const lease = leases.begin(binding());
+    const input = { ...binding(), leaseId: lease.leaseId, messageId: 'message-1' };
+    expect(await leases.claim(input)).toEqual({ hit: true, runId: ids[1] });
+    expect(await leases.claim({ ...input, messageId: 'message-2' })).toEqual({ hit: false, runId: null });
+    expect(await leases.release(input)).toBe(false);
+    let ready = false;
+    const waiting = leases.waitForClaim(ids[1]).then((value) => { ready = true; return value; });
+    const invalidation = leases.invalidateAll();
+    finish();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(stop).toHaveBeenCalledWith(ids[1]);
+    expect(ready).toBe(false);
+    finishStop();
+    await invalidation;
+    expect(await waiting).toBe(false);
+    leases.settle(ids[1]);
+    await leases.shutdown();
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
   it('lets a message without a client lease adopt a server-initiated warm runtime for its channel', async () => {
     const prepare = vi.fn(async () => {});
     const stop = vi.fn(async () => {});
@@ -103,9 +128,11 @@ describe('Production Bot warm runtime leases', () => {
       librarySnapshotKey: binding().librarySnapshotKey,
       messageId: 'e0000000-0000-4000-8000-000000000001',
     });
-    await Promise.resolve();
-    finish();
     expect(await claim).toEqual({ hit: true, runId: ids[1] });
+    expect(marks).not.toContain('lease_adopted');
+    const ready = leases.waitForClaim(ids[1]);
+    finish();
+    expect(await ready).toBe(true);
     expect(await leases.claim({
       leaseId: lease.leaseId,
       principalId: binding().principalId,
@@ -178,6 +205,7 @@ describe('Production Bot warm runtime leases', () => {
       librarySnapshotKey: binding().librarySnapshotKey,
       messageId: 'e0000000-0000-4000-8000-000000000003',
     })).toEqual({ hit: false, runId: null });
+    await new Promise((resolve) => setImmediate(resolve));
     expect(stop).toHaveBeenCalledWith(ids[1]);
   });
 
@@ -207,16 +235,17 @@ describe('Production Bot warm runtime leases', () => {
       librarySnapshotKey: secondBinding.librarySnapshotKey,
       messageId: 'e0000000-0000-4000-8000-000000000005',
     })).toEqual({ hit: true, runId: ids[3] });
+    expect(await leases.waitForClaim(ids[3])).toBe(true);
     expect(stop).toHaveBeenCalledWith(ids[1]);
     expect(prepare).toHaveBeenCalledTimes(2);
     await leases.shutdown();
   });
 
-  it('records content-free preparation stage and error code diagnostics', async () => {
+  it.each(['readiness', 'oauth_readiness'])('records content-free %s preparation diagnostics', async (stage) => {
     let index = 0;
     const error = Object.assign(new Error('provider detail must stay out of diagnostics'), {
       code: 'bot_opencode_start_timeout',
-      botRuntimeStage: 'readiness',
+      botRuntimeStage: stage,
     });
     const record = vi.fn();
     const leases = createBotWarmRuntimeLeases({
@@ -234,11 +263,12 @@ describe('Production Bot warm runtime leases', () => {
       revisionId: binding().revisionId,
       librarySnapshotKey: binding().librarySnapshotKey,
       messageId: 'e0000000-0000-4000-8000-000000000006',
-    })).resolves.toEqual({ hit: false, runId: null });
+    })).resolves.toEqual({ hit: true, runId: ids[1] });
+    expect(await leases.waitForClaim(ids[1])).toBe(false);
     const failure = record.mock.calls.find(([mark]) => mark === 'warm_miss');
     expect(failure?.[1]).toMatchObject({
       reason: 'prepare_failed',
-      stage: 'readiness',
+      stage,
       errorCode: 'bot_opencode_start_timeout',
     });
     expect(JSON.stringify(failure)).not.toContain(error.message);

@@ -28,5 +28,5 @@
 - Change assistant image syntax rules only in `lib/assistant-image-sources.js` and update the shared golden fixtures so UI and server authorization stay equivalent.
 - Change cross-host commit draft formatting, deadline, repair, or fallback policy only in `lib/commit-message-draft.js`; Git context collection and provider transport stay with each host.
 - Change free OpenCode Zen discovery, cache, or cost-intersection rules only in `lib/free-zen-model-catalog.js`; host adapters own feature-specific model ordering and generation requests.
-- Change cross-host sequential free-model attempt semantics or PR output normalization only in `lib/free-zen-generation.js`; callers choose their per-model timeout and direct transport.
+- Change cross-host sequential free-model attempt semantics or PR output normalization only in `lib/free-zen-generation.js`; callers choose their per-model timeout, model limit, cooldown policy, and abortable direct transport.
 - Add any new cross-host runtime module here only when it has no UI or host-process ownership.

@@ -55,4 +55,4 @@ Zustand store layer for persisted and session-local client state: UI preferences
 
 ## Session change cache
 
-`useSessionTreeChangesStore.ts` keys summaries by runtime URL, principal, directory and root session. It checks response identity, cancels obsolete generations, retains rich fields during refresh, and bounds entries by count and bytes. Repository polling cannot replace captured revisions; explicit capture notifications and session lifecycle edges refresh them. Auth changes, deletion and directory disposal invalidate caches.
+`useSessionTreeChangesStore.ts` keys summaries by runtime URL, principal, directory and root session. It checks response identity, cancels obsolete generations, retains rich fields during refresh, and bounds entries by count and bytes. The cache holds the first bounded file page plus total count and revision-bound cursors; additional review pages stay local to the card. Repository polling cannot replace captured revisions; explicit capture notifications and session lifecycle edges refresh them. Auth changes, deletion and directory disposal invalidate caches.

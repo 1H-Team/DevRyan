@@ -1,6 +1,7 @@
 import { isGitGenerationSessionRecord } from '@/lib/git/gitGenerationSessions';
 
 export const SMARTFETCH_SECONDARY_SESSION_TITLE = 'smartfetch-secondary';
+export const SESSION_TEXT_HELPER_SESSION_TITLE = 'DevRyan text generation (internal)';
 export const SESSION_TITLE_HELPER_SESSION_TITLE = 'DevRyan title generation (internal)';
 
 export type SessionVisibilityRecord = {
@@ -19,7 +20,7 @@ const isTitleGenerationHelperSession = (
   session: SessionVisibilityRecord,
 ): boolean => (
   typeof session.title === 'string'
-  && session.title.trim() === SESSION_TITLE_HELPER_SESSION_TITLE
+  && (session.title.trim() === SESSION_TITLE_HELPER_SESSION_TITLE || session.title.trim() === SESSION_TEXT_HELPER_SESSION_TITLE)
 );
 
 /**

@@ -338,7 +338,14 @@ export function createOpenCodeReasoningAdapter({
       return this.prepareRevision({ ...input, mode: 'warm' });
     },
     async releaseWarm({ runId }) {
-      return this.closeRun({ runId });
+      try {
+        return await this.closeRun({ runId });
+      } catch (error) {
+        // Failed preparation already rolls back before registering an active
+        // run. Releasing that lease must still allow the joined cold fallback.
+        if (error?.code !== 'bot_opencode_run_not_found') throw error;
+        return undefined;
+      }
     },
   });
 }

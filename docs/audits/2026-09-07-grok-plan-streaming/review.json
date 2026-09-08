@@ -1,0 +1,330 @@
+{
+  "reviewedAt": "2026-09-07T22:03:58.240Z",
+  "reviewer": "Codex",
+  "liveProvider": "not-run",
+  "renderMode": "Live",
+  "runtimes": {
+    "web": {
+      "automatedChecks": 19,
+      "sourceRun": "web-grok-plan-heI7Dj",
+      "screenshots": [
+        {
+          "file": "web/chat-idle.png",
+          "sha256": "ff33df8505dceda2bb71c07f3cbee5d6eae37090dd384179e9d5e01842fc740f",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-cancelled-draft.png",
+          "sha256": "77c6b8776c42437d8d73c27296c6fce8fa49e6a3bca3f630d8f3d09aa124deb2",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-1280-completed.png",
+          "sha256": "226595d822c8ae0727bc9147f974165ba797e62fde7b5e2813347eab1d79d2e6",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-1280-expanded.png",
+          "sha256": "77a68995a999232cadfef9f1a8cbb05b9686c65f6a73fef987a67c04d7aa9e94",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-1280-final-streaming.png",
+          "sha256": "36f26694e54b80b33ba5f9b4c3d2b78e57431f1645cda798f9b43b8e8a1faafd",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-1280-first-tokens.png",
+          "sha256": "11d0e66cde3a97c5228aab60dc3cb0b8c1e78aee2ce5f16ed1056ad0ab549d72",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-1280-hidden-continuation.png",
+          "sha256": "ee527e4acfe809590a0990871d58957c757163e2b3633f9ba3bb6bb75ce785c3",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-1280-reloaded.png",
+          "sha256": "d253fc58541458aa2425cc9c9671773611a50a24d44af9378bbe4e20c30e824b",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-1280-streaming.png",
+          "sha256": "83c7f594772ecba975ba96e3b60983bae69059f75368b9a07a25557acd277eaa",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-390-completed.png",
+          "sha256": "4110791e4c16229efe819d6a0a13690ac533cba7ca354195e2f4ded43ef354d4",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-390-expanded.png",
+          "sha256": "ece2c43e26b18ec722e432a60de98836db8589c7fe74b61e9c47a4440ab95dbc",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-390-final-streaming.png",
+          "sha256": "2cadcae0a828c8b72e4725c82a0efa436dfb2b0cece2d4c3c109e6bfe746f8f8",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-390-first-tokens.png",
+          "sha256": "7b27c1b5890a1b11cc84dafc032e55882f7564527753ef11b7c15463322ce87f",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-390-hidden-continuation.png",
+          "sha256": "d463728987ddc42081815a777b1b18ed5bce0a814f6bdd8fa39db3d3881ee27a",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-390-reloaded.png",
+          "sha256": "10f7b066abc63945b6bdc4af5c492d5104c04741ca68b66aea9791c88ca9b6d6",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-dark-390-streaming.png",
+          "sha256": "39f2d7ca8247ede2ca2908fb04386a4178d7e3792a8df818d02811188d478055",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-1280-completed.png",
+          "sha256": "772190257cb2d1e970cb20b6a04710c30ecf83fa20be22d6ef15e7327c0bd62e",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-1280-expanded.png",
+          "sha256": "ed31b3f1b695b15ede456ba3d852e8029a4f1fec6e79c165375e9029d7933fb2",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-1280-final-streaming.png",
+          "sha256": "94072de5cdf759344136767c1b32e71b7f4ffcbbf577682c5e19efbfd37865e4",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-1280-first-tokens.png",
+          "sha256": "b93de94fa70f3bde75b5f42e32ad04cbf35070338781cd66608ba921cbe9cc13",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-1280-hidden-continuation.png",
+          "sha256": "71973a0b075661c653b40499ddfd7ef374aff0d5461a00055259ed8a11eb0094",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-1280-reloaded.png",
+          "sha256": "e305433cdbc7ce0bb2083cc9d9c647838c73f7e42d586574f4aa97d6625f33f8",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-1280-streaming.png",
+          "sha256": "6bc2aff3e6a0641ff6b225132b8a564384bb9baf2ab774eb8d4be6522032507a",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-390-completed.png",
+          "sha256": "0cf8b9b8b841e6ec4b99199b715b3a1378f8c07f3d8f048cd545765a49993428",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-390-expanded.png",
+          "sha256": "4fcfe2d61493658eb2dc65cc5e10d8cc7cd81affb3461e4b4d78f8921d1c8887",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-390-final-streaming.png",
+          "sha256": "bc922aed3c9b3e596bddab2cc44268cf8bcb1db6cdd9ddf24cbab8a27eefb9c2",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-390-first-tokens.png",
+          "sha256": "d1aac2d210a9e984dfb41e4b76c1cd36b43948b7a2407aa6b1597f220257c264",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-390-hidden-continuation.png",
+          "sha256": "eaa8cda2ed28b35ab08fd33f3c6ddacbe5dd599360aba358562b75a699264e05",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-390-reloaded.png",
+          "sha256": "6b63d887bd7f539d6b156b66fbbdaa959cc833a849877adf11b9575fd6e0c961",
+          "reviewed": true
+        },
+        {
+          "file": "web/grok-light-390-streaming.png",
+          "sha256": "71fa39d2e300fdfe8d3db513acdd2555092920031f45654f5f92dda3a265083c",
+          "reviewed": true
+        }
+      ]
+    },
+    "electron": {
+      "automatedChecks": 19,
+      "sourceRun": "electron-grok-plan-WDI9Ix",
+      "screenshots": [
+        {
+          "file": "electron/chat-idle.png",
+          "sha256": "90d2bde118c6807a971bd51192b8fd397285500b60e02106b75acbd9867828ff",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-cancelled-draft.png",
+          "sha256": "a5b1e1dcc5024cc56cc019aa25e8f361290421b78de9b50cf525e95ac00d39a4",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-1280-completed.png",
+          "sha256": "96b6c998755e0607fdbac3cb8956477415ccfccac763301847b11cec6772a548",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-1280-expanded.png",
+          "sha256": "614f24dd159c92c3a0cdc169031eecf4e799746c2a51271816b553b57dd84f2b",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-1280-final-streaming.png",
+          "sha256": "7b9489ed03178813fef3e20713da5123913d258d37d968d2d2ee9ba3bcc29905",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-1280-first-tokens.png",
+          "sha256": "ba67571aaebd37911b41475ce63ad9c01538b26a437a5a5f70b8ca6e937fe8b2",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-1280-hidden.png",
+          "sha256": "44fb0fc0e25636acb1528878d4d3ffa1f7e842e966658501cd7f43d2c38d9953",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-1280-reloaded.png",
+          "sha256": "8c6f3b57456d450909f6b7abb87741b4e42569e208c3f5db9cd75190595abe54",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-1280-streaming.png",
+          "sha256": "cff015222f4944e7a1fbbfa827a5562bdbf670ae45a7e12b5233a48dc1713a43",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-600-action.png",
+          "sha256": "7733fc6fc10c1c2b251d509552dd96b0600c60e647edb2c009252f0b5205fb51",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-600-completed.png",
+          "sha256": "e4bbbe8c52148ccdd20b6c7a6ef941964b64aa6463064af809ec09784ca4a727",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-600-expanded.png",
+          "sha256": "d99c247cded834db50f60220c22136f4cc2076a7527d4d071935e853c19549ff",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-600-final-streaming.png",
+          "sha256": "b1455f8dd5e71be0aa539a9231b6aa8f504d18b878c6dc49e42ff8ad47314c06",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-600-first-tokens.png",
+          "sha256": "c40ac0f731d5a7e30598789744686c8d1d8e65c338f0845ab9b725ee81f9f7e0",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-600-hidden.png",
+          "sha256": "54bd42ed4380004fff6381e0e25ec910137ae7a18fe54c129236a474ff607b4a",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-600-reloaded.png",
+          "sha256": "c0612f6bb619e4e005b9cd933e4bdec0d49a6fe496eecd7190b503930ff37c43",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-dark-600-streaming.png",
+          "sha256": "273dd9f7d6664c863f38289ab5c36c52b66e53e8b57685faf20aa220ecbc0358",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-1280-completed.png",
+          "sha256": "c8f5932f0feb49155d5c87da6ea1dc04bca22f9420234bf65c5e586d1e34ba33",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-1280-expanded.png",
+          "sha256": "0d7c623dca4cb4bcc8853a53ad09ebb5f793cfb5fd603d69de17b339396f6079",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-1280-final-streaming.png",
+          "sha256": "505271e7e28480fa9ebfc172ba09730bf9375d7077590929563250baee080cbf",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-1280-first-tokens.png",
+          "sha256": "773818fae50716e8766ce086473eeefadcae58512c319a224222a6ffbdd7d66a",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-1280-hidden.png",
+          "sha256": "7f837c6979464d18c5c0c2071e370cb7e87eeefdcc4a53d0d4e20c3aff29aee2",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-1280-reloaded.png",
+          "sha256": "1427ec77285fb3a593f0fa2b5655d88477422421f363760deef475dec8dc5a90",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-1280-streaming.png",
+          "sha256": "bfc3dc6ba1314c59b850a0dc81d2a5f6f8b1b728cafa8a154ddaf8d9fd330f41",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-600-action.png",
+          "sha256": "59e286beb813f1ffce28afc50ab56f77ca55a92f0e258613128d9d7946563e1a",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-600-completed.png",
+          "sha256": "fa86ca007f7f4fa5e0c00966b441c8b7eac4221b6eef2b38fe8abadf1ff0b12b",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-600-expanded.png",
+          "sha256": "6e93a7acdd0a3a008e78f0bfada6b0cbce1323ca2ab84e65f59b05efc5ea097c",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-600-final-streaming.png",
+          "sha256": "59db69e48c291fb74c253c19b32d9de20b7b8bbb8204b26572e92079206973d1",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-600-first-tokens.png",
+          "sha256": "c0799dcac198dd375f66ee5bdad48891f55547fbd5a7ff3a5e16d6c1a7ff2813",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-600-hidden.png",
+          "sha256": "0b8810d68e0fc6bbb76be60481ffbfb7c6314ebd4aff8baa528f7a3c8774cfc6",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-600-reloaded.png",
+          "sha256": "71825e544304b075364a8a24339cd7e2a0bac19d55a07776aab2da3f0ce624a3",
+          "reviewed": true
+        },
+        {
+          "file": "electron/grok-light-600-streaming.png",
+          "sha256": "d28b309f5df432baa1bb8153071b3323d9c30e0613b4d8186c4e2c4433cd6fd1",
+          "reviewed": true
+        }
+      ]
+    }
+  }
+}

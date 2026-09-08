@@ -6,6 +6,7 @@ const HIDDEN_NOTIFICATION_SESSION_TITLES = new Set([
   'smartfetch-secondary',
   'Commit generation workflow',
   'DevRyan title generation (internal)',
+  'DevRyan text generation (internal)',
 ]);
 
 export const isUserVisibleNotificationSessionInfo = (sessionInfo) => {

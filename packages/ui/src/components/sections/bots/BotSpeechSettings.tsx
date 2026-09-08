@@ -53,21 +53,19 @@ export function BotSpeechSettings({ botId, active, api }: { botId: string; activ
   };
   return <details className="mt-5 border-t border-border/60 pt-3" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary className="cursor-pointer typography-ui-label">Voice processing</summary>
-    <p className="mt-2 typography-micro text-muted-foreground">Explicit server-owned, OpenAI-compatible speech endpoints. Audio and reply text are sent to these services. Browser settings, chat OAuth and host-wide API keys are never reused. Text arrives first; speech failure does not rerun the Bot.</p>
-    <p className="mt-2 typography-micro text-muted-foreground">Limits: 5 minutes and 20 MiB incoming audio; one transcription and one synthesis at a time per Bot; 4,000 characters for automatic spoken replies. Longer answers remain complete in text.</p>
     {error ? <p role="alert" className="mt-2 typography-ui text-[var(--status-error)]">{error}</p> : null}
     {check ? <p role="status" className="mt-2 typography-ui">{check}</p> : null}
     <form onSubmit={(event) => void save(event)} className="mt-3 space-y-3">
       <fieldset disabled={busy || loading || !active || !open || !status} className="space-y-3">
-        <label className="flex items-center gap-2 typography-ui"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft((previous) => ({ ...previous, enabled: event.target.checked }))} />Enable External Speech Processing</label>
+        <label className="flex items-center gap-2 typography-ui"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft((previous) => ({ ...previous, enabled: event.target.checked }))} />Enable Voice</label>
         {(['stt', 'tts'] as const).map((kind) => <div key={kind} className="space-y-2 rounded-lg border border-border/60 p-3">
           <h4 className="typography-ui-label">{kind === 'stt' ? 'Incoming transcription' : 'Spoken replies'} · {status?.[kind]?.ready ? 'Configured' : 'Not ready'}</h4>
-          <label className="block typography-micro">Endpoint Base URL<Input type="url" placeholder="https://speech.example/v1" value={draft[kind].baseUrl} onChange={(event) => setDraft((previous) => ({ ...previous, [kind]: { ...previous[kind], baseUrl: event.target.value } }))} /></label>
+          <label className="block typography-micro">Endpoint<Input type="url" placeholder="https://speech.example/v1" value={draft[kind].baseUrl} onChange={(event) => setDraft((previous) => ({ ...previous, [kind]: { ...previous[kind], baseUrl: event.target.value } }))} /></label>
           <label className="block typography-micro">Model<Input value={draft[kind].model} onChange={(event) => setDraft((previous) => ({ ...previous, [kind]: { ...previous[kind], model: event.target.value } }))} /></label>
           {kind === 'tts' ? <label className="block typography-micro">Voice<Input value={draft.tts.voice} onChange={(event) => setDraft((previous) => ({ ...previous, tts: { ...previous.tts, voice: event.target.value } }))} /></label> : null}
-          <label className="block typography-micro">API Key{status?.[kind]?.hasApiKey ? ' (Saved; Leave Unchanged to Retain)' : ''}<Input type="password" autoComplete="new-password" value={draft[kind].apiKey ?? ''} onChange={(event) => setDraft((previous) => ({ ...previous, [kind]: { ...previous[kind], apiKey: event.target.value } }))} /></label>
+          <label className="block typography-micro">API Key{status?.[kind]?.hasApiKey ? ' (Saved)' : ''}<Input type="password" autoComplete="new-password" value={draft[kind].apiKey ?? ''} onChange={(event) => setDraft((previous) => ({ ...previous, [kind]: { ...previous[kind], apiKey: event.target.value } }))} /></label>
         </div>)}
-        <Button type="submit" size="sm">Save Speech Settings</Button>
+        <Button type="submit" size="sm">Save</Button>
         <Button type="button" variant="outline" size="sm" className="ml-2" onClick={() => {
           if (pending.current || !active || !open || loading) return;
           pending.current = true;
@@ -76,7 +74,7 @@ export function BotSpeechSettings({ botId, active, api }: { botId: string; activ
             if (alive.current && generation.current === request) setCheck(`Transcription: ${result.stt.ready ? 'ready' : result.stt.code || 'unavailable'}. Spoken replies: ${result.tts.ready ? 'ready' : result.tts.code || 'unavailable'}.`);
           }).catch(() => { if (alive.current && generation.current === request) setError('Could not verify the saved speech provider.'); })
             .finally(() => { pending.current = false; if (alive.current) setBusy(false); });
-        }}>Check Saved Providers</Button>
+        }}>Check</Button>
       </fieldset>
     </form>
   </details>;

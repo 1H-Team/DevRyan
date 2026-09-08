@@ -613,6 +613,27 @@ describe('plan-bearing text justification exemption', () => {
 });
 
 describe('plan rendered as a thought (Grok, 2026-08-21)', () => {
+    test('live and grouped activities consume every plan range while preserving preamble through final handoff', () => {
+        const user = createMessageEntry({ id: 'u', role: 'user', createdAt: 1, planMode: true });
+        const preamble = createReasoningPart('a', 'r1', 'Ordinary preamble.\n<!--plan-->');
+        const body = createReasoningPart('a', 'r2', '# Streaming plan');
+        const tail = createReasoningPart('a', 'r3', '## Context\nWhy\n## Implementation\n1. Keep every section.');
+        const assistant = createMessageEntry({ id: 'a', role: 'assistant', parentID: 'u', createdAt: 2,
+            providerID: 'xai', parts: [preamble, body, tail] });
+        for (const parts of [assistant.parts, [...assistant.parts, createPlanPart('a', 'Final plan')]]) {
+            const projection = projectTurnRecords([user, { ...assistant, parts }]);
+            const turn = projection.turns[0];
+            for (const activities of [turn.activityParts, turn.activitySegments.flatMap(segment => segment.parts)]) {
+                const thoughts = activities.filter(activity => activity.kind === 'reasoning');
+                expect(thoughts.map(activity => activity.part)).toEqual([{ ...preamble, text: 'Ordinary preamble.\n' }]);
+                expect(thoughts.some(activity => JSON.stringify(activity.part).includes('Streaming plan'))).toBe(false);
+            }
+            expect(projection.planTraceIndex.entries).toHaveLength(1);
+            expect(projection.planTraceIndex.entries[0]?.isActionable).toBe(false);
+        }
+        expect(preamble).toMatchObject({ text: 'Ordinary preamble.\n<!--plan-->' });
+    });
+
     const findActivity = (
         projection: ReturnType<typeof projectTurnRecords>,
         partId: string,
@@ -800,7 +821,7 @@ describe('plan-mode recorded only locally (Grok, 2026-08-22)', () => {
         const projection = projectTurnRecords(buildTurn(false), {
             recordedPlanModeMessageIds: new Set(['u1']),
         });
-        expect(findActivity(projection, 'a1-reasoning')).toBe(undefined);
+        expect(findActivity(projection, 'a1-reasoning')?.part).toMatchObject({ type: 'reasoning', text: 'Perfect! The exact model ID is in the catalog.\n' });
     });
 
     test('without any plan-mode signal the reasoning part stays a thought', () => {
@@ -826,9 +847,9 @@ describe('plan-mode recorded only locally (Grok, 2026-08-22)', () => {
         const projection = projectTurnRecords([user, assistant], {
             recordedPlanModeMessageIds: new Set(['u1']),
         });
-        // The reasoning head hosts the plan card; the text tail is plan
-        // continuation — neither may land in the thought/justification bucket.
-        expect(findActivity(projection, 'a1-plan-head')).toBe(undefined);
+        // Keep only the ordinary preamble in Thinking; both plan halves are
+        // consumed by the card, including the text continuation.
+        expect(findActivity(projection, 'a1-plan-head')?.part).toMatchObject({ type: 'reasoning', text: 'Thinking.\n' });
         expect(findActivity(projection, 'a1-plan-tail')).toBe(undefined);
     });
 });

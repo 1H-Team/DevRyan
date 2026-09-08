@@ -1,12 +1,13 @@
 import React from 'react';
 import { Tabs } from '@base-ui/react/tabs';
-import { RiComputerLine, RiFolderSharedLine, RiRefreshLine, RiShieldCheckLine } from '@remixicon/react';
+import { RiFolderSharedLine, RiRefreshLine, RiShieldCheckLine } from '@remixicon/react';
 
 import { retryBotsEventConnection } from '@/apps/botEventConnection';
 import { Button } from '@/components/ui/button';
 import { useAuthPrincipal } from '@/lib/authSession';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { FONT_SIZE_SCALES } from '@/lib/typography';
 import { useBotChannelStore, type BotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotOperationsStore, type BotOperationsStore } from '@/stores/useBotOperationsStore';
 import { useBotOperationsNavigationStore } from '@/stores/useBotOperationsNavigationStore';
@@ -16,9 +17,9 @@ import { BotArtifactsTab } from './BotArtifactsTab';
 import { useBotComputerActivityStore } from '@/stores/useBotComputerActivityStore';
 import { BotCurrentRun } from './BotCurrentRun';
 
-type OperationsTab = 'computer' | 'approvals' | 'shared';
+type OperationsTab = 'approvals' | 'shared';
 const isOperationsTab = (value: string | number): value is OperationsTab => (
-  value === 'computer' || value === 'approvals' || value === 'shared'
+  value === 'approvals' || value === 'shared'
 );
 
 const connectionLabelKey = {
@@ -37,10 +38,14 @@ const sanitizedConnectionCode = (value: string | null): string | null => {
 };
 
 const tabClassName = cn(
-  'inline-flex h-8 min-w-8 flex-1 items-center justify-center gap-1 rounded-md border border-transparent px-1.5 typography-micro text-muted-foreground',
+  'inline-flex h-8 min-w-8 flex-auto items-center justify-center gap-1 rounded-md border border-transparent px-0.5 @min-[280px]:px-1.5 typography-micro text-muted-foreground',
   'transition-[background-color,border-color,color,box-shadow] hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
   'data-[selected]:border-border data-[selected]:bg-interactive-selection data-[selected]:font-semibold data-[selected]:text-interactive-selection-foreground data-[selected]:shadow-sm',
 );
+
+const tabListStyle: React.CSSProperties & { '--bot-tab-compact-font-size': string } = {
+  '--bot-tab-compact-font-size': FONT_SIZE_SCALES.small.micro,
+};
 
 type BotOperationsRailProps = {
   botId: string;
@@ -61,7 +66,7 @@ export const BotOperationsRail: React.FC<BotOperationsRailProps> = ({
   const principal = useAuthPrincipal();
   const [activeTab, setActiveTab] = React.useState<OperationsTab>(() => {
     const navigation = useBotOperationsNavigationStore.getState();
-    return navigation.botId === botId && navigation.tab === 'approvals' ? 'approvals' : 'computer';
+    return navigation.botId === botId && navigation.tab === 'approvals' ? 'approvals' : 'shared';
   });
   const navigationTab = useBotOperationsNavigationStore((state) => (
     state.botId === botId ? state.tab : null
@@ -75,8 +80,8 @@ export const BotOperationsRail: React.FC<BotOperationsRailProps> = ({
   )).length);
   const canOperate = membership !== undefined;
   React.useEffect(() => {
-    if (navigationTab === 'approvals') setActiveTab('approvals');
-  }, [navigationTab]);
+    setActiveTab(navigationTab === 'approvals' ? 'approvals' : 'shared');
+  }, [botId, navigationTab]);
 
   return (
     <div className="@container flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar" data-bot-operations-rail>
@@ -125,20 +130,18 @@ export const BotOperationsRail: React.FC<BotOperationsRailProps> = ({
             onValueChange={(value) => {
               if (!isOperationsTab(value)) return;
               setActiveTab(value);
-              if (value === 'approvals') {
-                useBotOperationsNavigationStore.getState().selectTab(botId, value);
-              }
+              useBotOperationsNavigationStore.getState().selectTab(botId, value);
             }}
             className="flex min-h-0 flex-1 flex-col"
           >
-            <Tabs.List className="flex h-10 items-center gap-0.5 border-b border-border/50 px-2" aria-label={t('bots.operations.tabsAria')}>
-              <Tabs.Tab className={tabClassName} value="computer" aria-label={t('bots.operations.tab.computer')}>
-                <RiComputerLine className="h-3.5 w-3.5" aria-hidden />
-                <span className="hidden @min-[420px]:inline">{t('bots.operations.tab.computerShort')}</span>
+            <Tabs.List className="flex h-10 items-center gap-0.5 border-b border-border/50 px-2 [--bot-tab-font-size:var(--bot-tab-compact-font-size)] @min-[280px]:[--bot-tab-font-size:var(--text-micro)]" style={tabListStyle} aria-label={t('bots.operations.tabsAria')}>
+              <Tabs.Tab className={tabClassName} style={{ fontSize: 'var(--bot-tab-font-size)' }} value="shared" aria-label={t('bots.operations.tab.shared')}>
+                <RiFolderSharedLine className="hidden h-3.5 w-3.5 shrink-0 @min-[280px]:block" aria-hidden />
+                <span>{t('bots.operations.tab.shared')}</span>
               </Tabs.Tab>
-              <Tabs.Tab className={tabClassName} value="approvals" aria-label={t('bots.operations.tab.approvals')}>
-                <RiShieldCheckLine className="h-3.5 w-3.5" aria-hidden />
-                <span className="hidden @min-[420px]:inline">{t('bots.operations.tab.approvals')}</span>
+              <Tabs.Tab className={tabClassName} style={{ fontSize: 'var(--bot-tab-font-size)' }} value="approvals" aria-label={t('bots.operations.tab.approvals')}>
+                <RiShieldCheckLine className="hidden h-3.5 w-3.5 shrink-0 @min-[280px]:block" aria-hidden />
+                <span>{t('bots.operations.tab.approvals')}</span>
                 {pendingCount > 0 ? (
                   <span
                     className="text-[var(--status-warning)]"
@@ -148,20 +151,8 @@ export const BotOperationsRail: React.FC<BotOperationsRailProps> = ({
                   </span>
                 ) : null}
               </Tabs.Tab>
-              <Tabs.Tab className={tabClassName} value="shared" aria-label={t('bots.operations.tab.shared')}>
-                <RiFolderSharedLine className="h-3.5 w-3.5" aria-hidden />
-                <span className="hidden @min-[420px]:inline">{t('bots.operations.tab.shared')}</span>
-              </Tabs.Tab>
             </Tabs.List>
 
-            <Tabs.Panel value="computer" className="min-h-0 flex-1 overflow-hidden [[hidden]]:hidden">
-              <div className="space-y-3 p-4 typography-meta text-muted-foreground">
-                <p>The shared Bot computer appears in the conversation when the Bot uses it. Members share its files and saved logins.</p>
-                <Button variant="outline" size="sm" onClick={() => useBotComputerActivityStore.getState().show(botId, channel.id)}>
-                  <RiComputerLine /> Open in Conversation
-                </Button>
-              </div>
-            </Tabs.Panel>
             <Tabs.Panel value="approvals" className="min-h-0 flex-1 overflow-y-auto [[hidden]]:hidden">
               <BotApprovalsTab
                 botId={botId}
@@ -176,8 +167,7 @@ export const BotOperationsRail: React.FC<BotOperationsRailProps> = ({
                 botId={botId}
                 channelId={channel.id}
                 onOpenComputer={() => {
-                  setActiveTab('computer');
-                  if (channel) useBotComputerActivityStore.getState().show(botId, channel.id);
+                  useBotComputerActivityStore.getState().show(botId, channel.id);
                 }}
               />
             </Tabs.Panel>

@@ -40,7 +40,7 @@ const Transcript = ({ owner = false, channelId = channel.id }: { owner?: boolean
 );
 
 describe('normalized Bot events through the mounted transcript', () => {
-  test('buffers streaming and acknowledgment events until verified finality, then ignores replay and partial regression', async () => withDom(async (container) => {
+  test('shows durable acknowledgments immediately, buffers unverified text, and ignores replay and partial regression', async () => withDom(async (container) => {
     const { createRoot } = await import('react-dom/client');
     const root = createRoot(container as unknown as Element);
     resetStores('member');
@@ -52,10 +52,11 @@ describe('normalized Bot events through the mounted transcript', () => {
       expect(container.textContent).toContain('Visible user request');
       expect(container.find((node) => node.hasAttribute('data-bot-typing-indicator'))).not.toBeNull();
       await act(async () => {
-        reconciler.ingest(envelope(2, 'message.updated', { message: message('ack', 2, { role: 'assistant', assistantPhase: 'acknowledgment', body: { text: 'Hidden acknowledgment prose', attachmentIds: [] } }) }));
+        reconciler.ingest(envelope(2, 'message.updated', { message: message('ack', 2, { role: 'assistant', assistantPhase: 'acknowledgment', body: { text: 'Visible acknowledgment prose', attachmentIds: [] } }) }));
         reconciler.ingest(envelope(3, 'message.streaming', { messageId: 'answer', runId: 'event-run', channelId: channel.id, sequence: 3, createdAt: NOW, text: 'Hidden unverified stream', revision: 1 }));
         reconciler.ingest(envelope(4, 'message.updated', { message: message('answer', 3, { role: 'assistant', assistantPhase: 'result', finalizedAt: null, body: { text: 'Hidden partial checkpoint', attachmentIds: [] } }), streamRevision: 1 }));
       });
+      expect(container.textContent).toContain('Visible acknowledgment prose');
       expect(container.textContent).not.toContain('Hidden');
       expect(container.find((node) => node.getAttribute('data-bot-message-id') === 'answer')).toBeNull();
       expect(container.find((node) => node.hasAttribute('data-bot-typing-indicator'))).not.toBeNull();
@@ -71,6 +72,7 @@ describe('normalized Bot events through the mounted transcript', () => {
       });
       expect(container.find((node) => node.getAttribute('data-bot-message-id') === 'answer')).toBe(finalNode);
       expect(container.textContent).toContain('Verified answer. مرحباً');
+      expect(container.textContent).toContain('Visible acknowledgment prose');
       expect(container.textContent).not.toContain('Hidden');
       expect(useBotChannelStore.getState().messageIdsByChannelId[channel.id]).toEqual(['user', 'ack', 'answer']);
     } finally { await act(async () => { root.unmount(); }); resetStores(null); }

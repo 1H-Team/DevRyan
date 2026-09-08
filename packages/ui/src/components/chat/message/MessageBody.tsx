@@ -25,7 +25,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
 import { hasQuestionTool } from './questionContext';
-import { findPlanCardReasoningPartIndex, resolveMessagePlanCard, splitReasoningPartPlan } from '@/lib/messages/actionablePlan';
+import { projectReasoningOutsidePlan, resolveMessagePlanCardResolution, type PlanCardPartRange } from '@/lib/messages/actionablePlan';
 import {
     buildPlanCardRenderSegments,
     shouldStopAfterPlanCard,
@@ -1386,22 +1386,30 @@ const AssistantMessageBody = React.memo(({
         )
     ), [activityByPart, localManagedTaskDispatch.contentParts]);
 
-    const messagePlan = React.useMemo(
-        () => (sessionId != null ? resolveMessagePlanCard(planResolutionParts, { isPlanModeSource: isPlanRevisionModeSource, turnIntent: turnPlanIntent }) : null),
+    const planResolution = React.useMemo(
+        () => (sessionId != null ? resolveMessagePlanCardResolution(planResolutionParts, { isPlanModeSource: isPlanRevisionModeSource, turnIntent: turnPlanIntent }) : null),
         [isPlanRevisionModeSource, planResolutionParts, sessionId, turnPlanIntent],
     );
+    const messagePlan = planResolution?.split ?? null;
 
     // Id of the reasoning part hosting the plan card, when the plan was emitted
     // on the reasoning channel (Grok does this). Keyed by part id, not index —
     // the render loop iterates contentParts while plan resolution runs over the
     // filtered planResolutionParts.
     const planCardReasoningPartId = React.useMemo(() => {
-        if (messagePlan?.source !== 'reasoning') return null;
-        const index = findPlanCardReasoningPartIndex(planResolutionParts, { isPlanModeSource: isPlanRevisionModeSource });
+        const index = planResolution?.reasoningPartIndex ?? -1;
         const part = index >= 0 ? planResolutionParts[index] : undefined;
-        const id = (part as { id?: unknown } | undefined)?.id;
+        const id = part?.id;
         return typeof id === 'string' && id.length > 0 ? id : null;
-    }, [isPlanRevisionModeSource, messagePlan?.source, planResolutionParts]);
+    }, [planResolution, planResolutionParts]);
+    const reasoningPlanRangesById = React.useMemo(() => {
+        const ranges = new Map<string, PlanCardPartRange>();
+        for (const range of planResolution?.reasoningRanges ?? []) {
+            const id = planResolutionParts[range.partIndex]?.id;
+            if (id) ranges.set(id, range);
+        }
+        return ranges;
+    }, [planResolution, planResolutionParts]);
 
     // A resolved plan must render even when the message's finish is not 'stop'
     // (Grok reports 'tool-calls'/'length' on plan turns); the Implement action
@@ -1589,13 +1597,14 @@ const AssistantMessageBody = React.memo(({
                         }
 
                         rendered.push(
-                            <div key={`assistant-text-${messageId}-${i}-${groupEndIndex}-plan`}>
+                            <div key={`assistant-plan-${messageId}`}>
                                 <PlanCard
                                     sessionId={sessionId as string}
                                     sourceMessageId={messageId}
                                     streamPhase={streamPhase}
                                     planText={messagePlan.planText.trimStart()}
                                     projectPath={messageProjectRef?.path ?? null}
+                                    sessionDirectory={messageSession?.directory}
                                     sessionCreated={messageSession?.time?.created ?? null}
                                     sessionSlug={messageSession?.slug ?? null}
                                 />
@@ -1661,51 +1670,41 @@ const AssistantMessageBody = React.memo(({
                     ? groupParts.findIndex((candidate) => (candidate as { id?: unknown }).id === planCardReasoningPartId)
                     : -1;
 
-                // The plan was emitted on the reasoning channel: render the
-                // pre-plan thought text as reasoning, then mount the plan card
-                // here — the text branch can never mount it because its offset
-                // math only counts text parts. The card renders even with
-                // reasoning traces hidden; reasoning parts after the plan are
-                // post-plan content and are suppressed like post-plan text.
+                // Use the same source ranges as activity projection. This also
+                // consumes older reasoning drafts when final text takes over,
+                // while preserving the ordinary preamble in Thinking.
+                const thoughtEntries = groupParts.flatMap((reasoningPart) => {
+                    const projected = projectReasoningOutsidePlan(reasoningPart, reasoningPlanRangesById.get(reasoningPart.id));
+                    return projected ? [{ part: projected, messageId }] : [];
+                });
+                if (thoughtEntries.length > 0 && shouldRenderReasoning(showReasoningTraces) && !suppressLiveManagedControlReasoning) {
+                    rendered.push(
+                        <ReasoningGroup
+                            key={getReasoningPartRenderKey(messageId, part.id, i)}
+                            entries={thoughtEntries}
+                            providerID={providerID}
+                            responseStyleLevel={turnGroupingContext?.responseStyleLevel}
+                            onContentChange={onContentChange}
+                            isMessageCompleted={isMessageCompleted}
+                            isTrailingLiveRun={planPartPos < 0 && groupEndIndex === localManagedTaskDispatch.contentParts.length - 1}
+                            isMobile={isMobile}
+                        />
+                    );
+                }
+
+                // A reasoning-hosted card is independent of the trace toggle
+                // and completion. Its entire resolved body streams here.
                 if (planPartPos >= 0 && messagePlan && sessionId != null) {
-                    if (shouldRenderReasoning(showReasoningTraces) && !suppressLiveManagedControlReasoning) {
-                        const planPart = groupParts[planPartPos];
-                        const planPartText = (planPart as { text?: string }).text ?? '';
-                        const prePlanText = splitReasoningPartPlan(planPartText)?.preambleText ?? '';
-                        const thoughtEntries = groupParts.slice(0, planPartPos).map((reasoningPart) => ({ part: reasoningPart, messageId }));
-                        if (prePlanText.trim().length > 0) {
-                            thoughtEntries.push({
-                                part: {
-                                    ...planPart,
-                                    id: `${(planPart as { id?: string }).id ?? 'reasoning'}__pre-plan`,
-                                    text: prePlanText,
-                                } as Part,
-                                messageId,
-                            });
-                        }
-                        if (thoughtEntries.length > 0) {
-                            rendered.push(
-                                <ReasoningGroup
-                                    key={getReasoningPartRenderKey(messageId, part.id, i)}
-                                    entries={thoughtEntries}
-                                    providerID={providerID}
-                                    responseStyleLevel={turnGroupingContext?.responseStyleLevel}
-                                    onContentChange={onContentChange}
-                                    isMessageCompleted={isMessageCompleted}
-                                    isMobile={isMobile}
-                                />
-                            );
-                        }
-                    }
                     if (mountPlanCard && messagePlan.planText.trim().length > 0) {
                         rendered.push(
-                            <div key={`assistant-reasoning-plan-${messageId}-${i}`}>
+                            <div key={`assistant-plan-${messageId}`}>
                                 <PlanCard
                                     sessionId={sessionId as string}
                                     sourceMessageId={messageId}
                                     streamPhase={streamPhase}
                                     planText={messagePlan.planText.trimStart()}
                                     projectPath={messageProjectRef?.path ?? null}
+                                    sessionDirectory={messageSession?.directory}
                                     sessionCreated={messageSession?.time?.created ?? null}
                                     sessionSlug={messageSession?.slug ?? null}
                                 />
@@ -1713,25 +1712,6 @@ const AssistantMessageBody = React.memo(({
                         );
                     }
                     hasRenderedPlanCard = true;
-                    i = groupEndIndex + 1;
-                    continue;
-                }
-
-                if (shouldRenderReasoning(showReasoningTraces) && !suppressLiveManagedControlReasoning) {
-                    rendered.push(
-                        <ReasoningGroup
-                            key={getReasoningPartRenderKey(messageId, part.id, i)}
-                            entries={localManagedTaskDispatch.contentParts
-                                .slice(i, groupEndIndex + 1)
-                                .map((reasoningPart) => ({ part: reasoningPart, messageId }))}
-                            providerID={providerID}
-                            responseStyleLevel={turnGroupingContext?.responseStyleLevel}
-                            onContentChange={onContentChange}
-                            isMessageCompleted={isMessageCompleted}
-                            isTrailingLiveRun={groupEndIndex === localManagedTaskDispatch.contentParts.length - 1}
-                            isMobile={isMobile}
-                        />
-                    );
                 }
                 i = groupEndIndex + 1;
                 continue;
@@ -1960,8 +1940,10 @@ const AssistantMessageBody = React.memo(({
         messageActionButtons,
         messagePlan,
         planCardReasoningPartId,
+        reasoningPlanRangesById,
         messageProjectRef?.path,
         messageSession?.slug,
+        messageSession?.directory,
         messageSession?.time?.created,
         localManagedTaskDispatch,
         sessionId,

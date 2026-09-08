@@ -39,13 +39,15 @@ export const shouldPersistPlanCard = ({
   hasPlanText,
   isLatestPlan,
   isRevisionSettled = true,
+  isGenerationSuccessful = true,
 }: {
   streamPhase: StreamPhase;
   hasPlanText: boolean;
   isLatestPlan: boolean;
   /** False while any assistant sibling in the plan revision is still running. */
   isRevisionSettled?: boolean;
-}): boolean => streamPhase === 'completed' && hasPlanText && isLatestPlan && isRevisionSettled;
+  isGenerationSuccessful?: boolean;
+}): boolean => streamPhase === 'completed' && hasPlanText && isLatestPlan && isRevisionSettled && isGenerationSuccessful;
 
 export const getPlanCardActionState = ({
   streamPhase,
@@ -53,6 +55,7 @@ export const getPlanCardActionState = ({
   isImplementationRequested,
   isLatestPlan,
   isRevisionSettled = true,
+  isGenerationSuccessful = true,
 }: {
   streamPhase: StreamPhase;
   hasPlanText: boolean;
@@ -60,6 +63,7 @@ export const getPlanCardActionState = ({
   isLatestPlan: boolean;
   /** False while any assistant sibling in the plan revision is still running. */
   isRevisionSettled?: boolean;
+  isGenerationSuccessful?: boolean;
 }): PlanCardActionState => {
   if (!isLatestPlan) {
     return {
@@ -80,6 +84,10 @@ export const getPlanCardActionState = ({
       canImplement: false,
       disabledReason: 'The response is still finishing.',
     };
+  }
+
+  if (!isGenerationSuccessful) {
+    return { canImplement: false, disabledReason: 'The response did not finish successfully.' };
   }
 
   return {

@@ -1,75 +1,25 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
-import { createRecordStore } from './record-store.js';
-import { withCrossProcessFileLock, writeFileAtomic } from './atomic-file.js';
+import { withCrossProcessFileLock } from './atomic-file.js';
+import { git, gitToFile, gitTokens, changeError as failure } from './session-changes-git.js';
+import { openChangeStore, changeKey as hash } from './session-changes-store.js';
+import { captureSnapshot, changedEntries, changeTreeEntries, equalEntry as equal,
+  makeChangeTree as makeTree, safeChangePath as safePath, verifyAncestors } from './session-changes-snapshot.js';
 
-const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
-const failure = (code, status = 409) => Object.assign(new Error(code), { code, status });
-const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
-const safePath = (value) => typeof value === 'string' && value && !path.isAbsolute(value)
-  && !value.split(/[\\/]/).some((part) => part === '..' || part === '.git');
-
-// All Git writes target a private bare repository and disposable index. Never
-// use the checkout's index, refs or object database for capture or composition.
-const git = (cwd, args, { env, input, limit = 32 * 1024 * 1024 } = {}) => new Promise((resolve, reject) => {
-  const child = spawn('git', args, { cwd, env: { ...process.env,
-    GIT_DIR: undefined, GIT_COMMON_DIR: undefined, GIT_INDEX_FILE: undefined, GIT_WORK_TREE: undefined,
-    GIT_OBJECT_DIRECTORY: undefined, GIT_ALTERNATE_OBJECT_DIRECTORIES: undefined,
-    GIT_OPTIONAL_LOCKS: '0', ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
-  const chunks = [];
-  let size = 0;
-  let exceeded = false;
-  const timer = setTimeout(() => { exceeded = true; child.kill('SIGKILL'); }, 30_000);
-  child.stdout.on('data', (chunk) => {
-    size += chunk.length;
-    if (size > limit) { exceeded = true; child.kill('SIGKILL'); } else chunks.push(chunk);
-  });
-  child.stderr.resume();
-  child.on('error', (error) => { clearTimeout(timer); reject(error); });
-  child.on('close', (code) => {
-    clearTimeout(timer);
-    if (exceeded) reject(failure('capture_limit', 503));
-    else if (code !== 0) reject(failure('capture_git_failed', 503));
-    else resolve(Buffer.concat(chunks));
-  });
-  child.stdin.on('error', () => {});
-  child.stdin.end(input);
-});
-
-const diskBytes = async (directory) => {
-  // Bounded parallel metadata reads avoid one disk round trip per loose Git
-  // object. Missing temporary files are normal during another scope's cleanup.
-  let size = 0;
-  const pending = [{ file: directory, directory: true }];
-  while (pending.length) {
-    const batch = pending.splice(-64);
-    await Promise.all(batch.map(async (entry) => {
-      if (entry.directory) {
-        const entries = await fs.readdir(entry.file, { withFileTypes: true }).catch((error) => { if (error.code === 'ENOENT') return []; throw error; });
-        for (const child of entries) pending.push({ file: path.join(entry.file, child.name), directory: child.isDirectory() });
-      } else {
-        size += await fs.stat(entry.file).then((stat) => stat.size).catch((error) => { if (error.code === 'ENOENT') return 0; throw error; });
-      }
-    }));
-  }
-  return size;
-};
+const sessionKey = (id) => `sessions/${hash(id)}.json`;
+const operationKey = (id) => `operations/${id}.json`;
+const timelineKey = (op) => `timeline/${String(op.createdAt).padStart(16, '0')}-${op.id}.json`;
+const summaryKey = (id) => `summaries/${hash(id)}.json`;
+const revisionKey = (id, revision) => `revisions/${hash(id)}/${revision}.json`;
+const rowsKey = (id, revision) => `rows/${hash(id)}/${revision}`;
+const membersKey = (id, revision) => `members/${hash(id)}/${revision}`;
+const normalizedError = (error) => ['ENOSPC', 'EDQUOT', 'EIO', 'EROFS'].includes(error?.code) ? 'storage_unavailable' : error?.code ?? 'capture_failed';
+const DIFF_BYTES = 64 * 1024;
 
 export function createSessionChangeRuntime(options) {
   const storage = path.resolve(options.directory);
-  const maxBytes = options.maxBytes ?? 256 * 1024 * 1024;
-  const maxOperations = options.maxOperations ?? 2000;
-  const maxRevisions = options.maxRevisions ?? 20;
-  const maxCaptureBytes = options.maxCaptureBytes ?? 64 * 1024 * 1024;
-  const store = createRecordStore({ directory: path.join(storage, 'records'), maxReadBytes: 16 * 1024 * 1024,
-    validateRecord: (record) => {
-      if (!object(record) || record.version !== 1 || !Array.isArray(record.operations) || !Array.isArray(record.sessions)) throw failure('invalid_change_record');
-      return record;
-    } });
-  const tails = new Map();
-  const active = new Map();
+  const tails = new Map(), active = new Map();
   const serialize = (key, run) => {
     const operation = (tails.get(key) ?? Promise.resolve()).catch(() => {}).then(() =>
       withCrossProcessFileLock(path.join(storage, 'locks', `${hash(key)}.lock`), run, { timeoutMs: 60_000 }));
@@ -81,290 +31,333 @@ export function createSessionChangeRuntime(options) {
     if (typeof directory !== 'string' || !path.isAbsolute(directory)) throw failure('invalid_change_directory', 400);
     return fs.realpath((await git(directory, ['rev-parse', '--show-toplevel'])).toString().trim());
   };
+  const putOperation = (repo, op) => {
+    const value = { ...op }; delete value.changes;
+    repo.db.set(operationKey(op.id), value);
+    repo.db.set(timelineKey(op), value);
+    const pendingKey = `pending/${op.id}.json`;
+    if (op.state === 'pending') repo.db.set(pendingKey, value); else repo.db.remove(pendingKey);
+  };
+  const noteSession = async (repo, input) => {
+    const key = sessionKey(input.sessionID);
+    const existing = await repo.db.get(key);
+    if (existing) return existing;
+    const value = { id: input.sessionID, parentID: input.parentID ?? null, firstUserMessageID: input.userMessageID ?? null, issues: [] };
+    repo.db.set(key, value);
+    return value;
+  };
+  const issue = async (repo, id, code) => {
+    const entry = await noteSession(repo, { sessionID: id });
+    if (!entry.issues.includes(code)) { entry.issues.push(code); repo.db.set(sessionKey(id), entry); }
+  };
+  const saveSummary = async (repo, id, stored, files, members) => {
+    const revision = stored.summary.revision;
+    if (files) await repo.db.setList(rowsKey(id, revision), files);
+    if (members) await repo.db.setList(membersKey(id, revision), members);
+    repo.db.set(summaryKey(id), stored);
+    repo.db.set(revisionKey(id, revision), stored);
+  };
+  const migrate = async (repo) => {
+    const legacyPath = path.join(storage, 'records', `${repo.key}.json`);
+    let legacy;
+    try {
+      // V1 guarded its records to 16 MiB. Read this one-time, bounded input only;
+      // the original remains intact until the new atomic state is verified.
+      if ((await fs.stat(legacyPath)).size > 16 * 1024 * 1024) throw failure('invalid_change_record', 503);
+      legacy = JSON.parse(await fs.readFile(legacyPath, 'utf8')).record;
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (legacy) {
+      if (legacy.version !== 1 || legacy.directory !== repo.directory || !Array.isArray(legacy.operations) || !Array.isArray(legacy.sessions)) throw failure('invalid_change_record');
+      for (const entry of legacy.sessions) repo.db.set(sessionKey(entry.id), { ...entry, issues: [] });
+      const emptyTree = await makeTree(repo, []);
+      for (const op of legacy.operations) {
+        if (op.state === 'complete' && Array.isArray(op.changes)) {
+          op.before = op.changes.length ? await makeTree(repo, op.changes.map((entry) => [entry.file, entry.before])) : emptyTree;
+          op.after = op.changes.length ? await makeTree(repo, op.changes.map((entry) => [entry.file, entry.after])) : emptyTree;
+        }
+        const related = (legacy.issues ?? []).filter((entry) => entry.sessionID === op.sessionID);
+        putOperation(repo, { ...op, hasChanges: Boolean(op.changes?.length),
+          errorCode: op.state === 'unavailable' ? related.find((entry) => ['capture_limit', 'storage_limit', 'capture_timeout'].includes(entry.code))?.code ?? 'capture_unavailable' : null });
+      }
+      for (const entry of legacy.issues ?? []) {
+        // Move capture failures onto the failed calls so exact receipt repair
+        // can resolve them individually, without clearing unrelated gaps.
+        if (['capture_limit', 'storage_limit', 'capture_unavailable'].includes(entry.code)
+          && legacy.operations.some((op) => op.sessionID === entry.sessionID && op.state === 'unavailable')) continue;
+        await issue(repo, entry.sessionID, entry.code);
+      }
+      for (const [id, current] of Object.entries(legacy.summaries ?? {})) {
+        for (const stored of [...(legacy.revisions?.[id] ?? []), current]) {
+          const { files, ...summary } = stored.summary;
+          const value = { ...stored, summary: { ...summary, fileCount: files.length } }; delete value.operationIDs;
+          await saveSummary(repo, id, value, files, stored.operationIDs ?? []);
+        }
+      }
+      for (const [id, generation] of Object.entries(legacy.generations ?? {})) repo.db.set(`generations/${hash(id)}.json`, generation);
+    }
+    repo.db.set('meta.json', { version: 2, directory: repo.directory, completedSinceMaintenance: 0, migrated: Boolean(legacy) });
+    await repo.db.commit();
+    // Reopen from the committed tree; a failed verification leaves V1 intact.
+    const verified = await openChangeStore(storage, repo.gitDir);
+    if ((await verified.get('meta.json'))?.version !== 2) throw failure('change_migration_failed', 503);
+    if (legacy) {
+      let operations = 0;
+      for await (const entry of verified.entries('operations')) { void entry; operations++; }
+      if (operations !== legacy.operations.length) throw failure('change_migration_failed', 503);
+    }
+  };
   const load = async (directory) => {
-    const key = hash(directory);
-    const record = await store.readRecord(key) ?? { version: 1, directory, operations: [], sessions: [], issues: [], summaries: {} };
-    for (const op of record.operations) {
-      if (op.state !== 'pending' || active.has(op.id)) continue;
+    const key = hash(directory), gitDir = path.join(storage, key, 'git');
+    try { await fs.access(path.join(gitDir, 'HEAD')); } catch {
+      await fs.mkdir(gitDir, { recursive: true, mode: 0o700 }); await git(storage, ['init', '--bare', gitDir]);
+    }
+    const repo = { key, directory, storage, gitDir, run: (args, extra) => git(storage, ['--git-dir', gitDir, ...args], extra),
+      db: await openChangeStore(storage, gitDir) };
+    if (!repo.db.exists) await migrate(repo);
+    for await (const { value: op } of repo.db.entries('pending')) {
+      if (active.has(op.id)) continue;
       let alive = false;
       if (op.ownerPID && op.ownerPID !== process.pid) {
         try { process.kill(op.ownerPID, 0); alive = true; } catch (error) { alive = error.code === 'EPERM'; }
       }
-      if (!alive) {
-        op.state = 'unavailable';
-        if (!record.issues.some((entry) => entry.sessionID === op.sessionID && entry.code === 'capture_interrupted')) record.issues.push({ sessionID: op.sessionID, code: 'capture_interrupted' });
-      }
+      if (!alive) { op.state = 'unavailable'; op.errorCode = 'capture_interrupted'; putOperation(repo, op); }
     }
-    record.revisions ??= {};
-    record.generations ??= {};
-    const gitDir = path.join(storage, key, 'git');
-    try { await fs.access(path.join(gitDir, 'HEAD')); } catch {
-      await fs.mkdir(gitDir, { recursive: true, mode: 0o700 });
-      await git(storage, ['init', '--bare', gitDir]);
+    await repo.db.commit();
+    return repo;
+  };
+  const collect = async (repo) => {
+    // A worktree lock covers capture, restore and collection. Metadata refs
+    // commit before obsolete content refs are dropped. Cache invalidation must
+    // precede pruning, including if collection is interrupted.
+    const trees = new Set();
+    for await (const { value: op } of repo.db.entries('operations')) {
+      if (op.before) trees.add(op.before); if (op.after) trees.add(op.after);
     }
-    return { key, record, gitDir, directory };
-  };
-  const run = (repo, args, extra = {}) => git(storage, ['--git-dir', repo.gitDir, ...args], extra);
-  const retain = async (repo, tree) => {
-    await run(repo, ['update-ref', `refs/devryan/trees/${tree}`, tree]);
-    return tree;
-  };
-  const withIndex = async (repo, fn) => {
-    const index = path.join(storage, repo.key, `${crypto.randomUUID()}.index`);
-    const env = { GIT_INDEX_FILE: index, GIT_WORK_TREE: repo.directory };
-    try { return await fn(env); } finally {
-      await fs.rm(index, { force: true });
-      await fs.rm(`${index}.lock`, { force: true });
+    for await (const { value: stored } of repo.db.entries('revisions')) { trees.add(stored.before); trees.add(stored.after); }
+    await fs.rm(path.join(storage, repo.key, 'stat-cache'), { recursive: true, force: true });
+    await fs.rm(path.join(storage, repo.key, 'stat-cache.json'), { force: true });
+    for await (const row of gitTokens(storage, ['--git-dir', repo.gitDir, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/devryan/trees/'], { delimiter: 10 })) {
+      const [ref, tree] = row.split(' ');
+      if (ref && !trees.has(tree)) await repo.run(['update-ref', '-d', ref]);
     }
+    await repo.run(['gc', '--prune=now'], { timeoutMs: 120_000 });
+    await fs.rm(path.join(storage, repo.key, 'diffs'), { recursive: true, force: true });
   };
-  const snapshot = async (repo) => {
-    const list = (await git(repo.directory, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'])).toString().split('\0');
-    const files = [];
-    const stats = new Map();
-    const cachePath = path.join(storage, repo.key, 'stat-cache.json');
-    let cachedSnapshot = {};
-    try {
-      if ((await fs.stat(cachePath)).size <= 16 * 1024 * 1024) cachedSnapshot = JSON.parse(await fs.readFile(cachePath, 'utf8'));
-    } catch { /* Cache loss only requires rehashing raw bytes. */ }
-    const cache = object(cachedSnapshot?.files) ? cachedSnapshot.files : {};
-    const cached = (file) => cache[file]?.signature === signature(stats.get(file)) && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(cache[file]?.oid);
-    const nextCache = Object.create(null);
-    const signature = (stat) => [stat.dev, stat.ino, stat.mode, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
+  const maintain = async (repo) => {
+    const meta = await repo.db.get('meta.json');
+    meta.completedSinceMaintenance = (meta.completedSinceMaintenance ?? 0) + 1;
+    repo.db.set('meta.json', meta); await repo.db.commit();
+    if (meta.completedSinceMaintenance < (options.maintenanceEvery ?? 128)) return;
+    await collect(repo);
+    meta.completedSinceMaintenance = 0; repo.db.set('meta.json', meta); await repo.db.commit();
+  };
+  const checkExplicitQuota = async () => {
+    if (!Number.isFinite(options.maxBytes)) return;
     let bytes = 0;
-    const candidates = [...new Set(list.filter(Boolean))];
-    for (let offset = 0; offset < candidates.length; offset += 64) {
-      const batch = candidates.slice(offset, offset + 64);
-      const observed = await Promise.all(batch.map(async (file) => {
-        if (!safePath(file)) throw failure('unsupported_path');
-        try { return await fs.lstat(path.join(repo.directory, file), { bigint: true }); }
-        catch (error) { if (error.code === 'ENOENT') return null; throw error; }
-      }));
-      for (let index = 0; index < batch.length; index++) {
-        const stat = observed[index];
-        if (!stat) continue;
-        if (!stat.isFile() && !stat.isSymbolicLink()) throw failure('unsupported_file_type');
-        bytes += Number(stat.size);
-        if (bytes > maxCaptureBytes || files.length >= 50_000) throw failure('capture_limit');
-        files.push(batch[index]); stats.set(batch[index], stat);
+    const scan = async (directory) => {
+      for await (const entry of await fs.opendir(directory)) {
+        const file = path.join(directory, entry.name);
+        if (entry.isDirectory()) await scan(file);
+        else bytes += (await fs.stat(file).catch((error) => { if (error.code === 'ENOENT') return { size: 0 }; throw error; })).size;
+        if (bytes > options.maxBytes) throw failure('storage_limit');
       }
-    }
-    if (/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(cachedSnapshot?.tree) && files.length === Object.keys(cache).length && files.every(cached)) return cachedSnapshot.tree;
-    return withCrossProcessFileLock(path.join(storage, 'quota.lock'), async () => {
-      if (await diskBytes(storage) + bytes > maxBytes) throw failure('storage_limit');
-      // Hash raw bytes, bypassing checkout attributes/clean filters. Otherwise
-      // CRLF and custom filters make captured objects differ from the bytes
-      // that restore verifies and writes. Git batches these bounded reads.
-      const regular = files.filter((file) => stats.get(file).isFile() && !cached(file));
-      const oids = regular.length ? (await run(repo, ['hash-object', '-w', '--no-filters', '--stdin-paths'],
-        { input: regular.map((file) => JSON.stringify(path.join(repo.directory, file))).join('\n') + '\n' })).toString().trim().split('\n') : [];
-      const hashes = new Map(regular.map((file, index) => [file, oids[index]]));
-      const entries = [];
-      for (const file of files) {
-        const stat = stats.get(file);
-        // hash-object follows links; store the link target itself instead.
-        const oid = cached(file) ? cache[file].oid : stat.isSymbolicLink() ? (await run(repo, ['hash-object', '-w', '--no-filters', '--stdin'],
-          { input: await fs.readlink(path.join(repo.directory, file)) })).toString().trim() : hashes.get(file);
-        entries.push([file, { oid, mode: stat.isSymbolicLink() ? '120000' : stat.mode & 0o111n ? '100755' : '100644' }]);
-        // Reuse only if no writer changed the file while its bytes were read.
-        if (cached(file) || signature(await fs.lstat(path.join(repo.directory, file), { bigint: true })) === signature(stat)) nextCache[file] = { signature: signature(stat), oid };
-      }
-      const tree = await makeTree(repo, entries);
-      await writeFileAtomic(cachePath, JSON.stringify({ tree, files: nextCache }));
-      return tree;
-    }, { timeoutMs: 60_000 });
-  };
-  const treeEntries = async (repo, tree) => {
-    const entries = new Map();
-    for (const row of (await run(repo, ['ls-tree', '-r', '-z', tree])).toString().split('\0').filter(Boolean)) {
-      const tab = row.indexOf('\t');
-      const [mode, type, oid] = row.slice(0, tab).split(' ');
-      if (type !== 'blob') throw failure('unsupported_file_type');
-      entries.set(row.slice(tab + 1), { mode, oid });
-    }
-    return entries;
-  };
-  const equal = (a, b) => a?.oid === b?.oid && a?.mode === b?.mode;
-  const changed = async (repo, before, after) => {
-    if (before === after) return [];
-    const a = await treeEntries(repo, before);
-    const b = await treeEntries(repo, after);
-    return [...new Set([...a.keys(), ...b.keys()])].filter((file) => !equal(a.get(file), b.get(file)))
-      .map((file) => ({ file, before: a.get(file) ?? null, after: b.get(file) ?? null }));
-  };
-  const issue = (record, sessionID, code) => {
-    if (!record.issues.some((entry) => entry.sessionID === sessionID && entry.code === code)) record.issues.push({ sessionID, code });
-  };
-  const save = (repo) => {
-    // Never write a record that the guarded reader would later quarantine.
-    if (Buffer.byteLength(JSON.stringify(repo.record, null, 2)) > 15 * 1024 * 1024) throw failure('storage_limit', 503);
-    return store.writeRecord(repo.key, repo.record);
-  };
-  const noteSession = (record, input) => {
-    if (record.sessions.some((entry) => entry.id === input.sessionID)) return;
-    if (record.sessions.length >= 2000) throw failure('storage_limit');
-    record.sessions.push({ id: input.sessionID, parentID: input.parentID ?? null, firstUserMessageID: input.userMessageID ?? null });
+    };
+    await scan(storage);
   };
   const begin = async (input) => {
     const deadline = input.captureDeadline ?? Date.now() + 30_000;
     const directory = await resolveDirectory(input.directory);
     return serialize(directory, async () => {
       const repo = await load(directory);
-      noteSession(repo.record, input);
-      const id = hash(`${input.sessionID}\0${input.callID}`);
-      const existing = repo.record.operations.find((op) => op.id === id);
+      await noteSession(repo, input);
+      const id = hash(`${input.sessionID}\0${input.callID}`), existing = await repo.db.get(operationKey(id));
       if (existing) {
-        if (existing.messageID !== input.messageID) { issue(repo.record, input.sessionID, 'capture_identity_reused'); await save(repo); }
+        if (existing.messageID !== input.messageID) { await issue(repo, input.sessionID, 'capture_identity_reused'); await repo.db.commit(); }
         return;
       }
       const inputDirectory = await fs.realpath(input.directory);
-      const paths = Array.isArray(input.paths) && input.paths.length ? input.paths.map((file) => {
+      const paths = Array.isArray(input.paths) && input.paths.length ? [...new Set(input.paths.map((file) => {
         const absolute = path.isAbsolute(file) && file.startsWith(`${input.directory}${path.sep}`)
           ? path.resolve(inputDirectory, path.relative(input.directory, file)) : path.resolve(inputDirectory, file);
         const relative = path.relative(directory, absolute);
         if (!safePath(relative)) throw failure('unsupported_path');
         return relative;
-      }) : null;
-      const overlaps = repo.record.operations.filter((op) => op.state === 'pending'
-        && (!paths || !op.paths || paths.some((file) => op.paths.includes(file))));
-      for (const previous of overlaps) previous.overlap = true;
+      }))] : null;
+      let overlap = false;
+      for await (const { value: previous } of repo.db.entries('pending')) {
+        if (!paths || !previous.paths || paths.some((file) => previous.paths.includes(file))) {
+          previous.overlap = true; putOperation(repo, previous); overlap = true;
+        }
+      }
       const op = { id, sessionID: input.sessionID, messageID: input.messageID, callID: input.callID,
-        state: 'pending', paths, ownerPID: process.pid, overlap: overlaps.length > 0, createdAt: Date.now() };
-      if (repo.record.operations.length >= maxOperations) { issue(repo.record, input.sessionID, 'storage_limit'); await save(repo); return; }
-      repo.record.operations.push(op);
+        state: 'pending', paths, ownerPID: process.pid, overlap, createdAt: Date.now() };
       active.set(id, directory);
       try {
-        if (Date.now() >= deadline) throw failure('capture_timeout');
-        op.before = await snapshot(repo);
-        if (Date.now() >= deadline) throw failure('capture_timeout');
-      } catch (error) { op.state = 'unavailable'; issue(repo.record, input.sessionID, error.code ?? 'capture_failed'); active.delete(id); }
-      await save(repo);
+        // Optional explicit quotas remain for embedders and fault fixtures;
+        // production has no cumulative byte/count admission ceiling.
+        if (Number.isFinite(options.maxOperations)) {
+          let count = 0; for await (const entry of repo.db.entries('operations')) { void entry; count++; }
+          if (count >= options.maxOperations) throw failure('storage_limit');
+        }
+        op.before = await captureSnapshot(repo, { paths, deadline, maxCaptureBytes: options.maxCaptureBytes });
+        await checkExplicitQuota();
+      } catch (error) { op.state = 'unavailable'; op.errorCode = normalizedError(error); active.delete(id); }
+      putOperation(repo, op);
+      await repo.db.commit();
+      if (op.errorCode) await options.onDiagnostic?.({ code: op.errorCode, phase: 'before', sessionID: op.sessionID, callID: op.callID });
     });
   };
   const finish = async (input) => {
     const directory = await resolveDirectory(input.directory);
     return serialize(directory, async () => {
-      const repo = await load(directory);
-      const id = hash(`${input.sessionID}\0${input.callID}`);
-      const op = repo.record.operations.find((entry) => entry.id === id);
-      if (!op) { noteSession(repo.record, input); issue(repo.record, input.sessionID, 'missing_capture'); await save(repo); return; }
+      const repo = await load(directory), id = hash(`${input.sessionID}\0${input.callID}`);
+      const op = await repo.db.get(operationKey(id));
+      if (!op) { await noteSession(repo, input); await issue(repo, input.sessionID, 'missing_capture'); await repo.db.commit(); return; }
       if (input.messageID && input.messageID !== op.messageID) throw failure('capture_identity_mismatch');
       if (op.state !== 'pending') return;
       try {
-        op.after = await snapshot(repo);
-        op.changes = (await changed(repo, op.before, op.after)).filter((change) => !op.paths || op.paths.includes(change.file));
-        op.state = 'complete';
-        if (op.overlap && op.changes.length) issue(repo.record, input.sessionID, 'overlapping_operations');
-      } catch (error) { op.state = 'unavailable'; issue(repo.record, input.sessionID, error.code ?? 'capture_failed'); }
-      active.delete(id);
-      await save(repo);
+        const after = await captureSnapshot(repo, { paths: op.paths, maxCaptureBytes: options.maxCaptureBytes, deadline: input.captureDeadline ?? Date.now() + 30_000 });
+        await checkExplicitQuota();
+        const side = async function* (name) { for await (const change of changedEntries(repo, op.before, after, op.paths)) yield [change.file, change[name]]; };
+        const before = await makeTree(repo, side('before'));
+        const changedAfter = await makeTree(repo, side('after'));
+        op.before = before; op.after = changedAfter; op.hasChanges = before !== changedAfter; op.state = 'complete';
+      } catch (error) { op.state = 'unavailable'; op.errorCode = normalizedError(error); }
+      active.delete(id); putOperation(repo, op); await repo.db.commit();
+      if (op.errorCode) await options.onDiagnostic?.({ code: op.errorCode, phase: 'after', sessionID: op.sessionID, callID: op.callID });
       await options.onChange?.({ directory, sessionID: input.sessionID });
+      // Collection failure does not turn a durably captured change into a gap.
+      await maintain(repo).catch(async (error) => options.onDiagnostic?.({ code: normalizedError(error), phase: 'maintenance', sessionID: input.sessionID }));
     });
   };
   const importHistorical = async (inputs) => {
     if (!inputs.length) return;
-    const directory = await resolveDirectory(inputs[0].directory);
-    const inputDirectory = await fs.realpath(inputs[0].directory);
+    const directory = await resolveDirectory(inputs[0].directory), inputDirectory = await fs.realpath(inputs[0].directory);
     return serialize(directory, async () => {
       const repo = await load(directory);
-      const known = new Set(repo.record.operations.map((op) => op.id));
-      const pending = inputs.filter((input) => !known.has(hash(`${input.sessionID}\0${input.callID}`)));
-      if (!pending.length) return;
-      await withCrossProcessFileLock(path.join(storage, 'quota.lock'), async () => {
-      let availableBytes = maxBytes - await diskBytes(storage);
-      for (const input of pending) {
-        const id = hash(`${input.sessionID}\0${input.callID}`);
-        if (known.has(id) || input.directory !== inputs[0].directory || !Array.isArray(input.files) || !input.files.length) continue;
+      for (const input of inputs) {
+        const id = hash(`${input.sessionID}\0${input.callID}`), existing = await repo.db.get(operationKey(id));
+        if (existing && (existing.state !== 'unavailable' || existing.messageID !== input.messageID)) continue;
+        if (input.directory !== inputs[0].directory || !Array.isArray(input.files) || !input.files.length) continue;
         const changes = [];
-        let bytes = 0;
         for (const file of input.files) {
           const candidate = path.isAbsolute(file.path) && file.path.startsWith(`${input.directory}${path.sep}`)
-            ? path.resolve(inputDirectory, path.relative(input.directory, file.path))
-            : path.resolve(inputDirectory, file.path);
+            ? path.resolve(inputDirectory, path.relative(input.directory, file.path)) : path.resolve(inputDirectory, file.path);
           const relative = path.relative(directory, candidate);
           if (!safePath(relative) || ![file.before, file.after].every((content) => content === null || typeof content === 'string')) break;
-          bytes += Buffer.byteLength(file.before ?? '') + Buffer.byteLength(file.after ?? '');
-          if (bytes > maxCaptureBytes) break;
           changes.push({ file: relative, before: file.before, after: file.after });
         }
         if (changes.length !== input.files.length) continue;
-        noteSession(repo.record, input);
-        if (repo.record.operations.length >= maxOperations || availableBytes < bytes + 4096) {
-          issue(repo.record, input.sessionID, 'storage_limit'); continue;
-        }
-        availableBytes -= bytes + 4096;
-        for (const change of changes) {
-          for (const side of ['before', 'after']) {
-            if (change[side] === null) continue;
-            const oid = (await run(repo, ['hash-object', '-w', '--stdin', '--no-filters'], { input: change[side] })).toString().trim();
-            change[side] = { oid, mode: '100644' };
-          }
+        await noteSession(repo, input);
+        for (const change of changes) for (const side of ['before', 'after']) {
+          if (change[side] === null) continue;
+          const oid = (await repo.run(['hash-object', '-w', '--stdin', '--no-filters'], { input: change[side] })).toString().trim();
+          change[side] = { oid, mode: '100644' };
         }
         const before = await makeTree(repo, changes.map((change) => [change.file, change.before]));
         const after = await makeTree(repo, changes.map((change) => [change.file, change.after]));
-        repo.record.operations.push({ id, sessionID: input.sessionID, messageID: input.messageID, callID: input.callID,
-          createdAt: input.createdAt, state: 'complete', changes, before, after, historical: true });
-        known.add(id);
-        // Text receipts recover review content, but do not prove historical
-        // modes or capture completeness needed for whole-session Undo.
-        issue(repo.record, input.sessionID, 'historical_restore_unavailable');
+        putOperation(repo, { id, sessionID: input.sessionID, messageID: input.messageID, callID: input.callID,
+          createdAt: existing?.createdAt ?? input.createdAt, state: 'complete', before, after, hasChanges: before !== after,
+          historical: true, overlap: existing?.overlap ?? false, ownerSessionID: existing?.ownerSessionID });
       }
-      await save(repo);
-      }, { timeoutMs: 60_000 });
+      await repo.db.commit();
     });
   };
-  const makeTree = (repo, files) => withIndex(repo, async (env) => {
-    await run(repo, ['read-tree', '--empty'], { env });
-    const input = files.filter(([, entry]) => entry).map(([file, entry]) => `${entry.mode} ${entry.oid}\t${file}\0`).join('');
-    if (input) await run(repo, ['update-index', '-z', '--index-info'], { env, input });
-    return retain(repo, (await run(repo, ['write-tree'], { env })).toString().trim());
-  });
-  const archiveSummary = (repo, rootSessionID, stored) => {
-    if (!stored) return;
-    const revisions = repo.record.revisions[rootSessionID] ?? [];
-    if (!revisions.some((entry) => entry.summary.revision === stored.summary.revision)) revisions.push(structuredClone(stored));
-    while (revisions.length > maxRevisions || Buffer.byteLength(JSON.stringify(revisions)) > 4 * 1024 * 1024) revisions.shift();
-    repo.record.revisions[rootSessionID] = revisions;
+  const storedRevision = async (repo, id, revision) => {
+    if (typeof revision !== 'string' || !/^[a-f0-9]{64}$/.test(revision)) throw failure('invalid_change_revision', 400);
+    const stored = await repo.db.get(revisionKey(id, revision));
+    if (!stored) throw failure('summary_detail_expired', 410);
+    return stored;
   };
-  const summarize = async ({ directory: requestedDirectory, rootSessionID, sessions = [], firstUserMessageID = null, coverageReasons = [], expectedCalls = [], hiddenMessages = [] }) => {
+  const page = async (repo, id, stored, cursor = null) => {
+    const revision = stored.summary.revision;
+    let index = 0;
+    if (cursor !== null) {
+      const match = typeof cursor === 'string' && cursor.match(/^([a-f0-9]{64}):(\d{1,10})$/);
+      if (!match || match[1] !== revision) throw failure('invalid_change_cursor', 400);
+      index = Number(match[2]);
+    }
+    const files = await repo.db.get(`${rowsKey(id, revision)}/${String(index).padStart(10, '0')}.json`);
+    if (!files && index !== 0) throw failure('invalid_change_cursor', 400);
+    const next = await repo.db.get(`${rowsKey(id, revision)}/${String(index + 1).padStart(10, '0')}.json`);
+    return { ...stored.summary, files: stored.undone ? [] : files ?? [], undone: stored.undone === true,
+      pageIndex: index, previousCursor: index > 1 ? `${revision}:${index - 1}` : null,
+      nextCursor: !stored.undone && next ? `${revision}:${index + 1}` : null };
+  };
+  const summaryPage = async ({ directory: requested, rootSessionID, revision, cursor = null }) => {
+    const directory = await resolveDirectory(requested);
+    return serialize(directory, async () => { const repo = await load(directory); return page(repo, rootSessionID, await storedRevision(repo, rootSessionID, revision), cursor); });
+  };
+  const summarize = async ({ directory: requestedDirectory, rootSessionID, sessions = [], firstUserMessageID = null, coverageReasons = [], expectedCalls = [], hiddenMessages = [], reverts = [] }) => {
     const directory = await resolveDirectory(requestedDirectory);
     return serialize(directory, async () => {
-      const repo = await load(directory);
-      const savedSummary = repo.record.summaries[rootSessionID];
+      const repo = await load(directory), saved = await repo.db.get(summaryKey(rootSessionID));
       const ids = new Set([rootSessionID, ...sessions.map((entry) => entry.id)]);
-      // Retain verified child membership after a child is deleted upstream.
       let expanded = true;
-      while (expanded) { expanded = false; for (const entry of repo.record.sessions) {
-        if (ids.has(entry.parentID) && !ids.has(entry.id)) { ids.add(entry.id); expanded = true; }
-      }
-      for (const op of repo.record.operations) {
-        if (ids.has(op.ownerSessionID) && !ids.has(op.sessionID)) { ids.add(op.sessionID); expanded = true; }
-      } }
-      const hidden = new Set(hiddenMessages.map((entry) => `${entry.sessionID}\0${entry.messageID}`));
-      const ops = repo.record.operations.filter((entry) => ids.has(entry.sessionID) && !entry.undone && !hidden.has(`${entry.sessionID}\0${entry.messageID}`))
-        .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-      const reasons = new Set([...coverageReasons, ...repo.record.issues.filter((entry) => ids.has(entry.sessionID)).map((entry) => entry.code)]);
-      if (!repo.record.sessions.some((entry) => entry.id === rootSessionID)) reasons.add('historical_capture_unavailable');
-      const firstCaptured = repo.record.sessions.find((entry) => entry.id === rootSessionID)?.firstUserMessageID;
-      if (firstUserMessageID && firstCaptured !== firstUserMessageID) reasons.add('historical_capture_unavailable');
-      const capturedIDs = new Set(repo.record.operations.map((op) => op.id));
-      if (expectedCalls.some((call) => !capturedIDs.has(hash(`${call.sessionID}\0${call.callID}`)))) reasons.add('missing_capture');
-      if (savedSummary?.undone && !reasons.size && ops.every((op) => op.state === 'complete' && !op.changes.length)) {
-        if (ops.length) {
-          for (const op of ops) op.undone = true;
-          savedSummary.operationIDs = [...new Set([...savedSummary.operationIDs, ...ops.map((op) => op.id)])];
-          await save(repo);
+      while (expanded) {
+        expanded = false;
+        for await (const { value: entry } of repo.db.entries('sessions')) {
+          if (ids.has(entry.parentID) && !ids.has(entry.id)) { ids.add(entry.id); expanded = true; }
         }
-        return { ...savedSummary.summary, undone: true, files: [] };
+        for await (const { value: op } of repo.db.entries('operations')) {
+          if (ids.has(op.ownerSessionID) && !ids.has(op.sessionID)) { ids.add(op.sessionID); expanded = true; }
+        }
       }
-      const sourceFingerprint = hash(JSON.stringify({ ids: [...ids].sort(),
-        operations: ops.map((op) => [op.id, op.state, op.overlap]), reasons: [...reasons].sort(),
-        firstUserMessageID, generation: repo.record.generations[rootSessionID] ?? 0, directory: requestedDirectory }));
-      if (savedSummary?.sourceFingerprint === sourceFingerprint) return savedSummary.summary;
-      const files = new Map();
-      const excluded = new Set();
-      for (const op of ops) {
-        if (op.state !== 'complete') { reasons.add(op.state === 'pending' ? 'capture_pending' : 'capture_unavailable'); continue; }
-        for (const change of op.changes) {
+      const hidden = new Set(hiddenMessages.map((entry) => `${entry.sessionID}\0${entry.messageID}`));
+      const observedCalls = new Set(expectedCalls.map((call) => hash(`${call.sessionID}\0${call.callID}`)));
+      for (const id of ids) {
+        const revertID = reverts.find((entry) => entry.sessionID === id)?.messageID;
+        const boundary = revertID ? await repo.db.get(`history/${hash(id)}/messages/${hash(revertID)}.json`) : null;
+        if (revertID && !boundary) throw failure('revert_boundary_unavailable', 503);
+        for await (const { value: message } of repo.db.entries(`history/${hash(id)}/messages`)) {
+          for (const callID of message.calls) observedCalls.add(hash(`${id}\0${callID}`));
+          if (boundary && message.createdAt >= boundary.createdAt) hidden.add(`${id}\0${message.id}`);
+        }
+      }
+      const operations = async function* () {
+        for await (const { value: op } of repo.db.entries('timeline')) {
+          if (ids.has(op.sessionID) && !op.undone && !hidden.has(`${op.sessionID}\0${op.messageID}`)) yield op;
+        }
+      };
+      const root = await repo.db.get(sessionKey(rootSessionID));
+      const reasons = new Set(coverageReasons);
+      for (const id of ids) for (const reason of (await repo.db.get(sessionKey(id)))?.issues ?? []) reasons.add(reason);
+      if (!root || (firstUserMessageID && root.firstUserMessageID !== firstUserMessageID)) reasons.add('historical_capture_unavailable');
+      for await (const { value: op } of repo.db.entries('operations')) observedCalls.delete(op.id);
+      if (observedCalls.size) reasons.add('missing_capture');
+      const fingerprint = crypto.createHash('sha256');
+      const generation = await repo.db.get(`generations/${hash(rootSessionID)}.json`) ?? 0;
+      fingerprint.update(JSON.stringify({ ids: [...ids].sort(), firstUserMessageID, generation, directory: requestedDirectory }));
+      const files = new Map(), excluded = new Set();
+      let onlyNoops = true;
+      for await (const op of operations()) {
+        fingerprint.update(JSON.stringify([op.id, op.state, op.overlap, op.before, op.after, op.historical]));
+        if (op.state !== 'complete') {
+          reasons.add(op.state === 'pending' ? 'capture_pending' : op.errorCode ?? 'capture_unavailable');
+          onlyNoops = false; continue;
+        }
+        if (op.historical) reasons.add('historical_restore_unavailable');
+        if (op.hasChanges) onlyNoops = false;
+        if (op.overlap && op.hasChanges) reasons.add('overlapping_operations');
+
+      }
+      fingerprint.update(JSON.stringify([...reasons].sort()));
+      const sourceFingerprint = fingerprint.digest('hex');
+      if (saved?.undone && !reasons.size && onlyNoops) {
+        // No-op calls after Undo join the same operation set for Redo.
+        const members = [];
+        for await (const op of operations()) { op.undone = true; putOperation(repo, op); members.push(op.id); }
+        if (members.length) {
+          const original = (await openChangeStore(storage, repo.gitDir)).list(membersKey(rootSessionID, saved.summary.revision));
+          await repo.db.setList(membersKey(rootSessionID, saved.summary.revision), (async function* () { yield* original; yield* members; })());
+          await repo.db.commit();
+        }
+        return page(repo, rootSessionID, saved);
+      }
+      if (saved?.sourceFingerprint === sourceFingerprint) return page(repo, rootSessionID, saved);
+      for await (const op of operations()) {
+        if (op.state !== 'complete') continue;
+        for await (const change of changedEntries(repo, op.before, op.after, op.paths)) {
           if (op.overlap) { excluded.add(change.file); continue; }
           const previous = files.get(change.file);
           if (previous && !equal(previous.after, change.before)) { excluded.add(change.file); reasons.add('interleaved_file_changes'); continue; }
@@ -373,96 +366,137 @@ export function createSessionChangeRuntime(options) {
         }
       }
       for (const file of excluded) files.delete(file);
-      for (const [file, value] of files) if (equal(value.before, value.after)) files.delete(file);
-      const before = await makeTree(repo, [...files].map(([file, value]) => [file, value.before]));
-      const after = await makeTree(repo, [...files].map(([file, value]) => [file, value.after]));
-      const rows = [];
-      const tokens = (await run(repo, ['diff', '--no-ext-diff', '--no-textconv', '--find-renames', '--numstat', '-z', before, after])).toString().split('\0');
-      for (let i = 0; i < tokens.length; i++) {
-        if (!tokens[i]) continue;
-        const [added, deleted, ...name] = tokens[i].split('\t');
-        let file = name.join('\t');
-        let oldPath = null;
-        if (!file) { oldPath = tokens[++i]; file = tokens[++i]; }
-        const entry = files.get(file);
-        rows.push({ path: file, oldPath, status: oldPath ? 'renamed' : !entry.before ? 'added' : !entry.after ? 'deleted' : 'modified',
-          additions: added === '-' ? null : Number(added), deletions: deleted === '-' ? null : Number(deleted),
-          sessions: [...new Set([...(entry?.sessions ?? []), ...(oldPath ? files.get(oldPath)?.sessions ?? [] : [])])] });
-      }
+      for (const [file, entry] of files) if (equal(entry.before, entry.after)) files.delete(file);
+      const before = await makeTree(repo, (function* () { for (const [file, entry] of files) yield [file, entry.before]; })());
+      const after = await makeTree(repo, (function* () { for (const [file, entry] of files) yield [file, entry.after]; })());
       const result = { rootSessionID, directory: requestedDirectory, worktreeDirectory: directory, worktreeID: repo.key,
-        files: rows, sessionCount: ids.size, firstUserMessageID: firstUserMessageID ?? repo.record.sessions.find((entry) => entry.id === rootSessionID)?.firstUserMessageID ?? null,
+        sessionCount: ids.size, firstUserMessageID: firstUserMessageID ?? root?.firstUserMessageID ?? null,
         coverage: reasons.size ? 'partial' : 'complete', reasons: [...reasons].sort(), hasUnattributedMutations: false };
-      const revision = hash(JSON.stringify({ before, after, result, generation: repo.record.generations[rootSessionID] ?? 0 }));
-      const summary = { ...result, revision };
-      if (savedSummary?.summary.revision === revision) {
-        savedSummary.operationIDs = ops.map((op) => op.id);
-        savedSummary.sourceFingerprint = sourceFingerprint;
-        await save(repo);
-        return savedSummary.summary;
+      const revision = hash(JSON.stringify({ before, after, result, generation }));
+      const members = async function* () { for await (const op of operations()) yield op.id; };
+      if (saved?.summary.revision === revision) {
+        saved.sourceFingerprint = sourceFingerprint;
+        await saveSummary(repo, rootSessionID, saved, null, members()); await repo.db.commit();
+        return page(repo, rootSessionID, saved);
       }
-      archiveSummary(repo, rootSessionID, savedSummary);
-      repo.record.summaries[rootSessionID] = { summary, before, after, sourceFingerprint, operationIDs: ops.map((op) => op.id) };
-      await save(repo);
-      return summary;
+      let fileCount = 0, additions = 0, deletions = 0;
+      const rows = async function* () {
+        const iterator = gitTokens(storage, ['--git-dir', repo.gitDir, 'diff', '--no-ext-diff', '--no-textconv', '--find-renames', '--numstat', '-z', before, after])[Symbol.asyncIterator]();
+        try {
+          for (;;) {
+            const token = await iterator.next(); if (token.done) break;
+            const [added, deleted, ...name] = token.value.split('\t');
+            let file = name.join('\t'), oldPath = null;
+            if (!file) { oldPath = (await iterator.next()).value; file = (await iterator.next()).value; }
+            const entry = files.get(file);
+            if (!entry) throw failure('invalid_change_record');
+            fileCount++; additions += added === '-' ? 0 : Number(added); deletions += deleted === '-' ? 0 : Number(deleted);
+            yield { path: file, oldPath, status: oldPath ? 'renamed' : !entry.before ? 'added' : !entry.after ? 'deleted' : 'modified',
+              additions: added === '-' ? null : Number(added), deletions: deleted === '-' ? null : Number(deleted),
+              sessions: [...new Set([...entry.sessions, ...(oldPath ? files.get(oldPath)?.sessions ?? [] : [])])] };
+          }
+        } finally { await iterator.return?.(); }
+      };
+      await repo.db.setList(rowsKey(rootSessionID, revision), rows());
+      const stored = { summary: { ...result, revision, fileCount, additions, deletions }, before, after, sourceFingerprint, createdAt: Date.now() };
+      await saveSummary(repo, rootSessionID, stored, null, members());
+      // Explicit opt-in retention remains supported for embedders. The host
+      // default retains all revisions until deletion.
+      if (Number.isFinite(options.maxRevisions)) {
+        const revisions = [];
+        for await (const entry of repo.db.entries(`revisions/${hash(rootSessionID)}`)) revisions.push(entry);
+        const previous = revisions.filter((entry) => entry.value.summary.revision !== revision).sort((a, b) => (a.value.createdAt ?? 0) - (b.value.createdAt ?? 0));
+        while (previous.length > options.maxRevisions) {
+          const old = previous.shift(); repo.db.remove(old.key);
+          for (const prefix of [rowsKey(rootSessionID, old.value.summary.revision), membersKey(rootSessionID, old.value.summary.revision)]) {
+            for await (const { key } of repo.db.entries(prefix)) repo.db.remove(key);
+          }
+        }
+      }
+      await repo.db.commit();
+      return page(repo, rootSessionID, stored);
     });
   };
-  const diff = async ({ directory: requested, rootSessionID, revision, file }) => {
+  const diff = async ({ directory: requested, rootSessionID, revision, file, cursor = null }) => {
     const directory = await resolveDirectory(requested);
     return serialize(directory, async () => {
-      const repo = await load(directory);
-      const current = repo.record.summaries[rootSessionID];
-      const stored = current?.summary.revision === revision ? current : repo.record.revisions[rootSessionID]?.find((entry) => entry.summary.revision === revision);
-      if (!stored) throw failure('summary_detail_expired', 410);
-      const row = stored.summary.files.find((entry) => entry.path === file);
+      const repo = await load(directory), stored = await storedRevision(repo, rootSessionID, revision);
+      let row;
+      for await (const entry of repo.db.list(rowsKey(rootSessionID, revision))) if (entry.path === file) { row = entry; break; }
       if (!row) throw failure('summary_file_not_found', 404);
-      const patch = await run(repo, ['--literal-pathspecs', 'diff', '--no-ext-diff', '--no-textconv', stored.before, stored.after, '--', ...(row.oldPath ? [row.oldPath] : []), row.path]);
-      return { rootSessionID, revision, path: file, patch: patch.toString() };
+      const key = hash(`${rootSessionID}\0${revision}\0${file}`);
+      let offset = 0;
+      if (cursor !== null) {
+        const match = typeof cursor === 'string' && cursor.match(/^([a-f0-9]{64}):(\d{1,16})$/);
+        if (!match || match[1] !== key || !Number.isSafeInteger(Number(match[2]))) throw failure('invalid_change_cursor', 400);
+        offset = Number(match[2]);
+        if (offset % DIFF_BYTES !== 0) throw failure('invalid_change_cursor', 400);
+      }
+      const directoryPath = path.join(storage, repo.key, 'diffs'), patchPath = path.join(directoryPath, `${key}.patch`);
+      await fs.mkdir(directoryPath, { recursive: true, mode: 0o700 });
+      try { await fs.access(patchPath); } catch {
+        const temporary = `${patchPath}.${crypto.randomUUID()}`;
+        try {
+          await gitToFile(storage, ['--git-dir', repo.gitDir, '--literal-pathspecs', 'diff', '--no-ext-diff', '--no-textconv',
+            stored.before, stored.after, '--', ...(row.oldPath ? [row.oldPath] : []), row.path], temporary);
+          await fs.rename(temporary, patchPath);
+        } finally { await fs.rm(temporary, { force: true }); }
+      }
+      const handle = await fs.open(patchPath, 'r');
+      try {
+        const { size } = await handle.stat();
+        if (offset > size) throw failure('invalid_change_cursor', 400);
+        const buffer = Buffer.alloc(DIFF_BYTES + 4), { bytesRead } = await handle.read(buffer, 0, buffer.length, offset);
+        let start = 0, length = Math.min(DIFF_BYTES, bytesRead);
+        // Nominal pages are fixed byte ranges; shift both boundaries forward
+        // past UTF-8 continuation bytes so forward/back navigation is exact.
+        while (start < bytesRead && (buffer[start] & 0xc0) === 0x80) start++;
+        while (length < bytesRead && (buffer[length] & 0xc0) === 0x80) length++;
+        return { rootSessionID, revision, path: file, patch: buffer.subarray(start, length).toString(), totalBytes: size,
+          pageIndex: offset / DIFF_BYTES, previousCursor: offset > DIFF_BYTES ? `${key}:${offset - DIFF_BYTES}` : null,
+          nextCursor: offset + length < size ? `${key}:${offset + DIFF_BYTES}` : null };
+      } finally { await handle.close(); }
     });
   };
   const registerSession = async (input) => {
     const directory = await resolveDirectory(input.directory);
-    return serialize(directory, async () => { const repo = await load(directory); noteSession(repo.record, input); await save(repo); });
+    return serialize(directory, async () => { const repo = await load(directory); await noteSession(repo, input); await repo.db.commit(); });
   };
-  // Card Undo is a filesystem transaction over the exact reviewed revision.
-  // It deliberately does not invoke OpenCode's worktree-wide native revert.
   const restore = async ({ directory: requested, rootSessionID, revision, redo = false }) => {
     const directory = await resolveDirectory(requested);
     return serialize(directory, async () => {
-      const repo = await load(directory);
-      const stored = repo.record.summaries[rootSessionID];
+      const repo = await load(directory), stored = await repo.db.get(summaryKey(rootSessionID));
       if (!stored || stored.summary.revision !== revision) throw failure('summary_revision_changed');
       if (stored.summary.coverage !== 'complete') throw failure('summary_incomplete');
-      if (repo.record.operations.some((op) => op.state === 'pending')) throw failure('directory_busy');
-      const from = await treeEntries(repo, redo ? stored.before : stored.after);
-      const to = await treeEntries(repo, redo ? stored.after : stored.before);
-      const paths = [...new Set([...from.keys(), ...to.keys()])];
+      for await (const entry of repo.db.entries('pending')) { void entry; throw failure('directory_busy'); }
+      const from = new Map(), to = new Map();
+      for await (const entry of changeTreeEntries(repo, redo ? stored.before : stored.after)) from.set(...entry);
+      for await (const entry of changeTreeEntries(repo, redo ? stored.after : stored.before)) to.set(...entry);
+      const paths = new Set([...from.keys(), ...to.keys()]);
       const inspect = async (file) => {
-        // Never follow an ancestor symlink on restore.
-        let parent = path.dirname(path.join(directory, file));
-        while (parent !== directory) {
-          const stat = await fs.lstat(parent).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
-          if (stat && (!stat.isDirectory() || stat.isSymbolicLink())) throw failure('unsupported_path');
-          parent = path.dirname(parent);
-        }
+        await verifyAncestors(directory, file);
         const target = path.join(directory, file);
         const stat = await fs.lstat(target).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
         if (!stat) return null;
         if (!stat.isFile() && !stat.isSymbolicLink()) throw failure('working_tree_changed');
-        if (stat.size > maxCaptureBytes) throw failure('capture_limit');
-        const content = stat.isSymbolicLink() ? Buffer.from(await fs.readlink(target)) : await fs.readFile(target);
-        const oid = (await run(repo, ['hash-object', '--stdin', '--no-filters'], { input: content })).toString().trim();
+        const oid = (await repo.run(stat.isSymbolicLink() ? ['hash-object', '--stdin', '--no-filters']
+          : ['hash-object', '--no-filters', '--', target], stat.isSymbolicLink() ? { input: await fs.readlink(target) } : {})).toString().trim();
         return { oid, mode: stat.isSymbolicLink() ? '120000' : stat.mode & 0o111 ? '100755' : '100644' };
       };
       for (const file of paths) if (!equal(await inspect(file), from.get(file))) throw failure('working_tree_changed');
       const write = async (file, entry) => {
         const target = path.join(directory, file);
+        await verifyAncestors(directory, file);
         if (!entry) { await fs.rm(target, { force: true }); return; }
-        const content = await run(repo, ['cat-file', 'blob', entry.oid], { limit: maxCaptureBytes });
         await fs.mkdir(path.dirname(target), { recursive: true });
         const temp = `${target}.devryan-${crypto.randomUUID()}`;
         try {
-          if (entry.mode === '120000') await fs.symlink(content.toString(), temp);
-          else await fs.writeFile(temp, content, { mode: entry.mode === '100755' ? 0o755 : 0o644, flag: 'wx' });
+          if (entry.mode === '120000') await fs.symlink((await repo.run(['cat-file', 'blob', entry.oid])).toString(), temp);
+          else {
+            await gitToFile(storage, ['--git-dir', repo.gitDir, 'cat-file', 'blob', entry.oid], temp,
+              { mode: entry.mode === '100755' ? 0o755 : 0o644 });
+            const handle = await fs.open(temp, 'r'); try { await handle.sync(); } finally { await handle.close(); }
+          }
           await fs.rename(temp, target);
         } finally { await fs.rm(temp, { force: true }); }
       };
@@ -473,83 +507,108 @@ export function createSessionChangeRuntime(options) {
           written.push(file); await write(file, to.get(file));
         }
         for (const file of paths) if (!equal(await inspect(file), to.get(file))) throw failure('restore_verification_failed');
-        archiveSummary(repo, rootSessionID, stored);
-        repo.record.generations[rootSessionID] = (repo.record.generations[rootSessionID] ?? 0) + 1;
-        for (const op of repo.record.operations) if (stored.operationIDs.includes(op.id)) op.undone = !redo;
-        stored.undone = !redo;
-        stored.summary = { ...stored.summary, revision: hash(`${revision}\0${redo}\0${Date.now()}`) };
-        await save(repo);
+        const generation = (await repo.db.get(`generations/${hash(rootSessionID)}.json`) ?? 0) + 1;
+        repo.db.set(`generations/${hash(rootSessionID)}.json`, generation);
+        for await (const id of repo.db.list(membersKey(rootSessionID, revision))) {
+          const op = await repo.db.get(operationKey(id));
+          if (!op) throw failure('invalid_change_record');
+          op.undone = !redo; putOperation(repo, op);
+        }
+        const next = { ...stored, undone: !redo, createdAt: Date.now(),
+          summary: { ...stored.summary, revision: hash(`${revision}\0${redo}\0${generation}`) } };
+        await saveSummary(repo, rootSessionID, next, repo.db.list(rowsKey(rootSessionID, revision)), repo.db.list(membersKey(rootSessionID, revision)));
+        await repo.db.commit();
       } catch (error) {
-        const rollback = await Promise.allSettled(written.reverse().map(async (file) => {
-          const current = await inspect(file);
-          if (equal(current, from.get(file))) return;
-          if (!equal(current, to.get(file))) throw failure('working_tree_changed');
-          await write(file, from.get(file));
-          if (!equal(await inspect(file), from.get(file))) throw failure('rollback_failed');
-        }));
-        if (rollback.some((entry) => entry.status === 'rejected')) throw failure('rollback_failed', 500);
+        let failed = false;
+        for (const file of written.reverse()) {
+          try {
+            const current = await inspect(file);
+            if (equal(current, from.get(file))) continue;
+            if (!equal(current, to.get(file))) throw failure('working_tree_changed');
+            await write(file, from.get(file));
+            if (!equal(await inspect(file), from.get(file))) throw failure('rollback_failed');
+          } catch { failed = true; }
+        }
+        if (failed) throw failure('rollback_failed', 500);
         throw error;
       }
       return { undone: !redo };
     });
   };
-  const deleteSession = async (sessionID) => {
-    for (const { record } of await store.listRecords()) {
-      if (!record.sessions.some((entry) => entry.id === sessionID) && !record.operations.some((op) => op.sessionID === sessionID || op.ownerSessionID === sessionID)) continue;
-      await serialize(record.directory, async () => {
-      const repo = await load(record.directory);
-      for (const op of repo.record.operations) if (op.sessionID === sessionID) {
-        active.delete(op.id);
-        if (op.state === 'pending') { op.state = 'unavailable'; issue(repo.record, sessionID, 'capture_interrupted'); }
+  const repositories = async function* () {
+    let entries;
+    try { entries = await fs.opendir(storage); } catch (error) { if (error.code === 'ENOENT') return; throw error; }
+    for await (const entry of entries) {
+      if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name)) continue;
+      const db = await openChangeStore(storage, path.join(storage, entry.name, 'git'));
+      const meta = await db.get('meta.json');
+      if (meta?.directory) yield meta.directory;
+      else {
+        const legacyPath = path.join(storage, 'records', `${entry.name}.json`);
+        const legacy = JSON.parse(await fs.readFile(legacyPath, 'utf8'));
+        if (legacy.record?.directory) yield legacy.record.directory;
       }
-      const parentID = repo.record.sessions.find((entry) => entry.id === sessionID)?.parentID;
-      if (parentID && repo.record.sessions.some((entry) => entry.id === parentID)) {
-        // A child's completed contribution belongs to its parent's historical
-        // review. Remove direct child access while retaining that contribution.
-        for (const op of repo.record.operations) if (op.sessionID === sessionID || op.ownerSessionID === sessionID) op.ownerSessionID = parentID;
-      } else {
-        const removed = new Set([sessionID]);
-        let size;
-        do {
-          size = removed.size;
-          for (const entry of repo.record.sessions) if (removed.has(entry.parentID)) removed.add(entry.id);
-          for (const op of repo.record.operations) if (removed.has(op.ownerSessionID)) removed.add(op.sessionID);
-        } while (removed.size !== size);
-        for (const op of repo.record.operations) if (removed.has(op.sessionID)) active.delete(op.id);
-        repo.record.operations = repo.record.operations.filter((op) => !removed.has(op.sessionID));
-        repo.record.sessions = repo.record.sessions.filter((entry) => !removed.has(entry.id));
-        repo.record.issues = repo.record.issues.filter((entry) => !removed.has(entry.sessionID));
-        for (const id of removed) { delete repo.record.summaries[id]; delete repo.record.revisions[id]; delete repo.record.generations[id]; }
-      }
-      repo.record.sessions = repo.record.sessions.filter((entry) => entry.id !== sessionID);
-      delete repo.record.summaries[sessionID];
-      delete repo.record.revisions[sessionID];
-      delete repo.record.generations[sessionID];
-      if (!repo.record.sessions.length && !repo.record.operations.length) {
-        await store.deleteRecord(repo.key);
-        await fs.rm(path.join(storage, repo.key), { recursive: true, force: true });
-        return;
-      }
-      await save(repo);
-      const trees = new Set(repo.record.operations.flatMap((op) => [op.before, op.after]).filter(Boolean));
-      for (const summary of [...Object.values(repo.record.summaries), ...Object.values(repo.record.revisions).flat()]) { trees.add(summary.before); trees.add(summary.after); }
-      const refs = (await run(repo, ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/devryan/trees/'])).toString().trim().split('\n');
-      for (const row of refs) {
-        const [ref, tree] = row.split(' ');
-        if (ref && !trees.has(tree)) await run(repo, ['update-ref', '-d', ref]);
-      }
-      await fs.rm(path.join(storage, repo.key, 'stat-cache.json'), { force: true });
-      await run(repo, ['gc', '--prune=now']);
-      });
     }
   };
-  return { begin, finish, importHistorical, registerSession, summarize, diff, restore, deleteSession,
-    async drain() { await Promise.all([...tails.values()]); await store.drain(); },
+  const deleteSession = async (sessionID) => {
+    for await (const directory of repositories()) await serialize(directory, async () => {
+      const repo = await load(directory), session = await repo.db.get(sessionKey(sessionID));
+      let owned = Boolean(session);
+      if (!owned) for await (const { value: op } of repo.db.entries('operations')) if (op.sessionID === sessionID || op.ownerSessionID === sessionID) { owned = true; break; }
+      if (!owned) return;
+      const retainedParent = session?.parentID && await repo.db.get(sessionKey(session.parentID));
+      const removed = new Set([sessionID]);
+      if (!retainedParent) {
+        let expanded = true;
+        while (expanded) {
+          expanded = false;
+          for await (const { value: entry } of repo.db.entries('sessions')) if (removed.has(entry.parentID) && !removed.has(entry.id)) { removed.add(entry.id); expanded = true; }
+          for await (const { value: op } of repo.db.entries('operations')) if (removed.has(op.ownerSessionID) && !removed.has(op.sessionID)) { removed.add(op.sessionID); expanded = true; }
+        }
+      }
+      for await (const { value: op } of repo.db.entries('operations')) {
+        if (retainedParent && (op.sessionID === sessionID || op.ownerSessionID === sessionID)) {
+          active.delete(op.id); op.ownerSessionID = session.parentID;
+          if (op.state === 'pending') { op.state = 'unavailable'; op.errorCode = 'capture_interrupted'; }
+          putOperation(repo, op);
+        } else if (!retainedParent && removed.has(op.sessionID)) {
+          active.delete(op.id); repo.db.remove(operationKey(op.id)); repo.db.remove(timelineKey(op)); repo.db.remove(`pending/${op.id}.json`);
+        }
+      }
+      for (const id of removed) {
+        repo.db.remove(sessionKey(id)); repo.db.remove(summaryKey(id)); repo.db.remove(`generations/${hash(id)}.json`);
+        for (const prefix of [`revisions/${hash(id)}`, `rows/${hash(id)}`, `members/${hash(id)}`, `history/${hash(id)}`]) {
+          for await (const { key } of repo.db.entries(prefix)) repo.db.remove(key);
+        }
+      }
+      await repo.db.commit();
+      let remaining = false;
+      for await (const entry of repo.db.entries('sessions')) { void entry; remaining = true; break; }
+      if (!remaining) for await (const entry of repo.db.entries('operations')) { void entry; remaining = true; break; }
+      if (!remaining) {
+        await fs.rm(path.join(storage, repo.key), { recursive: true, force: true });
+        await fs.rm(path.join(storage, 'records', `${repo.key}.json`), { force: true });
+      } else await collect(repo);
+    });
+  };
+  // Host history reconciliation checkpoints contain identifiers and timestamps,
+  // never message bodies. Pages of exact receipts are imported separately.
+  const historyState = async ({ directory: requested, sessionID, state, messages = [] }) => {
+    const directory = await resolveDirectory(requested);
+    return serialize(directory, async () => {
+      const repo = await load(directory), key = `history/${hash(sessionID)}/state.json`;
+      for (const message of messages) repo.db.set(`history/${hash(sessionID)}/messages/${hash(message.id)}.json`, message);
+      if (state !== undefined) repo.db.set(key, state);
+      await repo.db.commit();
+      return repo.db.get(key);
+    });
+  };
+  return { begin, finish, importHistorical, registerSession, summarize, summaryPage, diff, restore, deleteSession, historyState,
+    async drain() { await Promise.all([...tails.values()]); },
     async observe(event, directory) {
       const part = event?.properties?.part;
       if (part?.type === 'tool' && ['completed', 'error'].includes(part.state?.status)) {
-        const id = hash(`${part.sessionID}\0${part.callID}`);
-        const capturedDirectory = active.get(id);
+        const id = hash(`${part.sessionID}\0${part.callID}`), capturedDirectory = active.get(id);
         if (capturedDirectory) await finish({ directory: capturedDirectory, sessionID: part.sessionID, callID: part.callID });
       }
       if (event?.type === 'session.deleted') await deleteSession(event.properties.info.id);

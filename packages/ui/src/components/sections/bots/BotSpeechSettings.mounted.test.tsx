@@ -42,7 +42,7 @@ describe('mounted Bot speech settings', () => {
     try {
       await act(async () => { root.render(<BotSpeechSettings botId="bot" active api={api} />); });
       await act(async () => { container.find((node) => node.tagName === 'DETAILS')?.toggle(true); });
-      await act(async () => { container.find((node) => node.tagName === 'BUTTON' && node.textContent === 'Check Saved Providers')?.click(); });
+      await act(async () => { container.find((node) => node.tagName === 'BUTTON' && node.textContent === 'Check')?.click(); });
       await act(async () => { container.find((node) => node.tagName === 'DETAILS')?.toggle(false); });
       await act(async () => { container.find((node) => node.tagName === 'DETAILS')?.toggle(true); });
       await act(async () => { check.resolve({ stt: { ready: true, code: null }, tts: { ready: true, code: null } }); });
@@ -57,7 +57,7 @@ describe('mounted Bot speech settings', () => {
     try {
       await act(async () => { root.render(<BotSpeechSettings botId="bot" active api={api} />); });
       await act(async () => { container.find((node) => node.tagName === 'DETAILS')?.toggle(true); });
-      await act(async () => { container.find((node) => node.tagName === 'BUTTON' && node.textContent === 'Check Saved Providers')?.click(); });
+      await act(async () => { container.find((node) => node.tagName === 'BUTTON' && node.textContent === 'Check')?.click(); });
       expect(container.textContent).toContain('Transcription: ready');
       await act(async () => { const form = container.find((node) => node.tagName === 'FORM'); form?.submit(); form?.submit(); });
       expect(saves).toBe(1); expect(container.textContent).not.toContain('Transcription: ready');

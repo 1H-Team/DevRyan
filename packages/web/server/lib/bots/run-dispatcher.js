@@ -822,6 +822,7 @@ export function createBotRunDispatcher({
       ...(synthetic === true || currentRecord?.synthetic === true ? { synthetic: true } : {}),
     }));
     active.partsByMessage.set(messageId, parts);
+    if (active.toolObserved && !active.acknowledgmentPromoted) promoteAcknowledgment(active);
     noteRequesterText(active);
     scheduleCheckpoint(active);
     return true;
@@ -896,12 +897,12 @@ export function createBotRunDispatcher({
   // and a fresh pending row takes the final answer, so the member sees the Bot
   // respond in its own voice before the work starts. Progress prose between
   // tools is still never persisted.
-  const promoteAcknowledgment = (active) => {
+  const promoteAcknowledgment = (active, projection = null) => {
     if (active.acknowledgmentPromoted || active.streamPaused) return;
     const message = active.assistantMessage;
     if (!message || message.assistant_phase !== 'pending' || message.finalized_at) return;
     if (typeof channels.getOrCreateAssistantCheckpoint !== 'function') return;
-    const acknowledgmentText = assistantResponseProjection(active).acknowledgmentText;
+    const acknowledgmentText = (projection || assistantResponseProjection(active)).acknowledgmentText;
     if (!acknowledgmentText.trim()) return;
     active.acknowledgmentPromoted = true;
     active.phaseTransition = active.phaseTransition
@@ -913,17 +914,25 @@ export function createBotRunDispatcher({
           finalizedAt: nowIso(now),
           assistantPhase: 'acknowledgment',
         });
-        const pending = await channels.getOrCreateAssistantCheckpoint({
-          run: active.run,
-          assistantPhase: 'pending',
-        });
-        if (active.assistantMessage === message) active.assistantMessage = pending;
+        // The durable acknowledgment is immediately visible; allocating the
+        // next checkpoint must neither delay it nor overwrite it on failure.
+        if (active.assistantMessage === message) active.assistantMessage = null;
         if (acknowledgment) {
           await publish('message.updated', active.run, {
             message: acknowledgment,
             ...channelPreviewPayload(acknowledgment),
           }).catch(() => undefined);
+          markDiagnostic('model_acknowledgment_published', {
+            botId: active.run.bot_id, channelId: active.run.channel_id,
+            runId: active.run.id, messageId: acknowledgment.id,
+          });
         }
+        const pending = await channels.getOrCreateAssistantCheckpoint({
+          run: active.run,
+          assistantPhase: 'pending',
+        });
+        if (!pending) fail('Bot result checkpoint is unavailable', 'bot_response_checkpoint_missing', 503);
+        active.assistantMessage = pending;
         if (pending) {
           await publish('message.created', active.run, {
             message: pendingMessageProjection(pending),
@@ -932,7 +941,8 @@ export function createBotRunDispatcher({
         }
       })
       .catch((error) => {
-        active.acknowledgmentPromoted = false;
+        active.phaseTransitionError = error;
+        active.reject(error);
         logger?.warn?.('[BotsDispatcher] acknowledgment promotion failed', {
           ...botErrorLogFields(error, 'bot_acknowledgment_failed'),
           runId: active.run.id,
@@ -956,9 +966,8 @@ export function createBotRunDispatcher({
   });
 
   const beginToolPhase = (active) => {
-    const first = !active.toolObserved;
     active.toolObserved = true;
-    if (first) promoteAcknowledgment(active);
+    if (!active.acknowledgmentPromoted) promoteAcknowledgment(active);
   };
 
   const pendingPartTool = (active, messageId, partId) => {
@@ -1220,7 +1229,10 @@ export function createBotRunDispatcher({
         currentMessageSequence: userMessage.sequence,
         actorUserId: userMessage.actor_user_id || null,
       });
-      const runtimePromise = activeAdapter.prepareRevision({
+      const runtimePromise = (async () => {
+        await warmRuntimeLeases?.waitForClaim?.(claimed.id);
+        controller.signal.throwIfAborted();
+        return activeAdapter.prepareRevision({
         signal: controller.signal,
         run: runInput,
         contract: revision.contract,
@@ -1232,7 +1244,8 @@ export function createBotRunDispatcher({
         libraryVersionIds: Array.isArray(claimed.context_snapshot?.libraryVersionIds)
           ? claimed.context_snapshot.libraryVersionIds
           : [],
-      });
+        });
+      })();
       // Preparation can finish after a cancelled non-abortable host callback.
       // Release its late resource instead of resurrecting a cancelled runtime.
       void runtimePromise.then(() => {
@@ -1640,7 +1653,11 @@ export function createBotRunDispatcher({
         if (!(await recreateLostExecution(error))) throw error;
         finalizedInspection = await waitForCompletion(active);
       }
+      if (!active.acknowledgmentPromoted && finalizedInspection.assistantProjection?.toolObserved) {
+        promoteAcknowledgment(active, finalizedInspection.assistantProjection);
+      }
       await active.phaseTransition;
+      if (active.phaseTransitionError) throw active.phaseTransitionError;
       if (active.streamTimer) clearTimeout(active.streamTimer);
       await active.streamDelivery.catch(() => undefined);
       if (active.checkpointTimer) clearTimeout(active.checkpointTimer);
@@ -1892,6 +1909,13 @@ export function createBotRunDispatcher({
           runId: claimed.id,
         });
       });
+      if (!runtimeStarted) {
+        await warmRuntimeLeases?.abandonClaim?.(claimed.id).catch((error) => {
+          logger?.warn?.('[BotsDispatcher] reserved runtime cleanup failed', {
+            ...botErrorLogFields(error, 'bot_warm_cleanup_failed'), runId: claimed.id,
+          });
+        });
+      }
       warmRuntimeLeases?.settle(claimed.id);
       if (terminalError && (terminalState === 'failed' || terminalState === 'interrupted')) {
         logger?.warn?.('[BotsDispatcher] Bot run failed', {

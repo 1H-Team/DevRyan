@@ -119,7 +119,8 @@ Electron shell.
   acknowledgment/result projection that keeps the bounded pre-tool sentence and
   falls back to the last complete prose segment when a turn ends on a tool call.
 - `opencode-reasoning-adapter.js`: OpenCode session/segment/event translation,
-  recovery, cancellation, warm leases, image export, and structured completion.
+  recovery, cancellation, warm leases (absent-run release permits joined cold
+  fallback), image export, and structured completion.
 - `ag-ui-reasoning-adapter.js`: pinned `@ag-ui/core@0.0.58` reviewed SSE subset,
   exact event ordering/size/replay checks, the `devryan_bot` gateway and
   OAuth-gated primary-agent `devryan_image` tool contracts,
@@ -226,8 +227,9 @@ Electron shell.
   failure/interruption publication.
 - `prewarm-cache.js`: four-entry/five-minute non-secret channel/revision LRU,
   30-second model-catalog singleflight, health/config warming, and invalidation.
-- `warm-runtime-leases.js`: principal/channel/revision/Library-bound two-minute
+- `warm-runtime-leases.js`: principal/channel/revision/Library-bound ten-minute
   provisional reasoning-runtime leases, two-entry LRU, atomic run-ID adoption,
+  immediate reservation followed by admission-time readiness waiting,
   stage/error-code diagnostics, and full unused-runtime cleanup.
 - `stream-access-lease.js`: short-lived requester stream authorization with
   fail-closed revalidation and synchronous revocation invalidation.
@@ -236,6 +238,8 @@ Electron shell.
   settlement of non-resumable orphan runs, plus the periodic sweep that
   re-drains scopes holding aged queued runs and settles expired leases no live
   process owns.
+- `catalog-visibility.js`: shared `agent_test` creator-based catalog filtering for
+  human viewers, with batched account-kind reads and bounded event decisions.
 - `event-stream.js`: snapshot-first, monotonic, principal-filtered Bot SSE kept
   separate from ordinary OpenCode event state.
 - `connector-registry.js`: complete connector interface with isolated-workspace
@@ -449,8 +453,9 @@ Electron shell.
   is recorded content-free in the run's context snapshot.
 - Context never includes messages newer than the run's admitted message
   sequence. Clients resume from Supabase sequence, never OpenCode history.
-- Every run promotes its admitted pending row to one verified result. Historical
-  acknowledgment rows remain stored but hidden and excluded from context/previews.
+- Ordinary turns promote their pending row directly to a verified result; tool
+  turns first publish one durable acknowledgment, then a separate result.
+  Acknowledgments remain visible but excluded from memory and previews.
   Terminal content is immutable; unknown or ambiguous partial text never publishes.
 - Bot SSE filters the principal before serializing private identifiers or
   payloads and never enters the ordinary session/message stores.

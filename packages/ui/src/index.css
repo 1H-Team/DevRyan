@@ -1685,6 +1685,14 @@ input[aria-label="Terminal input"] {
   animation: bot-typing-dot 1.1s ease-in-out infinite;
 }
 
+/* Match this unlayered animation's cascade priority; utility-layer overrides
+   alone cannot disable it. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-bot-typing-dot {
+    animation: none;
+  }
+}
+
 @keyframes navrail-dot-wave {
   0%, 100% {
     transform: scale(0.72);

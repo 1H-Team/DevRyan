@@ -12,7 +12,7 @@ import { sessionEvents } from '@/lib/sessionEvents'
  * and every response is checked against the latest request for its key so a
  * slow, superseded fetch can never overwrite fresher data.
  */
-export type SessionTreeChangesEntry = {
+export type SessionTreeChangesEntry = Pick<SessionTreeChanges, 'fileCount' | 'nextCursor' | 'previousCursor' | 'pageIndex'> & {
   revision?: string
   worktreeDirectory?: string
   coverage?: 'complete' | 'partial'
@@ -186,6 +186,10 @@ export async function refreshSessionTreeChanges(directory: string, rootSessionID
   const previous = useSessionTreeChangesStore.getState().entries.get(key)
   patchEntry(key, {
     revision: result.revision,
+    fileCount: result.fileCount,
+    nextCursor: result.nextCursor,
+    previousCursor: result.previousCursor,
+    pageIndex: result.pageIndex,
     worktreeDirectory: result.worktreeDirectory,
     coverage: result.coverage,
     reasons: result.reasons,
@@ -198,6 +202,9 @@ export async function refreshSessionTreeChanges(directory: string, rootSessionID
     loading: false,
     error: null,
   })
+  if (result.reasons?.includes('history_pending') && (subscriberCounts.get(key) ?? 0) > 0) {
+    requestSessionTreeChangesRefresh(directory, rootSessionID)
+  }
 }
 
 /** Debounced refresh (500 ms). Multiple triggers within the window coalesce. */

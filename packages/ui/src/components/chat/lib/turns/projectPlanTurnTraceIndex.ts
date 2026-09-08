@@ -110,6 +110,7 @@ const toRevisionTurnInput = (
         id: message.info.id,
         parentMessageId: getAssistantParentMessageId(message),
         completedAt: getAssistantCompletedAt(message),
+        hasError: message.info.role === 'assistant' && message.info.error != null,
         parts: message.parts,
     })),
 });
@@ -137,7 +138,8 @@ const buildTraceEntry = (
     isActionable: isLatestPlan
         && revision.sourceMessageId !== null
         && revision.sourceCompletedAt !== null
-        && revision.isSettled,
+        && revision.isSettled
+        && !revision.hasTerminalError,
 });
 
 export const projectPlanTurnTraceIndex = (

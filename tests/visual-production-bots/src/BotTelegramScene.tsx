@@ -12,6 +12,13 @@ export function BotTelegramScene() {
   const backend = React.useRef(initial());
   const speech = React.useRef<BotSpeechStatus>({ botId, enabled: false, generation: 'fixture', stt: null, tts: null,
     limits: { maximumInputSeconds: 300, maximumInputBytes: 20971520, maximumReplyCharacters: 4000 } });
+  React.useLayoutEffect(() => {
+    if (new URLSearchParams(location.search).get('state')?.startsWith('voice_')) {
+      speech.current = { ...speech.current, enabled: true,
+        stt: { baseUrl: 'https://speech.example/v1', model: 'transcribe', hasApiKey: true, ready: true },
+        tts: { baseUrl: 'https://speech.example/v1', model: 'speak', voice: 'nova', hasApiKey: true, ready: true } };
+    }
+  }, []);
   const api = React.useMemo(() => createBotsApi({ fetchImpl: async (input, init) => {
     const url = String(input); const method = init?.method ?? 'GET';
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
@@ -35,7 +42,7 @@ export function BotTelegramScene() {
     else if (method === 'DELETE') { backend.current = initial(); result = backend.current; }
     return new Response(JSON.stringify(result), { status: 200, headers: { 'content-type': 'application/json' } });
   } }), []);
-  return <div className="mx-auto max-w-3xl space-y-4 p-4">
+  return <div className="mx-auto max-h-[calc(100dvh-140px)] max-w-3xl space-y-4 overflow-y-auto p-4" data-network-policy-window>
     <p className="typography-ui">Telegram settings fixture. All requests are synthetic and stay in this page. Use only invented credentials.</p>
     <div className="flex flex-wrap gap-2">
       <Button variant="outline" onClick={() => { backend.current = initial(); setGeneration((v) => v + 1); }}>Reset fixture</Button>

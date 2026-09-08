@@ -47,8 +47,7 @@ describe('BotDetails', () => {
 
   test('keeps client avatar bounds aligned with the server contract and allows reselecting a file', () => {
     const source = readFileSync(new URL('./BotDetails.tsx', import.meta.url), 'utf8');
-    expect(source).toContain("new Set(['image/png', 'image/jpeg', 'image/webp'])");
-    expect(source).toContain('5 * 1024 * 1024');
+    expect(source).toContain('await prepareBotAvatar(file)');
     expect(source).toContain("event.currentTarget.value = ''");
     expect(source).toContain('setAvatar(null)');
   });

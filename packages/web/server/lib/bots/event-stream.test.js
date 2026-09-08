@@ -8,6 +8,44 @@ const BOT_ID = 'b0000000-0000-4000-8000-000000000001';
 const CHANNEL_ID = 'c0000000-0000-4000-8000-000000000001';
 
 describe('Production Bot event stream', () => {
+  it('preserves unique publication order while a visibility lookup is pending', async () => {
+    let finish;
+    const gate = new Promise((resolve) => { finish = resolve; });
+    const received = [];
+    const stream = createBotEventStream({ canDeliver: async () => { await gate; return true; }, epoch: 'ordered' });
+    await stream.open({ principal: { id: USER_ID }, send: async (event) => received.push(event) });
+    const first = stream.publish({ kind: 'bot.updated', botId: BOT_ID, audienceUserIds: [USER_ID], payload: { value: 1 } });
+    const second = stream.publish({ kind: 'bot.updated', botId: BOT_ID, audienceUserIds: [USER_ID], payload: { value: 2 } });
+    finish();
+    await Promise.all([first, second]);
+    expect(received.map((event) => event.id)).toEqual(['ordered:0', 'ordered:1', 'ordered:2']);
+    expect(received.slice(1).map((event) => event.payload.value)).toEqual([1, 2]);
+    stream.shutdown();
+  });
+  it('drains snapshot-time events before newer live publications', async () => {
+    let finishSnapshot, finishFirst, firstStarted;
+    const snapshotGate = new Promise((resolve) => { finishSnapshot = resolve; });
+    const firstGate = new Promise((resolve) => { finishFirst = resolve; });
+    const sendingFirst = new Promise((resolve) => { firstStarted = resolve; });
+    const received = [];
+    const stream = createBotEventStream({ loadSnapshot: async () => { await snapshotGate; return {}; }, epoch: 'drain' });
+    const opening = stream.open({ principal: { id: USER_ID }, send: async (event) => {
+      if (event.sequence === 1) { firstStarted(); await firstGate; }
+      received.push(event.sequence);
+    } });
+    const publish = (value) => stream.publish({ kind: 'bot.updated', botId: BOT_ID, audienceUserIds: [USER_ID], payload: { value } });
+    await publish(1);
+    finishSnapshot();
+    await sendingFirst;
+    const second = publish(2);
+    await Promise.resolve();
+    expect(received).toEqual([0]);
+    finishFirst();
+    await Promise.all([opening, second]);
+    expect(received).toEqual([0, 1, 2]);
+    stream.shutdown();
+  });
+
   it('sends an authorized snapshot before monotonic live events', async () => {
     const send = vi.fn();
     const stream = createBotEventStream({

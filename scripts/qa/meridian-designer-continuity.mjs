@@ -169,6 +169,14 @@ export async function runDesignerContinuityComparison() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const results = await runDesignerContinuityComparison();
-  if (results.some(result => !result.accepted)) process.exitCode = 1;
+  const args = process.argv.slice(2);
+  if (args.length === 2 && args[0] === '--quota') {
+    const { runClaudeQuotaWorkload } = await import('./claude-quota-live.mjs');
+    const result = await runClaudeQuotaWorkload(JSON.parse(await fs.readFile(args[1], 'utf8')));
+    if (!result.passed) process.exitCode = 1;
+  } else {
+    if (args.length) throw new Error('Expected no arguments for the legacy smoke, or --quota CONFIG for the guarded editing study');
+    const results = await runDesignerContinuityComparison();
+    if (results.some(result => !result.accepted)) process.exitCode = 1;
+  }
 }

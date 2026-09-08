@@ -6,8 +6,7 @@ import { Input } from '@/components/ui/input';
 import type { BotSummary } from '@/lib/botsApi';
 import { BotAvatar } from '@/components/bots/BotAvatar';
 
-const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
-const AVATAR_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+import { prepareBotAvatar } from '@/lib/botAvatarUpload';
 
 export type BotProfileSaveRequest = {
   name: string;
@@ -65,18 +64,24 @@ export const BotDetails: React.FC<BotDetailsProps> = ({
   const [name, setName] = React.useState(bot.name);
   const [title, setTitle] = React.useState(bot.title);
   const [avatar, setAvatar] = React.useState<BotProfileSaveRequest['avatar'] | undefined>();
-  const [avatarPreview, setAvatarPreview] = React.useState<string | null>(null);
+  const [avatarPreview, setAvatarPreview] = React.useState<{ botId: string; dataUrl: string } | null>(null);
   const [avatarError, setAvatarError] = React.useState<string | null>(null);
+  const avatarRequest = React.useRef(0);
+  const [avatarLoading, setAvatarLoading] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
   const nameRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
+    avatarRequest.current += 1;
+    setAvatarLoading(false);
     setName(bot.name);
     setTitle(bot.title);
     setAvatar(undefined);
     setAvatarPreview(null);
     setAvatarError(null);
   }, [bot.avatarFallback, bot.avatarUrl, bot.id, bot.name, bot.summary, bot.title]);
+
+  React.useEffect(() => () => { avatarRequest.current += 1; }, []);
 
   React.useEffect(() => {
     if (focusNameSignal > 0) nameRef.current?.focus();
@@ -89,7 +94,8 @@ export const BotDetails: React.FC<BotDetailsProps> = ({
     && name.trim().length <= 120
     && title.trim().length > 0
     && title.trim().length <= 160
-    && !avatarError;
+    && !avatarError
+    && !avatarLoading;
   const request = React.useMemo<BotProfileSaveRequest>(() => ({
     name: name.trim(),
     title: title.trim(),
@@ -105,31 +111,20 @@ export const BotDetails: React.FC<BotDetailsProps> = ({
 
   const selectAvatar = async (file: File | undefined) => {
     if (!file) return;
-    if (!AVATAR_TYPES.has(file.type)) {
-      setAvatarError('Choose a PNG, JPEG, or WebP image.');
-      return;
+    const requestId = ++avatarRequest.current;
+    setAvatarLoading(true);
+    try {
+      const prepared = await prepareBotAvatar(file);
+      if (requestId !== avatarRequest.current) return;
+      setAvatar(prepared.avatar);
+      setAvatarPreview({ botId: bot.id, dataUrl: prepared.dataUrl });
+      setAvatarError(null);
+    } catch (error) {
+      if (requestId !== avatarRequest.current) return;
+      setAvatarError(error instanceof Error ? error.message : 'The selected image could not be read.');
+    } finally {
+      if (requestId === avatarRequest.current) setAvatarLoading(false);
     }
-    if (file.size > MAX_AVATAR_BYTES) {
-      setAvatarError('Avatar images must be 5 MiB or smaller.');
-      return;
-    }
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Invalid image'));
-      reader.onerror = () => reject(reader.error || new Error('Image could not be read'));
-      reader.readAsDataURL(file);
-    }).catch(() => '');
-    const separator = dataUrl.indexOf(',');
-    if (separator < 0) {
-      setAvatarError('The selected image could not be read.');
-      return;
-    }
-    setAvatar({
-      contentType: file.type as 'image/png' | 'image/jpeg' | 'image/webp',
-      dataBase64: dataUrl.slice(separator + 1),
-    });
-    setAvatarPreview(dataUrl);
-    setAvatarError(null);
   };
 
   return (
@@ -150,7 +145,7 @@ export const BotDetails: React.FC<BotDetailsProps> = ({
           <div className="space-y-3">
             <BotAvatar
               bot={bot}
-              imageUrl={avatar === null ? null : (avatarPreview ?? undefined)}
+              imageUrl={avatar === null ? null : (avatarPreview?.botId === bot.id ? avatarPreview.dataUrl : undefined)}
               className="h-40 w-40 rounded-2xl text-4xl shadow-[0_12px_36px_color-mix(in_srgb,var(--foreground)_8%,transparent)]"
             />
             {!readOnly ? (
@@ -176,6 +171,8 @@ export const BotDetails: React.FC<BotDetailsProps> = ({
                     size="xs"
                     variant="ghost"
                     onClick={() => {
+                      avatarRequest.current += 1;
+                      setAvatarLoading(false);
                       setAvatar(null);
                       setAvatarPreview(null);
                       setAvatarError(null);

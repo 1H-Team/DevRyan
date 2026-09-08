@@ -27,6 +27,7 @@ export interface PlanRevisionAssistantInput {
     id: string;
     parentMessageId: string | null;
     completedAt: number | null;
+    hasError?: boolean;
     parts: readonly Part[];
 }
 
@@ -58,6 +59,8 @@ export interface PlanRevision {
     planText: string | null;
     /** True once every assistant sibling across member turns has completed. */
     isSettled: boolean;
+    /** A failed/aborted source or terminal sibling cannot authorize a draft. */
+    hasTerminalError: boolean;
     /** Position of every assistant sibling relative to the selected source. */
     messageRoles: Map<string, PlanRevisionMessageRole>;
     /** Member turns that occur entirely after the source turn. */
@@ -140,9 +143,11 @@ const projectGroup = (group: TurnGroup): PlanRevision | null => {
     let source: PlanRevisionAssistantInput | null = null;
     let planText: string | null = null;
     let isSettled = true;
+    let lastAssistant: PlanRevisionAssistantInput | null = null;
 
     for (const member of members) {
         for (const assistant of member.assistants) {
+            lastAssistant = assistant;
             if (assistant.completedAt === null) {
                 isSettled = false;
             }
@@ -195,6 +200,7 @@ const projectGroup = (group: TurnGroup): PlanRevision | null => {
         sourceCompletedAt: source?.completedAt ?? null,
         planText,
         isSettled,
+        hasTerminalError: source?.hasError === true || lastAssistant?.hasError === true,
         messageRoles,
         turnIdsAfterSource,
     };

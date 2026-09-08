@@ -383,7 +383,15 @@ export type SessionTreeChangedFile = {
   sessions: string[];
 };
 
+export type SessionChangesDiffPage = {
+  patch: string; nextCursor: string | null; previousCursor: string | null; pageIndex: number; totalBytes: number;
+};
+
 export type SessionTreeChanges = {
+  fileCount?: number;
+  nextCursor?: string | null;
+  previousCursor?: string | null;
+  pageIndex?: number;
   revision?: string;
   directory?: string;
   worktreeID?: string;
@@ -674,6 +682,10 @@ export function parseSessionTreeChanges(payload: unknown): SessionTreeChanges {
     coverage: record.revision && record.coverage === 'complete' ? 'complete' : 'partial',
     reasons: Array.isArray(record.reasons) ? record.reasons.filter((reason): reason is string => typeof reason === 'string') : ['capture_unavailable'],
     files,
+    ...(typeof record.fileCount === 'number' && Number.isSafeInteger(record.fileCount) && record.fileCount >= files.length ? { fileCount: record.fileCount } : {}),
+    ...(typeof record.pageIndex === 'number' && Number.isSafeInteger(record.pageIndex) && record.pageIndex >= 0 ? { pageIndex: record.pageIndex } : {}),
+    ...('nextCursor' in record ? { nextCursor: typeof record.nextCursor === 'string' ? record.nextCursor : null } : {}),
+    ...('previousCursor' in record ? { previousCursor: typeof record.previousCursor === 'string' ? record.previousCursor : null } : {}),
     sessionCount: typeof record.sessionCount === "number" && Number.isFinite(record.sessionCount)
       ? Math.max(0, Math.trunc(record.sessionCount))
       : sessionIds.size,
@@ -1875,15 +1887,31 @@ class OpencodeService {
     if (!response.ok) throw await readScopedRevertError(response, 'Cannot restore session changes');
   }
 
-  async getSessionChangesDiff(sessionId: string, directory: string, revision: string, file: string, signal?: AbortSignal): Promise<string> {
+  async getSessionChangesPage(sessionId: string, directory: string, revision: string, cursor: string | null, signal?: AbortSignal): Promise<SessionTreeChanges> {
+    const url = buildScopedRevertUrl(this.baseUrl, sessionId, 'changes', directory);
+    url.searchParams.set('revision', revision);
+    if (cursor) url.searchParams.set('cursor', cursor);
+    const response = await this.noStoreFetch(url.toString(), { signal });
+    if (!response.ok) throw await readScopedRevertError(response, 'Cannot load session changes');
+    const body: unknown = await response.json();
+    if (!isRecord(body) || body.rootSessionID !== sessionId || body.revision !== revision || body.directory !== directory) throw new Error('Session change page identity mismatch');
+    return parseSessionTreeChanges(body);
+  }
+
+  async getSessionChangesDiffPage(sessionId: string, directory: string, revision: string, file: string, cursor: string | null, signal?: AbortSignal): Promise<SessionChangesDiffPage> {
     const url = buildScopedRevertUrl(this.baseUrl, sessionId, 'changes/diff', directory);
     url.searchParams.set('revision', revision);
     url.searchParams.set('file', file);
+    if (cursor) url.searchParams.set('cursor', cursor);
     const response = await this.noStoreFetch(url.toString(), { signal });
     if (!response.ok) throw await readScopedRevertError(response, 'Cannot load session diff');
     const body: unknown = await response.json();
     if (!isRecord(body) || body.rootSessionID !== sessionId || body.revision !== revision || body.path !== file || typeof body.patch !== 'string') throw new Error('Session diff identity mismatch');
-    return body.patch;
+    if (typeof body.pageIndex !== 'number' || !Number.isSafeInteger(body.pageIndex) || body.pageIndex < 0
+      || typeof body.totalBytes !== 'number' || !Number.isSafeInteger(body.totalBytes) || body.totalBytes < 0
+      || !(body.nextCursor === null || typeof body.nextCursor === 'string')
+      || !(body.previousCursor === null || typeof body.previousCursor === 'string')) throw new Error('Invalid session diff page');
+    return { patch: body.patch, pageIndex: body.pageIndex, totalBytes: body.totalBytes, nextCursor: body.nextCursor, previousCursor: body.previousCursor };
   }
 
   async unrevertSession(sessionId: string): Promise<Session> {

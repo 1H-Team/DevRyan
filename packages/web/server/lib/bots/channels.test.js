@@ -625,7 +625,7 @@ describe('Production Bot continuous channels', () => {
       name: 'Release helper',
       title: 'Release Operations',
       summary: 'Coordinates reviewed releases.',
-      avatar_object_id: null,
+      avatar_object_id: '90000000-0000-4000-8000-000000000011',
       avatar_fallback: 'RO',
       lifecycle: 'active',
       tenancy: 'team',
@@ -758,6 +758,14 @@ describe('Production Bot continuous channels', () => {
     expect(snapshot.revisions[0]).not.toHaveProperty('contract');
     expect(snapshot.runs[0]).not.toHaveProperty('opencodeSegmentId');
     expect(snapshot.runs[0]).not.toHaveProperty('opencodeSessionId');
+
+    expect(snapshot.bots[0].avatarUrl).toBe(`/api/bots/${BOT_ID}/avatar?v=${botRow.avatar_object_id}`);
+    botRow.updated_at = '2026-09-07T12:00:00.000Z';
+    expect((await channels.snapshotForPrincipal({ id: USER_ID })).bots[0].avatarUrl)
+      .toBe(snapshot.bots[0].avatarUrl);
+    botRow.avatar_object_id = '90000000-0000-4000-8000-000000000012';
+    expect((await channels.snapshotForPrincipal({ id: USER_ID })).bots[0].avatarUrl)
+      .not.toBe(snapshot.bots[0].avatarUrl);
 
     botRow.active_revision_id = null;
     store.repositories.bot_channels.list.mockResolvedValueOnce({ items: [], nextCursor: null });

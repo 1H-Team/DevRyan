@@ -1,14 +1,16 @@
 import {
-  COMMIT_DRAFT_DEADLINE_MS,
   buildCommitDraftPrompt,
-  generateCommitDraftWithDeadline,
+  createDeterministicCommitDraft,
+  runFreeZenModelRotation,
+  sharedFreeZenCooldowns,
   normalizeGeneratedCommitDraft,
 } from '@openchamber/shared-runtime';
 import { generateZenText } from '../text/summarization.js';
 
 export const COMMIT_SUBJECT_MAX_LENGTH = 72;
 export const COMMIT_GENERATION_DEFAULT_ZEN_MODEL = 'nemotron-3.5-lightning-free';
-export const COMMIT_GENERATION_TIMEOUT_MS = COMMIT_DRAFT_DEADLINE_MS;
+export const COMMIT_GENERATION_TIMEOUT_MS = 15_000;
+export const COMMIT_GENERATION_MAX_FREE_MODELS = 3;
 export const COMMIT_GENERATION_CHAT_MAX_TOKENS = 220;
 export const COMMIT_GENERATION_RESPONSES_MAX_OUTPUT_TOKENS = 256;
 export const ALLOWED_COMMIT_TYPES = [
@@ -42,46 +44,65 @@ export function buildCommitMessagePrompt(context, guidance) {
 export async function generateCommitMessageDirect({
   context,
   guidance,
-  zenModel,
-  fallbackZenModel,
-  deadlineAt,
-  skipProvider = false,
+  models = [],
+  catalogState = 'empty',
+  cooldowns = sharedFreeZenCooldowns,
+  timeoutMs = COMMIT_GENERATION_TIMEOUT_MS,
   onTiming,
+  onAttempt,
+  afterAttempt,
   requestText = generateZenText,
 }) {
-  const model = typeof zenModel === 'string' && zenModel.trim()
-    ? zenModel.trim()
-    : COMMIT_GENERATION_DEFAULT_ZEN_MODEL;
   const providerStartedAt = Date.now();
-  const result = await generateCommitDraftWithDeadline({
-    context,
-    guidance,
-    deadlineAt,
-    requestText: skipProvider ? undefined : ({ prompt, timeoutMs }) => requestText({
+  const prompt = buildCommitDraftPrompt(context, guidance);
+  const result = await runFreeZenModelRotation({
+    models,
+    timeoutMs,
+    maxModels: COMMIT_GENERATION_MAX_FREE_MODELS,
+    cooldowns,
+    cooldownPolicy: 'prioritize',
+    request: ({ model, timeoutMs: attemptTimeoutMs, signal }) => requestText({
       prompt,
       zenModel: model,
-      timeoutMs,
+      timeoutMs: attemptTimeoutMs,
+      signal,
       chatMaxTokens: COMMIT_GENERATION_CHAT_MAX_TOKENS,
       chatReasoningEffort: 'none',
       responsesMaxOutputTokens: COMMIT_GENERATION_RESPONSES_MAX_OUTPUT_TOKENS,
     }),
+    accept: (output) => {
+      const normalized = normalizeGeneratedCommitDraft(output, context);
+      return normalized.source === 'local_fallback' ? null : normalized;
+    },
+    onAttempt,
+    afterAttempt,
   });
-  const providerMs = Date.now() - providerStartedAt;
+  const source = result.ok ? result.value.source : 'local_fallback';
+  const providerOutcome = result.ok ? 'complete'
+    : result.attempts > 0 ? 'exhausted'
+      : catalogState === 'unavailable' ? 'catalog_unavailable' : 'no_free_models';
+  const warning = result.ok ? null : result.attempts > 0
+    ? 'Free Zen AI attempts were exhausted; created a local commit draft'
+    : catalogState === 'unavailable'
+      ? 'Free Zen model catalog was unavailable; created a local commit draft'
+      : 'No free Zen models were available; created a local commit draft';
   onTiming?.({
-    providerMs,
+    providerMs: Date.now() - providerStartedAt,
     parseMs: 0,
-    retried: false,
-    source: result.source,
-    providerOutcome: result.providerOutcome,
+    retried: result.attempts > 1,
+    source,
+    providerOutcome,
   });
   return {
-    ...result.message,
+    ...(result.ok ? result.value.message : createDeterministicCommitDraft(context)),
     _generation: {
-      source: result.source,
-      warning: result.warning,
-      providerOutcome: result.providerOutcome,
-      model,
-      fallbackModel: typeof fallbackZenModel === 'string' ? fallbackZenModel.trim() : '',
+      source,
+      warning,
+      providerOutcome,
+      model: result.model,
+      attempts: result.attempts,
+      failures: result.failures,
+      skipped: result.skipped,
     },
   };
 }

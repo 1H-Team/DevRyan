@@ -320,6 +320,11 @@ const runNativePointerSmoke = async (options) => {
       window.dispatchEvent(new PopStateEvent('popstate'));
       return location.search;
     })()`);
+    // The readiness check requires a visible document. Activate this owned
+    // window before waiting, rather than only at the later native click.
+    await execFileAsync('/usr/bin/xcrun', [
+      'swift', swiftHelper, String(child.pid), '--activate',
+    ], { timeout: 30_000, maxBuffer: 1024 * 1024 });
     const button = await waitForEvaluation(cdp, createButtonExpression, {
       timeoutMs: options.timeoutMs,
       label: 'enabled Catalog Create Bot button',

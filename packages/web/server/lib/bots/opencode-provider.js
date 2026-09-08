@@ -686,15 +686,22 @@ export function createBotOpenCodeProvider({
       let runtimeStage = 'environment';
       try {
         normalized.signal?.throwIfAborted();
-        environment = await environmentSecrets.prepareRun(normalized.run);
-        normalized.signal?.throwIfAborted();
+        // Both preparations own separate run-scoped files. Wait for every
+        // outcome before cleanup, including a late success after cancellation.
+        const [environmentResult, artifactResult] = await Promise.allSettled([
+          Promise.resolve().then(() => environmentSecrets.prepareRun(normalized.run)),
+          Promise.resolve().then(() => artifactService.materializeRun({
+            run: normalized.run,
+            channel: { id: normalized.run.channelId },
+            attachmentIds: normalized.attachmentIds || [],
+            libraryVersionIds: normalized.libraryVersionIds || [],
+          })),
+        ]);
+        if (environmentResult.status === 'rejected') throw environmentResult.reason;
+        environment = environmentResult.value;
         runtimeStage = 'artifacts';
-        materialized = await artifactService.materializeRun({
-          run: normalized.run,
-          channel: { id: normalized.run.channelId },
-          attachmentIds: normalized.attachmentIds || [],
-          libraryVersionIds: normalized.libraryVersionIds || [],
-        });
+        if (artifactResult.status === 'rejected') throw artifactResult.reason;
+        materialized = artifactResult.value;
         const attachments = materialized?.attachments || [];
         recordLifecycle('bot.attachments.materialized', normalized.run, {
           attachmentCount: attachments.length,
@@ -760,6 +767,11 @@ export function createBotOpenCodeProvider({
               });
             } catch (error) {
               const failureClass = safeUpstreamFailureClass(error);
+              recordFailure({
+                event: 'bot.provider.oauth_readiness_failed', run: normalized.run,
+                stage: runtimeStage, reason: failureClass,
+                error: { name: error?.name, code: error?.code, statusCode: error?.statusCode },
+              });
               const transient = error?.name === 'TimeoutError' || error?.code === 23
                 || error?.name === 'AbortError'
                 || TRANSIENT_OAUTH_READINESS_FAILURES.has(failureClass);
@@ -776,6 +788,11 @@ export function createBotOpenCodeProvider({
             }
             const failureClass = safeUpstreamFailureClass(response?.error);
             const statusCode = Number(response?.response?.status);
+            if (response?.error) recordFailure({
+              event: 'bot.provider.oauth_readiness_failed', run: normalized.run,
+              stage: runtimeStage, reason: failureClass, statusCode,
+              error: { name: response.error.name, code: response.error.code },
+            });
             const transient = response?.error && failureClass !== 'provider_authentication'
               && (TRANSIENT_OAUTH_READINESS_FAILURES.has(failureClass)
                 || (statusCode >= 500 && statusCode <= 599));

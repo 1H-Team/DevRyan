@@ -126,14 +126,14 @@ describe('BotSidebarSection', () => {
     }
   });
 
-  test('renders the uploaded Bot avatar and retains the configured fallback when no image exists', () => {
+  test('renders the correct fallback before authenticated images decode', () => {
     const avatarMarkup = renderAtWidth(280, 'dark', false, {
       avatarUrl: '/api/bots/release-steward/avatar',
     });
     const fallbackMarkup = renderAtWidth(280, 'dark');
 
-    expect(avatarMarkup).toContain('src="/api/bots/release-steward/avatar"');
-    expect(avatarMarkup).toContain('alt="Release operations lead avatar"');
+    expect(avatarMarkup).toContain('RS');
+    expect(avatarMarkup).not.toContain('<img');
     expect(fallbackMarkup).toContain('RS');
     expect(fallbackMarkup).not.toContain('<img');
   });
@@ -182,7 +182,9 @@ describe('BotSidebarSection', () => {
       const markup = renderWithRun(state);
       expect(markup).toContain('data-bot-sidebar-status="typing"');
       expect(markup).toContain('animate-bot-typing-dot');
-      expect(markup).toContain('Typing…');
+      expect(markup).toContain('Typing'); // Retained in the accessible row name.
+      expect(markup).not.toContain('>Typing');
+      expect(markup.match(/animate-bot-typing-dot/g)?.length).toBe(3);
       expect(markup).not.toContain('Deploy completed without errors.');
       expect(markup).toContain('aria-label="Open Conversation with Release Steward. Typing. Aug 23"');
     }

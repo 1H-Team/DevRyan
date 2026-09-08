@@ -12,6 +12,47 @@ import {
 } from './loopback-opencode-fixture.mjs';
 
 describe('loopback OpenCode performance fixture', () => {
+  it('replays reasoning deltas without terminal events and retains identical fetched text', async () => {
+    const fixture = await createLoopbackOpenCodeFixture({ directory: '/qa-plan-delta' });
+    const controller = new AbortController();
+    const received = [];
+    let reading;
+    try {
+      const stream = await fetch(`${fixture.origin}/global/event`, { signal: controller.signal });
+      reading = (async () => {
+        let pending = '';
+        const decoder = new TextDecoder();
+        for await (const chunk of stream.body) {
+          pending += decoder.decode(chunk, { stream: true });
+          let newline;
+          while ((newline = pending.indexOf('\n')) >= 0) {
+            const line = pending.slice(0, newline); pending = pending.slice(newline + 1);
+            if (line.startsWith('data: ')) received.push(JSON.parse(line.slice(6)));
+          }
+        }
+      })().catch(error => { if (error.name !== 'AbortError') throw error; });
+      const row = { info: { id: 'draft', sessionID: PERF_PARENT_SESSION_ID, role: 'assistant', time: { created: 1 } },
+        parts: [{ id: 'reasoning', messageID: 'draft', sessionID: PERF_PARENT_SESSION_ID, type: 'reasoning', text: '<!--plan-->\n', time: { start: 1 } }] };
+      fixture.replayRecoveryVisual({ sessionID: PERF_PARENT_SESSION_ID, rows: [row], status: 'busy' });
+      fixture.appendVisualPartDelta({ sessionID: PERF_PARENT_SESSION_ID, messageID: 'draft', partID: 'reasoning', delta: '# Live plan' });
+      const deadline = Date.now() + 3000;
+      const deltas = () => received.map(event => event.payload ?? event).filter(event => event.type === 'message.part.delta');
+      while (!deltas().length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+      assert.deepEqual(deltas().map(event => event.properties), [{ sessionID: PERF_PARENT_SESSION_ID, messageID: 'draft', partID: 'reasoning', field: 'text', delta: '# Live plan' }]);
+      const rows = await fetch(`${fixture.origin}/session/${PERF_PARENT_SESSION_ID}/message`).then(response => response.json());
+      const fetched = rows.find(candidate => candidate.info.id === 'draft');
+      assert.equal(fetched.parts[0].text, '<!--plan-->\n# Live plan');
+      assert.equal(fetched.info.time.completed, undefined);
+      assert.equal(fetched.parts[0].time.end, undefined);
+      assert.equal(row.parts[0].text, '<!--plan-->\n', 'fixture does not mutate the caller snapshot');
+      assert.throws(() => fixture.appendVisualPartDelta({ sessionID: PERF_PARENT_SESSION_ID, messageID: 'draft', partID: 'missing', delta: 'x' }), /existing text or reasoning/);
+    } finally {
+      controller.abort();
+      await reading;
+      await fixture.close();
+    }
+  });
+
   const post = (url, body) => fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
   const waitIdle = async (fixture) => {
     const deadline = Date.now() + 3000;

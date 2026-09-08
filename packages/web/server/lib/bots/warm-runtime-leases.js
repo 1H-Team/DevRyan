@@ -12,6 +12,7 @@ const SAFE_PREPARATION_STAGES = new Set([
   'artifacts',
   'container',
   'readiness',
+  'oauth_readiness',
   'admission',
   'unknown',
 ]);
@@ -35,16 +36,11 @@ const publicLease = (entry) => Object.freeze({
   serverInitiated: entry.serverInitiated === true,
 });
 
-const adoptEntry = async (entry, messageId, note) => {
+const reserveEntry = (entry, messageId, note, claims) => {
   entry.claimedMessageId = messageId;
   if (entry.timer) clearTimeout(entry.timer);
-  try {
-    await entry.promise;
-  } catch {
-    return Object.freeze({ hit: false, runId: null });
-  }
-  note('warm_hit', entry);
-  note('lease_adopted', entry, { messageId });
+  claims.set(entry.runId, entry);
+  note('lease_reserved', entry, { messageId });
   return Object.freeze({ hit: true, runId: entry.runId });
 };
 
@@ -67,6 +63,9 @@ export function createBotWarmRuntimeLeases({
   }
 
   const leases = new Map();
+  // Retain claimed preparation/cleanup even after invalidation removes a lease.
+  // A cold fallback must never race a late warm resource or its stop operation.
+  const claims = new Map();
 
   const note = (mark, entry, extra = {}) => {
     try {
@@ -89,14 +88,19 @@ export function createBotWarmRuntimeLeases({
     return true;
   };
 
-  const dispose = async (entry, reason) => {
-    if (!forget(entry)) return;
-    note(reason === 'expired' ? 'warm_expired' : 'warm_released', entry, { reason });
-    await entry.promise?.catch(() => undefined);
-    await stop(entry.runId).catch((error) => logger?.warn?.(
+  const dispose = (entry, reason) => {
+    if (entry.disposal) return entry.disposal;
+    forget(entry);
+    entry.disposal = (async () => {
+      note(reason === 'expired' ? 'warm_expired' : 'warm_released', entry, { reason });
+      await entry.promise?.catch(() => undefined);
+      await stop(entry.runId);
+    })();
+    void entry.disposal.catch((error) => logger?.warn?.(
       '[BotsWarmLease] runtime cleanup failed',
       { ...botErrorLogFields(error, 'bot_warm_cleanup_failed'), runId: entry.runId },
     ));
+    return entry.disposal;
   };
 
   const expire = (entry) => {
@@ -202,13 +206,13 @@ export function createBotWarmRuntimeLeases({
         || entry.librarySnapshotKey !== librarySnapshotKey
         || (entry.claimedMessageId && entry.claimedMessageId !== messageId)) {
         if (entry && entry.expiresAt <= now() && !entry.claimedMessageId) {
-          await dispose(entry, 'expired');
+          void dispose(entry, 'expired');
         }
         try { record('warm_miss', { channelId, revisionId, leaseId, reason: 'unavailable' }); } catch {}
         return Object.freeze({ hit: false, runId: null });
       }
       touch(entry);
-      return adoptEntry(entry, messageId, note);
+      return reserveEntry(entry, messageId, note, claims);
     },
 
     // A message sent without a client lease adopts a server-initiated warm
@@ -225,7 +229,25 @@ export function createBotWarmRuntimeLeases({
       ));
       if (!entry) return Object.freeze({ hit: false, runId: null });
       touch(entry);
-      return adoptEntry(entry, messageId, note);
+      return reserveEntry(entry, messageId, note, claims);
+    },
+
+    async waitForClaim(runId) {
+      const entry = claims.get(runId);
+      if (!entry) return false;
+      try {
+        await entry.promise;
+      } catch {
+        await dispose(entry, 'prepare_failed');
+        return false;
+      }
+      if (entry.disposal) {
+        await entry.disposal;
+        return false;
+      }
+      note('warm_hit', entry);
+      note('lease_adopted', entry, { messageId: entry.claimedMessageId });
+      return true;
     },
 
     async release({ leaseId, principalId, channelId }) {
@@ -244,21 +266,24 @@ export function createBotWarmRuntimeLeases({
     },
 
     async abandonClaim(runId) {
-      const entry = [...leases.values()].find((candidate) => candidate.runId === runId);
+      const entry = claims.get(runId) || [...leases.values()].find((candidate) => candidate.runId === runId);
       if (entry) await dispose(entry, 'admission_failed');
+      claims.delete(runId);
     },
 
     settle(runId) {
-      const entry = [...leases.values()].find((candidate) => candidate.runId === runId);
+      const entry = claims.get(runId) || [...leases.values()].find((candidate) => candidate.runId === runId);
       if (entry) forget(entry);
+      claims.delete(runId);
     },
 
     async shutdown() {
-      await Promise.all([...leases.values()].map((entry) => dispose(entry, 'shutdown')));
+      await Promise.all([...new Set([...leases.values(), ...claims.values()])].map((entry) => dispose(entry, 'shutdown')));
+      claims.clear();
     },
 
     async invalidateAll() {
-      await Promise.all([...leases.values()].map((entry) => dispose(entry, 'invalidated')));
+      await Promise.all([...new Set([...leases.values(), ...claims.values()])].map((entry) => dispose(entry, 'invalidated')));
     },
 
     get size() { return leases.size; },

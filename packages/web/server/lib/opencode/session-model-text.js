@@ -63,6 +63,9 @@ export async function generateTextWithSessionModel({
   accept = (text) => trimString(text) || null,
   timeoutMs = SESSION_MODEL_TEXT_TIMEOUT_MS,
   recoveryTimeoutMs = SESSION_MODEL_TEXT_RECOVERY_TIMEOUT_MS,
+  signal,
+  recoverOnError = true,
+  denyTools = false,
   sessionTitle = SESSION_MODEL_TEXT_SESSION_TITLE,
   now = () => Date.now(),
   logger = console,
@@ -105,7 +108,11 @@ export async function generateTextWithSessionModel({
     ...(getOpenCodeAuthHeaders?.() || {}),
   });
 
+  const requestSignal = () => signal
+    ? AbortSignal.any([signal, AbortSignal.timeout(remainingMs())])
+    : AbortSignal.timeout(remainingMs());
   let helperSessionID = '';
+  let completed = false;
   try {
     const createUrl = buildUrl(`/session${query}`);
     if (!createUrl) return finish({ reason: 'runtime_unavailable' });
@@ -114,8 +121,8 @@ export async function generateTextWithSessionModel({
       createResponse = await fetchImpl(createUrl, {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify({ title: sessionTitle }),
-        signal: AbortSignal.timeout(remainingMs()),
+        body: JSON.stringify({ title: sessionTitle, ...(denyTools ? { permission: [{ permission: '*', pattern: '*', action: 'deny' }] } : {}) }),
+        signal: requestSignal(),
       });
     } catch (error) {
       return finish({ reason: reasonForError(error), error });
@@ -130,15 +137,13 @@ export async function generateTextWithSessionModel({
     const messageUrl = buildUrl(`/session/${encodeURIComponent(helperSessionID)}/message${query}`);
     if (!messageUrl) return finish({ reason: 'runtime_unavailable' });
 
-    const succeed = (text, value) => ({
-      ok: true,
-      value,
-      text,
-      reason: null,
-      status: undefined,
-      attempts,
-      durationMs: Math.max(0, now() - startedAt),
-    });
+    const succeed = (text, value) => {
+      completed = true;
+      return {
+        ok: true, value, text, reason: null, status: undefined, attempts,
+        durationMs: Math.max(0, now() - startedAt),
+      };
+    };
 
     // After a transport timeout the model may still have finished: read the
     // session back once before giving up on it.
@@ -165,7 +170,7 @@ export async function generateTextWithSessionModel({
     let lastStatus;
     let lastError = null;
     for (const text of [promptText, trimString(repairPrompt)].filter(Boolean)) {
-      if (now() >= deadlineAt) {
+      if (signal?.aborted || now() >= deadlineAt) {
         lastReason = 'timeout';
         break;
       }
@@ -180,7 +185,7 @@ export async function generateTextWithSessionModel({
             tools: {},
             parts: [{ type: 'text', text }],
           }),
-          signal: AbortSignal.timeout(remainingMs()),
+          signal: requestSignal(),
         });
         if (!response?.ok) {
           lastReason = reasonForStatus(response?.status);
@@ -188,14 +193,22 @@ export async function generateTextWithSessionModel({
           break;
         }
         const result = await response.json().catch(() => null);
-        const replyText = extractAssistantText(result?.data ?? result);
+        const message = result?.data ?? result;
+        const providerError = message?.info?.error;
+        if (providerError) {
+          const status = providerError?.data?.statusCode;
+          lastStatus = Number.isFinite(status) ? status : undefined;
+          lastReason = providerError.name === 'ProviderModelNotFoundError' ? 'model_unavailable' : reasonForStatus(lastStatus);
+          break;
+        }
+        const replyText = extractAssistantText(message);
         const value = replyText ? await accept(replyText) : null;
         if (value) return succeed(replyText, value);
         lastReason = replyText ? 'invalid_output' : 'empty_output';
       } catch (error) {
         lastError = error;
         lastReason = reasonForError(error);
-        const recovered = await recoverCompletedReply();
+        const recovered = recoverOnError && !signal?.aborted ? await recoverCompletedReply() : null;
         if (recovered) return recovered;
         break;
       }
@@ -203,6 +216,14 @@ export async function generateTextWithSessionModel({
     return finish({ reason: lastReason, status: lastStatus, error: lastError });
   } finally {
     if (helperSessionID) {
+      // Cancelling the HTTP request alone does not stop native inference.
+      // Git rotation waits for this bounded cleanup before trying another model.
+      if (denyTools && !completed) {
+        const abortUrl = buildUrl(`/session/${encodeURIComponent(helperSessionID)}/abort${query}`);
+        if (abortUrl) await fetchImpl(abortUrl, {
+          method: 'POST', headers: headers(), signal: AbortSignal.timeout(recoveryMs),
+        }).catch(() => {});
+      }
       const deleteUrl = buildUrl(`/session/${encodeURIComponent(helperSessionID)}${query}`);
       if (deleteUrl) {
         await fetchImpl(deleteUrl, {

@@ -14,6 +14,21 @@ const visualCase = (id, scene, state, options = {}) => Object.freeze({
 });
 
 export const PRODUCTION_BOTS_VISUAL_MATRIX = Object.freeze([
+  visualCase('catalog-filtered-light', 'catalog', 'catalog_filtered'),
+  visualCase('catalog-empty-dark-narrow', 'catalog', 'catalog_empty', { theme: 'dark', role: 'developer', viewport: narrow, drawer: 'closed' }),
+  ...['computer_hidden', 'computer_shown', 'computer_expanded', 'computer_waiting', 'computer_owned', 'computer_disconnected', 'computer_completed', 'computer_idle'].flatMap((state) => [
+    visualCase(`conversation-${state}-light`, 'conversation', state, { interaction: 'computer_controls' }),
+    visualCase(`conversation-${state}-dark-narrow`, 'conversation', state, { theme: 'dark', role: 'developer', viewport: narrow, drawer: 'closed', interaction: 'computer_controls' }),
+  ]),
+  visualCase('telegram-compact-light', 'telegram', 'telegram_compact'),
+  visualCase('telegram-compact-dark-narrow', 'telegram', 'telegram_compact', { theme: 'dark', viewport: narrow, drawer: 'closed' }),
+  visualCase('voice-configured-light', 'telegram', 'voice_configured', { interaction: 'voice_settings' }),
+  visualCase('voice-error-dark-narrow', 'telegram', 'voice_error', { theme: 'dark', viewport: narrow, drawer: 'closed', interaction: 'voice_settings' }),
+
+  visualCase('avatars-cold-light', 'avatars', 'cold'),
+  visualCase('avatars-warm-light', 'avatars', 'warm', { interaction: 'avatars' }),
+  visualCase('avatars-warm-dark-narrow', 'avatars', 'warm', { theme: 'dark', viewport: narrow, interaction: 'avatars' }),
+  visualCase('avatars-reduced-motion', 'avatars', 'reduced_motion', { interaction: 'avatars' }),
   visualCase('agent-opencode-light-r220', 'agent', 'opencode', { rail: 220 }),
   visualCase('agent-agui-healthy-dark-r280', 'agent', 'healthy', { theme: 'dark' }),
   visualCase('agent-testing-light-r500', 'agent', 'testing', { rail: 500 }),

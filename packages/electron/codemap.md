@@ -248,7 +248,8 @@ and desktop-host broker bridges.
   loading the production runtime or touching its journal; see the fixture README.
 - **Native pointer acceptance**: `scripts/bot-catalog-native-pointer-smoke.mjs`
   launches the current source Electron runtime with isolated DevRyan and Chromium
-  data, signs in through the loopback-only Test Administrator endpoint, locates
+  data, signs in through the loopback-only Test Administrator endpoint, activates
+  the owned window before its document-visibility readiness check, locates
   the enabled Bots Catalog create control through CDP, then delegates the actual
   click to `macos-pointer-click.swift` as a CoreGraphics HID event. CDP is used
   only to locate the control and assert/capture the resulting dialog, so the

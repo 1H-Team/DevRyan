@@ -1,4 +1,4 @@
-import { findPlanCardReasoningPartIndex, hasStructuredPlanBody, joinAssistantTextParts, splitPlanCardSentinel } from '@/lib/messages/actionablePlan';
+import { hasStructuredPlanBody, joinAssistantTextParts, projectReasoningOutsidePlan, resolveMessagePlanCardResolution, splitPlanCardSentinel } from '@/lib/messages/actionablePlan';
 import { isStandaloneTool } from '../../message/parts/toolRenderUtils';
 import { hasQuestionTool } from '../../message/questionContext';
 import type {
@@ -115,11 +115,12 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
         const messageHasTool = message.parts.some((part) => part.type === 'tool');
         const messageHasQuestion = hasQuestionTool(message.parts);
 
-        // When the plan card is mounted from a reasoning part, that part must not
-        // ALSO render as a thought — otherwise the same plan appears twice.
-        const planCardReasoningIndex = findPlanCardReasoningPartIndex(message.parts, {
+        // Detection and rendering share every consumed reasoning range, even
+        // after a final text plan supersedes the reasoning draft.
+        const planResolution = resolveMessagePlanCardResolution(message.parts, {
             isPlanModeSource: input.isPlanModeTurn === true,
         });
+        const reasoningRanges = new Map(planResolution?.reasoningRanges.map((range) => [range.partIndex, range]));
 
         // Providers like Grok interleave tool calls mid-plan, splitting the plan
         // across text parts none of which is plan-bearing on its own. When the
@@ -134,14 +135,16 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
         // narration fragments in such messages render as body/preamble text
         // instead of thought-style; post-plan fragments are consumed by
         // shouldSuppressPostPlanText.
-        let messagePlanBearing = turnPlanBearing || planCardReasoningIndex >= 0;
+        let messagePlanBearing = turnPlanBearing || (planResolution?.reasoningPartIndex ?? -1) >= 0;
         if (!messagePlanBearing && input.isPlanModeTurn === true) {
             const joinedText = joinAssistantTextParts(message.parts);
             messagePlanBearing = joinedText.length > 0
                 && (splitPlanCardSentinel(joinedText) !== null || hasStructuredPlanBody(joinedText));
         }
 
-        message.parts.forEach((part, partIndex) => {
+        message.parts.forEach((canonicalPart, partIndex) => {
+            const part = projectReasoningOutsidePlan(canonicalPart, reasoningRanges.get(partIndex));
+            if (!part) return;
             const isTool = part.type === 'tool';
 
             const text = part.type === 'reasoning' || part.type === 'text'
@@ -183,11 +186,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
             if (isTool) {
                 kind = 'tool';
             } else if (part.type === 'reasoning') {
-                if (partIndex === planCardReasoningIndex) {
-                    // Rendered by the plan card instead; see
-                    // findPlanCardReasoningPartIndex.
-                    kind = null;
-                } else if (text || isActiveReasoningPart(part)) {
+                if (text || isActiveReasoningPart(part)) {
                     kind = 'reasoning';
                 }
             } else if (

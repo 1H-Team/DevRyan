@@ -10,7 +10,9 @@ import {
   isPlanModeUserMessage,
   isManagedPlanMaintenanceMessage,
   parsePlanImplementationRequestPart,
+  projectReasoningOutsidePlan,
   resolveMessagePlanCard,
+  resolveMessagePlanCardResolution,
   resolvePlanCardSplit,
   resolvePlanTurnIntent,
   splitPlanCardSentinel,
@@ -506,6 +508,112 @@ describe("resolveMessagePlanCard", () => {
       planText: structuredPlanBody,
       source: "structured",
     })
+  })
+})
+
+describe("incremental reasoning plan sources", () => {
+  const reasoning = (id: string, text: string): Part => ({ ...reasoningPart("stream", text), id })
+  const text = (id: string, value: string): Part => ({ ...textPart("stream", value), id })
+  const resolve = (parts: Part[]) => resolveMessagePlanCardResolution(parts, { isPlanModeSource: true })
+  const thoughts = (parts: Part[]) => {
+    const ranges = new Map(resolve(parts)?.reasoningRanges.map(range => [range.partIndex, range]))
+    return parts.flatMap((part, index) => {
+      if (part.type !== "reasoning") return []
+      const projected = projectReasoningOutsidePlan(part, ranges.get(index))
+      return projected?.type === "reasoning" ? [projected.text] : []
+    }).join("\n")
+  }
+
+  test("populates from the first body token after a marker split across reasoning parts", () => {
+    const prefix = reasoning("r1", "Ordinary preamble.\n<!--pl")
+    expect(resolve([prefix])).toBeNull()
+    const marker = reasoning("r2", "an-->\n")
+    expect(resolve([prefix, marker])).toBeNull()
+    const body = reasoning("r3", "# P")
+    const parts = [prefix, marker, body]
+    expect(resolve(parts)).toMatchObject({
+      reasoningPartIndex: 0,
+      split: { source: "reasoning", planText: "# P" },
+      sourceRanges: [
+        { partIndex: 0, start: "Ordinary preamble.\n".length, end: prefix.type === "reasoning" ? prefix.text.length : 0 },
+        { partIndex: 1, start: 0, end: 5 },
+        { partIndex: 2, start: 0, end: 3 },
+      ],
+    })
+    expect(thoughts(parts)).toBe("Ordinary preamble.\n")
+  })
+
+  test("keeps the title and context when later reasoning sections arrive", () => {
+    const head = reasoning("r1", "Thinking.\n<!--plan-->\n# Streaming plan\n## Context\nWhy")
+    const middle = reasoning("r2", "## Implementation\n1. Update the renderer.")
+    const tail = reasoning("r3", "## Verification\n1. Inspect the streaming card.")
+    const snapshots = [[head], [head, middle], [head, middle, tail]]
+    const bodies = snapshots.map(parts => resolve(parts)?.split.planText ?? "")
+    expect(bodies[0]).toBe("# Streaming plan\n## Context\nWhy")
+    expect(bodies[1]).toBe(`${bodies[0]}\n${middle.type === "reasoning" ? middle.text : ""}`)
+    expect(bodies[2]).toBe(`${bodies[1]}\n${tail.type === "reasoning" ? tail.text : ""}`)
+    expect(thoughts(snapshots[2])).toBe("Thinking.\n")
+    expect(resolve(structuredClone(snapshots[2]))?.split).toEqual(resolve(snapshots[2])?.split)
+  })
+
+  test("uses a marker-only reasoning part when the first body tokens arrive in text", () => {
+    const head = reasoning("r1", "Preamble.\n<!--plan-->")
+    const body = text("t1", "# P")
+    expect(resolve([head])).toBeNull()
+    expect(resolve([head, body])).toMatchObject({
+      reasoningPartIndex: 0, split: { source: "reasoning", planText: "# P" },
+      sourceRanges: [{ partIndex: 0 }, { partIndex: 1 }],
+    })
+    expect(thoughts([head, body])).toBe("Preamble.\n")
+  })
+
+  test("joins reasoning sections across step metadata without joining across a tool", () => {
+    const head = reasoning("r1", "<!--plan-->\n# Plan\n## Context\nWhy")
+    const tail = reasoning("r2", "## Implementation\n1. Do it.")
+    const metadata: Part = { id: "step", messageID: "stream", sessionID: "session-1", type: "step-start" }
+    expect(resolve([head, metadata, tail])?.split.planText).toContain("1. Do it.")
+    const tool: Part = { id: "tool", messageID: "stream", sessionID: "session-1", type: "tool", tool: "read" } as Part
+    expect(resolve([head, tool, reasoning("r3", "Now inspect the file.")])?.split.planText).not.toContain("Now inspect")
+  })
+
+  test("assembles the conservative unmarked fallback across reasoning parts", () => {
+    const parts = [reasoning("r1", "Thinking.\n# Plan"), reasoning("r2", "## Context\nWhy")]
+    expect(resolve([parts[0]])).toBeNull()
+    expect(resolve(parts)?.split.planText).toBe("# Plan\n## Context\nWhy")
+    expect(resolveMessagePlanCard(parts, { isPlanModeSource: false })).toBeNull()
+  })
+
+  test("replaces repeated drafts without exposing either draft in Thinking", () => {
+    const first = reasoning("r1", "Preamble.\n<!--plan-->\n# First draft")
+    const pending = reasoning("r2", "<!--plan-->\n")
+    expect(resolve([first, pending])?.split.planText).toBe("# First draft")
+    const next = reasoning("r2", "<!--plan-->\n# Revised draft")
+    expect(resolve([first, next])?.split.planText).toBe("# Revised draft")
+    expect(thoughts([first, next])).toBe("Preamble.\n")
+    expect(thoughts([first, pending])).toBe("Preamble.\n")
+  })
+
+  test("continues a multi-part reasoning plan in text, then prefers authoritative text", () => {
+    const parts = [reasoning("r1", "Thought.\n<!--plan-->\n# Draft"), reasoning("r2", "## Context\nWhy")]
+    const continuation = text("t1", "## Implementation\n1. Update it.")
+    expect(resolve([...parts, continuation])?.split.planText).toBe("# Draft\n## Context\nWhy\n## Implementation\n1. Update it.")
+    const marker = text("t1", "<!--plan-->\n")
+    expect(resolve([...parts, marker])?.split.planText).toContain("# Draft")
+    const final = text("t1", "<!--plan-->\n# Final plan\n## Context\nFinal context")
+    const finalParts = [...parts, final]
+    expect(resolve(finalParts)).toMatchObject({ reasoningPartIndex: -1, split: { source: "sentinel", planText: "# Final plan\n## Context\nFinal context" } })
+    expect(thoughts(finalParts)).toBe("Thought.\n")
+  })
+
+  test("preserves raw offsets and references for unchanged reasoning preamble", () => {
+    const part = reasoning("r1", "  Preamble.\r\n<!--plan-->\r\n# Plan")
+    const parts = [part]
+    const range = resolve(parts)?.reasoningRanges[0]
+    const projected = projectReasoningOutsidePlan(part, range)
+    expect(projected).toMatchObject({ text: "  Preamble.\r\n" })
+    expect(projectReasoningOutsidePlan(part, range)).toBe(projected)
+    expect(part).toMatchObject({ text: "  Preamble.\r\n<!--plan-->\r\n# Plan" })
+    expect(projectReasoningOutsidePlan(part, undefined)).toBe(part)
   })
 })
 

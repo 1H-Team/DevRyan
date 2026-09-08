@@ -15,7 +15,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = path.join(root, '.cache/qa'), holdMs = 0 } = {}) {
   if (!Number.isSafeInteger(holdMs) || holdMs < 0 || holdMs > 300000) throw new Error('QA inspection hold must be 0–300000 milliseconds');
   if (!['web', 'electron'].includes(runtime)) throw new Error('QA runtime must be web or electron');
-  if (!['chat', 'mobile', 'recovery', 'thinking'].includes(scenario) || (scenario === 'mobile' && runtime !== 'web')) throw new Error('QA scenario must be chat, recovery, thinking, or mobile on web');
+  if (!['chat', 'mobile', 'recovery', 'thinking', 'grok-plan'].includes(scenario) || (scenario === 'mobile' && runtime !== 'web')) throw new Error('QA scenario must be chat, recovery, thinking, grok-plan, or mobile on web');
   if (runtime === 'electron') {
     const [webIndex, stagedIndex] = await Promise.all([
       readFile(path.join(root, 'packages/web/dist/index.html'), 'utf8'),
@@ -269,6 +269,10 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
     if (scenario === 'recovery') {
       const { runQaRecoveryCards } = await import('./recovery-cards.mjs');
       evidence.recoveryCards = await runQaRecoveryCards({ fixture, cdp, directory: workspace, dataDirectory: data, runtime, check, screenshot });
+    }
+    if (scenario === 'grok-plan') {
+      const { runGrokPlanQa } = await import('./grok-plan.mjs');
+      evidence.grokPlan = await runGrokPlanQa({ fixture, cdp, directory: workspace, dataDirectory: data, runtime, check, screenshot });
     }
     await delay(750);
     await screenshot('chat-idle');

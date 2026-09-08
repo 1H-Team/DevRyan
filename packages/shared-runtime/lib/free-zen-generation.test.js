@@ -103,6 +103,47 @@ describe('free Zen model rotation', () => {
     expect(result).toMatchObject({ ok: true, model: 'free-b', skipped: [] });
   });
 
+  it('prioritizes warm models but fills remaining slots with cooling models, deduplicating IDs', async () => {
+    const cooldowns = createFreeZenCooldowns();
+    cooldowns.mark('a', 'rate_limited');
+    cooldowns.mark('c', 'timeout');
+    const request = mock(async ({ model }) => model === 'c' ? 'recovered' : '');
+    const result = await runFreeZenModelRotation({
+      models: ['a', { id: ' b ' }, 'b', 'c', 'a'],
+      timeoutMs: 15_000, maxModels: 3, cooldowns, cooldownPolicy: 'prioritize', request,
+    });
+    expect(request.mock.calls.map(([input]) => input.model)).toEqual(['b', 'a', 'c']);
+    expect(result).toMatchObject({ ok: true, model: 'c', attempts: 3, skipped: [] });
+  });
+
+  it('aborts the timed-out request before advancing and ignores its late success', async () => {
+    let expire;
+    let lateResolve;
+    let firstSignal;
+    const attempts = [];
+    const pending = runFreeZenModelRotation({
+      models: ['a', 'b'], timeoutMs: 15_000,
+      setTimer: (callback) => { expire = callback; return 1; },
+      clearTimer: () => {},
+      request: ({ model, signal }) => {
+        if (model === 'a') {
+          firstSignal = signal;
+          return new Promise((resolve) => { lateResolve = resolve; });
+        }
+        expect(firstSignal.aborted).toBe(true);
+        return 'accepted';
+      },
+      onAttempt: (attempt) => attempts.push(attempt),
+    });
+    await Promise.resolve();
+    expire();
+    const result = await pending;
+    lateResolve('too late');
+    await Promise.resolve();
+    expect(result).toMatchObject({ ok: true, model: 'b', value: 'accepted', attempts: 2 });
+    expect(attempts.map(({ model, reason }) => [model, reason])).toEqual([['a', 'timeout'], ['b', undefined]]);
+  });
+
   it('bounds the rotation to the first N warm models', async () => {
     const request = mock(async () => '');
     const result = await runFreeZenModelRotation({

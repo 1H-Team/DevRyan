@@ -154,11 +154,13 @@ describe('BotOperationsRail', () => {
       expect(markup).toContain(`width:${width}px`);
       expect(markup).toContain('aria-label="Bot Operations Views"');
       expect(markup).toContain('@container');
-      expect(markup).toContain('@min-[420px]:inline');
-      expect(markup).toContain('aria-label="Live Computer"');
+      expect(markup).not.toContain('value="computer"');
+      expect(markup).not.toContain('aria-label="Live Computer"');
       expect(markup).not.toContain('aria-label="Activity"');
       expect(markup).toContain('aria-label="Confirmations"');
-      expect(markup).toContain('aria-label="Shared"');
+      expect(markup).toContain('aria-label="Shared files"');
+      expect(markup.indexOf('aria-label="Shared files"')).toBeLessThan(markup.indexOf('aria-label="Confirmations"'));
+      expect(/aria-selected="true"[^>]*aria-label="Shared files"|aria-label="Shared files"[^>]*aria-selected="true"/.test(markup)).toBe(true);
     }
   });
 
@@ -218,7 +220,7 @@ describe('BotOperationsRail', () => {
     expect(markup).toContain('Retry</button>');
   });
 
-  test('keeps the persistent Live Computer available after a run completes', () => {
+  test('keeps the rail focused on files after a run completes', () => {
     operationsStore.getState().upsertRun({
       ...run,
       state: 'completed',
@@ -237,7 +239,8 @@ describe('BotOperationsRail', () => {
       </I18nProvider>,
     );
 
-    expect(markup).toContain('Open in Conversation');
+    expect(markup).not.toContain('Open in Conversation');
+    expect(markup).toContain('Shared files');
     expect(markup).not.toContain(`data-bot-live-computer="${BOT_ID}"`);
     expect(markup).not.toContain('No live computer');
   });

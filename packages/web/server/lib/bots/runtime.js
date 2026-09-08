@@ -19,6 +19,7 @@ import { createBotAuthorization } from './authorization.js';
 import { createBotBlobStore } from './blob-store.js';
 import { createBotBrowserService } from './browser-service.js';
 import { createBotChannels } from './channels.js';
+import { createBotCatalogVisibility } from './catalog-visibility.js';
 import { createBotCapabilityBindings } from './capability-bindings.js';
 import { createBotConfigCompiler } from './config-compiler.js';
 import { createBotComputerRuntimeManager } from './computer-runtime-manager.js';
@@ -282,12 +283,15 @@ export function createBotsRuntime({
     principalPolicy,
   });
   const blobStore = createBotBlobStore({ store, authorization, encryption });
-  const channels = createBotChannels({ store, authorization, encryption });
+  const catalogVisibility = createBotCatalogVisibility({ store });
+  const channels = createBotChannels({ store, authorization, encryption, filterCatalog: catalogVisibility.filterBots });
   const streamAccessLeases = createBotStreamAccessLeases({
     revalidate: (input) => channels.preflightMessage(input),
   });
   const eventStream = createBotEventStream({
     loadSnapshot: (principal) => channels.snapshotForPrincipal(principal),
+    filterSnapshot: catalogVisibility.filterSnapshot,
+    canDeliver: catalogVisibility.isVisible,
   });
   const dockerProvider = createBotDockerProvider({ botHost });
   const computerBackend = createDockerBotComputerBackend({ dockerProvider });
@@ -641,6 +645,7 @@ export function createBotsRuntime({
   });
   const management = createBotManagement({
     store,
+    filterCatalog: catalogVisibility.filterBots,
     authorization,
     encryption,
     blobStore,

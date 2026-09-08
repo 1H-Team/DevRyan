@@ -24,3 +24,5 @@ Message rows iterate parts and delegate rendering; part components format stream
 Used by chat/message components and backed by shared markdown/tool helpers.
 
 Interactive reasoning lifecycle checks: `tests/visual-reasoning/` mounts these real components and verifies pending status, keyboard/focus, completion, cancellation, reload, and responsive layouts.
+
+`PlanCard.tsx` streams the shared resolver's body through the existing text throttle even when it originates in reasoning. Its source-message key is shared across reasoning/text rendering so an in-message handoff preserves the mounted card. Persistence and implementation require a settled, successful revision and a session that is not busy/retrying; a completed tool step cannot prematurely save a draft. `scripts/qa/grok-plan.mjs` verifies real web/Electron streaming, source handoff, reload, hidden reasoning, responsive themes, and cancellation with controlled SSE deltas.

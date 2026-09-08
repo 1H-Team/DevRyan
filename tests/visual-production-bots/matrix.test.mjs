@@ -14,6 +14,9 @@ describe('Production Bots visual fixture matrix', () => {
     expect(PRODUCTION_BOTS_VISUAL_MATRIX.some((entry) => entry.viewport.width === 390 && entry.drawer === 'open')).toBe(true);
     expect(PRODUCTION_BOTS_VISUAL_MATRIX.some((entry) => entry.viewport.width === 390 && entry.drawer === 'closed')).toBe(true);
     for (const state of [
+      'catalog_filtered', 'catalog_empty', 'telegram_compact', 'voice_configured', 'voice_error',
+      'computer_hidden', 'computer_shown', 'computer_expanded', 'computer_waiting',
+      'computer_owned', 'computer_disconnected', 'computer_completed', 'computer_idle',
       'provider_model', 'missing_credential',
       'opencode', 'healthy', 'testing', 'failed', 'revoked', 'privacy_warning',
       'trusted', 'untrusted', 'tampered', 'binding_failed', 'diff',
@@ -32,7 +35,7 @@ describe('Production Bots visual fixture matrix', () => {
   });
 
   test('constructs loopback URLs without carrying unrelated query data', () => {
-    const url = new URL(productionBotsVisualUrl('http://127.0.0.1:4178/ignored?secret=no', PRODUCTION_BOTS_VISUAL_MATRIX[0]));
+    const url = new URL(productionBotsVisualUrl('http://127.0.0.1:4178/ignored?secret=no', PRODUCTION_BOTS_VISUAL_MATRIX.find((entry) => entry.id === 'agent-opencode-light-r220')));
     expect(url.hostname).toBe('127.0.0.1');
     expect(url.searchParams.get('secret')).toBeNull();
     expect(url.searchParams.get('scene')).toBe('agent');

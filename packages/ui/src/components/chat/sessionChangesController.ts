@@ -77,7 +77,8 @@ export type SessionChangesFooterState = {
 
 /**
  * Visibility matrix for the session changed-files card. Hidden when the
- * directory is not a git repo, a complete summary has no changes (except Undo),
+ * latest submitted turn is not a settled implementation, there are no changes (except Undo),
+ * the directory is not a git repo,
  * a revert is pending, or the tree is still working. Disabled (with a reason) while a session outside the tree is working in the same project.
  */
 export const resolveSessionChangesFooterState = ({
@@ -87,9 +88,7 @@ export const resolveSessionChangesFooterState = ({
     isTreeWorking,
     isSiblingWorking,
     isUndone,
-    isLoading = false,
-    hasError = false,
-    coverage,
+    isImplementationSettled,
 }: {
     isGitRepo: boolean | null;
     fileCount: number;
@@ -97,15 +96,14 @@ export const resolveSessionChangesFooterState = ({
     isTreeWorking: boolean;
     isSiblingWorking: boolean;
     isUndone: boolean;
-    isLoading?: boolean;
-    hasError?: boolean;
-    coverage?: SessionTreeChangesEntry['coverage'];
+    isImplementationSettled: boolean;
 }): SessionChangesFooterState => {
     const mode: SessionChangesMode = isUndone ? 'undone' : 'changes';
     const hidden = isGitRepo !== true
+        || !isImplementationSettled
         || isRevertPending
         || isTreeWorking
-        || (fileCount === 0 && !isUndone && !isLoading && !hasError && coverage !== 'partial');
+        || (fileCount === 0 && !isUndone);
     return {
         visible: !hidden,
         mode,
@@ -156,6 +154,11 @@ export type SessionChangesController = {
     rootSessionId: string | null;
     directory: string;
     files: GitChangedFile[];
+    fileCount: number;
+    pageIndex: number;
+    pageLoading: boolean;
+    nextPage?: () => void;
+    previousPage?: () => void;
     subagentCount: number;
     statusMessage: string | null;
     revision: string | null;
@@ -187,6 +190,7 @@ export const useSessionChangesController = (): SessionChangesController => {
         statuses,
         revertTransactions,
         isGitRepo,
+        isImplementationSettled,
     } = useSessionChangesFooterSources();
     useAuthPrincipal();
     const [reviewSelection, setReviewSelection] = React.useState<{ key: string; file: string; revision: string } | null>(null);
@@ -224,9 +228,27 @@ export const useSessionChangesController = (): SessionChangesController => {
         observeSessionTreeActivity(directory, rootSessionId, isTreeWorking || isRevertPending);
     }, [directory, isRevertPending, isTreeWorking, rootSessionId]);
 
+    const [pageSelection, setPageSelection] = React.useState<{ key: string; revision: string; value: Awaited<ReturnType<typeof opencodeClient.getSessionChangesPage>> } | null>(null);
+    const [pageRequest, setPageRequest] = React.useState<{ key: string; revision: string; cursor: string | null; sequence: number } | null>(null);
+    const [pageLoading, setPageLoading] = React.useState(false);
+    const visiblePage = pageSelection?.key === entryKey && pageSelection.revision === entry?.revision ? pageSelection.value : entry;
+    React.useEffect(() => {
+        if (!pageRequest || pageRequest.key !== entryKey || pageRequest.revision !== entry?.revision || !rootSessionId) return;
+        const controller = new AbortController();
+        setPageLoading(true);
+        void opencodeClient.getSessionChangesPage(rootSessionId, directory, pageRequest.revision, pageRequest.cursor, controller.signal)
+            .then((value) => { if (!controller.signal.aborted) setPageSelection({ key: entryKey, revision: pageRequest.revision, value }); })
+            .catch(() => { if (!controller.signal.aborted) toast.error(t('chat.sessionChanges.loadFailed')); })
+            .finally(() => { if (!controller.signal.aborted) setPageLoading(false); });
+        return () => { controller.abort(); setPageLoading(false); };
+    }, [directory, entry?.revision, entryKey, pageRequest, rootSessionId, t]);
+    const requestPage = (cursor: string | null) => {
+        const revision = entry?.revision;
+        if (revision) setPageRequest((previous) => ({ key: entryKey, revision, cursor, sequence: (previous?.sequence ?? 0) + 1 }));
+    };
     const files = React.useMemo(
-        () => (entry?.files ?? []).map((file) => toGitChangedFile(file, entry?.worktreeDirectory ?? directory)),
-        [directory, entry?.files, entry?.worktreeDirectory],
+        () => (visiblePage?.files ?? []).map((file) => toGitChangedFile(file, entry?.worktreeDirectory ?? directory)),
+        [directory, visiblePage?.files, entry?.worktreeDirectory],
     );
 
     const state = resolveSessionChangesFooterState({
@@ -236,9 +258,7 @@ export const useSessionChangesController = (): SessionChangesController => {
         isTreeWorking,
         isSiblingWorking,
         isUndone,
-        isLoading: entry?.loading,
-        hasError: Boolean(entry?.error),
-        coverage: entry?.coverage,
+        isImplementationSettled,
     });
 
     let statusMessage: string | null = null;
@@ -247,7 +267,10 @@ export const useSessionChangesController = (): SessionChangesController => {
     else if (entry?.coverage === 'partial') {
         const reasons = entry.reasons ?? [];
         if (reasons.some((reason) => ['overlapping_operations', 'interleaved_file_changes'].includes(reason))) statusMessage = t('chat.sessionChanges.overlap');
-        else if (reasons.some((reason) => ['storage_limit', 'capture_limit'].includes(reason))) statusMessage = t('chat.sessionChanges.limit');
+        else if (reasons.includes('storage_unavailable')) statusMessage = t('chat.sessionChanges.storageUnavailable');
+        else if (reasons.includes('capture_timeout')) statusMessage = t('chat.sessionChanges.captureTimeout');
+        else if (reasons.includes('history_pending')) statusMessage = t('chat.sessionChanges.loading');
+        else if (reasons.some((reason) => ['storage_limit', 'capture_limit'].includes(reason))) statusMessage = t('chat.sessionChanges.legacyCapture');
         else if (reasons.includes('native_revert_active')) statusMessage = t('chat.sessionChanges.rewound');
         else statusMessage = t('chat.sessionChanges.incomplete');
     }
@@ -294,6 +317,11 @@ export const useSessionChangesController = (): SessionChangesController => {
         rootSessionId,
         directory,
         files,
+        fileCount: entry?.fileCount ?? files.length,
+        pageIndex: visiblePage?.pageIndex ?? 0,
+        pageLoading,
+        nextPage: visiblePage?.nextCursor ? () => requestPage(visiblePage.nextCursor ?? null) : undefined,
+        previousPage: (visiblePage?.pageIndex ?? 0) > 0 ? () => requestPage(visiblePage?.previousCursor ?? null) : undefined,
         subagentCount: Math.max(0, (entry?.sessionCount ?? treeIds.length) - 1),
         statusMessage,
         revision: reviewSelection?.key === entryKey ? reviewSelection.revision : entry?.revision ?? null,

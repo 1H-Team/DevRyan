@@ -1,0 +1,91 @@
+# Reviewed packaged captures
+
+All 83 cases passed automated interaction/layout checks and visual inspection.
+The two expanded cases were recaptured with an explicit modal assertion and inspected again.
+Full assertions, stream/focus metrics, and image SHA-256 values are in [evidence.json](evidence.json).
+
+| Case | Theme / role | Viewport | Result |
+| --- | --- | --- | --- |
+| [catalog-filtered-light](catalog-filtered-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [catalog-empty-dark-narrow](catalog-empty-dark-narrow.png) | dark / developer | 390 × 844 | Passed / reviewed |
+| [conversation-computer_hidden-light](conversation-computer_hidden-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [conversation-computer_hidden-dark-narrow](conversation-computer_hidden-dark-narrow.png) | dark / developer | 390 × 844 | Passed / reviewed |
+| [conversation-computer_shown-light](conversation-computer_shown-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [conversation-computer_shown-dark-narrow](conversation-computer_shown-dark-narrow.png) | dark / developer | 390 × 844 | Passed / reviewed |
+| [conversation-computer_expanded-light](conversation-computer_expanded-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [conversation-computer_expanded-dark-narrow](conversation-computer_expanded-dark-narrow.png) | dark / developer | 390 × 844 | Passed / reviewed |
+| [conversation-computer_waiting-light](conversation-computer_waiting-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [conversation-computer_waiting-dark-narrow](conversation-computer_waiting-dark-narrow.png) | dark / developer | 390 × 844 | Passed / reviewed |
+| [conversation-computer_owned-light](conversation-computer_owned-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [conversation-computer_owned-dark-narrow](conversation-computer_owned-dark-narrow.png) | dark / developer | 390 × 844 | Passed / reviewed |
+| [conversation-computer_disconnected-light](conversation-computer_disconnected-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [conversation-computer_disconnected-dark-narrow](conversation-computer_disconnected-dark-narrow.png) | dark / developer | 390 × 844 | Passed / reviewed |
+| [conversation-computer_completed-light](conversation-computer_completed-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [conversation-computer_completed-dark-narrow](conversation-computer_completed-dark-narrow.png) | dark / developer | 390 × 844 | Passed / reviewed |
+| [conversation-computer_idle-light](conversation-computer_idle-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [conversation-computer_idle-dark-narrow](conversation-computer_idle-dark-narrow.png) | dark / developer | 390 × 844 | Passed / reviewed |
+| [telegram-compact-light](telegram-compact-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [telegram-compact-dark-narrow](telegram-compact-dark-narrow.png) | dark / admin | 390 × 844 | Passed / reviewed |
+| [voice-configured-light](voice-configured-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [voice-error-dark-narrow](voice-error-dark-narrow.png) | dark / admin | 390 × 844 | Passed / reviewed |
+| [avatars-cold-light](avatars-cold-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [avatars-warm-light](avatars-warm-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [avatars-warm-dark-narrow](avatars-warm-dark-narrow.png) | dark / admin | 390 × 844 | Passed / reviewed |
+| [avatars-reduced-motion](avatars-reduced-motion.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [agent-opencode-light-r220](agent-opencode-light-r220.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [agent-agui-healthy-dark-r280](agent-agui-healthy-dark-r280.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [agent-testing-light-r500](agent-testing-light-r500.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [agent-failed-dark-r280](agent-failed-dark-r280.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [agent-revoked-light-r220](agent-revoked-light-r220.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [agent-privacy-warning-dark-narrow](agent-privacy-warning-dark-narrow.png) | dark / admin | 390 × 844 | Passed / reviewed |
+| [overview-provider-model-light-r280](overview-provider-model-light-r280.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [overview-missing-credential-dark-narrow](overview-missing-credential-dark-narrow.png) | dark / admin | 390 × 844 | Passed / reviewed |
+| [spec-trusted-light-r500](spec-trusted-light-r500.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [spec-untrusted-dark-r280](spec-untrusted-dark-r280.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [spec-tampered-light-r220](spec-tampered-light-r220.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [spec-binding-failed-dark-narrow](spec-binding-failed-dark-narrow.png) | dark / admin | 390 × 844 | Passed / reviewed |
+| [spec-portable-diff-light-r500](spec-portable-diff-light-r500.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [policy-structured-light-r500](policy-structured-light-r500.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [policy-validation-error-dark-r280](policy-validation-error-dark-r280.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [policy-quota-exhausted-light-narrow](policy-quota-exhausted-light-narrow.png) | light / admin | 390 × 844 | Passed / reviewed |
+| [network-public-only-light-r220](network-public-only-light-r220.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [network-allowlist-dark-r500](network-allowlist-dark-r500.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [network-private-denial-light-r280](network-private-denial-light-r280.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [network-proxy-failure-dark-narrow](network-proxy-failure-dark-narrow.png) | dark / admin | 390 × 844 | Passed / reviewed |
+| [network-standard-light-r280](network-standard-light-r280.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [network-runsc-dark-r500](network-runsc-dark-r500.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [network-runsc-unavailable-light-r220](network-runsc-unavailable-light-r220.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [runtime-consent-light-r280](runtime-consent-light-r280.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [runtime-legacy-consent-dialog-light-r500](runtime-legacy-consent-dialog-light-r500.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [runtime-starting-dark-r220](runtime-starting-dark-r220.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [runtime-connected-light-r500](runtime-connected-light-r500.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [runtime-degraded-dark-r280](runtime-degraded-dark-r280.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [runtime-updating-light-narrow](runtime-updating-light-narrow.png) | light / admin | 390 × 844 | Passed / reviewed |
+| [runtime-disabled-dark-r280](runtime-disabled-dark-r280.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [runtime-desktop-unavailable-light-r500](runtime-desktop-unavailable-light-r500.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [transcript-empty-light-r220](transcript-empty-light-r220.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [transcript-loading-dark-r280](transcript-loading-dark-r280.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [transcript-pending-light-r280](transcript-pending-light-r280.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [transcript-pending-developer-dark-r220](transcript-pending-developer-dark-r220.png) | dark / developer | 1280 × 800 | Passed / reviewed |
+| [transcript-settled-light-r500](transcript-settled-light-r500.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [transcript-reconciliation-dark-r500](transcript-reconciliation-dark-r500.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [transcript-partial-failure-light-narrow](transcript-partial-failure-light-narrow.png) | light / admin | 390 × 844 | Passed / reviewed |
+| [transcript-paused-dark-r280](transcript-paused-dark-r280.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [transcript-retry-refused-light](transcript-retry-refused-light.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [transcript-timeout-dark-narrow](transcript-timeout-dark-narrow.png) | dark / admin | 390 × 844 | Passed / reviewed |
+| [transcript-retired-light-r500](transcript-retired-light-r500.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [transcript-ack-running-light-admin-r280](transcript-ack-running-light-admin-r280.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [transcript-ack-running-dark-developer-narrow](transcript-ack-running-dark-developer-narrow.png) | dark / developer | 390 × 844 | Passed / reviewed |
+| [transcript-ack-result-dark-admin-r500](transcript-ack-result-dark-admin-r500.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [transcript-ack-result-light-developer-narrow](transcript-ack-result-light-developer-narrow.png) | light / developer | 390 × 844 | Passed / reviewed |
+| [transcript-image-loading-light-admin-r280](transcript-image-loading-light-admin-r280.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [transcript-image-ready-dark-admin-r500](transcript-image-ready-dark-admin-r500.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [transcript-image-error-light-developer-narrow](transcript-image-error-light-developer-narrow.png) | light / developer | 390 × 844 | Passed / reviewed |
+| [screen-connecting-light-admin-r280](screen-connecting-light-admin-r280.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [screen-owned-dark-admin-r500](screen-owned-dark-admin-r500.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [screen-view-only-light-developer-narrow](screen-view-only-light-developer-narrow.png) | light / developer | 390 × 844 | Passed / reviewed |
+| [screen-conflict-light-admin-r220](screen-conflict-light-admin-r220.png) | light / admin | 1280 × 800 | Passed / reviewed |
+| [screen-wait-owned-dark-admin-r500](screen-wait-owned-dark-admin-r500.png) | dark / admin | 1280 × 800 | Passed / reviewed |
+| [screen-wait-other-light-admin-narrow](screen-wait-other-light-admin-narrow.png) | light / admin | 390 × 844 | Passed / reviewed |
+| [screen-disconnected-dark-developer-r280](screen-disconnected-dark-developer-r280.png) | dark / developer | 1280 × 800 | Passed / reviewed |
+| [screen-off-light-admin-narrow](screen-off-light-admin-narrow.png) | light / admin | 390 × 844 | Passed / reviewed |

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.16] - 2026-09-08
+
+- Production Bots: simplify the catalog and conversation surfaces, add cached and validated custom avatars, consolidate computer status and controls, and keep catalog visibility and navigation authoritative across roles and lifecycle states.
+- Bot runtime: harden admission, event replay, channel delivery, provider errors, and warm-runtime lease recovery while preserving scoped state and explicit terminal outcomes.
+- Plans: stream actionable plan content progressively across Grok and Meridian, preserve plan identity through partial output, cancellation, reload, and continuation, and keep implementation controls tied to complete revisions.
+- Session changes: split Git capture, snapshots, and durable storage into focused modules; preserve turn-scoped change summaries and diffs; and bound work for large repositories and histories.
+- Provider QA: add deterministic Claude quota and cancellation fixtures, Meridian prefix and continuity coverage, native pointer verification, and expanded responsive Production Bot visual evidence.
+- Database: deploy and verify all repository migrations and the required Production Bots schema marker before release publication.
+- Release: update all DevRyan package and desktop metadata to 1.1.16.
+
 ## [1.1.15] - 2026-09-07
 
 - Chat: preserve Markdown when copying messages, keep question context visible, narrow prompt-history subscriptions, and bound large tool-diff rendering with downloadable full patches.

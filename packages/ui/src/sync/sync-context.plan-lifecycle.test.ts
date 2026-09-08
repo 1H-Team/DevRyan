@@ -1763,7 +1763,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "idle" })
   })
 
-  test("renders plan-ready yellow after part and message updates complete the plan card lifecycle", async () => {
+  test("renders plan-ready yellow only after part, message, and authoritative idle updates settle the plan", async () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
     const incompleteAssistantMessage = {
@@ -1807,10 +1807,9 @@ describe("sync plan lifecycle on message.part.delta", () => {
     )
     await flushAsync()
 
-    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({
-      state: "proposed",
-      sourceMessageId: ASSISTANT_MESSAGE_ID,
-    })
+    // A completed tool step can carry a whole reasoning draft while the turn
+    // stays busy. Proposal/persistence must wait for the authoritative idle.
+    expect(useSessionUIStore.getState().sessionPlanIndicator.has(SESSION_ID)).toBe(false)
     expect(resolveSidebarIndicator({
       isRootSession: true,
       isWorking: true,

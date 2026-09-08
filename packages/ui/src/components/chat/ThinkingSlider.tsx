@@ -131,7 +131,7 @@ export function ThinkingSliderPopover({ trigger, children, disabled }: { trigger
             <Popover.Positioner side="top" align="center" sideOffset={12} collisionPadding={12} className="z-[100]">
                 <Popover.Popup ref={popupRef} initialFocus={() => popupRef.current?.querySelector<HTMLElement>('[role="slider"]') ?? true}
                     onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setOpen(false); } }}
-                    aria-label="Thinking Options" className="w-[min(280px,calc(100vw-24px))] rounded-xl border border-border/60 bg-background/95 p-5 shadow-xl outline-none backdrop-blur-xl">
+                    aria-label="Thinking Options" className="w-[min(280px,calc(100vw-24px))] rounded-xl border border-border/60 bg-background/95 px-5 py-4.5 shadow-xl outline-none backdrop-blur-xl">
                     {children}
                     <Popover.Arrow className="absolute -bottom-[5px] h-[10px] w-[10px] rotate-45 border-b border-r border-border/60 bg-background" />
                 </Popover.Popup>

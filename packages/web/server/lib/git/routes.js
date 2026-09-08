@@ -5,15 +5,14 @@ import {
 } from './commit-message.js';
 import { collectCommitMessageContext, validateCommitMessageSelectedFiles } from './commit-message-context.js';
 import { generatePullRequestDescriptionDirect } from './pr-description.js';
+import { createGitZenTextTransport } from './zen-text.js';
 import { requireManagedAssignedBranch } from '../multi-user/branch-authorization.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
 import { executionFromManagedAgent, findManagedAgent } from '../multi-user/managed-agent-defaults.js';
 import { generateTextWithSessionModel as generateTextWithSessionModelDefault } from '../opencode/session-model-text.js';
 import {
-  COMMIT_DRAFT_DEADLINE_MS,
   PULL_REQUEST_DIFF_MAX_CHARS,
   buildPullRequestDiffContext,
-  createCommitModelCooldowns,
   normalizePullRequestDraft,
   sharedFreeZenCooldowns,
 } from '@openchamber/shared-runtime';
@@ -119,8 +118,6 @@ const collectCommitContextWithinDeadline = async ({ promise, selectedFiles, stag
 };
 
 export function registerGitRoutes(app, {
-  resolveZenModel = async (override) => override || 'gpt-5-nano',
-  resolveCommitZenModel,
   fetchFreeZenModels,
   getCachedFreeZenModels,
   generateCommitMessage = generateCommitMessageDirect,
@@ -136,7 +133,6 @@ export function registerGitRoutes(app, {
   registerCommitTemplateRoutes(app);
 
   let gitLibraries = null;
-  const commitModelCooldowns = createCommitModelCooldowns();
   // Last catalog this route saw: the stale fallback when the live fetch fails
   // and no catalog snapshot getter was injected.
   let lastKnownFreeZenModels = [];
@@ -163,28 +159,6 @@ export function registerGitRoutes(app, {
     const { getPrimaryWorktreeRoot } = await getGitLibraries();
     const repoRoot = await getPrimaryWorktreeRoot(directory);
     return { directory, repoRoot };
-  };
-
-  const resolveCommitModelSelection = async (requestedModel) => {
-    if (typeof resolveCommitZenModel === 'function') {
-      const selection = await resolveCommitZenModel(requestedModel);
-      if (selection && typeof selection === 'object') {
-        return {
-          model: typeof selection.model === 'string' && selection.model.trim()
-            ? selection.model.trim()
-            : requestedModel,
-          fallbackModel: typeof selection.fallbackModel === 'string' && selection.fallbackModel.trim()
-            ? selection.fallbackModel.trim()
-            : null,
-          catalogState: typeof selection.catalogState === 'string' ? selection.catalogState : 'unknown',
-        };
-      }
-    }
-    return {
-      model: await resolveZenModel(requestedModel),
-      fallbackModel: null,
-      catalogState: 'blocking',
-    };
   };
 
   const setCommitServerTiming = (res, timings) => {
@@ -221,13 +195,40 @@ export function registerGitRoutes(app, {
     }
   };
 
-  const runCommitMessageGeneration = async ({ context, guidance, requestedModel, timings, deadlineAt }) => {
+  const recordGenerationAttempt = (req, event, tier, attempt, catalogState) => {
+    try {
+      recordCommitTiming(req, {
+        event,
+        tier,
+        contextMs: 0,
+        modelMs: 0,
+        providerMs: attempt.durationMs ?? 0,
+        parseMs: 0,
+        totalMs: attempt.durationMs ?? 0,
+        outcome: attempt.outcome,
+        model: attempt.model,
+        catalogState: catalogState || tier,
+        retried: (attempt.attempt ?? 1) > 1,
+        attempt: attempt.attempt ?? 1,
+        statusCode: attempt.status,
+        source: tier,
+        providerOutcome: attempt.reason || attempt.outcome,
+      });
+    } catch {
+      // Diagnostics must never break generation.
+    }
+  };
+
+  const runCommitMessageGeneration = async ({ req, directory, context, guidance, requestedModel, timings }) => {
     const modelStartedAt = Date.now();
-    const selection = await resolveCommitModelSelection(requestedModel);
+    const catalog = await resolveFreeZenCatalog();
+    const modelId = (entry) => typeof entry === 'string' ? entry.trim() : entry.id.trim();
+    const models = [
+      ...catalog.models.filter((entry) => modelId(entry) === requestedModel),
+      ...catalog.models.filter((entry) => modelId(entry) !== requestedModel),
+    ];
     timings.modelMs = Date.now() - modelStartedAt;
-    const selectedModel = commitModelCooldowns.select(selection.model, selection.fallbackModel);
-    timings.model = selectedModel;
-    timings.catalogState = selection.catalogState;
+    timings.catalogState = catalog.state;
     let generatorTiming = null;
     const providerStartedAt = Date.now();
     let message;
@@ -235,10 +236,11 @@ export function registerGitRoutes(app, {
       message = await generateCommitMessage({
         context,
         guidance,
-        zenModel: selectedModel,
-        fallbackZenModel: null,
-        deadlineAt,
-        skipProvider: !selectedModel,
+        ...createGitZenTextTransport({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, agent: 'devryan-commit' }),
+        models,
+        catalogState: catalog.state,
+        cooldowns: freeZenCooldowns,
+        onAttempt: (attempt) => recordGenerationAttempt(req, 'git_commit_message_model_attempt', 'free_zen', attempt, catalog.state),
         onTiming: (value) => {
           generatorTiming = value;
         },
@@ -249,9 +251,7 @@ export function registerGitRoutes(app, {
       timings.retried = generatorTiming?.retried === true;
     }
     const generation = message?._generation || {};
-    if (generation.providerOutcome === 'deadline' || generation.providerOutcome === 'error') {
-      commitModelCooldowns.markUnhealthy(selectedModel);
-    }
+    timings.model = generation.model ?? null;
     return {
       message: {
         subject: message.subject,
@@ -260,9 +260,9 @@ export function registerGitRoutes(app, {
       warning: typeof generation.warning === 'string' ? generation.warning : null,
       source: generation.source || 'ai',
       providerOutcome: generation.providerOutcome || 'complete',
-      model: selectedModel,
-      catalogState: selection.catalogState,
-      retried: false,
+      model: generation.model ?? null,
+      catalogState: catalog.state,
+      retried: (generation.attempts ?? 0) > 1,
     };
   };
 
@@ -1011,7 +1011,8 @@ export function registerGitRoutes(app, {
         guidance: typeof guidance === 'string' ? guidance : undefined,
         requestedModel: requestedModel || COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
         timings,
-        deadlineAt: startedAt + COMMIT_DRAFT_DEADLINE_MS,
+        req,
+        directory,
       });
       timings.totalMs = Date.now() - startedAt;
       timingDetails = {
@@ -1094,7 +1095,8 @@ export function registerGitRoutes(app, {
         guidance: typeof guidance === 'string' ? guidance : undefined,
         requestedModel: requestedModel || COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
         timings,
-        deadlineAt: startedAt + COMMIT_DRAFT_DEADLINE_MS,
+        req,
+        directory,
       });
       timings.totalMs = Date.now() - startedAt;
       timingDetails = {
@@ -1157,7 +1159,7 @@ export function registerGitRoutes(app, {
       const stale = staleFreeZenModels();
       return { models: stale, state: stale.length > 0 ? 'stale' : 'empty' };
     } catch (error) {
-      console.warn('[git] Free Zen catalog unavailable for PR generation:', error?.message || error);
+      console.warn('[git] Free Zen catalog unavailable for Git generation:', error?.message || error);
       const stale = staleFreeZenModels();
       return { models: stale, state: stale.length > 0 ? 'stale' : 'unavailable' };
     }
@@ -1222,25 +1224,7 @@ export function registerGitRoutes(app, {
         reason,
         ...(Number.isFinite(attempt.durationMs) ? { durationMs: attempt.durationMs } : {}),
       });
-      try {
-        recordCommitTiming(req, {
-          event: 'git_pr_description_model_attempt',
-          tier,
-          contextMs: 0,
-          modelMs: 0,
-          providerMs: attempt.durationMs ?? 0,
-          parseMs: 0,
-          totalMs: attempt.durationMs ?? 0,
-          outcome: attempt.outcome,
-          model: attempt.model,
-          catalogState: catalogState || tier,
-          retried: (attempt.attempt ?? 1) > 1,
-          source: tier,
-          providerOutcome: attempt.reason || attempt.outcome,
-        });
-      } catch {
-        // Diagnostics must never break PR generation.
-      }
+      recordGenerationAttempt(req, 'git_pr_description_model_attempt', tier, attempt, catalogState);
     };
     const finishTiming = () => {
       res.setHeader('Server-Timing', `pr-total;dur=${Date.now() - startedAt}`);
@@ -1270,6 +1254,7 @@ export function registerGitRoutes(app, {
       if (catalog.models.length > 0) {
         try {
           const generated = await generatePullRequestDescription({
+            ...createGitZenTextTransport({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, agent: PR_SESSION_HELPER_AGENT }),
             prompt: fullPrompt,
             models: catalog.models,
             cooldowns: freeZenCooldowns,
@@ -1312,6 +1297,7 @@ export function registerGitRoutes(app, {
         agent: PR_SESSION_HELPER_AGENT,
         prompt: fullPrompt,
         repairPrompt: PR_SESSION_REPAIR_PROMPT,
+        denyTools: true,
         accept: normalizePullRequestDraft,
         timeoutMs: PR_SESSION_MODEL_TIMEOUT_MS,
       });

@@ -328,8 +328,12 @@ attempt to remove the final active Manager.
 Bot presentation is durable and independent of revisions. `PATCH /api/bots/:botId/profile`
 updates Name, Title, Short Summary, and the optional encrypted avatar under an
 exact Bot `updated_at` precondition. `GET /api/bots/:botId/avatar` permits only
-current members and Managers. Avatar
-uploads accept PNG, JPEG, or WebP up to 5 MiB and verify both declared MIME and
+current members and Managers and keeps `Cache-Control: no-store, private`.
+The public `avatarUrl` version is the profile avatar object ID, so unrelated
+Bot timestamp changes do not invalidate the UI's private in-memory cache.
+Replacement changes the version; removal returns a null URL. The endpoint
+continues to authorize and serve the current profile image, not arbitrary
+objects named by a query parameter. Avatar uploads accept PNG, JPEG, or WebP up to 5 MiB and verify both declared MIME and
 byte signature before encryption. Replacement uploads the new object first,
 swaps the same-Bot profile pointer optimistically, removes the new object on
 conflict, then tombstones and resumably cleans the old object. A migrated
@@ -599,15 +603,22 @@ provisional mode without a durable message or run. Credential selection and
 materialization therefore skip `bot_runs` model-snapshot writes until normal
 admission claims the same preallocated run ID. `warm-runtime-leases.js` binds its opaque lease and
 preallocated run ID to the principal, channel, active revision, and Library
-snapshot. It keeps at most two live leases with a two-minute idle TTL and LRU
+snapshot. It keeps at most two live leases with a ten-minute idle TTL and LRU
 eviction. Eligible attachment-free sends atomically claim the lease; attachments,
 routines, expiry, mismatch, or preparation failure fall back to the cold path.
 `DELETE /api/bot-channels/:channelId/prewarm/:leaseId` releases an unused lease.
 Release, expiry, eviction, revision/channel invalidation, shutdown, and cold-path
 replacement stop the runtime and revoke credentials, capabilities, environment
 files, artifacts, and containers through the provider's normal scoped cleanup.
-Preparation failures retain content-free `stage` and `errorCode` diagnostics;
-they are not collapsed to one `prepare_failed` label.
+Claimed preparation and cleanup must settle before cold fallback reuses the same
+durable run ID. OpenCode `releaseWarm` treats only `bot_opencode_run_not_found`
+as already cleaned up; other cleanup failures block fallback, and ordinary
+provider stop/inspection operations remain strict. This prevents failed warm
+preparation from being masked by a second stop of its rolled-back runtime.
+Preparation failures retain content-free `stage` (including `oauth_readiness`)
+and `errorCode` diagnostics; they are not collapsed to one `prepare_failed`
+label. OAuth discovery failures record sanitized upstream classification and
+status before wrapping, without response bodies, headers, or credentials.
 
 Electron's app-bound or background owner uses the separate
 `prepareStartup`/server-handle `prepareBotRuntime()` contract after bounded HTTP
@@ -797,7 +808,9 @@ turns.
 
 Every assembled turn also includes one runtime-owned synthetic response-style
 instruction between the private context and the user's query. It requires a
-direct final answer without acknowledgments or pre-tool/inter-tool narration.
+direct answer for ordinary conversation. Before tool work it asks for one short,
+request-specific acknowledgment using the configured Soul, without generic
+receipt examples or inter-tool narration. No additional model call is added.
 The Bot retains its configured Soul and selected reasoning model.
 The instruction is execution-only: it is not written into the
 published revision contract, compiled hash, context snapshot, or canonical
@@ -807,12 +820,15 @@ without republishing.
 Normalized adapter events retain authoritative request/message/part identity,
 part type, visibility and completion. Finalization reconciles against provider
 records for the exact submitted request; reasoning, hidden and unknown fragments
-fail closed. The pending row is promoted to one final `result` only after that
-reconciliation. Missing text fails as `bot_response_missing` unless a valid
+fail closed. One verified pre-tool checkpoint becomes an `acknowledgment` and
+is published before allocating the next pending result row. Delayed text/tool
+events and final reconciliation share a single promotion guard. The separate
+pending result is finalized only after provider reconciliation. Missing text fails as `bot_response_missing` unless a valid
 persisted deliverable exists. Generated images are published before finality.
 `response-sanitizer.js` uses metadata only: it never removes legitimate sentences,
-literal protocol markers or code by natural-language heuristics. Historical
-acknowledgment rows are hidden by the UI without a destructive migration.
+literal protocol markers or code by natural-language heuristics. Acknowledgments
+stay visible after reload and completion but remain excluded from previews,
+memory extraction, and final-result selection.
 OpenCode SSE reconnects with bounded backoff and read-only completion polling;
 it never resends an uncertain prompt. `request-lifetime.js` starts the deadline
 before preparation/submission and propagates cancellation to pending HTTP work.
@@ -1415,3 +1431,20 @@ floor fail configuration. Pruning first crosses the managed audit-outbox
 delivery barrier exactly once, then calls the fixed security-invoker RPC daily;
 transient control-plane failures are retried without taking the existing
 multi-user runtime offline.
+
+## Catalog visibility and preparation coordination
+
+`catalog-visibility.js` shares creator account classification across management,
+channel snapshots, combined snapshots, and live catalog events. Bots created
+by reserved `agent_test` accounts are omitted for human viewers, including
+administrators; test viewers retain their existing authorized access. The rule
+never matches names or deletes data. `store.listUserAccountKinds` batches only
+`id,account_kind`; bounded short-lived decisions avoid repeated profile queries
+on event delivery. Per-subscriber delivery preserves event order across checks.
+
+Warm leases reserve an execution identity immediately. Durable admission precedes
+`waitForClaim`, and invalidation/cancellation retains the claim until preparation
+and disposal settle. Failed preparation falls back cold only after cleanup.
+The two-lease limit, ten-minute lifetime, and startup concurrency stay unchanged.
+Environment secrets and attachment/Library materialization prepare concurrently;
+both settle before startup or failure cleanup, including late successful work.

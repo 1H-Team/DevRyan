@@ -1,5 +1,5 @@
 import React from 'react';
-import { RiRefreshLine, RiRobot2Line, RiUserSharedLine } from '@remixicon/react';
+import { RiRefreshLine, RiRobot2Line } from '@remixicon/react';
 
 import { Button } from '@/components/ui/button';
 import { type BotSummary } from '@/lib/botsApi';
@@ -9,6 +9,7 @@ import { useI18n } from '@/lib/i18n';
 import { useBotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotOperationsStore } from '@/stores/useBotOperationsStore';
 import { useBotSharedFilesStore } from '@/stores/useBotSharedFilesStore';
+import { useBotComputerActivityStore } from '@/stores/useBotComputerActivityStore';
 import { useBotsStore } from '@/stores/useBotsStore';
 import { resolveBotRuntimeRecovery, resolveBotRuntimeWarnings } from '../botPresentation';
 import { botRuntimeProgressLabel, useBotRuntimeOperation } from '../useBotRuntimeOperation';
@@ -17,6 +18,7 @@ import { BotMessageList } from './BotMessageList';
 import { resolveBotTypingRunId } from './botTypingState';
 import { selectBotCurrentRunId } from '../operations/selectBotCurrentRun';
 import { BotInlineComputer } from './BotInlineComputer';
+import { BotComputerStatusBar } from './BotComputerStatusBar';
 
 type BotChatViewProps = {
   bot: BotSummary;
@@ -63,11 +65,13 @@ export const BotChatView: React.FC<BotChatViewProps> = ({ bot, channelId }) => {
   React.useEffect(() => {
     useBotChannelStore.getState().setActiveChannel(channelId);
     return () => {
+      const computer = useBotComputerActivityStore.getState();
+      if (computer.manualByBotId[bot.id]?.channelId === channelId) computer.hide(bot.id);
       if (useBotChannelStore.getState().activeChannelId === channelId) {
         useBotChannelStore.getState().setActiveChannel(null);
       }
     };
-  }, [channelId]);
+  }, [bot.id, channelId]);
 
   React.useEffect(() => {
     if (!prewarmChannelId) return;
@@ -137,16 +141,7 @@ export const BotChatView: React.FC<BotChatViewProps> = ({ bot, channelId }) => {
         acceptingMessage={acceptingMessage}
         computerSlot={<BotInlineComputer botId={bot.id} channelId={channel.id} botActive={bot.lifecycle === 'active'} />}
       />
-      {latestRun?.state === 'waiting_control' ? (
-        <div
-          className="mx-3 mb-2 flex items-center gap-2 rounded-md border border-[var(--status-warning)]/40 bg-[var(--status-warning)]/10 px-3 py-2 typography-micro text-foreground"
-          data-bot-chat-control-wait
-          role="status"
-        >
-          <RiUserSharedLine className="h-4 w-4 shrink-0 text-[var(--status-warning)]" aria-hidden />
-          {t('bots.chat.waitingBrowserControl')}
-        </div>
-      ) : null}
+      <BotComputerStatusBar bot={bot} channelId={channel.id} />
       <BotComposer
         botId={bot.id}
         channel={channel}

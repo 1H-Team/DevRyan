@@ -7,13 +7,21 @@ func fail(_ message: String, _ code: Int32) -> Never {
     exit(code)
 }
 
-guard CommandLine.arguments.count == 4,
-      let processId = Int32(CommandLine.arguments[1]),
-      let x = Double(CommandLine.arguments[2]),
-      let y = Double(CommandLine.arguments[3]),
-      x.isFinite,
-      y.isFinite else {
-    fail("usage: macos-pointer-click.swift <pid> <screen-x> <screen-y>", 64)
+let activateOnly = CommandLine.arguments.count == 3 && CommandLine.arguments[2] == "--activate"
+guard (activateOnly || CommandLine.arguments.count == 4),
+      let processId = Int32(CommandLine.arguments[1]) else {
+    fail("usage: macos-pointer-click.swift <pid> <screen-x> <screen-y> | <pid> --activate", 64)
+}
+var x = 0.0
+var y = 0.0
+if !activateOnly {
+    guard let parsedX = Double(CommandLine.arguments[2]),
+          let parsedY = Double(CommandLine.arguments[3]),
+          parsedX.isFinite, parsedY.isFinite else {
+        fail("screen coordinates must be finite numbers", 64)
+    }
+    x = parsedX
+    y = parsedY
 }
 
 if #available(macOS 10.15, *) {
@@ -31,6 +39,11 @@ guard application.activate(options: [.activateAllWindows]) else {
 }
 
 Thread.sleep(forTimeInterval: 0.35)
+
+if activateOnly {
+    FileHandle.standardOutput.write(Data("{\"activated\":true}\n".utf8))
+    exit(0)
+}
 
 let original = CGEvent(source: nil)?.location
 let target = CGPoint(x: x, y: y)

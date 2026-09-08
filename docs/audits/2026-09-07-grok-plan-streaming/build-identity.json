@@ -1,0 +1,53 @@
+{
+  "revision": "324795c3a8b1b4620abda7a42bc076f4568f2fb4",
+  "dirty": true,
+  "capturedAt": "2026-09-07T21:47:55.816Z",
+  "appVersion": "1.1.15",
+  "electronVersion": "41.2.1",
+  "web": {
+    "files": 647,
+    "sha256": "370d0830f99e523baccb1be710291f3e5aa51c4357dc54a6b886b0ed2049b5f5"
+  },
+  "electron": {
+    "files": 647,
+    "sha256": "370d0830f99e523baccb1be710291f3e5aa51c4357dc54a6b886b0ed2049b5f5"
+  },
+  "sources": [
+    {
+      "path": "packages/ui/src/components/chat/ChatMessage.tsx",
+      "sha256": "2811b2627238fcb80fbaf2cf21b3da59ea3187c9ced6b58976526d31fd809c54"
+    },
+    {
+      "path": "packages/ui/src/components/chat/message/MessageBody.tsx",
+      "sha256": "353069291c89356870212eccf67c269f4b82565b618765b1f8f5112a6b1e95f8"
+    },
+    {
+      "path": "packages/ui/src/components/chat/message/parts/PlanCard.tsx",
+      "sha256": "b8f8ee2f6e36da55ba92043d7394e4cee3718a7fb0949e2c42e7e1a30c7d43f9"
+    },
+    {
+      "path": "packages/ui/src/components/chat/message/parts/planCardReveal.ts",
+      "sha256": "9acf3d055b555412b7e28af958617d67d3cfe913ff19cff77ea3d61f5ecd3664"
+    },
+    {
+      "path": "packages/ui/src/components/chat/lib/turns/projectPlanTurnTraceIndex.ts",
+      "sha256": "680669404ed068bd08bcebad1ee98addcb890e5a5f71c1b4d51d3d0d3925a19a"
+    },
+    {
+      "path": "packages/ui/src/components/chat/lib/turns/projectTurnActivity.ts",
+      "sha256": "2647e7cb96d5c0f4d22e8e3e17c8cd89a36b3244f8ef532f6521ccfcb5c1004f"
+    },
+    {
+      "path": "packages/ui/src/lib/messages/actionablePlan.ts",
+      "sha256": "e10a685629d412c0f0d76a4c0b02fea7b779d7bb2c8b3dd6f67e8f8edbc5d3f2"
+    },
+    {
+      "path": "packages/ui/src/lib/messages/planRevisions.ts",
+      "sha256": "ddeeb9c5acb927f4ba0731fd5e02ab6fc66a37b22c3603f7bc03e267701242df"
+    },
+    {
+      "path": "packages/ui/src/sync/plan-proposed-detection.ts",
+      "sha256": "b1037a045e795e4bba9f079188bb2ae494c8458ee6aab8a9d880d84955c0584a"
+    }
+  ]
+}

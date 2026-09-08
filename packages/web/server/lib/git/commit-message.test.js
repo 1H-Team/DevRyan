@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createFreeZenCooldowns } from '@openchamber/shared-runtime';
 
 import {
   COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
@@ -25,6 +26,7 @@ const context = {
 };
 
 describe('direct commit message generation', () => {
+  afterEach(() => vi.useRealTimers());
   it('builds a staged-worktree prompt with non-authoritative guidance', () => {
     const prompt = buildCommitMessagePrompt(context, 'Prefer a ui scope');
 
@@ -56,7 +58,7 @@ describe('direct commit message generation', () => {
     const result = await generateCommitMessageDirect({
       context,
       guidance: '',
-      zenModel: 'gpt-5-nano',
+      models: ['gpt-5-nano'],
       requestText,
     });
 
@@ -75,10 +77,10 @@ describe('direct commit message generation', () => {
     expect(requestText.mock.calls.flat().join(' ')).not.toMatch(/\/session|prompt_async/);
   });
 
-  it('defaults direct generation to the commit-specific Zen model', async () => {
+  it('uses the catalog model selected by the route', async () => {
     const requestText = vi.fn(async () => 'fix(git): generate worktree commit message');
 
-    await generateCommitMessageDirect({ context, requestText });
+    await generateCommitMessageDirect({ context, models: [COMMIT_GENERATION_DEFAULT_ZEN_MODEL], requestText });
 
     expect(COMMIT_GENERATION_DEFAULT_ZEN_MODEL).toBe('nemotron-3.5-lightning-free');
     expect(requestText).toHaveBeenCalledWith(expect.objectContaining({
@@ -92,7 +94,7 @@ describe('direct commit message generation', () => {
 
     await generateCommitMessageDirect({
       context,
-      zenModel: 'big-pickle',
+      models: ['big-pickle'],
       requestText,
     });
 
@@ -102,28 +104,75 @@ describe('direct commit message generation', () => {
     }));
   });
 
-  it('does not retry provider failures inside the speed budget and returns a local draft', async () => {
-    const requestText = vi.fn().mockRejectedValue(new Error('model unavailable'));
-    const onTiming = vi.fn();
-
+  it('advances immediately through failures and accepts the third model', async () => {
+    vi.useFakeTimers();
+    const requestText = vi.fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockRejectedValueOnce(Object.assign(new Error('Rate limit'), { status: 429 }))
+      .mockResolvedValueOnce(JSON.stringify({ subject: 'fix(git): recover commit generation', details: ['Try available models', 'Recover immediately'] }));
+    const onAttempt = vi.fn();
     const result = await generateCommitMessageDirect({
-      context,
-      zenModel: COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
-      fallbackZenModel: 'big-pickle',
-      requestText,
-      onTiming,
+      context, models: ['a', 'b', 'c'], requestText, onAttempt,
+      cooldowns: createFreeZenCooldowns(),
     });
-
-    expect(result._generation.source).toBe('local_fallback');
-    expect(result.subject).toMatch(/^chore\(ui\): /);
-    expect(requestText).toHaveBeenCalledOnce();
-    expect(onTiming).toHaveBeenCalledWith(expect.objectContaining({ retried: false, providerOutcome: 'error' }));
+    expect(result).toMatchObject({ subject: 'fix(git): recover commit generation', _generation: { source: 'ai', attempts: 3, model: 'c' } });
+    expect(requestText.mock.calls.map(([input]) => input.zenModel)).toEqual(['a', 'b', 'c']);
+    expect(onAttempt.mock.calls.map(([attempt]) => attempt.reason)).toEqual(['request_failed', 'rate_limited', undefined]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('skips the provider when every candidate is cooling down', async () => {
+  it('rejects invalid output before falling back only after three attempts', async () => {
+    const requestText = vi.fn(async () => 'invalid draft');
+    const onTiming = vi.fn();
+    const result = await generateCommitMessageDirect({
+      context, models: ['a', 'b', 'c', 'd'], requestText, onTiming,
+      cooldowns: createFreeZenCooldowns(),
+    });
+    expect(result._generation).toMatchObject({ source: 'local_fallback', attempts: 3, providerOutcome: 'exhausted' });
+    expect(result.subject).toMatch(/^chore\(ui\): /);
+    expect(requestText).toHaveBeenCalledTimes(3);
+    expect(onTiming).toHaveBeenCalledWith(expect.objectContaining({ retried: true, providerOutcome: 'exhausted' }));
+  });
+
+  it('waits up to 15 seconds per attempt and allows the third attempt past 20 seconds', async () => {
+    vi.useFakeTimers();
+    const signals = [];
+    const requestText = vi.fn(({ signal }) => {
+      signals.push(signal);
+      if (signals.length === 3) return Promise.resolve(JSON.stringify({ subject: 'fix: recover after timeouts', details: ['Abort slow requests', 'Try the third model'] }));
+      return new Promise(() => {});
+    });
+    const pending = generateCommitMessageDirect({ context, models: ['a', 'b', 'c'], requestText, cooldowns: createFreeZenCooldowns() });
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(requestText).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(signals[0].aborted).toBe(true);
+    expect(requestText).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect((await pending)._generation).toMatchObject({ source: 'ai', model: 'c', attempts: 3 });
+    expect(signals[1].aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('returns a local draft only after all three 15-second timeouts', async () => {
+    vi.useFakeTimers();
+    const requestText = vi.fn(() => new Promise(() => {}));
+    const pending = generateCommitMessageDirect({ context, models: ['a', 'b', 'c'], requestText, cooldowns: createFreeZenCooldowns() });
+    let finished = false;
+    void pending.then(() => { finished = true; });
+    await vi.advanceTimersByTimeAsync(44_999);
+    expect(finished).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await pending)._generation).toMatchObject({ source: 'local_fallback', attempts: 3, failures: [
+      expect.objectContaining({ reason: 'timeout' }), expect.objectContaining({ reason: 'timeout' }), expect.objectContaining({ reason: 'timeout' }),
+    ] });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['empty', 'unavailable'])('discloses a %s catalog without guessing a model', async (catalogState) => {
     const requestText = vi.fn();
-    const result = await generateCommitMessageDirect({ context, requestText, skipProvider: true });
-    expect(result._generation.source).toBe('local_fallback');
+    const result = await generateCommitMessageDirect({ context, models: [], requestText, catalogState });
+    expect(result._generation).toMatchObject({ source: 'local_fallback', attempts: 0, providerOutcome: catalogState === 'empty' ? 'no_free_models' : 'catalog_unavailable' });
     expect(requestText).not.toHaveBeenCalled();
   });
 });

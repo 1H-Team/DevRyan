@@ -41,7 +41,7 @@ describe('mounted Bot transcript', () => {
     } finally { await act(async () => { root.unmount(); }); useBotChannelStore.getState().resetPrincipal(null); }
   }), 30_000);
 
-  test('draft keystrokes do not commit transcript renders and partial/acknowledgment events never reach the DOM', async () => withDom(async (container) => {
+  test('draft keystrokes do not repaint the transcript; acknowledgments stay visible and partial prose stays private', async () => withDom(async (container) => {
     const { createRoot } = await import('react-dom/client');
     const root = createRoot(container as unknown as Element);
     useBotChannelStore.getState().resetPrincipal('member');
@@ -58,10 +58,10 @@ describe('mounted Bot transcript', () => {
       });
       expect(commits).toBe(before);
       await act(async () => {
-        useBotChannelStore.getState().upsertMessage(message('ack', 2, { role: 'assistant', assistantPhase: 'acknowledgment', body: { text: 'Internal acknowledgment', attachmentIds: [] } }));
+        useBotChannelStore.getState().upsertMessage(message('ack', 2, { role: 'assistant', assistantPhase: 'acknowledgment', body: { text: 'I’ll turn your sketch into a moonlit city.', attachmentIds: [] } }));
         useBotChannelStore.getState().upsertMessage(message('answer', 3, { role: 'assistant', assistantPhase: 'result', finalizedAt: null, body: { text: 'Unverified preamble', attachmentIds: [] } }));
       });
-      expect(container.textContent).not.toContain('Internal acknowledgment');
+      expect(container.textContent).toContain('I’ll turn your sketch into a moonlit city.');
       expect(container.textContent).not.toContain('Unverified preamble');
       expect(container.find((node) => node.hasAttribute('data-bot-typing-indicator'))).not.toBeNull();
       await act(async () => {
@@ -70,6 +70,8 @@ describe('mounted Bot transcript', () => {
       });
       expect(container.find((node) => node.getAttribute('data-bot-message-id') === 'answer')).not.toBeNull();
       expect(container.textContent).toContain('Verified final answer');
+      expect(container.textContent).toContain('I’ll turn your sketch into a moonlit city.');
+      expect(container.textContent.indexOf('I’ll turn your sketch')).toBeLessThan(container.textContent.indexOf('Verified final answer'));
       expect(container.find((node) => node.hasAttribute('data-bot-typing-indicator'))).toBeNull();
     } finally { await act(async () => { root.unmount(); }); useBotChannelStore.getState().resetPrincipal(null); }
   }), 30_000);

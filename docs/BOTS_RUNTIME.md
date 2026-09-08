@@ -27,10 +27,16 @@ A tool turn begins with one short line in the Bot's own voice as its own
 bubble; the answer follows in a second bubble. A Bot can ask one quick-reply
 question inside its bubble (`devryan_ask`): tapping an option sends an ordinary
 reply, the typed draft survives, and the next message marks it answered. The
-inline computer is screen-first, sized by the desktop's aspect and free to grow
+sidebar contains Shared files (default) and Confirmations. Authorized computer
+activity appears above the composer with the Bot’s name and Show/Hide; waiting
+for control is distinct from active use. Show and Shared file actions open the
+same viewer. The inline computer is screen-first, sized by the desktop's aspect and free to grow
 past the message column, with controls as overlays and one slim bar. Resources
 → Computer files opens on Shared and Resources; the whole workspace is one
-click away and the whole container only for a global administrator.
+click away and the whole container only for a global administrator. Normal
+human catalogs and snapshots omit Bots created by reserved `agent_test`
+accounts; those accounts retain existing authorized access. This classification
+never uses Bot names or deletes their data.
 
 Some sections below document retained persistence and adapters. Those paths are
 compatibility/security machinery only: immutable revisions still pin admitted
@@ -365,12 +371,13 @@ transaction. A no-tool turn promotes that row directly to the result, so a
 greeting or simple question receives one natural answer. When the Bot needs a
 tool or external action, its first short, request-specific sentence is written
 in the configured Soul voice and promotes that row to a finalized
-acknowledgment; a separate pending row then becomes the final result. The
+acknowledgment. It publishes as soon as the durable checkpoint is ready, before
+allocating the separate pending row that becomes the final result. The
 acknowledgment stays visible after completion and reload but is excluded from
 previews, model context, memory summaries, notifications, and final-result
 selection. The admitted run is queued with a pending model snapshot. Event publication, Shared
 copy preparation, FIFO claim, model catalog and credential checks, config
-materialization, and runtime startup occur after the response. Opening an idle,
+materialization, and runtime startup occur after the response. Interacting with the composer of an idle,
 active, send-capable channel requests an optional ten-minute warm lease. At most
 two principal/channel/revision/Library-bound leases keep the exact preallocated
 run-scoped runtime, credential, gateway capability, compiled revision, and

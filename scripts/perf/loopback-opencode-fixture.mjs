@@ -776,6 +776,15 @@ export const createLoopbackOpenCodeFixture = async ({ directory, agentVariant, t
     stopScenario,
     seedHistory,
     // Bounded canonical replay for recovery UI acceptance; never invokes a provider.
+    appendVisualPartDelta: ({ sessionID, messageID, partID, delta }) => {
+      const row = promptRows.get(sessionID)?.find((candidate) => candidate.info.id === messageID);
+      const part = row?.parts.find((candidate) => candidate.id === partID);
+      if (!part || !['text', 'reasoning'].includes(part.type) || typeof part.text !== 'string' || typeof delta !== 'string') {
+        throw new Error('Visual delta requires an existing text or reasoning part');
+      }
+      part.text += delta;
+      sendEvent(directory, { type: 'message.part.delta', properties: { sessionID, messageID, partID, field: 'text', delta } });
+    },
     replayRecoveryVisual: ({ sessionID, rows, taskEvents = [], status = 'idle', agent = null }) => {
       requireSession(sessionID);
       if (promptTimers.has(sessionID) || !Array.isArray(rows) || rows.length > 32

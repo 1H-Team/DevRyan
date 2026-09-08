@@ -721,3 +721,5 @@ mounted ModelControls hydration tests. The opt-in isolated live comparison is
 ## Harness skill discovery
 
 `harness-skill-discovery.js` exposes `createHarnessSkillDiscovery`, receiving filesystem, home-directory, YAML and existing skill-search services. It preserves discovered records by resolved path and retains malformed frontmatter as `parseOk: false` diagnostics. The server composition root owns its construction and passes the collection callback to harness consumers.
+
+- `session-model-text.js` provides isolated text-helper sessions for Git generation. Git free-Zen requests go through the native `opencode` provider because Zen rejects standalone free-tier inference. Caller cancellation disables response recovery, aborts native inference, and deletes the tool-denied helper before the next attempt. Embedded provider errors are classified even when the HTTP response is successful. PR session-model fallback retains its repair/recovery behavior. `runtime-agent-overlays.js` supplies hidden `devryan-commit` and `devryan-pr` no-tools agents; the shared UI and notification policy hide their internal text-helper sessions.

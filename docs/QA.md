@@ -23,6 +23,12 @@ Current coverage: select a fixture session; connect event transport; receive fou
 
 The default smoke does not cover new-session creation, attachments, queue policy, permission dialogs, tool expansion or old-history anchoring; use the matrix fixture for those journeys. Drawer swipes, native dialogs, long idle recovery and closed-session memory still need separate verification. Physical-device keyboard behavior remains unverified until exercised on a device.
 
+## Grok streaming plan cards
+
+Run `DEVRYAN_QA_SCENARIO=grok-plan bun scripts/qa/run.mjs` for isolated web acceptance and add `DEVRYAN_QA_RUNTIME=electron` for the actual desktop host. Build the current UI and stage Electron assets first, as for the recovery-card scenario. The fixture emits xAI-shaped reasoning/text parts and real `message.part.delta` events, holds the turn busy at each assertion, and proves the card grows before completion. It covers a split sentinel, multiple reasoning parts, a text continuation, the handoff to a final assistant, disabled actions across tool-call gaps, exact saved Markdown after idle/reload, and an aborted draft that cannot save or implement. Captures cover both themes and wide/narrow layouts, with reasoning displayed and hidden. Plan turns retain reasoning source parts through `ChatMessage`; `MessageBody` applies the Thinking visibility preference after resolving the card. Inspect every original PNG before recording visual acceptance. This is deterministic provider transport; a separately configured live xAI journey is required for a live-provider claim. The product fixes chat rendering to Live; legacy Sorted projection remains unit-test territory.
+
+The [2026-09-07 Grok streaming audit](audits/2026-09-07-grok-plan-streaming/README.md) retains reviewed web/Electron captures, exact build identity, automated results, and the unavailable live-provider check.
+
 ## Local packaged Electron candidate
 
 The opt-in macOS arm64 packager consumes a chosen web build and the matching native binaries from an existing repository-local `packages/electron/dist/mac-arm64/DevRyan.app`:
@@ -397,3 +403,47 @@ scripted interaction; screenshots still capture the real renderer. The thinking
 scenario also verifies the supported header Fast toggle and focus restoration.
 
 Recorded acceptance evidence: [2026-09-07 thinking slider](audits/2026-09-07-thinking-slider/README.md).
+
+## Claude quota and native prefix verification
+
+The [Claude quota audit](audits/2026-09-07-claude-quota.md) documents the incident, pinned runtime, control/candidate distinction, quota resolution and rollback. This study is opt-in and is separate from deterministic CI and visual QA.
+
+Run the real-executable offline regression with explicit installed paths:
+
+```sh
+node scripts/qa/meridian-prefix.mjs --modules /absolute/managed/node_modules --claude /absolute/native/claude --arm candidate --steps 20 --parallel 4
+node scripts/qa/meridian-prefix.mjs --modules /absolute/managed/node_modules --claude /absolute/native/claude --arm candidate --steps 10 --parallel 3 --stream false
+```
+
+The loopback provider emits synthetic authored responses and never contacts Anthropic or reads authentication. `--arm control` retains the previous installed HTTP/handoff revision and is expected to fail the prefix/history assertions. Do not treat its synthetic usage values as quota measurements.
+
+For live work, first prepare a cache-owned profile with `prepareMeridianFixture` and `prepareClaudeQuotaRuntime` from `scripts/qa/claude-quota-fixture.mjs` and `scripts/qa/claude-quota-runtime.mjs`. Both require explicit installed module/executable paths and refuse dependency installation. Save their `{ fixture, profile }` return values to a cache-owned JSON file. Record an authoritative `projectQuota` baseline from the explicitly authorized loopback Meridian quota origin, plus the agreed `limitPoints`, `diagnosticReservePoints` and `finalHeadroomPoints`. The admission default is 20 points; the implementation allows at most 40 when separately authorized. Keep at least five points for final retests.
+
+The guarded runner accepts this configuration (all paths must be explicit):
+
+```json
+{
+  "preparedFile": "/absolute/DevRyan/.cache/qa/study/prepared.json",
+  "installedModules": "/absolute/managed/node_modules",
+  "claudeExecutable": "/absolute/native/claude",
+  "arm": "direct",
+  "baselineFile": "/absolute/DevRyan/.cache/qa/study/baseline.json",
+  "quotaOrigin": "http://127.0.0.1:3456",
+  "outputRoot": "/absolute/DevRyan/.cache/qa/study/results",
+  "referenceSession": "/absolute/authorized/reference-session.jsonl"
+}
+```
+
+Run `node scripts/qa/meridian-designer-continuity.mjs --quota /absolute/CONFIG.json`. Each `direct`, `control` or `candidate` invocation creates a fresh Git project, uses identical TSX/CSS prompts, verifies exact Opus 4.8/medium selection, and checks files and tests independently. Native interactive Claude uses the existing web package's `node-pty`; mediated runs use the actual private web/OpenCode/plugin path. Explicit benchmark titles separate the primary workload from title generation. Use three cohorts in direct/control/candidate, candidate/control/direct, then direct/control/candidate order. Retain failed attempts, pause on missing/stale quota, and never admit another arm merely because a quota request failed. Avoid other account activity throughout the measured windows.
+
+Set `"cancellationCheck": true` for a separate direct/candidate idle/cancellation/recovery run, outside paired workload totals. It keeps the completed session open for six minutes, checks for native responses and quota changes, then cancels an actually started foreground tool. It waits past that tool's completion deadline to detect survivors, checks for newly observed native responses after settled abort, and resumes the review/tests. All of its consumption still counts against the same overall quota ceiling.
+
+Set `"workload": "sustained"` for the longer twelve-brief review workbench instead of the default small component. Every turn requires actual TypeScript/TSX, CSS and test edits. Its independent grader lives outside the editable project and checks public behavior and React server-rendered output, including stable sorting, pagination, CSV escaping, immutable moderation/replies and safe highlighting. The final turn also builds the component for a browser. React and React DOM are linked from existing installed repository dependencies; seeding does not install packages. Freeze the same fixture and prompts for all arms and retain their prompt/source hashes.
+
+An optional `"calibrationTurns": 2` runs only the first two sustained briefs to check the new fixture before committing to a full cohort. Such evidence is labeled `editing-calibration`, records its shorter prompt hash and required/full turn counts, and must not be counted as a completed paired workload.
+
+A quota reset does not renew the authorized study ceiling. Do not run a measured arm across a reset. While all model work is idle, retain a valid final reading for the old window and a fresh starting reading for the new window; explicitly carry previous consumption in the baseline file's `carriedConsumedPoints`, including any reserve for integer rounding. Admission adds that carried amount to new-window consumption. Missing old-window evidence must not be replaced with an invented zero.
+
+An authoritative zero-usage window can have a null reset timestamp while inactive. Preserve that raw baseline. When its first active reset timestamp appears, the runner records `activatedFiveHourReset` and the corresponding observation atomically in the cache-owned baseline file. Subsequent inactive windows or changed reset timestamps then stop admission; an inactive starting baseline cannot silently grant a second window's budget. A nonzero window without a reset boundary remains invalid. Full sustained arms require at least sixty minutes before a known quota reset and sixty minutes of existing access lifetime at startup; the runner does not write refresh credentials.
+
+The output records authoritative quota before/after each turn, immediate and delayed samples, native usage deduplicated by provider message ID, exact model/effort evidence, mediated request counters and verified file/test outcomes. Each delayed endpoint must have been fetched after completed work plus 30 seconds; a recent cached reading that predates completion is insufficient. That endpoint can serve as the next turn's preceding observation while fresh, since no inference occurs between them. The first prompt similarly requires a fresh observation fetched after the arm started. Valid observations can be reused for up to 85 seconds to avoid bursts of quota refresh requests, while their provider fetch time remains subject to the 90-second freshness bound. With model work idle, the runner can wait up to ten minutes for a fresh endpoint. Missing or stale quota during active inference still aborts the owned workload. Native transcript and Meridian client counters do not cover every auxiliary or failed provider attempt. A one-point quota display delta of zero does not establish zero consumption or parity. The runner never writes refresh credentials or passwords, never patches the installed runtime, and stops only processes it created.

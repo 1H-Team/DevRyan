@@ -26,7 +26,7 @@ entries select the exact tab.
 ## Flow
 Navigation selects a view; view binds data hooks and renders feature sections.
 
-`GitView.tsx` treats generated commit highlights as body details, inserting a validated subject followed by a blank line and bounded bullet list. Host warnings disclose when the shared fast local fallback supplied the draft.
+`GitView.tsx` treats generated commit highlights as body details, inserting a validated subject followed by a blank line and bounded bullet list. Host warnings disclose when the local fallback supplied the draft after free Zen attempts were exhausted or the catalog was unavailable.
 
 ## Integration
 Connected to router/state stores and feature component trees.

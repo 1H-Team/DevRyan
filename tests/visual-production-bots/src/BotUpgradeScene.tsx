@@ -2,6 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { BotComposer } from '@/components/bots/chat/BotComposer';
 import { BotInlineComputer } from '@/components/bots/chat/BotInlineComputer';
+import { BotComputerStatusBar } from '@/components/bots/chat/BotComputerStatusBar';
 import { BotMessageList } from '@/components/bots/chat/BotMessageList';
 import type { BotChannel, BotMessage, BotRun, BotSummary } from '@/lib/botsApi';
 import { useBotChannelStore } from '@/stores/useBotChannelStore';
@@ -75,7 +76,7 @@ export const BotUpgradeScene: React.FC<{ bot: BotSummary; channel: BotChannel; r
     requestBase.current = count + sequence.current * 3;
     useBotOperationsStore.getState().upsertRun({ ...run, id, state: 'running', finishedAt: null });
     useBotChannelStore.getState().upsertMessage({ ...createMessage(requestBase.current), id: `upgrade-user-${id}`, runId: id, role: 'user', assistantPhase: null, body: { text: 'Please run the next check.', attachmentIds: [] } });
-    useBotChannelStore.getState().upsertMessage({ ...createMessage(requestBase.current + 1), id: `upgrade-ack-${id}`, runId: id, role: 'assistant', assistantPhase: 'acknowledgment', body: { text: 'HIDDEN ACKNOWLEDGMENT SENTINEL', attachmentIds: [] } });
+    useBotChannelStore.getState().upsertMessage({ ...createMessage(requestBase.current + 1), id: `upgrade-ack-${id}`, runId: id, role: 'assistant', assistantPhase: 'acknowledgment', body: { text: 'I’ll check the release dashboard before we send it out.', attachmentIds: [] } });
     useBotChannelStore.getState().upsertMessage({ ...createMessage(requestBase.current + 2), id: `upgrade-result-${id}`, runId: id, role: 'assistant', assistantPhase: 'result', finalizedAt: null, body: { text: 'HIDDEN PARTIAL PREAMBLE SENTINEL', attachmentIds: [] } });
     setWorking(true);
   };
@@ -160,6 +161,7 @@ export const BotUpgradeScene: React.FC<{ bot: BotSummary; channel: BotChannel; r
     <output className="block whitespace-pre-wrap rounded-lg border p-2 font-mono text-xs" data-upgrade-metrics>{JSON.stringify({ ...metrics, screen, benchmarkRuns }, null, 2)}</output>
     <div ref={container} className="flex h-[600px] min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-background">
       <ProfiledMessageList onCommit={countCommit} bot={bot} channelId={channel.id} typingRunId={working ? requestId.current : null} computerSlot={computerSlot} />
+      <BotComputerStatusBar bot={bot} channelId={channel.id} />
       <BotComposer botId={bot.id} channel={channel} runtimeState="healthy" runtimeAvailable />
     </div>
   </div>;

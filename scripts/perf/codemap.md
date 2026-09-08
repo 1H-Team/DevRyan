@@ -12,6 +12,9 @@ behavior.
   sessions with deterministic message/status/SSE fixtures on loopback. Its bounded
   `replayRecoveryVisual` helper replaces fixture-owned canonical rows and publishes
   validated task events for the recovery-card QA scenario.
+  `appendVisualPartDelta` emits actual text/reasoning delta events while updating
+  only fixture-owned history, allowing streaming Plan QA to assert before any
+  message/part completion and verify the same content after reload.
   Seeded responses use numbered ASCII segments and retain their configured byte
   size through the production fetched-text normalizer, so history workloads
   measure the full payload instead of deduplicated repeated filler.

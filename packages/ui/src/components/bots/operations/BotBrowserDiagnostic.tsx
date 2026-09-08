@@ -432,7 +432,7 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
   );
 
   const viewToggle = visibleView ? (
-    <Button type="button" variant="outline" size="xs" onClick={stopViewing}>
+    <Button type="button" variant="outline" size="xs" className="bg-background text-foreground hover:bg-interactive-hover" onClick={stopViewing}>
       {t('bots.operations.computer.stopViewing')}
     </Button>
   ) : (
@@ -554,7 +554,7 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
             role="status"
           >
             <p className="min-w-0 flex-1 typography-micro">{t('bots.operations.computer.releaseExpired')}</p>
-            <Button type="button" variant="outline" size="xs" disabled={pendingControl} onClick={returnControl}>
+            <Button type="button" variant="outline" size="xs" className="bg-background text-foreground hover:bg-interactive-hover" disabled={pendingControl} onClick={returnControl}>
               {t('bots.operations.computer.return')}
             </Button>
           </div>
@@ -578,6 +578,7 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
                 type="button"
                 variant="outline"
                 size="xs"
+                className="bg-background text-foreground hover:bg-interactive-hover"
                 disabled={pendingControl}
                 onClick={returnControl}
               >

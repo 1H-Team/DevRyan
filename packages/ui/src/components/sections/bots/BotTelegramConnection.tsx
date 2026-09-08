@@ -77,10 +77,7 @@ function TelegramConnection({ botId, canManage, active, api = botsApi }: Props) 
         <span role="status" className="typography-micro text-muted-foreground">{status?.state.replaceAll('_', ' ') || 'Loading connection…'}</span>
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => void refresh()}>Refresh</Button>
       </div>
-      <p className="mt-2 typography-ui text-muted-foreground">Use this Bot in a private Telegram chat. Only linked DevRyan members can send requests. Unrelated desktop messages are not forwarded.</p>
-      <p className="mt-2 typography-micro text-muted-foreground">Messages and attachments are processed by Telegram. This uses your existing private conversation, the Bot’s shared memory, and its shared computer with saved logins and files. Approvals and computer takeover stay in authenticated DevRyan.</p>
-      <p className="mt-2 typography-micro text-muted-foreground">Keep the runtime host running to receive and send messages. Telegram attachments, including voice, are limited to 10 MiB. Telegram retains updates for at most 24 hours; requests not admitted within 15 minutes expire and must be resent.</p>
-      {status && (status.hostOnline !== undefined || status.executionReady !== undefined) ? <p className="mt-2 typography-micro text-muted-foreground">Host: {status.hostOnline ? 'online' : 'offline'}. Bot execution: {status.executionReady ? 'ready' : 'waiting for runtime'}. Requests waiting for startup keep their original 15-minute expiry.</p> : null}
+      {status && (status.hostOnline !== undefined || status.executionReady !== undefined) ? <p className="mt-2 typography-micro text-muted-foreground">{status.hostOnline ? 'Host online' : 'Host offline'} · {status.executionReady ? 'Ready' : 'Waiting for runtime'}</p> : null}
       {error ? <p role="alert" className="mt-3 typography-ui text-[var(--status-error)]">{error}</p> : null}
       {notice ? <p role="status" className="mt-3 typography-ui">{notice}</p> : null}
       {status?.errorCode ? <p className="mt-2 typography-micro text-[var(--status-error)]">Connection needs attention: {status.errorCode}. A webhook or competing consumer must be removed by its owner; DevRyan will not take it over.</p> : null}

@@ -38,6 +38,7 @@ let sources: SessionChangesFooterSources = {
   statuses: {},
   revertTransactions: {},
   isGitRepo: true,
+  isImplementationSettled: true,
 };
 let rootMessages: Record<string, Message[]> = { ses_root: [userMessage('msg_1', 'ses_root')] };
 
@@ -138,6 +139,7 @@ describe('resolveSessionChangesFooterState', () => {
     isTreeWorking: false,
     isSiblingWorking: false,
     isUndone: false,
+    isImplementationSettled: true,
   };
 
   test('visibility matrix', () => {
@@ -149,6 +151,7 @@ describe('resolveSessionChangesFooterState', () => {
     expect(resolveSessionChangesFooterState({ ...base, fileCount: 0 }).visible).toBe(false);
     expect(resolveSessionChangesFooterState({ ...base, isRevertPending: true }).visible).toBe(false);
     expect(resolveSessionChangesFooterState({ ...base, isTreeWorking: true }).visible).toBe(false);
+    expect(resolveSessionChangesFooterState({ ...base, isImplementationSettled: false }).visible).toBe(false);
   });
 
   test('a busy sibling session disables Undo with a reason instead of hiding the card', () => {
@@ -320,6 +323,7 @@ describe('SessionChangesCard (connected)', () => {
       statuses: {},
       revertTransactions: {},
       isGitRepo: true,
+      isImplementationSettled: true,
     };
     rootMessages = { ses_root: [userMessage('msg_1', 'ses_root')] };
     storeModule.resetSessionTreeChangesForTests();
@@ -333,6 +337,20 @@ describe('SessionChangesCard (connected)', () => {
     expect(countRows(markup)).toBe(2);
     expect(markup).toContain('<span style="color:var(--status-success)">+3</span>');
     expect(markup).toContain('<span style="color:var(--status-error)">-1</span>');
+  });
+
+  test('hides earlier changes while planning or unresolved, then restores them after implementation', () => {
+    sources = { ...sources, isImplementationSettled: false };
+    expect(renderConnected()).toBe('');
+    seedEntry('ses_root', { files: [], undone: true });
+    expect(renderConnected()).toBe('');
+    sources = { ...sources, isImplementationSettled: true, statuses: { ses_child: busy } };
+    seedEntry('ses_root');
+    expect(renderConnected()).toBe('');
+    sources = { ...sources, statuses: {} };
+    expect(renderConnected()).toContain('Edited 2 files');
+    sources = { ...sources, currentSessionId: 'ses_other', isImplementationSettled: false };
+    expect(renderConnected()).toBe('');
   });
 
   test('renders from a child session by resolving the root tree', () => {
@@ -362,17 +380,18 @@ describe('SessionChangesCard (connected)', () => {
     expect(renderConnected()).toBe('');
   });
 
-  test('shows empty loading, failed and incomplete summaries with safe actions', () => {
+  test('hides empty loading, failed and incomplete summaries but preserves status with recorded files', () => {
     for (const [overrides, label] of [
       [{ loading: true }, 'chat.sessionChanges.loading'],
       [{ error: 'Failed to load' }, 'chat.sessionChanges.loadFailed'],
       [{ coverage: 'partial' }, 'chat.sessionChanges.incomplete'],
     ] as const) {
       seedEntry('ses_root', { files: [], ...overrides });
+      expect(renderConnected()).toBe('');
+      seedEntry('ses_root', overrides);
       const markup = renderConnected();
       expect(markup).toContain(dict[label]);
       expect(hasDisabledUndo(markup)).toBe(true);
-      expect(markup).not.toContain('data-session-changes-action="review"');
       expect(markup.includes('data-session-changes-action="retry"')).toBe('error' in overrides);
     }
   });
@@ -417,7 +436,7 @@ describe('SessionChangesCard (connected)', () => {
     sources = { ...sources, statuses: { ses_child: { type: 'idle' } } };
     storeModule.observeSessionTreeActivity('/repo', 'ses_root', false);
     await settle();
-    expect(renderConnected()).toContain(dict['chat.sessionChanges.incomplete']);
+    expect(renderConnected()).toBe('');
     response = result({ files: [{ path: 'late.ts', status: 'modified', additions: 2, deletions: 1, sessions: ['ses_child'] }] });
     sessionEvents.requestGitRefresh({ directory: '/repo', sessionChanges: true });
     await settle();
@@ -427,7 +446,7 @@ describe('SessionChangesCard (connected)', () => {
   });
 
   test('Retry refreshes the selected root and clears the failure on success', async () => {
-    seedEntry('ses_root', { files: [], error: 'offline' });
+    seedEntry('ses_root', { error: 'offline' });
     sources = { ...sources, currentSessionId: 'ses_child' };
     const calls: string[] = [];
     let finish!: (value: SessionTreeChanges) => void;
@@ -524,4 +543,13 @@ describe('mount points', () => {
     expect(source).toContain("onContentChange?.('structural');");
     expect(source).toContain('React.useLayoutEffect(() => {\n        onContentChange?.(\'structural\');');
   });
+});
+
+test('large summaries retain the total count while the card renders a bounded page', () => {
+  seedEntry('ses_root', { fileCount: 513, pageIndex: 0, nextCursor: 'revision:1' });
+  const markup = renderConnected();
+  expect(markup).toContain('513');
+  expect(markup).toContain('Changed file pages');
+  expect(markup).toContain('Next');
+  expect(countRows(markup) <= 3).toBe(true);
 });

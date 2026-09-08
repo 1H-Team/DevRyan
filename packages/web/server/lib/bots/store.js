@@ -499,6 +499,22 @@ export function createBotStore({ supabase, logger = null } = {}) {
     },
   )));
 
+  // Internal fixture classification only; account kinds never enter public
+  // Bot/member payloads. Resolve a bounded batch instead of one query per Bot.
+  const listUserAccountKinds = async (userIds) => {
+    const unique = [...new Set(userIds.map((id) => validateUuid(id, 'userId')))];
+    const kinds = new Map();
+    for (let index = 0; index < unique.length; index += 100) {
+      const batch = unique.slice(index, index + 100);
+      const rows = await requireSupabase().rest('user_profiles', {
+        query: { id: `in.(${batch.map(postgrestLiteral).join(',')})`, limit: String(batch.length) },
+        select: 'id,account_kind',
+      });
+      for (const row of Array.isArray(rows) ? rows : []) kinds.set(row.id, row.account_kind);
+    }
+    return kinds;
+  };
+
   // Resolves member ids to the name and email a Manager recognizes. Only the
   // three display fields are selected; nothing else about a person crosses into
   // the Bots surface.
@@ -746,6 +762,7 @@ export function createBotStore({ supabase, logger = null } = {}) {
     updateMessageCheckpoint,
     userProfileExists,
     listUserProfiles,
+    listUserAccountKinds,
     searchUserProfiles,
     rollbackRestoredBot,
     allocateMessageSequence: (channelId) => callRpc('allocateMessageSequence', {

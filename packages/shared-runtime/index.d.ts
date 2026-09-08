@@ -233,7 +233,7 @@ export type FreeZenSkipReason = 'cooling_down' | 'max_models' | 'deadline';
 export function runFreeZenModelRotation<TInput = unknown, TOutput = TInput>(options: {
   models: Array<FreeZenModel | string>;
   timeoutMs: number;
-  request: (input: { model: string; timeoutMs: number }) => Promise<TInput> | TInput;
+  request: (input: { model: string; timeoutMs: number; signal: AbortSignal }) => Promise<TInput> | TInput;
   accept?: (value: TInput, input: { model: string; attempt: number }) => Promise<TOutput | null> | TOutput | null;
   onAttempt?: (input: {
     model: string;
@@ -244,6 +244,8 @@ export function runFreeZenModelRotation<TInput = unknown, TOutput = TInput>(opti
     status?: number;
   }) => void;
   cooldowns?: FreeZenCooldowns | null;
+  cooldownPolicy?: 'skip' | 'prioritize';
+  afterAttempt?: () => Promise<void> | void;
   maxModels?: number;
   deadlineMs?: number;
   now?: () => number;

@@ -72,8 +72,8 @@ describe('direct PR description generation', () => {
       code: 'FREE_ZEN_EXHAUSTED',
       attempts: 3,
       skipped: [
-        { model: 'free-a', reason: 'cooling_down' },
         { model: 'free-e', reason: 'max_models' },
+        { model: 'free-a', reason: 'max_models' },
       ],
     });
     expect(requestText.mock.calls.map(([input]) => input.zenModel)).toEqual(['free-b', 'free-c', 'free-d']);

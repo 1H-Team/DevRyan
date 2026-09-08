@@ -52,6 +52,11 @@ export const SESSION_CHANGES_INITIAL_VISIBLE_FILES = 3;
 export interface SessionChangesCardViewProps {
     directory: string;
     files: GitChangedFile[];
+    fileCount?: number;
+    pageIndex?: number;
+    pageLoading?: boolean;
+    onNextPage?: () => void;
+    onPreviousPage?: () => void;
     subagentCount: number;
     statusMessage?: string | null;
     onOpenRepository?: () => void;
@@ -73,6 +78,11 @@ export interface SessionChangesCardViewProps {
 export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
     directory,
     files,
+    fileCount: totalFileCount,
+    pageIndex = 0,
+    pageLoading = false,
+    onNextPage,
+    onPreviousPage,
     subagentCount,
     statusMessage,
     onOpenRepository,
@@ -93,7 +103,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
     const [isExpanded, setIsExpanded] = React.useState(false);
     const [confirmOpen, setConfirmOpen] = React.useState(false);
 
-    const fileCount = files.length;
+    const fileCount = totalFileCount ?? files.length;
     const filesLabel = t(fileCount === 1 ? 'chat.sessionChanges.count.fileSingle' : 'chat.sessionChanges.count.filePlural', { count: fileCount });
     const title = mode === 'undone'
         ? t('chat.sessionChanges.footer.undone')
@@ -184,6 +194,12 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
         </Tooltip>
     );
 
+    const pagination = onNextPage || onPreviousPage ? <nav className="flex items-center justify-between gap-2 border-t border-border/70 px-3 py-1.5" aria-label={t('chat.sessionChanges.filePages')}>
+        <Button size="xs" variant="ghost" disabled={!onPreviousPage || pageLoading} onClick={onPreviousPage}>{t('chat.sessionChanges.previousPage')}</Button>
+        <span className="typography-meta text-muted-foreground" role="status">{pageLoading ? t('chat.sessionChanges.loading') : t('chat.sessionChanges.page', { page: pageIndex + 1 })}</span>
+        <Button size="xs" variant="ghost" disabled={!onNextPage || pageLoading} onClick={onNextPage}>{t('chat.sessionChanges.nextPage')}</Button>
+    </nav> : null;
+
     const hasRows = mode === 'changes' && visibleFiles.length > 0;
 
     return (
@@ -237,6 +253,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                                                     currentDirectory={directory}
                                                     onOpenFile={handleOpenFile}
                                                 />
+                                                {pagination}
                                                 {statusMessage ? (
                                                     <div className="px-2 py-1 typography-meta text-muted-foreground">
                                                         {statusMessage}
@@ -263,6 +280,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                             ))}
                         </div>
                     ) : null}
+                    {pagination}
                     {showToggle ? (
                         <div className="border-t border-border/70 px-3 py-1.5">
                             <Button
@@ -343,6 +361,11 @@ export const SessionChangesCard: React.FC<SessionChangesCardProps> = React.memo(
             key={`${controller.rootSessionId}:${controller.directory}`}
             directory={controller.directory}
             files={controller.files}
+            fileCount={controller.fileCount}
+            pageIndex={controller.pageIndex}
+            pageLoading={controller.pageLoading}
+            onNextPage={controller.nextPage}
+            onPreviousPage={controller.previousPage}
             subagentCount={controller.subagentCount}
             statusMessage={controller.statusMessage}
             onRetry={controller.retry}

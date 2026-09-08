@@ -86,7 +86,7 @@ export const BotGallery: React.FC<BotGalleryProps> = ({
                     selected && 'bg-interactive-active',
                   )}
                 >
-                  <BotAvatar bot={bot} className="h-9 w-9 rounded-[10px] typography-ui-label" />
+                  <BotAvatar bot={bot} className="h-9 w-9 rounded-[10px] typography-ui-label" lazy />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate typography-ui-label font-medium text-foreground">{bot.name}</span>
                     {/* A title that just repeats the name is noise, not a subtitle. */}

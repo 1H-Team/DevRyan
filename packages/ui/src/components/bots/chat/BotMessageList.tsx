@@ -51,7 +51,7 @@ export const BotMessageList: React.FC<BotMessageListProps> = ({
       const message = state.messagesById[messageId];
       if (message?.role !== 'user' && message?.role !== 'assistant') return false;
       return message.role === 'user'
-        || (message.assistantPhase !== 'acknowledgment' && message.finalizedAt !== null
+        || (message.finalizedAt !== null
           && (message.body.text.trim().length > 0
             || message.attachmentCount > 0
             || sharedMessageIdSet.has(messageId)));

@@ -491,7 +491,7 @@ export async function generateCommitMessageDraft(
 }
 
 // Tier 1 (free Zen, 45 s) + tier 2 (session model, 60 s) + diff collection.
-export const PR_DESCRIPTION_REQUEST_TIMEOUT_MS = 120_000;
+export const PR_DESCRIPTION_REQUEST_TIMEOUT_MS = 150_000;
 
 export type PullRequestGenerationAttempt = {
   tier: string;

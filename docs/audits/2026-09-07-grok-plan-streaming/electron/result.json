@@ -1,0 +1,1758 @@
+{
+  "schemaVersion": 1,
+  "revision": "324795c3a8b1b4620abda7a42bc076f4568f2fb4",
+  "dirty": true,
+  "runtime": "electron",
+  "scenario": "grok-plan",
+  "startedAt": "2026-09-07T22:00:34.126Z",
+  "outcome": "passed",
+  "checks": [
+    {
+      "name": "selected session and composer",
+      "outcome": "passed",
+      "elapsedMs": 6411.041000000001
+    },
+    {
+      "name": "four-session stream reaches selected transcript",
+      "outcome": "passed",
+      "elapsedMs": 1529.5149999999994
+    },
+    {
+      "name": "typing survives background streaming",
+      "outcome": "passed",
+      "elapsedMs": 531.8123330000017
+    },
+    {
+      "name": "send and reconcile a real composer submission",
+      "outcome": "passed",
+      "elapsedMs": 2497.2187080000003
+    },
+    {
+      "name": "cancel an active composer submission",
+      "outcome": "passed",
+      "elapsedMs": 299.8060829999995
+    },
+    {
+      "name": "reconnect and reopen without duplicate user messages",
+      "outcome": "passed",
+      "elapsedMs": 1033.276417000001
+    },
+    {
+      "name": "grok-light-1280: card grows before reasoning and turn completion",
+      "outcome": "passed",
+      "elapsedMs": 634.1432090000017
+    },
+    {
+      "name": "grok-light-1280: hidden reasoning and reload preserve the live card",
+      "outcome": "passed",
+      "elapsedMs": 1388.866915999999
+    },
+    {
+      "name": "grok-light-1280: final text replaces the draft and saves only on idle",
+      "outcome": "passed",
+      "elapsedMs": 1743.140875000001
+    },
+    {
+      "name": "grok-light-600: card grows before reasoning and turn completion",
+      "outcome": "passed",
+      "elapsedMs": 614.671875
+    },
+    {
+      "name": "grok-light-600: hidden reasoning and reload preserve the live card",
+      "outcome": "passed",
+      "elapsedMs": 1051.6501250000001
+    },
+    {
+      "name": "grok-light-600: final text replaces the draft and saves only on idle",
+      "outcome": "passed",
+      "elapsedMs": 2223.6458330000023
+    },
+    {
+      "name": "grok-dark-1280: card grows before reasoning and turn completion",
+      "outcome": "passed",
+      "elapsedMs": 939.2482499999969
+    },
+    {
+      "name": "grok-dark-1280: hidden reasoning and reload preserve the live card",
+      "outcome": "passed",
+      "elapsedMs": 1508.7658329999977
+    },
+    {
+      "name": "grok-dark-1280: final text replaces the draft and saves only on idle",
+      "outcome": "passed",
+      "elapsedMs": 2138.196541999998
+    },
+    {
+      "name": "grok-dark-600: card grows before reasoning and turn completion",
+      "outcome": "passed",
+      "elapsedMs": 847.2203750000044
+    },
+    {
+      "name": "grok-dark-600: hidden reasoning and reload preserve the live card",
+      "outcome": "passed",
+      "elapsedMs": 1536.7485000000015
+    },
+    {
+      "name": "grok-dark-600: final text replaces the draft and saves only on idle",
+      "outcome": "passed",
+      "elapsedMs": 3551.2217500000042
+    },
+    {
+      "name": "aborted reasoning plan stays visible without saving or enabling implementation",
+      "outcome": "passed",
+      "elapsedMs": 1702.7367079999967
+    }
+  ],
+  "consoleErrors": [],
+  "screenshots": [
+    "grok-light-1280-first-tokens.png",
+    "grok-light-1280-streaming.png",
+    "grok-light-1280-hidden.png",
+    "grok-light-1280-final-streaming.png",
+    "grok-light-1280-completed.png",
+    "grok-light-1280-expanded.png",
+    "grok-light-1280-reloaded.png",
+    "grok-light-600-first-tokens.png",
+    "grok-light-600-streaming.png",
+    "grok-light-600-hidden.png",
+    "grok-light-600-final-streaming.png",
+    "grok-light-600-completed.png",
+    "grok-light-600-expanded.png",
+    "grok-light-600-action.png",
+    "grok-light-600-reloaded.png",
+    "grok-dark-1280-first-tokens.png",
+    "grok-dark-1280-streaming.png",
+    "grok-dark-1280-hidden.png",
+    "grok-dark-1280-final-streaming.png",
+    "grok-dark-1280-completed.png",
+    "grok-dark-1280-expanded.png",
+    "grok-dark-1280-reloaded.png",
+    "grok-dark-600-first-tokens.png",
+    "grok-dark-600-streaming.png",
+    "grok-dark-600-hidden.png",
+    "grok-dark-600-final-streaming.png",
+    "grok-dark-600-completed.png",
+    "grok-dark-600-expanded.png",
+    "grok-dark-600-action.png",
+    "grok-dark-600-reloaded.png",
+    "grok-cancelled-draft.png",
+    "chat-idle.png"
+  ],
+  "liveProvider": "not-run",
+  "physicalDevice": "not-run",
+  "visualReview": "pending",
+  "inspection": {
+    "cdp": "http://127.0.0.1:54641",
+    "fixture": "http://127.0.0.1:54640",
+    "app": "http://127.0.0.1:54681"
+  },
+  "streamEvents": {
+    "message.part.delta": 204,
+    "message.part.updated": 20
+  },
+  "streamSample": {
+    "directory": "<QA_RUNTIME>/workspace",
+    "payload": {
+      "type": "message.part.updated",
+      "properties": {
+        "part": {
+          "id": "part_text_ses_perfparent",
+          "sessionID": "ses_perfparent",
+          "messageID": "msg_assistant_ses_perfparent",
+          "type": "text",
+          "text": "Renderer paint fixture parent.\nRenderer paint fixture parent.\nRenderer paint ",
+          "time": {
+            "start": 1788818434061
+          }
+        }
+      }
+    }
+  },
+  "grokPlan": {
+    "liveProvider": false,
+    "providerId": "xai",
+    "modelId": "grok-4.6",
+    "renderMode": "live",
+    "checkpoints": [
+      {
+        "label": "grok-light-1280 first tokens",
+        "source": "msg_1a07de39ad8001draft",
+        "characters": 14,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-1280 context",
+        "source": "msg_1a07de39ad8001draft",
+        "characters": 58,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-1280 implementation",
+        "source": "msg_1a07de39ad8001draft",
+        "characters": 118,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-1280 hidden reasoning",
+        "source": "msg_1a07de39ad8001draft",
+        "characters": 118,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-1280 channel continuation",
+        "source": "msg_1a07de39ad8001draft",
+        "characters": 175,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-1280 tool boundary",
+        "source": "msg_1a07de39ad8001draft",
+        "characters": 175,
+        "streaming": false,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-1280 pending final marker",
+        "source": "msg_1a07de39ad8001draft",
+        "characters": 175,
+        "streaming": false,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-1280 final handoff",
+        "source": "msg_1a07de39ad9001final",
+        "characters": 281,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-1280 handoff frames",
+        "frames": 12,
+        "failures": [],
+        "maxScrollDelta": 12
+      },
+      {
+        "label": "grok-light-1280 completed",
+        "source": "msg_1a07de39ad9001final",
+        "characters": 281,
+        "streaming": false,
+        "canImplement": true
+      },
+      {
+        "label": "grok-light-1280 reloaded final",
+        "source": "msg_1a07de39ad9001final",
+        "characters": 281,
+        "streaming": false,
+        "canImplement": true
+      },
+      {
+        "label": "grok-light-600 first tokens",
+        "source": "msg_1a07de39b3c001draft",
+        "characters": 14,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-600 context",
+        "source": "msg_1a07de39b3c001draft",
+        "characters": 58,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-600 implementation",
+        "source": "msg_1a07de39b3c001draft",
+        "characters": 118,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-600 hidden reasoning",
+        "source": "msg_1a07de39b3c001draft",
+        "characters": 118,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-600 channel continuation",
+        "source": "msg_1a07de39b3c001draft",
+        "characters": 175,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-600 tool boundary",
+        "source": "msg_1a07de39b3c001draft",
+        "characters": 175,
+        "streaming": false,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-600 pending final marker",
+        "source": "msg_1a07de39b3c001draft",
+        "characters": 175,
+        "streaming": false,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-600 final handoff",
+        "source": "msg_1a07de39b3d001final",
+        "characters": 281,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-light-600 handoff frames",
+        "frames": 11,
+        "failures": [],
+        "maxScrollDelta": 12
+      },
+      {
+        "label": "grok-light-600 completed",
+        "source": "msg_1a07de39b3d001final",
+        "characters": 281,
+        "streaming": false,
+        "canImplement": true
+      },
+      {
+        "label": "grok-light-600 reloaded final",
+        "source": "msg_1a07de39b3d001final",
+        "characters": 281,
+        "streaming": false,
+        "canImplement": true
+      },
+      {
+        "label": "grok-dark-1280 first tokens",
+        "source": "msg_1a07de39ba0001draft",
+        "characters": 14,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-1280 context",
+        "source": "msg_1a07de39ba0001draft",
+        "characters": 58,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-1280 implementation",
+        "source": "msg_1a07de39ba0001draft",
+        "characters": 118,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-1280 hidden reasoning",
+        "source": "msg_1a07de39ba0001draft",
+        "characters": 118,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-1280 channel continuation",
+        "source": "msg_1a07de39ba0001draft",
+        "characters": 175,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-1280 tool boundary",
+        "source": "msg_1a07de39ba0001draft",
+        "characters": 175,
+        "streaming": false,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-1280 pending final marker",
+        "source": "msg_1a07de39ba0001draft",
+        "characters": 175,
+        "streaming": false,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-1280 final handoff",
+        "source": "msg_1a07de39ba1001final",
+        "characters": 281,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-1280 handoff frames",
+        "frames": 12,
+        "failures": [],
+        "maxScrollDelta": 12
+      },
+      {
+        "label": "grok-dark-1280 completed",
+        "source": "msg_1a07de39ba1001final",
+        "characters": 281,
+        "streaming": false,
+        "canImplement": true
+      },
+      {
+        "label": "grok-dark-1280 reloaded final",
+        "source": "msg_1a07de39ba1001final",
+        "characters": 281,
+        "streaming": false,
+        "canImplement": true
+      },
+      {
+        "label": "grok-dark-600 first tokens",
+        "source": "msg_1a07de39c04001draft",
+        "characters": 14,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-600 context",
+        "source": "msg_1a07de39c04001draft",
+        "characters": 58,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-600 implementation",
+        "source": "msg_1a07de39c04001draft",
+        "characters": 118,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-600 hidden reasoning",
+        "source": "msg_1a07de39c04001draft",
+        "characters": 118,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-600 channel continuation",
+        "source": "msg_1a07de39c04001draft",
+        "characters": 175,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-600 tool boundary",
+        "source": "msg_1a07de39c04001draft",
+        "characters": 175,
+        "streaming": false,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-600 pending final marker",
+        "source": "msg_1a07de39c04001draft",
+        "characters": 175,
+        "streaming": false,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-600 final handoff",
+        "source": "msg_1a07de39c05001final",
+        "characters": 281,
+        "streaming": true,
+        "canImplement": false
+      },
+      {
+        "label": "grok-dark-600 handoff frames",
+        "frames": 12,
+        "failures": [],
+        "maxScrollDelta": 12
+      },
+      {
+        "label": "grok-dark-600 completed",
+        "source": "msg_1a07de39c05001final",
+        "characters": 281,
+        "streaming": false,
+        "canImplement": true
+      },
+      {
+        "label": "grok-dark-600 reloaded final",
+        "source": "msg_1a07de39c05001final",
+        "characters": 281,
+        "streaming": false,
+        "canImplement": true
+      },
+      {
+        "label": "aborted draft",
+        "source": "msg_1a07de39c68001draft",
+        "characters": 54,
+        "streaming": false,
+        "canImplement": false
+      }
+    ],
+    "savedPlans": [
+      {
+        "source": "msg_1a07de39ad9001final",
+        "markdownMatches": true
+      },
+      {
+        "source": "msg_1a07de39b3d001final",
+        "markdownMatches": true
+      },
+      {
+        "source": "msg_1a07de39ba1001final",
+        "markdownMatches": true
+      },
+      {
+        "source": "msg_1a07de39c05001final",
+        "markdownMatches": true
+      }
+    ]
+  },
+  "diagnostics": {
+    "httpStatus": 200,
+    "enabled": true,
+    "directory": "<QA_RUNTIME>/data/harness/journal",
+    "diskBytes": 112330,
+    "maxBytes": 1073741824,
+    "segmentCount": 5,
+    "sessionCount": 4,
+    "queuedRecords": 0,
+    "writtenRecords": 247,
+    "gapRecords": 0,
+    "lastError": null,
+    "contextModeRecovery": {
+      "state": "healthy",
+      "incidentId": null,
+      "detectedAt": null,
+      "updatedAt": 1788818440800,
+      "recoveredAt": null,
+      "occurrenceCount": 0,
+      "restartAttempts": 0,
+      "lastRestartError": null,
+      "outcome": null,
+      "guidance": null,
+      "transitions": []
+    },
+    "commandDeadlineRecovery": {
+      "activeCount": 0,
+      "recoveredCount": 0,
+      "unresolvedCount": 0,
+      "lastOutcome": null,
+      "lastError": null,
+      "updatedAt": null
+    }
+  },
+  "fixture": {
+    "activeScenario": "idle",
+    "sseClientCount": 1,
+    "sseConnectionCount": 2,
+    "statusRequestCount": 47,
+    "suppressedEvents": [],
+    "suppressionRuns": [],
+    "messageRequestCounts": {
+      "ses_perfparent": 80,
+      "ses_perfchild3": 26,
+      "ses_perfchild1": 19,
+      "ses_perfchild2": 19
+    },
+    "olderMessageRequestCounts": {},
+    "messagePageRequests": [
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_user_ses_perfparent"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_user_ses_perfparent"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 50,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_user_ses_perfparent"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_user_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_user_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_assistant_ses_perfparent"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_assistant_ses_perfparent"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_assistant_ses_perfparent"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 4,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_qa_assistant_1"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_qa_assistant_1"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_qa_assistant_1"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 6,
+        "before": null,
+        "returned": 6,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_qa_assistant_2"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 6,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_qa_assistant_2"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 5,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_assistant_ses_perfparent",
+        "lastMessageID": "msg_qa_assistant_2"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 6,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_qa_assistant_2"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 6,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_qa_assistant_2"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 6,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_qa_assistant_2"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 6,
+        "before": null,
+        "returned": 6,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_qa_assistant_2"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad8001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad8001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad8001draft"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 4,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad8001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad8001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad8001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad8001draft"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad8001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad9001final"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 5,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad9001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad9001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad9001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad9001final"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ad9001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3c001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3c001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3c001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3c001draft"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 4,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3c001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3c001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3c001draft"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3c001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3d001final"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 5,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3d001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3d001final"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3d001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3d001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3d001final"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39b3d001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba0001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba0001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba0001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba0001draft"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 4,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba0001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba0001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba0001draft"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba0001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba1001final"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 5,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba1001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba1001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba1001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba1001final"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39ba1001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c04001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c04001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c04001draft"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c04001draft"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 4,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c04001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c04001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c04001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c04001draft"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c05001final"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 5,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c05001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c05001final"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c05001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c05001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c05001final"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 5,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c05001final"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c68001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c68001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c68001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c68001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c68001draft"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 4,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a07de39c68001draft"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_assistant_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_assistant_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_assistant_ses_perfchild3"
+      }
+    ],
+    "textLengths": {
+      "ses_perfparent": 629,
+      "ses_perfchild1": 406,
+      "ses_perfchild2": 406,
+      "ses_perfchild3": 446
+    },
+    "receivedPrompts": [
+      {
+        "sessionID": "ses_perfparent",
+        "messageID": "msg_07de38cae001eeQLUDSElKC3r1",
+        "partTypes": [
+          "text"
+        ],
+        "model": {
+          "providerID": "fixture",
+          "modelID": "fixture-model",
+          "variant": "low"
+        },
+        "agent": "build",
+        "variant": "low"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "messageID": "msg_07de3956c0010yivdWF7SIgySI",
+        "partTypes": [
+          "text"
+        ],
+        "model": {
+          "providerID": "fixture",
+          "modelID": "fixture-model",
+          "variant": "low"
+        },
+        "agent": "build",
+        "variant": "low"
+      }
+    ],
+    "canonicalUserDelays": [],
+    "rejectedPrompts": [],
+    "replies": [],
+    "unknownRoutes": [],
+    "permissionCount": 0,
+    "questionCount": 0,
+    "abortedPrompts": 1,
+    "activePrompts": 0
+  },
+  "cleanupErrors": [],
+  "finishedAt": "2026-09-07T22:02:00.528Z",
+  "journalDirectory": "journal"
+}

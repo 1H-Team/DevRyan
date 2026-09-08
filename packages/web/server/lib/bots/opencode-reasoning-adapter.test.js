@@ -17,6 +17,18 @@ const createProvider = () => ({
 });
 
 describe('OpenCode reasoning adapter', () => {
+  it('tolerates only an absent runtime during warm release while close remains strict', async () => {
+    const provider = createProvider();
+    const adapter = createOpenCodeReasoningAdapter({ provider });
+    const missing = Object.assign(new Error('absent'), { code: 'bot_opencode_run_not_found' });
+    provider.stopReasoningRun.mockRejectedValue(missing);
+    await expect(adapter.releaseWarm({ runId: RUN_ID })).resolves.toBeUndefined();
+    await expect(adapter.closeRun({ runId: RUN_ID })).rejects.toBe(missing);
+    const cleanup = Object.assign(new Error('cleanup failed'), { code: 'bot_container_stop_failed' });
+    provider.stopReasoningRun.mockRejectedValue(cleanup);
+    await expect(adapter.releaseWarm({ runId: RUN_ID })).rejects.toBe(cleanup);
+  });
+
   it('forwards only the provider structured-completion contract', async () => {
     const provider = createProvider();
     const adapter = createOpenCodeReasoningAdapter({ provider });

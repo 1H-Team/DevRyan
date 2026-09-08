@@ -93,6 +93,11 @@ const TITLE_AGENT_OVERLAY = {
     permission: { '*': 'deny' },
     prompt: expect.any(String),
   },
+  'devryan-commit': {
+    description: 'Internal no-tools commit draft generator',
+    mode: 'subagent', hidden: true, temperature: 0,
+    permission: { '*': 'deny' }, prompt: expect.any(String),
+  },
   'devryan-pr': {
     description: 'Internal no-tools pull request draft generator',
     mode: 'subagent',

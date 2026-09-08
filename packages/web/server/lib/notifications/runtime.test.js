@@ -385,6 +385,7 @@ describe('notification trigger runtime completion gating', () => {
     'smartfetch-secondary',
     'Commit generation workflow',
     'DevRyan title generation (internal)',
+    'DevRyan text generation (internal)',
   ])(
     'suppresses completion delivery for the hidden helper session %s',
     async (title) => {

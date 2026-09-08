@@ -1,0 +1,5585 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-07T21:46:53.065Z",
+  "result": "pass",
+  "browser": "Packaged Electron CDP isolated visual shell",
+  "electronMode": "packaged",
+  "crossMachinePixelBaseline": false,
+  "reviewStatus": "reviewed: all 83 screenshots inspected; interaction assertions passed",
+  "cases": [
+    {
+      "id": "catalog-filtered-light",
+      "scene": "catalog",
+      "state": "catalog_filtered",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "catalog-filtered-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "RSRockbotRelease operations leadactive",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "4b4abe9b836756cfbd42f63c2b0fe0923019804bd34c2f123d12d40a6051f025",
+      "reviewed": true
+    },
+    {
+      "id": "catalog-empty-dark-narrow",
+      "scene": "catalog",
+      "state": "catalog_empty",
+      "theme": "dark",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "catalog-empty-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "applicable": false,
+        "reason": "empty member catalog",
+        "visibleTabbableCount": 0
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "a73dcc79231aa0a625875443a78ee7713a3785b28476bebd7e42433b80808c86",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_hidden-light",
+      "scene": "conversation",
+      "state": "computer_hidden",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "conversation-computer_hidden-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 1,
+        "stops": 1,
+        "active": 0,
+        "maxActive": 1
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "d1f3bd82cb599675f2c834e29d116a58da2276b5a3efbf6765b86c8bd2f62b68",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_hidden-dark-narrow",
+      "scene": "conversation",
+      "state": "computer_hidden",
+      "theme": "dark",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "conversation-computer_hidden-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 1,
+        "stops": 1,
+        "active": 0,
+        "maxActive": 1
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "2d83c7df654c7f78d0a43993c95dd0bcc38228bed4c4a66388411dbd3df85e99",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_shown-light",
+      "scene": "conversation",
+      "state": "computer_shown",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "conversation-computer_shown-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "viewing",
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 3,
+        "stops": 2,
+        "active": 1,
+        "maxActive": 1
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "a3406ae08ce19435bbcb964de70fc62c835f5d6d70b4b3f1d7fb2fe4345cf767",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_shown-dark-narrow",
+      "scene": "conversation",
+      "state": "computer_shown",
+      "theme": "dark",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "conversation-computer_shown-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "viewing",
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 2,
+        "stops": 1,
+        "active": 1,
+        "maxActive": 1
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "584fd0d305a5ce9a25a161ade8ac37a64b00fce768d5cacbf5853d892b8364b5",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_expanded-light",
+      "scene": "conversation",
+      "state": "computer_expanded",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "conversation-computer_expanded-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "expandedContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "viewing",
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 1,
+        "stops": 0,
+        "active": 1,
+        "maxActive": 1
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "1bdd9fe4859e9f1ccf1cb103607f0e99c83b0417ef418fce94aa58f6f9227e0d",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_expanded-dark-narrow",
+      "scene": "conversation",
+      "state": "computer_expanded",
+      "theme": "dark",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "conversation-computer_expanded-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "expandedContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "viewing",
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 1,
+        "stops": 0,
+        "active": 1,
+        "maxActive": 1
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "aaa93a61bcd0ab296f96018b0b81a17786e74d592aba5464eaf4f72b802d151b",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_waiting-light",
+      "scene": "conversation",
+      "state": "computer_waiting",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "conversation-computer_waiting-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "viewing",
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 1,
+        "stops": 0,
+        "active": 1,
+        "maxActive": 1
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "05edcb5814672e3cc5d3e8e80593f43192cd3c627e40c48344ff93502a069a72",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_waiting-dark-narrow",
+      "scene": "conversation",
+      "state": "computer_waiting",
+      "theme": "dark",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "conversation-computer_waiting-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "viewing",
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 1,
+        "stops": 0,
+        "active": 1,
+        "maxActive": 1
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "6f7bbdc8d1e8a1ada1c553bfe8aa0ed076fd3e415a48dc065294f9ab56133614",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_owned-light",
+      "scene": "conversation",
+      "state": "computer_owned",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "conversation-computer_owned-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "viewing",
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 1,
+        "stops": 0,
+        "active": 1,
+        "maxActive": 1
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "0fc3f2f0155edf8fbff118dad7ad836a235a5763b090ba073d513d0a88fe700f",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_owned-dark-narrow",
+      "scene": "conversation",
+      "state": "computer_owned",
+      "theme": "dark",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "conversation-computer_owned-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "viewing",
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 1,
+        "stops": 0,
+        "active": 1,
+        "maxActive": 1
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "4f2e1d871af96d38aa2a82752093361d89addd64dc9cf55f55cbc3ea989a4d8e",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_disconnected-light",
+      "scene": "conversation",
+      "state": "computer_disconnected",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "conversation-computer_disconnected-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "screen-unavailable",
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 0,
+        "stops": 0,
+        "active": 0,
+        "maxActive": 0
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "45fbd0024889a31bebc4a2e6abe998f44981a339088f6652a4b8ac4b30e9e94b",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_disconnected-dark-narrow",
+      "scene": "conversation",
+      "state": "computer_disconnected",
+      "theme": "dark",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "conversation-computer_disconnected-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "screen-unavailable",
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 0,
+        "stops": 0,
+        "active": 0,
+        "maxActive": 0
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "575a04a0c92564f3249da2d8830e3b616d86c60f5f574b2d81da786928cdc39d",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_completed-light",
+      "scene": "conversation",
+      "state": "computer_completed",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "conversation-computer_completed-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack",
+          "conversation-result"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 0,
+        "stops": 0,
+        "active": 0,
+        "maxActive": 0
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "6634f61ef1348389b04733ec9de4975b19a71204b5ead61fb76e13f6022a9b42",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_completed-dark-narrow",
+      "scene": "conversation",
+      "state": "computer_completed",
+      "theme": "dark",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "conversation-computer_completed-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack",
+          "conversation-result"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 0,
+        "stops": 0,
+        "active": 0,
+        "maxActive": 0
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "6803590fe7e6288c4e86248d5848658169ba52a825f551dd46fd5aeb15094a06",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_idle-light",
+      "scene": "conversation",
+      "state": "computer_idle",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "conversation-computer_idle-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 0,
+        "stops": 0,
+        "active": 0,
+        "maxActive": 0
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "f3e0539d0ab973afa61ed8c58b4777bb7e9548b3fdc48693b371f85c8ab17b89",
+      "reviewed": true
+    },
+    {
+      "id": "conversation-computer_idle-dark-narrow",
+      "scene": "conversation",
+      "state": "computer_idle",
+      "theme": "dark",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "conversation-computer_idle-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "conversation-request",
+          "conversation-ack"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 1:00 PM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "computerMetrics": {
+        "starts": 0,
+        "stops": 0,
+        "active": 0,
+        "maxActive": 0
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "dbc436b3fd1a6cd0e79626e668ded5c2148c594aa66f100e93a442a9b50b97f1",
+      "reviewed": true
+    },
+    {
+      "id": "telegram-compact-light",
+      "scene": "telegram",
+      "state": "telegram_compact",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "telegram-compact-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Simulate consumer conflict",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "b0b7efdf265f6506227e1b0d8d56926f284ca9770ee8989417bbda4d12c86417",
+      "reviewed": true
+    },
+    {
+      "id": "telegram-compact-dark-narrow",
+      "scene": "telegram",
+      "state": "telegram_compact",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "telegram-compact-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Simulate consumer conflict",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "f2eee2db200a0fceaad080286fc80b12fcf4b07de0b48f482f40a69ccf2c2e3f",
+      "reviewed": true
+    },
+    {
+      "id": "voice-configured-light",
+      "scene": "telegram",
+      "state": "voice_configured",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "voice-configured-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Simulate consumer conflict",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "adc0dad79d649c5e363c5bcaaced4a08187b51bd2149d4094cc4955f598596c5",
+      "reviewed": true
+    },
+    {
+      "id": "voice-error-dark-narrow",
+      "scene": "telegram",
+      "state": "voice_error",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "voice-error-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Simulate consumer conflict",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "39f500c20e0f0725f194f37e5c1cc83e518f750146f16cb6b61e90e8648fa3f7",
+      "reviewed": true
+    },
+    {
+      "id": "avatars-cold-light",
+      "scene": "avatars",
+      "state": "cold",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "avatars-cold-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Update title",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "0d65ace563e5ca859f93c7c3c0fe2935e41f652c4225887b0d972e642e087813",
+      "reviewed": true
+    },
+    {
+      "id": "avatars-warm-light",
+      "scene": "avatars",
+      "state": "warm",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "avatars-warm-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Update title",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "avatarMetrics": {
+        "optimized": {
+          "coldMs": 224.5,
+          "initialRequests": 2,
+          "warmSwitchRequests": 0,
+          "latencies": [
+            1.2,
+            1.1,
+            0.5,
+            1
+          ]
+        },
+        "baseline": {
+          "coldMs": [
+            225.5,
+            245.30000000074506,
+            225.39999999850988
+          ],
+          "switchMs": [
+            206.89999999850988,
+            194.69999999925494,
+            198.19999999925494,
+            190.70000000298023
+          ],
+          "requests": 6
+        }
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "9ca32fc844313ab5a0c8b8d0cdf8ea4765669a8a87c1d2bd26e76e7cd3df948b",
+      "reviewed": true
+    },
+    {
+      "id": "avatars-warm-dark-narrow",
+      "scene": "avatars",
+      "state": "warm",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "avatars-warm-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Update title",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "avatarMetrics": {
+        "optimized": {
+          "coldMs": 214.6,
+          "initialRequests": 2,
+          "warmSwitchRequests": 0,
+          "latencies": [
+            0.7,
+            1,
+            0.3,
+            0.6
+          ]
+        },
+        "baseline": {
+          "coldMs": [
+            223.19999999925494,
+            230.60000000149012,
+            222.89999999850988
+          ],
+          "switchMs": [
+            214.30000000074506,
+            241.59999999776483,
+            214.40000000223517,
+            227.19999999925494
+          ],
+          "requests": 6
+        }
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "5d8900285f1049d8fab356f34cbbba6519a138bd9e660f3ca1929959aa169b74",
+      "reviewed": true
+    },
+    {
+      "id": "avatars-reduced-motion",
+      "scene": "avatars",
+      "state": "reduced_motion",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "avatars-reduced-motion.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Update title",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "avatarMetrics": {
+        "optimized": {
+          "coldMs": 213.7,
+          "initialRequests": 2,
+          "warmSwitchRequests": 0,
+          "latencies": [
+            0.7,
+            0.7,
+            0.6,
+            0.7
+          ]
+        },
+        "baseline": {
+          "coldMs": [
+            215.29999999701977,
+            236,
+            215
+          ],
+          "switchMs": [
+            198.5,
+            204.69999999925494,
+            188.10000000149012,
+            211.29999999701977
+          ],
+          "requests": 6
+        }
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "8927de067fe080e7f72a31ea863ddb0b377dac53d98e534cd390c99c193497d1",
+      "reviewed": true
+    },
+    {
+      "id": "agent-opencode-light-r220",
+      "scene": "agent",
+      "state": "opencode",
+      "theme": "light",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "agent-opencode-light-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Managed OpenCodeLocal Default. Model Credentials Stay in DevRyan.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "647b63680efbf2642a4f38c8b67499062572a8b60b1041b1d206408f2fe7b489",
+      "reviewed": true
+    },
+    {
+      "id": "agent-agui-healthy-dark-r280",
+      "scene": "agent",
+      "state": "healthy",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "agent-agui-healthy-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Managed OpenCodeLocal Default. Model Credentials Stay in DevRyan.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "6f9f96af7356af44420cdefdd53ead9f74ab146b81e1c4ed55a3b1cedc5a0cc0",
+      "reviewed": true
+    },
+    {
+      "id": "agent-testing-light-r500",
+      "scene": "agent",
+      "state": "testing",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "agent-testing-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Managed OpenCodeLocal Default. Model Credentials Stay in DevRyan.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "8544c8229683c1f1b0e5d56c36b0eaf33d3ab22d04bc09851e1bd6ca6c35c737",
+      "reviewed": true
+    },
+    {
+      "id": "agent-failed-dark-r280",
+      "scene": "agent",
+      "state": "failed",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "agent-failed-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Managed OpenCodeLocal Default. Model Credentials Stay in DevRyan.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "0a0c76c4f633506985f9149d06b400c21049e0102e7b5a9f18d7cb974a6a93e4",
+      "reviewed": true
+    },
+    {
+      "id": "agent-revoked-light-r220",
+      "scene": "agent",
+      "state": "revoked",
+      "theme": "light",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "agent-revoked-light-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Managed OpenCodeLocal Default. Model Credentials Stay in DevRyan.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "1094ed2674250d572bb8959264e193101750de369a4327dfaf75e1b4634017fc",
+      "reviewed": true
+    },
+    {
+      "id": "agent-privacy-warning-dark-narrow",
+      "scene": "agent",
+      "state": "privacy_warning",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "agent-privacy-warning-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Managed OpenCodeLocal Default. Model Credentials Stay in DevRyan.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "056538265f75cd1609ba723208fcb4abe5d0ab8c2c5743fafbb2769c6f74915e",
+      "reviewed": true
+    },
+    {
+      "id": "overview-provider-model-light-r280",
+      "scene": "overview",
+      "state": "provider_model",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "overview-provider-model-light-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "GPT-5.6 Sol",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "a6d4c01c9b61036f17b4b499693a53c80512f714638b5454097fe2f671a0cdb4",
+      "reviewed": true
+    },
+    {
+      "id": "overview-missing-credential-dark-narrow",
+      "scene": "overview",
+      "state": "missing_credential",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "overview-missing-credential-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "GPT-5.6 Sol",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "316e6f94a18e3f96824f2bd4d662a952c93685f1d7a0cf133f299d910f4378c3",
+      "reviewed": true
+    },
+    {
+      "id": "spec-trusted-light-r500",
+      "scene": "spec",
+      "state": "trusted",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "spec-trusted-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Export Signed JSON",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "ad1c480acca1853000413e794a211c836d3f0b5bb48349120b73f19756b47d9e",
+      "reviewed": true
+    },
+    {
+      "id": "spec-untrusted-dark-r280",
+      "scene": "spec",
+      "state": "untrusted",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "spec-untrusted-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Export Signed JSON",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "4d0c6fc6667e1b586919df8539687f139e191e5772ee7b450d755806b17bbf98",
+      "reviewed": true
+    },
+    {
+      "id": "spec-tampered-light-r220",
+      "scene": "spec",
+      "state": "tampered",
+      "theme": "light",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "spec-tampered-light-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Export Signed JSON",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "2be72a4206cdc63f4cd65cdc3cba63fe66715c8c5f61ff6302b1aefd7a3ba14a",
+      "reviewed": true
+    },
+    {
+      "id": "spec-binding-failed-dark-narrow",
+      "scene": "spec",
+      "state": "binding_failed",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "spec-binding-failed-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Export Signed JSON",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "197d6582dcdf18c64d12fcc2748c89c832ed76e428568720579f22d7f52e3b25",
+      "reviewed": true
+    },
+    {
+      "id": "spec-portable-diff-light-r500",
+      "scene": "spec",
+      "state": "diff",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "spec-portable-diff-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Export Signed JSON",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "38a7edee8023d2d8b84bf4486320e63a053a69abb4d9d2186797642aafcdfce2",
+      "reviewed": true
+    },
+    {
+      "id": "policy-structured-light-r500",
+      "scene": "policy",
+      "state": "healthy",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "policy-structured-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "LowSensitiveCritical",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "f3ece39a682f536414365df9b5541a73b4a9d2f95c10f852b79fca240cf85f4d",
+      "reviewed": true
+    },
+    {
+      "id": "policy-validation-error-dark-r280",
+      "scene": "policy",
+      "state": "validation_error",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "policy-validation-error-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "LowSensitiveCritical",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "745543cd3995d77309f94430016319d0fbcd94d3c654da93ad1839f47aff62ef",
+      "reviewed": true
+    },
+    {
+      "id": "policy-quota-exhausted-light-narrow",
+      "scene": "policy",
+      "state": "quota_exhausted",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "policy-quota-exhausted-light-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "LowSensitiveCritical",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "09f2903910c2b7199802c1e20b37fd37872ce87fed5f19b3a760fae16c5ef6f8",
+      "reviewed": true
+    },
+    {
+      "id": "network-public-only-light-r220",
+      "scene": "network",
+      "state": "public_only",
+      "theme": "light",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "network-public-only-light-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "f69c97f7040d064d192a01b07490e05ebf4e42679bfd4827ec2d479a3be15332",
+      "reviewed": true
+    },
+    {
+      "id": "network-allowlist-dark-r500",
+      "scene": "network",
+      "state": "allowlist",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "network-allowlist-dark-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "8db0f897cc3a55cf4eca8e223c02a7654cbffd98f4d026a0aea911b73a05b956",
+      "reviewed": true
+    },
+    {
+      "id": "network-private-denial-light-r280",
+      "scene": "network",
+      "state": "private_denial",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "network-private-denial-light-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "2a977a7fb4b17fec896ff254b07d293b23c1e716434bae9ce9056551fc6e8020",
+      "reviewed": true
+    },
+    {
+      "id": "network-proxy-failure-dark-narrow",
+      "scene": "network",
+      "state": "proxy_failure",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "network-proxy-failure-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "998cb5bb5ba350dd2adca19d57de1b861c0990b5c8cb0db52741ea7fe0bb358b",
+      "reviewed": true
+    },
+    {
+      "id": "network-standard-light-r280",
+      "scene": "network",
+      "state": "standard",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "network-standard-light-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "e1acf081a33f1ba8de77022f540672a71fcdd2cc38b1e9b5aa97eb2c9693ae4c",
+      "reviewed": true
+    },
+    {
+      "id": "network-runsc-dark-r500",
+      "scene": "network",
+      "state": "runsc",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "network-runsc-dark-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "5c734d95222c3957ed896a62a7f3fc16317f6bb727a72b9568c413a5d95cf0b4",
+      "reviewed": true
+    },
+    {
+      "id": "network-runsc-unavailable-light-r220",
+      "scene": "network",
+      "state": "runsc_unavailable",
+      "theme": "light",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "network-runsc-unavailable-light-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "select",
+        "name": "Standard Container BoundaryHardened runsc Boundary",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "8127acaff7f574b471ac3e1b0eebb65b2b549c655119b461ad45f3c4128cc3dc",
+      "reviewed": true
+    },
+    {
+      "id": "runtime-consent-light-r280",
+      "scene": "runtime",
+      "state": "consent",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-consent-light-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Open Settings",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "45c35ae42c2b164533c9c84d8f75d247535e26b2c051bd57cb55250138a5d159",
+      "reviewed": true
+    },
+    {
+      "id": "runtime-legacy-consent-dialog-light-r500",
+      "scene": "runtime",
+      "state": "legacy_consent",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-legacy-consent-dialog-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Enable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "d375e4e8dc2d762815d091d420d6ff3d3cfc1e5ab9026231eb8fa62f627ab8d0",
+      "reviewed": true
+    },
+    {
+      "id": "runtime-starting-dark-r220",
+      "scene": "runtime",
+      "state": "starting",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-starting-dark-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Disable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "9bf8b770c01b2262c965168b6918e4df9a989e8c09ebb98c83f1d7efc380f413",
+      "reviewed": true
+    },
+    {
+      "id": "runtime-connected-light-r500",
+      "scene": "runtime",
+      "state": "connected",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-connected-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Disable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "91516d29c7961ccb2d8581f284fc536c12e3c495d0f6d69220add72546bb9e31",
+      "reviewed": true
+    },
+    {
+      "id": "runtime-degraded-dark-r280",
+      "scene": "runtime",
+      "state": "degraded",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-degraded-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Disable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "7345b0bdb4e56cf6e2da0762247f20fde405eeee793502bafeac8a239e140fc1",
+      "reviewed": true
+    },
+    {
+      "id": "runtime-updating-light-narrow",
+      "scene": "runtime",
+      "state": "updating",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "runtime-updating-light-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Disable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "0a30d1e21df54116d2d53d67145b21ecd73dfc1c0667aa1c4d04e97bde2b4059",
+      "reviewed": true
+    },
+    {
+      "id": "runtime-disabled-dark-r280",
+      "scene": "runtime",
+      "state": "disabled",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-disabled-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Enable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "dec82002fe53b3ce2d1ed677312f72489b80c817ba83be58b7a277a57e475688",
+      "reviewed": true
+    },
+    {
+      "id": "runtime-desktop-unavailable-light-r500",
+      "scene": "runtime",
+      "state": "desktop_unavailable",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "runtime-desktop-unavailable-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Disable Background Bots",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "fa74e267878a97643644b58beaabef6d1dd64e00a4a5b7c23dc410cac87bc12d",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-empty-light-r220",
+      "scene": "transcript",
+      "state": "empty",
+      "theme": "light",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-empty-light-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "div",
+        "name": "No confirmations waitingSensitive actions pause here before execution.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "4a555c22fbc5ca53612fb9d5dff0e0bcb6c3f3fce3cddabd8d95fc373a280cfa",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-loading-dark-r280",
+      "scene": "transcript",
+      "state": "loading",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-loading-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "div",
+        "name": "No confirmations waitingSensitive actions pause here before execution.",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "f236b8d47842bfa248c946de6f02c1002ebeabe2a66410929754f3679ea9b41b",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-pending-light-r280",
+      "scene": "transcript",
+      "state": "pending",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-pending-light-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Cancel Bot Run",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "0803e56f493614aa1c8428eeaa6d0d9cfaef4bea55a045cc8bf0ed0d846c0a01",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-pending-developer-dark-r220",
+      "scene": "transcript",
+      "state": "pending",
+      "theme": "dark",
+      "role": "developer",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-pending-developer-dark-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Confirmations",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "8ff9506d67f95f1f286aa0151433fb867d968b92398195aa9c05dafdae32c16a",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-settled-light-r500",
+      "scene": "transcript",
+      "state": "settled",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-settled-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Confirmations",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "5238e18defd7acab7c1d1b35fb68a6e5c1958b110aefe326a8d315acd85a3eed",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-reconciliation-dark-r500",
+      "scene": "transcript",
+      "state": "reconciliation",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-reconciliation-dark-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Cancel Bot Run",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "83a5162dc0bf4fae891a8db7b296c84bb353755f231a79c0508643e1f238506c",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-partial-failure-light-narrow",
+      "scene": "transcript",
+      "state": "partial_failure",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "transcript-partial-failure-light-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Retry",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "5cb7dee72007aded24778b1f32966f664ff3dc1470b41c5d9be5221935ecbfdc",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-paused-dark-r280",
+      "scene": "transcript",
+      "state": "paused",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-paused-dark-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Confirmations",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "b1a29223ac82d40c3776b62444b028849dc204978a7dddd15142a552e192e028",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-retry-refused-light",
+      "scene": "transcript",
+      "state": "retry_refused",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-retry-refused-light.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Retry safely",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "77fbbe266c5862ec80b08f883a6e46dac834c0dedcd82843e41dc491bfef485e",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-timeout-dark-narrow",
+      "scene": "transcript",
+      "state": "timeout",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "transcript-timeout-dark-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "Release Steward, 11:00 AM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": false,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "014eb7ea8f790005126335a555189d3c6475f25ee259870af5e7d04e03e907d5",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-retired-light-r500",
+      "scene": "transcript",
+      "state": "retired",
+      "theme": "light",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-retired-light-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Cancel Bot Run",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "69070c8173df72bd8d0f4e1a2a8cb24d6055f74c32136334ce87571bcb212e25",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-ack-running-light-admin-r280",
+      "scene": "transcript",
+      "state": "ack_running",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-ack-running-light-admin-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 1,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000002",
+          "d1000000-0000-4000-8000-000000000003"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 11:00 AM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "a7baec4fd5cbaa1992e2b187071e94870573f18abf99f93413a04426b44de114",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-ack-running-dark-developer-narrow",
+      "scene": "transcript",
+      "state": "ack_running",
+      "theme": "dark",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "transcript-ack-running-dark-developer-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 1,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000002",
+          "d1000000-0000-4000-8000-000000000003"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 11:00 AM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "41e1d756c6f9c906925a586a8e0e31a64822c21bbf13ef0243f26abbef91c50e",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-ack-result-dark-admin-r500",
+      "scene": "transcript",
+      "state": "ack_result",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-ack-result-dark-admin-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 1,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000002",
+          "d1000000-0000-4000-8000-000000000003",
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 11:00 AM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "6eef0c74ab42090a9c764fd951212a0aa67aa2638655586d9d47834145416d5b",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-ack-result-light-developer-narrow",
+      "scene": "transcript",
+      "state": "ack_result",
+      "theme": "light",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "transcript-ack-result-light-developer-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 1,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000002",
+          "d1000000-0000-4000-8000-000000000003",
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "time",
+        "name": "You, 11:00 AM",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "ac2e1957ef48069446cef6aa857876b36cb9f5a72fce6a03a625126d609989f1",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-image-loading-light-admin-r280",
+      "scene": "transcript",
+      "state": "image_loading",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-image-loading-light-admin-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": "loading",
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Confirmations",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "62872f1dd2b05123e67d01f5af74920ae23fef06376bd1b51d42fd9a165c050d",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-image-ready-dark-admin-r500",
+      "scene": "transcript",
+      "state": "image_ready",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "transcript-image-ready-dark-admin-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": "ready",
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Confirmations",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "7078909824b7feb8e20a6b7d25d6e3f2bd7e724ccb31bf04fb59a4709c9d8ca6",
+      "reviewed": true
+    },
+    {
+      "id": "transcript-image-error-light-developer-narrow",
+      "scene": "transcript",
+      "state": "image_error",
+      "theme": "light",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "transcript-image-error-light-developer-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [
+          "d1000000-0000-4000-8000-000000000001"
+        ],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": "error",
+        "screenState": null,
+        "expectedScreenState": null,
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Retry Image",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "4297011aa35d6ea01a5f739bd55195d57c72127e24e89a094ea3a477d1ec2127",
+      "reviewed": true
+    },
+    {
+      "id": "screen-connecting-light-admin-r280",
+      "scene": "screen",
+      "state": "screen_connecting",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "screen-connecting-light-admin-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "connecting",
+        "expectedScreenState": "connecting",
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Confirmations",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "e18d71bc60be7897f2eb8859f98942e6d7396bf08af003aeb992cd4a04d24670",
+      "reviewed": true
+    },
+    {
+      "id": "screen-owned-dark-admin-r500",
+      "scene": "screen",
+      "state": "screen_owned",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "screen-owned-dark-admin-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "viewing",
+        "expectedScreenState": "viewing",
+        "expectedInputState": "enabled",
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Return Control",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": 2,
+      "remoteKeyboard": {
+        "text": "Stop Screen Viewing",
+        "focusVisible": true
+      },
+      "rendererErrorCount": 0,
+      "screenshotSha256": "ee8482259282e9a5c730d259876e26b3522e3dc5cef7c27ec7b6512cb13a8bc5",
+      "reviewed": true
+    },
+    {
+      "id": "screen-view-only-light-developer-narrow",
+      "scene": "screen",
+      "state": "screen_view_only",
+      "theme": "light",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "screen-view-only-light-developer-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "viewing",
+        "expectedScreenState": "viewing",
+        "expectedInputState": "disabled",
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Stop Screen Viewing",
+        "visible": true,
+        "focusVisible": true,
+        "moved": false,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "e9fa968b687e6fff5c929e316248cef759ea4fa38f451383e094fc92902c1ca2",
+      "reviewed": true
+    },
+    {
+      "id": "screen-conflict-light-admin-r220",
+      "scene": "screen",
+      "state": "screen_conflict",
+      "theme": "light",
+      "role": "admin",
+      "rail": 220,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "screen-conflict-light-admin-r220.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "viewing",
+        "expectedScreenState": "viewing",
+        "expectedInputState": "disabled",
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Cancel Bot Run",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "4331be53ec923f4501d9fcc6b073ba0840dc0db82b272dc80fc78fe9bd0081cc",
+      "reviewed": true
+    },
+    {
+      "id": "screen-wait-owned-dark-admin-r500",
+      "scene": "screen",
+      "state": "screen_wait_owned",
+      "theme": "dark",
+      "role": "admin",
+      "rail": 500,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "screen-wait-owned-dark-admin-r500.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": "owned",
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "viewing",
+        "expectedScreenState": "viewing",
+        "expectedInputState": "enabled",
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Return Control",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "1f5bb1e32887f7a94544d51b8ad92ce8392d134dd0a2bddaab22c1bd1663ec99",
+      "reviewed": true
+    },
+    {
+      "id": "screen-wait-other-light-admin-narrow",
+      "scene": "screen",
+      "state": "screen_wait_other",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "screen-wait-other-light-admin-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": "other",
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "viewing",
+        "expectedScreenState": "viewing",
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Stop Screen Viewing",
+        "visible": true,
+        "focusVisible": true,
+        "moved": false,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "d3e7d3782d145297372f4ebeb97be94feb299a59d422ec1843abf11b0c8d80a3",
+      "reviewed": true
+    },
+    {
+      "id": "screen-disconnected-dark-developer-r280",
+      "scene": "screen",
+      "state": "screen_disconnected",
+      "theme": "dark",
+      "role": "developer",
+      "rail": 280,
+      "drawer": "open",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "screenshot": "screen-disconnected-dark-developer-r280.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "screen-unavailable",
+        "expectedScreenState": "screen-unavailable",
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Confirmations",
+        "visible": true,
+        "focusVisible": true,
+        "moved": true,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "7cbea01b32ef739dc87b679e7652b559c84be34efabec4249e96c621942825b7",
+      "reviewed": true
+    },
+    {
+      "id": "screen-off-light-admin-narrow",
+      "scene": "screen",
+      "state": "screen_off",
+      "theme": "light",
+      "role": "admin",
+      "rail": 280,
+      "drawer": "closed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "screen-off-light-admin-narrow.png",
+      "assertions": {
+        "ok": true,
+        "errors": [],
+        "overflow": [],
+        "secretSentinelFound": false,
+        "unnamedDialogs": 0,
+        "focusedInView": true,
+        "focusScopeInView": true,
+        "acknowledgmentContract": true,
+        "acknowledgmentCount": 0,
+        "genericAcknowledgmentPresent": false,
+        "transcriptOrder": [],
+        "internalWorkLanguage": false,
+        "screenContract": true,
+        "controlWaitContract": true,
+        "expectedControlWait": null,
+        "imageContract": true,
+        "expectedImageState": null,
+        "screenState": "off",
+        "expectedScreenState": "off",
+        "expectedInputState": null,
+        "headerTop": 0,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "keyboardFocus": {
+        "tag": "button",
+        "name": "Start Screen Viewing",
+        "visible": true,
+        "focusVisible": true,
+        "moved": false,
+        "initialScroll": {
+          "x": 0,
+          "y": 0
+        },
+        "restored": {
+          "windowY": 0,
+          "documentY": 0,
+          "bodyY": 0,
+          "visualPageTop": 0,
+          "headerTop": 0
+        }
+      },
+      "remotePointerInput": null,
+      "remoteKeyboard": null,
+      "rendererErrorCount": 0,
+      "screenshotSha256": "0e37f3e9ae3d2ecf4f242cf068cf82477bb18e2c750fb2015eadd262b7d73376",
+      "reviewed": true
+    }
+  ],
+  "reviewNotes": {
+    "method": "All 21 contact sheets visually inspected; expanded replacements inspected at original size. Pilot failures inspected and corrected before final capture.",
+    "expandedRecapture": "2026-09-07T21:48:01.495Z",
+    "limitations": "Deterministic packaged Electron fixture, not signed release or live provider/browser verification. Screenshots include intentional fixture scrolling and truncated secondary text in narrow layouts."
+  }
+}

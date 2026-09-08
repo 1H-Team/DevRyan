@@ -232,9 +232,11 @@ const verifyRemotePointerInput = async (cdp, timeoutMs) => {
 };
 
 const clickCenter = async (cdp, selectorExpression) => {
-  const point = await evaluate(cdp, `(() => {
+  const point = await evaluate(cdp, `(async () => {
     const element = ${selectorExpression};
     if (!(element instanceof HTMLElement)) return null;
+    element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    await new Promise(resolve => requestAnimationFrame(resolve));
     const rect = element.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
@@ -242,6 +244,62 @@ const clickCenter = async (cdp, selectorExpression) => {
   if (!point) throw new Error('Interactive visual fixture control is unavailable');
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+};
+
+// Reproduce the former plain <img> delivery in an isolated synthetic surface.
+// CDP fulfills every baseline request locally with the same 180ms delay used
+// by the optimized fixture; no runtime, account, or provider is contacted.
+const measureUncachedAvatars = async (cdp) => {
+  const png = await evaluate(cdp, `(() => {
+    const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 128;
+    const context = canvas.getContext('2d'); context.fillStyle = '#246da7'; context.fillRect(0, 0, 256, 128);
+    return canvas.toDataURL('image/png').split(',')[1];
+  })()`);
+  let requests = 0;
+  const pending = new Set();
+  const fulfillmentErrors = [];
+  const unsubscribe = cdp.on('Fetch.requestPaused', ({ requestId }) => {
+    requests += 1;
+    const response = wait(180).then(() => cdp.send('Fetch.fulfillRequest', {
+      requestId, responseCode: 200,
+      responseHeaders: [{ name: 'Content-Type', value: 'image/png' }, { name: 'Cache-Control', value: 'no-store, private' }],
+      body: png,
+    }));
+    pending.add(response);
+    void response.then(() => pending.delete(response), (error) => {
+      pending.delete(response);
+      fulfillmentErrors.push(error);
+    });
+  });
+  await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*__avatar_baseline__*', requestStage: 'Request' }] });
+  try {
+    const timings = await evaluate(cdp, `(async () => {
+      const surface = document.createElement('div'); surface.style.cssText = 'position:fixed;left:-1000px;top:0';
+      document.body.append(surface);
+      const url = id => '/__avatar_baseline__/' + id + '?v=1';
+      const load = (image, source) => new Promise((resolve, reject) => {
+        const start = performance.now();
+        image.onload = () => resolve(performance.now() - start);
+        image.onerror = () => reject(new Error('Baseline image failed'));
+        image.src = source;
+      });
+      const sidebarA = document.createElement('img'); const sidebarB = document.createElement('img');
+      const header = document.createElement('img'); surface.append(sidebarA, sidebarB, header);
+      try {
+        const coldMs = await Promise.all([load(sidebarA, url('a')), load(sidebarB, url('b')), load(header, url('a'))]);
+        const switchMs = [];
+        for (const id of ['b', 'a', 'b', 'a']) switchMs.push(await load(header, url(id)));
+        return { coldMs, switchMs };
+      } finally { surface.remove(); }
+    })()`);
+    await Promise.allSettled([...pending]);
+    if (fulfillmentErrors.length > 0) throw fulfillmentErrors[0];
+    return { ...timings, requests };
+  } finally {
+    await Promise.allSettled([...pending]);
+    await cdp.send('Fetch.disable');
+    unsubscribe();
+  }
 };
 
 const resetFixtureDocumentScroll = async (cdp) => {
@@ -284,10 +342,10 @@ const layoutAssertionsExpression = `(() => {
   const transcriptOrder = Array.from(document.querySelectorAll('[data-bot-message-id]'))
     .map((element) => element.getAttribute('data-bot-message-id'));
   const expectedAnswerOrder = fixtureState === 'ack_result'
-    ? ['d1000000-0000-4000-8000-000000000002', 'd1000000-0000-4000-8000-000000000001']
-    : ['d1000000-0000-4000-8000-000000000002'];
+    ? ['d1000000-0000-4000-8000-000000000002', 'd1000000-0000-4000-8000-000000000003', 'd1000000-0000-4000-8000-000000000001']
+    : ['d1000000-0000-4000-8000-000000000002', 'd1000000-0000-4000-8000-000000000003'];
   const acknowledgmentContract = !acknowledgmentFixture || (
-    acknowledgmentCount === 0
+    acknowledgmentCount === 1
     && !genericAcknowledgmentPresent
     && transcriptOrder.length === expectedAnswerOrder.length
     && transcriptOrder.every((id, index) => id === expectedAnswerOrder[index])
@@ -337,6 +395,7 @@ const layoutAssertionsExpression = `(() => {
   const values = Array.from(document.querySelectorAll('input,textarea'))
     .map((element) => element.value || '')
     .join(' ');
+  const expandedContract = fixtureState !== 'computer_expanded' || Boolean(document.querySelector('dialog:modal'));
   const overflow = [];
   if (root.scrollWidth > root.clientWidth + 1) overflow.push('document');
   if (body.scrollWidth > body.clientWidth + 1) overflow.push('body');
@@ -370,7 +429,7 @@ const layoutAssertionsExpression = `(() => {
     focusedInView = rect.top >= 0 && rect.bottom <= viewportHeight;
   }
   return {
-    ok: errors.length === 0 && overflow.length === 0 && !secretPattern.test(text) && !secretPattern.test(values) && unnamedDialogs === 0 && focusedInView && focusScopeInView && Math.abs(headerTop) <= 1 && acknowledgmentContract && !internalWorkLanguage && screenContract && controlWaitContract && imageContract,
+    ok: expandedContract && errors.length === 0 && overflow.length === 0 && !secretPattern.test(text) && !secretPattern.test(values) && unnamedDialogs === 0 && focusedInView && focusScopeInView && Math.abs(headerTop) <= 1 && acknowledgmentContract && !internalWorkLanguage && screenContract && controlWaitContract && imageContract,
     errors,
     overflow,
     secretSentinelFound: secretPattern.test(text) || secretPattern.test(values),
@@ -378,6 +437,7 @@ const layoutAssertionsExpression = `(() => {
     focusedInView,
     focusScopeInView,
     acknowledgmentContract,
+    expandedContract,
     acknowledgmentCount,
     genericAcknowledgmentPresent,
     transcriptOrder,
@@ -395,7 +455,7 @@ const layoutAssertionsExpression = `(() => {
   };
 })()`;
 
-const assertKeyboardFocus = async (cdp) => {
+const assertKeyboardFocus = async (cdp, { allowNoninteractive = false } = {}) => {
   const before = await evaluate(cdp, `(() => ({
     active: document.activeElement instanceof HTMLElement
       ? { tag: document.activeElement.tagName.toLowerCase(), id: document.activeElement.id, data: { ...document.activeElement.dataset } }
@@ -416,6 +476,9 @@ const assertKeyboardFocus = async (cdp) => {
       .slice(0, 12)
       .map((element) => ({ tag: element.tagName.toLowerCase(), name: element.getAttribute('aria-label') || element.textContent?.trim().slice(0, 40) || '', tabIndex: element.tabIndex })),
   }))()`);
+  if (allowNoninteractive && before.visibleTabbableCount === 0) {
+    return { applicable: false, reason: 'empty member catalog', visibleTabbableCount: 0 };
+  }
   const originReady = await evaluate(cdp, `(() => {
     const scope = document.querySelector('[data-visual-focus-scope="true"]') || document;
     const candidates = Array.from(scope.querySelectorAll('button,a[href],input,select,textarea,[tabindex]'));
@@ -613,20 +676,25 @@ export const runProductionBotsVisualCapture = async (options) => {
     for (const entry of selected) {
       process.stdout.write(`[production-bots-visual] checking ${entry.id}\n`);
       rendererErrors = [];
+      let avatarMetrics = null;
+      let computerMetrics = null;
       await cdp.send('Emulation.setDeviceMetricsOverride', {
         width: entry.viewport.width,
         height: entry.viewport.height,
         deviceScaleFactor: 1,
         mobile: false,
       });
+      await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: entry.state === 'reduced_motion' ? 'reduce' : 'no-preference' }] });
       process.stdout.write(`[production-bots-visual] metrics ${entry.id}\n`);
       const caseUrl = productionBotsVisualUrl(fixture.baseUrl, entry);
       const currentUrl = await evaluate(cdp, 'location.href');
       process.stdout.write(`[production-bots-visual] url ${currentUrl}\n`);
       if (currentUrl !== caseUrl) {
         const loaded = waitForCdpEvent(cdp, 'Page.loadEventFired', options.timeoutMs);
-        await cdp.send('Page.navigate', { url: caseUrl });
-        await loaded;
+        await Promise.all([
+          cdp.send('Page.navigate', { url: caseUrl }, options.timeoutMs),
+          loaded,
+        ]);
         process.stdout.write(`[production-bots-visual] navigated ${entry.id}\n`);
       }
       await waitForEvaluation(cdp, `document.documentElement.dataset.fixtureReady === 'true'`, {
@@ -636,13 +704,141 @@ export const runProductionBotsVisualCapture = async (options) => {
       process.stdout.write(`[production-bots-visual] ready ${entry.id}\n`);
       await wait(100);
       await alignFixtureFocusScope(cdp);
-      const focus = await assertKeyboardFocus(cdp);
+      const focus = await assertKeyboardFocus(cdp, { allowNoninteractive: entry.scene === 'catalog' && entry.state === 'catalog_empty' });
       const remotePointerInput = entry.state === 'screen_owned'
         ? await verifyRemotePointerInput(cdp, options.timeoutMs)
         : null;
       const remoteKeyboard = entry.state === 'screen_owned'
         ? await verifyRemoteKeyboardRelease(cdp, options.timeoutMs)
         : null;
+      if (entry.scene === 'avatars' && entry.state === 'cold') {
+        const fallback = await evaluate(cdp, `(() => {
+          const fixture = document.querySelector('[data-avatar-fixture]');
+          return fixture && !fixture.querySelector('img') && fixture.querySelector('[data-bot-identity-header] [data-bot-avatar]')?.textContent === 'AA';
+        })()`);
+        if (!fallback) throw new Error('Cold avatar initials were not shown');
+      }
+      if (entry.interaction === 'avatars') {
+        await waitForEvaluation(cdp, `document.querySelectorAll('[data-avatar-fixture] img').length === 3`, { timeoutMs: options.timeoutMs, label: 'decoded avatar images' });
+        const avatarResult = await evaluate(cdp, `(async () => {
+          const fixture = document.querySelector('[data-avatar-fixture]');
+          const frame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const initialRequests = Number(fixture.dataset.avatarRequests);
+          const coldMs = Number(fixture.dataset.correctImageMs);
+          if (initialRequests !== 2 || fixture.dataset.uploadVerified !== 'true') throw new Error('Avatar deduplication or upload failed');
+          const latencies = [];
+          for (const id of ['b', 'a', 'b', 'a']) {
+            document.querySelector('[data-bot-sidebar-row="' + id + '"]').click();
+            await frame();
+            const header = fixture.querySelector('[data-bot-identity-header] [data-bot-avatar]');
+            const sidebar = fixture.querySelector('[data-bot-sidebar-row="' + id + '"] img');
+            if (header?.dataset.botAvatar !== id || !header.querySelector('img')?.complete || fixture.dataset.firstRenderDecoded !== 'true' || header.querySelector('img').src !== sidebar?.src) throw new Error('Avatar switch mismatch');
+            latencies.push(Number(fixture.dataset.correctImageMs));
+          }
+          fixture.querySelector('[data-avatar-rename]').click(); await frame();
+          if (Number(fixture.dataset.avatarRequests) !== initialRequests) throw new Error('Warm avatar refetched');
+          const dots = [...fixture.querySelectorAll('[data-bot-sidebar-status="typing"]')];
+          if (dots.some(row => row.textContent.trim() || row.querySelectorAll('.animate-bot-typing-dot').length !== 3)) throw new Error('Typing label regression');
+          if (matchMedia('(prefers-reduced-motion: reduce)').matches && dots.some(row => [...row.querySelectorAll('.animate-bot-typing-dot')].some(dot => getComputedStyle(dot).animationName !== 'none'))) throw new Error('Reduced motion ignored');
+          fixture.querySelector('[data-avatar-replace]').click();
+          await frame();
+          if (fixture.querySelector('[data-bot-identity-header] img')) throw new Error('Old avatar retained during replacement');
+          return { coldMs, initialRequests, warmSwitchRequests: Number(fixture.dataset.avatarRequests) - initialRequests - 1, latencies };
+        })()`);
+        avatarMetrics = { optimized: avatarResult, baseline: await measureUncachedAvatars(cdp) };
+        process.stdout.write(`[production-bots-visual] avatar metrics ${JSON.stringify(avatarMetrics)}\n`);
+        await waitForEvaluation(cdp, `document.querySelectorAll('[data-avatar-fixture] img').length === 3 && document.querySelector('[data-avatar-fixture]').dataset.avatarRequests === '3'`, { timeoutMs: options.timeoutMs, label: 'replacement avatar decoded' });
+      }
+      if (entry.scene === 'catalog') {
+        await evaluate(cdp, `(() => {
+          const catalog = document.querySelector('[data-catalog-fixture]');
+          if (!catalog || /Verify Bot|Bot E2E/.test(catalog.innerText)) throw new Error('Fixture Bot leaked into catalog');
+          if (${entry.state === 'catalog_filtered'} && (!catalog.innerText.includes('Rockbot') || !catalog.innerText.includes('Pixel'))) throw new Error('Human catalog missing');
+          if (${entry.state === 'catalog_empty'} && !catalog.innerText.includes('No Bots assigned')) throw new Error('Empty catalog has rows');
+        })()`);
+      }
+      if (entry.interaction === 'computer_controls') {
+        const hidden = ['computer_hidden', 'computer_idle', 'computer_completed'].includes(entry.state);
+        const unavailable = entry.state === 'computer_disconnected';
+        await waitForEvaluation(cdp, `Boolean(document.querySelector('[data-bot-inline-computer]')) === ${!hidden}`, { timeoutMs: options.timeoutMs, label: 'computer opt-in visibility' });
+        await evaluate(cdp, `(() => {
+          const tabs = [...document.querySelectorAll('[data-bot-operations-rail] [role="tab"]')];
+          if (tabs.length !== 2 || tabs[0].getAttribute('aria-label') !== 'Shared files' || tabs[1].getAttribute('aria-label') !== 'Confirmations') throw new Error('Unexpected Bot tabs');
+          if (tabs[0].getAttribute('aria-selected') !== 'true') throw new Error('Shared files is not the default');
+          const status = document.querySelector('[data-bot-computer-status]');
+          const input = document.querySelector('[data-conversation-fixture] form textarea');
+          if (!input || input.value !== 'Make the stars a little brighter') throw new Error('Composer draft missing');
+          if (status && status.getBoundingClientRect().bottom > input.getBoundingClientRect().top) throw new Error('Computer controls are not above input');
+          if (document.body.innerText.includes('Open in Conversation')) throw new Error('Old Computer tab survived');
+        })()`);
+        if (entry.viewport.width > 720) {
+          await clickCenter(cdp, "document.querySelector('[data-bot-operations-rail] [role=\"tab\"][aria-label=\"Confirmations\"]')");
+          await waitForEvaluation(cdp, `document.querySelector('[role="tab"][aria-label="Confirmations"]')?.getAttribute('aria-selected') === 'true'`, { timeoutMs: options.timeoutMs, label: 'Confirmations tab selected' });
+          await clickCenter(cdp, "document.querySelector('[data-bot-operations-rail] [role=\"tab\"][aria-label=\"Shared files\"]')");
+          await waitForEvaluation(cdp, `document.querySelector('[role="tab"][aria-label="Shared files"]')?.getAttribute('aria-selected') === 'true'`, { timeoutMs: options.timeoutMs, label: 'Shared files tab restored' });
+        }
+        if (entry.state === 'computer_hidden') {
+          if (await evaluate(cdp, 'window.__DEVRYAN_VISUAL_SCREEN_STREAMS__.starts') !== 0) throw new Error('Hidden computer opened a stream');
+          await clickCenter(cdp, "document.querySelector('[data-bot-computer-status] button')");
+          await waitForEvaluation(cdp, `document.querySelector('[data-bot-screen-view-state]')?.dataset.botScreenViewState === 'viewing' && window.__DEVRYAN_VISUAL_SCREEN_STREAMS__.active === 1`, { timeoutMs: options.timeoutMs, label: 'Show opens one computer stream' });
+          await clickCenter(cdp, "document.querySelector('[data-bot-computer-status] button')");
+          await waitForEvaluation(cdp, `!document.querySelector('[data-bot-inline-computer]') && window.__DEVRYAN_VISUAL_SCREEN_STREAMS__.active === 0`, { timeoutMs: options.timeoutMs, label: 'Hide stops stream' });
+        } else if (!hidden) {
+          await waitForEvaluation(cdp, `document.querySelector('[data-bot-screen-view-state]')?.dataset.botScreenViewState === '${unavailable ? 'screen-unavailable' : 'viewing'}'`, { timeoutMs: options.timeoutMs, label: 'requested computer state' });
+          if (entry.state === 'computer_shown') {
+            await evaluate(cdp, `(() => {
+              Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+              document.dispatchEvent(new Event('visibilitychange'));
+            })()`);
+            await waitForEvaluation(cdp, `window.__DEVRYAN_VISUAL_SCREEN_STREAMS__.active === 0`, { timeoutMs: options.timeoutMs, label: 'hidden document stops computer stream' });
+            await evaluate(cdp, `(() => { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); })()`);
+            await waitForEvaluation(cdp, `window.__DEVRYAN_VISUAL_SCREEN_STREAMS__.active === 1`, { timeoutMs: options.timeoutMs, label: 'visible document resumes one stream' });
+            if (entry.viewport.width > 720) {
+              await clickCenter(cdp, "document.querySelector('[data-bot-computer-status] button')");
+              await waitForEvaluation(cdp, `window.__DEVRYAN_VISUAL_SCREEN_STREAMS__.active === 0 && document.activeElement === document.querySelector('[data-bot-computer-status] button')`, { timeoutMs: options.timeoutMs, label: 'Hide restores status focus' });
+              await clickCenter(cdp, "[...document.querySelectorAll('[data-bot-shared-file] button')].find(button => button.textContent.trim() === 'Open in Computer')");
+              await waitForEvaluation(cdp, `window.__DEVRYAN_VISUAL_SCREEN_STREAMS__.active === 1`, { timeoutMs: options.timeoutMs, label: 'shared file opens the same viewer' });
+            }
+          }
+          if (entry.state === 'computer_expanded') {
+            await clickCenter(cdp, "document.querySelector('[aria-label=\"Expand Computer\"]')");
+            await waitForEvaluation(cdp, `Boolean(document.querySelector('dialog:modal'))`, { timeoutMs: options.timeoutMs, label: 'expanded computer dialog' });
+            await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+            await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+            await waitForEvaluation(cdp, `!document.querySelector('dialog:modal')`, { timeoutMs: options.timeoutMs, label: 'Escape collapses viewer' });
+            await clickCenter(cdp, "document.querySelector('[aria-label=\"Expand Computer\"]')");
+            await waitForEvaluation(cdp, `Boolean(document.querySelector('dialog:modal'))`, { timeoutMs: options.timeoutMs, label: 'expanded computer reopened' });
+          }
+          if (entry.state === 'computer_owned') {
+            await clickCenter(cdp, "[...document.querySelectorAll('[data-bot-inline-computer] button')].find(button => button.textContent.trim() === 'Return Control')");
+            await waitForEvaluation(cdp, `[...document.querySelectorAll('[data-bot-inline-computer] button')].some(button => button.textContent.trim() === 'Take Control')`, { timeoutMs: options.timeoutMs, label: 'return control' });
+            await clickCenter(cdp, "[...document.querySelectorAll('[data-bot-inline-computer] button')].find(button => button.textContent.trim() === 'Take Control')");
+            await waitForEvaluation(cdp, `[...document.querySelectorAll('[data-bot-inline-computer] button')].some(button => button.textContent.trim() === 'Return Control')`, { timeoutMs: options.timeoutMs, label: 'take control' });
+          }
+        }
+        computerMetrics = await evaluate(cdp, `(() => {
+          const streams = window.__DEVRYAN_VISUAL_SCREEN_STREAMS__;
+          if (streams.maxActive > 1) throw new Error('Duplicate computer streams');
+          if (document.querySelector('[data-conversation-fixture] form textarea').value !== 'Make the stars a little brighter') throw new Error('Draft changed during computer controls');
+          return streams;
+        })()`);
+      }
+      if (entry.interaction === 'voice_settings') {
+        await clickCenter(cdp, "[...document.querySelectorAll('summary')].find(element => element.textContent.trim() === 'Voice processing')");
+        await waitForEvaluation(cdp, `document.querySelector('details[open] fieldset')?.disabled === false`, { timeoutMs: options.timeoutMs, label: 'voice settings loaded' });
+        await evaluate(cdp, `(() => {
+          const panel = document.querySelector('details[open]');
+          panel.setAttribute('data-visual-focus-scope', 'true');
+          panel.scrollIntoView({ block: 'start' });
+          if (/Explicit server-owned|Limits: 5 minutes|Keep the runtime host running|Messages and attachments are processed/.test(document.body.innerText)) throw new Error('Explanatory copy survived');
+        })()`);
+        await clickCenter(cdp, "[...document.querySelectorAll('details[open] button')].find(button => button.textContent.trim() === 'Save')");
+        await waitForEvaluation(cdp, `document.querySelector('details[open] fieldset')?.disabled === false`, { timeoutMs: options.timeoutMs, label: 'voice settings saved' });
+        if (entry.state === 'voice_error') {
+          await clickCenter(cdp, "[...document.querySelectorAll('details[open] button')].find(button => button.textContent.trim() === 'Check')");
+          await waitForEvaluation(cdp, `document.querySelector('details[open]')?.textContent.includes('model_not_found')`, { timeoutMs: options.timeoutMs, label: 'voice provider feedback' });
+        }
+      }
       if (entry.interaction === 'legacy_dialog') {
         await prepareLegacyDialog(cdp, options.timeoutMs);
         await wait(250);
@@ -705,6 +901,8 @@ export const runProductionBotsVisualCapture = async (options) => {
         keyboardFocus: focus,
         remotePointerInput,
         remoteKeyboard,
+        ...(avatarMetrics ? { avatarMetrics } : {}),
+        ...(computerMetrics ? { computerMetrics } : {}),
         rendererErrorCount: rendererErrors.length,
       });
       process.stdout.write(`[production-bots-visual] PASS ${entry.id}\n`);

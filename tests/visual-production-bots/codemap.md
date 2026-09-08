@@ -42,3 +42,20 @@ in `docs/TESTING.md`.
 - `src/BotTelegramScene.tsx` adds `?scene=telegram` for independently saved setup,
   numeric pairing confirmation, uncertain delivery and scoped speech settings.
   All requests are intercepted by an in-memory fixture API; never enter real credentials.
+
+- `src/BotAvatarScene.tsx` exercises the real avatar, sidebar, and header with
+  delayed synthetic PNGs. Avatar cases cover cold fallback, warm switching,
+  replacement, unrelated title updates, dots-only/reduced-motion typing, and
+  WebP/PNG resizing with a transparent edge. Capture verifies two initial
+  requests for two Bots, no requests on warm switches/title edits, and one
+  shared request on replacement; measured switch paint times are logged.
+
+- `src/BotConversationScene.tsx`: real transcript, composer, computer status and
+  single inline/expanded viewer for hidden/shown/waiting/owned/disconnected/
+  completed states, with draft-preserving Show/Hide and control interactions.
+- `src/BotCatalogScene.tsx`: filtered/empty catalog presentation; server contract
+  tests independently establish creator-account classification. Telegram scenes
+  include compact voice settings Save/Check and actionable provider feedback.
+
+- `src/sharedFilesFetchFixture.ts`: installs the bounded Shared inventory fixture
+  before the default API captures fetch; all unrelated requests pass through.

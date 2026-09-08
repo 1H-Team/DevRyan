@@ -165,6 +165,16 @@ describe('Production Bots catalog store', () => {
     expect(second.membershipsByBotId).toBe(first.membershipsByBotId);
   });
 
+  test('a filtered snapshot removes stale catalog selection and membership', () => {
+    const store = createBotsStore();
+    store.getState().replaceSnapshot(snapshot());
+    store.getState().selectBot(BOT_ID);
+    store.getState().replaceSnapshot({ ...snapshot(), bots: [], revisions: [], memberships: [] });
+    expect(store.getState().selectedBotId).toBeNull();
+    expect(store.getState().botIds).toEqual([]);
+    expect(store.getState().membershipsByBotId).toEqual({});
+  });
+
   test('updates Bot presentation fields without replacing unrelated catalog rows', () => {
     const secondBot = bot({
       id: 'b0000000-0000-4000-8000-000000000002',

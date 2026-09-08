@@ -1,6 +1,6 @@
 import React from 'react';
 import { RiDraftLine, RiArrowDownSLine } from '@remixicon/react';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui';
 
 import { Button } from '@/components/ui/button';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
@@ -18,6 +18,7 @@ import {
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { useSessionStatus } from '@/sync/sync-context';
 import {
   CHAT_PRESERVE_SCROLL_ANCHOR_EVENT,
   requestChatScrollToBottom,
@@ -54,6 +55,7 @@ interface PlanCardProps {
   streamPhase: StreamPhase;
   planText: string;
   projectPath: string | null;
+  sessionDirectory?: string;
   sessionCreated: number | null;
   sessionSlug: string | null;
 }
@@ -64,6 +66,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
   streamPhase,
   planText,
   projectPath,
+  sessionDirectory,
   sessionCreated,
   sessionSlug,
 }) => {
@@ -109,10 +112,13 @@ const PlanCard: React.FC<PlanCardProps> = ({
     ),
   );
   const traceEntry = usePlanTurnTraceEntry(sourceMessageId);
+  const sessionStatus = useSessionStatus(sessionId, sessionDirectory);
   const isLatestPlan = traceEntry?.isLatestPlan === true;
   // Unsettled revision = another assistant sibling is still running; the card
   // stays visible but disabled until the whole revision settles.
-  const isRevisionSettled = traceEntry?.isSettled ?? true;
+  const isRevisionSettled = (traceEntry?.isSettled ?? true)
+    && sessionStatus?.type !== 'busy' && sessionStatus?.type !== 'retry';
+  const isGenerationSuccessful = traceEntry?.isActionable ?? true;
   const planFileRecord = useSessionPlanFileStore((state) => state.recordsBySession[sessionId]);
   const currentPlanFileRecord = planFileRecord?.sourceMessageId === sourceMessageId
     ? planFileRecord
@@ -123,12 +129,14 @@ const PlanCard: React.FC<PlanCardProps> = ({
     isImplementationRequested,
     isLatestPlan: traceEntry?.isLatestPlan ?? true,
     isRevisionSettled,
+    isGenerationSuccessful,
   });
   const shouldPersist = shouldPersistPlanCard({
     streamPhase,
     hasPlanText: planText.trim().length > 0,
     isLatestPlan,
     isRevisionSettled,
+    isGenerationSuccessful,
   });
   const isPlanFileReady = currentPlanFileRecord?.status === 'saved' && Boolean(currentPlanFileRecord.path);
   const canImplement = actionState.canImplement && isPlanFileReady;

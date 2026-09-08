@@ -1,3 +1,4 @@
+import { botAvatarCache } from '@/lib/botAvatarCache';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 
 import {
@@ -340,6 +341,26 @@ export const createBotsStore = ({ api = botsApi }: { api?: BotsApi } = {}): Bots
 };
 
 export const useBotsStore = createBotsStore();
+
+// Only catalog/auth changes invalidate identity images; streaming state never
+// enters the avatar cache. Dispose before any later async image can publish.
+useBotsStore.subscribe((state, previous) => {
+  if (state.principalId !== previous.principalId) {
+    botAvatarCache.clear();
+    return;
+  }
+  if (state.botsById !== previous.botsById) {
+    for (const [id, bot] of Object.entries(previous.botsById)) {
+      if (state.botsById[id]?.avatarUrl !== bot.avatarUrl || !state.botsById[id]) botAvatarCache.invalidateBot(id);
+    }
+  }
+  if (state.membershipsByBotId !== previous.membershipsByBotId) {
+    for (const id of Object.keys(previous.membershipsByBotId)) {
+      const membership = state.membershipsByBotId[id];
+      if (!membership || membership.revokedAt) botAvatarCache.invalidateBot(id);
+    }
+  }
+});
 
 export const botsSelectors = Object.freeze({
   bot: (botId: string) => (state: BotsState) => state.botsById[botId],

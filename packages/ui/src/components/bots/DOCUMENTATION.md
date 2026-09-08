@@ -96,9 +96,10 @@ conversational groups; user messages are higher-contrast bubbles aligned right.
 Timeline spines, revision/checkpoint seams, repeated actor labels, system rows,
 and tool-call records are intentionally absent. Every send starts with an empty
 pending assistant row. A simple no-tool turn promotes it directly to the one
-natural result. Tool turns also publish only the verified final answer.
-Historical acknowledgment rows and unfinalized prose remain stored but hidden;
-intermediate narration and ambiguous streaming text never enter the transcript. Timestamps
+natural result. Tool turns first publish one durable, request-specific acknowledgment in the
+Bot’s Soul, then the verified final result. Finalized acknowledgments remain
+visible after completion and reload; inter-tool narration and unfinalized prose
+never enter the transcript. Timestamps
 remain subtle and keyboard accessible. The chat has no separate run-status
 strip: avatar-free animated typing dots may appear while the pending row is
 empty and never reappear after visible response content arrives.
@@ -172,7 +173,7 @@ latest draft immediately. A later failure therefore keeps earlier successes,
 preserves concurrent text edits, and reports the failed filename and reason so
 only that file needs to be selected again.
 
-The transcript renders canonical finalized result rows only. Legacy
+The transcript renders canonical finalized acknowledgment and result rows. Legacy
 `message.streaming` events may be reconciled for compatibility but never render.
 Immediate animated working feedback remains until a final answer or terminal
 failure. `useBotDraftStore` isolates composer edits from transcript subscribers.
@@ -187,7 +188,7 @@ Required approval,
 reconciliation, cancellation, and failure notices
 remain available through their existing surfaces.
 
-Interacting with an idle send-capable channel's composer requests a two-minute,
+Interacting with an idle send-capable channel's composer requests a ten-minute,
 principal-bound runtime lease. Merely switching to the Bots audience or rendering
 the selected conversation does not start a reasoning container, so ordinary
 Coding Agent work keeps its runtime resources. The client passes the opaque lease
@@ -220,17 +221,16 @@ messages restores the prior visible position synchronously in a layout effect.
 `operations/BotOperationsRail.tsx` keeps the current run summary above three
 Base UI tabs:
 
-- Computer: automatic, ephemeral screen viewing plus human take/return control
+- Shared files (default): conversation-associated persistent files with sender,
+  time, fixed `/workspace/Shared/...` path, copy status, download, retry, and
+  Open in Computer actions
 - Confirmations: bounded action identity, risk, requester approval/rejection,
   and unknown-write reconciliation. Pending confirmations are Bot-wide without
   exposing the originating private transcript.
-- Shared: conversation-associated persistent files with sender, time, fixed
-  `/workspace/Shared/...` path, copy status, download, retry, and Open in
-  Computer actions
 
 The rail is selected from the active Agents/Bots audience, never merely from a
 retained Bot selection: Agents always shows the existing repository/files
-surfaces and Bots shows Current Run, Computer, Confirmations, and Shared. `MainLayout` also suppresses
+surfaces and Bots shows Current Run, Shared files, and Confirmations. `MainLayout` also suppresses
 project actions, Context, ordinary Browser, Terminal, and Multi Run surfaces.
 Mobile reuses the existing right drawer rather than introducing a Bot-specific
 overlay. Its connection header localizes every state, exposes only a bounded
@@ -245,13 +245,14 @@ focus effects run only while that panel is active.
 
 ## Diagnostic screen safety
 
-`BotInlineComputer.tsx` shows **Shared Bot Computer** only for authoritative
-`computer.activity` in the current channel, or an explicit sidebar reveal.
+`BotComputerStatusBar.tsx` shows current, authorized computer activity above
+the composer, with the Bot’s name, waiting/active state, and Show/Hide.
+`BotInlineComputer.tsx` opens **Shared Bot Computer** only after Show or an
+explicit Shared files action. Terminal run state suppresses stale activity.
 It keeps one `BotBrowserDiagnostic` and canvas mounted across native-dialog
 expansion/collapse; the sidebar reveals this viewer rather than connecting its
-own. Automatic viewers are bound to the activity run; ownership handoff,
-terminal settlement, account/channel changes, revocation and hidden surfaces
-release them and any owned input lease. Manual viewing still exposes the same
+own. Account/channel changes, revocation and hidden surfaces release viewing
+and any owned input lease. Hiding leaves the composer draft and Bot work intact. Manual viewing still exposes the same
 shared saved logins/files. It stores only the server-issued ephemeral viewer
 descriptor and mounts its one-use authenticated multipart URL through a
 same-origin abortable fetch; Stop, tab,
@@ -332,8 +333,25 @@ states and validate MIME, magic bytes, and image decode before display.
 - Shared files live in their own principal-scoped store. Initial channel loads
   replace only that channel, `shared_file.updated` changes one row, and Bot SSE
   snapshot/revocation events prune files outside the current channel ACL.
-- `BotAvatar.tsx` owns image-failure fallback consistently across navigation,
-  chat, and Bot settings.
+- `BotAvatar.tsx` keys displayed images by principal, Bot, and avatar source.
+  Loading/failure immediately shows that Bot's configured fallback or initials;
+  late requests cannot publish an old Bot's image into the active header.
+- `lib/botAvatarCache.ts` shares decoded images across navigation, chat, and
+  settings. It retains at most 100 entries / 20 MiB (encoded bytes plus decoded
+  pixels), evicts unused LRU entries, loads at most four images concurrently,
+  and applies a 15-second request deadline. The selected Bot has priority;
+  sidebar/catalog avatars load near the viewport; sidebar avatars prefetch on
+  hover/focus. Warm
+  selections synchronously reuse the decoded URL without another HTTP request.
+  Images are memory-only, never persisted; catalog changes, removal, membership
+  revocation, and principal reset invalidate entries and revoke object URLs.
+- `lib/botAvatarUpload.ts` validates PNG/JPEG/WebP uploads up to 5 MiB, resizes
+  to a maximum 256px longest edge without upscaling, and encodes WebP with PNG
+  fallback while preserving alpha and aspect ratio. Existing larger avatars
+  are resized for cache retention without modifying their stored original.
+- Sidebar typing status uses the same three animated dots as the chat bubble,
+  with no visible typing label. Accessible status descriptions and reduced
+  motion remain available.
 - Attachment IDs are a stable channel-store projection, recalculated only when
   attachment membership changes—not for streamed text updates.
 - Bot rows are native buttons with visible focus, `aria-current`, and a

@@ -2,7 +2,10 @@ const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 
 const modelIdOf = (value) => trimString(value?.id ?? value);
 
+const FAILURE_REASONS = new Set(['rate_limited', 'model_unavailable', 'unauthorized', 'upstream_error', 'timeout', 'empty_output', 'invalid_output', 'request_failed']);
+
 export const classifyFreeZenFailure = (error) => {
+  if (FAILURE_REASONS.has(error?.reason)) return error.reason;
   const status = Number(error?.status);
   const message = String(error?.message || error || '');
   if (status === 429 || /rate limit/i.test(message)) return 'rate_limited';
@@ -28,7 +31,9 @@ export async function runFreeZenModelRotation({
   request,
   accept = (value) => value,
   onAttempt,
+  afterAttempt,
   cooldowns = null,
+  cooldownPolicy = 'skip',
   maxModels,
   deadlineMs,
   now = () => Date.now(),
@@ -49,7 +54,9 @@ export async function runFreeZenModelRotation({
   // whole-catalog outage must not make the caller give up without trying.
   if (cooldowns && typeof cooldowns.isCoolingDown === 'function') {
     const warm = orderedModels.filter((model) => !cooldowns.isCoolingDown(model));
-    if (warm.length > 0 && warm.length < orderedModels.length) {
+    if (cooldownPolicy === 'prioritize') {
+      candidates = [...warm, ...orderedModels.filter((model) => !warm.includes(model))];
+    } else if (warm.length > 0 && warm.length < orderedModels.length) {
       for (const model of orderedModels) {
         if (!warm.includes(model)) skipped.push({ model, reason: 'cooling_down' });
       }
@@ -84,12 +91,16 @@ export async function runFreeZenModelRotation({
     const timeoutError = Object.assign(new Error(`Free Zen model timed out after ${attemptTimeoutMs}ms`), {
       code: 'FREE_ZEN_TIMEOUT',
     });
+    const controller = new AbortController();
     let timer;
     try {
       const raw = await Promise.race([
-        Promise.resolve(request({ model, timeoutMs: attemptTimeoutMs })),
+        Promise.resolve().then(() => request({ model, timeoutMs: attemptTimeoutMs, signal: controller.signal })),
         new Promise((_, reject) => {
-          timer = setTimer(() => reject(timeoutError), attemptTimeoutMs);
+          timer = setTimer(() => {
+            controller.abort(timeoutError);
+            reject(timeoutError);
+          }, attemptTimeoutMs);
           timer?.unref?.();
         }),
       ]);
@@ -108,7 +119,7 @@ export async function runFreeZenModelRotation({
         model,
         attempt,
         durationMs: Math.max(0, now() - attemptStartedAt),
-        reason: error === timeoutError ? 'timeout' : classifyFreeZenFailure(error),
+        reason: controller.signal.aborted ? 'timeout' : classifyFreeZenFailure(error),
         status: Number.isFinite(Number(error?.status)) ? Number(error.status) : undefined,
       };
       failures.push(failure);
@@ -116,6 +127,8 @@ export async function runFreeZenModelRotation({
       onAttempt?.({ ...failure, outcome: 'failed' });
     } finally {
       if (timer !== undefined) clearTimer(timer);
+      controller.abort();
+      await afterAttempt?.();
     }
   }
 

@@ -396,10 +396,140 @@ export const splitReasoningPartPlan = (text: string): PlanCardSentinelSplit | nu
   return splitStructuredPlanFallback(text, 'reasoning');
 };
 
-type MessagePlanCardResolution = {
+/** UTF-16 offsets into the original part, including its plan marker. */
+export type PlanCardPartRange = {
+  partIndex: number;
+  start: number;
+  end: number;
+};
+
+export type MessagePlanCardResolution = {
   split: PlanCardSentinelSplit;
   /** Index in `parts` of the reasoning part hosting the plan card, or -1 when text-sourced. */
   reasoningPartIndex: number;
+  sourceRanges: PlanCardPartRange[];
+  /** All recognized reasoning plans, including drafts superseded by final text. */
+  reasoningRanges: PlanCardPartRange[];
+};
+
+type PlanSourceText = {
+  text: string;
+  spans: { partIndex: number; start: number; end: number; rawStart: number }[];
+};
+
+const joinPlanSourceParts = (parts: readonly Part[], indexes: readonly number[]): PlanSourceText => {
+  let text = '';
+  const spans: PlanSourceText['spans'] = [];
+  for (const partIndex of indexes) {
+    const raw = getPartText(parts[partIndex]);
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    // Distinct reasoning blocks normally need a newline. A marker split by
+    // the provider across blocks is still one token, not two Markdown lines.
+    const lastLine = text.slice(text.lastIndexOf('\n') + 1).trim().replace(/^`{1,3}/, '').replace(/\s/g, '');
+    const splitMarker = lastLine.length > 0 && lastLine !== PLAN_CARD_SENTINEL
+      && PLAN_CARD_SENTINEL.startsWith(lastLine);
+    if (text && !splitMarker) text += '\n';
+    const start = text.length;
+    text += trimmed;
+    spans.push({ partIndex, start, end: text.length, rawStart: raw.length - raw.trimStart().length });
+  }
+  return { text, spans };
+};
+
+const sourcePartRanges = (source: PlanSourceText, start: number, end = source.text.length): PlanCardPartRange[] => (
+  source.spans.flatMap((span) => {
+    const from = Math.max(start, span.start);
+    const to = Math.min(end, span.end);
+    return to > from ? [{ partIndex: span.partIndex, start: span.rawStart + from - span.start, end: span.rawStart + to - span.start }] : [];
+  })
+);
+
+const reasoningPreambleCache = new WeakMap<Part, { start: number; projected: Part | null }>();
+
+/** Keep only ordinary preamble in Thinking, without mutating canonical parts. */
+export const projectReasoningOutsidePlan = (part: Part, range: PlanCardPartRange | undefined): Part | null => {
+  if (part.type !== 'reasoning' || !range) return part;
+  const cached = reasoningPreambleCache.get(part);
+  if (cached?.start === range.start) return cached.projected;
+  const text = getPartText(part).slice(0, range.start);
+  if (!text.trim()) {
+    reasoningPreambleCache.set(part, { start: range.start, projected: null });
+    return null;
+  }
+  const projected: TextLikePart = { ...part, text };
+  if (typeof projected.content === 'string') projected.content = text;
+  if (typeof projected.value === 'string') projected.value = text;
+  reasoningPreambleCache.set(part, { start: range.start, projected });
+  return projected;
+};
+
+type ReasoningPlanCandidate = {
+  split: PlanCardSentinelSplit;
+  ranges: PlanCardPartRange[];
+  consumedRanges: PlanCardPartRange[];
+  lastPartIndex: number;
+};
+
+const collectReasoningPlans = (parts: readonly Part[]): ReasoningPlanCandidate[] => {
+  const candidates: ReasoningPlanCandidate[] = [];
+  let indexes: number[] = [];
+  const flush = () => {
+    if (!indexes.length) return;
+    const source = joinPlanSourceParts(parts, indexes);
+    const markers = [...source.text.matchAll(new RegExp(
+      `(^|[\\r\\n])([ \\t]*${PLAN_CARD_SENTINEL_TOKEN_SOURCE}[ \\t]*)(?=\\r?\\n|$)`, 'g',
+    ))];
+    let candidate: ReasoningPlanCandidate | undefined;
+    // Prefer the latest nonempty draft; a new marker alone must not blank the
+    // card that is already streaming. Earlier drafts are consumed, not joined.
+    for (let index = markers.length - 1; index >= 0; index -= 1) {
+      const marker = markers[index];
+      const start = marker.index + (marker[1]?.length ?? 0);
+      const markerEnd = marker.index + marker[0].length;
+      const bodyStart = markerEnd + (source.text.startsWith('\r\n', markerEnd) ? 2 : source.text[markerEnd] === '\n' ? 1 : 0);
+      const next = markers[index + 1];
+      const end = next ? next.index + (next[1]?.length ?? 0) : source.text.length;
+      const planText = source.text.slice(bodyStart, end).trimEnd();
+      if (!planText.trim()) continue;
+      candidate = {
+        split: { preambleText: source.text.slice(0, start), planText, source: 'reasoning' },
+        ranges: sourcePartRanges(source, start, end),
+        consumedRanges: sourcePartRanges(source, markers[0].index + (markers[0][1]?.length ?? 0)),
+        lastPartIndex: indexes[indexes.length - 1],
+      };
+      break;
+    }
+    if (!candidate && !markers.length) {
+      const split = splitStructuredPlanFallback(source.text, 'reasoning');
+      if (split) {
+        const ranges = sourcePartRanges(source, split.preambleText.length);
+        candidate = { split, ranges, consumedRanges: ranges, lastPartIndex: indexes[indexes.length - 1] };
+      }
+    }
+    // A completed marker can live alone in reasoning while its very first
+    // body tokens arrive in text. Keep the boundary, but never resolve an
+    // empty card from it without a body or displace a nonempty earlier draft.
+    if (!candidate && markers.length) {
+      const marker = markers[markers.length - 1];
+      const start = marker.index + (marker[1]?.length ?? 0);
+      candidate = {
+        split: { preambleText: source.text.slice(0, start), planText: '', source: 'reasoning' },
+        ranges: sourcePartRanges(source, start),
+        consumedRanges: sourcePartRanges(source, markers[0].index + (markers[0][1]?.length ?? 0)),
+        lastPartIndex: indexes[indexes.length - 1],
+      };
+    }
+    if (candidate) candidates.push(candidate);
+    indexes = [];
+  };
+  parts.forEach((part, index) => {
+    if (part.type === 'reasoning') indexes.push(index);
+    // Step metadata is not a semantic boundary; tools and ordinary text are.
+    else if (part.type !== 'step-start' && part.type !== 'step-finish') flush();
+  });
+  flush();
+  return candidates;
 };
 
 const buildReasoningPlanPreamble = (
@@ -435,21 +565,26 @@ const buildReasoningPlanPreamble = (
 const resolveReasoningStraddlePlan = (
   parts: readonly Part[],
   textSplit: PlanCardSentinelSplit | null,
+  candidates: readonly ReasoningPlanCandidate[],
+  reasoningRanges: PlanCardPartRange[],
 ): MessagePlanCardResolution | null => {
-  for (let index = parts.length - 1; index >= 0; index -= 1) {
-    const part = parts[index];
-    if (part?.type !== 'reasoning') continue;
-    const text = getPartText(part).trim();
-    if (text.length === 0) continue;
-    const reasoningSplit = splitReasoningPartPlan(text);
-    if (!reasoningSplit?.planText.trim()) continue;
+  for (let candidateIndex = candidates.length - 1; candidateIndex >= 0; candidateIndex -= 1) {
+    const candidate = candidates[candidateIndex];
+    const index = candidate.ranges[0].partIndex;
+    const reasoningSplit = candidate.split;
 
-    const textTail = collectAssistantTextParts(parts.slice(index + 1)).join('\n');
+    const tailIndexes = parts.flatMap((part, partIndex) => partIndex > candidate.lastPartIndex && part.type === 'text' ? [partIndex] : []);
+    const tailSource = joinPlanSourceParts(parts, tailIndexes);
+    const textTail = tailSource.text;
     if (textTail.trim().length === 0) return null;
-    if (countPlanModeSectionHeadings(textTail) < 1) return null;
+    const startsBodyInText = !reasoningSplit.planText.trim()
+      && tailIndexes.length > 0
+      && !parts.slice(candidate.lastPartIndex + 1, tailIndexes[0]).some(part => part.type === 'tool')
+      && splitPlanCardSentinel(textTail) === null;
+    if (!startsBodyInText && countPlanModeSectionHeadings(textTail) < 1) return null;
 
-    const combined = `${reasoningSplit.planText}\n${textTail}`;
-    if (countPlanModeSectionHeadings(combined) < 2) return null;
+    const combined = reasoningSplit.planText ? `${reasoningSplit.planText}\n${textTail}` : textTail;
+    if (!startsBodyInText && countPlanModeSectionHeadings(combined) < 2) return null;
     if (textSplit?.planText.trim()) {
       if (!combined.trimEnd().endsWith(textSplit.planText.trim())) return null;
       // A text plan that opens with its own level-1 title is self-contained;
@@ -466,6 +601,8 @@ const resolveReasoningStraddlePlan = (
         source: 'reasoning',
       },
       reasoningPartIndex: index,
+      sourceRanges: [...candidate.ranges, ...sourcePartRanges(tailSource, 0)],
+      reasoningRanges,
     };
   }
   return null;
@@ -477,7 +614,7 @@ const resolveReasoningStraddlePlan = (
  * wrappers over this, so the render layer and the turn-activity projection can
  * never disagree about where the plan lives.
  */
-const resolveMessagePlanCardResolution = (
+export const resolveMessagePlanCardResolution = (
   parts: readonly Part[],
   options: ResolveMessagePlanCardOptions = {},
 ): MessagePlanCardResolution | null => {
@@ -487,33 +624,37 @@ const resolveMessagePlanCardResolution = (
 
   const joinedText = textParts.join('\n');
   const textSplit = resolvePlanCardSplit(joinedText, options);
+  const candidates = options.isPlanModeSource === true ? collectReasoningPlans(parts) : [];
+  const reasoningRanges = candidates.flatMap((candidate) => candidate.consumedRanges);
+  const resolveTextSource = (split: PlanCardSentinelSplit): MessagePlanCardResolution => {
+    const source = joinPlanSourceParts(parts, parts.flatMap((part, index) => part.type === 'text' ? [index] : []));
+    return { split, reasoningPartIndex: -1, sourceRanges: sourcePartRanges(source, split.preambleText.length), reasoningRanges };
+  };
   // A sentinel in the text parts is an exact author-placed marker and wins outright.
   if (textSplit?.planText.trim() && textSplit.source === 'sentinel') {
-    return { split: textSplit, reasoningPartIndex: -1 };
+    return resolveTextSource(textSplit);
   }
   if (options.isPlanModeSource !== true) {
-    return textSplit?.planText.trim() ? { split: textSplit, reasoningPartIndex: -1 } : null;
+    return textSplit?.planText.trim() ? resolveTextSource(textSplit) : null;
   }
 
-  const straddle = resolveReasoningStraddlePlan(parts, textSplit);
+  const straddle = resolveReasoningStraddlePlan(parts, textSplit, candidates, reasoningRanges);
   if (straddle) return straddle;
 
-  if (textSplit?.planText.trim()) return { split: textSplit, reasoningPartIndex: -1 };
+  if (textSplit?.planText.trim()) return resolveTextSource(textSplit);
 
-  for (let index = parts.length - 1; index >= 0; index -= 1) {
-    const part = parts[index];
-    if (part?.type !== 'reasoning') continue;
-    const text = getPartText(part).trim();
-    if (text.length === 0) continue;
-    const reasoningSplit = splitReasoningPartPlan(text);
-    if (!reasoningSplit?.planText.trim()) continue;
+  const candidate = [...candidates].reverse().find(candidate => candidate.split.planText.trim());
+  if (candidate) {
+    const index = candidate.ranges[0].partIndex;
     return {
       split: {
         preambleText: buildReasoningPlanPreamble(parts, index, true),
-        planText: reasoningSplit.planText,
+        planText: candidate.split.planText,
         source: 'reasoning',
       },
       reasoningPartIndex: index,
+      sourceRanges: candidate.ranges,
+      reasoningRanges,
     };
   }
 

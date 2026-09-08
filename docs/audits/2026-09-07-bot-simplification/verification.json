@@ -1,0 +1,130 @@
+{
+  "scope": "Working tree verification; concurrent unrelated changes were preserved.",
+  "aggregateFullGate": "Not green: initial timing/path failures passed on retry; final quick gate and full egress retry failed bounds a relayed response with ECONNRESET. That case passes alone.",
+  "logs": [
+    {
+      "path": ".cache/bot-simplification/validate-full-3.log",
+      "sha256": "c056f0e1acfa56ea95698ad01b4ea7e77163ca1684cf864313d251f892491d7b"
+    },
+    {
+      "path": ".cache/bot-simplification/package-gates.log",
+      "sha256": "b6b148921f3de7533e399bba3fb03ba9952fcb57928656cbfc2cf4d215c36424"
+    },
+    {
+      "path": ".cache/bot-simplification/package-gates-2.log",
+      "sha256": "9f459eab2a207f8e7d9006d220e660fdfd30c3a59cc099128c90ecc2256d9c9f"
+    },
+    {
+      "path": ".cache/bot-simplification/package-gates-3.log",
+      "sha256": "4e8620fb3312a8bf60cf13c947b14e87e95aa74cbfe68ac53543cba3a4054875"
+    },
+    {
+      "path": ".cache/bot-simplification/web-final.log",
+      "sha256": "5f66a64c6de5f8cf93fc0eebf49e480686197b70349c9baf7b652923d9679ef0"
+    },
+    {
+      "path": ".cache/bot-simplification/web-final-retry.log",
+      "sha256": "535374db8abf548b2767edc773a8e5ac7eb1c49824764f38f6beeb5dada415cc"
+    },
+    {
+      "path": ".cache/bot-simplification/script-final-retry.log",
+      "sha256": "098efa400f3af512d0412df384a7fdbca30f2969f57fbe7190a1b0c59951d202"
+    },
+    {
+      "path": ".cache/bot-simplification/target-web-2.log",
+      "sha256": "621c5d30312ea7d1c4cf7ff253b8b6a7207d98065fadaee9639a86c6d9b9d420"
+    },
+    {
+      "path": ".cache/bot-simplification/target-web-3.log",
+      "sha256": "794cc390728a7b24c395d0868aceaa598c7591e0a5af2039040fd2c043319545"
+    },
+    {
+      "path": ".cache/bot-simplification/target-events.log",
+      "sha256": "9d68d7e82e123314007f0acc20de0d81cc3b6897d9a895c4e815d16b085157cd"
+    },
+    {
+      "path": ".cache/bot-simplification/target-ui-3.log",
+      "sha256": "eb91c0f5808b21ac3bd547cc7b570b405c869f397cd2042afc7fc24d414ab8d1"
+    },
+    {
+      "path": ".cache/bot-simplification/visual-full-3.log",
+      "sha256": "deb9fd35d304ccbfa54cd4ef18f4755823f535836ff2cc07e249a2ed087efd4b"
+    },
+    {
+      "path": ".cache/bot-simplification/expanded-final.log",
+      "sha256": "c770319506aa99e773d6e77dd057820c646bca7745fbf093003a5e87a350d157"
+    },
+    {
+      "path": ".cache/bot-simplification/build-final.log",
+      "sha256": "1ef5bbe2c1bdc6aa0f0eb6c68fa6396b35a3d8f0dd59ca85b22b5f37a2364745"
+    },
+    {
+      "path": ".cache/bot-simplification/bundle-final.log",
+      "sha256": "30855eb627bc589becf91148d16ded61d352ecaa60512fbf087ccc374511722e"
+    },
+    {
+      "path": ".cache/bot-simplification/validate-quick-final.log",
+      "sha256": "95af09df5c9b6c0eff7b626e90944ca28a6c45f93829816b1294878ba1bff629"
+    },
+    {
+      "path": ".cache/bot-simplification/egress-final-retry.log",
+      "sha256": "37fea92dc335859b39a4b4399a267f9579de087d154f2c3e2f797e6d626f3268"
+    },
+    {
+      "path": ".cache/bot-simplification/egress-isolated.log",
+      "sha256": "b2b698062cf857a28a66b4320035eef120fc175db15e211b9933441c1d568f75"
+    },
+    {
+      "path": ".cache/bot-simplification/native-driver-test-2.log",
+      "sha256": "6e022f3fa33f5b176ef6c4f244e3a0e0cbf1ae34861e4c1224b6c3d18f039fc8"
+    },
+    {
+      "path": ".cache/bot-simplification/native-helper-compile.log",
+      "sha256": "efe1c6332e7642916144859ce29042e0bb245438f4a391f04766b8b3e01b2a49"
+    },
+    {
+      "path": ".cache/bot-simplification/native-pointer-4.log",
+      "sha256": "2f544d13a3170a1f9d4d1decd9b206e1eb54a9d8499bff3afb125c5c97a16511"
+    },
+    {
+      "path": ".cache/bot-simplification/docs-final.log",
+      "sha256": "ebac86516e4f2c3129138c7233778ee14974d29d85e47227b8b7272b119c4f1b"
+    }
+  ],
+  "build": "passed",
+  "bundle": {
+    "result": "passed",
+    "rawBytes": 4691107,
+    "gzipBytes": 1379639,
+    "rawBudget": 4962877,
+    "gzipBudget": 1456388
+  },
+  "finalEgress": {
+    "fullSuite": {
+      "pass": 31,
+      "fail": 1
+    },
+    "isolatedFailingCase": {
+      "pass": 1,
+      "fail": 0,
+      "filtered": 8
+    },
+    "modified": false
+  },
+  "nativeHelperTests": {
+    "pass": 3,
+    "fail": 0,
+    "swiftCompile": "Succeeded; expected missing-arguments exit 64"
+  },
+  "native": {
+    "result": "pass",
+    "mode": "raw",
+    "evidence": "native/evidence.json",
+    "screenshotReviewed": true,
+    "sha256": "cb8295390f2e40134b0478d5c999aaf08fe120d38b42a9be72da831a827a9c35"
+  },
+  "signedReleaseNative": "not performed",
+  "documentation": "passed with historical/generated-target warnings",
+  "diffWhitespace": "passed",
+  "nativeTemporaryProfiles": "cleaned up"
+}

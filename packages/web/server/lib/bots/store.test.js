@@ -61,6 +61,18 @@ describe('Production Bots Supabase repositories', () => {
     }
   });
 
+  it('batches deduplicated account classifications without private profile fields', async () => {
+    const supabase = createSupabase();
+    supabase.rest.mockResolvedValue([{ id: BOT_ID, account_kind: 'agent_test' }]);
+    const store = createBotStore({ supabase });
+    expect(await store.listUserAccountKinds([BOT_ID, BOT_ID])).toEqual(new Map([[BOT_ID, 'agent_test']]));
+    expect(supabase.rest).toHaveBeenCalledExactlyOnceWith('user_profiles', {
+      select: 'id,account_kind', query: { id: `in.(${BOT_ID})`, limit: '1' },
+    });
+    await expect(store.listUserAccountKinds(['invalid'])).rejects.toMatchObject({ statusCode: 400 });
+    expect(supabase.rest).toHaveBeenCalledTimes(1);
+  });
+
   it('uses explicit selects and opaque cursor paging', async () => {
     const supabase = createSupabase();
     const store = createBotStore({ supabase });

@@ -25,7 +25,7 @@ export const BotIdentityHeader: React.FC<BotIdentityHeaderProps> = ({
         className="app-region-drag relative flex min-h-20 items-center gap-3 px-14 py-3 select-none"
         data-bot-identity-header="mobile"
       >
-        {bot ? <BotAvatar bot={bot} className="h-14 w-14 shrink-0 rounded-full typography-ui-label" /> : null}
+        {bot ? <BotAvatar bot={bot} className="h-14 w-14 shrink-0 rounded-full typography-ui-label" priority={2} /> : null}
         <span className="flex min-h-14 min-w-0 flex-1 flex-col justify-center">
           <span className="line-clamp-2 break-words typography-ui-label font-semibold text-foreground">
             {bot?.name || t('bots.sidebar.title')}
@@ -46,7 +46,7 @@ export const BotIdentityHeader: React.FC<BotIdentityHeaderProps> = ({
       data-bot-identity-header="desktop"
     >
       <div className="flex min-w-0 flex-1 items-center gap-4">
-        {bot ? <BotAvatar bot={bot} className="h-16 w-16 shrink-0 rounded-full typography-ui-label" /> : null}
+        {bot ? <BotAvatar bot={bot} className="h-16 w-16 shrink-0 rounded-full typography-ui-label" priority={2} /> : null}
         <span className="flex min-h-16 min-w-0 flex-1 flex-col justify-center py-1">
           <span className="line-clamp-2 break-words typography-ui-label font-semibold text-foreground">
             {bot?.name || t('bots.sidebar.title')}

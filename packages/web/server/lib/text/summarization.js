@@ -190,6 +190,7 @@ export async function generateZenText({
   chatReasoningEffort,
   responsesMaxOutputTokens,
   stop,
+  signal,
 }) {
   const normalizedPrompt = typeof prompt === 'string' ? prompt.trim() : '';
   if (!normalizedPrompt) {
@@ -199,6 +200,9 @@ export async function generateZenText({
   const model = typeof zenModel === 'string' && zenModel.trim() ? zenModel.trim() : 'gpt-5-nano';
   const endpoint = getZenCompletionEndpoint(model);
   const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abort();
+  else signal?.addEventListener('abort', abort, { once: true });
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
@@ -255,6 +259,7 @@ export async function generateZenText({
     throw error;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
   }
 }
 

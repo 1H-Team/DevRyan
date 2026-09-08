@@ -966,9 +966,9 @@ describe('Production Bot FIFO run dispatcher', () => {
       invalidateChannel: vi.fn(),
       invalidateAll: vi.fn(),
     };
-    const startReasoningRun = vi.fn(async () => ({
-      modelSnapshot: { providerId: 'openai', modelId: 'gpt-5.6-sol', contextLimit: 100 },
-    }));
+    let finishWarmup;
+    const warming = new Promise((resolve) => { finishWarmup = resolve; });
+    const startReasoningRun = vi.fn(() => warming);
     const harness = createExecutionHarness({ prewarmCache, startReasoningRun });
     const lease = await harness.dispatcher.prewarmChannel({
       principal: { id: USER_ID }, channelId: CHANNEL_ID,
@@ -987,8 +987,54 @@ describe('Production Bot FIFO run dispatcher', () => {
     expect(startReasoningRun).toHaveBeenCalledTimes(1);
     expect(accepted.run.id).toBe(startReasoningRun.mock.calls[0][0].run.id);
     expect(harness.recordDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
-      mark: 'bot.turn.lease_adopted',
+      mark: 'bot.turn.lease_reserved',
     }));
+    finishWarmup({ modelSnapshot: { providerId: 'openai', modelId: 'gpt-5.6-sol', contextLimit: 100 } });
+    await harness.dispatcher.shutdown();
+  });
+
+  it.each([false, true])('joins failed warm cleanup before fallback (cleanup failure: %s)', async (cleanupFails) => {
+    let rejectWarm;
+    const warming = new Promise((_, reject) => { rejectWarm = reject; });
+    const startReasoningRun = vi.fn()
+      .mockImplementationOnce(() => warming)
+      .mockResolvedValue({ modelSnapshot: { providerId: 'openai', modelId: 'gpt-5.6-sol' } });
+    const harness = createExecutionHarness({ startReasoningRun });
+    const cleanupError = Object.assign(new Error('fixture cleanup'), {
+      code: cleanupFails ? 'bot_container_stop_failed' : 'bot_opencode_run_not_found',
+    });
+    harness.opencodeProvider.stopReasoningRun.mockRejectedValueOnce(cleanupError);
+    const lease = await harness.dispatcher.prewarmChannel({
+      principal: { id: USER_ID }, channelId: CHANNEL_ID,
+    });
+    const accepted = await harness.dispatcher.enqueueMessage({
+      principal: { id: USER_ID }, channelId: CHANNEL_ID,
+      message: {
+        messageId: 'e0000000-0000-4000-8000-000000000091',
+        idempotencyKey: 'failed-warm-send', text: 'Use fallback', attachmentIds: [],
+        prewarmLeaseId: lease.leaseId,
+      },
+    });
+    harness.getRow().id = accepted.run.id;
+    const executing = harness.dispatcher.resumeRun(harness.getRow());
+    rejectWarm(Object.assign(new Error('fixture OAuth discovery'), {
+      code: 'bot_opencode_request_failed', botRuntimeStage: 'oauth_readiness', statusCode: 502,
+    }));
+    if (cleanupFails) {
+      await executing;
+      expect(harness.getRow().interruption_kind).toBe(cleanupError.code);
+      expect(startReasoningRun).toHaveBeenCalledTimes(1);
+      expect(harness.opencodeProvider.prompt).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() => expect(harness.opencodeProvider.prompt).toHaveBeenCalledTimes(1));
+      expect(startReasoningRun).toHaveBeenCalledTimes(2);
+      expect(startReasoningRun.mock.calls[1][0].run.id).toBe(accepted.run.id);
+      expect(harness.opencodeProvider.stopReasoningRun.mock.invocationCallOrder[0])
+        .toBeLessThan(startReasoningRun.mock.invocationCallOrder[1]);
+      await harness.dispatcher.cancelRun({ principal: { id: USER_ID }, runId: accepted.run.id });
+      await executing;
+      expect(harness.opencodeProvider.prompt).toHaveBeenCalledTimes(1);
+    }
     await harness.dispatcher.shutdown();
   });
 
@@ -1157,6 +1203,36 @@ describe('Production Bot FIFO run dispatcher', () => {
       }),
     }));
     expect(harness.opencodeProvider.stopReasoningRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishes a late pre-tool sentence before allocating the next pending checkpoint', async () => {
+    const harness = createExecutionHarness();
+    const pending = deferred();
+    harness.setPromptHook(async () => {
+      // Part content can precede role metadata, and the pre-tool text can
+      // initially be empty. Later metadata/content must still promote it once.
+      const part = (id, type, text = '') => harness.emit({ type: 'message.part.updated', properties: { part: { id, messageID: 'msg_assistant', sessionID: 'ses_bot_1', type, text, ...(type === 'tool' ? { tool: 'devryan_bot', state: { status: 'running' } } : {}) } } });
+      await part('ack', 'text');
+      await part('tool', 'tool');
+      await harness.emit({ type: 'message.updated', properties: { info: { id: 'msg_assistant', sessionID: 'ses_bot_1', role: 'assistant' } } });
+      const createPending = harness.channels.getOrCreateAssistantCheckpoint.getMockImplementation();
+      harness.channels.getOrCreateAssistantCheckpoint.mockImplementationOnce(async (input) => { await pending.promise; return createPending(input); });
+      await part('ack', 'text', 'I’ll paint that skyline with a little extra moonlight.');
+      await waitFor(() => expect(harness.eventStream.publish).toHaveBeenCalledWith(expect.objectContaining({
+        kind: 'message.updated', payload: expect.objectContaining({ message: expect.objectContaining({ assistantPhase: 'acknowledgment', body: expect.objectContaining({ text: 'I’ll paint that skyline with a little extra moonlight.' }) }) }),
+      })));
+      pending.resolve();
+      await part('ack', 'text', 'I’ll paint that skyline with a little extra moonlight.');
+      await part('answer', 'text', 'Here is your moonlit skyline.');
+      await harness.emit({ type: 'session.status', properties: { sessionID: 'ses_bot_1', status: { type: 'idle' } } });
+    });
+    try {
+      await harness.dispatcher.resumeRun(harness.getRow());
+      const writes = harness.channels.updateAssistantCheckpoint.mock.calls.map(([input]) => input);
+      expect(writes.filter((input) => input.assistantPhase === 'acknowledgment')).toHaveLength(1);
+      expect(writes.at(-1)).toMatchObject({ assistantPhase: 'result', text: 'Here is your moonlit skyline.' });
+      expect(harness.getRow().state).toBe('completed');
+    } finally { pending.resolve(); await harness.dispatcher.shutdown(); }
   });
 
   it('promotes the pre-tool line to an acknowledgment bubble, buffers inter-tool prose, and publishes the final result', async () => {
@@ -1961,15 +2037,15 @@ describe('Production Bot FIFO run dispatcher', () => {
     });
     expect(accepted.run.id).toBe(warmCall.run.id);
     expect(harness.recordDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
-      mark: 'bot.turn.lease_adopted',
+      mark: 'bot.turn.lease_reserved',
     }));
     await harness.dispatcher.shutdown();
   });
 
-  it('retries a startup failure on the requester\'s behalf a bounded number of times', async () => {
+  it.each([['readiness', 'bot_opencode_start_timeout'], ['oauth_readiness', 'bot_opencode_request_failed']])('bounds startup retries for %s', async (stage, code) => {
     const startupFailure = () => Object.assign(
       new Error('Scoped OpenCode runtime did not become ready'),
-      { code: 'bot_opencode_start_timeout', statusCode: 504, botRuntimeStage: 'readiness' },
+      { code, statusCode: 504, botRuntimeStage: stage },
     );
     const retryRun = vi.fn(async ({ runId }) => ({
       id: runId,
@@ -1998,7 +2074,7 @@ describe('Production Bot FIFO run dispatcher', () => {
     }));
     expect(harness.getRow().context_snapshot).toEqual(expect.objectContaining({
       failurePhase: 'startup',
-      failureStage: 'readiness',
+      failureStage: stage,
       retryable: true,
     }));
 
@@ -2011,6 +2087,8 @@ describe('Production Bot FIFO run dispatcher', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(exhausted.store.retryRun).not.toHaveBeenCalled();
     expect(exhausted.getRow().state).toBe('failed');
+    expect(exhausted.getRow().interruption_kind).toBe(code);
+    expect(exhausted.getRow().context_snapshot.failureStage).toBe(stage);
 
     // A configuration failure (missing environment secret) is not a boot
     // problem: replaying it would only repeat the same failure.

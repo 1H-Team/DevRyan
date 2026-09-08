@@ -9,7 +9,7 @@ This module provides shared text transformation and direct Zen generation helper
 ## Public exports
 
 ### Summarization (summarization.js)
-- `generateZenText({ prompt, zenModel, timeoutMs, chatMaxTokens, chatReasoningEffort, responsesMaxOutputTokens, stop })`: Send one bounded non-streaming prompt directly to the appropriate Zen Responses or Chat Completions endpoint and return extracted text. This helper does not use OpenCode sessions.
+- `generateZenText({ prompt, zenModel, timeoutMs, chatMaxTokens, chatReasoningEffort, responsesMaxOutputTokens, stop, signal })`: Send one bounded non-streaming prompt directly to the appropriate Zen Responses or Chat Completions endpoint and return extracted text. Caller cancellation is forwarded to the HTTP request and its listener is removed on completion. This helper does not use OpenCode sessions.
 - `summarizeText({ text, threshold, maxLength, zenModel, mode })`: Shared summarization entrypoint.
 - `sanitizeForTTS(text)`: Sanitizes text for speech output.
 - `sanitizeForNotification(text)`: Sanitizes text for compact notification output.

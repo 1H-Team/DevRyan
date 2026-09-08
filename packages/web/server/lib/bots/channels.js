@@ -133,7 +133,7 @@ const publicBot = (row) => Object.freeze({
   title: row.title || row.name,
   summary: row.summary || '',
   avatarUrl: row.avatar_object_id
-    ? `/api/bots/${row.id}/avatar?v=${encodeURIComponent(row.updated_at)}`
+    ? `/api/bots/${row.id}/avatar?v=${encodeURIComponent(row.avatar_object_id)}`
     : null,
   avatarFallback: row.avatar_fallback || null,
   lifecycle: row.lifecycle,
@@ -190,6 +190,7 @@ export function createBotChannels({
   store,
   authorization,
   encryption,
+  filterCatalog = async (_principal, rows) => rows,
   uuid = randomUUID,
   now = () => new Date(),
 } = {}) {
@@ -759,11 +760,16 @@ export function createBotChannels({
         });
         for (const revision of revisionPage?.items || []) revisions.set(revision.id, revision);
       }
+      const visible = await filterCatalog(principal, [...bots.values()]);
+      const visibleIds = new Set(visible.map((bot) => bot.id));
+      const hiddenIds = new Set([...bots.keys()].filter((id) => !visibleIds.has(id)));
+      for (const id of hiddenIds) bots.delete(id);
       const own = await store.repositories.bot_channels.list({
         filters: { owner_user_id: principal.id, lifecycle: 'active' },
         limit: 100,
       });
       for (const row of own.items) {
+        if (hiddenIds.has(row.bot_id)) continue;
         try {
           await authorization.requireChannelRead(principal, row.bot_id, row.id, null);
           channels.set(row.id, { row, accessRole: 'owner' });
@@ -776,7 +782,7 @@ export function createBotChannels({
       });
       for (const grant of grants?.items || []) {
         const row = await store.get('bot_channels', { id: grant.channel_id });
-        if (!row || row.lifecycle !== 'active' || row.archived_at !== null) continue;
+        if (!row || hiddenIds.has(row.bot_id) || row.lifecycle !== 'active' || row.archived_at !== null) continue;
         try {
           await authorization.requireChannelRead(principal, row.bot_id, row.id, null);
           if (!channels.has(row.id)) channels.set(row.id, { row, accessRole: grant.role });
@@ -830,10 +836,12 @@ export function createBotChannels({
           .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
           .map(publicBot)),
         revisions: Object.freeze([...revisions.values()]
+          .filter((row) => !hiddenIds.has(row.bot_id))
           .sort((left, right) => Number(left.revision_number) - Number(right.revision_number)
             || left.id.localeCompare(right.id))
           .map(publicRevision)),
         memberships: Object.freeze(memberships
+          .filter((row) => !hiddenIds.has(row.bot_id))
           .sort((left, right) => left.bot_id.localeCompare(right.bot_id))
           .map(publicMembership)),
         channels: Object.freeze([...channels.values()]

@@ -151,6 +151,7 @@ import { registerEvidenceRoutes } from './lib/evidence/routes.js';
 import { registerIndexingPolicy } from './lib/indexing-policy.js';
 import { getPublicRuntimePort } from './lib/runtime-port-visibility.js';
 import { configureWorktreeBootstrapRuntime } from './lib/git/service.js';
+import { buildGitGenerationTimingRecord } from './lib/git/generation-diagnostics.js';
 import { stripEventDiffContent } from './lib/opencode/diff-summary.js';
 import {
   OPENCODE_DB_PRELAUNCH_TIME_BUDGET_MS,
@@ -1382,6 +1383,7 @@ const primaryRecoveryRuntime = createWebPrimaryRecoveryRuntime({
 harnessRuntime.setPrimaryRecoveryRuntime(primaryRecoveryRuntime);
 const sessionChangeHost = createSessionChangeHost({
   dataDirectory: OPENCHAMBER_DATA_DIR,
+  onDiagnostic: (event) => harnessRuntime.record({ type: 'log', event: 'session_changes_capture', sessionID: event.sessionID, payload: event }),
   publishEvent: emitSyntheticOpenCodeEvent,
   buildOpenCodeUrl: (pathname) => buildOpenCodeUrl(pathname, ''),
   getOpenCodeAuthHeaders,
@@ -2223,34 +2225,7 @@ async function main(options = {}) {
     getCachedZenModels,
     xaiToolCatalogRuntime,
     resolveZenModelNonBlocking,
-    recordCommitTiming: (req, payload) => harnessRuntime.record({
-      type: 'timing',
-      actor: req?.principal?.id
-        ? {
-            id: req.principal.id,
-            role: req.principal.role || null,
-            scope: req.principal.scope || null,
-          }
-        : null,
-      mark: payload.event,
-      payload: {
-        durationMs: payload.totalMs,
-        stages: [
-          { phase: 'context', durationMs: payload.contextMs },
-          { phase: 'model', durationMs: payload.modelMs },
-          { phase: 'provider', durationMs: payload.providerMs },
-          { phase: 'parsing', durationMs: payload.parseMs },
-        ],
-        count: payload.selectedFileCount,
-        scope: payload.stagedOnly === true ? 'staged-only' : 'staged-and-unstaged',
-        outcome: payload.outcome,
-        model: payload.model,
-        state: payload.catalogState,
-        retry: payload.retried === true,
-        source: payload.source,
-        providerOutcome: payload.providerOutcome,
-      },
-    }),
+    recordCommitTiming: (req, payload) => harnessRuntime.record(buildGitGenerationTimingRecord(req, payload)),
     resolveManagedProject: multiUserRuntime.resolveManagedProject?.bind(multiUserRuntime),
     ownsSession: multiUserRuntime.ownsSession?.bind(multiUserRuntime),
     resolveOwnedSessionPlanContext: multiUserRuntime.resolveOwnedSessionPlanContext?.bind(multiUserRuntime),

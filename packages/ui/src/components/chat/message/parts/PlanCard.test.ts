@@ -114,6 +114,22 @@ describe('getPlanCardImplementationKey', () => {
 });
 
 describe('getPlanCardActionState', () => {
+  test('an aborted completed draft can neither save nor enable implementation', () => {
+    const state = { streamPhase: 'completed' as const, hasPlanText: true, isLatestPlan: true,
+      isRevisionSettled: true, isGenerationSuccessful: false };
+    expect(getPlanCardActionState({ ...state, isImplementationRequested: false })).toEqual({
+      canImplement: false, disabledReason: 'The response did not finish successfully.',
+    });
+    expect(shouldPersistPlanCard(state)).toBe(false);
+  });
+
+  test('a completed tool step stays pending while its session is still busy', () => {
+    const state = { streamPhase: 'completed' as const, hasPlanText: true, isLatestPlan: true,
+      isRevisionSettled: false, isGenerationSuccessful: true };
+    expect(getPlanCardActionState({ ...state, isImplementationRequested: false }).canImplement).toBe(false);
+    expect(shouldPersistPlanCard(state)).toBe(false);
+  });
+
   test('allows only the latest completed unimplemented plan', () => {
     expect(getPlanCardActionState({
       streamPhase: 'completed',

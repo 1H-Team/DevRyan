@@ -324,8 +324,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerGitHubRoutes(app);
     registerProcessesRoutes(app, { runtime: processesRuntime });
     registerGitRoutes(app, {
-      resolveZenModel,
-      resolveCommitZenModel: resolveZenModelNonBlocking,
       fetchFreeZenModels,
       // Last known free-model catalog so a catalog outage degrades to stale
       // models (then the session model) instead of failing with no attempt.

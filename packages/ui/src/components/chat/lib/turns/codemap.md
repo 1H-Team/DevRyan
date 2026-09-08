@@ -11,3 +11,5 @@ Incoming message arrays are grouped/annotated, plan-mode turns are indexed in ca
 
 ## Integration
 Integrated with chat store selectors and message row components.
+
+`projectTurnActivity.ts` consumes the shared plan resolver's reasoning ranges, including split markers and superseded drafts, before deriving activity records. Only ordinary reasoning preamble remains in the activity stream. `projectPlanTurnTraceIndex.ts` keeps failed/aborted final drafts non-actionable while retaining their source for presentation.

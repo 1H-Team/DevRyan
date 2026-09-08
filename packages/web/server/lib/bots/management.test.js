@@ -95,6 +95,7 @@ const createHarness = ({
   readHostProviderAuth = vi.fn(() => null),
   getOAuthConnections,
   eventStream = null,
+  filterCatalog,
   audit = vi.fn(async () => {}),
 } = {}) => {
   const store = {
@@ -131,6 +132,7 @@ const createHarness = ({
       readHostProviderAuth,
       getOAuthConnections,
       eventStream,
+      filterCatalog,
       audit,
       uuid: vi.fn(() => RUN_ID),
       now: () => new Date(NOW),
@@ -139,6 +141,36 @@ const createHarness = ({
 };
 
 describe('Bot management control plane', () => {
+  it('applies the same injected catalog rule to administrators and authorized members', async () => {
+    const filterCatalog = vi.fn(async () => []);
+    const harness = createHarness({
+      list: vi.fn(async (table) => ({ items: table === 'bots' ? [bot] : [membership()], nextCursor: null })),
+      get: vi.fn(async () => bot),
+      filterCatalog,
+    });
+    for (const viewer of [{ ...principal, role: 'admin', scope: 'global' }, principal]) {
+      expect((await harness.management.listCatalog(viewer)).bots).toEqual([]);
+      expect(filterCatalog).toHaveBeenLastCalledWith(viewer, [bot]);
+    }
+  });
+
+  it('versions avatar URLs by image identity across unrelated catalog updates', async () => {
+    const objectId = 'f0000000-0000-4000-8000-000000000011';
+    let row = { ...bot, avatar_object_id: objectId };
+    const harness = createHarness({ list: vi.fn(async () => ({ items: [row], nextCursor: null })) });
+    const administrator = { id: USER_ID, role: 'admin', scope: 'managed' };
+    const first = await harness.management.listCatalog(administrator);
+    row = { ...row, name: 'New Name', updated_at: '2026-09-07T12:00:00.000Z' };
+    const renamed = await harness.management.listCatalog(administrator);
+    expect(first.bots[0].avatarUrl).toBe(`/api/bots/${BOT_ID}/avatar?v=${objectId}`);
+    expect(renamed.bots[0].avatarUrl).toBe(first.bots[0].avatarUrl);
+    row = { ...row, avatar_object_id: 'f0000000-0000-4000-8000-000000000012' };
+    const replaced = await harness.management.listCatalog(administrator);
+    expect(replaced.bots[0].avatarUrl).not.toBe(first.bots[0].avatarUrl);
+    row = { ...row, avatar_object_id: null };
+    expect((await harness.management.listCatalog(administrator)).bots[0].avatarUrl).toBeNull();
+  });
+
   it('projects Bot creation from the same global-admin and durable-actor rule used by create', async () => {
     const harness = createHarness({
       list: vi.fn(async () => ({ items: [bot], nextCursor: null })),
@@ -744,7 +776,7 @@ describe('Bot management control plane', () => {
       bot: {
         title: 'Research Operations',
         summary: 'A concise durable profile.',
-        avatarUrl: expect.stringContaining(`/api/bots/${BOT_ID}/avatar?v=`),
+        avatarUrl: `/api/bots/${BOT_ID}/avatar?v=${newObjectId}`,
         avatarFallback: 'R',
       },
       avatarCleanupRequired: true,

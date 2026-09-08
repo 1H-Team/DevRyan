@@ -47,11 +47,12 @@ export const BotMessageRow = React.memo<BotMessageRowProps>(({ bot, messageId })
     if (message?.role === 'user' && message.runId === null && message.finalizedAt === null) {
       markOptimisticRender();
     }
-    if (message?.role === 'assistant' && message.assistantPhase !== 'acknowledgment' && message.finalizedAt !== null) {
+    if (message?.role === 'assistant' && message.finalizedAt !== null) {
       try {
         if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
-          performance.clearMarks?.(`bot.final-render:${messageId}`);
-          performance.mark(`bot.final-render:${messageId}`);
+          const phase = message.assistantPhase === 'acknowledgment' ? 'acknowledgment' : 'final';
+          performance.clearMarks?.(`bot.${phase}-render:${messageId}`);
+          performance.mark(`bot.${phase}-render:${messageId}`);
         }
       } catch {
         // Rendering must not depend on browser performance instrumentation.

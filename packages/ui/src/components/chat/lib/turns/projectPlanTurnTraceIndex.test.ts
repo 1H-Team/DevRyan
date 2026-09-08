@@ -88,6 +88,29 @@ const implementationUser = (id: string, createdAt: number, sourceMessageId: stri
 );
 
 describe('projectPlanTurnTraceIndex plan revisions', () => {
+    test('keeps one source through an empty final marker and rejects an aborted final draft', () => {
+        const human = createMessageEntry({ id: 'u', role: 'user', createdAt: 1, planMode: true });
+        const draft = createMessageEntry({ id: 'draft', role: 'assistant', parentID: 'u', createdAt: 2, completedAt: 3,
+            parts: [{ id: 'r', messageID: 'draft', sessionID: 'session-1', type: 'reasoning', text: '<!--plan-->\n# Draft', time: { start: 2, end: 3 } }] });
+        const final = createMessageEntry({ id: 'final', role: 'assistant', parentID: 'u', createdAt: 4,
+            parts: [createTextPart('final', '<!--plan-->\n')] });
+        const pending = projectTurnRecords([human, draft, final]).planTraceIndex;
+        expect(pending.entries).toHaveLength(1);
+        expect(pending.entries[0]).toMatchObject({ assistantSourceMessageId: 'draft', isActionable: false, isSettled: false });
+        final.parts = [createTextPart('final', '<!--plan-->\n# Final')];
+        const streaming = projectTurnRecords([human, draft, final]).planTraceIndex;
+        expect(streaming.entries).toHaveLength(1);
+        expect(streaming.entries[0]).toMatchObject({ assistantSourceMessageId: 'final', isActionable: false });
+        if (final.info.role !== 'assistant') throw new Error('Expected assistant fixture');
+        final.info.time.completed = 5;
+        final.info.error = { name: 'MessageAbortedError', data: { message: 'Aborted' } };
+        for (const messages of [[human, draft, final], structuredClone([human, draft, final])]) {
+            expect(projectTurnRecords(messages).planTraceIndex.entries[0]).toMatchObject({
+                assistantSourceMessageId: 'final', isSettled: true, isActionable: false,
+            });
+        }
+    });
+
     test('recovered planning keeps one actionable revision and effective rendering intent', () => {
         const messages = [
             createMessageEntry({ id: 'human', role: 'user', createdAt: 1, planMode: true }),

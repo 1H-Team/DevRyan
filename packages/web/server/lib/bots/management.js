@@ -51,7 +51,7 @@ const publicBot = (row) => Object.freeze({
   title: row.title || row.name,
   summary: row.summary || '',
   avatarUrl: row.avatar_object_id
-    ? `/api/bots/${row.id}/avatar?v=${encodeURIComponent(row.updated_at)}`
+    ? `/api/bots/${row.id}/avatar?v=${encodeURIComponent(row.avatar_object_id)}`
     : null,
   avatarFallback: row.avatar_fallback || null,
   lifecycle: row.lifecycle,
@@ -359,6 +359,7 @@ export function createBotManagement({
   beforeActivateComputer = async () => null,
   afterDeactivateComputer = async () => null,
   onRuntimeInvalidated = () => {},
+  filterCatalog = async (_principal, rows) => rows,
   uuid = randomUUID,
   now = () => new Date(),
 } = {}) {
@@ -600,7 +601,7 @@ export function createBotManagement({
   const listCatalog = async (principal) => {
     requirePrincipal(principal);
     if (isGlobalAdmin(principal)) {
-      const rows = await listRows('bots');
+      const rows = await filterCatalog(principal, await listRows('bots'));
       return Object.freeze({
         bots: Object.freeze(rows.map(publicBot)),
         canCreateBot: canCreateBot(principal),
@@ -613,10 +614,11 @@ export function createBotManagement({
     for (const membership of memberships) {
       if (!activeMembership(membership)) continue;
       const row = await store.get('bots', { id: membership.bot_id });
-      if (row) bots.push(publicBot(row));
+      if (row) bots.push(row);
     }
-    bots.sort((left, right) => left.name.localeCompare(right.name));
-    return Object.freeze({ bots: Object.freeze(bots), canCreateBot: false });
+    const visible = await filterCatalog(principal, bots);
+    visible.sort((left, right) => left.name.localeCompare(right.name));
+    return Object.freeze({ bots: Object.freeze(visible.map(publicBot)), canCreateBot: false });
   };
 
   const getDetail = async (principal, botId) => {

@@ -1,0 +1,33 @@
+.review-workbench {
+  --review-accent: #17685d;
+  --review-surface: #ffffff;
+  --review-border: #d7dfdc;
+  --review-muted: #52625e;
+  color: #203630;
+  background: #f5f7f6;
+  padding: 24px;
+}
+.review-toolbar {
+  display: flex;
+  gap: 16px;
+}
+.review-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 16px 0;
+}
+.review-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.review-card {
+  padding: 16px;
+  background: var(--review-surface);
+  border: 1px solid var(--review-border);
+  border-radius: 8px;
+}
+.review-card h3 {
+  margin: 0 0 8px;
+}

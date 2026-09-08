@@ -458,9 +458,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     const visibleParts = React.useMemo(
         () =>
             filterVisibleParts(normalizedParts, {
-                includeReasoning: showReasoningTraces,
+                // Plan bodies may arrive through reasoning. Keep those source
+                // parts available; MessageBody applies the Thinking toggle.
+                includeReasoning: showReasoningTraces || (!isUser && effectiveIsPlanModeSource),
             }),
-        [normalizedParts, showReasoningTraces]
+        [effectiveIsPlanModeSource, isUser, normalizedParts, showReasoningTraces]
     );
 
     const displayParts = React.useMemo(() => {

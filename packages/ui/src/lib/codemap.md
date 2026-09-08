@@ -12,6 +12,10 @@ Shared non-React application logic for the UI package: API clients, routing/seri
 - **Shared byte presentation**: `formatBytes.ts` is the single 1024-based formatter used by diagnostic-journal and Electron-cache status UI.
 - **Authoritative session-change projection**: `sessionChangeAttribution.ts` derives repository-relative paths only from completed successful file-tool parts, records successful shell mutations as explicitly unattributed, and ignores shared-working-tree message summaries and patch snapshots.
 - **Runtime capability gates**: desktop/web differences are centralized (e.g., `desktop.ts`, runtime API detection helpers).
+- **Production Bot avatars**: `botAvatarCache.ts` owns bounded, principal-scoped
+  memory reuse, priority loading, decode, and URL disposal; `botAvatarUpload.ts`
+  owns browser-only image resizing and encoding. `useBotsStore` invalidates
+  retained identity images on catalog/auth changes.
 - **Production Bot clients**: `botsApi.ts` owns authenticated management,
   channel, routine, recovery-status, and resumable-purge HTTP contracts;
   `botsDesktopApi.ts` owns only local Electron runtime management and native
@@ -35,3 +39,5 @@ Shared non-React application logic for the UI package: API clients, routing/seri
 `providers/variantControls.ts` also exposes optional display-only
 `defaultThinkingLevel` catalog lookup for ModelControls; it does not resolve or
 override the variant sent to the provider.
+
+- `sessionVisibility.ts` hides exact internal title/text generation helper titles, including temporary commit/PR helpers, while preserving array and record references for unchanged visible sessions.

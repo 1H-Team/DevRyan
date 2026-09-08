@@ -1,9 +1,13 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { afterEach, beforeEach, expect, test as bunTest } from 'bun:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSessionChangeHost } from './session-changes-host.js';
+
+// These are real Git/metadata integration tests, with the same outer budget
+// as session-changes.test.js; protocol deadlines remain independently tested.
+const test = (name, run) => bunTest(name, run, 60_000);
 
 let base, directory, host, messages, statuses, events;
 beforeEach(async () => {
@@ -24,7 +28,7 @@ beforeEach(async () => {
     },
   });
 });
-afterEach(async () => { await host.drain(); await fs.rm(base, { recursive: true, force: true }); });
+afterEach(async () => { await host.drain(); await fs.rm(base, { recursive: true, force: true }); }, 30_000);
 const endpoint = (action = '') => `/api/openchamber/session/ses_a/changes${action}?directory=${encodeURIComponent(directory)}`;
 const tool = (callID) => ({ info: { id: `msg_${callID}`, parentID: 'user_1', role: 'assistant', time: { created: 2 } },
   parts: [{ id: `part_${callID}`, type: 'tool', callID, tool: 'bash', state: { status: 'completed' } }] });
@@ -106,4 +110,31 @@ test('restore fails closed when another session is busy or live status is malfor
   statuses = [];
   expect((await host.handleRequest('POST', endpoint('/undo'), { revision: body.revision })).body.code).toBe('session_status_unavailable');
   expect(await fs.readFile(path.join(directory, 'shell.txt'), 'utf8')).toBe('keep\n');
+});
+
+test('cached history refreshes only the head page and captures newly settled receipts', async () => {
+  let pages = 0;
+  const historical = tool('historical'), newest = tool('newest');
+  historical.parts[0].tool = 'edit';
+  historical.parts[0].state.metadata = { filediff: { file: 'a.txt', before: 'base\n', after: 'first\n' } };
+  const paged = createSessionChangeHost({ dataDirectory: base, buildOpenCodeUrl: (pathname) => `http://fixture${pathname}`,
+    fetchImpl: async (raw) => {
+      const url = new URL(raw);
+      if (url.pathname.endsWith('/children')) return Response.json([]);
+      if (!url.pathname.endsWith('/message')) return Response.json({ id: 'ses_a', directory });
+      pages++;
+      if (url.searchParams.has('before')) return Response.json(messages);
+      return new Response(JSON.stringify([historical, newest]), { headers: { 'x-next-cursor': 'older' } });
+    },
+  });
+  const first = await paged.handleRequest('GET', endpoint());
+  expect(first.status).toBe(200); expect(pages).toBe(2);
+  newest.parts[0].tool = 'edit';
+  newest.parts[0].state.metadata = { filediff: { file: 'a.txt', before: 'first\n', after: 'second\n' } };
+  newest.parts[0].state.time = { start: 3 };
+  const second = await paged.handleRequest('GET', endpoint());
+  expect(second.status).toBe(200); expect(pages).toBe(3);
+  const diff = await paged.handleRequest('GET', `${endpoint('/diff')}&revision=${second.body.revision}&file=a.txt`);
+  expect(diff.body.patch).toContain('+second');
+  await paged.drain();
 });

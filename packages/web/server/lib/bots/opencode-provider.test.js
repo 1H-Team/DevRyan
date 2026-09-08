@@ -179,6 +179,47 @@ const createHarness = (overrides = {}) => {
 };
 
 describe('scoped Bot OpenCode provider', () => {
+  it('overlaps independent preparation and starts the container only after both finish', async () => {
+    const harness = createHarness();
+    let finishEnvironment, finishArtifacts;
+    harness.environmentSecrets.prepareRun.mockImplementation(() => new Promise((resolve) => { finishEnvironment = resolve; }));
+    harness.artifactService.materializeRun.mockImplementation(() => new Promise((resolve) => { finishArtifacts = resolve; }));
+    const starting = harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
+    await waitUntil(() => finishEnvironment && finishArtifacts);
+    finishArtifacts({ objectCount: 0 });
+    await Promise.resolve();
+    expect(harness.dockerProvider.ensureReasoning).not.toHaveBeenCalled();
+    finishEnvironment({ count: 0 });
+    await starting;
+    expect(harness.dockerProvider.ensureReasoning).toHaveBeenCalledTimes(1);
+    await harness.provider.shutdown();
+  });
+
+  it.each(['environment', 'artifacts', 'cancel'])('waits for late preparation before cleanup on %s failure', async (failure) => {
+    const harness = createHarness();
+    const controller = new AbortController();
+    let finishEnvironment, failEnvironment, finishArtifacts, failArtifacts;
+    harness.environmentSecrets.prepareRun.mockImplementation(() => new Promise((resolve, reject) => { finishEnvironment = resolve; failEnvironment = reject; }));
+    harness.artifactService.materializeRun.mockImplementation(() => new Promise((resolve, reject) => { finishArtifacts = resolve; failArtifacts = reject; }));
+    const starting = harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [], signal: controller.signal });
+    const outcome = starting.catch((error) => error);
+    await waitUntil(() => finishEnvironment && finishArtifacts);
+    if (failure === 'environment') failEnvironment(new Error('environment failed'));
+    else if (failure === 'artifacts') failArtifacts(new Error('artifacts failed'));
+    else controller.abort();
+    await Promise.resolve();
+    expect(harness.artifactService.cleanupRun).not.toHaveBeenCalled();
+    expect(harness.environmentSecrets.finalizeRun).not.toHaveBeenCalled();
+    if (failure !== 'environment') finishEnvironment({ count: 0 });
+    if (failure !== 'artifacts') finishArtifacts({ objectCount: 0 });
+    expect(await outcome).toBeInstanceOf(Error);
+    expect(harness.dockerProvider.ensureReasoning).not.toHaveBeenCalled();
+    expect(harness.artifactService.cleanupRun).toHaveBeenCalledWith(RUN_ID);
+    expect(harness.environmentSecrets.finalizeRun).toHaveBeenCalledWith(RUN_ID);
+    expect(harness.modelCredentialBroker.discardRun).toHaveBeenCalledWith(RUN_ID);
+    await harness.provider.shutdown();
+  });
+
   it('preflights config, catalog, and credentials without starting Docker', async () => {
     const harness = createHarness();
     const checked = await harness.provider.preflightReasoningRun({
@@ -243,22 +284,38 @@ describe('scoped Bot OpenCode provider', () => {
     }));
   });
 
-  it('does not retry an OAuth authentication rejection', async () => {
-    const harness = createHarness();
+  it.each(['response', 'throw'])('preserves sanitized OAuth rejection diagnostics (%s)', async (transport) => {
+    const recordDiagnostic = vi.fn();
+    const harness = createHarness({ recordDiagnostic });
     const prepared = await harness.modelCredentialBroker.prepareProvisionalRun();
     harness.modelCredentialBroker.prepareProvisionalRun.mockResolvedValue({
       ...prepared,
       coordinatedOAuth: true,
     });
     harness.modelCredentialBroker.assertRuntimeReady = vi.fn(async () => {});
-    harness.client.provider.list.mockResolvedValueOnce({
-      error: { name: 'ProviderAuthError', data: { message: 'OAuth credential rejected' } },
-      response: { status: 401 },
-    });
+    const upstream = {
+      name: 'ProviderAuthError', statusCode: 401,
+      data: { message: 'OAuth credential rejected; private-fixture-body', responseBody: 'private-fixture-body' },
+      headers: { authorization: 'private-fixture-credential' },
+    };
+    if (transport === 'throw') harness.client.provider.list.mockRejectedValueOnce(upstream);
+    else harness.client.provider.list.mockResolvedValueOnce({ error: upstream, response: { status: 401 } });
 
     await expect(harness.provider.startReasoningRun({
       run: run(), contract: contract(), catalog: [], mode: 'warm',
-    })).rejects.toMatchObject({ code: 'bot_opencode_provider_authentication' });
+    })).rejects.toMatchObject({
+      botRuntimeStage: 'oauth_readiness',
+      ...(transport === 'response' ? { code: 'bot_opencode_provider_authentication' } : { name: 'ProviderAuthError' }),
+    });
+    const discoveryFailure = recordDiagnostic.mock.calls.map(([record]) => record)
+      .find((record) => record.event === 'bot.provider.oauth_readiness_failed');
+    expect(discoveryFailure).toMatchObject({
+      payload: {
+        runId: RUN_ID, stage: 'oauth_readiness',
+        error: { name: 'ProviderAuthError', statusCode: 401, reason: 'provider_authentication', message: '' },
+      },
+    });
+    expect(JSON.stringify(discoveryFailure)).not.toContain('private-fixture');
     expect(harness.client.provider.list).toHaveBeenCalledTimes(1);
     expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
   });

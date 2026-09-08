@@ -14,7 +14,7 @@ export type PlanProposedCandidate = {
 
 type PlanProposedDetectionState = Pick<
   State,
-  "message" | "part" | "permission" | "question" | "session" | "revert_transaction"
+    "message" | "part" | "permission" | "question" | "session" | "revert_transaction" | "session_status"
 >
 
 export function detectPlanProposedCandidate({
@@ -30,6 +30,8 @@ export function detectPlanProposedCandidate({
   implementedPlanRequests: ReadonlySet<string>
   externallyHandedOffPlanRequests?: ReadonlySet<string>
 }): PlanProposedCandidate | null {
+  const status = state.session_status[sessionID]?.type
+  if (status === "busy" || status === "retry") return null
   const pendingQuestions = state.question[sessionID]
   if (pendingQuestions && pendingQuestions.length > 0) return null
   const pendingPermissions = state.permission[sessionID]
@@ -66,7 +68,7 @@ export function detectPlanProposedCandidate({
 
   // Never save or enable implementation while any sibling assistant in the
   // revision is still generating or running tools.
-  if (!revision.isSettled) return null
+  if (!revision.isSettled || revision.hasTerminalError) return null
   for (const memberTurnId of revision.memberTurnIds) {
     const memberTurn = turnInputs.find((turn) => turn.turnId === memberTurnId)
     if (!memberTurn) continue
@@ -127,6 +129,7 @@ function buildRevisionTurnInputs(
       id: message.id,
       parentMessageId: typeof parentID === "string" && parentID.trim().length > 0 ? parentID : null,
       completedAt: getAssistantCompletedAt(message),
+      hasError: message.role === "assistant" && message.error != null,
       parts: state.part[message.id] ?? [],
     })
   }

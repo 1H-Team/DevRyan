@@ -42,10 +42,13 @@ const sseFrame = (event) => (
 
 export function createBotEventStream({
   loadSnapshot = async () => ({}),
+  filterSnapshot = async (_principal, snapshot) => snapshot,
+  canDeliver = async () => true,
   epoch = randomUUID(),
   heartbeatMs = 25_000,
 } = {}) {
-  if (typeof loadSnapshot !== 'function' || typeof epoch !== 'string' || !epoch
+  if (typeof loadSnapshot !== 'function' || typeof filterSnapshot !== 'function'
+    || typeof canDeliver !== 'function' || typeof epoch !== 'string' || !epoch
     || !Number.isFinite(heartbeatMs) || heartbeatMs < 1_000) {
     throw new TypeError('Bot event stream is misconfigured');
   }
@@ -68,7 +71,7 @@ export function createBotEventStream({
         combined[key] = value;
       }
     }
-    return combined;
+    return filterSnapshot(principal, combined);
   };
 
   const deliver = async (subscriber, event) => {
@@ -98,6 +101,7 @@ export function createBotEventStream({
       ready: false,
       closed: false,
       pending: [],
+      delivery: Promise.resolve(),
     };
     subscribers.add(subscriber);
     try {
@@ -109,8 +113,12 @@ export function createBotEventStream({
         kind: 'snapshot',
         payload: snapshot,
       }));
-      subscriber.ready = true;
-      for (const event of subscriber.pending.splice(0)) await deliver(subscriber, event);
+      subscriber.delivery = subscriber.delivery.catch(() => undefined).then(async () => {
+        if (subscriber.closed) return;
+        subscriber.ready = true;
+        for (const event of subscriber.pending.splice(0)) await deliver(subscriber, event);
+      });
+      await subscriber.delivery;
     } catch (error) {
       closeSubscriber(subscriber);
       throw error;
@@ -147,23 +155,29 @@ export function createBotEventStream({
         fail('Bot event audience is invalid');
       }
       const audience = new Set(audienceUserIds);
-      sequence += 1;
-      let event = null;
+      const eventSequence = ++sequence;
       let delivered = 0;
-      for (const subscriber of subscribers) {
-        if (!audience.has(subscriber.principal.id)) continue;
-        event ||= Object.freeze({
-          id: `${epoch}:${sequence}`,
-          sequence,
+      const targets = [...subscribers].filter((subscriber) => audience.has(subscriber.principal.id));
+      if (targets.length === 0) return Object.freeze({ sequence: eventSequence, delivered });
+      const event = Object.freeze({
+          id: `${epoch}:${eventSequence}`,
+          sequence: eventSequence,
           kind: normalizedKind,
           ...(botId ? { botId } : {}),
           ...(channelId ? { channelId } : {}),
           payload: clonePayload(payload),
         });
-        await deliver(subscriber, event);
-        delivered += 1;
-      }
-      return Object.freeze({ sequence, delivered });
+      // Reserve delivery order before awaiting the visibility lookup; concurrent
+      // publishers must not duplicate sequence IDs or overtake earlier events.
+      await Promise.all(targets.map((subscriber) => {
+        subscriber.delivery = subscriber.delivery.catch(() => undefined).then(async () => {
+          if (subscriber.closed || !await canDeliver(subscriber.principal, botId)) return;
+          await deliver(subscriber, event);
+          delivered += 1;
+        });
+        return subscriber.delivery;
+      }));
+      return Object.freeze({ sequence: eventSequence, delivered });
     },
 
     async writeSse({ principal, request, response } = {}) {

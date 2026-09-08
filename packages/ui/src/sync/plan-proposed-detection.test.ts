@@ -60,6 +60,29 @@ const detect = (
 })
 
 describe("detectPlanProposedCandidate", () => {
+  test("does not propose a streamed reasoning draft during tool gaps or after cancellation", () => {
+    const draft = assistantMessage("draft", { parentID: "human" })
+    const state = buildState({
+      message: { [SESSION_ID]: [userMessage("human"), draft] },
+      part: {
+        human: [textPart("human", "User has requested to enter plan mode.", true)],
+        draft: [{ id: "r", messageID: "draft", sessionID: SESSION_ID, type: "reasoning",
+          text: "<!--plan-->\n# Draft\n## Context\nWhy", time: { start: 2, end: 3 } }],
+      },
+      session_status: { [SESSION_ID]: { type: "busy" } },
+    })
+    expect(detect(state)).toBeNull()
+    state.session_status[SESSION_ID] = { type: "retry", attempt: 1, message: "Retrying", next: 10 }
+    expect(detect(state)).toBeNull()
+    state.session_status[SESSION_ID] = { type: "idle" }
+    state.message[SESSION_ID][1] = assistantMessage("draft", { parentID: "human", error: { name: "MessageAbortedError", data: { message: "Aborted" } } })
+    expect(detect(state)).toBeNull()
+    expect(detect(structuredClone(state))).toBeNull()
+    state.message[SESSION_ID].push(assistantMessage("recovered", { parentID: "human" }))
+    state.part.recovered = [textPart("recovered", "<!--plan-->\n# Recovered final plan")]
+    expect(detect(state)?.sourceMessageId).toBe("recovered")
+  })
+
   test("persists the recovered plan under its original human request only after the recovery settles", () => {
     const markdown = "# Recovered Plan\n\n## Context\nRestore cards.\n\n## Verification\nReload and inspect."
     const state = buildState({

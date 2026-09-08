@@ -1,0 +1,13 @@
+import { expect, test } from 'bun:test';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { ReviewWorkbench } from './ReviewWorkbench';
+import { sampleReviews } from './review-data';
+import { selectReviews, summarizeReviews } from './review-domain';
+
+test('the initial workbench keeps the supplied reviews intact', () => {
+  const result = selectReviews(sampleReviews);
+  expect(result).toEqual(sampleReviews);
+  expect(result).not.toBe(sampleReviews);
+  expect(summarizeReviews([]).average).toBe(0);
+  expect(renderToStaticMarkup(<ReviewWorkbench reviews={sampleReviews} />)).toContain('Review workbench');
+});

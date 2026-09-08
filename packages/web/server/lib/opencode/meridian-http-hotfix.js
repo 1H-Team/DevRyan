@@ -36,9 +36,13 @@ export const applyMeridianHttpHotfix = ({ configDirectory, fs: fsApi = fs,
   }
   const httpPatched = IMPORT + original.replace(MERIDIAN_HTTP_SERVER_ORIGINAL, PATCHED).replace(ORIGINAL_END, PATCHED_END);
   let patched;
-  try { patched = patchMeridianHandoff(httpPatched); }
+  let previousPatched;
+  try {
+    patched = patchMeridianHandoff(httpPatched);
+    previousPatched = patchMeridianHandoff(httpPatched, { includePrefixFix: false });
+  }
   catch { return incompatible('Meridian handoff source anchors are incompatible'); }
-  if (source !== original && source !== httpPatched && source !== patched) return incompatible('Meridian source contains an incomplete patch');
+  if (source !== original && source !== httpPatched && source !== previousPatched && source !== patched) return incompatible('Meridian source contains an incomplete patch');
   let changed = false;
   try {
     for (const [file, content] of [[helper, helperSource], [path.join(packageRoot, 'dist', MERIDIAN_HANDOFF_HELPER), handoffSource], [entry, patched]]) {
@@ -57,5 +61,7 @@ export const applyMeridianHttpHotfix = ({ configDirectory, fs: fsApi = fs,
   } catch { return incompatible('Meridian HTTP hotfix could not be installed atomically'); }
   return { ok: true, changed, version: MERIDIAN_HTTP_HOTFIX_VERSION, originalSha256: expectedOriginalSha256,
     sourceSha256: sha256(patched), helperSha256: sha256(helperSource), handoffSha256: sha256(handoffSource),
-    transport: 'bun-native-request-signal; node-adapter-preserved', handoff: 'interrupt-after-complete-tool-checkpoint; canonical-terminal-or-verified-native-checkpoint' };
+    transport: 'bun-native-request-signal; node-adapter-preserved', handoff: 'interrupt-after-complete-tool-checkpoint; canonical-terminal-or-verified-native-checkpoint',
+    prefix: 'native-fork-at-client-tool-checkpoint; git-snapshot-disabled-for-passthrough',
+    background: 'normal-sdk-mode; stop-processing-at-forwarded-tool-hook' };
 };

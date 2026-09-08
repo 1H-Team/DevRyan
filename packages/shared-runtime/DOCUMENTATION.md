@@ -10,7 +10,7 @@
 
 `lib/free-zen-model-catalog.js` intersects the models currently served by the Zen API with the OpenCode rows whose models.dev input and output costs are both zero. It owns a five-minute success cache, single-flight refreshes, bounded fetches, and a stale snapshot for temporary catalog outages. Web/Electron share this policy while retaining their own feature-specific ordering and request transports.
 
-`lib/free-zen-generation.js` runs a supplied direct-generation transport sequentially across that catalog. Every model receives its own caller-selected timeout, invalid output advances to the next model, and only sanitized attempt metadata is exposed. It also owns the shared PR title/body JSON normalizer used by web/Electron.
+`lib/free-zen-generation.js` runs a supplied direct-generation transport sequentially across that catalog. Every model receives its own caller-selected timeout and AbortSignal; expiry aborts the request before advancing, and late results are ignored. Invalid output advances to the next model, and only sanitized attempt metadata is exposed. The default cooldown policy skips cooling models unless the entire pool is cooling; Git's explicit `prioritize` policy orders warm models first and then fills remaining attempt slots with cooling models. Callers choose model limits and optional overall deadlines. An optional `afterAttempt` hook waits for bounded native helper cleanup after transport cancellation, before advancing. It also owns the shared PR title/body JSON normalizer used by web/Electron.
 
 ## Commit message drafts
 

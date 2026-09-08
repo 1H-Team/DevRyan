@@ -9,7 +9,7 @@ API contracts.
 
 ## Where to change things
 
-- Session-owned tool captures, cumulative revisions, stored diffs and conflict-checked restore: `lib/session-changes.js`; authenticated host HTTP/plugin adapter: `lib/session-changes-host.js`. See `docs/SESSION_CHANGES.md`.
+- Session-owned tool captures, cumulative revisions, stored diffs and conflict-checked restore: `lib/session-changes.js`; authenticated host HTTP/plugin adapter: `lib/session-changes-host.js`. `lib/session-changes-git.js` streams Git I/O; `lib/session-changes-snapshot.js` owns scoped capture and the bounded stat cache; `lib/session-changes-store.js` owns individually indexed metadata and atomic publication. `lib/session-changes-scale.test.js` covers large capture, pagination, migration and collection. See `docs/SESSION_CHANGES.md`.
 
 - Primary provider liveness, durable attempt/cancellation fences and read-only recovery: `lib/provider-recovery.js`, `lib/provider-recovery-policy.js`; shared host HTTP adapter: `lib/provider-recovery-host.js`.
 

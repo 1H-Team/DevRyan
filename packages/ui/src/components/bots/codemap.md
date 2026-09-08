@@ -11,7 +11,10 @@ Operations rail shared by the web and Electron renderers. Bot configuration live
 
 - `BotAvatar.tsx` is the shared profile-identity primitive for navigation,
   canonical chat, and Bot settings. It renders the authenticated avatar
-  URL, then the configured fallback, then generated initials.
+  URL after decode, with the current Bot's configured fallback or initials
+  during loading/failure. `lib/botAvatarCache.ts` deduplicates and retains private
+  decoded avatars across navigation; `lib/botAvatarUpload.ts` bounds image
+  dimensions for uploads and legacy-image cache retention.
 - `sidebar/` owns recency-ranked assigned-Bot conversation rows driven by
   finalized channel previews. `botSidebarStatus.ts` projects each row's current
   run (from `useBotOperationsStore`, so a Bot working in another channel still
@@ -41,7 +44,9 @@ Operations rail shared by the web and Electron renderers. Bot configuration live
   partial-success handling for multi-file selections; every Bot request has a
   deadline (`bot_request_timeout`, treated as an ambiguous send).
   `chat/BotInlineComputer.tsx` owns the single inline/expanded shared computer
-  viewer, driven by channel-authorized activity and narrow `useBotComputerActivityStore`;
+  viewer, opened explicitly through narrow `useBotComputerActivityStore`;
+  `chat/BotComputerStatusBar.tsx` owns authorized active/waiting status and Show/Hide
+  immediately above the composer, independently of frames and draft updates;
   it is sized by the desktop's 16:9 aspect (never a fixed height), may grow past
   the 760px message column via the transcript's inline-size container, and
   expands to the viewport at the same aspect.

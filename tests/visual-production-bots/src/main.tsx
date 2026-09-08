@@ -1,3 +1,4 @@
+import './sharedFilesFetchFixture';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import {
@@ -53,6 +54,9 @@ import { createBotOperationsStore, useBotOperationsStore } from '@/stores/useBot
 import { useBotsStore } from '@/stores/useBotsStore';
 import './fixture.css';
 import { BotUpgradeScene } from './BotUpgradeScene';
+import { BotConversationScene } from './BotConversationScene';
+import { BotCatalogScene } from './BotCatalogScene';
+import { BotAvatarScene } from './BotAvatarScene';
 import { BotTelegramScene } from './BotTelegramScene';
 import { createWebAPIs } from '../../../packages/web/src/api';
 
@@ -463,7 +467,7 @@ const visualView: BotComputerViewSession = {
   streamUrl: `${VISUAL_STREAM_PATH}/visual-view-01`,
   startedAt: NOW,
 };
-const screenLeaseOwner = ['screen_owned', 'screen_wait_owned'].includes(fixtureState)
+const screenLeaseOwner = ['screen_owned', 'screen_wait_owned', 'computer_owned', 'computer_waiting'].includes(fixtureState)
   ? USER_ID
   : ['screen_conflict', 'screen_wait_other'].includes(fixtureState)
     ? 'a0000000-0000-4000-8000-000000000099'
@@ -500,7 +504,7 @@ const screenApi = {
   getComputerStatus: async () => screenStatus,
   startComputerView: async () => {
     if (fixtureState === 'screen_connecting') return new Promise(() => undefined);
-    if (fixtureState === 'screen_disconnected') throw disconnectedError;
+    if (fixtureState === 'screen_disconnected' || fixtureState === 'computer_disconnected') throw disconnectedError;
     return { view: visualView };
   },
   stopComputerView: async () => ({ stopped: true }),
@@ -851,7 +855,9 @@ const initializeStores = () => {
         ? 'bot_event_connection_failed'
         : null,
   );
-  if (hasOperations) {
+  if (scene === 'conversation' || scene === 'catalog') {
+    useBotOperationsNavigationStore.getState().selectTab(BOT_ID, 'shared');
+  } else if (hasOperations) {
     if (hasGovernedAction && scene === 'transcript' && drawer === 'open') {
       useBotOperationsNavigationStore.getState().focusAction(BOT_ID, 'approvals', ACTION_ID);
     } else {
@@ -1076,7 +1082,7 @@ const TranscriptScene: React.FC = () => (
         <div className="mt-4 h-20 animate-pulse rounded-xl bg-[var(--surface-subtle)]" />
       </div>
     ) : fixtureState === 'ack_running' || fixtureState === 'ack_result' ? (
-      <div className="h-[430px] overflow-hidden rounded-xl border border-border bg-[var(--surface-elevated)]">
+      <div className="flex h-[430px] flex-col overflow-hidden rounded-xl border border-border bg-[var(--surface-elevated)]">
         <BotMessageList
           bot={bot}
           channelId={CHANNEL_ID}
@@ -1140,6 +1146,8 @@ const installUpgradeComputer = () => {
 };
 
 const MainScene: React.FC = () => {
+  if (scene === 'catalog') return <BotCatalogScene bot={bot} empty={fixtureState === 'catalog_empty'} canCreate={role === 'admin'} />;
+  if (scene === 'conversation') return <BotConversationScene bot={bot} channel={channel} run={run} state={fixtureState} installComputer={installUpgradeComputer} />;
   if (scene === 'telegram') return <BotTelegramScene />;
   if (scene === 'upgrade') return <BotUpgradeScene bot={bot} channel={channel} run={run} installComputer={installUpgradeComputer} />;
   if (scene === 'overview') return <OverviewScene />;
@@ -1160,6 +1168,21 @@ const App: React.FC = () => {
     }, scene === 'spec' || scene === 'screen' ? 350 : 100);
     return () => window.clearTimeout(ready);
   }, []);
+
+  // Identity/loading checks have their own catalog and principal. Keep the
+  // unrelated Operations rail out of this fixture's state and request counts.
+  if (scene === 'avatars') {
+    return (
+      <I18nProvider>
+        <div className="fixture-shell" data-scene={scene} data-state={fixtureState}>
+          <main className="fixture-content min-h-screen">
+            <h1 className="mb-6 typography-ui-header">Bot conversations</h1>
+            <BotAvatarScene />
+          </main>
+        </div>
+      </I18nProvider>
+    );
+  }
 
   return (
     <RuntimeAPIProvider apis={runtimeApis}>

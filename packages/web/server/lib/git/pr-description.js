@@ -3,7 +3,7 @@ import { generateZenText } from '../text/summarization.js';
 
 export const PR_GENERATION_MODEL_TIMEOUT_MS = 15_000;
 export const PR_GENERATION_MAX_TOKENS = 1_200;
-// Tier 1 is bounded: at most three warm free models and 45 s in total before
+// Tier 1 is bounded: at most three free models, prioritizing warm ones, and 45 s in total before
 // the route falls back to the user's session model.
 export const PR_GENERATION_MAX_FREE_MODELS = 3;
 export const PR_GENERATION_FREE_DEADLINE_MS = 45_000;
@@ -17,6 +17,7 @@ export async function generatePullRequestDescriptionDirect({
   cooldowns = sharedFreeZenCooldowns,
   requestText = generateZenText,
   onAttempt,
+  afterAttempt,
   now,
 }) {
   const result = await runFreeZenModelRotation({
@@ -25,17 +26,20 @@ export async function generatePullRequestDescriptionDirect({
     maxModels,
     deadlineMs,
     cooldowns,
+    cooldownPolicy: 'prioritize',
     now,
-    request: ({ model, timeoutMs: modelTimeoutMs }) => requestText({
+    request: ({ model, timeoutMs: modelTimeoutMs, signal }) => requestText({
       prompt,
       zenModel: model,
       timeoutMs: modelTimeoutMs,
+      signal,
       chatMaxTokens: PR_GENERATION_MAX_TOKENS,
       chatReasoningEffort: 'none',
       responsesMaxOutputTokens: PR_GENERATION_MAX_TOKENS,
     }),
     accept: normalizePullRequestDraft,
     onAttempt,
+    afterAttempt,
   });
   if (!result.ok) {
     const error = new Error(result.deadlineExceeded

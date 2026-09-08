@@ -1,6 +1,8 @@
 import React from 'react';
 import { RiLoader4Line } from '@remixicon/react';
 
+import { botAvatarCache } from '@/lib/botAvatarCache';
+import { useBotsStore } from '@/stores/useBotsStore';
 import { BotAvatar } from '@/components/bots/BotAvatar';
 import { BotTypingDots } from '@/components/bots/chat/BotTypingDots';
 import type { BotSidebarStatus } from './botSidebarStatus';
@@ -62,6 +64,9 @@ export const BotSidebarRow = React.memo<BotSidebarRowProps>(({
   onSelect,
 }) => {
   const { t } = useI18n();
+  const prefetchAvatar = () => {
+    if (bot.avatarUrl) botAvatarCache.prefetch({ principalId: useBotsStore.getState().principalId, botId: bot.id, source: bot.avatarUrl });
+  };
   const preview = channelStore((state) => channelId ? state.previewsByChannelId[channelId] : undefined);
   const previewText = preview
     ? conversationPreview(preview.text) || (preview.attachmentCount > 0 ? t('bots.sidebar.attachmentPreview') : '')
@@ -82,6 +87,8 @@ export const BotSidebarRow = React.memo<BotSidebarRowProps>(({
       aria-label={[t('bots.sidebar.openAria', { name: bot.name }), accessiblePreview, timestamp]
         .filter(Boolean)
         .join('. ')}
+      onMouseEnter={prefetchAvatar}
+      onFocus={prefetchAvatar}
       onClick={() => onSelect(bot.id)}
       className={cn(
         'group flex min-h-[72px] w-full min-w-0 items-center gap-3 rounded-lg border px-2.5 py-2.5 text-left',
@@ -92,7 +99,7 @@ export const BotSidebarRow = React.memo<BotSidebarRowProps>(({
       )}
     >
       <span className="relative h-11 w-11 shrink-0">
-        <BotAvatar bot={bot} className="h-11 w-11 rounded-full typography-ui-label" />
+        <BotAvatar lazy={!selected} priority={selected ? 2 : 0} bot={bot} className="h-11 w-11 rounded-full typography-ui-label" />
         <span
           className={cn('absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full ring-2 ring-sidebar', lifecycleTone[bot.lifecycle])}
           aria-hidden
@@ -109,11 +116,10 @@ export const BotSidebarRow = React.memo<BotSidebarRowProps>(({
         </span>
         {status === 'typing' ? (
           <span
-            className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate typography-meta text-foreground/80"
+            className="mt-0.5 flex min-h-5 min-w-0 items-center gap-1.5 truncate typography-meta text-foreground/80"
             data-bot-sidebar-status="typing"
           >
             <BotTypingDots dotClassName="h-1 w-1 bg-foreground/60" />
-            <span className="truncate">{statusText}</span>
           </span>
         ) : status === 'waiting' ? (
           <span

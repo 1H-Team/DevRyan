@@ -17,15 +17,15 @@ export const BotInlineComputer = React.memo(function BotInlineComputer({ botId, 
   const activity = useBotComputerActivityStore((s) => s.byBotId[botId]);
   const manual = useBotComputerActivityStore((s) => s.manualByBotId[botId]);
   const runId = activity?.channelId === channelId && activity.state !== 'idle' ? activity.runId : undefined;
-  const [hiddenRun, setHiddenRun] = React.useState<string>();
   const [expanded, setExpanded] = React.useState(false);
   const [documentVisible, setDocumentVisible] = React.useState(() => typeof document === 'undefined' || !document.hidden);
   const [onScreen, setOnScreen] = React.useState(true);
   const dialogRef = React.useRef<HTMLDialogElement>(null);
   const markerRef = React.useRef<HTMLDivElement>(null);
   const returnFocus = React.useRef<HTMLElement | null>(null);
+  const wasShown = React.useRef(false);
   const requested = manual?.channelId === channelId;
-  const shown = botActive && Boolean(membership) && (requested || Boolean(runId && hiddenRun !== runId));
+  const shown = botActive && Boolean(membership) && requested;
 
   React.useEffect(() => {
     const update = () => setDocumentVisible(!document.hidden);
@@ -39,8 +39,14 @@ export const BotInlineComputer = React.memo(function BotInlineComputer({ botId, 
     observer.observe(marker);
     return () => observer.disconnect();
   }, [shown]);
-  React.useEffect(() => { setExpanded(false); setHiddenRun(undefined); }, [botId, channelId, principal.id]);
+  React.useEffect(() => { setExpanded(false); }, [botId, channelId, principal.id]);
   React.useEffect(() => { if (!shown) setExpanded(false); }, [shown]);
+  React.useLayoutEffect(() => {
+    if (wasShown.current && !shown) {
+      document.querySelector<HTMLElement>(`[aria-controls="bot-computer-${botId}"]`)?.focus({ preventScroll: true });
+    }
+    wasShown.current = shown;
+  }, [botId, shown]);
   React.useLayoutEffect(() => {
     if (requested) markerRef.current?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
   }, [requested, manual?.request]);
@@ -70,12 +76,12 @@ export const BotInlineComputer = React.memo(function BotInlineComputer({ botId, 
       data-bot-inline-computer={botId}
     >
       <dialog
-        ref={dialogRef} open aria-label="Shared Bot Computer"
+        ref={dialogRef} id={`bot-computer-${botId}`} open aria-label="Shared Bot Computer"
         onCancel={(event) => { event.preventDefault(); setExpanded(false); }}
         className={cn(
           'm-0 flex flex-col overflow-hidden rounded-xl border border-border bg-background p-0 text-foreground shadow-sm backdrop:bg-black/70',
           expanded
-            ? 'fixed inset-0 m-auto h-auto max-h-[94dvh] w-[min(96vw,calc((94dvh-72px)*16/9))] max-w-none'
+            ? 'fixed inset-0 m-auto h-fit max-h-[94dvh] w-[min(96vw,calc((94dvh-72px)*16/9))] max-w-none'
             : 'relative w-full max-w-none',
         )}
       >
@@ -86,7 +92,7 @@ export const BotInlineComputer = React.memo(function BotInlineComputer({ botId, 
             {expanded ? <RiFullscreenExitLine /> : <RiFullscreenLine />}
           </Button>
           <Button variant="ghost" size="xs" onClick={() => {
-            setExpanded(false); setHiddenRun(runId);
+            setExpanded(false);
             useBotComputerActivityStore.getState().hide(botId);
           }}><RiArrowDownSLine /> Hide</Button>
         </div>

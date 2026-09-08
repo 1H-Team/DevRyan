@@ -12,6 +12,7 @@ const error = (code, status = 409) => Object.assign(new Error(code), { code, sta
 // directory against OpenCode before touching the filesystem.
 export function createSessionChangeHost(options) {
   const runtime = createSessionChangeRuntime({ directory: path.join(options.dataDirectory, 'harness', 'session-changes'),
+    onDiagnostic: options.onDiagnostic,
     onChange: ({ directory, sessionID }) => options.publishEvent?.({ type: 'session.changes.updated', properties: { sessionID } }, { directory }),
   });
   const request = async (pathname, directory) => {
@@ -49,7 +50,6 @@ export function createSessionChangeHost(options) {
     const entries = [root];
     const seen = new Set([id]);
     for (let i = 0; i < entries.length; i++) {
-      if (entries.length > 1000) throw error('session_tree_limit', 503);
       const { data } = await request(`/session/${entries[i].id}/children`, directory);
       if (!Array.isArray(data)) throw error('invalid_session_tree', 503);
       for (const child of data) {
@@ -62,27 +62,35 @@ export function createSessionChangeHost(options) {
     }
     return entries;
   };
-  const history = async (id, directory, revertMessageID, budget) => {
-    let first = null;
-    const calls = new Map();
-    const receipts = [];
-    const messageTimes = new Map();
-    const deadline = Date.now() + 30_000;
-    let cursor = null;
+  const history = async (id, directory) => {
+    const saved = await runtime.historyState({ directory, sessionID: id });
+    const state = saved ?? { complete: false, cursor: null, first: null, newestID: null };
+    const deadline = Date.now() + 20_000;
     const seen = new Set();
-    for (let page = 0; page < 100; page++) {
-      if (Date.now() >= deadline) throw error('history_limit', 503);
-      const query = new URLSearchParams({ limit: '100', ...(cursor ? { before: cursor } : {}) });
-      const result = await request(`/session/${id}/message?${query}`, directory);
-      budget.bytes += result.bytes;
-      if (budget.bytes > 64 * 1024 * 1024) throw error('history_limit', 503);
+    let cursor = state.complete ? null : state.cursor;
+    let newestID = state.newestID;
+    let limit = 100;
+    for (;;) {
+      if (Date.now() >= deadline) return { first: state.first?.id ?? null, complete: false };
+      const query = new URLSearchParams({ limit: String(limit), ...(cursor ? { before: cursor } : {}) });
+      let result;
+      try { result = await request(`/session/${id}/message?${query}`, directory); }
+      catch (cause) {
+        if (cause.code === 'history_limit' && limit > 1) { limit = Math.max(1, Math.floor(limit / 2)); continue; }
+        throw cause;
+      }
       if (!Array.isArray(result.data)) throw error('invalid_session_history', 503);
+      const receipts = [], messages = [];
+      let reachedSavedHead = false;
       for (const record of result.data) {
-        if (record.info?.id && typeof record.info.time?.created === 'number') messageTimes.set(record.info.id, record.info.time.created);
+        if (!record.info?.id || typeof record.info.time?.created !== 'number') throw error('invalid_session_history', 503);
+        if (record.info.id === saved?.newestID) reachedSavedHead = true;
+        if (!cursor && (!newestID || record.info.time.created > (result.data.find((entry) => entry.info.id === newestID)?.info.time.created ?? -1))) newestID = record.info.id;
+        const calls = [];
         for (const part of record.parts ?? []) {
-          if (part.type === 'tool' && !READ_ONLY.has(part.tool)) calls.set(part.callID ?? part.id, { sessionID: id, callID: part.callID ?? part.id });
+          if (part.type === 'tool' && !READ_ONLY.has(part.tool)) calls.push(part.callID ?? part.id);
           const metadata = part.state?.metadata;
-          if (!FILE_TOOLS.has(part.tool) || !part.callID || !metadata) continue;
+          if (!FILE_TOOLS.has(part.tool) || !part.callID || !metadata || !['completed', 'error'].includes(part.state?.status)) continue;
           const diffs = metadata.filediff ? [metadata.filediff] : Array.isArray(metadata.files) ? metadata.files : [];
           const files = [];
           for (const diff of diffs) {
@@ -92,20 +100,19 @@ export function createSessionChangeHost(options) {
               after: diff.type === 'deleted' ? null : diff.after });
           }
           if (files.length && files.length === diffs.length) receipts.push({ sessionID: id, callID: part.callID,
-            messageID: record.info.id, userMessageID: record.info.parentID, createdAt: part.state?.time?.start ?? record.info.time.created, files });
+            messageID: record.info.id, userMessageID: record.info.parentID, createdAt: part.state?.time?.start ?? record.info.time.created, files, directory });
         }
-        if (record.info?.role === 'user' && (!first || record.info.time.created < first.time.created)) first = record.info;
+        messages.push({ id: record.info.id, createdAt: record.info.time.created, calls });
+        if (record.info.role === 'user' && (!state.first || record.info.time.created < state.first.createdAt)) state.first = { id: record.info.id, createdAt: record.info.time.created };
       }
-      if (!result.cursor) {
-        const boundary = messageTimes.get(revertMessageID);
-        if (revertMessageID && boundary === undefined) throw error('revert_boundary_unavailable', 503);
-        const hiddenMessages = boundary === undefined ? [] : [...messageTimes].filter(([, time]) => time >= boundary).map(([messageID]) => ({ sessionID: id, messageID }));
-        return { first: first?.id ?? null, calls: [...calls.values()], receipts, hiddenMessages };
-      }
-      if (seen.has(result.cursor)) break;
+      await runtime.importHistorical(receipts);
+      const complete = !result.cursor || Boolean(saved?.complete && reachedSavedHead);
+      if (result.cursor && seen.has(result.cursor)) throw error('invalid_history_cursor', 503);
+      state.complete = complete; state.cursor = complete ? null : result.cursor; state.newestID = newestID;
+      await runtime.historyState({ directory, sessionID: id, state, messages });
+      if (complete) return { first: state.first?.id ?? null, complete: true };
       seen.add(result.cursor); cursor = result.cursor;
     }
-    throw error('history_limit', 503);
   };
   const plugin = async (input) => {
     const captureDeadline = Date.now() + 30_000;
@@ -133,23 +140,28 @@ export function createSessionChangeHost(options) {
       const [, rootSessionID, action] = match;
       const directory = url.searchParams.get('directory');
       try {
+        if (method === 'GET' && action === 'diff') {
+          await session(rootSessionID, directory);
+          return { status: 200, body: await runtime.diff({ directory, rootSessionID,
+            revision: url.searchParams.get('revision'), file: url.searchParams.get('file'), cursor: url.searchParams.get('cursor') }) };
+        }
+        if (method === 'GET' && !action && url.searchParams.has('revision')) {
+          await session(rootSessionID, directory);
+          return { status: 200, body: await runtime.summaryPage({ directory, rootSessionID,
+            revision: url.searchParams.get('revision'), cursor: url.searchParams.get('cursor') }) };
+        }
         const sessions = await tree(rootSessionID, directory);
         if (method === 'GET' && !action) {
           const histories = [];
-          const budget = { bytes: 0 };
           for (let start = 0; start < sessions.length; start += 4) {
-            histories.push(...await Promise.all(sessions.slice(start, start + 4).map((entry) => history(entry.id, directory, entry.revert?.messageID, budget))));
+            histories.push(...await Promise.all(sessions.slice(start, start + 4).map((entry) => history(entry.id, directory))));
           }
-          const receipts = histories.flatMap((entry) => entry.receipts).sort((a, b) => a.createdAt - b.createdAt);
-          await runtime.importHistorical(receipts.map((receipt) => ({ ...receipt, directory,
-            parentID: sessions.find((entry) => entry.id === receipt.sessionID)?.parentID ?? null })));
           const firstUserMessageID = histories[0].first;
-          return { status: 200, body: await runtime.summarize({ directory, rootSessionID, sessions, firstUserMessageID, expectedCalls: histories.flatMap((entry) => entry.calls),
-            hiddenMessages: histories.flatMap((entry) => entry.hiddenMessages),
-            coverageReasons: sessions.some((entry) => entry.revert?.messageID) ? ['native_revert_active'] : [] }) };
+          return { status: 200, body: await runtime.summarize({ directory, rootSessionID, sessions, firstUserMessageID,
+            reverts: sessions.filter((entry) => entry.revert?.messageID).map((entry) => ({ sessionID: entry.id, messageID: entry.revert.messageID })),
+            coverageReasons: [...(sessions.some((entry) => entry.revert?.messageID) ? ['native_revert_active'] : []),
+              ...(histories.some((entry) => !entry.complete) ? ['history_pending'] : [])] }) };
         }
-        if (method === 'GET' && action === 'diff') return { status: 200, body: await runtime.diff({ directory, rootSessionID,
-          revision: url.searchParams.get('revision'), file: url.searchParams.get('file') }) };
         if (method === 'POST' && ['undo', 'redo'].includes(action)) {
           const { data: statuses } = await request('/session/status', directory);
           if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)
