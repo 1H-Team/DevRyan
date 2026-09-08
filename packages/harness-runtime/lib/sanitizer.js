@@ -28,7 +28,7 @@ const RECORD_FIELDS = Object.freeze({
 
 const NESTED_FIELDS = new Set([
   'type', 'properties', 'payload', 'actor', 'info', 'part', 'status', 'state', 'time',
-  'id', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
+  'id', 'helperSessionID', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
   'botID', 'botId', 'channelID', 'channelId', 'runID', 'runId',
   'role', 'scope', 'finish', 'completed', 'created', 'updated', 'started', 'ended',
   'version', 'phase', 'outcome', 'settledAt',
@@ -51,20 +51,39 @@ const NESTED_FIELDS = new Set([
   'model', 'system', 'noReply', 'tools', 'tokens', 'cost', 'snapshot',
   'streamId', 'sequence', 'generation', 'observedAt', 'origin', 'requestType',
   'firstMissingSequence', 'lastMissingSequence', 'failureCode',
+  'workerCallID', 'contextModeWorkerCallID', 'sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents',
+]);
+
+const MEMORY_EXTRACTION_COUNTS = new Set([
+  'attemptCount', 'acceptedCount', 'rejectedCount', 'activatedCount', 'idempotentCount',
+  'supersededCount', 'extractionVersion', 'recoveryVersion', 'delayMs',
+]);
+const MEMORY_EXTRACTION_STRINGS = new Set([
+  'botId', 'channelId', 'runId', 'phase', 'code', 'reason', 'validator', 'outcome', 'decision',
+]);
+const MEMORY_REJECTION_REASONS = new Set([
+  'schema_invalid', 'schema_statement_invalid', 'schema_key_invalid', 'provenance_invalid',
+  'cross_user_scope_rejected', 'transcript_quote_rejected', 'secret_rejected', 'too_many_candidates',
 ]);
 
 const TOKEN_FIELDS = new Set(['total', 'input', 'output', 'reasoning', 'cache']);
 const TOKEN_CACHE_FIELDS = new Set(['read', 'write']);
 
 const STABLE_IDENTIFIER_FIELDS = new Set([
-  'id', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
+  'id', 'helperSessionID', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
   'botID', 'botId', 'channelID', 'channelId', 'runID', 'runId',
   'callID', 'callId', 'providerID', 'providerId', 'modelID', 'modelId',
   'operationID', 'operationId', 'checkpointID', 'checkpointId', 'turnID', 'turnId',
   'userMessageID', 'assistantMessageID', 'idempotencyKey', 'fingerprint',
   'sha256', 'hash', 'head', 'commit', 'tree', 'ref', 'parent',
   'streamId',
+  'workerCallID', 'contextModeWorkerCallID',
 ]);
+
+const CONTEXT_MODE_FIELDS = new Set(['phase', 'callID', 'messageID', 'workerCallID', 'tool', 'sequence',
+  'sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents']);
+const CONTEXT_MODE_IDENTIFIERS = new Set(['workerCallID', 'contextModeWorkerCallID']);
+const CONTEXT_MODE_NUMBERS = new Set(['sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents']);
 
 const BROWSER_NETWORK_FIELDS = new Set([
   'botId', 'streamId', 'sequence', 'generation', 'observedAt', 'kind', 'origin',
@@ -228,6 +247,11 @@ export const createDiagnosticSanitizer = (options = {}) => {
       ? TOKEN_FIELDS
       : (field === 'cache' ? TOKEN_CACHE_FIELDS : NESTED_FIELDS);
     for (const [key, nested] of Object.entries(object)) {
+      if ((CONTEXT_MODE_IDENTIFIERS.has(key) && (typeof nested !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(nested)))
+        || (CONTEXT_MODE_NUMBERS.has(key) && (!Number.isFinite(nested) || nested < 0))) {
+        report.droppedFields += 1;
+        continue;
+      }
       if (!allowedFields.has(key)) {
         report.droppedFields += 1;
         continue;
@@ -251,12 +275,36 @@ export const createDiagnosticSanitizer = (options = {}) => {
         report.droppedFields += 1;
         continue;
       }
+      if (key === 'payload' && type === 'lifecycle'
+        && typeof object.event === 'string' && object.event.startsWith('bot.memory.extraction.')) {
+        const metadata = {};
+        for (const [field, nested] of Object.entries(asObject(value) || {})) {
+          if (MEMORY_EXTRACTION_COUNTS.has(field) && Number.isSafeInteger(nested) && nested >= 0) {
+            metadata[field] = nested;
+          } else if (MEMORY_EXTRACTION_STRINGS.has(field) && typeof nested === 'string'
+            && /^[A-Za-z0-9_:.-]{1,160}$/.test(nested)) {
+            metadata[field] = redactString(nested, { highEntropy: false });
+          } else if (['inline', 'hasPersistedCandidates'].includes(field) && typeof nested === 'boolean') {
+            metadata[field] = nested;
+          } else if (field === 'rejectionReasons' && asObject(nested)) {
+            metadata[field] = Object.fromEntries(Object.entries(nested).filter(([reason, count]) => (
+              MEMORY_REJECTION_REASONS.has(reason) && Number.isSafeInteger(count) && count >= 0 && count <= 999999
+            )));
+          } else report.droppedFields += 1;
+        }
+        output[key] = metadata;
+        continue;
+      }
       const browserNetwork = key === 'payload'
         && ['bot.computer.network', 'bot.computer.network_gap'].includes(object.event)
         && ['connection', 'gap'].includes(type);
       // Browser diagnostics have a narrower contract than ordinary execution
       // records: even otherwise permitted headers/body/input fields are dropped.
-      const projected = browserNetwork && asObject(value)
+      const contextMode = key === 'payload' && typeof object.event === 'string' && object.event.startsWith('context_mode.')
+        && ['lifecycle', 'gap'].includes(type);
+      const projected = contextMode && asObject(value)
+        ? Object.fromEntries(Object.entries(value).filter(([field]) => CONTEXT_MODE_FIELDS.has(field)))
+        : browserNetwork && asObject(value)
         ? Object.fromEntries(Object.entries(value).filter(([field, nested]) => (
           BROWSER_NETWORK_FIELDS.has(field)
           && (typeof nested === 'string' || (typeof nested === 'number' && Number.isFinite(nested)))

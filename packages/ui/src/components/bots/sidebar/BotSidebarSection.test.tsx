@@ -110,6 +110,32 @@ const renderAtWidth = (
 };
 
 describe('BotSidebarSection', () => {
+  test('distinguishes catalog loading, failure, confirmed empty, and disconnected populated states', () => {
+    const botsStore = createBotsStore();
+    const channelStore = createBotChannelStore();
+    const operationsStore = createBotOperationsStore();
+    const render = () => {
+      Object.assign(botsStore.getInitialState(), botsStore.getState());
+      Object.assign(operationsStore.getInitialState(), operationsStore.getState());
+      return renderToStaticMarkup(<I18nProvider><BotSidebarSection botsStore={botsStore} channelStore={channelStore} operationsStore={operationsStore} /></I18nProvider>);
+    };
+    botsStore.getState().setCapabilities({ available: true, state: 'healthy', code: null, owner: 'electron', canManageRuntime: true, canCreateBot: false });
+    expect(render()).toContain('Loading Bots');
+    expect(render()).not.toContain('No Bots assigned');
+    botsStore.setState({ catalogErrorCode: 'bot_request_timeout' });
+    expect(render()).toContain('Couldn’t load your Bots');
+    expect(render()).toContain('Retry');
+    expect(render()).not.toContain('No Bots assigned');
+    botsStore.getState().replaceSnapshot({ bots: [], revisions: [], memberships: [] });
+    expect(render()).toContain('No Bots assigned');
+    botsStore.getState().replaceSnapshot({ bots: [bot], revisions: [], memberships: [membership] });
+    operationsStore.getState().setConnectionState('reconnecting', 'bot_event_connection_lost');
+    expect(render()).toContain(bot.name);
+    expect(render()).toContain('Live updates are unavailable');
+    expect(render()).toContain('Retry');
+    expect(render()).not.toContain('No Bots assigned');
+  });
+
   test('stays width-agnostic at the supported 220, 280, and 500px sidebar widths', () => {
     for (const width of [220, 280, 500]) {
       const markup = renderAtWidth(width, width === 280 ? 'dark' : 'light');

@@ -276,7 +276,9 @@ describe('Production Bots Supabase repositories', () => {
         p_lease_owner: 'worker-1',
         p_candidate_envelope: { ciphertext: 'opaque' },
       }],
-      ['devryan_settle_bot_memory_extraction_job', {
+      ['devryan_settle_bot_memory_extraction_job_v2', {
+        p_extraction_version: 2,
+        p_diagnostics: {},
         p_run_id: 'run-1',
         p_lease_owner: 'worker-1',
         p_disposition: 'succeeded',
@@ -284,6 +286,24 @@ describe('Production Bots Supabase repositories', () => {
         p_phase: 'complete',
         p_error_code: null,
       }],
+    ]);
+  });
+
+  it('uses content-bounded recovery scans and service RPCs for recovery and aggregate counts', async () => {
+    const supabase = createSupabase();
+    const store = createBotStore({ supabase });
+    await store.listMemoryExtractionRecoveryCandidates({ version: 2, limit: 100 });
+    expect(supabase.rest).toHaveBeenLastCalledWith('bot_memory_extraction_jobs', {
+      select: BOT_TABLES.bot_memory_extraction_jobs.select,
+      query: { recovery_version: 'lt.2', state: 'in.(terminal,succeeded)', order: 'created_at.asc,run_id.asc', limit: 100 },
+    });
+    await store.recoverMemoryExtractionJob({ runId: 'run-1', expectedUpdatedAt: CREATED_AT, version: 2, decision: 'requeue' });
+    await store.memoryExtractionSummary({ botId: BOT_ID });
+    await store.wakeMemoryExtractionJobs({ channelId: 'channel-1' });
+    expect(supabase.rpc.mock.calls).toEqual([
+      ['devryan_recover_bot_memory_extraction_job', { p_run_id: 'run-1', p_expected_updated_at: CREATED_AT, p_recovery_version: 2, p_decision: 'requeue' }],
+      ['devryan_bot_memory_extraction_summary', { p_bot_id: BOT_ID }],
+      ['devryan_wake_bot_memory_extraction_jobs', { p_channel_id: 'channel-1' }],
     ]);
   });
 

@@ -16,7 +16,7 @@ const createInstalledPlugin = (source) => {
   const packageRoot = path.join(temporaryRoot, 'node_modules', 'oh-my-opencode-slim');
   const entrypointPath = path.join(packageRoot, 'dist', 'index.js');
   fs.mkdirSync(path.dirname(entrypointPath), { recursive: true });
-  fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'oh-my-opencode-slim', version: '2.2.15', type: 'module' }));
+  fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'oh-my-opencode-slim', version: '2.2.18', type: 'module' }));
   fs.writeFileSync(entrypointPath, source);
 };
 
@@ -45,7 +45,7 @@ describe('DevRyan Oh My OpenCode Slim wrapper', () => {
 
   it.each([
     ['legacy function', 'factory'],
-    ['2.2.15 descriptor', "{ id: 'oh-my-opencode-slim', server: factory, setup: () => { throw new Error('Native setup is not the server hook'); } }"],
+    ['2.2.18 descriptor', "{ id: 'oh-my-opencode-slim', server: factory, setup: () => { throw new Error('Native setup is not the server hook'); } }"],
   ])('preserves runtime hooks and DevRyan agent ownership for the %s', async (_shape, exported) => {
     createInstalledPlugin(`
       const factory = async (context) => ({
@@ -91,5 +91,31 @@ describe('DevRyan Oh My OpenCode Slim wrapper', () => {
   it('rejects an installed descriptor without a callable server', async () => {
     createInstalledPlugin("export default { id: 'oh-my-opencode-slim', server: {} };");
     await expect(DevRyanOhMyOpenCodeSlimPlugin({})).rejects.toThrow('does not export a plugin');
+  });
+
+  it.each([false, true])('keeps retained background admission state aligned with host agents when config throws=%s', async (throws) => {
+    createInstalledPlugin(`export default { server: async () => {
+      let retained;
+      return {
+        tool: { admission: { execute: async () => retained } },
+        config: async (config) => {
+          config.agent = { explorer: { model: 'unexpected/model' }, injected: { model: 'other/model' } };
+          retained = config.agent;
+          config.default_agent = 'injected';
+          ${throws ? "throw new Error('config failed');" : ''}
+        },
+      };
+    } };`);
+    const plugin = await DevRyanOhMyOpenCodeSlimPlugin({});
+    const agent = {
+      builder: { model: 'primary/model', variant: 'high', prompt: 'Keep my instructions' },
+      explorer: { model: 'specialist/model', permission: { edit: 'deny' } },
+    };
+    const config = { agent: structuredClone(agent), default_agent: 'builder' };
+    if (throws) await expect(plugin.config(config)).rejects.toThrow('config failed');
+    else await plugin.config(config);
+    expect(config).toEqual({ agent, default_agent: 'builder' });
+    expect(await plugin.tool.admission.execute()).toBe(config.agent);
+    expect(await plugin.tool.admission.execute()).toEqual(agent);
   });
 });

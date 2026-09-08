@@ -1,0 +1,62 @@
+[
+  {
+    "package": "oh-my-opencode-slim",
+    "version": "2.2.15",
+    "integrity": "sha512-5jGrr6UKQy942aye7KfeuhwfowDqi6AteVBKhbZFSTnpwDBhaZNbMAmLHUIbU7vi7hhrcbZgQkQZXHH0fjbOOA==",
+    "tarballSha256": "e28872abfa4fd7a7d2683029415b85d1f5310db8aad23b72a221c916e64aad37"
+  },
+  {
+    "package": "oh-my-opencode-slim",
+    "version": "2.2.18",
+    "integrity": "sha512-jS+Q8o00oRoqhQTJedQfZEZHsolerWzorF0B2yy9uPZwoqTjH3yJgfi7CktxjYVkELu7RyJZkk/xz943Tw1nyQ==",
+    "tarballSha256": "32afa1d723cecb3f5478418d9b520265996ded467252ec215b288fb37eecff75"
+  },
+  {
+    "package": "@rama_nigg/open-cursor",
+    "version": "2.5.4",
+    "integrity": "sha512-zLg6HU2oha0YAym8fm6/4XDO5z44o+CMAIoII2Cr3FoFsGdoDaUmwIYkhueDes52nu7hl1ktlEEf5zUdKyRx2g==",
+    "tarballSha256": "0f860dde19d3a03919e06ad7cfdd6bacf0b18f50c7b4efd79bf78f6c4824853b"
+  },
+  {
+    "package": "@rama_nigg/open-cursor",
+    "version": "2.5.8",
+    "integrity": "sha512-sqPRt62YjLGfFld/yVGTMlnDlkzJYZ1y3ZogVlMp4CgZZ0WA+G3CXpdws/yrH5Nmpp/K9deIgeHxjA8TvZEv6g==",
+    "tarballSha256": "839e97008e177f4671b90d1efa76bd52b21daed777c162ed449482c2da961789"
+  },
+  {
+    "package": "opencode-gpt-imagegen",
+    "version": "0.1.10",
+    "integrity": "sha512-tV9JXr0cV/Qyt+NF+YpMc/GdVexv0YNnllrC93DxbODqI1DhezXT8XJJU/7jVvW9vPAQygfkjFiH3SGC0G9zng==",
+    "tarballSha256": "8d91b557b9ea7a6dcef9a789fbfd42ab9477990eae3d878b36853108b1683bfd"
+  },
+  {
+    "package": "opencode-gpt-imagegen",
+    "version": "0.1.12",
+    "integrity": "sha512-k1B7s0VC6onawzRlL3I+skvqBZxDrXwJlxFZdO9JMyaT4CKcvUjKLFbjBanksRtd7hTIEaj6CT91H4zFOS4XGg==",
+    "tarballSha256": "2c0c1ea42db4160c02b8ffba8daa615bb4ddfc82a02b2de19e3145082a7f1df7"
+  },
+  {
+    "package": "opencode-with-claude",
+    "version": "1.8.0",
+    "integrity": "sha512-egsP3d2BSWgPF//lewdKKW43urqxAwDYGp00J50tE5QHPaK5kwTwvO8ROu4X/b3RgqOH9qbe9Fc6aKg5/T7Z3Q==",
+    "tarballSha256": "6af0d718a8168e28826876ee01f76c264793f10ddcfedc02b1cb1bc1139d3947"
+  },
+  {
+    "package": "opencode-with-claude",
+    "version": "1.10.1",
+    "integrity": "sha512-eCkxK8pY9QNwvECighKdjiaZWTtvo/vvUSAgV/9CGkEWA9xsJHxO2YOelwY0rpH0GKQ4dzEBpP42w3x+zP3CuQ==",
+    "tarballSha256": "52096d5e6fd666c22a37f3a197121d9f9a8f6d4ff6a517ab9ddb2484a4a10610"
+  },
+  {
+    "package": "@rynfar/meridian",
+    "version": "1.62.6",
+    "integrity": "sha512-lLzId3rt38iai3X9SHEoGJPJHEGx/GB6O42upB66ls+Nnr3TMGtNk6iIGPq0tF4ljEHdkemc+bGXo6KzYcBXoQ==",
+    "tarballSha256": "d373a3bd87e5912b19819b58d69b62078dc736506a5aefb4a24351715b73003d"
+  },
+  {
+    "package": "@rynfar/meridian",
+    "version": "1.68.0",
+    "integrity": "sha512-sibFM+La3RCjWMSt3oD5+Oisy8llaJKMwWlL8zK81Mk528ao+g8y+9mHvpxT96gYHBXDh7SNga5+iqCNBVxSqg==",
+    "tarballSha256": "e80757a8b17f1d05f2506a8cf4cbedcbd7dadee4151ec5b926ebe5d575d3e123"
+  }
+]

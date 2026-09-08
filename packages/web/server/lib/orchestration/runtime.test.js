@@ -52,6 +52,62 @@ const createPersistence = () => {
   };
 };
 
+it.each(['anthropic', 'cursor-acp'])('projects first %s activity through the real owner and executor before prompt acceptance', async (providerId) => {
+  const prompt = deferred();
+  const enteredPrompt = deferred();
+  const onFirstAssistantActivity = vi.fn();
+  const messages = [{ info: { id: 'msg_new', role: 'assistant', finish: 'stop', time: { created: 10_001, completed: 10_002 } }, parts: [{ type: 'text', text: 'Done' }] }];
+  const accept = async () => { enteredPrompt.resolve(); await prompt.promise; };
+  const runtime = createWebManagedOrchestrationRuntime({
+    persistence: createPersistence(), now: () => 10_000,
+    createTaskId: () => 'dvr_task_activity', createLeaseToken: () => 'dvr_lease_activity',
+    resolveTaskPromptPreamble: () => null, validateAgentExecution: async () => true,
+    onFirstAssistantActivity,
+    buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+    getOpenCodeAuthHeaders: () => ({}),
+    cursorSdkRuntime: {
+      async handlePromptAsync() { await accept(); return { handled: true, status: 204 }; },
+      getSessionStatus: () => ({ ses_child: { type: 'idle' } }),
+      getSessionMessages: async () => messages,
+    },
+    fetchImpl: async (url, init) => {
+      const pathname = new URL(url).pathname;
+      if (pathname === '/session' && init.method === 'POST') return Response.json({ id: 'ses_child' });
+      if (pathname.endsWith('/prompt_async')) { await accept(); return new Response(null, { status: 204 }); }
+      if (pathname === '/session/status') return Response.json({ ses_child: { type: 'idle' } });
+      if (pathname.endsWith('/message')) return Response.json(messages);
+      if (pathname === '/session/ses_child') return Response.json({ id: 'ses_child' });
+      throw new Error(`Unexpected fixture request ${pathname}`);
+    },
+  });
+  try {
+    await runtime.handleRpc({ method: 'submit', params: submitParams('activity', { providerId }) });
+    await enteredPrompt.promise;
+    const info = { type: 'message.updated', properties: { info: {
+      id: 'msg_new', sessionID: 'ses_child', role: 'assistant', time: { created: 10_001 },
+    } } };
+    const part = { type: 'message.part.updated', properties: { part: {
+      messageID: 'msg_new', sessionID: 'ses_child', type: 'reasoning', text: 'Thinking',
+    } } };
+    runtime.processOpenCodeEvent(info, '/wrong');
+    runtime.processOpenCodeEvent(part, '/wrong');
+    expect(onFirstAssistantActivity).not.toHaveBeenCalled();
+    runtime.processOpenCodeEvent(info, '/workspace');
+    runtime.processOpenCodeEvent(part, '/workspace');
+    await waitFor(() => onFirstAssistantActivity.mock.calls.length === 1);
+    const snapshot = await runtime.getSnapshot({ rootSessionId: 'ses_root' });
+    expect(snapshot.tasks[0]).toMatchObject({ status: 'starting', childPromptedAt: null, firstAssistantPartAt: 10_000 });
+    expect(onFirstAssistantActivity).toHaveBeenCalledWith({ taskId: 'dvr_task_activity', childSessionId: 'ses_child', messageId: 'msg_new', observedAt: 10_000, source: 'event' });
+    runtime.processOpenCodeEvent(part, '/workspace');
+    prompt.resolve();
+    await runtime.handleRpc({ method: 'wait', params: { taskId: 'dvr_task_activity', rootSessionId: 'ses_root', directory: '/workspace' } });
+    expect(onFirstAssistantActivity).toHaveBeenCalledOnce();
+  } finally {
+    prompt.resolve();
+    await runtime.shutdown();
+  }
+});
+
 const createTerminalPair = (suffix, recoverablePreview, overrides = {}) => {
   const queued = createManagedTaskRecord({
     taskId: `dvr_task_${suffix}`,

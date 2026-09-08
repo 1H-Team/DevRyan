@@ -475,6 +475,17 @@ export function registerBotRoutes(app, {
     },
   );
 
+  app.get('/api/bots/assigned', async (req, res) => {
+    try {
+      if (!channels) throw Object.assign(new Error('Bot catalog is unavailable'), {
+        code: 'bot_catalog_unavailable', statusCode: 503,
+      });
+      return res.json(await channels.assignedForPrincipal(req.principal));
+    } catch (error) {
+      return botRouteError(res, error);
+    }
+  });
+
   app.get('/api/bots', async (req, res) => {
     try {
       if (!management) throw Object.assign(new Error('Bot management is unavailable'), {
@@ -1305,6 +1316,19 @@ export function registerBotRoutes(app, {
         validateUuid(req.params.botId, 'botId'),
         validateUuid(req.params.runId, 'runId'),
       ));
+    } catch (error) {
+      return botRouteError(res, error);
+    }
+  });
+
+  app.get('/api/bots/:botId/memories/extractions', async (req, res) => {
+    try {
+      const runtime = runtimeService('memoryRuntime', memoryRuntime);
+      if (!runtime) throw Object.assign(new Error('Bot memory is unavailable'), { code: 'bots_unavailable', statusCode: 503 });
+      return res.json(await runtime.listExtractions(req.principal, validateUuid(req.params.botId, 'botId'), {
+        cursor: req.query?.cursor || null, limit: req.query?.limit,
+        state: typeof req.query?.state === 'string' ? req.query.state : null,
+      }));
     } catch (error) {
       return botRouteError(res, error);
     }

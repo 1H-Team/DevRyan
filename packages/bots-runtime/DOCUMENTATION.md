@@ -88,7 +88,7 @@ bun run --cwd packages/bots-runtime test
 ## Scoped OpenCode runtime
 
 `docker/opencode/Dockerfile` pins both `opencode-ai` and its plugin API to
-1.18.26, pins the reviewed `opencode-gpt-imagegen@0.1.10`, and runs as UID/GID
+1.18.26, pins the reviewed `opencode-gpt-imagegen@0.1.12`, and runs as UID/GID
 10001. The server compiles the single-agent config
 into an immutable host channel/hash directory; Electron verifies it and the
 supervisor mounts it read-only at `/runtime-config`. The reviewed gateway
@@ -138,3 +138,5 @@ The fixed launcher parses the host-materialized per-run
 to `process.env` without a shell. OpenCode tools and non-recursive subagents
 inherit the snapshot. The file is read-only, run-scoped, absent from computer
 containers, and removed by host cleanup on every terminal/startup/shutdown path.
+
+The OpenCode Docker build also applies the shared `imagegen-model-hotfix.js` source gate: `devryan_image` uses GPT-6 Astra with medium reasoning. The offline OAuth acceptance fixture checks both fields on the actual image request.

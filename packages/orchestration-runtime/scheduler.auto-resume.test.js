@@ -15,6 +15,108 @@ const MINUTE = 60_000;
 const START = 1_000_000;
 const LIMIT = "You've hit your session limit · resets 7:30pm";
 const BACKUP = { providerId: 'openai', modelId: 'gpt-5.6', variant: 'medium' };
+const TRANSPORT_FAILURE = 'Connection closed mid-response';
+const transportReceipt = (overrides = {}) => ({
+  revision: 1, phase: 'exhausted', kind: 'connection_failure',
+  sameModelAttempts: 1, backupAttempts: 0,
+  failedMessageId: 'msg_failed', failedUserMessageId: 'msg_user',
+  recoveryMessageId: 'msg_recovery', eventId: 'evt_connection', reservedAt: START,
+  submittedAt: START, ...overrides,
+});
+const transportFailed = async (_task, control) => {
+  await control.recordTransportRecovery(transportReceipt(), 0);
+  return { ...limited(), failureReason: TRANSPORT_FAILURE };
+};
+
+describe('managed transport backup policy', () => {
+  test('uses one configured backup without quota probes, breakers, or reset scheduling', async () => {
+    let quotaProbes = 0;
+    const h = createHarness({ startResult: transportFailed, providerReset() { quotaProbes++; return null; } });
+    const original = await h.park();
+    await h.runDue();
+    expect(h.attempts).toHaveLength(1);
+    expect(h.inPlaceRetries).toHaveLength(1);
+    expect(h.inPlaceRetries[0]).toMatchObject({
+      childSessionId: original.childSessionId, ...BACKUP, agent: original.agent,
+      transportRecovery: { phase: 'backup_pending', sameModelAttempts: 1, backupAttempts: 1 },
+    });
+    expect(h.state(original.taskId)).toMatchObject({ trigger: 'provider_transport', state: 'succeeded', attemptCount: 1, noSignalProbes: 0, rejectionsInWindow: 0, resetAt: null });
+    expect(quotaProbes).toBe(0);
+    expect(h.scheduler.getDiagnostics().providerBreakerCount).toBe(0);
+    await h.scheduler.shutdown();
+  });
+
+  test.each([TRANSPORT_FAILURE, LIMIT, 'Invalid API key'])('stops if the backup fails: %s', async (failureReason) => {
+    const h = createHarness({ startResult: transportFailed, retryResults: [{ ...limited(), failureReason }] });
+    const original = await h.park();
+    await h.runDue();
+    await h.advance(7 * 60 * MINUTE);
+    expect(h.attempts).toHaveLength(1);
+    const backup = h.inPlaceRetries[0];
+    expect(h.scheduler.getResultEnvelope(backup.taskId)).toMatchObject({ resumable: true, action: null, autoResume: null });
+    expect(h.state(original.taskId).state).toBe('ended');
+    expect(h.scheduler.getDiagnostics().providerBreakerCount).toBe(0);
+    await h.scheduler.shutdown();
+  });
+
+  test.each([null, { providerId: 'anthropic', modelId: 'claude-opus', variant: 'high' }])('requires manual recovery without a distinct backup', async (backup) => {
+    const h = createHarness({ startResult: transportFailed, backup });
+    const original = await h.park();
+    await h.runDue();
+    expect(h.state(original.taskId)).toMatchObject({ state: 'exhausted', reason: 'backup_unavailable', attemptCount: 0 });
+    expect(h.attempts).toHaveLength(0);
+    await h.scheduler.shutdown();
+  });
+
+  test('Stop and disabled automatic recovery fence scheduled backup admission', async () => {
+    const h = createHarness({ startResult: transportFailed });
+    const original = await h.park();
+    await h.scheduler.cancelAutoResumeForSession(original.childSessionId, 'cancelled');
+    await h.runDue();
+    expect(h.attempts).toHaveLength(0);
+    expect(h.state(original.taskId)).toMatchObject({ enabled: false, state: 'cancelled' });
+    await h.scheduler.shutdown();
+  });
+
+  test('old transport failures without a durable receipt never acquire automatic fallback', async () => {
+    const h = createHarness({ startResult: { ...limited(), failureReason: TRANSPORT_FAILURE } });
+    const original = await h.park();
+    await h.runDue();
+    expect(h.state(original.taskId)).toBeNull();
+    expect(h.attempts).toHaveLength(0);
+    await h.scheduler.shutdown();
+  });
+
+  test('a stop during host selection invalidates backup admission', async () => {
+    const h = createHarness({ startResult: transportFailed, async attemptOutcome(params, harness) {
+      await harness.scheduler.cancelAutoResumeForSession('ses_root', 'cancelled');
+      await expect(harness.scheduler.acknowledgeResult(params.taskId, {
+        action: params.action, idempotencyKey: params.idempotencyKey,
+        providerId: params.providerId, modelId: params.modelId, variant: params.variant,
+        autoResumeGeneration: params.autoResumeGeneration,
+      })).rejects.toMatchObject({ code: 'auto_resume_stale' });
+      return { outcome: 'unavailable' };
+    } });
+    const original = await h.park();
+    await h.runDue();
+    expect(h.inPlaceRetries).toHaveLength(0);
+    expect(h.state(original.taskId)).toMatchObject({ state: 'cancelled', enabled: false });
+    await h.scheduler.shutdown();
+  });
+
+  test('restart heals a newly exhausted receipt before its backup was parked', async () => {
+    const task = record(1, { failureReason: TRANSPORT_FAILURE, transportRecovery: transportReceipt() });
+    const envelope = createManagedTaskResultEnvelope(task, { sequence: 1, createdAt: START, resumable: true });
+    const h = createHarness({ persistence: snapshotPersistence({ version: 1, tasks: [task], resultEnvelopes: [envelope] }) });
+    await h.scheduler.initialize();
+    await h.advance(15_000);
+    expect(h.attempts).toHaveLength(1);
+    expect(h.inPlaceRetries).toHaveLength(1);
+    expect(h.state(task.taskId)).toMatchObject({ trigger: 'provider_transport', state: 'succeeded' });
+    expect(h.scheduler.getDiagnostics().providerBreakerCount).toBe(0);
+    await h.scheduler.shutdown();
+  });
+});
 
 const limited = (providerResetAt = null) => ({
   status: 'failed',

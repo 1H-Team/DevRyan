@@ -46,7 +46,7 @@ server layer must pass Supabase errors through
 `productionBotsMigrationFailurePayload()` before continuing: a missing Bot
 relation, column, or RPC fails closed as HTTP `503` with
 `code: "bot_schema_migration_required"` and
-`requiredMigration: "20260903110000"`. Runtime startup additionally verifies
+`requiredMigration: "20260908182901"`. Runtime startup additionally verifies
 the service-role-only `devryan_bot_schema_version()` marker, and one route
 boundary blocks every Bot read or mutation while that marker is stale.
 
@@ -570,6 +570,12 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   Detail exposes only an allowlist
   suitable for agent context; task-scoped diagnostic export continues to use
   the existing diagnostics API when a session ID is present.
+
+Managed transport failures additionally expose validated `recoveryPhase`,
+`recoveryKind`, `sameModelAttempts`, `backupAttempts`, `failedMessageId`,
+`recoveryMessageId`, and `recoveryEventId` in the bounded Error Log context.
+These fields correlate the durable automatic-recovery receipt without including
+prompts, tool arguments or provider credentials.
 
 An Error Log event UUID is an administrative locator, not a journal record ID.
 Resolve it through `GET /api/error-logs/:eventId` and capture the returned

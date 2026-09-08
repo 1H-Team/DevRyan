@@ -40,3 +40,5 @@ Shared Cursor SDK runtime for DevRyan hosts. It keeps Cursor model execution, SD
 - Web/Electron creates the runtime in `packages/web/server/index.js` and intercepts `cursor-acp` prompt sends before the OpenCode proxy.
 - Web/Electron merges `getSessionStatus()` into `/api/session/status` so Cursor SDK sessions report live busy/idle state alongside OpenCode sessions.
 - Web/Electron consumes `listPendingQuestions()`, `replyToQuestion()`, and `rejectQuestion()` through the focused `/api/question` merge routes. Cursor question events reuse the canonical OpenCode event and card payloads.
+
+- `cursor-tool-receipts.js` preserves actual native Edit execution diffs for session attribution. Count-only write/delete results and nested task previews never become fabricated before/after receipts. Native call IDs survive canonical projection.

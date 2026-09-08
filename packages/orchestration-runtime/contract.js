@@ -7,6 +7,7 @@ import {
   isManagedTaskModelUnavailable,
   isProviderPromptRejected,
 } from './provider-retry-policy.js';
+import { validateManagedTransportRecovery } from './transport-recovery.js';
 
 export const MANAGED_TASK_OWNER = 'devryan';
 
@@ -249,6 +250,7 @@ export const validateManagedTaskRecord = (task) => {
   assertNullableTimestamp(task.childPromptedAt, 'childPromptedAt');
   assertNullableTimestamp(task.firstAssistantPartAt, 'firstAssistantPartAt');
   assertNullableWaitingReason(task.waitingReason, 'waitingReason');
+  validateManagedTransportRecovery(task.transportRecovery);
   if (task.status !== 'queued' && task.waitingReason !== null) {
     throw new TypeError('waitingReason must be null unless the task is queued');
   }
@@ -276,6 +278,7 @@ export const createManagedTaskRecord = (input) => {
     childPromptedAt: null,
     firstAssistantPartAt: null,
     waitingReason: null,
+    transportRecovery: input.transportRecovery ?? null,
     failureReason: null,
     partial: false,
     recoverablePreview: '',
@@ -290,6 +293,7 @@ const resolveManagedTaskAgentRetryAvailable = (task, failureKind) => (
   && task.attempt < 2
   && failureKind !== PROVIDER_USAGE_LIMIT_FAILURE_KIND
   && failureKind !== MODEL_UNAVAILABLE_FAILURE_KIND
+  && !task.transportRecovery
 );
 
 export const isManagedTaskAgentRetryAvailable = (task) => {
@@ -314,6 +318,7 @@ export const requiresManualModelRecovery = (task, resultEnvelope) => Boolean(
   && (
     isDefiniteProviderUsageLimit(task.failureReason)
     || isManagedTaskModelUnavailable(task.failureReason)
+    || Boolean(task.transportRecovery)
     || (task.mode === 'orchestrator' && task.dispatchGroupId !== null && task.attempt >= 2)
   )
 );
@@ -353,6 +358,7 @@ const projectTaskForEvent = (task) => {
     childPromptedAt: task.childPromptedAt,
     firstAssistantPartAt: task.firstAssistantPartAt,
     waitingReason: task.waitingReason ? { ...task.waitingReason } : null,
+    transportRecovery: task.transportRecovery ? { ...task.transportRecovery } : null,
     failureReason: task.failureReason,
     failureKind,
     partial: task.partial,

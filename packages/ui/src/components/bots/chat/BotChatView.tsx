@@ -14,7 +14,7 @@ import { useBotsStore } from '@/stores/useBotsStore';
 import { resolveBotRuntimeRecovery, resolveBotRuntimeWarnings } from '../botPresentation';
 import { botRuntimeProgressLabel, useBotRuntimeOperation } from '../useBotRuntimeOperation';
 import { BotComposer, type BotRuntimeRecoveryAction } from './BotComposer';
-import { BotMessageList } from './BotMessageList';
+import { BotMessageList, type BotMessageListHandle } from './BotMessageList';
 import { resolveBotTypingRunId } from './botTypingState';
 import { selectBotCurrentRunId } from '../operations/selectBotCurrentRun';
 import { BotInlineComputer } from './BotInlineComputer';
@@ -39,6 +39,7 @@ export const BotChatView: React.FC<BotChatViewProps> = ({ bot, channelId }) => {
     return id ? state.runsById[id] : null;
   });
   const [runtimeActionError, setRuntimeActionError] = React.useState<string | null>(null);
+  const messageListRef = React.useRef<BotMessageListHandle>(null);
   const refreshedRuntimeOperationRef = React.useRef<string | null>(null);
   const runtimeOperation = useBotRuntimeOperation(botsDesktopApi);
   const recoveryKind = resolveBotRuntimeRecovery(capabilities, botsDesktopApi.isAvailable());
@@ -50,6 +51,9 @@ export const BotChatView: React.FC<BotChatViewProps> = ({ bot, channelId }) => {
     if (!prewarmChannelId || !canPrewarmChannel) return;
     void warmBotChannel(prewarmChannelId).catch(() => undefined);
   }, [canPrewarmChannel, prewarmChannelId]);
+  const handleComputerStatusVisible = React.useCallback(() => {
+    messageListRef.current?.scrollToLatest('if-following');
+  }, []);
 
   React.useEffect(() => {
     if (!channelId || !channelAvailable) return;
@@ -135,13 +139,18 @@ export const BotChatView: React.FC<BotChatViewProps> = ({ bot, channelId }) => {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background" data-bot-chat-view={bot.id}>
       <BotMessageList
+        ref={messageListRef}
         bot={bot}
         channelId={channel.id}
         typingRunId={typingRunId}
         acceptingMessage={acceptingMessage}
         computerSlot={<BotInlineComputer botId={bot.id} channelId={channel.id} botActive={bot.lifecycle === 'active'} />}
       />
-      <BotComputerStatusBar bot={bot} channelId={channel.id} />
+      <BotComputerStatusBar
+        bot={bot}
+        channelId={channel.id}
+        onVisible={handleComputerStatusVisible}
+      />
       <BotComposer
         botId={bot.id}
         channel={channel}

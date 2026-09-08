@@ -3,6 +3,22 @@ import { describe, expect, test } from 'bun:test';
 import { BotsApiError, createBotsApi, getBotRetryReason, type BotRoutineContract } from './botsApi';
 
 describe('Production Bots HTTP client', () => {
+  test('loads the assigned catalog with credentials and rejects malformed catalogs', async () => {
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+    let payload: unknown = { bots: [], memberships: [], revisions: [] };
+    const api = createBotsApi({ fetchImpl: async (input, init) => {
+      calls.push({ input, init });
+      return Response.json(payload);
+    } });
+    expect(await api.getAssignedCatalog()).toEqual(payload);
+    expect(String(calls[0]?.input)).toBe('/api/bots/assigned');
+    expect(calls[0]?.init?.credentials).toBe('same-origin');
+    for (const invalid of [{}, { bots: [], memberships: [] }, { bots: [{}], memberships: [], revisions: [] }]) {
+      payload = invalid;
+      await expect(api.getAssignedCatalog()).rejects.toMatchObject({ code: 'bot_invalid_response' });
+    }
+  });
+
   test('aborts pending computer input HTTP without resending the command', async () => {
     let requests = 0;
     let requestSignal: AbortSignal | null = null;

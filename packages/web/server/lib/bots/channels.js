@@ -203,6 +203,69 @@ export function createBotChannels({
     throw new TypeError('Bot channels are misconfigured');
   }
 
+  // Catalog bootstrap must not depend on conversation decryption, operations,
+  // or execution health. Both HTTP and SSE use this same membership boundary.
+  const loadAssignedCatalog = async (principal) => {
+    if (!principal?.id) fail('Authentication required', 'bot_authentication_required', 401);
+    const bots = new Map();
+    const revisions = new Map();
+    const memberships = [];
+    const listRows = async (repository, filters) => {
+      if (typeof repository?.list !== 'function') {
+        fail('Bot catalog is unavailable', 'bot_catalog_unavailable', 503);
+      }
+      const rows = [];
+      let cursor = null;
+      do {
+        const page = await repository.list({ filters, limit: 100, cursor });
+        rows.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor);
+      return rows;
+    };
+    const membershipRows = await listRows(store.repositories.bot_memberships, {
+      user_id: principal.id, revoked_at: null,
+    });
+    for (const membership of membershipRows) {
+      if (membership.revoked_at !== null
+        || (membership.activated_at && Date.parse(membership.activated_at) > now().getTime())) continue;
+      let decision;
+      try {
+        decision = await authorization.requireActiveMembership(principal, membership.bot_id);
+      } catch (error) {
+        // Membership can be revoked or the Bot deleted between reads. Only
+        // those expected denials are empty results; dependency failures surface.
+        if (error?.code === 'bot_membership_required' || error?.code === 'bot_not_found') continue;
+        throw error;
+      }
+      const bot = decision.bot;
+      if (!bot.active_revision_id) continue;
+      bots.set(bot.id, bot);
+      memberships.push(decision.membership);
+      const revisionRows = await listRows(store.repositories.bot_revisions, { bot_id: bot.id });
+      for (const revision of revisionRows) revisions.set(revision.id, revision);
+    }
+    const visible = await filterCatalog(principal, [...bots.values()]);
+    const visibleIds = new Set(visible.map((bot) => bot.id));
+    const hiddenIds = new Set([...bots.keys()].filter((id) => !visibleIds.has(id)));
+    for (const id of hiddenIds) bots.delete(id);
+    const catalog = Object.freeze({
+      bots: Object.freeze([...bots.values()]
+        .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
+        .map(publicBot)),
+      revisions: Object.freeze([...revisions.values()]
+        .filter((row) => !hiddenIds.has(row.bot_id))
+        .sort((left, right) => Number(left.revision_number) - Number(right.revision_number)
+          || left.id.localeCompare(right.id))
+        .map(publicRevision)),
+      memberships: Object.freeze(memberships
+        .filter((row) => !hiddenIds.has(row.bot_id))
+        .sort((left, right) => left.bot_id.localeCompare(right.bot_id))
+        .map(publicMembership)),
+    });
+    return { catalog, bots, hiddenIds };
+  };
+
   const withKey = async (operation) => {
     let provided = null;
     let key = null;
@@ -730,40 +793,16 @@ export function createBotChannels({
       });
     },
 
+    async assignedForPrincipal(principal) {
+      return (await loadAssignedCatalog(principal)).catalog;
+    },
+
     async snapshotForPrincipal(principal) {
       if (!principal?.id) fail('Authentication required', 'bot_authentication_required', 401);
       const channels = new Map();
-      const bots = new Map();
-      const revisions = new Map();
-      const memberships = [];
+      const { catalog, bots, hiddenIds } = await loadAssignedCatalog(principal);
       const runs = new Map();
       const previewCandidates = [];
-      const membershipPage = await store.repositories.bot_memberships?.list?.({
-        filters: { user_id: principal.id, revoked_at: null },
-        limit: 100,
-      });
-      for (const membership of membershipPage?.items || []) {
-        if (membership.revoked_at !== null
-          || (membership.activated_at && Date.parse(membership.activated_at) > now().getTime())) continue;
-        const bot = await store.repositories.bots?.get?.({ id: membership.bot_id });
-        if (!bot || !bot.active_revision_id) continue;
-        try {
-          await authorization.requireActiveMembership(principal, bot.id);
-        } catch {
-          continue;
-        }
-        bots.set(bot.id, bot);
-        memberships.push(membership);
-        const revisionPage = await store.repositories.bot_revisions?.list?.({
-          filters: { bot_id: bot.id },
-          limit: 100,
-        });
-        for (const revision of revisionPage?.items || []) revisions.set(revision.id, revision);
-      }
-      const visible = await filterCatalog(principal, [...bots.values()]);
-      const visibleIds = new Set(visible.map((bot) => bot.id));
-      const hiddenIds = new Set([...bots.keys()].filter((id) => !visibleIds.has(id)));
-      for (const id of hiddenIds) bots.delete(id);
       const own = await store.repositories.bot_channels.list({
         filters: { owner_user_id: principal.id, lifecycle: 'active' },
         limit: 100,
@@ -832,18 +871,7 @@ export function createBotChannels({
         }
       }
       return Object.freeze({
-        bots: Object.freeze([...bots.values()]
-          .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
-          .map(publicBot)),
-        revisions: Object.freeze([...revisions.values()]
-          .filter((row) => !hiddenIds.has(row.bot_id))
-          .sort((left, right) => Number(left.revision_number) - Number(right.revision_number)
-            || left.id.localeCompare(right.id))
-          .map(publicRevision)),
-        memberships: Object.freeze(memberships
-          .filter((row) => !hiddenIds.has(row.bot_id))
-          .sort((left, right) => left.bot_id.localeCompare(right.bot_id))
-          .map(publicMembership)),
+        ...catalog,
         channels: Object.freeze([...channels.values()]
           .sort((left, right) => left.row.created_at.localeCompare(right.row.created_at)
             || left.row.id.localeCompare(right.row.id))

@@ -135,6 +135,7 @@ describe('normalized Bot events through the mounted transcript', () => {
       emit(event: BotEventEnvelope) { for (const listener of this.listeners.get(event.kind) ?? []) listener({ data: JSON.stringify(event) } as MessageEvent<string>); }
     }
     Object.defineProperty(globalThis, 'EventSource', { value: FixtureSource, configurable: true, writable: true });
+    const catalog = spyOn(botsApi, 'getAssignedCatalog').mockResolvedValue({ bots: [], revisions: [], memberships: [] });
     const capabilities = spyOn(botsApi, 'getCapabilities').mockResolvedValue({ available: true, state: 'ready', code: null, owner: 'test', canManageRuntime: false, canCreateBot: false, runtime: null });
     try {
       setAuthPrincipal({ ...originalPrincipal, id: 'member', scope: 'managed', policy: { ...originalPrincipal.policy, bots: true } });
@@ -158,7 +159,7 @@ describe('normalized Bot events through the mounted transcript', () => {
       expect(useBotChannelStore.getState().messagesById).toEqual({});
       expect(container.textContent).not.toContain('Visible user request');
     } finally {
-      await act(async () => { root.unmount(); }); capabilities.mockRestore(); setAuthPrincipal(originalPrincipal); resetStores(null);
+      await act(async () => { root.unmount(); }); capabilities.mockRestore(); catalog.mockRestore(); setAuthPrincipal(originalPrincipal); resetStores(null);
       if (originalSource) Object.defineProperty(globalThis, 'EventSource', originalSource); else Reflect.deleteProperty(globalThis, 'EventSource');
     }
     expect(sources.every((source) => source.closed)).toBe(true);

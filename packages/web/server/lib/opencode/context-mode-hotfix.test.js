@@ -18,9 +18,10 @@ import {
   isRecoverableContextModeStoreError,
 } from './context-mode-content-store-recovery.js';
 import { NATIVE_EXECUTE_ORIGINAL, patchNativeServerSource } from './context-mode-native-hotfix.js';
+import { STORAGE_PATCHES } from './context-mode-storage-hotfix.js';
 
 const ORIGINAL_PLUGIN_SOURCE = NATIVE_EXECUTE_ORIGINAL;
-const ORIGINAL_EXECUTOR_SOURCE = '            let timedOut = false;\n            let resolved = false;\n            proc.on("close", (exitCode) => {\n                clearTimeout(timer);';
+const ORIGINAL_EXECUTOR_SOURCE = '        const binPath = srcPath.replace(/\\.rs$/, "") + binSuffix;\n    async #spawn(cmd, cwd, sandboxTmpDir, timeout, background = false) {\n        return new Promise((res) => {\n            let timedOut = false;\n            let resolved = false;\nconst timer = timeout === undefined ? undefined : setTimeout(() => {\n                timedOut = true;\n            proc.on("close", (exitCode) => {\n                clearTimeout(timer);';
 
 const ORIGINAL_SERVER_SOURCE = `import { ContentStore, cleanupStaleDBs, cleanupStaleContentDBs } from "./store.js";
 function getStore() {
@@ -54,6 +55,8 @@ async function ctxIndexHandler({ content, path }) {
 `;
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
+const storageFixtures = Object.fromEntries(STORAGE_PATCHES.map(({ file, edits }) => [file, edits.map(([anchor]) => anchor).join('\n')]));
+const expectedStorageSha256 = Object.fromEntries(Object.entries(storageFixtures).map(([file, source]) => [file, sha256(source)]));
 
 describe('context-mode provisioning hotfix', () => {
   const roots = [];
@@ -76,6 +79,10 @@ describe('context-mode provisioning hotfix', () => {
     fs.mkdirSync(path.join(packageRoot, 'build', 'adapters', 'opencode'), { recursive: true });
     fs.writeFileSync(path.join(packageRoot, 'build', 'adapters', 'opencode', 'plugin.js'), ORIGINAL_PLUGIN_SOURCE);
     fs.writeFileSync(path.join(packageRoot, 'build', 'executor.js'), ORIGINAL_EXECUTOR_SOURCE);
+    for (const [file, source] of Object.entries(storageFixtures)) {
+      fs.mkdirSync(path.dirname(path.join(packageRoot, 'build', file)), { recursive: true });
+      fs.writeFileSync(path.join(packageRoot, 'build', file), source);
+    }
     return root;
   };
 
@@ -86,6 +93,7 @@ describe('context-mode provisioning hotfix', () => {
       expectedOriginalSha256: sha256(ORIGINAL_SERVER_SOURCE),
       expectedPluginSha256: sha256(ORIGINAL_PLUGIN_SOURCE),
       expectedExecutorSha256: sha256(ORIGINAL_EXECUTOR_SOURCE),
+      expectedStorageSha256,
     };
 
     const first = applyContextModeHotfix(options);
@@ -175,8 +183,8 @@ describe('context-mode provisioning hotfix', () => {
     expect(wrongHash).toMatchObject({ ok: false, code: CONTEXT_MODE_HOTFIX_INCOMPATIBLE });
   });
 
-  it('does not partially patch a package when the native adapter or executor is incompatible', () => {
-    for (const relativePath of ['adapters/opencode/plugin.js', 'executor.js']) {
+  it('does not partially patch a package when any native adapter, executor or storage source is incompatible', () => {
+    for (const relativePath of ['adapters/opencode/plugin.js', 'executor.js', ...STORAGE_PATCHES.map(({ file }) => file)]) {
       const configDirectory = createFixture();
       const build = path.join(configDirectory, 'node_modules/context-mode/build');
       const incompatiblePath = path.join(build, relativePath);
@@ -185,7 +193,7 @@ describe('context-mode provisioning hotfix', () => {
       const result = applyContextModeHotfix({ configDirectory,
         expectedOriginalSha256: sha256(ORIGINAL_SERVER_SOURCE),
         expectedPluginSha256: sha256(ORIGINAL_PLUGIN_SOURCE),
-        expectedExecutorSha256: sha256(ORIGINAL_EXECUTOR_SOURCE) });
+        expectedExecutorSha256: sha256(ORIGINAL_EXECUTOR_SOURCE), expectedStorageSha256 });
       expect(result).toMatchObject({ ok: false, code: CONTEXT_MODE_HOTFIX_INCOMPATIBLE });
       expect(fs.readFileSync(path.join(build, 'server.js'), 'utf8')).toBe(ORIGINAL_SERVER_SOURCE);
       expect(fs.readFileSync(incompatiblePath, 'utf8')).toBe(incompatibleSource);
@@ -219,6 +227,28 @@ describe('context-mode capability', () => {
 });
 
 describe('recovering ContentStore proxy', () => {
+  it('reopens a native worker handle for future calls without replaying a failed operation', () => {
+    const key = Symbol.for('devryan.context-mode.storage');
+    const previous = globalThis[key];
+    globalThis[key] = () => ({});
+    const operation = vi.fn(() => { throw new Error('SQLITE_IOERR after a possible commit'); });
+    const subsequent = vi.fn(() => 'next explicit call');
+    const createStore = vi.fn()
+      .mockReturnValueOnce({ index: operation, close: vi.fn() })
+      .mockReturnValue({ index: subsequent });
+    try {
+      const recovering = createRecoveringContentStore({ createStore });
+      expect(() => recovering.index('first')).toThrow('SQLITE_IOERR');
+      expect(createStore).toHaveBeenCalledTimes(2);
+      expect(operation).toHaveBeenCalledOnce();
+      expect(subsequent).not.toHaveBeenCalled();
+      expect(recovering.index('second')).toBe('next explicit call');
+      expect(subsequent).toHaveBeenCalledExactlyOnceWith('second');
+    } finally {
+      if (previous === undefined) delete globalThis[key];
+      else globalThis[key] = previous;
+    }
+  });
   it('reopens the same store generation and retries a synchronous database method once', () => {
     const denyChecker = vi.fn(() => false);
     const stores = [];

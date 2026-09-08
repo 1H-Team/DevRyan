@@ -175,6 +175,7 @@ export function createBotRunDispatcher({
   resolveLibrarySnapshot = async ({ configuredVersionIds }) => configuredVersionIds || [],
   onRunCompleted = async () => {},
   onRunSettled = async () => {},
+  hasPendingMemory = async () => false,
   executeClaimedRun = null,
   uuid = randomUUID,
   now = () => new Date(),
@@ -196,6 +197,7 @@ export function createBotRunDispatcher({
     || typeof resolveLibrarySnapshot !== 'function'
     || typeof onRunCompleted !== 'function'
     || typeof onRunSettled !== 'function'
+    || typeof hasPendingMemory !== 'function'
     || typeof reconcileExpiredApprovals !== 'function'
     || typeof uuid !== 'function' || typeof now !== 'function'
     || typeof recordDiagnostic !== 'function'
@@ -419,17 +421,20 @@ export function createBotRunDispatcher({
     return true;
   };
 
+  const memoryChannels = new Set();
   const beginPostRunPrewarm = async ({ bot, channel, revision }) => {
     if (!warmRuntimeLeases || shuttingDown) return null;
     if (revision.activated_at === null || revision.retired_at !== null
       || (bot.active_revision_id && bot.active_revision_id !== revision.id)) return null;
     if (await hasQueuedRun(channel.id)) return null;
+    if (memoryChannels.has(channel.id) || await hasPendingMemory(channel.id)) return null;
     const libraryVersionIds = (await resolveLibrarySnapshot({
       botId: bot.id,
       configuredVersionIds: Array.isArray(revision.contract?.libraryVersionIds)
         ? revision.contract.libraryVersionIds
         : [],
     })).map((versionId) => validateUuid(versionId, 'libraryVersionId'));
+    if (memoryChannels.has(channel.id)) return null;
     return warmRuntimeLeases.begin({
       principalId: validateUuid(channel.owner_user_id, 'channel.owner_user_id'),
       botId: bot.id,
@@ -2088,6 +2093,20 @@ export function createBotRunDispatcher({
   const drainScope = (computerScopeKey) => startScopeDrain(computerScopeKey);
 
   return Object.freeze({
+    async prepareMemoryExtraction({ channelId, signal }) {
+      const normalizedChannelId = validateUuid(channelId, 'channelId');
+      memoryChannels.add(normalizedChannelId);
+      try {
+        await withBotAbort(warmRuntimeLeases?.releaseChannel({
+          channelId: normalizedChannelId, reason: 'memory_extraction',
+        }), signal);
+        signal?.throwIfAborted();
+        return () => memoryChannels.delete(normalizedChannelId);
+      } catch (error) {
+        memoryChannels.delete(normalizedChannelId);
+        throw error;
+      }
+    },
     async enqueueMessage({ principal, channelId, message, admission, timing = null } = {}) {
       if (shuttingDown) fail('Bot dispatcher is shutting down', 'bots_unavailable', 503);
       const normalizedMessage = normalizeMessage(message);
@@ -2430,7 +2449,8 @@ export function createBotRunDispatcher({
         filters: { channel_id: preflight.channel.id },
         limit: 100,
       });
-      if ((recentRuns.items || []).some((run) => !TERMINAL_RUN_STATES.has(run.state))) {
+      if ((recentRuns.items || []).some((run) => !TERMINAL_RUN_STATES.has(run.state))
+        || memoryChannels.has(channelId) || await hasPendingMemory(channelId)) {
         return Object.freeze({
           state: 'skipped',
           leaseId: null,
@@ -2445,6 +2465,9 @@ export function createBotRunDispatcher({
           ? revision.contract.libraryVersionIds
           : [],
       })).map((versionId) => validateUuid(versionId, 'libraryVersionId'));
+      if (memoryChannels.has(channelId)) {
+        return Object.freeze({ state: 'skipped', leaseId: null, revisionId: revision.id, expiresAt: null, reason: 'busy' });
+      }
       return warmRuntimeLeases.begin({
         principalId: validateUuid(principal?.id, 'principal.id'),
         botId: preflight.bot.id,

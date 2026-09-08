@@ -1,0 +1,25 @@
+{
+  "imageModel": "gpt-6-astra",
+  "reasoningEffort": "medium",
+  "focusedTests": 32,
+  "liveImage": "passed, one request, HTTP 200",
+  "bakedBotImage": "passed, offline, UID 10001",
+  "build": "web/Electron passed",
+  "bundleBudgets": "passed",
+  "docs": "passed",
+  "fullValidation": "failed: one Cursor timing test; isolated rerun passed",
+  "scripts": {
+    "passed": 586,
+    "failed": 0
+  },
+  "ui": {
+    "passed": 3580,
+    "failed": 0
+  },
+  "web": {
+    "passed": 3869,
+    "failed": 1
+  },
+  "botOAuthSmoke": "two initial chat timeouts before image execution",
+  "cleanup": "owned image removed; acceptance containers auto-removed"
+}

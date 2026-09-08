@@ -44,11 +44,11 @@ describe('managed plugin manifest', () => {
       'mammoth': '1.12.1',
       'unpdf': '1.8.0',
       'opencode-antigravity-auth': '1.6.0',
-      '@rama_nigg/open-cursor': '2.5.4',
+      '@rama_nigg/open-cursor': '2.5.8',
       'opencode-with-claude': '1.8.0',
-      'opencode-gpt-imagegen': '0.1.10',
+      'opencode-gpt-imagegen': '0.1.12',
       'context-mode': '1.0.169',
-      'oh-my-opencode-slim': '2.2.15',
+      'oh-my-opencode-slim': '2.2.18',
     });
     expect(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS).toEqual([
       './node_modules/opencode-antigravity-auth/dist/index.js',
@@ -110,7 +110,7 @@ describe('managed plugin manifest', () => {
     }
 
     // Tauri retains Slim 2.0.5 and its legacy loader; the forward profile also
-    // supports the server descriptor exported by its pinned Slim 2.2.15.
+    // supports the server descriptor exported by its pinned Slim 2.2.18.
     expect(fs.readFileSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'), 'utf8'))
       .toContain('exported.server');
     expect(fs.readFileSync(path.join(tauriDefaultConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'), 'utf8'))

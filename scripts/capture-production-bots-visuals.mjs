@@ -749,6 +749,30 @@ export const runProductionBotsVisualCapture = async (options) => {
         process.stdout.write(`[production-bots-visual] avatar metrics ${JSON.stringify(avatarMetrics)}\n`);
         await waitForEvaluation(cdp, `document.querySelectorAll('[data-avatar-fixture] img').length === 3 && document.querySelector('[data-avatar-fixture]').dataset.avatarRequests === '3'`, { timeoutMs: options.timeoutMs, label: 'replacement avatar decoded' });
       }
+      if (entry.interaction === 'assigned_catalog') {
+        await waitForEvaluation(cdp, `document.querySelector('[data-settings-catalog]')?.textContent.includes('Assigned Assistant')`, { timeoutMs: options.timeoutMs, label: 'active Bot in Settings' });
+        await evaluate(cdp, `document.querySelector('[data-bots-tab]').click()`);
+        const initialCopy = entry.state === 'assigned_failure' ? 'Couldn’t load your Bots'
+          : entry.state === 'assigned_loading' ? 'Loading Bots'
+            : entry.state === 'assigned_empty' ? 'No Bots assigned' : 'Assigned Assistant';
+        await waitForEvaluation(cdp, `document.querySelector('[aria-label="Bot navigation"]')?.textContent.includes(${JSON.stringify(initialCopy)})`, { timeoutMs: options.timeoutMs, label: 'accurate initial catalog state' });
+        const falseEmpty = await evaluate(cdp, `document.querySelector('[aria-label="Bot navigation"]')?.textContent.includes('No Bots assigned')`);
+        if (entry.state !== 'assigned_empty' && falseEmpty) throw new Error('Unloaded catalog presented as unassigned');
+        if (entry.state === 'assigned_disconnected') {
+          await evaluate(cdp, `document.querySelector('[aria-label="Bot navigation"] button[aria-label^="Open Conversation"]').click()`);
+          await waitForEvaluation(cdp, `document.body.textContent.includes('Your existing conversation is available.')`, { timeoutMs: options.timeoutMs, label: 'history without live snapshot' });
+        }
+        await evaluate(cdp, `document.querySelector('[data-restore-service]').click()`);
+        await evaluate(cdp, `Array.from(document.querySelectorAll('[aria-label="Bot navigation"] button')).find(button => button.textContent.trim() === 'Retry' && !button.disabled)?.click()`);
+        await waitForEvaluation(cdp, `document.querySelector('[data-assigned-catalog-fixture]')?.dataset.connection === 'connected'`, { timeoutMs: options.timeoutMs, label: 'authoritative reconnect snapshot' });
+        if (entry.state !== 'assigned_empty') {
+          await evaluate(cdp, `document.querySelector('[aria-label="Bot navigation"] button[aria-label^="Open Conversation"]').click()`);
+          await waitForEvaluation(cdp, `document.body.textContent.includes('Your existing conversation is available.')`, { timeoutMs: options.timeoutMs, label: 'restored conversation history' });
+          await evaluate(cdp, `document.querySelector('[data-settings-tab]').click()`);
+          await evaluate(cdp, `document.querySelector('[data-bots-tab]').click()`);
+          await waitForEvaluation(cdp, `document.body.textContent.includes('Your existing conversation is available.')`, { timeoutMs: options.timeoutMs, label: 'selection survives Settings navigation' });
+        }
+      }
       if (entry.scene === 'catalog') {
         await evaluate(cdp, `(() => {
           const catalog = document.querySelector('[data-catalog-fixture]');

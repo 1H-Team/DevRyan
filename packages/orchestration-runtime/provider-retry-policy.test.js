@@ -33,7 +33,7 @@ describe('managed task model availability classification', () => {
     expect(classifyManagedTaskFailure(failure)).toBe(MODEL_UNAVAILABLE_FAILURE_KIND);
     expect(classifyManagedTaskFailure('ProviderModelNotFoundError: Requested model does not exist'))
       .toBe(MODEL_UNAVAILABLE_FAILURE_KIND);
-    expect(classifyManagedTaskFailure('The model did not respond')).toBeNull();
+    expect(classifyManagedTaskFailure('The model did not respond')).toBe('provider_transport');
   });
 });
 

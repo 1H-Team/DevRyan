@@ -6,6 +6,7 @@ import { git, gitToFile, gitTokens, changeError as failure } from './session-cha
 import { openChangeStore, changeKey as hash } from './session-changes-store.js';
 import { captureSnapshot, changedEntries, changeTreeEntries, equalEntry as equal,
   makeChangeTree as makeTree, safeChangePath as safePath, verifyAncestors } from './session-changes-snapshot.js';
+import { exactSessionChanges, receiptInputFingerprint, receiptPatchesKey, revisionSegmentKey, revisionSegmentsKey, storeSessionChangeReceipt } from './session-changes-receipts.js';
 
 const sessionKey = (id) => `sessions/${hash(id)}.json`;
 const operationKey = (id) => `operations/${id}.json`;
@@ -16,10 +17,12 @@ const rowsKey = (id, revision) => `rows/${hash(id)}/${revision}`;
 const membersKey = (id, revision) => `members/${hash(id)}/${revision}`;
 const normalizedError = (error) => ['ENOSPC', 'EDQUOT', 'EIO', 'EROFS'].includes(error?.code) ? 'storage_unavailable' : error?.code ?? 'capture_failed';
 const DIFF_BYTES = 64 * 1024;
+const ATTRIBUTION_VERSION = 2;
 
 export function createSessionChangeRuntime(options) {
   const storage = path.resolve(options.directory);
   const tails = new Map(), active = new Map();
+  const diagnostic = async (event) => { try { await options.onDiagnostic?.(event); } catch { /* Optional journaling never invalidates capture. */ } };
   const serialize = (key, run) => {
     const operation = (tails.get(key) ?? Promise.resolve()).catch(() => {}).then(() =>
       withCrossProcessFileLock(path.join(storage, 'locks', `${hash(key)}.lock`), run, { timeoutMs: 60_000 }));
@@ -41,7 +44,15 @@ export function createSessionChangeRuntime(options) {
   const noteSession = async (repo, input) => {
     const key = sessionKey(input.sessionID);
     const existing = await repo.db.get(key);
-    if (existing) return existing;
+    if (existing) {
+      if (input.parentID && existing.parentID && existing.parentID !== input.parentID) throw failure('invalid_session_lineage', 503);
+      if (!existing.parentID && input.parentID || !existing.firstUserMessageID && input.userMessageID) {
+        existing.parentID = existing.parentID ?? input.parentID ?? null;
+        existing.firstUserMessageID = existing.firstUserMessageID ?? input.userMessageID ?? null;
+        repo.db.set(key, existing);
+      }
+      return existing;
+    }
     const value = { id: input.sessionID, parentID: input.parentID ?? null, firstUserMessageID: input.userMessageID ?? null, issues: [] };
     repo.db.set(key, value);
     return value;
@@ -132,8 +143,14 @@ export function createSessionChangeRuntime(options) {
     const trees = new Set();
     for await (const { value: op } of repo.db.entries('operations')) {
       if (op.before) trees.add(op.before); if (op.after) trees.add(op.after);
+      if (op.patchTree) trees.add(op.patchTree);
     }
     for await (const { value: stored } of repo.db.entries('revisions')) { trees.add(stored.before); trees.add(stored.after); }
+    for await (const { value: segment } of repo.db.entries('segments')) {
+      if (segment.beforeTree) trees.add(segment.beforeTree);
+      if (segment.afterTree) trees.add(segment.afterTree);
+      if (segment.patchTree) trees.add(segment.patchTree);
+    }
     await fs.rm(path.join(storage, repo.key, 'stat-cache'), { recursive: true, force: true });
     await fs.rm(path.join(storage, repo.key, 'stat-cache.json'), { force: true });
     for await (const row of gitTokens(storage, ['--git-dir', repo.gitDir, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/devryan/trees/'], { delimiter: 10 })) {
@@ -190,7 +207,8 @@ export function createSessionChangeRuntime(options) {
         }
       }
       const op = { id, sessionID: input.sessionID, messageID: input.messageID, callID: input.callID,
-        state: 'pending', paths, ownerPID: process.pid, overlap, createdAt: Date.now() };
+        state: 'pending', evidence: 'snapshot', source: input.source ?? 'opencode', tool: input.tool ?? null,
+        paths, ownerPID: process.pid, overlap, createdAt: Date.now() };
       active.set(id, directory);
       try {
         // Optional explicit quotas remain for embedders and fault fixtures;
@@ -204,7 +222,7 @@ export function createSessionChangeRuntime(options) {
       } catch (error) { op.state = 'unavailable'; op.errorCode = normalizedError(error); active.delete(id); }
       putOperation(repo, op);
       await repo.db.commit();
-      if (op.errorCode) await options.onDiagnostic?.({ code: op.errorCode, phase: 'before', sessionID: op.sessionID, callID: op.callID });
+      if (op.errorCode) await diagnostic({ code: op.errorCode, phase: 'before', sessionID: op.sessionID, callID: op.callID });
     });
   };
   const finish = async (input) => {
@@ -224,45 +242,62 @@ export function createSessionChangeRuntime(options) {
         op.before = before; op.after = changedAfter; op.hasChanges = before !== changedAfter; op.state = 'complete';
       } catch (error) { op.state = 'unavailable'; op.errorCode = normalizedError(error); }
       active.delete(id); putOperation(repo, op); await repo.db.commit();
-      if (op.errorCode) await options.onDiagnostic?.({ code: op.errorCode, phase: 'after', sessionID: op.sessionID, callID: op.callID });
+      if (op.errorCode) await diagnostic({ code: op.errorCode, phase: 'after', sessionID: op.sessionID, callID: op.callID });
+      else if (op.hasChanges) await diagnostic({ code: 'snapshot_observation', phase: 'after',
+        sessionID: op.sessionID, callID: op.callID, source: op.source, evidence: 'snapshot' });
       await options.onChange?.({ directory, sessionID: input.sessionID });
       // Collection failure does not turn a durably captured change into a gap.
-      await maintain(repo).catch(async (error) => options.onDiagnostic?.({ code: normalizedError(error), phase: 'maintenance', sessionID: input.sessionID }));
+      await maintain(repo).catch(async (error) => diagnostic({ code: normalizedError(error), phase: 'maintenance', sessionID: input.sessionID }));
     });
   };
-  const importHistorical = async (inputs) => {
+  const recordReceipts = async (inputs, historical) => {
     if (!inputs.length) return;
     const directory = await resolveDirectory(inputs[0].directory), inputDirectory = await fs.realpath(inputs[0].directory);
     return serialize(directory, async () => {
       const repo = await load(directory);
+      const changed = new Set();
+      const diagnostics = [];
       for (const input of inputs) {
+        if (input.directory !== inputs[0].directory
+          || ![input.sessionID, input.messageID, input.callID].every((id) => typeof id === 'string' && id.length > 0 && id.length <= 512)
+          || !input.files || typeof input.files[Symbol.iterator] !== 'function' && typeof input.files[Symbol.asyncIterator] !== 'function') throw failure('invalid_change_receipt', 400);
         const id = hash(`${input.sessionID}\0${input.callID}`), existing = await repo.db.get(operationKey(id));
-        if (existing && (existing.state !== 'unavailable' || existing.messageID !== input.messageID)) continue;
-        if (input.directory !== inputs[0].directory || !Array.isArray(input.files) || !input.files.length) continue;
-        const changes = [];
-        for (const file of input.files) {
-          const candidate = path.isAbsolute(file.path) && file.path.startsWith(`${input.directory}${path.sep}`)
-            ? path.resolve(inputDirectory, path.relative(input.directory, file.path)) : path.resolve(inputDirectory, file.path);
-          const relative = path.relative(directory, candidate);
-          if (!safePath(relative) || ![file.before, file.after].every((content) => content === null || typeof content === 'string')) break;
-          changes.push({ file: relative, before: file.before, after: file.after });
-        }
-        if (changes.length !== input.files.length) continue;
         await noteSession(repo, input);
-        for (const change of changes) for (const side of ['before', 'after']) {
-          if (change[side] === null) continue;
-          const oid = (await repo.run(['hash-object', '-w', '--stdin', '--no-filters'], { input: change[side] })).toString().trim();
-          change[side] = { oid, mode: '100644' };
+        if (existing && existing.messageID !== input.messageID) {
+          await issue(repo, input.sessionID, 'capture_identity_reused');
+          continue;
         }
-        const before = await makeTree(repo, changes.map((change) => [change.file, change.before]));
-        const after = await makeTree(repo, changes.map((change) => [change.file, change.after]));
-        putOperation(repo, { id, sessionID: input.sessionID, messageID: input.messageID, callID: input.callID,
-          createdAt: existing?.createdAt ?? input.createdAt, state: 'complete', before, after, hasChanges: before !== after,
-          historical: true, overlap: existing?.overlap ?? false, ownerSessionID: existing?.ownerSessionID });
+        const inputFingerprint = receiptInputFingerprint(input);
+        if (inputFingerprint && existing?.evidence === 'exact' && existing.receiptInputFingerprint === inputFingerprint) continue;
+        try {
+          const op = await storeSessionChangeReceipt(repo, { ...input, historical, receiptInputFingerprint: inputFingerprint }, existing, inputDirectory);
+          if (!op) continue;
+          active.delete(id); putOperation(repo, op); changed.add(input.sessionID);
+          diagnostics.push({ code: 'exact_tool_receipt', phase: historical ? 'history' : 'receipt',
+            sessionID: input.sessionID, callID: input.callID, source: op.source, evidence: 'exact' });
+        } catch (error) {
+          if (historical && ['unsupported_path', 'invalid_change_receipt'].includes(error.code) && existing?.evidence !== 'exact') {
+            // One malformed historical receipt must not hide other verified
+            // files. Keep a call-scoped gap that a later valid receipt can repair.
+            putOperation(repo, { ...existing, id, sessionID: input.sessionID, messageID: input.messageID, callID: input.callID,
+              createdAt: existing?.createdAt ?? input.createdAt ?? Date.now(), state: 'unavailable', evidence: 'snapshot',
+              errorCode: 'invalid_change_receipt', source: input.source ?? 'native-tool' });
+            active.delete(id); changed.add(input.sessionID);
+            diagnostics.push({ code: 'invalid_change_receipt', phase: 'history', sessionID: input.sessionID, callID: input.callID });
+            continue;
+          }
+          if (error.code !== 'receipt_conflict') throw error;
+          await issue(repo, input.sessionID, 'receipt_conflict');
+          diagnostics.push({ code: 'receipt_conflict', phase: 'receipt', sessionID: input.sessionID, callID: input.callID });
+        }
       }
       await repo.db.commit();
+      for (const event of diagnostics) await diagnostic(event);
+      for (const sessionID of changed) await options.onChange?.({ directory, sessionID });
     });
   };
+  const recordReceipt = (input) => recordReceipts([input], false);
+  const importHistorical = (inputs) => recordReceipts(inputs, true);
   const storedRevision = async (repo, id, revision) => {
     if (typeof revision !== 'string' || !/^[a-f0-9]{64}$/.test(revision)) throw failure('invalid_change_revision', 400);
     const stored = await repo.db.get(revisionKey(id, revision));
@@ -327,19 +362,35 @@ export function createSessionChangeRuntime(options) {
       if (observedCalls.size) reasons.add('missing_capture');
       const fingerprint = crypto.createHash('sha256');
       const generation = await repo.db.get(`generations/${hash(rootSessionID)}.json`) ?? 0;
-      fingerprint.update(JSON.stringify({ ids: [...ids].sort(), firstUserMessageID, generation, directory: requestedDirectory }));
-      const files = new Map(), excluded = new Set();
+      fingerprint.update(JSON.stringify({ attributionVersion: ATTRIBUTION_VERSION, ids: [...ids].sort(), firstUserMessageID, generation, directory: requestedDirectory }));
+      const files = new Map(), restoreReasons = new Set();
       let onlyNoops = true;
       for await (const op of operations()) {
-        fingerprint.update(JSON.stringify([op.id, op.state, op.overlap, op.before, op.after, op.historical]));
+        fingerprint.update(JSON.stringify([op.id, op.state, op.before, op.after, op.historical, op.evidence,
+          op.receiptFingerprint, op.restoreVerified, op.receiptComplete, op.createdAt, op.source, op.tool]));
         if (op.state !== 'complete') {
           reasons.add(op.state === 'pending' ? 'capture_pending' : op.errorCode ?? 'capture_unavailable');
           onlyNoops = false; continue;
         }
-        if (op.historical) reasons.add('historical_restore_unavailable');
         if (op.hasChanges) onlyNoops = false;
-        if (op.overlap && op.hasChanges) reasons.add('overlapping_operations');
-
+        if (op.evidence !== 'exact' && !op.historical) {
+          if (op.hasChanges) reasons.add('unverified_tool_changes');
+          continue;
+        }
+        if (op.receiptComplete === false) reasons.add('tool_changes_incomplete');
+        if (op.hasChanges && op.restoreVerified !== true) restoreReasons.add('restore_evidence_unavailable');
+        for await (const change of exactSessionChanges(repo, op)) {
+          const previous = files.get(change.file);
+          const segmented = Boolean(change.patchOID || previous?.reviewMode === 'segments'
+            || previous && !equal(previous.after, change.before));
+          files.set(change.file, { before: previous ? previous.before : change.before, after: change.after,
+            reviewMode: segmented ? 'segments' : 'net', segmentCount: (previous?.segmentCount ?? 0) + 1,
+            sessions: new Set([...(previous?.sessions ?? []), op.sessionID]) });
+        }
+      }
+      for (const [file, entry] of files) {
+        if (entry.reviewMode === 'net' && equal(entry.before, entry.after)) files.delete(file);
+        else if (entry.reviewMode === 'segments') restoreReasons.add('segmented_changes');
       }
       fingerprint.update(JSON.stringify([...reasons].sort()));
       const sourceFingerprint = fingerprint.digest('hex');
@@ -355,51 +406,76 @@ export function createSessionChangeRuntime(options) {
         return page(repo, rootSessionID, saved);
       }
       if (saved?.sourceFingerprint === sourceFingerprint) return page(repo, rootSessionID, saved);
+      const treeSide = function* (side) { for (const [file, entry] of files) if (entry.reviewMode === 'net') yield [file, entry[side]]; };
+      const before = await makeTree(repo, treeSide('before')), after = await makeTree(repo, treeSide('after'));
+      const rows = new Map();
+      const iterator = gitTokens(storage, ['--git-dir', repo.gitDir, 'diff', '--no-ext-diff', '--no-textconv', '--find-renames', '--numstat', '-z', before, after])[Symbol.asyncIterator]();
+      try {
+        for (;;) {
+          const token = await iterator.next(); if (token.done) break;
+          const [added, deleted, ...name] = token.value.split('\t');
+          let file = name.join('\t'), oldPath = null;
+          if (!file) { oldPath = (await iterator.next()).value; file = (await iterator.next()).value; }
+          const entry = files.get(file);
+          if (!entry) throw failure('invalid_change_record');
+          rows.set(file, { path: file, oldPath, status: oldPath ? 'renamed' : !entry.before ? 'added' : !entry.after ? 'deleted' : 'modified',
+            additions: added === '-' ? null : Number(added), deletions: deleted === '-' ? null : Number(deleted),
+            reviewMode: 'net', segmentCount: 0,
+            sessions: [...new Set([...entry.sessions, ...(oldPath ? files.get(oldPath)?.sessions ?? [] : [])])] });
+        }
+      } finally { await iterator.return?.(); }
+      // Store bounded segment records separately, so no file row grows with
+      // session length. Old revisions keep these immutable object references.
       for await (const op of operations()) {
         if (op.state !== 'complete') continue;
-        for await (const change of changedEntries(repo, op.before, op.after, op.paths)) {
-          if (op.overlap) { excluded.add(change.file); continue; }
-          const previous = files.get(change.file);
-          if (previous && !equal(previous.after, change.before)) { excluded.add(change.file); reasons.add('interleaved_file_changes'); continue; }
-          files.set(change.file, { before: previous ? previous.before : change.before, after: change.after,
-            sessions: [...new Set([...(previous?.sessions ?? []), op.sessionID])] });
+        for await (const change of exactSessionChanges(repo, op)) {
+          const entry = files.get(change.file);
+          if (entry?.reviewMode !== 'segments') continue;
+          let row = rows.get(change.file);
+          if (!row) {
+            row = { path: change.file, oldPath: null, status: 'modified', additions: 0, deletions: 0,
+              reviewMode: 'segments', segmentCount: 0, sessions: [...entry.sessions] };
+            rows.set(change.file, row);
+          }
+          let additions = change.additions, deletions = change.deletions;
+          if (!change.patchOID) {
+            const stats = (await repo.run(['--literal-pathspecs', 'diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--numstat', '-z',
+              change.beforeTree, change.afterTree, '--', change.file])).toString().split('\t');
+            additions = stats[0] === '-' ? null : Number(stats[0]);
+            deletions = stats[1] === '-' ? null : Number(stats[1]);
+          }
+          row.additions = row.additions === null || additions === null ? null : row.additions + additions;
+          row.deletions = row.deletions === null || deletions === null ? null : row.deletions + deletions;
+          repo.db.set(revisionSegmentKey(rootSessionID, sourceFingerprint, change.file, row.segmentCount), {
+            ...change, sessionID: op.sessionID, messageID: op.messageID, callID: op.callID,
+            source: op.source ?? 'native-tool', createdAt: op.createdAt, index: row.segmentCount,
+          });
+          row.segmentCount++;
         }
       }
-      for (const file of excluded) files.delete(file);
-      for (const [file, entry] of files) if (equal(entry.before, entry.after)) files.delete(file);
-      const before = await makeTree(repo, (function* () { for (const [file, entry] of files) yield [file, entry.before]; })());
-      const after = await makeTree(repo, (function* () { for (const [file, entry] of files) yield [file, entry.after]; })());
+      const totalsMode = [...rows.values()].some((row) => row.reviewMode === 'segments') ? 'recorded' : 'net';
+      if (reasons.size) restoreReasons.add('summary_incomplete');
       const result = { rootSessionID, directory: requestedDirectory, worktreeDirectory: directory, worktreeID: repo.key,
+        attributionVersion: ATTRIBUTION_VERSION, totalsMode, restoreAvailable: !restoreReasons.size && rows.size > 0,
+        restoreReasons: [...restoreReasons].sort(),
         sessionCount: ids.size, firstUserMessageID: firstUserMessageID ?? root?.firstUserMessageID ?? null,
         coverage: reasons.size ? 'partial' : 'complete', reasons: [...reasons].sort(), hasUnattributedMutations: false };
-      const revision = hash(JSON.stringify({ before, after, result, generation }));
+      const rowFingerprint = crypto.createHash('sha256');
+      for (const row of rows.values()) rowFingerprint.update(JSON.stringify(row));
+      const revision = hash(JSON.stringify({ before, after, result, generation, rows: rowFingerprint.digest('hex'),
+        segments: totalsMode === 'recorded' ? sourceFingerprint : null }));
       const members = async function* () { for await (const op of operations()) yield op.id; };
       if (saved?.summary.revision === revision) {
         saved.sourceFingerprint = sourceFingerprint;
         await saveSummary(repo, rootSessionID, saved, null, members()); await repo.db.commit();
         return page(repo, rootSessionID, saved);
       }
-      let fileCount = 0, additions = 0, deletions = 0;
-      const rows = async function* () {
-        const iterator = gitTokens(storage, ['--git-dir', repo.gitDir, 'diff', '--no-ext-diff', '--no-textconv', '--find-renames', '--numstat', '-z', before, after])[Symbol.asyncIterator]();
-        try {
-          for (;;) {
-            const token = await iterator.next(); if (token.done) break;
-            const [added, deleted, ...name] = token.value.split('\t');
-            let file = name.join('\t'), oldPath = null;
-            if (!file) { oldPath = (await iterator.next()).value; file = (await iterator.next()).value; }
-            const entry = files.get(file);
-            if (!entry) throw failure('invalid_change_record');
-            fileCount++; additions += added === '-' ? 0 : Number(added); deletions += deleted === '-' ? 0 : Number(deleted);
-            yield { path: file, oldPath, status: oldPath ? 'renamed' : !entry.before ? 'added' : !entry.after ? 'deleted' : 'modified',
-              additions: added === '-' ? null : Number(added), deletions: deleted === '-' ? null : Number(deleted),
-              sessions: [...new Set([...entry.sessions, ...(oldPath ? files.get(oldPath)?.sessions ?? [] : [])])] };
-          }
-        } finally { await iterator.return?.(); }
-      };
-      await repo.db.setList(rowsKey(rootSessionID, revision), rows());
-      const stored = { summary: { ...result, revision, fileCount, additions, deletions }, before, after, sourceFingerprint, createdAt: Date.now() };
-      await saveSummary(repo, rootSessionID, stored, null, members());
+      let additions = 0, deletions = 0;
+      for (const row of rows.values()) { additions += row.additions ?? 0; deletions += row.deletions ?? 0; }
+      const orderedRows = [...rows.values()].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+      const stored = { summary: { ...result, revision, fileCount: rows.size, additions, deletions }, before, after,
+        segmentRevision: totalsMode === 'recorded' ? sourceFingerprint : null, sourceFingerprint, createdAt: Date.now() };
+      await saveSummary(repo, rootSessionID, stored, orderedRows, members());
       // Explicit opt-in retention remains supported for embedders. The host
       // default retains all revisions until deletion.
       if (Number.isFinite(options.maxRevisions)) {
@@ -408,7 +484,8 @@ export function createSessionChangeRuntime(options) {
         const previous = revisions.filter((entry) => entry.value.summary.revision !== revision).sort((a, b) => (a.value.createdAt ?? 0) - (b.value.createdAt ?? 0));
         while (previous.length > options.maxRevisions) {
           const old = previous.shift(); repo.db.remove(old.key);
-          for (const prefix of [rowsKey(rootSessionID, old.value.summary.revision), membersKey(rootSessionID, old.value.summary.revision)]) {
+          for (const prefix of [rowsKey(rootSessionID, old.value.summary.revision), membersKey(rootSessionID, old.value.summary.revision),
+            ...(old.value.segmentRevision ? [revisionSegmentsKey(rootSessionID, old.value.segmentRevision)] : [])]) {
             for await (const { key } of repo.db.entries(prefix)) repo.db.remove(key);
           }
         }
@@ -417,14 +494,21 @@ export function createSessionChangeRuntime(options) {
       return page(repo, rootSessionID, stored);
     });
   };
-  const diff = async ({ directory: requested, rootSessionID, revision, file, cursor = null }) => {
+  const diff = async ({ directory: requested, rootSessionID, revision, file, cursor = null, segment = null }) => {
     const directory = await resolveDirectory(requested);
     return serialize(directory, async () => {
       const repo = await load(directory), stored = await storedRevision(repo, rootSessionID, revision);
       let row;
       for await (const entry of repo.db.list(rowsKey(rootSessionID, revision))) if (entry.path === file) { row = entry; break; }
       if (!row) throw failure('summary_file_not_found', 404);
-      const key = hash(`${rootSessionID}\0${revision}\0${file}`);
+      const segmented = row.reviewMode === 'segments';
+      const segmentIndex = segment === null ? 0 : Number(segment);
+      if (segment !== null && !/^(0|[1-9]\d{0,9})$/.test(String(segment))
+        || !Number.isSafeInteger(segmentIndex) || segmentIndex < 0
+        || (segmented ? segmentIndex >= row.segmentCount : segment !== null)) throw failure('invalid_change_segment', 400);
+      const selected = segmented ? await repo.db.get(revisionSegmentKey(rootSessionID, stored.segmentRevision, file, segmentIndex)) : null;
+      if (segmented && !selected) throw failure('summary_detail_expired', 410);
+      const key = hash(`${rootSessionID}\0${revision}\0${file}\0${segmented ? segmentIndex : 'net'}`);
       let offset = 0;
       if (cursor !== null) {
         const match = typeof cursor === 'string' && cursor.match(/^([a-f0-9]{64}):(\d{1,16})$/);
@@ -437,8 +521,9 @@ export function createSessionChangeRuntime(options) {
       try { await fs.access(patchPath); } catch {
         const temporary = `${patchPath}.${crypto.randomUUID()}`;
         try {
-          await gitToFile(storage, ['--git-dir', repo.gitDir, '--literal-pathspecs', 'diff', '--no-ext-diff', '--no-textconv',
-            stored.before, stored.after, '--', ...(row.oldPath ? [row.oldPath] : []), row.path], temporary);
+          if (selected?.patchOID) await gitToFile(storage, ['--git-dir', repo.gitDir, 'cat-file', 'blob', selected.patchOID], temporary);
+          else await gitToFile(storage, ['--git-dir', repo.gitDir, '--literal-pathspecs', 'diff', '--no-ext-diff', '--no-textconv',
+            selected?.beforeTree ?? stored.before, selected?.afterTree ?? stored.after, '--', ...(row.oldPath ? [row.oldPath] : []), row.path], temporary);
           await fs.rename(temporary, patchPath);
         } finally { await fs.rm(temporary, { force: true }); }
       }
@@ -453,6 +538,9 @@ export function createSessionChangeRuntime(options) {
         while (start < bytesRead && (buffer[start] & 0xc0) === 0x80) start++;
         while (length < bytesRead && (buffer[length] & 0xc0) === 0x80) length++;
         return { rootSessionID, revision, path: file, patch: buffer.subarray(start, length).toString(), totalBytes: size,
+          reviewMode: segmented ? 'segments' : 'net', segmentIndex: segmented ? segmentIndex : null,
+          segmentCount: segmented ? row.segmentCount : 0,
+          segment: selected ? { sessionID: selected.sessionID, messageID: selected.messageID, callID: selected.callID, source: selected.source } : null,
           pageIndex: offset / DIFF_BYTES, previousCursor: offset > DIFF_BYTES ? `${key}:${offset - DIFF_BYTES}` : null,
           nextCursor: offset + length < size ? `${key}:${offset + DIFF_BYTES}` : null };
       } finally { await handle.close(); }
@@ -467,7 +555,8 @@ export function createSessionChangeRuntime(options) {
     return serialize(directory, async () => {
       const repo = await load(directory), stored = await repo.db.get(summaryKey(rootSessionID));
       if (!stored || stored.summary.revision !== revision) throw failure('summary_revision_changed');
-      if (stored.summary.coverage !== 'complete') throw failure('summary_incomplete');
+      if (stored.summary.coverage !== 'complete' || stored.summary.restoreAvailable !== true
+        || stored.summary.attributionVersion !== ATTRIBUTION_VERSION) throw failure('summary_incomplete');
       for await (const entry of repo.db.entries('pending')) { void entry; throw failure('directory_busy'); }
       const from = new Map(), to = new Map();
       for await (const entry of changeTreeEntries(repo, redo ? stored.before : stored.after)) from.set(...entry);
@@ -573,11 +662,12 @@ export function createSessionChangeRuntime(options) {
           putOperation(repo, op);
         } else if (!retainedParent && removed.has(op.sessionID)) {
           active.delete(op.id); repo.db.remove(operationKey(op.id)); repo.db.remove(timelineKey(op)); repo.db.remove(`pending/${op.id}.json`);
+          for await (const { key } of repo.db.entries(receiptPatchesKey(op.id))) repo.db.remove(key);
         }
       }
       for (const id of removed) {
         repo.db.remove(sessionKey(id)); repo.db.remove(summaryKey(id)); repo.db.remove(`generations/${hash(id)}.json`);
-        for (const prefix of [`revisions/${hash(id)}`, `rows/${hash(id)}`, `members/${hash(id)}`, `history/${hash(id)}`]) {
+        for (const prefix of [`revisions/${hash(id)}`, `rows/${hash(id)}`, `members/${hash(id)}`, `history/${hash(id)}`, `segments/${hash(id)}`]) {
           for await (const { key } of repo.db.entries(prefix)) repo.db.remove(key);
         }
       }
@@ -599,11 +689,17 @@ export function createSessionChangeRuntime(options) {
       const repo = await load(directory), key = `history/${hash(sessionID)}/state.json`;
       for (const message of messages) repo.db.set(`history/${hash(sessionID)}/messages/${hash(message.id)}.json`, message);
       if (state !== undefined) repo.db.set(key, state);
+      if (state?.complete && state.first?.id) {
+        const session = await noteSession(repo, { sessionID });
+        if (session.firstUserMessageID !== state.first.id) {
+          session.firstUserMessageID = state.first.id; repo.db.set(sessionKey(sessionID), session);
+        }
+      }
       await repo.db.commit();
       return repo.db.get(key);
     });
   };
-  return { begin, finish, importHistorical, registerSession, summarize, summaryPage, diff, restore, deleteSession, historyState,
+  return { begin, finish, recordReceipt, importHistorical, registerSession, summarize, summaryPage, diff, restore, deleteSession, historyState,
     async drain() { await Promise.all([...tails.values()]); },
     async observe(event, directory) {
       const part = event?.properties?.part;

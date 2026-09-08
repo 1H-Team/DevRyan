@@ -195,12 +195,16 @@ export const createWebHarnessRuntime = (options = {}) => {
     record,
     recordOpenCodeEvent(payload, directory = null) {
       primaryRecoveryRuntime?.observe(payload);
-      void sessionChangeHost?.observe(payload, directory).catch(() => record({ type: 'log', event: 'session_changes_observation_failed' }));
+      void sessionChangeHost?.observe(payload, directory).catch((error) => record({ type: 'log', event: 'session_changes_observation_failed',
+        sessionID: payload?.properties?.part?.sessionID ?? payload?.properties?.sessionID ?? null,
+        payload: { callID: payload?.properties?.part?.callID ?? null, code: typeof error?.code === 'string' ? error.code : 'capture_unavailable' },
+      }));
       return record({
         type: 'open_code_event',
         directory,
         sessionID: payload?.properties?.sessionID
           ?? payload?.properties?.info?.sessionID
+          ?? payload?.properties?.part?.sessionID
           ?? null,
         payload,
       });

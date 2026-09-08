@@ -637,7 +637,9 @@ export function createEventPipeline(input: EventPipelineInput) {
     const normalizedPayload = normalizeIncomingEvent(payload)
     const normalizedType = (normalizedPayload as unknown as { type?: string }).type
     if (normalizedType === "session.changes.updated") {
-      sessionEvents.requestGitRefresh({ directory: routeDirectory?.(directory, normalizedPayload) || directory, sessionChanges: true })
+      const properties: unknown = "properties" in normalizedPayload ? normalizedPayload.properties : null
+      const sessionID = properties && typeof properties === "object" && "sessionID" in properties && typeof properties.sessionID === "string" ? properties.sessionID : undefined
+      sessionEvents.requestGitRefresh({ directory: routeDirectory?.(directory, normalizedPayload) || directory, sessionChanges: true, sessionID })
       return
     }
     if (normalizedType === "openchamber:primary-recovery") {

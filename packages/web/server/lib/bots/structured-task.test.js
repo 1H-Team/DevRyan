@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { runBotStructuredTask } from './structured-task.js';
 
@@ -41,6 +41,7 @@ describe('Bot structured task lifecycle', () => {
     expect(adapter.closeRun).toHaveBeenCalledWith({
       runId: RUN_ID,
       binding: { kind: 'opencode' },
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -58,5 +59,64 @@ describe('Bot structured task lifecycle', () => {
       title: 'Routine draft',
     })).rejects.toThrow('invalid output');
     expect(adapter.closeRun).toHaveBeenCalledTimes(1);
+  });
+});
+
+const structuredInput = (adapter, signal) => ({
+  adapter, signal, run: { id: RUN_ID }, contract: {}, binding: { kind: 'opencode' },
+  prompt: 'Return JSON', schema: { type: 'object' }, title: 'Memory extraction',
+});
+
+const fakeDeadlines = () => {
+  vi.useFakeTimers();
+  vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), ms);
+    return controller.signal;
+  });
+};
+
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
+
+describe('structured extraction deadlines', () => {
+  it('bounds hung cleanup to five seconds after successful completion', async () => {
+    fakeDeadlines();
+    const adapter = createAdapter();
+    adapter.closeRun.mockImplementation(() => new Promise(() => {}));
+    const result = runBotStructuredTask(structuredInput(adapter));
+    let settled = false;
+    void result.then(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(result).resolves.toEqual({ ok: true });
+  });
+
+  it('propagates inline cancellation through completion and uses a fresh cleanup signal', async () => {
+    const adapter = createAdapter();
+    const controller = new AbortController();
+    adapter.completeStructured.mockImplementation(() => new Promise(() => {}));
+    const result = runBotStructuredTask(structuredInput(adapter, controller.signal));
+    const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(adapter.completeStructured).toHaveBeenCalled());
+    controller.abort();
+    await rejected;
+    expect(adapter.prepareRevision.mock.calls[0][0].signal).toBe(controller.signal);
+    expect(adapter.completeStructured.mock.calls[0][0].signal).toBe(controller.signal);
+    expect(adapter.closeRun.mock.calls[0][0].signal.aborted).toBe(false);
+  });
+
+  it('cleans a runtime that finishes preparing after cancellation', async () => {
+    const adapter = createAdapter();
+    const controller = new AbortController();
+    let finish;
+    adapter.prepareRevision.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const result = runBotStructuredTask(structuredInput(adapter, controller.signal));
+    const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort();
+    await rejected;
+    finish({ prepared: true });
+    await vi.waitFor(() => expect(adapter.closeRun).toHaveBeenCalledTimes(2));
+    expect(adapter.completeStructured).not.toHaveBeenCalled();
   });
 });

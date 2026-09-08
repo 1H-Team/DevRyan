@@ -18,7 +18,7 @@ const SESSION_TITLE_MAX_LENGTH = 80;
 const PLACEHOLDER_RECOVERY_CONCURRENCY = 2;
 // Title generation is bounded end to end. The UI keeps the submitted prompt
 // until a model title (or the final exhausted-generation fallback) is ready.
-const SESSION_MODEL_TITLE_TIMEOUT_MS = 10_000;
+const SESSION_MODEL_TITLE_TIMEOUT_MS = 30_000;
 const SESSION_MODEL_TITLE_MAX_ATTEMPTS = 2;
 const TITLE_HELPER_RECOVERY_TIMEOUT_MS = 2_500;
 const TITLE_GENERATION_RETRY_DELAY_MS = 60_000;
@@ -228,6 +228,8 @@ export const createStandardSessionTitleRuntime = ({
 } = {}) => {
   const jobsByKey = new Map();
   const pendingByKey = new Map();
+  const generationControllers = new Set();
+  const helperCleanups = new Set();
   const finalizingByKey = new Map();
   const recoveryByDirectory = new Map();
   const reconcilingByDirectory = new Map();
@@ -248,20 +250,19 @@ export const createStandardSessionTitleRuntime = ({
     if (typeof recordDiagnostic !== 'function') return;
     try {
       void Promise.resolve(recordDiagnostic({
-        type: 'log',
-        level: entry.outcome === 'failed' || entry.outcome === 'corrupt_recovered' ? 'warn' : 'info',
+        type: 'lifecycle',
         event: 'session_title_generation',
         sessionID: trimString(entry.sessionID) || undefined,
         directory: trimString(entry.directory) || undefined,
         payload: {
           stage: entry.stage,
+          helperSessionID: trimString(entry.helperSessionID) || undefined,
           outcome: entry.outcome,
           providerID: trimString(entry.providerID) || undefined,
           modelID: trimString(entry.modelID) || undefined,
           titleModel: trimString(entry.titleModel) || undefined,
           source: trimString(entry.source) || undefined,
-          attempts: Number.isFinite(entry.attempts) ? entry.attempts : undefined,
-          attempt: Number.isFinite(entry.attempt) ? entry.attempt : undefined,
+          attempt: Number.isFinite(entry.attempt) ? entry.attempt : entry.attempts,
           durationMs: Number.isFinite(entry.durationMs) ? entry.durationMs : undefined,
           reason: trimString(entry.reason) || undefined,
           status: Number.isFinite(entry.status) ? entry.status : undefined,
@@ -405,82 +406,122 @@ export const createStandardSessionTitleRuntime = ({
     await readJsonResult(buildSessionUrl(sessionID, directory), { method: 'DELETE' })
   ).ok;
 
-  const defaultSessionModelTitleGenerator = async ({ text, directory, providerID, modelID, timeoutMs }) => {
-    if (!trimString(providerID) || !trimString(modelID)) return null;
-    const deadlineAt = now() + Math.max(1, Number(timeoutMs) || Number(helperRequestTimeoutMs) || SESSION_MODEL_TITLE_TIMEOUT_MS);
-    const remainingMs = () => Math.max(1, deadlineAt - now());
-    let helperSessionID = '';
+  // Bound the operation even when a transport ignores AbortSignal. Late results
+  // have no mutation path; callers only consume the winner of this race.
+  const boundedOperation = async (operation, timeoutMs, parentSignal) => {
+    const controller = new AbortController();
+    let timer;
+    let onAbort;
     try {
-      const createUrl = buildSessionListUrl(directory);
-      if (!createUrl) return null;
-      const createResponse = await fetchImpl(createUrl, {
-        method: 'POST',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...getOpenCodeAuthHeaders() },
-        body: JSON.stringify({ title: SESSION_TITLE_HELPER_SESSION_TITLE }),
-        signal: AbortSignal.timeout(remainingMs()),
+      return await Promise.race([
+        new Promise((_, reject) => {
+          const stop = (reason) => {
+            controller.abort();
+            reject(Object.assign(new Error(reason), { titleFailureReason: reason }));
+          };
+          onAbort = () => stop('cancelled');
+          if (parentSignal?.aborted) return onAbort();
+          parentSignal?.addEventListener('abort', onAbort, { once: true });
+          timer = setTimer(() => stop('timeout'), Math.max(1, timeoutMs));
+          timer?.unref?.();
+        }),
+        Promise.resolve().then(() => {
+          if (controller.signal.aborted) throw Object.assign(new Error('cancelled'), { titleFailureReason: 'cancelled' });
+          return operation(controller.signal);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimer(timer);
+      parentSignal?.removeEventListener('abort', onAbort);
+    }
+  };
+
+  const defaultSessionModelTitleGenerator = async (input) => {
+    const { text, directory, providerID, modelID, timeoutMs, signal } = input;
+    const deadlineAt = now() + timeoutMs;
+    let helperSessionID = '';
+    const report = (stage, outcome, reason, status) => emitDiagnostic({
+      ...input, helperSessionID, stage, outcome, reason, status,
+    });
+    const request = (url, options, budget) => boundedOperation(async (requestSignal) => {
+      const response = await fetchImpl(url, {
+        ...options,
+        headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders(), ...options?.headers },
+        signal: requestSignal,
       });
-      if (!createResponse?.ok) return null;
-      const created = await createResponse.json().catch(() => null);
+      if (!response?.ok) throw Object.assign(new Error('http_failure'), {
+        titleFailureReason: 'http_failure', status: Number(response?.status) || 0,
+      });
+      return response.json();
+    }, budget, signal);
+    let reason = 'empty_response';
+    try {
+      const created = await request(buildSessionListUrl(directory), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: SESSION_TITLE_HELPER_SESSION_TITLE }),
+      }, deadlineAt - now());
       helperSessionID = trimString(created?.id ?? created?.data?.id);
-      if (!helperSessionID) return null;
+      if (!helperSessionID) return { title: null, reason: 'empty_response' };
+      report('helper_created', 'complete');
       const messageUrl = buildSessionUrl(helperSessionID, directory, '/message');
-      if (!messageUrl) return null;
-      const recoverCompletedTitle = async () => {
-        try {
-          const response = await fetchImpl(messageUrl, {
-            headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-            signal: AbortSignal.timeout(TITLE_HELPER_RECOVERY_TIMEOUT_MS),
-          });
-          if (!response?.ok) return null;
-          const records = await response.json().catch(() => null);
-          const assistants = (Array.isArray(records) ? records : [records])
-            .filter((record) => trimString(record?.info?.role ?? record?.role).toLowerCase() === 'assistant')
-            .reverse();
-          for (const record of assistants) {
-            const recovered = normalizeGeneratedSessionTitle(extractAssistantText(record), text);
-            if (recovered) return recovered;
-          }
-        } catch {
+      for (const prompt of [buildSummarizationInput(text, SESSION_TITLE_MAX_LENGTH, 'title'), TITLE_HELPER_REPAIR_PROMPT]) {
+        if (now() >= deadlineAt || signal.aborted) {
+          reason = signal.aborted ? 'cancelled' : 'timeout';
+          break;
         }
-        return null;
-      };
-      for (const prompt of [
-        buildSummarizationInput(text, SESSION_TITLE_MAX_LENGTH, 'title'),
-        TITLE_HELPER_REPAIR_PROMPT,
-      ]) {
-        if (now() >= deadlineAt) break;
         try {
-          const response = await fetchImpl(messageUrl, {
-            method: 'POST',
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...getOpenCodeAuthHeaders() },
+          const result = await request(messageUrl, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               agent: SESSION_TITLE_HELPER_AGENT,
               model: { providerID: trimString(providerID), modelID: trimString(modelID) },
-              tools: {},
-              parts: [{ type: 'text', text: prompt }],
+              tools: {}, parts: [{ type: 'text', text: prompt }],
             }),
-            signal: AbortSignal.timeout(remainingMs()),
-          });
-          if (!response?.ok) return null;
-          const result = await response.json().catch(() => null);
-          const title = normalizeGeneratedSessionTitle(extractAssistantText(result?.data ?? result), text);
-          if (title) return title;
-        } catch {
-          return recoverCompletedTitle();
+          }, deadlineAt - now());
+          const raw = extractAssistantText(result?.data ?? result);
+          const title = normalizeGeneratedSessionTitle(raw, text);
+          if (title) return { title };
+          reason = raw ? 'validation_rejection' : 'empty_response';
+          report('helper_response', 'failed', reason);
+        } catch (error) {
+          reason = error?.titleFailureReason || 'request_failure';
+          report('helper_response', 'failed', reason, error?.status);
+          break;
         }
       }
-      return recoverCompletedTitle();
+      if (signal.aborted) return { title: null, reason: 'cancelled' };
+      // Recovery owns a fresh budget; cleanup cannot consume it.
+      try {
+        const records = await request(messageUrl, {}, TITLE_HELPER_RECOVERY_TIMEOUT_MS);
+        const assistants = (Array.isArray(records) ? records : [records])
+          .filter((record) => trimString(record?.info?.role ?? record?.role).toLowerCase() === 'assistant')
+          .reverse();
+        for (const record of assistants) {
+          if (!Number.isFinite(record?.info?.time?.completed) && !trimString(record?.info?.finish)) continue;
+          const title = normalizeGeneratedSessionTitle(extractAssistantText(record), text);
+          if (title) {
+            report('recovery', 'complete');
+            return { title };
+          }
+        }
+        report('recovery', 'failed', 'recovery_failure');
+      } catch (error) {
+        report('recovery', 'failed', error?.titleFailureReason === 'cancelled' ? 'cancelled' : 'recovery_failure', error?.status);
+      }
+      return { title: null, reason };
+    } catch (error) {
+      reason = error?.titleFailureReason || 'request_failure';
+      report('helper_create', 'failed', reason, error?.status);
+      return { title: null, reason };
     } finally {
       if (helperSessionID) {
-        await deleteSession(helperSessionID, directory).catch((error) => {
-          logger.warn?.('[SessionTitle] Failed to clean up internal helper session:', error instanceof Error ? error.message : error);
-        });
+        const cleanup = deleteSession(helperSessionID, directory)
+          .then((ok) => report('helper_cleanup', ok ? 'complete' : 'failed', ok ? undefined : 'cleanup_failure'))
+          .finally(() => helperCleanups.delete(cleanup));
+        helperCleanups.add(cleanup);
       }
     }
   };
-  const sessionModelTitleGenerator = typeof generateSessionModelTitle === 'function'
-    ? generateSessionModelTitle
-    : defaultSessionModelTitleGenerator;
 
   const retryDelayFor = (attemptCount) => {
     const delays = Array.isArray(retryDelaysMs) && retryDelaysMs.length > 0 ? retryDelaysMs : RETRY_DELAYS_MS;
@@ -799,28 +840,22 @@ export const createStandardSessionTitleRuntime = ({
     return 'projected';
   };
 
-  // One bounded call: the race guarantees `run` returns even if an injected
-  // generator never settles, and the default helper shares the same deadline.
   const requestSessionModelTitle = async (input) => {
     const timeoutMs = Math.max(1, Number(helperRequestTimeoutMs) || SESSION_MODEL_TITLE_TIMEOUT_MS);
-    const timeoutMarker = Symbol('session-model-timeout');
-    let timer = null;
+    const controller = new AbortController();
+    generationControllers.add(controller);
     try {
-      const result = await Promise.race([
-        Promise.resolve().then(() => sessionModelTitleGenerator({ ...input, timeoutMs })),
-        new Promise((resolve) => {
-          timer = setTimer(() => resolve(timeoutMarker), timeoutMs);
-          timer?.unref?.();
-        }),
-      ]);
-      if (result === timeoutMarker) return { title: null, reason: 'timeout' };
-      const title = normalizeGeneratedSessionTitle(result?.title ?? result, input.text);
-      return { title, reason: title ? '' : 'rejected' };
+      const result = typeof generateSessionModelTitle === 'function'
+        ? await boundedOperation((signal) => generateSessionModelTitle({ ...input, timeoutMs, signal }), timeoutMs, controller.signal)
+        : await defaultSessionModelTitleGenerator({ ...input, timeoutMs, signal: controller.signal });
+      if (controller.signal.aborted) return { title: null, reason: 'cancelled' };
+      const raw = result && typeof result === 'object' ? result.title : result;
+      const title = normalizeGeneratedSessionTitle(raw, input.text);
+      return { title, reason: title ? '' : (result?.reason || (trimString(raw) ? 'validation_rejection' : 'empty_response')) };
     } catch (error) {
-      logger.warn?.('[SessionTitle] Session-model title generation failed:', error instanceof Error ? error.message : error);
-      return { title: null, reason: 'error' };
+      return { title: null, reason: error?.titleFailureReason || 'request_failure' };
     } finally {
-      if (timer) clearTimer(timer);
+      generationControllers.delete(controller);
     }
   };
 
@@ -917,6 +952,7 @@ export const createStandardSessionTitleRuntime = ({
       providerID: effectiveProviderID,
       modelID: effectiveModelID,
     };
+    if (disposed) return true;
     const startedAt = now();
     const { title: modelTitle, reason } = effectiveProviderID && effectiveModelID
       ? await requestSessionModelTitle(upgradeInput)
@@ -1114,6 +1150,7 @@ export const createStandardSessionTitleRuntime = ({
 
   const dispose = async () => {
     disposed = true;
+    for (const controller of generationControllers) controller.abort();
     for (const scheduled of watchdogsByDirectory.values()) clearTimer(scheduled.handle);
     watchdogsByDirectory.clear();
     for (const scheduled of generationRetryTimers.values()) clearTimer(scheduled.handle);
@@ -1124,6 +1161,7 @@ export const createStandardSessionTitleRuntime = ({
       ...recoveryByDirectory.values(),
       ...reconcilingByDirectory.values(),
     ]);
+    await Promise.allSettled([...helperCleanups]);
     await outboxStore.dispose();
   };
 

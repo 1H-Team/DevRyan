@@ -1,0 +1,33 @@
+[
+  {
+    "package": "oh-my-opencode-slim",
+    "version": "2.2.15",
+    "differences": []
+  },
+  {
+    "package": "@rama_nigg/open-cursor",
+    "version": "2.5.4",
+    "differences": []
+  },
+  {
+    "package": "opencode-gpt-imagegen",
+    "version": "0.1.10",
+    "differences": []
+  },
+  {
+    "package": "opencode-with-claude",
+    "version": "1.8.0",
+    "differences": []
+  },
+  {
+    "package": "@rynfar/meridian",
+    "version": "1.62.6",
+    "differences": [
+      {
+        "file": "dist/cli-wxk8xvd3.js",
+        "status": "modified",
+        "sha256": "3780a40b4d02927087565706ce3e8d4cb355be8cd8c6b6b0be44f4c497cf5114"
+      }
+    ]
+  }
+]

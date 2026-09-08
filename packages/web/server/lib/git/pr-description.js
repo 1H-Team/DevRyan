@@ -1,5 +1,5 @@
 import { normalizePullRequestDraft, runFreeZenModelRotation, sharedFreeZenCooldowns } from '@openchamber/shared-runtime';
-import { generateZenText } from '../text/summarization.js';
+import { generateZenText, resolveZenSessionID } from '../text/summarization.js';
 
 export const PR_GENERATION_MODEL_TIMEOUT_MS = 15_000;
 export const PR_GENERATION_MAX_TOKENS = 1_200;
@@ -9,6 +9,7 @@ export const PR_GENERATION_MAX_FREE_MODELS = 3;
 export const PR_GENERATION_FREE_DEADLINE_MS = 45_000;
 
 export async function generatePullRequestDescriptionDirect({
+  sessionID,
   prompt,
   models,
   timeoutMs = PR_GENERATION_MODEL_TIMEOUT_MS,
@@ -20,6 +21,7 @@ export async function generatePullRequestDescriptionDirect({
   afterAttempt,
   now,
 }) {
+  const requestSessionID = resolveZenSessionID(sessionID);
   const result = await runFreeZenModelRotation({
     models,
     timeoutMs,
@@ -30,6 +32,7 @@ export async function generatePullRequestDescriptionDirect({
     now,
     request: ({ model, timeoutMs: modelTimeoutMs, signal }) => requestText({
       prompt,
+      sessionID: requestSessionID,
       zenModel: model,
       timeoutMs: modelTimeoutMs,
       signal,

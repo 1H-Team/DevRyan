@@ -102,6 +102,7 @@ describe('managed orchestration contract', () => {
       childPromptedAt: null,
       firstAssistantPartAt: null,
       waitingReason: null,
+      transportRecovery: null,
       failureReason: null,
       partial: false,
       recoverablePreview: '',

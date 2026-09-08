@@ -44,11 +44,11 @@ test('prefix evidence distinguishes changed instructions, tool schemas, and miss
   assert.deepEqual(grade.checks[2].missingResults, ['tool-0', 'tool-1']);
 });
 
-test('hidden provider requests are counted separately from client requests', () => {
+test('hidden provider requests are counted separately and reject upgrade acceptance', () => {
   const requests = history();
   requests.splice(1, 0, { ...requests[0], primary: false });
   const grade = gradePrefixRequests(requests, expected);
-  assert.equal(grade.passed, true);
+  assert.equal(grade.passed, false);
   assert.equal(grade.providerRequests, 4);
   assert.equal(grade.clientRequests, 3);
   assert.equal(grade.hiddenRequests, 1);

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { applyMeridianHttpHotfix, MERIDIAN_HTTP_SERVER_ORIGINAL } from './meridian-http-hotfix.js';
+import { applyMeridianHttpHotfix, MERIDIAN_HTTP_SERVER_ORIGINAL, MERIDIAN_REVIEWED_PATCHES } from './meridian-http-hotfix.js';
 import { serveMeridianHttp } from './meridian-http-server.js';
 import { MERIDIAN_HANDOFF_EDITS, MERIDIAN_HANDOFF_HELPER, MERIDIAN_PREFIX_EDITS, stripMeridianHandoffPatch } from './meridian-passthrough-hotfix.js';
 
@@ -128,5 +128,31 @@ describe('Meridian native HTTP cancellation compatibility', () => {
     await Promise.resolve();
     expect(callback).toHaveBeenCalledExactlyOnceWith();
     expect(native.stop.mock.calls).toEqual([[], [true]]);
+  });
+});
+
+describe('Meridian upgrade source gates', () => {
+  it('supports the candidate without weakening current patch recovery or accepting partial candidates', () => {
+    const review = MERIDIAN_REVIEWED_PATCHES['1.68.0'];
+    const { root, dist } = fixture('1.68.0');
+    const upstreamFork = '...isUndo || forkSession || resumeSessionId && forkSessionId || passthrough && resumeSessionAtUuid ? { forkSession: true } : {},';
+    const candidateSource = `async function start() {\n${MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;\n}\n${review.edits.map(([before]) => before).join('\n')}\n${upstreamFork}`;
+    const entry = path.join(dist, review.entry);
+    fs.writeFileSync(entry, candidateSource);
+    const options = { configDirectory: root, expectedOriginalSha256: sha256(candidateSource) };
+    expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: true, changed: true, version: '1.68.0', entry: review.entry });
+    const complete = fs.readFileSync(entry, 'utf8');
+    expect(complete).toContain(upstreamFork);
+    expect(complete).toContain('REPLAY_PROVENANCE_NOTE');
+    expect(complete).toContain('continue: false');
+    expect(complete).toContain('CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS: "1"');
+    expect(complete).not.toContain('CLAUDE_CODE_SESSION_KIND: "bg"');
+    expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: true, changed: false });
+    for (const [before, after] of review.edits) {
+      const partial = complete.replace(after, before);
+      fs.writeFileSync(entry, partial);
+      expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: false });
+      expect(fs.readFileSync(entry, 'utf8')).toBe(partial);
+    }
   });
 });

@@ -3,6 +3,20 @@ import { describe, expect, test } from 'bun:test';
 import { createDiagnosticSanitizer } from './sanitizer.js';
 
 describe('diagnostic sanitizer', () => {
+  test('keeps bounded memory extraction diagnostics and excludes conversation content', () => {
+    const record = createDiagnosticSanitizer().sanitizeRecord({
+      type: 'lifecycle', event: 'bot.memory.extraction.terminal_failure', payload: {
+        runId: 'run-1', attemptCount: 3, validator: 'session_id', reason: 'shape',
+        text: 'private conversation', input: { text: 'private source' },
+        rejectionReasons: { schema_invalid: 2, secret_rejected: 1, arbitrary: 'private memory' },
+      },
+    });
+    expect(record.payload).toEqual({
+      runId: 'run-1', attemptCount: 3, validator: 'session_id', reason: 'shape',
+      rejectionReasons: { schema_invalid: 2, secret_rejected: 1 },
+    });
+  });
+
   test('preserves the provider token breakdown needed to audit context usage', () => {
     const sanitizer = createDiagnosticSanitizer();
     const record = sanitizer.sanitizeRecord({

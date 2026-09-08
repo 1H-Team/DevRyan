@@ -4,6 +4,7 @@ import {
   BOT_MEMORY_EXTRACTION_SCHEMA,
   buildBotMemoryExtractionPrompt,
   classifyBotMemoryCandidates,
+  summarizeBotMemoryClassification,
 } from './memory-classifier.js';
 
 const BOT_ID = '11111111-1111-4111-8111-111111111111';
@@ -64,6 +65,29 @@ describe('Bot memory classifier', () => {
     transcript: 'A short completed private conversation.',
   });
 
+  it('attaches verified server provenance without asking the model for source identifiers', () => {
+    const result = classifyBotMemoryCandidates({
+      output: { candidates: [candidate({ provenance: { messageIds: [RUN_ID] }, subjectUserId: OTHER_ID })] },
+      botId: BOT_ID, channelId: CHANNEL_ID, runId: RUN_ID, ownerUserId: OWNER_ID,
+      messageIds: [MESSAGE_ID], transcript: 'Completed conversation', serverProvenance: true,
+    });
+    expect(BOT_MEMORY_EXTRACTION_SCHEMA.properties.candidates.items.required).not.toContain('provenance');
+    expect(result.accepted[0]).toMatchObject({
+      botId: BOT_ID, subjectUserId: null, classifier: { version: 2 },
+      provenance: { channelId: CHANNEL_ID, runId: RUN_ID, messageIds: [MESSAGE_ID] },
+    });
+    expect(result.rejected).toEqual([]);
+  });
+
+  it('distinguishes no facts, policy filtering, usable facts and malformed candidates without retaining text', () => {
+    expect(summarizeBotMemoryClassification(classify([]))).toEqual({ outcome: 'no_facts', rejectionReasons: {} });
+    expect(summarizeBotMemoryClassification(classify([candidate({ statement: 'password: never-store-this' })])))
+      .toEqual({ outcome: 'filtered', rejectionReasons: { secret_rejected: 1 } });
+    expect(summarizeBotMemoryClassification(classify([candidate()])).outcome).toBe('saved');
+    expect(summarizeBotMemoryClassification(classify([{}, candidate()])))
+      .toEqual({ outcome: 'invalid', rejectionReasons: { schema_statement_invalid: 1 } });
+  });
+
   it('recovers JSON wrapped in a markdown fence, a leading sentence, or a bare array', () => {
     const encoded = JSON.stringify({ candidates: [candidate()] });
     expect(classifyOutput(`\`\`\`json\n${encoded}\n\`\`\``).accepted).toHaveLength(1);
@@ -73,9 +97,10 @@ describe('Bot memory classifier', () => {
       .toHaveLength(1);
   });
 
-  it('treats an empty or candidate-less answer as zero candidates rather than a failure', () => {
-    expect(classifyOutput('').accepted).toEqual([]);
-    expect(classifyOutput('{}').accepted).toEqual([]);
+  it('requires an explicit candidate list before reporting no reusable facts', () => {
+    for (const value of ['', '{}', null]) {
+      expect(() => classifyOutput(value)).toThrow(expect.objectContaining({ reason: 'shape' }));
+    }
     expect(classifyOutput({ candidates: [] }).accepted).toEqual([]);
   });
 

@@ -26,6 +26,10 @@ type BotMessageListProps = {
   computerSlot?: React.ReactNode;
 };
 
+export type BotMessageListHandle = {
+  scrollToLatest: (mode: 'force' | 'if-following') => void;
+};
+
 type PendingPrepend = {
   channelId: string;
   firstMessageId: string | null;
@@ -33,13 +37,13 @@ type PendingPrepend = {
   scrollTop: number;
 };
 
-export const BotMessageList: React.FC<BotMessageListProps> = ({
+export const BotMessageList = React.forwardRef<BotMessageListHandle, BotMessageListProps>(function BotMessageList({
   bot,
   channelId,
   typingRunId,
   acceptingMessage = false,
   computerSlot,
-}) => {
+}, ref) {
   const { t } = useI18n();
   const sharedMessageIds = useBotSharedFilesStore(useShallow((state) => (
     (state.fileIdsByChannelId[channelId] ?? []).map((fileId) => state.filesById[fileId]?.messageId)
@@ -108,6 +112,17 @@ export const BotMessageList: React.FC<BotMessageListProps> = ({
     if (!element || !pinnedRef.current) return;
     element.scrollTop = element.scrollHeight;
   }, []);
+
+  const scrollToLatest = React.useCallback((mode: 'force' | 'if-following') => {
+    if (mode === 'force') pinnedRef.current = true;
+    scrollToBottom();
+  }, [scrollToBottom]);
+
+  React.useImperativeHandle(ref, () => ({ scrollToLatest }), [scrollToLatest]);
+
+  const handleQuickReplyIntent = React.useCallback(() => {
+    scrollToLatest('force');
+  }, [scrollToLatest]);
 
   React.useLayoutEffect(() => {
     pinnedRef.current = true;
@@ -194,7 +209,7 @@ export const BotMessageList: React.FC<BotMessageListProps> = ({
     const runId = message?.runId ?? null;
     const failureRunId = runId && runId !== next?.runId ? runId : null;
     return <>
-      <BotMessageRow bot={bot} messageId={messageId} />
+      <BotMessageRow bot={bot} messageId={messageId} onQuickReplyIntent={handleQuickReplyIntent} />
       {failureRunId ? <BotRunFailureNotice runId={failureRunId} channelId={channelId}
         sourceHasAttachments={runHasAttachments.get(failureRunId) === true} /> : null}
     </>;
@@ -277,4 +292,4 @@ export const BotMessageList: React.FC<BotMessageListProps> = ({
       </div>
     </div>
   );
-};
+});

@@ -87,6 +87,7 @@ const createHarness = (overrides = {}) => {
     ...overrides.channels,
   };
   const memoryRuntime = {
+    listExtractions: vi.fn(async () => ({ jobs: [], nextCursor: 'next-page' })),
     listForManager: vi.fn(async () => ({ memories: [], nextCursor: null })),
     getForManager: vi.fn(async () => ({ memory: { id: OBJECT_ID }, versions: [], sources: [] })),
     editMemory: vi.fn(async () => ({ memory: { id: OBJECT_ID } })),
@@ -451,6 +452,24 @@ describe('Production Bots capabilities and routes', () => {
       code: 'dependency_unavailable',
       retryable: true,
     });
+  });
+
+  it('serves assigned catalog summaries through the static route and preserves failures', async () => {
+    const assigned = { bots: [{ id: BOT_ID }], revisions: [], memberships: [] };
+    const assignedForPrincipal = vi.fn(async () => assigned);
+    const harness = createHarness({ channels: { assignedForPrincipal } });
+    const principal = { id: USER_ID, role: 'admin', scope: 'managed' };
+    expect(harness.registrations.indexOf('GET /api/bots/assigned')).toBeLessThan(
+      harness.registrations.indexOf('GET /api/bots/:botId'),
+    );
+    const response = await harness.invoke('GET', '/api/bots/assigned', { principal });
+    expect(response.payload).toEqual(assigned);
+    expect(assignedForPrincipal).toHaveBeenCalledWith(principal);
+    assignedForPrincipal.mockRejectedValueOnce(Object.assign(new Error('Catalog unavailable'), { code: 'bot_catalog_unavailable', statusCode: 503 }));
+    const failure = await harness.invoke('GET', '/api/bots/assigned', { principal });
+    expect(failure.statusCode).toBe(503);
+    expect(failure.payload.code).toBe('bot_catalog_unavailable');
+    expect(failure.payload).not.toHaveProperty('bots');
   });
 
   it('registers the static Bot event stream before the dynamic Bot detail path', () => {
@@ -1291,6 +1310,18 @@ describe('Production Bots capabilities and routes', () => {
     );
   });
 
+  it('pages extraction activity independently of the memory list preview', async () => {
+    const harness = createHarness();
+    const result = await harness.invoke('GET', '/api/bots/:botId/memories/extractions', {
+      params: { botId: BOT_ID }, query: { cursor: 'opaque-cursor', limit: '25', state: 'terminal' },
+    });
+    expect(result.payload).toEqual({ jobs: [], nextCursor: 'next-page' });
+    expect(harness.memoryRuntime.listExtractions).toHaveBeenCalledWith(
+      expect.objectContaining({ id: USER_ID }), BOT_ID,
+      { cursor: 'opaque-cursor', limit: '25', state: 'terminal' },
+    );
+  });
+
   it('exposes manager memory operations and explicit shared-learning channel deletion', async () => {
     const harness = createHarness();
     const listed = await harness.invoke('GET', '/api/bots/:botId/memories', {
@@ -1567,7 +1598,7 @@ describe('Production Bots capabilities and routes', () => {
     expect(response.payload).toEqual({
       error: 'Database migration required',
       code: 'bot_schema_migration_required',
-        requiredMigration: '20260903110000',
+        requiredMigration: '20260908182901',
     });
   });
 });

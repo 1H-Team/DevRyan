@@ -227,7 +227,11 @@ export const isShellToolName = (toolName: unknown): boolean => {
 };
 
 export const isExpandableTool = (toolName: unknown): boolean => {
-    return EXPANDABLE_TOOL_NAMES.has(normalizeToolName(toolName));
+    const normalized = normalizeToolName(toolName);
+    // Context Mode failures carry recovery guidance and possibly partial output.
+    // Keep it accessible through the standard tool disclosure in both view modes.
+    return EXPANDABLE_TOOL_NAMES.has(normalized)
+        || /^(?:ctx_.+|mcp__context[-_]mode__.+)$/.test(normalized);
 };
 
 export const isStandaloneTool = (toolName: unknown): boolean => {

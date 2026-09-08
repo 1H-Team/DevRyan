@@ -79,3 +79,20 @@ describe('createCanonicalOpenCodeEventProcessor', () => {
     expect(processSessionTitle).toHaveBeenCalledWith(payload);
   });
 });
+
+
+it('forwards authoritative event directory to the journal and session receipt host', () => {
+  const recordJournalEvent = vi.fn();
+  const process = createCanonicalOpenCodeEventProcessor({ recordJournalEvent });
+  const payload = { type: 'message.part.updated', properties: { part: { sessionID: 'ses_a' } } };
+  process(payload, '/fixture/project');
+  expect(recordJournalEvent).toHaveBeenCalledWith(payload, '/fixture/project');
+});
+
+it('preserves directory scope for managed assistant activity', () => {
+  const processManagedOrchestration = vi.fn();
+  const process = createCanonicalOpenCodeEventProcessor({ processManagedOrchestration });
+  const payload = { type: 'message.updated', properties: { info: { sessionID: 'child' } } };
+  process(payload, '/fixture/project');
+  expect(processManagedOrchestration).toHaveBeenCalledWith(payload, '/fixture/project');
+});

@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import { createBotEventReconciler } from '@/apps/BotsEventOwner';
+import { botsApi, BotsApiError } from '@/lib/botsApi';
 import type {
+  BotAssignedCatalog,
   BotCapabilities,
   BotChannel,
   BotComputerStatus,
@@ -150,6 +152,80 @@ const snapshot = (): BotSnapshot => ({
 });
 
 describe('Production Bots catalog store', () => {
+  test('loads assigned bots independently and preserves a known catalog on HTTP failure', async () => {
+    let fail = false;
+    const store = createBotsStore({ api: { ...botsApi, getAssignedCatalog: async () => {
+      if (fail) throw new BotsApiError('Unavailable', { status: 503, code: 'bot_catalog_unavailable' });
+      return snapshot();
+    } } });
+    store.getState().resetPrincipal(USER_ID);
+    const pending = store.getState().loadAssignedCatalog();
+    expect(store.getState()).toMatchObject({ catalogLoading: true, catalogLoaded: false });
+    await pending;
+    expect(store.getState()).toMatchObject({ catalogLoading: false, catalogLoaded: true, catalogErrorCode: null, capabilities: null, botIds: [BOT_ID] });
+    store.getState().selectBot(BOT_ID);
+    const first = store.getState();
+    await store.getState().loadAssignedCatalog();
+    expect(store.getState().botsById).toBe(first.botsById);
+    expect(store.getState().selectedBotId).toBe(BOT_ID);
+    fail = true;
+    await store.getState().loadAssignedCatalog();
+    expect(store.getState()).toMatchObject({ catalogLoading: false, catalogLoaded: true, catalogErrorCode: 'bot_catalog_unavailable', botIds: [BOT_ID] });
+    expect(store.getState().botsById).toBe(first.botsById);
+  });
+
+  test('does not mark a first catalog failure as an empty success', async () => {
+    const store = createBotsStore({ api: { ...botsApi, getAssignedCatalog: async () => { throw new Error('network'); } } });
+    await store.getState().loadAssignedCatalog();
+    expect(store.getState()).toMatchObject({ catalogLoaded: false, catalogLoading: false, catalogErrorCode: 'bot_request_failed' });
+    store.getState().replaceSnapshot({ bots: [], memberships: [], revisions: [] });
+    expect(store.getState()).toMatchObject({ catalogLoaded: true, catalogErrorCode: null, botIds: [] });
+    store.getState().resetPrincipal(null);
+    expect(store.getState()).toMatchObject({ catalogLoaded: false, catalogErrorCode: null });
+  });
+
+  test('ignores late HTTP success and failure after a live snapshot, catalog event, reset, or disposal', async () => {
+    for (const action of ['snapshot', 'revocation', 'membership', 'bot', 'principal', 'dispose'] as const) {
+      for (const fails of [false, true]) {
+        let complete!: (value: BotAssignedCatalog) => void;
+        let reject!: (error: Error) => void;
+        const response = new Promise<BotAssignedCatalog>((resolve, fail) => { complete = resolve; reject = fail; });
+        const store = createBotsStore({ api: { ...botsApi, getAssignedCatalog: () => response } });
+        store.getState().resetPrincipal(USER_ID);
+        store.getState().replaceSnapshot(snapshot());
+        const pending = store.getState().loadAssignedCatalog();
+        if (action === 'snapshot') store.getState().replaceSnapshot({ bots: [], memberships: [], revisions: [] });
+        if (action === 'revocation') store.getState().removeBot(BOT_ID);
+        if (action === 'membership') store.getState().upsertMembership({ ...membership(), role: 'manager' });
+        if (action === 'bot') store.getState().upsertBot({ ...bot(), name: 'Updated live' });
+        if (action === 'principal') store.getState().resetPrincipal('next-account');
+        if (action === 'dispose') store.getState().cancelCatalogLoad();
+        const authoritative = store.getState();
+        if (fails) reject(new Error('late HTTP failure'));
+        else complete(snapshot());
+        await pending;
+        expect(store.getState()).toBe(authoritative);
+        expect(store.getState().catalogLoading).toBe(false);
+      }
+    }
+  });
+
+  test('rejects a snapshot without its catalog instead of clearing HTTP-loaded bots', async () => {
+    const bots = createBotsStore({ api: { ...botsApi, getAssignedCatalog: async () => snapshot() } });
+    await bots.getState().loadAssignedCatalog();
+    const channels = createBotChannelStore();
+    const operations = createBotOperationsStore();
+    const shared = createBotSharedFilesStore();
+    const reconciler = createBotEventReconciler({ stores: { bots, channels, operations, shared } });
+    const before = bots.getState();
+    expect(reconciler.ingest({ id: 'broken:0', sequence: 0, kind: 'snapshot', payload: {} }))
+      .toEqual({ accepted: false, reason: 'invalid' });
+    expect(bots.getState()).toBe(before);
+    expect(reconciler.ingest({ id: 'healthy:0', sequence: 0, kind: 'snapshot', payload: { bots: [], revisions: [], memberships: [] } }))
+      .toEqual({ accepted: true, reason: 'snapshot' });
+    expect(bots.getState().botIds).toEqual([]);
+  });
+
   test('preserves catalog and entity references for a no-op snapshot', () => {
     const store = createBotsStore();
     store.getState().replaceSnapshot(snapshot());

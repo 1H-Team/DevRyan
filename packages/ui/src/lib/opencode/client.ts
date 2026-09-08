@@ -381,10 +381,16 @@ export type SessionTreeChangedFile = {
   additions: number | null;
   deletions: number | null;
   sessions: string[];
+  reviewMode?: 'net' | 'segments';
+  segmentCount?: number;
 };
 
 export type SessionChangesDiffPage = {
   patch: string; nextCursor: string | null; previousCursor: string | null; pageIndex: number; totalBytes: number;
+  reviewMode?: 'net' | 'segments';
+  segmentIndex?: number | null;
+  segmentCount?: number;
+  segment?: { sessionID: string; messageID: string; callID: string; source: string } | null;
 };
 
 export type SessionTreeChanges = {
@@ -398,6 +404,10 @@ export type SessionTreeChanges = {
   worktreeDirectory?: string;
   coverage?: 'complete' | 'partial';
   reasons?: string[];
+  attributionVersion?: number;
+  totalsMode?: 'net' | 'recorded';
+  restoreAvailable?: boolean;
+  restoreReasons?: string[];
   undone?: boolean;
   files: SessionTreeChangedFile[];
   sessionCount: number;
@@ -662,6 +672,8 @@ export function parseSessionTreeChanges(payload: unknown): SessionTreeChanges {
         sessions: Array.isArray(entry.sessions)
           ? entry.sessions.filter((id): id is string => typeof id === "string")
           : [],
+        reviewMode: entry.reviewMode === 'segments' ? 'segments' : 'net',
+        segmentCount: parseCount(entry.segmentCount),
       });
     }
   }
@@ -681,6 +693,10 @@ export function parseSessionTreeChanges(payload: unknown): SessionTreeChanges {
     } : {}),
     coverage: record.revision && record.coverage === 'complete' ? 'complete' : 'partial',
     reasons: Array.isArray(record.reasons) ? record.reasons.filter((reason): reason is string => typeof reason === 'string') : ['capture_unavailable'],
+    attributionVersion: parseCount(record.attributionVersion),
+    totalsMode: record.totalsMode === 'recorded' ? 'recorded' : 'net',
+    restoreAvailable: record.attributionVersion === 2 && record.restoreAvailable === true && record.coverage === 'complete',
+    restoreReasons: Array.isArray(record.restoreReasons) ? record.restoreReasons.filter((reason): reason is string => typeof reason === 'string') : ['restore_evidence_unavailable'],
     files,
     ...(typeof record.fileCount === 'number' && Number.isSafeInteger(record.fileCount) && record.fileCount >= files.length ? { fileCount: record.fileCount } : {}),
     ...(typeof record.pageIndex === 'number' && Number.isSafeInteger(record.pageIndex) && record.pageIndex >= 0 ? { pageIndex: record.pageIndex } : {}),
@@ -1898,11 +1914,12 @@ class OpencodeService {
     return parseSessionTreeChanges(body);
   }
 
-  async getSessionChangesDiffPage(sessionId: string, directory: string, revision: string, file: string, cursor: string | null, signal?: AbortSignal): Promise<SessionChangesDiffPage> {
+  async getSessionChangesDiffPage(sessionId: string, directory: string, revision: string, file: string, cursor: string | null, signal?: AbortSignal, segment: number | null = null): Promise<SessionChangesDiffPage> {
     const url = buildScopedRevertUrl(this.baseUrl, sessionId, 'changes/diff', directory);
     url.searchParams.set('revision', revision);
     url.searchParams.set('file', file);
     if (cursor) url.searchParams.set('cursor', cursor);
+    if (segment !== null) url.searchParams.set('segment', String(segment));
     const response = await this.noStoreFetch(url.toString(), { signal });
     if (!response.ok) throw await readScopedRevertError(response, 'Cannot load session diff');
     const body: unknown = await response.json();
@@ -1911,7 +1928,19 @@ class OpencodeService {
       || typeof body.totalBytes !== 'number' || !Number.isSafeInteger(body.totalBytes) || body.totalBytes < 0
       || !(body.nextCursor === null || typeof body.nextCursor === 'string')
       || !(body.previousCursor === null || typeof body.previousCursor === 'string')) throw new Error('Invalid session diff page');
-    return { patch: body.patch, pageIndex: body.pageIndex, totalBytes: body.totalBytes, nextCursor: body.nextCursor, previousCursor: body.previousCursor };
+    const reviewMode = body.reviewMode === 'segments' ? 'segments' : 'net';
+    let selected: SessionChangesDiffPage['segment'] = null;
+    if (reviewMode === 'segments') {
+      if (typeof body.segmentIndex !== 'number' || !Number.isSafeInteger(body.segmentIndex) || body.segmentIndex < 0
+        || typeof body.segmentCount !== 'number' || !Number.isSafeInteger(body.segmentCount) || body.segmentCount <= body.segmentIndex
+        || segment !== null && body.segmentIndex !== segment
+        || !isRecord(body.segment) || typeof body.segment.sessionID !== 'string' || typeof body.segment.messageID !== 'string'
+        || typeof body.segment.callID !== 'string' || typeof body.segment.source !== 'string') throw new Error('Invalid session diff segment');
+      selected = { sessionID: body.segment.sessionID, messageID: body.segment.messageID, callID: body.segment.callID, source: body.segment.source };
+    } else if (segment !== null) throw new Error('Session diff segment identity mismatch');
+    return { patch: body.patch, pageIndex: body.pageIndex, totalBytes: body.totalBytes, nextCursor: body.nextCursor, previousCursor: body.previousCursor,
+      reviewMode, segmentIndex: reviewMode === 'segments' && typeof body.segmentIndex === 'number' ? body.segmentIndex : null,
+      segmentCount: reviewMode === 'segments' && typeof body.segmentCount === 'number' ? body.segmentCount : 0, segment: selected };
   }
 
   async unrevertSession(sessionId: string): Promise<Session> {

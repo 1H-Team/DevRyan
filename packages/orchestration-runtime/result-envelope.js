@@ -30,6 +30,7 @@ const AUTO_RESUME_REASONS = new Set([
   'time_cap',
   'host_failures',
   'window_rejections',
+  'backup_unavailable',
 ]);
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -82,6 +83,9 @@ export const validateManagedTaskAutoResume = (value) => {
     throw new TypeError('autoResume.enabled must be a boolean');
   }
   assertEnum(value.state, 'autoResume.state', AUTO_RESUME_STATES);
+  if (value.trigger !== undefined) {
+    assertEnum(value.trigger, 'autoResume.trigger', new Set(['provider_usage_limit', 'provider_transport']));
+  }
   assertCount(value.cancelGeneration, 'autoResume.cancelGeneration');
   assertTimestamp(value.lineageStartedAt, 'autoResume.lineageStartedAt');
   assertTimestamp(value.expiresAt, 'autoResume.expiresAt');
@@ -148,6 +152,7 @@ export const validateManagedTaskAutoResume = (value) => {
 
   return {
     revision: value.revision,
+    ...(value.trigger === undefined ? {} : { trigger: value.trigger }),
     enabled: value.enabled,
     state: value.state,
     cancelGeneration: value.cancelGeneration,

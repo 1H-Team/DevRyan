@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'vitest';
 import plugin from './devryan-session-changes.mjs';
+import { SESSION_CHANGE_READ_ONLY_TOOLS } from '@openchamber/harness-runtime';
 
 const originalUrl = process.env.DEVRYAN_ORCHESTRATION_URL;
 const originalToken = process.env.DEVRYAN_ORCHESTRATION_TOKEN;
@@ -13,7 +14,7 @@ test('captures shell, file and MCP execution boundaries without parsing commands
   process.env.DEVRYAN_ORCHESTRATION_TOKEN = 'fixture';
   const calls = [];
   const hooks = await plugin({ directory: '/fixture', fetchImpl: async (_url, init) => {
-    calls.push(JSON.parse(init.body)); return Response.json({ ok: true });
+    calls.push(JSON.parse(init.body)); return Response.json({ ok: true, result: { readOnlyTools: SESSION_CHANGE_READ_ONLY_TOOLS } });
   } });
   for (const tool of ['bash', 'oc_bash', 'write', 'ctx_execute', 'mcp_custom_execution']) {
     await hooks['tool.execute.before']({ tool, sessionID: 'ses_a', callID: tool });
@@ -23,7 +24,7 @@ test('captures shell, file and MCP execution boundaries without parsing commands
   await hooks['tool.execute.before']({ tool: 'devryan_task', sessionID: 'ses_a', callID: 'dispatch' });
   await hooks['tool.execute.before']({ tool: 'council_session', sessionID: 'ses_a', callID: 'council' });
   expect(calls).toHaveLength(10);
-  expect(calls[0]).toEqual({ method: 'session_changes', params: { action: 'before', sessionID: 'ses_a', callID: 'bash', directory: '/fixture' } });
+  expect(calls[0]).toEqual({ method: 'session_changes', params: { action: 'before', tool: 'bash', sessionID: 'ses_a', callID: 'bash', directory: '/fixture' } });
 });
 
 test('external runtimes are not mutated', async () => {

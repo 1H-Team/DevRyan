@@ -190,6 +190,8 @@ export const BOT_TABLES = Object.freeze({
       'run_id', 'bot_id', 'channel_id', 'revision_id', 'state', 'candidate_envelope',
       'candidate_persisted_at', 'attempt_count', 'next_attempt_at', 'lease_owner',
       'lease_until', 'last_phase', 'last_error_code', 'completed_at', 'created_at', 'updated_at',
+      'extraction_version', 'recovery_version', 'defer_count', 'outcome', 'last_reason',
+      'last_validator', 'rejection_reasons',
     ],
     writable: [],
     keys: ['run_id'],
@@ -227,7 +229,10 @@ const RPC_NAMES = Object.freeze({
   claimMemoryExtractionJob: 'devryan_claim_bot_memory_extraction_job',
   claimMemoryExtractionJobByRun: 'devryan_claim_bot_memory_extraction_job_by_run',
   persistMemoryExtractionCandidates: 'devryan_persist_bot_memory_extraction_candidates',
-  settleMemoryExtractionJob: 'devryan_settle_bot_memory_extraction_job',
+  settleMemoryExtractionJob: 'devryan_settle_bot_memory_extraction_job_v2',
+  recoverMemoryExtractionJob: 'devryan_recover_bot_memory_extraction_job',
+  memoryExtractionSummary: 'devryan_bot_memory_extraction_summary',
+  wakeMemoryExtractionJobs: 'devryan_wake_bot_memory_extraction_jobs',
   requeueMemoryExtractionJob: 'devryan_requeue_bot_memory_extraction_job',
   deleteChannel: 'devryan_delete_bot_channel',
   pruneAudit: 'devryan_prune_bot_audit',
@@ -922,6 +927,22 @@ export function createBotStore({ supabase, logger = null } = {}) {
     requeueMemoryExtractionJob: async ({ runId, botId }) => firstRow(
       await callRpc('requeueMemoryExtractionJob', { p_run_id: runId, p_bot_id: botId }),
     ),
+    listMemoryExtractionRecoveryCandidates: async ({ version, limit = 100 }) => {
+      if (!Number.isSafeInteger(version) || version < 1) throw new TypeError('Invalid extraction version');
+      return requireSupabase().rest('bot_memory_extraction_jobs', {
+        select: BOT_TABLES.bot_memory_extraction_jobs.select,
+        query: { recovery_version: `lt.${version}`, state: 'in.(terminal,succeeded)',
+          order: 'created_at.asc,run_id.asc', limit: normalizePageLimit(limit) },
+      });
+    },
+    recoverMemoryExtractionJob: async ({ runId, expectedUpdatedAt, version, decision }) => firstRow(
+      await callRpc('recoverMemoryExtractionJob', {
+        p_run_id: runId, p_expected_updated_at: expectedUpdatedAt,
+        p_recovery_version: version, p_decision: decision,
+      }),
+    ),
+    memoryExtractionSummary: ({ botId }) => callRpc('memoryExtractionSummary', { p_bot_id: botId }),
+    wakeMemoryExtractionJobs: ({ channelId }) => callRpc('wakeMemoryExtractionJobs', { p_channel_id: channelId }),
     settleMemoryExtractionJob: async ({
       runId,
       leaseOwner,
@@ -929,6 +950,8 @@ export function createBotStore({ supabase, logger = null } = {}) {
       nextAttemptAt = null,
       phase = null,
       errorCode = null,
+      extractionVersion = 2,
+      diagnostics = {},
     }) => firstRow(await callRpc('settleMemoryExtractionJob', {
       p_run_id: runId,
       p_lease_owner: leaseOwner,
@@ -936,6 +959,8 @@ export function createBotStore({ supabase, logger = null } = {}) {
       p_next_attempt_at: nextAttemptAt,
       p_phase: phase,
       p_error_code: errorCode,
+      p_extraction_version: extractionVersion,
+      p_diagnostics: diagnostics,
     })),
     deleteChannel: async ({ channelId, actorId }) => firstRow(await callRpc('deleteChannel', {
       p_channel_id: channelId,

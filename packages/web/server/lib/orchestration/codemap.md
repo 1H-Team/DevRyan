@@ -17,17 +17,23 @@ Web/Electron owner adapter for the transport-neutral DevRyan-managed task schedu
   agent handoff, atomic parent-recovery continuation claims, external-runtime gating, event publication, and exact-owner
   shutdown. It wires the scheduler's automatic-resume hooks (`resolveOwnerKey`,
   `resolveBackupExecution`, `resolveProviderReset`, and an `attempt` that re-enters
-  the acknowledge RPC under an internal context), exposes the scoped
+  the acknowledge RPC under an internal context, with transport-backup configuration/catalog revalidation), exposes the scoped
   `set_auto_resume` RPC, and cancels plans on `session.deleted` events. Optional `auxiliaryRpcHandlers` dispatch named bridge methods before
   scheduler initialization or availability gating, so lightweight private
   integrations can reuse the loopback bridge without touching managed-task state.
 - `atomic-ledger.js`: private atomic JSON persistence with an exclusive heartbeat owner lock, dead-process recovery regardless of heartbeat age, per-operation token fencing, legacy dispatch-group hydration, and corrupt-ledger quarantine.
-- `open-code-executor.js`: managed OpenCode HTTP transport and Cursor SDK routing for the shared executor state machine, including per-executor exact-URL status single-flight and cross-owner stale-child abort/deletion cleanup.
+- `open-code-executor.js`: managed OpenCode HTTP transport and Cursor SDK routing for the shared executor state machine, including per-executor exact-URL status single-flight and cross-owner stale-child abort/deletion cleanup and cancellation of reserved recovery POSTs.
 - `private-host.js`: authenticated IPv4-loopback RPC listener with bounded bodies and deterministic close.
 - `provider-reset-probe.js`: the scheduler's `resolveProviderReset` hook for Anthropic-routed children — resolves the loopback Meridian proxy (shared quota resolver, per-directory cache) and reads its raw quota buckets into `{ limited, resetAt }`, cached per proxy for 60 s with single-flight; null for external runtimes, other providers, or failures.
 - `routes.js`: authenticated UI snapshot, task, cancellation, acknowledgement, auto-resume toggle, and Orchestrator-to-Builder handoff endpoints.
 - `*.test.js`: focused owner, transport, persistence, security, and lifecycle coverage.
 
 ## Integration
+
+The owner feeds canonical and Cursor synthetic message events into the shared
+assistant-activity registry, preserving directory scope. Executors subscribe
+before prompting and publish their first output through ordinary progress
+updates. The server journals `managed_task.first_assistant_activity` once per
+successful attempt stamp, with content-free identity and detection-source fields.
 
 `packages/web/server/index.js` creates this runtime before OpenCode bootstrap, registers its UI routes, supplies its private environment to `lib/opencode/lifecycle.js`, publishes synthetic managed events, and disposes the owner through `lib/opencode/shutdown-runtime.js`.

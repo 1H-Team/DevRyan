@@ -38,6 +38,9 @@ describe('tts routes', () => {
     expect(response.status).toBe(502);
     // Two modes attempted, each retrying the transient 503 once.
     expect(fetch).toHaveBeenCalledTimes(4);
+    const ids = vi.mocked(fetch).mock.calls.map(([, init]) => init.headers['x-opencode-session']);
+    expect(ids[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(new Set(ids).size).toBe(1);
     expect(response.body).toEqual({
       error: 'Note summarization failed',
       reason: 'Zen API returned 503: unavailable',

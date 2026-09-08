@@ -2,6 +2,14 @@
 
 ## Purpose
 
+Canonical OpenCode and Cursor synthetic message events feed the shared active-child
+assistant-activity registry. It preserves directory scope and supplies the
+executor's optional subscription hook without another SSE connection. First
+reasoning, text or tool activity publishes the existing progress timestamp without
+waiting for transcript polling. The content-free journal event
+`managed_task.first_assistant_activity` identifies task, child, assistant message,
+observation time and `event`/`transcript` detection source.
+
 This module owns the single DevRyan-managed scheduler for the web server process. Electron inherits the same owner because it starts this web server in-process. Provider-native task events do not enter this module and are never counted or cancelled here.
 
 ## Ownership and startup
@@ -9,6 +17,8 @@ This module owns the single DevRyan-managed scheduler for the web server process
 `runtime.js` composes the shared `@openchamber/orchestration-runtime` scheduler with the web OpenCode transport, atomic ledger, synthetic-event publisher, and private tool host. `lifecycle.js` asks the runtime for bridge environment immediately before spawning managed OpenCode. The runtime must acquire the ledger's cross-process owner lease before it starts the private bridge or initializes recovery, so two web/Electron processes cannot manage the same data directory. A competing live owner fails closed with `managed_orchestration_owner_conflict`; snapshots remain empty and surface a sanitized warning without running scheduler recovery. OpenCode spawn continues without injecting the private bridge, so a leftover or competing owner cannot brick the rest of the app. Only `DEVRYAN_ORCHESTRATION_URL`, `DEVRYAN_ORCHESTRATION_TOKEN`, and the fixed capability marker `DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS=1` are injected; configured external OpenCode runtimes keep managed orchestration unavailable.
 
 The private host binds `127.0.0.1:0`, requires a random bearer token, caps JSON input, exposes only `/rpc`, and is stopped before provider runtimes during graceful shutdown. URL/token values are never returned by diagnostics, UI routes, events, or routine logs.
+
+The `context_mode_diagnostic` auxiliary RPC uses that same authenticated bridge without scheduler initialization. Its OpenCode-owned validator records bounded lifecycle correlation and telemetry gaps; it cannot execute work or change recovery policy. See the [Context Mode contract](../opencode/DOCUMENTATION.md#public-exports-context-mode-hotfixjs--context-mode-content-store-recoveryjs).
 
 Private task-result RPCs accept `resultMode: "eager" | "reference"`; omission is eager for UI routes, Council, older plugins, and compatibility callers. Reference mode lazifies only a matching retained preview above 8,192 UTF-8 bytes and exposes the first page beside the existing wrapper. `read_result` requires exact task/root/directory scope plus the opaque `resultCursor`, performs no scheduler mutation, and returns only the next `resultReference`. Malformed cursors use `invalid_result_cursor` (400), retained identity/payload changes use `result_reference_mismatch` (409), and existing scope/result 403/404 errors remain authoritative. Snapshots and UI routes remain eager.
 
@@ -110,3 +120,16 @@ their existing adapter contract. This applies to starts and same-child
 continuations, using the durable task's captured selection.
 
 Plan-card implementation starts additionally verify the available Executing Plans skill and preceding visible implementation statement in the bundled plugin before creating a pending dispatch barrier or submitting work. Active-context skill reuse is valid until compaction; unavailable/denied skills are skipped, while unreadable history/catalog evidence fails explicitly. The policy is provider-neutral and leaves specialist-specific skills with the child.
+
+## Transport recovery and automatic backup
+
+The shared executor routes live provider connection errors through the same
+settlement policy as transcript errors. The owner supplies durable recovery
+checkpoints through its scheduler, and the HTTP adapter forwards cancellation to
+recovery POSTs. Exact reserved message IDs are observed after ambiguous delivery;
+they are never blindly resent. One same-model continuation may be followed by one
+configured backup in the existing child session. Before automatic fallback the
+owner rechecks the configured execution and catalog availability; unavailable
+backups leave manual recovery. This policy uses `autoResume.trigger =
+provider_transport` and never probes quota or marks a provider quota-limited.
+See [the shared recovery contract](../../../../orchestration-runtime/DOCUMENTATION.md).

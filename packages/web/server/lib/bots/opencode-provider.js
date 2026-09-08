@@ -534,7 +534,7 @@ export function createBotOpenCodeProvider({
       ['title', 'system', 'signal'],
     );
     const active = requireActive(input.runId);
-    const signal = botRequestSignal(input.signal, active.requestController.signal);
+    const signal = botRequestSignal(input.signal, active.requestController.signal, 120_000);
     const prompt = validateBoundedString(input.prompt, 'Bot structured-output prompt', {
       maximum: 256 * 1024,
     });
@@ -547,12 +547,21 @@ export function createBotOpenCodeProvider({
       'Bot structured-output system prompt',
       { maximum: 16 * 1024 },
     );
-    const created = unwrap(await withBotAbort(active.client.session.create({
+    const cleanupSession = async (sessionId) => {
+      if (typeof active.client.session?.delete !== 'function') return;
+      const cleanupSignal = AbortSignal.timeout(5_000);
+      await withBotAbort(active.client.session.delete({
+        sessionID: sessionId, directory: WORKSPACE_DIRECTORY,
+      }, { signal: cleanupSignal }), cleanupSignal).catch(() => undefined);
+    };
+    const creation = active.client.session.create({
       directory: WORKSPACE_DIRECTORY,
       title,
-    }, { signal }), signal), 'Bot structured-output session creation', { logger });
-    const sessionId = normalizeSessionId(created?.id);
+    }, { signal });
+    let sessionId = null;
     try {
+      const created = unwrap(await withBotAbort(creation, signal), 'Bot structured-output session creation', { logger });
+      sessionId = normalizeSessionId(created?.id);
       await modelCredentialBroker.assertRuntimeReady?.(active.runId);
       if (typeof active.client.session?.prompt !== 'function') {
         fail('Bot structured output is unavailable', 'bot_opencode_structured_unavailable', 502);
@@ -581,11 +590,12 @@ export function createBotOpenCodeProvider({
       }
       return output;
     } finally {
-      if (typeof active.client.session?.delete === 'function') {
-        await active.client.session.delete({
-          sessionID: sessionId,
-          directory: WORKSPACE_DIRECTORY,
-        }).catch(() => undefined);
+      if (sessionId) await cleanupSession(sessionId);
+      else if (signal.aborted) {
+        // A client that ignores cancellation can still create a session later.
+        void Promise.resolve(creation).then((result) => cleanupSession(normalizeSessionId(
+          unwrap(result, 'Bot structured-output session creation', { logger })?.id,
+        ))).catch(() => undefined);
       }
     }
   };
@@ -1006,7 +1016,7 @@ export function createBotOpenCodeProvider({
     runNoToolsStructured,
 
     runNoToolsExtraction(input = {}) {
-      exactMethodInput(input, 'Bot no-tools extraction request', ['runId', 'prompt', 'schema']);
+      exactMethodInput(input, 'Bot no-tools extraction request', ['runId', 'prompt', 'schema'], ['signal']);
       const runId = validateUuid(input.runId, 'runId');
       return runNoToolsStructured({
         runId,
@@ -1014,6 +1024,7 @@ export function createBotOpenCodeProvider({
         schema: input.schema,
         title: `Bot memory extraction ${runId.slice(0, 8)}`,
         system: 'Extract structured memory only. Do not call tools or perform actions.',
+        ...(input.signal ? { signal: input.signal } : {}),
       });
     },
 

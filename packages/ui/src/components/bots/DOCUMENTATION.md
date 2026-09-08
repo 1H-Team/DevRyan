@@ -215,6 +215,10 @@ remain visible without treating composer or window resizing as new content.
 Scrolling upward releases following; returning to the bottom re-pins it. Channel
 changes start pinned, native scroll anchoring is disabled, and loading older
 messages restores the prior visible position synchronously in a layout effect.
+Submitting an in-message quick reply explicitly re-pins the transcript before
+its optimistic message is inserted. When the computer status bar first appears,
+it synchronously compensates for the smaller transcript viewport only if the
+reader was already following the conversation tail.
 
 ## Operations rail
 
@@ -388,3 +392,9 @@ send controls in one row. It grows to 12rem, then scrolls internally. Image
 previews reserve width even for image-only replies. Releasing the last preview
 consumer detaches its cache entry before aborting, so immediate remounts start
 a fresh request and stale completion cannot evict the replacement.
+
+### Assigned catalog readiness
+
+The event owner also loads `GET /api/bots/assigned` independently of capability discovery and the larger SSE snapshot. Catalog loading, successful completion, and failure are separate from runtime capabilities. The sidebar renders “No Bots assigned” only after a successful empty catalog; errors expose Retry, and already loaded Bots remain visible during reconnects. Retry refreshes the assigned catalog and retries the capability/event connection. Catalog failures retry with capped 250ms/1s/2s/5s/15s backoff.
+
+A fresh SSE snapshot replaces catalog state authoritatively. Snapshot replacement, catalog/membership events, principal resets, and owner disposal invalidate pending HTTP results, including late failures. Catalog reconciliation preserves unchanged entity/list references and selection when still authorized. No catalog is persisted between principals, and HTTP bootstrap never replaces channel, message, or operations state.

@@ -19,3 +19,5 @@ Runtime selects an app entry, mounts providers, then renders feature components.
 
 ## Integration
 Integrates contexts, stores, styles, and major view modules.
+
+- `botCatalogConnection.ts` owns assigned-catalog HTTP bootstrap and capped retry backoff alongside the Bot event connection. `BotsEventOwner.tsx` installs one combined Retry/disposal owner per principal; capability probing does not gate catalog loading.

@@ -41,6 +41,7 @@ export type ManagedTaskAutoResumeResetSource = 'opencode_status' | 'meridian_quo
 
 /** Mirrors `ManagedTaskAutoResumeReason` in packages/orchestration-runtime/index.d.ts. */
 export type ManagedTaskAutoResumeReason =
+  | 'backup_unavailable'
   | 'user'
   | 'manual_retry'
   | 'session_deleted'
@@ -68,6 +69,7 @@ export type ManagedTaskAutoResumeError = {
  * envelope. `revision` only moves forward; the store keeps the highest one.
  */
 export type ManagedTaskAutoResume = {
+  trigger?: 'provider_usage_limit' | 'provider_transport';
   revision: number;
   enabled: boolean;
   state: ManagedTaskAutoResumeState;

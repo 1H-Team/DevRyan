@@ -8,6 +8,7 @@ import {
     getSessionTreeChangesKey,
     refreshSessionTreeChanges,
     observeSessionTreeActivity,
+    observeSessionTreeMembers,
     subscribeSessionTreeChanges,
     useSessionTreeChangesStore,
     type SessionTreeChangesEntry,
@@ -23,23 +24,6 @@ import { useSessionChangesFooterSources } from './sessionChangesFooterSources';
 // ---------------------------------------------------------------------------
 
 type SessionWithParent = Session & { parentID?: string | null };
-
-/** Walk `parentID` up through the given list until the root. */
-export const resolveRootSessionIdFromList = (sessions: readonly Session[], sessionId: string): string => {
-    const parentById = new Map<string, string>();
-    for (const session of sessions) {
-        const parentID = (session as SessionWithParent).parentID;
-        if (parentID) parentById.set(session.id, parentID);
-    }
-    const visited = new Set<string>([sessionId]);
-    let current = sessionId;
-    for (;;) {
-        const parentID = parentById.get(current);
-        if (!parentID || visited.has(parentID)) return current;
-        visited.add(parentID);
-        current = parentID;
-    }
-};
 
 /** Root plus every descendant, in discovery order. */
 export const resolveSessionTreeIds = (sessions: readonly Session[], rootSessionId: string): string[] => {
@@ -140,6 +124,8 @@ export const toGitChangedFile = (file: SessionTreeChangedFile, directory: string
         deletions: file.deletions ?? 0,
         binary: file.additions === null || file.deletions === null,
         oldPath: file.oldPath,
+        reviewMode: file.reviewMode,
+        segmentCount: file.segmentCount,
         status: file.status === 'added' ? 'A' : file.status === 'deleted' ? 'D' : file.status === 'renamed' ? 'R' : 'M',
     };
 };
@@ -155,6 +141,7 @@ export type SessionChangesController = {
     directory: string;
     files: GitChangedFile[];
     fileCount: number;
+    totalsMode: 'net' | 'recorded';
     pageIndex: number;
     pageLoading: boolean;
     nextPage?: () => void;
@@ -196,10 +183,9 @@ export const useSessionChangesController = (): SessionChangesController => {
     const [reviewSelection, setReviewSelection] = React.useState<{ key: string; file: string; revision: string } | null>(null);
     const [busySelection, setBusySelection] = React.useState<{ key: string; action: SessionChangesBusy } | null>(null);
 
-    const rootSessionId = React.useMemo(
-        () => (currentSessionId ? resolveRootSessionIdFromList(sessions, currentSessionId) : null),
-        [currentSessionId, sessions],
-    );
+    // The selected session is the root of this card, including when it is a
+    // child. Its ancestors and siblings are separate summaries.
+    const rootSessionId = currentSessionId;
     const treeIds = React.useMemo(
         () => (rootSessionId ? resolveSessionTreeIds(sessions, rootSessionId) : []),
         [rootSessionId, sessions],
@@ -222,6 +208,11 @@ export const useSessionChangesController = (): SessionChangesController => {
         if (!directory || !rootSessionId) return undefined;
         return subscribeSessionTreeChanges(directory, rootSessionId);
     }, [directory, entryKey, rootSessionId]);
+
+    React.useEffect(() => {
+        if (!directory || !rootSessionId) return;
+        observeSessionTreeMembers(directory, rootSessionId, treeIds);
+    }, [directory, rootSessionId, treeIds]);
 
     React.useEffect(() => {
         if (!directory || !rootSessionId) return;
@@ -266,7 +257,7 @@ export const useSessionChangesController = (): SessionChangesController => {
     else if (entry?.error) statusMessage = t('chat.sessionChanges.loadFailed');
     else if (entry?.coverage === 'partial') {
         const reasons = entry.reasons ?? [];
-        if (reasons.some((reason) => ['overlapping_operations', 'interleaved_file_changes'].includes(reason))) statusMessage = t('chat.sessionChanges.overlap');
+        if (reasons.some((reason) => ['invalid_change_receipt', 'unverified_tool_changes', 'tool_changes_incomplete', 'receipt_conflict', 'overlapping_operations', 'interleaved_file_changes'].includes(reason))) statusMessage = t('chat.sessionChanges.unverified');
         else if (reasons.includes('storage_unavailable')) statusMessage = t('chat.sessionChanges.storageUnavailable');
         else if (reasons.includes('capture_timeout')) statusMessage = t('chat.sessionChanges.captureTimeout');
         else if (reasons.includes('history_pending')) statusMessage = t('chat.sessionChanges.loading');
@@ -274,7 +265,7 @@ export const useSessionChangesController = (): SessionChangesController => {
         else if (reasons.includes('native_revert_active')) statusMessage = t('chat.sessionChanges.rewound');
         else statusMessage = t('chat.sessionChanges.incomplete');
     }
-    state.undoDisabled = state.undoDisabled || Boolean(entry?.loading || entry?.error) || entry?.coverage !== 'complete' || !entry?.revision;
+    state.undoDisabled = state.undoDisabled || Boolean(entry?.loading || entry?.error) || entry?.coverage !== 'complete' || !entry?.revision || entry?.restoreAvailable !== true;
 
     const retry = React.useCallback(() => {
         if (!rootSessionId || !directory || entry?.loading) return;
@@ -318,6 +309,7 @@ export const useSessionChangesController = (): SessionChangesController => {
         directory,
         files,
         fileCount: entry?.fileCount ?? files.length,
+        totalsMode: entry?.totalsMode ?? 'net',
         pageIndex: visiblePage?.pageIndex ?? 0,
         pageLoading,
         nextPage: visiblePage?.nextCursor ? () => requestPage(visiblePage.nextCursor ?? null) : undefined,
@@ -332,7 +324,8 @@ export const useSessionChangesController = (): SessionChangesController => {
         state,
         disabledReason: state.disabledReason === 'busy-sibling'
             ? t('chat.sessionChanges.footer.undoBlockedTooltip')
-            : state.undoDisabled ? statusMessage ?? t('chat.sessionChanges.incomplete') : null,
+            : state.undoDisabled ? statusMessage ?? t(entry?.restoreReasons?.includes('segmented_changes')
+                ? 'chat.sessionChanges.segmentedRestore' : 'chat.sessionChanges.restoreUnavailable') : null,
         busy,
         undo,
         redo,

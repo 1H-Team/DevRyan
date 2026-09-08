@@ -1,3 +1,4 @@
+import './assignedCatalogFetchFixture';
 import './sharedFilesFetchFixture';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -56,8 +57,10 @@ import './fixture.css';
 import { BotUpgradeScene } from './BotUpgradeScene';
 import { BotConversationScene } from './BotConversationScene';
 import { BotCatalogScene } from './BotCatalogScene';
+import { BotAssignedCatalogScene } from './BotAssignedCatalogScene';
 import { BotAvatarScene } from './BotAvatarScene';
 import { BotTelegramScene } from './BotTelegramScene';
+import { BotMemoryScene } from './BotMemoryScene';
 import { createWebAPIs } from '../../../packages/web/src/api';
 
 declare global {
@@ -1171,6 +1174,10 @@ const App: React.FC = () => {
 
   // Identity/loading checks have their own catalog and principal. Keep the
   // unrelated Operations rail out of this fixture's state and request counts.
+  if (scene === 'assigned-catalog') return <RuntimeAPIProvider apis={runtimeApis}><I18nProvider><div className="p-4"><BotAssignedCatalogScene /></div></I18nProvider></RuntimeAPIProvider>;
+
+  if (scene === 'memory') return <I18nProvider><BotMemoryScene initialState={fixtureState} /></I18nProvider>;
+
   if (scene === 'avatars') {
     return (
       <I18nProvider>

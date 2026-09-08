@@ -16,6 +16,7 @@ type Props = {
   messageId: string;
   sequence: number;
   question: BotQuestion;
+  onReplyIntent?: () => void;
   channelStore?: BotChannelStore;
   operationsStore?: BotOperationsStore;
 };
@@ -27,6 +28,7 @@ export const BotQuestionBlock: React.FC<Props> = ({
   messageId,
   sequence,
   question,
+  onReplyIntent,
   channelStore = useBotChannelStore,
   operationsStore = useBotOperationsStore,
 }) => {
@@ -47,6 +49,7 @@ export const BotQuestionBlock: React.FC<Props> = ({
   const disabled = answered || sending || busy;
 
   const send = (text: string) => {
+    onReplyIntent?.();
     void channelStore.getState().sendQuickReply(channelId, text).catch(() => undefined);
   };
 

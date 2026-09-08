@@ -1,6 +1,7 @@
 import React from 'react';
 import { useDocumentAnimationState } from '@/hooks/useDocumentAnimationState';
 import { cn } from '@/lib/utils';
+import { shouldPreserveWorkingStatus, type WorkingStatusLabel } from './workingPlaceholderStatus';
 import {
   formatRetryCountdown,
   getRetryCountdownBoundaryDelayMs,
@@ -52,11 +53,12 @@ export function WorkingPlaceholder({
   const [displayedPermission, setDisplayedPermission] = React.useState<boolean>(false);
   const displayedTextRef = React.useRef(displayedText);
   const displayedPermissionRef = React.useRef(displayedPermission);
+  const displayedGenericRef = React.useRef(false);
   displayedTextRef.current = displayedText;
   displayedPermissionRef.current = displayedPermission;
 
   const statusShownAtRef = React.useRef<number>(0);
-  const queuedStatusRef = React.useRef<{ text: string; permission: boolean } | null>(null);
+  const queuedStatusRef = React.useRef<WorkingStatusLabel | null>(null);
   const processQueueTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Countdown state for retry mode
@@ -102,11 +104,12 @@ export function WorkingPlaceholder({
     }
   }, []);
 
-  const showStatus = React.useCallback((text: string, permission: boolean) => {
+  const showStatus = React.useCallback((text: string, permission: boolean, generic: boolean) => {
     clearTimers();
     queuedStatusRef.current = null;
     setDisplayedText(text);
     setDisplayedPermission(permission);
+    displayedGenericRef.current = generic;
     statusShownAtRef.current = Date.now();
   }, [clearTimers]);
 
@@ -119,7 +122,7 @@ export function WorkingPlaceholder({
 
       const queued = queuedStatusRef.current;
       if (queued) {
-        showStatus(queued.text, queued.permission);
+        showStatus(queued.text, queued.permission, queued.generic);
       }
     }, remaining);
   }, [isVisible, showStatus]);
@@ -130,6 +133,7 @@ export function WorkingPlaceholder({
       queuedStatusRef.current = null;
       setDisplayedText(null);
       setDisplayedPermission(false);
+      displayedGenericRef.current = false;
       return;
     }
 
@@ -150,31 +154,34 @@ export function WorkingPlaceholder({
 
     if (!isVisible) {
       clearTimers();
-      queuedStatusRef.current = { text: incomingText, permission: incomingPermission };
+      queuedStatusRef.current = { text: incomingText, permission: incomingPermission, generic: incomingGeneric };
       return;
     }
 
     if (!displayedTextRef.current) {
-      showStatus(incomingText, incomingPermission);
+      showStatus(incomingText, incomingPermission, incomingGeneric);
       return;
     }
 
-    if (incomingText === displayedTextRef.current && incomingPermission === displayedPermissionRef.current) {
-      return;
-    }
-
-    // Ignore generic churn.
-    if (incomingGeneric) {
+    if (shouldPreserveWorkingStatus(
+      { text: displayedTextRef.current, permission: displayedPermissionRef.current, generic: displayedGenericRef.current },
+      { text: incomingText, permission: incomingPermission, generic: incomingGeneric },
+    )) {
+      // A newer state supersedes queued labels too: a short tool call may have
+      // already finished before its minimum-display timer was allowed to fire.
+      clearTimers();
+      queuedStatusRef.current = null;
+      displayedGenericRef.current = incomingGeneric;
       return;
     }
 
     const elapsed = Date.now() - statusShownAtRef.current;
     if (elapsed >= STATUS_DISPLAY_TIME_MS) {
-      showStatus(incomingText, incomingPermission);
+      showStatus(incomingText, incomingPermission, incomingGeneric);
       return;
     }
 
-    queuedStatusRef.current = { text: incomingText, permission: incomingPermission };
+    queuedStatusRef.current = { text: incomingText, permission: incomingPermission, generic: incomingGeneric };
     scheduleQueueProcess();
   }, [
     isWorking,

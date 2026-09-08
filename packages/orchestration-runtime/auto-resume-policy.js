@@ -1,6 +1,7 @@
 import { requiresManualModelRecovery } from './contract.js';
 import { supportsManagedReadOnlyProvider } from './provider-capabilities.js';
 import { isDefiniteProviderUsageLimit } from './provider-retry-policy.js';
+import { isManagedTransportBackupEligible } from './transport-recovery.js';
 
 /**
  * Pure planning policy for automatically resuming a managed task that parked on
@@ -47,7 +48,8 @@ export const createLineageId = (rootTaskId) => {
 export const isAutoResumeEligible = (task, envelope) => Boolean(
   envelope
   && envelope.action === null
-  && isDefiniteProviderUsageLimit(task?.failureReason)
+  && task?.transportRecovery?.backupAttempts !== 1
+  && (isDefiniteProviderUsageLimit(task?.failureReason) || isManagedTransportBackupEligible(task))
   && requiresManualModelRecovery(task, envelope),
 );
 
@@ -154,6 +156,20 @@ export const planAutoResumeAttempt = ({
     variant: origin?.variant === undefined ? (task.variant ?? null) : origin.variant,
   };
   const exhausted = (reason) => ({ state: 'exhausted', reason });
+  if (state.trigger === 'provider_transport') {
+    if (state.attemptCount >= 1 || task.transportRecovery?.backupAttempts === 1) return exhausted('attempt_cap');
+    if (now >= state.expiresAt) return exhausted('time_cap');
+    const distinct = backup && (backup.providerId !== task.providerId || backup.modelId !== task.modelId);
+    if (!distinct || (task.readOnly && !supportsManagedReadOnlyProvider(backup.providerId))
+      || readBreaker(breakerUntil, backup.providerId, now).until !== null) {
+      return exhausted('backup_unavailable');
+    }
+    return {
+      state: 'scheduled', nextAttemptAt: now,
+      target: { kind: 'backup', providerId: backup.providerId, modelId: backup.modelId, variant: backup.variant ?? null },
+      resetAt: null, resetSource: null,
+    };
+  }
   if (state.attemptCount >= AUTO_RESUME_MAX_ATTEMPTS) return exhausted('attempt_cap');
   if (now >= state.expiresAt) return exhausted('time_cap');
 

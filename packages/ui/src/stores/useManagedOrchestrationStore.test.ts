@@ -7,6 +7,7 @@ import {
   type ManagedTaskEventRecord,
   type ManagedTaskRemovalEvent,
   type ManagedTaskStatus,
+  type ManagedTransportRecovery,
 } from '@openchamber/orchestration-runtime';
 
 import type {
@@ -59,6 +60,24 @@ const taskRecord = (
 const projectedTask = (...args: Parameters<typeof taskRecord>) => (
   toManagedTaskEvent(taskRecord(...args)).properties.task
 );
+
+test('keeps transport receipt revisions monotonic and preserves identical row references', () => {
+  const store = createManagedOrchestrationStore({ api: fakeApi() });
+  const transportRecovery: ManagedTransportRecovery = {
+    revision: 2, phase: 'submitted', kind: 'connection_failure', sameModelAttempts: 1, backupAttempts: 0,
+    failedMessageId: 'msg_failed', failedUserMessageId: 'msg_user', recoveryMessageId: 'msg_recovery',
+    eventId: 'evt_failed', reservedAt: 1_000, submittedAt: 1_100,
+  };
+  const task = projectedTask(1, 'running', { transportRecovery });
+  store.getState().ingestEvent(taskEvent(task));
+  const saved = store.getState().tasksById[task.taskId];
+  store.getState().ingestEvent(taskEvent(structuredClone(task)));
+  expect(store.getState().tasksById[task.taskId]).toBe(saved);
+  store.getState().ingestEvent(taskEvent({ ...task, transportRecovery: { ...transportRecovery, revision: 1, phase: 'reserved' } }));
+  expect(store.getState().tasksById[task.taskId]).toBe(saved);
+  store.getState().ingestEvent(taskEvent({ ...task, transportRecovery: { ...transportRecovery, revision: 3, phase: 'exhausted' } }));
+  expect(store.getState().tasksById[task.taskId].transportRecovery?.phase).toBe('exhausted');
+});
 
 /** What the store holds for a wire record from a host without the recovery fields. */
 const withRecoveryDefaults = (task: ManagedTaskEventRecord): ManagedTaskProjectedRecord => ({

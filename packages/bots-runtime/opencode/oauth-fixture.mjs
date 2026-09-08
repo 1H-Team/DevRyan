@@ -18,7 +18,7 @@ import {
 import botPlugin from './devryan-bot-tools.mjs';
 
 assert.equal(JSON.parse(await fs.readFile('/opt/devryan/node_modules/opencode-ai/package.json', 'utf8')).version, '1.18.26');
-assert.equal(JSON.parse(await fs.readFile('/opt/devryan/node_modules/opencode-gpt-imagegen/package.json', 'utf8')).version, '0.1.10');
+assert.equal(JSON.parse(await fs.readFile('/opt/devryan/node_modules/opencode-gpt-imagegen/package.json', 'utf8')).version, '0.1.12');
 
 let rotation = 0;
 let auth = { type: 'oauth', accountId: 'fixture-account', access: 'fixture-access-0', refresh: 'fixture-refresh-0', expires: 0 };
@@ -42,7 +42,7 @@ const server = https.createServer({ key: await fs.readFile('/fixture-tls/key.pem
     assert.equal(req.headers.authorization, `Bearer fixture-access-${rotation}`);
     assert.equal(req.headers['chatgpt-account-id'], 'fixture-account');
     const body = JSON.parse(raw);
-    providerCalls.push({ model: body.model, rotation, image: body.tool_choice?.type === 'image_generation' });
+    providerCalls.push({ model: body.model, reasoning: body.reasoning, rotation, image: body.tool_choice?.type === 'image_generation' });
     res.setHeader('content-type', 'text/event-stream');
     const event = (value) => res.write(`data: ${JSON.stringify(value)}\n\n`);
     if (body.tool_choice?.type === 'image_generation') {
@@ -181,6 +181,7 @@ try {
   assert.equal(JSON.parse(await fs.readFile('/data/opencode/auth.json', 'utf8')).openai.refresh, '');
   assert.ok(providerCalls.some((call) => call.image));
   assert.ok(providerCalls.filter((call) => !call.image).every((call) => call.model === 'gpt-5.4'));
+  assert.ok(providerCalls.filter((call) => call.image).every((call) => call.model === 'gpt-6-astra' && call.reasoning?.effort === 'medium'));
   assert.ok(!JSON.stringify(diagnostics).match(/fixture-access|fixture-refresh|fixture-account/));
   console.log(JSON.stringify({ passed: true, runtime: 'OpenCode 1.18.26', chatRequests: providerCalls.filter((c) => !c.image).length,
     imageRequests: providerCalls.filter((c) => c.image).length, coordinatedRefreshes: rotation, internet: 'disabled' }));

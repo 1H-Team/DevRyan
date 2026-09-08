@@ -49,6 +49,16 @@ export async function prepareMeridianFixture({ outputRoot, arm, installedModules
   await fs.cp(path.join(installedModules, '@rynfar/meridian'), packageRoot, { recursive: true, dereference: true });
   const manifest = JSON.parse(await fs.readFile(path.join(packageRoot, 'package.json'), 'utf8'));
   const dependencies = new Set([...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.optionalDependencies ?? {}), `@libsql/${process.platform}-${process.arch}`]);
+  // Newer libsql releases use libc-qualified native package names on Linux.
+  // Read the installed dependency manifest instead of guessing that suffix.
+  try {
+    const libsql = JSON.parse(await fs.readFile(path.join(installedModules, 'libsql/package.json'), 'utf8'));
+    for (const name of Object.keys(libsql.optionalDependencies ?? {})) {
+      if (name.startsWith('@libsql/')) dependencies.add(name);
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
   for (const dependency of dependencies) {
     try { await fs.access(path.join(installedModules, dependency)); } catch { continue; }
     const target = path.join(root, 'node_modules', dependency);
@@ -57,8 +67,9 @@ export async function prepareMeridianFixture({ outputRoot, arm, installedModules
   }
   const patch = applyMeridianHttpHotfix({ configDirectory: root });
   if (!patch.ok) throw new Error(patch.error);
-  const entry = path.join(packageRoot, 'dist/cli-wxk8xvd3.js');
+  const entry = path.join(packageRoot, 'dist', patch.entry);
   if (arm === 'control') {
+    if (manifest.version !== '1.62.6') throw new Error('Historical uncorrected control requires Meridian 1.62.6; use candidate for corrected upgrade comparisons');
     const complete = await fs.readFile(entry, 'utf8');
     // Retain the already-installed HTTP and handoff fixes in the control.
     const previous = MERIDIAN_PREFIX_EDITS.reduce((text, [before, after]) => text.replace(after, before), complete);
@@ -72,7 +83,7 @@ export async function prepareMeridianFixture({ outputRoot, arm, installedModules
   await fs.writeFile(path.join(config, 'sdk-features.json'), JSON.stringify({ opencode: {
     codeSystemPrompt: true, clientSystemPrompt: false, memory: false, dreaming: false,
   } }));
-  return { root, packageRoot, workspace, config, sourceSha256, patch };
+  return { root, packageRoot, workspace, config, sourceSha256, patch, entry };
 }
 
 export function isolatedClaudeEnvironment(fixture, claudeExecutable) {

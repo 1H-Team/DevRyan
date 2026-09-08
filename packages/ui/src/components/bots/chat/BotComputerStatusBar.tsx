@@ -12,8 +12,8 @@ const ACTIVE_STATES = new Set(['queued', 'starting', 'running', 'waiting_approva
 // Computer activity is a leaf subscription: neither frames nor composer text
 // should repaint the transcript or the surrounding chat chrome.
 export const BotComputerStatusBar = React.memo(function BotComputerStatusBar({
-  bot, channelId,
-}: { bot: BotSummary; channelId: string }) {
+  bot, channelId, onVisible,
+}: { bot: BotSummary; channelId: string; onVisible?: () => void }) {
   const { t } = useI18n();
   const member = useBotsStore((state) => state.membershipsByBotId[bot.id]);
   const activity = useBotComputerActivityStore((state) => state.byBotId[bot.id]);
@@ -21,7 +21,13 @@ export const BotComputerStatusBar = React.memo(function BotComputerStatusBar({
   const runState = useBotOperationsStore((state) => activity ? state.runsById[activity.runId]?.state : undefined);
   const usingComputer = activity?.channelId === channelId && activity.state !== 'idle'
     && (runState === undefined || ACTIVE_STATES.has(runState));
-  if (!member || bot.lifecycle !== 'active' || (!usingComputer && !shown)) return null;
+  const visible = Boolean(member && bot.lifecycle === 'active' && (usingComputer || shown));
+  const wasVisibleRef = React.useRef(false);
+  React.useLayoutEffect(() => {
+    if (visible && !wasVisibleRef.current) onVisible?.();
+    wasVisibleRef.current = visible;
+  }, [onVisible, visible]);
+  if (!visible) return null;
   const waiting = usingComputer && (activity.state === 'waiting' || runState === 'waiting_control');
   const Icon = waiting ? RiUserSharedLine : RiComputerLine;
   return (

@@ -17,6 +17,7 @@ import {
 
 /** Presentation slice of a usage-limit envelope's auto-resume block. */
 export type ModelRecoveryAutoResume = {
+  trigger?: 'provider_usage_limit' | 'provider_transport';
   enabled: boolean;
   state: ManagedTaskAutoResumeState;
   nextAttemptAt: number | null;
@@ -95,6 +96,7 @@ export function ModelRecoveryCard({
   const autoResumeStatus = (() => {
     if (!autoResume) return null;
     if (autoResume.state === 'exhausted') {
+      if (autoResume.reason === 'backup_unavailable') return t('chat.managedTasks.transport.backupUnavailable');
       const reason = autoResume.reason ?? autoResume.lastError?.message ?? null;
       return reason
         ? t('chat.modelRecovery.autoResume.exhausted', { reason })
@@ -186,9 +188,11 @@ export function ModelRecoveryCard({
                     checked={autoResume.enabled}
                     onChange={(next) => void onAutoResumeChange?.(next)}
                     disabled={pending || autoResumePending || !onAutoResumeChange}
-                    ariaLabel={t('chat.modelRecovery.autoResume.label')}
+                    ariaLabel={t(autoResume.trigger === 'provider_transport'
+                      ? 'chat.managedTasks.transport.autoBackup' : 'chat.modelRecovery.autoResume.label')}
                   />
-                  <span>{t('chat.modelRecovery.autoResume.label')}</span>
+                  <span>{t(autoResume.trigger === 'provider_transport'
+                    ? 'chat.managedTasks.transport.autoBackup' : 'chat.modelRecovery.autoResume.label')}</span>
                 </label>
                 {autoResumeStatus ? (
                   <p className="typography-micro text-muted-foreground">{autoResumeStatus}</p>

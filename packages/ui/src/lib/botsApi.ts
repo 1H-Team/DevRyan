@@ -1,3 +1,5 @@
+import { parseBotAssignedCatalog } from './botCatalog';
+
 export type BotLifecycle = 'draft' | 'active' | 'paused' | 'retired';
 /** Every Bot runs one shared computer. 'personalized' only appears on records
  *  written before that change and resolves to the same shared computer. */
@@ -916,14 +918,26 @@ export type BotMemoryExtractionJob = {
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  outcome?: 'saved' | 'no_facts' | 'filtered' | 'invalid' | null;
+  reason?: string | null;
+  validator?: string | null;
+  rejectionReasons?: Readonly<Record<string, number>>;
+  extractionVersion?: number;
+  recoveryVersion?: number;
 };
 
 export type BotMemoryExtractionSummary = {
-  pending: number;
-  failed: number;
+  pending: number | null;
+  failed: number | null;
   workerStarted: boolean;
   recent: readonly BotMemoryExtractionJob[];
+  status?: 'up_to_date' | 'updating' | 'waiting' | 'paused' | 'needs_attention' | 'unavailable';
+  waiting?: number | null;
+  recovering?: number | null;
+  nextAttemptAt?: string | null;
 };
+
+export type BotMemoryExtractionPage = { jobs: BotMemoryExtractionJob[]; nextCursor: string | null };
 
 export type BotMemoryPage = {
   memories: BotMemory[];
@@ -1065,6 +1079,8 @@ export type BotSnapshot = {
   computers: readonly BotComputerStatus[];
 };
 
+export type BotAssignedCatalog = Pick<BotSnapshot, 'bots' | 'revisions' | 'memberships'>;
+
 export type BotMessageEventPayload = Readonly<{
   message: BotMessage;
   run?: BotRun;
@@ -1202,6 +1218,7 @@ export type BotsApi = {
   configureSpeech(botId: string, request: BotSpeechConfiguration): Promise<BotSpeechStatus>;
   checkSpeech(botId: string): Promise<{ stt: { ready: boolean; code: string | null }; tts: { ready: boolean; code: string | null } }>;
   getCapabilities(): Promise<BotCapabilities>;
+  getAssignedCatalog(): Promise<BotAssignedCatalog>;
   listBots(): Promise<{ bots: BotSummary[]; canCreateBot: boolean }>;
   createBot(request: {
     name: string;
@@ -1473,6 +1490,7 @@ export type BotsApi = {
     state?: 'active' | 'forgotten' | null;
   }): Promise<BotMemoryPage>;
   requeueBotMemoryExtraction(botId: string, runId: string): Promise<{ job: BotMemoryExtractionJob }>;
+  listBotMemoryExtractions(botId: string, options?: { cursor?: string | null; limit?: number; state?: BotMemoryExtractionJob['state'] }): Promise<BotMemoryExtractionPage>;
   getBotMemory(botId: string, memoryId: string): Promise<BotMemoryDetail>;
   editBotMemory(botId: string, memoryId: string, request: {
     text: string;
@@ -1746,6 +1764,13 @@ export const createBotsApi = ({
     configureSpeech: (botId, body) => mutateJson(`/api/bots/${encoded(botId)}/speech`, 'PUT', body),
     checkSpeech: (botId) => mutateJson(`/api/bots/${encoded(botId)}/speech/check`, 'POST'),
     getCapabilities: () => requestJson('/api/bots/capabilities'),
+    getAssignedCatalog: async () => {
+      const catalog = parseBotAssignedCatalog(await requestJson<unknown>('/api/bots/assigned'));
+      if (!catalog) throw new BotsApiError('Production Bots returned an invalid catalog', {
+        status: 502, code: 'bot_invalid_response',
+      });
+      return catalog;
+    },
     listBots: () => requestJson('/api/bots'),
     createBot: (body) => mutateJson('/api/bots', 'POST', body),
     getBot: (botId) => requestJson(`/api/bots/${encoded(botId)}`),
@@ -2018,6 +2043,14 @@ export const createBotsApi = ({
       if (options.state) query.set('state', options.state);
       const suffix = query.size > 0 ? `?${query.toString()}` : '';
       return requestJson(`/api/bots/${encoded(botId)}/memories${suffix}`);
+    },
+    listBotMemoryExtractions(botId, options = {}) {
+      const query = new URLSearchParams();
+      if (options.cursor) query.set('cursor', options.cursor);
+      if (options.limit !== undefined) query.set('limit', String(options.limit));
+      if (options.state) query.set('state', options.state);
+      const suffix = query.size > 0 ? `?${query.toString()}` : '';
+      return requestJson(`/api/bots/${encoded(botId)}/memories/extractions${suffix}`);
     },
     requeueBotMemoryExtraction: (botId, runId) => mutateJson(
       `/api/bots/${encoded(botId)}/memories/extraction/${encoded(runId)}/requeue`,

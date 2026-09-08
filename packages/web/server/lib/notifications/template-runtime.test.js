@@ -15,6 +15,15 @@ describe('notification template runtime zen models', () => {
     vi.restoreAllMocks();
   });
 
+  it('uses the notification conversation identity for direct Zen summaries', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true, json: async () => ({ choices: [{ message: { content: 'Work complete' } }] }),
+    });
+    await expect(createRuntime().summarizeText('A completed task', 100, 'big-pickle', 'ses_notification'))
+      .resolves.toBe('Work complete');
+    expect(fetchMock.mock.calls[0][1].headers['x-opencode-session']).toBe('ses_notification');
+  });
+
   it('uses zen models with zero-cost metadata as selectable', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
       if (String(url).includes('models.dev')) {

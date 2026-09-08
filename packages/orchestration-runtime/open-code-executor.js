@@ -1,4 +1,6 @@
 import { resolveProviderPromptTools } from './provider-prompt-tools.js';
+import { isManagedAssistantActivityPart } from './assistant-activity.js';
+import { createManagedRecoveryMessageId } from './transport-recovery.js';
 import {
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
@@ -333,9 +335,14 @@ const MODEL_CONTINUATION_NOTICE_PATTERN = new RegExp(
   `\\n\\n${escapeRegExp(MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX)}[^\\n]*$`,
 );
 
-const buildModelContinuationNotice = (task) => (
+const buildModelContinuationNotice = (task, failureReason) => (
   `${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}${task.providerId}/${task.modelId}`
-  + `${task.variant ? ` · ${task.variant}` : ''} after a provider usage limit.`
+  + `${task.variant ? ` · ${task.variant}` : ''}`
+  + (isDefiniteProviderUsageLimit(failureReason)
+    ? ' after a provider usage limit.'
+    : isTransientAssistantTransportFailure(failureReason)
+      ? ' after a provider connection interruption.'
+      : ' to continue the previous task.')
 );
 
 const matchesManagedUserPrompt = (value, prompt) => {
@@ -411,7 +418,7 @@ const orderMessageRecordsChronologically = (records) => {
   return indexed.map(({ record }) => record);
 };
 
-const analyzeMessages = (inputRecords, childSessionId) => {
+const analyzeMessages = (inputRecords, childSessionId, recovery = null) => {
   const records = orderMessageRecordsChronologically(inputRecords);
   const progressSignature = createTranscriptProgressSignature(records);
   const transientTransportContinuationCount = countTransientTransportContinuationPrompts(records);
@@ -468,6 +475,29 @@ const analyzeMessages = (inputRecords, childSessionId) => {
   const resumeContinuationPending = lastResumeContinuationIndex > lastAssistantIndex;
   const continuationPending = lastContinuationIndex > lastAssistantIndex;
   const latestAssistantMessageId = trimString(latest?.info?.id) || null;
+  const lastUser = records.findLast((record) => record?.info?.role === 'user');
+  const recoveryObservation = {
+    latestMessageId: trimString(records.at(-1)?.info?.id) || null,
+    latestAssistantParentId: trimString(latest?.info?.parentID) || null,
+    latestUserMessageId: trimString(lastUser?.info?.id) || null,
+    hasNewerUserInput: Boolean(lastUser && records.indexOf(lastUser) > lastAssistantIndex),
+    assistantCompleted: Number.isFinite(latest?.info?.time?.completed),
+    assistantCompletedAt: latest?.info?.time?.completed ?? null,
+    recoveryPromptPresent: Boolean(recovery && records.some((record) => (
+      record.info?.role === 'user' && record.info.id === recovery.recoveryMessageId
+    ))),
+    // A tool that started and was aborted may already have changed external state.
+    // A blank pending call torn down before execution (as in the incident) is safe.
+    hasUncertainTool: currentAttemptAssistants.some((record) => record.parts?.some((part) => (
+      part?.type === 'tool'
+      && ['error', 'failed', 'aborted', 'cancelled', 'canceled', 'timeout', 'timedout'].includes(normalizeToolStatus(part.state?.status))
+      && /abort|cancel|timeout|timed out/i.test(trimString(part.state?.error) || trimString(part.state?.status))
+      && (Number.isFinite(part.state?.time?.start) || !isEmptyPlainObject(part.state?.input))
+    ))),
+  };
+  const assistantActivityIds = currentAttemptAssistants
+    .filter((record) => record.parts?.some(isManagedAssistantActivityPart))
+    .map((record) => record.info.id);
   if (!latest) {
     return {
       assistantCount: assistants.length,
@@ -481,6 +511,8 @@ const analyzeMessages = (inputRecords, childSessionId) => {
       hasInFlightTool: false,
       hasUsefulWork: false,
       latestAssistantMessageId,
+      assistantActivityIds,
+      assistantMessageIds: assistants.map((record) => record.info.id),
       recoverablePreview: '',
       progressSignature,
       resumeContinuationCount,
@@ -488,6 +520,7 @@ const analyzeMessages = (inputRecords, childSessionId) => {
       terminal: false,
       transientTransportContinuationCount,
       transientTransportFailureCount,
+      ...recoveryObservation,
     };
   }
 
@@ -543,6 +576,8 @@ const analyzeMessages = (inputRecords, childSessionId) => {
     hasInFlightTool,
     hasUsefulWork: usefulWork.hasUsefulWork,
     latestAssistantMessageId,
+    assistantActivityIds,
+    assistantMessageIds: assistants.map((record) => record.info.id),
     recoverablePreview: previewWork?.recoverablePreview ?? '',
     progressSignature,
     resumeContinuationCount,
@@ -554,6 +589,7 @@ const analyzeMessages = (inputRecords, childSessionId) => {
     ),
     transientTransportContinuationCount,
     transientTransportFailureCount,
+    ...recoveryObservation,
   };
 };
 
@@ -682,6 +718,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   const sleep = options.sleep ?? defaultSleep;
   const shutdownController = new AbortController();
   const retryStops = new Map();
+  const activeExecutions = new Map();
 
   const assertRunning = () => {
     if (shutdownController.signal.aborted) {
@@ -740,7 +777,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     const messages = await transport.readMessages(input);
     assertRunning();
     return {
-      ...analyzeMessages(messages, task.childSessionId),
+      ...analyzeMessages(messages, task.childSessionId, task.transportRecovery),
       ...normalizeStatusFields(status),
     };
   };
@@ -753,7 +790,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       providerId: task.providerId,
       after,
     });
-    if (!error) return null;
+    if (!error || (error.eventId && error.eventId === task.transportRecovery?.eventId)) return null;
 
     let observation = previousObservation;
     try {
@@ -767,7 +804,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       .map(trimString)
       .filter(Boolean)
       .join(': ');
-    return {
+    const result = {
       status: 'failed',
       failureReason: isManagedTaskModelUnavailable(classifiedFailure)
         ? (isManagedTaskModelUnavailable(message) ? message : `Model unavailable: ${message}`)
@@ -777,6 +814,83 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       canonicalRefs: observation?.canonicalRefs ?? [],
       resumable: true,
     };
+    return { error, observation, result, transportKind: classifyProviderTransportFailure(error.errorName, message) };
+  };
+
+  const saveTransportRecovery = async (task, control, changes) => {
+    const previous = task.transportRecovery;
+    const recovery = { ...previous, ...changes, revision: (previous?.revision ?? 0) + 1 };
+    if (typeof control?.recordTransportRecovery !== 'function'
+      || await control.recordTransportRecovery(recovery, previous?.revision ?? 0) !== true) {
+      throw new Error('Managed transport recovery could not retain its durable execution lease');
+    }
+    task.transportRecovery = recovery;
+    return recovery;
+  };
+
+  const transportRecoveryResult = (observation, failureReason, status = 'interrupted') => ({
+    status,
+    failureReason,
+    partial: observation?.hasUsefulWork === true,
+    recoverablePreview: observation?.recoverablePreview ?? '',
+    canonicalRefs: observation?.canonicalRefs ?? [],
+    resumable: true,
+  });
+
+  const sendTransportRecovery = async (task, control, observation, event = null, backup = false) => {
+    const reservedAt = now();
+    const recoveryMessageId = createManagedRecoveryMessageId(reservedAt, observation.latestMessageId);
+    try {
+      await saveTransportRecovery(task, control, {
+        phase: 'reserved',
+        kind: classifyProviderTransportFailure(null, observation.failureReason) ?? task.transportRecovery?.kind ?? 'stream_idle_timeout',
+        sameModelAttempts: 1,
+        backupAttempts: backup ? 1 : 0,
+        failedMessageId: observation.latestAssistantMessageId,
+        failedUserMessageId: observation.latestAssistantParentId ?? observation.latestUserMessageId,
+        recoveryMessageId,
+        eventId: event?.eventId ?? (backup ? task.transportRecovery?.eventId ?? null : null),
+        reservedAt,
+        submittedAt: null,
+      });
+    } catch (error) {
+      return transportRecoveryResult(observation, error.message);
+    }
+    try {
+      assertRunning();
+      const signal = activeExecutions.get(task.taskId)?.signal;
+      signal?.throwIfAborted();
+      const current = await readObservation(task);
+      if (LIVE_STATUS_TYPES.has(current.statusType) || current.hasInFlightTool || current.hasUncertainTool
+        || !current.assistantCompleted || current.hasNewerUserInput
+        || current.latestAssistantMessageId !== observation.latestAssistantMessageId
+        || current.latestUserMessageId !== observation.latestUserMessageId) {
+        await saveTransportRecovery(task, control, { phase: 'blocked' });
+        return transportRecoveryResult(current, 'Managed connection recovery was superseded before dispatch');
+      }
+      assertRunning();
+      signal?.throwIfAborted();
+      await transport.promptSession({
+        sessionId: task.childSessionId,
+        directory: task.directory,
+        providerId: task.providerId,
+        modelId: task.modelId,
+        agent: task.agent,
+        variant: task.variant,
+        messageId: recoveryMessageId,
+        signal,
+        prompt: resolveTaskPrompt(task, backup
+          ? `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${buildModelContinuationNotice(task, observation.failureReason)}`
+          : MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT),
+        tools: resolveTaskPromptTools(task),
+      });
+      await saveTransportRecovery(task, control, { phase: 'submitted', submittedAt: now() });
+    } catch {
+      // Reservation is durable. A rejected/ambiguous POST is never blindly resent.
+      // Observation below can still prove that its exact message was accepted.
+      return null;
+    }
+    return null;
   };
 
   const retryStopInput = (task) => ({
@@ -945,6 +1059,54 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     }
   };
 
+  const activityWatches = new Map();
+  const activityKey = (task) => `${task.taskId}:${task.leaseToken ?? ''}`;
+  // A provider can create its assistant shell before prompt_async returns, so
+  // restart observation must use the attempt start, not the acceptance stamp.
+  const watchActivity = (task, control, after = task.startedAt ?? task.childPromptedAt ?? now(), excludedMessageId = null) => {
+    const existing = activityWatches.get(activityKey(task));
+    if (existing) return existing;
+    let settled = task.firstAssistantPartAt != null;
+    let pending = false;
+    let unsubscribe = () => {};
+    const stamp = async ({ messageId, observedAt }, source) => {
+      if (settled || pending || typeof control?.recordProgress !== 'function') return;
+      pending = true;
+      try {
+        const accepted = await control.recordProgress({ firstAssistantPartAt: observedAt });
+        settled = true;
+        unsubscribe();
+        if (accepted !== false) {
+          try {
+            await options.onFirstAssistantActivity?.({
+              taskId: task.taskId, childSessionId: task.childSessionId,
+              messageId, observedAt, source,
+            });
+          } catch { /* Diagnostics cannot affect execution. */ }
+        }
+      } catch { /* A later event or transcript observation can retry persistence. */ }
+      finally { pending = false; }
+    };
+    const watch = { taskId: task.taskId, stamp, dispose: () => { settled = true; unsubscribe(); } };
+    activityWatches.set(activityKey(task), watch);
+    if (!settled && typeof control?.recordProgress === 'function' && options.subscribeAssistantActivity) {
+      unsubscribe = options.subscribeAssistantActivity({
+        sessionId: task.childSessionId, directory: task.directory, after, excludedMessageId,
+      }, (activity) => { void stamp(activity, 'event'); });
+      if (settled) unsubscribe();
+    }
+    return watch;
+  };
+  const releaseActivity = (task) => {
+    activityWatches.get(activityKey(task))?.dispose();
+    activityWatches.delete(activityKey(task));
+  };
+  const withActivityCleanup = (execute) => async (task, control) => {
+    activeExecutions.set(task.taskId, new AbortController());
+    try { return await execute(task, control); }
+    finally { releaseActivity(task); activeExecutions.delete(task.taskId); }
+  };
+
   const waitForTerminal = async (task, waitOptions = {}) => {
     if (!task.childSessionId) {
       throw new Error(`Managed task ${task.taskId} has no child session`);
@@ -966,13 +1128,13 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     let staleTailReprompts = 0;
     let staleTailGraceExhausted = false;
     // First assistant output of THIS attempt: the inherited stale tail never counts.
-    let firstAssistantPartStamped = false;
+    const activityWatch = watchActivity(task, waitOptions.control);
     const stampFirstAssistantPart = async (observation) => {
-      if (firstAssistantPartStamped) return;
-      const messageId = observation.latestAssistantMessageId;
+      const messageId = observation.assistantActivityIds?.at(-1);
       if (!messageId || messageId === staleTailAnchorId) return;
-      firstAssistantPartStamped = true;
-      await recordProgress(waitOptions.control, { firstAssistantPartAt: now() });
+      if (staleTailAnchorId && observation.assistantMessageIds.indexOf(messageId)
+        <= observation.assistantMessageIds.indexOf(staleTailAnchorId)) return;
+      await activityWatch.stamp({ messageId, observedAt: now() }, 'transcript');
     };
     // Turn-budget backstop. Turns are counted from this wait's baseline: 0 for a
     // fresh child, the inherited tail for resume/retry (a deliberately resumed
@@ -1019,18 +1181,31 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       }
       return null;
     };
-    const terminalErrorAfter = Number.isFinite(waitOptions.terminalErrorAfter)
+    let terminalErrorAfter = Number.isFinite(waitOptions.terminalErrorAfter)
       ? waitOptions.terminalErrorAfter
       : Number.isFinite(task.startedAt) ? task.startedAt : 0;
+    terminalErrorAfter = Math.max(terminalErrorAfter, task.transportRecovery?.reservedAt ?? 0);
+    let pendingTransportEvent = null;
+    let settlementStartedAt = null;
+    let recoveryAssistantSeen = false;
     while (true) {
       let observation;
       try {
+        activeExecutions.get(task.taskId)?.signal.throwIfAborted();
         const authoritativeError = await readAuthoritativeTerminalError(
           task,
           terminalErrorAfter,
           lastSuccessfulObservation,
         );
-        if (authoritativeError) return authoritativeError;
+        if (authoritativeError && !authoritativeError.transportKind) return authoritativeError.result;
+        if (authoritativeError && (!pendingTransportEvent
+          || pendingTransportEvent.eventId !== authoritativeError.error.eventId)) {
+          pendingTransportEvent = {
+            ...authoritativeError.error,
+            failedMessageId: authoritativeError.observation?.latestAssistantMessageId ?? null,
+          };
+          settlementStartedAt ??= now();
+        }
         // Cheap gate first. A live child (busy, or retrying for a reason other
         // than a definite usage limit) can never produce a terminal result, so
         // it does not need a transcript read on every poll. The status itself is
@@ -1039,6 +1214,8 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         const liveStatus = normalizeStatusFields(status);
         if (
           LIVE_STATUS_TYPES.has(liveStatus.statusType)
+          && !pendingTransportEvent
+          && (!task.transportRecovery || recoveryAssistantSeen)
           && !(
             liveStatus.statusType === 'retry'
             && liveStatus.statusFailureKind === PROVIDER_USAGE_LIMIT_FAILURE_KIND
@@ -1073,7 +1250,8 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
               && observedAt - lastLiveProgressAt >= liveProgressTimeoutMs
             ) {
               const continuationAlreadyUsed = transientTransportContinuations
-                >= MAX_TRANSIENT_TRANSPORT_CONTINUATIONS
+                  >= MAX_TRANSIENT_TRANSPORT_CONTINUATIONS
+                || Boolean(task.transportRecovery)
                 || liveObservation.transientTransportContinuationCount
                   >= MAX_TRANSIENT_TRANSPORT_CONTINUATIONS;
               const stopError = await ensureRetryStopped(task);
@@ -1092,7 +1270,16 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
               if (settledResult?.status === 'completed') {
                 return settledResult;
               }
+              if (settledObservation.hasInFlightTool || settledObservation.hasUncertainTool
+                || !settledObservation.assistantCompleted
+                || LIVE_STATUS_TYPES.has(settledObservation.statusType)) {
+                return transportRecoveryResult(settledObservation,
+                  'Managed connection recovery needs attention: provider or tool settlement is unconfirmed');
+              }
               if (continuationAlreadyUsed) {
+                if (task.transportRecovery) {
+                  await saveTransportRecovery(task, waitOptions.control, { phase: 'exhausted' });
+                }
                 return {
                   status: 'failed',
                   failureReason: 'Stream idle timeout: managed child stopped producing response data after one automatic recovery',
@@ -1104,16 +1291,9 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
               }
 
               transientTransportContinuations += 1;
-              await transport.promptSession({
-                sessionId: task.childSessionId,
-                directory: task.directory,
-                providerId: task.providerId,
-                modelId: task.modelId,
-                agent: task.agent,
-                variant: task.variant,
-                prompt: resolveTaskPrompt(task, MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT),
-                tools: resolveTaskPromptTools(task),
-              });
+              const failedRecovery = await sendTransportRecovery(task, waitOptions.control, settledObservation);
+              if (failedRecovery) return failedRecovery;
+              terminalErrorAfter = task.transportRecovery.reservedAt;
               lastTranscriptReadAt = null;
               lastLiveProgressAt = null;
               lastLiveProgressSignature = null;
@@ -1167,6 +1347,102 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       }
       const providerUsageLimit = settleProviderUsageLimit(task, observation);
       if (providerUsageLimit) return providerUsageLimit;
+      if (pendingTransportEvent && !observation.failureReason
+        && observation.latestAssistantMessageId !== pendingTransportEvent.failedMessageId
+        && observation.assistantCompletedAt >= pendingTransportEvent.observedAt) {
+        pendingTransportEvent = null;
+        settlementStartedAt = null;
+      }
+      const recovery = task.transportRecovery;
+      if (recovery) {
+        const ownAssistant = observation.latestAssistantParentId === recovery.recoveryMessageId;
+        recoveryAssistantSeen ||= ownAssistant;
+        const newerUser = observation.latestUserMessageId
+          && observation.latestUserMessageId !== recovery.recoveryMessageId
+          && observation.latestUserMessageId !== recovery.failedUserMessageId;
+        if (newerUser) {
+          await saveTransportRecovery(task, waitOptions.control, { phase: 'blocked' });
+          return transportRecoveryResult(observation, 'Managed connection recovery was superseded by newer input');
+        }
+        if (recovery.phase === 'uncertain' || recovery.phase === 'blocked') {
+          return transportRecoveryResult(observation, 'Managed connection recovery requires manual review');
+        }
+        if (!ownAssistant) {
+          if (now() - recovery.reservedAt < continuationStartGraceMs) {
+            await sleep(pollIntervalMs, { signal: shutdownController.signal });
+            continue;
+          }
+          await saveTransportRecovery(task, waitOptions.control, { phase: 'uncertain' });
+          return transportRecoveryResult(observation,
+            'Managed connection recovery delivery or execution is unconfirmed; the continuation was not resent');
+        }
+        // An accepted recovery's current assistant, rather than an old event or
+        // the inherited failed tail, owns its outcome.
+        if (pendingTransportEvent && !observation.failureReason) {
+          pendingTransportEvent = null;
+          settlementStartedAt = null;
+        }
+        const terminal = toTerminalResult(observation);
+        if (terminal?.status === 'completed') {
+          await saveTransportRecovery(task, waitOptions.control, { phase: 'recovered' });
+          return terminal;
+        }
+      }
+      const transportFailure = isTransientAssistantTransportFailure(observation.failureReason);
+      if ((pendingTransportEvent || transportFailure)
+        && !(hasStaleTailAnchor && observation.latestAssistantMessageId === staleTailAnchorId && !recovery)) {
+        // Historical continuation markers retain their prior terminal outcome;
+        // they never acquire a new reservation or automatic backup on upgrade.
+        if (!recovery && (observation.transientTransportFailureCount > MAX_TRANSIENT_TRANSPORT_CONTINUATIONS
+          || observation.transientTransportContinuationCount >= MAX_TRANSIENT_TRANSPORT_CONTINUATIONS
+          || transientTransportContinuations >= MAX_TRANSIENT_TRANSPORT_CONTINUATIONS)) {
+          const legacyResult = toTerminalResult(observation);
+          if (legacyResult) return legacyResult;
+        }
+        settlementStartedAt ??= now();
+        if (observation.hasNewerUserInput) {
+          if (recovery) await saveTransportRecovery(task, waitOptions.control, { phase: 'blocked' });
+          return transportRecoveryResult(observation, 'Managed connection recovery was superseded by newer input');
+        }
+        const settled = !LIVE_STATUS_TYPES.has(observation.statusType)
+          && observation.assistantCompleted
+          && transportFailure
+          && !observation.hasInFlightTool
+          && !observation.hasUncertainTool
+          && !observation.continuationPending;
+        if (!settled) {
+          if (now() - settlementStartedAt >= resumeTeardownSettleMs) {
+            if (recovery) await saveTransportRecovery(task, waitOptions.control, { phase: 'blocked' });
+            return transportRecoveryResult(observation,
+              'Managed connection recovery needs attention: provider or tool settlement is unconfirmed');
+          }
+          await sleep(pollIntervalMs, { signal: shutdownController.signal });
+          continue;
+        }
+        if (recovery) {
+          await saveTransportRecovery(task, waitOptions.control, {
+            phase: 'exhausted', failedMessageId: observation.latestAssistantMessageId,
+            failedUserMessageId: observation.latestAssistantParentId,
+            eventId: pendingTransportEvent?.eventId ?? recovery.eventId,
+          });
+          return toTerminalResult(observation);
+        }
+        // Legacy transcripts already containing a recovery retain their consumed
+        // budget. They do not acquire the new automatic backup policy on upgrade.
+        if (observation.transientTransportFailureCount > MAX_TRANSIENT_TRANSPORT_CONTINUATIONS
+          || observation.transientTransportContinuationCount >= MAX_TRANSIENT_TRANSPORT_CONTINUATIONS
+          || transientTransportContinuations >= MAX_TRANSIENT_TRANSPORT_CONTINUATIONS) {
+          return toTerminalResult(observation);
+        }
+        const failedRecovery = await sendTransportRecovery(task, waitOptions.control, observation, pendingTransportEvent);
+        if (failedRecovery) return failedRecovery;
+        transientTransportContinuations += 1;
+        terminalErrorAfter = task.transportRecovery.reservedAt;
+        pendingTransportEvent = null;
+        settlementStartedAt = null;
+        await sleep(pollIntervalMs, { signal: shutdownController.signal });
+        continue;
+      }
       // The tail of the previous attempt is not this attempt's result. A resume or
       // retry dispatched moments after an abort would otherwise read the killed turn's
       // error and terminalize instantly, before the child had run a single token. This
@@ -1210,34 +1486,8 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         continue;
       }
       if (
-        !LIVE_STATUS_TYPES.has(observation.statusType)
-        && isTransientAssistantTransportFailure(observation.failureReason)
-        && observation.transientTransportFailureCount <= MAX_TRANSIENT_TRANSPORT_CONTINUATIONS
-        && observation.transientTransportContinuationCount < MAX_TRANSIENT_TRANSPORT_CONTINUATIONS
-        && transientTransportContinuations < MAX_TRANSIENT_TRANSPORT_CONTINUATIONS
-      ) {
-        transientTransportContinuations += 1;
-        await transport.promptSession({
-          sessionId: task.childSessionId,
-          directory: task.directory,
-          providerId: task.providerId,
-          modelId: task.modelId,
-          agent: task.agent,
-          variant: task.variant,
-          // No explicit messageId: OpenCode only runs a turn when the incoming
-          // message sorts after the session's latest one, and a task-derived id
-          // sorts arbitrarily. When it landed low the continuation was written
-          // into the past and silently never ran. Repeat continuations are
-          // already bounded by the transcript failure count and the local counter.
-          prompt: resolveTaskPrompt(task, MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT),
-          tools: resolveTaskPromptTools(task),
-        });
-        await sleep(pollIntervalMs, { signal: shutdownController.signal });
-        assertRunning();
-        continue;
-      }
-      if (
         isEmptyTerminalObservation(observation)
+        && !task.transportRecovery
         && observation.emptyOutputContinuationCount < MAX_EMPTY_OUTPUT_CONTINUATIONS
         && emptyOutputContinuations < MAX_EMPTY_OUTPUT_CONTINUATIONS
       ) {
@@ -1307,6 +1557,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     });
     const runningTask = { ...task, childSessionId };
     const terminalErrorAfter = now();
+    watchActivity(runningTask, control, terminalErrorAfter);
     await transport.promptSession({
       sessionId: childSessionId,
       directory: task.directory,
@@ -1328,7 +1579,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     return await waitForTerminal(runningTask, { terminalErrorAfter, turnBudgetBaseline: 0, control });
   };
 
-  const observe = async (task) => await waitForTerminal(task);
+  const observe = async (task, control) => await waitForTerminal(task, { control });
 
   const retainInPlaceAcceptance = async (task, control, stage) => {
     await retainCheckpoint({
@@ -1402,6 +1653,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       // child that was already resumed once still needs its own continuation now.
       const staleTailAssistantMessageId = observation.latestAssistantMessageId;
       const terminalErrorAfter = now();
+      watchActivity(task, control, terminalErrorAfter, staleTailAssistantMessageId);
       await transport.promptSession({
         sessionId: task.childSessionId,
         directory: task.directory,
@@ -1440,6 +1692,21 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     }
     assertReadOnlyAgentSupport(task);
     assertReadOnlyProviderSupport(task);
+    if (task.transportRecovery?.phase === 'backup_pending') {
+      // Automatic fallback never aborts a newer turn to make room for itself.
+      const observation = await readObservation(task);
+      if (LIVE_STATUS_TYPES.has(observation.statusType) || !observation.assistantCompleted
+        || observation.hasInFlightTool || observation.hasUncertainTool || observation.continuationPending
+        || !isTransientAssistantTransportFailure(observation.failureReason)
+        || observation.latestAssistantParentId !== task.transportRecovery.recoveryMessageId) {
+        await saveTransportRecovery(task, control, { phase: 'blocked' });
+        return transportRecoveryResult(observation, 'Automatic backup needs attention: the failed turn is no longer safely resumable');
+      }
+      await retainInPlaceAcceptance(task, control, 'before automatic backup continuation');
+      const failedRecovery = await sendTransportRecovery(task, control, observation, null, true);
+      if (failedRecovery) return failedRecovery;
+      return await waitForTerminal(task, { control, terminalErrorAfter: task.transportRecovery.reservedAt });
+    }
     const stopError = await ensureRetryStopped(task);
     if (stopError) throw stopError;
     // Capture the tail this retry inherits, so the first poll cannot settle on the
@@ -1447,6 +1714,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     const priorObservation = await readObservation(task);
     const staleTailAssistantMessageId = priorObservation.latestAssistantMessageId;
     const terminalErrorAfter = now();
+    watchActivity(task, control, terminalErrorAfter, staleTailAssistantMessageId);
     await transport.promptSession({
       sessionId: task.childSessionId,
       directory: task.directory,
@@ -1456,7 +1724,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       variant: task.variant,
       prompt: resolveTaskPrompt(
         task,
-        `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${buildModelContinuationNotice(task)}`,
+        `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${buildModelContinuationNotice(task, priorObservation.failureReason)}`,
       ),
       tools: resolveTaskPromptTools(task),
     });
@@ -1523,6 +1791,8 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         };
       }
       const observation = await readObservation(task);
+      if (task.transportRecovery?.phase === 'backup_pending') return { state: 'relaunch' };
+      if (task.transportRecovery) return { state: 'live' };
       const providerUsageLimit = settleProviderUsageLimit(task, observation);
       if (providerUsageLimit) {
         return { state: 'terminal', result: providerUsageLimit };
@@ -1571,11 +1841,17 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   };
 
   return {
-    start,
-    resume,
-    retryInPlace,
-    observe,
+    start: withActivityCleanup(start),
+    resume: withActivityCleanup(resume),
+    retryInPlace: withActivityCleanup(retryInPlace),
+    observe: withActivityCleanup(observe),
     async abort(task, options = {}) {
+      activeExecutions.get(task.taskId)?.abort(new Error('Managed task cancelled'));
+      for (const [key, watch] of activityWatches) {
+        if (watch.taskId !== task.taskId) continue;
+        watch.dispose();
+        activityWatches.delete(key);
+      }
       if (!task.childSessionId) return { aborted: false, failureReason: 'Managed task has no child session' };
       const aborted = await transport.abortSession({
         sessionId: task.childSessionId,
@@ -1591,8 +1867,13 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     reconcile,
     readRecoverableResult,
     async shutdown() {
+      for (const watch of activityWatches.values()) watch.dispose();
+      activityWatches.clear();
       if (!shutdownController.signal.aborted) {
         shutdownController.abort(new Error('Managed OpenCode executor shut down'));
+      }
+      for (const controller of activeExecutions.values()) {
+        controller.abort(shutdownController.signal.reason);
       }
     },
   };

@@ -904,7 +904,7 @@ select is(
 
 select is(
   public.devryan_bot_schema_version(),
-  '20260901160000',
+  '20260908182901',
   'the Bot schema marker includes runtime-scope and terminal-audit repair'
 );
 

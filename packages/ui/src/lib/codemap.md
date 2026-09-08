@@ -41,3 +41,5 @@ Shared non-React application logic for the UI package: API clients, routing/seri
 override the variant sent to the provider.
 
 - `sessionVisibility.ts` hides exact internal title/text generation helper titles, including temporary commit/PR helpers, while preserving array and record references for unchanged visible sessions.
+
+- `botCatalog.ts` shares Bot/revision/membership parsing across HTTP assigned-catalog bootstrap and live events. `botsApi.ts` exposes `getAssignedCatalog()` for `GET /api/bots/assigned` and rejects missing or malformed catalog collections.

@@ -1,0 +1,416 @@
+[
+  {
+    "case": "prefix-current-stream",
+    "claudeVersion": "2.1.215",
+    "stream": true,
+    "steps": 6,
+    "parallelTools": 2,
+    "sourceSha256": "3780a40b4d02927087565706ce3e8d4cb355be8cd8c6b6b0be44f4c497cf5114",
+    "passed": true,
+    "providerRequests": 8,
+    "clientRequests": 8,
+    "hiddenRequests": 0,
+    "checks": [
+      {
+        "step": 0,
+        "system": "ec7ed4dd72b6f9d83f27674a14ac58ad96bef6ac6265b27e73239245262a8b14",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 1,
+        "system": "ec7ed4dd72b6f9d83f27674a14ac58ad96bef6ac6265b27e73239245262a8b14",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 2,
+        "system": "ec7ed4dd72b6f9d83f27674a14ac58ad96bef6ac6265b27e73239245262a8b14",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 3,
+        "system": "ec7ed4dd72b6f9d83f27674a14ac58ad96bef6ac6265b27e73239245262a8b14",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 4,
+        "system": "ec7ed4dd72b6f9d83f27674a14ac58ad96bef6ac6265b27e73239245262a8b14",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 5,
+        "system": "ec7ed4dd72b6f9d83f27674a14ac58ad96bef6ac6265b27e73239245262a8b14",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 6,
+        "system": "ec7ed4dd72b6f9d83f27674a14ac58ad96bef6ac6265b27e73239245262a8b14",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 7,
+        "system": "ec7ed4dd72b6f9d83f27674a14ac58ad96bef6ac6265b27e73239245262a8b14",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      }
+    ],
+    "sdkSessions": 7
+  },
+  {
+    "case": "prefix-new-stream",
+    "claudeVersion": "2.1.260",
+    "stream": true,
+    "steps": 6,
+    "parallelTools": 2,
+    "sourceSha256": "93d04e2796fc77e7bec62b1e659f5becca5b14b70c40fa475780b6a0cadccf81",
+    "passed": false,
+    "providerRequests": 8,
+    "clientRequests": 8,
+    "hiddenRequests": 0,
+    "checks": [
+      {
+        "step": 0,
+        "system": "170115feca56d3c1e23176a084912a0a60b89c7fdec5f66ff59fbc461ab8577b",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 1,
+        "system": "170115feca56d3c1e23176a084912a0a60b89c7fdec5f66ff59fbc461ab8577b",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 2,
+        "system": "170115feca56d3c1e23176a084912a0a60b89c7fdec5f66ff59fbc461ab8577b",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 3,
+        "system": "170115feca56d3c1e23176a084912a0a60b89c7fdec5f66ff59fbc461ab8577b",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 4,
+        "system": "170115feca56d3c1e23176a084912a0a60b89c7fdec5f66ff59fbc461ab8577b",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 5,
+        "system": "170115feca56d3c1e23176a084912a0a60b89c7fdec5f66ff59fbc461ab8577b",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 6,
+        "system": "170115feca56d3c1e23176a084912a0a60b89c7fdec5f66ff59fbc461ab8577b",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 7,
+        "system": "170115feca56d3c1e23176a084912a0a60b89c7fdec5f66ff59fbc461ab8577b",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      }
+    ],
+    "sdkSessions": 8
+  },
+  {
+    "case": "prefix-cli-isolation",
+    "claudeVersion": "2.1.260",
+    "stream": true,
+    "steps": 3,
+    "parallelTools": 2,
+    "sourceSha256": "3780a40b4d02927087565706ce3e8d4cb355be8cd8c6b6b0be44f4c497cf5114",
+    "passed": false,
+    "providerRequests": 5,
+    "clientRequests": 5,
+    "hiddenRequests": 0,
+    "checks": [
+      {
+        "step": 0,
+        "system": "9f9ab047e672abd27869dfc4dc69501275a1125cae513270f203ca7660b1e9fa",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 1,
+        "system": "9f9ab047e672abd27869dfc4dc69501275a1125cae513270f203ca7660b1e9fa",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 2,
+        "system": "9f9ab047e672abd27869dfc4dc69501275a1125cae513270f203ca7660b1e9fa",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 3,
+        "system": "9f9ab047e672abd27869dfc4dc69501275a1125cae513270f203ca7660b1e9fa",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 4,
+        "system": "9f9ab047e672abd27869dfc4dc69501275a1125cae513270f203ca7660b1e9fa",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      }
+    ],
+    "sdkSessions": 4
+  },
+  {
+    "case": "prefix-minimum-cli",
+    "claudeVersion": "2.1.257",
+    "stream": true,
+    "steps": 3,
+    "parallelTools": 2,
+    "sourceSha256": "93d04e2796fc77e7bec62b1e659f5becca5b14b70c40fa475780b6a0cadccf81",
+    "passed": false,
+    "providerRequests": 5,
+    "clientRequests": 5,
+    "hiddenRequests": 0,
+    "checks": [
+      {
+        "step": 0,
+        "system": "438e826413241146cc3cd9a8ff4f4c077467190b14c32346fd1265362c901a92",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 1,
+        "system": "438e826413241146cc3cd9a8ff4f4c077467190b14c32346fd1265362c901a92",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 2,
+        "system": "438e826413241146cc3cd9a8ff4f4c077467190b14c32346fd1265362c901a92",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 3,
+        "system": "438e826413241146cc3cd9a8ff4f4c077467190b14c32346fd1265362c901a92",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 4,
+        "system": "438e826413241146cc3cd9a8ff4f4c077467190b14c32346fd1265362c901a92",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      }
+    ],
+    "sdkSessions": 5
+  },
+  {
+    "case": "prefix-current-nonstream",
+    "claudeVersion": "2.1.215",
+    "stream": false,
+    "steps": 3,
+    "parallelTools": 2,
+    "sourceSha256": "3780a40b4d02927087565706ce3e8d4cb355be8cd8c6b6b0be44f4c497cf5114",
+    "passed": true,
+    "providerRequests": 5,
+    "clientRequests": 5,
+    "hiddenRequests": 0,
+    "checks": [
+      {
+        "step": 0,
+        "system": "197fac55e932f062600636c4d92d249d32192d55746e860772bce6fb0394131e",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 1,
+        "system": "197fac55e932f062600636c4d92d249d32192d55746e860772bce6fb0394131e",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 2,
+        "system": "197fac55e932f062600636c4d92d249d32192d55746e860772bce6fb0394131e",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 3,
+        "system": "197fac55e932f062600636c4d92d249d32192d55746e860772bce6fb0394131e",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 4,
+        "system": "197fac55e932f062600636c4d92d249d32192d55746e860772bce6fb0394131e",
+        "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      }
+    ],
+    "sdkSessions": 4
+  },
+  {
+    "case": "prefix-candidate-nonstream",
+    "claudeVersion": "2.1.260",
+    "stream": false,
+    "steps": 3,
+    "parallelTools": 2,
+    "sourceSha256": "93d04e2796fc77e7bec62b1e659f5becca5b14b70c40fa475780b6a0cadccf81",
+    "passed": false,
+    "providerRequests": 5,
+    "clientRequests": 5,
+    "hiddenRequests": 0,
+    "checks": [
+      {
+        "step": 0,
+        "system": "5afca5603a4b056ce9554cfc5f2cea7be86359f88f43010f9b80548a02f280b2",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": true,
+        "missingResults": []
+      },
+      {
+        "step": 1,
+        "system": "5afca5603a4b056ce9554cfc5f2cea7be86359f88f43010f9b80548a02f280b2",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 2,
+        "system": "5afca5603a4b056ce9554cfc5f2cea7be86359f88f43010f9b80548a02f280b2",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 3,
+        "system": "5afca5603a4b056ce9554cfc5f2cea7be86359f88f43010f9b80548a02f280b2",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      },
+      {
+        "step": 4,
+        "system": "5afca5603a4b056ce9554cfc5f2cea7be86359f88f43010f9b80548a02f280b2",
+        "tools": "9e281f4c9b731c2d4b0d0f82ff581f0a0368e7c84ee6da769dc285880ad84e00",
+        "systemStable": true,
+        "toolsStable": true,
+        "previousMessagesStable": false,
+        "missingResults": []
+      }
+    ],
+    "sdkSessions": 5
+  }
+]

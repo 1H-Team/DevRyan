@@ -34,7 +34,7 @@ export function gradePrefixRequests(requests, expectedResults) {
       missingResults };
   });
   return {
-    passed: checks.length > 2 && checks.every(check => check.systemStable && check.toolsStable
+    passed: checks.length > 2 && requests.every(row => row.primary) && checks.every(check => check.systemStable && check.toolsStable
       && check.previousMessagesStable && check.missingResults.length === 0),
     providerRequests: requests.length, clientRequests: primary.length,
     hiddenRequests: requests.filter(row => !row.primary).length, checks,
@@ -100,7 +100,7 @@ export async function runMeridianPrefixProbe({ installedModules, claudeExecutabl
   // createProxyServer (unlike startProxyServer) does not initialize the module's
   // executable selection for streaming. Seed that configuration in this owned
   // copy; starting the full server would enable unrelated auth refresh timers.
-  const entry = path.join(fixture.packageRoot, 'dist/cli-wxk8xvd3.js');
+  const entry = fixture.entry;
   const source = await fs.readFile(entry, 'utf8');
   const bootstrapAnchor = 'var claudeExecutable = "";';
   if (source.split(bootstrapAnchor).length !== 2) throw new Error('Fixture executable bootstrap is incompatible');

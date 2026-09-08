@@ -60,6 +60,7 @@ describe('user profile provisioning', () => {
     },
     applyContextModeHotfix: () => ({ ok: true, changed: false }),
     applyMeridianHttpHotfix: () => ({ ok: true, changed: false }),
+    applyImagegenModelHotfix: () => ({ ok: true, changed: false }),
     ...overrides,
   });
 
@@ -71,6 +72,12 @@ describe('user profile provisioning', () => {
 
   afterEach(() => {
     fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('blocks startup when the image model patch cannot be applied safely', async () => {
+    const result = await createRuntime({ applyImagegenModelHotfix: () => ({ ok: false, changed: false, code: 'DEVRYAN_IMAGEGEN_MODEL_INCOMPATIBLE', error: 'fixture source mismatch' }) }).provision();
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('DEVRYAN_IMAGEGEN_MODEL_INCOMPATIBLE');
   });
 
   it('installs the complete sanitized baseline into a blank user profile', async () => {
@@ -97,14 +104,14 @@ describe('user profile provisioning', () => {
     expect(packageJson.dependencies).toMatchObject({
       '@ai-sdk/openai-compatible': '^2.0.47',
       '@opencode-ai/plugin': '1.18.29',
-      '@rama_nigg/open-cursor': '2.5.4',
+      '@rama_nigg/open-cursor': '2.5.8',
       '@rynfar/meridian': '1.62.6',
       'context-mode': '1.0.169',
       'adm-zip': '0.6.0',
       'mammoth': '1.12.1',
-      'oh-my-opencode-slim': '2.2.15',
+      'oh-my-opencode-slim': '2.2.18',
       'opencode-antigravity-auth': '1.6.0',
-      'opencode-gpt-imagegen': '0.1.10',
+      'opencode-gpt-imagegen': '0.1.12',
       'opencode-with-claude': '1.8.0',
       'unpdf': '1.8.0',
     });
@@ -221,6 +228,43 @@ describe('user profile provisioning', () => {
     expect(config.agent.custom).toEqual({ description: 'keep' });
     expect(config.plugin).toContain('custom-plugin');
     expect(commands).toHaveLength(1);
+  });
+
+  it('preserves untracked personal Slim JSON, higher-precedence JSONC and prompt overrides', async () => {
+    const configDir = path.join(home, '.config', 'opencode');
+    const slimPath = path.join(configDir, 'oh-my-opencode-slim.json');
+    const jsoncPath = path.join(configDir, 'oh-my-opencode-slim.jsonc');
+    const promptPath = path.join(configDir, 'agents', 'builder.md');
+    const personal = { preset: 'openai', disabled_mcps: ['context7', 'websearch', 'gh_grep'],
+      agents: { builder: { model: 'xai/grok-4.6', variant: 'high' }, designer: { model: 'anthropic/claude-opus-5', variant: 'medium' } } };
+    writeJson(slimPath, personal);
+    fs.writeFileSync(jsoncPath, '// personal precedence\n{"agents":{"oracle":{"model":"openai/gpt-6-astra"}}}\n');
+    fs.mkdirSync(path.dirname(promptPath), { recursive: true });
+    fs.writeFileSync(promptPath, 'My primary agent instructions\n');
+    const before = [slimPath, jsoncPath, promptPath].map(file => fs.readFileSync(file, 'utf8'));
+    const runtime = createRuntime();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await runtime.provision();
+      expect(result.ok).toBe(true);
+      expect(result.conflicts).toEqual(expect.arrayContaining([slimPath, promptPath]));
+      expect([slimPath, jsoncPath, promptPath].map(file => fs.readFileSync(file, 'utf8'))).toEqual(before);
+    }
+  });
+
+  it('does not replace a user-owned Slim adapter or install a new package against it', async () => {
+    const configDir = path.join(home, '.config', 'opencode');
+    const adapter = path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs');
+    fs.mkdirSync(path.dirname(adapter), { recursive: true });
+    fs.writeFileSync(adapter, 'export default async () => ({ custom: true });\n');
+    const packagePath = path.join(configDir, 'package.json');
+    writeJson(packagePath, { dependencies: { 'oh-my-opencode-slim': '2.2.15' } });
+    const before = fs.readFileSync(packagePath, 'utf8');
+    const result = await createRuntime().provision();
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('DEVRYAN_SLIM_ADAPTER_CONFLICT');
+    expect(fs.readFileSync(adapter, 'utf8')).toContain('custom: true');
+    expect(fs.readFileSync(packagePath, 'utf8')).toBe(before);
+    expect(commands).toHaveLength(0);
   });
 
   it('reconciles legacy managed specs in a previously managed config without discarding later user edits', async () => {
@@ -681,8 +725,8 @@ describe('user profile provisioning', () => {
     const result = await runtime.provision();
 
     expect(result.ok).toBe(true);
-    expect(readJson(packagePath).dependencies['oh-my-opencode-slim']).toBe('2.2.15');
-    expect(readJson(installedPackagePath).version).toBe('2.2.15');
+    expect(readJson(packagePath).dependencies['oh-my-opencode-slim']).toBe('2.2.18');
+    expect(readJson(installedPackagePath).version).toBe('2.2.18');
     expect(fs.readFileSync(slimConfigPath, 'utf8')).toBe(expectedSlimConfig);
     expect(fs.readFileSync(orchestratorPath, 'utf8')).toBe(expectedOrchestrator);
     expect(result.conflicts).toEqual(expect.arrayContaining([

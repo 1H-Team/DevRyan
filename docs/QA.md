@@ -447,3 +447,16 @@ A quota reset does not renew the authorized study ceiling. Do not run a measured
 An authoritative zero-usage window can have a null reset timestamp while inactive. Preserve that raw baseline. When its first active reset timestamp appears, the runner records `activatedFiveHourReset` and the corresponding observation atomically in the cache-owned baseline file. Subsequent inactive windows or changed reset timestamps then stop admission; an inactive starting baseline cannot silently grant a second window's budget. A nonzero window without a reset boundary remains invalid. Full sustained arms require at least sixty minutes before a known quota reset and sixty minutes of existing access lifetime at startup; the runner does not write refresh credentials.
 
 The output records authoritative quota before/after each turn, immediate and delayed samples, native usage deduplicated by provider message ID, exact model/effort evidence, mediated request counters and verified file/test outcomes. Each delayed endpoint must have been fetched after completed work plus 30 seconds; a recent cached reading that predates completion is insufficient. That endpoint can serve as the next turn's preceding observation while fresh, since no inference occurs between them. The first prompt similarly requires a fresh observation fetched after the arm started. Valid observations can be reused for up to 85 seconds to avoid bursts of quota refresh requests, while their provider fetch time remains subject to the 90-second freshness bound. With model work idle, the runner can wait up to ten minutes for a fresh endpoint. Missing or stale quota during active inference still aborts the owned workload. Native transcript and Meridian client counters do not cover every auxiliary or failed provider attempt. A one-point quota display delta of zero does not establish zero consumption or parity. The runner never writes refresh credentials or passwords, never patches the installed runtime, and stops only processes it created.
+
+## Context Mode timeout and reconnect
+
+Run `DEVRYAN_QA_SCENARIO=context-mode bun scripts/qa/run.mjs`, and repeat with
+`DEVRYAN_QA_RUNTIME=electron` after staging the current web build. The scenario
+uses the real worker pool with a deliberately silent worker and replays its
+actual timeout through the deterministic OpenCode HTTP/SSE fixture. It checks
+that Context Mode activity clears, the unknown-outcome error is visible, Stop
+remains available while running, and reconnect restores the error without replay.
+The preceding standard smoke verifies the composer Stop/abort route. Real
+worker/process cancellation is covered separately by
+`scripts/verify-context-mode-workers.mjs`; this UI scenario is not live-provider
+or installed-app verification.

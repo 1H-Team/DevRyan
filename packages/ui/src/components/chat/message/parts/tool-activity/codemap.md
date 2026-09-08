@@ -7,6 +7,7 @@ Renders tool-execution activity rows within chat message parts.
 
 `targets.ts` uses the shared tool diff preview budget before deriving patch counts or file summaries. Oversized raw sources retain authoritative metadata counts and their complete download source; they do not acquire partial inferred totals.
 Part-specific subcomponents isolate tool status formatting and incremental updates.
+`classification.ts` routes native and MCP Context Mode tools through the standard expandable tool disclosure so error guidance and partial output remain inspectable in Live and Sorted modes.
 
 ## Flow
 Message-part data enters from chat store; components map tool events to badges/log snippets.

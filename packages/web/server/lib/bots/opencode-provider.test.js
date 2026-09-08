@@ -733,7 +733,47 @@ describe('scoped Bot OpenCode provider', () => {
     expect(harness.client.session.delete).toHaveBeenCalledWith({
       sessionID: 'ses_bot_1',
       directory: '/workspace',
+    }, { signal: expect.any(AbortSignal) });
+  });
+
+  it('allows structured completion after fifteen seconds and still removes its session', async () => {
+    const harness = createHarness();
+    await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
+    vi.useFakeTimers();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), ms);
+      return controller.signal;
     });
+    try {
+      harness.client.session.prompt.mockImplementationOnce(() => new Promise((resolve) => setTimeout(() => resolve({
+        data: { parts: [{ type: 'text', text: '{"candidates":[]}' }] },
+      }), 16_000)));
+      const result = harness.provider.runNoToolsExtraction({ runId: RUN_ID, prompt: 'Extract', schema: { type: 'object' } });
+      await vi.advanceTimersByTimeAsync(16_000);
+      await expect(result).resolves.toBe('{"candidates":[]}');
+      expect(timeout).toHaveBeenCalledWith(120_000);
+      expect(harness.client.session.delete).toHaveBeenCalledTimes(1);
+    } finally { timeout.mockRestore(); vi.useRealTimers(); }
+  });
+
+  it('deletes a disposable session that arrives after its creation was cancelled', async () => {
+    const harness = createHarness();
+    await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
+    let finish;
+    harness.client.session.create.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const controller = new AbortController();
+    const result = harness.provider.runNoToolsExtraction({
+      runId: RUN_ID, prompt: 'Extract', schema: { type: 'object' }, signal: controller.signal,
+    });
+    const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort();
+    await rejected;
+    finish({ data: { id: 'ses_late' } });
+    await vi.waitFor(() => expect(harness.client.session.delete).toHaveBeenCalledWith(
+      { sessionID: 'ses_late', directory: '/workspace' }, { signal: expect.any(AbortSignal) },
+    ));
+    expect(harness.client.session.prompt).not.toHaveBeenCalled();
   });
 
   it('supports purpose-bound no-tools structured runs for reviewed routine drafting', async () => {

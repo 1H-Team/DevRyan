@@ -489,6 +489,7 @@ export function createBotsRuntime({
     channels,
     encryption,
     indexer: memoryIndexer,
+    prepareExtraction: (input) => dispatcher?.prepareMemoryExtraction(input),
     extractCandidates: async (input) => {
       if (!reasoningAdapterRegistry) {
         throw Object.assign(new Error('Bot reasoning runtime is unavailable'), {
@@ -519,6 +520,7 @@ export function createBotsRuntime({
         schema: input.schema,
         title: `Bot memory extraction ${input.runId.slice(0, 8)}`,
         system: 'Extract structured memory only. Do not call tools or perform actions.',
+        ...(input.signal ? { signal: input.signal } : {}),
       });
     },
     audit: botAudit,
@@ -1092,12 +1094,14 @@ export function createBotsRuntime({
         executeGovernedToolIntent: actionGateway.handleGatewayOperation,
         eventStream,
         resolveLibrarySnapshot: (input) => libraryRuntime.snapshotForRun(input),
+        hasPendingMemory: (channelId) => memoryRuntime.hasPendingForChannel(channelId),
         onRunCompleted: (input) => {
           sweepGate.noteActivity();
           return memoryRuntime?.enqueueCompletedRun(input);
         },
-        onRunSettled: (input) => {
+        onRunSettled: async (input) => {
           sweepGate.noteRunSettled(input?.run?.id);
+          if (input?.run?.channel_id) await memoryRuntime.wakeChannel(input.run.channel_id).catch(() => undefined);
           return routineSettlementHandler?.(input);
         },
         streamAccessLeases,

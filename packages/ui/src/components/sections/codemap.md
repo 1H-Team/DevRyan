@@ -57,3 +57,6 @@ Defines settings-domain feature sections (providers, agents, Bots, MCP, skills, 
 - Integrates with `stores/*` for configuration/state mutations.
 - Uses `components/ui/*` controls and `lib/i18n` translation keys.
 - Some sections integrate directly with backend routes via helpers (MCP OAuth, providers auth, skills catalog, quota/usage endpoints, `/api/admin/*` shared-host management, and managed bug/error routes).
+
+- `bots/BotMemoryExtractionDetails.tsx`: cursor-paged, content-free extraction
+  activity with per-job retries and event/poll refresh of all loaded pages.

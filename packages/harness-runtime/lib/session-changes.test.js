@@ -4,32 +4,34 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSessionChangeRuntime } from './session-changes.js';
+import { finishFixtureMutation } from '../test/session-change-fixture.js';
 
 // Real Git integration can share the host with builds; keep a bounded budget
 // that does not tear down a live fixture at Bun's five-second default.
 const test = (name, run) => bunTest(name, run, 60_000);
 
 describe('session changes', () => {
-  let base, directory, runtime, n;
+  let base, directory, storage, runtime, n;
   const command = (...args) => execFileSync('git', args, { cwd: directory, encoding: 'utf8' });
   const write = (file, text) => fs.writeFile(path.join(directory, file), text);
   const input = (sessionID = 'a') => ({ directory, sessionID, messageID: 'msg_1', userMessageID: 'user_1', callID: `call_${++n}` });
   const summary = (rootSessionID = 'a', sessions = []) => runtime.summarize({ directory, rootSessionID, sessions });
-  const change = async (fn, sessionID = 'a') => { const op = input(sessionID); await runtime.begin(op); await fn(); await runtime.finish(op); };
+  const finish = (op) => finishFixtureMutation(runtime, op, storage);
+  const change = async (fn, sessionID = 'a') => { const op = input(sessionID); await runtime.begin(op); await fn(); await finish(op); };
   beforeEach(async () => {
     base = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-session-changes-'));
-    directory = path.join(base, 'repo'); await fs.mkdir(directory);
+    directory = path.join(base, 'repo'); storage = path.join(base, 'storage'); await fs.mkdir(directory);
     command('init', '-q'); command('config', 'user.name', 'Test'); command('config', 'user.email', 'test@example.invalid');
     await write('a.txt', 'base\n'); command('add', '.'); command('commit', '-qm', 'base');
     runtime = createSessionChangeRuntime({ directory: path.join(base, 'storage') }); n = 0;
   }, 30_000);
   afterEach(async () => { await runtime.drain(); await fs.rm(base, { recursive: true, force: true }); }, 30_000);
-  test('captures shell changes with a dirty staged baseline, preserving index and HEAD', async () => {
+  test('captures exact fixture changes with a dirty staged baseline, preserving index and HEAD', async () => {
     await write('a.txt', 'base\nuser\n'); command('add', 'a.txt');
     const index = command('diff', '--cached'); const head = command('rev-parse', 'HEAD');
     await change(() => write('a.txt', 'base\nuser\nagent\n'));
     const result = await summary();
-    expect(result.files).toEqual([{ path: 'a.txt', oldPath: null, status: 'modified', additions: 1, deletions: 0, sessions: ['a'] }]);
+    expect(result.files).toEqual([{ path: 'a.txt', oldPath: null, status: 'modified', additions: 1, deletions: 0, sessions: ['a'], reviewMode: 'net', segmentCount: 0 }]);
     expect(command('diff', '--cached')).toBe(index); expect(command('rev-parse', 'HEAD')).toBe(head);
   });
   test('net edits cancel and add/delete disappears', async () => {
@@ -47,13 +49,13 @@ describe('session changes', () => {
     expect((await summary('b')).files.map((file) => file.path)).toEqual(['b.txt']);
     expect((await runtime.diff({ directory, rootSessionID: 'a', revision: before.revision, file: 'a.txt' })).patch).toContain('+a');
   });
-  test('overlapping operations are unassigned, including after a restart', async () => {
+  test('overlapping observations without receipts remain unverified after a restart', async () => {
     const a = input('a'); const b = input('b');
     await runtime.begin(a); await runtime.begin(b);
     await write('a.txt', 'concurrent\n'); await runtime.finish(a); await runtime.finish(b);
     runtime = createSessionChangeRuntime({ directory: path.join(base, 'storage') });
     for (const id of ['a', 'b']) {
-      const result = await summary(id); expect(result.files).toEqual([]); expect(result.reasons).toContain('overlapping_operations');
+      const result = await summary(id); expect(result.files).toEqual([]); expect(result.reasons).toContain('unverified_tool_changes');
     }
   });
   test('read-only shell does not create a warning or files', async () => {
@@ -63,13 +65,14 @@ describe('session changes', () => {
   test('includes failed tools when the terminal event settles partial writes', async () => {
     const op = input(); await runtime.begin(op); await write('partial.txt', 'written before error\n');
     await runtime.observe({ properties: { part: { type: 'tool', sessionID: 'a', callID: op.callID, state: { status: 'error' } } } });
+    await finish(op);
     expect((await summary()).files[0].path).toBe('partial.txt');
   });
   test('counts a verified child once and detects renamed and binary files', async () => {
     await runtime.registerSession({ directory, sessionID: 'a' });
     const op = { ...input('child'), parentID: 'a' }; await runtime.begin(op);
     await fs.rename(path.join(directory, 'a.txt'), path.join(directory, 'renamed.txt'));
-    await write('image.bin', Buffer.from([0, 1, 2])); await runtime.finish(op);
+    await write('image.bin', Buffer.from([0, 1, 2])); await finish(op);
     const result = await summary();
     expect(result.files.find((file) => file.path === 'renamed.txt')).toMatchObject({ status: 'renamed', oldPath: 'a.txt' });
     expect(result.files.find((file) => file.path === 'image.bin')).toMatchObject({ additions: null, deletions: null });
@@ -106,18 +109,19 @@ describe('session changes', () => {
     expect(result.files).toEqual([]); expect(result.reasons).toContain('capture_interrupted');
   });
 
-  test('another writer between same-session edits leaves that file unassigned', async () => {
+  test('another writer between same-session edits preserves the recorded edit segments', async () => {
     await change(() => write('a.txt', 'first\n'));
     await change(() => write('a.txt', 'other\n'), 'b');
     await change(() => write('a.txt', 'last\n'));
     const result = await summary();
-    expect(result.files).toEqual([]); expect(result.reasons).toContain('interleaved_file_changes');
+    expect(result.files[0]).toMatchObject({ path: 'a.txt', reviewMode: 'segments', segmentCount: 2, sessions: ['a'] });
+    expect(result.coverage).toBe('complete'); expect(result.restoreReasons).toContain('segmented_changes');
   });
 
   test('retains completed child contributions on child deletion and clears them with the parent', async () => {
     await runtime.registerSession({ directory, sessionID: 'a' });
     const op = { ...input('child'), parentID: 'a' };
-    await runtime.begin(op); await write('a.txt', 'child\n'); await runtime.finish(op);
+    await runtime.begin(op); await write('a.txt', 'child\n'); await finish(op);
     const before = await summary();
     await runtime.deleteSession('child');
     expect((await summary()).files).toEqual(before.files);
@@ -129,7 +133,8 @@ describe('session changes', () => {
     await write('.gitignore', 'ignored.bin\n'); command('add', '.gitignore'); command('commit', '-qm', 'ignore');
     await change(() => write('ignored.bin', 'ignored'));
     expect((await summary()).files).toEqual([]);
-    runtime = createSessionChangeRuntime({ directory: path.join(base, 'small-storage'), maxCaptureBytes: 2 });
+    storage = path.join(base, 'small-storage');
+    runtime = createSessionChangeRuntime({ directory: storage, maxCaptureBytes: 2 });
     await change(() => write('a.txt', 'larger than limit'));
     expect((await summary()).reasons).toContain('capture_limit');
   });
@@ -159,7 +164,7 @@ describe('session changes', () => {
     await change(() => write('a.txt', 'first\n'));
     await runtime.restore({ directory, rootSessionID: 'a', revision: (await summary()).revision });
     const op = { ...input('child'), parentID: 'a' };
-    await runtime.begin(op); await write('b.txt', 'child\n'); await runtime.finish(op);
+    await runtime.begin(op); await write('b.txt', 'child\n'); await finish(op);
     const result = await summary();
     expect(result.undone).not.toBe(true); expect(result.files.map((file) => file.path)).toEqual(['b.txt']);
   });
@@ -178,13 +183,13 @@ describe('session changes', () => {
     const a = { ...input('a'), paths: ['a.txt'] }; const b = { ...input('b'), paths: ['b.txt'] };
     await runtime.begin(a); await runtime.begin(b);
     await write('a.txt', 'a\n'); await write('b.txt', 'b\n');
-    await runtime.finish(a); await runtime.finish(b);
+    await finish(a); await finish(b);
     expect((await summary('a')).files.map((file) => file.path)).toEqual(['a.txt']);
     expect((await summary('b')).files.map((file) => file.path)).toEqual(['b.txt']);
     expect((await summary('a')).coverage).toBe('complete');
   });
 
-  test('explicit same-file edits still remain unassigned when windows overlap', async () => {
+  test('declared same-file targets without receipts do not establish ownership', async () => {
     const a = { ...input('a'), paths: ['a.txt'] }; const b = { ...input('b'), paths: ['a.txt'] };
     await runtime.begin(a); await runtime.begin(b); await write('a.txt', 'overlap\n');
     await runtime.finish(a); await runtime.finish(b);
@@ -224,7 +229,7 @@ describe('session changes', () => {
 
   test('deduplicates exact receipts but rejects a reused call identity in another message', async () => {
     const op = input(); await runtime.begin(op); await runtime.begin(op);
-    await write('a.txt', 'first\n'); await runtime.finish(op); await runtime.finish(op);
+    await write('a.txt', 'first\n'); await finish(op); await runtime.finish(op);
     expect((await summary()).coverage).toBe('complete');
     expect((await summary()).files).toHaveLength(1);
     await runtime.begin({ ...op, messageID: 'another-message' });

@@ -139,17 +139,17 @@ update public.bot_runs set context_snapshot = '{"failurePhase":"execution","retr
   agent_adapter = 'opencode', agent_thread_id = 'thread', opencode_session_id = 'ses_1', opencode_segment_id = 'segment',
   agent_execution = '{"threadId":"thread","segmentId":"segment"}'::jsonb
   where id = 'e3000000-0000-4000-8000-000000000001';
-select r->>'ok' as retry_ok, r->'run'->>'state' as retry_state, r->'run'->>'agent_thread_id' as retry_thread,
-  r->'run'->>'opencode_session_id' as retry_session, r->'run'->>'opencode_segment_id' as retry_segment,
-  r->'run'->'agent_execution' as retry_execution, r->'run'->'context_snapshot'->>'retryCount' as retry_count
+select r->>'ok' as retry_ok, r->'run'->>'state' as retry_state, (r->'run'->>'agent_thread_id') is null as retry_thread,
+  (r->'run'->>'opencode_session_id') is null as retry_session, (r->'run'->>'opencode_segment_id') is null as retry_segment,
+  (r->'run'->>'agent_execution') is null as retry_execution, r->'run'->'context_snapshot'->>'retryCount' as retry_count
   from public.devryan_retry_bot_run('e3000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', now()) as r \gset
 rollback to retry_case;
 select is(:'retry_ok'::boolean, true, 'a dead execution identity alone no longer blocks an evidence-cleared replay');
 select is(:'retry_state'::text, 'queued', 'the evidence-cleared replay requeues the same run');
-select is(:'retry_thread'::text, null::text, 'the stale agent thread is cleared for a fresh execution');
-select is(:'retry_session'::text, null::text, 'the stale session identity is cleared for a fresh execution');
-select is(:'retry_segment'::text, null::text, 'the stale segment identity is cleared for a fresh execution');
-select is(:'retry_execution'::text, null::text, 'the stale generic execution is cleared for a fresh execution');
+select is(:'retry_thread'::boolean, true, 'the stale agent thread is cleared for a fresh execution');
+select is(:'retry_session'::boolean, true, 'the stale session identity is cleared for a fresh execution');
+select is(:'retry_segment'::boolean, true, 'the stale segment identity is cleared for a fresh execution');
+select is(:'retry_execution'::boolean, true, 'the stale generic execution is cleared for a fresh execution');
 select is(:'retry_count'::text, '1', 'the replay records its retry count');
 savepoint retry_case;
 update public.bot_runs set context_snapshot = '{"failurePhase":"execution","retryable":true}', agent_thread_id = 'thread' where id = 'e3000000-0000-4000-8000-000000000001';

@@ -5,7 +5,7 @@ import {
   sharedFreeZenCooldowns,
   normalizeGeneratedCommitDraft,
 } from '@openchamber/shared-runtime';
-import { generateZenText } from '../text/summarization.js';
+import { generateZenText, resolveZenSessionID } from '../text/summarization.js';
 
 export const COMMIT_SUBJECT_MAX_LENGTH = 72;
 export const COMMIT_GENERATION_DEFAULT_ZEN_MODEL = 'nemotron-3.5-lightning-free';
@@ -42,6 +42,7 @@ export function buildCommitMessagePrompt(context, guidance) {
 }
 
 export async function generateCommitMessageDirect({
+  sessionID,
   context,
   guidance,
   models = [],
@@ -55,6 +56,7 @@ export async function generateCommitMessageDirect({
 }) {
   const providerStartedAt = Date.now();
   const prompt = buildCommitDraftPrompt(context, guidance);
+  const requestSessionID = resolveZenSessionID(sessionID);
   const result = await runFreeZenModelRotation({
     models,
     timeoutMs,
@@ -63,6 +65,7 @@ export async function generateCommitMessageDirect({
     cooldownPolicy: 'prioritize',
     request: ({ model, timeoutMs: attemptTimeoutMs, signal }) => requestText({
       prompt,
+      sessionID: requestSessionID,
       zenModel: model,
       timeoutMs: attemptTimeoutMs,
       signal,

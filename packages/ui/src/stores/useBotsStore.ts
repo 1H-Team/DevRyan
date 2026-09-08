@@ -4,15 +4,15 @@ import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import {
   botsApi,
   BotsApiError,
+  type BotAssignedCatalog,
   type BotCapabilities,
   type BotMembershipSummary,
   type BotRevisionSummary,
   type BotsApi,
-  type BotSnapshot,
   type BotSummary,
 } from '@/lib/botsApi';
 
-type CatalogSnapshot = Pick<BotSnapshot, 'bots' | 'revisions' | 'memberships'>;
+type CatalogSnapshot = BotAssignedCatalog;
 
 type BotsState = {
   principalId: string | null;
@@ -25,6 +25,11 @@ type BotsState = {
   revisionIdsByBotId: Readonly<Record<string, readonly string[]>>;
   membershipsByBotId: Readonly<Record<string, BotMembershipSummary>>;
   selectedBotId: string | null;
+  catalogLoaded: boolean;
+  catalogLoading: boolean;
+  catalogErrorCode: string | null;
+  loadAssignedCatalog(): Promise<BotAssignedCatalog | null>;
+  cancelCatalogLoad(): void;
   resetPrincipal(principalId: string | null): void;
   loadCapabilities(): Promise<BotCapabilities | null>;
   setCapabilities(capabilities: BotCapabilities | null, errorCode?: string | null): void;
@@ -127,6 +132,7 @@ const reconcileRecords = <T extends { id: string }>(
 
 export const createBotsStore = ({ api = botsApi }: { api?: BotsApi } = {}): BotsStore => {
   let capabilityRequest = 0;
+  let catalogRequest = 0;
   return create<BotsState>((set, get) => ({
     principalId: null,
     capabilities: null,
@@ -138,12 +144,19 @@ export const createBotsStore = ({ api = botsApi }: { api?: BotsApi } = {}): Bots
     revisionIdsByBotId: {},
     membershipsByBotId: {},
     selectedBotId: null,
+    catalogLoaded: false,
+    catalogLoading: false,
+    catalogErrorCode: null,
 
     resetPrincipal(principalId) {
       capabilityRequest += 1;
+      catalogRequest += 1;
       set((state) => {
         if (
           state.principalId === principalId
+          && !state.catalogLoaded
+          && !state.catalogLoading
+          && state.catalogErrorCode === null
           && state.capabilities === null
           && Object.keys(state.botsById).length === 0
           && Object.keys(state.revisionsById).length === 0
@@ -161,8 +174,32 @@ export const createBotsStore = ({ api = botsApi }: { api?: BotsApi } = {}): Bots
           revisionIdsByBotId: {},
           membershipsByBotId: {},
           selectedBotId: null,
+          catalogLoaded: false,
+          catalogLoading: false,
+          catalogErrorCode: null,
         };
       });
+    },
+
+    async loadAssignedCatalog() {
+      const request = ++catalogRequest;
+      set((state) => state.catalogLoading ? state : { catalogLoading: true });
+      try {
+        const catalog = await api.getAssignedCatalog();
+        if (request !== catalogRequest) return null;
+        get().replaceSnapshot(catalog);
+        return catalog;
+      } catch (error) {
+        if (request !== catalogRequest) return null;
+        const errorCode = error instanceof BotsApiError ? error.code : 'bot_request_failed';
+        set({ catalogLoading: false, catalogErrorCode: errorCode });
+        return null;
+      }
+    },
+
+    cancelCatalogLoad() {
+      catalogRequest += 1;
+      set((state) => state.catalogLoading ? { catalogLoading: false } : state);
     },
 
     async loadCapabilities() {
@@ -201,6 +238,7 @@ export const createBotsStore = ({ api = botsApi }: { api?: BotsApi } = {}): Bots
     },
 
     replaceSnapshot(snapshot) {
+      catalogRequest += 1;
       set((state) => {
         const botsById = reconcileRecords(state.botsById, snapshot.bots, botEqual);
         const revisionsById = reconcileRecords(
@@ -243,7 +281,10 @@ export const createBotsStore = ({ api = botsApi }: { api?: BotsApi } = {}): Bots
           ? state.selectedBotId
           : null;
         if (
-          botsById === state.botsById
+          state.catalogLoaded
+          && !state.catalogLoading
+          && state.catalogErrorCode === null
+          && botsById === state.botsById
           && botIds === state.botIds
           && revisionsById === state.revisionsById
           && revisionIdsByBotId === state.revisionIdsByBotId
@@ -251,6 +292,9 @@ export const createBotsStore = ({ api = botsApi }: { api?: BotsApi } = {}): Bots
           && selectedBotId === state.selectedBotId
         ) return state;
         return {
+          catalogLoaded: true,
+          catalogLoading: false,
+          catalogErrorCode: null,
           botsById,
           botIds,
           revisionsById,
@@ -262,6 +306,7 @@ export const createBotsStore = ({ api = botsApi }: { api?: BotsApi } = {}): Bots
     },
 
     upsertBot(bot) {
+      get().cancelCatalogLoad();
       set((state) => {
         const preserved = preserveRecord(state.botsById[bot.id], bot, botEqual);
         if (preserved === state.botsById[bot.id]) return state;
@@ -275,6 +320,7 @@ export const createBotsStore = ({ api = botsApi }: { api?: BotsApi } = {}): Bots
     },
 
     removeBot(botId) {
+      get().cancelCatalogLoad();
       set((state) => {
         if (!state.botsById[botId]) return state;
         const botsById = omitKey(state.botsById, botId);
@@ -295,6 +341,7 @@ export const createBotsStore = ({ api = botsApi }: { api?: BotsApi } = {}): Bots
     },
 
     upsertRevision(revision) {
+      get().cancelCatalogLoad();
       set((state) => {
         const current = state.revisionsById[revision.id];
         const preserved = preserveRecord(current, revision, revisionEqual);
@@ -317,6 +364,7 @@ export const createBotsStore = ({ api = botsApi }: { api?: BotsApi } = {}): Bots
     },
 
     upsertMembership(membership) {
+      get().cancelCatalogLoad();
       set((state) => {
         const current = state.membershipsByBotId[membership.botId];
         const preserved = preserveRecord(current, membership, membershipEqual);
@@ -326,6 +374,7 @@ export const createBotsStore = ({ api = botsApi }: { api?: BotsApi } = {}): Bots
     },
 
     removeMembership(botId) {
+      get().cancelCatalogLoad();
       set((state) => {
         if (!state.membershipsByBotId[botId]) return state;
         const membershipsByBotId = omitKey(state.membershipsByBotId, botId);

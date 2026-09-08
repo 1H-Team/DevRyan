@@ -75,7 +75,7 @@ export const createOpenCodeWatcherRuntime = (deps) => {
         if (!payload || typeof payload !== 'object') {
           return;
         }
-        onPayload(payload);
+        onPayload(payload, typeof event.directory === 'string' && event.directory !== 'global' ? event.directory : null);
       });
       unsubscribeStatus = globalEventHub.subscribeStatus((status) => {
         if (signal.aborted) {
@@ -108,7 +108,7 @@ export const createOpenCodeWatcherRuntime = (deps) => {
         if (!payload || typeof payload !== 'object') {
           return;
         }
-        onPayload(payload);
+        onPayload(payload, typeof event.directory === 'string' && event.directory !== 'global' ? event.directory : null);
       },
       onError(error) {
         if (signal.aborted) {

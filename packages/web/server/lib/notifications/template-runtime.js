@@ -198,9 +198,10 @@ export const createNotificationTemplateRuntime = (deps) => {
     }
   };
 
-  const summarizeText = async (text, targetLength, zenModel) => {
+  const summarizeText = async (text, targetLength, zenModel, sessionID) => {
     if (!text || typeof text !== 'string' || text.trim().length === 0) return text;
     const result = await summarizeSharedText({
+      sessionID,
       text,
       threshold: 0,
       maxLength: targetLength,

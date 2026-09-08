@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { memoryAssociatedData } from './channels.js';
 import { decryptBotJson } from './encryption.js';
 import { createBotMemoryRuntime } from './memory-runtime.js';
+import { createBotContextAssembler } from './context-assembler.js';
 
 const BOT_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
@@ -61,6 +62,8 @@ const createHarness = ({
   extractCandidates,
   commitResult,
   loadAdditionalIndexDocuments,
+  prepareExtraction,
+  extractionTimeoutMs,
   logger = { warn: vi.fn() },
 } = {}) => {
   const memory = memoryRow();
@@ -156,10 +159,13 @@ const createHarness = ({
       Object.assign(job, { candidate_envelope: candidateEnvelope });
       return { ...job };
     }),
-    settleMemoryExtractionJob: vi.fn(async ({ runId, disposition }) => {
+    settleMemoryExtractionJob: vi.fn(async ({ runId, disposition, diagnostics, phase, errorCode, nextAttemptAt }) => {
       const job = jobs.get(runId);
       Object.assign(job, {
         state: ['defer', 'retry'].includes(disposition) ? 'queued' : disposition,
+        last_phase: phase, last_error_code: errorCode, next_attempt_at: nextAttemptAt,
+        defer_count: disposition === 'defer' ? (job.defer_count || 0) + 1 : 0,
+        outcome: diagnostics?.outcome, rejection_reasons: diagnostics?.rejectionReasons,
         attempt_count: disposition === 'defer'
           ? Math.max(0, job.attempt_count - 1)
           : job.attempt_count,
@@ -244,6 +250,8 @@ const createHarness = ({
     uuid: () => uuids[uuidIndex++ % uuids.length],
     now: () => new Date('2026-08-23T12:02:00.000Z'),
     extractionRetryDelaysMs: [1],
+    ...(prepareExtraction ? { prepareExtraction } : {}),
+    ...(extractionTimeoutMs ? { extractionTimeoutMs } : {}),
     logger,
   });
   repositories.bot_runs.get.mockImplementation(async ({ id }) => ({
@@ -264,6 +272,7 @@ const createHarness = ({
     logger,
     onMemoryChanged,
     memory,
+    jobs,
   };
 };
 
@@ -298,6 +307,109 @@ const threadCandidate = ({
 });
 
 describe('Bot layered memory runtime', () => {
+  it.each([
+    [[], 'no_facts', {}],
+    [[{ statement: 'password: forbidden-value', logicalKey: 'unsafe' }], 'filtered', { secret_rejected: 1 }],
+    [[{ statement: 'Reports should be concise.', logicalKey: 'preference.reports' }], 'saved', {}],
+  ])('persists an accurate content-free outcome for %j', async (candidates, outcome, rejectionReasons) => {
+    const harness = createHarness();
+    await harness.runtime.enqueueCompletedRun({ ...completedRun(), extract: async () => ({ candidates }) });
+    expect(harness.store.settleMemoryExtractionJob).toHaveBeenLastCalledWith(expect.objectContaining({
+      disposition: 'succeeded', diagnostics: { outcome, rejectionReasons },
+    }));
+    expect(harness.onMemoryChanged).toHaveBeenCalledWith(expect.objectContaining({ source: 'extraction_completed' }));
+    if (outcome === 'saved') {
+      expect(harness.store.commitMemoryVersion).toHaveBeenCalledWith(expect.objectContaining({
+        runId: RUN_ID, channelId: CHANNEL_ID, messageId: USER_MESSAGE_ID,
+        sourceMetadata: expect.objectContaining({ messageIds: [USER_MESSAGE_ID, ASSISTANT_MESSAGE_ID] }),
+      }));
+    }
+    await harness.runtime.shutdown();
+  });
+
+  it('saves a useful fact with encryption and retrieves it into a subsequent turn after restart', async () => {
+    const harness = createHarness();
+    const factText = 'Weekly reports should use concise bullet points.';
+    let saved = null;
+    const commit = harness.store.commitMemoryVersion.getMockImplementation();
+    harness.store.commitMemoryVersion.mockImplementation(async (input) => {
+      const result = await commit(input);
+      saved = result.memory;
+      return result;
+    });
+    await harness.runtime.enqueueCompletedRun({
+      ...completedRun(), extract: async () => ({ candidates: [{ statement: factText, logicalKey: 'preference.reports' }] }),
+    });
+    await harness.runtime.shutdown();
+    expect(JSON.stringify(saved.encrypted_content)).not.toContain(factText);
+    expect(harness.indexer.upsert).toHaveBeenCalledWith(expect.objectContaining({ text: factText }));
+    harness.store.getPreviousChannelRun = async () => null;
+    harness.repositories.bot_memories.list.mockResolvedValue(page([saved]));
+    harness.channels.loadRecentMessages = async () => [];
+    harness.channels.decryptMemory.mockImplementation(async (row) => decryptBotJson({
+      key: Buffer.alloc(32, 7), envelope: row.encrypted_content, expectedKeyId: 'deployment-v1',
+      associatedData: memoryAssociatedData(row.id),
+    }));
+    const restarted = createBotContextAssembler({ store: harness.store, channels: harness.channels });
+    const next = await restarted.assemble({
+      run: { id: SECOND_RUN_ID, channel_id: CHANNEL_ID, queue_sequence: 2, context_snapshot: {} },
+      bot: { id: BOT_ID }, channel: completedRun().channel, revision: { id: REVISION_ID, contract: {} },
+      queryText: 'How should you write my next weekly report?',
+      currentMessageId: SECOND_USER_MESSAGE_ID, currentMessageSequence: 2,
+    });
+    expect(next.parts[0].text).toContain(factText);
+  });
+
+  it('bounds a hung index commit and retains encrypted candidates for retry', async () => {
+    const harness = createHarness({ extractionTimeoutMs: 20 });
+    harness.indexer.upsert.mockImplementation(() => new Promise(() => {}));
+    await harness.runtime.enqueueCompletedRun({
+      ...completedRun(), extract: async () => ({ candidates: [{ statement: 'Reports should be concise.', logicalKey: 'preference.reports' }] }),
+    });
+    expect(harness.jobs.get(RUN_ID)).toMatchObject({ state: 'queued' });
+    expect(harness.jobs.get(RUN_ID).candidate_envelope).toBeTruthy();
+    expect(harness.audit).not.toHaveBeenCalled();
+    await harness.runtime.shutdown();
+  });
+
+  it('keeps transient outages queued beyond the former retry limit', async () => {
+    const harness = createHarness();
+    const extract = vi.fn(async () => { throw Object.assign(new Error('offline'), { code: 'bot_opencode_request_failed', statusCode: 503 }); });
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await harness.runtime.enqueueCompletedRun({ ...completedRun(), extract });
+    }
+    expect(extract).toHaveBeenCalledTimes(10);
+    expect(harness.jobs.get(RUN_ID)).toMatchObject({ state: 'queued', attempt_count: 10 });
+    expect(harness.audit).not.toHaveBeenCalled();
+    await harness.runtime.shutdown();
+  });
+
+  it('backs off repeated busy runtimes without consuming model attempts', async () => {
+    const harness = createHarness();
+    const extract = async () => { throw Object.assign(new Error('busy'), { code: 'bot_runtime_scope_busy' }); };
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await harness.runtime.enqueueCompletedRun({ ...completedRun(), extract });
+    }
+    expect(harness.jobs.get(RUN_ID)).toMatchObject({ state: 'queued', attempt_count: 0, defer_count: 4 });
+    const retryTimes = harness.store.settleMemoryExtractionJob.mock.calls.map(([input]) => Date.parse(input.nextAttemptAt));
+    expect(retryTimes[3] - retryTimes[0]).toBe(35_000);
+    expect(harness.audit).not.toHaveBeenCalled();
+    await harness.runtime.shutdown();
+  });
+
+  it('reports aggregate counts over 100 and unavailable reads without inventing zeros', async () => {
+    const harness = createHarness();
+    harness.store.memoryExtractionSummary = vi.fn(async () => ({
+      pending: 235, failed: 110, waiting: 20, recovering: 120, nextAttemptAt: TIMESTAMP, recent: [],
+    }));
+    const result = await harness.runtime.listForManager({ id: USER_ID }, BOT_ID, { state: 'active' });
+    expect(result.extraction).toMatchObject({ pending: 235, failed: 110, recovering: 120 });
+    harness.store.memoryExtractionSummary.mockRejectedValueOnce(new Error('unavailable'));
+    const unavailable = await harness.runtime.listForManager({ id: USER_ID }, BOT_ID, { state: 'active' });
+    expect(unavailable.extraction).toMatchObject({ status: 'unavailable', pending: null, failed: null });
+    await harness.runtime.shutdown();
+  });
+
   it('never lets an asynchronous extraction failure change the completed run outcome', async () => {
     const harness = createHarness({
       extractCandidates: vi.fn(async () => {
@@ -691,14 +803,13 @@ describe('Bot layered memory runtime', () => {
     }));
   });
 
-  it('drains asynchronous extraction during shutdown and refuses new work', async () => {
+  it('cancels asynchronous extraction during shutdown and refuses new work', async () => {
     let finishExtraction;
     const extraction = new Promise((resolve) => { finishExtraction = resolve; });
     const harness = createHarness({ extractCandidates: vi.fn(() => extraction) });
     await harness.runtime.enqueueCompletedRun(completedRun());
     const shutdown = harness.runtime.shutdown();
     await expect(harness.runtime.enqueueCompletedRun(completedRun())).resolves.toEqual({ skipped: true });
-    expect(harness.runtime.getPendingExtractionCount()).toBe(1);
     finishExtraction({ candidates: [] });
     await shutdown;
     expect(harness.runtime.getPendingExtractionCount()).toBe(0);
@@ -1252,6 +1363,10 @@ describe('Bot memory console diagnostics', () => {
       )),
     };
 
+    harness.store.memoryExtractionSummary = vi.fn(async () => ({
+      pending: 1, failed: 1, waiting: 0, recovering: 0, nextAttemptAt: null,
+      recent: [job('queued', { run_id: SECOND_RUN_ID }), job('terminal')],
+    }));
     const result = await harness.runtime.listForManager({ id: USER_ID }, BOT_ID, { state: 'active' });
 
     expect(harness.repositories.bot_memories.list).toHaveBeenCalledWith(expect.objectContaining({

@@ -718,6 +718,20 @@ export function createPrimaryRecoveryHost(options: PrimaryRecoveryHostOptions): 
 export interface SessionChangeIdentity {
   directory: string; sessionID: string; messageID?: string; callID?: string;
   userMessageID?: string; parentID?: string | null; paths?: string[]; captureDeadline?: number;
+  source?: string; tool?: string;
+}
+export type SessionChangeEvidenceKind = 'snapshot' | 'exact';
+export type SessionChangeFileContent = string | null | { oid: string; mode: '100644' | '100755' | '120000' };
+export type SessionChangeFileReceipt = { path: string; oldPath?: string | null } & (
+  { before: SessionChangeFileContent; after: SessionChangeFileContent; patch?: never }
+  | { patch: string; before?: never; after?: never }
+);
+export type SessionChangeReceipt = SessionChangeIdentity & {
+  messageID: string; callID: string; createdAt?: number; complete?: boolean;
+  files: Iterable<SessionChangeFileReceipt> | AsyncIterable<SessionChangeFileReceipt>;
+};
+export interface SessionChangeDiagnostic {
+  code: string; phase: string; sessionID: string; callID?: string; source?: string; evidence?: SessionChangeEvidenceKind;
 }
 export interface SessionChangePage {
   nextCursor: string | null; previousCursor: string | null; pageIndex: number;
@@ -726,23 +740,28 @@ export interface SessionChangeSummary extends SessionChangePage {
   fileCount: number; additions?: number; deletions?: number;
   rootSessionID: string; directory: string; worktreeDirectory: string; worktreeID: string; revision: string;
   coverage: 'complete' | 'partial'; reasons: string[]; sessionCount: number;
+  attributionVersion: number; totalsMode: 'net' | 'recorded'; restoreAvailable: boolean; restoreReasons: string[];
   firstUserMessageID: string | null; hasUnattributedMutations: false; undone?: boolean;
   files: Array<{ path: string; oldPath: string | null; status: 'added' | 'deleted' | 'modified' | 'renamed';
-    additions: number | null; deletions: number | null; sessions: string[] }>;
+    additions: number | null; deletions: number | null; sessions: string[]; reviewMode: 'net' | 'segments'; segmentCount: number }>;
 }
 export interface SessionChangeRuntime {
   begin(input: SessionChangeIdentity & { messageID: string; callID: string }): Promise<void>;
   finish(input: SessionChangeIdentity & { callID: string }): Promise<void>;
+  recordReceipt(input: SessionChangeReceipt): Promise<void>;
   registerSession(input: SessionChangeIdentity): Promise<void>;
-  importHistorical(inputs: Array<SessionChangeIdentity & { callID: string; createdAt: number;
-    files: Array<{ path: string; before: string | null; after: string | null }> }>): Promise<void>;
+  importHistorical(inputs: Array<SessionChangeReceipt & { createdAt: number }>): Promise<void>;
   summarize(input: { directory: string; rootSessionID: string; sessions?: Array<{ id: string }>;
     firstUserMessageID?: string | null; coverageReasons?: string[];
     expectedCalls?: Array<{ sessionID: string; callID: string }>;
     hiddenMessages?: Array<{ sessionID: string; messageID: string }>;
     reverts?: Array<{ sessionID: string; messageID: string }> }): Promise<SessionChangeSummary>;
   summaryPage(input: { directory: string; rootSessionID: string; revision: string; cursor?: string | null }): Promise<SessionChangeSummary>;
-  diff(input: { directory: string; rootSessionID: string; revision: string; file: string; cursor?: string | null }): Promise<SessionChangePage & { rootSessionID: string; revision: string; path: string; patch: string; totalBytes: number }>;
+  diff(input: { directory: string; rootSessionID: string; revision: string; file: string; cursor?: string | null; segment?: number | string | null }): Promise<SessionChangePage & {
+    rootSessionID: string; revision: string; path: string; patch: string; totalBytes: number;
+    reviewMode: 'net' | 'segments'; segmentIndex: number | null; segmentCount: number;
+    segment: { sessionID: string; messageID: string; callID: string; source: string } | null;
+  }>;
   restore(input: { directory: string; rootSessionID: string; revision: string; redo?: boolean }): Promise<{ undone: boolean }>;
   deleteSession(sessionID: string): Promise<void>;
   observe(event: unknown, directory?: string | null): Promise<void>;
@@ -750,7 +769,7 @@ export interface SessionChangeRuntime {
 }
 export function createSessionChangeRuntime(options: { directory: string; maxBytes?: number; maxOperations?: number;
   maxCaptureBytes?: number; maxRevisions?: number; maintenanceEvery?: number;
-  onDiagnostic?: (event: { code: string; phase: string; sessionID: string; callID?: string }) => void | Promise<void>;
+  onDiagnostic?: (event: SessionChangeDiagnostic) => void | Promise<void>;
   onChange?: (scope: { directory: string; sessionID: string }) => void | Promise<void> }): SessionChangeRuntime;
 export interface SessionChangeHost {
   plugin(input: Record<string, unknown>): Promise<unknown>;
@@ -759,8 +778,17 @@ export interface SessionChangeHost {
   drain(): Promise<void>;
 }
 export function createSessionChangeHost(options: Pick<PrimaryRecoveryHostOptions, 'dataDirectory' | 'buildOpenCodeUrl' | 'getOpenCodeAuthHeaders' | 'fetchImpl' | 'publishEvent'> & {
-  onDiagnostic?: (event: { code: string; phase: string; sessionID: string; callID?: string }) => void | Promise<void>;
+  onDiagnostic?: (event: SessionChangeDiagnostic) => void | Promise<void>;
 }): SessionChangeHost;
+export const SESSION_CHANGE_READ_ONLY_TOOLS: readonly string[];
+export function normalizeSessionChangeTool(value: unknown): string;
+export function classifySessionChangeTool(value: unknown): 'read-only' | 'file' | 'execution';
+export function isSyntheticSessionChange(part: unknown): boolean;
+export function sessionChangeCapturePaths(part: unknown): string[] | null;
+export function sessionChangeReceipt(part: unknown): { files: SessionChangeFileReceipt[]; complete: boolean; tool: string } | null;
+export function sessionChangePatchFiles(patch: unknown, fallbackPath?: string | null): Array<{
+  path: string; oldPath: string | null; status: 'added' | 'modified' | 'deleted' | 'renamed'; patch: string; additions: number; deletions: number;
+}>;
 export function createPrimaryRecoveryManagedAdapter(rpc: (request: { method: string; params: Record<string, unknown> }) => Promise<unknown>): Pick<PrimaryRecoveryHostOptions, 'managedBarrier' | 'cancelDescendants'>;
 export const PROVIDER_RECOVERY_POLICY_VERSION: 1;
 export const PROVIDER_PROGRESS_TIMEOUT_MS: number;

@@ -90,15 +90,15 @@ export const MERIDIAN_PREFIX_EDITS = [
 
 export const MERIDIAN_HANDOFF_EDITS = [...MERIDIAN_HANDOFF_V1_EDITS, ...MERIDIAN_PREFIX_EDITS];
 
-export const stripMeridianHandoffPatch = source => {
+export const stripMeridianHandoffPatch = (source, edits = MERIDIAN_HANDOFF_EDITS) => {
   let original = source.replace(MERIDIAN_HANDOFF_IMPORT, '');
-  for (const [before, after] of MERIDIAN_HANDOFF_EDITS) original = original.replace(after, before);
+  for (const [before, after] of edits) original = original.replace(after, before);
   return original;
 };
 
-export const patchMeridianHandoff = (source, { includePrefixFix = true } = {}) => {
+export const patchMeridianHandoff = (source, { includePrefixFix = true, edits } = {}) => {
   let patched = source;
-  for (const [before, after] of includePrefixFix ? MERIDIAN_HANDOFF_EDITS : MERIDIAN_HANDOFF_V1_EDITS) {
+  for (const [before, after] of edits ?? (includePrefixFix ? MERIDIAN_HANDOFF_EDITS : MERIDIAN_HANDOFF_V1_EDITS)) {
     if (patched.split(before).length !== 2) throw new Error('Meridian handoff source anchors are incompatible');
     patched = patched.replace(before, after);
   }

@@ -14,6 +14,16 @@ export type UserProfileProvisionResult = {
     installedVersion: string | null;
   }>;
   warnings?: string[];
+  imagegenModelHotfix?: {
+    ok: boolean;
+    changed: boolean;
+    version?: string;
+    model?: string;
+    reasoningEffort?: string;
+    sourceSha256?: string;
+    code?: string;
+    error?: string;
+  };
   meridianPolicy?: {
     ok: boolean;
     changed: boolean;

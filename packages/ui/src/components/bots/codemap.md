@@ -156,3 +156,5 @@ Operations rail shared by the web and Electron renderers. Bot configuration live
   `components/sections/bots/BotEnvironmentSecrets.tsx`
 - Optional per-Bot Skills/SOPs: `components/sections/bots/BotSkills.tsx`
 - Protected provider API keys/accounts: `components/sections/bots/BotCredentials.tsx`
+
+- Assigned navigation bootstrap uses the dedicated HTTP catalog independently of SSE history/operations. The sidebar subscribes to catalog readiness and connection status separately; loading/failure never renders as unassigned, and Retry refreshes both sources.

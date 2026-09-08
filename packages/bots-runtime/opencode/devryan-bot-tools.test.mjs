@@ -319,7 +319,7 @@ describe('scoped OpenCode Bot plugin', () => {
     expect(subagents).toContain("browser: 'deny'");
     expect(BOT_TARGET_OPENCODE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
     expect(dockerfile).toContain(
-      `opencode-ai@${BOT_TARGET_OPENCODE_VERSION} @opencode-ai/plugin@${BOT_TARGET_OPENCODE_VERSION} opencode-gpt-imagegen@0.1.10`,
+      `opencode-ai@${BOT_TARGET_OPENCODE_VERSION} @opencode-ai/plugin@${BOT_TARGET_OPENCODE_VERSION} opencode-gpt-imagegen@0.1.12`,
     );
     expect(dockerfile).toContain("node_modules/opencode-gpt-imagegen/package.json");
     expect(entrypoint).toContain('launch-opencode.mjs');

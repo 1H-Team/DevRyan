@@ -42,6 +42,25 @@ afterEach(async () => {
 });
 
 describe('session-partitioned diagnostic journal', () => {
+  test('retains Context Mode call correlation, timing and delivery gaps through storage', async () => {
+    const journal = createJournal(await temporaryDirectory());
+    const workerCallID = 'd32c15a7-632c-47f9-a82a-c9c45981fd31';
+    const payload = { phase: 'dispatched', callID: null, messageID: 'msg_a', workerCallID,
+      tool: 'ctx_index', sequence: 2, sourceAt: 1000, elapsedMs: 12, budgetMs: 120000 };
+    journal.enqueue({ type: 'lifecycle', sessionID: 'ses_a', event: 'context_mode.dispatched',
+      payload: { ...payload, args: { path: '/private-input' }, error: 'private-input' } });
+    journal.enqueue(partEvent('ses_a', '', { part: { id: 'part_a', type: 'tool', callID: 'call_a',
+      state: { status: 'running', metadata: { contextModeWorkerCallID: workerCallID, unknown: 'private-input' } } } }));
+    journal.enqueue({ type: 'gap', sessionID: 'ses_a', event: 'context_mode.diagnostics_gap', payload: { droppedEvents: 3 } });
+    await journal.flush();
+    const records = await journal.readRecords();
+    expect(records.find((record) => record.event === 'context_mode.dispatched')).toMatchObject({ payload });
+    expect(records.find((record) => record.type === 'open_code_event').payload.properties.part.state.metadata)
+      .toEqual({ contextModeWorkerCallID: workerCallID });
+    expect(records.find((record) => record.event === 'context_mode.diagnostics_gap').payload).toEqual({ droppedEvents: 3 });
+    expect(JSON.stringify(records)).not.toContain('private-input');
+    await journal.close();
+  });
   test('preserves browser network correlation through disk sanitization and drops sensitive extras', async () => {
     const journal = createJournal(await temporaryDirectory());
     const payload = {

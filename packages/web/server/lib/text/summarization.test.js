@@ -26,7 +26,64 @@ describe('text summarization zen requests', () => {
     __resetZenModelCooldowns();
   });
 
-  it('uses responses endpoint for gpt models', async () => {
+  it.each(['big-pickle', 'gpt-5-nano'])('sends the caller session for %s', async (zenModel) => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({
+      choices: [{ message: { content: 'OK' } }],
+      output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }],
+    }) }));
+    stubFetch(fetchMock);
+    for (const sessionID of ['ses_first', 'ses_first', 'ses_second']) {
+      await generateZenText({ prompt: 'Reply OK', zenModel, sessionID });
+    }
+    expect(fetchMock.mock.calls.map(([, init]) => init.headers['x-opencode-session']))
+      .toEqual(['ses_first', 'ses_first', 'ses_second']);
+  });
+
+  it('keeps an operation ID across model rotation and isolates separate operations', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({ error: { type: 'FreeUsageLimitError', message: 'Rate limit' } }) })
+      .mockImplementation(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'Short summary' } }] }) }));
+    stubFetch(fetchMock);
+    const input = { text: 'Long text '.repeat(30), threshold: 0, zenModel: 'big-pickle', fallbackZenModel: 'mimo-v2.5-free' };
+    await summarizeText(input);
+    await summarizeText(input);
+    const ids = fetchMock.mock.calls.map(([, init]) => init.headers['x-opencode-session']);
+    expect(ids).toHaveLength(3);
+    expect(ids[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(ids[1]).toBe(ids[0]);
+    expect(ids[2]).not.toBe(ids[0]);
+  });
+
+  it.each(['', '{{CHAT_ID}}', 'ses_bad\r\nInjected: value', 'a'.repeat(257), null])('rejects invalid session IDs before sending', async (sessionID) => {
+    const fetchMock = vi.fn();
+    stubFetch(fetchMock);
+    await expect(generateZenText({ prompt: 'Reply OK', sessionID })).rejects.toThrow('Zen sessionID');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('forwards cancellation and removes the caller abort listener', async () => {
+    const controller = new AbortController();
+    const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
+    stubFetch(vi.fn((_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    })));
+    const pending = generateZenText({ prompt: 'Reply OK', sessionID: 'ses_cancel', signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toThrow();
+    expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function));
+    removeListener.mockRestore();
+  });
+
+  it('preserves missing-session provider errors separately from rate limits', async () => {
+    stubFetch(vi.fn(async () => ({ ok: false, status: 400, json: async () => ({
+      error: { type: 'MissingSessionID', message: 'Session required' },
+    }) })));
+    await expect(generateZenText({ prompt: 'Reply OK' })).rejects.toMatchObject({
+      status: 400, providerType: 'MissingSessionID', detail: 'Session required',
+    });
+  });
+
+  it.each(['gpt-5-nano', 'muse-spark-1.2-contributor-free', 'muse-spark-1.3-contributor-free'])('uses responses endpoint for %s', async (zenModel) => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({
@@ -42,7 +99,7 @@ describe('text summarization zen requests', () => {
       text: 'Long text '.repeat(30),
       threshold: 0,
       maxLength: 100,
-      zenModel: 'gpt-5-nano',
+      zenModel,
       mode: 'notification',
     });
 
@@ -271,6 +328,8 @@ describe('text summarization zen requests', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result).toMatchObject({ summary: 'Recovered title', summarized: true, attempts: 2 });
+    expect(fetchMock.mock.calls[1][1].headers['x-opencode-session'])
+      .toBe(fetchMock.mock.calls[0][1].headers['x-opencode-session']);
   });
 
   it('switches to the fallback model when the primary one is unavailable', async () => {

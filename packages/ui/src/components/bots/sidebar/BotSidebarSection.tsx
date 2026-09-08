@@ -6,6 +6,8 @@ import { BotSidebarRow } from './BotSidebarRow';
 import { resolveBotSidebarStatus, type BotSidebarStatus } from './botSidebarStatus';
 import { selectBotCurrentRunId } from '../operations/selectBotCurrentRun';
 import { useI18n } from '@/lib/i18n';
+import { Button } from '@/components/ui/button';
+import { retryBotsEventConnection } from '@/apps/botEventConnection';
 import { useBotChannelStore, type BotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotOperationsStore, type BotOperationsStore } from '@/stores/useBotOperationsStore';
 import { useBotsStore, type BotsStore } from '@/stores/useBotsStore';
@@ -34,8 +36,13 @@ export const BotSidebarSection: React.FC<BotSidebarSectionProps> = ({
   const botsById = botsStore((state) => state.botsById);
   const selectedBotId = botsStore((state) => state.selectedBotId);
   const principalId = botsStore((state) => state.principalId);
-  const capabilities = botsStore((state) => state.capabilities);
-  const capabilitiesLoading = botsStore((state) => state.capabilitiesLoading);
+  const catalogLoaded = botsStore((state) => state.catalogLoaded);
+  const catalogLoading = botsStore((state) => state.catalogLoading);
+  const catalogErrorCode = botsStore((state) => state.catalogErrorCode);
+  const connectionState = operationsStore((state) => state.connectionState);
+  const connectionErrorCode = operationsStore((state) => state.connectionErrorCode);
+  const accessDisabled = connectionState === 'unsupported';
+  const connectionFailed = Boolean(connectionErrorCode) && connectionState !== 'connected' && !accessDisabled;
   const openingByBotId = channelStore((state) => state.openingOwnerChannelByBotId);
   const errorsByBotId = channelStore((state) => state.ownerChannelErrorCodeByBotId);
   const ownerChannelIdByBotId = channelStore(useShallow((state) => {
@@ -115,13 +122,30 @@ export const BotSidebarSection: React.FC<BotSidebarSectionProps> = ({
             );
           })}
         </div>
-      ) : (
-        <p className="px-2 py-1 typography-micro text-muted-foreground" role={capabilitiesLoading ? 'status' : undefined}>
-          {capabilitiesLoading || capabilities === null
-            ? t('bots.sidebar.loading')
-            : t('bots.sidebar.empty')}
+      ) : !catalogErrorCode ? (
+        <p className="px-2 py-1 typography-micro text-muted-foreground" role={!catalogLoaded ? 'status' : undefined}>
+          {accessDisabled
+            ? t('bots.sidebar.accessDisabled')
+            : !catalogLoaded
+              ? t('bots.sidebar.loading')
+              : t('bots.sidebar.empty')}
         </p>
-      )}
+      ) : null}
+      {catalogErrorCode || connectionFailed ? (
+        <div className="px-2 py-1 typography-micro text-muted-foreground">
+          <p role={catalogErrorCode ? 'alert' : 'status'}>
+            {catalogErrorCode ? t('bots.sidebar.loadFailed') : t('bots.sidebar.connectionFailed')}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={catalogLoading}
+            onClick={retryBotsEventConnection}
+          >
+            {t('bots.operations.connection.retry')}
+          </Button>
+        </div>
+      ) : null}
     </section>
   );
 };

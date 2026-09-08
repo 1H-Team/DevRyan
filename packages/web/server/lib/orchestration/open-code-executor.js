@@ -155,6 +155,7 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
           method: 'POST',
           label: 'session.prompt_async',
           timeoutMs: dispatchRequestTimeoutMs,
+          ...(input.signal ? { signal: AbortSignal.any([input.signal, AbortSignal.timeout(dispatchRequestTimeoutMs)]) } : {}),
           body,
         },
       );
@@ -252,6 +253,9 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
 
   return createManagedOpenCodeExecutor({
     transport,
+    subscribeAssistantActivity: options.subscribeAssistantActivity,
+    onFirstAssistantActivity: options.onFirstAssistantActivity,
+    ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
     ...(options.idleStablePolls === undefined ? {} : { idleStablePolls: options.idleStablePolls }),
     ...(options.sleep === undefined ? {} : { sleep: options.sleep }),

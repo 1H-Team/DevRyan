@@ -15,6 +15,10 @@ const CANDIDATE_FIELDS = Object.freeze([
   'transcriptQuote',
 ]);
 const PROVENANCE_FIELDS = Object.freeze(['channelId', 'messageIds', 'runId']);
+export const BOT_MEMORY_EXTRACTION_VERSION = 2;
+const MODEL_CANDIDATE_FIELDS = Object.freeze(CANDIDATE_FIELDS.filter(
+  (field) => field !== 'provenance' && field !== 'subjectUserId',
+));
 const SECRET_PATTERNS = Object.freeze([
   /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/i,
   /\b(?:bearer|authorization)\s+[a-z0-9._~+/=-]{16,}\b/i,
@@ -36,31 +40,14 @@ export const BOT_MEMORY_EXTRACTION_SCHEMA = Object.freeze({
       items: {
         type: 'object',
         additionalProperties: false,
-        required: CANDIDATE_FIELDS,
+        required: MODEL_CANDIDATE_FIELDS,
         properties: {
           statement: { type: 'string', minLength: 1, maxLength: 4_096 },
           logicalKey: { type: 'string', pattern: '^[a-z0-9][a-z0-9._:-]{0,127}$' },
           scope: { type: 'string', enum: ['shared', 'user_private', 'thread_only'] },
-          subjectUserId: { type: ['string', 'null'] },
           sensitivity: { type: 'string', enum: ['normal', 'confidential', 'restricted'] },
           confidence: { type: 'number', minimum: 0, maximum: 1 },
           transcriptQuote: { type: 'boolean' },
-          provenance: {
-            type: 'object',
-            additionalProperties: false,
-            required: PROVENANCE_FIELDS,
-            properties: {
-              channelId: { type: 'string' },
-              runId: { type: 'string' },
-              messageIds: {
-                type: 'array',
-                minItems: 1,
-                maxItems: 8,
-                uniqueItems: true,
-                items: { type: 'string' },
-              },
-            },
-          },
         },
       },
     },
@@ -144,7 +131,7 @@ const parseOutput = (value) => {
     fail('Bot memory extraction output is too large', undefined, undefined, 'too_large');
   }
   const trimmed = stripCodeFence(value.trim()).trim();
-  if (!trimmed) return { candidates: [] };
+  if (!trimmed) fail('Bot memory extraction output is empty', undefined, undefined, 'shape');
   try {
     return JSON.parse(trimmed);
   } catch {
@@ -157,14 +144,13 @@ const parseOutput = (value) => {
 // Accept `{ candidates: [...] }`, a bare array, or an object whose single
 // array-valued key carries the candidates. Extra top-level keys are ignored.
 const candidateListFrom = (parsed) => {
-  if (parsed === null || parsed === undefined) return [];
+  if (parsed === null || parsed === undefined) return null;
   if (Array.isArray(parsed)) return parsed;
   if (!isRecord(parsed)) return null;
   if (Array.isArray(parsed.candidates)) return parsed.candidates;
   if (parsed.candidates === null || parsed.candidates === undefined) {
     const arrays = Object.values(parsed).filter((entry) => Array.isArray(entry));
     if (arrays.length === 1) return arrays[0];
-    if (Object.keys(parsed).length === 0) return [];
   }
   return null;
 };
@@ -257,7 +243,7 @@ export const buildBotMemoryExtractionPrompt = ({
     'Use thread_only for temporary context that belongs only in the channel summary.',
     'Mark a fact confidential or restricted when it is personal or sensitive; it is still shared, so prefer thread_only when it should not outlive the channel.',
     'Never copy raw transcript passages, credentials, tokens, passwords, or unsupported claims.',
-    'Every provenance ID must come from the supplied context.',
+    'Return only the fact fields in the schema. The server attaches source IDs from the saved conversation; do not generate provenance or user IDs.',
     'Logical keys are lowercase dotted paths. Use the prefix user. for durable facts about the person you talk to (user.name, user.timezone, user.role), preference. for how they like things done, identity. for facts about the Bot itself, and project. or topic. for everything else, so the most personal facts stay retrievable.',
     `Context JSON:\n${encoded}`,
   ].join('\n\n');
@@ -271,6 +257,7 @@ export function classifyBotMemoryCandidates({
   ownerUserId,
   messageIds,
   transcript,
+  serverProvenance = false,
 } = {}) {
   const normalizedBotId = validateUuid(botId, 'botId');
   const normalizedChannelId = validateUuid(channelId, 'channelId');
@@ -302,7 +289,9 @@ export function classifyBotMemoryCandidates({
     // Structured-output models routinely omit null-valued keys, capitalise
     // logical keys, or add an extra field. Those are shape problems, not
     // trust problems: normalise them and keep the trust checks below strict.
-    const candidate = normalizeCandidateShape(rawCandidate, {
+    const candidate = normalizeCandidateShape(serverProvenance && isRecord(rawCandidate)
+      ? { ...rawCandidate, provenance: undefined, messageIds: undefined, subjectUserId: null }
+      : rawCandidate, {
       channelId: normalizedChannelId,
       runId: normalizedRunId,
       messageIds: [...allowedMessageIds],
@@ -384,7 +373,7 @@ export function classifyBotMemoryCandidates({
         messageIds: Object.freeze([...provenanceIds]),
       }),
       classifier: Object.freeze({
-        version: 1,
+        version: serverProvenance ? BOT_MEMORY_EXTRACTION_VERSION : 1,
         requestedScope: candidate.scope,
         resolvedScope: scope,
       }),
@@ -396,3 +385,19 @@ export function classifyBotMemoryCandidates({
     rejected: Object.freeze(rejected),
   });
 }
+
+// Policy exclusions are valid extraction outcomes. Broken fact shapes are
+// repairable output failures, including when another candidate was usable.
+export const summarizeBotMemoryClassification = ({ accepted, rejected }) => {
+  const rejectionReasons = {};
+  for (const rejection of rejected) {
+    rejectionReasons[rejection.code] = (rejectionReasons[rejection.code] || 0) + 1;
+  }
+  const invalid = Object.keys(rejectionReasons).some((code) => (
+    code.startsWith('schema_') || code === 'provenance_invalid'
+  ));
+  return Object.freeze({
+    outcome: invalid ? 'invalid' : (accepted.length > 0 ? 'saved' : (rejected.length > 0 ? 'filtered' : 'no_facts')),
+    rejectionReasons: Object.freeze(rejectionReasons),
+  });
+};

@@ -8,6 +8,8 @@
  * - title: concise session title
  */
 
+import { randomUUID } from 'node:crypto';
+
 import {
   FREE_ZEN_LONG_COOLDOWN_MS,
   FREE_ZEN_SHORT_COOLDOWN_MS,
@@ -105,11 +107,12 @@ export function isPlanControlTitle(text) {
 }
 
 export class ZenApiError extends Error {
-  constructor(status, detail) {
+  constructor(status, detail, providerType) {
     super(`Zen API returned ${status}${detail ? `: ${detail}` : ''}`);
     this.name = 'ZenApiError';
     this.status = status;
     this.detail = detail || '';
+    this.providerType = typeof providerType === 'string' ? providerType : undefined;
   }
 }
 
@@ -182,8 +185,18 @@ const wait = (delayMs) => (
   delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve()
 );
 
+// Resolve once per logical operation, outside retry/model-rotation loops.
+export function resolveZenSessionID(sessionID) {
+  if (sessionID === undefined) return randomUUID();
+  if (typeof sessionID !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(sessionID)) {
+    throw new TypeError('Zen sessionID must be a nonempty identifier (letters, digits, underscores or hyphens; max 256 characters)');
+  }
+  return sessionID;
+}
+
 export async function generateZenText({
   prompt,
+  sessionID,
   zenModel,
   timeoutMs = SUMMARIZE_TIMEOUT_MS,
   chatMaxTokens,
@@ -198,6 +211,7 @@ export async function generateZenText({
   }
 
   const model = typeof zenModel === 'string' && zenModel.trim() ? zenModel.trim() : 'gpt-5-nano';
+  const requestSessionID = resolveZenSessionID(sessionID);
   const endpoint = getZenCompletionEndpoint(model);
   const controller = new AbortController();
   const abort = () => controller.abort(signal?.reason);
@@ -208,7 +222,7 @@ export async function generateZenText({
   try {
     const response = await fetch(`https://opencode.ai/zen/v1/${endpoint}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-opencode-session': requestSessionID },
       body: JSON.stringify(endpoint === 'responses'
         ? {
             model,
@@ -241,7 +255,7 @@ export async function generateZenText({
         : typeof errorBody?.error === 'string'
           ? errorBody.error
           : response.statusText;
-      throw new ZenApiError(response.status, detail);
+      throw new ZenApiError(response.status, detail, errorBody?.error?.type);
     }
 
     const data = await response.json();
@@ -426,6 +440,7 @@ function getZenCompletionEndpoint(model) {
   if (typeof model !== 'string') return 'responses';
   if (
     model.startsWith('gpt-')
+    || model.startsWith('muse-spark-')
     || model.startsWith('claude-')
     || model.startsWith('gemini-')
   ) {
@@ -468,6 +483,7 @@ function fallbackByMode(text, maxLength, mode) {
 
 export async function summarizeText({
   text,
+  sessionID,
   threshold = 200,
   maxLength = 500,
   zenModel,
@@ -493,6 +509,7 @@ export async function summarizeText({
     };
   }
 
+  const requestSessionID = resolveZenSessionID(sessionID);
   const prompt = buildSummarizationInput(text, maxLength, mode);
   const primaryModel = typeof zenModel === 'string' && zenModel.trim() ? zenModel.trim() : 'gpt-5-nano';
 
@@ -570,6 +587,7 @@ export async function summarizeText({
       );
       const summary = await generateZenText({
         prompt,
+        sessionID: requestSessionID,
         zenModel: model,
         timeoutMs,
         chatMaxTokens,

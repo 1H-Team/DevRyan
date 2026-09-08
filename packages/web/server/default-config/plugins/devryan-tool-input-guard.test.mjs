@@ -17,7 +17,8 @@ const { afterEach, describe, expect, test } = process.env.VITEST
 const LEGACY_FIXTURE_ROOT = '/tmp';
 
 const beforeTool = async (tool, args) => {
-  const hooks = await DevRyanToolInputGuardPlugin({ directory: LEGACY_FIXTURE_ROOT });
+  // Shell policy checks must never contend for the installed app's slots.
+  const hooks = await DevRyanToolInputGuardPlugin({ directory: LEGACY_FIXTURE_ROOT }, { dataDir: createDataDir() });
   return hooks['tool.execute.before'](
     { tool, sessionID: 'session-1', callID: 'call-1' },
     { args },

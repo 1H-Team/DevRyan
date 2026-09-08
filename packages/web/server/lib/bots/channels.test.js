@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { decryptBotJson, encryptBotJson } from './encryption.js';
 import { createBotChannels, messageAssociatedData } from './channels.js';
+import { createBotAuthorization } from './authorization.js';
 
 const BOT_ID = 'b0000000-0000-4000-8000-000000000001';
 const CHANNEL_ID = 'c0000000-0000-4000-8000-000000000001';
@@ -773,5 +774,91 @@ describe('Production Bot continuous channels', () => {
     expect(setupOnlySnapshot).toMatchObject({
       bots: [], revisions: [], memberships: [], channels: [], runs: [],
     });
+  });
+});
+
+
+describe('assigned Bot catalog bootstrap', () => {
+  const setup = ({ member = true, filterCatalog } = {}) => {
+    const botRow = bot({ name: 'Assigned Bot', created_at: NOW, updated_at: NOW, retired_at: null });
+    const membershipRow = { bot_id: BOT_ID, user_id: USER_ID, role: 'member', activated_at: NOW, revoked_at: null, updated_at: NOW };
+    const revisionRow = { id: REVISION_ID, bot_id: BOT_ID, revision_number: 1, compiled_hash: 'hash', created_at: NOW, activated_at: NOW, retired_at: null, contract: { private: true } };
+    const store = {
+      get: vi.fn(async (table, filters) => {
+        if (table === 'bots') return botRow;
+        if (table === 'bot_memberships') return member && filters.user_id === USER_ID ? membershipRow : null;
+        if (table === 'bot_channels') return channel();
+        return null;
+      }),
+      repositories: {
+        bot_memberships: { list: vi.fn(async () => ({ items: member ? [membershipRow] : [], nextCursor: null })) },
+        bot_revisions: { list: vi.fn(async () => ({ items: [revisionRow], nextCursor: null })) },
+        bot_channels: { list: vi.fn(async () => ({ items: [channel()], nextCursor: null })) },
+        bot_channel_acl: { list: vi.fn(async () => ({ items: [], nextCursor: null })) },
+        bot_messages: { list: vi.fn(async () => ({ items: [], nextCursor: null })) },
+        bot_runs: { list: vi.fn(async () => ({ items: [], nextCursor: null })) },
+      },
+    };
+    const encryption = { getKey: vi.fn(async () => { throw new Error('fixture key unavailable'); }) };
+    const authorization = createBotAuthorization({ store, now: () => Date.parse(NOW) });
+    const channels = createBotChannels({ store, authorization, encryption, filterCatalog, now: () => new Date(NOW) });
+    return { channels, store, encryption, authorization, botRow, membershipRow, revisionRow };
+  };
+
+  it('lists an assigned bot without loading history, operations, or an encryption key even when SSE fails', async () => {
+    const { channels, store, encryption } = setup();
+    const assigned = await channels.assignedForPrincipal({ id: USER_ID });
+    expect(assigned).toMatchObject({ bots: [{ id: BOT_ID }], revisions: [{ id: REVISION_ID }], memberships: [{ userId: USER_ID }] });
+    expect(assigned.revisions[0]).not.toHaveProperty('contract');
+    expect(encryption.getKey).not.toHaveBeenCalled();
+    expect(store.repositories.bot_channels.list).not.toHaveBeenCalled();
+    expect(store.repositories.bot_messages.list).not.toHaveBeenCalled();
+    expect(store.repositories.bot_runs.list).not.toHaveBeenCalled();
+    await expect(channels.snapshotForPrincipal({ id: USER_ID })).rejects.toThrow('fixture key unavailable');
+    expect(await channels.assignedForPrincipal({ id: USER_ID })).toEqual(assigned);
+    store.repositories.bot_runs.list.mockRejectedValueOnce(new Error('fixture operations unavailable'));
+    await expect(channels.snapshotForPrincipal({ id: USER_ID })).rejects.toThrow('fixture operations unavailable');
+    expect(await channels.assignedForPrincipal({ id: USER_ID })).toEqual(assigned);
+  });
+
+  it('uses the exact same catalog in a healthy snapshot', async () => {
+    const { channels, encryption } = setup();
+    encryption.getKey.mockResolvedValue(Buffer.from(KEY));
+    const catalog = await channels.assignedForPrincipal({ id: USER_ID });
+    expect(await channels.snapshotForPrincipal({ id: USER_ID })).toMatchObject(catalog);
+  });
+
+  it('does not grant administrator chat access without membership', async () => {
+    const { channels } = setup({ member: false });
+    expect(await channels.assignedForPrincipal({ id: USER_ID, role: 'admin', scope: 'managed' }))
+      .toEqual({ bots: [], revisions: [], memberships: [] });
+    await expect(channels.assignedForPrincipal(null)).rejects.toMatchObject({ code: 'bot_authentication_required' });
+  });
+
+  it('excludes unpublished, revoked, future, and hidden assignments', async () => {
+    const { channels, botRow, membershipRow } = setup();
+    botRow.active_revision_id = null;
+    expect((await channels.assignedForPrincipal({ id: USER_ID })).bots).toEqual([]);
+    botRow.active_revision_id = REVISION_ID;
+    membershipRow.revoked_at = NOW;
+    expect((await channels.assignedForPrincipal({ id: USER_ID })).bots).toEqual([]);
+    membershipRow.revoked_at = null;
+    membershipRow.activated_at = '2099-01-01T00:00:00.000Z';
+    expect((await channels.assignedForPrincipal({ id: USER_ID })).bots).toEqual([]);
+    const hidden = setup({ filterCatalog: async () => [] });
+    expect(await hidden.channels.assignedForPrincipal({ id: USER_ID })).toEqual({ bots: [], revisions: [], memberships: [] });
+  });
+
+  it('paginates assignments and surfaces lookup failures instead of returning a false empty catalog', async () => {
+    const { channels, store, membershipRow } = setup();
+    store.repositories.bot_memberships.list.mockResolvedValueOnce({ items: [], nextCursor: 'next-membership' });
+    expect((await channels.assignedForPrincipal({ id: USER_ID })).bots).toHaveLength(1);
+    expect(store.repositories.bot_memberships.list).toHaveBeenLastCalledWith({ filters: { user_id: USER_ID, revoked_at: null }, cursor: 'next-membership', limit: 100 });
+    store.get.mockRejectedValueOnce(new Error('fixture database unavailable'));
+    await expect(channels.assignedForPrincipal({ id: USER_ID })).rejects.toThrow('fixture database unavailable');
+    store.repositories.bot_memberships.list.mockRejectedValueOnce(new Error('fixture membership unavailable'));
+    await expect(channels.assignedForPrincipal({ id: USER_ID })).rejects.toThrow('fixture membership unavailable');
+    membershipRow.revoked_at = NOW;
+    expect((await channels.assignedForPrincipal({ id: USER_ID })).bots).toEqual([]);
   });
 });

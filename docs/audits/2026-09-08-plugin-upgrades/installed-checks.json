@@ -1,0 +1,28 @@
+[
+  {
+    "case": "personal-checks-final",
+    "passed": true,
+    "versions": {
+      "oh-my-opencode-slim": "2.2.18",
+      "@rama_nigg/open-cursor": "2.5.8",
+      "opencode-gpt-imagegen": "0.1.12"
+    },
+    "image": "synthetic SSE generation, reference, quality, size, non-overwrite, missing-auth",
+    "slim": "real package config preserves host models, variants, prompts, permissions and disabled MCPs",
+    "cursor": "installed entrypoint imports; text delta and tool-call duplicate handling",
+    "liveProviderRequests": 0
+  },
+  {
+    "case": "rollback-checks",
+    "passed": true,
+    "versions": {
+      "oh-my-opencode-slim": "2.2.15",
+      "@rama_nigg/open-cursor": "2.5.4",
+      "opencode-gpt-imagegen": "0.1.10"
+    },
+    "image": "synthetic SSE generation, reference, quality, size, non-overwrite, missing-auth",
+    "slim": "real package config preserves host models, variants, prompts, permissions and disabled MCPs",
+    "cursor": "installed entrypoint imports; text delta and tool-call duplicate handling",
+    "liveProviderRequests": 0
+  }
+]

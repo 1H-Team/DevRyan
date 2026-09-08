@@ -23,6 +23,7 @@ import {
 import { createCursorQuestionRuntime } from './cursor-question-runtime.js';
 import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
 import { assertCursorSdkNodeCompatibility } from './node-version.js';
+import { cursorToolReceiptMetadata } from './cursor-tool-receipts.js';
 import {
   CURSOR_NATIVE_TASK_METADATA_KEY,
   mergeCursorNativeTaskActivity,
@@ -4580,6 +4581,7 @@ export function createCursorSdkRuntime(options = {}) {
             const metadata = {
               ...sanitizeProviderToolMetadata(existingState.metadata),
               ...sanitizeProviderToolMetadata(message.metadata),
+              ...cursorToolReceiptMetadata(message),
               ...(existingSummary ? { cursorTaskSummary: existingSummary } : {}),
               ...(cursorNativeTask ? { [CURSOR_NATIVE_TASK_METADATA_KEY]: cursorNativeTask } : {}),
             };
@@ -4587,6 +4589,7 @@ export function createCursorSdkRuntime(options = {}) {
               id: partID,
               sessionID,
               messageID: assistantMessageID,
+              ...(trimString(message.call_id) ? { callID: trimString(message.call_id) } : {}),
               type: 'tool',
               tool: trimString(message.name) || trimString(existing?.tool) || 'tool',
               ...(input ? { input } : {}),

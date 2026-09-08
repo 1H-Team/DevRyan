@@ -52,6 +52,17 @@ describe('resolveManagedChildGenericStatusText', () => {
     recoveringText: 'Recovering subtask',
   };
 
+  test('never restores startup copy between Claude Designer tool and reasoning cycles', () => {
+    for (const executionKind of ['start', 'resume', 'retry_in_place', 'recover_in_place'] as const) {
+      for (const isGenericStatus of [false, true, false, true]) {
+        expect(resolveManagedChildGenericStatusText({
+          task: { executionKind, status: 'running', firstAssistantPartAt: 0 },
+          isGenericStatus, ...copy,
+        })).toBeNull();
+      }
+    }
+  });
+
   test('replaces random generic copy for an active managed child', () => {
     expect(resolveManagedChildGenericStatusText({
       task: { executionKind: 'start', status: 'running' },

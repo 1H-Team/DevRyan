@@ -28,7 +28,7 @@ describe('DevRyan default plugin catalog', () => {
       {
         pluginId: '@rama_nigg/open-cursor',
         shippedSpec: './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
-        version: '2.5.4',
+        version: '2.5.8',
         delivery: 'installed-local',
       },
       {
@@ -40,7 +40,7 @@ describe('DevRyan default plugin catalog', () => {
       {
         pluginId: 'opencode-gpt-imagegen',
         shippedSpec: './node_modules/opencode-gpt-imagegen/dist/index.js',
-        version: '0.1.10',
+        version: '0.1.12',
         delivery: 'installed-local',
       },
       {
@@ -52,7 +52,7 @@ describe('DevRyan default plugin catalog', () => {
       {
         pluginId: 'oh-my-opencode-slim',
         shippedSpec: './plugins/devryan-oh-my-opencode-slim.mjs',
-        version: '2.2.15',
+        version: '2.2.18',
         delivery: 'installed-local',
       },
       {

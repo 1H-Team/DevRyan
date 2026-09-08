@@ -2,13 +2,13 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ContextModeWorkerPool } from './context-mode-worker-pool.js';
-import { WORKER_POOL_SOURCE, WORKER_SOURCE } from './context-mode-worker-sources.js';
+import { WORKER_POOL_SOURCE, WORKER_SOURCE, WORKER_STATE_SOURCE, WORKER_STORAGE_SOURCE, WORKER_PROCESS_SOURCE } from './context-mode-worker-sources.js';
 
 class FakeWorker extends EventEmitter {
   static instances = [];
   messages = [];
   constructor(url, options) { super(); this.options = options; FakeWorker.instances.push(this); }
-  postMessage(message) { this.messages.push(message); if (message.type === 'close') queueMicrotask(() => this.emit('message', { type: 'closed' })); }
+  postMessage(message) { this.messages.push(message); if (message.type === 'close') queueMicrotask(() => { this.emit('message', { type: 'closed' }); this.emit('exit', 0); }); }
   complete(result = 'ok') { this.emit('message', { type: 'result', id: this.messages.at(-1).id, result }); }
   async terminate() { this.emit('exit', 0); }
 }
@@ -21,38 +21,44 @@ describe('Context Mode worker isolation', () => {
   it('ships identical helpers in bundled web provisioning', () => {
     expect(WORKER_POOL_SOURCE).toBe(fs.readFileSync(new URL('./context-mode-worker-pool.js', import.meta.url), 'utf8'));
     expect(WORKER_SOURCE).toBe(fs.readFileSync(new URL('./context-mode-worker.js', import.meta.url), 'utf8'));
+    expect(WORKER_STATE_SOURCE).toBe(fs.readFileSync(new URL('./context-mode-worker-state.js', import.meta.url), 'utf8'));
+    expect(WORKER_STORAGE_SOURCE).toBe(fs.readFileSync(new URL('./context-mode-worker-storage.js', import.meta.url), 'utf8'));
+    expect(WORKER_PROCESS_SOURCE).toBe(fs.readFileSync(new URL('./context-mode-worker-process.js', import.meta.url), 'utf8'));
   });
-  it('serializes a project and attributes every call to its initiating session', async () => {
+  it.each([true, false])('dispatches two calls from each of fifteen sessions immediately (same project: %s)', async (sameProject) => {
     const runtime = pool();
-    const first = runtime.execute(call());
-    const second = runtime.execute(call('/repo', 'ses_two'));
-    expect(FakeWorker.instances).toHaveLength(1);
-    const worker = FakeWorker.instances[0];
-    expect(worker.messages).toHaveLength(1);
-    worker.complete('first');
-    expect(worker.messages[1].sessionId).toBe('ses_two');
-    worker.complete('second');
-    expect(await Promise.all([first, second])).toEqual(['first', 'second']);
-  });
-  it('separates projects and storage roots without exceeding four workers', async () => {
-    const runtime = pool();
-    const calls = [0, 1, 2, 3, 4].map((index) => runtime.execute(call(`/repo${index}`)));
-    expect(FakeWorker.instances).toHaveLength(4);
-    expect(runtime.queue).toHaveLength(1);
-    FakeWorker.instances[0].complete();
+    const tools = ['ctx_execute', 'ctx_execute_file', 'ctx_batch_execute', 'ctx_index', 'ctx_search', 'ctx_stats', 'ctx_fetch_and_index'];
+    const calls = Array.from({ length: 30 }, (_, index) => runtime.execute({
+      ...call(sameProject ? '/repo' : `/repo${Math.floor(index / 2)}`, `ses_${Math.floor(index / 2)}`),
+      name: tools[index % tools.length],
+    }));
+    expect(FakeWorker.instances).toHaveLength(30);
+    expect(runtime.workers.size).toBe(30);
+    expect(FakeWorker.instances.every((worker) => worker.messages.length === 1)).toBe(true);
+    expect(FakeWorker.instances.map((worker) => worker.messages[0].sessionId))
+      .toEqual(Array.from({ length: 30 }, (_, index) => `ses_${Math.floor(index / 2)}`));
+    for (const worker of FakeWorker.instances) worker.complete();
+    await Promise.all(calls);
     await Promise.resolve();
     expect(runtime.workers.size).toBe(4);
-    expect(FakeWorker.instances).toHaveLength(5);
-    for (const worker of FakeWorker.instances.slice(1)) worker.complete();
-    await Promise.all(calls);
-    const differentData = runtime.execute({ ...call('/repo4'), env: { CONTEXT_MODE_DIR: '/other/data' } });
-    await Promise.resolve();
-    expect(FakeWorker.instances.at(-1).options.env.CONTEXT_MODE_DIR).toBe('/other/data');
-    FakeWorker.instances.at(-1).complete();
-    await differentData;
+    expect([...runtime.workers].every((slot) => !slot.active)).toBe(true);
+  });
+  it('reuses an idle compatible worker while separating different storage environments', async () => {
+    const runtime = pool();
+    const first = runtime.execute(call());
+    FakeWorker.instances[0].complete('first');
+    await first;
+    const second = runtime.execute(call('/repo', 'ses_two'));
+    expect(FakeWorker.instances).toHaveLength(1);
+    expect(FakeWorker.instances[0].messages.at(-1).sessionId).toBe('ses_two');
+    const other = runtime.execute({ ...call(), env: { CONTEXT_MODE_DIR: '/other/data' } });
+    expect(FakeWorker.instances).toHaveLength(2);
+    expect(FakeWorker.instances[1].options.env.CONTEXT_MODE_DIR).toBe('/other/data');
+    for (const worker of FakeWorker.instances) worker.complete();
+    await Promise.all([second, other]);
   });
   it('never evicts a worker while a background process is alive', async () => {
-    const runtime = pool({ maxWorkers: 1 });
+    const runtime = pool({ maxIdleWorkers: 1 });
     const running = runtime.execute(call());
     const worker = FakeWorker.instances[0];
     worker.emit('message', { type: 'process', pid: 2147483000, running: true });
@@ -60,6 +66,7 @@ describe('Context Mode worker isolation', () => {
     await running;
     const next = runtime.execute(call('/other'));
     expect(worker.messages.at(-1).type).toBe('execute');
+    expect(FakeWorker.instances).toHaveLength(2);
     worker.emit('message', { type: 'process', pid: 2147483000, running: false });
     await Promise.resolve();
     expect(FakeWorker.instances).toHaveLength(2);
@@ -74,15 +81,14 @@ describe('Context Mode worker isolation', () => {
     for (const worker of FakeWorker.instances) worker.complete();
     await Promise.all([first, second]);
   });
-  it('bounds queued calls and bytes, and explicitly fails without dispatch', async () => {
-    const runtime = pool({ maxQueue: 1, maxQueuedBytes: 20 });
-    const active = runtime.execute(call());
-    const queued = runtime.execute(call());
-    await expect(runtime.execute(call())).rejects.toThrow('not executed');
+  it('validates serialization without imposing a pending-call byte budget', async () => {
+    const runtime = pool();
+    const circular = {};
+    circular.self = circular;
+    await expect(runtime.execute(call('/repo', 'ses_one', circular))).rejects.toThrow('not serializable');
+    const active = runtime.execute(call('/repo', 'ses_one', { content: 'a'.repeat(1024 * 1024) }));
     FakeWorker.instances[0].complete();
-    FakeWorker.instances[0].complete();
-    await Promise.all([active, queued]);
-    await expect(runtime.execute(call('/repo', 'ses_one', { text: 'a'.repeat(21) }))).rejects.toThrow('capacity');
+    await active;
   });
   it('rejects crashed active calls and never replays a potentially mutating tool', async () => {
     const runtime = pool();
@@ -91,16 +97,16 @@ describe('Context Mode worker isolation', () => {
     FakeWorker.instances[0].emit('error', new Error('crash'));
     await assertion;
     expect(FakeWorker.instances).toHaveLength(1);
-    expect(runtime.queue).toHaveLength(0);
+    expect(runtime.workers.size).toBe(0);
   });
-  it('removes cancelled queued calls without executing them or evicting the active worker', async () => {
+  it('does not dispatch a pre-cancelled call or disturb an active sibling', async () => {
     const runtime = pool();
     const active = runtime.execute(call());
     const controller = new AbortController();
-    const queued = runtime.execute({ ...call(), name: 'ctx_execute', signal: controller.signal });
     controller.abort();
-    await expect(queued).rejects.toThrow('cancelled before execution');
-    expect(runtime.queuedBytes).toBe(0);
+    await expect(runtime.execute({ ...call(), name: 'ctx_execute', signal: controller.signal }))
+      .rejects.toThrow('cancelled before execution');
+    expect(FakeWorker.instances).toHaveLength(1);
     expect(FakeWorker.instances[0].messages).toHaveLength(1);
     FakeWorker.instances[0].complete();
     await active;
@@ -110,5 +116,23 @@ describe('Context Mode worker isolation', () => {
     await expect(runtime.execute(call('relative'))).rejects.toThrow('absolute project');
     await expect(runtime.execute(call('/repo', ''))).rejects.toThrow('initiating session');
     expect(FakeWorker.instances).toHaveLength(0);
+  });
+  it('records only one statistics delta for a call and ignores late deltas after reuse', async () => {
+    const runtime = pool();
+    const recorded = [];
+    runtime.state.update = (_slot, delta) => recorded.push(delta);
+    const first = runtime.execute(call());
+    const worker = FakeWorker.instances[0];
+    const id = worker.messages[0].id;
+    const delta = { calls: { ctx_index: 1 } };
+    worker.emit('message', { type: 'stats', id, delta });
+    worker.emit('message', { type: 'stats', id, delta });
+    worker.complete();
+    await first;
+    const second = runtime.execute(call());
+    worker.emit('message', { type: 'stats', id, delta });
+    expect(recorded).toEqual([delta]);
+    worker.complete();
+    await second;
   });
 });

@@ -14,6 +14,7 @@ import { BotResultAttachments } from './BotResultAttachments';
 type BotMessageRowProps = {
   bot: BotSummary;
   messageId: string;
+  onQuickReplyIntent?: () => void;
 };
 
 const formatMessageTime = (value: string): string => {
@@ -36,7 +37,7 @@ const markOptimisticRender = (): void => {
   }
 };
 
-export const BotMessageRow = React.memo<BotMessageRowProps>(({ bot, messageId }) => {
+export const BotMessageRow = React.memo<BotMessageRowProps>(({ bot, messageId, onQuickReplyIntent }) => {
   const { t } = useI18n();
   const message = useBotChannelStore((state) => state.messagesById[messageId]);
   const notConfirmed = useBotChannelStore((state) => state.unconfirmedMessageIds[messageId] === true);
@@ -119,6 +120,7 @@ export const BotMessageRow = React.memo<BotMessageRowProps>(({ bot, messageId })
                 messageId={messageId}
                 sequence={message.sequence}
                 question={question}
+                onReplyIntent={onQuickReplyIntent}
               />
             ) : null}
             {attachmentIds.length > 0 ? (

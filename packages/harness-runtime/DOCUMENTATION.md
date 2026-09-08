@@ -91,6 +91,15 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   drops headers, bodies, and input even though ordinary execution records may
   permit those fields. A real journal write/read regression verifies this
   contract after sanitization, rather than testing only a recorder mock.
+  Context Mode lifecycle/gap records use a separate bounded payload projection:
+  worker-call/session/message correlation, phase/sequence, source timestamp,
+  elapsed time, budget and dropped-event count. Tool parts retain the validated
+  `contextModeWorkerCallID`; commands, paths and arbitrary diagnostic payloads
+  are excluded. A real journal round trip covers both correlation surfaces.
+- `bot.memory.extraction.*` lifecycle payloads use a separate content-free
+  projection: correlation IDs, bounded counters, outcome/reason/validator labels,
+  and a fixed rejection histogram. Conversation, memory, input and arbitrary
+  nested text are excluded.
 - `export.js`: task/runtime export selection and second-pass redaction. Bundle
   version 2 streams one plain NDJSON entry per session plus `runtime.ndjson`,
   an included-manifest index, and decompressed plain-text blobs.
@@ -160,3 +169,7 @@ safety, protocol, storage, rollout and rollback contracts are documented in
 ## Session-owned changes
 
 `lib/session-changes.js` owns always-on execution receipts, private Git snapshots, cumulative net summaries, paged stored revisions retained until deletion, and conflict-checked file-only Undo/Redo. It is independent of optional diagnostic evidence. `lib/session-changes-host.js` validates canonical session identity, lineage and directory; consumes paginated history; and exposes the same plugin/HTTP contract in web/Electron. The focused `session-changes-{git,snapshot,store}.js` modules own bounded Git I/O, scoped raw capture/stat caching, and atomic individually indexed metadata. Full contract, operational limits and verification: `docs/SESSION_CHANGES.md`.
+
+### Session title correlation
+
+The web host emits `session_title_generation` lifecycle records with the target session in top-level `sessionID` and the hidden helper in `payload.helperSessionID`. The sanitizer preserves both identifiers along with stage, outcome, reason, provider/model, status, attempt, and duration. Title text and source prompts are excluded by the producer.

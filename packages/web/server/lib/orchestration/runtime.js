@@ -1,4 +1,5 @@
 import {
+  createManagedAssistantActivityRegistry,
   createManagedTerminalErrorRegistry,
   createManagedTaskScheduler,
   isManagedModelAvailableInCatalog,
@@ -216,6 +217,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     logger,
   });
   const terminalErrors = options.terminalErrors ?? createManagedTerminalErrorRegistry({ now });
+  const assistantActivity = createManagedAssistantActivityRegistry({ now });
   const validateAgentExecution = typeof options.validateAgentExecution === 'function'
     ? options.validateAgentExecution
     : typeof options.buildOpenCodeUrl === 'function'
@@ -244,6 +246,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     cursorSdkRuntime: options.cursorSdkRuntime,
     fetchImpl: options.fetchImpl,
     readTerminalError: (input) => terminalErrors.read(input),
+    subscribeAssistantActivity: assistantActivity.subscribe,
+    onFirstAssistantActivity: options.onFirstAssistantActivity,
+    now,
     // Claude compatibility mode drops opencode's system prompt for Anthropic-routed
     // children, so their agent rules travel inside the first task prompt instead.
     resolveTaskPromptPreamble: options.resolveTaskPromptPreamble
@@ -252,8 +257,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     // then abort) so a runaway child cannot burn the whole task timeout.
     resolveTaskTurnBudget: options.resolveTaskTurnBudget ?? resolveManagedTaskTurnBudget,
   });
-  // One automatic resume attempt for a result parked on a definite provider
-  // usage limit. It re-enters the acknowledge RPC exactly as a user's Try Again
+  // Automatic quota recovery or a single backup after exhausted transport
+  // recovery. It re-enters the acknowledge RPC exactly as a user's Try Again
   // would, plus the internal generation guard the scheduler uses to reject a
   // stale attempt; the host defers (never fails) while work admission is blocked.
   const attemptAutoResume = async (params) => {
@@ -266,6 +271,27 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       };
     }
     try {
+      const task = scheduler.getTask(params.taskId);
+      const envelope = scheduler.getResultEnvelope(params.taskId);
+      if (task && envelope?.autoResume?.trigger === 'provider_transport') {
+        const backup = await resolveAutoResumeBackupExecution({
+          rootSessionId: task.rootSessionId, directory: task.directory, agent: task.agent,
+          providerId: task.providerId, modelId: task.modelId,
+        });
+        if (!backup || backup.providerId !== params.providerId || backup.modelId !== params.modelId
+          || (backup.variant ?? null) !== (params.variant ?? null)) {
+          return { outcome: 'rejected', code: 'backup_unavailable', message: 'The configured backup changed or is unavailable' };
+        }
+        if (validateAgentExecution) {
+          const available = await validateAgentExecution({ directory: task.directory, providerId: params.providerId, modelId: params.modelId });
+          if (available === false) {
+            return { outcome: 'rejected', code: 'backup_unavailable', message: 'The configured backup model is unavailable' };
+          }
+          if (available === null && params.providerId !== 'cursor-acp') {
+            return { outcome: 'rejected', code: 'backup_availability_unknown', message: 'The backup model catalog could not be verified' };
+          }
+        }
+      }
       const result = await handleRpcInternal({ method: 'acknowledge', params }, { autoResume: true });
       return {
         outcome: 'started',
@@ -796,6 +822,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         : { status: 'fulfilled' };
       ownershipAcquired = false;
       terminalErrors.clear();
+      assistantActivity.clear();
       const errors = [hostResult, schedulerResult, ownershipResult]
         .filter((result) => result.status === 'rejected')
         .map((result) => result.reason);
@@ -812,7 +839,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     initialize,
     handleRpc,
     getSnapshot,
-    processOpenCodeEvent: (payload) => {
+    processOpenCodeEvent: (payload, directory = null) => {
+      assistantActivity.observe(payload, directory);
       const observed = terminalErrors.observe(payload);
       // A deleted root session can never receive its follow-up, so its parked
       // auto-resume plans stop here instead of firing into a missing session.

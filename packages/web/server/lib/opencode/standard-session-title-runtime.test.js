@@ -4,6 +4,8 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createWebHarnessRuntime } from '../harness/runtime.js';
+
 import { createFileSessionTitleOutbox, createMemorySessionTitleOutbox } from './session-title-outbox.js';
 import {
   SESSION_TITLE_HELPER_SESSION_TITLE,
@@ -196,10 +198,196 @@ const pendingJob = (overrides = {}) => ({
 
 const tempDirectories = [];
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(tempDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })));
 });
 
 describe('standard session title runtime', () => {
+  it('accepts a model response after ten seconds without waiting for slow cleanup', async () => {
+    vi.useFakeTimers();
+    const fake = createFakeOpenCode();
+    const originalFetch = fake.fetchImpl;
+    let deleteSignal;
+    fake.fetchImpl = vi.fn(async (url, options = {}) => {
+      if (options.method === 'DELETE') {
+        deleteSignal = options.signal;
+        return new Promise(() => {});
+      }
+      if (options.method === 'POST' && String(url).includes('/message')) {
+        await new Promise((resolve) => setTimeout(resolve, 15_000));
+      }
+      return originalFetch(url, options);
+    });
+    const projected = [];
+    const runtime = createRuntime({ fake, projected, generateSessionModelTitle: null });
+    const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await vi.advanceTimersByTimeAsync(10_001);
+    expect(projected).toEqual([]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await scheduled;
+    expect(projected[0]?.title).toBe('Selected Model Session Title');
+    expect(deleteSignal.aborted).toBe(false);
+    const disposing = runtime.dispose();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await disposing;
+    expect(deleteSignal.aborted).toBe(true);
+  });
+
+  it('recovers a completed answer with a separate budget after cancelling a timed-out POST', async () => {
+    vi.useFakeTimers();
+    const fake = createFakeOpenCode();
+    const originalFetch = fake.fetchImpl;
+    let postSignal;
+    fake.fetchImpl = vi.fn(async (url, options = {}) => {
+      if (String(url).includes('/ses_helper/message')) {
+        if (options.method === 'POST') {
+          postSignal = options.signal;
+          return new Promise(() => {});
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        return response([{ info: { role: 'assistant', finish: 'stop' }, parts: [{ type: 'text', text: 'Clinic Profile Field Alignment' }] }]);
+      }
+      return originalFetch(url, options);
+    });
+    const projected = [];
+    const diagnostics = [];
+    const runtime = createRuntime({ fake, projected, diagnostics, generateSessionModelTitle: null });
+    const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(postSignal.aborted).toBe(true);
+    expect(projected).toEqual([]);
+    await vi.advanceTimersByTimeAsync(2_001);
+    await scheduled;
+    expect(projected[0]?.title).toBe('Clinic Profile Field Alignment');
+    expect(stageOutcomes(diagnostics, 'recovery')).toEqual(['recovery:complete']);
+    await runtime.dispose();
+  });
+
+  it.each([
+    ['', 'empty_response'],
+    ['This response has far too many words to be accepted as a concise title', 'validation_rejection'],
+  ])('classifies invalid helper output and rejects unfinished recovery text', async (text, reason) => {
+    const fake = createFakeOpenCode();
+    const originalFetch = fake.fetchImpl;
+    fake.fetchImpl = vi.fn((url, options = {}) => {
+      if (String(url).includes('/ses_helper/message')) {
+        return Promise.resolve(response(options.method === 'POST'
+          ? { parts: [{ type: 'text', text }] }
+          : [{ info: { role: 'assistant' }, parts: [{ type: 'text', text: 'Unfinished Title Must Not Win' }] }]));
+      }
+      return originalFetch(url, options);
+    });
+    const projected = [];
+    const diagnostics = [];
+    const runtime = createRuntime({ fake, projected, diagnostics, generateSessionModelTitle: null });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(projected).toEqual([]);
+    expect(diagnostics.map(({ payload }) => payload)).toContainEqual(expect.objectContaining({ stage: 'session_model', reason }));
+    await runtime.dispose();
+  });
+
+  it('bounds a stalled recovery read independently of generation', async () => {
+    vi.useFakeTimers();
+    const fake = createFakeOpenCode();
+    const originalFetch = fake.fetchImpl;
+    let recoverySignal;
+    fake.fetchImpl = vi.fn((url, options = {}) => {
+      if (String(url).includes('/ses_helper/message')) {
+        if (options.method !== 'POST') recoverySignal = options.signal;
+        return new Promise(() => {});
+      }
+      return originalFetch(url, options);
+    });
+    const diagnostics = [];
+    const runtime = createRuntime({ fake, diagnostics, generateSessionModelTitle: null });
+    const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(recoverySignal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(2_500);
+    await scheduled;
+    expect(recoverySignal.aborted).toBe(true);
+    expect(stageOutcomes(diagnostics, 'recovery')).toEqual(['recovery:failed']);
+    await runtime.dispose();
+  });
+
+  it('cancels generation on shutdown and ignores its late answer', async () => {
+    const fake = createFakeOpenCode();
+    let finish;
+    let signal;
+    const projected = [];
+    const generator = vi.fn((input) => {
+      signal = input.signal;
+      return new Promise((resolve) => { finish = resolve; });
+    });
+    const runtime = createRuntime({ fake, projected, generateSessionModelTitle: generator });
+    const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await vi.waitFor(() => expect(generator).toHaveBeenCalledOnce());
+    await runtime.dispose();
+    expect(signal.aborted).toBe(true);
+    finish('Late Answer Must Not Win');
+    await scheduled;
+    expect(projected).toEqual([]);
+    expect(fake.state.patches).toEqual([]);
+  });
+
+  it('fences a late timed-out answer while preserving the delayed retry', async () => {
+    vi.useFakeTimers();
+    const fake = createFakeOpenCode();
+    let finish;
+    const projected = [];
+    const generator = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
+      .mockResolvedValueOnce('Recovered Sidebar Title Summaries');
+    const runtime = createRuntime({ fake, projected, generateSessionModelTitle: generator });
+    const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await vi.advanceTimersByTimeAsync(30_000);
+    await scheduled;
+    finish('Late Answer Must Not Win');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(projected).toEqual([]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(projected[0]?.title).toBe('Recovered Sidebar Title Summaries');
+    await runtime.dispose();
+  });
+
+  it('writes correlated failure diagnostics through the real harness journal', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-title-journal-'));
+    tempDirectories.push(directory);
+    const harness = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    await harness.initialize();
+    const prompt = 'Private example request must not appear in title diagnostics';
+    const fake = createFakeOpenCode({ prompt });
+    const originalFetch = fake.fetchImpl;
+    fake.fetchImpl = vi.fn((url, options = {}) => (
+      String(url).includes('/ses_helper/message') && options.method === 'POST'
+        ? Promise.resolve(response(null, { status: 503, ok: false })) : originalFetch(url, options)
+    ));
+    const runtime = createRuntime({ fake, generateSessionModelTitle: null, recordDiagnostic: harness.record });
+    try {
+      await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+      await runtime.dispose();
+      await harness.journal.flush();
+      const records = (await harness.journal.readRecords()).filter((record) => record.event === 'session_title_generation');
+      expect(records).toContainEqual(expect.objectContaining({
+        type: 'lifecycle', sessionID: 'ses_1',
+        payload: expect.objectContaining({ helperSessionID: 'ses_helper', reason: 'http_failure', status: 503 }),
+      }));
+      expect(records).toContainEqual(expect.objectContaining({ payload: expect.objectContaining({ reason: 'recovery_failure' }) }));
+      expect(JSON.stringify(records)).not.toContain(prompt);
+    } finally {
+      await harness.drain();
+    }
+  });
+
+  it.each([
+    ['In /dashboard/clinic/profile the core details fields are misaligned. Fix the form layout.', 'Clinic Profile Field Alignment'],
+    ['Could you investigate why my sidebar titles copy the beginning of my prompt?', 'Sidebar Title Generation Reliability'],
+  ])('accepts a concise summary of a contextual request', (prompt, title) => {
+    expect(normalizeGeneratedSessionTitle(title, prompt)).toBe(title);
+    const fallback = deriveLocalSessionTitle(prompt);
+    expect(fallback.length).toBeLessThanOrEqual(80);
+    expect(fallback.split(/\s+/).length).toBeLessThanOrEqual(7);
+  });
+
   it.each(['explorer', 'designer'])('recovers the reserved %s child placeholder using the brief, then persists on idle', async (agent) => {
     const placeholder = `Managed ${agent} task`;
     const fake = createFakeOpenCode({ sessions: [{ id: 'ses_1', parentID: 'ses_root', agent, title: placeholder }] });
@@ -301,7 +489,7 @@ describe('standard session title runtime', () => {
       text: prompt,
       providerID: 'openai',
       modelID: 'gpt-5.6-sol',
-      timeoutMs: 10_000,
+      timeoutMs: 30_000,
     }));
     expect(await outbox.list()).toEqual([expect.objectContaining({
       candidateTitle: 'Neutral Title Generation Pipeline',
@@ -379,7 +567,7 @@ describe('standard session title runtime', () => {
     const runtime = createRuntime({ fake, projected, diagnostics, generateSessionModelTitle, setTimer, clearTimer });
 
     const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    const boundTimer = () => timers.find(({ delay, cleared }) => delay === 10_000 && !cleared);
+    const boundTimer = () => timers.find(({ delay, cleared }) => delay === 30_000 && !cleared);
     for (let index = 0; index < 20 && !boundTimer(); index += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }

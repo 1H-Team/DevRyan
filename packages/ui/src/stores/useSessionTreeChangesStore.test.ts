@@ -8,6 +8,7 @@ import {
   clearSessionTreeChanges,
   getSessionTreeChangesKey,
   observeSessionTreeActivity,
+  observeSessionTreeMembers,
   refreshSessionTreeChanges,
   requestSessionTreeChangesRefresh,
   resetSessionTreeChangesForTests,
@@ -137,6 +138,22 @@ describe('useSessionTreeChangesStore', () => {
     await wait(DEBOUNCE_MS * 3)
     expect(calls).toHaveLength(1)
     unsubscribe()
+  })
+
+  test('session capture events refresh only the selected subtree, including verified children', async () => {
+    respond = rootSessionID => Promise.resolve(makeChanges({ rootSessionID, coverage: 'complete' }))
+    const releases = ['ses_root', 'ses_other', 'ses_child'].map(id => subscribeSessionTreeChanges('/repo', id))
+    observeSessionTreeMembers('/repo', 'ses_root', ['ses_child'])
+    await wait(0)
+    calls.length = 0
+    sessionEvents.requestGitRefresh({ directory: '/repo', sessionChanges: true, sessionID: 'ses_other' })
+    await wait(DEBOUNCE_MS * 3)
+    expect(calls.map(call => call.rootSessionID)).toEqual(['ses_other'])
+    calls.length = 0
+    sessionEvents.requestGitRefresh({ directory: '/repo', sessionChanges: true, sessionID: 'ses_child' })
+    await wait(DEBOUNCE_MS * 3)
+    expect(calls.map(call => call.rootSessionID).sort()).toEqual(['ses_child', 'ses_root'])
+    releases.forEach(release => release())
   })
 
   test('subscribing fetches immediately and stores the entry under the key', async () => {

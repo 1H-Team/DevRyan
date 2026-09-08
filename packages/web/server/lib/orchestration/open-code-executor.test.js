@@ -310,13 +310,14 @@ describe('web managed OpenCode executor transport', () => {
     });
   });
 
-  it('sends an idempotent same-child continuation after a terminal operation timeout', async () => {
+  it('reserves one same-child continuation after a finalized operation timeout', async () => {
     const requests = [];
     let statusReads = 0;
     const timeoutMessage = {
       info: {
         id: 'msg_timeout',
         role: 'assistant',
+        time: { completed: 1_000 },
         finish: 'error',
         error: { message: 'The operation timed out.' },
       },
@@ -328,14 +329,14 @@ describe('web managed OpenCode executor transport', () => {
       if (pathname.endsWith('/prompt_async')) return new Response(null, { status: 204 });
       if (pathname === '/session/status') {
         statusReads += 1;
-        const type = statusReads === 2 ? 'busy' : 'idle';
+        const type = requests.some(({ url: sent }) => new URL(sent).pathname.endsWith('/prompt_async')) && statusReads === 3 ? 'busy' : 'idle';
         return jsonResponse({ ses_child: { type } });
       }
       if (pathname.endsWith('/message')) {
         // The recovery message appears once the continuation prompt was sent,
         // rather than after a fixed number of transcript reads: a live child is
         // no longer re-read on every poll.
-        const continued = requests.some(({ url: sent }) => (
+        const continued = requests.find(({ url: sent }) => (
           new URL(sent).pathname.endsWith('/prompt_async')
         ));
         return jsonResponse(!continued
@@ -343,7 +344,7 @@ describe('web managed OpenCode executor transport', () => {
           : [
               timeoutMessage,
               {
-                info: { id: 'msg_done', role: 'assistant', finish: 'stop' },
+                info: { id: 'msg_done', role: 'assistant', finish: 'stop', parentID: JSON.parse(continued.init.body).messageID },
                 parts: [{ type: 'text', text: 'done' }],
               },
             ]);
@@ -365,7 +366,7 @@ describe('web managed OpenCode executor transport', () => {
       modelId: 'gpt-4.1',
       agent: 'fixer',
       variant: 'high',
-    });
+    }, { async recordTransportRecovery() { return true; } });
 
     expect(result.status).toBe('completed');
     const promptRequests = requests.filter(({ url }) => (
@@ -385,10 +386,8 @@ describe('web managed OpenCode executor transport', () => {
       },
       parts: [{ type: 'text', text: MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT }],
     });
-    // OpenCode must mint the id. A task-derived one is not ordered like an
-    // OpenCode id, and a continuation that sorts below the session's latest
-    // message is written into the past and silently never runs.
-    expect(continuationBody).not.toHaveProperty('messageID');
+    // The persisted correlation ID is fresh and sorts like an OpenCode message.
+    expect(continuationBody.messageID).toMatch(/^msg_[0-9a-f]{26}$/);
   });
 
   it('aborts and deletes a normal-provider child when the scheduler rejects its ownership checkpoint', async () => {

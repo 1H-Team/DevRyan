@@ -60,7 +60,7 @@ describe('bundled agent tool recovery guidance', () => {
 
   it('gives Orchestrator a safe fallback after a context-mode storage failure', () => {
     const orchestrator = readAgent('orchestrator');
-    expect(orchestrator).toContain('SQLite, disk I/O, or database-is-locked failure');
+    expect(orchestrator).toContain('SQLite, disk I/O, database-is-locked, worker timeout, or worker-unavailable failure');
     expect(orchestrator).toContain('native read/search tools or appropriately scoped specialist discovery');
     expect(orchestrator).toContain('Report a blocker only when neither safe fallback can satisfy the task');
   });

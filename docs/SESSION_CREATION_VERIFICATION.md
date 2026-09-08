@@ -1,5 +1,10 @@
 # Session creation implementation and verification
 
+The worker limits below describe the August 31 implementation. The current
+[Context Mode concurrency contract](../packages/web/server/lib/opencode/DOCUMENTATION.md#public-exports-context-mode-hotfixjs--context-mode-content-store-recoveryjs)
+removes those command-queue limits; its disposable verification now exercises
+thirty concurrent calls across fifteen sessions.
+
 Verified on macOS arm64, 2026-08-31, using OpenCode 1.18.25 and Context Mode
 1.0.169. The user's live DevRyan/OpenCode processes were not restarted or patched.
 Unrelated working-tree changes and existing user indexes were preserved.

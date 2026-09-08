@@ -35,10 +35,12 @@ const tool = (callID) => ({ info: { id: `msg_${callID}`, parentID: 'user_1', rol
 
 test('private hook receipts feed the same summary, diff, and restore HTTP contract', async () => {
   await host.plugin({ action: 'message', sessionID: 'ses_a', directory, userMessageID: 'user_1' });
-  messages.push(tool('call_a'));
+  const record = tool('call_a'); record.parts[0].tool = 'write'; record.parts[0].state.input = { filePath: 'shell.txt' };
+  messages.push(record);
   const input = { sessionID: 'ses_a', directory, callID: 'call_a' };
   await host.plugin({ ...input, action: 'before' });
   await fs.writeFile(path.join(directory, 'shell.txt'), 'from shell\n');
+  record.parts[0].state.metadata = { filediff: { file: 'shell.txt', before: null, after: 'from shell\n' } };
   await host.plugin({ ...input, action: 'after' });
   const result = await host.handleRequest('GET', endpoint());
   expect(result.status).toBe(200); expect(result.body.coverage).toBe('complete');
@@ -74,7 +76,8 @@ test('reconstructs historical native file receipts without adopting broad turn d
   const result = await host.handleRequest('GET', endpoint());
   expect(result.status).toBe(200);
   expect(result.body.files.map((file) => file.path)).toEqual(['a.txt']);
-  expect(result.body.reasons).toContain('historical_restore_unavailable');
+  expect(result.body.coverage).toBe('complete');
+  expect(result.body.restoreReasons).toContain('restore_evidence_unavailable');
   expect((await host.handleRequest('POST', endpoint('/undo'), { revision: result.body.revision })).status).toBe(409);
 });
 
@@ -99,10 +102,12 @@ test('reads history beyond 1000 messages using the supplied cursor', async () =>
 
 test('restore fails closed when another session is busy or live status is malformed', async () => {
   await host.plugin({ action: 'message', sessionID: 'ses_a', directory, userMessageID: 'user_1' });
-  messages.push(tool('call_a'));
+  const record = tool('call_a'); record.parts[0].tool = 'write'; record.parts[0].state.input = { filePath: 'shell.txt' };
+  messages.push(record);
   const input = { sessionID: 'ses_a', directory, callID: 'call_a' };
   await host.plugin({ ...input, action: 'before' });
   await fs.writeFile(path.join(directory, 'shell.txt'), 'keep\n');
+  record.parts[0].state.metadata = { filediff: { file: 'shell.txt', before: null, after: 'keep\n' } };
   await host.plugin({ ...input, action: 'after' });
   const { body } = await host.handleRequest('GET', endpoint());
   statuses = { other: { type: 'busy' } };
@@ -137,4 +142,73 @@ test('cached history refreshes only the head page and captures newly settled rec
   const diff = await paged.handleRequest('GET', `${endpoint('/diff')}&revision=${second.body.revision}&file=a.txt`);
   expect(diff.body.patch).toContain('+second');
   await paged.drain();
+});
+
+test('shared native aliases exclude reads and import patch, write, and multi-file execution receipts', async () => {
+  await host.plugin({ action: 'message', sessionID: 'ses_a', directory, userMessageID: 'user_1' });
+  for (const name of ['ls', 'oc_stat', 'skill', 'ctx_search']) {
+    const read = tool(name); read.parts[0].tool = name; messages.push(read);
+    await host.plugin({ action: 'before', sessionID: 'ses_a', directory, callID: name, tool: name });
+  }
+  const native = tool('native'); native.parts[0].tool = 'oc_edit';
+  native.parts[0].state.input = { path: 'native.txt' };
+  native.parts[0].state.metadata = { diff: '--- a/native.txt\n+++ b/native.txt\n@@ -1 +1 @@\n-old\n+new\n' };
+  messages.push(native);
+  const multi = tool('multi'); multi.parts[0].tool = 'apply_patch';
+  multi.parts[0].state.metadata = { files: [
+    { filePath: 'one.txt', before: '', after: 'one\n', type: 'added' },
+    { filePath: 'two.txt', before: '', after: 'two\n', type: 'added' },
+  ] };
+  messages.push(multi);
+  const synthetic = tool('synthetic'); synthetic.parts[0].tool = 'apply_patch';
+  synthetic.parts[0].state.metadata = { syntheticWorkspacePatch: true, files: [{ file: 'foreign.txt', before: '', after: 'foreign' }] };
+  messages.push(synthetic);
+  const result = await host.handleRequest('GET', endpoint());
+  expect(result.body).toMatchObject({ coverage: 'complete', reasons: [], fileCount: 3, restoreAvailable: false });
+  expect(result.body.files.map((file) => file.path)).toEqual(['native.txt', 'one.txt', 'two.txt']);
+});
+
+test('canonical terminal events persist exact failed-tool edits without claiming unknown effects', async () => {
+  await host.plugin({ action: 'message', sessionID: 'ses_a', directory, userMessageID: 'user_1' });
+  const record = tool('failed'); record.parts[0].tool = 'edit';
+  messages.push(record);
+  await host.plugin({ action: 'before', sessionID: 'ses_a', directory, callID: 'failed' });
+  await fs.writeFile(path.join(directory, 'partial.txt'), 'written\n');
+  Object.assign(record.parts[0], { sessionID: 'ses_a', messageID: record.info.id });
+  record.parts[0].state = { status: 'error', metadata: { filediff: { file: 'partial.txt', before: null, after: 'written\n' } } };
+  await host.observe({ type: 'message.part.updated', properties: { part: record.parts[0] } }, directory);
+  const result = await host.handleRequest('GET', endpoint());
+  expect(result.body.files[0].path).toBe('partial.txt');
+  expect(result.body.reasons).toEqual(['tool_changes_incomplete']);
+  expect(result.body.restoreAvailable).toBe(false);
+});
+
+
+test('bounded native Cursor task previews cannot certify child edits', async () => {
+  const record = tool('native_task');
+  record.info.providerID = 'cursor-acp';
+  record.parts[0].tool = 'task';
+  record.parts[0].state.metadata = { cursorNativeTask: { source: 'cursor-native' } };
+  messages.push(record);
+  const result = await host.handleRequest('GET', endpoint());
+  expect(result.body.coverage).toBe('partial');
+  expect(result.body.reasons).toContain('missing_capture');
+  expect(result.body.files).toEqual([]);
+});
+
+
+test('invalid historical paths leave verified files reviewable and repair only their own call', async () => {
+  const known = tool('known'), invalid = tool('invalid');
+  for (const record of [known, invalid]) record.parts[0].tool = 'edit';
+  known.parts[0].state.metadata = { filediff: { file: 'known.txt', before: null, after: 'known\n' } };
+  invalid.parts[0].state.metadata = { filediff: { file: '../outside.txt', before: null, after: 'outside\n' } };
+  messages.push(known, invalid);
+  const first = await host.handleRequest('GET', endpoint());
+  expect(first.status).toBe(200);
+  expect(first.body.files.map(file => file.path)).toEqual(['known.txt']);
+  expect(first.body.reasons).toContain('invalid_change_receipt');
+  invalid.parts[0].state.metadata.filediff.file = 'repaired.txt';
+  const repaired = await host.handleRequest('GET', endpoint());
+  expect(repaired.body.coverage).toBe('complete');
+  expect(repaired.body.files.map(file => file.path)).toEqual(['known.txt', 'repaired.txt']);
 });

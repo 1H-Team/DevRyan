@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-09
+
+- Session changes: attribute files to exact execution receipts and verified descendants, exclude independent and external writes, preserve recorded edit segments, and keep conflict-safe Undo and Redo available only when evidence is complete.
+- Production Bot memory: add versioned extraction diagnostics, automatic recovery for compatible failed and legacy jobs, conversation-aware deferral, manager-facing recovery detail, and a schema-gated migration with service-role-only control functions.
+- Managed plugins: upgrade Oh My OpenCode Slim to 2.2.18, Open Cursor to 2.5.8, and GPT Image Generation to 0.1.12 while preserving user-owned models, prompts, permissions, MCP choices, and rollback compatibility.
+- Image generation: default managed host and Bot image requests to GPT-6 Astra with medium reasoning through an exact-source, atomic compatibility patch.
+- Runtime reliability: harden Context Mode worker liveness, timeouts, diagnostics, and recovery; retain reviewed Meridian compatibility; and improve tool-state placeholders, Bot questions, notifications, summarization, and Git-generated text handling.
+- Quality: expand deterministic package, migration, receipt-attribution, plugin-upgrade, Context Mode, and responsive web/Electron visual coverage with retained audit evidence.
+- Database: deploy and verify migration `20260908182901` and the matching Production Bots schema marker before release publication.
+- Release: update all DevRyan package and desktop metadata to 1.2.0.
+
 ## [1.1.16] - 2026-09-08
 
 - Production Bots: simplify the catalog and conversation surfaces, add cached and validated custom avatars, consolidate computer status and controls, and keep catalog visibility and navigation authoritative across roles and lifecycle states.

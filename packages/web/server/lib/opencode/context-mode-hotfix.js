@@ -63,6 +63,8 @@ export const createRecoveringContentStore = ({ createStore, onRecovery = () => {
     } catch (error) {
       if (!retryAllowed || !isRecoverableContextModeStoreError(error)) throw error;
       const replacement = replaceFailedGeneration(store, storeGeneration, error);
+      // Native worker calls can contain committed work. Reopen for the next call, never replay this one.
+      if (globalThis[Symbol.for("devryan.context-mode.storage")]) throw error;
       return Reflect.apply(replacement[method], replacement, args);
     }
 
@@ -70,6 +72,8 @@ export const createRecoveringContentStore = ({ createStore, onRecovery = () => {
     return result.catch((error) => {
       if (!retryAllowed || !isRecoverableContextModeStoreError(error)) throw error;
       const replacement = replaceFailedGeneration(store, storeGeneration, error);
+      // Native worker calls can contain committed work. Reopen for the next call, never replay this one.
+      if (globalThis[Symbol.for("devryan.context-mode.storage")]) throw error;
       return Reflect.apply(replacement[method], replacement, args);
     });
   };
@@ -231,6 +235,7 @@ export const applyContextModeHotfix = ({
   expectedOriginalSha256 = CONTEXT_MODE_HOTFIX_ORIGINAL_SHA256,
   expectedPluginSha256,
   expectedExecutorSha256,
+  expectedStorageSha256,
   recoveryModuleSource,
 } = {}) => {
   const packageRoot = path.join(configDirectory, 'node_modules', 'context-mode');
@@ -288,7 +293,7 @@ export const applyContextModeHotfix = ({
 
   let nativeFiles;
   try {
-    nativeFiles = prepareNativeContextModeHotfix({ packageRoot, fsApi, expectedPluginSha256, expectedExecutorSha256 });
+    nativeFiles = prepareNativeContextModeHotfix({ packageRoot, fsApi, expectedPluginSha256, expectedExecutorSha256, expectedStorageSha256 });
   } catch (error) {
     return incompatible(error.message);
   }

@@ -14,3 +14,5 @@ the harness and host tests verify actual Git capture and restore behavior.
 
 Large-list mode exercises bounded page navigation and the total file count.
 Diff fixtures use the same paged response contract as production.
+
+The fixture includes independent working-session, selected-child, segmented-diff and precise capture-limitation controls. Real HTTP/SSE/private-store web and Electron journeys live in `scripts/qa/session-changes.mjs`; this smaller fixture remains a presentation fixture.

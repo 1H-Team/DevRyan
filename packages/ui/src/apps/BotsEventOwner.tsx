@@ -1,19 +1,18 @@
 import React from 'react';
 
+import { parseBot, isRevision, isMembership, parseBotAssignedCatalog } from '@/lib/botCatalog';
+
 import {
   type BotActionAttempt,
   type BotChannel,
   type BotChannelPreview,
   type BotComputerStatus,
   type BotEventEnvelope,
-  type BotMembershipSummary,
   type BotMessage,
-  type BotRevisionSummary,
   type BotRun,
   type BotSharedFile,
   type BotSnapshot,
   type BotStreamingMessage,
-  type BotSummary,
 } from '@/lib/botsApi';
 import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 import {
@@ -38,6 +37,7 @@ import {
   releaseBotEventConnection,
   type BotEventSource,
 } from './botEventConnection';
+import { createBotCatalogConnection } from './botCatalogConnection';
 
 const BOT_EVENT_KINDS = Object.freeze([
   'snapshot',
@@ -146,57 +146,6 @@ const isComputerActivity = (value: unknown): value is BotComputerActivity => (
   && typeof value.runId === 'string' && Number.isSafeInteger(value.revision)
   && ['active', 'waiting', 'idle'].includes(String(value.state))
 );
-
-const parseBot = (value: unknown, previous?: BotSummary): BotSummary | null => {
-  if (!isRecord(value)) return null;
-  if (!hasString(value, 'id')
-    || !hasString(value, 'name')
-    || !['draft', 'active', 'paused', 'retired'].includes(String(value.lifecycle))
-    || !['team', 'personalized'].includes(String(value.tenancy))
-    || !hasNullableString(value, 'activeRevisionId')
-    || !hasString(value, 'createdAt')
-    || !hasString(value, 'updatedAt')
-    || !hasNullableString(value, 'retiredAt')
-    || (value.title !== undefined && typeof value.title !== 'string')
-    || (value.summary !== undefined && typeof value.summary !== 'string')
-    || (value.avatarUrl !== undefined && !hasNullableString(value, 'avatarUrl'))
-    || (value.avatarFallback !== undefined && !hasNullableString(value, 'avatarFallback'))) return null;
-  return {
-    id: String(value.id),
-    name: String(value.name),
-    title: typeof value.title === 'string' ? value.title : previous?.title ?? String(value.name),
-    summary: typeof value.summary === 'string' ? value.summary : previous?.summary ?? '',
-    avatarUrl: nullableStringOr(value.avatarUrl, previous?.avatarUrl ?? null),
-    avatarFallback: nullableStringOr(value.avatarFallback, previous?.avatarFallback ?? null),
-    lifecycle: value.lifecycle as BotSummary['lifecycle'],
-    tenancy: value.tenancy as BotSummary['tenancy'],
-    activeRevisionId: value.activeRevisionId as string | null,
-    createdAt: String(value.createdAt),
-    updatedAt: String(value.updatedAt),
-    retiredAt: value.retiredAt as string | null,
-  };
-};
-
-const isRevision = (value: unknown): value is BotRevisionSummary => {
-  if (!isRecord(value)) return false;
-  return hasString(value, 'id')
-    && hasString(value, 'botId')
-    && Number.isSafeInteger(value.revisionNumber)
-    && hasString(value, 'compiledHash')
-    && hasString(value, 'createdAt')
-    && hasNullableString(value, 'activatedAt')
-    && hasNullableString(value, 'retiredAt');
-};
-
-const isMembership = (value: unknown): value is BotMembershipSummary => {
-  if (!isRecord(value)) return false;
-  return hasString(value, 'botId')
-    && hasString(value, 'userId')
-    && hasString(value, 'role')
-    && hasString(value, 'activatedAt')
-    && hasNullableString(value, 'revokedAt')
-    && hasString(value, 'updatedAt');
-};
 
 const isChannel = (value: unknown): value is BotChannel => {
   if (!isRecord(value)) return false;
@@ -386,19 +335,17 @@ const parsedArrayOf = <T,>(
 
 const parseSnapshot = (value: unknown): BotSnapshot | null => {
   if (!isRecord(value)) return null;
-  const bots = parsedArrayOf(value, 'bots', parseBot);
-  const revisions = arrayOf(value, 'revisions', isRevision);
-  const memberships = arrayOf(value, 'memberships', isMembership);
+  const catalog = parseBotAssignedCatalog(value);
   const channels = arrayOf(value, 'channels', isChannel);
   const channelPreviews = arrayOf(value, 'channelPreviews', isChannelPreview);
   const runs = parsedArrayOf(value, 'runs', parseRun);
   const recentActions = arrayOf(value, 'recentActions', isAction);
   const pendingApprovals = arrayOf(value, 'pendingApprovals', isAction);
   const computers = arrayOf(value, 'computers', isComputer);
-  if (!bots || !revisions || !memberships || !channels || !channelPreviews || !runs || !recentActions || !pendingApprovals || !computers) {
+  if (!catalog || !channels || !channelPreviews || !runs || !recentActions || !pendingApprovals || !computers) {
     return null;
   }
-  return { bots, revisions, memberships, channels, channelPreviews, runs, recentActions, pendingApprovals, computers };
+  return { ...catalog, channels, channelPreviews, runs, recentActions, pendingApprovals, computers };
 };
 
 const parseEnvelope = (value: unknown): BotEventEnvelope | null => {
@@ -719,11 +666,30 @@ export const BotsEventOwner: React.FC = () => {
       }),
     });
 
-    installBotEventConnection(controller);
+    const catalogConnection = createBotCatalogConnection({
+      load: () => useBotsStore.getState().loadAssignedCatalog(),
+      shouldRetry: () => {
+        const state = useBotsStore.getState();
+        return !state.catalogLoaded || state.catalogErrorCode !== null;
+      },
+      cancel: () => useBotsStore.getState().cancelCatalogLoad(),
+    });
+    const connection = {
+      retry() {
+        catalogConnection.retry();
+        controller.retry();
+      },
+      dispose() {
+        catalogConnection.dispose();
+        controller.dispose();
+      },
+    };
+    installBotEventConnection(connection);
+    catalogConnection.retry();
     controller.start();
     return () => {
       disposed = true;
-      releaseBotEventConnection(controller);
+      releaseBotEventConnection(connection);
       ownerCount = Math.max(0, ownerCount - 1);
       const generation = ++cleanupGeneration;
       queueMicrotask(() => {

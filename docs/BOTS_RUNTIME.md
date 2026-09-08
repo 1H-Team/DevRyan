@@ -54,9 +54,9 @@ following prerequisites must all be true:
    may be owned by its registered background runtime while the UI is closed;
    Docker mutations remain inside the signed local runtime boundary. The legacy Tauri shell does not own this feature.
 2. Supabase multi-user mode is configured and every repository migration,
-   through `supabase/migrations/20260903110000_bot_memory_extraction_inline_claim.sql`,
+   through `supabase/migrations/20260908182901_bot_memory_automatic_recovery.sql`,
    is deployed. A schema-cache miss returns `migration_required` with
-   `requiredMigration: "20260903110000"`; it must never fall back to local
+   `requiredMigration: "20260908182901"`; it must never fall back to local
    plaintext state. The required marker is a minimum: newer 14-digit markers
    are accepted, and Bot migrations remain backward-compatible for at least one
    desktop release so database-first rollout does not disable older clients.
@@ -129,7 +129,7 @@ run/channel. It cannot scan a computer or accept a host/container path.
 and optional `size` and `images`. The server exposes it only when the admitted model is
 OpenAI with a resolved ChatGPT OAuth credential; API keys and all other
 providers fail with `bot_image_generation_unavailable`. It delegates to the
-pinned `opencode-gpt-imagegen@0.1.10` inside the `1.1.8` runtime image and uses
+pinned `opencode-gpt-imagegen@0.1.12` inside the `1.1.8` runtime image and uses
 the existing scoped `auth.json`. Subagents are denied the tool. The hidden
 legacy `devryan_bot image.generate` executor remains compatible with persisted
 1.2.0 calls. Egress remains limited to

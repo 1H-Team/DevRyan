@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import { classifyProviderTransportFailure } from '@openchamber/orchestration-runtime';
+import { classifyProviderTransportFailure, validateManagedTransportRecovery } from '@openchamber/orchestration-runtime';
 import { rewriteContextModeWedgeFailureText } from '../opencode/context-mode-recovery.js';
 import { stableAuditEventId } from './analytics.js';
 import { classifyDiagnosticFailure } from './error-diagnostics.js';
@@ -347,6 +347,8 @@ export const projectOpenCodeActivity = ({
     const failureText = safeFailureText(managedTask.failureReason, sanitizeFailureText);
     const stack = safeStackText(managedTask.failureStack, sanitizeFailureText);
     const childSessionId = safeString(managedTask.childSessionId);
+    let recovery = null;
+    try { recovery = validateManagedTransportRecovery(managedTask.transportRecovery); } catch { /* Ignore malformed optional diagnostics. */ }
     const eventId = stableAuditEventId(
       'managed_task.failed',
       `${taskId}:${Number.isSafeInteger(managedTask.sequence) ? managedTask.sequence : ''}:${managedTask.status}`,
@@ -370,6 +372,15 @@ export const projectOpenCodeActivity = ({
         : {}),
       ...(Number.isSafeInteger(managedTask.attempt) ? { attempt: managedTask.attempt } : {}),
       ...(typeof managedTask.partial === 'boolean' ? { partial: managedTask.partial } : {}),
+      ...(recovery ? {
+        recoveryPhase: recovery.phase,
+        recoveryKind: recovery.kind,
+        sameModelAttempts: recovery.sameModelAttempts,
+        backupAttempts: recovery.backupAttempts,
+        failedMessageId: recovery.failedMessageId,
+        recoveryMessageId: recovery.recoveryMessageId,
+        recoveryEventId: recovery.eventId,
+      } : {}),
       ...(failureText ? { failureText } : {}),
       ...(stack ? { stack } : {}),
     };

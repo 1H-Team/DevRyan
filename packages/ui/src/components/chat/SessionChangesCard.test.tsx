@@ -62,7 +62,6 @@ mock.module('@/stores/useSessionTreeChangesStore', () => ({
 
 const {
   useSessionChangesController,
-  resolveRootSessionIdFromList,
   resolveSessionChangesFooterState,
   resolveSessionTreeIds,
   resolveVisibleChangedFiles,
@@ -91,6 +90,7 @@ const seedEntry = (rootSessionID: string, overrides: Partial<SeededEntry> = {}) 
       firstUserMessageID: 'msg_1',
       revision: 'rev_1',
       coverage: 'complete',
+      restoreAvailable: true,
       fetchedAt: 10,
       loading: false,
       error: null,
@@ -175,9 +175,8 @@ describe('session tree helpers', () => {
     session('ses_other'),
   ];
 
-  test('resolves the root by walking parentID and collects the whole tree', () => {
-    expect(resolveRootSessionIdFromList(sessions, 'ses_grandchild')).toBe('ses_root');
-    expect(resolveRootSessionIdFromList(sessions, 'ses_other')).toBe('ses_other');
+  test('collects descendants only from the selected session', () => {
+    expect(resolveSessionTreeIds(sessions, 'ses_child')).toEqual(['ses_child', 'ses_grandchild']);
     expect(resolveSessionTreeIds(sessions, 'ses_root')).toEqual(['ses_root', 'ses_child', 'ses_grandchild']);
     expect(resolveSessionTreeIds(sessions, 'ses_other')).toEqual(['ses_other']);
   });
@@ -227,6 +226,19 @@ describe('SessionChangesCardView', () => {
     expect(hasDisabledUndo(markup)).toBe(false);
     expect(markup).toContain(dict['chat.sessionChanges.footer.actions.undo']);
     expect(markup).not.toContain('data-session-changes-action="redo"');
+  });
+
+  test('segmented files count once and label recorded totals with restore disabled', () => {
+    const markup = render(React.createElement(SessionChangesCardView, { ...viewProps,
+      files: [{ ...gitFile('shared.ts', 4, 2), reviewMode: 'segments', segmentCount: 2 }],
+      totalsMode: 'recorded', undoDisabled: true, disabledReason: dict['chat.sessionChanges.segmentedRestore'],
+    }));
+    expect(countRows(markup)).toBe(1);
+    expect(markup).toContain('Edited 1 file');
+    expect(markup).toContain('data-session-changes-totals="recorded"');
+    expect(markup).toContain('2 edits');
+    expect(hasDisabledUndo(markup)).toBe(true);
+    expect(markup).not.toContain('overlapping owners');
   });
 
   test('has no stand-alone Review button', () => {
@@ -282,8 +294,8 @@ describe('SessionChangesCardView', () => {
   });
 
   test('shows specific incomplete coverage without the shell disclaimer', () => {
-    const markup = render(React.createElement(SessionChangesCardView, { ...viewProps, statusMessage: 'Some changes have overlapping owners and remain unassigned.' }));
-    expect(markup).toContain('Some changes have overlapping owners and remain unassigned.');
+    const markup = render(React.createElement(SessionChangesCardView, { ...viewProps, statusMessage: 'Some tool changes could not be verified for this session. Verified edits are shown.' }));
+    expect(markup).toContain('Some tool changes could not be verified for this session. Verified edits are shown.');
     expect(markup).not.toContain('shell commands');
   });
 
@@ -353,9 +365,13 @@ describe('SessionChangesCard (connected)', () => {
     expect(renderConnected()).toBe('');
   });
 
-  test('renders from a child session by resolving the root tree', () => {
+  test('a child never displays cached parent or sibling changes', () => {
     sources = { ...sources, currentSessionId: 'ses_child' };
-    expect(renderConnected()).toContain('Edited 2 files');
+    expect(renderConnected()).toBe('');
+    seedEntry('ses_child', { sessionCount: 1, files: [{ path: 'child-only.ts', status: 'added', additions: 1, deletions: 0, sessions: ['ses_child'] }] });
+    const markup = renderConnected();
+    expect(markup).toContain('Edited 1 file'); expect(markup).toContain('child-only.ts');
+    expect(markup).not.toContain('src/a.ts');
   });
 
   test('folds a long tree list behind Show N more files', () => {
@@ -419,7 +435,7 @@ describe('SessionChangesCard (connected)', () => {
   const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 20));
   const result = (overrides: Partial<SessionTreeChanges> = {}): SessionTreeChanges => ({
     rootSessionID: 'ses_root', directory: '/repo', revision: 'rev_2',
-    coverage: 'complete', files: [], sessionCount: 2,
+    coverage: 'complete', restoreAvailable: true, files: [], sessionCount: 2,
     hasUnattributedMutations: false, firstUserMessageID: 'msg_1', ...overrides,
   });
 
@@ -446,7 +462,7 @@ describe('SessionChangesCard (connected)', () => {
   });
 
   test('Retry refreshes the selected root and clears the failure on success', async () => {
-    seedEntry('ses_root', { error: 'offline' });
+    seedEntry('ses_child', { error: 'offline', sessionCount: 1 });
     sources = { ...sources, currentSessionId: 'ses_child' };
     const calls: string[] = [];
     let finish!: (value: SessionTreeChanges) => void;
@@ -455,10 +471,10 @@ describe('SessionChangesCard (connected)', () => {
       return new Promise((resolve) => { finish = resolve; });
     });
     controller().retry?.();
-    expect(calls).toEqual(['/repo:ses_root']);
+    expect(calls).toEqual(['/repo:ses_child']);
     expect(renderConnected()).toContain(dict['chat.sessionChanges.loading']);
     expect(controller().retry).toBeUndefined();
-    finish(result({ files: [{ path: 'recovered.ts', status: 'added', additions: 1, deletions: 0, sessions: ['ses_root'] }] }));
+    finish(result({ rootSessionID: 'ses_child', files: [{ path: 'recovered.ts', status: 'added', additions: 1, deletions: 0, sessions: ['ses_root'] }] }));
     await settle();
     expect(renderConnected()).toContain('recovered.ts');
     expect(renderConnected()).not.toContain(dict['chat.sessionChanges.loadFailed']);

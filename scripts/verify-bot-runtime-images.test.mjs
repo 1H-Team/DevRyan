@@ -296,7 +296,7 @@ describe('Bot runtime image build metadata', () => {
       version: currentVersion,
     });
     assert.equal(metadata.openCodeVersion, BOT_TARGET_OPENCODE_VERSION);
-    assert.equal(metadata.schemaVersion, '20260903110000');
+    assert.equal(metadata.schemaVersion, '20260908182901');
     assert.match(metadata.pluginHash, /^sha256:[0-9a-f]{64}$/);
     assert.deepEqual(new Set(Object.values(metadata.packageVersions)), new Set([currentVersion]));
   });

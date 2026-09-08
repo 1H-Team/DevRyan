@@ -28,6 +28,9 @@ describe('direct PR description generation', () => {
       _generation: { model: 'free-c', attempts: 3 },
     });
     expect(requestText).toHaveBeenCalledTimes(3);
+    const sessionIDs = requestText.mock.calls.map(([input]) => input.sessionID);
+    expect(sessionIDs[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(new Set(sessionIDs).size).toBe(1);
   });
 
   it('fails after all free models return invalid output', async () => {

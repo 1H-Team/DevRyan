@@ -24,6 +24,8 @@ export interface GitChangedFile {
     binary?: boolean;
     oldPath?: string | null;
     status: string;
+    reviewMode?: 'net' | 'segments';
+    segmentCount?: number;
 }
 
 export type ChangedFileEntry = ChangedFile | GitChangedFile;

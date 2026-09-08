@@ -5,7 +5,7 @@ Shared direct Zen text generation, summarization, and sanitization utilities use
 
 ## Design
 - `summarization.js` centralizes prompt templates by mode (`tts`, `notification`, `note`, `title`) and source-aware topic-first correction for incidental planning titles.
-- `generateZenText` provides a bounded, session-free Responses/Chat Completions transport for focused utility requests.
+- `generateZenText` provides a bounded Responses/Chat Completions transport with `x-opencode-session`; `resolveZenSessionID` validates caller identity or generates an operation UUID for focused utility requests without creating native sessions.
 - Sanitizers are mode-specific and intentionally strip markdown/unsafe tokens before fallback output.
 - Runtime path prefers model-backed summarization, with deterministic fallback/clamping for timeout/error cases.
 

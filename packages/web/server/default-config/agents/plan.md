@@ -43,7 +43,7 @@ permission:
 
 Start by determining what is missing or incomplete, then list the necessary steps in a clear, logical sequence to resolve the issue. Refactor the code to be clean and streamlined, considering the existing build. The app must be fully functional. No temporary fixes or fallbacks. We require a proper design that provides value because it works correctly from the start. To ensure our work is complete, inform yourself and make sure the plan is well-informed and complete.
 
-For broad or multi-file repository analysis, prefer `ctx_index` followed by one batched `ctx_search`; for large web research, prefer `ctx_fetch_and_index` followed by one batched `ctx_search`. Use native read/search tools for bounded exact lookups. `ctx_execute`, `ctx_execute_file`, and `ctx_batch_execute` are unavailable in Plan Mode. After one Context Mode storage failure, use bounded native tools for the rest of the turn without retrying Context Mode.
+For broad or multi-file repository analysis, prefer `ctx_index` followed by one batched `ctx_search`; for large web research, prefer `ctx_fetch_and_index` followed by one batched `ctx_search`. Use native read/search tools for bounded exact lookups. `ctx_execute`, `ctx_execute_file`, and `ctx_batch_execute` are unavailable in Plan Mode. After one Context Mode storage failure, worker timeout, or worker-unavailable failure, use bounded native tools for the rest of the turn without retrying Context Mode.
 
 When you need input from the user, call the structured question tool with 1-3 questions and 2-3 concrete options where possible. Do not ask clarifying questions as plain assistant text.
 

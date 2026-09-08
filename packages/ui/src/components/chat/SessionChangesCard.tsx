@@ -53,6 +53,7 @@ export interface SessionChangesCardViewProps {
     directory: string;
     files: GitChangedFile[];
     fileCount?: number;
+    totalsMode?: 'net' | 'recorded';
     pageIndex?: number;
     pageLoading?: boolean;
     onNextPage?: () => void;
@@ -79,6 +80,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
     directory,
     files,
     fileCount: totalFileCount,
+    totalsMode = 'net',
     pageIndex = 0,
     pageLoading = false,
     onNextPage,
@@ -125,7 +127,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
     // last message; stick-to-bottom only stays correct when it hears about them.
     React.useLayoutEffect(() => {
         onContentChange?.('structural');
-    }, [mode, onContentChange, visibleFiles.length, showToggle, statusMessage]);
+    }, [mode, onContentChange, visibleFiles.length, showToggle, statusMessage, totalsMode]);
 
     const handleToggleExpanded = React.useCallback(() => {
         setIsExpanded((previous) => !previous);
@@ -225,6 +227,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                         <RiFileEditLine className="mt-0.5 size-3.5 shrink-0 text-[var(--primary-base)]" aria-hidden="true" />
                         <div className="flex min-w-0 flex-1 flex-col">
                             <h3 className="truncate typography-ui-label font-semibold text-foreground">{title}</h3>
+                            {mode === 'changes' && totalsMode === 'recorded' ? <p className="typography-meta text-muted-foreground" data-session-changes-totals="recorded" title={t('chat.sessionChanges.recordedEditsDescription')}>{t('chat.sessionChanges.recordedEdits')}</p> : null}
                             {mode === 'changes' && fileCount > 0 ? (
                                 <Popover.Root open={isReviewOpen} onOpenChange={setIsReviewOpen}>
                                     <Popover.Trigger
@@ -362,6 +365,7 @@ export const SessionChangesCard: React.FC<SessionChangesCardProps> = React.memo(
             directory={controller.directory}
             files={controller.files}
             fileCount={controller.fileCount}
+            totalsMode={controller.totalsMode}
             pageIndex={controller.pageIndex}
             pageLoading={controller.pageLoading}
             onNextPage={controller.nextPage}

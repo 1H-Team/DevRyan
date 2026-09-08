@@ -20,7 +20,7 @@ select has_index(
 );
 select is(
   public.devryan_bot_schema_version(),
-  '20260901160000'::text,
+  '20260908182901'::text,
   'the Bot schema marker includes terminal settlement and audit repair'
 );
 

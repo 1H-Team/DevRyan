@@ -151,7 +151,10 @@ describe('tool activity grouping', () => {
             { tool: 'todowrite', expandable: false, standalone: false, hidden: false, static: true },
             { tool: 'structuredoutput', expandable: false, standalone: false, hidden: false, static: true },
             { tool: 'council', expandable: false, standalone: false, hidden: false, static: true },
-            { tool: 'ctx_execute', expandable: false, standalone: false, hidden: false, static: true },
+            { tool: 'ctx_execute', expandable: true, standalone: false, hidden: false, static: false },
+            { tool: 'ctx_index', expandable: true, standalone: false, hidden: false, static: false },
+            { tool: 'mcp__context-mode__ctx_index', expandable: true, standalone: false, hidden: false, static: false },
+            { tool: 'mcp__context_mode__ctx_execute_file', expandable: true, standalone: false, hidden: false, static: false },
             { tool: 'mcp__future_plugin__inspect', expandable: false, standalone: false, hidden: false, static: true },
         ];
 

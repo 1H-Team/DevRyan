@@ -1,6 +1,6 @@
 import express from 'express';
 import { normalizeCustomOpenAIBaseURL } from './base-url.js';
-import { summarizeText, sanitizeForTTS, sanitizeForNote, sanitizeForNotification } from '../text/summarization.js';
+import { resolveZenSessionID, summarizeText, sanitizeForTTS, sanitizeForNote, sanitizeForNotification } from '../text/summarization.js';
 
 export function registerTtsRoutes(app, { resolveZenModel, sayTTSCapability }) {
   let ttsModulePromise = null;
@@ -125,7 +125,9 @@ export function registerTtsRoutes(app, { resolveZenModel, sayTTSCapability }) {
       }
 
       const sumZenModel = await resolveZenModel(typeof req.body?.zenModel === 'string' ? req.body.zenModel : undefined);
+      const sessionID = resolveZenSessionID();
       let result = await summarizeText({
+        sessionID,
         text,
         threshold,
         maxLength,
@@ -135,6 +137,7 @@ export function registerTtsRoutes(app, { resolveZenModel, sayTTSCapability }) {
 
       if (mode === 'note' && !result.summarized) {
         const notificationResult = await summarizeText({
+          sessionID,
           text,
           threshold,
           maxLength,

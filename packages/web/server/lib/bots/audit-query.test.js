@@ -37,7 +37,7 @@ const createHarness = ({ rows = [auditRow()], detailRow, bots, actors } = {}) =>
       : actors;
     throw new Error(`Unexpected table ${table}`);
   });
-  const assertSchemaVersion = vi.fn(async () => '20260903110000');
+  const assertSchemaVersion = vi.fn(async () => '20260908182901');
   const rpc = vi.fn(async () => ({ clearedCount: 2 }));
   return {
     rest,
@@ -81,7 +81,7 @@ describe('Bot audit query service', () => {
       actor: { displayName: 'Administrator', former: false },
     });
     expect(page.nextCursor).toEqual(expect.any(String));
-    expect(harness.assertSchemaVersion).toHaveBeenCalledWith('20260903110000');
+    expect(harness.assertSchemaVersion).toHaveBeenCalledWith('20260908182901');
     const request = harness.rest.mock.calls.find(([table]) => table === 'bot_audit_review_events')[1];
     expect(request.query).toMatchObject({
       result: 'in.(failure,partial,unknown)',
@@ -224,7 +224,7 @@ describe('Bot audit query service', () => {
     harness.rest.mockRejectedValueOnce({ payload: { code: 'PGRST205' } });
     await expect(harness.query.list(admin)).rejects.toMatchObject({
       code: 'bot_audit_clear_migration_required',
-      message: expect.stringContaining('20260903110000'),
+      message: expect.stringContaining('20260908182901'),
     });
   });
 });

@@ -3,6 +3,7 @@
 Repository-only Electron/web QA and shared CDP inspection helpers. No file in this directory enters the shipped UI or changes native security policy.
 
 - `run.mjs`: existing isolated QA entrypoint plus an explicit `--config` path to the separate matrix runner.
+- `session-changes.mjs`: deterministic exact-receipt attribution journeys through the production web/Electron controller, HTTP/SSE, and private Git store; verifies concurrent/external writers, selected descendants, segment paging, capture limitations, and conflict-safe restore in both themes and widths. Screenshots require individual visual review.
 - `grok-plan.mjs`: xAI-shaped Plan-mode HTTP/SSE replay through real web/Electron UI. Verifies progressive reasoning plan assembly, hidden traces, final-text replacement, busy/cancel safeguards, saved Markdown, reload, and responsive themes. This fixture is separate from live-provider acceptance.
 - `matrix-runner.mjs`: pinned actual-UI matrix lifecycle, private host/profile startup, served-entry verification, provider/model/agent/Plan/effort selection, core/project/compaction journeys, diagnostics, owned tree cleanup, and per-cell evidence. A fixture or partial compaction result does not establish live-provider or full continuity acceptance.
 - `host-readiness.mjs`: bounded loopback readiness requests outside the renderer, including native packaged origin discovery; startup cannot strand a CDP evaluation.
@@ -54,3 +55,7 @@ Commands, prerequisites, coverage limits and journal investigation: `docs/QA.md`
 - `thinking-slider.mjs`: opt-in `thinking` scenario, real shared-UI 0–5-stop
   catalog checks, pointer resistance and commit, touch cancellation, keyboard
   focus, light/dark/narrow screenshots, reduced motion, and native submission.
+
+- `plugin-upgrades.mjs`: opt-in installed-package checks using disposable Slim profiles and synthetic image SSE; no live provider requests. Upgrade gates and interpretation: [runbook](../../docs/PLUGIN_UPGRADES.md).
+
+- `imagegen-live.mjs`: opt-in single-image ChatGPT OAuth acceptance using a disposable patched profile from `plugin-upgrades.mjs`. Uses an unexpired access-only projection in memory, never refreshes credentials, caps execution at one request/four minutes, and retains only safe request/result metadata plus the generated PNG.

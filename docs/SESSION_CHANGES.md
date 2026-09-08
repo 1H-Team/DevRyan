@@ -9,7 +9,8 @@ request/auth adapter and event publisher. The managed
 `devryan-session-changes.mjs` plugin registers the initial user message and
 sends exact session/call execution boundaries over the existing bearer-protected
 loopback bridge. The host resolves the assistant message and verifies the
-session directory before capture. Canonical completed/error tool events finish
+session directory before capture. The OpenCode watcher retains the SSE envelope directory through canonical ingestion
+so exact receipts update the card live. Canonical completed/error tool events finish
 pending captures even when a failed or cancelled command bypasses the after hook.
 Before-capture receipts must settle within 30 seconds, before the plugin
 transport timeout; a late snapshot is unavailable even if execution proceeds.
@@ -24,17 +25,25 @@ rehashing, and object collection invalidates the cache. They never write the use
 Git-backed capture includes dirty and staged starting states as the baseline.
 
 Known native edit/write targets capture only their validated paths, including missing
-targets; unrelated checkout files are neither enumerated nor hashed. Ancestor
-symlinks are rejected. These targets provide explicit file scopes. Disjoint explicit
-file operations can overlap without mixing attribution. Unknown execution tools,
-including shell and MCP tools, capture the whole checkout. Overlapping unknown
-windows and conflicting same-file windows remain unassigned. Known read-only
-and task/Council wrapper tools do not capture; verified descendants contribute
-their own operations. Repeated delivery deduplicates by session/call identity,
-with exact assistant-message validation. No time-window containment deduplication
-or current-repository fallback is used. An uninstrumented external writer cannot
-be conclusively attributed from Git alone; missing runtime receipts produce
-incomplete coverage, and conflicting recorded file chains are excluded.
+targets; ancestor symlinks are rejected. Snapshots are observations, not ownership
+receipts: even a single managed capture can include an external CLI writer. A
+changed snapshot without an exact execution receipt contributes no owned files
+and reports `unverified_tool_changes`. Empty observations produce no warning.
+
+The shared tool classifier recognizes verified OpenCode and Claude-compatible
+edit/write/patch aliases and Cursor native tools. Known read-only tools and
+verified task/Council wrappers do not capture. Canonical file-tool execution
+metadata supplies exact full before/after bodies or an actual unified patch;
+input arguments, counts, synthesized turn patches, and arbitrary MCP tool names
+cannot establish ownership. Cursor Edit execution `diffString` is preserved;
+count-only Write/Delete results and bounded native task previews remain explicit
+capture limitations. Verified descendants supply their own receipts.
+
+Overlapping windows never discard exact receipts or serialize tool execution.
+Canonical directory, session, message and call identity deduplicates repeated
+receipts. Matching receipts repair failed or overlapping observations; differing
+receipts for one call fail closed. Unknown shell/MCP effects remain unresolved
+unless trustworthy receipts exist. External agents require no configuration.
 
 ## Summary and review contract
 
@@ -42,24 +51,33 @@ incomplete coverage, and conflicting recorded file chains are excluded.
 
 - `rootSessionID`, requested `directory`, canonical `worktreeDirectory`, `worktreeID` and `revision`.
 - `coverage` (`complete` or `partial`) and machine-readable `reasons`.
-- Net `fileCount`, total `additions`/`deletions`, a bounded `files` page,
+- Unique `fileCount`, total `additions`/`deletions`, a bounded `files` page,
   `sessionCount`, `firstUserMessageID` and optional `undone`.
 - `pageIndex`, `nextCursor` and `previousCursor`. Follow-up file pages use
   `GET .../changes?revision=...&cursor=...`, without reconciling live history again.
   Pages contain at most 128 rows or approximately 256 KiB of row metadata.
 - Each file has `path`, optional `oldPath`, status, contributing sessions and
-  line counts. Binary line counts are `null`.
+  line counts. Binary line counts are `null`. `reviewMode` is `net` or `segments`,
+  with `segmentCount` for recorded edits.
+- `attributionVersion: 2`, `totalsMode` (`net` or `recorded`), and explicit
+  `restoreAvailable` / `restoreReasons`, separate from capture coverage.
 
-Before/after file chains compose chronologically across the verified root and
-its descendants. Repeated edits count once; exact reversals disappear. Private
-Git trees detect renames and compute net line counts. Another session's later
-edits, commits and repository polling do not rewrite those trees.
+The root is the selected session, plus verified descendants. Selecting a child
+excludes its parent and siblings. Uninterrupted before/after chains compose into
+net diffs; exact reversals disappear. If another writer interrupts a file chain,
+known edits remain chronological segments under one file row. Patch-only receipts
+also remain segments. Segmented line totals are labeled **Recorded edits** and
+must not be interpreted as a net repository diff. Another session's later edits,
+commits and repository polling do not rewrite stored revisions.
 
 `GET .../changes/diff?revision=...&file=...` reads only the selected stored
 revision. The renderer captures that revision when opening review. Expired
 revision detail returns `410 summary_detail_expired`; it never opens today's
 repository diff instead. The diff response includes `patch`, `totalBytes`,
-`pageIndex`, `nextCursor` and `previousCursor`; requests accept `cursor`. Patches
+`pageIndex`, `nextCursor` and `previousCursor`; requests accept `cursor`. Segment
+requests additionally accept a zero-based `segment`; responses carry `reviewMode`,
+`segmentIndex`, `segmentCount`, and canonical segment identity. Cursors are pinned
+to a revision, file and segment. Changing edits resets patch pagination. Patches
 are generated lazily into private, disposable files and read in 64 KiB pages
 aligned to UTF-8 boundaries. The UI replaces the current page instead of appending
 an unbounded patch string. Current repository review is a separate card action.
@@ -67,7 +85,8 @@ an unbounded patch string. Current repository review is a separate card action.
 The UI cache includes runtime URL, authenticated principal, directory and root
 session. It validates response identity, fences stale requests, and clears on
 account changes, deletion and directory disposal. It is bounded to 128 entries
-and 8 MiB. Capture notifications use a narrow `session.changes.updated` channel;
+and 8 MiB. Capture notifications use a narrow `session.changes.updated` channel and refresh
+only subscribed trees containing the event session;
 ordinary Git polling does not refresh immutable captured history. Partial,
 failed and loading results remain explicit when recorded files or an undone
 revision justify the card. Empty loading/error/partial summaries stay hidden.
@@ -83,9 +102,11 @@ produces no warning.
 ## Undo and Redo
 
 `POST .../changes/undo` and `POST .../changes/redo` accept `{ revision }`.
-The backend requires current exact revision, complete coverage and no busy
+The backend requires current exact revision, complete coverage, verified restore evidence and no busy
 runtime sessions or pending capture. It restores only the same verified
-operation set used by the summary. Every expected current file is checked before
+operation set used by the summary. Segmented changes remain reviewable with
+restore disabled. Full receipts require original raw snapshot evidence or trusted
+internal blob/mode attestations for restoration. Every expected current file is checked before
 any write and again immediately before its write. Restore rejects changed bytes,
 modes, unsupported ancestors and ambiguous state. Writes are atomic per file;
 a post-write verification precedes persistence. On failure it rolls back only
@@ -113,10 +134,11 @@ an explicit observation failure rather than a fabricated complete history.
 
 Older native file receipts can reconstruct exact textual before/after diffs,
 including calls whose original capture record is unavailable. Recovery preserves
-call/message identity and overlap information, and only resolves the repaired
+call/message identity and only resolves the repaired
 call's capture failure. Worktree-wide turn diffs never establish ownership.
-Historical receipts cannot prove file modes or complete execution capture, so
-historical Undo remains disabled. Missing shell snapshots cannot be reconstructed
+Historical-only receipts cannot prove file modes, so restore remains disabled
+even when exact textual review coverage is complete. A receipt matched against
+retained original capture evidence may recover restore availability. Missing shell execution receipts cannot be reconstructed
 from the current checkout.
 
 Production capture has no fixed snapshot-byte, path-count, operation-count,
@@ -126,6 +148,10 @@ Disk failures (`storage_unavailable`), command/capture deadlines (`capture_timeo
 and interrupted captures remain distinct. Diagnostics record the phase, session
 and call identity without source contents. Tool execution keeps its existing
 behavior when capture fails; coverage never silently becomes complete.
+
+Attribution algorithm version 2 recomputes current summaries; old revisions remain
+readable but cannot authorize restore. Legacy snapshot records are never silently
+upgraded into exact ownership.
 
 Metadata version 2 stores individual operation/session blobs and bounded list
 pages in the private Git tree at `refs/devryan/state`. A disposable index and one
@@ -139,7 +165,7 @@ Completed operations retain before/after trees containing their changed paths.
 Every 128 settled operations, maintenance removes obsolete snapshot references
 and runs private Git packing/collection under the worktree lock. It retains
 pending capture trees and all objects needed by completed operations and recorded
-revisions. Derived patch files and stat caches may be discarded and regenerated.
+revisions, including receipt patch trees and immutable segment metadata. Derived patch files and stat caches may be discarded and regenerated.
 Maintenance failure does not invalidate a successfully persisted capture.
 
 All summary revisions remain available until session deletion by default.
@@ -152,6 +178,9 @@ replacements, retaining conflict verification and conditional rollback.
 
 ## Verification
 
+`session-changes-attribution.test.js` checks mixed concurrent sources, a separate
+external writer process, exact receipt repair/deduplication, selected descendants,
+interleaving segments and revision isolation.
 `session-changes.test.js` exercises real temporary Git repositories, including
 shell-only and partial writes, staged/dirty baselines, untracked and ignored
 files, raw CRLF/filters, symlinks, binaries, renames, net-zero changes, descendant
@@ -167,3 +196,14 @@ metadata transaction failure, collection, and streaming large-file restore.
 with deterministic fixture data. Expand/review, recorded diff, Undo/Redo,
 independent-session switching and incomplete narrow layouts are manually
 verified there. This fixture does not claim end-to-end provider execution.
+
+The `session-changes` scenario in `scripts/qa/run.mjs` uses the production host to
+record deterministic file-tool executions before application startup, then opens
+the real web/Electron application on that isolated private store. Its separate
+external writer process, production controller, HTTP/SSE, theme/width matrix,
+segment paging, child reload and restore/conflict checks are owned by
+`scripts/qa/session-changes.mjs`. Run with `DEVRYAN_QA_SCENARIO=session-changes`
+and `DEVRYAN_QA_RUNTIME=web` or `electron` after building and staging web assets.
+Screenshots require individual visual inspection; result.json alone does not
+establish visual acceptance. This is deterministic adapter QA, not live-provider
+verification.

@@ -18,4 +18,5 @@ export * from './lib/sanitizer.js';
 export * from './lib/session-id.js';
 export * from './lib/session-changes.js';
 export * from './lib/session-changes-host.js';
+export * from './lib/session-changes-tools.js';
 export * from './lib/worktree-bootstrap.js';

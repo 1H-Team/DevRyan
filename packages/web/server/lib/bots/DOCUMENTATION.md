@@ -244,7 +244,7 @@ HTTP server are torn down.
 ## Supabase repositories
 
 `store.js` defines every relation and fixed RPC through migration
-`20260903110000`. Each
+`20260908182901`. Each
 repository has a literal select list and literal writable fields. Request JSON
 is never spread into a PostgREST body. Unsupported filters or fields fail before
 network I/O, and diagnostic logging contains only operation, table, and field
@@ -277,7 +277,10 @@ Cross-row operations are restricted to the migration-owned functions:
 - `devryan_enqueue_bot_memory_extraction_job`
 - `devryan_claim_bot_memory_extraction_job`
 - `devryan_persist_bot_memory_extraction_candidates`
-- `devryan_settle_bot_memory_extraction_job`
+- `devryan_settle_bot_memory_extraction_job_v2`
+- `devryan_recover_bot_memory_extraction_job`
+- `devryan_bot_memory_extraction_summary`
+- `devryan_wake_bot_memory_extraction_jobs`
 - `devryan_delete_bot_channel`
 - `devryan_prune_bot_audit`
 - `devryan_purge_bot_resource`
@@ -296,7 +299,7 @@ while missing, malformed, or older markers fail closed. Bot migrations must
 therefore remain backward-compatible for at least one desktop release. A stale
 marker or a schema-cache miss for any Bot table/function produces HTTP 503 with
 `code: "bot_schema_migration_required"` and
-`requiredMigration: "20260903110000"`.
+`requiredMigration: "20260908182901"`.
 
 The migration adds nullable `agent_adapter`, `agent_thread_id`, and bounded
 `agent_execution` fields to durable runs and backfills the projection from
@@ -924,8 +927,8 @@ unavailable claim, a queued follow-up message, or an aborted pass leaves the job
 to the durable worker unchanged. The structured completion prefers the agent's
 validated `structured` value over the text parts, and the classifier recovers
 JSON wrapped in fences, prose, a bare array, or extra top-level keys while
-keeping every per-candidate trust check strict; an empty answer is zero
-candidates, not a failure. `bot_memory_extraction_invalid`,
+keeping every per-candidate trust check strict. Only an explicit empty candidate
+list means no reusable facts; missing lists and malformed candidates require repair. `bot_memory_extraction_invalid`,
 `bot_opencode_request_invalid`, and `bot_opencode_response_invalid` are
 repairable: one immediate repair pass with a content-free hint, then up to
 three durable attempts, after which the terminal audit metadata and log line
@@ -938,13 +941,12 @@ or aborted failure settle as `defer` without consuming an attempt.
 Accepted/rejected classifier output is encrypted with the deployment key and
 persisted on the job before any summary, version, or index commit. Lease expiry,
 process crashes, and restarts therefore resume the commit phase without another
-model request. Transient provider, checkpoint, storage, and index failures use
-bounded durable backoff; malformed, missing, deleted, or undecryptable inputs
+model request. Transient provider, storage, and index failures remain queued
+with increasing delays capped at one hour; optimistic conflicts have four durable
+attempts and malformed outputs have three. Missing, deleted, or undecryptable inputs
 settle terminally. The terminal branch logs only the normalized code/name/status,
 run/Bot IDs, phase, and attempt count before its audit diagnostic; provider
-payloads and extracted content never enter the log. Underlying non-retryable classifications are preserved, and
-revision conflicts settle after one attempt instead of exhausting the retry
-schedule. Migration `20260901130000_bot_memory_extraction_conflict_recovery.sql`
+payloads and extracted content never enter the log. Underlying non-retryable classifications are preserved. Migration `20260901130000_bot_memory_extraction_conflict_recovery.sql`
 requeues only the historical terminal `classification` plus
 `bot_revision_conflict` signature; a later success resolves the prior issue in
 the audit projection without deleting the immutable event. Intermediate retries
@@ -961,8 +963,10 @@ to `defer`, requeues the job, and restores the attempt count. Deferred work
 resumes after channel idle and emits only a content-free journal lifecycle
 record—not a Bot Audit issue.
 
-The classifier rejects unsupported fields/scopes, cross-user subjects,
-unrecognized provenance, long transcript copies, and credential-like values.
+The version 2 model schema contains fact fields only. The server attaches verified
+Bot/channel/run/message IDs loaded from the finalized conversation. Legacy
+candidate validation retains its cross-user and provenance checks; scope,
+transcript-copy, and secret filtering remain enforced by the classifier.
 Every retained fact is shared: a Bot keeps one memory that all of its members
 can retrieve from, and there is no owner-private layer. Personal or sensitive
 statements are still escalated to `confidential` so the console can surface
@@ -983,6 +987,39 @@ entry; an undecryptable summary is never replaced with an empty one. Audit
 metadata separates activated, idempotent, superseded, skipped, conflict,
 index-sync, recovery, and retry counts without including memory or transcript
 content.
+
+Migration `20260908182901_bot_memory_automatic_recovery.sql` must be applied before
+starting the version 2 worker; the schema compatibility gate enforces that order.
+Its service-only settlement RPC persists outcome (`saved`, `no_facts`, `filtered`,
+`invalid`), bounded rejection-reason counts, and validator labels without text.
+`memory-extraction-recovery.js` inspects at most 100 legacy terminal/succeeded
+jobs per scan. The recovery RPC compares `updated_at`, checks eligible states
+and error codes, and stamps `recovery_version` atomically. Eligible terminal
+jobs retain candidate checkpoints. Only a legacy succeeded envelope with zero
+accepted and nonzero rejected candidates is cleared for one re-extraction.
+Unreadable envelopes become actionable terminal jobs; temporarily locked OS keys
+leave the scan retryable. Recovery never replays conversation tools, changes
+original runs, or bypasses memory edits, source deduplication, or tombstones.
+
+Background extraction has a 120-second cancellation budget through preparation
+and completion; inline work keeps the dispatcher's 30-second budget. Disposable
+session and task cleanup have separate five-second waits and handle late
+preparation/session creation. Conversations have priority over pending memory,
+which has priority over speculative warm runtimes. The dispatcher releases only
+unclaimed warm leases through `warm-runtime-leases.js` and blocks new warm work
+while memory prepares. Channel settlement wakes admission deferrals; repeated
+busy checks back off from five seconds to five minutes without consuming model
+attempts.
+
+The memory list's first page includes a database aggregate with exact pending,
+failed, waiting and recovering counts, earliest retry time, and a 20-job preview.
+An unavailable read returns null counts and `status: unavailable`. The independent
+manager-only `GET /api/bots/:botId/memories/extractions` route pages sanitized job
+details using the standard cursor contract. Settings presents Updating memory,
+Waiting for the conversation to finish, and Memory needs attention. Memory
+Activity retains per-job Retry, refreshes all loaded pages on memory-change
+events, and uses a 30-second fallback poll. Switching Bots remounts the console
+so in-flight responses cannot expose the previous Bot's content.
 
 `indexer-client.js` constructs the exact per-Bot and per-channel namespaces and
 delegates only bounded typed operations through Electron to the
@@ -1448,3 +1485,9 @@ and disposal settle. Failed preparation falls back cold only after cleanup.
 The two-lease limit, ten-minute lifetime, and startup concurrency stay unchanged.
 Environment secrets and attachment/Library materialization prepare concurrently;
 both settle before startup or failure cleanup, including late successful work.
+
+## Assigned catalog bootstrap
+
+`GET /api/bots/assigned` returns `{ bots, revisions, memberships }` summaries for the authenticated principal, using the same loader as the SSE snapshot. Active membership, publication (`active_revision_id`), and account-visibility checks remain required even for administrators. Settings retains its broader management catalog at `GET /api/bots`.
+
+The assigned catalog reads paginated membership and revision records without loading channels, decrypting message previews, requesting approvals/operations, or inspecting Docker. Expected concurrent membership revocation or Bot deletion excludes that assignment; dependency failures reject the request instead of producing an empty catalog. The route retains the normal startup/schema and authentication/policy middleware.

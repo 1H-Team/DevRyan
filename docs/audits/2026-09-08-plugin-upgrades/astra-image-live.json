@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "model": "gpt-6-astra",
+  "reasoningEffort": "medium",
+  "requests": 1,
+  "httpStatus": 200,
+  "width": 1254,
+  "height": 1254,
+  "bytes": 787054,
+  "visualInspection": "Pass: centered blue circle on white background, matching the prompt.",
+  "requestedSize": "1024x1024",
+  "note": "Backend returned a 1254x1254 PNG; size is forwarded unchanged, not locally enforced."
+}

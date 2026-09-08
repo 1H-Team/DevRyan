@@ -43,10 +43,12 @@ const getStatusPresentation = (
   if (task.status === 'queued') {
     return { label: t('chat.managedTasks.summary.queued'), className: 'text-muted-foreground' };
   }
+  if (task.firstAssistantPartAt != null) {
+    return { label: t('chat.managedTasks.summary.running'), className: 'text-muted-foreground' };
+  }
   if (
     (task.status === 'starting' || task.status === 'running')
-    && task.childPromptedAt
-    && !task.firstAssistantPartAt
+    && task.childPromptedAt != null
   ) {
     // The child has its prompt but the model has not produced anything yet.
     return { label: t('chat.managedTasks.summary.startingModel'), className: 'text-muted-foreground' };
@@ -83,6 +85,23 @@ const getProviderFailurePresentation = ({
   providers: ControlledModelPickerProvider[];
   t: ReturnType<typeof useI18n>['t'];
 }) => {
+  if (task.transportRecovery && (task.status === 'starting' || task.status === 'running')) {
+    return {
+      message: t(task.transportRecovery.backupAttempts === 1
+        ? 'chat.managedTasks.transport.backup' : 'chat.managedTasks.transport.recovering', {
+        model: providerModelLabel(task, providers).model,
+      }),
+      className: 'text-[var(--status-warning)]',
+      role: 'status' as const,
+    };
+  }
+  if (task.failureKind === 'provider_transport') {
+    return {
+      message: t('chat.managedTasks.transport.interrupted'),
+      className: 'text-[var(--status-warning)]',
+      role: 'alert' as const,
+    };
+  }
   if (task.failureKind === 'provider_usage_limit') {
     const failedModel = providerModelLabel(task, providers);
     return {
@@ -134,7 +153,8 @@ const getProviderFailurePresentation = ({
   );
   if (continuedAfterLimit) {
     return {
-      message: t('chat.managedTasks.providerLimit.continued', {
+      message: t(priorEnvelope?.autoResume?.trigger === 'provider_transport'
+        ? 'chat.managedTasks.transport.continued' : 'chat.managedTasks.providerLimit.continued', {
         model: providerModelLabel(task, providers).model,
         thinking: formatEffortLabel(task.variant ?? undefined, { providerId: task.providerId }),
       }),
@@ -167,7 +187,7 @@ const deriveAutoResume = (
   resultEnvelope: ManagedTaskRowEnvelope | undefined,
   providers: ControlledModelPickerProvider[],
 ): ModelRecoveryAutoResume | undefined => {
-  if (task.failureKind !== 'provider_usage_limit') return undefined;
+  if (task.failureKind !== 'provider_usage_limit' && resultEnvelope?.autoResume?.trigger !== 'provider_transport') return undefined;
   const providerResetAt = resultEnvelope?.providerResetAt ?? null;
   const autoResume = resultEnvelope?.autoResume ?? null;
   if (!autoResume) {
@@ -184,6 +204,7 @@ const deriveAutoResume = (
     };
   }
   return {
+    trigger: autoResume.trigger,
     enabled: autoResume.enabled,
     state: autoResume.state,
     nextAttemptAt: autoResume.nextAttemptAt,
@@ -237,6 +258,7 @@ export const ManagedTaskRowView = React.memo(({
     && (
       task.failureKind === 'provider_usage_limit'
       || task.failureKind === 'model_unavailable'
+      || Boolean(task.transportRecovery)
       || (task.mode === 'orchestrator' && task.dispatchGrouped && task.attempt >= 2)
     )
     && (task.status === 'failed' || task.status === 'interrupted'),

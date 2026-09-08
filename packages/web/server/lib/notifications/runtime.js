@@ -714,13 +714,13 @@ export const createNotificationTriggerRuntime = (deps) => {
     return !hasActiveAssistantWork(parts);
   };
 
-  const prepareLastMessageForNotification = ({ message, settings }) => {
+  const prepareLastMessageForNotification = ({ message, settings, sessionId }) => {
     return prepareNotificationLastMessage({
       message,
       settings,
       summarize: async (text, length) => {
         const zenModel = await resolveZenModel(settings?.zenModel);
-        return summarizeText(text, length, zenModel);
+        return summarizeText(text, length, zenModel, sessionId);
       },
     });
   };
@@ -828,6 +828,7 @@ export const createNotificationTriggerRuntime = (deps) => {
         const planTemplate = (settings.notificationTemplates || {}).planReady || PLAN_READY_DEFAULT_TEMPLATE;
         const variables = await buildTemplateVariables(payload, sessionId);
         variables.last_message = await prepareLastMessageForNotification({
+          sessionId,
           message: planRevision.planText,
           settings,
         });
@@ -905,6 +906,7 @@ export const createNotificationTriggerRuntime = (deps) => {
       }
 
       variables.last_message = await prepareLastMessageForNotification({
+        sessionId,
         message: lastMessage,
         settings,
       });
@@ -1149,6 +1151,7 @@ export const createNotificationTriggerRuntime = (deps) => {
           }
 
           variables.last_message = await prepareLastMessageForNotification({
+            sessionId,
             message: lastMessage,
             settings,
           });

@@ -19,6 +19,7 @@ import {
 } from './managed-plugins.js';
 import { applyManagedMeridianSdkFeaturePolicy } from './meridian-sdk-features.js';
 import { applyMeridianHttpHotfix } from './meridian-http-hotfix.js';
+import { applyImagegenModelHotfix } from './imagegen-model-hotfix.js';
 import {
   CLAUDE_RUNTIME_MANAGED_OVERRIDES,
   COMPATIBILITY_MARKER_RELATIVE_PATH,
@@ -142,6 +143,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
   const applyContextModeHotfixFn = dependencies.applyContextModeHotfix
     || applyContextModeHotfix;
   const applyMeridianHttpHotfixFn = dependencies.applyMeridianHttpHotfix || applyMeridianHttpHotfix;
+  const applyImagegenModelHotfixFn = dependencies.applyImagegenModelHotfix || applyImagegenModelHotfix;
   const profileRoot = dependencies.profileRoot || DEFAULT_PROFILE_ROOT;
   const configRoot = dependencies.configRoot || DEFAULT_CONFIG_ROOT;
   const configDirectory = dependencies.configDirectory || pathApi.join(homedir(), '.config', 'opencode');
@@ -209,7 +211,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
         currentContent !== null
         && !mergeSafe
         && (
-          previousHash && currentHash !== previousHash
+          !previousHash || currentHash !== previousHash
         )
       ) {
         result.conflicts.push(targetPath);
@@ -289,12 +291,6 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     const desiredPackage = packageMerge.packageJson;
     const dependenciesChanged = JSON.stringify(currentPackage.dependencies || {}) !== JSON.stringify(desiredPackage.dependencies || {});
     const overridesChanged = JSON.stringify(currentPackage.overrides || {}) !== JSON.stringify(desiredPackage.overrides || {});
-    // package.json is assembled from the current user file plus managed defaults,
-    // so writing that merged result cannot discard unrelated user fields. Allow
-    // newly managed dependencies to land even when another package field changed
-    // since the last provisioning manifest.
-    syncContent('package.json', `${JSON.stringify(desiredPackage, null, 2)}\n`, { mergeSafe: true });
-
     syncContent('oh-my-opencode-slim.json', fsApi.readFileSync(pathApi.join(profileRoot, 'oh-my-opencode-slim.json'), 'utf8'));
 
     const canonicalAssets = await listDefaultConfigAssets(configRoot);
@@ -312,6 +308,16 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
         syncContent(targetRelativePath, fsApi.readFileSync(pathApi.join(configRoot, sourceRelativePath), 'utf8'));
       }
     }
+    // The new Slim runtime retains host agent state. Do not install its package
+    // alongside a user-owned adapter whose restoration contract is unknown.
+    if (result.conflicts.includes(pathApi.join(configDirectory, 'plugins/devryan-oh-my-opencode-slim.mjs'))) {
+      result.ok = false;
+      result.error = 'DEVRYAN_SLIM_ADAPTER_CONFLICT: preserve and reconcile the user-owned Slim adapter before upgrading managed plugins';
+      return result;
+    }
+    // This merge retains unrelated user fields. Write it only after checking
+    // that the required Slim adapter can be upgraded safely.
+    syncContent('package.json', `${JSON.stringify(desiredPackage, null, 2)}\n`, { mergeSafe: true });
     const retiredSkillPaths = Object.keys(previousFiles)
       .filter((relativePath) => relativePath.startsWith('skills/'));
     const skillsDirectory = pathApi.join(configDirectory, 'skills');
@@ -489,6 +495,14 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
         result.ok = false;
         result.error = `Managed OpenCode plugin validation failed after provisioning: ${issueSummary}`;
       }
+    }
+
+    if (result.ok) {
+      result.imagegenModelHotfix = applyImagegenModelHotfixFn({ configDirectory, fs: fsApi });
+      if (!result.imagegenModelHotfix.ok) {
+        result.ok = false;
+        result.error = `${result.imagegenModelHotfix.code}: ${result.imagegenModelHotfix.error}`;
+      } else if (result.imagegenModelHotfix.changed) result.changed = true;
     }
 
     result.claudeRuntime = inspectClaudeRuntimeCompatibility({

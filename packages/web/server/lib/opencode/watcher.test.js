@@ -46,6 +46,7 @@ describe('createOpenCodeWatcherRuntime', () => {
   it('waits for OpenCode readiness and forwards unwrapped global SSE payloads', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const payloads = [];
+    const directories = [];
     const fetchCalls = [];
 
     const watcher = createOpenCodeWatcherRuntime({
@@ -54,8 +55,8 @@ describe('createOpenCodeWatcherRuntime', () => {
       },
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({ Authorization: 'Bearer test-token' }),
-      onPayload(payload) {
-        payloads.push(payload);
+      onPayload(payload, directory) {
+        payloads.push(payload); directories.push(directory);
         watcher.stop();
       },
       fetchImpl: async (url, options) => {
@@ -72,6 +73,7 @@ describe('createOpenCodeWatcherRuntime', () => {
     await watcher.start();
     await new Promise((resolve) => setTimeout(resolve, 10));
 
+    expect(directories).toEqual(['/tmp/project']);
     expect(fetchCalls).toEqual([
       {
         url: 'http://127.0.0.1:4096/global/event',
@@ -279,4 +281,20 @@ describe('createOpenCodeWatcherRuntime', () => {
     expect(events.size).toBe(0);
     expect(statuses.size).toBe(0);
   });
+});
+
+
+it('retains the shared hub directory for exact receipt ingestion', async () => {
+  let accept;
+  const onPayload = vi.fn();
+  const watcher = createOpenCodeWatcherRuntime({ waitForOpenCodePort: async () => {}, onPayload,
+    globalEventHub: { start() {}, subscribeEvent(callback) { accept = callback; return () => {}; }, subscribeStatus() { return () => {}; } },
+  });
+  await watcher.start();
+  const payload = { type: 'message.part.updated', properties: { part: { sessionID: 'ses_1', messageID: 'msg_1', type: 'tool' } } };
+  accept({ payload, directory: '/fixture/project' });
+  expect(onPayload).toHaveBeenCalledWith(payload, '/fixture/project');
+  accept({ payload, directory: 'global' });
+  expect(onPayload).toHaveBeenLastCalledWith(payload, null);
+  watcher.stop();
 });

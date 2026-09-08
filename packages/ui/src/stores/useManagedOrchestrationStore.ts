@@ -8,6 +8,7 @@ import {
   MAX_MANAGED_TASK_PREVIEW_BYTES,
   truncateManagedText,
   validateManagedTaskResultEnvelope,
+  validateManagedTransportRecovery,
   type ManagedTaskEvent,
   type ManagedTaskRemovalEvent,
   type ManagedTaskResultAction,
@@ -73,6 +74,7 @@ const MANAGED_TASK_AUTO_RESUME_STATES = new Set<ManagedTaskAutoResumeState>([
   'acknowledged',
 ]);
 const MANAGED_TASK_AUTO_RESUME_REASONS = new Set<ManagedTaskAutoResumeReason>([
+  'backup_unavailable',
   'user',
   'manual_retry',
   'session_deleted',
@@ -239,6 +241,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord
       || value.failureKind === 'provider_prompt_rejected'
       || value.failureKind === 'model_unavailable'
       || value.failureKind === 'deadline_exceeded'
+      || value.failureKind === 'provider_transport'
     )
     && typeof value.partial === 'boolean'
     && typeof value.recoverablePreview === 'string'
@@ -250,6 +253,12 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord
     && isOptionalNullableTimestamp(value.childPromptedAt)
     && isOptionalNullableTimestamp(value.firstAssistantPartAt);
   if (!valid) return null;
+  let transportRecovery: ReturnType<typeof validateManagedTransportRecovery>;
+  try {
+    transportRecovery = validateManagedTransportRecovery(value.transportRecovery);
+  } catch {
+    return null;
+  }
   return {
     owner: 'devryan',
     taskId: value.taskId as string,
@@ -285,6 +294,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord
       ? null
       : truncateManagedText(value.failureReason, MAX_MANAGED_TASK_FAILURE_BYTES),
     failureKind: value.failureKind === 'provider_usage_limit'
+      || value.failureKind === 'provider_transport'
       || value.failureKind === 'provider_prompt_rejected'
       || value.failureKind === 'model_unavailable'
       || value.failureKind === 'deadline_exceeded'
@@ -304,6 +314,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord
       : null,
     childPromptedAt: isTimestamp(value.childPromptedAt) ? value.childPromptedAt : null,
     firstAssistantPartAt: isTimestamp(value.firstAssistantPartAt) ? value.firstAssistantPartAt : null,
+    transportRecovery,
     // Queued-only scheduler state; a stale reason on a started task is dropped.
     waitingReason: value.status === 'queued' ? parseManagedTaskWaitingReason(value.waitingReason) : null,
   };
@@ -363,6 +374,7 @@ export const parseManagedTaskAutoResume = (value: unknown): ManagedTaskAutoResum
   const lastError = parseManagedTaskAutoResumeError(value.lastError);
   if (target === undefined || lastError === undefined) return null;
   const valid = isCount(value.revision)
+    && (value.trigger === undefined || value.trigger === 'provider_usage_limit' || value.trigger === 'provider_transport')
     && typeof value.enabled === 'boolean'
     && MANAGED_TASK_AUTO_RESUME_STATES.has(value.state as ManagedTaskAutoResumeState)
     && isCount(value.cancelGeneration)
@@ -387,6 +399,7 @@ export const parseManagedTaskAutoResume = (value: unknown): ManagedTaskAutoResum
   if (!valid) return null;
   return {
     revision: value.revision as number,
+    ...(value.trigger === 'provider_usage_limit' || value.trigger === 'provider_transport' ? { trigger: value.trigger } : {}),
     enabled: value.enabled as boolean,
     state: value.state as ManagedTaskAutoResumeState,
     cancelGeneration: value.cancelGeneration as number,
@@ -540,7 +553,7 @@ const sameRecord = (left: Record<string, unknown>, right: Record<string, unknown
   for (const key of leftKeys) {
     const leftValue = left[key];
     const rightValue = right[key];
-    if (key === 'canonicalRefs' || key === 'autoResume' || key === 'waitingReason') {
+    if (key === 'canonicalRefs' || key === 'autoResume' || key === 'waitingReason' || key === 'transportRecovery') {
       if (JSON.stringify(leftValue) !== JSON.stringify(rightValue)) return false;
     } else if (!Object.is(leftValue, rightValue)) {
       return false;
@@ -584,6 +597,7 @@ const mergeTask = (
   if (sameTask(current, incoming)) return current;
   if (isTerminalManagedTaskStatus(current.status)) return current;
   if (metadataRegressed(current, incoming)) return current;
+  if ((incoming.transportRecovery?.revision ?? 0) < (current.transportRecovery?.revision ?? 0)) return current;
   if (!canTransitionManagedTaskStatus(current.status, incoming.status)) {
     const skippedForward = statusStage(incoming.status) > statusStage(current.status);
     if (!skippedForward) return current;
@@ -657,6 +671,7 @@ const isManualRecoveryTask = (
   && (
     task.failureKind === 'provider_usage_limit'
     || task.failureKind === 'model_unavailable'
+    || Boolean(task.transportRecovery)
     || (task.mode === 'orchestrator' && task.dispatchGrouped && task.attempt >= 2)
   )
   && (task.status === 'failed' || task.status === 'interrupted')

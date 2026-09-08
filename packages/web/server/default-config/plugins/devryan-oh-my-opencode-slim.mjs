@@ -32,7 +32,7 @@ const loadSlimPlugin = async () => {
 
   const module = await import(pathToFileURL(pluginEntrypoint).href);
   const exported = module.default || module;
-  // Slim 2.2.15 uses the OpenCode plugin descriptor. Its server factory
+  // Slim 2.2.18 uses the OpenCode plugin descriptor. Its server factory
   // supplies the same runtime hooks as the legacy function export; setup is
   // the native descriptor integration and must not replace DevRyan ownership.
   const plugin = isRecord(exported) ? exported.server : exported;
@@ -68,18 +68,34 @@ export const DevRyanOhMyOpenCodeSlimPlugin = async (context) => {
       const hadDefaultAgent = Object.prototype.hasOwnProperty.call(config, 'default_agent');
       const previousDefaultAgent = hadDefaultAgent ? config.default_agent : undefined;
 
-      await slimConfigHook(config);
+      try {
+        await slimConfigHook(config);
+      } finally {
+        // Slim 2.2.18 retains this object for background-task model admission.
+        // Restore it in place so those hooks see the same effective host agents
+        // as OpenCode, including when Slim replaced the original config object.
+        if (isRecord(config.agent)) {
+          const retainedAgents = config.agent;
+          for (const key of Object.keys(retainedAgents)) delete retainedAgents[key];
+          if (isRecord(previousAgent)) Object.assign(retainedAgents, previousAgent);
+          if (hadAgent && isRecord(previousAgent)) {
+            config.agent = retainedAgents;
+          } else if (hadAgent) {
+            config.agent = previousAgent;
+          } else {
+            delete config.agent;
+          }
+        } else if (hadAgent) {
+          config.agent = previousAgent;
+        } else {
+          delete config.agent;
+        }
 
-      if (hadAgent) {
-        config.agent = previousAgent;
-      } else {
-        delete config.agent;
-      }
-
-      if (hadDefaultAgent) {
-        config.default_agent = previousDefaultAgent;
-      } else {
-        delete config.default_agent;
+        if (hadDefaultAgent) {
+          config.default_agent = previousDefaultAgent;
+        } else {
+          delete config.default_agent;
+        }
       }
     },
   };

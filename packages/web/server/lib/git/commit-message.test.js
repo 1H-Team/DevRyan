@@ -117,6 +117,9 @@ describe('direct commit message generation', () => {
     });
     expect(result).toMatchObject({ subject: 'fix(git): recover commit generation', _generation: { source: 'ai', attempts: 3, model: 'c' } });
     expect(requestText.mock.calls.map(([input]) => input.zenModel)).toEqual(['a', 'b', 'c']);
+    const sessionIDs = requestText.mock.calls.map(([input]) => input.sessionID);
+    expect(sessionIDs[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(new Set(sessionIDs).size).toBe(1);
     expect(onAttempt.mock.calls.map(([attempt]) => attempt.reason)).toEqual(['request_failed', 'rate_limited', undefined]);
     expect(vi.getTimerCount()).toBe(0);
   });

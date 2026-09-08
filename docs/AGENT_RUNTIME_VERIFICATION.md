@@ -76,3 +76,36 @@ When the report starts with an Error Log event UUID, treat that UUID as a durabl
 - Runtime health: `GET /api/diagnostics/status` (default port 3000; `dev:server` uses `${OPENCHAMBER_PORT:-3001}`) reports `sessionCount`, bytes, queue/write/gap counts, segment count, and the last error.
 - Caveats: records and manifests are sanitized before disk (secrets redacted, home/worktree paths rewritten to `<WORKTREE_…>` placeholders); retention is 7 days / 1 GiB total. Absence of an expected non-delta record is itself evidence — the runtime never saw it.
 - Deep contracts: `packages/harness-runtime/DOCUMENTATION.md` (journal, sanitizer, export, storage limits) and `packages/web/server/lib/diagnostics/DOCUMENTATION.md` (HTTP status/clear/export/sanitize).
+
+## Context Mode worker liveness
+
+For `ctx_*` stalls, correlate the native tool part's
+`metadata.contextModeWorkerCallID` with `context_mode.*` lifecycle records and
+its session/message identity. Inspect `worker_started`/`worker_reused`,
+`dispatched`, `initializing`, `executing` and
+`storage_contended`/`storage_acquired` phases before
+deciding whether indexing itself ran. Current workers have no command queue;
+`queued` or `queue_timeout` identifies an older runtime revision. Check normal
+managed provisioning status rather than restarting a busy runtime. Use the
+per-call sequence/source timestamp when delivery order differs. Run the journal
+gap check, including `context_mode.diagnostics_gap`; unavailable final telemetry
+must qualify conclusions. Queue expiry and unavailable-worker errors mean the
+call did not execute. Active timeout/cancellation errors mean the outcome is
+unknown; inspect current state and never replay the command automatically.
+
+The disposable `bun scripts/verify-context-mode-workers.mjs
+.cache/context-mode-worker-check` check uses a pinned local Context Mode install
+inside `.cache`, isolated HOME/config/data/temp directories, and no provider
+credentials. It exercises thirty concurrent calls from fifteen sessions within one project
+and across projects, repeated bursts, all permitted tools against local fixtures,
+shared-source replacement, initiating-session JSON/SessionDB statistics and index reopening. A real
+index call is deliberately held at its storage transaction for 31.1 seconds while
+sibling reads/commands complete. It also covers deadlines, shared batch budgets,
+same-project cancellation, background ownership, compiled-host worker startup
+and repeated indexing across the maintenance boundary. Workers use separate
+processes to contain native faults. Cold/warm latency, summed parent/worker RSS
+and host event-loop delay are recorded in `verification.json` under the supplied
+disposable package root; run fixtures and child processes are cleaned up. Only
+idle workers are capped (four, expiring after thirty seconds). It does not touch the
+installed app. Activate updated helpers only through normal managed provisioning;
+do not patch or restart a busy runtime to run this check.

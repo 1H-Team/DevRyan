@@ -1,0 +1,67 @@
+[
+  {
+    "suite": "visual-fixture",
+    "exitCode": 0,
+    "seconds": 0.27
+  },
+  {
+    "suite": "bots-runtime",
+    "exitCode": 0,
+    "seconds": 0.04
+  },
+  {
+    "suite": "bot-supervisor",
+    "exitCode": 0,
+    "seconds": 0.1
+  },
+  {
+    "suite": "bot-engine-proxy",
+    "exitCode": 0,
+    "seconds": 0.05
+  },
+  {
+    "suite": "bot-egress",
+    "exitCode": 0,
+    "seconds": 0.11
+  },
+  {
+    "suite": "bot-computer",
+    "exitCode": 0,
+    "seconds": 0.26
+  },
+  {
+    "suite": "bot-indexer",
+    "exitCode": 0,
+    "seconds": 0.32
+  },
+  {
+    "suite": "shared-runtime",
+    "exitCode": 0,
+    "seconds": 0.13
+  },
+  {
+    "suite": "harness-runtime",
+    "exitCode": 0,
+    "seconds": 119.81
+  },
+  {
+    "suite": "orchestration-runtime",
+    "exitCode": 0,
+    "seconds": 3.2
+  },
+  {
+    "suite": "cursor-sdk-runtime",
+    "exitCode": 0,
+    "seconds": 1.52
+  },
+  {
+    "suite": "electron",
+    "exitCode": 0,
+    "seconds": 5.07
+  },
+  {
+    "suite": "desktop",
+    "exitCode": 0,
+    "seconds": 1.15
+  }
+]

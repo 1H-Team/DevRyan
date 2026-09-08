@@ -15,7 +15,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = path.join(root, '.cache/qa'), holdMs = 0 } = {}) {
   if (!Number.isSafeInteger(holdMs) || holdMs < 0 || holdMs > 300000) throw new Error('QA inspection hold must be 0–300000 milliseconds');
   if (!['web', 'electron'].includes(runtime)) throw new Error('QA runtime must be web or electron');
-  if (!['chat', 'mobile', 'recovery', 'thinking', 'grok-plan'].includes(scenario) || (scenario === 'mobile' && runtime !== 'web')) throw new Error('QA scenario must be chat, recovery, thinking, grok-plan, or mobile on web');
+  if (!['chat', 'mobile', 'recovery', 'thinking', 'grok-plan', 'context-mode', 'session-changes'].includes(scenario) || (scenario === 'mobile' && runtime !== 'web')) throw new Error('QA scenario must be chat, recovery, thinking, grok-plan, context-mode, session-changes, or mobile on web');
   if (runtime === 'electron') {
     const [webIndex, stagedIndex] = await Promise.all([
       readFile(path.join(root, 'packages/web/dist/index.html'), 'utf8'),
@@ -90,6 +90,8 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
       desktopWindowState: { width: 1280, height: 800, maximized: false } }));
     const thinking = scenario === 'thinking' ? await import('./thinking-slider.mjs') : null;
     fixture = await createLoopbackOpenCodeFixture({ directory: workspace, thinkingModels: thinking?.thinkingModels });
+    const sessionChanges = scenario === 'session-changes' ? await import('./session-changes.mjs') : null;
+    const preparedChanges = sessionChanges ? await sessionChanges.prepareSessionChangesQa({ fixture, directory: workspace, dataDirectory: data }) : null;
     const debugPort = await reservePort();
     const port = await reservePort();
     const env = { ...process.env, OPENCHAMBER_DATA_DIR: data, OPENCHAMBER_ELECTRON_USER_DATA_DIR: profile,
@@ -189,6 +191,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
       await cdp.send('Emulation.clearDeviceMetricsOverride');
       await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     }
+    if (scenario !== 'session-changes') {
     await check('four-session stream reaches selected transcript', async () => {
       await waitFor('renderer event transport readiness', async () => transportReady);
       await delay(500);
@@ -273,6 +276,13 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
     if (scenario === 'grok-plan') {
       const { runGrokPlanQa } = await import('./grok-plan.mjs');
       evidence.grokPlan = await runGrokPlanQa({ fixture, cdp, directory: workspace, dataDirectory: data, runtime, check, screenshot });
+    }
+    if (scenario === 'context-mode') {
+      const { runContextModeQa } = await import('./context-mode.mjs');
+      evidence.contextMode = await runContextModeQa({ fixture, cdp, directory: workspace, check, screenshot });
+    }
+    } else {
+      evidence.sessionChanges = await sessionChanges.runSessionChangesQa({ cdp, directory: workspace, runtime, prepared: preparedChanges, check, screenshot });
     }
     await delay(750);
     await screenshot('chat-idle');

@@ -794,13 +794,14 @@ export function createAgUiReasoningAdapter({
       completions.delete(runId);
       return Object.freeze({ closed: true });
     },
-    async completeStructured({ binding, prompt, schema, title = 'Structured task', system = '' }) {
-      const handle = await this.startRun({ runId: uuid() });
+    async completeStructured({ runId = uuid(), binding, prompt, schema, title = 'Structured task', system = '', signal }) {
+      const handle = await this.startRun({ runId, signal });
       let text = '';
       const result = await this.continueRun({
-        runId: uuid(),
+        runId,
         handle,
         binding,
+        ...(signal ? { signal } : {}),
         parts: [{
           type: 'text',
           text: `${system}\n\n${title}\n\n${prompt}\n\nReturn only JSON matching this schema:\n${canonicalizeBotJson(schema)}`,

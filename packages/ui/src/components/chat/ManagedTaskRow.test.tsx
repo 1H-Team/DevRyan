@@ -8,6 +8,7 @@ import {
   type ManagedTaskEventRecord,
   type ManagedTaskRecord,
   type ManagedTaskStatus,
+  type ManagedTransportRecovery,
 } from '@openchamber/orchestration-runtime';
 
 import { I18nProvider } from '@/lib/i18n';
@@ -173,6 +174,58 @@ const renderView = (element: React.ReactElement) => renderToStaticMarkup(
   <I18nProvider>{element}</I18nProvider>,
 );
 
+const transportRecovery: ManagedTransportRecovery = {
+  revision: 3, phase: 'exhausted', kind: 'connection_failure', sameModelAttempts: 1, backupAttempts: 0,
+  failedMessageId: 'msg_failed', failedUserMessageId: 'msg_user', recoveryMessageId: 'msg_recovery',
+  eventId: 'evt_failed', reservedAt: 1_000, submittedAt: 1_100,
+};
+
+test('connection recovery shows a backup control without claiming a usage limit', () => {
+  const failed = record('dvr_task_transport', 'failed', {
+    failureReason: 'Connection closed mid-response', transportRecovery,
+  });
+  const envelope = {
+    ...createManagedTaskResultEnvelope(failed, { sequence: 1, createdAt: 2_000, resumable: true }),
+    autoResume: autoResumeBlock({ trigger: 'provider_transport', resetAt: null, resetSource: null }),
+  };
+  const html = renderView(<ManagedTaskRowView
+    task={toManagedTaskEvent(failed, envelope).properties.task}
+    resultEnvelope={envelope} onOpenChild={() => undefined} onRetryInPlace={async () => undefined}
+    onAutoResumeChange={async () => undefined}
+  />);
+  expect(html).toContain('The model connection was interrupted');
+  expect(html).toContain('Automatically switch to the configured backup');
+  expect(html).not.toContain('Limit Lifts');
+  expect(html).not.toContain('usage limit');
+});
+
+test('connection backup completion names the actual recovery cause', () => {
+  const { envelope } = manualRecoveryFailure('provider_usage_limit', autoResumeBlock({
+    trigger: 'provider_transport', state: 'succeeded', lastAttemptTaskId: 'dvr_task_backup',
+  }));
+  const backup = toManagedTaskEvent(record('dvr_task_backup', 'completed', {
+    priorTaskId: envelope.taskId, executionKind: 'retry_in_place',
+    transportRecovery: { ...transportRecovery, phase: 'recovered', backupAttempts: 1 },
+  })).properties.task;
+  const html = renderView(<ManagedTaskRowView task={backup} priorEnvelope={envelope} onOpenChild={() => undefined} />);
+  expect(html).toContain('after the connection interruption');
+  expect(html).not.toContain('after the usage limit');
+});
+
+test('an unavailable backup keeps a clear manual recovery action', () => {
+  const failed = record('dvr_task_no_backup', 'failed', { failureReason: 'Connection closed mid-response', transportRecovery });
+  const envelope = {
+    ...createManagedTaskResultEnvelope(failed, { sequence: 1, createdAt: 2_000, resumable: true }),
+    autoResume: autoResumeBlock({ trigger: 'provider_transport', state: 'exhausted', reason: 'backup_unavailable' }),
+  };
+  const html = renderView(<ManagedTaskRowView
+    task={toManagedTaskEvent(failed, envelope).properties.task} resultEnvelope={envelope}
+    onOpenChild={() => undefined} onRetryInPlace={async () => undefined}
+  />);
+  expect(html).toContain('No distinct, available backup model is configured');
+  expect(html).toContain('Try Again');
+});
+
 afterEach(() => {
   latestCheckboxChange = null;
   store.getState().reset();
@@ -223,6 +276,17 @@ describe('ManagedTaskRow', () => {
 
     const legacy = renderView(<ManagedTaskRowView task={running} onOpenChild={() => undefined} />);
     expect(legacy).toContain('Running...');
+  });
+
+  test('shows real activity before prompt acceptance, while terminal and queued states retain precedence', () => {
+    for (const [status, label] of [
+      ['starting', 'Running...'], ['completed', 'Complete'], ['failed', 'Error'], ['queued', 'Queued'],
+    ] as const) {
+      const task = toManagedTaskEvent(record('dvr_task_early', status)).properties.task;
+      expect(renderView(<ManagedTaskRowView
+        task={{ ...task, childPromptedAt: null, firstAssistantPartAt: 0 }} onOpenChild={() => undefined}
+      />)).toContain(label);
+    }
   });
 
   test('routes recovery controls to the latest failed attempt from an older dispatch row', () => {

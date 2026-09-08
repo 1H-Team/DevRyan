@@ -524,3 +524,10 @@ remains in `../multi-user/runtime.auth.test.js`. The pgTAP suite in
 identity conflict handling, and one-scope claim semantics;
 `bot_safe_run_retry.test.sql` proves evidence-based replay, and
 `bot_memory_extraction_requeue.test.sql` proves terminal-only extraction requeue.
+
+- `memory-extraction-recovery.js`: bounded, versioned recovery inspection of
+  encrypted legacy jobs; uses the store recovery CAS and existing extraction leases.
+- Memory extraction aggregate/detail contracts and rollout ordering are documented
+  in `DOCUMENTATION.md` under Layered automatic memory.
+
+- `channels.js` owns the shared membership/publication-filtered assigned-catalog loader used by `assignedForPrincipal` and the full channel snapshot. `routes.js` mounts `GET /api/bots/assigned` before dynamic Bot IDs; it requires no history decryption or execution services.

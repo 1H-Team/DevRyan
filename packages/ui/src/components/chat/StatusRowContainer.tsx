@@ -150,12 +150,14 @@ export const resolveManagedChildGenericStatusText = ({
     waitingText,
     recoveringText,
 }: {
-    task?: Pick<ManagedTaskEventRecord, 'executionKind' | 'status'>;
+    task?: Pick<ManagedTaskEventRecord, 'executionKind' | 'status'>
+        & Partial<Pick<ManagedTaskEventRecord, 'firstAssistantPartAt'>>;
     isGenericStatus: boolean;
     waitingText: string;
     recoveringText: string;
 }): string | null => {
     if (!isGenericStatus || !task) return null;
+    if (task.firstAssistantPartAt != null) return null;
     if (task.status !== 'queued' && task.status !== 'starting' && task.status !== 'running') {
         return null;
     }

@@ -5,12 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSessionChangeRuntime } from './session-changes.js';
+import { finishFixtureMutation } from '../test/session-change-fixture.js';
 import { openChangeStore, changeKey } from './session-changes-store.js';
 
 const test = (name, run) => bunTest(name, run, 180_000);
 let base, directory, storage, runtime, count;
 const git = (...args) => execFileSync('git', args, { cwd: directory, encoding: 'utf8' }).trim();
 const input = (extra = {}) => ({ directory, sessionID: 'root', messageID: 'message', userMessageID: 'user', callID: `call_${++count}`, ...extra });
+const finish = (op) => finishFixtureMutation(runtime, op, storage);
 const summary = () => runtime.summarize({ directory, rootSessionID: 'root' });
 const digest = async (file) => {
   const hash = crypto.createHash('sha256'), handle = await fs.open(file, 'r'), buffer = Buffer.alloc(1024 * 1024);
@@ -33,7 +35,7 @@ test('a scoped edit ignores unrelated checkout size and does not snapshot other 
   // This explicit small policy would fail immediately if scope regressed.
   runtime = createSessionChangeRuntime({ directory: storage, maxCaptureBytes: 16 });
   const op = input({ paths: ['a.txt'] }); await runtime.begin(op);
-  await fs.writeFile(path.join(directory, 'a.txt'), 'scoped\n'); await runtime.finish(op);
+  await fs.writeFile(path.join(directory, 'a.txt'), 'scoped\n'); await finish(op);
   const result = await summary();
   expect(result.coverage).toBe('complete'); expect(result.fileCount).toBe(1);
   const gitDir = path.join(storage, changeKey(directory), 'git');
@@ -50,7 +52,7 @@ test('captures and restores files above 64 MiB with bounded JavaScript buffers',
   try {
     const op = input(); await runtime.begin(op);
     const changing = await fs.open(target, 'r+'); await changing.write(Buffer.from('changed')); await changing.close();
-    const after = await digest(target); await runtime.finish(op);
+    const after = await digest(target); await finish(op);
     const result = await summary(); expect(result.coverage).toBe('complete');
     expect(result.files[0]).toMatchObject({ path: 'large.bin', additions: null, deletions: null });
     await runtime.restore({ directory, rootSessionID: 'root', revision: result.revision });
@@ -67,7 +69,7 @@ test('checkout capture exceeds 50000 paths without truncating the result', async
   const total = 50_010;
   for (let start = 0; start < total; start += 64) await Promise.all(Array.from({ length: Math.min(64, total - start) }, (_, i) => fs.writeFile(path.join(directory, `file-${start + i}`), '')));
   const op = input({ captureDeadline: Date.now() + 120_000 }); await runtime.begin(op);
-  await fs.writeFile(path.join(directory, 'a.txt'), 'changed\n'); await runtime.finish({ ...op, captureDeadline: Date.now() + 120_000 });
+  await fs.writeFile(path.join(directory, 'a.txt'), 'changed\n'); await finish({ ...op, captureDeadline: Date.now() + 120_000 });
   expect(await summary()).toMatchObject({ coverage: 'complete', fileCount: 1 });
 });
 
@@ -75,12 +77,12 @@ test('summary pages and UTF-8 diff pages stay pinned to their stored revision', 
   const op = input(); await runtime.begin(op);
   for (let start = 0; start < 270; start += 32) await Promise.all(Array.from({ length: Math.min(32, 270 - start) }, (_, i) => fs.writeFile(path.join(directory, `added-${String(start + i).padStart(4, '0')}`), 'added\n')));
   const content = 'é漢🙂'.repeat(25_000);
-  await fs.writeFile(path.join(directory, 'a.txt'), content); await runtime.finish(op);
+  await fs.writeFile(path.join(directory, 'a.txt'), content); await finish(op);
   const first = await summary(); expect(first.fileCount).toBe(271); expect(first.files).toHaveLength(128);
   const second = await runtime.summaryPage({ directory, rootSessionID: 'root', revision: first.revision, cursor: first.nextCursor });
   expect(second.files).toHaveLength(128); expect(second.pageIndex).toBe(1);
   await expect(runtime.summaryPage({ directory, rootSessionID: 'root', revision: first.revision, cursor: `${'a'.repeat(64)}:1` })).rejects.toMatchObject({ code: 'invalid_change_cursor' });
-  const secondOp = input({ paths: ['a.txt'] }); await runtime.begin(secondOp); await fs.writeFile(path.join(directory, 'a.txt'), 'later'); await runtime.finish(secondOp); await summary();
+  const secondOp = input({ paths: ['a.txt'] }); await runtime.begin(secondOp); await fs.writeFile(path.join(directory, 'a.txt'), 'later'); await finish(secondOp); await summary();
   let cursor = null, patch = '', previous;
   do {
     const result = await runtime.diff({ directory, rootSessionID: 'root', revision: first.revision, file: 'a.txt', cursor });
@@ -100,7 +102,7 @@ test('repairs failed native receipts individually and retains unrecoverable shel
   runtime = createSessionChangeRuntime({ directory: storage });
   await runtime.importHistorical([{ ...edit, createdAt: 1, files: [{ path: 'a.txt', before: 'base\n', after: 'recovered\n' }] }]);
   const result = await summary();
-  expect(result.fileCount).toBe(1); expect(result.reasons).toContain('capture_limit'); expect(result.reasons).toContain('historical_restore_unavailable');
+  expect(result.fileCount).toBe(1); expect(result.reasons).toContain('capture_limit'); expect(result.restoreReasons).toContain('restore_evidence_unavailable');
   await runtime.importHistorical([{ ...shell, createdAt: 2, files: [{ path: 'other.txt', before: null, after: 'also recovered\n' }] }]);
   const recovered = await summary(); expect(recovered.reasons).not.toContain('capture_limit'); expect(recovered.fileCount).toBe(2);
   await expect(runtime.restore({ directory, rootSessionID: 'root', revision: recovered.revision })).rejects.toMatchObject({ code: 'summary_incomplete' });
@@ -116,7 +118,7 @@ test('migrates more than 2000 operations and registrations without losing V1 evi
   const sessions = [{ id: 'root', firstUserMessageID: 'user' }, ...Array.from({ length: 2010 }, (_, i) => ({ id: `session_${i}`, firstUserMessageID: 'user' }))];
   const legacy = JSON.stringify({ version: 1, key, record: { version: 1, directory, sessions, operations, issues: [], summaries: {} } });
   await fs.mkdir(path.join(storage, 'records')); const legacyPath = path.join(storage, 'records', `${key}.json`); await fs.writeFile(legacyPath, legacy);
-  const op = input({ paths: ['a.txt'], captureDeadline: Date.now() + 120_000 }); await runtime.begin(op); await fs.writeFile(path.join(directory, 'a.txt'), 'new\n'); await runtime.finish(op);
+  const op = input({ paths: ['a.txt'], captureDeadline: Date.now() + 120_000 }); await runtime.begin(op); await fs.writeFile(path.join(directory, 'a.txt'), 'new\n'); await finish(op);
   expect(await summary()).toMatchObject({ coverage: 'complete', fileCount: 1 });
   expect(await fs.readFile(legacyPath, 'utf8')).toBe(legacy);
   await runtime.registerSession({ directory, sessionID: 'new_registration' });
@@ -127,12 +129,12 @@ test('migrates more than 2000 operations and registrations without losing V1 evi
 
 test('metadata transactions survive an abandoned write and GC retains review and Undo data', async () => {
   runtime = createSessionChangeRuntime({ directory: storage, maintenanceEvery: 1 });
-  const op = input({ paths: ['a.txt'] }); await runtime.begin(op); await fs.writeFile(path.join(directory, 'a.txt'), 'first\n'); await runtime.finish(op);
+  const op = input({ paths: ['a.txt'] }); await runtime.begin(op); await fs.writeFile(path.join(directory, 'a.txt'), 'first\n'); await finish(op);
   const first = await summary(), gitDir = path.join(storage, changeKey(directory), 'git');
   const abandoned = await openChangeStore(storage, gitDir);
   abandoned.set('meta.json', { version: 999 });
   expect((await (await openChangeStore(storage, gitDir)).get('meta.json')).version).toBe(2);
-  const second = input({ paths: ['a.txt'] }); await runtime.begin(second); await fs.writeFile(path.join(directory, 'a.txt'), 'second\n'); await runtime.finish(second);
+  const second = input({ paths: ['a.txt'] }); await runtime.begin(second); await fs.writeFile(path.join(directory, 'a.txt'), 'second\n'); await finish(second);
   expect((await runtime.diff({ directory, rootSessionID: 'root', revision: first.revision, file: 'a.txt' })).patch).toContain('+first');
   await runtime.restore({ directory, rootSessionID: 'root', revision: (await summary()).revision });
   expect(await fs.readFile(path.join(directory, 'a.txt'), 'utf8')).toBe('base\n');
@@ -146,19 +148,19 @@ test('storage above 256 MiB still admits captures and unchanged blobs are reused
   for (let i = 0; i < 270; i++) await target.write(block);
   await target.close();
   const first = input({ captureDeadline: Date.now() + 120_000 }); await runtime.begin(first);
-  await fs.writeFile(path.join(directory, 'a.txt'), 'first\n'); await runtime.finish(first);
+  await fs.writeFile(path.join(directory, 'a.txt'), 'first\n'); await finish(first);
   expect((await summary()).coverage).toBe('complete');
   const gitDir = path.join(storage, changeKey(directory), 'git');
   const stats = () => execFileSync('git', ['--git-dir', gitDir, 'count-objects', '-v'], { encoding: 'utf8' });
   expect(Number(stats().match(/^size: (\d+)$/m)[1]) * 1024).toBeGreaterThan(256 * 1024 * 1024);
   const blobs = () => execFileSync('git', ['--git-dir', gitDir, 'cat-file', '--batch-all-objects', '--batch-check=%(objecttype) %(objectsize)'], { encoding: 'utf8' }).split('\n').filter((line) => line === `blob ${270 * 1024 * 1024}`).length;
   expect(blobs()).toBe(1);
-  const next = input(); await runtime.begin(next); await fs.writeFile(path.join(directory, 'a.txt'), 'second\n'); await runtime.finish(next);
+  const next = input(); await runtime.begin(next); await fs.writeFile(path.join(directory, 'a.txt'), 'second\n'); await finish(next);
   expect((await summary()).coverage).toBe('complete'); expect(blobs()).toBe(1);
 });
 
 test('failed metadata persistence rolls Undo back without changing the recorded revision', async () => {
-  const op = input({ paths: ['a.txt'] }); await runtime.begin(op); await fs.writeFile(path.join(directory, 'a.txt'), 'edited\n'); await runtime.finish(op);
+  const op = input({ paths: ['a.txt'] }); await runtime.begin(op); await fs.writeFile(path.join(directory, 'a.txt'), 'edited\n'); await finish(op);
   const result = await summary(), gitDir = path.join(storage, changeKey(directory), 'git');
   const lock = path.join(gitDir, 'refs', 'devryan', 'state.lock'); await fs.writeFile(lock, 'fixture-owned lock');
   try {
@@ -169,10 +171,10 @@ test('failed metadata persistence rolls Undo back without changing the recorded 
 });
 
 test('a damaged optional stat cache causes rehashing rather than a capture gap', async () => {
-  const first = input({ paths: ['a.txt'] }); await runtime.begin(first); await runtime.finish(first);
+  const first = input({ paths: ['a.txt'] }); await runtime.begin(first); await finish(first);
   const cache = path.join(storage, changeKey(directory), 'stat-cache', `${changeKey('a.txt').slice(0, 2)}.json`);
   await fs.writeFile(cache, 'null');
-  const second = input({ paths: ['a.txt'] }); await runtime.begin(second); await fs.writeFile(path.join(directory, 'a.txt'), 'after cache loss\n'); await runtime.finish(second);
+  const second = input({ paths: ['a.txt'] }); await runtime.begin(second); await fs.writeFile(path.join(directory, 'a.txt'), 'after cache loss\n'); await finish(second);
   expect(await summary()).toMatchObject({ coverage: 'complete', fileCount: 1 });
 });
 
@@ -201,8 +203,35 @@ test('a failed migration publication keeps V1 authoritative and retries without 
 test('scoped captures preserve Git ignore policy and literal filenames', async () => {
   await fs.writeFile(path.join(directory, '.gitignore'), 'ignored.txt\n');
   await fs.writeFile(path.join(directory, 'literal[1].txt'), 'before\n');
-  const ignored = input({ paths: ['ignored.txt'] }); await runtime.begin(ignored); await fs.writeFile(path.join(directory, 'ignored.txt'), 'ignored\n'); await runtime.finish(ignored);
+  const ignored = input({ paths: ['ignored.txt'] }); await runtime.begin(ignored); await fs.writeFile(path.join(directory, 'ignored.txt'), 'ignored\n'); await finish(ignored);
   expect(await summary()).toMatchObject({ coverage: 'complete', fileCount: 0 });
-  const literal = input({ paths: ['literal[1].txt'] }); await runtime.begin(literal); await fs.writeFile(path.join(directory, 'literal[1].txt'), 'after\n'); await runtime.finish(literal);
+  const literal = input({ paths: ['literal[1].txt'] }); await runtime.begin(literal); await fs.writeFile(path.join(directory, 'literal[1].txt'), 'after\n'); await finish(literal);
   const result = await summary(); expect(result.fileCount).toBe(1); expect(result.files[0].path).toBe('literal[1].txt');
+});
+
+test('segmented UTF-8 patches stay cursor-pinned through collection and restart', async () => {
+  runtime = createSessionChangeRuntime({ directory: storage, maintenanceEvery: 1 });
+  const content = 'é漢🙂\n'.repeat(15_000);
+  const patch = `--- a/patch.txt\n+++ b/patch.txt\n@@ -1 +1,15000 @@\n-old\n${content.split('\n').filter(Boolean).map(line => `+${line}\n`).join('')}`;
+  const first = input();
+  await runtime.recordReceipt({ ...first, files: [{ path: 'patch.txt', patch }] });
+  await runtime.recordReceipt({ ...input(), files: [{ path: 'patch.txt', patch: '--- a/patch.txt\n+++ b/patch.txt\n@@ -1 +1 @@\n-other\n+second\n' }] });
+  const recorded = await summary();
+  expect(recorded.files[0]).toMatchObject({ reviewMode: 'segments', segmentCount: 2 });
+  const initial = await runtime.diff({ directory, rootSessionID: 'root', revision: recorded.revision, file: 'patch.txt' });
+  expect(initial.nextCursor).not.toBeNull();
+  await expect(runtime.diff({ directory, rootSessionID: 'root', revision: recorded.revision, file: 'patch.txt', segment: 1, cursor: initial.nextCursor })).rejects.toMatchObject({ code: 'invalid_change_cursor' });
+  // Settling an unrelated observation forces private GC without a new receipt.
+  const unrelated = input({ sessionID: 'other', paths: ['a.txt'] });
+  await runtime.begin(unrelated); await runtime.finish(unrelated);
+  runtime = createSessionChangeRuntime({ directory: storage });
+  let cursor = null, reconstructed = '';
+  do {
+    const page = await runtime.diff({ directory, rootSessionID: 'root', revision: recorded.revision, file: 'patch.txt', cursor });
+    expect(page.segmentIndex).toBe(0); expect(Buffer.byteLength(page.patch)).toBeLessThanOrEqual(65540);
+    reconstructed += page.patch; cursor = page.nextCursor;
+  } while (cursor);
+  expect(reconstructed).toBe(patch);
+  expect(reconstructed).not.toContain('\uFFFD');
+  expect((await runtime.diff({ directory, rootSessionID: 'root', revision: recorded.revision, file: 'patch.txt', segment: 1 })).patch).toContain('+second');
 });

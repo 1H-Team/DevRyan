@@ -52,6 +52,7 @@ export const ChangedFileRow: React.FC<ChangedFileRowProps> = ({ file, currentDir
                 )}
             </span>
             {isGitFile(file) && file.binary ? <span className="typography-meta text-muted-foreground">{t('chat.sessionChanges.binary')}</span> : null}
+            {isGitFile(file) && file.reviewMode === 'segments' ? <span className="shrink-0 typography-meta text-muted-foreground" title={t('chat.sessionChanges.recordedEdits')}>{t((file.segmentCount ?? 1) === 1 ? 'chat.sessionChanges.oneEdit' : 'chat.sessionChanges.editCount', { count: file.segmentCount ?? 1 })}</span> : null}
             {isGitFile(file) && file.oldPath ? <span className="max-w-[40%] truncate typography-meta text-muted-foreground" title={file.oldPath}>← {file.oldPath}</span> : null}
             {(stats.additions > 0 || stats.deletions > 0) ? (
                 <span className="flex-shrink-0 inline-flex items-baseline gap-1 text-[0.75rem] tabular-nums">

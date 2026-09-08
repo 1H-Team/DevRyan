@@ -17,6 +17,9 @@ export type SessionTreeChangesEntry = Pick<SessionTreeChanges, 'fileCount' | 'ne
   worktreeDirectory?: string
   coverage?: 'complete' | 'partial'
   reasons?: string[]
+  totalsMode?: 'net' | 'recorded'
+  restoreAvailable?: boolean
+  restoreReasons?: string[]
   undone?: boolean
   files: SessionTreeChangedFile[]
   sessionCount: number
@@ -80,6 +83,7 @@ const requestSequence = new Map<string, number>()
 const inFlightControllers = new Map<string, AbortController>()
 const subscriberCounts = new Map<string, number>()
 const workingByKey = new Map<string, boolean>()
+const sessionIdsByKey = new Map<string, ReadonlySet<string>>()
 const entryBytes = (entry: SessionTreeChangesEntry): number => new TextEncoder().encode(JSON.stringify(entry)).byteLength
 let authIdentity = getAuthPrincipal().id
 subscribeAuthPrincipal(() => {
@@ -129,6 +133,8 @@ const areFilesEqual = (left: SessionTreeChangedFile[], right: SessionTreeChanged
       || a.status !== b.status
       || a.additions !== b.additions
       || a.deletions !== b.deletions
+      || a.reviewMode !== b.reviewMode
+      || a.segmentCount !== b.segmentCount
       || a.sessions.length !== b.sessions.length
       || a.sessions.some((id, sessionIndex) => id !== b.sessions[sessionIndex])
     ) {
@@ -193,6 +199,9 @@ export async function refreshSessionTreeChanges(directory: string, rootSessionID
     worktreeDirectory: result.worktreeDirectory,
     coverage: result.coverage,
     reasons: result.reasons,
+    totalsMode: result.totalsMode,
+    restoreAvailable: result.restoreAvailable,
+    restoreReasons: result.restoreReasons,
     undone: result.undone,
     files: previous && areFilesEqual(previous.files, result.files) ? previous.files : result.files,
     sessionCount: result.sessionCount,
@@ -241,6 +250,10 @@ export function observeSessionTreeActivity(directory: string, rootSessionID: str
   }
 }
 
+export function observeSessionTreeMembers(directory: string, rootSessionID: string, sessionIDs: readonly string[]): void {
+  sessionIdsByKey.set(getSessionTreeChangesKey(directory, rootSessionID), new Set([rootSessionID, ...sessionIDs]))
+}
+
 /**
  * Keep a key live: fetches immediately on first subscription and re-fetches on
  * git refresh hints for its directory while at least one subscriber remains.
@@ -261,6 +274,7 @@ export function subscribeSessionTreeChanges(directory: string, rootSessionID: st
     if (remaining <= 0) {
       subscriberCounts.delete(key)
       workingByKey.delete(key)
+      sessionIdsByKey.delete(key)
       inFlightControllers.get(key)?.abort()
       inFlightControllers.delete(key)
       requestSequence.delete(key)
@@ -287,6 +301,7 @@ export function clearSessionTreeChanges(directory: string, rootSessionID: string
   inFlightControllers.delete(key)
   requestSequence.delete(key)
   workingByKey.delete(key)
+  sessionIdsByKey.delete(key)
   useSessionTreeChangesStore.setState((current) => {
     if (!current.entries.has(key)) return current
     const entries = new Map(current.entries)
@@ -314,16 +329,18 @@ export function resetSessionTreeChanges(): void {
   requestSequence.clear()
   subscriberCounts.clear()
   workingByKey.clear()
+  sessionIdsByKey.clear()
   useSessionTreeChangesStore.setState({ entries: new Map() })
 }
 
 // Shell commands and tool edits already broadcast git refresh hints; the same
 // hint keeps every subscribed tree in that directory fresh.
-sessionEvents.onGitRefreshHint(({ directory, sessionChanges }) => {
+sessionEvents.onGitRefreshHint(({ directory, sessionChanges, sessionID }) => {
   const normalized = normalizeDirectory(directory)
   for (const key of subscriberCounts.keys()) {
     if (splitKey(key).directory !== normalized) continue
     const { rootSessionID } = splitKey(key)
+    if (sessionChanges && sessionID && sessionID !== rootSessionID && !sessionIdsByKey.get(key)?.has(sessionID)) continue
     if (!sessionChanges && useSessionTreeChangesStore.getState().entries.get(key)?.revision) continue
     requestSessionTreeChangesRefresh(directory, rootSessionID)
   }

@@ -59,6 +59,8 @@ export const createRecoveringContentStore = ({ createStore, onRecovery = () => {
     } catch (error) {
       if (!retryAllowed || !isRecoverableContextModeStoreError(error)) throw error;
       const replacement = replaceFailedGeneration(store, storeGeneration, error);
+      // Native worker calls can contain committed work. Reopen for the next call, never replay this one.
+      if (globalThis[Symbol.for("devryan.context-mode.storage")]) throw error;
       return Reflect.apply(replacement[method], replacement, args);
     }
 
@@ -66,6 +68,8 @@ export const createRecoveringContentStore = ({ createStore, onRecovery = () => {
     return result.catch((error) => {
       if (!retryAllowed || !isRecoverableContextModeStoreError(error)) throw error;
       const replacement = replaceFailedGeneration(store, storeGeneration, error);
+      // Native worker calls can contain committed work. Reopen for the next call, never replay this one.
+      if (globalThis[Symbol.for("devryan.context-mode.storage")]) throw error;
       return Reflect.apply(replacement[method], replacement, args);
     });
   };

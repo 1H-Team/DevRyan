@@ -104,7 +104,7 @@ The user-facing completion name is **Session Completion**. Plan-producing turns 
   - `fetchFreeZenModels()`
   - `resolveZenModel(override)`
   - `validateZenModelAtStartup()`
-  - `summarizeText(text, targetLength, zenModel)`
+  - `summarizeText(text, targetLength, zenModel, sessionID)`
   - `extractLastMessageText(payload, maxLength?)`
   - `fetchSessionMessages(sessionId, limit?)`
   - `fetchLastAssistantMessageText(sessionId, messageId, maxLength?)`

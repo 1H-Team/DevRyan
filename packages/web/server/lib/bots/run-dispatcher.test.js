@@ -682,6 +682,7 @@ describe('Production Bot FIFO run dispatcher', () => {
     sharedFileService = null,
     streamAccessLeases = null,
     prewarmCache = null,
+    hasPendingMemory = async () => false,
     checkpointIntervalMs = 10,
     recordDiagnostic = vi.fn(),
     settleRunTerminal = null,
@@ -917,6 +918,7 @@ describe('Production Bot FIFO run dispatcher', () => {
       runTimeoutMs,
       checkpointIntervalMs,
       autoDispatch: false,
+      hasPendingMemory,
       recordDiagnostic,
       logger,
       assistantMessages,
@@ -958,6 +960,28 @@ describe('Production Bot FIFO run dispatcher', () => {
       },
     };
   };
+
+  it('gives pending extraction priority over speculative warm runtimes', async () => {
+    const harness = createExecutionHarness({ hasPendingMemory: async () => true });
+    await expect(harness.dispatcher.prewarmChannel({ principal: { id: USER_ID }, channelId: CHANNEL_ID }))
+      .resolves.toMatchObject({ state: 'skipped', reason: 'busy' });
+    expect(harness.opencodeProvider.startReasoningRun).not.toHaveBeenCalled();
+    await harness.dispatcher.shutdown();
+  });
+
+  it('releases an unclaimed warm lease before memory preparation and holds off new warm work', async () => {
+    const harness = createExecutionHarness();
+    const lease = await harness.dispatcher.prewarmChannel({ principal: { id: USER_ID }, channelId: CHANNEL_ID });
+    expect(lease.leaseId).toBeTruthy();
+    const release = await harness.dispatcher.prepareMemoryExtraction({ channelId: CHANNEL_ID });
+    expect(harness.opencodeProvider.stopReasoningRun).toHaveBeenCalledTimes(1);
+    await expect(harness.dispatcher.prewarmChannel({ principal: { id: USER_ID }, channelId: CHANNEL_ID }))
+      .resolves.toMatchObject({ state: 'skipped' });
+    release();
+    await expect(harness.dispatcher.prewarmChannel({ principal: { id: USER_ID }, channelId: CHANNEL_ID }))
+      .resolves.toMatchObject({ state: 'warming' });
+    await harness.dispatcher.shutdown();
+  });
 
   it('adopts an in-flight warm runtime run id for an eligible send', async () => {
     const prewarmCache = {

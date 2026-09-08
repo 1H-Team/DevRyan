@@ -51,6 +51,7 @@ export type ManagedTaskMode = 'builder' | 'orchestrator';
 export type ManagedTaskExecutionKind = 'start' | 'retry' | 'resume' | 'recover_in_place' | 'retry_in_place';
 export type ManagedTaskResultAction = 'continue' | 'resume' | 'retry' | 'recover_in_place' | 'retry_in_place' | 'abandon';
 export type ManagedTaskFailureKind =
+  | 'provider_transport'
   | 'provider_usage_limit'
   | 'provider_prompt_rejected'
   | 'model_unavailable'
@@ -69,6 +70,24 @@ export interface ManagedTaskCanonicalRef {
   [key: string]: JsonValue;
 }
 
+export interface ManagedTransportRecovery {
+  revision: number;
+  phase: 'backup_pending' | 'reserved' | 'submitted' | 'recovered' | 'exhausted' | 'uncertain' | 'blocked';
+  kind: ProviderTransportFailureKind;
+  sameModelAttempts: 1;
+  backupAttempts: 0 | 1;
+  failedMessageId: string;
+  failedUserMessageId: string | null;
+  recoveryMessageId: string;
+  eventId: string | null;
+  reservedAt: number;
+  submittedAt: number | null;
+}
+export function validateManagedTransportRecovery(value: unknown): ManagedTransportRecovery | null;
+export function isManagedTransportBackupEligible(task: Pick<ManagedTaskRecord, 'transportRecovery' | 'failureReason'> | null | undefined): boolean;
+export function createManagedRecoveryMessageId(now: number, latestMessageId: string | null): string;
+export const PROVIDER_TRANSPORT_FAILURE_KIND: 'provider_transport';
+
 export type ManagedTaskAutoResumeState =
   | 'planning'
   | 'scheduled'
@@ -82,6 +101,7 @@ export type ManagedTaskAutoResumeState =
 export type ManagedTaskAutoResumeResetSource = 'opencode_status' | 'meridian_quota' | 'backoff';
 export type ManagedTaskAutoResumeTargetKind = 'backup' | 'original';
 export type ManagedTaskAutoResumeReason =
+  | 'backup_unavailable'
   | 'user'
   | 'manual_retry'
   | 'session_deleted'
@@ -106,6 +126,8 @@ export interface ManagedTaskAutoResumeError {
 
 /** Durable auto-resume state carried on a parked provider-limit result envelope. */
 export interface ManagedTaskAutoResume {
+  /** Absent on legacy quota recovery records. */
+  trigger?: 'provider_usage_limit' | 'provider_transport';
   revision: number;
   enabled: boolean;
   state: ManagedTaskAutoResumeState;
@@ -143,6 +165,7 @@ export interface ManagedTaskWaitingReason {
 }
 
 export interface ManagedTaskRecord {
+  transportRecovery?: ManagedTransportRecovery | null;
   owner: 'devryan';
   taskId: string;
   idempotencyKey: string;
@@ -310,6 +333,8 @@ export interface ManagedTaskExecutorResult {
 }
 
 export interface ManagedTaskControl {
+  /** Required for automatic transport recovery. Commits before dispatch and fences stale/cancelled leases. */
+  recordTransportRecovery?(recovery: ManagedTransportRecovery, expectedRevision: number): Promise<boolean>;
   setChildSessionId(childSessionId: string): Promise<boolean>;
   markAccepted(): Promise<boolean>;
   /** Lease-checked; fills only fields that are still null. */
@@ -357,6 +382,7 @@ export interface ManagedOpenCodeTransport {
     title: string;
   }): Promise<{ id?: string } | null>;
   promptSession(input: ManagedOpenCodeTransportInput & {
+    signal?: AbortSignal;
     modelId: string;
     agent: string;
     variant: string | null;
@@ -394,6 +420,12 @@ export interface ManagedOpenCodeTransport {
 
 export interface ManagedOpenCodeExecutorOptions {
   transport: ManagedOpenCodeTransport;
+  subscribeAssistantActivity?: ManagedAssistantActivitySubscribe;
+  onFirstAssistantActivity?: (activity: ManagedAssistantActivity & {
+    taskId: string;
+    childSessionId: string;
+    source: 'event' | 'transcript';
+  }) => void | Promise<void>;
   pollIntervalMs?: number;
   idleStablePolls?: number;
   retryStopMaxAborts?: number;
@@ -888,6 +920,22 @@ export function supportsManagedReadOnlyProvider(providerId: unknown): boolean;
 export const MANAGED_READ_ONLY_AGENT_UNSUPPORTED: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED';
 export const MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE: string;
 export function supportsManagedReadOnlyAgent(agent: unknown): boolean;
+export interface ManagedAssistantActivity {
+  messageId: string;
+  observedAt: number;
+}
+export type ManagedAssistantActivitySubscribe = (input: {
+  sessionId: string;
+  directory?: string;
+  after: number;
+  excludedMessageId?: string | null;
+}, onActivity: (activity: ManagedAssistantActivity) => void) => () => void;
+export function isManagedAssistantActivityPart(part: unknown): boolean;
+export function createManagedAssistantActivityRegistry(options?: { now?: () => number }): {
+  subscribe: ManagedAssistantActivitySubscribe;
+  observe(payload: unknown, directory?: string | null): void;
+  clear(): void;
+};
 export function createManagedOpenCodeExecutor(options: ManagedOpenCodeExecutorOptions): ManagedTaskExecutor;
 export type ManagedAgentContractRole = 'designer' | 'fixer' | 'explorer' | 'librarian' | 'oracle';
 export const MANAGED_AGENT_CONTRACT_TAG: '[devryan-agent-contract:v1]';

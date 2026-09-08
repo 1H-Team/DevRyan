@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { validateUuid } from './validation.js';
+import { withBotAbort } from './request-lifetime.js';
 
 export async function runBotStructuredTask({
   adapter,
@@ -11,6 +12,7 @@ export async function runBotStructuredTask({
   schema,
   title,
   system = '',
+  signal,
   uuid = randomUUID,
 } = {}) {
   if (!adapter || typeof adapter.prepareRevision !== 'function'
@@ -24,16 +26,28 @@ export async function runBotStructuredTask({
     throw new TypeError('Bot structured task is misconfigured');
   }
   const runId = validateUuid(run.id || uuid(), 'structuredTask.runId');
-  const prepared = await adapter.prepareRevision({
+  signal?.throwIfAborted();
+  const preparation = adapter.prepareRevision({
     run: Object.freeze({ ...run, id: runId }),
     contract,
     binding,
     attachmentIds: [],
     libraryVersionIds: [],
     persistence: 'ephemeral',
+    ...(signal ? { signal } : {}),
   });
+  const cleanup = async () => {
+    const cleanupSignal = AbortSignal.timeout(5_000);
+    try {
+      await withBotAbort(adapter.closeRun({ runId, binding, signal: cleanupSignal }), cleanupSignal);
+    } catch {
+      // Cleanup cannot replace the original completion or cancellation result.
+    }
+  };
+  let prepared;
   try {
-    return await adapter.completeStructured({
+    prepared = await withBotAbort(preparation, signal);
+    return await withBotAbort(adapter.completeStructured({
       runId,
       binding,
       prepared,
@@ -41,8 +55,10 @@ export async function runBotStructuredTask({
       schema,
       title,
       system,
-    });
+      ...(signal ? { signal } : {}),
+    }), signal);
   } finally {
-    await adapter.closeRun({ runId, binding }).catch(() => undefined);
+    if (!prepared && signal?.aborted) void Promise.resolve(preparation).then(cleanup, () => {});
+    await cleanup();
   }
 }

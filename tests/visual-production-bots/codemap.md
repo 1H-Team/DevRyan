@@ -59,3 +59,8 @@ in `docs/TESTING.md`.
 
 - `src/sharedFilesFetchFixture.ts`: installs the bounded Shared inventory fixture
   before the default API captures fetch; all unrelated requests pass through.
+
+- `src/BotMemoryScene.tsx`: isolated Settings memory fixture for accurate counts,
+  waiting/attention/unavailable states, paged activity, event updates and Bot switching.
+
+- `src/BotAssignedCatalogScene.tsx` and the early `assignedCatalogFetchFixture.ts` render Settings-to-Bots navigation through the real event owner, sidebar, and chat. In-memory HTTP/EventSource fixtures cover failed, delayed, empty, and disconnected catalogs, existing history before SSE, and manual reconnect without touching installed-app data.

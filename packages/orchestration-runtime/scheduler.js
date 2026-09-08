@@ -10,6 +10,7 @@ import {
   validateManagedTaskRecord,
 } from './contract.js';
 import { assertManagedTaskTransition } from './transitions.js';
+import { validateManagedTransportRecovery } from './transport-recovery.js';
 import {
   assertManagedTaskResultEnvelopeMatchesTask,
   createManagedTaskResultEnvelope,
@@ -51,6 +52,7 @@ const ADMISSION_RETRY_MIN_MS = 1_000;
 const ADMISSION_RETRY_MAX_MS = 60_000;
 const TERMINAL_RESULT_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
 const AGENT_HANDOFF_MANUAL_RECOVERY_ABANDON = Symbol('agent-handoff-manual-recovery-abandon');
+const AUTO_RESUME_SUBMISSION = Symbol('auto-resume-submission');
 
 // A recovery attempt continues work that was sized for the source task's window, so it
 // inherits that window instead of silently dropping to the caller's default. Without this a
@@ -66,6 +68,7 @@ const resolveFollowUpTimeoutAt = (sourceTask, requestedTimeoutAt, now) => {
 
 const cloneTask = (task) => task ? {
   ...task,
+  transportRecovery: task.transportRecovery ? { ...task.transportRecovery } : null,
   waitingReason: task.waitingReason ? { ...task.waitingReason } : null,
   canonicalRefs: task.canonicalRefs.map((reference) => ({ ...reference })),
 } : null;
@@ -730,6 +733,26 @@ export const createManagedTaskScheduler = (options = {}) => {
   };
 
   const createTaskControl = (taskId, leaseToken) => ({
+    async recordTransportRecovery(recovery, expectedRevision = 0) {
+      if (shutDown) return false;
+      const normalized = validateManagedTransportRecovery(recovery);
+      if (!normalized || normalized.revision !== expectedRevision + 1) {
+        throw new TypeError('transport recovery requires the next revision');
+      }
+      return await runExclusive(async () => {
+        const previous = tasks.get(taskId);
+        if (!previous || isTerminalManagedTaskStatus(previous.status)
+          || previous.leaseToken !== leaseToken
+          || (previous.transportRecovery?.revision ?? 0) !== expectedRevision) return false;
+        if (previous.transportRecovery
+          && (normalized.sameModelAttempts < previous.transportRecovery.sameModelAttempts
+            || normalized.backupAttempts < previous.transportRecovery.backupAttempts)) {
+          throw new TypeError('transport recovery attempts cannot be restored');
+        }
+        await commitTaskUpdateLocked(previous, { ...previous, transportRecovery: normalized });
+        return true;
+      });
+    },
     async setChildSessionId(childSessionId) {
       if (shutDown) return false;
       return await runExclusive(async () => {
@@ -896,7 +919,9 @@ export const createManagedTaskScheduler = (options = {}) => {
     );
     const eligible = isAutoResumeEligible(task, envelope);
     if (continuesAutoAttempt) {
-      if (task.status === 'completed' || task.firstAssistantPartAt !== null) {
+      if (priorState.trigger === 'provider_transport') {
+        // A transport incident carries no evidence about provider quota health.
+      } else if (task.status === 'completed' || task.firstAssistantPartAt !== null) {
         clearProviderBreakerLocked(task.providerId, ownerKey);
       } else if (isDefiniteProviderUsageLimit(task.failureReason)) {
         markProviderLimitedLocked(task.providerId, ownerKey, {
@@ -930,6 +955,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     if (!eligible) return;
 
     const at = now();
+    const transportRecovery = task.transportRecovery?.phase === 'exhausted';
     const origin = resolveAutoResumeOriginLocked(task);
     // The reset hint only describes the provider that just rejected the task. When
     // that was the backup, the lineage keeps what it knew about the origin.
@@ -941,11 +967,13 @@ export const createManagedTaskScheduler = (options = {}) => {
       now: at,
       enabled: priorState ? priorState.enabled : autoResumeDefaultEnabled,
       providerResetAt: originReset,
-      prior: continuesAutoAttempt ? { ...priorState, state: 'attempting', lastAttemptTaskId: task.taskId } : null,
+      prior: continuesAutoAttempt && (!transportRecovery || priorState.trigger === 'provider_transport')
+        ? { ...priorState, state: 'attempting', lastAttemptTaskId: task.taskId } : null,
       taskId: task.taskId,
     });
     const state = {
-      ...(isPrimary ? recordProviderRejection(initial, { now: at, providerResetAt: originReset }) : initial),
+      ...(isPrimary && !transportRecovery ? recordProviderRejection(initial, { now: at, providerResetAt: originReset }) : initial),
+      ...(transportRecovery ? { trigger: 'provider_transport' } : {}),
       ...resolveAutoResumeCycleLocked(task, origin),
     };
     await commitEnvelopeUpdateLocked(envelope, {
@@ -977,7 +1005,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       providerId: origin.providerId,
       modelId: origin.modelId,
     });
-    const providerReset = await resolveAutoResumeHook('resolveProviderReset', {
+    const providerReset = envelope.autoResume.trigger === 'provider_transport' ? null : await resolveAutoResumeHook('resolveProviderReset', {
       providerId: origin.providerId,
       ownerKey,
       directory: task.directory,
@@ -996,10 +1024,12 @@ export const createManagedTaskScheduler = (options = {}) => {
         return;
       }
       const at = now();
-      markProviderLimitedLocked(origin.providerId, ownerKey, {
-        until: state.resetAt,
-        source: state.resetSource ?? 'opencode_status',
-      });
+      if (state.trigger !== 'provider_transport') {
+        markProviderLimitedLocked(origin.providerId, ownerKey, {
+          until: state.resetAt,
+          source: state.resetSource ?? 'opencode_status',
+        });
+      }
       if (providerReset && providerReset.limited !== false && Number.isFinite(providerReset.resetAt)) {
         markProviderLimitedLocked(origin.providerId, ownerKey, {
           until: providerReset.resetAt,
@@ -1070,7 +1100,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         await rearmAt(breaker.probing.since + autoResumeProbeStaggerMs);
         return;
       }
-      if (state.attemptCount >= AUTO_RESUME_MAX_ATTEMPTS) {
+      if (state.attemptCount >= (state.trigger === 'provider_transport' ? 1 : AUTO_RESUME_MAX_ATTEMPTS)) {
         await commitAutoResumeExhaustedLocked(previous, 'attempt_cap');
         return;
       }
@@ -1084,7 +1114,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         lastAttemptAt: at,
         nextAttemptAt: null,
       });
-      setProviderProbeLocked(targetProviderId, ownerKey, { taskId, since: at });
+      if (state.trigger !== 'provider_transport') setProviderProbeLocked(targetProviderId, ownerKey, { taskId, since: at });
       params = buildAutoResumeAcknowledgeParams({ task, envelope: resultEnvelopes.get(taskId) });
     });
     if (!params) return;
@@ -1109,6 +1139,11 @@ export const createManagedTaskScheduler = (options = {}) => {
       if (state.state !== 'attempting') return;
       const at = now();
       clearProviderProbeLocked(targetProviderId, ownerKey, taskId);
+      if (state.trigger === 'provider_transport' && outcome?.outcome === 'rejected'
+        && outcome.code === 'backup_unavailable') {
+        await commitAutoResumeExhaustedLocked(previous, 'backup_unavailable');
+        return;
+      }
       if (outcome?.outcome === 'deferred') {
         const retryAfterMs = Number.isFinite(outcome.retryAfterMs)
           ? Math.max(0, outcome.retryAfterMs)
@@ -1604,6 +1639,10 @@ export const createManagedTaskScheduler = (options = {}) => {
       const current = resultEnvelopes.get(envelope.taskId);
       if (current.autoResume !== null || current.action !== null) continue;
       const task = tasks.get(current.taskId);
+      if (task?.transportRecovery?.phase === 'exhausted' && isTerminalManagedTaskStatus(task.status)) {
+        await parkAutoResumeLocked(task, { planningDelayMs: autoResumeStartupGraceMs });
+        continue;
+      }
       if (!task?.priorTaskId || !isTerminalManagedTaskStatus(task.status)) continue;
       const priorState = resultEnvelopes.get(task.priorTaskId)?.autoResume ?? null;
       if (
@@ -1748,6 +1787,15 @@ export const createManagedTaskScheduler = (options = {}) => {
       const indexKey = idempotencyIndexKey(input.rootSessionId, input.idempotencyKey);
       const existingTaskId = idempotencyIndex.get(indexKey);
       if (existingTaskId) return cloneTask(tasks.get(existingTaskId));
+      const automatic = input[AUTO_RESUME_SUBMISSION];
+      if (automatic) {
+        const source = resultEnvelopes.get(automatic.taskId);
+        if (!source || source.action !== null || !isAutoResumeActive(source)
+          || source.autoResume.cancelGeneration !== automatic.generation
+          || source.autoResume.state !== 'attempting') {
+          throw new ManagedOrchestrationError('auto_resume_stale', 'Automatic recovery was cancelled before admission');
+        }
+      }
 
       // Content-scoped duplicate guard. Only collapses onto a task that is
       // STILL RUNNING — a finished task never blocks a fresh dispatch, so
@@ -1819,6 +1867,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         dispatchWaveId: resolveDispatchWaveIdLocked(input),
         parentTaskId: input.parentTaskId ?? null,
         childSessionId: input.childSessionId ?? null,
+        transportRecovery: input.transportRecovery ?? null,
         directory: input.directory,
         sequence: nextSequenceLocked(),
         mode: input.mode,
@@ -2585,6 +2634,17 @@ export const createManagedTaskScheduler = (options = {}) => {
       let followUpTask = null;
       if (action === 'retry' || action === 'resume' || action === 'retry_in_place') {
         followUpTask = await submit({
+          ...(autoResumeGeneration === null ? {} : {
+            [AUTO_RESUME_SUBMISSION]: { taskId, generation: autoResumeGeneration },
+          }),
+          ...(autoResumeGeneration !== null && currentEnvelope.autoResume?.trigger === 'provider_transport' ? {
+            transportRecovery: {
+              ...sourceTask.transportRecovery,
+              revision: sourceTask.transportRecovery.revision + 1,
+              phase: 'backup_pending',
+              backupAttempts: 1,
+            },
+          } : {}),
           idempotencyKey: actionOptions.idempotencyKey,
           rootSessionId: sourceTask.rootSessionId,
           dispatchGroupId: sourceTask.dispatchGroupId,
@@ -2708,10 +2768,10 @@ export const createManagedTaskScheduler = (options = {}) => {
       }
 
       const at = now();
-      const base = state ?? recordProviderRejection(
-        initialAutoResumeState({ now: at, enabled: true, providerResetAt: previous.providerResetAt }),
-        { now: at, providerResetAt: previous.providerResetAt },
-      );
+      const initial = initialAutoResumeState({ now: at, enabled: true, providerResetAt: previous.providerResetAt });
+      const base = state ?? (task.transportRecovery?.phase === 'exhausted'
+        ? { ...initial, trigger: 'provider_transport' }
+        : recordProviderRejection(initial, { now: at, providerResetAt: previous.providerResetAt }));
       const cancelGeneration = state ? state.cancelGeneration + 1 : base.cancelGeneration;
       clearAutoResumeTimer(taskId);
       if (state?.target) {

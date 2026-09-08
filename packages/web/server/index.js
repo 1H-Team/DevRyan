@@ -1,3 +1,4 @@
+import { recordContextModeDiagnostic } from './lib/opencode/context-mode-diagnostics.js';
 import { createCompressionPolicy } from './lib/http-compression-policy.js';
 import { createHarnessSkillDiscovery } from './lib/opencode/harness-skill-discovery.js';
 import 'reflect-metadata';
@@ -561,6 +562,7 @@ const turnTimingRuntime = createTurnTimingRuntime({
 });
 
 const emitSyntheticOpenCodeEvent = (payload, options = {}) => {
+  managedOrchestrationRuntime?.processOpenCodeEvent?.(payload, options.directory ?? null);
   maybeCacheSessionInfoFromEvent(payload);
   sessionRuntime.processOpenCodeSsePayload(payload);
   turnTimingRuntime.processOpenCodeEvent(payload);
@@ -1053,11 +1055,11 @@ const processCanonicalOpenCodeEvent = createCanonicalOpenCodeEventProcessor({
   sendPush: maybeSendPushForTrigger,
   processSessionState: (payload) => sessionRuntime.processOpenCodeSsePayload(payload),
   processTurnTiming: (payload) => turnTimingRuntime.processOpenCodeEvent(payload),
-  recordJournalEvent: (payload) => harnessRuntime.recordOpenCodeEvent(payload),
+  recordJournalEvent: (payload, directory) => harnessRuntime.recordOpenCodeEvent(payload, directory),
   recordMultiUserActivity: (payload) => multiUserRuntime?.recordOpenCodeActivity?.(payload),
   processEvidence: (payload) => evidenceRuntime?.processOpenCodeEvent(payload),
   processBrowserLease: (payload) => browserLeaseRuntime?.processOpenCodeEvent(payload),
-  processManagedOrchestration: (payload) => managedOrchestrationRuntime?.processOpenCodeEvent?.(payload),
+  processManagedOrchestration: (payload, directory) => managedOrchestrationRuntime?.processOpenCodeEvent?.(payload, directory),
   processSessionTitle: (payload) => standardSessionTitleRuntime.processOpenCodeEvent(payload),
   processContextModeRecovery: (payload) => observeContextModeToolFailure(payload),
   processCommandDeadline: (payload) => observeCommandDeadline(payload),
@@ -2002,6 +2004,13 @@ async function main(options = {}) {
     ),
   });
   managedOrchestrationRuntime = createWebManagedOrchestrationRuntime({
+    onFirstAssistantActivity: (activity) => {
+      harnessRuntime.record({
+        type: 'lifecycle', event: 'managed_task.first_assistant_activity',
+        sessionID: activity.childSessionId, assistantMessageID: activity.messageId,
+        payload: activity,
+      });
+    },
     dataDirectory: OPENCHAMBER_DATA_DIR,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
@@ -2027,6 +2036,7 @@ async function main(options = {}) {
     ),
     resolveProviderReset: (params) => providerResetProbe.resolveProviderReset(params),
     auxiliaryRpcHandlers: {
+      context_mode_diagnostic: (params) => recordContextModeDiagnostic(params, harnessRuntime.record),
       primary_recovery: (params) => primaryRecoveryRuntime.plugin(params),
       session_changes: (params) => sessionChangeHost.plugin(params),
       resolve_agent_execution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)

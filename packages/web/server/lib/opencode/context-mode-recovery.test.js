@@ -65,6 +65,16 @@ describe('context-mode recovery detection', () => {
     })).toBeNull();
   });
 
+  it('does not turn worker deadlines containing partial SQLite output into host restart incidents', () => {
+    const text = 'Context Mode worker: TIMEOUT: command budget exceeded.\nPartial output: SQLITE_IOERR: disk I/O error';
+    const payload = structuredClone(ioerrPayload);
+    payload.properties.part.state.error = text;
+    expect(extractContextModeToolFailure(payload)).toBeNull();
+    expect(rewriteContextModeWedgeFailureText({ tool: 'ctx_execute', failureText: text })).toBe(text);
+    payload.properties.part.state.error = 'Context Mode worker: EXECUTION_FAILED: SQLITE_IOERR: disk I/O error';
+    expect(extractContextModeToolFailure(payload)?.tool).toBe('ctx_batch_execute');
+  });
+
   it('rewrites wedged-handle failure text without dropping SQLITE_IOERR', () => {
     expect(rewriteContextModeWedgeFailureText({
       tool: 'ctx_execute',

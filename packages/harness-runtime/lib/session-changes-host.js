@@ -2,8 +2,8 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { createSessionChangeRuntime } from './session-changes.js';
 
-const READ_ONLY = new Set(['read', 'oc_read', 'glob', 'grep', 'list', 'webfetch', 'websearch', 'todowrite', 'todoread', 'question', 'task', 'devryan_task', 'council_session']);
-const FILE_TOOLS = new Set(['edit', 'oc_edit', 'write', 'oc_write', 'apply_patch', 'multiedit']);
+import { SESSION_CHANGE_READ_ONLY_TOOLS, classifySessionChangeTool, isSyntheticSessionChange,
+  normalizeSessionChangeTool, sessionChangeCapturePaths, sessionChangeReceipt } from './session-changes-tools.js';
 
 const error = (code, status = 409) => Object.assign(new Error(code), { code, status });
 
@@ -62,7 +62,9 @@ export function createSessionChangeHost(options) {
     }
     return entries;
   };
-  const history = async (id, directory) => {
+  const history = async (verified, directory) => {
+    const id = verified.id;
+    await runtime.registerSession({ directory, sessionID: id, parentID: verified.parentID ?? null });
     const saved = await runtime.historyState({ directory, sessionID: id });
     const state = saved ?? { complete: false, cursor: null, first: null, newestID: null };
     const deadline = Date.now() + 20_000;
@@ -87,20 +89,22 @@ export function createSessionChangeHost(options) {
         if (record.info.id === saved?.newestID) reachedSavedHead = true;
         if (!cursor && (!newestID || record.info.time.created > (result.data.find((entry) => entry.info.id === newestID)?.info.time.created ?? -1))) newestID = record.info.id;
         const calls = [];
+        if (record.info.sessionID && record.info.sessionID !== id) throw error('capture_identity_mismatch', 503);
         for (const part of record.parts ?? []) {
-          if (part.type === 'tool' && !READ_ONLY.has(part.tool)) calls.push(part.callID ?? part.id);
-          const metadata = part.state?.metadata;
-          if (!FILE_TOOLS.has(part.tool) || !part.callID || !metadata || !['completed', 'error'].includes(part.state?.status)) continue;
-          const diffs = metadata.filediff ? [metadata.filediff] : Array.isArray(metadata.files) ? metadata.files : [];
-          const files = [];
-          for (const diff of diffs) {
-            const file = diff?.file ?? diff?.filePath ?? part.state?.input?.filePath;
-            if (typeof file !== 'string' || typeof diff?.before !== 'string' || typeof diff?.after !== 'string') continue;
-            files.push({ path: file, before: metadata.exists === false || diff.type === 'added' ? null : diff.before,
-              after: diff.type === 'deleted' ? null : diff.after });
-          }
-          if (files.length && files.length === diffs.length) receipts.push({ sessionID: id, callID: part.callID,
-            messageID: record.info.id, userMessageID: record.info.parentID, createdAt: part.state?.time?.start ?? record.info.time.created, files, directory });
+          // Native Cursor tasks expose bounded activity previews, not verified
+          // DevRyan child sessions or full edit receipts. Their missing capture
+          // must remain explicit instead of declaring the parent complete.
+          const nativeTask = normalizeSessionChangeTool(part.tool) === 'task'
+            && (record.info.providerID === 'cursor-acp' || part.state?.metadata?.cursorNativeTask?.source === 'cursor-native');
+          if (part.type !== 'tool' || isSyntheticSessionChange(part) || classifySessionChangeTool(part.tool) === 'read-only' && !nativeTask) continue;
+          if (part.sessionID && part.sessionID !== id || part.messageID && part.messageID !== record.info.id) throw error('capture_identity_mismatch', 503);
+          const callID = part.callID ?? part.id;
+          if (typeof callID !== 'string' || !callID) throw error('capture_identity_mismatch', 503);
+          calls.push(callID);
+          const receipt = sessionChangeReceipt(part);
+          if (receipt) receipts.push({ ...receipt, sessionID: id, callID, messageID: record.info.id,
+            userMessageID: record.info.parentID, createdAt: part.state?.time?.start ?? record.info.time.created,
+            directory, source: record.info.providerID === 'cursor-acp' ? 'cursor' : 'opencode' });
         }
         messages.push({ id: record.info.id, createdAt: record.info.time.created, calls });
         if (record.info.role === 'user' && (!state.first || record.info.time.created < state.first.createdAt)) state.first = { id: record.info.id, createdAt: record.info.time.created };
@@ -115,24 +119,52 @@ export function createSessionChangeHost(options) {
     }
   };
   const plugin = async (input) => {
+    if (!['message', 'before', 'after'].includes(input.action)) throw error('invalid_capture_identity', 400);
+    // A supplied read-only name can only skip observation. Canonical history
+    // still checks every executing call and exposes any missing capture.
+    if (input.action !== 'message' && typeof input.tool === 'string' && classifySessionChangeTool(input.tool) === 'read-only') return null;
     const captureDeadline = Date.now() + 30_000;
     const current = await session(input.sessionID, input.directory);
     const scope = { directory: input.directory, sessionID: input.sessionID, callID: input.callID, captureDeadline, parentID: current.parentID ?? null };
-    if (input.action === 'message') return runtime.registerSession({ ...scope, userMessageID: input.userMessageID });
-    if (!['before', 'after'].includes(input.action) || typeof input.callID !== 'string' || !input.callID) throw error('invalid_capture_identity', 400);
+    if (input.action === 'message') {
+      await runtime.registerSession({ ...scope, userMessageID: input.userMessageID });
+      return { readOnlyTools: SESSION_CHANGE_READ_ONLY_TOOLS };
+    }
+    if (typeof input.callID !== 'string' || !input.callID) throw error('invalid_capture_identity', 400);
     const { data } = await request(`/session/${input.sessionID}/message?limit=100`, input.directory);
     const invoking = Array.isArray(data) ? data.find((record) => record.info?.role === 'assistant'
       && record.parts?.some((part) => part.type === 'tool' && part.callID === input.callID)) : null;
     if (!invoking?.info.id) throw error('capture_call_unresolved', 503);
     const part = invoking.parts.find((entry) => entry.type === 'tool' && entry.callID === input.callID);
-    if (['edit', 'oc_edit', 'write', 'oc_write'].includes(part.tool) && typeof part.state?.input?.filePath === 'string') {
-      scope.paths = [part.state.input.filePath];
-    }
+    if (invoking.info.sessionID && invoking.info.sessionID !== input.sessionID
+      || part.sessionID && part.sessionID !== input.sessionID
+      || part.messageID && part.messageID !== invoking.info.id) throw error('capture_identity_mismatch', 503);
+    if (classifySessionChangeTool(part.tool) === 'read-only' || isSyntheticSessionChange(part)) return null;
+    scope.paths = sessionChangeCapturePaths(part);
     scope.messageID = invoking.info.id;
     scope.userMessageID = invoking.info.parentID;
-    return input.action === 'before' ? runtime.begin(scope) : runtime.finish(scope);
+    scope.source = invoking.info.providerID === 'cursor-acp' ? 'cursor' : 'opencode';
+    scope.tool = normalizeSessionChangeTool(part.tool);
+    if (input.action === 'before') return runtime.begin(scope);
+    await runtime.finish(scope);
+    const receipt = sessionChangeReceipt(part);
+    if (receipt) await runtime.recordReceipt({ ...scope, ...receipt });
+    return null;
   };
   return { ...runtime, plugin,
+    async observe(event, directory) {
+      await runtime.observe(event, directory);
+      const part = event?.properties?.part;
+      const receipt = sessionChangeReceipt(part);
+      if (!receipt || typeof directory !== 'string' || !part.sessionID || !part.messageID) return;
+      const current = await session(part.sessionID, directory);
+      const callID = part.callID ?? part.id;
+      if (typeof callID !== 'string' || !callID) return;
+      // Events carry canonical tool metadata. Persist before notification; a
+      // later paged-history replay is deduplicated by this same identity.
+      await runtime.recordReceipt({ ...receipt, directory, sessionID: part.sessionID, messageID: part.messageID,
+        callID, parentID: current.parentID ?? null, createdAt: part.state?.time?.start, source: 'canonical-event' });
+    },
     async handleRequest(method, rawPath, body = {}) {
       const url = new URL(rawPath, 'http://session-changes.invalid');
       const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/openchamber\/session\/([^/]+)\/changes(?:\/(diff|undo|redo))?$/);
@@ -143,7 +175,7 @@ export function createSessionChangeHost(options) {
         if (method === 'GET' && action === 'diff') {
           await session(rootSessionID, directory);
           return { status: 200, body: await runtime.diff({ directory, rootSessionID,
-            revision: url.searchParams.get('revision'), file: url.searchParams.get('file'), cursor: url.searchParams.get('cursor') }) };
+            revision: url.searchParams.get('revision'), file: url.searchParams.get('file'), cursor: url.searchParams.get('cursor'), segment: url.searchParams.get('segment') }) };
         }
         if (method === 'GET' && !action && url.searchParams.has('revision')) {
           await session(rootSessionID, directory);
@@ -154,7 +186,7 @@ export function createSessionChangeHost(options) {
         if (method === 'GET' && !action) {
           const histories = [];
           for (let start = 0; start < sessions.length; start += 4) {
-            histories.push(...await Promise.all(sessions.slice(start, start + 4).map((entry) => history(entry.id, directory))));
+            histories.push(...await Promise.all(sessions.slice(start, start + 4).map((entry) => history(entry, directory))));
           }
           const firstUserMessageID = histories[0].first;
           return { status: 200, body: await runtime.summarize({ directory, rootSessionID, sessions, firstUserMessageID,

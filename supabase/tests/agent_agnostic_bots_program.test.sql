@@ -138,7 +138,7 @@ select has_function(
 );
 select is(
   public.devryan_bot_schema_version(),
-  '20260901160000'::text,
+  '20260908182901'::text,
   'schema marker includes terminal settlement and audit repair'
 );
 

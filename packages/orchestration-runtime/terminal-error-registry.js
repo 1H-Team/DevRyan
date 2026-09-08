@@ -47,6 +47,8 @@ export const createManagedTerminalErrorRegistry = ({
     const observedAt = Number.isFinite(options.observedAt) ? Number(options.observedAt) : now();
     const entry = terminalErrorFromPayload(payload, observedAt);
     if (!entry) return false;
+    // Re-delivery must not move an old failure across a new prompt's boundary.
+    if (entry.eventId && latestBySession.get(entry.sessionId)?.eventId === entry.eventId) return false;
     touch(entry.sessionId, entry);
     return true;
   };
