@@ -106,6 +106,17 @@ test('first Claude activity reaches the subscribed card and child copy before a 
       expect(performance.now() - started).toBeLessThan(1_000);
       expect(reads).toBe(1);
       expect(store.getState().tasksById.dvr_task_unrelated).toBe(unrelated);
+      const active = store.getState().tasksById.dvr_task_activity;
+      await act(async () => {
+        // A snapshot/event captured before semantic activity must not restore
+        // the startup labels while the same attempt is already working.
+        store.getState().ingestEvent(toManagedTaskEvent(current));
+      });
+      expect(store.getState().tasksById.dvr_task_activity).toBe(active);
+      expect(container.textContent).toContain('Running...');
+      expect(container.textContent).toContain('Working');
+      expect(container.textContent).not.toContain('Waiting for model');
+      expect(container.textContent).not.toContain('Starting model');
     } finally {
       await act(async () => {
         read.resolve([{ info: { id: 'msg_activity', role: 'assistant', finish: 'stop', time: { completed: Date.now() } }, parts: [{ type: 'text', text: 'Done' }] }]);

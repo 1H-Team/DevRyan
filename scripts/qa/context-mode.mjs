@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { executeWithFailureCapture, wrapExecutionFailures } from '../../packages/web/server/lib/opencode/context-mode-execution.js';
 import { EventEmitter } from 'node:events';
 import { ContextModeWorkerPool } from '../../packages/web/server/lib/opencode/context-mode-worker-pool.js';
 import { PERF_PARENT_SESSION_ID } from '../perf/loopback-opencode-fixture.mjs';
@@ -38,6 +39,7 @@ export async function runContextModeQa({ fixture, cdp, directory, check, screens
   const replay = (status = 'busy') => fixture.replayRecoveryVisual({ sessionID: scene.sessionID, rows: scene.rows, status });
   const messageSelector = `[data-message-id="${scene.assistantID}"]`;
   const expandError = async () => {
+    await ui.waitVisibleText('Context Mode: Index', messageSelector);
     const shown = await evaluate(cdp, `document.querySelector('${messageSelector}')?.innerText.includes('Execution outcome is unknown')`);
     if (!shown) await ui.click({ selector: `${messageSelector} [role="button"]`, text: 'Context Mode: Index', exact: false });
     await ui.waitVisibleText('Execution outcome is unknown', messageSelector);
@@ -73,6 +75,30 @@ export async function runContextModeQa({ fixture, cdp, directory, check, screens
       assert.equal(fixture.getState().receivedPrompts.length, beforePrompts);
       assert.equal(messages.filter(message => message.type === 'execute').length, 1);
       await screenshot('context-mode-reopened');
+    });
+    await check('context-mode indexed crash retains fatal details after reconnect', async () => {
+      const result = await wrapExecutionFailures(async () => {
+        await executeWithFailureCapture({ execute: async () => ({ exitCode: 134, stdout: '', stderr: 'FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory' }) }, {});
+        return { isError: true, content: [{ type: 'text', text: 'Indexed 6 sections from "execute:shell:error". No sections matched unrelated intent.' }] };
+      })();
+      const crash = createContextModeScene(directory, Date.now() + 1);
+      crash.tool.tool = 'ctx_execute';
+      crash.tool.state = { status: 'error', input: { language: 'shell', code: 'node fixture.cjs' }, error: result.content.map(part => part.text).join('\n\n'), time: { start: Date.now(), end: Date.now() } };
+      crash.assistant.info.time.completed = Date.now();
+      crash.assistant.info.finish = 'stop';
+      fixture.replayRecoveryVisual({ sessionID: crash.sessionID, rows: crash.rows, status: 'idle' });
+      const selector = `[data-message-id="${crash.assistantID}"]`;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await ui.reload();
+        await ui.waitVisibleText('Context Mode: Execute', selector);
+        const shown = await evaluate(cdp, `document.querySelector('${selector}')?.innerText.includes('node_heap_exhausted')`);
+        if (!shown) await ui.click({ selector: `${selector} [role="button"]`, text: 'Context Mode: Execute', exact: false });
+        await ui.waitVisibleText('node_heap_exhausted', selector);
+        await ui.waitVisibleText('FATAL ERROR', selector);
+        await ui.waitVisibleText('Indexed 6 sections', selector);
+      }
+      assert.equal(fixture.getState().receivedPrompts.length, beforePrompts);
+      await screenshot('context-mode-indexed-crash');
     });
     return { liveProvider: false, worker: 'silent injected worker, production pool', errorCode: error.code,
       events, dispatchCount: messages.filter(message => message.type === 'execute').length,

@@ -107,3 +107,10 @@ describe('diagnostic sanitizer', () => {
     });
   });
 });
+
+ test('retains bounded Context Mode crash facts without raw output', () => {
+  const record = createDiagnosticSanitizer().sanitizeRecord({ type: 'lifecycle', event: 'context_mode.execution_failed', payload: {
+    failureCategory: 'node_heap_exhausted', exitCode: 134, signal: 'SIGABRT', stderr: 'private output', NODE_OPTIONS: 'private options',
+  } });
+  expect(record.payload).toEqual({ failureCategory: 'node_heap_exhausted', exitCode: 134, signal: 'SIGABRT' });
+});

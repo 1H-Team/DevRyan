@@ -85,20 +85,30 @@ const collectBatchContext = async ({
   getDiff,
   limits,
 }) => {
-  const selectedPaths = files.map((file) => file.path);
-  const requests = [getDiff(directory, {
-    paths: selectedPaths,
-    staged: true,
-    contextLines: limits.diffContextLines,
-  })];
-  if (!stagedOnly) {
-    requests.push(getDiff(directory, {
-      paths: selectedPaths,
-      staged: false,
-      contextLines: limits.diffContextLines,
-    }));
+  // Git's batched diff omits untracked files. The single-path service reads
+  // those with --no-index, without staging them or changing the user's index.
+  const untrackedFiles = stagedOnly ? [] : files.filter((file) => file.index === '?' && file.workingDir === '?');
+  const untrackedPaths = new Set(untrackedFiles.map((file) => file.path));
+  const trackedPaths = files.filter((file) => !untrackedPaths.has(file.path)).map((file) => file.path);
+  const requests = [];
+  if (trackedPaths.length > 0) {
+    requests.push({ paths: trackedPaths, staged: true, contextLines: limits.diffContextLines });
+    if (!stagedOnly) requests.push({ paths: trackedPaths, staged: false, contextLines: limits.diffContextLines });
   }
-  const settled = await Promise.allSettled(requests);
+  requests.push(...untrackedFiles.map((file) => ({ path: file.path, staged: false, contextLines: limits.diffContextLines })));
+  const settled = [];
+  // Keep at most two Git processes active even for selections of new files.
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(2, requests.length) }, async () => {
+    while (next < requests.length) {
+      const index = next++;
+      try {
+        settled[index] = { status: 'fulfilled', value: await getDiff(directory, requests[index]) };
+      } catch (reason) {
+        settled[index] = { status: 'rejected', reason };
+      }
+    }
+  }));
   const combined = settled
     .filter((result) => result.status === 'fulfilled')
     .map((result) => normalizeDiffResult(result.value).trim())
@@ -133,9 +143,14 @@ export const collectCommitMessageContext = async ({
 }) => {
   const selectedPaths = validateCommitMessageSelectedFiles(selectedFiles);
   const allowlist = new Set(selectedPaths);
+  let historyUnavailable = false;
   const [status, log] = await Promise.all([
     getStatus(directory),
-    getLog(directory, { maxCount: limits.recentCommitCount }),
+    getLog(directory, { maxCount: limits.recentCommitCount }).catch(() => {
+      // History is optional wording context; a readable diff is sufficient.
+      historyUnavailable = true;
+      return { all: [] };
+    }),
   ]);
   const statusFiles = Array.isArray(status?.files) ? status.files : [];
   if (status?.mergeInProgress || status?.rebaseInProgress || hasMergeOrRebaseConflict(statusFiles)) {
@@ -184,7 +199,12 @@ export const collectCommitMessageContext = async ({
       recentCommitSubjects,
       ...(batchContext.patch ? { patch: batchContext.patch } : {}),
       ...(batchContext.patchTruncated ? { patchNote: 'combined patch truncated' } : {}),
-      ...(batchContext.partial ? { contextWarning: 'some diff context was unavailable' } : {}),
+      ...((batchContext.partial || historyUnavailable) ? {
+        contextWarning: [
+          batchContext.partial ? 'some diff context was unavailable' : '',
+          historyUnavailable ? 'recent commit history was unavailable' : '',
+        ].filter(Boolean).join('; '),
+      } : {}),
     },
   };
 };

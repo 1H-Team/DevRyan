@@ -1,3 +1,5 @@
+import { cursorSessionChangeObservation } from './cursor-session-changes.js';
+
 const isPlainObject = (value) => (
   value !== null && typeof value === 'object' && !Array.isArray(value)
 );
@@ -181,13 +183,25 @@ export const normalizeInteractionUpdateToSdkMessage = (input) => {
 
   if (update.type === 'tool-call-delta') {
     const callID = trimString(update.callId ?? update.call_id);
-    const nestedUpdate = normalizeNestedTaskUpdate(update.taskUpdate ?? update.task_update);
-    if (!callID || !nestedUpdate) return null;
+    const rawNested = update.taskUpdate ?? update.task_update;
+    const nestedUpdate = normalizeNestedTaskUpdate(rawNested);
+    if (!callID) return null;
+    if (!nestedUpdate) {
+      // Unsupported/deeper tool activity cannot silently certify its parent.
+      // This private event never becomes a task preview or a chat tool part.
+      return typeof rawNested?.type === 'string' && rawNested.type.startsWith('tool-call')
+        ? { type: 'session_change', sessionChange: { phase: 'stream-gap', callID } } : null;
+    }
+    const execution = nestedUpdate.type === 'tool-call' ? cursorSessionChangeObservation({
+      call_id: nestedUpdate.call_id, name: nestedUpdate.name, status: nestedUpdate.status,
+      args: rawNested.toolCall?.args, result: rawNested.toolCall?.result,
+    }) : null;
     return {
       type: 'task_activity',
       call_id: callID,
       model_call_id: trimString(update.modelCallId ?? update.model_call_id),
       update: nestedUpdate,
+      ...(execution ? { sessionChange: { ...execution, parentCallID: callID } } : {}),
     };
   }
 

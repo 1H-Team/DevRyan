@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { botsApi, type BotSummary } from '@/lib/botsApi';
 import { useBotOperationsStore } from '@/stores/useBotOperationsStore';
 import { useBotsStore } from '@/stores/useBotsStore';
-import { restoreAssignedFixture } from './assignedCatalogFetchFixture';
+import { interruptAssignedFixture, openAssignedTransportFixture, publishAssignedFixtureMessage, restoreAssignedFixture } from './assignedCatalogFetchFixture';
 
 export function BotAssignedCatalogScene() {
   const [tab, setTab] = React.useState('settings');
@@ -21,6 +21,11 @@ export function BotAssignedCatalogScene() {
       <Button variant="outline" data-settings-tab onClick={() => setTab('settings')}>Settings / Bots</Button>
       <Button variant="outline" data-bots-tab onClick={() => setTab('bots')}>Bots</Button>
       <Button variant="ghost" data-restore-service onClick={restoreAssignedFixture}>Restore fixture service</Button>
+      {new URLSearchParams(location.search).get('state') === 'assigned_recovery' ? <>
+        <Button data-interrupt-service onClick={interruptAssignedFixture}>Disconnect fixture</Button>
+        <Button data-open-transport onClick={openAssignedTransportFixture}>Open transport without snapshot</Button>
+        <Button data-publish-message onClick={publishAssignedFixtureMessage}>Publish fixture response</Button>
+      </> : null}
     </nav>
     {tab === 'settings' ? <div data-settings-catalog className="p-3"><BotGallery bots={settingsBots} selectedBotId={null} canCreate={false} onSelect={() => {}} onCreate={() => {}} /></div> :
       <div className="flex min-h-[520px] flex-1 flex-col sm:flex-row">

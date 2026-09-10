@@ -1981,7 +1981,11 @@ export const dict = {
   'chat.sessionChanges.legacyCapture': 'Some earlier changes were not captured. Available recorded changes are shown.',
 
   'chat.sessionChanges.loadFailed': 'Session changes could not be loaded. Reopen the session to retry.',
-  'chat.sessionChanges.unverified': 'Some tool changes could not be verified for this session. Verified edits are shown.',
+  'chat.sessionChanges.captureInterrupted': 'Change capture was interrupted. Retry to recover saved tool results.',
+  'chat.sessionChanges.receiptConflict': 'A tool reported conflicting change details. Recorded edits remain available; Undo is disabled.',
+  'chat.sessionChanges.invalidReceipt': 'A tool returned invalid change details. Retry to check for a corrected result.',
+  'chat.sessionChanges.deliveryFailed': 'Saved tool changes could not be loaded. Retry to recover them.',
+  'chat.sessionChanges.executionUnavailable': 'A tool did not provide a complete record of its file edits. Available recorded edits are shown.',
   'chat.sessionChanges.recordedEdits': 'Recorded Edits',
   'chat.sessionChanges.recordedEditsDescription': 'Counts include this session’s separate recorded edits when a single net diff is unavailable.',
   'chat.sessionChanges.oneEdit': '1 edit',

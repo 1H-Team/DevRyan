@@ -242,6 +242,8 @@ Electron shell.
   human viewers, with batched account-kind reads and bounded event decisions.
 - `event-stream.js`: snapshot-first, monotonic, principal-filtered Bot SSE kept
   separate from ordinary OpenCode event state.
+- `event-diagnostics.js`: content-free subscription correlation, snapshot-stage
+  and byte measurements, failure codes, and HTTP/response lifetime diagnostics.
 - `connector-registry.js`: complete connector interface with isolated-workspace
   and explicit Shared-publication connectors registered in production and
   fail-closed dispatch for unknown connectors. MCP is not registered.

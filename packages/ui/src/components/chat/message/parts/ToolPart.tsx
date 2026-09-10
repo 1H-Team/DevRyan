@@ -41,7 +41,7 @@ import { TaskToolSummary } from './TaskToolSummary';
 import { ToolScrollableSection } from './ToolScrollableSection';
 import { getToolIcon } from './toolPresentation';
 import { isToolHeaderInteractive } from './toolHeaderInteractions';
-import { getToolDescriptionFallback, normalizeToolName } from './toolRenderUtils';
+import { getToolDescriptionFallback, getToolDescriptionForDisplay, normalizeToolName } from './toolRenderUtils';
 import { useDurationTickerNow } from './useDurationTicker';
 import { createTerminalTranscriptParser } from './terminalTranscript';
 import { buildTaskInvocationKey } from '../../lib/taskSessionLinking';
@@ -1906,11 +1906,11 @@ const ToolPart: React.FC<ToolPartProps> = ({
         }
         const title = (stateWithData as { title?: string }).title;
         if (typeof title === 'string' && title.trim().length > 0) {
-            return title;
+            return getToolDescriptionForDisplay(normalizedPartTool, title) || null;
         }
         const inputDesc = input?.description;
         if (typeof inputDesc === 'string' && inputDesc.trim().length > 0) {
-            return inputDesc;
+            return getToolDescriptionForDisplay(normalizedPartTool, inputDesc) || null;
         }
         return null;
     }, [descriptionPath, normalizedPartTool, stateWithData, input]);

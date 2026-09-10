@@ -100,6 +100,69 @@ describe('commit message host context collection', () => {
     expect(getDiff).not.toHaveBeenCalled();
   });
 
+  it('includes each selected untracked file alongside tracked diffs without staging or widening the selection', async () => {
+    const getDiff = vi.fn(async (_directory, options) => {
+      if (options.path) return `diff --git a/${options.path} b/${options.path}\n+new ${options.path}`;
+      return options.staged ? '+staged tracked change' : '+unstaged tracked change';
+    });
+    const result = await collectCommitMessageContext({
+      directory: '/repo',
+      selectedFiles: ['tracked.ts', 'new-a.ts', 'new-b.ts'],
+      getStatus: async () => baseStatus([
+        statusFile('tracked.ts'), statusFile('new-a.ts', '?', '?'),
+        statusFile('new-b.ts', '?', '?'), statusFile('unselected.ts', '?', '?'),
+      ]),
+      getLog: async () => ({ all: [] }),
+      getDiff,
+    });
+    expect(result.context.patch).toContain('+staged tracked change');
+    expect(result.context.patch).toContain('+unstaged tracked change');
+    expect(result.context.patch).toContain('+new new-a.ts');
+    expect(result.context.patch).toContain('+new new-b.ts');
+    expect(result.context.patch).not.toContain('unselected.ts');
+    expect(getDiff.mock.calls.map(([, options]) => options)).toEqual([
+      { paths: ['tracked.ts'], staged: true, contextLines: 1 },
+      { paths: ['tracked.ts'], staged: false, contextLines: 1 },
+      { path: 'new-a.ts', staged: false, contextLines: 1 },
+      { path: 'new-b.ts', staged: false, contextLines: 1 },
+    ]);
+  });
+
+  it('bounds concurrent untracked reads and preserves remaining context after one file fails', async () => {
+    let active = 0;
+    let peak = 0;
+    const files = Array.from({ length: 8 }, (_, index) => statusFile(`new-${index}.ts`, '?', '?'));
+    const result = await collectCommitMessageContext({
+      directory: '/repo', selectedFiles: files.map((file) => file.path),
+      getStatus: async () => baseStatus(files), getLog: async () => ({ all: [] }),
+      getDiff: async (_directory, options) => {
+        expect(options.paths).toBeUndefined();
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        active -= 1;
+        if (options.path === 'new-2.ts') throw new Error('File became unavailable');
+        return `+${options.path}`;
+      },
+    });
+    expect(peak).toBe(2);
+    expect(result.context.patch).toContain('+new-7.ts');
+    expect(result.context.contextWarning).toBe('some diff context was unavailable');
+  });
+
+  it('generates from selected diffs when optional recent history is unavailable', async () => {
+    const result = await collectCommitMessageContext({
+      directory: '/repo', selectedFiles: ['tracked.ts'], stagedOnly: true,
+      getStatus: async () => baseStatus([statusFile('tracked.ts')]),
+      getLog: async () => { throw new Error('History unavailable'); },
+      getDiff: async () => '+selected staged change',
+    });
+    expect(result).toMatchObject({ status: 'ready', context: {
+      patch: '+selected staged change', recentCommitSubjects: [],
+      contextWarning: 'recent commit history was unavailable',
+    } });
+  });
+
   it('enforces a total combined patch budget and preserves line statistics', async () => {
     const files = ['a.ts', 'b.ts', 'large.ts'].map((filePath) => statusFile(filePath));
     const result = await collectCommitMessageContext({

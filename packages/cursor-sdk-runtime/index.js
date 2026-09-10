@@ -24,6 +24,7 @@ import { createCursorQuestionRuntime } from './cursor-question-runtime.js';
 import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
 import { assertCursorSdkNodeCompatibility } from './node-version.js';
 import { cursorToolReceiptMetadata } from './cursor-tool-receipts.js';
+import { createCursorChangeOutbox, cursorSessionChangeObservation } from './cursor-session-changes.js';
 import {
   CURSOR_NATIVE_TASK_METADATA_KEY,
   mergeCursorNativeTaskActivity,
@@ -1579,6 +1580,8 @@ export function createCursorSdkRuntime(options = {}) {
   const readAuth = typeof options.readAuth === 'function' ? options.readAuth : () => ({});
   const env = isPlainObject(options.env) ? options.env : process.env;
   const storageDir = trimString(options.storageDir) || defaultStorageDir();
+  const executionOutbox = typeof options.onSessionChangeExecution === 'function'
+    ? createCursorChangeOutbox({ directory: path.join(storageDir, 'change-outbox'), deliver: options.onSessionChangeExecution }) : null;
   const hasInjectedLoadSdk = typeof options.loadSdk === 'function';
   const rawLoadSdk = hasInjectedLoadSdk ? options.loadSdk : () => importRuntimeModule('@cursor/sdk');
   const ripgrepPath = trimString(options.ripgrepPath);
@@ -1740,6 +1743,7 @@ export function createCursorSdkRuntime(options = {}) {
         logger.error?.('[CursorSDK] failed to delete session state:', error);
       });
     await removal;
+    await executionOutbox?.remove(id);
     persistQueues.delete(id);
     return true;
   };
@@ -3416,6 +3420,15 @@ export function createCursorSdkRuntime(options = {}) {
     const modelSelection = await resolveCursorSdkModelSelection({ modelID, variant });
     const userMessageID = trimString(body?.messageID) || createId('msg');
     const assistantMessageID = createAssistantMessageId(userMessageID);
+    let hasNativeChanges = false, changeCaptureFailed = false;
+    const captureNativeChange = async (event) => {
+      if (!executionOutbox || !event) return;
+      hasNativeChanges = true;
+      const saved = await executionOutbox.append({ ...event, sessionID, messageID: assistantMessageID,
+        userMessageID, directory, createdAt: now() });
+      if (!saved) changeCaptureFailed = true;
+      void executionOutbox.replay(sessionID);
+    };
     const requestedAgent = trimString(body?.agent);
     const fileParts = normalizePromptFileParts(body, { sessionID, messageID: userMessageID });
     const images = buildCursorImages(fileParts);
@@ -4375,6 +4388,7 @@ export function createCursorSdkRuntime(options = {}) {
         };
 
         const applyCursorTaskActivity = async (message) => {
+          await captureNativeChange(message.sessionChange);
           const partID = getToolPartID(message.call_id);
           const existing = assistantRecord.parts.find((part) => part.id === partID);
           const existingState = isPlainObject(existing?.state) ? existing.state : {};
@@ -4532,9 +4546,12 @@ export function createCursorSdkRuntime(options = {}) {
             }
           } else if (message.type === 'thinking_completed') {
             await finalizeActiveReasoningPart();
+          } else if (message.type === 'session_change') {
+            await captureNativeChange(message.sessionChange);
           } else if (message.type === 'task_activity') {
             await applyCursorTaskActivity(message);
           } else if (message.type === 'tool_call') {
+            if (message.name === 'task') await captureNativeChange(cursorSessionChangeObservation(message));
             if (previousContentKind === 'thinking') {
               await finalizeActiveReasoningPart();
             }
@@ -4654,6 +4671,7 @@ export function createCursorSdkRuntime(options = {}) {
         }
         lastError = text;
       } finally {
+        if (hasNativeChanges) await captureNativeChange({ phase: 'run-settled', captureFailed: changeCaptureFailed });
         // releaseActiveRun already drops this entry on abort, and a fast resend may
         // have installed a new run for the same session — only clear it when it
         // still points at this run so we never evict a freshly-started one.
@@ -4683,6 +4701,15 @@ export function createCursorSdkRuntime(options = {}) {
 
   return {
     getRuntimeStatus: getStatus,
+    async reconcileSessionChanges({ sessionID, directory }) {
+      if (!executionOutbox || !await executionOutbox.has(sessionID)) return { pending: false, reasons: [] };
+      const result = await executionOutbox.replay(sessionID);
+      if (!result.pending && !result.reasons.length && !activeRuns.has(sessionID)) {
+        try { await options.onSessionChangeExecution({ phase: 'interrupted', sessionID, directory }); }
+        catch { return { pending: false, reasons: ['execution_delivery_failed'] }; }
+      }
+      return result;
+    },
     getSessionStatus,
     listPendingQuestions(options = {}) {
       return questionRuntime.listPendingQuestions(options);
@@ -4794,6 +4821,7 @@ export function createCursorSdkRuntime(options = {}) {
     async dispose() {
       await questionRuntime.dispose();
       await persistentWorkerRuntime.dispose();
+      await executionOutbox?.drain();
     },
   };
 }

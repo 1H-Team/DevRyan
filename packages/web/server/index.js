@@ -617,6 +617,7 @@ const cursorSdkRuntime = createCursorSdkRuntime({
   readAuth: readAuthFile,
   env: process.env,
   emitEvent: emitSyntheticOpenCodeEvent,
+  onSessionChangeExecution: (input) => sessionChangeHost.acceptExecution(input),
   recordTimingMark: (input) => turnTimingRuntime.recordClientMark(input),
   logger: console,
   resolveAgentPrompt: async ({ agent, directory }) => {
@@ -1389,6 +1390,7 @@ const sessionChangeHost = createSessionChangeHost({
   publishEvent: emitSyntheticOpenCodeEvent,
   buildOpenCodeUrl: (pathname) => buildOpenCodeUrl(pathname, ''),
   getOpenCodeAuthHeaders,
+  reconcileExecutionReceipts: (input) => cursorSdkRuntime.reconcileSessionChanges(input),
 });
 harnessRuntime.setSessionChangeHost(sessionChangeHost);
 observeCommandDeadline = (payload) => commandDeadlineRuntime.observe(payload);

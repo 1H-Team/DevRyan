@@ -66,7 +66,10 @@ export const HostPrimaryRecovery = React.memo(({ sessionId, showAvailability = f
     <p className="mt-1 text-muted-foreground">{record.providerID}/{record.modelID} · {record.agent}{record.variant ? ` · ${record.variant}` : ''}</p>
     <p className="mt-1">Completed work and the original error remain in this session. Automatic recovery can only inspect files.</p>
     {record.reason === 'provider_input_progress_unavailable' && <p className="mt-1">This runtime does not report incremental tool arguments. The watchdog will not interrupt this phase automatically. Stop remains available.</p>}
-    {record.reason && <p className="mt-1 text-muted-foreground">{record.reason.replaceAll('_', ' ')}</p>}
+    {record.reason && <p className="mt-1 text-muted-foreground">{record.reason === 'recovery_tool_outcome_unknown'
+      ? 'A tool may have changed files before the timeout. Automatic retry is paused; review the outcome before continuing.'
+      : record.providerID === 'anthropic' && record.reason === 'chunk_timeout' ? 'Claude stopped sending data.'
+      : record.reason.replaceAll('_', ' ')}</p>}
     {error && <p role="alert" className="mt-2 text-destructive">{error}</p>}
     <div className="mt-2 flex gap-2">
       {record.state !== 'completed' && <Button variant="outline" size="sm" onClick={() => void act('cancel')}>Stop</Button>}

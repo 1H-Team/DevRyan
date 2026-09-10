@@ -214,7 +214,7 @@ export const prepareQaPluginHomeWrapper = async (entry) => {
 };
 
 export async function prepareQaProfile({ runtimeRoot, workspace, providerId, modelId, variant = null, agentAssignments = {},
-    sourceHome = os.homedir(), opencodeBinary = path.join(repositoryRoot, '.cache/qa/opencode-1.18.29/package/bin/opencode') }) {
+    sourceHome = os.homedir(), opencodeBinary = path.join(repositoryRoot, '.cache/qa/opencode-1.18.30/package/bin/opencode') }) {
     const cacheRoot = path.join(repositoryRoot, '.cache');
     if (!path.isAbsolute(runtimeRoot) || !isInside(cacheRoot, path.resolve(runtimeRoot))) throw new Error('QA runtime root must be inside this repository cache');
     if (!path.isAbsolute(workspace) || !isInside(cacheRoot, path.resolve(workspace))) throw new Error('QA workspace must be inside this repository cache');

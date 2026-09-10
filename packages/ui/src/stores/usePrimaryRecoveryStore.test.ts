@@ -29,3 +29,20 @@ test('rollback retains host ownership of an already accepted read-only recovery'
   usePrimaryRecoveryStore.getState().accept('ses_test', { ...snapshot(), mode: 'off', enforced: false });
   expect(hostOwnsPrimaryRecovery('ses_test')).toBe(true);
 });
+
+test('Claude host enforcement suppresses renderer recovery and survives capability loss', () => {
+  const current = snapshot();
+  current.record.providerID = 'anthropic';
+  usePrimaryRecoveryStore.getState().accept('ses_test', current);
+  expect(hostOwnsPrimaryRecovery('ses_test')).toBe(true);
+  usePrimaryRecoveryStore.getState().accept('ses_test', { ...current, enforced: false, supported: false,
+    record: { ...current.record, revision: 2 } });
+  expect(hostOwnsPrimaryRecovery('ses_test')).toBe(true);
+});
+
+test('unverified Claude keeps manual renderer recovery available', () => {
+  const current = snapshot();
+  usePrimaryRecoveryStore.getState().accept('ses_test', { ...current, enforced: false, supported: false,
+    record: { ...current.record, providerID: 'anthropic', recoveryID: null, readOnly: false, attemptCount: 0 } });
+  expect(hostOwnsPrimaryRecovery('ses_test')).toBe(false);
+});

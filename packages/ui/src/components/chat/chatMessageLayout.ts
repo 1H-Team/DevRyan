@@ -77,3 +77,56 @@ export const getAssistantMessageTopPaddingClass = ({
     }
     return 'pt-0';
 };
+
+export type AssistantHeaderStreamPhase = 'streaming' | 'cooldown' | 'completed' | string;
+
+/**
+ * Should this row draw the agent/model header?
+ *
+ * Headers are turn-scoped: only the assistant message nominated as the turn's
+ * header owner draws one. `suppressAssistantHeader` is the escape hatch for a
+ * turn (or ungrouped row) that paints nothing at all — without it, a run of
+ * content-less turns stamps a stack of identical "agent · model" rows above
+ * empty space. See `message/assistantRowContent.ts` for the content predicate.
+ */
+export const resolveShouldShowAssistantHeader = ({
+    isUser,
+    suppressAssistantHeader,
+    messageId,
+    headerMessageId,
+    streamPhase,
+    hasStartedStreamingHeader,
+}: {
+    isUser: boolean;
+    suppressAssistantHeader: boolean;
+    messageId: string;
+    headerMessageId?: string;
+    streamPhase: AssistantHeaderStreamPhase;
+    hasStartedStreamingHeader: boolean;
+}): boolean => {
+    if (isUser) {
+        return true;
+    }
+    if (suppressAssistantHeader) {
+        return false;
+    }
+
+    if (headerMessageId) {
+        if (messageId !== headerMessageId) {
+            // Continuation rows never repeat the turn's header.
+            return false;
+        }
+
+        // Historical messages always show it.
+        if (streamPhase === 'completed') {
+            return true;
+        }
+
+        // Streaming: reveal once output starts, then keep it pinned.
+        const isCurrentlyStreaming = streamPhase === 'streaming' || streamPhase === 'cooldown';
+        return hasStartedStreamingHeader || isCurrentlyStreaming;
+    }
+
+    // Ungrouped fallback: no turn context to nominate an owner.
+    return true;
+};

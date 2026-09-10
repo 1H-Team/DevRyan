@@ -94,7 +94,9 @@ export function createPrimaryRecoveryHost(options) {
   const abortSession = (r) => request(`/session/${r.sessionID}/abort`, r.directory, { method: 'POST', body: '{}' });
   const controller = createPrimaryRecoveryController({
     directory: path.join(options.dataDirectory, 'harness', 'provider-recovery'),
-    mode: options.mode ?? process.env.DEVRYAN_PRIMARY_RECOVERY_MODE ?? 'observe',
+    mode: options.mode ?? process.env.DEVRYAN_PRIMARY_RECOVERY_MODE,
+    anthropicMode: options.anthropicMode ?? process.env.DEVRYAN_ANTHROPIC_RECOVERY_MODE,
+    isAnthropicConformant: options.isAnthropicConformant,
     progressTimeoutMs: options.progressTimeoutMs ?? (process.env.DEVRYAN_PROVIDER_PROGRESS_TIMEOUT_MS === '0' ? false
       : process.env.DEVRYAN_PROVIDER_PROGRESS_TIMEOUT_MS ? Number(process.env.DEVRYAN_PROVIDER_PROGRESS_TIMEOUT_MS) : undefined),
     isManaged: options.isManaged, authorize: options.authorize,

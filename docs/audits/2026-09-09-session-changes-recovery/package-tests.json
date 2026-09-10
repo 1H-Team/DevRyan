@@ -1,0 +1,67 @@
+[
+  {
+    "package": "bot-supervisor",
+    "exitCode": 0,
+    "log": ".cache/session-changes-tests-bot-supervisor.log"
+  },
+  {
+    "package": "bot-engine-proxy",
+    "exitCode": 0,
+    "log": ".cache/session-changes-tests-bot-engine-proxy.log"
+  },
+  {
+    "package": "bot-egress",
+    "exitCode": 0,
+    "log": ".cache/session-changes-tests-bot-egress.log"
+  },
+  {
+    "package": "bot-computer",
+    "exitCode": 0,
+    "log": ".cache/session-changes-tests-bot-computer.log"
+  },
+  {
+    "package": "bot-indexer",
+    "exitCode": 0,
+    "log": ".cache/session-changes-tests-bot-indexer.log"
+  },
+  {
+    "package": "shared-runtime",
+    "exitCode": 0,
+    "log": ".cache/session-changes-tests-shared-runtime.log"
+  },
+  {
+    "package": "harness-runtime",
+    "exitCode": 1,
+    "log": ".cache/session-changes-tests-harness-runtime.log"
+  },
+  {
+    "package": "orchestration-runtime",
+    "exitCode": 0,
+    "log": ".cache/session-changes-tests-orchestration-runtime.log"
+  },
+  {
+    "package": "cursor-sdk-runtime",
+    "exitCode": 0,
+    "log": ".cache/session-changes-tests-cursor-sdk-runtime.log"
+  },
+  {
+    "package": "electron",
+    "exitCode": 0,
+    "log": ".cache/session-changes-tests-electron.log"
+  },
+  {
+    "package": "desktop",
+    "exitCode": 0,
+    "log": ".cache/session-changes-tests-desktop.log"
+  },
+  {
+    "package": "ui",
+    "exitCode": 1,
+    "log": ".cache/session-changes-tests-ui.log"
+  },
+  {
+    "package": "web",
+    "exitCode": 1,
+    "log": ".cache/session-changes-tests-web.log"
+  }
+]

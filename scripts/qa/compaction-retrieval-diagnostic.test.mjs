@@ -172,7 +172,7 @@ async function exerciseAdapter(kind, { pendingQuestion = false, uncorrelated = f
     assert.equal(options, undefined, 'The diagnostic must not send API mutations');
     if (route.startsWith('/api/question')) return questions;
     if (route.startsWith('/api/session/status')) return {};
-    if (route === '/api/health') return { openCodeVersion: '1.18.29' };
+    if (route === '/api/health') return { openCodeVersion: '1.18.30' };
     if (route.startsWith('/api/config?')) return {};
     if (route === '/api/diagnostics/status') return { gapRecords: 0, lastError: null };
     throw new Error('Unexpected diagnostic API: ' + route);

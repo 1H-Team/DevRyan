@@ -1044,6 +1044,16 @@ deleted — every memory is shared and outlives its source channel — but its
 source records are tombstoned with `channelDeleted: true` so provenance does not
 pretend the deleted transcript is still available.
 
+Bot SSE diagnostics use the existing local journal. `bot.events.opening`,
+`ready`, `connected`, `failed`, `http_failed`, and `closed` records share an
+opaque subscription ID. They record the failing snapshot source/filter/serialize
+stage, elapsed milliseconds, encoded snapshot bytes when available, safe error
+code, HTTP status, and close reason. They never record principal identifiers,
+snapshot content, message text, request headers, or credentials. Filter the
+runtime journal for `bot.events.` and run its gap check when investigating
+`bot_event_connection_lost`; the browser error alone cannot distinguish an HTTP
+rejection from a broken live response.
+
 `event-stream.js` is a separate principal-scoped Bot event runtime. A subscriber
 is registered before its authorized snapshot is loaded, so events concurrent
 with snapshot construction queue behind it and then retain monotonic

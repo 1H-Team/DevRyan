@@ -77,6 +77,25 @@ When the report starts with an Error Log event UUID, treat that UUID as a durabl
 - Caveats: records and manifests are sanitized before disk (secrets redacted, home/worktree paths rewritten to `<WORKTREE_…>` placeholders); retention is 7 days / 1 GiB total. Absence of an expected non-delta record is itself evidence — the runtime never saw it.
 - Deep contracts: `packages/harness-runtime/DOCUMENTATION.md` (journal, sanitizer, export, storage limits) and `packages/web/server/lib/diagnostics/DOCUMENTATION.md` (HTTP status/clear/export/sanitize).
 
+## Context Mode command crashes
+
+An indexed `execute:shell:error` response means the command failed; indexing is
+not itself evidence of a storage failure. Read the prepended execution summary
+and correlate `context_mode.execution_failed` using the existing worker/call IDs.
+Code 134 alone does not establish heap exhaustion. Only an explicit fatal
+allocation diagnostic justifies that category. An indexing failure is reported
+separately, and full output may then be unavailable. Never automatically replay
+an arbitrary failed command.
+
+For an intentional Node heap limit, use a single positive integer
+`NODE_OPTIONS=--max-old-space-size=4096` in the runtime environment, or specify
+the heap option directly on an authorized Node command. Mixed inherited options
+remain filtered. The value is in MiB; choose it for the workload and host budget.
+DevRyan does not raise defaults or retry with more memory automatically.
+The disposable worker suite reproduces small-heap OOM across execute, execute-file
+and batch, verifies summaries despite unrelated search intent, then runs a healthy
+command and checks explicit-setting isolation. It disables core dumps for crashes.
+
 ## Context Mode worker liveness
 
 For `ctx_*` stalls, correlate the native tool part's

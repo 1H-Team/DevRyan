@@ -84,6 +84,7 @@ export function classifyAssistantError(
     steeredAbortMessageId?: string | null
     messageId?: string | null
     isLatestMessage?: boolean
+    providerID?: string | null
     managedAbortRecovery?: ManagedAbortRecoveryPresentation
     managedTransportRecovery?: ManagedTransportRecoveryPresentation
   } = {},
@@ -201,7 +202,7 @@ export function classifyAssistantError(
       }
     }
     return {
-      text: `${getTransportFailureCopy(transportFailureKind)} Any completed work was preserved in this session.\n\`${detail}\``,
+      text: `${transportFailureKind === "stream_idle_timeout" && options.providerID === "anthropic" ? "Claude stopped sending data before this turn finished." : getTransportFailureCopy(transportFailureKind)} Any completed work was preserved in this session.\n\`${detail}\``,
       variant: "error",
       retryable: true,
     }

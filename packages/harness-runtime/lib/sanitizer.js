@@ -51,7 +51,7 @@ const NESTED_FIELDS = new Set([
   'model', 'system', 'noReply', 'tools', 'tokens', 'cost', 'snapshot',
   'streamId', 'sequence', 'generation', 'observedAt', 'origin', 'requestType',
   'firstMissingSequence', 'lastMissingSequence', 'failureCode',
-  'workerCallID', 'contextModeWorkerCallID', 'sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents',
+  'workerCallID', 'contextModeWorkerCallID', 'sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents', 'failureCategory', 'exitCode', 'signal',
 ]);
 
 const MEMORY_EXTRACTION_COUNTS = new Set([
@@ -81,7 +81,7 @@ const STABLE_IDENTIFIER_FIELDS = new Set([
 ]);
 
 const CONTEXT_MODE_FIELDS = new Set(['phase', 'callID', 'messageID', 'workerCallID', 'tool', 'sequence',
-  'sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents']);
+  'sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents', 'failureCategory', 'exitCode', 'signal']);
 const CONTEXT_MODE_IDENTIFIERS = new Set(['workerCallID', 'contextModeWorkerCallID']);
 const CONTEXT_MODE_NUMBERS = new Set(['sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents']);
 

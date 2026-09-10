@@ -67,12 +67,52 @@ describe('Bot event connection controller', () => {
 
     timers[0]();
     expect(sources).toHaveLength(2);
+    expect(states.at(-1)).toEqual(['reconnecting', 'bot_event_json_invalid']);
     sources[1].onopen?.(new Event('open'));
-    expect(states.at(-1)?.[0]).toBe('reconnecting');
+    expect(states.at(-1)).toEqual(['reconnecting', 'bot_event_json_invalid']);
     expect(reconnectedSnapshotCount).toBe(0);
     sources[1].emit('snapshot', JSON.stringify('snapshot'));
     expect(states.at(-1)).toEqual(['connected', undefined]);
     expect(reconnectedSnapshotCount).toBe(1);
+  });
+
+  test('keeps the first outage visible before any snapshot and manual retry cannot declare recovery', () => {
+    const sources: FakeEventSource[] = [];
+    const timers: Array<() => void> = [];
+    const states: Array<[string, string | null | undefined]> = [];
+    const controller = createBotEventConnectionController({
+      eventKinds: ['snapshot'],
+      createSource: () => {
+        const source = new FakeEventSource();
+        sources.push(source);
+        return source;
+      },
+      ingest: () => ({ accepted: true, reason: 'snapshot' }),
+      setConnectionState: (state, code) => states.push([state, code]),
+      setTimeoutImpl: ((callback: () => void) => {
+        timers.push(callback);
+        return timers.length as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout,
+      clearTimeoutImpl: (() => {}) as typeof clearTimeout,
+    });
+    controller.start();
+    expect(states.at(-1)).toEqual(['connecting', null]);
+    sources[0].onerror?.(new Event('error'));
+    expect(states.at(-1)).toEqual(['reconnecting', 'bot_event_connection_lost']);
+    controller.retry();
+    sources[1].onopen?.(new Event('open'));
+    expect(states.at(-1)).toEqual(['connecting', 'bot_event_connection_lost']);
+    timers[0](); // Even an already queued callback cannot replace manual Retry.
+    sources[0].emit('snapshot', '{}');
+    sources[0].onerror?.(new Event('error'));
+    expect(sources).toHaveLength(2);
+    expect(states.at(-1)).toEqual(['connecting', 'bot_event_connection_lost']);
+    sources[1].emit('snapshot', '{}');
+    expect(states.at(-1)).toEqual(['connected', undefined]);
+    sources[1].onerror?.(new Event('error'));
+    controller.dispose();
+    timers.at(-1)?.();
+    expect(sources).toHaveLength(2);
   });
 
   test('uses capped reconnect backoff and manual retry replaces the current generation', () => {

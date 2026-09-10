@@ -63,6 +63,21 @@ draft when the refresh completes, so a late response cannot replace a newer
 agent/model/thinking pick with account defaults or restore a draft the user left.
 Explicit settings actions still apply defaults normally.
 
+`useAgentsStore.ts` captures the settings directory before an override save/reset.
+The response updates only that directory's existing config snapshot; the active
+chat catalog and agent selection update only if its directory still matches.
+Other cached directories retain their catalogs and refresh effective defaults
+through their existing activation/config-apply loaders. A save response without
+agent configuration uses the agent captured before the request as its fallback.
+Late catalog, model override, and backup-model responses cannot replace the
+visible settings catalog after its directory changes.
+
+Settings catalog refreshes reconcile complete normalized records by agent name
+against state at response time, retaining save/reset generation guards. Structural
+comparison ignores object key order, preserves array order, and distinguishes
+missing fields from explicit `null`. Unchanged agents, catalog arrays, and stale
+override lists retain their references, including when only another agent changes.
+
 Managed non-admin accounts keep sparse per-agent provider, model, and optional
 thinking overrides as account-global state, never directory snapshots. Only an
 explicit Save in Settings → Sessions persists one through the server; composer
@@ -245,6 +260,11 @@ Ownership and safety rules:
    It must not silently filter a record and then delete known-good state.
 5. Late snapshots cannot replace a task updated by a newer event. Task status,
    child identity, timestamps, and terminal state never regress.
+   `childPromptedAt` and `firstAssistantPartAt` are write-once within each task
+   attempt: an established value, including zero, survives missing, null, or
+   conflicting values in otherwise valid events and snapshots. Valid forward
+   status transitions still apply; a separate recovery task starts with its own
+   progress. Reconciled no-ops preserve the task reference.
 6. Cancel/retry/resume/continue/abandon keep the card in place until the host
    returns authoritative state. Duplicate requests share one promise, failures
    remain visible, and retry reuses its idempotency key.
@@ -296,9 +316,12 @@ Ownership and safety rules:
     the host keeps the envelope unacknowledged and rejects agent `abandon`, so
     every failed sibling child retains its own Model Recovery card until the
     user starts a `retry_in_place` attempt.
-    Events, snapshots, acknowledgement responses, and compaction recompute only
-    affected child leaves; unrelated task, root, and index references remain
-    stable. The sidebar consumes the narrow one-root recovery selector so
+    Events, snapshots, acknowledgement responses, and compaction reconcile both
+    child indexes in one task traversal for all affected children. Selection uses
+    the highest sequence, then task ID, preserving earlier-attempt fallback when
+    a newer task is acknowledged or removed. Progress-only updates skip that
+    traversal; unrelated task, root, and unchanged index references remain stable.
+    The sidebar consumes the narrow one-root recovery selector so
     managed-child recovery attention appears on the parent row without
     subscribing to task or envelope containers. Task-specific recovery
     surfaces may consume the one-child selectors.

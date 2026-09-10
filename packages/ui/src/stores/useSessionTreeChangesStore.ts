@@ -16,6 +16,7 @@ export type SessionTreeChangesEntry = Pick<SessionTreeChanges, 'fileCount' | 'ne
   revision?: string
   worktreeDirectory?: string
   coverage?: 'complete' | 'partial'
+  reconciliationState?: 'pending' | 'settled'
   reasons?: string[]
   totalsMode?: 'net' | 'recorded'
   restoreAvailable?: boolean
@@ -84,6 +85,7 @@ const inFlightControllers = new Map<string, AbortController>()
 const subscriberCounts = new Map<string, number>()
 const workingByKey = new Map<string, boolean>()
 const sessionIdsByKey = new Map<string, ReadonlySet<string>>()
+const pendingRetries = new Map<string, number>()
 const entryBytes = (entry: SessionTreeChangesEntry): number => new TextEncoder().encode(JSON.stringify(entry)).byteLength
 let authIdentity = getAuthPrincipal().id
 subscribeAuthPrincipal(() => {
@@ -198,6 +200,7 @@ export async function refreshSessionTreeChanges(directory: string, rootSessionID
     pageIndex: result.pageIndex,
     worktreeDirectory: result.worktreeDirectory,
     coverage: result.coverage,
+    reconciliationState: result.reconciliationState,
     reasons: result.reasons,
     totalsMode: result.totalsMode,
     restoreAvailable: result.restoreAvailable,
@@ -211,16 +214,20 @@ export async function refreshSessionTreeChanges(directory: string, rootSessionID
     loading: false,
     error: null,
   })
-  if (result.reasons?.includes('history_pending') && (subscriberCounts.get(key) ?? 0) > 0) {
-    requestSessionTreeChangesRefresh(directory, rootSessionID)
-  }
+  const pending = result.reconciliationState === 'pending'
+    || result.reasons?.some((reason) => ['history_pending', 'capture_pending', 'receipts_pending'].includes(reason))
+  if (pending && (subscriberCounts.get(key) ?? 0) > 0) {
+    const attempt = pendingRetries.get(key) ?? 0
+    pendingRetries.set(key, Math.min(attempt + 1, 5))
+    requestSessionTreeChangesRefresh(directory, rootSessionID, { delayMs: Math.min(10_000, debounceMs * 2 ** attempt) })
+  } else pendingRetries.delete(key)
 }
 
 /** Debounced refresh (500 ms). Multiple triggers within the window coalesce. */
 export function requestSessionTreeChangesRefresh(
   directory: string,
   rootSessionID: string,
-  options: { immediate?: boolean } = {},
+  options: { immediate?: boolean; delayMs?: number } = {},
 ): void {
   if (!directory || !rootSessionID) return
   if (options.immediate) {
@@ -228,12 +235,13 @@ export function requestSessionTreeChangesRefresh(
     return
   }
   const key = getSessionTreeChangesKey(directory, rootSessionID)
+  if (options.delayMs === undefined) pendingRetries.delete(key)
   const existing = debounceTimers.get(key)
   if (existing !== undefined) clearTimeout(existing)
   debounceTimers.set(key, setTimeout(() => {
     debounceTimers.delete(key)
     void refreshSessionTreeChanges(directory, rootSessionID)
-  }, debounceMs))
+  }, options.delayMs ?? debounceMs))
 }
 
 /**
@@ -275,6 +283,7 @@ export function subscribeSessionTreeChanges(directory: string, rootSessionID: st
       subscriberCounts.delete(key)
       workingByKey.delete(key)
       sessionIdsByKey.delete(key)
+      pendingRetries.delete(key)
       inFlightControllers.get(key)?.abort()
       inFlightControllers.delete(key)
       requestSequence.delete(key)
@@ -302,6 +311,7 @@ export function clearSessionTreeChanges(directory: string, rootSessionID: string
   requestSequence.delete(key)
   workingByKey.delete(key)
   sessionIdsByKey.delete(key)
+  pendingRetries.delete(key)
   useSessionTreeChangesStore.setState((current) => {
     if (!current.entries.has(key)) return current
     const entries = new Map(current.entries)
@@ -322,6 +332,7 @@ export function clearDirectorySessionTreeChanges(directory: string): void {
 
 /** Test seam: drop every entry, timer, and subscription. */
 export function resetSessionTreeChanges(): void {
+  pendingRetries.clear()
   for (const timer of debounceTimers.values()) clearTimeout(timer)
   debounceTimers.clear()
   for (const controller of inFlightControllers.values()) controller.abort()

@@ -403,6 +403,7 @@ export type SessionTreeChanges = {
   worktreeID?: string;
   worktreeDirectory?: string;
   coverage?: 'complete' | 'partial';
+  reconciliationState?: 'pending' | 'settled';
   reasons?: string[];
   attributionVersion?: number;
   totalsMode?: 'net' | 'recorded';
@@ -692,10 +693,13 @@ export function parseSessionTreeChanges(payload: unknown): SessionTreeChanges {
       undone: record.undone === true,
     } : {}),
     coverage: record.revision && record.coverage === 'complete' ? 'complete' : 'partial',
+    reconciliationState: record.reconciliationState === 'pending'
+      || Array.isArray(record.reasons) && record.reasons.some((reason) => ['history_pending', 'capture_pending', 'receipts_pending'].includes(reason)) ? 'pending' : 'settled',
     reasons: Array.isArray(record.reasons) ? record.reasons.filter((reason): reason is string => typeof reason === 'string') : ['capture_unavailable'],
     attributionVersion: parseCount(record.attributionVersion),
     totalsMode: record.totalsMode === 'recorded' ? 'recorded' : 'net',
-    restoreAvailable: record.attributionVersion === 2 && record.restoreAvailable === true && record.coverage === 'complete',
+    restoreAvailable: (record.attributionVersion === 2 || record.attributionVersion === 3) && record.restoreAvailable === true
+      && record.coverage === 'complete' && record.reconciliationState !== 'pending',
     restoreReasons: Array.isArray(record.restoreReasons) ? record.restoreReasons.filter((reason): reason is string => typeof reason === 'string') : ['restore_evidence_unavailable'],
     files,
     ...(typeof record.fileCount === 'number' && Number.isSafeInteger(record.fileCount) && record.fileCount >= files.length ? { fileCount: record.fileCount } : {}),

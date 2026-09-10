@@ -24,7 +24,8 @@ import MessageBody from './message/MessageBody';
 import type { AgentMentionInfo } from './message/types';
 import type { StreamPhase, ToolPopupContent } from './message/types';
 import { deriveMessageRole } from './message/messageRole';
-import { extractTextContent, filterVisibleParts, normalizeParts } from './message/partUtils';
+import { normalizeParts } from './message/partUtils';
+import { projectAssistantDisplayParts } from './message/assistantRowContent';
 import { normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
 import { getMessageCopyText } from '@/lib/messages/messageCopyText';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
@@ -47,9 +48,9 @@ import {
     getAssistantMessageBottomPaddingClass,
     getAssistantMessageTopPaddingClass,
     hasRenderableAssistantContent,
+    resolveShouldShowAssistantHeader,
     shouldHideAssistantAbortArtifact,
 } from './chatMessageLayout';
-import { shouldSuppressIntermediateAssistantStatusText } from './message/assistantInlineActions';
 import { isEditToolName, isShellToolName, normalizeToolName } from './message/parts/toolRenderUtils';
 
 const ToolOutputDialog = lazyWithChunkRecovery(() => import('./message/ToolOutputDialog'));
@@ -123,6 +124,8 @@ interface ChatMessageProps {
     scrollToBottom?: () => void;
     turnGroupingContext?: TurnGroupingContext;
     assistantHeaderMessageId?: string;
+    /** Turn renders no content anywhere; never draw this row's header. */
+    suppressAssistantHeader?: boolean;
     isInActiveTurn?: boolean;
     activeStreamingPhase?: StreamPhase | null;
     animateUserOnMount?: boolean;
@@ -138,6 +141,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     animationHandlers,
     turnGroupingContext,
     assistantHeaderMessageId,
+    suppressAssistantHeader = false,
     isInActiveTurn = false,
     activeStreamingPhase = null,
     animateUserOnMount = false,
@@ -455,45 +459,20 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         return typeof finish === 'string' ? finish : undefined;
     }, [message.info]);
 
-    const visibleParts = React.useMemo(
+    const assistantDisplayPartsProjection = React.useMemo(
         () =>
-            filterVisibleParts(normalizedParts, {
+            projectAssistantDisplayParts({
+                parts: normalizedParts,
                 // Plan bodies may arrive through reasoning. Keep those source
                 // parts available; MessageBody applies the Thinking toggle.
                 includeReasoning: showReasoningTraces || (!isUser && effectiveIsPlanModeSource),
-            }),
-        [effectiveIsPlanModeSource, isUser, normalizedParts, showReasoningTraces]
-    );
-
-    const displayParts = React.useMemo(() => {
-        if (isUser) {
-            return visibleParts;
-        }
-
-        const hasToolParts = visibleParts.some((part) => part.type === 'tool');
-        if (!hasToolParts || messageFinish !== 'tool-calls') {
-            return visibleParts;
-        }
-
-        let removedStatusText = false;
-        const filtered = visibleParts.filter((part) => {
-            if (part.type !== 'text') {
-                return true;
-            }
-            const shouldSuppress = shouldSuppressIntermediateAssistantStatusText({
                 messageFinish,
-                hasToolParts,
-                text: extractTextContent(part),
-            });
-            if (shouldSuppress) {
-                removedStatusText = true;
-                return false;
-            }
-            return true;
-        });
-
-        return removedStatusText ? filtered : visibleParts;
-    }, [isUser, messageFinish, visibleParts]);
+                isUser,
+            }),
+        [effectiveIsPlanModeSource, isUser, messageFinish, normalizedParts, showReasoningTraces]
+    );
+    const visibleParts = assistantDisplayPartsProjection.visibleParts;
+    const displayParts = assistantDisplayPartsProjection.displayParts;
 
 
     const assistantTextParts = React.useMemo(() => {
@@ -666,7 +645,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     React.useEffect(() => {
         const headerMessageId = assistantHeaderMessageId ?? turnGroupingContext?.headerMessageId;
-        if (isUser || !headerMessageId || headerMessageId !== message.info.id) {
+        if (isUser || suppressAssistantHeader || !headerMessageId || headerMessageId !== message.info.id) {
             return;
         }
 
@@ -674,35 +653,16 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         if (isCurrentlyStreaming) {
             setHasStartedStreamingHeader(true);
         }
-    }, [assistantHeaderMessageId, isUser, message.info.id, streamPhase, turnGroupingContext?.headerMessageId]);
+    }, [assistantHeaderMessageId, isUser, message.info.id, streamPhase, suppressAssistantHeader, turnGroupingContext?.headerMessageId]);
 
-    const shouldShowHeader = React.useMemo(() => {
-        if (isUser) return true;
-
-        // Use turn grouping context if available for more precise control
-        const headerMessageId = assistantHeaderMessageId ?? turnGroupingContext?.headerMessageId;
-        if (headerMessageId) {
-            // For turn grouping: only show header for the first assistant message in the turn
-            const isFirstAssistantInTurn = message.info.id === headerMessageId;
-
-            if (isFirstAssistantInTurn) {
-                // For completed messages, always show header (historical messages)
-                if (streamPhase === 'completed') {
-                    return true;
-                }
-
-                // For streaming messages: show header when streaming starts and keep it visible
-                const isCurrentlyStreaming = streamPhase === 'streaming' || streamPhase === 'cooldown';
-                return hasStartedStreamingHeader || isCurrentlyStreaming;
-            }
-
-            // For non-first assistant messages, don't show header
-            return false;
-        }
-
-        // Ungrouped fallback path: always show assistant header.
-        return true;
-    }, [assistantHeaderMessageId, hasStartedStreamingHeader, isUser, turnGroupingContext, streamPhase, message.info.id]);
+    const shouldShowHeader = React.useMemo(() => resolveShouldShowAssistantHeader({
+        isUser,
+        suppressAssistantHeader,
+        messageId: message.info.id,
+        headerMessageId: assistantHeaderMessageId ?? turnGroupingContext?.headerMessageId,
+        streamPhase,
+        hasStartedStreamingHeader,
+    }), [assistantHeaderMessageId, hasStartedStreamingHeader, isUser, suppressAssistantHeader, turnGroupingContext, streamPhase, message.info.id]);
 
     const handleCopyCode = React.useCallback((code: string) => {
         void copyTextToClipboard(code).then((result) => {
@@ -739,10 +699,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             steeredAbortMessageId?: string;
             messageId?: string;
             isLatestMessage?: boolean;
+            providerID?: string | null;
             managedAbortRecovery?: ManagedAbortRecoveryPresentation;
             managedTransportRecovery?: ManagedTransportRecoveryPresentation;
         } = {
             isLatestMessage,
+            providerID,
         };
         if (managedTransportRecovery) {
             abortOptions.managedTransportRecovery = managedTransportRecovery;
@@ -760,7 +722,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             abortOptions.messageId = messageId;
         }
         return classifyAssistantError(errorInfo, abortOptions) ?? classifySteeredAbortFallback(abortOptions);
-    }, [isLatestMessage, isUser, managedAbortRecovery, managedTransportRecovery, manualAbortMessageId, message.info, steeredAbortMessageId]);
+    }, [isLatestMessage, isUser, managedAbortRecovery, managedTransportRecovery, manualAbortMessageId, message.info, providerID, steeredAbortMessageId]);
 
     React.useEffect(() => {
         if (assistantError?.abortKind !== 'unexpected' || !messageSessionId) {
@@ -1259,6 +1221,7 @@ export default React.memo(ChatMessage, (prev, next) => {
         && prev.isLatestMessage === next.isLatestMessage
         && prev.activeStreamingPhase === next.activeStreamingPhase
         && prev.assistantHeaderMessageId === next.assistantHeaderMessageId
+        && prev.suppressAssistantHeader === next.suppressAssistantHeader
         && prev.animateUserOnMount === next.animateUserOnMount
         && prev.onUserAnimationConsumed === next.onUserAnimationConsumed
         && areRelevantTurnGroupingContextsEqual(

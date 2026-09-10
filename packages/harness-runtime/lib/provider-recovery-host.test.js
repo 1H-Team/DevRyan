@@ -130,3 +130,18 @@ test('complete turn fetch follows pagination beyond the loaded page', async () =
   expect(f.calls.some((call) => call.url.searchParams.get('before') === 'older')).toBe(true);
   expect(f.calls.filter((call) => call.url.pathname.endsWith('/prompt_async'))).toHaveLength(1);
 });
+
+
+test('Claude mode environment override does not bypass production conformance', async () => {
+  const previous = process.env.DEVRYAN_ANTHROPIC_RECOVERY_MODE;
+  process.env.DEVRYAN_ANTHROPIC_RECOVERY_MODE = 'enforce';
+  try {
+    const f = await setup({ mode: 'off' });
+    const body = { ...f.body, messageID: 'msg_claude', model: { providerID: 'anthropic', modelID: 'claude-opus-5' } };
+    expect(await f.host.handleRequest('POST', '/session/ses_test/prompt_async', body)).toBeNull();
+    expect(await f.host.getSnapshot('ses_test')).toMatchObject({ mode: 'enforce', supported: false, enforced: false });
+  } finally {
+    if (previous === undefined) delete process.env.DEVRYAN_ANTHROPIC_RECOVERY_MODE;
+    else process.env.DEVRYAN_ANTHROPIC_RECOVERY_MODE = previous;
+  }
+});

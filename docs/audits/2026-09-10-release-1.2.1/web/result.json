@@ -1,0 +1,1886 @@
+{
+  "schemaVersion": 1,
+  "revision": "a82ca5fff1c5ccace020b02316c8b14ff1f4040c",
+  "dirty": true,
+  "runtime": "web",
+  "scenario": "session-changes",
+  "startedAt": "2026-09-09T23:46:46.761Z",
+  "outcome": "passed",
+  "checks": [
+    {
+      "name": "selected session and composer",
+      "outcome": "passed",
+      "elapsedMs": 5049.916417
+    },
+    {
+      "name": "exact summary excludes independent and external writers",
+      "outcome": "passed",
+      "elapsedMs": 26017.978208000008
+    },
+    {
+      "name": "live exact receipt arrives through SSE without changing an unrelated summary",
+      "outcome": "passed",
+      "elapsedMs": 20363.40637499999
+    },
+    {
+      "name": "a late exact receipt clears only its repaired error without reloading",
+      "outcome": "passed",
+      "elapsedMs": 16518.150083
+    },
+    {
+      "name": "native receipts exceed preview limits and pending coverage automatically settles",
+      "outcome": "passed",
+      "elapsedMs": 46310.66925000002
+    },
+    {
+      "name": "changes-light-1280: completed card while independent writer is busy",
+      "outcome": "passed",
+      "elapsedMs": 16494.226999999984
+    },
+    {
+      "name": "changes-light-1280: recorded segment navigation and patch pagination",
+      "outcome": "passed",
+      "elapsedMs": 2375.934749999986
+    },
+    {
+      "name": "changes-light-1280: child selection and reload excludes its parent",
+      "outcome": "passed",
+      "elapsedMs": 12577.565415999998
+    },
+    {
+      "name": "changes-light-1280: precise capture limitation retains exact file",
+      "outcome": "passed",
+      "elapsedMs": 5610.995290999999
+    },
+    {
+      "name": "changes-light-1280: Undo and Redo controls",
+      "outcome": "passed",
+      "elapsedMs": 16268.110541000002
+    },
+    {
+      "name": "changes-light-390: completed card while independent writer is busy",
+      "outcome": "passed",
+      "elapsedMs": 13377.04466700001
+    },
+    {
+      "name": "changes-light-390: recorded segment navigation and patch pagination",
+      "outcome": "passed",
+      "elapsedMs": 1195.3251670000027
+    },
+    {
+      "name": "changes-light-390: child selection and reload excludes its parent",
+      "outcome": "passed",
+      "elapsedMs": 14967.764792000002
+    },
+    {
+      "name": "changes-light-390: precise capture limitation retains exact file",
+      "outcome": "passed",
+      "elapsedMs": 9399.174458999973
+    },
+    {
+      "name": "changes-light-390: Undo and Redo controls",
+      "outcome": "passed",
+      "elapsedMs": 18228.051167000027
+    },
+    {
+      "name": "changes-dark-1280: completed card while independent writer is busy",
+      "outcome": "passed",
+      "elapsedMs": 15179.394375000033
+    },
+    {
+      "name": "changes-dark-1280: recorded segment navigation and patch pagination",
+      "outcome": "passed",
+      "elapsedMs": 2312.0520829999587
+    },
+    {
+      "name": "changes-dark-1280: child selection and reload excludes its parent",
+      "outcome": "passed",
+      "elapsedMs": 11263.096042000048
+    },
+    {
+      "name": "changes-dark-1280: precise capture limitation retains exact file",
+      "outcome": "passed",
+      "elapsedMs": 14929.970833999978
+    },
+    {
+      "name": "changes-dark-1280: Undo and Redo controls",
+      "outcome": "passed",
+      "elapsedMs": 26159.291000000027
+    },
+    {
+      "name": "changes-dark-390: completed card while independent writer is busy",
+      "outcome": "passed",
+      "elapsedMs": 21277.83583300002
+    },
+    {
+      "name": "changes-dark-390: recorded segment navigation and patch pagination",
+      "outcome": "passed",
+      "elapsedMs": 1720.6529999999912
+    },
+    {
+      "name": "changes-dark-390: child selection and reload excludes its parent",
+      "outcome": "passed",
+      "elapsedMs": 18660.507166999974
+    },
+    {
+      "name": "changes-dark-390: precise capture limitation retains exact file",
+      "outcome": "passed",
+      "elapsedMs": 6449.214124999999
+    },
+    {
+      "name": "changes-dark-390: Undo and Redo controls",
+      "outcome": "passed",
+      "elapsedMs": 26322.928957999975
+    },
+    {
+      "name": "restore rejects conflicts and Undo/Redo preserve unrelated files",
+      "outcome": "passed",
+      "elapsedMs": 28706.035250000015
+    }
+  ],
+  "consoleErrors": [],
+  "screenshots": [
+    "changes-live-independent-receipt.png",
+    "changes-before-late-recovery.png",
+    "changes-after-late-recovery.png",
+    "changes-native-pending.png",
+    "changes-native-settled.png",
+    "[REDACTED]:high_entropy.png",
+    "changes-light-1280-first-edit.png",
+    "[REDACTED]:high_entropy.png",
+    "[REDACTED]:high_entropy.png",
+    "[REDACTED]:high_entropy.png",
+    "[REDACTED]:high_entropy.png",
+    "changes-light-1280-undone.png",
+    "changes-light-1280-redone.png",
+    "[REDACTED]:high_entropy.png",
+    "changes-light-390-first-edit.png",
+    "[REDACTED]:high_entropy.png",
+    "[REDACTED]:high_entropy.png",
+    "[REDACTED]:high_entropy.png",
+    "[REDACTED]:high_entropy.png",
+    "changes-light-390-undone.png",
+    "changes-light-390-redone.png",
+    "[REDACTED]:high_entropy.png",
+    "changes-dark-1280-first-edit.png",
+    "[REDACTED]:high_entropy.png",
+    "[REDACTED]:high_entropy.png",
+    "[REDACTED]:high_entropy.png",
+    "[REDACTED]:high_entropy.png",
+    "changes-dark-1280-undone.png",
+    "changes-dark-1280-redone.png",
+    "[REDACTED]:high_entropy.png",
+    "changes-dark-390-first-edit.png",
+    "[REDACTED]:high_entropy.png",
+    "changes-dark-390-child-reloaded.png",
+    "[REDACTED]:high_entropy.png",
+    "[REDACTED]:high_entropy.png",
+    "changes-dark-390-undone.png",
+    "changes-dark-390-redone.png",
+    "changes-after-conflict-undo-confirmation.png",
+    "changes-after-conflict-undone.png",
+    "changes-after-conflict-redone.png",
+    "chat-idle.png"
+  ],
+  "liveProvider": "not-run",
+  "physicalDevice": "not-run",
+  "visualReview": "pending",
+  "inspection": {
+    "cdp": "http://127.0.0.1:51170",
+    "fixture": "http://127.0.0.1:50946",
+    "app": "http://127.0.0.1:51171"
+  },
+  "sessionChanges": {
+    "externalWriterProcess": true,
+    "productionController": true,
+    "privateGitStore": true,
+    "checkpoints": [
+      {
+        "name": "root",
+        "fileCount": 4,
+        "coverage": "complete",
+        "totalsMode": "recorded"
+      },
+      {
+        "name": "native",
+        "fileCount": 28,
+        "coverage": "complete",
+        "previewRows": 24
+      }
+    ]
+  },
+  "diagnostics": {
+    "httpStatus": 200,
+    "enabled": true,
+    "directory": "<QA_RUNTIME>/data/harness/journal",
+    "diskBytes": 45907,
+    "maxBytes": 1073741824,
+    "segmentCount": 3,
+    "sessionCount": 2,
+    "queuedRecords": 0,
+    "writtenRecords": 107,
+    "gapRecords": 0,
+    "lastError": null,
+    "contextModeRecovery": {
+      "state": "healthy",
+      "incidentId": null,
+      "detectedAt": null,
+      "updatedAt": 1788997656032,
+      "recoveredAt": null,
+      "occurrenceCount": 0,
+      "restartAttempts": 0,
+      "lastRestartError": null,
+      "outcome": null,
+      "guidance": null,
+      "transitions": []
+    },
+    "commandDeadlineRecovery": {
+      "activeCount": 0,
+      "recoveredCount": 0,
+      "unresolvedCount": 0,
+      "lastOutcome": null,
+      "lastError": null,
+      "updatedAt": null
+    }
+  },
+  "fixture": {
+    "activeScenario": "idle",
+    "sseClientCount": 1,
+    "sseConnectionCount": 17,
+    "statusRequestCount": 104,
+    "suppressedEvents": [],
+    "suppressionRuns": [],
+    "messageRequestCounts": {
+      "ses_perfparent": 53,
+      "ses_qa1": 71,
+      "ses_perfchild1": 34,
+      "ses_qa2": 98,
+      "ses_qa3": 68,
+      "ses_qa4": 51,
+      "ses_qa5": 39,
+      "ses_perfchild3": 12,
+      "ses_perfchild2": 15
+    },
+    "olderMessageRequestCounts": {},
+    "messagePageRequests": [
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 50,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_user_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_user_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 5,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_user_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 5,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 50,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_user_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 30,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 50,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 50,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_user_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 30,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 50,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 50,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_user_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 100,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 50,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild2",
+        "lastMessageID": "msg_user_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "before": null,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a088911e22answer"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 30,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 30,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa1",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911e86user",
+        "lastMessageID": "msg_1a088911e87answer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 50,
+        "before": null,
+        "returned": 3,
+        "firstMessageID": "msg_user_ses_perfchild1",
+        "lastMessageID": "msg_1a088911ef0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      },
+      {
+        "sessionID": "ses_qa2",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911f59user",
+        "lastMessageID": "msg_1a088911f5aanswer"
+      },
+      {
+        "sessionID": "ses_qa3",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088911fbfuser",
+        "lastMessageID": "msg_1a088911fc0answer"
+      },
+      {
+        "sessionID": "ses_qa4",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a088912027user",
+        "lastMessageID": "msg_1a088912028answer"
+      },
+      {
+        "sessionID": "ses_qa5",
+        "limit": 50,
+        "before": null,
+        "returned": 2,
+        "firstMessageID": "msg_1a08891208euser",
+        "lastMessageID": "msg_1a08891208fanswer"
+      }
+    ],
+    "textLengths": {
+      "ses_perfparent": 0,
+      "ses_perfchild1": 0,
+      "ses_perfchild2": 0,
+      "ses_perfchild3": 0
+    },
+    "receivedPrompts": [],
+    "canonicalUserDelays": [],
+    "rejectedPrompts": [],
+    "replies": [],
+    "unknownRoutes": [],
+    "permissionCount": 0,
+    "questionCount": 0,
+    "abortedPrompts": 0,
+    "activePrompts": 0
+  },
+  "cleanupErrors": [],
+  "finishedAt": "2026-09-09T23:54:22.950Z",
+  "journalDirectory": "journal"
+}

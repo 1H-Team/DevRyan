@@ -103,10 +103,10 @@ The first app is only a native-binary donor and must not be launched or treated 
 Install the exact live-QA OpenCode runtime only in the ignored path expected by profile preparation:
 
 ```sh
-mkdir -p .cache/qa/opencode-1.18.29
-npm pack opencode-darwin-arm64@1.18.29 \
-  --pack-destination "$PWD/.cache/qa/opencode-1.18.29" --json \
-  > .cache/qa/opencode-1.18.29/pack-metadata.json
+mkdir -p .cache/qa/opencode-1.18.30
+npm pack opencode-darwin-arm64@1.18.30 \
+  --pack-destination "$PWD/.cache/qa/opencode-1.18.30" --json \
+  > .cache/qa/opencode-1.18.30/pack-metadata.json
 
 node --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
@@ -115,26 +115,26 @@ import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const directory = path.resolve('.cache/qa/opencode-1.18.29');
+const directory = path.resolve('.cache/qa/opencode-1.18.30');
 const metadata = JSON.parse(await readFile(path.join(directory, 'pack-metadata.json'), 'utf8'));
 assert.equal(metadata.length, 1);
 const entry = metadata[0];
 assert.equal(entry.name, 'opencode-darwin-arm64');
-assert.equal(entry.version, '1.18.29');
+assert.equal(entry.version, '1.18.30');
 assert.equal(path.basename(entry.filename), entry.filename);
 const archive = path.join(directory, entry.filename);
 assert.equal(`sha512-${createHash('sha512').update(await readFile(archive)).digest('base64')}`, entry.integrity);
 execFileSync('tar', ['-xzf', archive, '-C', directory], { stdio: 'inherit' });
 const pkg = JSON.parse(await readFile(path.join(directory, 'package/package.json'), 'utf8'));
 assert.equal(pkg.name, 'opencode-darwin-arm64');
-assert.equal(pkg.version, '1.18.29');
+assert.equal(pkg.version, '1.18.30');
 const version = execFileSync(path.join(directory, 'package/bin/opencode'), ['--version'], { encoding: 'utf8' }).trim();
-assert.equal(version, '1.18.29');
+assert.equal(version, '1.18.30');
 console.log(`Verified cached OpenCode ${version}`);
 NODE
 ```
 
-The archive's integrity is checked against npm pack's retained metadata, and the installed package identity and executable version are checked after extraction. This does not modify the user's OpenCode installation or install a package globally. The package identity and layout match the current retained `.cache/qa/opencode-1.18.29/package/package.json` and `profile-preparation.mjs` contract.
+The archive's integrity is checked against npm pack's retained metadata, and the installed package identity and executable version are checked after extraction. This does not modify the user's OpenCode installation or install a package globally. The package identity and layout match the current retained `.cache/qa/opencode-1.18.30/package/package.json` and `profile-preparation.mjs` contract.
 
 A fresh checkout alone still cannot run live-provider QA. `prepareQaProfile` also requires the user's existing supported OpenCode configuration directory, its installed dependency tree/package manifest and managed provider/agent configuration. It copies those installed dependencies into each owned private profile and provisions candidate defaults there. It projects only supported unexpired access credentials without refresh tokens; Anthropic requires the existing Claude CLI credential source. Establish these through their canonical owners. Fixture QA needs no provider credentials or cached OpenCode executable. Do not suggest hand-written credential files or a global install as a bootstrap substitute.
 
@@ -211,7 +211,7 @@ Before and after an Electron cell, the loader verifies the app archive, shipped 
 
 Initial low-level health readiness does not imply that native plugins, providers, and agents have finished initializing. Only the first cold reload therefore has a separate 180-second bootstrap ceiling, additionally capped by the cell's remaining deadline. The gate requires initialized UI provider/agent state, visible enabled composer and New Chat controls, populated model/agent controls, and the exact pinned model and requested primary agent in the real connected native catalogs. Five-second bounded catalog requests retry transient startup failures; unavailable selections and permanent API failures fail explicitly. `initial-bootstrap.json` retains phase timings, request attempts, and the last UI snapshot, including on failure. All subsequent ordinary reloads keep their 30-second limit, and the later exact provider, agent, variant, and canonical submission checks still run.
 
-Each cell receives an owned Git project, private home marker, managed data directory and Chromium profile. Live profile preparation provisions candidate defaults and plugins into that private installation, copies installed dependencies from the existing OpenCode configuration, and pins primary and delegated agent models. It expects the verified OpenCode 1.18.29 executable at `.cache/qa/opencode-1.18.29/package/bin/opencode`. Available API credentials or unexpired OAuth access credentials are projected into private files; refresh tokens and personal skills are not copied. Claude access comes from the existing CLI credential source. Do not put credentials in matrix JSON or handcraft the profile environment. The runner records credential availability and installed/plugin fingerprints without exposing secret values; missing dependencies, unsupported credentials or unavailable model access fail explicitly. Immediately after preparing each fresh live profile and before starting any host, the runner requires the copied selected-provider OAuth/Claude access expiry to cover the configured cell timeout plus ten minutes. It records the successful admission timestamp and budget; unavailable, expired, insufficient or unknown OAuth/Claude expiry fails the cell and follows normal private-profile cleanup. Existing OpenAI/xAI API-key admission is preserved with `expiryCheck: 'not-applicable-to-api-key'`; this makes no credential-lifetime guarantee. Other providers do not determine admission, and this check never refreshes credentials.
+Each cell receives an owned Git project, private home marker, managed data directory and Chromium profile. Live profile preparation provisions candidate defaults and plugins into that private installation, copies installed dependencies from the existing OpenCode configuration, and pins primary and delegated agent models. It expects the verified OpenCode 1.18.30 executable at `.cache/qa/opencode-1.18.30/package/bin/opencode`. Available API credentials or unexpired OAuth access credentials are projected into private files; refresh tokens and personal skills are not copied. Claude access comes from the existing CLI credential source. Do not put credentials in matrix JSON or handcraft the profile environment. The runner records credential availability and installed/plugin fingerprints without exposing secret values; missing dependencies, unsupported credentials or unavailable model access fail explicitly. Immediately after preparing each fresh live profile and before starting any host, the runner requires the copied selected-provider OAuth/Claude access expiry to cover the configured cell timeout plus ten minutes. It records the successful admission timestamp and budget; unavailable, expired, insufficient or unknown OAuth/Claude expiry fails the cell and follows normal private-profile cleanup. Existing OpenAI/xAI API-key admission is preserved with `expiryCheck: 'not-applicable-to-api-key'`; this makes no credential-lifetime guarantee. Other providers do not determine admission, and this check never refreshes credentials.
 
 For focused specialist diagnostics, the `prepareQaProfile` / `pinQaAgents` APIs accept an optional `agentAssignments` map for known specialist roles, for example `{ explorer: { providerId: 'openai', modelId: 'gpt-5.3-codex-spark', variant: 'high' } }`. Assignments require the primary provider and an explicit nullable variant; malformed, ambiguous or cross-provider assignments fail before profile writes. Explicitly assigning a disabled specialist also fails instead of recording an ineffective assignment. Primary defaults remain pinned to the original cell. Profile evidence records the actual `agentModels` map and each role's model and nullable variant in `agentSelections`. This API option is not a matrix JSON field and does not establish availability or successful specialist execution: a focused run must separately check the live catalog, effective child selection, actual child results and parent reconciliation. It changes only the owned QA profile.
 
@@ -225,7 +225,7 @@ A rejected native permission can end a QA turn before its deadline only when the
 
 The live observer records whitelisted controls at native `chat.message` and final `chat.params` hooks after configured plugins and before the provider adapter. The grader correlates the tracked user-message IDs, provider/model and explicit variant selection with the advertised control values. Default must arrive as an explicit cleared variant; native adapter defaults are reported separately. These records are not provider wire capture. Inspect `reasoningControls.turns` for the exact graded turn set, including any declared gaps.
 
-Manual compaction requires both canonical summary linkage and independently observed native lifecycle events at each boundary. It verifies revision 2 remains saved, the paused project stays unchanged, and implementation resumes from the current approval surface. With Plan enabled, the reference is the app's saved session revision, identified by its original human request, source message, session directory, creation time and slug. Its raw path, byte count and hash remain pinned. Every exact revision read must stay inside the project-plan directory derived from the prepared runtime's own data root, reject symlinks and match the file's bytes to the API response. With Plan disabled, the reference remains the existing `.opencode/plans/qa-current.md` file in the owned project. Both references are checked at every paused boundary and before approval; a later Plan card cannot replace the baseline. Fresh approval requests contain the existing path and require an observed successful native read before a new full canonical Plan response. The harness does not copy the file, refeed its contents or count an unreadable reference as continuity. Natural compaction additionally requires OpenCode 1.18.29's unchanged configured model limits, measured usage at the threshold, `auto: true` and no provider-overflow substitute. It sends labelled synthetic project audit data through the ordinary composer, bounded to 256 KiB per batch, 40 batches per boundary and 32 MiB total, within the cell deadline. Reaching a workload bound without two verified boundaries fails; one boundary, a forced summary or a fixture result cannot stand in for natural coverage.
+Manual compaction requires both canonical summary linkage and independently observed native lifecycle events at each boundary. It verifies revision 2 remains saved, the paused project stays unchanged, and implementation resumes from the current approval surface. With Plan enabled, the reference is the app's saved session revision, identified by its original human request, source message, session directory, creation time and slug. Its raw path, byte count and hash remain pinned. Every exact revision read must stay inside the project-plan directory derived from the prepared runtime's own data root, reject symlinks and match the file's bytes to the API response. With Plan disabled, the reference remains the existing `.opencode/plans/qa-current.md` file in the owned project. Both references are checked at every paused boundary and before approval; a later Plan card cannot replace the baseline. Fresh approval requests contain the existing path and require an observed successful native read before a new full canonical Plan response. The harness does not copy the file, refeed its contents or count an unreadable reference as continuity. Natural compaction additionally requires OpenCode 1.18.30's unchanged configured model limits, measured usage at the threshold, `auto: true` and no provider-overflow substitute. It sends labelled synthetic project audit data through the ordinary composer, bounded to 256 KiB per batch, 40 batches per boundary and 32 MiB total, within the cell deadline. Reaching a workload bound without two verified boundaries fails; one boundary, a forced summary or a fixture result cannot stand in for natural coverage.
 
 Manual Orchestrator coverage keeps its mixed first-boundary policy: two distinct seeded task/child/dispatch identities, one actually running child and one completed result with its exact undispositioned envelope. Both must be observed across native start and canonical summary completion. The active child may finish naturally during compaction while its result stays pending. Collection follows that exit observation; both exact results must remain completed through the second boundary. Missing, failed, consumed, replaced or ambiguous witnesses fail coverage.
 
@@ -448,7 +448,7 @@ An authoritative zero-usage window can have a null reset timestamp while inactiv
 
 The output records authoritative quota before/after each turn, immediate and delayed samples, native usage deduplicated by provider message ID, exact model/effort evidence, mediated request counters and verified file/test outcomes. Each delayed endpoint must have been fetched after completed work plus 30 seconds; a recent cached reading that predates completion is insufficient. That endpoint can serve as the next turn's preceding observation while fresh, since no inference occurs between them. The first prompt similarly requires a fresh observation fetched after the arm started. Valid observations can be reused for up to 85 seconds to avoid bursts of quota refresh requests, while their provider fetch time remains subject to the 90-second freshness bound. With model work idle, the runner can wait up to ten minutes for a fresh endpoint. Missing or stale quota during active inference still aborts the owned workload. Native transcript and Meridian client counters do not cover every auxiliary or failed provider attempt. A one-point quota display delta of zero does not establish zero consumption or parity. The runner never writes refresh credentials or passwords, never patches the installed runtime, and stops only processes it created.
 
-## Context Mode timeout and reconnect
+## Context Mode timeout, crash reporting and reconnect
 
 Run `DEVRYAN_QA_SCENARIO=context-mode bun scripts/qa/run.mjs`, and repeat with
 `DEVRYAN_QA_RUNTIME=electron` after staging the current web build. The scenario
@@ -456,7 +456,10 @@ uses the real worker pool with a deliberately silent worker and replays its
 actual timeout through the deterministic OpenCode HTTP/SSE fixture. It checks
 that Context Mode activity clears, the unknown-outcome error is visible, Stop
 remains available while running, and reconnect restores the error without replay.
-The preceding standard smoke verifies the composer Stop/abort route. Real
-worker/process cancellation is covered separately by
+The preceding standard smoke verifies the composer Stop/abort route.
+The same scenario projects the production failure formatter’s indexed OOM
+summary through the real UI and verifies fatal details survive reconnect.
+Real crash reproduction and
+worker/process cancellation are covered separately by
 `scripts/verify-context-mode-workers.mjs`; this UI scenario is not live-provider
 or installed-app verification.

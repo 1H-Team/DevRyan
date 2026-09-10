@@ -289,6 +289,7 @@ export function createBotsRuntime({
     revalidate: (input) => channels.preflightMessage(input),
   });
   const eventStream = createBotEventStream({
+    recordDiagnostic,
     loadSnapshot: (principal) => channels.snapshotForPrincipal(principal),
     filterSnapshot: catalogVisibility.filterSnapshot,
     canDeliver: catalogVisibility.isVisible,

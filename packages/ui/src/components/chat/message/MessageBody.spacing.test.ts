@@ -95,3 +95,17 @@ describe('session output spacing', () => {
         expect(progressiveGroup).toContain('pr-2 pl-px py-1.5 rounded-xl text-left min-w-0');
     });
 });
+
+describe('assistant part projection', () => {
+    test('renders from the shared projection instead of an inlined filter chain', () => {
+        // ChatMessage decides header visibility from the same projection. If the
+        // filter chain is re-inlined here the two answers silently diverge and
+        // empty rows regain their headers.
+        const source = read('MessageBody.tsx');
+
+        expect(source).toContain("import { projectAssistantVisibleParts } from './assistantRowContent';");
+        expect(source).toContain('projectAssistantVisibleParts(parts, {');
+        expect(source).not.toContain('.filter((part) => !isEmptyTextPart(part))');
+        expect(source).not.toContain('collapseSupersededTodoWrites(parts,');
+    });
+});

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Agent } from "@opencode-ai/sdk/v2";
 import {
   buildAgentConfigPayload,
@@ -14,6 +14,9 @@ import {
 } from "./useAgentsStore";
 import { useConfigStore } from "./useConfigStore";
 import { useSelectionStore } from "@/sync/selection-store";
+import { opencodeClient } from '@/lib/opencode/client';
+import { useDirectoryStore } from './useDirectoryStore';
+import { useProjectsStore } from './useProjectsStore';
 
 const makeAgent = (agent: Partial<Agent> & { name: string }): Agent => agent as Agent;
 const originalFetch = globalThis.fetch;
@@ -144,6 +147,23 @@ describe("Council agent model config serialization", () => {
 });
 
 describe("agent model override persistence", () => {
+  let clientDirectory: string | undefined;
+  let directoryState: ReturnType<typeof useDirectoryStore.getState>;
+  let projectsState: ReturnType<typeof useProjectsStore.getState>;
+  beforeEach(() => {
+    clientDirectory = opencodeClient.getDirectory();
+    directoryState = useDirectoryStore.getState();
+    projectsState = useProjectsStore.getState();
+    opencodeClient.setDirectory(undefined);
+    useDirectoryStore.setState({ currentDirectory: '' });
+    useProjectsStore.setState({ projects: [], activeProjectId: null });
+  });
+  afterEach(() => {
+    opencodeClient.setDirectory(clientDirectory);
+    useDirectoryStore.setState(directoryState);
+    useProjectsStore.setState(projectsState);
+  });
+
   test("saves an agent model override through the override route", async () => {
     let fetchCalls = 0;
     const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -509,7 +529,7 @@ describe("agent model override persistence", () => {
   });
 
   test("syncs saved override agent config into the chat config store", async () => {
-    const originalAgents = useConfigStore.getState().agents;
+    const originalConfigState = useConfigStore.getState();
     const originalSettingsAgents = useAgentsStore.getState().agents;
     const nextAgent = makeAgent({
       name: "builder",
@@ -521,6 +541,7 @@ describe("agent model override persistence", () => {
       agents: [makeAgent({ name: "builder", mode: "primary", model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" } })],
     });
     useConfigStore.setState({
+      activeDirectoryKey: '__global__',
       agents: [makeAgent({ name: "builder", mode: "primary", model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" } })],
       directoryScoped: {},
     });
@@ -555,7 +576,7 @@ describe("agent model override persistence", () => {
     } finally {
       globalThis.fetch = originalFetch;
       useAgentsStore.setState({ agents: originalSettingsAgents });
-      useConfigStore.setState({ agents: originalAgents, directoryScoped: {} });
+      useConfigStore.setState(originalConfigState);
     }
   });
 

@@ -43,6 +43,8 @@ describe('managed agent contracts', () => {
     expect(designer).toContain('managed designer task');
     expect(designer).toContain('layout, states, dark and light themes, mobile and desktop');
     expect(designer).toContain('Do not run tsc for a UI-only task unless the task asks for it');
+    expect(designer).toContain('better suited to fixer');
+    expect(designer).toContain('never block for this');
 
     const fixer = buildManagedAgentContract({ agent: 'fixer' });
     expect(fixer).toContain('managed fixer task');

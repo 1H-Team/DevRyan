@@ -119,6 +119,7 @@ export type CursorQuestionRequest = {
 };
 
 export type CursorSdkRuntime = {
+  reconcileSessionChanges(scope: { sessionID: string; directory: string }): Promise<{ pending: boolean; reasons: string[] }>;
   getRuntimeStatus(): CursorRuntimeStatus;
   verifyConnection(): Promise<CursorRuntimeStatus & { ok: boolean; configured: boolean }>;
   prewarm(): Promise<CursorRuntimeStatus & { ok: boolean; configured: boolean }>;
@@ -200,6 +201,12 @@ export function resolveCursorSdkWorkerRuntimeConfig(options?: {
   workerEnv: Record<string, string>;
 };
 export function createCursorSdkRuntime(options: Record<string, unknown> & {
+  onSessionChangeExecution?: (input: {
+    directory: string; sessionID: string; messageID?: string; userMessageID?: string;
+    phase: 'tool' | 'stream-gap' | 'run-settled' | 'interrupted'; callID?: string; parentCallID?: string;
+    tool?: string; state?: 'running' | 'completed' | 'error' | 'cancelled'; path?: string;
+    metadata?: { diff?: string }; createdAt?: number; captureFailed?: boolean;
+  }) => Promise<{ acknowledged: true }>;
   ripgrepPath?: string;
   resolveAgentPrompt?: (input: { agent?: string; directory?: string | null }) => Promise<string> | string;
   resolveAgentDefinitions?: (input: {

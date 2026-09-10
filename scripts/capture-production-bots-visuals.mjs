@@ -749,6 +749,49 @@ export const runProductionBotsVisualCapture = async (options) => {
         process.stdout.write(`[production-bots-visual] avatar metrics ${JSON.stringify(avatarMetrics)}\n`);
         await waitForEvaluation(cdp, `document.querySelectorAll('[data-avatar-fixture] img').length === 3 && document.querySelector('[data-avatar-fixture]').dataset.avatarRequests === '3'`, { timeoutMs: options.timeoutMs, label: 'replacement avatar decoded' });
       }
+      if (entry.interaction === 'event_recovery') {
+        const connected = `document.querySelector('[data-assigned-catalog-fixture]')?.dataset.connection === 'connected'`;
+        const warning = `document.querySelector('[aria-label="Bot navigation"]')?.textContent.includes('Live updates are unavailable')`;
+        await evaluate(cdp, `document.querySelector('[data-bots-tab]').click()`);
+        await waitForEvaluation(cdp, connected, { timeoutMs: options.timeoutMs, label: 'initial Bot snapshot' });
+        await evaluate(cdp, `document.querySelector('[aria-label="Bot navigation"] button[aria-label^="Open Conversation"]').click()`);
+        await waitForEvaluation(cdp, `document.body.textContent.includes('Your existing conversation is available.')`, { timeoutMs: options.timeoutMs, label: 'existing Bot conversation' });
+        await evaluate(cdp, `document.querySelector('form textarea').focus()`);
+        await cdp.send('Input.insertText', { text: 'Keep this draft during reconnect' });
+        await evaluate(cdp, `document.querySelector('[data-publish-message]').click()`);
+        await waitForEvaluation(cdp, `document.body.textContent.includes('Verified fixture response 1.')`, { timeoutMs: options.timeoutMs, label: 'first live Bot response' });
+
+        await evaluate(cdp, `document.querySelector('[data-interrupt-service]').click()`);
+        if (await evaluate(cdp, warning)) throw new Error('Bot warning skipped its grace period');
+        await evaluate(cdp, `document.querySelector('[data-publish-message]').click()`);
+        await waitForEvaluation(cdp, warning, { timeoutMs: options.timeoutMs, label: 'prolonged Bot outage warning' });
+        await evaluate(cdp, `document.querySelector('[data-open-transport]').click()`);
+        await evaluate(cdp, `Array.from(document.querySelectorAll('[aria-label="Bot navigation"] button')).find(button => button.textContent.trim() === 'Retry').click()`);
+        // An open transport without a snapshot must retain both the error and
+        // the warning, including after navigation remounts the real sidebar.
+        await wait(200);
+        if (await evaluate(cdp, connected) || !await evaluate(cdp, warning)) throw new Error('Transport open incorrectly cleared the Bot outage');
+        await evaluate(cdp, `document.querySelector('[data-settings-tab]').click()`);
+        await evaluate(cdp, `document.querySelector('[data-bots-tab]').click()`);
+        await waitForEvaluation(cdp, warning, { timeoutMs: options.timeoutMs, label: 'warning survives sidebar remount' });
+        await evaluate(cdp, `document.querySelector('[data-restore-service]').click()`);
+        await waitForEvaluation(cdp, connected, { timeoutMs: options.timeoutMs, label: 'fresh Bot recovery snapshot' });
+        await waitForEvaluation(cdp, `document.body.textContent.includes('Verified fixture response 2.')`, { timeoutMs: options.timeoutMs, label: 'missed Bot response restored from history' });
+        for (let response = 3; response <= 5; response += 1) {
+          await evaluate(cdp, `document.querySelector('[data-publish-message]').click()`);
+          await waitForEvaluation(cdp, `document.body.textContent.includes('Verified fixture response ${response}.')`, { timeoutMs: options.timeoutMs, label: 'continued Bot message delivery' });
+        }
+        await evaluate(cdp, `(async () => {
+          if (${warning}) throw new Error('Recovered Bot warning remained visible');
+          if (document.querySelector('form textarea')?.value !== 'Keep this draft during reconnect') throw new Error('Bot draft lost during recovery');
+          for (let index = 1; index <= 5; index += 1) {
+            const rows = [...document.querySelectorAll('[data-bot-message-id]')].filter(row => row.textContent.includes('Verified fixture response ' + index + '.'));
+            if (rows.length !== 1) throw new Error('Missing or duplicated recovered Bot message: ' + index + ', count=' + rows.length);
+          }
+          const stats = window.__DEVRYAN_BOT_EVENT_FIXTURE__.stats();
+          if (stats.activeSources !== 1 || stats.maximumSources !== 1) throw new Error('Overlapping Bot event subscriptions');
+        })()`);
+      }
       if (entry.interaction === 'assigned_catalog') {
         await waitForEvaluation(cdp, `document.querySelector('[data-settings-catalog]')?.textContent.includes('Assigned Assistant')`, { timeoutMs: options.timeoutMs, label: 'active Bot in Settings' });
         await evaluate(cdp, `document.querySelector('[data-bots-tab]').click()`);

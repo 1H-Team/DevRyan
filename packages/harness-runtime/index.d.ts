@@ -703,6 +703,8 @@ export interface PrimaryRecoveryHost extends PrimaryRecoveryController {
 export interface PrimaryRecoveryHostOptions {
   dataDirectory: string;
   mode?: 'off' | 'observe' | 'enforce';
+  anthropicMode?: 'off' | 'observe' | 'enforce';
+  isAnthropicConformant?(record: PrimaryRecoveryExecutionRecord, runtimeVersion: string | undefined): boolean;
   progressTimeoutMs?: number | false;
   buildOpenCodeUrl(pathname: string): string | URL;
   getOpenCodeAuthHeaders?(): Record<string, string>;
@@ -730,6 +732,12 @@ export type SessionChangeReceipt = SessionChangeIdentity & {
   messageID: string; callID: string; createdAt?: number; complete?: boolean;
   files: Iterable<SessionChangeFileReceipt> | AsyncIterable<SessionChangeFileReceipt>;
 };
+export type SessionChangeExecution = {
+  directory: string; sessionID: string; messageID?: string; userMessageID?: string;
+  phase: 'tool' | 'stream-gap' | 'run-settled' | 'interrupted'; callID?: string; parentCallID?: string;
+  tool?: string; state?: 'running' | 'completed' | 'error' | 'cancelled'; path?: string;
+  metadata?: { diff?: string }; createdAt?: number; captureFailed?: boolean;
+};
 export interface SessionChangeDiagnostic {
   code: string; phase: string; sessionID: string; callID?: string; source?: string; evidence?: SessionChangeEvidenceKind;
 }
@@ -740,6 +748,7 @@ export interface SessionChangeSummary extends SessionChangePage {
   fileCount: number; additions?: number; deletions?: number;
   rootSessionID: string; directory: string; worktreeDirectory: string; worktreeID: string; revision: string;
   coverage: 'complete' | 'partial'; reasons: string[]; sessionCount: number;
+  reconciliationState: 'pending' | 'settled';
   attributionVersion: number; totalsMode: 'net' | 'recorded'; restoreAvailable: boolean; restoreReasons: string[];
   firstUserMessageID: string | null; hasUnattributedMutations: false; undone?: boolean;
   files: Array<{ path: string; oldPath: string | null; status: 'added' | 'deleted' | 'modified' | 'renamed';
@@ -749,6 +758,10 @@ export interface SessionChangeRuntime {
   begin(input: SessionChangeIdentity & { messageID: string; callID: string }): Promise<void>;
   finish(input: SessionChangeIdentity & { callID: string }): Promise<void>;
   recordReceipt(input: SessionChangeReceipt): Promise<void>;
+  recordExecution(input: SessionChangeExecution & { parentID?: string | null; receipt?: ReturnType<typeof sessionChangeReceipt> }): Promise<void>;
+  findCall(input: SessionChangeIdentity & { callID: string }): Promise<string | null>;
+  unresolvedHistory(input: SessionChangeIdentity & { cursor?: string | null }): Promise<{ messages: Array<{ id: string; cursor: string }>; more: boolean }>;
+  settleHistoricalCall(input: SessionChangeIdentity & { callID: string }): Promise<void>;
   registerSession(input: SessionChangeIdentity): Promise<void>;
   importHistorical(inputs: Array<SessionChangeReceipt & { createdAt: number }>): Promise<void>;
   summarize(input: { directory: string; rootSessionID: string; sessions?: Array<{ id: string }>;
@@ -772,6 +785,7 @@ export function createSessionChangeRuntime(options: { directory: string; maxByte
   onDiagnostic?: (event: SessionChangeDiagnostic) => void | Promise<void>;
   onChange?: (scope: { directory: string; sessionID: string }) => void | Promise<void> }): SessionChangeRuntime;
 export interface SessionChangeHost {
+  acceptExecution(input: SessionChangeExecution): Promise<{ acknowledged: true }>;
   plugin(input: Record<string, unknown>): Promise<unknown>;
   handleRequest(method: string, path: string, body?: unknown): Promise<null | { status: number; body: unknown }>;
   observe(event: unknown, directory?: string | null): Promise<void>;
@@ -779,6 +793,7 @@ export interface SessionChangeHost {
 }
 export function createSessionChangeHost(options: Pick<PrimaryRecoveryHostOptions, 'dataDirectory' | 'buildOpenCodeUrl' | 'getOpenCodeAuthHeaders' | 'fetchImpl' | 'publishEvent'> & {
   onDiagnostic?: (event: SessionChangeDiagnostic) => void | Promise<void>;
+  reconcileExecutionReceipts?: (scope: { directory: string; sessionID: string }) => Promise<{ pending: boolean; reasons: string[] }>;
 }): SessionChangeHost;
 export const SESSION_CHANGE_READ_ONLY_TOOLS: readonly string[];
 export function normalizeSessionChangeTool(value: unknown): string;
@@ -794,6 +809,8 @@ export const PROVIDER_RECOVERY_POLICY_VERSION: 1;
 export const PROVIDER_PROGRESS_TIMEOUT_MS: number;
 export const RECOVERY_READ_TOOLS: readonly string[];
 export const RECOVERY_CONTINUATION: string;
+export function isPrimaryRecoveryProvider(providerID: unknown): providerID is 'openai' | 'anthropic';
+export function primaryRecoveryMode(providerID: unknown, options: Pick<PrimaryRecoveryHostOptions, 'mode' | 'anthropicMode'>): 'off' | 'observe' | 'enforce';
 export function classifyPrimaryTransportError(error: unknown, runtimeVersion: string): null | { kind: string; source: string };
 export interface PrimaryRecoveryExecutionRecord {
   sessionID: string; directory: string; anchorID: string; providerID: string; modelID: string;
@@ -803,6 +820,8 @@ export interface PrimaryRecoveryExecutionRecord {
 }
 export function createPrimaryRecoveryController(options: {
   directory: string; mode?: 'off' | 'observe' | 'enforce'; progressTimeoutMs?: number | false;
+  anthropicMode?: PrimaryRecoveryHostOptions['anthropicMode'];
+  isAnthropicConformant?: PrimaryRecoveryHostOptions['isAnthropicConformant'];
   isManaged(): boolean;
   authorize(record: PrimaryRecoveryExecutionRecord): Promise<boolean>;
   observeTurn(record: PrimaryRecoveryExecutionRecord, options?: { signal: AbortSignal }): Promise<unknown>;

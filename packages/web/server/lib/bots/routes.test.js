@@ -482,6 +482,30 @@ describe('Production Bots capabilities and routes', () => {
     );
   });
 
+  it('correlates a rejected Bot SSE response without logging its private error message', async () => {
+    const records = [];
+    const harness = createHarness({
+      recordDiagnostic: (entry) => records.push(entry),
+      eventStream: {
+        writeSse: async ({ diagnostics }) => {
+          diagnostics.stage('snapshot.serialize');
+          diagnostics.snapshot(300_000);
+          throw Object.assign(new Error('private snapshot content'), { code: 'bot_event_too_large', statusCode: 413 });
+        },
+      },
+    });
+    const response = await harness.invoke('GET', '/api/bots/events');
+    expect(response.statusCode).toBe(413);
+    expect(records.find((entry) => entry.event === 'bot.events.http_failed')).toMatchObject({
+      payload: { statusCode: 413, headersSent: false },
+    });
+    expect(records.find((entry) => entry.event === 'bot.events.failed')).toMatchObject({
+      payload: { stage: 'snapshot.serialize', snapshotBytes: 300_000, code: 'bot_event_too_large', statusCode: 413 },
+    });
+    expect(new Set(records.map((entry) => entry.payload.subscriptionId)).size).toBe(1);
+    expect(JSON.stringify(records)).not.toContain('private');
+  });
+
   it('uses reconciled runtime services after routes have already been registered', async () => {
     let liveLibraryRuntime = null;
     const harness = createHarness({

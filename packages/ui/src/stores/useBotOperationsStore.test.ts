@@ -19,6 +19,28 @@ const ACTION_ID = '90000000-0000-4000-8000-000000000001';
 const USER_ID = 'a0000000-0000-4000-8000-000000000001';
 const NOW = '2026-08-23T10:00:00.000Z';
 
+test('keeps an outage clock across retries and clears it on snapshot recovery or principal reset', () => {
+  let now = 10_000;
+  const store = createBotOperationsStore({ now: () => now });
+  store.getState().setConnectionState('connecting');
+  expect(store.getState().connectionFailureStartedAt).toBeNull();
+  store.getState().setConnectionState('reconnecting', 'bot_event_connection_lost');
+  expect(store.getState().connectionFailureStartedAt).toBe(10_000);
+  now += 2_000;
+  store.getState().setConnectionState('connecting', 'bot_event_connection_lost');
+  store.getState().setConnectionState('reconnecting', 'bot_event_json_invalid');
+  expect(store.getState().connectionFailureStartedAt).toBe(10_000);
+  const unchanged = store.getState();
+  store.getState().setConnectionState('reconnecting', 'bot_event_json_invalid');
+  expect(store.getState()).toBe(unchanged);
+  store.getState().setConnectionState('connected');
+  expect(store.getState().connectionFailureStartedAt).toBeNull();
+  store.getState().setConnectionState('reconnecting', 'bot_event_connection_lost');
+  expect(store.getState().connectionFailureStartedAt).toBe(12_000);
+  store.getState().resetPrincipal('another-principal');
+  expect(store.getState().connectionFailureStartedAt).toBeNull();
+});
+
 const run = (
   id: string,
   channelId: string,

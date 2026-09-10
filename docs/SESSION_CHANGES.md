@@ -36,21 +36,38 @@ verified task/Council wrappers do not capture. Canonical file-tool execution
 metadata supplies exact full before/after bodies or an actual unified patch;
 input arguments, counts, synthesized turn patches, and arbitrary MCP tool names
 cannot establish ownership. Cursor Edit execution `diffString` is preserved;
-count-only Write/Delete results and bounded native task previews remain explicit
-capture limitations. Verified descendants supply their own receipts.
+count-only Write/Delete results remain explicit capture limitations. Native task
+receipts are extracted before activity-preview limits; verified managed
+descendants supply their own receipts.
 
 Overlapping windows never discard exact receipts or serialize tool execution.
 Canonical directory, session, message and call identity deduplicates repeated
 receipts. Matching receipts repair failed or overlapping observations; differing
-receipts for one call fail closed. Unknown shell/MCP effects remain unresolved
+actual edits for one call fail closed. Completion and restoration evidence can
+strengthen an identical receipt; repeated or stale deliveries cannot downgrade it.
+Missing hooks and conflicts are scoped to their call, so repairing one call
+cannot clear another call’s gap. Unknown shell/MCP effects remain unresolved
 unless trustworthy receipts exist. External agents require no configuration.
+
+Cursor’s private `cursor-session-changes.js` channel stores full execution diffs
+separately from bounded activity previews. Direct, one-shot-worker and
+persistent-worker execution share the raw normalizer. Atomic per-session outbox
+records replay in order until the harness acknowledges persistence. Nested
+identity includes the real session, parent call and nested call; no navigable
+session is synthesized. Task wrappers settle only after their execution stream
+finishes, and observed mutating calls without receipts remain specific failures.
+Read-only nested tools add no edits or capture gap. Unsupported deeper execution
+marks a gap rather than silently certifying the task. Replay can repair an
+interrupted task after restart. Receipt bodies stay out of diagnostics and public
+activity events.
 
 ## Summary and review contract
 
 `GET /api/openchamber/session/:id/changes?directory=...` returns:
 
 - `rootSessionID`, requested `directory`, canonical `worktreeDirectory`, `worktreeID` and `revision`.
-- `coverage` (`complete` or `partial`) and machine-readable `reasons`.
+- `coverage` (`complete` or `partial`), machine-readable `reasons`, and typed
+  `reconciliationState` (`pending` or `settled`).
 - Unique `fileCount`, total `additions`/`deletions`, a bounded `files` page,
   `sessionCount`, `firstUserMessageID` and optional `undone`.
 - `pageIndex`, `nextCursor` and `previousCursor`. Follow-up file pages use
@@ -59,7 +76,7 @@ unless trustworthy receipts exist. External agents require no configuration.
 - Each file has `path`, optional `oldPath`, status, contributing sessions and
   line counts. Binary line counts are `null`. `reviewMode` is `net` or `segments`,
   with `segmentCount` for recorded edits.
-- `attributionVersion: 2`, `totalsMode` (`net` or `recorded`), and explicit
+- `attributionVersion: 3`, `totalsMode` (`net` or `recorded`), and explicit
   `restoreAvailable` / `restoreReasons`, separate from capture coverage.
 
 The root is the selected session, plus verified descendants. Selecting a child
@@ -86,7 +103,9 @@ The UI cache includes runtime URL, authenticated principal, directory and root
 session. It validates response identity, fences stale requests, and clears on
 account changes, deletion and directory disposal. It is bounded to 128 entries
 and 8 MiB. Capture notifications use a narrow `session.changes.updated` channel and refresh
-only subscribed trees containing the event session;
+only subscribed trees containing the event session. Persistence also publishes
+the event for retained ancestors, including those whose children are absent from
+the UI’s loaded session list;
 ordinary Git polling does not refresh immutable captured history. Partial,
 failed and loading results remain explicit when recorded files or an undone
 revision justify the card. Empty loading/error/partial summaries stay hidden.
@@ -96,13 +115,18 @@ no pending revert. Submitted plan intent comes from canonical message metadata
 and recorded plan flags; maintenance continuations do not change it. Returning
 to planning hides earlier cumulative changes, and changing the composer toggle
 alone does not reveal them. An undone summary stays visible for Redo outside
-planning. Failed reads with retained files offer Retry. A successful read-only shell command
+planning. Pending reconciliation retains recorded files and displays “Loading session
+changes…”. Subscribed summaries retry with exponential backoff capped at ten
+seconds, stopping on settlement or unsubscribe. Settled failures use specific
+execution-evidence, receipt-conflict, interrupted-capture, timeout or storage
+messages. Recoverable failures and failed reads with retained files offer Retry. A successful read-only shell command
 produces no warning.
 
 ## Undo and Redo
 
 `POST .../changes/undo` and `POST .../changes/redo` accept `{ revision }`.
-The backend requires current exact revision, complete coverage, verified restore evidence and no busy
+The backend reconciles receipts and history before checking the requested
+revision. It requires current exact revision, settled complete coverage, verified restore evidence and no busy
 runtime sessions or pending capture. It restores only the same verified
 operation set used by the summary. Segmented changes remain reviewable with
 restore disabled. Full receipts require original raw snapshot evidence or trusted
@@ -125,12 +149,23 @@ known conflicts but do not constitute an OS-wide write lock.
 History reconciliation imports one response page at a time and persists only
 message/call identifiers, timestamps, the earliest user message, and a continuation
 cursor. Completed scans subsequently refresh the head through the saved boundary;
-incomplete scans resume on the next read. A 20-second reconciliation work slice
+incomplete scans resume on the next read. A one-time reindex upgrades older
+history caches. Unresolved message identities are revisited separately, so a late
+receipt outside the head page can repair its call. Hook lookup uses the canonical
+call-to-message index, an exact message read and paginated fallback, without a
+latest-100-message dependency. Summary reads wait for asynchronous receipt
+ingestion within a bounded work slice. A 20-second reconciliation work slice
 returns `history_pending`, and subscribed UI cards schedule another read. There is
 no lifetime page-count, aggregate-history-byte or descendant-count ceiling.
 Responses remain bounded to 16 MiB; oversized pages retry with a smaller requested
 message count. An individually oversized or unavailable upstream response remains
 an explicit observation failure rather than a fabricated complete history.
+
+Verified descendant links and retained history survive deletion while an ancestor
+remains. Exact child contributions stay in ancestor summaries, including through
+a deleted read-only intermediate child. Each live descendant reconciles its own
+history; unrelated sessions never join the tree. Legacy session-wide missing
+capture flags clear only after retained complete history accounts for every call.
 
 Older native file receipts can reconstruct exact textual before/after diffs,
 including calls whose original capture record is unavailable. Recovery preserves
@@ -172,7 +207,8 @@ All summary revisions remain available until session deletion by default.
 Deleting a child retains its verified contribution under the parent. Permanent
 root deletion clears owned descendants and collects private objects; deleting
 the last owned session removes the private repository and migrated legacy record.
-Interrupted captures remain explicitly unavailable after restart. Large-file
+Interrupted captures remain explicit until matching retained execution evidence
+repairs them after restart. Large-file
 Undo/Redo hashes working files and streams stored bytes into per-file atomic
 replacements, retaining conflict verification and conditional rollback.
 
@@ -191,6 +227,12 @@ card/store tests check presentation and asynchronous isolation.
 `session-changes-scale.test.js` crosses the old snapshot, path, storage, operation
 and registration limits; verifies scoped capture, UTF-8 pagination, receipt repair,
 metadata transaction failure, collection, and streaming large-file restore.
+`session-changes-recovery.test.js` covers call-scoped and legacy repair, monotonic
+completion and mode evidence, deleted intermediate descendants, canonical hook
+lookup, delayed ingestion, native stream gaps, replayed settlement and stale
+restore rejection. Cursor's `cursor-session-changes.test.js` and worker transport
+tests verify that full native diffs survive preview limits and acknowledged
+outbox replay across restart.
 
 `tests/visual-session-changes/` mounts the production card and revision dialog
 with deterministic fixture data. Expand/review, recorded diff, Undo/Redo,
@@ -204,6 +246,10 @@ external writer process, production controller, HTTP/SSE, theme/width matrix,
 segment paging, child reload and restore/conflict checks are owned by
 `scripts/qa/session-changes.mjs`. Run with `DEVRYAN_QA_SCENARIO=session-changes`
 and `DEVRYAN_QA_RUNTIME=web` or `electron` after building and staging web assets.
+The scenario also delivers a late exact receipt through canonical SSE and a
+delayed native stream marker through the private host. It checks error removal,
+28 complete native edits beyond the 24-row preview, retained pending files,
+automatic settlement without a refresh event and disabled unsafe restore.
 Screenshots require individual visual inspection; result.json alone does not
 establish visual acceptance. This is deterministic adapter QA, not live-provider
 verification.

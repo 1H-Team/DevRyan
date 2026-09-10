@@ -136,6 +136,35 @@ export const toGitChangedFile = (file: SessionTreeChangedFile, directory: string
 
 export type SessionChangesBusy = 'undo' | 'redo' | null;
 
+export const resolveSessionChangesStatusKey = (entry?: Pick<SessionTreeChangesEntry, 'loading' | 'error' | 'coverage' | 'reasons' | 'reconciliationState'>) => {
+    if (entry?.loading) return 'chat.sessionChanges.loading';
+    if (entry?.error) return 'chat.sessionChanges.loadFailed';
+    if (entry?.reconciliationState === 'pending'
+        || entry?.reasons?.some((reason) => ['history_pending', 'capture_pending', 'receipts_pending'].includes(reason))) return 'chat.sessionChanges.loading';
+    if (entry?.coverage !== 'partial') return null;
+    const reasons = entry.reasons ?? [];
+    if (reasons.includes('storage_unavailable')) return 'chat.sessionChanges.storageUnavailable';
+    if (reasons.includes('capture_timeout')) return 'chat.sessionChanges.captureTimeout';
+    if (reasons.includes('capture_interrupted')) return 'chat.sessionChanges.captureInterrupted';
+    if (reasons.includes('receipt_conflict') || reasons.includes('capture_identity_reused')) return 'chat.sessionChanges.receiptConflict';
+    if (reasons.includes('invalid_change_receipt')) return 'chat.sessionChanges.invalidReceipt';
+    if (reasons.includes('execution_delivery_failed')) return 'chat.sessionChanges.deliveryFailed';
+    if (reasons.some((reason) => ['missing_capture', 'unverified_tool_changes', 'execution_receipt_unavailable', 'tool_changes_incomplete'].includes(reason))) return 'chat.sessionChanges.executionUnavailable';
+    if (reasons.some((reason) => ['storage_limit', 'capture_limit', 'historical_capture_unavailable'].includes(reason))) return 'chat.sessionChanges.legacyCapture';
+    if (reasons.includes('native_revert_active')) return 'chat.sessionChanges.rewound';
+    return 'chat.sessionChanges.incomplete';
+};
+
+export const canRetrySessionChanges = (entry?: Pick<SessionTreeChangesEntry, 'loading' | 'error' | 'reasons' | 'reconciliationState'>): boolean => {
+    if (!entry || entry.loading) return false;
+    if (entry.error) return true;
+    if (entry.reconciliationState === 'pending') return false;
+    return Boolean(entry.reasons?.some((reason) => [
+        'missing_capture', 'capture_unavailable', 'capture_interrupted', 'capture_timeout', 'storage_unavailable',
+        'execution_delivery_failed', 'invalid_change_receipt', 'session_observation_unavailable', 'historical_capture_unavailable',
+    ].includes(reason)));
+};
+
 export type SessionChangesController = {
     rootSessionId: string | null;
     directory: string;
@@ -252,20 +281,10 @@ export const useSessionChangesController = (): SessionChangesController => {
         isImplementationSettled,
     });
 
-    let statusMessage: string | null = null;
-    if (entry?.loading) statusMessage = t('chat.sessionChanges.loading');
-    else if (entry?.error) statusMessage = t('chat.sessionChanges.loadFailed');
-    else if (entry?.coverage === 'partial') {
-        const reasons = entry.reasons ?? [];
-        if (reasons.some((reason) => ['invalid_change_receipt', 'unverified_tool_changes', 'tool_changes_incomplete', 'receipt_conflict', 'overlapping_operations', 'interleaved_file_changes'].includes(reason))) statusMessage = t('chat.sessionChanges.unverified');
-        else if (reasons.includes('storage_unavailable')) statusMessage = t('chat.sessionChanges.storageUnavailable');
-        else if (reasons.includes('capture_timeout')) statusMessage = t('chat.sessionChanges.captureTimeout');
-        else if (reasons.includes('history_pending')) statusMessage = t('chat.sessionChanges.loading');
-        else if (reasons.some((reason) => ['storage_limit', 'capture_limit'].includes(reason))) statusMessage = t('chat.sessionChanges.legacyCapture');
-        else if (reasons.includes('native_revert_active')) statusMessage = t('chat.sessionChanges.rewound');
-        else statusMessage = t('chat.sessionChanges.incomplete');
-    }
-    state.undoDisabled = state.undoDisabled || Boolean(entry?.loading || entry?.error) || entry?.coverage !== 'complete' || !entry?.revision || entry?.restoreAvailable !== true;
+    const statusKey = resolveSessionChangesStatusKey(entry);
+    const statusMessage = statusKey ? t(statusKey) : null;
+    state.undoDisabled = state.undoDisabled || Boolean(entry?.loading || entry?.error) || entry?.reconciliationState === 'pending'
+        || entry?.coverage !== 'complete' || !entry?.revision || entry?.restoreAvailable !== true;
 
     const retry = React.useCallback(() => {
         if (!rootSessionId || !directory || entry?.loading) return;
@@ -319,7 +338,7 @@ export const useSessionChangesController = (): SessionChangesController => {
         revision: reviewSelection?.key === entryKey ? reviewSelection.revision : entry?.revision ?? null,
         reviewFile: reviewSelection?.key === entryKey ? reviewSelection.file : null,
         closeReview,
-        retry: entry?.error && !entry.loading ? retry : undefined,
+        retry: canRetrySessionChanges(entry) ? retry : undefined,
         openRepository,
         state,
         disabledReason: state.disabledReason === 'busy-sibling'

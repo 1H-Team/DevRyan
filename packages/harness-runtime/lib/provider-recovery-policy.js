@@ -8,10 +8,17 @@ export const RECOVERY_CONTINUATION = 'Continue from the existing progress and co
 // recovery (docs/PROVIDER_RECOVERY.md). Extend only with transport and hook
 // conformance evidence; the host target pin lives in
 // packages/web/server/lib/opencode/version-policy.js and must stay listed here.
-export const PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['1.18.25', '1.18.26', '1.18.27', '1.18.29']);
+export const PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['1.18.25', '1.18.26', '1.18.27', '1.18.29', '1.18.30']);
 export const isProviderRecoverySupportedRuntimeVersion = (version) => (
   typeof version === 'string' && PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS.includes(version)
 );
+
+// Claude transport/tool conformance must be established by the composing host.
+// A requested enforce mode alone never authorizes an unverified integration.
+export const isPrimaryRecoveryProvider = (providerID) => ['openai', 'anthropic'].includes(providerID);
+export const primaryRecoveryMode = (providerID, options) => providerID === 'anthropic'
+  ? options.anthropicMode ?? options.mode ?? 'enforce'
+  : options.mode ?? 'observe';
 
 export const recoveryError = (code, statusCode = 409) => Object.assign(
   new Error(code.replaceAll('_', ' ')), { code, statusCode },
@@ -25,6 +32,16 @@ export function classifyPrimaryTransportError(error, runtimeVersion) {
   const status = error.statusCode ?? error.status ?? error.data?.statusCode;
   if (Number.isInteger(status) && status >= 400 && status < 500) return null;
   if (/auth|certificate|cert_|quota|policy|model.?not.?found|abort|cancel|usage.?limit/i.test(`${name} ${code} ${message}`)) return null;
+  if (name === 'UnknownError' && isProviderRecoverySupportedRuntimeVersion(runtimeVersion) && message.length <= 4096) {
+    try {
+      const envelope = JSON.parse(message);
+      if (envelope && typeof envelope === 'object' && !Array.isArray(envelope)
+        && envelope.type === 'upstream_timeout' && typeof envelope.message === 'string'
+        && /^Upstream stalled: no data for [1-9][0-9]{0,12}ms$/.test(envelope.message)) {
+        return { kind: 'chunk_timeout', source: 'upstream_timeout_envelope' };
+      }
+    } catch { /* Unrecognized envelopes cannot authorize recovery. */ }
+  }
   const codes = {
     ETIMEDOUT: 'request_timeout', ECONNRESET: 'connection_reset', EPIPE: 'connection_reset',
     UND_ERR_HEADERS_TIMEOUT: 'header_timeout', UND_ERR_SOCKET: 'connection_reset',

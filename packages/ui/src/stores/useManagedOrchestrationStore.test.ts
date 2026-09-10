@@ -1103,6 +1103,54 @@ describe('managed orchestration store', () => {
     expect(notifications).toBe(3);
   });
 
+  test('indexes a large multi-root snapshot and retains the right fallback after acknowledgement and removal', async () => {
+    const records = Array.from({ length: 2_000 }, (_, index) => ({
+      ...taskRecord(index + 1, 'failed', {
+        childSessionId: `ses_child_${Math.floor(index / 2)}`,
+        rootSessionId: `ses_root_${Math.floor(index / 2) % 4}`,
+        failureReason: 'Provider connection ended', attempt: 2,
+      }),
+      dispatchGroupId: 'msg_dispatch',
+    }));
+    const envelopes = records.map((record) => createManagedTaskResultEnvelope(record, {
+      sequence: record.sequence, createdAt: 10_000, resumable: true,
+    }));
+    const tasks = records.map((record, index) => toManagedTaskEvent(record, envelopes[index]).properties.task);
+    const store = createManagedOrchestrationStore({ api: fakeApi({
+      getSnapshot: async () => emptySnapshot({ tasks: [...tasks].reverse(), resultEnvelopes: envelopes }),
+    }) });
+    await store.getState().loadSnapshot();
+    for (let child = 0; child < 1_000; child++) {
+      expect(store.getState().latestTaskIdByChildSessionId[`ses_child_${child}`]).toBe(`dvr_task_${child * 2 + 2}`);
+      expect(store.getState().manualRecoveryTaskIdByChildSessionId[`ses_child_${child}`]).toBe(`dvr_task_${child * 2 + 2}`);
+    }
+    const unrelatedRoot = store.getState().taskIdsByRootId.ses_root_1;
+    const latestIndex = store.getState().latestTaskIdByChildSessionId;
+    store.getState().ingestEvent(taskEvent(tasks[1], { ...envelopes[1], action: 'continue', acknowledgedAt: 11_000 }));
+    expect(store.getState().latestTaskIdByChildSessionId).toBe(latestIndex);
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_0).toBe('dvr_task_1');
+    store.getState().ingestEvent(removalEvent(tasks[1]));
+    expect(store.getState().latestTaskIdByChildSessionId.ses_child_0).toBe('dvr_task_1');
+    expect(store.getState().taskIdsByRootId.ses_root_1).toBe(unrelatedRoot);
+  });
+
+  test('progress-only updates preserve both child indexes and task-id tie breaking remains deterministic', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const first = projectedTask(1, 'running', { childSessionId: 'ses_child' });
+    const tied = projectedTask(2, 'running', { childSessionId: 'ses_child', sequence: first.sequence });
+    store.getState().ingestEvent(taskEvent(tied));
+    store.getState().ingestEvent(taskEvent(first));
+    const initial = store.getState();
+    expect(initial.latestTaskIdByChildSessionId.ses_child).toBe(tied.taskId);
+    store.getState().ingestEvent(taskEvent({ ...tied, childPromptedAt: 2_500, firstAssistantPartAt: 2_800 }));
+    const updated = store.getState();
+    expect(updated.latestTaskIdByChildSessionId).toBe(initial.latestTaskIdByChildSessionId);
+    expect(updated.manualRecoveryTaskIdByChildSessionId).toBe(initial.manualRecoveryTaskIdByChildSessionId);
+    expect(updated.taskIdsByRootId).toBe(initial.taskIdsByRootId);
+    store.getState().ingestEvent(taskEvent(tied));
+    expect(store.getState()).toBe(updated);
+  });
+
   test('rejects a snapshot whose result envelope contradicts its task', async () => {
     const failed = taskRecord(1, 'failed', {
       failureReason: 'Provider failed',
@@ -1582,6 +1630,59 @@ describe('managed orchestration store', () => {
 
     store.getState().ingestEvent(taskEvent({ ...running, childPromptedAt: 'soon' as never }));
     expect(store.getState().tasksById[running.taskId]?.firstAssistantPartAt).toBe(2_800);
+  });
+
+  test('retains write-once progress through missing, null, and contradictory same-attempt updates', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const running = projectedTask(1, 'running', {
+      childSessionId: 'ses_child', childPromptedAt: 0, firstAssistantPartAt: 2_800,
+    });
+    store.getState().ingestEvent(taskEvent(running));
+    const current = store.getState().tasksById[running.taskId];
+    const legacy = Object.fromEntries(Object.entries(running).filter(([key]) => (
+      key !== 'childPromptedAt' && key !== 'firstAssistantPartAt'
+    )));
+    for (const stale of [legacy, { ...running, childPromptedAt: null, firstAssistantPartAt: null },
+      { ...running, childPromptedAt: 3_000, firstAssistantPartAt: 4_000 }]) {
+      store.getState().ingestEvent({
+        type: 'openchamber:managed-task', properties: { owner: 'devryan', directory: running.directory, task: stale },
+      });
+      expect(store.getState().tasksById[running.taskId]).toBe(current);
+    }
+
+    const completed = taskRecord(1, 'completed', { childSessionId: 'ses_child' });
+    const envelope = createManagedTaskResultEnvelope(completed, { sequence: 1, createdAt: 4_000, resumable: false });
+    store.getState().ingestEvent(toManagedTaskEvent(completed, envelope));
+    const settled = store.getState().tasksById[running.taskId];
+    expect(settled).toMatchObject({ status: 'completed', childPromptedAt: 0, firstAssistantPartAt: 2_800 });
+    store.getState().ingestEvent(taskEvent(running));
+    expect(store.getState().tasksById[running.taskId]).toBe(settled);
+  });
+
+  test('a delayed running snapshot cannot erase newer live progress', async () => {
+    const response = deferred<ManagedOrchestrationSnapshot>();
+    const store = createManagedOrchestrationStore({ api: fakeApi({ getSnapshot: async () => response.promise }) });
+    const running = projectedTask(1, 'running', { childSessionId: 'ses_child' });
+    store.getState().ingestEvent(taskEvent(running));
+    const loading = store.getState().loadSnapshot();
+    store.getState().ingestEvent(taskEvent({ ...running, childPromptedAt: 2_500, firstAssistantPartAt: 2_800 }));
+    const latest = store.getState().tasksById[running.taskId];
+    response.resolve(emptySnapshot({ tasks: [running] }));
+    await loading;
+    expect(store.getState().tasksById[running.taskId]).toBe(latest);
+    expect(store.getState().snapshotError).toBeNull();
+  });
+
+  test('same-child recovery attempts receive their own progress timestamps', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const original = projectedTask(1, 'running', { childSessionId: 'ses_child', childPromptedAt: 2_500, firstAssistantPartAt: 2_800 });
+    const retry = projectedTask(2, 'running', { childSessionId: 'ses_child', attempt: 2, priorTaskId: original.taskId, executionKind: 'retry_in_place' });
+    store.getState().ingestEvent(taskEvent(original));
+    store.getState().ingestEvent(taskEvent(retry));
+    expect(store.getState().tasksById[retry.taskId]).toMatchObject({ childPromptedAt: null, firstAssistantPartAt: null });
+    store.getState().ingestEvent(taskEvent({ ...retry, childPromptedAt: 3_000, firstAssistantPartAt: 3_500 }));
+    expect(store.getState().tasksById[retry.taskId]).toMatchObject({ childPromptedAt: 3_000, firstAssistantPartAt: 3_500 });
+    expect(store.getState().tasksById[original.taskId].firstAssistantPartAt).toBe(2_800);
   });
 
   test('keeps auto-resume progress on an unacknowledged envelope and ignores stale revisions', () => {

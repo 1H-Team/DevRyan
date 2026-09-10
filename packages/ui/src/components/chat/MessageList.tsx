@@ -48,6 +48,7 @@ import {
     useManagedOrchestrationStore,
 } from '@/stores/useManagedOrchestrationStore';
 import { resolveManagedTaskTurnProjection } from './managedTaskDispatch';
+import { assistantRowRendersContent, selectAssistantHeaderTargetId } from './message/assistantRowContent';
 import type { AssistantImageMessage } from './message/parts/generatedImageResults';
 
 // Sessions below the threshold render fully (zero behavior change for the
@@ -406,6 +407,7 @@ interface MessageRowProps {
     isLatestMessage: boolean;
     turnGroupingContext?: TurnGroupingContext;
     assistantHeaderMessageId?: string;
+    suppressAssistantHeader?: boolean;
     isInActiveTurn?: boolean;
     activeStreamingPhase?: StreamPhase | null;
     animateUserOnMount?: boolean;
@@ -422,6 +424,7 @@ const MessageRow = React.memo<MessageRowProps>(({
     isLatestMessage,
     turnGroupingContext,
     assistantHeaderMessageId,
+    suppressAssistantHeader,
     isInActiveTurn,
     activeStreamingPhase,
     animateUserOnMount,
@@ -443,6 +446,7 @@ const MessageRow = React.memo<MessageRowProps>(({
             scrollToBottom={scrollToBottom}
             turnGroupingContext={turnGroupingContext}
             assistantHeaderMessageId={assistantHeaderMessageId}
+            suppressAssistantHeader={suppressAssistantHeader}
             isInActiveTurn={isInActiveTurn}
             activeStreamingPhase={activeStreamingPhase}
         />
@@ -461,6 +465,7 @@ const MessageRow = React.memo<MessageRowProps>(({
         && prev.scrollToBottom === next.scrollToBottom
         && areRelevantTurnGroupingContextsEqual(prevTurn, nextTurn, prev.message.info.id, resolveMessageRole(prev.message) === 'user')
         && prev.assistantHeaderMessageId === next.assistantHeaderMessageId
+        && prev.suppressAssistantHeader === next.suppressAssistantHeader
         && prev.isInActiveTurn === next.isInActiveTurn
         && prev.activeStreamingPhase === next.activeStreamingPhase
         && prev.animationHandlers?.onChunk === next.animationHandlers?.onChunk
@@ -746,6 +751,87 @@ const TurnBlock = React.memo(({
         };
     }, [assistantImageMessages, isPlanModeSourceTurn, responseStyleLevel, turn.diffStats, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summary.sourceMessageId, turn.summary.sourcePartId, turn.summaryText, turn.turnId, turn.userMessage.info, visibleActivityParts, visibleActivitySegments]);
 
+    const turnSessionId = typeof turn.userMessage.info.sessionID === 'string'
+        ? turn.userMessage.info.sessionID
+        : null;
+    const turnAbortMessageId = useSessionUIStore(
+        React.useCallback((state) => (
+            turnSessionId ? (state.sessionAbortFlags.get(turnSessionId)?.id ?? null) : null
+        ), [turnSessionId]),
+    );
+
+    // A turn's header must never be drawn above rows that paint nothing: while a
+    // managed sub-agent runs, the parent's poll/wait messages have their reasoning
+    // deliberately suppressed and their dispatch parts lifted into the turn-owned
+    // Agent Dispatch card, so they render empty. Without this pass each such turn
+    // still stamped its own "<agent> · <model>" row, stacking identical headers.
+    // The predicate is deliberately permissive — anything uncertain counts as content.
+    const contentBearingAssistantIds = React.useMemo(() => {
+        const activitySegmentAnchorIds = new Set(
+            visibleActivitySegments.map((segment) => segment.anchorMessageId),
+        );
+        const ids = new Set<string>();
+        visibleAssistantMessages.forEach((assistant, index) => {
+            const messageId = assistant.info.id;
+            const managedProjection = managedTaskProjectionsByMessageId.get(messageId);
+            const finish = (assistant.info as { finish?: unknown }).finish;
+            const rendersContent = assistantRowRendersContent({
+                parts: assistant.parts,
+                messageFinish: typeof finish === 'string' ? finish : undefined,
+                lastTodoToolPartId: turnGroupingContextBase.lastTodoToolPartId,
+                isLiveStreamingRow: messageId === streamingAssistantMessageId,
+                hasErrorSurface: Boolean((assistant.info as { error?: unknown }).error)
+                    || Boolean(assistant.presentation?.managedTransportRecovery)
+                    || Boolean(assistant.presentation?.managedAbortRecovery)
+                    || turnAbortMessageId === messageId,
+                ownsManagedTaskCard: Boolean(
+                    managedProjection
+                    && (managedProjection.taskIds.length > 0
+                        || managedProjection.pendingDispatches.length > 0
+                        || managedProjection.fallbackTasks.length > 0),
+                ),
+                ownsAssistantImages: index === visibleAssistantMessages.length - 1
+                    && assistantImageMessages.length > 0,
+                ownsActivityOutput: activitySegmentAnchorIds.has(messageId)
+                    || messageId === activityOwnerMessageId
+                    || (activityPartsByMessageId.get(messageId)?.length ?? 0) > 0,
+            });
+            if (rendersContent) {
+                ids.add(messageId);
+            }
+        });
+        return ids;
+    }, [
+        activityOwnerMessageId,
+        activityPartsByMessageId,
+        assistantImageMessages,
+        managedTaskProjectionsByMessageId,
+        streamingAssistantMessageId,
+        turnAbortMessageId,
+        turnGroupingContextBase.lastTodoToolPartId,
+        visibleActivitySegments,
+        visibleAssistantMessages,
+    ]);
+
+    const headerTargetAssistantMessageId = React.useMemo(
+        () => selectAssistantHeaderTargetId(
+            visibleAssistantMessages.map((assistant) => assistant.info.id),
+            contentBearingAssistantIds,
+        ),
+        [contentBearingAssistantIds, visibleAssistantMessages],
+    );
+
+    React.useEffect(() => {
+        if (!import.meta.env.DEV) return;
+        if (headerTargetAssistantMessageId !== null) return;
+        if (!visibleAssistantMessages.some((assistant) => assistant.parts.length > 0)) return;
+        console.warn(
+            '[MessageList] Suppressed the header for a turn whose assistant messages carry parts. '
+            + 'assistantRowRendersContent may be under-reporting.',
+            { turnId: turn.turnId },
+        );
+    }, [headerTargetAssistantMessageId, turn.turnId, visibleAssistantMessages]);
+
     const renderMessage = React.useCallback(
         (message: ChatMessageEntry) => {
             const messageRole = resolveMessageRole(message);
@@ -769,7 +855,9 @@ const TurnBlock = React.memo(({
             const shouldAttachFullTurnContext = chatRenderMode === 'sorted'
                 ? isAssistantMessage
                 : (isActivityOwner || isFirstAssistant || isLastAssistant || hasTurnRollupTool);
-            const assistantHeaderMessageId = visibleAssistantMessages[0]?.info.id ?? turn.headerMessageId;
+            const assistantHeaderMessageId = headerTargetAssistantMessageId
+                ?? visibleAssistantMessages[0]?.info.id
+                ?? turn.headerMessageId;
 
             const previousMessage = isUserMessage
                 ? undefined
@@ -822,6 +910,7 @@ const TurnBlock = React.memo(({
                     isLatestMessage={message.info.id === latestRawMessageId}
                     turnGroupingContext={turnGroupingContext}
                     assistantHeaderMessageId={assistantHeaderMessageId}
+                    suppressAssistantHeader={isAssistantMessage && headerTargetAssistantMessageId === null}
                     isInActiveTurn={Boolean(streamingAssistantMessageId) && message.info.id === streamingAssistantMessageId}
                     activeStreamingPhase={message.info.id === streamingAssistantMessageId ? activeStreamingPhase : null}
                     animateUserOnMount={shouldAnimateUserMessage(message)}
@@ -857,6 +946,7 @@ const TurnBlock = React.memo(({
             visibleAssistantMessages,
             visibleAssistantIds,
             activityOwnerMessageId,
+            headerTargetAssistantMessageId,
             shouldAnimateUserMessage,
             onUserAnimationConsumed,
             handleToggleTurnGroup,
@@ -914,6 +1004,34 @@ const UngroupedMessageRow = React.memo(({
     activeStreamingMessageId,
     activeStreamingPhase,
 }: UngroupedMessageRowProps) => {
+    const sessionId = typeof message.info.sessionID === 'string' ? message.info.sessionID : null;
+    const abortMessageId = useSessionUIStore(
+        React.useCallback((state) => (
+            sessionId ? (state.sessionAbortFlags.get(sessionId)?.id ?? null) : null
+        ), [sessionId]),
+    );
+
+    // Ungrouped rows carry no turn context, so ChatMessage would otherwise fall
+    // through to its "always show the header" path. Apply the same renderability
+    // test here. The turn-owned surfaces are all unreachable without a turn
+    // context, so their ownership flags stay false.
+    const suppressAssistantHeader = React.useMemo(() => {
+        if (resolveMessageRole(message) === 'user') {
+            return false;
+        }
+        const finish = (message.info as { finish?: unknown }).finish;
+        return !assistantRowRendersContent({
+            parts: message.parts,
+            messageFinish: typeof finish === 'string' ? finish : undefined,
+            isLiveStreamingRow: Boolean(activeStreamingMessageId)
+                && message.info.id === activeStreamingMessageId,
+            hasErrorSurface: Boolean((message.info as { error?: unknown }).error)
+                || Boolean(message.presentation?.managedTransportRecovery)
+                || Boolean(message.presentation?.managedAbortRecovery)
+                || abortMessageId === message.info.id,
+        });
+    }, [abortMessageId, activeStreamingMessageId, message]);
+
     return (
         <MessageRow
             message={message}
@@ -925,6 +1043,7 @@ const UngroupedMessageRow = React.memo(({
             onContentChange={onMessageContentChange}
             animationHandlers={getAnimationHandlers(message.info.id)}
             scrollToBottom={scrollToBottom}
+            suppressAssistantHeader={suppressAssistantHeader}
             isInActiveTurn={Boolean(activeStreamingMessageId) && message.info.id === activeStreamingMessageId}
             activeStreamingPhase={message.info.id === activeStreamingMessageId ? activeStreamingPhase : null}
         />

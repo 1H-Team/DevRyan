@@ -8,7 +8,7 @@ import { createQaNaturalWorkload, createQaNaturalInvestigationPrompt, QA_NATURAL
 import { readQaSavedPlanRevision } from './compaction-approval.mjs';
 import { createQaProjectFixture, removeQaProjectFixture } from './project-fixture.mjs';
 
-const nativePolicy = overrides => deriveQaNativeCompactionPolicy({ version: '1.18.29',
+const nativePolicy = overrides => deriveQaNativeCompactionPolicy({ version: '1.18.30',
   modelLimits: { context: 1050000, input: 276000, output: 128000 }, ...overrides });
 const rows = () => [
   { info: { id: 'msg_usage', role: 'assistant', time: { created: 50, completed: 90 },
@@ -160,7 +160,7 @@ test('natural Plan captures bind both revisions to exact newly submitted human m
     }
     const api = async (route, options) => {
       requests.push(route);
-      if (route === '/api/health') return { openCodeVersion: '1.18.29' };
+      if (route === '/api/health') return { openCodeVersion: '1.18.30' };
       if (route === `/api/config?directory=${encodeURIComponent(fixture.fixtureRoot)}`) return { compaction: { auto: true } };
       const url = new URL(route, 'http://qa.invalid');
       const index = savedPlans.findIndex(saved => url.pathname === `/api/session/${sessionID}/plan-revisions/${saved.sourceMessageID}`);

@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/ui",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "type": "module",
   "main": "src/main.tsx",
@@ -41,7 +41,7 @@
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@lezer/highlight": "^1.2.3",
     "@openchamber/orchestration-runtime": "workspace:*",
-    "@opencode-ai/sdk": "^1.18.29",
+    "@opencode-ai/sdk": "^1.18.30",
     "@pierre/diffs": "1.1.0-beta.13",
     "@remixicon/react": "^4.9.0",
     "@simplewebauthn/browser": "13.3.0",

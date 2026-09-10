@@ -13,7 +13,7 @@ import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
 import type { StreamPhase, ToolPopupContent, AgentMentionInfo } from './types';
 import type { ManagedTransportRecoveryState, TurnGroupingContext } from '../lib/turns/types';
 import { cn } from '@/lib/utils';
-import { collapseExactDuplicateAdjacentTextParts, collapseSupersededTodoWrites, isEmptyTextPart, extractTextContent, mergeConsecutiveTextParts } from './partUtils';
+import { collapseExactDuplicateAdjacentTextParts, isEmptyTextPart, extractTextContent, mergeConsecutiveTextParts } from './partUtils';
 import { FadeInOnReveal } from './FadeInOnReveal';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -31,7 +31,6 @@ import {
     shouldStopAfterPlanCard,
     shouldSuppressPostPlanText,
 } from '@/lib/messages/planCardRender';
-import { isOrphanNarrationFragment } from '@/lib/messages/orphanNarration';
 import { PlanTurnTraceContext } from '../PlanTurnTraceContext';
 import { usePlanRevisionPresentation } from '../usePlanTurnTraceEntry';
 import { useMessageTTS } from '@/hooks/useMessageTTS';
@@ -49,14 +48,12 @@ import {
     collectToolActivityBurst,
     getToolActivityGroupInfo,
     isExpandableTool,
-    isHiddenTool,
-    isManagedTaskToolName,
     isStandaloneTool,
     normalizeToolName,
     type ToolActivityGroupInfo,
 } from './parts/toolRenderUtils';
 import { ManagedTaskList } from '../ManagedTaskList';
-import { resolveCursorNativeTaskDispatches } from '../cursorNativeTaskDispatch';
+import { projectAssistantVisibleParts } from './assistantRowContent';
 import {
     resolveManagedTaskDispatch,
     resolveManagedTaskFallbacks,
@@ -873,41 +870,14 @@ const AssistantMessageBody = React.memo(({
     const awaitingMessageCompletion = !isMessageCompleted;
     const shouldRecoverMissingManagedDispatches = streamPhase === 'completed';
     const animateActivityRows = awaitingMessageCompletion || Boolean(turnGroupingContext?.isWorking);
-    const cursorNativeTaskProjection = React.useMemo(() => {
-        const tasks = resolveCursorNativeTaskDispatches(parts);
-        return {
-            tasks,
-            partIds: new Set(tasks.map((task) => task.partId)),
-        };
-    }, [parts]);
-    const cursorNativeTasks = cursorNativeTaskProjection.tasks;
-    const cursorNativeTaskPartIds = cursorNativeTaskProjection.partIds;
-    const visibleParts = React.useMemo(() => {
-        return collapseSupersededTodoWrites(parts, turnGroupingContext?.lastTodoToolPartId ?? null)
-            .filter((part) => !isEmptyTextPart(part))
-            .filter((part) => {
-                const rawPart = part as Record<string, unknown>;
-                return rawPart.type !== 'compaction';
-            })
-            .filter((part) => part.type !== 'tool' || !cursorNativeTaskPartIds.has(part.id))
-            .filter((part) => {
-                // Hidden tools (e.g. create_plan, which is surfaced as the rich
-                // Implementation Plan card) must never render as their own row.
-                if (part.type !== 'tool') return true;
-                if (isManagedTaskToolName((part as ToolPartType).tool)) return true;
-                return !isHiddenTool((part as ToolPartType).tool);
-            })
-            .filter((part, index, arr) => {
-                // Drop short mid-sentence narration fragments wedged between
-                // tool/reasoning activity (composer choppy-narration noise).
-                if (part.type !== 'text') return true;
-                return !isOrphanNarrationFragment(
-                    extractTextContent(part),
-                    arr[index - 1]?.type,
-                    arr[index + 1]?.type,
-                );
-            });
-    }, [cursorNativeTaskPartIds, parts, turnGroupingContext?.lastTodoToolPartId]);
+    const assistantVisiblePartsProjection = React.useMemo(
+        () => projectAssistantVisibleParts(parts, {
+            lastTodoToolPartId: turnGroupingContext?.lastTodoToolPartId ?? null,
+        }),
+        [parts, turnGroupingContext?.lastTodoToolPartId],
+    );
+    const cursorNativeTasks = assistantVisiblePartsProjection.cursorNativeTasks;
+    const visibleParts = assistantVisiblePartsProjection.visibleParts;
 
     const localManagedTaskDispatch = React.useMemo(
         () => resolveManagedTaskDispatch(visibleParts),

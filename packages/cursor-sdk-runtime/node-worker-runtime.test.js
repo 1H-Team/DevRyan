@@ -8,6 +8,7 @@ import {
   createCursorSdkRuntime,
   resolveCursorSdkWorkerRuntimeConfig,
 } from './index.js';
+import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
 
 let tempDir = null;
 
@@ -35,13 +36,11 @@ const createFakeWorkerSpawn = (capture) => (command, args, options) => {
     final(callback) {
       capture.input = JSON.parse(rawInput);
       queueMicrotask(() => {
-        child.stdout.push(`${JSON.stringify({
-          type: 'message',
-          message: {
+        const messages = capture.messages ?? [{
             type: 'assistant',
             message: { content: [{ type: 'text', text: 'worker ok' }] },
-          },
-        })}\n`);
+        }];
+        for (const message of messages) child.stdout.push(`${JSON.stringify({ type: 'message', message })}\n`);
         child.stdout.push(`${JSON.stringify({ type: 'done', status: 'finished' })}\n`);
         child.stdout.push(null);
         child.exitCode = 0;
@@ -1503,6 +1502,45 @@ describe('Cursor SDK worker runtime config', () => {
     });
     await runtime.dispose();
   });
+
+  for (const persistent of [false, true]) test(`preserves private native edit receipts through the ${persistent ? 'persistent' : 'one-shot'} worker transport`, async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-receipts-'));
+    const diff = '--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+' + 'x'.repeat(5000) + '\n';
+    const messages = [
+      { type: 'tool_call', name: 'task', call_id: 'task_1', status: 'running' },
+      ...Array.from({ length: 28 }, (_, i) => normalizeInteractionUpdateToSdkMessage({ type: 'tool-call-delta', callId: 'task_1',
+        taskUpdate: { type: 'tool-call-completed', callId: `nested_${i}`, toolCall: { type: 'edit', args: { path: 'file.txt' },
+          result: { status: 'success', value: { diffString: diff } } } } })),
+      { type: 'tool_call', name: 'task', call_id: 'task_1', status: 'completed' },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Finished.' }] } },
+    ];
+    const capture = { calls: [], children: [], commands: [], messages };
+    const receipts = [];
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {}, getWorkspaceDiff: async () => '',
+      readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }), useNodeWorkerForPrompts: true,
+      usePersistentWorkerForPrompts: persistent,
+      spawnImpl: persistent ? createFakePersistentWorkerSpawn(capture, { autoRespond: false }) : createFakeWorkerSpawn(capture),
+      onSessionChangeExecution: async (input) => { receipts.push(input); return { acknowledged: true }; },
+    });
+    try {
+      await runtime.handlePromptAsync({ sessionID: 'ses_worker', directory: tempDir, body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, messageID: 'msg_worker_user', parts: [{ type: 'text', text: 'Edit files.' }],
+      } });
+      if (persistent) {
+        const command = await waitFor(() => capture.commands.find((entry) => entry.type === 'prompt'), 5000);
+        for (const message of messages) capture.children[0].emitWorkerEvent({ requestID: command.requestID, type: 'message', message });
+        capture.children[0].emitWorkerEvent({ requestID: command.requestID, type: 'done', status: 'finished' });
+      }
+      await waitFor(() => runtime.getSessionStatus().ses_worker?.type === 'idle', 5000);
+      expect(await runtime.reconcileSessionChanges({ sessionID: 'ses_worker', directory: tempDir })).toEqual({ pending: false, reasons: [] });
+      const edits = receipts.filter((value) => value.parentCallID);
+      expect(edits).toHaveLength(28);
+      expect(edits.every((value) => value.metadata.diff === diff && value.parentCallID === 'task_1')).toBe(true);
+      const records = await runtime.getSessionMessages('ses_worker');
+      expect(records.find((record) => record.info.role === 'assistant').parts.find((part) => part.tool === 'task').state.metadata.cursorNativeTask.entries).toHaveLength(24);
+      expect(JSON.stringify(records)).not.toContain(diff);
+    } finally { await runtime.dispose(); }
+  }, 15_000);
 
   test('sends persistent worker cancel commands for active prompts', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-cancel-'));

@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { BotSidebarRow } from './BotSidebarRow';
 import { resolveBotSidebarStatus, type BotSidebarStatus } from './botSidebarStatus';
+import { useBotConnectionWarning } from './useBotConnectionWarning';
 import { selectBotCurrentRunId } from '../operations/selectBotCurrentRun';
 import { useI18n } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
@@ -41,8 +42,11 @@ export const BotSidebarSection: React.FC<BotSidebarSectionProps> = ({
   const catalogErrorCode = botsStore((state) => state.catalogErrorCode);
   const connectionState = operationsStore((state) => state.connectionState);
   const connectionErrorCode = operationsStore((state) => state.connectionErrorCode);
+  const connectionFailureStartedAt = operationsStore((state) => state.connectionFailureStartedAt);
+  const showConnectionWarning = useBotConnectionWarning(connectionFailureStartedAt);
   const accessDisabled = connectionState === 'unsupported';
-  const connectionFailed = Boolean(connectionErrorCode) && connectionState !== 'connected' && !accessDisabled;
+  const connectionFailed = showConnectionWarning && Boolean(connectionErrorCode)
+    && connectionState !== 'connected' && !accessDisabled;
   const openingByBotId = channelStore((state) => state.openingOwnerChannelByBotId);
   const errorsByBotId = channelStore((state) => state.ownerChannelErrorCodeByBotId);
   const ownerChannelIdByBotId = channelStore(useShallow((state) => {

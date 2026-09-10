@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
 
 import { createBotEventStream } from './event-stream.js';
 
@@ -8,6 +9,74 @@ const BOT_ID = 'b0000000-0000-4000-8000-000000000001';
 const CHANNEL_ID = 'c0000000-0000-4000-8000-000000000001';
 
 describe('Production Bot event stream', () => {
+  it('records the failing snapshot source without recording content or credentials', async () => {
+    const records = [];
+    const stream = createBotEventStream({
+      recordDiagnostic: (entry) => records.push(entry),
+      loadSnapshot: async () => ({ privateText: 'private snapshot content' }),
+    });
+    stream.addSnapshotSource('operations', async () => {
+      throw Object.assign(new Error('private credential or database error'), { code: 'bot_fixture_unavailable', statusCode: 503 });
+    });
+    await expect(stream.open({ principal: { id: USER_ID }, send: vi.fn() }))
+      .rejects.toMatchObject({ code: 'bot_fixture_unavailable' });
+    expect(records.at(-1)).toMatchObject({
+      type: 'connection', event: 'bot.events.failed',
+      payload: { stage: 'snapshot.operations', code: 'bot_fixture_unavailable', statusCode: 503 },
+    });
+    expect(new Set(records.map((entry) => entry.payload.subscriptionId)).size).toBe(1);
+    expect(records.at(-1).payload.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(records)).not.toContain('private');
+    expect(JSON.stringify(records)).not.toContain(USER_ID);
+    expect(stream.getSubscriberCount()).toBe(0);
+  });
+
+  it('records snapshot size before a serialization limit rejects the stream', async () => {
+    const records = [];
+    const snapshot = { content: 'x'.repeat(256 * 1024) };
+    const stream = createBotEventStream({
+      loadSnapshot: async () => snapshot,
+      recordDiagnostic: (entry) => records.push(entry),
+    });
+    await expect(stream.open({ principal: { id: USER_ID }, send: vi.fn() }))
+      .rejects.toMatchObject({ code: 'bot_event_too_large' });
+    expect(records.at(-1)).toMatchObject({
+      event: 'bot.events.failed',
+      payload: { stage: 'snapshot.serialize', snapshotBytes: Buffer.byteLength(JSON.stringify(snapshot)), statusCode: 413 },
+    });
+    expect(JSON.stringify(records)).not.toContain(snapshot.content);
+    expect(stream.getSubscriberCount()).toBe(0);
+  });
+
+  it('records HTTP connection and one close reason and releases its heartbeat', async () => {
+    vi.useFakeTimers();
+    const records = [];
+    const response = Object.assign(new EventEmitter(), {
+      statusCode: 200, writableEnded: false, destroyed: false,
+      write: vi.fn(), setHeader: vi.fn(), flushHeaders: vi.fn(),
+    });
+    const request = new EventEmitter();
+    const stream = createBotEventStream({ recordDiagnostic: (entry) => records.push(entry), heartbeatMs: 1_000 });
+    try {
+      const close = await stream.writeSse({ principal: { id: USER_ID }, request, response });
+      expect(records.find((entry) => entry.event === 'bot.events.connected')).toMatchObject({ payload: { statusCode: 200 } });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(response.write).toHaveBeenLastCalledWith(': heartbeat\n\n');
+      response.emit('close');
+      request.emit('close');
+      close();
+      expect(records.filter((entry) => entry.event === 'bot.events.closed')).toHaveLength(1);
+      expect(records.at(-1).payload.reason).toBe('response_closed');
+      const writes = response.write.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(response.write).toHaveBeenCalledTimes(writes);
+      expect(stream.getSubscriberCount()).toBe(0);
+    } finally {
+      stream.shutdown();
+      vi.useRealTimers();
+    }
+  });
+
   it('preserves unique publication order while a visibility lookup is pending', async () => {
     let finish;
     const gate = new Promise((resolve) => { finish = resolve; });

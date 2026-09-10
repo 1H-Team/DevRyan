@@ -480,3 +480,147 @@ assert.equal(
 );
 
 console.log("orchestrator-autoresume harness passed");
+
+// --- dispatch barrier: never nudge the orchestrator while a child is running ---
+
+async function dispatch(parentID, partID, childID, agent) {
+  await emit({
+    type: "message.part.updated",
+    properties: {
+      sessionID: parentID,
+      part: { id: partID, sessionID: parentID, messageID: `m-${partID}`, type: "subtask", prompt: "work", description: "task", agent },
+      time: 1,
+    },
+  });
+  await emit({
+    type: "session.created",
+    properties: {
+      info: { id: childID, parentID, title: agent, directory: "/tmp", version: "test", time: { created: 2, updated: 2 } },
+    },
+  });
+}
+
+const parentResumes = (id) => calls.filter((call) => call.sessionID === id && call.agent === "orchestrator").length;
+
+await emit({
+  type: "session.created",
+  properties: { info: { id: "p-barrier", title: "Barrier", directory: "/tmp", version: "test", time: { created: 1, updated: 1 } } },
+});
+await dispatch("p-barrier", "sub-b1", "child-b1", "builder");
+await dispatch("p-barrier", "sub-b2", "child-b2", "builder");
+
+// One child finishes while the other is still working.
+await emit({ type: "session.status", properties: { sessionID: "p-barrier", status: { type: "idle" } } });
+await emit({ type: "session.status", properties: { sessionID: "child-b1", status: { type: "idle" } } });
+await wait();
+
+assert.equal(
+  parentResumes("p-barrier"),
+  0,
+  "parent must not be resumed while a dispatched child is still running",
+);
+
+// The barrier clears once every dispatched child has reported idle.
+await emit({ type: "session.status", properties: { sessionID: "child-b2", status: { type: "idle" } } });
+await emit({ type: "session.status", properties: { sessionID: "p-barrier", status: { type: "idle" } } });
+await wait();
+
+assert.equal(
+  parentResumes("p-barrier"),
+  1,
+  "parent should be resumed once every dispatched child is idle",
+);
+
+// --- resume cap must bind for an orchestrator that keeps no todos ---
+
+await emit({
+  type: "session.created",
+  properties: { info: { id: "p-cap", title: "Cap", directory: "/tmp", version: "test", time: { created: 1, updated: 1 } } },
+});
+await dispatch("p-cap", "sub-c1", "child-c1", "builder");
+
+for (let attempt = 0; attempt < 8; attempt += 1) {
+  // A todo-less parent used to have its counter zeroed by every todo event.
+  await emit({ type: "todo.updated", properties: { sessionID: "p-cap", todos: [] } });
+  await emit({ type: "session.status", properties: { sessionID: "p-cap", status: { type: "idle" } } });
+  await emit({ type: "session.status", properties: { sessionID: "child-c1", status: { type: "idle" } } });
+  await wait();
+}
+
+assert.equal(
+  parentResumes("p-cap"),
+  3,
+  "repeated child idle events must not push a todo-less parent past the resume cap",
+);
+
+// --- repeated streaming updates of one subtask part must not refill the budget ---
+
+for (let attempt = 0; attempt < 5; attempt += 1) {
+  await emit({
+    type: "message.part.updated",
+    properties: {
+      sessionID: "p-cap",
+      part: { id: "sub-c1", sessionID: "p-cap", messageID: "m-sub-c1", type: "subtask", prompt: "work", description: "task", agent: "builder" },
+      time: 1,
+    },
+  });
+  await emit({ type: "session.status", properties: { sessionID: "p-cap", status: { type: "idle" } } });
+  await emit({ type: "session.status", properties: { sessionID: "child-c1", status: { type: "idle" } } });
+  await wait();
+}
+
+assert.equal(
+  parentResumes("p-cap"),
+  3,
+  "re-emitting the same subtask part must not grant the parent a fresh resume budget",
+);
+
+// --- a genuinely new delegation does earn a fresh budget ---
+
+await dispatch("p-cap", "sub-c2", "child-c2", "builder");
+await emit({ type: "session.status", properties: { sessionID: "p-cap", status: { type: "idle" } } });
+await emit({ type: "session.status", properties: { sessionID: "child-c1", status: { type: "idle" } } });
+await emit({ type: "session.status", properties: { sessionID: "child-c2", status: { type: "idle" } } });
+await wait();
+
+assert.equal(
+  parentResumes("p-cap"),
+  4,
+  "a new dispatch should let the parent be nudged again",
+);
+
+// --- closing a real todo cycle also earns a fresh budget ---
+
+await emit({
+  type: "session.created",
+  properties: { info: { id: "p-todo", title: "Todo", directory: "/tmp", version: "test", time: { created: 1, updated: 1 } } },
+});
+await dispatch("p-todo", "sub-t1", "child-t1", "builder");
+await emit({
+  type: "todo.updated",
+  properties: { sessionID: "p-todo", todos: [{ content: "reconcile", status: "pending", priority: "high" }] },
+});
+
+for (let attempt = 0; attempt < 5; attempt += 1) {
+  await emit({ type: "session.status", properties: { sessionID: "p-todo", status: { type: "idle" } } });
+  await emit({ type: "session.status", properties: { sessionID: "child-t1", status: { type: "idle" } } });
+  await wait();
+}
+
+assert.equal(parentResumes("p-todo"), 3, "parent with incomplete todos still stops at the cap");
+
+await emit({
+  type: "todo.updated",
+  properties: { sessionID: "p-todo", todos: [{ content: "reconcile", status: "completed", priority: "high" }] },
+});
+await emit({ type: "session.status", properties: { sessionID: "p-todo", status: { type: "idle" } } });
+await emit({ type: "session.status", properties: { sessionID: "child-t1", status: { type: "idle" } } });
+await wait();
+
+assert.equal(
+  parentResumes("p-todo"),
+  4,
+  "completing the outstanding todos should reopen the resume budget",
+);
+
+console.log("orchestrator-autoresume barrier + resume-cap checks passed");

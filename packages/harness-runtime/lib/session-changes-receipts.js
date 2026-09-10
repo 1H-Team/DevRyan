@@ -87,15 +87,42 @@ export async function storeSessionChangeReceipt(repo, input, existing, canonical
     if (after) afterFiles.set(relative, after);
   }
   if (!count) throw changeError('invalid_change_receipt', 400);
-  const before = await makeChangeTree(repo, beforeFiles), after = await makeChangeTree(repo, afterFiles);
+  let before = await makeChangeTree(repo, beforeFiles), after = await makeChangeTree(repo, afterFiles);
   const patchTree = patches.length ? await makeChangeTree(repo, patches.map((entry) => [`${changeKey(entry.file)}.patch`, { oid: entry.patchOID, mode: '100644' }])) : null;
+  patches.sort((left, right) => left.file.localeCompare(right.file));
   const complete = input.complete !== false;
-  const receiptFingerprint = changeKey(JSON.stringify({ before, after, patches, complete }));
   if (existing?.evidence === 'exact') {
-    if (existing.receiptFingerprint === receiptFingerprint) return null;
-    // Repeated terminal delivery may enrich metadata, but cannot change the
-    // already recorded edit for the same canonical call.
-    throw changeError('receipt_conflict', 409);
+    const storedPatches = [];
+    for await (const { value } of repo.db.entries(receiptPatchesKey(existing.id))) storedPatches.push(value);
+    storedPatches.sort((left, right) => left.file.localeCompare(right.file));
+    // Compare content, including records written before completion was removed
+    // from the fingerprint. A stale delivery must never downgrade evidence.
+    const oldModesKnown = existing.restoreEvidence === true || existing.restoreVerified === true;
+    const newModesKnown = explicitModes || matchesObservation;
+    const sameBlobs = async (tree, files) => {
+      let count = 0;
+      for await (const [file, entry] of changeTreeEntries(repo, tree)) {
+        if (files.get(file)?.oid !== entry.oid) return false;
+        count++;
+      }
+      return count === files.size;
+    };
+    if (JSON.stringify(storedPatches) !== JSON.stringify(patches)
+      || (existing.before !== before || existing.after !== after)
+      && (oldModesKnown && newModesKnown || !await sameBlobs(existing.before, beforeFiles) || !await sameBlobs(existing.after, afterFiles))) {
+      throw changeError('receipt_conflict', 409);
+    }
+    // Text receipts do not attest modes. A later trusted mode attestation may
+    // strengthen the same bytes; subsequent textual replay preserves it.
+    if (oldModesKnown || !newModesKnown) { before = existing.before; after = existing.after; }
+    const receiptComplete = existing.receiptComplete !== false || complete;
+    const restoreEvidence = oldModesKnown || newModesKnown;
+    const restoreVerified = receiptComplete && !patches.length && restoreEvidence;
+    if (existing.receiptComplete === receiptComplete && existing.restoreVerified === restoreVerified
+      && oldModesKnown === restoreEvidence && existing.before === before && existing.after === after) return null;
+    return { ...existing, before, after, hasChanges: before !== after || patches.some((entry) => entry.additions || entry.deletions || entry.status === 'renamed'),
+      receiptFingerprint: changeKey(JSON.stringify({ before, after, patches })), receiptComplete, restoreEvidence, restoreVerified,
+      receiptInputFingerprint: input.receiptInputFingerprint ?? null };
   }
   const id = changeKey(`${input.sessionID}\0${input.callID}`);
   for await (const { key } of repo.db.entries(receiptPatchesKey(id))) repo.db.remove(key);
@@ -104,7 +131,8 @@ export async function storeSessionChangeReceipt(repo, input, existing, canonical
     createdAt: existing?.createdAt ?? input.createdAt ?? Date.now(), state: 'complete', before, after, patchTree,
     hasChanges: before !== after || patches.some((entry) => entry.additions || entry.deletions || entry.status === 'renamed'),
     evidence: 'exact', source: input.source ?? 'native-tool', tool: input.tool ?? null, receiptComplete: complete,
-    receiptFingerprint, receiptInputFingerprint: input.receiptInputFingerprint ?? null,
+    receiptFingerprint: changeKey(JSON.stringify({ before, after, patches })), receiptInputFingerprint: input.receiptInputFingerprint ?? null,
+    restoreEvidence: !patches.length && (explicitModes || matchesObservation),
     restoreVerified: complete && !patches.length && (explicitModes || matchesObservation),
     historical: input.historical === true, paths: null, errorCode: null };
 }

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
 import { CdpConnection, discoverPageTarget, evaluate } from './cdp.mjs';
+import { createQaUiDriver } from './ui-driver.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
 import { createLoopbackOpenCodeFixture, PERF_PARENT_SESSION_ID } from '../perf/loopback-opencode-fixture.mjs';
 
@@ -142,6 +143,9 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
     await cdp.send('Network.enable');
     await cdp.send('Runtime.enable');
     await cdp.send('Page.enable');
+    // Use the same CSS-pixel viewport for initial selection as the subsequent
+    // matrix; native Retina defaults otherwise precede the first metric override.
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
     if (process.env.DEVRYAN_QA_BACKGROUND !== '1') await cdp.send('Page.bringToFront');
     if (runtime === 'electron') {
       await waitFor('Electron loopback origin', async () => /^http:\/\/127\.0\.0\.1:\d+/.test(await evaluate(cdp, 'location.href')));
@@ -156,11 +160,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
     }
     await check('selected session and composer', async () => {
       await waitFor('session row', () => evaluate(cdp, `Boolean(document.body?.innerText.includes('Performance parent'))`), 60000);
-      await delay(750);
-      const point = await evaluate(cdp, `(() => { const e=[...document.querySelectorAll('[data-session-row="${PERF_PARENT_SESSION_ID}"] button')].find(e=>e.innerText.trim() === 'Performance parent'); if(!e) return null; const r=e.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`);
-      if (!point) throw new Error('Session row not found');
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
+      await createQaUiDriver(cdp).click({ selector: `[data-session-row="${PERF_PARENT_SESSION_ID}"] button`, text: 'Performance parent' });
       await waitFor('selected transcript and composer', () => evaluate(cdp,
         `Boolean(document.querySelector('textarea') && document.querySelector('[data-message-id="msg_user_${PERF_PARENT_SESSION_ID}"]')?.textContent.includes('Run the deterministic renderer performance fixture.'))`));
     });

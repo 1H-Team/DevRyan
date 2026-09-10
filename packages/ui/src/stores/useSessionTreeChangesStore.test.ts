@@ -262,4 +262,37 @@ describe('useSessionTreeChangesStore', () => {
     expect(entries.has(getSessionTreeChangesKey('/repo', 'ses_root'))).toBe(false)
     expect(entries.has(getSessionTreeChangesKey('/other', 'ses_root'))).toBe(true)
   })
+
+  test('pending capture retries preserve rows and stop automatically after settlement', async () => {
+    let attempt = 0
+    respond = () => Promise.resolve(makeChanges({ files: [file('src/a.ts')], revision: 'revision',
+      coverage: ++attempt < 3 ? 'partial' : 'complete', reconciliationState: attempt < 3 ? 'pending' : 'settled',
+      reasons: attempt < 3 ? ['capture_pending'] : [],
+    }))
+    const unsubscribe = subscribeSessionTreeChanges('/repo', 'ses_root')
+    const key = getSessionTreeChangesKey('/repo', 'ses_root')
+    for (let i = 0; i < 100 && useSessionTreeChangesStore.getState().entries.get(key)?.coverage !== 'complete'; i++) await wait(10)
+    const entry = useSessionTreeChangesStore.getState().entries.get(key)
+    expect(entry?.coverage).toBe('complete')
+    expect(entry?.files.map((value) => value.path)).toEqual(['src/a.ts'])
+    expect(calls).toHaveLength(3)
+    await wait(100)
+    expect(calls).toHaveLength(3)
+    unsubscribe()
+  })
+
+  test('unsubscribe cancels pending recovery and settled delivery failures wait for Retry', async () => {
+    respond = () => Promise.resolve(makeChanges({ reconciliationState: 'pending', reasons: ['receipts_pending'] }))
+    const unsubscribe = subscribeSessionTreeChanges('/repo', 'ses_root')
+    await wait(5)
+    unsubscribe()
+    const count = calls.length
+    await wait(100)
+    expect(calls).toHaveLength(count)
+    respond = () => Promise.resolve(makeChanges({ coverage: 'partial', reconciliationState: 'settled', reasons: ['execution_delivery_failed'] }))
+    const release = subscribeSessionTreeChanges('/repo', 'ses_root')
+    await wait(100)
+    expect(calls).toHaveLength(count + 1)
+    release()
+  })
 })

@@ -19,6 +19,8 @@ export const PRODUCTION_BOTS_VISUAL_MATRIX = Object.freeze([
     visualCase(`memory-${state}-dark-narrow`, 'memory', `memory_${state}`, { theme: 'dark', viewport: narrow }),
   ]),
   ...['disconnected', 'failure', 'loading', 'empty'].map((state) => visualCase(`assigned-catalog-${state}`, 'assigned-catalog', `assigned_${state}`, { interaction: 'assigned_catalog', ...(state === 'failure' ? { theme: 'dark', viewport: narrow } : {}) })),
+  visualCase('bot-event-recovery-light', 'assigned-catalog', 'assigned_recovery', { interaction: 'event_recovery' }),
+  visualCase('bot-event-recovery-dark-narrow', 'assigned-catalog', 'assigned_recovery', { interaction: 'event_recovery', theme: 'dark', viewport: narrow }),
   visualCase('catalog-filtered-light', 'catalog', 'catalog_filtered'),
   visualCase('catalog-empty-dark-narrow', 'catalog', 'catalog_empty', { theme: 'dark', role: 'developer', viewport: narrow, drawer: 'closed' }),
   ...['computer_hidden', 'computer_shown', 'computer_expanded', 'computer_waiting', 'computer_owned', 'computer_disconnected', 'computer_completed', 'computer_idle'].flatMap((state) => [

@@ -594,7 +594,6 @@ const mergeTask = (
 ): ManagedTaskProjectedRecord => {
   if (!current) return incoming;
   if (immutableTaskMetadataChanged(current, incoming)) return current;
-  if (sameTask(current, incoming)) return current;
   if (isTerminalManagedTaskStatus(current.status)) return current;
   if (metadataRegressed(current, incoming)) return current;
   if ((incoming.transportRecovery?.revision ?? 0) < (current.transportRecovery?.revision ?? 0)) return current;
@@ -602,7 +601,14 @@ const mergeTask = (
     const skippedForward = statusStage(incoming.status) > statusStage(current.status);
     if (!skippedForward) return current;
   }
-  return incoming;
+  // The scheduler writes each progress stamp once per task attempt. Older
+  // snapshots can still advance status, but cannot clear established activity.
+  const childPromptedAt = current.childPromptedAt ?? incoming.childPromptedAt;
+  const firstAssistantPartAt = current.firstAssistantPartAt ?? incoming.firstAssistantPartAt;
+  const next = childPromptedAt !== incoming.childPromptedAt || firstAssistantPartAt !== incoming.firstAssistantPartAt
+    ? { ...incoming, childPromptedAt, firstAssistantPartAt }
+    : incoming;
+  return sameTask(current, next) ? current : next;
 };
 
 const mergeEnvelope = (
@@ -679,30 +685,29 @@ const isManualRecoveryTask = (
   && envelope.action === null
 );
 
-const resolveLatestTaskIdForChildSession = (
-  tasksById: Readonly<Record<string, ManagedTaskProjectedRecord>>,
-  childSessionId: string,
-) => {
-  let latest: ManagedTaskProjectedRecord | null = null;
-  for (const task of Object.values(tasksById)) {
-    if (task.childSessionId !== childSessionId) continue;
-    if (
-      !latest
-      || task.sequence > latest.sequence
-      || (task.sequence === latest.sequence && task.taskId.localeCompare(latest.taskId) > 0)
-    ) latest = task;
-  }
-  return latest?.taskId;
-};
+const childIndexMembershipChanged = (
+  current: ManagedTaskProjectedRecord | undefined,
+  next: ManagedTaskProjectedRecord,
+  currentEnvelope: ManagedTaskProjectedEnvelope | undefined,
+  nextEnvelope: ManagedTaskProjectedEnvelope | undefined,
+) => (
+  !current || current.childSessionId !== next.childSessionId
+  || isManualRecoveryTask(current, currentEnvelope) !== isManualRecoveryTask(next, nextEnvelope)
+);
 
-const withLatestTaskIdsByChildSession = (
+const isLaterChildTask = (task: ManagedTaskProjectedRecord, previous: ManagedTaskProjectedRecord | undefined) => (
+  !previous || task.sequence > previous.sequence
+  || (task.sequence === previous.sequence && task.taskId.localeCompare(previous.taskId) > 0)
+);
+
+const reconcileChildIndex = (
   current: Readonly<Record<string, string>>,
-  tasksById: Readonly<Record<string, ManagedTaskProjectedRecord>>,
+  selected: ReadonlyMap<string, ManagedTaskProjectedRecord>,
   childSessionIds: Set<string>,
 ) => {
   let next: Record<string, string> | null = null;
   for (const childSessionId of childSessionIds) {
-    const taskId = resolveLatestTaskIdForChildSession(tasksById, childSessionId);
+    const taskId = selected.get(childSessionId)?.taskId;
     if (current[childSessionId] === taskId) continue;
     next ??= { ...current };
     if (taskId) next[childSessionId] = taskId;
@@ -711,45 +716,33 @@ const withLatestTaskIdsByChildSession = (
   return next ?? current;
 };
 
-const resolveManualRecoveryTaskId = (
-  tasksById: Readonly<Record<string, ManagedTaskProjectedRecord>>,
-  resultEnvelopesByTaskId: Readonly<Record<string, ManagedTaskProjectedEnvelope>>,
-  childSessionId: string,
-) => {
-  let latest: ManagedTaskProjectedRecord | null = null;
-  for (const task of Object.values(tasksById)) {
-    if (
-      task.childSessionId !== childSessionId
-      || !isManualRecoveryTask(task, resultEnvelopesByTaskId[task.taskId])
-    ) continue;
-    if (
-      !latest
-      || task.sequence > latest.sequence
-      || (task.sequence === latest.sequence && task.taskId.localeCompare(latest.taskId) > 0)
-    ) latest = task;
-  }
-  return latest?.taskId;
-};
+type ChildTaskIndexes = Pick<ManagedOrchestrationStore, 'latestTaskIdByChildSessionId' | 'manualRecoveryTaskIdByChildSessionId'>;
 
-const withManualRecoveryTaskIds = (
-  current: Readonly<Record<string, string>>,
+const withChildTaskIndexes = (
+  current: ChildTaskIndexes,
   tasksById: Readonly<Record<string, ManagedTaskProjectedRecord>>,
   resultEnvelopesByTaskId: Readonly<Record<string, ManagedTaskProjectedEnvelope>>,
   childSessionIds: Set<string>,
-) => {
-  let next: Record<string, string> | null = null;
-  for (const childSessionId of childSessionIds) {
-    const taskId = resolveManualRecoveryTaskId(
-      tasksById,
-      resultEnvelopesByTaskId,
-      childSessionId,
-    );
-    if (current[childSessionId] === taskId) continue;
-    next ??= { ...current };
-    if (taskId) next[childSessionId] = taskId;
-    else delete next[childSessionId];
+): ChildTaskIndexes => {
+  if (childSessionIds.size === 0) return {
+    latestTaskIdByChildSessionId: current.latestTaskIdByChildSessionId,
+    manualRecoveryTaskIdByChildSessionId: current.manualRecoveryTaskIdByChildSessionId,
+  };
+  const latest = new Map<string, ManagedTaskProjectedRecord>();
+  const recovery = new Map<string, ManagedTaskProjectedRecord>();
+  // One traversal serves every affected child and both indexes, including
+  // fallback to an earlier attempt after acknowledgement or compaction.
+  for (const task of Object.values(tasksById)) {
+    const childId = task.childSessionId;
+    if (!childId || !childSessionIds.has(childId)) continue;
+    if (isLaterChildTask(task, latest.get(childId))) latest.set(childId, task);
+    if (isManualRecoveryTask(task, resultEnvelopesByTaskId[task.taskId])
+      && isLaterChildTask(task, recovery.get(childId))) recovery.set(childId, task);
   }
-  return next ?? current;
+  return {
+    latestTaskIdByChildSessionId: reconcileChildIndex(current.latestTaskIdByChildSessionId, latest, childSessionIds),
+    manualRecoveryTaskIdByChildSessionId: reconcileChildIndex(current.manualRecoveryTaskIdByChildSessionId, recovery, childSessionIds),
+  };
 };
 
 const errorMessage = (error: unknown) => error instanceof Error
@@ -797,8 +790,6 @@ export const createManagedOrchestrationStore = (options: {
 
         for (const { task, envelope } of projections) {
           const currentTask = (mutableTasksById ?? state.tasksById)[task.taskId];
-          if (currentTask?.childSessionId) affectedChildSessionIds.add(currentTask.childSessionId);
-          if (task.childSessionId) affectedChildSessionIds.add(task.childSessionId);
           const nextTask = mergeTask(currentTask, task);
           if (nextTask !== currentTask) {
             mutableTasksById ??= { ...state.tasksById };
@@ -806,13 +797,16 @@ export const createManagedOrchestrationStore = (options: {
             if (!currentTask) affectedRoots.add(nextTask.rootSessionId);
           }
 
-          if (envelope && envelopeMatchesTask(task, envelope)) {
-            const currentEnvelope = (mutableEnvelopesByTaskId ?? state.resultEnvelopesByTaskId)[task.taskId];
-            const nextEnvelope = mergeEnvelope(currentEnvelope, envelope);
-            if (nextEnvelope !== currentEnvelope) {
-              mutableEnvelopesByTaskId ??= { ...state.resultEnvelopesByTaskId };
-              mutableEnvelopesByTaskId[task.taskId] = nextEnvelope;
-            }
+          const currentEnvelope = (mutableEnvelopesByTaskId ?? state.resultEnvelopesByTaskId)[task.taskId];
+          const nextEnvelope = envelope && envelopeMatchesTask(task, envelope)
+            ? mergeEnvelope(currentEnvelope, envelope) : currentEnvelope;
+          if (nextEnvelope && nextEnvelope !== currentEnvelope) {
+            mutableEnvelopesByTaskId ??= { ...state.resultEnvelopesByTaskId };
+            mutableEnvelopesByTaskId[task.taskId] = nextEnvelope;
+          }
+          if (childIndexMembershipChanged(currentTask, nextTask, currentEnvelope, nextEnvelope)) {
+            if (currentTask?.childSessionId) affectedChildSessionIds.add(currentTask.childSessionId);
+            if (nextTask.childSessionId) affectedChildSessionIds.add(nextTask.childSessionId);
           }
         }
 
@@ -828,21 +822,7 @@ export const createManagedOrchestrationStore = (options: {
             ? withRootIds(state.taskIdsByRootId, tasksById, affectedRoots)
             : state.taskIdsByRootId,
           resultEnvelopesByTaskId,
-          latestTaskIdByChildSessionId: affectedChildSessionIds.size > 0
-            ? withLatestTaskIdsByChildSession(
-              state.latestTaskIdByChildSessionId,
-              tasksById,
-              affectedChildSessionIds,
-            )
-            : state.latestTaskIdByChildSessionId,
-          manualRecoveryTaskIdByChildSessionId: affectedChildSessionIds.size > 0
-            ? withManualRecoveryTaskIds(
-              state.manualRecoveryTaskIdByChildSessionId,
-              tasksById,
-              resultEnvelopesByTaskId,
-              affectedChildSessionIds,
-            )
-            : state.manualRecoveryTaskIdByChildSessionId,
+          ...withChildTaskIndexes(state, tasksById, resultEnvelopesByTaskId, affectedChildSessionIds),
         };
       });
     };
@@ -929,21 +909,7 @@ export const createManagedOrchestrationStore = (options: {
           tasksById,
           taskIdsByRootId: withRootIds(state.taskIdsByRootId, tasksById, new Set([rootSessionId])),
           resultEnvelopesByTaskId,
-          latestTaskIdByChildSessionId: affectedChildSessionIds.size > 0
-            ? withLatestTaskIdsByChildSession(
-              state.latestTaskIdByChildSessionId,
-              tasksById,
-              affectedChildSessionIds,
-            )
-            : state.latestTaskIdByChildSessionId,
-          manualRecoveryTaskIdByChildSessionId: affectedChildSessionIds.size > 0
-            ? withManualRecoveryTaskIds(
-              state.manualRecoveryTaskIdByChildSessionId,
-              tasksById,
-              resultEnvelopesByTaskId,
-              affectedChildSessionIds,
-            )
-            : state.manualRecoveryTaskIdByChildSessionId,
+          ...withChildTaskIndexes(state, tasksById, resultEnvelopesByTaskId, affectedChildSessionIds),
           pendingActionByTaskId,
           actionErrorByTaskId,
         };
@@ -1025,8 +991,6 @@ export const createManagedOrchestrationStore = (options: {
               for (const task of snapshot.tasks) {
                 if (wasRemovedDuringLoad(task)) continue;
                 const currentTask = (mutableTasksById ?? state.tasksById)[task.taskId];
-                if (currentTask?.childSessionId) affectedChildSessionIds.add(currentTask.childSessionId);
-                if (task.childSessionId) affectedChildSessionIds.add(task.childSessionId);
                 if (currentTask && immutableTaskMetadataChanged(currentTask, task)) {
                   throw new TypeError('Managed orchestration returned an invalid snapshot');
                 }
@@ -1038,13 +1002,15 @@ export const createManagedOrchestrationStore = (options: {
                 }
 
                 const envelope = validEnvelopes.get(task.taskId);
-                if (envelope) {
-                  const currentEnvelope = (mutableEnvelopesByTaskId ?? state.resultEnvelopesByTaskId)[task.taskId];
-                  const nextEnvelope = mergeEnvelope(currentEnvelope, envelope);
-                  if (nextEnvelope !== currentEnvelope) {
-                    mutableEnvelopesByTaskId ??= { ...state.resultEnvelopesByTaskId };
-                    mutableEnvelopesByTaskId[task.taskId] = nextEnvelope;
-                  }
+                const currentEnvelope = (mutableEnvelopesByTaskId ?? state.resultEnvelopesByTaskId)[task.taskId];
+                const nextEnvelope = envelope ? mergeEnvelope(currentEnvelope, envelope) : currentEnvelope;
+                if (nextEnvelope && nextEnvelope !== currentEnvelope) {
+                  mutableEnvelopesByTaskId ??= { ...state.resultEnvelopesByTaskId };
+                  mutableEnvelopesByTaskId[task.taskId] = nextEnvelope;
+                }
+                if (childIndexMembershipChanged(currentTask, nextTask, currentEnvelope, nextEnvelope)) {
+                  if (currentTask?.childSessionId) affectedChildSessionIds.add(currentTask.childSessionId);
+                  if (nextTask.childSessionId) affectedChildSessionIds.add(nextTask.childSessionId);
                 }
               }
 
@@ -1087,21 +1053,7 @@ export const createManagedOrchestrationStore = (options: {
                   ? withRootIds(state.taskIdsByRootId, tasksById, affectedRoots)
                   : state.taskIdsByRootId,
                 resultEnvelopesByTaskId,
-                latestTaskIdByChildSessionId: affectedChildSessionIds.size > 0
-                  ? withLatestTaskIdsByChildSession(
-                    state.latestTaskIdByChildSessionId,
-                    tasksById,
-                    affectedChildSessionIds,
-                  )
-                  : state.latestTaskIdByChildSessionId,
-                manualRecoveryTaskIdByChildSessionId: affectedChildSessionIds.size > 0
-                  ? withManualRecoveryTaskIds(
-                    state.manualRecoveryTaskIdByChildSessionId,
-                    tasksById,
-                    resultEnvelopesByTaskId,
-                    affectedChildSessionIds,
-                  )
-                  : state.manualRecoveryTaskIdByChildSessionId,
+                ...withChildTaskIndexes(state, tasksById, resultEnvelopesByTaskId, affectedChildSessionIds),
                 pendingActionByTaskId: mutablePendingActions ?? state.pendingActionByTaskId,
                 actionErrorByTaskId: mutableActionErrors ?? state.actionErrorByTaskId,
                 available: snapshot.available === true,

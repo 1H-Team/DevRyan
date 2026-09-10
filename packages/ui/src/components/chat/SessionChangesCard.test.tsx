@@ -65,6 +65,8 @@ const {
   resolveSessionChangesFooterState,
   resolveSessionTreeIds,
   resolveVisibleChangedFiles,
+  resolveSessionChangesStatusKey,
+  canRetrySessionChanges,
 } = await import('./sessionChangesController');
 const {
   SESSION_CHANGES_INITIAL_VISIBLE_FILES,
@@ -228,14 +230,17 @@ describe('SessionChangesCardView', () => {
     expect(markup).not.toContain('data-session-changes-action="redo"');
   });
 
-  test('segmented files count once and label recorded totals with restore disabled', () => {
+  test('segmented files count once without a Recorded Edits subtitle and keep restore disabled', () => {
     const markup = render(React.createElement(SessionChangesCardView, { ...viewProps,
       files: [{ ...gitFile('shared.ts', 4, 2), reviewMode: 'segments', segmentCount: 2 }],
       totalsMode: 'recorded', undoDisabled: true, disabledReason: dict['chat.sessionChanges.segmentedRestore'],
     }));
     expect(countRows(markup)).toBe(1);
     expect(markup).toContain('Edited 1 file');
-    expect(markup).toContain('data-session-changes-totals="recorded"');
+    const header = markup.match(/<header\b[^>]*>([\s\S]*?)<\/header>/)?.[1];
+    expect(header).toBeDefined();
+    expect(header).not.toContain('Recorded Edits');
+    expect(markup).not.toContain('>Recorded Edits<');
     expect(markup).toContain('2 edits');
     expect(hasDisabledUndo(markup)).toBe(true);
     expect(markup).not.toContain('overlapping owners');
@@ -293,10 +298,20 @@ describe('SessionChangesCardView', () => {
       .toBe('Undo is unavailable while another session is working in this project');
   });
 
-  test('shows specific incomplete coverage without the shell disclaimer', () => {
-    const markup = render(React.createElement(SessionChangesCardView, { ...viewProps, statusMessage: 'Some tool changes could not be verified for this session. Verified edits are shown.' }));
-    expect(markup).toContain('Some tool changes could not be verified for this session. Verified edits are shown.');
-    expect(markup).not.toContain('shell commands');
+  test('shows specific missing execution evidence and distinguishes pending recovery from a settled failure', () => {
+    const partial = { loading: false, error: null, coverage: 'partial' as const, reasons: ['unverified_tool_changes'] };
+    expect(resolveSessionChangesStatusKey(partial)).toBe('chat.sessionChanges.executionUnavailable');
+    const markup = render(React.createElement(SessionChangesCardView, { ...viewProps, statusMessage: dict['chat.sessionChanges.executionUnavailable'] }));
+    expect(markup).toContain(dict['chat.sessionChanges.executionUnavailable']);
+    expect(resolveSessionChangesStatusKey({ ...partial, reconciliationState: 'pending' })).toBe('chat.sessionChanges.loading');
+    expect(resolveSessionChangesStatusKey({ ...partial, coverage: 'complete', reasons: [], reconciliationState: 'settled' })).toBeNull();
+    expect(resolveSessionChangesStatusKey({ ...partial, reasons: ['receipt_conflict'] })).toBe('chat.sessionChanges.receiptConflict');
+    expect(resolveSessionChangesStatusKey({ ...partial, reasons: ['storage_unavailable'] })).toBe('chat.sessionChanges.storageUnavailable');
+    expect(canRetrySessionChanges({ ...partial, reasons: ['capture_interrupted'] })).toBe(true);
+    expect(canRetrySessionChanges({ ...partial, reasons: ['receipt_conflict'] })).toBe(false);
+    const failedRetry = { ...partial, reconciliationState: 'pending' as const, error: 'offline' };
+    expect(resolveSessionChangesStatusKey(failedRetry)).toBe('chat.sessionChanges.loadFailed');
+    expect(canRetrySessionChanges(failedRetry)).toBe(true);
   });
 
   test('shows "Undone" + Redo and no rows after a successful Undo', () => {

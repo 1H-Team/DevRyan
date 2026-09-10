@@ -230,7 +230,7 @@ export async function runQaMatrixCell(cell) {
     console.log(JSON.stringify({ run: cell.runId, output: fixture.evidenceDirectory, inspection: evidence.inspection }));
     await check('candidate provider and managed runtime readiness', async () => {
       const health = await ui.waitFor('OpenCode readiness', async () => { const h = await api('/api/health'); return h.isOpenCodeReady ? h : false; }, 120000);
-      if (cell.transport === 'live' && health.openCodeVersion !== '1.18.29') throw new Error('Candidate OpenCode version does not match the pinned runtime');
+      if (cell.transport === 'live' && health.openCodeVersion !== '1.18.30') throw new Error('Candidate OpenCode version does not match the pinned runtime');
       evidence.runtimeVersion = health.openCodeVersion;
       if (packaged) {
         const host = JSON.parse(await readFile(path.join(runtimeRoot, 'packaged-host.json'), 'utf8'));

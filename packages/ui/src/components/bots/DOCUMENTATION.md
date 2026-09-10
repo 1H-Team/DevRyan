@@ -133,6 +133,14 @@ reconnect snapshot, the active transcript merges the canonical newest page;
 older loaded messages, stable message references, and the older-page cursor
 remain intact.
 
+The last failure survives automatic retries, manual Retry, and socket open;
+only an accepted snapshot clears it. The operations store retains the first
+failure time for the outage. The sidebar delays its warning for three seconds,
+then keeps it visible until recovery; retry attempts and sidebar navigation do
+not restart that clock. Connection state and Operations remain immediately
+accurate, and catalog-load errors retain their immediate Retry presentation.
+Principal reset and unsupported access clear the outage clock.
+
 Capability discovery is part of that same connection lifecycle. A transient
 `migration_required`, `supabase_unavailable`, or capability transport failure
 keeps its bounded error code visible while a single principal-scoped probe

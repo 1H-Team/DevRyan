@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ContextModeWorkerPool } from './context-mode-worker-pool.js';
-import { WORKER_POOL_SOURCE, WORKER_SOURCE, WORKER_STATE_SOURCE, WORKER_STORAGE_SOURCE, WORKER_PROCESS_SOURCE } from './context-mode-worker-sources.js';
+import { WORKER_POOL_SOURCE, WORKER_SOURCE, WORKER_STATE_SOURCE, WORKER_STORAGE_SOURCE, WORKER_PROCESS_SOURCE, EXECUTION_SOURCE } from './context-mode-worker-sources.js';
 
 class FakeWorker extends EventEmitter {
   static instances = [];
@@ -18,7 +18,19 @@ const call = (projectDir = '/repo', sessionId = 'ses_one', args = {}) => ({ name
 afterEach(async () => { await Promise.all(pools.splice(0).map((item) => item.close())); FakeWorker.instances = []; });
 
 describe('Context Mode worker isolation', () => {
+  it('never reuses a worker with a different explicit heap option', async () => {
+    const runtime = pool();
+    const first = runtime.execute({ ...call(), env: { NODE_OPTIONS: '--max-old-space-size=256' } });
+    FakeWorker.instances[0].complete();
+    await first;
+    const second = runtime.execute({ ...call(), env: {} });
+    expect(FakeWorker.instances).toHaveLength(2);
+    FakeWorker.instances[1].complete();
+    await second;
+  });
+
   it('ships identical helpers in bundled web provisioning', () => {
+    expect(EXECUTION_SOURCE).toBe(fs.readFileSync(new URL('./context-mode-execution.js', import.meta.url), 'utf8'));
     expect(WORKER_POOL_SOURCE).toBe(fs.readFileSync(new URL('./context-mode-worker-pool.js', import.meta.url), 'utf8'));
     expect(WORKER_SOURCE).toBe(fs.readFileSync(new URL('./context-mode-worker.js', import.meta.url), 'utf8'));
     expect(WORKER_STATE_SOURCE).toBe(fs.readFileSync(new URL('./context-mode-worker-state.js', import.meta.url), 'utf8'));

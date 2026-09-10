@@ -42,6 +42,7 @@ export const createBotEventConnectionController = ({
   let started = false;
   let disposed = false;
   let hasSnapshot = false;
+  let lastFailureCode = initialRecoveryErrorCode;
 
   const closeSource = () => {
     source?.close();
@@ -49,7 +50,7 @@ export const createBotEventConnectionController = ({
   };
 
   const clearReconnectTimer = () => {
-    if (reconnectTimer) clearTimeoutImpl(reconnectTimer);
+    if (reconnectTimer !== null) clearTimeoutImpl(reconnectTimer);
     reconnectTimer = null;
   };
 
@@ -60,7 +61,7 @@ export const createBotEventConnectionController = ({
     const currentGeneration = ++generation;
     setConnectionState(
       hasSnapshot ? 'reconnecting' : 'connecting',
-      hasSnapshot ? null : initialRecoveryErrorCode,
+      lastFailureCode,
     );
 
     let nextSource: BotEventSource;
@@ -97,6 +98,7 @@ export const createBotEventConnectionController = ({
       const reconnected = hasSnapshot;
       hasSnapshot = true;
       reconnectAttempt = 0;
+      lastFailureCode = null;
       setConnectionState('connected');
       if (reconnected) onReconnectedSnapshot();
     };
@@ -108,7 +110,7 @@ export const createBotEventConnectionController = ({
       if (disposed || generation !== currentGeneration || source !== nextSource) return;
       setConnectionState(
         hasSnapshot ? 'reconnecting' : 'connecting',
-        hasSnapshot ? null : initialRecoveryErrorCode,
+        lastFailureCode,
       );
     };
     nextSource.onerror = () => {
@@ -122,16 +124,19 @@ export const createBotEventConnectionController = ({
     generation += 1;
     closeSource();
     clearReconnectTimer();
+    lastFailureCode = hasSnapshot ? errorCode : lastFailureCode || errorCode;
     setConnectionState(
       'reconnecting',
-      hasSnapshot ? errorCode : initialRecoveryErrorCode || errorCode,
+      lastFailureCode,
     );
     const delay = RECONNECT_DELAYS_MS[Math.min(
       reconnectAttempt,
       RECONNECT_DELAYS_MS.length - 1,
     )];
     reconnectAttempt += 1;
+    const scheduledGeneration = generation;
     reconnectTimer = setTimeoutImpl(() => {
+      if (disposed || generation !== scheduledGeneration) return;
       reconnectTimer = null;
       connect();
     }, delay);

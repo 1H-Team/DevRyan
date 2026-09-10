@@ -6,7 +6,7 @@ import { withCrossProcessFileLock } from './atomic-file.js';
 import {
   classifyPrimaryTransportError, inspectRecoveryTurn, recoveryError,
   RECOVERY_READ_TOOLS, PROVIDER_PROGRESS_TIMEOUT_MS, validatePrimaryRecoveryRecord,
-  isProviderRecoverySupportedRuntimeVersion,
+  isProviderRecoverySupportedRuntimeVersion, isPrimaryRecoveryProvider, primaryRecoveryMode,
 } from './provider-recovery-policy.js';
 
 const TERMINAL = new Set(['completed', 'needs_attention', 'cancelled', 'superseded']);
@@ -19,8 +19,7 @@ const progressSignature = (part) => ['text', 'reasoning'].includes(part.type) ? 
 export function createPrimaryRecoveryController(options) {
   const now = options.now ?? Date.now;
   const store = options.store ?? createRecordStore({ directory: options.directory, validateRecord: validatePrimaryRecoveryRecord, maxReadBytes: 128 * 1024 });
-  const mode = options.mode ?? 'observe';
-  if (!['off', 'observe', 'enforce'].includes(mode)) throw new TypeError('Invalid provider recovery mode');
+  if ([options.mode, options.anthropicMode].some((value) => value !== undefined && !['off', 'observe', 'enforce'].includes(value))) throw new TypeError('Invalid provider recovery mode');
   const progressTimeoutMs = options.progressTimeoutMs ?? PROVIDER_PROGRESS_TIMEOUT_MS;
   if (progressTimeoutMs !== false && (!Number.isSafeInteger(progressTimeoutMs) || progressTimeoutMs < 1)) {
     throw new TypeError('Invalid provider progress timeout');
@@ -28,6 +27,7 @@ export function createPrimaryRecoveryController(options) {
   const records = new Map();
   const live = new Map();
   const pending = new Map();
+  const reschedule = new Map();
   const generations = new Map();
   let handshake = null;
   let draining = false;
@@ -37,19 +37,23 @@ export function createPrimaryRecoveryController(options) {
   let ownerTask;
   let ready;
   let storageHealthy = true;
-  const supported = (record) => storageHealthy && ownsRuntime && isProviderRecoverySupportedRuntimeVersion(handshake?.version) && options.isManaged()
+  const modeFor = (record) => primaryRecoveryMode(record?.providerID, options);
+  const providerSupported = (record) => !record || (isPrimaryRecoveryProvider(record.providerID)
+    && (record.providerID !== 'anthropic' || options.isAnthropicConformant?.(record, handshake?.version ?? undefined) === true));
+  const supported = (record) => providerSupported(record) && storageHealthy && ownsRuntime && isProviderRecoverySupportedRuntimeVersion(handshake?.version) && options.isManaged()
     && (!record || (record.requestedAt !== null && record.instanceID === handshake.instanceID));
-  const active = () => !draining && mode === 'enforce' && supported();
+  const active = (record) => !draining && modeFor(record) === 'enforce' && supported() && providerSupported(record);
   const diagnostic = (event, record, detail = {}) => options.recordIncident?.({
     event, sessionID: record?.sessionID, messageID: record?.anchorID,
-    assistantMessageID: record?.failedID ?? null, recoveryMessageID: record?.recoveryID ?? null,
+    assistantMessageID: record?.failedID ?? record?.stepID ?? null, recoveryMessageID: record?.recoveryID ?? null,
+    providerID: record?.providerID ?? null, modelID: record?.modelID ?? null,
     runtimeInstanceID: handshake?.instanceID ?? null, runtimeVersion: handshake?.version ?? null,
-    mode, progressTimeoutMs, wireTiming: 'unavailable', providerRequestID: 'unavailable', ...detail,
+    mode: modeFor(record), progressTimeoutMs, wireTiming: 'unavailable', providerRequestID: 'unavailable', ...detail,
     hostNodeVersion: process.version, hostBuild: options.buildVersion ?? process.env.npm_package_version ?? 'unavailable',
   });
   const project = (record) => ({
-    schemaVersion: 1, mode, supported: supported(record) && (!record || record.providerID === 'openai'),
-    enforced: active() && supported(record) && (!record || record.providerID === 'openai'), progressTimeoutMs,
+    schemaVersion: 1, mode: modeFor(record), supported: supported(record),
+    enforced: active(record) && supported(record), progressTimeoutMs,
     record: record ? {
       sessionID: record.sessionID, anchorID: record.anchorID, failedID: record.failedID,
       recoveryID: record.recoveryID, state: record.state, revision: record.revision,
@@ -101,17 +105,18 @@ export function createPrimaryRecoveryController(options) {
     return count < 1000 && bytes < 10 * 1024 * 1024;
   };
   const invalidate = (id) => generations.set(id, (generations.get(id) ?? 0) + 1);
-  const attention = (id, reason) => mutate(id, (r) => r && !['cancelled', 'superseded'].includes(r.state)
+  const attention = (id, reason, expected) => mutate(id, (r) => r && !['cancelled', 'superseded'].includes(r.state)
+    && (!expected || (r.anchorID === expected.anchorID && r.cancellationGeneration === expected.cancellationGeneration))
     ? { ...r, state: 'needs_attention', reason } : r);
 
   async function admit(input) {
     await ready;
     const body = input.body ?? {};
     if (!input.primary || !options.isManaged()) return;
-    if (body.model?.providerID !== 'openai' && !records.has(input.sessionID)) return;
+    if (!isPrimaryRecoveryProvider(body.model?.providerID) && !records.has(input.sessionID)) return;
     if (!storageHealthy || !ownsRuntime) throw recoveryError('recovery_storage_unavailable', 503);
     if (!body.messageID || !body.model?.providerID || !body.model?.modelID || !body.agent) {
-      if (records.has(input.sessionID) && active()) throw recoveryError('recovery_execution_selection_required', 400);
+      if (records.has(input.sessionID) && active(records.get(input.sessionID))) throw recoveryError('recovery_execution_selection_required', 400);
       return;
     }
     // The host adapter verifies session/directory/ownership before admission.
@@ -183,13 +188,17 @@ export function createPrimaryRecoveryController(options) {
 
   async function reconcileOne(id, watchdog = false) {
     const before = records.get(id);
-    if (!before || draining || TERMINAL.has(before.state) || before.providerID !== 'openai') return;
+    if (!before || draining || TERMINAL.has(before.state) || !isPrimaryRecoveryProvider(before.providerID)) return;
     // chat.message handshakes before OpenCode persists the admitted user
     // message. A delayed idle event must not mistake that window for lost work.
     if (before.state === 'observing' && !before.requestedAt && !before.failureObserved && !before.recoveryID) return;
     const generation = generations.get(id) ?? 0;
     const current = () => !draining && (generations.get(id) ?? 0) === generation;
     const liveness = remember(before);
+    // A queued watchdog signal may belong to a superseded invocation. Recheck
+    // the current step's deadline before any observation or stop decision.
+    if (watchdog && (progressTimeoutMs === false || liveness.phase !== 'provider'
+      || now() - liveness.at < progressTimeoutMs)) return;
     const progressAt = liveness.at;
     let observation = await observeBounded(before);
     if (!current()) return;
@@ -202,11 +211,11 @@ export function createPrimaryRecoveryController(options) {
         await mutate(id, (r) => r && current() ? { ...r, state: inspected.last.info.error ? 'needs_attention' : 'completed',
           reason: inspected.last.info.error ? 'recovery_failed' : 'recovery_completed' } : r);
       } else if (inspected.last?.info.error && inspected.last.info.time?.completed) {
-        await attention(id, 'recovery_failed');
+        await attention(id, 'recovery_failed', before);
       } else if (inspected.recoveryAccepted && before.state === 'recovery_reserved') {
         await mutate(id, (r) => current() ? { ...r, state: 'recovering' } : r);
       } else if (!inspected.recoveryAccepted) {
-        await attention(id, 'recovery_dispatch_uncertain');
+        await attention(id, 'recovery_dispatch_uncertain', before);
       }
       return;
     }
@@ -215,7 +224,7 @@ export function createPrimaryRecoveryController(options) {
     const failure = classifyPrimaryTransportError(inspected.last?.info.error, handshake?.version);
     if ((!failure || before.recoverySuppressed) && !watchdog) {
       if (inspected.settled && !inspected.last.info.error) await mutate(id, (r) => current() ? { ...r, state: 'completed' } : r);
-      else if (active() && inspected.last?.info.error && inspected.last.info.time?.completed) await attention(id, 'failure_not_eligible');
+      else if (active(before) && inspected.last?.info.error && inspected.last.info.time?.completed) await attention(id, 'failure_not_eligible', before);
       return;
     }
     if (watchdog) {
@@ -241,7 +250,7 @@ export function createPrimaryRecoveryController(options) {
       meaningfulProgressAt: liveness.at, phase: liveness.phase, elapsedWithoutProgressMs: now() - liveness.at,
       executingTools: liveness.calls.size, pendingRequests: liveness.blockers.size, status: observation.status });
     liveness.candidateKey = candidateKey;
-    if (!active() || !supported(before) || inspected.last?.info.id !== before.stepID) return;
+    if (!active(before) || !supported(before) || inspected.last?.info.id !== before.stepID) return;
     if (watchdog && (liveness.at !== progressAt || blocked(before, observation) || observation.status !== 'busy')) return;
     if (watchdog && inspected.last?.parts.some((part) => part.type === 'tool' && part.state?.status === 'pending')) {
       // 1.18.25 publishes tool-input-start but drops subsequent input deltas.
@@ -251,7 +260,13 @@ export function createPrimaryRecoveryController(options) {
       await mutate(id, (r) => current() ? { ...r, reason: 'provider_input_progress_unavailable' } : r);
       return;
     }
-    if (!await authorizeBounded(before) || !current()) { await attention(id, 'recovery_authorization_unavailable'); return; }
+    if (!watchdog && inspected.unresolved && inspected.last?.info.time?.completed && observation.status === 'idle') {
+      const record = await mutate(id, (r) => r && current() ? { ...r, state: 'needs_attention',
+        reason: 'recovery_tool_outcome_unknown', failedID: inspected.last.info.id } : r);
+      if (current()) diagnostic('provider_recovery_tool_outcome_unknown', record, { classification: failure });
+      return;
+    }
+    if (!await authorizeBounded(before) || !current()) { await attention(id, 'recovery_authorization_unavailable', before); return; }
     const stopping = await mutate(id, (r) => r && current() && !(watchdog && blocked(r, observation)) ? { ...r, state: watchdog ? 'stopping' : 'reconciling',
       failedID: r.recoveryID ? r.failedID : inspected.last?.info.id ?? r.stepID,
       reason: watchdog ? 'provider_progress_timeout' : failure.kind } : r);
@@ -267,26 +282,26 @@ export function createPrimaryRecoveryController(options) {
     const deadline = now() + (options.settlementMs ?? 30_000);
     // An abort acknowledgement is not settlement. Read exact transcript + live state.
     while (current()) {
-      if (now() >= deadline) { await attention(id, 'provider_stop_unconfirmed'); return; }
+      if (now() >= deadline) { await attention(id, 'provider_stop_unconfirmed', before); return; }
       observation = await observeBounded(before, deadline);
       if (!current()) return;
       inspected = inspectRecoveryTurn(before, observation);
       if (inspected.superseded) { await control(id, 'supersede'); return; }
       if (inspected.settled && !blocked(before, observation)) break;
-      if (now() >= deadline) { await attention(id, 'provider_stop_unconfirmed'); return; }
+      if (now() >= deadline) { await attention(id, 'provider_stop_unconfirmed', before); return; }
       await (options.wait ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))))(250);
     }
     if (!current()) return;
     diagnostic('provider_stop_settled', before, { finalizedMessageID: inspected.last.info.id, status: observation.status,
       finalizedAt: inspected.last.info.time.completed, blockersCleared: true });
-    if (watchdog) { await attention(id, 'provider_progress_timeout'); return; }
+    if (watchdog) { await attention(id, 'provider_progress_timeout', before); return; }
     if (!inspected.last.info.error) { await mutate(id, (r) => current() ? { ...r, state: 'completed' } : r); return; }
-    if (!inspected.recoveryParts.length) { await attention(id, 'recovery_input_unavailable'); return; }
+    if (!inspected.recoveryParts.length) { await attention(id, 'recovery_input_unavailable', before); return; }
     // Reserve under the same lock as ordinary admission. Release it before POST:
     // plugin hooks called during POST must be able to inspect the reservation.
     const reserved = await lock(id, async () => {
       let r = await store.readRecord(keyFor(id));
-      if (!r || !current() || r.attemptCount || r.recoverySuppressed || TERMINAL.has(r.state) || !active()) return;
+      if (!r || !current() || r.attemptCount || r.recoverySuppressed || TERMINAL.has(r.state) || !active(r)) return;
       const final = await observeBounded(r);
       const check = inspectRecoveryTurn(r, final);
       if (!current() || !check.settled || check.superseded || blocked(r, final) || !await authorizeBounded(r)
@@ -313,21 +328,35 @@ export function createPrimaryRecoveryController(options) {
         diagnostic('provider_recovery_dispatch_acknowledged', r);
     } catch {
         diagnostic('provider_recovery_dispatch_uncertain', r);
-        if (current()) await attention(id, 'recovery_dispatch_uncertain');
+        if (current()) await attention(id, 'recovery_dispatch_uncertain', before);
     }
   }
 
   function schedule(id, watchdog = false) {
-    if (pending.has(id)) return pending.get(id);
-    const operation = reconcileOne(id, watchdog).catch(async (error) => {
-      diagnostic('provider_recovery_observation_failed', records.get(id), {
-        reason: typeof error?.code === 'string' && /^[a-z_]{1,80}$/.test(error.code) ? error.code : 'observation_failed',
-      });
-      if (active()) await attention(id, 'recovery_observation_unavailable');
-    }).catch(() => {
+    if (pending.has(id)) {
+      // A terminal message may arrive while an earlier idle read is in flight.
+      // Coalesce bursts, but always perform a fresh read for the newer signal.
+      reschedule.set(id, watchdog || reschedule.get(id) === true);
+      return pending.get(id);
+    }
+    const operation = (async () => {
+      let checkWatchdog = watchdog;
+      do {
+        reschedule.delete(id);
+        const expected = records.get(id);
+        try { await reconcileOne(id, checkWatchdog); }
+        catch (error) {
+          diagnostic('provider_recovery_observation_failed', expected, {
+            reason: typeof error?.code === 'string' && /^[a-z_]{1,80}$/.test(error.code) ? error.code : 'observation_failed',
+          });
+          if (active(records.get(id))) await attention(id, 'recovery_observation_unavailable', expected);
+        }
+        checkWatchdog = reschedule.get(id) === true;
+      } while (!draining && reschedule.has(id));
+    })().catch(() => {
       storageHealthy = false;
       diagnostic('provider_recovery_persistence_failed', records.get(id));
-    }).finally(() => pending.delete(id));
+    }).finally(() => { pending.delete(id); reschedule.delete(id); });
     pending.set(id, operation);
     return operation;
   }
@@ -351,8 +380,8 @@ export function createPrimaryRecoveryController(options) {
     if (!handshake || handshake.instanceID !== input.instanceID) throw recoveryError('recovery_owner_mismatch');
     const r = records.get(input.sessionID);
     if (!r) return { allowed: true, readOnly: false };
-    const enforcing = active() && r.providerID === 'openai';
-    if (input.action === 'scope') return { tracked: r.providerID === 'openai' || Boolean(r.guardedIDs.length),
+    const enforcing = active(r);
+    if (input.action === 'scope') return { tracked: isPrimaryRecoveryProvider(r.providerID) || Boolean(r.guardedIDs.length),
       enforced: enforcing, readOnly: Boolean(r.guardedIDs.length), agent: r.agent };
     const isGuarded = r.guardedIDs.includes(input.userMessageID);
     const currentUser = r.recoveryID ?? r.continuationID ?? r.anchorID;
@@ -461,7 +490,9 @@ export function createPrimaryRecoveryController(options) {
       } : next)
         .then(() => schedule(id)).catch(() => diagnostic('provider_recovery_persistence_failed', r));
     }
-    if (payload.type === 'message.updated' && p.info?.time?.completed) void schedule(id);
+    if (payload.type === 'message.updated' && p.info?.time?.completed
+      && p.info.role === 'assistant' && p.info.id === r.stepID
+      && p.info.parentID === (r.recoveryID ?? r.continuationID ?? r.anchorID)) return schedule(id);
   }
 
   async function reconcile() {

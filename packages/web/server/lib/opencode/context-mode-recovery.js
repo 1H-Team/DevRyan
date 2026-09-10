@@ -25,6 +25,9 @@ export function isContextModeIoerrFailureText(failureText) {
   // A deadline can include partial command output mentioning SQLite. It is
   // not evidence of a poisoned Context Mode store and must not pause the host.
   if (/^Context Mode worker: (?:TIMEOUT|CANCELLED|QUEUE_TIMEOUT|UNAVAILABLE|DISPATCH_FAILED|WORKER_EXITED|QUEUE_CAPACITY|INVALID_TIMEOUT|INVALID_REQUEST):/.test(text)) return false;
+  // A captured child failure can quote SQLite errors from the user's command.
+  // Actual indexing failures carry a separate leading header and retain recovery.
+  if (/^Execution failure(?: \([^\n]{0,100}\))?: (?:node_heap_exhausted|process_aborted|process_signal|command_failed)\n/.test(text)) return false;
   return CONTEXT_MODE_IOERR_PATTERNS.some((pattern) => pattern.test(text));
 }
 

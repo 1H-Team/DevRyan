@@ -1,8 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'bun:test';
 import {
     getAssistantMessageBottomPaddingClass,
     getAssistantMessageTopPaddingClass,
     hasRenderableAssistantContent,
+    resolveShouldShowAssistantHeader,
     shouldHideAssistantAbortArtifact,
 } from './chatMessageLayout';
 
@@ -125,5 +129,71 @@ describe('shouldHideAssistantAbortArtifact', () => {
             abortKind: 'steered',
             parts: [],
         })).toBe(false);
+    });
+});
+
+const chatMessageSource = () => readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), 'ChatMessage.tsx'),
+    'utf8',
+);
+
+const header = (overrides: Partial<Parameters<typeof resolveShouldShowAssistantHeader>[0]> = {}) => (
+    resolveShouldShowAssistantHeader({
+        isUser: false,
+        suppressAssistantHeader: false,
+        messageId: 'm1',
+        headerMessageId: 'm1',
+        streamPhase: 'completed',
+        hasStartedStreamingHeader: false,
+        ...overrides,
+    })
+);
+
+describe('resolveShouldShowAssistantHeader', () => {
+    test('draws the header once per turn, on the nominated owner', () => {
+        expect(header()).toBe(true);
+        expect(header({ messageId: 'm2' })).toBe(false);
+    });
+
+    test('never draws a header for a row whose turn paints nothing', () => {
+        // The repeated-header bug: several content-less turns each stamped their
+        // own identical "agent · model" row above empty space.
+        expect(header({ suppressAssistantHeader: true })).toBe(false);
+        // Including on the ungrouped path, which otherwise always shows one.
+        expect(header({ suppressAssistantHeader: true, headerMessageId: undefined })).toBe(false);
+    });
+
+    test('suppression never hides a user message', () => {
+        expect(header({ isUser: true, suppressAssistantHeader: true })).toBe(true);
+    });
+
+    test('keeps the live streaming placeholder header pinned once it appears', () => {
+        expect(header({ streamPhase: 'streaming' })).toBe(true);
+        expect(header({ streamPhase: 'cooldown' })).toBe(true);
+        // Not yet started: nothing to anchor.
+        expect(header({ streamPhase: 'queued', hasStartedStreamingHeader: false })).toBe(false);
+        // Already revealed: stays put through mid-turn gaps.
+        expect(header({ streamPhase: 'queued', hasStartedStreamingHeader: true })).toBe(true);
+    });
+
+    test('falls back to showing the header when no turn nominates an owner', () => {
+        expect(header({ headerMessageId: undefined })).toBe(true);
+    });
+});
+
+describe('assistant header wiring', () => {
+    test('keeps the suppression flag out of the sticky streaming latch and in the comparator', () => {
+        const source = chatMessageSource();
+
+        expect(source).toContain('if (isUser || suppressAssistantHeader || !headerMessageId');
+        expect(source).toContain('prev.suppressAssistantHeader === next.suppressAssistantHeader');
+    });
+
+    test('shares the part projection with MessageBody rather than inlining it', () => {
+        const source = chatMessageSource();
+
+        expect(source).toContain("import { projectAssistantDisplayParts } from './message/assistantRowContent';");
+        expect(source).toContain('projectAssistantDisplayParts({');
+        expect(source).not.toContain('filterVisibleParts(normalizedParts');
     });
 });

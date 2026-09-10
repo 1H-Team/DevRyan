@@ -15,6 +15,10 @@ the reviewed state matrix without entering any production bundle.
   Network scenes viewport the real `BotPolicyEditor` network/isolation fieldset
   and mark it as the keyboard-focus scope so screenshots cannot pass on a label
   while the relevant controls remain below the fold.
+- `src/assignedCatalogFetchFixture.ts`: isolated assigned-catalog HTTP and event
+  transport fixtures; recovery scenes exercise grace timing, open-without-snapshot,
+  missed/live responses, draft retention, and one active subscription through
+  the real event owner and Bot conversation.
 - `matrix.mjs`: light/dark, viewport, rail, drawer, state, and interaction matrix.
 - `electron-shell.cjs`: isolated CDP shell that loads only the loopback Vite fixture URL.
 - `electron-builder.cjs`: packages that shell separately under ignored `.cache/e2e/` for release-candidate testing.

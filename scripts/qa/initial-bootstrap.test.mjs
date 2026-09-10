@@ -127,7 +127,9 @@ test('bounded native catalog reads retry a stalled request and503 without blocki
   const origin = `http://127.0.0.1:${server.address().port}`;
   try {
     const result = await reloadQaInitialBootstrap({ cdp: cdpFor(() => ({ ...ready, origin })), cell, directory: '/owned/project',
-      cellDeadline: Date.now() + 3000, requestTimeoutMs: 30, intervalMs: 5 });
+      // Ensure the loopback server observes the deliberately stalled request
+      // before its bounded timeout, even when the host scheduler is saturated.
+      cellDeadline: Date.now() + 10_000, requestTimeoutMs: 500, intervalMs: 5 });
     assert.equal(result.outcome, 'passed');
     assert.equal(providerCalls, 3);
     assert.equal(result.catalogAttempts.length, 3);

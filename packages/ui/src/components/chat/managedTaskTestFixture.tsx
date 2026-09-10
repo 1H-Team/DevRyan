@@ -4,8 +4,10 @@ import { createStore } from 'zustand/vanilla';
 import { formatManagedTaskDisplayName } from '@openchamber/orchestration-runtime';
 import { HostElement, HostNode, withDom } from '../bots/chat/botMountedDom';
 
+const defaultTitleSessions = () => [{ id: 'ses_child', title: 'Map the Workspace' }];
+
 export const managedTitleFixture = createStore(() => ({
-  session: [{ id: 'ses_child', title: 'Map the Workspace' }],
+  session: defaultTitleSessions(),
 }));
 
 const markup = (node: HostNode): string => {
@@ -19,8 +21,17 @@ export const renderManagedTaskMarkup = async (
   element: React.ReactNode,
   tasks?: readonly { childSessionId: string | null; label: string }[],
 ): Promise<string> => {
-  if (tasks) managedTitleFixture.setState({ session: tasks.flatMap((task) => task.childSessionId
-    ? [{ id: task.childSessionId, title: formatManagedTaskDisplayName(task.label) }] : []) });
+  // This fixture is one process-wide store, so a render that supplies no tasks
+  // must start from the default rather than inheriting whatever the previous
+  // test file left behind. Without the reset, titles leaked across test files
+  // and only failed depending on bun's file ordering.
+  managedTitleFixture.setState({
+    session: tasks
+      ? tasks.flatMap((task) => (task.childSessionId
+        ? [{ id: task.childSessionId, title: formatManagedTaskDisplayName(task.label) }]
+        : []))
+      : defaultTitleSessions(),
+  });
   let result = '';
   await withDom(async (container) => {
     const { createRoot } = await import('react-dom/client');

@@ -57,7 +57,7 @@ Every probe uses `SIGKILL` for timeout termination and rejects execution errors,
 Context-mode `1.0.169` receives an exact-version/source-hash provisioning hotfix after dependency installation and before managed OpenCode starts. `context-mode-hotfix.js` removes live stale-content database unlink sweeps while retaining row cleanup and inserts the existing `checkProjectBoundary` guard ahead of `ctx_index` file/directory deny-policy checks; inline-content indexing remains unchanged. `context-mode-content-store-recovery.js` replaces a poisoned handle on the same database. Native worker failures are never replayed; non-worker compatibility callers retain the one-operation retry. An incompatible source receives one forced reinstall of the pinned dependency and then fails closed with `CONTEXT_MODE_HOTFIX_INCOMPATIBLE`; database, WAL, and SHM files are never deleted. `/api/health.contextModeAvailable` is true only after this profile is successfully provisioned on a ready managed runtime; `contextModeReadOnlyIndexing` mirrors it as a compatibility alias. External, skipped-start, configured-host, restarting, and unready runtimes remain false.
 
 The optional Superpowers bundle is registered for normal on-demand skill loading only. The adapter never injects the full `using-superpowers` body into provider requests; a missing user-installed bundle remains a non-fatal warning.
-- The managed user-profile registers the document reader and pins `@opencode-ai/plugin@1.18.29`, `adm-zip@0.6.0`, `mammoth@1.12.1`, and `unpdf@1.8.0`. These packages use the same conflict-preserving provisioning and exact installed-entrypoint validation as package-backed managed plugins; configured external runtimes are never mutated.
+- The managed user-profile registers the document reader and pins `@opencode-ai/plugin@1.18.30`, `adm-zip@0.6.0`, `mammoth@1.12.1`, and `unpdf@1.8.0`. These packages use the same conflict-preserving provisioning and exact installed-entrypoint validation as package-backed managed plugins; configured external runtimes are never mutated.
 - `packages/web/server/default-config/plugins/devryan-document-reader.mjs`: managed provider-independent attachment adapter. Its message transform replaces every non-image raw file part with bounded extracted text or a deterministic failure notice, including historical parts that would otherwise poison later turns. CSV/text, searchable PDF, DOCX, and validated ZIP entries are parsed in resource-limited workers; only extracted text is cached under the managed config root. Small documents are inlined, while large documents and verified parent-task documents are available through the session-scoped `devryan_document` list/read/search tool. Scanned PDFs require external OCR, and unrelated sessions cannot address cached documents.
 - `packages/web/server/default-config/plugins/devryan-skill-context.mjs`: same-session skill reuse, Anthropic/Grok catalog compaction, and external-reference routing adapter. Its provider-bound system transform retains every visible skill name and on-demand body while capping descriptions and removing paths/repeated loading boilerplate for Anthropic and xAI aliases.
 - `packages/web/server/lib/opencode/default-config-assets.js`: canonical allowlist for distributable defaults: root `opencode.json`, `agents/**`, runtime-filtered `plugins/**`, and sanitized `user-profile/**`. It excludes test/spec/declaration files, lockfiles, generated manifests, auth/credential/secret/log/cache/backup paths, and `node_modules`; provisioning, overlays, packaging share this policy so `default-config` is the sole source asset tree.
@@ -85,7 +85,7 @@ The optional Superpowers bundle is registered for normal on-demand skill loading
 - `packages/web/server/lib/opencode/feature-routes-runtime.js`: feature route composition runtime for dynamic import-backed config/skill/provider route registration.
 - `packages/web/server/lib/opencode/opencode-resolution-runtime.js`: OpenCode binary resolution snapshot runtime for settings routes and diagnostics.
 - `packages/web/server/lib/opencode/opencode-update-runtime.js`: Version normalization/comparison plus the bounded, success-cached canonical stable-release lookup used by About settings across web/Electron.
-- `packages/web/server/lib/opencode/version-policy.js`: Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.29 and surfaces the upstream install command. On Unix, managed startup prefers the canonical `~/.opencode/bin/opencode` installer path over PATH shadows, while explicit settings/environment overrides remain authoritative.
+- `packages/web/server/lib/opencode/version-policy.js`: Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.30 and surfaces the upstream install command. On Unix, managed startup prefers the canonical `~/.opencode/bin/opencode` installer path over PATH shadows, while explicit settings/environment overrides remain authoritative.
 - `packages/web/server/lib/opencode/tunnel-wiring-runtime.js`: tunnel service/routes composition runtime and active-port wiring for main server startup.
 - `packages/web/server/lib/opencode/startup-pipeline-runtime.js`: server startup tail orchestration runtime for terminal/proxy/static/start-listen flow.
 - `packages/web/server/lib/opencode/server-utils-runtime.js`: shared server runtime utilities for OpenCode proxy wiring, OpenCode port/readiness helpers, and snapshot fetchers.
@@ -259,6 +259,26 @@ Native Context Mode execution is gated by the exact 1.0.169 adapter/executor
 hashes in `context-mode-native-hotfix.js` and storage-source hashes in
 `context-mode-storage-hotfix.js`. All hashes are validated before writing any
 package file. Helpers/server land before the adapter activation.
+
+`context-mode-execution-hotfix.js` adds reversible pinned-source edits;
+`context-mode-execution.js` owns per-call failure capture outside intent indexing.
+Execute, execute-file and each batch command preserve bounded fatal summaries,
+actual exit/signal values and batch labels even if indexing fails. Explicit fatal
+allocation messages identify `node_heap_exhausted`; code 134 alone identifies
+`process_aborted`. Ordinary shell soft-exit semantics remain compatible. Command
+failures never replay execution or invoke storage recovery on their own.
+
+Child environments accept only one positive safe-integer `--max-old-space-size`
+setting in `NODE_OPTIONS` (`=N` or whitespace-separated `N`), reconstructed in
+canonical form. Mixed or malformed settings remain denied; absent settings retain
+Node defaults. Batch tracking combines this safe option with its owned preload.
+The safe setting participates in worker reuse identity. No larger heap default
+or automatic memory escalation is introduced.
+
+`context_mode.execution_failed` carries only bounded `failureCategory`, nullable
+`exitCode` and nullable `signal` alongside existing call correlation. Raw command,
+environment and diagnostic text are excluded from this lifecycle record; the
+bounded fatal excerpt remains in the normal tool response/journal sanitizer path.
 
 `ContextModeWorkerPool.execute()` immediately leases an idle compatible worker
 or creates another, including for overlapping calls in the same session/project.

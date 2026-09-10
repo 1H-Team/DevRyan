@@ -40,6 +40,7 @@ export type BotOperationsState = {
   actionErrorCodeById: Readonly<Record<string, string>>;
   connectionState: BotEventsConnectionState;
   connectionErrorCode: string | null;
+  connectionFailureStartedAt: number | null;
   resetPrincipal(principalId: string | null): void;
   replaceSnapshot(snapshot: OperationsSnapshot): void;
   upsertRun(run: BotRun): void;
@@ -211,7 +212,7 @@ const groupedActionIds = (
 };
 
 export const createBotOperationsStore = (
-  { api = botsApi }: { api?: BotsApi } = {},
+  { api = botsApi, now = Date.now }: { api?: BotsApi; now?: () => number } = {},
 ): BotOperationsStore => {
   let principalGeneration = 0;
   const computerViewStarts = new Map<string, Promise<BotComputerViewSession>>();
@@ -231,6 +232,7 @@ export const createBotOperationsStore = (
   actionErrorCodeById: {},
   connectionState: 'idle',
   connectionErrorCode: null,
+  connectionFailureStartedAt: null,
 
   resetPrincipal(principalId) {
     principalGeneration += 1;
@@ -265,6 +267,7 @@ export const createBotOperationsStore = (
         actionErrorCodeById: {},
         connectionState: 'idle',
         connectionErrorCode: null,
+        connectionFailureStartedAt: null,
       };
     });
   },
@@ -397,12 +400,16 @@ export const createBotOperationsStore = (
   },
 
   setConnectionState(connectionState, connectionErrorCode = null) {
-    set((state) => (
-      state.connectionState === connectionState
-      && state.connectionErrorCode === connectionErrorCode
-        ? state
-        : { connectionState, connectionErrorCode }
-    ));
+    set((state) => {
+      const connectionFailureStartedAt = ['idle', 'connected', 'unsupported'].includes(connectionState)
+        ? null
+        : state.connectionFailureStartedAt ?? (connectionErrorCode ? now() : null);
+      return state.connectionState === connectionState
+        && state.connectionErrorCode === connectionErrorCode
+        && state.connectionFailureStartedAt === connectionFailureStartedAt
+          ? state
+          : { connectionState, connectionErrorCode, connectionFailureStartedAt };
+    });
   },
 
   async cancelRun(runId) {

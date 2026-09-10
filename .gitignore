@@ -30,6 +30,7 @@ local-dev*
 .opencode/plans/*
 .hive
 .cache/
+/.tmp/
 docs/personal/*
 packages/electron/resources/bot-runtime/images.release.json
 

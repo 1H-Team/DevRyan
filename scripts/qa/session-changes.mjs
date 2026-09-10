@@ -3,17 +3,21 @@ import { execFileSync } from 'node:child_process';
 import { writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createSessionChangeHost } from '../../packages/harness-runtime/lib/session-changes-host.js';
+import { normalizeInteractionUpdateToSdkMessage } from '../../packages/cursor-sdk-runtime/interaction-update-normalize.js';
+import { mergeCursorNativeTaskActivity } from '../../packages/cursor-sdk-runtime/cursor-native-task.js';
 import { PERF_PARENT_SESSION_ID, PERF_CHILD_SESSION_IDS } from '../perf/loopback-opencode-fixture.mjs';
 import { evaluate } from './cdp.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
 
-// This host runs only before the application starts. The application subsequently
-// opens the same production private store and serves its own HTTP/SSE contract.
+// Seed the production private store, then deliver explicitly delayed evidence
+// through a separate host under its cross-process lock during isolated QA.
 export async function prepareSessionChangesQa({ fixture, directory, dataDirectory }) {
   const create = async title => fetch(`${fixture.origin}/session`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title }) }).then(r => r.json());
   const unrelated = await create('Independent writer');
   const restorable = await create('Restore verification');
   const partial = await create('Capture limitation');
+  const recovery = await create('Late receipt recovery');
+  const native = await create('Native task reconciliation');
   const host = createSessionChangeHost({ dataDirectory, buildOpenCodeUrl: pathname => `${fixture.origin}${pathname}` });
   const rows = new Map();
   let sequence = Date.now();
@@ -61,7 +65,38 @@ export async function prepareSessionChangesQa({ fixture, directory, dataDirector
     const restore = await begin(restorable.id, 'restore.txt', 'write'); await finish(restore, null, 'restorable content\n');
     const known = await begin(partial.id, 'known.txt', 'write'); await finish(known, null, 'known exact content\n');
     const opaque = await begin(partial.id, 'opaque.txt', 'bash'); await finish(opaque, null, 'opaque effects\n', false);
-    return { root: PERF_PARENT_SESSION_ID, child: PERF_CHILD_SESSION_IDS[0], unrelated: unrelated.id, restorable: restorable.id, partial: partial.id,
+    const retained = await begin(recovery.id, 'retained.txt', 'write'); await finish(retained, null, 'retained exact content\n');
+    const recoveredRows = scene(recovery.id), recoveredMessageID = recoveredRows[1].info.id;
+    const late = { id: `prt_late_${++sequence}`, sessionID: recovery.id, messageID: recoveredMessageID, type: 'tool', callID: `late_${sequence}`, tool: 'edit',
+      state: { status: 'completed', input: { filePath: 'recovered.txt' }, output: 'File updated', time: { start: sequence, end: sequence + 1 } } };
+    recoveredRows[1].parts.push(late); replay(recovery.id);
+    await host.plugin({ action: 'after', sessionID: recovery.id, directory, callID: late.callID });
+
+    const nativeRows = scene(native.id), nativeMessageID = nativeRows[1].info.id;
+    nativeRows[1].info.providerID = 'cursor-acp';
+    const nativeIdentity = { sessionID: native.id, directory, messageID: nativeMessageID, userMessageID: nativeRows[0].info.id };
+    const taskID = `task_${++sequence}`;
+    await host.acceptExecution({ ...nativeIdentity, phase: 'tool', callID: taskID, tool: 'task', state: 'running' });
+    let projection;
+    for (let i = 1; i <= 28; i++) {
+      const file = `native-${String(i).padStart(2, '0')}.txt`;
+      const patch = `--- a/${file}\n+++ b/${file}\n@@ -1 +1 @@\n-old\n+${i === 28 ? 'long-native-edit-'.repeat(400) : `native edit ${i}`}\n`;
+      const message = normalizeInteractionUpdateToSdkMessage({ type: 'tool-call-delta', callId: taskID,
+        taskUpdate: { type: 'tool-call-completed', callId: `edit_${i}`, toolCall: { type: 'edit', args: { path: file }, result: { status: 'success', value: { diffString: patch } } } } });
+      await host.acceptExecution({ ...nativeIdentity, ...message.sessionChange });
+      projection = mergeCursorNativeTaskActivity(projection, message);
+    }
+    assert.equal(projection.entries.length, 24);
+    await host.acceptExecution({ ...nativeIdentity, phase: 'tool', callID: taskID, tool: 'task', state: 'completed' });
+    nativeRows[1].parts.push({ id: `prt_${taskID}`, sessionID: native.id, messageID: nativeMessageID, type: 'tool', callID: taskID, tool: 'task',
+      state: { status: 'completed', input: { prompt: 'Update 28 files.' }, output: 'Updated 28 files.', metadata: { cursorNativeTask: projection }, time: { start: sequence, end: sequence + 1 } } });
+    replay(native.id);
+    return { root: PERF_PARENT_SESSION_ID, child: PERF_CHILD_SESSION_IDS[0], unrelated: unrelated.id, restorable: restorable.id, partial: partial.id, recovery: recovery.id, native: native.id,
+      repairLateReceipt: async () => {
+        late.state.metadata = { filediff: { file: 'recovered.txt', before: null, after: 'recovered exact content\n' } };
+        replay(recovery.id);
+      },
+      settleNative: async () => { await host.acceptExecution({ ...nativeIdentity, phase: 'run-settled' }); await host.drain(); },
       setStatus: (id, status) => replay(id, status),
       appendLiveEdit: async (id, file, before, after) => {
         const records = scene(id), messageID = records[1].info.id, callID = `call_changes_live_${++sequence}`;
@@ -101,6 +136,34 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
     assert.equal((await summary(prepared.unrelated)).fileCount, 2);
     assert.equal((await summary(prepared.root)).fileCount, 4);
     await screenshot('changes-live-independent-receipt');
+  });
+  await check('a late exact receipt clears only its repaired error without reloading', async () => {
+    await select(prepared.recovery);
+    await ui.waitExpression('recoverable capture error', `document.querySelector('${card}')?.textContent.includes('A tool did not provide a complete record')`);
+    assert.match(await cardText(), /retained.txt/);
+    await screenshot('changes-before-late-recovery');
+    await prepared.repairLateReceipt();
+    await ui.waitExpression('late receipt settled in card', `document.querySelector('${card}')?.textContent.includes('recovered.txt') && !document.querySelector('${card}')?.textContent.includes('A tool did not provide a complete record')`);
+    assert.equal((await summary(prepared.recovery)).coverage, 'complete');
+    await screenshot('changes-after-late-recovery');
+  });
+  await check('native receipts exceed preview limits and pending coverage automatically settles', async () => {
+    await select(prepared.native);
+    await ui.waitExpression('pending native reconciliation', `document.querySelector('${card}')?.textContent.includes('Loading session changes')`);
+    const pending = await summary(prepared.native);
+    assert.equal(pending.fileCount, 28); assert.equal(pending.reconciliationState, 'pending');
+    assert.equal(pending.restoreAvailable, false);
+    await screenshot('changes-native-pending');
+    // No UI event is published for this delayed commit: subscribed backoff must
+    // discover settlement on its own.
+    await prepared.settleNative();
+    await ui.waitExpression('native reconciliation settled', `document.querySelector('${card}')?.textContent.includes('28 files') && !document.querySelector('${card}')?.textContent.includes('Loading session changes')`);
+    const settled = await summary(prepared.native);
+    assert.equal(settled.coverage, 'complete'); assert.equal(settled.reconciliationState, 'settled'); assert.equal(settled.restoreAvailable, false);
+    const diff = await evaluate(cdp, `fetch('/api/openchamber/session/${prepared.native}/changes/diff?directory='+encodeURIComponent(${JSON.stringify(directory)})+'&revision=${settled.revision}&file=native-28.txt&segment=0').then(r=>r.json())`);
+    assert.ok(diff.patch.includes('long-native-edit-'.repeat(400)));
+    await screenshot('changes-native-settled');
+    result.checkpoints.push({ name: 'native', fileCount: settled.fileCount, coverage: settled.coverage, previewRows: 24 });
   });
   const exerciseRestore = async prefix => {
     await select(prepared.restorable);
@@ -162,7 +225,8 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
         await select(prepared.partial);
         const value = await summary(prepared.partial);
         assert.deepEqual(value.files.map(file => file.path), ['known.txt']); assert.equal(value.coverage, 'partial');
-        await ui.waitExpression('capture warning', `document.querySelector('${card}')?.textContent.includes('could not be verified for this session')`);
+        await ui.waitExpression('specific missing execution evidence', `document.querySelector('${card}')?.textContent.includes('A tool did not provide a complete record of its file edits')`);
+        assert.doesNotMatch(await cardText(), /could not be verified for this session/);
         await screenshot(`${prefix}-capture-limitation`);
       });
       await check(`${prefix}: Undo and Redo controls`, () => exerciseRestore(prefix));

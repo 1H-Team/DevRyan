@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import simpleGit from 'simple-git';
 import { createRecordStore } from '@openchamber/harness-runtime';
+import { collectCommitMessageContext } from './commit-message-context.js';
 
 import {
   applyHunk,
@@ -12,6 +13,7 @@ import {
   commit,
   configureWorktreeBootstrapRuntime,
   getBranches,
+  getDiff,
   getLog,
   getRemotes,
   getRemoteUrl,
@@ -218,6 +220,32 @@ describe('file staging', () => {
     await git.commit('initial commit');
     return { directory, git };
   };
+
+  it('collects commit context for tracked and multiple new files without changing the index', async () => {
+    const { directory, git } = await createRepo();
+    await writeFile(join(directory, 'tracked.txt'), 'staged content\n');
+    await git.add('tracked.txt');
+    await writeFile(join(directory, 'tracked.txt'), 'unstaged content\n');
+    await writeFile(join(directory, 'new-a.ts'), 'export const first = true;\n');
+    await writeFile(join(directory, 'new-b.ts'), 'export const second = true;\n');
+    await writeFile(join(directory, 'unselected.ts'), 'must not enter the prompt\n');
+    const indexBefore = await readFile(join(directory, '.git', 'index'));
+    const dependencies = { directory, getStatus, getLog, getDiff };
+    const result = await collectCommitMessageContext({
+      ...dependencies, selectedFiles: ['tracked.txt', 'new-a.ts', 'new-b.ts'],
+    });
+    expect(result.context.patch).toContain('+export const first = true;');
+    expect(result.context.patch).toContain('+export const second = true;');
+    expect(result.context.patch).toContain('+staged content');
+    expect(result.context.patch).toContain('+unstaged content');
+    expect(result.context.patch).not.toContain('must not enter the prompt');
+    const staged = await collectCommitMessageContext({
+      ...dependencies, selectedFiles: ['tracked.txt'], stagedOnly: true,
+    });
+    expect(staged.context.patch).toContain('+staged content');
+    expect(staged.context.patch).not.toContain('unstaged content');
+    expect(await readFile(join(directory, '.git', 'index'))).toEqual(indexBefore);
+  });
 
   it('stages and unstages a modified file', async () => {
     const { directory } = await createRepo();

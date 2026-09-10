@@ -39,6 +39,8 @@ describe('Cursor native task activity', () => {
         status: 'running',
         args: { path: 'src/main.ts' },
       },
+      sessionChange: { phase: 'tool', callID: 'nested-read', parentCallID: 'parent-task', tool: 'read',
+        state: 'running', path: 'src/main.ts', metadata: {} },
     });
 
     expect(normalizeInteractionUpdateToSdkMessage({
@@ -60,7 +62,7 @@ describe('Cursor native task activity', () => {
     });
   });
 
-  test('drops malformed and deeper nested task activity', () => {
+  test('keeps deeper tool gaps private and drops activity without a parent identity', () => {
     expect(normalizeInteractionUpdateToSdkMessage({
       type: 'tool-call-delta',
       callId: 'parent-task',
@@ -69,7 +71,7 @@ describe('Cursor native task activity', () => {
         callId: 'deeper-task',
         taskUpdate: { type: 'text-delta', text: 'hidden' },
       },
-    })).toBeNull();
+    })).toEqual({ type: 'session_change', sessionChange: { phase: 'stream-gap', callID: 'parent-task' } });
     expect(normalizeInteractionUpdateToSdkMessage({
       type: 'tool-call-delta',
       taskUpdate: { type: 'text-delta', text: 'missing parent' },

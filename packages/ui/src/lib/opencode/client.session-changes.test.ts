@@ -23,6 +23,15 @@ test('review mode survives parsing and legacy/incomplete summaries cannot author
   expect(recorded.totalsMode).toBe('recorded');
 });
 
+test('reconciliation status supports pending and settled responses and older servers', () => {
+  expect(parseSessionTreeChanges({ ...summary, attributionVersion: 3, reconciliationState: 'settled' }))
+    .toMatchObject({ reconciliationState: 'settled', restoreAvailable: true });
+  expect(parseSessionTreeChanges({ ...summary, reconciliationState: 'pending' }))
+    .toMatchObject({ reconciliationState: 'pending', restoreAvailable: false });
+  expect(parseSessionTreeChanges({ ...summary, coverage: 'partial', reasons: ['capture_pending'] }).reconciliationState).toBe('pending');
+  expect(parseSessionTreeChanges(summary).reconciliationState).toBe('settled');
+});
+
 test('diff requests retain cursor and segment identity and reject mismatched server responses', async () => {
   const urls: URL[] = [];
   const body = { rootSessionID: 'root', revision: 'revision', path: 'a.txt', patch: '+own edit\n', pageIndex: 0,

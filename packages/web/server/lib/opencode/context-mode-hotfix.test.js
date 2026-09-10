@@ -18,6 +18,7 @@ import {
   isRecoverableContextModeStoreError,
 } from './context-mode-content-store-recovery.js';
 import { NATIVE_EXECUTE_ORIGINAL, patchNativeServerSource } from './context-mode-native-hotfix.js';
+import { EXECUTION_SERVER_EDITS, EXECUTION_EXECUTOR_EDITS, normalizeExecutionSource } from './context-mode-execution-hotfix.js';
 import { STORAGE_PATCHES } from './context-mode-storage-hotfix.js';
 
 const ORIGINAL_PLUGIN_SOURCE = NATIVE_EXECUTE_ORIGINAL;
@@ -124,6 +125,21 @@ describe('context-mode provisioning hotfix', () => {
     expect(recoverySource).toContain('isRecoverableContextModeStoreError');
     expect(recoveryModule.isRecoverableContextModeStoreError(new Error('disk I/O error'))).toBe(true);
     expect(patchNativeServerSource(transformContextModeServerSource(ORIGINAL_SERVER_SOURCE))).toBe(patched);
+  });
+
+  it('upgrades the previous native hotfix without changing normalized upstream hashes', () => {
+    const configDirectory = createFixture();
+    const options = { configDirectory, expectedOriginalSha256: sha256(ORIGINAL_SERVER_SOURCE),
+      expectedPluginSha256: sha256(ORIGINAL_PLUGIN_SOURCE), expectedExecutorSha256: sha256(ORIGINAL_EXECUTOR_SOURCE), expectedStorageSha256 };
+    expect(applyContextModeHotfix(options).ok).toBe(true);
+    const build = path.join(configDirectory, 'node_modules/context-mode/build');
+    for (const [file, edits] of [['server.js', EXECUTION_SERVER_EDITS], ['executor.js', EXECUTION_EXECUTOR_EDITS]]) {
+      const target = path.join(build, file);
+      fs.writeFileSync(target, normalizeExecutionSource(fs.readFileSync(target, 'utf8'), edits));
+    }
+    fs.rmSync(path.join(build, 'context-mode-execution.js'));
+    expect(applyContextModeHotfix(options)).toMatchObject({ ok: true, changed: true });
+    expect(applyContextModeHotfix(options)).toMatchObject({ ok: true, changed: false });
   });
 
   it('checks every file or directory path before deny policy and leaves inline content alone', async () => {

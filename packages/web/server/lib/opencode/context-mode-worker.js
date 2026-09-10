@@ -117,7 +117,8 @@ receive = async (request) => {
         }
       } });
     const result = await calls.run({ id: call.id, sessionId: request.sessionId, projectDir: request.projectDir, signal: call.controller.signal, deadline,
-      onTimeout: () => { call.timedOut = true; }, remainingMs, storage },
+      onTimeout: () => { call.timedOut = true; },
+      onExecutionFailure: (failure) => parentPort.postMessage({ type: 'execution_failure', id: call.id, ...failure }), remainingMs, storage },
     () => mod.withProjectDirOverride({ projectDir: request.projectDir, sessionId: request.sessionId }, async () => {
       const prepared = await new Promise((resolve, reject) => {
         call.prepared = resolve;

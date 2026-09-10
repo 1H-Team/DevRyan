@@ -38,11 +38,11 @@ export function createQaNaturalInvestigationPrompt(boundaryIndex) {
     + 'Do not start other tasks, repeat a previous investigation, rewrite the saved plan, change todos, or modify project files. Preserve the implementation pause.';
 }
 
-// OpenCode 1.18.29's native Is/Dl and maxOutputTokens functions, verified
+// OpenCode 1.18.30's native Is/Dl and maxOutputTokens functions, verified
 // against the pinned executable. Input limits take precedence over context.
 // This projects the existing policy; it never writes config or model limits.
 export function deriveQaNativeCompactionPolicy({ version, modelLimits, compaction, outputTokenMax }) {
-  assert.equal(version, '1.18.29', 'Natural threshold evidence requires the verified OpenCode version');
+  assert.equal(version, '1.18.30', 'Natural threshold evidence requires the verified OpenCode version');
   assert.ok(numeric(modelLimits?.context) && numeric(modelLimits?.output), 'Native model limits are unavailable');
   assert.notEqual(compaction?.auto, false, 'Native automatic compaction is disabled');
   assert.ok(modelLimits.context > 0, 'The selected model has no native context threshold');
@@ -55,7 +55,7 @@ export function deriveQaNativeCompactionPolicy({ version, modelLimits, compactio
   const usesInputLimit = !!modelLimits.input;
   const threshold = Math.max(0, usesInputLimit ? modelLimits.input - reserved : modelLimits.context - maximumOutput);
   assert.ok(threshold > 0, 'A positive natural compaction threshold is required');
-  return { version, source: 'verified-native-1.18.29-policy', modelLimits, maximumOutput, reserved,
+  return { version, source: 'verified-native-1.18.30-policy', modelLimits, maximumOutput, reserved,
     automatic: compaction?.auto ?? 'native-default', configuredReserved: compaction?.reserved ?? null,
     configuredOutputTokenMax: outputTokenMax === undefined || outputTokenMax === '' ? null : configuredMax,
     threshold, thresholdBasis: usesInputLimit ? 'input-minus-reserved' : 'context-minus-maximum-output' };

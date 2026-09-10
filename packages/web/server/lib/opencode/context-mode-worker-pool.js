@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { safeNodeHeapOption } from './context-mode-execution.js';
 import { isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execFile, execFileSync } from 'node:child_process';
@@ -70,10 +71,10 @@ export class ContextModeWorkerPool {
     this.closed = false;
   }
 
-  emit(call, phase) {
+  emit(call, phase, failure = {}) {
     if (!call) return;
     try {
-      this.onEvent({ phase, sessionID: call.sessionId, callID: call.callId, messageID: call.messageId, workerCallID: call.id,
+      this.onEvent({ ...failure, phase, sessionID: call.sessionId, callID: call.callId, messageID: call.messageId, workerCallID: call.id,
         tool: call.name, sequence: (call.sequence = (call.sequence || 0) + 1), sourceAt: Date.now(), elapsedMs: Math.max(0, Math.round(performance.now() - call.createdAt)), budgetMs: call.budget });
     } catch { /* Diagnostics cannot prevent settlement. */ }
   }
@@ -105,7 +106,7 @@ export class ContextModeWorkerPool {
       budget = args.timeout;
     }
     const scope = JSON.stringify([projectDir, env.CONTEXT_MODE_DIR, env.CONTEXT_MODE_DATA_DIR, env.OPENCODE_CONFIG_DIR,
-      env.OPENCHAMBER_DATA_DIR, env.XDG_CONFIG_HOME, env.XDG_DATA_HOME, env.XDG_STATE_HOME, env.XDG_CACHE_HOME, env.HOME]);
+      env.OPENCHAMBER_DATA_DIR, env.XDG_CONFIG_HOME, env.XDG_DATA_HOME, env.XDG_STATE_HOME, env.XDG_CACHE_HOME, env.HOME, safeNodeHeapOption(env.NODE_OPTIONS)]);
     const effectiveArgs = EXECUTION_TOOLS.has(name) ? { ...args, timeout: budget } : args;
     try { JSON.stringify(effectiveArgs); }
     catch { return reject('INVALID_REQUEST', `arguments are not serializable. ${NOT_EXECUTED}`); }
@@ -229,6 +230,11 @@ export class ContextModeWorkerPool {
     if (message.type === 'stats' && !call.statsRecorded) {
       call.statsRecorded = true;
       this.state.update(slot, message.delta, message);
+      return;
+    }
+    if (message.type === 'execution_failure') {
+      const { failureCategory, exitCode, signal } = message;
+      this.emit(call, 'execution_failed', { failureCategory, exitCode, signal });
       return;
     }
     if (message.type === 'phase' && ['initializing', 'executing', 'storage_contended', 'storage_acquired'].includes(message.phase)) {

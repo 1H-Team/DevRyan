@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-10
+
+- Session changes: reconcile delayed and interrupted capture evidence, retain stronger exact receipts and native Cursor task diffs, and keep incomplete or conflicting changes unavailable for Undo while recoverable states remain retryable.
+- Internal groundwork: add an unexported concurrent-revert mutation engine and disposable tests. Production Revert, Undo, and Redo retain their existing contracts; private execution isolation and conversation rollback integration are not enabled.
+- Provider recovery: recognize verified OpenAI and Anthropic upstream-timeout envelopes, reconcile finalized assistant errors that arrive without a session error, keep unresolved tool outcomes manual, and extend isolated runtime conformance to OpenCode 1.18.30. Automatic Claude recovery remains disabled pending production transport and tool conformance.
+- Context Mode: preserve indexed failure output, separate command crashes from indexing failures, isolate explicit Node heap limits, and add deterministic recovery coverage for execute, execute-file, and batch paths.
+- Orchestration: hold parent autoresume while delegated children are active, deduplicate streamed subtask dispatches, and reset resume budgets only at real work-cycle boundaries.
+- Managed orchestration: preserve write-once child progress across delayed snapshots and reconcile latest and recoverable child attempts deterministically without replacing unaffected state.
+- Chat: suppress duplicate assistant headers for empty managed-task rows, promote the header to the first visible assistant row, and refine session-change recovery and provider-error presentation.
+- Settings and tools: keep agent catalog and override responses scoped to their originating project, preserve unchanged catalog references, and hide generic Context Mode sandbox descriptions that do not explain the active operation.
+- Quality: add focused package, runtime, native Cursor, web, Electron, and visual evidence for recovery, concurrent revert, assistant-row, and context-worker behavior.
+- Database: deploy and verify all repository migrations and the required Production Bots schema marker before release publication.
+- Release: update all DevRyan package and desktop metadata to 1.2.1.
+
 ## [1.2.0] - 2026-09-09
 
 - Session changes: attribute files to exact execution receipts and verified descendants, exclude independent and external writes, preserve recorded edit segments, and keep conflict-safe Undo and Redo available only when evidence is complete.

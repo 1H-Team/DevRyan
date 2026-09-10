@@ -885,7 +885,9 @@ describe('DevRyan loopback evaluation client', () => {
         directory: '/tmp/fixture',
         selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
         prompt: 'in-memory prompt',
-        timeoutMs: 25,
+        // Leave enough headroom for loopback session creation on a loaded host;
+        // the permanently busy status still forces the timeout and cleanup path.
+        timeoutMs: 500,
       }),
       (error) => {
         assert.ok(error instanceof EvaluationTimeoutError);

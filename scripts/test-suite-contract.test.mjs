@@ -18,7 +18,6 @@ describe('full test-suite contract', () => {
     assert.ok(files.includes('scripts/verify-release-assets.test.mjs'));
     assert.ok(files.includes('scripts/verify-bot-runtime-images.test.mjs'));
     assert.ok(files.includes('scripts/test-suite-contract.test.mjs'));
-    assert.ok(files.includes('.opencode/agents/design-routing.test.mjs'));
     assert.deepEqual(files, [...files].sort());
   });
 

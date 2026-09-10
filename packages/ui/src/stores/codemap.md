@@ -6,6 +6,7 @@ Zustand store layer for persisted and session-local client state: UI preferences
 ## Design
 - **Store-per-domain**: each feature has a focused store (`useUIStore`, `useConfigStore`, `useGitStore`, `useSkillsStore`, etc.) to limit cross-feature coupling.
 - **Draft selection after catalog refresh**: `useConfigStore.loadAgents` uses the session UI store's existing `restoreLiveConfigForSelectedDraft` resolver after the active directory's catalog settles. Draft agent/model/thinking controls therefore match send-time selection even if the user changed drafts or controls during the request.
+- **Agent settings reconciliation**: `useAgentsStore.ts` applies model override save/reset responses only to the captured directory's config catalog and reapplies the active agent only when that directory is still active. Late responses cannot replace another directory's visible settings catalog. Catalog refreshes compare complete normalized records against current state, preserving unchanged agents, arrays, and other directory snapshots.
 - **Managed project projection**: `useProjectsStore.ts` treats the accepted managed principal's assignment list as authoritative immediately at principal acceptance and again during settings hydration. It groups assigned branches by project, replaces stale host-path projects with public `/projects/*` entries, and selects the default assignment before app effects mount. Git-integrate temp directories (`devryan-integrate-*`) are ignored by `addProject` and stripped during settings sanitization so leftover conflict worktrees cannot reappear in the admin sidebar.
 - **Managed account defaults**: `useConfigStore.ts` keeps sparse per-agent
   model/thinking overrides account-global, reports personal override keys from
@@ -55,11 +56,15 @@ Zustand store layer for persisted and session-local client state: UI preferences
 
 ## Session change cache
 
-`useSessionTreeChangesStore.ts` keys summaries by runtime URL, principal, directory and root session. It checks response identity, cancels obsolete generations, retains rich fields during refresh, and bounds entries by count and bytes. The cache holds the first bounded file page plus total count and revision-bound cursors; additional review pages stay local to the card. Repository polling cannot replace captured revisions; explicit capture notifications and session lifecycle edges refresh them. Auth changes, deletion and directory disposal invalidate caches.
+`useSessionTreeChangesStore.ts` keys summaries by runtime URL, principal, directory and root session. It checks response identity, cancels obsolete generations, retains rich fields during refresh, and bounds entries by count and bytes. The cache holds the first bounded file page plus total count and revision-bound cursors; additional review pages stay local to the card. Pending reconciliation retains recorded files and retries only while subscribed, with backoff capped at ten seconds; settlement and unsubscribe clear the timer. Repository polling cannot replace captured revisions; explicit capture notifications and session lifecycle edges refresh them. Auth changes, deletion and directory disposal invalidate caches.
 
 - `useBotsStore.ts` tracks assigned-catalog readiness independently of capabilities. HTTP loads are invalidated by live catalog changes, principal resets, and owner disposal; successful snapshots preserve unchanged entity references and settle catalog readiness.
 
 The managed orchestration store validates optional `transportRecovery` receipts,
 rejects regressing revisions, and preserves row references for identical updates.
+Established prompt/activity timestamps are write-once per task attempt, including
+zero; stale snapshots can advance status without clearing that progress. Both
+child indexes are reconciled in one traversal for all affected children, skipping
+progress-only updates and retaining unchanged index references.
 The auto-resume trigger distinguishes the single-backup connection policy from
 existing quota-reset recovery.

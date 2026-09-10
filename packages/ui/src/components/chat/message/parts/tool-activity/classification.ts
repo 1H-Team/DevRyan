@@ -169,6 +169,22 @@ export const normalizeToolName = (toolName: unknown): string => {
     return TOOL_NAME_ALIASES.get(normalized) ?? normalized;
 };
 
+const isContextModeToolName = (toolName: unknown): boolean => {
+    const normalized = normalizeToolName(toolName);
+    return /^(?:ctx_.+|mcp__context_mode__.+)$/.test(normalized);
+};
+
+export const getToolDescriptionForDisplay = (toolName: unknown, description: unknown): string => {
+    if (typeof description !== 'string') return '';
+    if (
+        isContextModeToolName(toolName)
+        && /^Run code in a sandbox\b/i.test(description.trimStart())
+    ) {
+        return '';
+    }
+    return description;
+};
+
 export const getToolDescriptionFallback = (
     toolName: unknown,
     {
@@ -191,7 +207,7 @@ export const getToolDescriptionFallback = (
     }
 
     const description = input?.description || metadata?.description || title || '';
-    return typeof description === 'string' ? description : '';
+    return getToolDescriptionForDisplay(toolName, description);
 };
 
 const getToolDescriptionFallbackForPart = (part: ToolPart): string => {

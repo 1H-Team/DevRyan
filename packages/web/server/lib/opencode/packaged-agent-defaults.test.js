@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 36_244;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 38_724;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -144,7 +144,7 @@ describe('packaged agent defaults', () => {
     expect(orchestrator.body).toContain('Orchestrator owns the grounded design approach and decision-complete implementation brief.');
     expect(orchestrator.body).toContain('Designer owns the approved design implementation end to end');
     expect(orchestrator.body).toContain('route that work back to Designer in normal mode');
-    expect(orchestrator.body).toContain('UI correctness bugs with no visual judgment route to `fixer`.');
+    expect(orchestrator.body).toContain('UI correctness bugs and UI behavior changes with no open visual decision route to `fixer`');
     expect(orchestrator.body).toContain('For mixed work, create disjoint scopes');
     expect(orchestrator.body).toContain('If Designer remains unavailable after the existing managed recovery, report the blocker');
     expect(orchestrator.body).toContain('Orchestrator owns design-change planning in plan mode.');

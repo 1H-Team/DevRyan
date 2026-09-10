@@ -10,7 +10,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 const timeout = { name: 'UnknownError', data: { message: 'The operation timed out.' } };
 const identity = { sessionID: 'ses_test', userMessageID: 'msg_user', assistantMessageID: 'msg_failed', instanceID: 'runtime-test' };
 
-async function fixture(overrides = {}) {
+async function fixture(overrides = {}, providerID = 'openai') {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-recovery-'));
   cleanups.push(() => fs.rm(directory, { recursive: true, force: true }));
   let time = 10_000;
@@ -31,7 +31,7 @@ async function fixture(overrides = {}) {
   cleanups.push(() => controller.drain());
   await controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version: '1.18.25' });
   await controller.admit({ sessionID: identity.sessionID, directory: '/project', primary: true,
-    body: { messageID: 'msg_user', agent: 'orchestrator', model: { providerID: 'openai', modelID: 'gpt-5.6-sol' }, variant: 'xhigh' } });
+    body: { messageID: 'msg_user', agent: 'orchestrator', model: { providerID, modelID: providerID === 'anthropic' ? 'claude-opus-5' : 'gpt-5.6-sol' }, variant: 'xhigh' } });
   let requestHook;
   const fail = async () => {
     const r = await controller.readRecord(identity.sessionID);
@@ -48,19 +48,20 @@ describe('failure classification', () => {
     expect(classifyPrimaryTransportError(timeout, '1.18.26')?.source).toBe('opencode_1.18.26_compatibility');
     expect(classifyPrimaryTransportError(timeout, '1.18.27')?.source).toBe('opencode_1.18.27_compatibility');
     expect(classifyPrimaryTransportError(timeout, '1.18.29')?.source).toBe('opencode_1.18.29_compatibility');
-    expect(classifyPrimaryTransportError(timeout, '1.18.30')).toBeNull();
+    expect(classifyPrimaryTransportError(timeout, '1.18.30')?.source).toBe('opencode_1.18.30_compatibility');
+    expect(classifyPrimaryTransportError(timeout, '1.18.31')).toBeNull();
     expect(classifyPrimaryTransportError(timeout, undefined)).toBeNull();
     expect(classifyPrimaryTransportError({ name: 'UnknownError', message: 'request timeout' }, '1.18.25')).toBeNull();
     expect(classifyPrimaryTransportError({ name: 'UnknownError', message: 'request timeout' }, '1.18.26')).toBeNull();
   });
   test('allow-lists only verified OpenCode versions for enforcement', async () => {
-    expect([...PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS]).toEqual(['1.18.25', '1.18.26', '1.18.27', '1.18.29']);
+    expect([...PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS]).toEqual(['1.18.25', '1.18.26', '1.18.27', '1.18.29', '1.18.30']);
     const f = await fixture();
     const hello = (version) => f.controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version });
     expect((await hello('1.18.26')).supported).toBe(true);
     expect((await hello('1.18.27')).supported).toBe(true);
-    expect((await hello('1.18.29')).supported).toBe(true);
-    expect((await hello('1.18.30')).supported).toBe(false);
+    expect((await hello('1.18.30')).supported).toBe(true);
+    expect((await hello('1.18.31')).supported).toBe(false);
     expect((await hello('1.18.25')).supported).toBe(true);
   });
   test.each(['AuthenticationError', 'QuotaError', 'CertificateError', 'ModelNotFoundError', 'AbortError', 'PolicyError'])(
@@ -200,11 +201,11 @@ test('progress resets the clock; repeated busy and accounting events do not', as
   f.advance(1); await f.controller.reconcile(); expect(f.aborted).toHaveLength(1);
 });
 
-test('unresolved tool and non-finalized message prevent dispatch', async () => {
+test('unresolved tool on a finalized failure prevents dispatch', async () => {
   const f = await fixture();
   f.state.messages.at(-1).parts.push({ type: 'tool', state: { status: 'error' } });
   await f.fail(); expect(f.sent).toHaveLength(0);
-  expect((await f.snapshot()).record.reason).toBe('provider_stop_unconfirmed');
+  expect((await f.snapshot()).record.reason).toBe('recovery_tool_outcome_unknown');
 });
 
 test('unobservable pending tool arguments are not mistaken for execution or a confirmed stall', async () => {
@@ -255,8 +256,8 @@ test('managed continuation and primary recovery share the admission boundary', a
   expect(f.sent).toHaveLength(1);
 });
 
-test('rollback keeps accepted recovery read-only after restart', async () => {
-  const f = await fixture(); await f.fail(); await f.controller.drain();
+test.each(['openai', 'anthropic'])('rollback keeps accepted recovery read-only after restart (%s)', async (providerID) => {
+  const f = await fixture({ isAnthropicConformant: () => true }, providerID); await f.fail(); await f.controller.drain();
   f.state.messages.push({ info: { id: 'msg_recovery', role: 'user' }, parts: [] },
     { info: { id: 'msg_recovered', role: 'assistant', parentID: 'msg_recovery', time: {} }, parts: [] });
   const restarted = createPrimaryRecoveryController({ directory: f.directory, mode: 'off', isManaged: () => true,
@@ -271,25 +272,25 @@ test('rollback keeps accepted recovery read-only after restart', async () => {
   expect((await restarted.getSnapshot(identity.sessionID)).record.attemptCount).toBe(1);
 });
 
-test('read-only guard blocks mutation, browser, delegation, and unknown MCP', async () => {
+test.each(['openai', 'anthropic'])('read-only guard blocks mutation, browser, delegation, and unknown MCP (%s)', async (providerID) => {
   for (const tool of ['bash', 'write', 'edit', 'browser', 'devryan_task', 'mcp_unknown']) {
-    const f = await fixture(); await f.fail();
+    const f = await fixture({ isAnthropicConformant: () => true }, providerID); await f.fail();
     await expect(f.controller.plugin({ action: 'tool_before', ...identity, userMessageID: 'msg_recovery', callID: 'call', tool }))
       .rejects.toThrow('recovery requires user action');
     expect((await f.snapshot()).record.attemptCount).toBe(1);
   }
 });
 
-test('Stop fences stale events and plugin requests', async () => {
-  const f = await fixture();
+test.each(['openai', 'anthropic'])('Stop fences stale events and plugin requests (%s)', async (providerID) => {
+  const f = await fixture({ isAnthropicConformant: () => true }, providerID);
   await f.controller.control(identity.sessionID, 'stop'); await f.fail();
   await expect(f.controller.plugin({ action: 'step', ...identity })).rejects.toThrow('fenced');
   expect((await f.snapshot()).record.state).toBe('cancelled'); expect(f.sent).toHaveLength(0);
 });
 
-test('ambiguous POST is never retried, including after restart', async () => {
+test.each(['openai', 'anthropic'])('ambiguous POST is never retried, including after restart (%s)', async (providerID) => {
   let posts = 0;
-  const f = await fixture({ promptSession: async () => { posts++; throw new Error('ack lost'); } });
+  const f = await fixture({ isAnthropicConformant: () => true, promptSession: async () => { posts++; throw new Error('ack lost'); } }, providerID);
   await f.fail(); await f.controller.reconcile(); await f.controller.drain();
   const restarted = createPrimaryRecoveryController({ directory: f.directory, mode: 'enforce', isManaged: () => true,
     observeTurn: async () => f.state, authorize: async () => true, promptSession: async () => { posts++; } });
@@ -335,4 +336,152 @@ test('corrupt persisted tool permissions cannot weaken the guard after restart',
   const restarted = createPrimaryRecoveryController({ directory: f.directory, isManaged: () => true });
   await restarted.initialize(); cleanups.push(() => restarted.drain());
   await expect(restarted.plugin({ action: 'hello', instanceID: 'new', version: '1.18.25', policyVersion: 1 })).rejects.toThrow('storage unavailable');
+});
+
+const upstreamTimeout = { name: 'UnknownError', data: { message: '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms"}' } };
+
+async function claudeFixture(overrides = {}) {
+  const f = await fixture({ isAnthropicConformant: () => true, ...overrides }, 'anthropic');
+  f.state.messages.at(-1).info.error = upstreamTimeout;
+  await f.controller.plugin({ action: 'step', ...identity });
+  f.finalize = () => f.controller.observe({ type: 'message.updated', properties: { info: structuredClone(f.state.messages.at(-1).info), sessionID: identity.sessionID } });
+  return f;
+}
+
+test('Claude exact envelope requires a verified runtime and excludes ambiguous errors', () => {
+  expect(classifyPrimaryTransportError(upstreamTimeout, '1.18.29')).toEqual({ kind: 'chunk_timeout', source: 'upstream_timeout_envelope' });
+  for (const message of ['upstream_timeout', '{"type":"upstream_timeout"}', '{"type":"upstream_timeout","message":"request timeout"}', '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms"', '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms auth failed"}']) {
+    expect(classifyPrimaryTransportError({ name: 'UnknownError', data: { message } }, '1.18.29')).toBeNull();
+  }
+  expect(classifyPrimaryTransportError(upstreamTimeout, '1.18.31')).toBeNull();
+  expect(classifyPrimaryTransportError({ ...upstreamTimeout, statusCode: 401 }, '1.18.29')).toBeNull();
+});
+
+test('Claude message-only terminal error recovers once with the original selection and tool guards', async () => {
+  const f = await claudeFixture();
+  await Promise.all([f.finalize(), f.finalize()]);
+  expect(f.sent).toHaveLength(1);
+  expect(f.sent[0]).toMatchObject({ model: { providerID: 'anthropic', modelID: 'claude-opus-5' }, variant: 'xhigh', tools: { '*': false, read: true } });
+  await expect(f.controller.plugin({ action: 'tool_before', ...identity, userMessageID: 'msg_recovery', tool: 'edit', callID: 'edit_call' })).rejects.toThrow('requires user action');
+  expect((await f.snapshot()).record.state).toBe('needs_attention');
+});
+
+test.each(['pending', 'error', 'running'])('Claude never replays an edit with %s outcome', async (status) => {
+  const f = await claudeFixture();
+  f.state.messages.at(-1).parts.push({ type: 'tool', tool: 'edit', callID: 'incident_edit', state: { status } });
+  await f.finalize();
+  expect(f.sent).toHaveLength(0);
+  expect((await f.snapshot()).record.reason).toBe('recovery_tool_outcome_unknown');
+});
+
+test('Claude conformance cannot be bypassed by enforce mode', async () => {
+  const f = await claudeFixture({ anthropicMode: 'enforce', isAnthropicConformant: undefined });
+  await f.finalize();
+  expect(f.sent).toHaveLength(0);
+  expect(await f.snapshot()).toMatchObject({ mode: 'enforce', supported: false, enforced: false });
+});
+
+test.each([
+  [undefined, undefined, 'enforce', 1], ['observe', undefined, 'observe', 0],
+  ['enforce', 'off', 'off', 0], ['off', 'enforce', 'enforce', 1],
+])('Claude mode precedence global=%s provider=%s', async (mode, anthropicMode, expectedMode, attempts) => {
+  const f = await claudeFixture({ mode, anthropicMode });
+  await f.finalize();
+  expect((await f.snapshot()).mode).toBe(expectedMode);
+  expect(f.sent).toHaveLength(attempts);
+});
+
+test('Claude ignores a stale assistant finalization and respects Stop', async () => {
+  const f = await claudeFixture();
+  await f.controller.observe({ type: 'message.updated', properties: { sessionID: identity.sessionID,
+    info: { ...f.state.messages.at(-1).info, id: 'msg_stale', parentID: 'msg_old' } } });
+  expect(f.sent).toHaveLength(0);
+  await f.controller.control(identity.sessionID, 'stop');
+  await f.finalize();
+  expect(f.sent).toHaveLength(0);
+});
+
+
+test('terminal message arriving during an idle observation is not lost', async () => {
+  let release;
+  let entered;
+  const started = new Promise((resolve) => { entered = resolve; });
+  let first = true;
+  let f;
+  f = await claudeFixture({ observeTurn: async () => {
+    if (!first) return structuredClone(f.state);
+    first = false;
+    const old = structuredClone(f.state);
+    delete old.messages.at(-1).info.error;
+    delete old.messages.at(-1).info.time.completed;
+    entered();
+    await new Promise((resolve) => { release = resolve; });
+    return old;
+  } });
+  const idle = f.controller.observe({ type: 'session.status', properties: { sessionID: identity.sessionID, status: { type: 'idle' } } });
+  await started;
+  const final = f.finalize();
+  release();
+  await Promise.all([idle, final]);
+  expect(f.sent).toHaveLength(1);
+});
+
+test('Claude repeated timeout consumes no second attempt', async () => {
+  const f = await claudeFixture();
+  await f.finalize();
+  f.state.messages.push({ info: { role: 'user', id: 'msg_recovery' }, parts: [] },
+    { info: { role: 'assistant', id: 'msg_retry', parentID: 'msg_recovery', time: { completed: 10001 }, error: upstreamTimeout }, parts: [] });
+  await f.controller.plugin({ action: 'step', ...identity, userMessageID: 'msg_recovery', assistantMessageID: 'msg_retry' });
+  await f.finalize();
+  expect(f.sent).toHaveLength(1);
+  expect((await f.snapshot()).record).toMatchObject({ state: 'needs_attention', reason: 'recovery_failed', attemptCount: 1 });
+});
+
+test.each(['question', 'permission', 'barrier', 'intent'])('Claude %s blocks automatic dispatch', async (blocker) => {
+  const f = await claudeFixture();
+  if (blocker === 'intent') await f.controller.control(identity.sessionID, 'intent');
+  else if (blocker === 'barrier') f.state.blocked = true;
+  else f.controller.observe({ type: `${blocker}.asked`, properties: { sessionID: identity.sessionID, id: 'pending_request' } });
+  await f.finalize();
+  expect(f.sent).toHaveLength(0);
+});
+
+
+test('a failed observation of the previous turn cannot poison newly admitted input', async () => {
+  let entered; let release;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const f = await claudeFixture({ observeTurn: async () => {
+    entered(); await new Promise((resolve) => { release = resolve; }); throw new Error('old observation failed');
+  } });
+  const old = f.finalize();
+  await started;
+  await f.controller.admit({ sessionID: identity.sessionID, directory: '/project', primary: true,
+    body: { messageID: 'msg_new', agent: 'orchestrator', model: { providerID: 'anthropic', modelID: 'claude-opus-5' } } });
+  release(); await old;
+  expect((await f.snapshot()).record).toMatchObject({ anchorID: 'msg_new', state: 'observing', reason: null, attemptCount: 0 });
+  expect(f.incidents.find((event) => event.event === 'provider_recovery_observation_failed')?.messageID).toBe('msg_user');
+  expect(f.sent).toHaveLength(0);
+});
+
+
+test('a queued watchdog from an old turn cannot stop a fresh provider step', async () => {
+  let entered; let release; let first = true; let f;
+  const started = new Promise((resolve) => { entered = resolve; });
+  f = await claudeFixture({ observeTurn: async () => {
+    const observation = structuredClone(f.state);
+    if (first) { first = false; entered(); await new Promise((resolve) => { release = resolve; }); }
+    return observation;
+  } });
+  const old = f.finalize(); await started;
+  f.advance(300001);
+  const watchdog = f.controller.reconcile();
+  await f.controller.admit({ sessionID: identity.sessionID, directory: '/project', primary: true,
+    body: { messageID: 'msg_new', agent: 'orchestrator', model: { providerID: 'anthropic', modelID: 'claude-opus-5' } } });
+  f.state.messages = [{ info: { id: 'msg_new', role: 'user' }, parts: [{ type: 'text', text: 'New input' }] },
+    { info: { id: 'msg_newassistant', role: 'assistant', parentID: 'msg_new', time: {} }, parts: [] }];
+  f.state.status = 'busy';
+  await f.controller.plugin({ action: 'step', ...identity, userMessageID: 'msg_new', assistantMessageID: 'msg_newassistant' });
+  release(); await Promise.all([old, watchdog]);
+  expect(f.aborted).toHaveLength(0); expect(f.sent).toHaveLength(0);
+  expect((await f.snapshot()).record).toMatchObject({ anchorID: 'msg_new', state: 'observing', reason: null });
 });

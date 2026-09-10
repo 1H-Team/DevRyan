@@ -157,3 +157,9 @@ describe('provider queue failures', () => {
     expect(PROVIDER_TRANSPORT_FAILURE_KINDS).toContain('provider_queue_timeout');
   });
 });
+
+ it('recognizes only the complete upstream stall envelope', () => {
+   expect(classifyProviderTransportFailure('UnknownError', '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms"}')).toBe('stream_idle_timeout');
+   expect(classifyProviderTransportFailure('UnknownError', '{"type":"upstream_timeout","message":"request timeout"}')).toBeNull();
+   expect(classifyProviderTransportFailure('AbortError', '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms"}')).toBeNull();
+ });

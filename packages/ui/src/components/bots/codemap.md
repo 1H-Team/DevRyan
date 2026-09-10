@@ -158,3 +158,6 @@ Operations rail shared by the web and Electron renderers. Bot configuration live
 - Protected provider API keys/accounts: `components/sections/bots/BotCredentials.tsx`
 
 - Assigned navigation bootstrap uses the dedicated HTTP catalog independently of SSE history/operations. The sidebar subscribes to catalog readiness and connection status separately; loading/failure never renders as unassigned, and Retry refreshes both sources.
+- `sidebar/useBotConnectionWarning.ts` owns the three-second warning grace
+  period using the operations store's first-failure timestamp; retries and
+  navigation never restart an unresolved outage's clock.

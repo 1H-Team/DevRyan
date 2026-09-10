@@ -1,6 +1,7 @@
+import { EXECUTION_SERVER_EDITS, EXECUTION_EXECUTOR_EDITS, patchExecutionSource, normalizeExecutionSource } from './context-mode-execution-hotfix.js';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { WORKER_POOL_SOURCE, WORKER_SOURCE, WORKER_STATE_SOURCE, WORKER_STORAGE_SOURCE, WORKER_PROCESS_SOURCE } from './context-mode-worker-sources.js';
+import { WORKER_POOL_SOURCE, WORKER_SOURCE, WORKER_STATE_SOURCE, WORKER_STORAGE_SOURCE, WORKER_PROCESS_SOURCE, EXECUTION_SOURCE } from './context-mode-worker-sources.js';
 import { prepareContextModeStorageHotfix } from './context-mode-storage-hotfix.js';
 
 export const CONTEXT_MODE_PLUGIN_SHA256 = 'a625c55ce3700de382df6cdf0648b808b11fbcee7fea90c669903d4ae7a422f0';
@@ -110,13 +111,13 @@ const SERVER_CONCURRENCY_EDITS = [
 ];
 
 export const normalizeNativeServerSource = (source) => [...SERVER_CONCURRENCY_EDITS].reverse()
-  .reduce((text, [original, patched]) => text.replaceAll(patched, original), source.replace(THREAD_IMPORT, '')
+  .reduce((text, [original, patched]) => text.replaceAll(patched, original), normalizeExecutionSource(source, EXECUTION_SERVER_EDITS).replace(THREAD_IMPORT, '')
     .replace(PRELOAD_PATCHED, PRELOAD_ORIGINAL).replace(SERVER_APPEND, '').replace(SERVER_APPEND_PREVIOUS, ''));
 export const patchNativeServerSource = (source) => {
   // Preserve the executable shebang in the standalone MCP entrypoint.
   const position = source.startsWith('#!') ? source.indexOf('\n') + 1 : 0;
   const patched = SERVER_CONCURRENCY_EDITS.reduce((text, [original, replacement]) => text.replaceAll(original, replacement), source);
-  return patched.slice(0, position) + THREAD_IMPORT + patched.slice(position).replace(PRELOAD_ORIGINAL, PRELOAD_PATCHED) + SERVER_APPEND;
+  return patchExecutionSource(patched.slice(0, position) + THREAD_IMPORT + patched.slice(position).replace(PRELOAD_ORIGINAL, PRELOAD_PATCHED) + SERVER_APPEND, EXECUTION_SERVER_EDITS);
 };
 
 const replaceOnce = (source, original, replacement) => {
@@ -131,7 +132,7 @@ export function prepareNativeContextModeHotfix({ packageRoot, fsApi = fs,
   const executorPath = `${packageRoot}/build/executor.js`;
   const plugin = fsApi.readFileSync(pluginPath, 'utf8').replace(PLUGIN_IMPORT, '')
     .replace(NATIVE_EXECUTE_PATCHED, NATIVE_EXECUTE_ORIGINAL).replace(NATIVE_EXECUTE_THREADED, NATIVE_EXECUTE_ORIGINAL).replace(NATIVE_EXECUTE_PREVIOUS, NATIVE_EXECUTE_ORIGINAL).replace(NATIVE_EXECUTE_LEGACY, NATIVE_EXECUTE_ORIGINAL);
-  const executor = fsApi.readFileSync(executorPath, 'utf8').replaceAll(CLEAR_TIMER_PATCHED, CLEAR_TIMER_ORIGINAL)
+  const executor = normalizeExecutionSource(fsApi.readFileSync(executorPath, 'utf8'), EXECUTION_EXECUTOR_EDITS).replaceAll(CLEAR_TIMER_PATCHED, CLEAR_TIMER_ORIGINAL)
     .replace(PROCESS_START_PATCHED, PROCESS_START_ORIGINAL).replace(PROCESS_START_PREVIOUS, PROCESS_START_ORIGINAL)
     .replace(PROCESS_END_PATCHED, PROCESS_END_ORIGINAL).replace(PROCESS_END_PREVIOUS, PROCESS_END_ORIGINAL)
     .replace(SPAWN_PATCHED, SPAWN_ORIGINAL).replace(TIMER_PATCHED, TIMER_ORIGINAL)
@@ -144,13 +145,14 @@ export function prepareNativeContextModeHotfix({ packageRoot, fsApi = fs,
     PROCESS_START_ORIGINAL, PROCESS_START_PATCHED), PROCESS_END_ORIGINAL, PROCESS_END_PATCHED);
   return [
     [pluginPath, PLUGIN_IMPORT + replaceOnce(plugin, NATIVE_EXECUTE_ORIGINAL, NATIVE_EXECUTE_PATCHED)],
-    [executorPath, replaceOnce(replaceOnce(replaceOnce(patchedExecutor, TIMER_ORIGINAL, TIMER_PATCHED),
-      TIMED_OUT_ORIGINAL, TIMED_OUT_PATCHED), COMPILE_ORIGINAL, COMPILE_PATCHED).replaceAll(CLEAR_TIMER_ORIGINAL, CLEAR_TIMER_PATCHED)],
+    [executorPath, patchExecutionSource(replaceOnce(replaceOnce(replaceOnce(patchedExecutor, TIMER_ORIGINAL, TIMER_PATCHED),
+      TIMED_OUT_ORIGINAL, TIMED_OUT_PATCHED), COMPILE_ORIGINAL, COMPILE_PATCHED).replaceAll(CLEAR_TIMER_ORIGINAL, CLEAR_TIMER_PATCHED), EXECUTION_EXECUTOR_EDITS)],
     [`${packageRoot}/build/devryan-context-mode-worker-pool.js`, WORKER_POOL_SOURCE],
     [`${packageRoot}/build/devryan-context-mode-worker.js`, WORKER_SOURCE],
     [`${packageRoot}/build/context-mode-worker-state.js`, WORKER_STATE_SOURCE],
     [`${packageRoot}/build/context-mode-worker-storage.js`, WORKER_STORAGE_SOURCE],
     [`${packageRoot}/build/context-mode-worker-process.js`, WORKER_PROCESS_SOURCE],
+    [`${packageRoot}/build/context-mode-execution.js`, EXECUTION_SOURCE],
     ...prepareContextModeStorageHotfix({ packageRoot, fsApi, expectedStorageSha256 }),
   ];
 }

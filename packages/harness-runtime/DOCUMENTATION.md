@@ -93,7 +93,9 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   contract after sanitization, rather than testing only a recorder mock.
   Context Mode lifecycle/gap records use a separate bounded payload projection:
   worker-call/session/message correlation, phase/sequence, source timestamp,
-  elapsed time, budget and dropped-event count. Tool parts retain the validated
+  elapsed time, budget and dropped-event count. Execution failures also retain
+  a bounded failure category and nullable exit code/signal; fatal text remains
+  in the normal sanitized tool response. Tool parts retain the validated
   `contextModeWorkerCallID`; commands, paths and arbitrary diagnostic payloads
   are excluded. A real journal round trip covers both correlation surfaces.
 - `bot.memory.extraction.*` lifecycle payloads use a separate content-free
@@ -162,13 +164,13 @@ detail.
 
 The dependency-free `provider-recovery` controller and `provider-recovery-host`
 adapter own primary turn admission, semantic liveness, durable recovery and
-cancellation across web/Electron. Default policy is observe. Full
+cancellation across web/Electron. OpenAI defaults to observe; Anthropic has a provider-specific mode and requires an explicit composing-adapter conformance attestation before enforcement. Final assistant errors are reconciled even without a session-error event; unresolved tools prevent replay. Full
 safety, protocol, storage, rollout and rollback contracts are documented in
 [`docs/PROVIDER_RECOVERY.md`](../../docs/PROVIDER_RECOVERY.md).
 
 ## Session-owned changes
 
-`lib/session-changes.js` owns always-on execution receipts, private Git snapshots, cumulative net summaries, paged stored revisions retained until deletion, and conflict-checked file-only Undo/Redo. It is independent of optional diagnostic evidence. `lib/session-changes-host.js` validates canonical session identity, lineage and directory; consumes paginated history; and exposes the same plugin/HTTP contract in web/Electron. The focused `session-changes-{git,snapshot,store}.js` modules own bounded Git I/O, scoped raw capture/stat caching, and atomic individually indexed metadata. Full contract, operational limits and verification: `docs/SESSION_CHANGES.md`.
+`lib/session-changes.js` owns always-on execution receipts, private Git snapshots, cumulative net summaries, paged stored revisions retained until deletion, and conflict-checked file-only Undo/Redo. It is independent of optional diagnostic evidence. `lib/session-changes-host.js` validates canonical session identity, lineage and directory; consumes and repairs paginated history; acknowledges private native execution receipts; reconciles pending observations before summary and restore; and exposes the same plugin/HTTP contract in web/Electron. The focused `session-changes-{git,snapshot,store}.js` modules own bounded Git I/O, scoped raw capture/stat caching, and atomic individually indexed metadata. Full contract, operational limits and verification: `docs/SESSION_CHANGES.md`.
 
 ### Session title correlation
 

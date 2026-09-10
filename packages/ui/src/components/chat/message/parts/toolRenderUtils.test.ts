@@ -18,6 +18,7 @@ import {
     getToolActivityGroupDescription,
     getToolActivityGroupSummaryCount,
     getToolFileMutationAction,
+    getToolDescriptionForDisplay,
     getToolDescriptionFallback,
     getToolPartDiffStatsFromToolPart,
     isExpandableTool,
@@ -83,6 +84,37 @@ describe('tool activity grouping', () => {
             pathDescription: 'src/config.ts',
             input: { description: 'Read the config' },
         })).toBe('src/config.ts');
+    });
+
+    test('hides the Context Mode sandbox boilerplate from tool descriptions', () => {
+        for (const tool of [
+            'ctx_execute',
+            'mcp__context-mode__ctx_execute',
+            'mcp__context_mode__ctx_execute_file',
+        ]) {
+            expect(getToolDescriptionForDisplay(
+                tool,
+                'Run code in a sandbox (JavaScript) without exposing host state',
+            )).toBe('');
+        }
+
+        expect(getToolDescriptionFallback('ctx_execute', {
+            title: '  Run code in a sandbox (JavaScript)',
+        })).toBe('');
+        expect(getToolDescriptionFallback('mcp__context-mode__ctx_execute', {
+            input: { description: 'Run code in a sandbox for analysis' },
+        })).toBe('');
+    });
+
+    test('preserves useful and non-Context Mode tool descriptions', () => {
+        expect(getToolDescriptionForDisplay(
+            'ctx_execute',
+            'Analyze the captured build output',
+        )).toBe('Analyze the captured build output');
+        expect(getToolDescriptionForDisplay(
+            'custom_tool',
+            'Run code in a sandbox (JavaScript)',
+        )).toBe('Run code in a sandbox (JavaScript)');
     });
 
     test('shows deduplicated glob patterns on grouped search rows', () => {

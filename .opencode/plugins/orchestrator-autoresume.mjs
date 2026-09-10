@@ -75,6 +75,7 @@ function getParent(sessionID) {
       pendingTimer: undefined,
       pendingChildAgents: [],
       resumeCount: 0,
+      seenSubtaskPartIds: new Set(),
       todos: [],
     };
     state.parents.set(sessionID, parent);
@@ -123,6 +124,16 @@ function assignPendingChildAgent(parent) {
 
 function hasIncompleteTodos(parent) {
   return parent.todos.some((todo) => INCOMPLETE_TODO_STATUSES.has(todo.status));
+}
+
+// A child is treated as running until it reports idle. Newly created children
+// start busy, so a dispatch cannot be reconciled before its child has spoken.
+function findActiveChild(parent) {
+  for (const childSessionID of parent.children) {
+    const child = state.children.get(childSessionID);
+    if (child && child.idle !== true) return child;
+  }
+  return undefined;
 }
 
 function hasIncompleteChildTodos(child) {
@@ -184,6 +195,11 @@ function shouldResume(parent) {
   if (parent.hasDelegated && parent.children.size === 0) return [false, "delegated work has no child session yet"];
   if (!parent.hasDelegated && parent.children.size === 0) return [false, "no delegated work"];
   if (!hasIncompleteTodos(parent) && !parent.hasDelegated) return [false, "no incomplete work"];
+  // Dispatch barrier: never nudge the orchestrator while any dispatched child is
+  // still working. Child idle/status events repeat, so without this the parent
+  // was re-prompted every cooldown for the whole life of a running subagent.
+  const activeChild = findActiveChild(parent);
+  if (activeChild) return [false, "child still running"];
   if (parent.resumeCount >= MAX_RESUMES_PER_PARENT) return [false, "resume cap reached"];
   if (now() - parent.lastResumeAt < RESUME_COOLDOWN_MS) return [false, "cooldown active"];
   return [true, "ready"];
@@ -328,9 +344,13 @@ function handleTodoUpdated(event) {
   }
 
   const parent = getParent(sessionID);
+  const hadIncompleteTodos = hasIncompleteTodos(parent);
   parent.todos = event.properties.todos ?? [];
 
-  if (!hasIncompleteTodos(parent)) {
+  // Only a real work cycle closing earns a fresh budget. Testing the new list
+  // alone also matched "this parent has no todos at all", so every todo event in
+  // a todo-less orchestrator zeroed the counter and the resume cap never bound.
+  if (hadIncompleteTodos && !hasIncompleteTodos(parent)) {
     parent.resumeCount = 0;
     parent.childDirty = false;
   }
@@ -343,6 +363,13 @@ function handlePartUpdated(event) {
   if (part.type === "subtask") {
     const parent = getParent(part.sessionID);
     parent.hasDelegated = true;
+    // Subtask parts stream, so the same dispatch arrives many times. Acting once
+    // per part id keeps the agent queue accurate and stops repeat updates from
+    // silently refilling the resume budget.
+    if (typeof part.id === "string" && parent.seenSubtaskPartIds.has(part.id)) return;
+    if (typeof part.id === "string") parent.seenSubtaskPartIds.add(part.id);
+    // A new delegation is a new work cycle: allow this parent to be nudged again.
+    parent.resumeCount = 0;
     parent.pendingChildAgents.push(part.agent);
     assignPendingChildAgent(parent);
     return;

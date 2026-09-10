@@ -179,30 +179,33 @@ export const buildAgentConfigPayload = (config: Partial<AgentConfig>, options?: 
   return agentConfig;
 };
 
-const buildAgentsSignature = (agents: Agent[]): string => {
-  return agents
-    .map((agent) => {
-      const extended = agent as AgentWithExtras;
-      const rawModelRefs = normalizeAgentModelRefs((extended as { modelRefs?: unknown }).modelRefs);
-      const optionModelRefs = normalizeAgentModelRefs(getAgentOptionModelRefs(extended));
-      const modelRefs = rawModelRefs.length > 0
-        ? rawModelRefs
-        : (optionModelRefs.length > 0 ? optionModelRefs : normalizeAgentModelRefs((extended as { model?: unknown }).model));
-      return [
-        agent.name,
-        agent.mode ?? '',
-        extended.scope ?? '',
-        extended.group ?? '',
-        extended.description ?? '',
-        modelRefs.join(','),
-        String((extended as { variant?: unknown }).variant ?? ''),
-        String(typeof agent.temperature === 'number' ? agent.temperature : ''),
-        String(typeof agent.topP === 'number' ? agent.topP : ''),
-        String(extended.hidden === true),
-        String(extended.native === true),
-      ].join('|');
-    })
-    .join('||');
+const isSettingsRecord = (value: unknown): value is Record<string, unknown> => (
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+);
+
+// These are normalized JSON records. Compare the whole configuration so new
+// fields cannot silently disappear from refreshes, without depending on key order.
+const sameAgentConfigValue = (left: unknown, right: unknown): boolean => {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right)
+      && left.length === right.length
+      && left.every((value, index) => sameAgentConfigValue(value, right[index]));
+  }
+  if (!isSettingsRecord(left) || !isSettingsRecord(right)) return false;
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length && keys.every((key) => (
+    Object.prototype.hasOwnProperty.call(right, key) && sameAgentConfigValue(left[key], right[key])
+  ));
+};
+
+const reconcileAgentCatalog = (current: Agent[], incoming: Agent[]): Agent[] => {
+  const currentByName = new Map(current.map((agent) => [agent.name, agent]));
+  const next = incoming.map((agent) => {
+    const previous = currentByName.get(agent.name);
+    return previous && sameAgentConfigValue(previous, agent) ? previous : agent;
+  });
+  return current.length === next.length && next.every((agent, index) => agent === current[index]) ? current : next;
 };
 
 const loadProjectAgents = async (configDirectory: string | null): Promise<{ agents: Agent[]; staleOverrides: string[] }> => {
@@ -241,10 +244,11 @@ const replaceAgentByName = (agents: Agent[], nextAgent: Agent): Agent[] => {
       return agent;
     }
     replaced = true;
-    return nextAgent;
+    return sameAgentConfigValue(agent, nextAgent) ? agent : nextAgent;
   });
 
-  return replaced ? nextAgents : [...nextAgents, nextAgent];
+  if (!replaced) return [...nextAgents, nextAgent];
+  return nextAgents.every((agent, index) => agent === agents[index]) ? agents : nextAgents;
 };
 
 const applySavedModelOverrideToAgent = (agent: AgentWithExtras, config: Partial<AgentConfig>): AgentWithExtras => {
@@ -279,27 +283,30 @@ const applySavedModelOverrideToAgent = (agent: AgentWithExtras, config: Partial<
   return normalizeAgentModelFields(next);
 };
 
-const syncConfigStoreAgent = (nextAgent: Agent) => {
+const syncConfigStoreAgent = (nextAgent: Agent, directory: string | null) => {
+  // Match useConfigStore's directory key, including its unscoped catalog.
+  const directoryKey = directory?.trim() || '__global__';
+  let activeAgentChanged = false;
   useConfigStore.setState((state) => {
-    const scopedEntries = Object.entries(state.directoryScoped).map(([directoryKey, snapshot]) => [
-      directoryKey,
-      {
-        ...snapshot,
-        agents: replaceAgentByName(snapshot.agents, nextAgent),
-      },
-    ] as const);
-
-    return {
-      agents: replaceAgentByName(state.agents, nextAgent),
-      directoryScoped: Object.fromEntries(scopedEntries),
-    };
+    const snapshot = state.directoryScoped[directoryKey];
+    const scopedAgents = snapshot ? replaceAgentByName(snapshot.agents, nextAgent) : null;
+    const directoryScoped = snapshot && scopedAgents && scopedAgents !== snapshot.agents
+      ? { ...state.directoryScoped, [directoryKey]: { ...snapshot, agents: scopedAgents } }
+      : state.directoryScoped;
+    const agents = state.activeDirectoryKey === directoryKey
+      ? replaceAgentByName(state.agents, nextAgent)
+      : state.agents;
+    activeAgentChanged = agents !== state.agents;
+    if (!activeAgentChanged && directoryScoped === state.directoryScoped) return state;
+    return { agents, directoryScoped };
   });
 
   const configStore = useConfigStore.getState();
-  if (configStore.currentAgentName === nextAgent.name) {
-    configStore.setAgent(nextAgent.name, {
-      agents: replaceAgentByName(configStore.agents, nextAgent),
-    });
+  if (configStore.activeDirectoryKey === directoryKey && configStore.currentAgentName === nextAgent.name
+    && (activeAgentChanged || configStore.currentProviderId !== nextAgent.model?.providerID
+      || configStore.currentModelId !== nextAgent.model?.modelID
+      || (configStore.currentVariant ?? null) !== (nextAgent.variant ?? null))) {
+    configStore.setAgent(nextAgent.name, { agents: configStore.agents });
   }
 };
 
@@ -360,10 +367,6 @@ export type AgentRuntimeSettingsInput = Partial<Pick<AgentRuntimeSettings, 'lsp'
 const AGENT_RUNTIME_ENDPOINT = '/api/config/agent-runtime';
 /** Serializes optimistic saves: only the newest one may reconcile or revert the store. */
 let agentRuntimeSaveGeneration = 0;
-
-const isSettingsRecord = (value: unknown): value is Record<string, unknown> => (
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-);
 
 export const normalizeAgentRuntimeSettings = (value: unknown): AgentRuntimeSettings | null => {
   if (!isSettingsRecord(value)) return null;
@@ -564,8 +567,6 @@ export const useAgentsStore = create<AgentsStore>()(
 
           const request = (async () => {
             set({ isLoading: true });
-            const previousAgents = get().agents;
-            const previousSignature = buildAgentsSignature(previousAgents);
             const requestGeneration = agentsLoadGeneration.get(cacheKey) ?? 0;
 
             for (let attempt = 0; attempt < 3; attempt++) {
@@ -573,18 +574,18 @@ export const useAgentsStore = create<AgentsStore>()(
                 const { agents: configAgents, staleOverrides } = await loadProjectAgents(configDirectory);
                 const agents = buildSettingsAgentCatalog(configAgents, []);
 
-                const nextSignature = buildAgentsSignature(agents);
                 if ((agentsLoadGeneration.get(cacheKey) ?? 0) !== requestGeneration) {
                   // A save/reset happened while this load was in flight. Do not let
                   // the older snapshot overwrite the just-saved model/variant values.
-                  set({ staleModelOverrides: staleOverrides, isLoading: false });
                   return false;
                 }
-                if (previousSignature !== nextSignature) {
-                  set({ agents, staleModelOverrides: staleOverrides, isLoading: false });
-                } else {
-                  set({ staleModelOverrides: staleOverrides, isLoading: false });
-                }
+                if (getConfigDirectory() !== configDirectory) return false;
+                set((state) => ({
+                  agents: reconcileAgentCatalog(state.agents, agents),
+                  staleModelOverrides: sameAgentConfigValue(state.staleModelOverrides, staleOverrides)
+                    ? state.staleModelOverrides : staleOverrides,
+                  isLoading: false,
+                }));
                 agentsLastLoadedAt.set(cacheKey, Date.now());
                 return true;
               } catch {
@@ -592,7 +593,6 @@ export const useAgentsStore = create<AgentsStore>()(
               }
             }
 
-            set({ isLoading: false });
             return false;
           })();
 
@@ -600,7 +600,8 @@ export const useAgentsStore = create<AgentsStore>()(
           try {
             return await request;
           } finally {
-            agentsLoadInFlight.delete(cacheKey);
+            if (agentsLoadInFlight.get(cacheKey) === request) agentsLoadInFlight.delete(cacheKey);
+            if (agentsLoadInFlight.size === 0 && get().isLoading) set({ isLoading: false });
           }
         },
 
@@ -616,6 +617,7 @@ export const useAgentsStore = create<AgentsStore>()(
 
         saveAgentModelOverride: async (name: string, config: Partial<AgentConfig>) => {
           const configDirectory = getConfigDirectory();
+          const existingAgent = get().agents.find((agent) => agent.name === name);
           const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
           invalidateAgentsLoadCache(configDirectory);
           const response = await fetch(`/api/config/agents/${encodeURIComponent(name)}/override${query}`, {
@@ -635,7 +637,6 @@ export const useAgentsStore = create<AgentsStore>()(
           const payload = await response.json().catch(() => null);
           recordConfigMutationResponse(payload);
           const responseAgent = payload?.agent?.config ? normalizeAgentModelFields(payload.agent.config as AgentWithExtras) : null;
-          const existingAgent = get().agents.find((agent) => agent.name === name) as AgentWithExtras | undefined;
           // Decision: reconcile successful saves locally even if a bridge/proxy returns
           // only `{ success: true }`; otherwise the form can snap back while waiting for
           // the next uncached agent reload.
@@ -644,10 +645,13 @@ export const useAgentsStore = create<AgentsStore>()(
             : null);
           if (nextAgent?.name) {
             useSelectionStore.getState().clearAgentModelSelections(name);
-            set((state) => ({
-              agents: replaceAgentByName(state.agents, nextAgent),
-            }));
-            syncConfigStoreAgent(nextAgent as Agent);
+            if (getConfigDirectory() === configDirectory) {
+              set((state) => {
+                const agents = replaceAgentByName(state.agents, nextAgent);
+                return agents === state.agents ? state : { agents };
+              });
+            }
+            syncConfigStoreAgent(nextAgent, configDirectory);
           }
           invalidateAgentsLoadCache(configDirectory);
           return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as AgentOverrideMutationResponse : null;
@@ -674,10 +678,13 @@ export const useAgentsStore = create<AgentsStore>()(
           const nextAgent = payload?.agent?.config ? normalizeAgentModelFields(payload.agent.config as AgentWithExtras) : null;
           if (nextAgent?.name) {
             useSelectionStore.getState().clearAgentModelSelections(name);
-            set((state) => ({
-              agents: replaceAgentByName(state.agents, nextAgent),
-            }));
-            syncConfigStoreAgent(nextAgent as Agent);
+            if (getConfigDirectory() === configDirectory) {
+              set((state) => {
+                const agents = replaceAgentByName(state.agents, nextAgent);
+                return agents === state.agents ? state : { agents };
+              });
+            }
+            syncConfigStoreAgent(nextAgent, configDirectory);
           }
           invalidateAgentsLoadCache(configDirectory);
           return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as AgentOverrideMutationResponse : null;
@@ -709,11 +716,15 @@ export const useAgentsStore = create<AgentsStore>()(
           const nextBackupModel = normalizeAgentBackupModelRecord(payload?.agent?.config?.backupModel)
             ?? normalizeAgentBackupModelRecord(payload?.backupModel)
             ?? normalizeAgentBackupModelRecord(body);
-          set((state) => ({
-            agents: state.agents.map((agent) => (
-              agent.name === name ? { ...agent, backupModel: nextBackupModel } as Agent : agent
-            )),
-          }));
+          if (getConfigDirectory() === configDirectory) {
+            set((state) => {
+              const existing = state.agents.find((agent) => agent.name === name);
+              if (!existing) return state;
+              const nextAgent: AgentWithExtras = { ...existing, backupModel: nextBackupModel };
+              const agents = replaceAgentByName(state.agents, nextAgent);
+              return agents === state.agents ? state : { agents };
+            });
+          }
           invalidateAgentsLoadCache(configDirectory);
           return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as AgentOverrideMutationResponse : null;
         },
@@ -735,11 +746,15 @@ export const useAgentsStore = create<AgentsStore>()(
           }
 
           const payload = await response.json().catch(() => null);
-          set((state) => ({
-            agents: state.agents.map((agent) => (
-              agent.name === name ? { ...agent, backupModel: null } as Agent : agent
-            )),
-          }));
+          if (getConfigDirectory() === configDirectory) {
+            set((state) => {
+              const existing = state.agents.find((agent) => agent.name === name);
+              if (!existing) return state;
+              const nextAgent: AgentWithExtras = { ...existing, backupModel: null };
+              const agents = replaceAgentByName(state.agents, nextAgent);
+              return agents === state.agents ? state : { agents };
+            });
+          }
           invalidateAgentsLoadCache(configDirectory);
           return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as AgentOverrideMutationResponse : null;
         },

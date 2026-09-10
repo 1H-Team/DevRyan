@@ -113,7 +113,7 @@ describe('BotSidebarSection', () => {
   test('distinguishes catalog loading, failure, confirmed empty, and disconnected populated states', () => {
     const botsStore = createBotsStore();
     const channelStore = createBotChannelStore();
-    const operationsStore = createBotOperationsStore();
+    const operationsStore = createBotOperationsStore({ now: () => Date.now() - 3_001 });
     const render = () => {
       Object.assign(botsStore.getInitialState(), botsStore.getState());
       Object.assign(operationsStore.getInitialState(), operationsStore.getState());

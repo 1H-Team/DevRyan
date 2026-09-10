@@ -37,6 +37,15 @@ describe('versioned primary recovery plugin boundary', () => {
     expect(f.calls.map((p) => p.action)).toEqual(['hello', 'scope', 'step']);
     expect(f.calls.at(-1)).toMatchObject({ assistantMessageID: 'msg_assistant', userMessageID: 'msg_user', timeouts: { total: 900000 } });
   });
+  it('forwards the exact Claude execution identity through the shared guard bridge', async () => {
+    const f = await setup();
+    await f.plugin['chat.params']({ sessionID: 'ses_fixture', agent: 'orchestrator',
+      model: { providerID: 'anthropic', id: 'claude-opus-5' }, message: { id: 'msg_user', variant: 'high' } });
+    expect(f.calls.at(-1)).toMatchObject({ action: 'step', userMessageID: 'msg_user', assistantMessageID: 'msg_assistant',
+      execution: { providerID: 'anthropic', modelID: 'claude-opus-5', agent: 'orchestrator', variant: 'high' } });
+    await expect(f.plugin['tool.execute.before']({ sessionID: 'ses_fixture', callID: 'call_tool', tool: 'edit' }))
+      .rejects.toThrow('requires_user_action');
+  });
   it('allows only a uniquely registered native inspection tool', async () => {
     const f = await setup();
     await f.plugin['tool.execute.before']({ sessionID: 'ses_fixture', callID: 'call_tool', tool: 'read' });

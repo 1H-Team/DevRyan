@@ -6,15 +6,21 @@ import { I18nProvider } from '@/lib/i18n';
 
 // Exercise the dialog's asynchronous state in the deterministic mounted DOM;
 // the separate browser fixture exercises the real Base UI primitives.
+//
+// `mock.module` is process-wide in bun, so this stub reaches every test file
+// that loads after this one. Spread the real module first: replacing it wholesale
+// dropped exports this file does not name (`DialogFooter`), which crashed
+// unrelated suites with "Export named ... not found" depending on file order.
+// The real `Button` renders fine here, so it is deliberately NOT stubbed —
+// stubbing it stripped classNames from other suites' markup assertions.
+const dialogModule = { ...(await import('@/components/ui/dialog')) };
 mock.module('@/components/ui/dialog', () => ({
+  ...dialogModule,
   Dialog: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   DialogContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   DialogHeader: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   DialogTitle: ({ children }: React.PropsWithChildren) => <h2>{children}</h2>,
   DialogDescription: ({ children }: React.PropsWithChildren) => <p>{children}</p>,
-}));
-mock.module('@/components/ui/button', () => ({
-  Button: ({ children, onClick, disabled }: React.PropsWithChildren<{ onClick?: () => void; disabled?: boolean }>) => <button onClick={onClick} disabled={disabled}>{children}</button>,
 }));
 const { SessionChangesDiffDialog } = await import('./SessionChangesDiffDialog');
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };

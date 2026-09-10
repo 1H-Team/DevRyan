@@ -245,3 +245,9 @@ describe("classifyAssistantError", () => {
     })).toBe(undefined)
   })
 })
+
+ test('presents the Claude upstream stall without generic failure copy', () => {
+   const result = classifyAssistantError({ name: 'UnknownError', data: { message: '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms"}' } }, { providerID: 'anthropic' });
+   expect(result?.text).toContain('Claude stopped sending data');
+   expect(result?.retryable).toBe(true);
+ });

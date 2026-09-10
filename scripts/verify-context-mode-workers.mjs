@@ -111,6 +111,39 @@ const idleLimit = () => waitUntil('retire excess workers after concurrent work',
   [...pool.workers].filter((slot) => slot.processes.size === 0).length <= 4);
 
 try {
+  await measure('executionCrashReporting', async () => {
+    await fs.writeFile(path.join(projects[0], 'oom.cjs'), `require('fs').appendFileSync('attempts.txt', 'attempt\\n'); console.log('irrelevant searchable output '.repeat(500)); const held = []; while (true) held.push(new Array(100000).fill('fixture'));`);
+    const code = 'ulimit -c 0; node --max-old-space-size=24 oom.cjs';
+    for (const [name, args] of [
+      ['ctx_execute', { language: 'shell', code, intent: 'unrelated successful typescript diagnostics', timeout: 30000 }],
+      ['ctx_execute_file', { language: 'shell', path: 'oom.cjs', code, intent: 'unrelated successful diagnostics', timeout: 30000 }],
+      ['ctx_batch_execute', { commands: [{ label: 'oom-fixture', command: code }, { label: 'healthy-sibling', command: 'echo sibling-ok' }], queries: ['unrelated successful diagnostics'], concurrency: 2, timeout: 30000 }],
+    ]) {
+      const result = await call(0, name, args);
+      assert.equal(result.isError, true, output(result));
+      assert.match(result.content[0].text, /node_heap_exhausted/);
+      assert.match(result.content[0].text, /FATAL ERROR:/);
+      assert.ok(result.content[0].text.length < 2000);
+      if (name === 'ctx_batch_execute') assert.match(result.content[0].text, /oom-fixture/);
+    }
+    assert.equal((await fs.readFile(path.join(projects[0], 'attempts.txt'), 'utf8')).trim().split('\n').length, 3, 'crashing commands must not replay');
+    const healthy = await call(0, 'ctx_execute', { language: 'shell', code: 'echo healthy-after-crash' });
+    assert.match(output(healthy), /healthy-after-crash/);
+    assert.doesNotMatch(output(healthy), /node_heap_exhausted/);
+    assert.ok(events.filter(event => event.phase === 'execution_failed' && event.failureCategory === 'node_heap_exhausted').length >= 3);
+    for (const setting of ['--max-old-space-size=256', undefined]) {
+      const result = await pool.execute({ name: 'ctx_execute', args: { language: 'shell', code: `node -p 'JSON.stringify(process.env.NODE_OPTIONS || "unset")'` }, env: { ...env, NODE_OPTIONS: setting }, projectDir: projects[0], sessionId: 'ses_heap_options' });
+      assert.match(output(result), setting ? /--max-old-space-size=256/ : /unset/);
+      await pool.execute({ name: 'ctx_batch_execute', args: {
+        commands: [{ label: 'heap-env', command: `node -e 'require("fs").writeFileSync("heap-option.txt",process.env.NODE_OPTIONS || "unset")'` }],
+        queries: ['heap-env'], concurrency: 1,
+      }, env: { ...env, NODE_OPTIONS: setting }, projectDir: projects[0], sessionId: 'ses_heap_options' });
+      const batchOption = await fs.readFile(path.join(projects[0], 'heap-option.txt'), 'utf8');
+      assert.match(batchOption, /--require /);
+      if (setting) assert.match(batchOption, /--max-old-space-size=256/);
+      else assert.doesNotMatch(batchOption, /--max-old-space-size/);
+    }
+  });
   await measure('sameProjectCold30', async () => {
     const results = await Promise.all(Array.from({ length: 30 }, (_, index) => pool.execute({
       name: 'ctx_index', args: { content: `# Fixture\nconcurrentfixture Independent payload number ${index}.`, source: `parallel-${index}` },

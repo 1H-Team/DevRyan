@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { createBotEventDiagnostics } from './event-diagnostics.js';
+
 const MAX_EVENT_BYTES = 256 * 1024;
 
 export class BotEventStreamError extends Error {
@@ -23,14 +25,16 @@ const normalizeKind = (value) => {
   return kind;
 };
 
-const clonePayload = (value) => {
+const clonePayload = (value, onEncoded = () => {}) => {
   let encoded;
   try {
     encoded = JSON.stringify(value ?? {});
   } catch {
     fail('Bot event payload is invalid');
   }
-  if (Buffer.byteLength(encoded, 'utf8') > MAX_EVENT_BYTES) {
+  const bytes = Buffer.byteLength(encoded, 'utf8');
+  onEncoded(bytes);
+  if (bytes > MAX_EVENT_BYTES) {
     fail('Bot event payload is too large', 'bot_event_too_large', 413);
   }
   return JSON.parse(encoded);
@@ -46,6 +50,7 @@ export function createBotEventStream({
   canDeliver = async () => true,
   epoch = randomUUID(),
   heartbeatMs = 25_000,
+  recordDiagnostic = () => {},
 } = {}) {
   if (typeof loadSnapshot !== 'function' || typeof filterSnapshot !== 'function'
     || typeof canDeliver !== 'function' || typeof epoch !== 'string' || !epoch
@@ -57,9 +62,10 @@ export function createBotEventStream({
   let sequence = 0;
   let shutdown = false;
 
-  const loadCombinedSnapshot = async (principal) => {
+  const loadCombinedSnapshot = async (principal, diagnostics) => {
     const combined = {};
-    for (const loader of snapshotSources.values()) {
+    for (const [name, loader] of snapshotSources) {
+      diagnostics.stage(`snapshot.${name}`);
       const projection = await loader(principal);
       if (!projection || typeof projection !== 'object' || Array.isArray(projection)) {
         fail('Bot event snapshot is invalid', 'bot_event_snapshot_invalid', 500);
@@ -71,6 +77,7 @@ export function createBotEventStream({
         combined[key] = value;
       }
     }
+    diagnostics.stage('snapshot.filter');
     return filterSnapshot(principal, combined);
   };
 
@@ -90,7 +97,7 @@ export function createBotEventStream({
     subscribers.delete(subscriber);
   };
 
-  const open = async ({ principal, send } = {}) => {
+  const open = async ({ principal, send, diagnostics = createBotEventDiagnostics(recordDiagnostic) } = {}) => {
     if (shutdown) fail('Bot event stream has shut down', 'bots_unavailable', 503);
     if (!principal?.id || typeof send !== 'function') {
       fail('Bot event subscription requires authentication', 'bot_authentication_required', 401);
@@ -104,9 +111,13 @@ export function createBotEventStream({
       delivery: Promise.resolve(),
     };
     subscribers.add(subscriber);
+    diagnostics.record('opening');
     try {
-      const snapshot = clonePayload(await loadCombinedSnapshot(principal));
+      const combined = await loadCombinedSnapshot(principal, diagnostics);
+      diagnostics.stage('snapshot.serialize');
+      const snapshot = clonePayload(combined, diagnostics.snapshot);
       if (subscriber.closed) return () => {};
+      diagnostics.stage('snapshot.send');
       await send(Object.freeze({
         id: `${epoch}:0`,
         sequence: 0,
@@ -119,7 +130,10 @@ export function createBotEventStream({
         for (const event of subscriber.pending.splice(0)) await deliver(subscriber, event);
       });
       await subscriber.delivery;
+      diagnostics.stage('live');
+      diagnostics.record('ready');
     } catch (error) {
+      diagnostics.failure(error, error?.statusCode || error?.status || 500);
       closeSubscriber(subscriber);
       throw error;
     }
@@ -180,7 +194,7 @@ export function createBotEventStream({
       return Object.freeze({ sequence: eventSequence, delivered });
     },
 
-    async writeSse({ principal, request, response } = {}) {
+    async writeSse({ principal, request, response, diagnostics = createBotEventDiagnostics(recordDiagnostic) } = {}) {
       if (!response || typeof response.write !== 'function' || typeof response.setHeader !== 'function') {
         throw new TypeError('Bot SSE response is invalid');
       }
@@ -188,6 +202,7 @@ export function createBotEventStream({
       let connected = false;
       const close = await open({
         principal,
+        diagnostics,
         send: async (event) => {
           if (!connected) {
             buffered.push(event);
@@ -202,18 +217,23 @@ export function createBotEventStream({
       response.setHeader('Connection', 'keep-alive');
       response.setHeader('X-Accel-Buffering', 'no');
       response.flushHeaders?.();
+      diagnostics.record('connected', { statusCode: 200 });
       connected = true;
       for (const event of buffered) response.write(sseFrame(event));
       const heartbeat = setInterval(() => {
         if (!response.writableEnded && !response.destroyed) response.write(': heartbeat\n\n');
       }, heartbeatMs);
       heartbeat.unref?.();
-      const cleanup = () => {
+      let cleaned = false;
+      const cleanup = (reason = 'disposed') => {
+        if (cleaned) return;
+        cleaned = true;
         clearInterval(heartbeat);
         close();
+        diagnostics.record('closed', { reason, statusCode: response.statusCode || 200 });
       };
-      request?.once?.('close', cleanup);
-      response.once?.('close', cleanup);
+      request?.once?.('close', () => cleanup('request_closed'));
+      response.once?.('close', () => cleanup('response_closed'));
       return cleanup;
     },
 

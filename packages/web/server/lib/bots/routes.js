@@ -1,6 +1,8 @@
 import express from 'express';
 import { performance } from 'node:perf_hooks';
 
+import { createBotEventDiagnostics } from './event-diagnostics.js';
+
 import { BOT_PROFILE_AVATAR_MAX_BYTES, publicBotObject } from './blob-store.js';
 import { productionBotsMigrationFailurePayload } from '../multi-user/auth-compat.js';
 import {
@@ -437,15 +439,22 @@ export function registerBotRoutes(app, {
   // Register the static SSE path before `/:botId`; otherwise Express treats
   // `events` as a Bot identifier and the event stream becomes unreachable.
   app.get('/api/bots/events', async (req, res) => {
+    const diagnostics = createBotEventDiagnostics(recordDiagnostic);
     try {
       if (!eventStream) throw Object.assign(new Error('Bot event stream is unavailable'), {
         code: 'bots_unavailable', statusCode: 503,
       });
-      await eventStream.writeSse({ principal: req.principal, request: req, response: res });
+      await eventStream.writeSse({ principal: req.principal, request: req, response: res, diagnostics });
       return undefined;
     } catch (error) {
-      if (res.headersSent) return res.end?.();
-      return botRouteError(res, error);
+      const headersSent = res.headersSent === true;
+      const result = headersSent ? res.end?.() : botRouteError(res, error);
+      diagnostics.record('http_failed', {
+        statusCode: res.statusCode,
+        headersSent,
+      });
+      diagnostics.failure(error, res.statusCode);
+      return result;
     }
   });
 

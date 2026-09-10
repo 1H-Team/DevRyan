@@ -134,7 +134,12 @@ export const createLifecycleTracker = (options = {}) => {
   };
 
   const settleTurn = (turn, outcome, reason = null) => {
-    if (!turn || turn.settledAt) return;
+    if (!turn) return;
+    // Idle can precede assistant finalization. Publish one authoritative
+    // correction for that same retained turn, never settle a newer turn.
+    const correction = Boolean(turn.settledAt && turn.outcome === 'completed'
+      && reason === 'assistant_error' && ['failed', 'aborted'].includes(outcome));
+    if (turn.settledAt && !correction) return;
     const settledAt = now();
     turn.settledAt = settledAt;
     turn.outcome = outcome;
@@ -144,7 +149,7 @@ export const createLifecycleTracker = (options = {}) => {
       reason,
       at: settledAt,
     });
-    settledTurns.push(turn);
+    if (!correction) settledTurns.push(turn);
     while (settledTurns.length > maxRetainedTurns) {
       pruneTurn(settledTurns.shift());
     }
@@ -197,14 +202,21 @@ export const createLifecycleTracker = (options = {}) => {
         source: 'assistant_recovery',
       });
     }
-    if (!turn || turn.assistantMessageID === messageID) return;
-    turn.assistantMessageID = messageID;
-    turnsByAssistantMessage.set(messageID, turn);
-    emit({
-      type: 'assistant_message_started',
-      ...turn,
-      at: now(),
-    });
+    if (!turn) return;
+    if (turn.assistantMessageID !== messageID) {
+      // Repeated updates to an earlier step must not move this turn backwards.
+      if (turnsByAssistantMessage.get(messageID) === turn) return;
+      turn.assistantMessageID = messageID;
+      turnsByAssistantMessage.set(messageID, turn);
+      emit({ type: 'assistant_message_started', ...turn, at: now() });
+    }
+    // A finalized error can arrive without session.error, including as the
+    // first update for this assistant. Apply it only to its exact parent turn.
+    if (parentID === turn.userMessageID && info.time?.completed && info.error) {
+      const cancelled = /^(AbortError|MessageAbortedError)$/.test(asString(asObject(info.error).name));
+      settleTurn(turn, cancelled ? 'aborted' : 'failed', 'assistant_error');
+    }
+
   };
 
   const processPartUpdated = (properties, directory) => {

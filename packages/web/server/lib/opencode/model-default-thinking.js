@@ -1,6 +1,6 @@
 // Display metadata only. Never merge this value into model options or prompts.
-// OpenCode defaults verified against v1.18.29 provider/transform.ts:
-// https://github.com/anomalyco/opencode/blob/v1.18.29/packages/opencode/src/provider/transform.ts
+// OpenCode defaults verified against v1.18.30 provider/transform.ts:
+// https://github.com/anomalyco/opencode/blob/v1.18.30/packages/opencode/src/provider/transform.ts
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const level = value => typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : undefined;
 
