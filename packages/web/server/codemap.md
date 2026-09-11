@@ -34,3 +34,10 @@ Primary backend runtime for DevRyan web/desktop: starts Express, wires OpenCode 
 - Publishes HTTP + SSE + WS contracts consumed by `packages/ui` through `packages/web/src/api/*` adapters.
 
 - **Extracted bootstrap policies**: `lib/http-compression-policy.js` preserves streaming exclusions and reads the API compression switch dynamically. `lib/opencode/harness-skill-discovery.js` gathers/deduplicates harness skills and reports invalid frontmatter explicitly; the entrypoint injects filesystem and discovery dependencies.
+
+## Supabase mode lifecycle
+
+`index.js` installs the connection boundary before private routes, retains local
+project context and injects idle blockers plus the owning host restart callback.
+See [connection behavior](../../../docs/SUPABASE_CONNECTION.md). The standalone
+supervisor opt-in uses the existing graceful shutdown path.

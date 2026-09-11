@@ -260,6 +260,7 @@ export function createBotsRuntime({
   withAuditDeliveryBarrier = async (operation) => operation(),
   recordDiagnostic = () => {},
   executionEnabled = true,
+  isAdmissionPaused = () => false,
   resolvePrincipal = null,
   oauthCoordinator = null,
 } = {}) {
@@ -395,6 +396,7 @@ export function createBotsRuntime({
     browserService,
   });
   const approvalService = createBotApprovalService({
+    onPending: () => approvalExpiryJob?.trigger(),
     store,
     authorization,
     channels,
@@ -485,6 +487,7 @@ export function createBotsRuntime({
     audit: botAudit,
   });
   memoryRuntime = createBotMemoryRuntime({
+    isAdmissionPaused,
     store,
     authorization,
     channels,
@@ -636,6 +639,7 @@ export function createBotsRuntime({
         supabase, store, authorization, channels, blobStore, encryption, dataDirectory,
         resolvePrincipal, getDispatcher: () => backgroundStopped ? null : dispatcher,
         speech: voiceService,
+        isAdmissionPaused,
         isOwner: () => executionEnabled && started && !backgroundStopped && !shutdownPromise,
       });
       if (executionEnabled && !backgroundStopped && !shutdownPromise) telegramService.start();
@@ -1061,6 +1065,7 @@ export function createBotsRuntime({
         },
       });
       routineRuntime ||= createBotRoutineRuntime({
+        isAdmissionPaused,
         store,
         authorization,
         channels,
@@ -1088,6 +1093,7 @@ export function createBotsRuntime({
       });
       const sweepGate = runSweepGate;
       dispatcher ||= trackBotDispatcherActivity(createBotRunDispatcher({
+        isAdmissionPaused,
         store,
         channels,
         contextAssembler,
@@ -1142,6 +1148,7 @@ export function createBotsRuntime({
         approvalExpiryJob = createBotPeriodicJob({
           name: 'approval_expiry',
           intervalMs: 5_000,
+          idleIntervalMs: 60_000,
           maxBackoffMs: 60_000,
           logger: console,
           run: async () => {
@@ -1150,6 +1157,7 @@ export function createBotsRuntime({
             for (const computerScopeKey of result.scopeKeys) {
               void dispatcher?.drainScope(computerScopeKey);
             }
+            return { idle: result.scopeKeys.length === 0 };
           },
         });
         approvalExpiryJob.start({ immediate: false });
@@ -1255,7 +1263,7 @@ export function createBotsRuntime({
     let count = 0;
     let cursor = null;
     do {
-      const page = await repository.list({ filters, cursor, limit: 100 });
+      const page = await repository.list({ filters, cursor, limit: 100, fields: ['id'] });
       count += page.items.length;
       cursor = page.nextCursor;
     } while (cursor && count < 10_000);
@@ -1481,6 +1489,14 @@ export function createBotsRuntime({
       registerBotVoiceRoutes(app, { getService: () => voiceService });
     },
     getQuitRiskStatus,
+    getRestartBlockers: () => [
+      ...(integrationStartPromise || executionStartPromise ? ['bot_startup'] : []),
+      ...(routineRuntime?.getActiveWorkCount?.() ? ['bot_routines'] : []),
+      ...(dispatcher?.getActiveWorkCount?.() ? ['bot_runs'] : []),
+      ...(telegramService?.getActiveWorkCount?.() ? ['telegram'] : []),
+      ...(memoryRuntime?.getPendingExtractionCount?.() ? ['memory_extraction'] : []),
+    ],
+    resumeAdmissions: async () => { dispatcher?.resumeAdmissions?.(); await routineRuntime?.tick(); },
     checkpointBotRuns: () => routineRuntime?.checkpoint()
       || Promise.resolve(Object.freeze({ status: 'idle' })),
     async stopDispatcher() {

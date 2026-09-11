@@ -1,5 +1,5 @@
 export const MANAGED_RESULT_PAGE_MAX_BYTES = 8 * 1024;
-export const MANAGED_RESULT_MODES = Object.freeze(['eager', 'reference']);
+export const MANAGED_RESULT_MODES = Object.freeze(['eager', 'reference', 'compact']);
 
 const CURSOR_PREFIX = 'dvr_result_cursor_v1.';
 const MAX_CURSOR_CHARS = 4 * 1024;
@@ -47,8 +47,8 @@ const referenceMismatch = (message = 'managed result reference no longer matches
 
 export const resolveManagedResultMode = (value) => {
   if (value === undefined) return 'eager';
-  if (value === 'eager' || value === 'reference') return value;
-  throw new TypeError('resultMode must be eager or reference');
+  if (value === 'eager' || value === 'reference' || value === 'compact') return value;
+  throw new TypeError('resultMode must be eager, reference or compact');
 };
 
 export const managedResultPayloadMatches = (task, resultEnvelope) => {
@@ -216,10 +216,10 @@ export const projectManagedTaskResult = (task, resultEnvelope, resultMode) => {
     ...(resultEnvelope ? { resultEnvelope } : {}),
   };
   if (
-    mode !== 'reference'
+    (mode !== 'reference' && mode !== 'compact')
     || !isRecord(resultEnvelope)
     || typeof resultEnvelope.recoverablePreview !== 'string'
-    || utf8ByteLength(resultEnvelope.recoverablePreview) <= MANAGED_RESULT_PAGE_MAX_BYTES
+    || (mode !== 'compact' && utf8ByteLength(resultEnvelope.recoverablePreview) <= MANAGED_RESULT_PAGE_MAX_BYTES)
     || !managedResultPayloadMatches(task, resultEnvelope)
   ) {
     return eager;
@@ -231,7 +231,12 @@ export const projectManagedTaskResult = (task, resultEnvelope, resultMode) => {
   delete projectedEnvelope.recoverablePreview;
   let resultReference;
   try {
-    resultReference = createInitialReference(task, resultEnvelope);
+    const totalBytes = utf8ByteLength(resultEnvelope.recoverablePreview);
+    resultReference = mode === 'compact'
+      ? { taskId: task.taskId, envelopeId: resultEnvelope.envelopeId, totalBytes, text: '', returnedBytes: 0,
+          nextCursor: totalBytes ? encodeCursor({ taskId: task.taskId, envelopeId: resultEnvelope.envelopeId,
+            stringOffset: 0, returnedBytes: 0, totalBytes }) : null, complete: totalBytes === 0 }
+      : createInitialReference(task, resultEnvelope);
   } catch (error) {
     if (error instanceof ManagedResultReferenceError) return eager;
     throw error;
@@ -257,7 +262,7 @@ export const readManagedResultReference = ({ task, resultEnvelope, resultCursor 
   }
   if (
     typeof resultEnvelope.recoverablePreview !== 'string'
-    || utf8ByteLength(resultEnvelope.recoverablePreview) <= MANAGED_RESULT_PAGE_MAX_BYTES
+    || resultEnvelope.recoverablePreview.length === 0
   ) {
     throw referenceMismatch('retained result does not require paging');
   }

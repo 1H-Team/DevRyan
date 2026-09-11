@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { DevRyanOhMyOpenCodeSlimPlugin } from './devryan-oh-my-opencode-slim.mjs';
 
 const originalConfigDirectory = process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR;
+const originalBridge = Object.fromEntries(['DEVRYAN_ORCHESTRATION_URL', 'DEVRYAN_ORCHESTRATION_TOKEN'].map((key) => [key, process.env[key]]));
 const testCache = fileURLToPath(new URL('../../../../../.cache/slim-wrapper-tests/', import.meta.url));
 let temporaryRoot = null;
 
@@ -21,6 +22,10 @@ const createInstalledPlugin = (source) => {
 };
 
 afterEach(() => {
+  for (const [key, value] of Object.entries(originalBridge)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   if (originalConfigDirectory === undefined) {
     delete process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR;
   } else {
@@ -33,6 +38,37 @@ afterEach(() => {
 });
 
 describe('DevRyan Oh My OpenCode Slim wrapper', () => {
+  it.each(['DEVRYAN_ORCHESTRATION_URL', 'DEVRYAN_ORCHESTRATION_TOKEN'])('removes autonomous submission capabilities for managed or partial %s configuration', async (key) => {
+    process.env[key] = 'fixture';
+    createInstalledPlugin(`export default async ({ client }) => ({
+      event: async () => ({ asyncSubmit: typeof client.session.promptAsync,
+        syncSubmit: typeof client.session.prompt, status: await client.session.status(),
+        tools: await client.tools() }),
+    });`);
+    class Sessions {
+      #status = 'idle';
+      status() { return this.#status; }
+      promptAsync() { throw new Error('must not submit'); }
+      prompt() { throw new Error('must not submit'); }
+    }
+    class Client {
+      #tools = ['read'];
+      session = new Sessions();
+      tools() { return this.#tools; }
+    }
+    const client = new Client();
+    const plugin = await DevRyanOhMyOpenCodeSlimPlugin({ client });
+    expect(await plugin.event()).toEqual({ asyncSubmit: 'undefined', syncSubmit: 'undefined', status: 'idle', tools: ['read'] });
+    expect(typeof client.session.promptAsync).toBe('function');
+  });
+
+  it('preserves standalone submission capabilities', async () => {
+    delete process.env.DEVRYAN_ORCHESTRATION_URL;
+    delete process.env.DEVRYAN_ORCHESTRATION_TOKEN;
+    createInstalledPlugin(`export default async ({ client }) => ({ event: () => client.session.promptAsync() });`);
+    const plugin = await DevRyanOhMyOpenCodeSlimPlugin({ client: { session: { promptAsync: () => 'standalone' } } });
+    expect(await plugin.event()).toBe('standalone');
+  });
   it('fails visibly instead of falling back to package resolution', async () => {
     fs.mkdirSync(testCache, { recursive: true });
     temporaryRoot = fs.mkdtempSync(path.join(testCache, 'missing-'));

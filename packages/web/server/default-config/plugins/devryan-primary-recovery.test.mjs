@@ -9,6 +9,8 @@ afterEach(() => {
   if (originalToken === undefined) delete process.env.DEVRYAN_ORCHESTRATION_TOKEN;
   else process.env.DEVRYAN_ORCHESTRATION_TOKEN = originalToken;
   delete globalThis[Symbol.for('devryan.primary-recovery.instance.v1')];
+  delete globalThis[Symbol.for('devryan.primary-recovery.ready.v1')];
+  delete globalThis[Symbol.for('devryan.preexecution-rejection.v1')];
 });
 
 async function setup({ guarded = true, ids = ['read', 'glob', 'grep', 'bash'], fail = false } = {}) {

@@ -191,6 +191,10 @@ describe('managed orchestration contract', () => {
     };
     expect(contract.requiresManualModelRecovery(parked, { resumable: true })).toBe(true);
     expect(contract.requiresManualModelRecovery(parked, { resumable: false })).toBe(false);
+    const envelope = { owner: 'devryan', taskId: parked.taskId, resumable: true, action: null };
+    expect(toManagedTaskEvent(parked, envelope).properties.task.manualRecoveryRequired).toBe(true);
+    expect(toManagedTaskEvent(parked, { ...envelope, action: 'retry_in_place' }).properties.task.manualRecoveryRequired).toBe(false);
+    expect(toManagedTaskEvent(parked).properties.task).not.toHaveProperty('manualRecoveryRequired');
     expect(contract.requiresManualModelRecovery(
       { ...parked, failureReason: 'provider disconnected' },
       { resumable: true },

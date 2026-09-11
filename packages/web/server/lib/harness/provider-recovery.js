@@ -1,3 +1,4 @@
+import { classifyManagedTaskFailure } from '@openchamber/orchestration-runtime';
 import crypto from 'node:crypto';
 import { createPrimaryRecoveryHost, createPrimaryRecoveryManagedAdapter } from '@openchamber/harness-runtime';
 
@@ -12,6 +13,7 @@ const ownerHash = (req) => {
 
 export function createWebPrimaryRecoveryRuntime(options) {
   const host = createPrimaryRecoveryHost({ ...options,
+    classifyFailure: (error) => classifyManagedTaskFailure(`${error?.name ?? ''}: ${error?.data?.message ?? error?.message ?? ''}`),
     ...createPrimaryRecoveryManagedAdapter((request) => options.getManagedRuntime().handleRpc(request)),
     authorize: (record) => options.getMultiUserRuntime()?.canSessionTokenHashAccess(record.owner, record.sessionID) ?? false,
   });

@@ -6,6 +6,8 @@ Web/Electron owner adapter for the transport-neutral DevRyan-managed task schedu
 
 ## Files
 
+- `parent-read-freshness.js`: host-owned before/after native read identities and existing-target mutation admission. Reads overlapping possible child writes are provisional; unavailable or stale identities require refresh. New-file creation remains valid. This does not classify arbitrary shell effects or replace native freshness checks.
+- `required-check-observer.js`: exact declared native command and effective-workdir matching, canonical call/message identity and numeric exit receipts tied to bounded file manifests. All matched names reserve atomically before canonical identity lookup; explicit start/bind/complete phases reject superseded or conflicting identities. Missing hooks, raced files, lost pre-execution hashes and stale leases remain unverified.
 - `runtime.js`: composes one scheduler, overlays the durable root owner's
   personal-or-host agent execution before admission and retry/resume agent
   changes, preserves explicit plan-safe and Model Recovery attempts, rejects
@@ -21,6 +23,7 @@ Web/Electron owner adapter for the transport-neutral DevRyan-managed task schedu
   `set_auto_resume` RPC, and cancels plans on `session.deleted` events. Optional `auxiliaryRpcHandlers` dispatch named bridge methods before
   scheduler initialization or availability gating, so lightweight private
   integrations can reuse the loopback bridge without touching managed-task state.
+- The same private runtime negotiates `harness_capabilities`, `wait_any`, `watch_result_commits`, `parent_tool`, `required_check`, compact result headers and context metadata. Commit watches notify the existing collection owner; unchanged transport slices never create model turns. Runtime flags and rollback contracts are documented in `docs/HARNESS_OPTIMIZATION.md`.
 - `atomic-ledger.js`: private atomic JSON persistence with an exclusive heartbeat owner lock, dead-process recovery regardless of heartbeat age, per-operation token fencing, legacy dispatch-group hydration, and corrupt-ledger quarantine.
 - `open-code-executor.js`: managed OpenCode HTTP transport and Cursor SDK routing for the shared executor state machine, including per-executor exact-URL status single-flight and cross-owner stale-child abort/deletion cleanup and cancellation of reserved recovery POSTs.
 - `private-host.js`: authenticated IPv4-loopback RPC listener with bounded bodies and deterministic close.

@@ -1,3 +1,4 @@
+import { resizeQaNativeWindow } from './native-window.mjs';
 import { mkdir, readFile, writeFile, rename, rm, readdir, stat, realpath } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -9,6 +10,7 @@ import { resolveSessionPlanRevision } from '../../packages/web/server/lib/plans/
 import { CdpConnection, discoverPageTarget, evaluate } from './cdp.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
+import { selectQaThinkingLevel } from './thinking-control.mjs';
 import { expandQaMatrix, loadQaMatrixConfig } from './matrix-config.mjs';
 import { createQaProjectFixture, removeQaProjectFixture } from './project-fixture.mjs';
 import { gradeQaProject } from './acceptance-graders.mjs';
@@ -170,9 +172,12 @@ export async function runQaMatrixCell(cell) {
     await writeFile(path.join(fixture.evidenceDirectory, 'runner-provenance.json'), JSON.stringify(runnerIdentity, null, 2));
     if (cell.transport === 'live') {
       const { prepareQaProfile, assertQaSelectedProviderDuration } = await import('./profile-preparation.mjs');
-      profile = await prepareQaProfile({ runtimeRoot, workspace: fixture.fixtureRoot, providerId: cell.providerId, modelId: cell.modelId, variant: cell.variant });
+      profile = await prepareQaProfile({ runtimeRoot, workspace: fixture.fixtureRoot, providerId: cell.providerId, modelId: cell.modelId, variant: cell.variant,
+        agentAssignments: cell.agentAssignments, allowCrossProviderAssignments: cell.allowCrossProviderAssignments });
       evidence.profile = profile.evidence;
       evidence.credentialAdmission = assertQaSelectedProviderDuration(cell.providerId, profile.evidence.credentials, cell.timeoutMs);
+      evidence.specialistCredentialAdmission = [...new Set(Object.values(cell.agentAssignments ?? {}).map(selected => selected.providerId))]
+        .map(providerId => assertQaSelectedProviderDuration(providerId, profile.evidence.credentials, cell.timeoutMs));
     } else {
       const { prepareQaFixtureProfile } = await import('./fixture-scenarios.mjs');
       profile = await prepareQaFixtureProfile({ runtimeRoot, workspace: fixture.fixtureRoot, cell });
@@ -198,9 +203,11 @@ export async function runQaMatrixCell(cell) {
     evidence.artifactManifestSha256 = createHash('sha256').update(manifest).digest('hex');
     const port = await reservePort();
     const debugPort = await reservePort();
+    const inspectorPort = cell.windowSize ? await reservePort() : null;
     const env = { ...process.env, ...profile.env, DEVRYAN_QA_RUNTIME: cell.runtime, OPENCHAMBER_PORT: String(port), OPENCHAMBER_DIST_DIR: artifactDirectory };
     delete env.ELECTRON_RUN_AS_NODE;
     const flags = [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR}`, '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-background-timer-throttling'];
+    if (inspectorPort) flags.push(`--inspect=127.0.0.1:${inspectorPort}`);
     if (cell.runtime === 'electron') start(packaged.binary, flags, env);
     else start('node', [profile.bootstrapPath], env);
     await check('initial managed runtime readiness', () => waitForQaHostReady({
@@ -247,6 +254,18 @@ export async function runQaMatrixCell(cell) {
       advertisedVariant = cell.variant === null ? null : provider.models[cell.modelId].variants[cell.variant];
       evidence.advertisedVariantControls = projectReasoningOptions(advertisedVariant);
       const agents = await api('/api/agent');
+      evidence.specialistSelections = Object.entries(cell.agentAssignments ?? {}).map(([name, selected]) => {
+        const assignedProvider = catalog.all?.find(provider => provider.id === selected.providerId);
+        const model = assignedProvider?.models?.[selected.modelId];
+        const agent = agents.find(agent => agent.name === name) ?? (name === 'builder' ? agents.find(agent => agent.name === 'build') : null);
+        if (!model || !catalog.connected?.includes(selected.providerId)
+          || (selected.variant !== null && !Object.hasOwn(model.variants ?? {}, selected.variant))) {
+          throw new Error(`Pinned specialist model or effort is unavailable: ${name}`);
+        }
+        if (agent?.model?.providerID !== selected.providerId || agent?.model?.modelID !== selected.modelId
+          || (agent.variant ?? null) !== selected.variant) throw new Error(`Native specialist differs from its explicit selection: ${name}`);
+        return { name, ...selected, available: true, nativeSelectionVerified: true };
+      });
       const visibleAgents = agents.filter(agent => !agent.hidden);
       nativeAgent = cell.agent === 'builder' && !visibleAgents.some(agent => agent.name === 'builder') ? 'build' : cell.agent;
       if (!visibleAgents.some(agent => agent.name === nativeAgent)) throw new Error('Pinned primary agent is unavailable');
@@ -256,6 +275,8 @@ export async function runQaMatrixCell(cell) {
         if (!Array.isArray(toolIDs) || !toolIDs.every(id => typeof id === 'string')
           || !toolIDs.includes('devryan_task')) throw new Error('Native managed orchestration plugin is not registered');
         evidence.nativeToolInventory = toolIDs;
+        const preflight = await api(`/api/diagnostics/harness/preflight?directory=${encodeURIComponent(fixture.fixtureRoot)}&providerID=${encodeURIComponent(cell.providerId)}&modelID=${encodeURIComponent(cell.modelId)}&agent=${encodeURIComponent(cell.agent)}${cell.variant === null ? '' : `&variant=${encodeURIComponent(cell.variant)}`}`);
+        evidence.harnessStartFingerprint = preflight.runFingerprint ?? null;
       }
       if (cell.transport === 'fixture') {
         const configCatalog = await api(`/api/config/agents?directory=${encodeURIComponent(fixture.fixtureRoot)}`);
@@ -292,9 +313,8 @@ export async function runQaMatrixCell(cell) {
         evidence.effectiveSelection = await evaluate(cdp, initialBootstrapSnapshotExpression(cell));
         return effectiveQaSelectionIsReady(evidence.effectiveSelection, cell, nativeAgent);
       });
-      await ui.click({ selector: 'button.model-controls__variant-trigger' });
       const variantLabel = cell.variant === null ? 'Default' : cell.variant.charAt(0).toUpperCase() + cell.variant.slice(1);
-      await ui.click({ selector: '[role="menuitem"]', text: variantLabel });
+      await selectQaThinkingLevel({ cdp, ui, value: cell.variant });
       await ui.waitExpression('pinned thinking control', `[...document.querySelectorAll('.model-controls__variant-trigger')].some(e=>e.innerText.trim()===${JSON.stringify(variantLabel)})`);
       if (cell.planMode) { await ui.type(''); await ui.key('Tab', { code: 'Tab', modifiers: 8, windowsVirtualKeyCode: 9 }); }
       await ui.click({ selector: agentTrigger });
@@ -303,6 +323,13 @@ export async function runQaMatrixCell(cell) {
       evidence.selection = { agent: cell.agent, variant: cell.variant, planMode: cell.planMode, observedInControls: true };
       await screenshot('configured-composer');
     });
+    if (cell.windowSize) {
+      await check('requested native Electron window size', async () => {
+        await resizeQaNativeWindow({ inspectorPort, pageUrl: await evaluate(cdp, 'location.href'),
+          requested: cell.windowSize, ui, record: value => { evidence.nativeWindow = value; } });
+        await screenshot('configured-native-window');
+      });
+    }
     if (cell.transport === 'fixture') {
       const { runQaFixtureScenario } = await import('./fixture-scenarios.mjs');
       evidence.fixtureScenario = await runQaFixtureScenario({ cell, fixture: profile.fixture, projectFixture: fixture, cdp, ui, api, check, screenshot, runDeadline });
@@ -467,6 +494,8 @@ export async function runQaMatrixCell(cell) {
     if (evidence.diagnostics.gapRecords > 0 || evidence.diagnostics.lastError) throw new Error('Diagnostic evidence has a gap or write error');
     if (cell.transport === 'live') {
       const observation = await readProviderObservation();
+      const preflight = await api(`/api/diagnostics/harness/preflight?directory=${encodeURIComponent(fixture.fixtureRoot)}&providerID=${encodeURIComponent(cell.providerId)}&modelID=${encodeURIComponent(cell.modelId)}&agent=${encodeURIComponent(cell.agent)}${cell.variant === null ? '' : `&variant=${encodeURIComponent(cell.variant)}`}`);
+      evidence.harnessFinishFingerprint = preflight.runFingerprint ?? null;
       if (!observation.some(row => row.kind === 'chat.params' && row.sessionID === sessionID)
         || owned.some(child => child.getLog().includes('DEVRYAN_QA_OBSERVER_GAP'))) throw new Error('Effective provider-option evidence is incomplete');
       evidence.reasoningControls = gradeQaReasoningControls({ observations: observation,

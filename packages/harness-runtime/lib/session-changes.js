@@ -291,7 +291,7 @@ export function createSessionChangeRuntime(options) {
           if (!op) continue;
           active.delete(id); nativeActive.delete(id); putOperation(repo, op); changed.add(input.sessionID);
           diagnostics.push({ code: 'exact_tool_receipt', phase: historical ? 'history' : 'receipt',
-            sessionID: input.sessionID, callID: input.callID, source: op.source, evidence: 'exact' });
+            sessionID: input.sessionID, messageID: input.messageID, callID: input.callID, source: op.source, evidence: 'exact', hasChanges: op.hasChanges === true });
         } catch (error) {
           if (historical && ['unsupported_path', 'invalid_change_receipt'].includes(error.code) && existing?.evidence !== 'exact') {
             // One malformed historical receipt must not hide other verified

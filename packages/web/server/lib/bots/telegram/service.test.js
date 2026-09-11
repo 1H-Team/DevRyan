@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { createBotTelegramService } from './service.js';
 import { encryptBotJson, decryptBotJson } from '../encryption.js';
 import { messageAssociatedData } from '../channels.js';
@@ -125,6 +125,21 @@ function fixture({ speech = null } = {}) {
 }
 
 describe('durable native Telegram service', () => {
+  test('shares one idle discovery scan per minute and invalidates local configuration changes', async () => {
+    const f = fixture(); await f.create();
+    const list = vi.spyOn(f.repository, 'list');
+    await Promise.all(Array.from({ length: 20 }, () => f.api.tick({ waitForJobs: false })));
+    expect(list.mock.calls.filter(([name]) => name === 'connections')).toHaveLength(1);
+    for (let index = 0; index < 59; index += 1) { f.advance(1_000); await f.api.tick({ waitForJobs: false }); }
+    expect(list.mock.calls.filter(([name]) => name === 'connections')).toHaveLength(1);
+    f.advance(1_000); await f.api.tick({ waitForJobs: false });
+    expect(list.mock.calls.filter(([name]) => name === 'connections')).toHaveLength(2);
+    await f.api.configure(principal, BOT, { enabled: true, token });
+    await f.api.tick({ waitForJobs: false });
+    expect(list.mock.calls.filter(([name]) => name === 'connections')).toHaveLength(3);
+    await f.api.stop();
+  });
+
   for (const stage of ['transcription', 'synthesis']) for (const action of ['stop', 'disconnect', 'rotate', 'revoke', 'purge', 'owner']) test(`${action} aborts and joins pending ${stage} even if its provider ignores cancellation`, async () => {
     const pending = deferred(); let signal; let finished = false;
     const f = fixture({ speech: {

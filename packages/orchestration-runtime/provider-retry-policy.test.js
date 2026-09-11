@@ -16,6 +16,11 @@ import {
 } from './provider-retry-policy.js';
 
 describe('managed task deadline classification', () => {
+  it.each(['AuthenticationError: upstream request failed', 'Unauthorized: usage limit reached', 'Invalid API key: service temporarily unavailable', 'HTTP 401: connection reset'])('keeps authentication distinct from transient failures: %s', (reason) => {
+    expect(classifyManagedTaskFailure(reason)).toBe('provider_authentication');
+    expect(classifyProviderRetryFailure(reason)).toBeNull();
+    expect(classifyProviderTransportFailure(null, reason)).toBeNull();
+  });
   it('recognizes only the scheduler-owned timeout prefix', () => {
     const timeout = `${MANAGED_TASK_TIMEOUT_REASON_PREFIX}1786540028910`;
 

@@ -12,3 +12,8 @@ Feature modules call endpoint helpers; responses are mapped into store-ready mod
 
 ## Integration
 Used by settings sections, auth, providers, skills, and session operations.
+
+`SupabaseConnectionAPI` is an optional host capability for the local-owner About
+switch. Its typed status separates desired mode, effective mode and restart
+blockers. The web adapter lives in `packages/web/src/api/supabaseConnection.ts`;
+Electron consumes the same HTTP capability.

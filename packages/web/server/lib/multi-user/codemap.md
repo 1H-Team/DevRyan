@@ -128,3 +128,13 @@ ownership, directory opacity, and audit control plane.
   `packages/ui/src/components/sections/users/UserManagementPage.tsx`.
 - Managed issue intake and exact-admin failure review are rendered by
   `packages/ui/src/components/sections/bug-reports/BugReportsPage.tsx`.
+
+## Supabase connection control
+
+`connection-preference.js` reads the persistent mode before cloud initialization.
+`supabase-connection.js` owns enrolled local-owner sessions, reconnect probes and
+idle-restart state; `connection-routes.js` installs the direct-local boundary and
+GET/PATCH control before ordinary API authentication. `disconnected-auth.js`
+requires the enrolled owner in solo mode. `principal-cache.js` coalesces refreshes
+with revocation fencing; `supabase-traffic.js` aggregates sanitized local byte and
+request estimates at the central transport. See [connection behavior](../../../../../docs/SUPABASE_CONNECTION.md).

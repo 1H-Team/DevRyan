@@ -46,3 +46,17 @@ test('unverified Claude keeps manual renderer recovery available', () => {
     record: { ...current.record, providerID: 'anthropic', recoveryID: null, readOnly: false, attemptCount: 0 } });
   expect(hostOwnsPrimaryRecovery('ses_test')).toBe(false);
 });
+
+test('an exact pre-execution rejection pause stays host-owned on Grok with transport recovery off', () => {
+  const current = snapshot(4, 'needs_attention');
+  usePrimaryRecoveryStore.getState().accept('ses_test', { ...current, mode: 'off', enforced: false, supported: false,
+    record: { ...current.record, providerID: 'xai', readOnly: false, recoveryID: null,
+      reason: 'managed_repeated_preexecution_rejection', attemptCount: 0, failureKind: null } });
+  expect(hostOwnsPrimaryRecovery('ses_test')).toBe(true);
+  expect(hostOwnsPrimaryRecovery('ses_other')).toBe(false);
+  usePrimaryRecoveryStore.getState().accept('ses_test', { ...current, mode: 'off', enforced: false, supported: false,
+    record: { ...current.record, revision: 5, providerID: 'xai', readOnly: false, recoveryID: null,
+      state: 'observing', reason: null, attemptCount: 0 } });
+  expect(usePrimaryRecoveryStore.getState().snapshots.ses_test.record?.revision).toBe(5);
+  expect(hostOwnsPrimaryRecovery('ses_test')).toBe(false);
+});

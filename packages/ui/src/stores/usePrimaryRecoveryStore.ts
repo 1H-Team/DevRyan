@@ -11,6 +11,7 @@ export const primaryRecoverySchema = z.object({
     revision: z.number().int().positive(), attemptCount: z.number().int().min(0).max(1), maxAttempts: z.literal(1),
     readOnly: z.boolean(), providerID: label, modelID: label, agent: label, variant: label.nullable(),
     reason: label.nullable(), updatedAt: z.number(),
+    failureKind: z.enum(['provider_transport', 'provider_usage_limit', 'provider_authentication', 'provider_prompt_rejected', 'model_unavailable', 'deadline_exceeded']).nullable().optional(),
   }).nullable(),
 });
 export type PrimaryRecoverySnapshot = z.infer<typeof primaryRecoverySchema>;
@@ -44,5 +45,6 @@ export const usePrimaryRecoveryStore = create<{
 
 export const hostOwnsPrimaryRecovery = (sessionID: string): boolean => {
   const snapshot = usePrimaryRecoveryStore.getState().snapshots[sessionID];
-  return Boolean(snapshot?.record && (snapshot.enforced || snapshot.record.readOnly));
+  return Boolean(snapshot?.record && (snapshot.enforced || snapshot.record.readOnly
+    || snapshot.record.reason === 'managed_repeated_preexecution_rejection'));
 };

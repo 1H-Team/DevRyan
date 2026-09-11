@@ -33,7 +33,7 @@ const stateMetadata = (row) => row ? { id: row.id, state: row.state, errorCode: 
 export async function createBotTelegramService({
   supabase, store, authorization, channels, blobStore, encryption, dataDirectory,
   resolvePrincipal, getDispatcher, speech = null, fetchImpl = fetch, now = Date.now,
-  logger = null, repository = null, credentialVault = null, isOwner = () => true,
+  logger = null, repository = null, credentialVault = null, isOwner = () => true, isAdmissionPaused = () => false,
 } = {}) {
   if (!authorization || !channels || !store || typeof resolvePrincipal !== 'function' || typeof getDispatcher !== 'function') throw new TypeError('Telegram requires Bot authorization, channels, durable store, principal resolver and dispatcher');
   const db = repository || createTelegramStore({ supabase });
@@ -45,11 +45,17 @@ export async function createBotTelegramService({
   const controllers = new Map();
   const locks = new Map();
   const pollBackoff = new Map();
+  const drainNextAt = new Map();
   const jobs = createTelegramJobScheduler();
   const listWork = (name, keys, query) => db.listWork(name, keys, query);
   let scanCursor = 0;
-  let connectionPageAfter = null;
-  let pollAfter = null;
+  let connectionOffset = 0;
+  let pollOffset = 0;
+  let discoveredConnections = [];
+  let discoveryAt = -Infinity;
+  let discoveryGeneration = 0;
+  let discoveryPromise = null;
+  let activeTicks = 0;
   let running = false;
   let stopped = false;
   let timer = null;
@@ -57,6 +63,36 @@ export async function createBotTelegramService({
   let migrationMissing = false;
   let lastPrune = 0;
   const timestamp = () => new Date(now()).toISOString();
+  const invalidateDiscovery = () => { discoveryAt = -Infinity; discoveryGeneration += 1; drainNextAt.clear(); };
+  const wakeDrains = (botId) => { for (const phase of ['inbox', 'outbox', 'synthesis']) drainNextAt.delete(`${botId}:${phase}`); };
+  const discoverConnections = async (force) => {
+    if (!force && now() - discoveryAt < 60_000) {
+      supabase?.traffic?.avoided('GET rest/bot_telegram_connections');
+      return discoveredConnections;
+    }
+    if (discoveryPromise) return discoveryPromise;
+    const generation = discoveryGeneration;
+    discoveryPromise = (async () => {
+      const rows = [];
+      let after = null;
+      while (!stopped) {
+        const page = await db.list('connections', { enabled: true }, {
+          order: 'bot_id.asc', limit: 100, ...(after ? { bot_id: `gt.${after}` } : {}),
+        });
+        rows.push(...page);
+        if (page.length < 100) break;
+        const next = page.at(-1).bot_id;
+        if (next === after) throw error('telegram_discovery_cursor_stalled', 503);
+        after = next;
+      }
+      if (generation === discoveryGeneration) {
+        discoveredConnections = rows;
+        discoveryAt = now();
+      }
+      return rows;
+    })().finally(() => { discoveryPromise = null; });
+    return discoveryPromise;
+  };
   const abortOwnedWork = () => {
     const reason = error('telegram_owner_unavailable', 503);
     for (const controller of controllers.values()) controller.abort(reason);
@@ -377,6 +413,7 @@ export async function createBotTelegramService({
     // One transaction inserts all inbox rows then advances offset. Never acknowledge before durable acceptance.
     await assertOwner();
     if (records.length && !await db.ingest(connection.bot_id, connection.generation, ownerId, records)) throw error('telegram_owner_unavailable', 503);
+    if (records.length) wakeDrains(connection.bot_id);
   };
 
   const deliver = async (original, signal) => {
@@ -625,6 +662,7 @@ export async function createBotTelegramService({
         for (const [key, controller] of controllers) if (key.endsWith(`:${botId}`)) controller.abort();
         jobs.abortWhere((job) => job.botId === botId && job.generation !== generation);
         pollBackoff.delete(botId);
+        invalidateDiscovery();
         if (existing?.credential_id && credentialId !== existing.credential_id) await vault.revoke(existing.credential_id);
         return api.status(principal, botId);
       });
@@ -636,6 +674,7 @@ export async function createBotTelegramService({
         await member(principal, botId, true);
         if (connection) {
           await db.patch('connections', { bot_id: botId }, { enabled: false, generation: crypto.randomUUID(), state: 'disabled', credential_id: null, error_code: null, lease_owner: null, lease_until: null });
+          invalidateDiscovery();
           for (const [key, controller] of controllers) if (key.endsWith(`:${botId}`)) controller.abort();
           jobs.abortWhere((job) => job.botId === botId);
           if (connection.credential_id) await vault.revoke(connection.credential_id);
@@ -693,9 +732,11 @@ export async function createBotTelegramService({
       if (!row || !['failed', 'uncertain'].includes(row.state)) throw error('telegram_delivery_not_retryable');
       await binding(row);
       await db.patch('outbox', { id: row.id, state: row.state }, { state: 'pending', error_code: null, next_attempt_at: timestamp() });
+      wakeDrains(botId);
       return { retryQueued: true, mayDuplicateLastPart: row.state === 'uncertain' };
     },
     async notifyRoutineCompleted({ run } = {}) {
+      if (run?.bot_id) wakeDrains(run.bot_id);
       if (!run?.context_snapshot?.routine || !terminalRuns.has(run.state)) return;
       const connection = await db.get('connections', { bot_id: run.bot_id, enabled: true });
       if (!connection) return;
@@ -706,35 +747,43 @@ export async function createBotTelegramService({
         if (Date.parse(run.created_at) >= Date.parse(pairing.routine_subscribed_at || pairing.confirmed_at)) await queueResult(connection, pairing, run, principal);
       }
     },
-    async tick({ pollTimeout = 0, waitForJobs = true } = {}) {
-      if (stopped) return;
+    tick(options = {}) {
+      activeTicks += 1;
+      return api.runTick(options).finally(() => { activeTicks -= 1; });
+    },
+    async runTick({ pollTimeout = 0, waitForJobs = true } = {}) {
+      if (stopped || isAdmissionPaused()) return;
       if (!await isOwner()) { abortOwnedWork(); return; }
-      let available = await db.list('connections', { enabled: true }, { order: 'bot_id.asc', limit: 100, ...(connectionPageAfter ? { bot_id: `gt.${connectionPageAfter}` } : {}) });
-      if (!available.length && connectionPageAfter) available = await db.list('connections', { enabled: true }, { order: 'bot_id.asc', limit: 100 });
-      connectionPageAfter = available.length === 100 ? available.at(-1).bot_id : null;
+      const discovered = await discoverConnections(waitForJobs);
+      if (isAdmissionPaused()) return;
+      if (connectionOffset >= discovered.length) connectionOffset = 0;
+      const available = discovered.slice(connectionOffset, connectionOffset + 100);
+      connectionOffset += available.length;
       const offset = available.length ? scanCursor++ % available.length : 0;
       const connections = [...available.slice(offset), ...available.slice(0, offset)];
       let pollSlots = 16 - [...controllers.keys()].filter((key) => key.startsWith('poll:')).length;
       const polls = [];
       // Poll order advances only when a slot is actually scheduled. Rotating
       // work pages while all long-poll slots are occupied can starve whole pages.
-      for (let page = 0; page < 2 && pollSlots > 0; page += 1) {
-        const candidates = await db.list('connections', { enabled: true }, { order: 'bot_id.asc', limit: 32, ...(pollAfter ? { bot_id: `gt.${pollAfter}` } : {}) });
-        for (const connection of candidates) {
-          if (pollSlots <= 0) break;
-          pollAfter = connection.bot_id;
+      for (let scanned = 0; scanned < discovered.length && pollSlots > 0; scanned += 1) {
+          if (pollOffset >= discovered.length) pollOffset = 0;
+          const connection = discovered[pollOffset++];
           if (controllers.has(`poll:${connection.bot_id}`) || (pollBackoff.get(connection.bot_id)?.nextAt || 0) > now() || connection.state === 'conflict') continue;
           pollSlots -= 1;
           const poll = runConnection(connection, { timeout: pollTimeout });
           void poll.catch(() => undefined); polls.push(poll);
-        }
-        if (candidates.length < 32 && pollSlots > 0) pollAfter = null;
-        else break;
       }
       if (waitForJobs) await Promise.allSettled(polls);
       for (const phase of ['inbox', 'outbox', 'synthesis']) {
+        if (isAdmissionPaused()) break;
         const work = [];
-        for (const connection of connections) work.push(...await runConnection(connection, { poll: false, phase }) || []);
+        for (const connection of connections) {
+          const key = `${connection.bot_id}:${phase}`;
+          if (!waitForJobs && (drainNextAt.get(key) || 0) > now()) continue;
+          const started = await runConnection(connection, { poll: false, phase }) || [];
+          drainNextAt.set(key, now() + (started.length ? 1_000 : 60_000));
+          work.push(...started);
+        }
         // Waiting is only for deterministic manual ticks; never hold the coordinator lock.
         if (waitForJobs) await Promise.allSettled(work);
       }
@@ -753,6 +802,7 @@ export async function createBotTelegramService({
       };
       background = loop();
     },
+    getActiveWorkCount: () => controllers.size + locks.size + jobs.active().length + activeTicks,
     async stop() {
       running = false;
       stopped = true;
@@ -763,8 +813,11 @@ export async function createBotTelegramService({
       await jobs.wait();
       await db.patch('connections', { lease_owner: ownerId }, { lease_owner: null, lease_until: null }).catch(() => {});
       pollBackoff.clear();
+      invalidateDiscovery();
+      discoveredConnections = [];
     },
     async purgeBot({ botId }) {
+      invalidateDiscovery();
       validateUuid(botId, 'botId');
       for (const [key, controller] of controllers) if (key.endsWith(`:${botId}`)) controller.abort();
       jobs.abortWhere((job) => job.botId === botId);

@@ -1,7 +1,11 @@
+import { createCompactResultHeader } from '@openchamber/orchestration-runtime';
+import { createRequiredCheckObserver } from './required-check-observer.js';
 import {
   createManagedAssistantActivityRegistry,
   createManagedTerminalErrorRegistry,
   createManagedTaskScheduler,
+  MANAGED_OVERLAP_READ_TOOLS,
+  resolveHarnessPolicies,
   isManagedModelAvailableInCatalog,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
@@ -23,6 +27,7 @@ import {
 } from './claude-compatibility.js';
 import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
 import { createManagedOrchestrationPrivateHost } from './private-host.js';
+import { createParentReadFreshness } from './parent-read-freshness.js';
 
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1_000;
 const DESIGNER_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
@@ -197,6 +202,11 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const isManagedOpenCode = options.isManagedOpenCode ?? (() => true);
   const getWorkAdmissionBlock = options.getWorkAdmissionBlock ?? (() => null);
   const publishEvent = options.publishEvent ?? (() => undefined);
+  const harnessPolicies = Object.freeze(Object.fromEntries(Object.entries(resolveHarnessPolicies(options.environment ?? process.env))
+    .map(([key, enabled]) => [key, typeof options.harnessPolicies?.[key] === 'boolean' ? options.harnessPolicies[key] : enabled])));
+  const policyProjection = () => ({ schemaVersion: 1, policies: harnessPolicies,
+    overlapReadTools: harnessPolicies.readOverlap ? [...MANAGED_OVERLAP_READ_TOOLS] : [] });
+  const parentReadFreshness = createParentReadFreshness();
   const resolveAgentExecution = typeof options.resolveAgentExecution === 'function'
     ? options.resolveAgentExecution
     : null;
@@ -313,6 +323,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   };
 
   const scheduler = options.scheduler ?? createManagedTaskScheduler({
+    onBarrierChange: options.onBarrierChange,
+    onRequiredCheckReceipt: options.onRequiredCheckReceipt,
     executor,
     persistence,
     now,
@@ -327,6 +339,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       attempt: attemptAutoResume,
     },
   });
+
+  const requiredCheckObserver = createRequiredCheckObserver({ scheduler, now });
 
   let privateHost;
   let bridgeEnvironment = null;
@@ -452,24 +466,34 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     return task;
   };
 
-  const projectTaskResult = (task, resultMode) => {
-    const envelope = scheduler.getResultEnvelope(task.taskId);
-    return projectManagedTaskResultForMode(
+  const projectTaskResult = async (task, resultMode, envelope = scheduler.getResultEnvelope(task.taskId)) => {
+    const result = projectManagedTaskResultForMode(
       projectTask(task, envelope),
       envelope,
       resultMode,
     );
+    if (resultMode === 'compact' && envelope && result.resultReference) {
+      result.resultHeader = createCompactResultHeader({ task, envelope,
+        checks: await requiredCheckObserver.project(task), observedAt: now() });
+    }
+    return Object.values(harnessPolicies).some(Boolean) ? { ...result, capabilities: policyProjection() } : result;
   };
 
-  const projectHandoffResult = (scope, result, resultMode) => ({
+  const projectEnvelopeResult = async (task, envelope, resultMode) => {
+    if (resultMode !== 'compact') return projectManagedResultEnvelope(task, envelope, resultMode);
+    const { task: _task, ...result } = await projectTaskResult(task, resultMode, envelope);
+    return result;
+  };
+
+  const projectHandoffResult = async (scope, result, resultMode) => ({
     rootSessionId: scope.rootSessionId,
     fromMode: scope.fromMode,
     toMode: scope.toMode,
     state: result.state,
-    tasks: result.taskIds
+    tasks: await Promise.all(result.taskIds
       .map((taskId) => scheduler.getTask(taskId))
       .filter(Boolean)
-      .map((task) => projectTaskResult(task, resultMode)),
+      .map((task) => projectTaskResult(task, resultMode))),
     failures: result.failures,
   });
 
@@ -516,8 +540,56 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
 
   const handleRpcInternal = async ({ method, params = {} }, context = {}) => {
     await ensureInitialized();
-    const resultMode = resolveManagedResultMode(params.resultMode);
+    const requestedResultMode = resolveManagedResultMode(params.resultMode);
+    const resultMode = harnessPolicies.compactResults && params.resultContractVersion === 1 && requestedResultMode !== 'eager'
+      ? 'compact' : requestedResultMode === 'compact' ? 'reference' : requestedResultMode;
     switch (method) {
+      case 'harness_capabilities': return policyProjection();
+      case 'context_state': {
+        if (!harnessPolicies.contextProjection) throw createRuntimeError('harness_policy_disabled', 'Task context projection is disabled', 409);
+        const { rootSessionId, directory } = params;
+        if (typeof rootSessionId !== 'string' || !rootSessionId || typeof directory !== 'string' || !directory) throw createRuntimeError('task_scope_mismatch', 'Context scope is required', 403);
+        const tasks = scheduler.listTasks({ rootSessionId });
+        for (const task of tasks) assertTaskScope(task, params);
+        return { tasks: tasks.map((task) => ({ taskId: task.taskId, rootSessionId, childSessionId: task.childSessionId,
+          status: task.status, failureReason: task.failureReason,
+          requiredChecks: (task.requiredChecks ?? []).map(({ name }) => ({ name })),
+          requiredCheckReceipts: (task.requiredCheckReceipts ?? []).map(({ name, status, callId, messageId }) => ({ name, status, callId, messageId })) })),
+          envelopes: scheduler.listResultEnvelopes({ rootSessionId }).map((envelope) => ({ taskId: envelope.taskId,
+            rootSessionId, envelopeId: envelope.envelopeId, action: envelope.action, autoResume: envelope.autoResume })) };
+      }
+      case 'required_check': {
+        if (!harnessPolicies.compactResults) return { tracked: false };
+        if (params.phase === 'before') return await requiredCheckObserver.before(params);
+        if (params.phase === 'after') return await requiredCheckObserver.after(params);
+        throw new TypeError('required check phase must be before or after');
+      }
+      case 'watch_result_commits': return await scheduler.waitForResultCommit({
+        directory: params.directory, afterCursor: params.afterCursor, signal: context.signal,
+        timeoutMs: resolveWaitTimeoutMs(params) ?? 25_000,
+      });
+      case 'parent_tool': {
+        if (!harnessPolicies.readOverlap) return { allowed: false };
+        const rootSessionId = typeof params.rootSessionId === 'string' ? params.rootSessionId.trim() : '';
+        const directory = typeof params.directory === 'string' ? params.directory.trim() : '';
+        if (!rootSessionId || !directory) throw createRuntimeError('task_scope_mismatch', 'rootSessionId and directory are required', 403);
+        const rootTasks = scheduler.listTasks({ rootSessionId });
+        if (rootTasks.some((task) => task.directory !== directory)) throw createRuntimeError('task_scope_mismatch', 'parent tool directory does not match managed work', 403);
+        const barrier = await scheduler.inspectDispatchBarrier(rootSessionId);
+        const clear = barrier.state === 'clear';
+        const input = { rootSessionId, directory, tool: params.tool, args: params.args, callId: params.callId, barrierClear: clear };
+        if (params.phase === 'after') {
+          await parentReadFreshness.observeRead(input);
+          return { allowed: true, provisional: !clear };
+        }
+        if (params.phase !== 'before') throw new TypeError('parent tool phase must be before or after');
+        await parentReadFreshness.beginRead(input);
+        if (!clear) return { allowed: MANAGED_OVERLAP_READ_TOOLS.includes(params.tool), provisional: true };
+        if (rootTasks.some((task) => task.mode === 'orchestrator' && task.dispatchGroupId !== null)) {
+          await parentReadFreshness.assertWrite(input);
+        }
+        return { allowed: true, provisional: false };
+      }
       case 'submit': {
         assertWorkAdmission();
         const timeoutAt = resolveSubmitTimeoutAt(params, now);
@@ -555,6 +627,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           variant: admittedExecution.variant ?? null,
           label: params.label,
           prompt: params.prompt,
+          ...(params.requiredChecks ? { requiredChecks: params.requiredChecks } : {}),
           allowDuplicate: params.allowDuplicate === true,
           timeoutAt,
         });
@@ -569,6 +642,19 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         });
         return projectTaskResult(settled, resultMode);
       }
+      case 'wait_any': {
+        if (!harnessPolicies.waitAny) throw createRuntimeError('harness_policy_disabled', 'wait_any is disabled; use wait for an individual task', 409);
+        if (!Array.isArray(params.taskIds) || params.taskIds.length === 0) throw new TypeError('taskIds is required');
+        const scopedTasks = [...new Set(params.taskIds)].map((taskId) => getScopedTask({ ...params, taskId }));
+        const waitTimeoutMs = resolveWaitTimeoutMs(params);
+        const result = await scheduler.waitForAnyTask({ rootSessionId: params.rootSessionId,
+          taskIds: scopedTasks.map((task) => task.taskId), afterCursor: params.afterCursor,
+          signal: context.signal, ...(waitTimeoutMs === undefined ? {} : { timeoutMs: waitTimeoutMs }) });
+        const returnedIds = new Set([...result.readyTaskIds, ...result.attention.map((entry) => entry.taskId),
+          ...(result.settled ? result.unacknowledgedTaskIds : [])]);
+        return { ...result, results: await Promise.all([...returnedIds].map((id) => scheduler.getTask(id)).filter(Boolean)
+          .map((task) => projectTaskResult(task, resultMode))), capabilities: policyProjection() };
+      }
       case 'wait_result_action': {
         const task = getScopedTask(params);
         const resultEnvelope = await scheduler.waitForResultAction(task.taskId, {
@@ -578,8 +664,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           ? scheduler.getTask(resultEnvelope.followUpTaskId)
           : null;
         return {
-          ...projectManagedResultEnvelope(task, resultEnvelope, resultMode),
-          followUpTask: followUpTask ? projectTaskResult(followUpTask, resultMode) : null,
+          ...await projectEnvelopeResult(task, resultEnvelope, resultMode),
+          followUpTask: followUpTask ? await projectTaskResult(followUpTask, resultMode) : null,
         };
       }
       case 'barrier': {
@@ -598,13 +684,15 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         if (!rootSessionId) {
           throw createRuntimeError('task_scope_mismatch', 'rootSessionId is required', 403);
         }
-        return await scheduler.inspectDispatchBarrier(rootSessionId);
+        const barrier = await scheduler.inspectDispatchBarrier(rootSessionId);
+        return Object.values(harnessPolicies).some(Boolean) ? { ...barrier, capabilities: policyProjection() } : barrier;
       }
       case 'list_provider_recovery_continuations': {
         const sessionId = typeof params.sessionId === 'string'
           ? params.sessionId.trim()
           : '';
         return {
+          resultCommitWatch: true,
           continuations: scheduler.listReadyProviderRecoveryContinuations({
             ...(sessionId ? { sessionId } : {}),
           }),
@@ -665,7 +753,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             : {}),
         });
         return Array.isArray(cancelled)
-          ? { tasks: cancelled.map((entry) => projectTaskResult(entry, resultMode)) }
+          ? { tasks: await Promise.all(cancelled.map((entry) => projectTaskResult(entry, resultMode))) }
           : projectTaskResult(cancelled, resultMode);
       }
       case 'read_result': {
@@ -721,9 +809,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             : {}),
         });
         return {
-          ...projectManagedResultEnvelope(task, result.envelope, resultMode),
+          ...await projectEnvelopeResult(task, result.envelope, resultMode),
           followUpTask: result.followUpTask
-            ? projectTaskResult(result.followUpTask, resultMode)
+            ? await projectTaskResult(result.followUpTask, resultMode)
             : null,
         };
       }
@@ -733,7 +821,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           throw createRuntimeError('invalid_request', 'enabled must be a boolean', 400);
         }
         const result = await scheduler.setResultAutoResume(task.taskId, { enabled: params.enabled });
-        return projectManagedResultEnvelope(task, result.envelope, resultMode);
+        return await projectEnvelopeResult(task, result.envelope, resultMode);
       }
       default:
         throw createRuntimeError('rpc_method_not_found', `Unknown managed orchestration method: ${method}`, 404);
@@ -807,6 +895,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   }
 
   const shutdown = () => {
+    requiredCheckObserver.dispose();
     if (shutdownPromise) return shutdownPromise;
     shutdownPromise = (async () => {
       const [hostResult, schedulerResult] = await Promise.allSettled([

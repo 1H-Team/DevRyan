@@ -1,3 +1,4 @@
+import { createWebSupabaseConnectionAPI } from './supabaseConnection';
 import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
 import { createWebTerminalAPI } from './terminal';
 import { createWebGitAPI } from './git';
@@ -26,6 +27,7 @@ export const createWebAPIs = (): RuntimeAPIs => ({
   github: createWebGitHubAPI(),
   push: createWebPushAPI(),
   diagnostics: createWebDiagnosticsAPI(),
+  supabaseConnection: createWebSupabaseConnectionAPI(),
   evidence: createWebEvidenceAPI(),
   processes: createWebProcessesAPI(),
   contextUsage: createWebContextUsageAPI(),

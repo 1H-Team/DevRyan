@@ -205,7 +205,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
 
     const uiAuthController = getUiAuthController();
     if (uiAuthController) {
-      uiAuthController.dispose();
+      await uiAuthController.dispose();
       setUiAuthController(null);
     }
 

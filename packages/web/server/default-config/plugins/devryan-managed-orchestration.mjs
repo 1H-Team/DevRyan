@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 
 import { tool } from '@opencode-ai/plugin';
 
@@ -6,6 +7,10 @@ const ACTIONS = [
   'start',
   'status',
   'wait',
+  'wait_any',
+  'checkpoint',
+  'remember_decision',
+  'decisions',
   'read_result',
   'cancel',
   'continue',
@@ -58,6 +63,7 @@ const RECOVERY_CONTINUATION_STALE_MS = 60_000;
 // Open-todo safety net: an idle orchestrator root turn that still has
 // pending/in_progress todos is nudged to continue, capped per user message.
 const OPEN_TODO_CONTINUATION_MAX_PER_TURN = 3;
+const BUILDER_TODO_CONTINUATION_MAX_PER_OBJECTIVE = 12;
 const OPEN_TODO_CONTINUATION_DEDUPE_MS = 60_000;
 const OPEN_TODO_CONTINUATION_MAP_MAX_ENTRIES = 256;
 const OPEN_TODO_STATUSES = new Set(['pending', 'in_progress']);
@@ -90,7 +96,7 @@ const resolveModelResultMode = () => (
 );
 
 const withModelResultMode = (params, resultMode) => (
-  resultMode === 'reference' ? { ...params, resultMode: 'reference' } : params
+  resultMode === 'reference' ? { ...params, resultMode: 'reference', resultContractVersion: 1 } : params
 );
 
 const getBridge = () => {
@@ -167,6 +173,8 @@ const callRpc = async (method, params, { signal } = {}) => {
   });
   const body = await response.json().catch(() => null);
   if (!response.ok || body?.ok !== true) {
+    if (response.status === 401) throw Object.assign(new Error('The private runtime connection was rejected. Reconnect the managed OpenCode runtime before retrying; repeating this tool call cannot repair the connection.'),
+      { code: 'managed_bridge_authentication_failed', statusCode: 401 });
     const message = typeof body?.error?.message === 'string' && body.error.message.trim()
       ? body.error.message.trim()
       : `Managed orchestration RPC failed (${response.status})`;
@@ -196,6 +204,8 @@ const validateResultReference = (value, {
   envelopeId = null,
   totalBytes = null,
   previouslyReturnedBytes = 0,
+  compact = false,
+  initial = false,
 } = {}) => {
   if (
     !isRecord(value)
@@ -204,12 +214,13 @@ const validateResultReference = (value, {
     || !value.envelopeId.trim()
     || (envelopeId && value.envelopeId !== envelopeId)
     || !Number.isSafeInteger(value.totalBytes)
-    || value.totalBytes <= RESULT_PAGE_MAX_BYTES
+    || value.totalBytes < 0
+    || (!compact && value.totalBytes <= RESULT_PAGE_MAX_BYTES)
     || (totalBytes !== null && value.totalBytes !== totalBytes)
     || typeof value.text !== 'string'
     || resultReferenceByteLength(value.text) > RESULT_PAGE_MAX_BYTES
     || !Number.isSafeInteger(value.returnedBytes)
-    || value.returnedBytes <= previouslyReturnedBytes
+    || (value.returnedBytes <= previouslyReturnedBytes && !(compact && initial && value.returnedBytes === 0 && value.text === ''))
     || value.returnedBytes > value.totalBytes
     || value.returnedBytes !== previouslyReturnedBytes + resultReferenceByteLength(value.text)
     || typeof value.complete !== 'boolean'
@@ -951,6 +962,11 @@ const resolveStartExecution = async (args, context, client, invocationPolicy) =>
 const requiresManualModelRecovery = (result) => {
   const task = result?.task;
   const resultEnvelope = result?.resultEnvelope;
+  // Current hosts project the shared scheduler's decision. The classifier
+  // below is compatibility for older hosts, not a second recovery authority.
+  if (typeof task?.manualRecoveryRequired === 'boolean') {
+    return task.manualRecoveryRequired && resultEnvelope?.action === null;
+  }
   return Boolean(
     isRecord(task)
     && isRecord(resultEnvelope)
@@ -960,7 +976,9 @@ const requiresManualModelRecovery = (result) => {
     && (task.status === 'failed' || task.status === 'interrupted')
     && (
       task.failureKind === 'provider_usage_limit'
+      || task.failureKind === 'provider_authentication'
       || task.failureKind === 'model_unavailable'
+      || Boolean(task.transportRecovery)
       || (
         task.mode === 'orchestrator'
         && task.dispatchGrouped === true
@@ -1002,6 +1020,114 @@ const waitForTerminalTask = async (taskId, scoped, signal, initialResult, result
       waitTimeoutMs: WAIT_TIMEOUT_MS,
     }, resultMode), { signal });
   }
+};
+
+const waitForAnyResult = async (args, context, resultMode) => {
+  if (!Array.isArray(args.task_ids) || args.task_ids.length === 0) throw new Error('task_ids is required for wait_any');
+  const taskIds = [...new Set(args.task_ids.map((id) => requireText(id, 'task_ids item')))];
+  let cursor = args.after_cursor;
+  while (true) {
+    if (context.abort?.aborted) throw context.abort.reason ?? new Error('Managed wait aborted');
+    const result = await callRpc('wait_any', withModelResultMode({
+      rootSessionId: requireText(context.sessionID, 'context.sessionID'),
+      directory: requireText(context.directory, 'context.directory'), taskIds,
+      ...(cursor === undefined ? {} : { afterCursor: cursor }), waitTimeoutMs: WAIT_TIMEOUT_MS,
+    }, resultMode), { signal: context.abort });
+    if (!isRecord(result) || result.rootSessionId !== context.sessionID || typeof result.cursor !== 'string'
+      || !Array.isArray(result.results) || !Array.isArray(result.readyTaskIds)
+      || !Array.isArray(result.attention) || !Array.isArray(result.pendingTaskIds)
+      || !Array.isArray(result.unacknowledgedTaskIds) || typeof result.settled !== 'boolean') {
+      throw new Error('Managed wait_any returned a malformed scoped snapshot');
+    }
+    const attentionIds = result.attention.map((entry) => entry?.taskId);
+    const revised = result.schemaVersion === 2;
+    if (revised && (!Array.isArray(result.changedTaskIds) || !Array.isArray(result.dispositioned)
+      || !Array.isArray(result.availableTaskIds) || result.activeWork !== !result.settled
+      || result.changedTaskIds.some(id => !taskIds.includes(id))
+      || new Set(result.changedTaskIds).size !== result.changedTaskIds.length
+      || result.availableTaskIds.some(id => typeof id !== 'string' || !id.startsWith('dvr_task_') || taskIds.includes(id))
+      || result.dispositioned.some(entry => !taskIds.includes(entry?.taskId)
+        || !['continue', 'retry', 'resume', 'abandon', 'recover_in_place', 'retry_in_place'].includes(entry.action)
+        || !(entry.followUpTaskId === null || (typeof entry.followUpTaskId === 'string' && entry.followUpTaskId.startsWith('dvr_task_')))))) {
+      throw new Error('Managed wait_any returned malformed collection changes');
+    }
+    const classifiedIds = [...result.readyTaskIds, ...attentionIds, ...result.pendingTaskIds];
+    if (revised) classifiedIds.push(...result.dispositioned.map(entry => entry.taskId));
+    if (classifiedIds.some((id) => !taskIds.includes(id)) || new Set(classifiedIds).size !== classifiedIds.length
+      || result.unacknowledgedTaskIds.some((id) => !taskIds.includes(id))
+      || result.attention.some((entry) => !['attention', 'scheduled'].includes(entry?.state))
+      || result.settled !== (result.pendingTaskIds.length === 0)) {
+      throw new Error('Managed wait_any returned invalid collection states');
+    }
+    const expectedResults = new Set([...result.readyTaskIds, ...attentionIds,
+      ...(result.settled ? result.unacknowledgedTaskIds : [])]);
+    const receivedIds = new Set();
+    for (const entry of result.results) {
+      if (!taskIds.includes(entry?.task?.taskId) || !TERMINAL_TASK_STATUSES.has(entry.task.status)
+        || entry.task.rootSessionId !== context.sessionID || entry.resultEnvelope?.taskId !== entry.task.taskId
+        || entry.resultEnvelope.action !== null || !expectedResults.has(entry.task.taskId)
+        || receivedIds.has(entry.task.taskId)) {
+        throw new Error('Managed wait_any returned an invalid result identity');
+      }
+      receivedIds.add(entry.task.taskId);
+      const expectedAttention = result.attention.find((item) => item.taskId === entry.task.taskId)?.state;
+      const actualAttention = readScheduledAutoResume(entry.resultEnvelope) ? 'scheduled'
+        : requiresManualModelRecovery(entry) ? 'attention' : undefined;
+      if (expectedAttention !== actualAttention) throw new Error('Managed wait_any returned inconsistent recovery state');
+    }
+    if (receivedIds.size !== expectedResults.size) throw new Error('Managed wait_any omitted a committed result');
+    if ((revised ? result.changedTaskIds.length : result.readyTaskIds.length || result.attention.length) || result.settled === true) {
+      return { ...result, results: result.results.map((entry) => exposeManualModelRecovery(entry)),
+        ...(result.settled && result.attention.length ? { instruction: 'No selected child is running. Collect and disposition any ready results, then leave parked results unacknowledged and end this turn so host or user recovery can continue. Add any recovered followUpTaskId to the next wait selection.' }
+          : result.settled && result.results.length === 0 ? { instruction: 'The selected results are already dispositioned. Continue from the current root state or select other task IDs with work remaining; do not repeat wait_any on this unchanged selection.' } : {}) };
+    }
+    // Cursor repair and transport slice expiration stay inside this tool call.
+    // Neither a live status change nor an unchanged snapshot starts a model turn.
+    cursor = result.cursor;
+  }
+};
+
+const rememberCollectedResult = (state, result, expectedTaskId) => {
+  const taskId = result?.task?.taskId;
+  if (!taskId || (expectedTaskId && taskId !== expectedTaskId)
+    || !TERMINAL_TASK_STATUSES.has(result?.task?.status)) throw new Error('Managed wait returned an invalid terminal task');
+  const envelopeId = result.resultEnvelope?.envelopeId;
+  let reference = null;
+  if (result.resultReference !== undefined) {
+    if (!envelopeId) throw createToolInputInvalidError(`Managed result page for ${taskId} has no matching result envelope`, { taskId, state: 'invalid_result_page' });
+    const header = result.resultHeader;
+    const compact = header?.schemaVersion === 1 && result.capabilities?.policies?.compactResults === true;
+    if (header && (!compact || header.taskId !== taskId || header.envelopeId !== envelopeId
+      || header.outcome?.status !== result.task.status || header.outcome?.partial !== result.resultEnvelope.partial
+      || header.outcome?.disposition !== result.resultEnvelope.action
+      || !Array.isArray(header.criticalFailures) || !Array.isArray(header.verification?.checks)
+      || header.criticalFailures.some((failure) => typeof failure !== 'string')
+      || (result.resultEnvelope.failureReason && !header.criticalFailures.includes(result.resultEnvelope.failureReason))
+      || !['passed', 'failed', 'not-observed'].includes(header.verification.status)
+      || header.verification.checks.some((check) => typeof check?.name !== 'string'
+        || !['passed', 'failed', 'not-observed'].includes(check.status)
+        || (check.status === 'passed' && (check.evidence?.exitCode !== 0
+          || typeof check.coverage?.contentHash !== 'string'
+          || check.coverage.contentHash !== check.evidence.checkedContentHash)))
+      || (header.verification.status === 'passed' && (!header.verification.checks.length
+        || header.verification.checks.some((check) => check.status !== 'passed')))
+      || ![null, 'manual-attention', 'scheduled-recovery'].includes(header.recovery?.restriction)
+      || header.recovery?.resumable !== result.resultEnvelope.resumable
+      || (header.reported !== undefined && (header.reported.source !== 'retained-child-preview' || header.reported.authoritative !== false
+        || !['complete', 'blocked', 'missing', 'ambiguous'].includes(header.reported.terminalMarker)))
+      || (header.detail?.requiredBeforeDisposition !== undefined && typeof header.detail.requiredBeforeDisposition !== 'boolean')
+      || (header.detail?.requiredBeforeDisposition === false && (header.reported?.terminalMarker !== 'complete'
+        || header.outcome.status !== 'completed' || header.outcome.partial || header.criticalFailures.length
+        || header.recovery.restriction !== null || header.verification.status !== 'passed' || header.detail.bytes >= 64 * 1024))
+      || header.detail?.bytes !== result.resultReference.totalBytes)) throw new Error('Invalid compact result header');
+    reference = validateResultReference(result.resultReference, { taskId, envelopeId, compact, initial: true });
+  }
+  state.collectedResults.set(taskId, { status: result.task.status, task: result.task,
+    resultEnvelope: result.resultEnvelope, compactHeader: result.resultHeader?.schemaVersion === 1,
+    detailRequired: result.resultHeader?.detail?.requiredBeforeDisposition !== false, resultPaging: reference
+      ? { envelopeId: reference.envelopeId, totalBytes: reference.totalBytes, returnedBytes: reference.returnedBytes,
+        expectedNextCursor: reference.nextCursor, complete: reference.complete }
+      : { envelopeId: null, totalBytes: null, returnedBytes: 0, expectedNextCursor: null, complete: true } });
 };
 
 const MANUAL_MODEL_RECOVERY_INSTRUCTION = 'This task is terminal and awaiting user action. Leave its result unacknowledged, tell the user to choose a model and thinking level in Model Recovery, and do not claim that it is still running or will resume automatically.';
@@ -1071,6 +1197,7 @@ const executeAction = async (args, context, client, dispatchCallId = null, resul
       action,
       label: typeof args.label === 'string' ? args.label.trim() : '',
       prompt: requireText(args.prompt, 'prompt'),
+      ...(args.required_checks ? { requiredChecks: args.required_checks } : {}),
       providerId: execution.providerId,
       modelId: execution.modelId,
       agent,
@@ -1095,6 +1222,7 @@ const executeAction = async (args, context, client, dispatchCallId = null, resul
       variant: normalizedArgs.variant,
       label: normalizedArgs.label || `Managed ${agent} task`,
       prompt: normalizedArgs.prompt,
+      ...(normalizedArgs.requiredChecks ? { requiredChecks: normalizedArgs.requiredChecks } : {}),
       timeoutAt: Date.now() + timeoutSeconds * 1_000,
     }, resultMode), { signal: context.abort });
     const withNotice = executionNotice && isRecord(result)
@@ -1103,6 +1231,12 @@ const executeAction = async (args, context, client, dispatchCallId = null, resul
     return annotateDispatchResult(withNotice, dispatchCallId);
   }
 
+  if (['checkpoint', 'remember_decision', 'decisions'].includes(action)) {
+    return await callRpc('harness_context', { action, sessionID: context.sessionID, directory: context.directory,
+      query: args.query, statement: args.decision, sourceMessageID: args.source_message_id, paths: args.decision_paths,
+      validUntil: args.valid_until, supersedes: args.supersedes }, { signal: context.abort });
+  }
+  if (action === 'wait_any') return await waitForAnyResult(args, context, resultMode);
   const scoped = buildScopedParams(args, context);
   if (action === 'status') {
     return await callRpc(action, withModelResultMode(scoped, resultMode), { signal: context.abort });
@@ -1185,7 +1319,25 @@ export const DevRyanManagedOrchestrationPlugin = async ({
   client,
   directory: pluginDirectory = null,
   scheduleTimeout = globalThis.setTimeout,
+  registerContinuation = async (input) => {
+    const instanceID = globalThis[Symbol.for('devryan.primary-recovery.instance.v1')];
+    const ready = globalThis[Symbol.for('devryan.primary-recovery.ready.v1')];
+    if (typeof instanceID !== 'string' || typeof ready !== 'function') {
+      throw new Error('Managed continuation owner is unavailable; no automatic prompt was sent');
+    }
+    await ready();
+    return await callRpc('primary_recovery', { action: 'continuation', instanceID, ...input });
+  },
 } = {}) => {
+  const factories = globalThis[Symbol.for('devryan.plugin-factories.v1')] ??= new Map();
+  const factoryKey = `managed:${pluginDirectory}:${import.meta.url}`;
+  factories.set(factoryKey, { name: 'devryan-managed-orchestration', directory: pluginDirectory,
+    contentHash: (() => {
+      try { return crypto.createHash('sha256').update(fs.readFileSync(new URL(import.meta.url))).digest('hex'); }
+      catch { return null; } // Missing diagnostic source must not disable the plugin.
+    })(),
+    factoryCalls: (factories.get(factoryKey)?.factoryCalls ?? 0) + 1, ownership: 'managed' });
+  while (factories.size > 256) factories.delete(factories.keys().next().value);
   const sessionStates = new Map();
   const modelResultMode = resolveModelResultMode();
   const pendingStartsByArgs = new WeakMap();
@@ -1199,6 +1351,10 @@ export const DevRyanManagedOrchestrationPlugin = async ({
   let recoveryScanTimer = null;
   let recoveryScanRequested = false;
   let recoverySettleRetriesRemaining = 0;
+  let disposed = false;
+  const commitWatchController = new AbortController();
+  let commitWatchPromise = null;
+  let commitWatchCursor;
 
   const canResumeRecoveredParents = Boolean(
     client?.session
@@ -1490,21 +1646,23 @@ export const DevRyanManagedOrchestrationPlugin = async ({
 
   // Shared by provider-recovery wakes and the open-todo continuation so both
   // use the same identity and primary-host pre-registration.
-  const promptSessionSynthetic = async ({ rootSessionId, directory, execution, text }) => {
+  const promptSessionSynthetic = async ({ rootSessionId, directory, execution, text, kind = 'collect' }) => {
     // Resolve current Plan authority after the task claim, independent of the
     // child policy and execution selection captured by the recovery scan.
-    const planParts = resolveContinuationPlanParts(
-      await resolvePlanAuthority(client, { sessionId: rootSessionId, directory }),
-    );
+    const authority = await resolvePlanAuthority(client, { sessionId: rootSessionId, directory });
+    const planParts = resolveContinuationPlanParts(authority);
     // Use a fresh sortable ID, never a content-derived hash. OpenCode ignores
     // a wake whose identity sorts before the session's current tail, and a
     // time-sortable identity lets the primary host serialize this managed
     // continuation with recovery and user input before OpenCode sees it.
     const wakeMessageID = `msg_${(BigInt(Date.now()) * 4096n).toString(16).slice(-12).padStart(12, '0')}${crypto.randomBytes(7).toString('hex')}`;
-    const primaryInstance = globalThis[Symbol.for('devryan.primary-recovery.instance.v1')];
-    if (typeof primaryInstance === 'string') {
-      await callRpc('primary_recovery', { action: 'continuation', sessionID: rootSessionId,
-        userMessageID: wakeMessageID, instanceID: primaryInstance });
+    const admission = await registerContinuation({ sessionID: rootSessionId, directory,
+      anchorUserMessageID: authority.info.id, userMessageID: wakeMessageID, kind,
+      execution: { providerID: execution.providerId, modelID: execution.modelId, agent: execution.agent,
+        variant: execution.variant ?? null } });
+    if (admission?.allowed !== true || admission.anchorUserMessageID !== authority.info.id
+      || !isRecord(admission.tools) || Object.values(admission.tools).some((value) => typeof value !== 'boolean')) {
+      throw new Error('Managed continuation owner did not authorize this objective');
     }
     const response = await client.session.promptAsync({
       path: { id: rootSessionId },
@@ -1517,6 +1675,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
           modelID: execution.modelId,
         },
         ...(execution.variant ? { variant: execution.variant } : {}),
+        ...(Object.keys(admission.tools).length ? { tools: admission.tools } : {}),
         parts: [...planParts, { type: 'text', text, synthetic: true }],
       },
     }, { throwOnError: false });
@@ -1688,7 +1847,8 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       : typeof last.info.mode === 'string'
         ? last.info.mode.trim().toLowerCase()
         : '';
-    if (lastAgent !== 'orchestrator') return false;
+    if (!['orchestrator', 'builder', 'build'].includes(lastAgent)) return false;
+    if (last.info.error || (last.info.finish && last.info.finish !== 'stop')) return false;
     const lastText = readRecordText(last);
     if (lastText.includes('manualRecoveryRequired') || lastText.includes('[devryan-provider-recovery:')) {
       return false;
@@ -1725,7 +1885,8 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     const continuationKey = `${rootSessionId}\u0000${anchorUserMessageId}`;
     const sent = openTodoContinuations.get(continuationKey) ?? { count: 0, lastSentAt: 0 };
     const count = Math.max(sent.count, transcriptContinuations);
-    if (count >= OPEN_TODO_CONTINUATION_MAX_PER_TURN) return false;
+    const limit = lastAgent === 'orchestrator' ? OPEN_TODO_CONTINUATION_MAX_PER_TURN : BUILDER_TODO_CONTINUATION_MAX_PER_OBJECTIVE;
+    if (count >= limit) return false;
     if (sent.lastSentAt && Date.now() - sent.lastSentAt < OPEN_TODO_CONTINUATION_DEDUPE_MS) return false;
 
     let barrier;
@@ -1758,6 +1919,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         directory,
         execution,
         text: `${OPEN_TODO_CONTINUATION_MARKER}\n${OPEN_TODO_CONTINUATION_PROMPT}`,
+        kind: lastAgent === 'orchestrator' ? 'orchestrator_todo' : 'builder_todo',
       });
     } catch (error) {
       // Keep the dedupe timestamp so a failing host cannot be hammered, but do
@@ -1795,11 +1957,32 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     }
   };
 
+  const startResultCommitWatch = () => {
+    if (disposed || commitWatchPromise || !pluginDirectory) return;
+    commitWatchPromise = (async () => {
+      while (!disposed) {
+        const result = await callRpc('watch_result_commits', {
+          directory: pluginDirectory, afterCursor: commitWatchCursor, waitTimeoutMs: WAIT_TIMEOUT_MS,
+        }, { signal: commitWatchController.signal });
+        if (!isRecord(result) || typeof result.cursor !== 'string' || !Array.isArray(result.rootSessionIds)
+          || result.rootSessionIds.some((id) => typeof id !== 'string' || !id)) {
+          throw new Error('Managed result commit watch returned a malformed snapshot');
+        }
+        commitWatchCursor = result.cursor;
+        if (result.rootSessionIds.length > 0 || result.cursorReset) scheduleRecoveryScan();
+      }
+    })().catch((error) => {
+      if (disposed) return;
+      logRecovery('result-commit-watch-failed', { message: error instanceof Error ? error.message : String(error) });
+      scheduleRecoveryScan({ delayMs: PROVIDER_RECOVERY_RETRY_DELAY_MS });
+    }).finally(() => { commitWatchPromise = null; });
+  };
+
   const scheduleRecoveryScan = ({
     delayMs = PROVIDER_RECOVERY_SCAN_DELAY_MS,
     settleRetries = 0,
   } = {}) => {
-    if (!canResumeRecoveredParents) return;
+    if (disposed || !canResumeRecoveredParents) return;
     recoverySettleRetriesRemaining = Math.max(
       recoverySettleRetriesRemaining,
       settleRetries,
@@ -1816,6 +1999,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         let continuations = [];
         try {
           const result = await callRpc('list_provider_recovery_continuations', {});
+          if (result?.resultCommitWatch === true) startResultCommitWatch();
           continuations = Array.isArray(result?.continuations) ? result.continuations : [];
           for (const continuation of continuations) {
             try {
@@ -2017,6 +2201,20 @@ export const DevRyanManagedOrchestrationPlugin = async ({
   };
 
   const handleEvent = ({ event } = {}) => {
+    if (event?.type === 'server.instance.disposed' && event.properties?.directory === pluginDirectory) {
+      disposed = true;
+      commitWatchController.abort(new Error('Managed plugin instance disposed'));
+      if (recoveryScanTimer) clearTimeout(recoveryScanTimer);
+      recoveryScanTimer = null;
+      pendingOpenTodoChecks.clear();
+      sessionStates.clear();
+      return;
+    }
+    if (disposed) return;
+    if (event?.type === 'todo.updated' && typeof event.properties?.sessionID === 'string') {
+      pendingOpenTodoChecks.add(event.properties.sessionID);
+      scheduleRecoveryScan();
+    }
     if (event?.type === 'session.idle') {
       const rootSessionId = typeof event.properties?.sessionID === 'string'
         ? event.properties.sessionID.trim()
@@ -2081,29 +2279,55 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     try {
       barrier = await callRpc('barrier_status', { rootSessionId });
     } catch (error) {
-      if (!state.knownBarrier) return;
+      if (!state.knownBarrier && !process.env.DEVRYAN_ORCHESTRATION_URL && !process.env.DEVRYAN_ORCHESTRATION_TOKEN) return;
+      invokingAgent ??= await requireInvokingAgent(rootSessionId, input?.callID);
+      if (invokingAgent === 'builder') return;
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Parent work cannot verify the dispatch barrier and remains blocked: ${message}`);
+      throw Object.assign(new Error(`Parent work cannot verify the dispatch barrier and remains blocked: ${message}`),
+        { code: error?.code ?? 'managed_bridge_unavailable', statusCode: error?.statusCode ?? 503 });
     }
 
     if (barrier?.state === 'clear') {
       state.knownBarrier = false;
+      if (barrier.capabilities?.policies?.readOverlap === true) {
+        invokingAgent ??= await requireInvokingAgent(rootSessionId, input?.callID);
+        if (invokingAgent !== 'builder') {
+          const admission = await callRpc('parent_tool', { rootSessionId, directory: pluginDirectory,
+            phase: 'before', tool: toolName, callId: input.callID, args: output?.args });
+          if (admission?.allowed !== true) throw new Error('The managed dispatch barrier changed; the host did not authorize this parent tool. Refresh task state before proceeding.');
+          if (toolName === 'read') state.overlapReadCalls ??= new Set();
+          if (toolName === 'read') state.overlapReadCalls.add(input.callID);
+        }
+      }
       return;
     }
     if (barrier?.state === 'active' || barrier?.state === 'awaiting_acknowledgement') {
       state.knownBarrier = true;
       invokingAgent ??= await requireInvokingAgent(rootSessionId, input?.callID);
       if (invokingAgent === 'builder') return;
+      if (barrier.capabilities?.policies?.readOverlap === true
+        && Array.isArray(barrier.capabilities.overlapReadTools)
+        && barrier.capabilities.overlapReadTools.includes(toolName)) {
+        const admission = await callRpc('parent_tool', { rootSessionId, directory: pluginDirectory,
+          phase: 'before', tool: toolName, callId: input.callID, args: output?.args });
+        if (admission?.allowed !== true) throw new Error('The managed host did not authorize this overlapping read');
+        if (toolName === 'read') { state.overlapReadCalls ??= new Set(); state.overlapReadCalls.add(input.callID); }
+        return;
+      }
       const taskIdList = Array.isArray(barrier.taskIds) ? barrier.taskIds : [];
       const taskIds = taskIdList.join(', ');
       // Be explicit about the ONE call that can make progress. The generic
       // "use devryan_task wait" wording left an orchestrator retrying ordinary
       // tools — on 2026-08-21 five consecutive ctx_search/bash/grep calls all
       // failed against this barrier, each burning a full turn.
-      const nextCall = taskIdList.length > 0
+      const nextCall = barrier.capabilities?.policies?.waitAny === true && taskIdList.length > 0
+        ? `devryan_task with action "wait_any" and task_ids ${JSON.stringify(taskIdList)}`
+        : taskIdList.length > 0
         ? `devryan_task with action "wait" and task_id "${taskIdList[0]}"`
         : 'devryan_task with action "wait"';
-      const blockedNote = `Every tool except devryan_task will keep failing until the barrier clears, so do not retry ${toolName} or try a different tool. Call ${nextCall} now.`;
+      const blockedNote = barrier.capabilities?.policies?.readOverlap === true
+        ? `Workspace mutations and general execution remain blocked. Use an authorized read for independent work, or call ${nextCall}. Do not repeat ${toolName} unchanged.`
+        : `Every tool except devryan_task will keep failing until the barrier clears, so do not retry ${toolName} or try a different tool. Call ${nextCall} now.`;
       if (barrier.state === 'active') {
         throw new Error(
           `Parent work is blocked by active managed tasks${taskIds ? `: ${taskIds}` : ''}. `
@@ -2115,7 +2339,9 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         + `${blockedNote} Once it returns, disposition the result with continue, retry, resume, or abandon.`,
       );
     }
-    if (!state.knownBarrier) return;
+    if (!state.knownBarrier && !process.env.DEVRYAN_ORCHESTRATION_URL && !process.env.DEVRYAN_ORCHESTRATION_TOKEN) return;
+    invokingAgent ??= await requireInvokingAgent(rootSessionId, input?.callID);
+    if (invokingAgent === 'builder') return;
     throw new Error('Parent work cannot verify the dispatch barrier and remains blocked');
   };
 
@@ -2124,14 +2350,29 @@ export const DevRyanManagedOrchestrationPlugin = async ({
   return {
     event: handleEvent,
     'tool.execute.before': beforeToolExecute,
+    'tool.execute.after': async (input) => {
+      const state = sessionStates.get(input?.sessionID);
+      if (!state?.overlapReadCalls?.delete(input.callID)) return;
+      await callRpc('parent_tool', { rootSessionId: input.sessionID, directory: pluginDirectory,
+        phase: 'after', tool: input.tool, callId: input.callID, args: input.args });
+    },
     tool: {
       devryan_task: tool({
-      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. Large terminal previews return an initial resultReference page; call read_result with each exact nextCursor until complete before dispositioning the result. A completed result accepts only continue. Retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns immediately with manualRecoveryRequired while its durable result stays pending for the user-facing Model Recovery controls, except provider prompt rejection, which requires the one agent recovery to use a reframed prompt in a fresh child. When that result also carries autoResume.scheduled, DevRyan retries the same child automatically at the reported time or on the backup model; leave it unacknowledged and end the turn. A stale_task_reference or already_dispositioned result requires no repeated wait, disposition, or replacement child; follow its authoritative barrier instruction and continue from the last confirmed parent state when clear. This is distinct from provider-native task orchestration.',
+      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. Legacy terminal previews require every resultReference page before disposition. With a versioned resultHeader and compactResults capability, inspect canonical outcome, reported status, failures, recovery restrictions and named check evidence first. When detail.requiredBeforeDisposition is true, read all retained pages before reconciliation; otherwise retrieve detail needed for the next decision. A passed check becomes unverified after relevant content changes. Use wait_any for the first collectable result when advertised; with contextProjection enabled, use checkpoint after a wake, after compaction and before final closeout; use decisions and remember_decision for sourced project decisions. A completed result accepts only continue. Retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns immediately with manualRecoveryRequired while its durable result stays pending for the user-facing Model Recovery controls, except provider prompt rejection, which requires the one agent recovery to use a reframed prompt in a fresh child. When that result also carries autoResume.scheduled, DevRyan retries the same child automatically at the reported time or on the backup model; leave it unacknowledged and end the turn. A stale_task_reference or already_dispositioned result requires no repeated wait, disposition, or replacement child; follow its authoritative barrier instruction and continue from the last confirmed parent state when clear. This is distinct from provider-native task orchestration.',
       args: {
-        action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, read_result, cancel, continue, retry, resume, or abandon. Use read_result only after a terminal wait returns resultReference.nextCursor, and pass each cursor exactly once in order until complete. A completed result accepts only continue; retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns manualRecoveryRequired and remains pending for the user-facing Model Recovery controls. After the user retries, an idle-parent continuation collects the recovered result. Wait stays attached only until the requested task is terminal while DevRyan polls internally; use status for a non-blocking live snapshot. stale_task_reference and already_dispositioned are no-op recovery states and must not trigger a replacement task or repeated acknowledgement.'),
-        task_id: tool.schema.string().optional().describe('Managed dvr_task_ ID. Required for every action except start.'),
+        action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, wait_any, read_result, cancel, continue, retry, resume, abandon, checkpoint, decisions, or remember_decision. Use read_result only after a terminal wait returns resultReference.nextCursor, and pass requested cursors exactly once in order. Legacy results require all pages; versioned compact headers permit selective detail retrieval. A completed result accepts only continue; retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns manualRecoveryRequired and remains pending for the user-facing Model Recovery controls. After the user retries, an idle-parent continuation collects the recovered result. Wait stays attached only until the requested task is terminal while DevRyan polls internally; use status for a non-blocking live snapshot. stale_task_reference and already_dispositioned are no-op recovery states and must not trigger a replacement task or repeated acknowledgement.'),
+        task_id: tool.schema.string().optional().describe('Managed dvr_task_ ID. Required except for start, wait_any, checkpoint, decisions, and remember_decision.'),
+        task_ids: tool.schema.array(tool.schema.string()).optional().describe('Managed task IDs owned by this root. Required for wait_any when capabilities.policies.waitAny is enabled.'),
+        after_cursor: tool.schema.string().optional().describe('Opaque cursor from the last wait_any. Omit when changing the selected tasks or recollecting retained results. Internal wait slices never return unchanged live snapshots to the model.'),
         result_cursor: tool.schema.string().optional().describe('Exact resultReference.nextCursor from the preceding wait or read_result page. Required only for read_result.'),
         label: tool.schema.string().optional().describe('Short task label for start or retry.'),
+        query: tool.schema.string().optional().describe('Relevant words for project decisions or checkpoint retrieval.'),
+        decision: tool.schema.string().optional().describe('Exact bounded quote from a real user message for remember_decision; project scope only.'),
+        source_message_id: tool.schema.string().optional().describe('Canonical real-user message containing the exact decision quote in this session.'),
+        decision_paths: tool.schema.array(tool.schema.string()).optional().describe('Relevant project-relative files; changes mark this decision stale.'),
+        valid_until: tool.schema.number().optional().describe('Optional expiry as Unix milliseconds.'),
+        supersedes: tool.schema.string().optional().describe('Existing decision ID explicitly superseded by this sourced decision.'),
+        required_checks: tool.schema.array(tool.schema.object({ name: tool.schema.string(), command: tool.schema.string(), paths: tool.schema.array(tool.schema.string()) })).optional().describe('Up to eight named required checks. command must exactly match a native bash call; paths lists the relevant project-relative files. Missing execution or changed content remains not-observed. Disposition is separate from verification.'),
         prompt: tool.schema.string().optional().describe('Full delegated prompt for start, or a retry override. A provider_prompt_rejected retry requires a compact, semantically complete prompt that differs from the rejected prompt.'),
         provider_id: tool.schema.string().optional().describe('Compatibility fallback provider ID when no runtime agent catalog is available. Supply together with model_id; configured agent settings are authoritative.'),
         model_id: tool.schema.string().optional().describe('Compatibility fallback model ID when no runtime agent catalog is available. Supply together with provider_id; configured agent settings are authoritative.'),
@@ -2191,6 +2432,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
               envelopeId: paging.envelopeId,
               totalBytes: paging.totalBytes,
               previouslyReturnedBytes: paging.returnedBytes,
+              compact: collected.compactHeader,
             });
             collected.resultPaging = {
               envelopeId: reference.envelopeId,
@@ -2250,6 +2492,10 @@ export const DevRyanManagedOrchestrationPlugin = async ({
             if (requiresManualModelRecovery(collected)) {
               throw new Error('Manual model recovery requires the user-facing Model Recovery controls; leave this result unacknowledged');
             }
+            if (collected.detailRequired && collected.resultPaging?.complete !== true) {
+              throw createToolInputInvalidError(`Read the remaining result pages for ${taskId} before ${action}; this result needs its retained detail for reconciliation.`,
+                { taskId, state: 'result_detail_required', nextCursor: collected.resultPaging?.expectedNextCursor });
+            }
           }
           let result;
           try {
@@ -2276,6 +2522,13 @@ export const DevRyanManagedOrchestrationPlugin = async ({
             return JSON.stringify(recovered, null, 2);
           }
           if (action === 'start' && context.agent !== 'builder') state.knownBarrier = true;
+          if (action === 'wait_any') {
+            for (const entry of result.dispositioned ?? []) state.collectedResults.delete(entry.taskId);
+            for (const entry of result.results) {
+              if (entry.resultEnvelope?.action === null) rememberCollectedResult(state, entry, entry.task.taskId);
+            }
+            return JSON.stringify({ ...result, results: result.results.map(compactManagedTaskToolResult) }, null, 2);
+          }
           if (RESULT_ACTIONS.has(action)) {
             state.collectedResults.delete(requireText(args.task_id, 'task_id'));
           }
@@ -2292,53 +2545,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
               );
             }
           }
-          if (action === 'wait') {
-            const requestedTaskId = requireText(args.task_id, 'task_id');
-            const status = typeof result?.task?.status === 'string' ? result.task.status : null;
-            const resultTaskId = typeof result?.task?.taskId === 'string'
-              ? result.task.taskId.trim()
-              : '';
-            state.collectedResults.delete(requestedTaskId);
-            if (TERMINAL_TASK_STATUSES.has(status)) {
-              if (!resultTaskId) throw new Error('Managed task wait returned a terminal result without a task ID');
-              const resultEnvelopeId = typeof result?.resultEnvelope?.envelopeId === 'string'
-                ? result.resultEnvelope.envelopeId.trim()
-                : '';
-              let resultReference = null;
-              if (result?.resultReference !== undefined) {
-                if (!resultEnvelopeId) {
-                  throw createToolInputInvalidError(
-                    `Managed result page for ${resultTaskId} has no matching result envelope`,
-                    { taskId: resultTaskId, state: 'invalid_result_page' },
-                  );
-                }
-                resultReference = validateResultReference(result.resultReference, {
-                  taskId: resultTaskId,
-                  envelopeId: resultEnvelopeId,
-                });
-              }
-              state.collectedResults.set(resultTaskId, {
-                status,
-                task: result.task,
-                resultEnvelope: result.resultEnvelope,
-                resultPaging: resultReference
-                  ? {
-                      envelopeId: resultReference.envelopeId,
-                      totalBytes: resultReference.totalBytes,
-                      returnedBytes: resultReference.returnedBytes,
-                      expectedNextCursor: resultReference.nextCursor,
-                      complete: resultReference.complete,
-                    }
-                  : {
-                      envelopeId: null,
-                      totalBytes: null,
-                      returnedBytes: 0,
-                      expectedNextCursor: null,
-                      complete: true,
-                    },
-              });
-            }
-          }
+          if (action === 'wait') rememberCollectedResult(state, result, requireText(args.task_id, 'task_id'));
           return JSON.stringify(compactManagedTaskToolResult(result), null, 2);
         } finally {
           pendingStart?.settle();

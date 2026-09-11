@@ -537,13 +537,15 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('Pick exactly one next action: ask, inspect, delegate, implement, verify, or finish.');
   });
 
-  it('keeps subagent result continuation same-turn instead of relying on auto-continue', () => {
+  it('continues permitted work after managed results through one continuation owner', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
-    expect(orchestrator?.prompt).toContain('After any `task` tool result returns, reconcile the active todo immediately and continue the next actionable todo in the same turn.');
-    expect(orchestrator?.prompt).toContain('Do not stop after a completed subagent result while incomplete todos remain.');
-    expect(orchestrator?.prompt).toContain('Auto-continue is a guardrail for stopping between batches, not the mechanism for resuming after a blocking subagent call returns.');
-    expect(orchestrator?.prompt).toContain('Before delegating when the user requested autonomous or batch work, or when you create 4+ todos, enable `auto_continue` only if the runtime exposes that tool.');
+    expect(orchestrator?.prompt).toContain('After a managed `devryan_task` result returns, reconcile its evidence and the active todo, disposition the result, and continue the next permitted action.');
+    expect(orchestrator?.prompt).toContain('Do not stop after a completed subagent result while actionable work remains.');
+    expect(orchestrator?.prompt).toContain('DevRyan owns automatic continuation and recovery.');
+    expect(orchestrator?.prompt).toContain('Do not enable another continuation loop or use provider-native task tools to bypass managed state.');
+    expect(orchestrator?.prompt).not.toContain('enable `auto_continue`');
+    expect(orchestrator?.prompt).toContain("A synthetic wake delivers existing work; it does not expand the user's authorization or reset retry budgets.");
     expect(orchestrator?.prompt).toContain('Ask every delegated subagent to end with exactly one terminal status marker: `**Status:** complete` or `**Status:** blocked`.');
   });
 
@@ -567,16 +569,15 @@ describe('Packaged OpenChamber agents', () => {
     expect(fixer?.prompt).toContain('followed by exactly one terminal marker');
   });
 
-  it('keeps Orchestrator parallel delegation bounded and failure-tolerant', () => {
+  it('keeps assignments bounded and dependency-aware without capping managed launches', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
     expect(orchestrator?.prompt).toContain('Parallel delegation readiness gate');
-    expect(orchestrator?.prompt).toContain('Default to at most 3 parallel implementation subagents per wave');
-    expect(orchestrator?.prompt).toContain('never compress an open backlog into three oversized assignments');
-    expect(orchestrator?.prompt).toContain('Use parallel agents only when tasks are independent and target disjoint files or subsystems.');
-    expect(orchestrator?.prompt).toContain('If tasks overlap files, share mutable state, or depend on each other, run them sequentially.');
-    expect(orchestrator?.prompt).toContain('Only call `auto_continue` when the runtime exposes that tool.');
-    expect(orchestrator?.prompt).toContain('If `auto_continue` is unavailable, continue normally and do not treat that as a blocker.');
+    expect(orchestrator?.prompt).toContain('DevRyan does not cap managed launches: start every justified independent child without artificial slot limits or oversized assignments.');
+    expect(orchestrator?.prompt).toContain('Use parallel agents only when tasks are independently useful and target disjoint files or subsystems.');
+    expect(orchestrator?.prompt).toContain('If tasks overlap files, share mutable state, or depend on earlier findings, sequence those dependencies.');
+    expect(orchestrator?.prompt).toContain('Solve a small coherent change directly when delegation would add more coordination than useful work.');
+    expect(orchestrator?.prompt).not.toContain('at most 3');
     expect(orchestrator?.prompt).toContain('Treat provider/tool crashes, missing terminal status markers, or repeated progress-only output as a blocked subtask.');
     expect(orchestrator?.prompt).toContain('Continue reconciling other returned subtasks instead of waiting indefinitely for the failed branch.');
   });

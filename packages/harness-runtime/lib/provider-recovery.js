@@ -1,8 +1,11 @@
+import { applyObjectiveRejection, applyObjectiveProgress, projectObjectiveProgress } from './objective-progress.js';
+import { planBuilderTodoContinuation } from './builder-todo-continuation.js';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { createRecordStore } from './record-store.js';
 import { withCrossProcessFileLock } from './atomic-file.js';
+import { currentObjectiveUser, isManagedMaintenancePrompt, observesNativeContinuation } from './objective-identity.js';
 import {
   classifyPrimaryTransportError, inspectRecoveryTurn, recoveryError,
   RECOVERY_READ_TOOLS, PROVIDER_PROGRESS_TIMEOUT_MS, validatePrimaryRecoveryRecord,
@@ -60,6 +63,8 @@ export function createPrimaryRecoveryController(options) {
       attemptCount: record.attemptCount, maxAttempts: 1, readOnly: Boolean(record.recoveryID),
       providerID: record.providerID, modelID: record.modelID, agent: record.agent, variant: record.variant,
       reason: record.reason, updatedAt: record.updatedAt,
+      progress: projectObjectiveProgress(record.progress),
+      failureKind: record.failureKind ?? null,
     } : null,
   });
   const publish = (record) => options.publishEvent?.({
@@ -77,6 +82,10 @@ export function createPrimaryRecoveryController(options) {
     catch (error) { storageHealthy = false; throw error; }
     records.set(id, value);
     publish(value);
+    if (existing?.anchorID !== value.anchorID || existing?.state !== value.state) {
+      diagnostic('objective_state', value, { state: value.state, createdAt: value.createdAt, updatedAt: value.updatedAt,
+        generation: value.cancellationGeneration, attempt: value.attemptCount, reason: value.reason, failureKind: value.failureKind ?? null });
+    }
     return value;
   });
   const remember = (record) => {
@@ -113,7 +122,9 @@ export function createPrimaryRecoveryController(options) {
     await ready;
     const body = input.body ?? {};
     if (!input.primary || !options.isManaged()) return;
-    if (!isPrimaryRecoveryProvider(body.model?.providerID) && !records.has(input.sessionID)) return;
+    if (isManagedMaintenancePrompt(body)) return;
+    // All managed primary objectives share continuation admission. Provider
+    // transport recovery remains separately gated by providerSupported/mode.
     if (!storageHealthy || !ownsRuntime) throw recoveryError('recovery_storage_unavailable', 503);
     if (!body.messageID || !body.model?.providerID || !body.model?.modelID || !body.agent) {
       if (records.has(input.sessionID) && active(records.get(input.sessionID))) throw recoveryError('recovery_execution_selection_required', 400);
@@ -164,12 +175,12 @@ export function createPrimaryRecoveryController(options) {
       && message.parts?.some((part) => part.type === 'tool' && part.state?.status === 'running'));
     return state.blocked || executing || l?.calls.size || l?.blockers.size || l?.phase === 'retry';
   };
-  const observeBounded = async (record, deadline = now() + 5000) => {
+  const observeBounded = async (record, deadline = now() + 5000, includeTodos = false) => {
     const abort = new AbortController();
     let timeout;
     try {
       return await Promise.race([
-        options.observeTurn(record, { signal: abort.signal }),
+        options.observeTurn(record, { signal: abort.signal, ...(includeTodos ? { includeTodos: true } : {}) }),
         new Promise((_, reject) => {
           timeout = setTimeout(() => { abort.abort(); reject(recoveryError('recovery_observation_timeout')); },
             Math.max(1, Math.min(5000, deadline - now())));
@@ -188,7 +199,7 @@ export function createPrimaryRecoveryController(options) {
 
   async function reconcileOne(id, watchdog = false) {
     const before = records.get(id);
-    if (!before || draining || TERMINAL.has(before.state) || !isPrimaryRecoveryProvider(before.providerID)) return;
+    if (!before || draining || TERMINAL.has(before.state)) return;
     // chat.message handshakes before OpenCode persists the admitted user
     // message. A delayed idle event must not mistake that window for lost work.
     if (before.state === 'observing' && !before.requestedAt && !before.failureObserved && !before.recoveryID) return;
@@ -222,6 +233,9 @@ export function createPrimaryRecoveryController(options) {
     // session.error has no reliable invocation identity. It only requests a
     // canonical read; a stale event cannot stop or recover a newer invocation.
     const failure = classifyPrimaryTransportError(inspected.last?.info.error, handshake?.version);
+    const failureKind = options.classifyFailure?.(inspected.last?.info.error) ?? null;
+    if ((before.failureKind ?? null) !== failureKind) await mutate(id, (record) => current()
+      && record?.anchorID === before.anchorID ? { ...record, failureKind } : record);
     if ((!failure || before.recoverySuppressed) && !watchdog) {
       if (inspected.settled && !inspected.last.info.error) await mutate(id, (r) => current() ? { ...r, state: 'completed' } : r);
       else if (active(before) && inspected.last?.info.error && inspected.last.info.time?.completed) await attention(id, 'failure_not_eligible', before);
@@ -311,6 +325,7 @@ export function createPrimaryRecoveryController(options) {
         : { toolIDs: RECOVERY_READ_TOOLS, allowedReadTools: RECOVERY_READ_TOOLS };
       if (!current()) return;
       r = { ...r, revision: r.revision + 1, state: 'recovery_reserved', attemptCount: 1,
+        activeUserID: undefined, recoverySourceUserID: currentObjectiveUser(r),
         recoveryID, allowedReadTools: toolPolicy.allowedReadTools, guardedIDs: [...r.guardedIDs, recoveryID], updatedAt: now() };
       await store.writeRecord(keyFor(id), r);
       records.set(id, r); publish(r);
@@ -376,31 +391,94 @@ export function createPrimaryRecoveryController(options) {
       }
       return { ...project(null), instanceID: handshake.instanceID };
     }
-    if (!handshake && input.action === 'continuation' && !records.get(input.sessionID)?.attemptCount) return { allowed: true };
     if (!handshake || handshake.instanceID !== input.instanceID) throw recoveryError('recovery_owner_mismatch');
-    const r = records.get(input.sessionID);
-    if (!r) return { allowed: true, readOnly: false };
+    let r = records.get(input.sessionID);
+    if (!r) {
+      if (input.action === 'continuation') {
+        diagnostic('managed_objective_unavailable', null, { sessionID: input.sessionID, reason: 'new_user_input_required' });
+        throw Object.assign(recoveryError('managed_objective_unavailable'), {
+          message: 'Automatic continuation has no durable objective owner for this session. Send a new user instruction to continue; older history cannot restore its continuation budgets.',
+        });
+      }
+      return { allowed: true, readOnly: false };
+    }
+    if (['message', 'step'].includes(input.action) && input.userMessageID !== currentObjectiveUser(r)) {
+      r = await mutate(r.sessionID, async (next) => {
+        if (!next) throw recoveryError('provider_recovery_fenced');
+        const observation = await observeBounded(next);
+        if (!observesNativeContinuation(next, observation, input.userMessageID)
+          || ['cancelled', 'superseded', 'needs_attention', 'stopping'].includes(next.state)
+          || next.guardedIDs.length >= 128 || !await authorizeBounded(next)) throw recoveryError('provider_recovery_fenced');
+        invalidate(next.sessionID);
+        return { ...next, activeUserID: input.userMessageID, stepID: null, requestedAt: null,
+          state: next.recoveryID ? 'recovering' : 'observing',
+          guardedIDs: next.recoveryID ? [...new Set([...next.guardedIDs, input.userMessageID])] : next.guardedIDs };
+      });
+      diagnostic('objective_native_compaction_continued', r, { activeUserMessageID: r.activeUserID });
+    }
     const enforcing = active(r);
-    if (input.action === 'scope') return { tracked: isPrimaryRecoveryProvider(r.providerID) || Boolean(r.guardedIDs.length),
+    if (input.action === 'scope') return { tracked: true,
       enforced: enforcing, readOnly: Boolean(r.guardedIDs.length), agent: r.agent };
     const isGuarded = r.guardedIDs.includes(input.userMessageID);
-    const currentUser = r.recoveryID ?? r.continuationID ?? r.anchorID;
+    const currentUser = currentObjectiveUser(r);
     const l = remember(r);
     if (input.action === 'tool_after') {
       l.calls.delete(input.callID); l.at = now(); l.phase = 'preparing'; return { allowed: true };
     }
+    if (input.action === 'rejected') {
+      if (input.userMessageID !== currentUser || TERMINAL.has(r.state) || input.assistantMessageID !== r.stepID) throw recoveryError('provider_recovery_fenced');
+      let result;
+      const updated = await mutate(r.sessionID, (next) => {
+        if (!next || next.anchorID !== r.anchorID || TERMINAL.has(next.state)
+          || input.userMessageID !== currentObjectiveUser(next) || input.assistantMessageID !== next.stepID) throw recoveryError('provider_recovery_fenced');
+        result = applyObjectiveRejection(next.rejections, { fingerprint: input.fingerprint, reason: input.reason, callID: input.callID, at: now() });
+        if (result.receipts === next.rejections) return next;
+        return { ...next, rejections: result.receipts,
+          ...(result.state === 'blocked' ? { state: 'needs_attention', reason: 'managed_repeated_preexecution_rejection' } : {}) };
+      });
+      // A rejection never ran its tool and cannot keep a phantom running call.
+      l.calls.delete(input.callID);
+      diagnostic('objective_preexecution_rejection', updated, { reason: input.reason, fingerprint: input.fingerprint,
+        toolCallID: input.callID, rejectionState: result.state, rejectionCount: result.count });
+      return { allowed: false, state: result.state, count: result.count };
+    }
     if (input.action === 'continuation') {
-      if (!enforcing) return { allowed: true };
-      if (typeof input.userMessageID !== 'string' || r.attemptCount || r.recoverySuppressed
+      if (!isProviderRecoverySupportedRuntimeVersion(handshake.version) || draining
+        || !/^msg_[a-zA-Z0-9]+$/.test(input.userMessageID ?? '') || r.attemptCount || r.recoverySuppressed
         || !['observing', 'completed'].includes(r.state)) throw recoveryError('managed_continuation_fenced');
-      return mutate(r.sessionID, async (next) => {
-        const observed = await observeBounded(next);
+      const admitted = await mutate(r.sessionID, async (next) => {
+        if (!next || next.anchorID !== input.anchorUserMessageID || next.directory !== input.directory
+          || next.providerID !== input.execution?.providerID || next.modelID !== input.execution?.modelID
+          || next.agent !== input.execution?.agent || next.variant !== (input.execution?.variant ?? null)
+          || !['collect', 'orchestrator_todo', 'builder_todo'].includes(input.kind)
+          || (input.kind === 'builder_todo' && !['build', 'builder'].includes(next.agent))
+          || (input.kind === 'orchestrator_todo' && next.agent !== 'orchestrator')) throw recoveryError('managed_objective_mismatch');
+        const observed = await observeBounded(next, undefined, input.kind === 'builder_todo');
         const check = inspectRecoveryTurn(next, observed);
         if (observed.status !== 'idle' || check.superseded || check.unresolved || !check.last?.info.time?.completed
-          || next.attemptCount || !await authorizeBounded(next)) throw recoveryError('managed_continuation_fenced');
+          || check.last.info.error || next.attemptCount || next.recoverySuppressed
+          || !['observing', 'completed'].includes(next.state)
+          || !await authorizeBounded(next)) throw recoveryError('managed_continuation_fenced');
+        // Collection may run with the child barrier present; ordinary TODO
+        // nudges must wait until all results are reconciled and blockers clear.
+        if (observed.blocked && (input.kind !== 'collect' || observed.blockedByRequests !== false
+          || !['active', 'awaiting_acknowledgement'].includes(observed.managedBarrierState))) throw recoveryError('managed_continuation_blocked');
+        const count = next.todoContinuationCount ?? 0;
+        const limit = input.kind === 'builder_todo' ? 12 : 3;
+        if (input.kind !== 'collect' && count >= limit) throw recoveryError('managed_objective_budget_exhausted');
+        const builder = input.kind === 'builder_todo' ? planBuilderTodoContinuation(next, observed) : null;
+        if (builder && !builder.allowed) throw recoveryError(builder.reason);
         invalidate(r.sessionID);
-        return { ...next, continuationID: input.userMessageID, state: 'observing', stepID: null, requestedAt: null, failure: null, failedID: null };
+        return { ...next, continuationID: input.userMessageID,
+          activeUserID: undefined,
+          todoContinuationCount: count + (input.kind === 'collect' ? 0 : 1),
+          ...(builder ? { builderTodoGuard: builder.guard } : {}),
+          state: 'observing', stepID: null, requestedAt: null, failure: null, failedID: null };
       });
+      diagnostic('managed_continuation_admitted', admitted, { kind: input.kind,
+        todoContinuationCount: admitted.todoContinuationCount, continuationMessageID: input.userMessageID });
+      return { allowed: true, anchorUserMessageID: admitted.anchorID, tools: admitted.tools,
+        todoContinuationCount: admitted.todoContinuationCount };
     }
     if (isGuarded && input.action === 'tool_before' && (!(r.allowedReadTools ?? []).includes(input.tool)
       || (input.nativeToolVerified !== true && options.getToolPolicy) || r.tools['*'] === false || r.tools[input.tool] === false)) {
@@ -411,7 +489,7 @@ export function createPrimaryRecoveryController(options) {
       void options.abortSession(r).catch(() => diagnostic('provider_recovery_abort_failed', r));
       throw recoveryError('recovery_requires_user_action');
     }
-    if ((enforcing || isGuarded) && (input.userMessageID !== currentUser || TERMINAL.has(r.state))) {
+    if (input.userMessageID !== currentUser || TERMINAL.has(r.state)) {
       throw recoveryError('provider_recovery_fenced');
     }
     if (enforcing && r.state === 'stopping' && input.action === 'tool_before') throw recoveryError('provider_stop_in_progress');
@@ -430,11 +508,11 @@ export function createPrimaryRecoveryController(options) {
       }
       l.phase = 'provider'; l.at = now(); l.signatures.clear(); l.textHashes.clear();
       await mutate(r.sessionID, (next) => {
-        if ((enforcing || isGuarded) && (next.anchorID !== r.anchorID || TERMINAL.has(next.state)
-          || input.userMessageID !== (next.recoveryID ?? next.continuationID ?? next.anchorID))) throw recoveryError('provider_recovery_fenced');
+        if (next.anchorID !== r.anchorID || TERMINAL.has(next.state)
+          || input.userMessageID !== currentObjectiveUser(next)) throw recoveryError('provider_recovery_fenced');
         if ((enforcing || isGuarded) && next.stepID === input.assistantMessageID && next.requestedAt !== null) throw recoveryError('provider_retry_requires_reconciliation');
         return { ...next, stepID: input.assistantMessageID,
-          requestedAt: now(), instanceID: input.instanceID, failure: null, failureObserved: false,
+          requestedAt: now(), instanceID: input.instanceID, failure: null, failureObserved: false, failureKind: null,
           reason: next.reason === 'provider_input_progress_unavailable' ? null : next.reason };
       });
       const timeouts = Object.fromEntries(['headers', 'chunk', 'total'].map((key) => [key,
@@ -446,12 +524,32 @@ export function createPrimaryRecoveryController(options) {
     return { allowed: true, readOnly: isGuarded };
   }
 
+  const observeProgress = (input) => {
+    const record = records.get(input.sessionID);
+    if (!record || TERMINAL.has(record.state) || (input.messageID && input.messageID !== record.stepID)
+      || (Number.isFinite(input.taskCreatedAt) && input.taskCreatedAt < record.createdAt)
+      || typeof input.identity !== 'string' || input.identity.length > 4096) return Promise.resolve();
+    const fingerprint = crypto.createHash('sha256').update(`${input.kind}:${input.identity}`).digest('hex');
+    if (record.progress?.seen.includes(fingerprint)) return Promise.resolve();
+    return mutate(record.sessionID, (next) => {
+      if (!next || next.anchorID !== record.anchorID || TERMINAL.has(next.state)) return next;
+      const progress = applyObjectiveProgress(next.progress, { kind: input.kind, fingerprint, at: now() });
+      return progress === next.progress ? next : { ...next, progress };
+    }).then((next) => diagnostic('objective_progress_observed', next, { progressKind: input.kind, fingerprint,
+      progress: projectObjectiveProgress(next?.progress) })).catch(() => diagnostic('objective_progress_observation_unavailable', record));
+  };
+
   function observe(payload) {
     const p = payload?.properties ?? {};
-    const id = p.sessionID ?? p.info?.sessionID ?? p.part?.sessionID;
+    const id = p.sessionID ?? p.info?.sessionID ?? p.part?.sessionID ?? p.task?.rootSessionId;
     const r = records.get(id);
     if (!r) return;
     const l = remember(r);
+    if (payload.type === 'openchamber:managed-task' && p.resultEnvelope && p.resultEnvelope.taskId === p.task?.taskId
+      && p.resultEnvelope.rootSessionId === id && p.resultEnvelope.status === 'completed') {
+      if (Number.isFinite(p.task.createdAt)) void observeProgress({ sessionID: id, kind: 'child-completed',
+        identity: p.resultEnvelope.envelopeId, taskCreatedAt: p.task.createdAt });
+    }
     if (payload.type === 'message.part.delta' && typeof p.delta === 'string' && p.delta && p.messageID === r.stepID
       && ['text', 'reasoning'].includes(p.field)) {
       l.at = now();
@@ -460,6 +558,17 @@ export function createPrimaryRecoveryController(options) {
     }
     if (payload.type === 'message.part.updated' && p.part?.messageID === r.stepID) {
       const part = p.part;
+      if (part.type === 'tool' && part.tool !== 'todowrite'
+        && (part.state?.status === 'completed' || (part.state?.status === 'error' && Number.isSafeInteger(part.state?.metadata?.exit)))) {
+        l.completedTools ??= new Set();
+        if (!l.completedTools.has(part.callID)) {
+          l.completedTools.add(part.callID);
+          while (l.completedTools.size > 512) l.completedTools.delete(l.completedTools.values().next().value);
+          const output = typeof part.state.output === 'string' ? part.state.output : part.state.error ?? '';
+          const fingerprint = crypto.createHash('sha256').update(JSON.stringify([part.tool, part.state.input, output])).digest('hex');
+          void observeProgress({ sessionID: id, messageID: part.messageID, kind: 'tool-evidence', identity: fingerprint });
+        }
+      }
       const signature = progressSignature(part);
       if (typeof signature === 'string') {
         // Retain hashes, never text/arguments, and only for the current step.
@@ -487,12 +596,13 @@ export function createPrimaryRecoveryController(options) {
       const failure = classifyPrimaryTransportError(p.error, handshake?.version);
       return mutate(id, (next) => next && !TERMINAL.has(next.state) ? { ...next,
         failure, failureObserved: true,
+        failureKind: options.classifyFailure?.(p.error) ?? null,
       } : next)
         .then(() => schedule(id)).catch(() => diagnostic('provider_recovery_persistence_failed', r));
     }
     if (payload.type === 'message.updated' && p.info?.time?.completed
       && p.info.role === 'assistant' && p.info.id === r.stepID
-      && p.info.parentID === (r.recoveryID ?? r.continuationID ?? r.anchorID)) return schedule(id);
+      && p.info.parentID === currentObjectiveUser(r)) return schedule(id);
   }
 
   async function reconcile() {
@@ -504,7 +614,7 @@ export function createPrimaryRecoveryController(options) {
     }));
   }
   return {
-    admit, control, plugin, observe, reconcile,
+    admit, control, plugin, observe, observeProgress, reconcile,
     readRecord: (id) => store.readRecord(keyFor(id)),
     async getSnapshot(id) {
       const r = await store.readRecord(keyFor(id));

@@ -1488,6 +1488,22 @@ export interface GitHubAPI {
   repoBranches(owner: string, repo: string): Promise<string[]>;
 }
 
+export interface SupabaseConnectionStatus {
+  configured: boolean;
+  desiredEnabled: boolean;
+  effectiveEnabled: boolean;
+  state: 'connected' | 'disconnecting' | 'disconnected' | 'connecting' | 'connection_failed';
+  errorCode: string | null;
+  restartRequired: boolean;
+  restartAvailable: boolean;
+  blockers: string[];
+}
+
+export interface SupabaseConnectionAPI {
+  getStatus(): Promise<SupabaseConnectionStatus | null>;
+  setEnabled(enabled: boolean): Promise<SupabaseConnectionStatus>;
+}
+
 export interface RuntimeAPIs {
   runtime: RuntimeDescriptor;
   terminal: TerminalAPI;
@@ -1500,6 +1516,7 @@ export interface RuntimeAPIs {
   github?: GitHubAPI;
   push?: PushAPI;
   diagnostics?: DiagnosticsAPI;
+  supabaseConnection?: SupabaseConnectionAPI;
   evidence?: EvidenceAPI;
   processes?: ProcessesAPI;
   contextUsage?: ContextUsageAPI;

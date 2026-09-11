@@ -114,6 +114,14 @@ const getProviderFailurePresentation = ({
     };
   }
 
+  if (task.failureKind === 'provider_authentication') {
+    return {
+      message: t('chat.managedTasks.authentication.required'),
+      className: 'text-[var(--status-warning)]',
+      role: 'alert' as const,
+    };
+  }
+
   if (task.failureKind === 'model_unavailable') {
     return {
       message: task.failureReason || t('chat.modelRecovery.modelUnavailable', {
@@ -257,6 +265,7 @@ export const ManagedTaskRowView = React.memo(({
     && task.failureKind !== 'provider_prompt_rejected'
     && (
       task.failureKind === 'provider_usage_limit'
+      || task.failureKind === 'provider_authentication'
       || task.failureKind === 'model_unavailable'
       || Boolean(task.transportRecovery)
       || (task.mode === 'orchestrator' && task.dispatchGrouped && task.attempt >= 2)

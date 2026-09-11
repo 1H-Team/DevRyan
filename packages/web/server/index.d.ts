@@ -2,6 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 
 export interface WebUiServerController {
+  issueLocalOwnerSession: () => Promise<{ name: string; value: string; maxAge: number } | null> | null;
   expressApp: Express;
   httpServer: Server;
   getPort: () => number | null;
@@ -69,6 +70,7 @@ export interface StartWebUiServerOptions {
   host?: string;
   attachSignals?: boolean;
   exitOnShutdown?: boolean;
+  onRestartHost?: () => Promise<void>;
   uiPassword?: string | null;
   getIsWindowFocused?: () => boolean;
   getBrowserCdpDiscoveryToken?: () => string;

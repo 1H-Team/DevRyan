@@ -289,6 +289,17 @@ describe('syncRuntimeAgentOverlays', () => {
     )).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it('keeps a project Council model companion after stock prompt consolidation', async () => {
+    await writeAgent(packagedAgentDirectory, 'council', ['mode: all', 'model: provider/default'], 'Maintained Council contract');
+    const councillors = [{ model: 'provider/first', variant: 'high' }, { model: 'provider/second' }];
+    await writeJson(path.join(projectDirectory, '.opencode', 'agents', 'council.models.json'), { version: 1, councillors });
+    const result = await syncRuntimeAgentOverlays({ workingDirectory: projectDirectory,
+      packagedAgentDirectory, packagedPluginDirectory, overlayRoot, manifestPath,
+      agentOverrides: {}, activeConfig: {}, mcpConfigs: [], userConfigPath: path.join(tempRoot, 'user.json') });
+    expect((await readOverlayAgent(result.targetConfigDirectory, 'council')).prompt).toBe('Maintained Council contract');
+    expect(await readCouncilModels(result.targetConfigDirectory)).toEqual({ version: 1, councillors });
+  });
+
   it('preserves a stale Luna agent override without manufacturing provider availability', async () => {
     await writeAgent(path.join(projectDirectory, '.opencode', 'agents'), 'explorer', [
       'mode: subagent',

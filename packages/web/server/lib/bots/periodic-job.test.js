@@ -75,6 +75,17 @@ describe('Bot periodic job', () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 
+  it('backs off idle work to one minute and wakes immediately for new work', async () => {
+    const run = vi.fn(async () => ({ idle: true }));
+    const job = createBotPeriodicJob({ name: 'idle', run, intervalMs: 5_000, idleIntervalMs: 60_000 });
+    job.start(); await flush();
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(run).toHaveBeenCalledTimes(1);
+    await job.trigger(); expect(run).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(60_000); expect(run).toHaveBeenCalledTimes(3);
+    await job.stop();
+  });
+
   it('rejects invalid configuration', () => {
     expect(() => createBotPeriodicJob({ name: 'Bad Name', run: async () => {}, intervalMs: 10 })).toThrow();
     expect(() => createBotPeriodicJob({ name: 'ok', run: async () => {}, intervalMs: 1_000, maxBackoffMs: 10 })).toThrow();

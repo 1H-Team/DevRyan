@@ -9,7 +9,7 @@ const RECORD_FIELDS = Object.freeze({
   control: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'action', 'payload']),
   lifecycle: new Set([
     'type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'turnID', 'userMessageID',
-    'assistantMessageID', 'event', 'payload',
+    'assistantMessageID', 'event', 'payload', 'coalesced',
   ]),
   worktree_transition: new Set([
     'type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'operationID', 'stage', 'status', 'payload',
@@ -22,7 +22,7 @@ const RECORD_FIELDS = Object.freeze({
   timing: new Set([
     'type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'messageID', 'mark', 'payload',
   ]),
-  log: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'level', 'source', 'message', 'payload']),
+  log: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'level', 'source', 'event', 'message', 'payload', 'coalesced']),
   gap: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'event', 'reason', 'count', 'source', 'payload']),
 });
 
@@ -52,6 +52,17 @@ const NESTED_FIELDS = new Set([
   'streamId', 'sequence', 'generation', 'observedAt', 'origin', 'requestType',
   'firstMissingSequence', 'lastMissingSequence', 'failureCode',
   'workerCallID', 'contextModeWorkerCallID', 'sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents', 'failureCategory', 'exitCode', 'signal',
+  'schemaVersion', 'configurationHash', 'runtimeVersion', 'selection', 'catalog', 'contentHash', 'sourceHash', 'idsHash',
+  'availability', 'bytes', 'plugins', 'configured', 'observed', 'observation', 'factoryCalls', 'ownership',
+  'policies', 'readOverlap', 'waitAny', 'compactResults', 'contextProjection',
+  'anchorUserMessageID', 'continuationMessageID', 'activeUserMessageID', 'todoContinuationCount',
+  'owner', 'task', 'taskId', 'rootSessionId', 'parentTaskId', 'childSessionId', 'priorTaskId', 'envelopeId', 'resultEnvelope',
+  'acknowledgedAt', 'resumable', 'partial', 'executionKind', 'failureKind', 'failureReason', 'dispatchGrouped',
+  'recoveryLineageId', 'recoveryMessageID', 'runtimeInstanceID', 'providerRequestID', 'cancellationGeneration',
+  'firstAssistantPartAt', 'childPromptedAt', 'start', 'end', 'autoResume', 'trigger', 'rejectionState',
+  'beforeBytes', 'projectedBytes', 'dynamicBytes', 'targetKind', 'lastAt', 'coalescedDiagnostics',
+  'progressKind', 'progress', 'counts', 'lastUsefulAt', 'relevance', 'policy',
+  'tool-evidence', 'child-completed', 'artifact-changed', 'required-check',
 ]);
 
 const MEMORY_EXTRACTION_COUNTS = new Set([
@@ -78,6 +89,10 @@ const STABLE_IDENTIFIER_FIELDS = new Set([
   'sha256', 'hash', 'head', 'commit', 'tree', 'ref', 'parent',
   'streamId',
   'workerCallID', 'contextModeWorkerCallID',
+  'configurationHash', 'contentHash', 'sourceHash', 'idsHash',
+  'anchorUserMessageID', 'continuationMessageID', 'activeUserMessageID',
+  'taskId', 'rootSessionId', 'parentTaskId', 'childSessionId', 'priorTaskId', 'envelopeId',
+  'recoveryLineageId', 'recoveryMessageID', 'runtimeInstanceID', 'providerRequestID',
 ]);
 
 const CONTEXT_MODE_FIELDS = new Set(['phase', 'callID', 'messageID', 'workerCallID', 'tool', 'sequence',
@@ -177,7 +192,7 @@ export const createDiagnosticSanitizer = (options = {}) => {
       value = value.split(secret).join(`${REDACTED}:known`);
       increment('known');
     }
-    for (const { absolute, placeholder } of pathMappings) {
+    for (const { absolute, placeholder } of redactOptions.paths === false ? [] : pathMappings) {
       const pattern = new RegExp(escapeRegExp(absolute), process.platform === 'win32' ? 'gi' : 'g');
       if (!pattern.test(value)) continue;
       pattern.lastIndex = 0;
@@ -247,6 +262,20 @@ export const createDiagnosticSanitizer = (options = {}) => {
       ? TOKEN_FIELDS
       : (field === 'cache' ? TOKEN_CACHE_FIELDS : NESTED_FIELDS);
     for (const [key, nested] of Object.entries(object)) {
+      if (key === 'owner' && nested !== 'devryan') {
+        report.droppedFields += 1;
+        continue;
+      }
+      if ((object.type === 'reasoning' && ['text', 'content', 'data'].includes(key))
+        || (['reasoning', 'reasoningText'].includes(key) && typeof nested !== 'number')) {
+        report.droppedFields += 1;
+        continue;
+      }
+      if (['configurationHash', 'contentHash', 'sourceHash', 'idsHash'].includes(key)
+        && nested !== null && (typeof nested !== 'string' || !/^[a-f0-9]{64}$/.test(nested))) {
+        report.droppedFields += 1;
+        continue;
+      }
       if ((CONTEXT_MODE_IDENTIFIERS.has(key) && (typeof nested !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(nested)))
         || (CONTEXT_MODE_NUMBERS.has(key) && (!Number.isFinite(nested) || nested < 0))) {
         report.droppedFields += 1;
@@ -331,6 +360,9 @@ export const createDiagnosticSanitizer = (options = {}) => {
       seen.add(object);
       const output = {};
       for (const [key, nested] of Object.entries(object)) {
+        if ((object.type === 'reasoning' && ['text', 'content', 'data'].includes(key))
+          || (['reasoning', 'reasoningText'].includes(key) && typeof nested !== 'number')
+          || ['providerMetadata', 'providerOptions', 'signature', 'encrypted_content'].includes(key)) continue;
         output[key] = visit(nested, key, seen);
       }
       seen.delete(object);
@@ -342,6 +374,8 @@ export const createDiagnosticSanitizer = (options = {}) => {
   return {
     sanitizeRecord,
     sanitizeText: redactString,
+    // Private task checkpoints need usable project paths; secrets are still removed.
+    sanitizeContextText: (value) => redactString(value, { paths: false }),
     sanitizeExportValue,
     addKnownSecret(value) {
       if (typeof value === 'string' && value.length >= 6) inventory.add(value);

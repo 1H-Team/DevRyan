@@ -1,3 +1,6 @@
+import { validateBuilderTodoGuard, validateObjectiveProgress, validateObjectiveRejections } from './objective-progress.js';
+import { currentObjectiveUser, isNativeCompactionRecord } from './objective-identity.js';
+
 // Deliberately narrower than the presentation/error-wording classifier.
 export const PROVIDER_RECOVERY_POLICY_VERSION = 1;
 export const PROVIDER_PROGRESS_TIMEOUT_MS = 300_000;
@@ -59,11 +62,20 @@ export function classifyPrimaryTransportError(error, runtimeVersion) {
 }
 
 export function validatePrimaryRecoveryRecord(value) {
+  validateObjectiveRejections(value?.rejections);
+  validateObjectiveProgress(value?.progress);
+  validateBuilderTodoGuard(value?.builderTodoGuard);
+  if (value?.failureKind !== undefined && value.failureKind !== null && !['provider_transport', 'provider_usage_limit', 'provider_authentication', 'provider_prompt_rejected', 'model_unavailable', 'deadline_exceeded'].includes(value.failureKind)) throw recoveryError('invalid_recovery_failure_kind');
   if (!value || value.version !== 1 || typeof value !== 'object') throw recoveryError('invalid_recovery_record');
   for (const key of ['sessionID', 'anchorID', 'directory', 'providerID', 'modelID', 'agent', 'state']) {
     if (typeof value[key] !== 'string' || !value[key] || (key !== 'directory' && value[key].length > 256)) throw recoveryError('invalid_recovery_record');
   }
   if (!Number.isSafeInteger(value.revision) || value.revision < 1
+    || (value.todoContinuationCount !== undefined && (!Number.isSafeInteger(value.todoContinuationCount)
+      || value.todoContinuationCount < 0 || value.todoContinuationCount > 12))
+    || (value.continuationID !== undefined && !/^msg_[a-zA-Z0-9]+$/.test(value.continuationID))
+    || (value.activeUserID !== undefined && !/^msg_[a-zA-Z0-9]+$/.test(value.activeUserID))
+    || (value.recoverySourceUserID !== undefined && !/^msg_[a-zA-Z0-9]+$/.test(value.recoverySourceUserID))
     || ![0, 1].includes(value.attemptCount) || !Number.isFinite(value.updatedAt)
     || !Number.isFinite(value.createdAt) || !Array.isArray(value.guardedIDs)
     || value.guardedIDs.some((id) => typeof id !== 'string')
@@ -88,11 +100,11 @@ export function inspectRecoveryTurn(record, observation) {
   const anchorIndex = messages.findIndex((m) => m.info?.id === record.anchorID && m.info.role === 'user');
   if (anchorIndex < 0) throw recoveryError('recovery_anchor_unavailable');
   const tail = messages.slice(anchorIndex);
-  const users = tail.filter((m) => m.info.role === 'user');
+  const expectedUser = currentObjectiveUser(record);
+  const users = tail.filter((m) => m.info.role === 'user' && (!isNativeCompactionRecord(m) || m.info.id === expectedUser));
   const currentUser = users.at(-1)?.info.id;
-  const originalUser = record.continuationID ?? record.anchorID;
-  const expectedUser = record.recoveryID ?? originalUser;
-  const recoveryAccepted = Boolean(record.recoveryID && currentUser === record.recoveryID);
+  const originalUser = record.recoverySourceUserID ?? record.activeUserID ?? record.continuationID ?? record.anchorID;
+  const recoveryAccepted = Boolean(record.recoveryID && currentUser === expectedUser);
   const superseded = currentUser !== expectedUser && !(record.recoveryID && currentUser === originalUser);
   const assistants = tail.filter((m) => m.info.role === 'assistant' && m.info.parentID === expectedUser);
   const last = assistants.at(-1);

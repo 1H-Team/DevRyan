@@ -18,6 +18,16 @@ const createSupabase = () => ({
 });
 
 describe('Production Bots Supabase repositories', () => {
+  it('validates narrow projections and retains fields needed for pagination', async () => {
+    const supabase = createSupabase(); const store = createBotStore({ supabase });
+    const page = await store.repositories.bot_runs.list({ fields: ['id'], limit: 1 });
+    expect(supabase.rest.mock.calls[0][1].select.split(',')).toEqual(['id', 'created_at']);
+    expect(page.nextCursor).toEqual(expect.any(String));
+    for (const fields of [[], ['*'], ['id,context_snapshot'], ['secret'], [null]]) {
+      await expect(store.repositories.bot_runs.list({ fields })).rejects.toBeInstanceOf(BotStoreError);
+    }
+  });
+
   it('defines an explicit, non-wildcard repository select for every Bot table', () => {
     expect(Object.keys(BOT_TABLES)).toEqual([
       'bots',

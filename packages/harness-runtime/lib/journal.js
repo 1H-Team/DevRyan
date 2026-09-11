@@ -116,6 +116,7 @@ const emptyManifest = (sessionID, runtime, rebuilt = false) => ({
   coalescedParts: 0,
   coalescedSessionUpdates: 0,
   coalescedRuntimeSyncs: 0,
+  coalescedDiagnostics: 0,
   models: [],
   chunkCount: 0,
   bytes: 0,
@@ -362,12 +363,14 @@ export const createDiagnosticJournal = (options = {}) => {
         coalescedParts: 0,
         coalescedSessionUpdates: 0,
         coalescedRuntimeSyncs: 0,
+        coalescedDiagnostics: 0,
       };
       for (const field of [
         'trimmedDeltas',
         'coalescedParts',
         'coalescedSessionUpdates',
         'coalescedRuntimeSyncs',
+        'coalescedDiagnostics',
       ]) {
         const delta = Math.max(0, (stats[field] ?? 0) - (previous[field] ?? 0));
         if (delta > 0) {
@@ -653,6 +656,11 @@ export const createDiagnosticJournal = (options = {}) => {
     await fsApi.mkdir(directory, { recursive: true, mode: 0o700 });
     const cutoff = now() - maxAgeMs;
     let total = await directorySize(fsApi, directory);
+    const recordEviction = async (kind, target, size, lastAt) => {
+      await writeSanitized({ type: 'lifecycle', event: 'journal_retention', at: now(),
+        payload: { phase: 'before_delete', reason: lastAt < cutoff ? 'age_limit' : 'size_limit',
+          targetKind: kind, sourceHash: crypto.createHash('sha256').update(target).digest('hex'), bytes: size, lastAt } });
+    };
 
     const rootEntries = await fsApi.readdir(directory, { withFileTypes: true }).catch(() => []);
     const legacy = [];
@@ -672,6 +680,7 @@ export const createDiagnosticJournal = (options = {}) => {
     legacy.sort((left, right) => left.lastAt - right.lastAt);
     for (const item of legacy) {
       if (item.lastAt >= cutoff && total <= maxBytes) continue;
+      await recordEviction('legacy-segment', item.path, item.size, item.lastAt);
       await fsApi.rm(item.path, { force: true });
       await fsApi.rm(item.blobPath, { recursive: true, force: true });
       total -= item.size;
@@ -684,6 +693,7 @@ export const createDiagnosticJournal = (options = {}) => {
       if (bucket.handle) continue;
       if (bucket.manifest.lastAt >= cutoff && total <= maxBytes) continue;
       const size = await directorySize(fsApi, bucket.directory);
+      await recordEviction('session', bucket.key, size, bucket.manifest.lastAt);
       await fsApi.rm(bucket.directory, { recursive: true, force: true });
       buckets.delete(bucket.key);
       total -= size;
@@ -706,6 +716,7 @@ export const createDiagnosticJournal = (options = {}) => {
       chunks.sort((left, right) => left.lastAt - right.lastAt);
       for (const chunk of chunks) {
         if (chunk.lastAt >= cutoff && total <= maxBytes) continue;
+        await recordEviction('runtime-chunk', chunk.path, chunk.size, chunk.lastAt);
         await fsApi.rm(chunk.path, { force: true });
         total -= chunk.size;
       }
@@ -714,6 +725,7 @@ export const createDiagnosticJournal = (options = {}) => {
         coalescedParts: runtimeBucket.manifest.coalescedParts,
         coalescedSessionUpdates: runtimeBucket.manifest.coalescedSessionUpdates,
         coalescedRuntimeSyncs: runtimeBucket.manifest.coalescedRuntimeSyncs,
+        coalescedDiagnostics: runtimeBucket.manifest.coalescedDiagnostics,
       };
       const wasRebuilt = runtimeBucket.manifest.rebuilt;
       const referencedBlobs = new Set();

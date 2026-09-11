@@ -8,6 +8,7 @@ import { createQaUiDriver } from '../qa/ui-driver.mjs';
 import {
   captureFirstDocumentStartup,
   captureMemoryCheckpoint,
+  assertEarlierCanonicalHistory,
   historyCoverage,
   loadOlderHistoryPage,
   observeStartupNavigation,
@@ -24,6 +25,16 @@ const host = { process: { heapUsed: 99999 }, appMetrics: [
 ] };
 const heap = { usedSize: 123, totalSize: 456 };
 const dom = { documents: 1, nodes: 20, jsEventListeners: 5 };
+
+test('a buffered history reveal must prove older canonical content in the exact session', () => {
+  const row = (id, created, sessionID = 'ses_history') => ({ info: { id, sessionID, time: { created } }, parts: [{ type: 'text', text: id }] });
+  const before = row('msg_newer', 200);
+  assert.doesNotThrow(() => assertEarlierCanonicalHistory(before, row('msg_older', 100), 'ses_history'));
+  for (const after of [before, row('msg_newer-again', 200), row('msg_future', 300), row('msg_foreign', 100, 'ses_other'),
+    row('msg_unknown', NaN), { ...row('msg_empty', 100), parts: [] }]) {
+    assert.throws(() => assertEarlierCanonicalHistory(before, after, 'ses_history'));
+  }
+});
 
 test('fixture preparation owns four independent histories without submitting prompts', async () => {
   const fixture = await createLoopbackOpenCodeFixture({ directory: path.resolve('.cache/perf/lifecycle-unit-workspace') });
@@ -67,7 +78,7 @@ test('Load Older requires this click’s fresh contiguous page and visible canon
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
-  for (const failure of [undefined, 'HTTP only', 'unchanged page', 'stale page', 'wrong session', 'absent DOM', 'wrong text']) {
+  for (const failure of [undefined, 'adaptive initial snapshot', 'unrelated after adaptive snapshot', 'HTTP only', 'unchanged page', 'stale page', 'wrong session', 'absent DOM', 'wrong text']) {
     await t.test(failure ?? 'same-height canonical commit', async () => {
       const pages = [
         { sessionID: session.id, before: null, returned: 360, firstMessageID: 'msg_stale' },
@@ -98,8 +109,10 @@ test('Load Older requires this click’s fresh contiguous page and visible canon
         assert.deepEqual(options, { text: 'LOAD OLDER MESSAGES' });
         assert.equal(clicked, false); clicked = true;
         if (failure) scroll.scrollHeight += 500;
+        if (failure?.includes('adaptive')) pages.push({ sessionID: session.id, before: null, returned: 100, firstMessageID: 'msg_260' });
         if (failure !== 'unchanged page') pages.push({ sessionID: session.id,
-          before: failure === 'stale page' ? null : 'msg_310', returned: failure === 'stale page' ? 50 : 200,
+          before: failure === 'stale page' ? null : failure === 'adaptive initial snapshot' ? 'msg_260'
+            : failure === 'unrelated after adaptive snapshot' ? 'unrelated' : 'msg_310', returned: failure === 'stale page' ? 50 : 200,
           firstMessageID: failure === 'stale page' ? 'msg_310' : firstMessageID });
         if (failure === 'wrong session') location.href = 'http://renderer.invalid/?session=ses_other';
         if (failure === 'wrong text') row.innerText = 'An earlier unrelated response';
@@ -113,15 +126,15 @@ test('Load Older requires this click’s fresh contiguous page and visible canon
       const fixture = { origin: `http://127.0.0.1:${server.address().port}`,
         getState: () => ({ messagePageRequests: structuredClone(pages) }) };
       const run = loadOlderHistoryPage({ session, ui, fixture, messagePageRequestOffset: 1 });
-      if (failure) await assert.rejects(run, undefined, `${failure} must not count as a UI page commit`);
+      if (failure && failure !== 'adaptive initial snapshot') await assert.rejects(run, undefined, `${failure} must not count as a UI page commit`);
       else {
         const result = await run;
-        assert.equal(result.coveredMessages, 250, 'The old cumulative full-page read must be excluded');
+        assert.equal(result.coveredMessages, failure === 'adaptive initial snapshot' ? 300 : 250, 'The old cumulative full-page read must be excluded');
         assert.equal(result.firstMessageID, firstMessageID);
         assert.equal(result.canonicalText, canonicalText);
         assert.equal(result.sessionID, session.id);
         assert.equal(reveals, 1);
-        assert.equal(scroll.scrollHeight, 1000);
+        assert.equal(scroll.scrollHeight, failure === 'adaptive initial snapshot' ? 1500 : 1000);
       }
       assert.equal(clicked, true);
     });

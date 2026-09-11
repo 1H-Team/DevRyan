@@ -8,6 +8,9 @@ const MAX_RESUMES_PER_COUNCIL_CHILD = 2;
 const MAX_RESUMES_PER_LIBRARIAN_CHILD = 2;
 const INCOMPLETE_TODO_STATUSES = new Set(["pending", "in_progress"]);
 const TERMINAL_STATUS_CHILD_AGENTS = new Set(["fixer", "designer", "librarian", "explorer"]);
+// A partial bridge configuration still means ownership is unknown, not that a
+// second controller may prompt. Recheck at dispatch as well as plugin creation.
+const hasManagedOwner = () => Boolean(process.env.DEVRYAN_ORCHESTRATION_URL || process.env.DEVRYAN_ORCHESTRATION_TOKEN);
 
 const CHILD_RESUME_CONFIG = {
   fixer: {
@@ -190,6 +193,7 @@ function markChildEvent(childSessionID) {
 }
 
 function shouldResume(parent) {
+  if (hasManagedOwner()) return [false, "DevRyan owns managed continuations"];
   if (!parent.idle) return [false, "parent busy"];
   if (!parent.childDirty) return [false, "no completed child work"];
   if (parent.hasDelegated && parent.children.size === 0) return [false, "delegated work has no child session yet"];
@@ -215,6 +219,7 @@ function scheduleResume(parent, reason) {
 }
 
 function shouldResumeChild(child) {
+  if (hasManagedOwner()) return [false, "DevRyan owns managed continuations"];
   if (!isResumableChildAgent(child.agent)) return [false, "not resumable child"];
   if (!child.idle) return [false, "child busy"];
   const config = CHILD_RESUME_CONFIG[child.agent];
@@ -435,6 +440,7 @@ function handleSessionStatus(event) {
 }
 
 export const OrchestratorAutoresumePlugin = async ({ client }) => {
+  if (hasManagedOwner()) return {};
   state.client = client;
 
   return {

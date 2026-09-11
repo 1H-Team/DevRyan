@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -9,6 +10,30 @@ const cloneValue = (value) => {
     return structuredClone(value);
   }
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+};
+
+// Slim's native background scheduler and foreground fallback submit through
+// these APIs. In a DevRyan-owned runtime only the managed host may submit a
+// continuation. Capability absence also disables Slim's periodic wake timer.
+// Keep the original SDK receiver for every other method (including getters).
+const managedSlimContext = (context) => {
+  if (!process.env.DEVRYAN_ORCHESTRATION_URL && !process.env.DEVRYAN_ORCHESTRATION_TOKEN) return context;
+  if (!context?.client?.session) return context;
+  const session = new Proxy(context.client.session, {
+    get(target, key) {
+      if (key === 'prompt' || key === 'promptAsync') return undefined;
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  const client = new Proxy(context.client, {
+    get(target, key) {
+      if (key === 'session') return session;
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  return { ...context, client };
 };
 
 const loadSlimPlugin = async () => {
@@ -46,7 +71,17 @@ const loadSlimPlugin = async () => {
 
 export const DevRyanOhMyOpenCodeSlimPlugin = async (context) => {
   const slimPlugin = await loadSlimPlugin();
-  const plugin = await slimPlugin(context);
+  const plugin = await slimPlugin(managedSlimContext(context));
+  const factories = globalThis[Symbol.for('devryan.plugin-factories.v1')] ??= new Map();
+  const factoryKey = `slim:${context?.directory}:${import.meta.url}`;
+  factories.set(factoryKey, { name: 'devryan-oh-my-opencode-slim', directory: context?.directory,
+    contentHash: (() => {
+      try { return crypto.createHash('sha256').update(fs.readFileSync(new URL(import.meta.url))).digest('hex'); }
+      catch { return null; } // Missing diagnostic source must not disable the plugin.
+    })(),
+    factoryCalls: (factories.get(factoryKey)?.factoryCalls ?? 0) + 1,
+    ownership: process.env.DEVRYAN_ORCHESTRATION_URL || process.env.DEVRYAN_ORCHESTRATION_TOKEN ? 'deferred' : 'standalone' });
+  while (factories.size > 256) factories.delete(factories.keys().next().value);
   if (!isRecord(plugin)) {
     return plugin;
   }

@@ -101,6 +101,7 @@ export async function createSessionVault({ dataDirectory }) {
         await persist();
       });
     },
+    drain: () => mutation,
     paths: { keyPath, vaultPath },
   };
 }

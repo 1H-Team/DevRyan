@@ -1,15 +1,17 @@
+import { scrollQaHistoryTop } from './history-scroll.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, realpath, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createLoopbackOpenCodeFixture, PERF_PARENT_SESSION_ID } from '../perf/loopback-opencode-fixture.mjs';
 import { evaluate } from './cdp.mjs';
-import { captureQaCompactionProjectPlan, prepareQaCompactionApproval } from './compaction-approval.mjs';
+import { captureQaCompactionProjectPlan } from './compaction-approval.mjs';
 import { findQaPlanApprovalUser } from './compaction-scenarios.mjs';
 import { assertQaSubmittedPlanMode } from './submitted-turn.mjs';
 import { runQaFixtureFailureRecovery } from './fixture-failures.mjs';
 import { runQaFixtureMobileCoverage } from './fixture-mobile-coverage.mjs';
+import { selectQaThinkingLevel } from './thinking-control.mjs';
 import { QA_COMPACTION_COMPOSER, QA_QUEUE_MODE_CONTROL, QA_QUEUE_MODE_STATE,
   readQaManualCompactionQueueMode, withQaManualCompactionSubmission } from './manual-compaction-submission.mjs';
 
@@ -117,9 +119,8 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
     await ui.waitExpression('mounted composer',"Boolean(document.querySelector('textarea'))");
   };
   const setVariant = async (value) => {
-    await ui.click({selector:'button.model-controls__variant-trigger'});
-    await ui.click({selector:'[role="menuitem"]',text:value === null ? 'Default' : value === 'high' ? 'High' : 'Low'});
-    await ui.waitExpression('selected thinking label',`[...document.querySelectorAll('.model-controls__variant-trigger')].some(e=>e.innerText.trim()===${JSON.stringify(value === null ? 'Default' : value === 'high' ? 'High' : 'Low')})`);
+    await selectQaThinkingLevel({ cdp, ui, value });
+    await ui.waitExpression('selected thinking label',`[...document.querySelectorAll('.model-controls__variant-trigger')].some(e=>e.innerText.trim()===${JSON.stringify(value === 'high' ? 'High' : 'Low')})`);
   };
   const planModeControl = `(() => {const e=[...document.querySelectorAll('[aria-pressed]')].find(e=>e.innerText?.trim().startsWith('Plan'));return e?{enabled:e.getAttribute('aria-pressed')==='true'}:null;})()`;
   const closeAgentMenu = async () => {
@@ -189,17 +190,17 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
   });
 
   await check('queued thinking snapshot survives later selector changes',async () => {
-    await setVariant(null);
+    await setVariant('low');
     fixture.configureNextPrompt(sessionID,{hold:true,chunks:2,intervalMs:100});
     await send('QA hold the current turn while another request is queued.');
-    await ui.type('QA queued with provider-default thinking.');
+    await ui.type('QA queued with Low thinking.');
     await ui.key('Enter',{code:'Enter',windowsVirtualKeyCode:13});
     await ui.waitExpression('queued row present',"Boolean(document.querySelector('button[aria-label=\"Remove from Queue\"]'))");
     await setVariant('high');
     const before=fixture.getState().receivedPrompts.length;
     fixture.releasePrompt(sessionID);
     const queued=await ui.waitFor('queued submission dispatched',() => fixture.getState().receivedPrompts[before]);
-    assert.ok(queued.variant === null || queued.variant === '', 'The queued provider-default selection must not become high effort');
+    assert.equal(queued.variant, 'low', 'The queued Low selection must not become high effort');
     await idle(sessionID);
     await ui.waitExpression('queue cleared',"!document.querySelector('button[aria-label=\"Remove from Queue\"]')");
     evidence.queuedSnapshot={messageID:queued.messageID,variant:queued.variant,model:queued.model,agent:queued.agent};
@@ -323,8 +324,8 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
   });
 
   evidence.compactionSelectionRestoration={source:'synthetic fixture messages; native compaction lifecycle is not exercised',cases:[]};
-  for(const variant of [null,'high']) {
-    const label=variant === null ? 'Default' : 'High';
+  for(const variant of ['low','high']) {
+    const label=variant === 'low' ? 'Low' : 'High';
     await check(`fixture compaction records preserve ${label} thinking after reload`,async () => {
       await setVariant(variant);
       fixture.configureNextPrompt(sessionID,{chunks:1,intervalMs:10});
@@ -395,9 +396,8 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
       // absent DOM below proves virtualization, not absent canonical data.
       for(let page=0;page<8;page++) {
         if(!await evaluate(cdp,"[...document.querySelectorAll('button')].some(e=>e.innerText.trim()==='LOAD OLDER MESSAGES')"))break;
-        const top=await evaluate(cdp,"(() => {const e=document.querySelector('[data-scrollbar=\"chat\"]');const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2,deltaY:-e.scrollHeight,deltaX:0,height:e.scrollHeight};})()");
-        const {height,...event}=top;await cdp.send('Input.dispatchMouseEvent',{type:'mouseWheel',...event});
-        await ui.waitExpression('older approval history edge',"document.querySelector('[data-scrollbar=\"chat\"]').scrollTop<=1");
+        await scrollQaHistoryTop(cdp, ui);
+        const height=await evaluate(cdp, `document.querySelector('[data-scrollbar="chat"]').scrollHeight`);
         await ui.click({text:'LOAD OLDER MESSAGES'});
         // Already fetched records can be outside the local presentation page.
         // Each click must commit history growth; only actual HTTP pagination
@@ -494,11 +494,25 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
         hitTarget:e.contains(hit)?'button':'immediate-footer-parent'};
     })()`);
     await screenshot('fixture-superseded-plan-disabled');
-    const prepared=await prepareQaCompactionApproval({projectFixture,priorSavedPlan:previousPlan,expectedProjectPlan,messages:()=>rows(sessionID),captureSavedPlan,
-      evidenceName:'fixture-fresh-current-plan',sendTurn:async text=>{
-        fixture.configureNextPrompt(sessionID,{responseText:'<!--plan-->\n'+projectPlan,chunks:1,intervalMs:10});
-        await send(text);await idle(sessionID);return rows(sessionID);
-      }});
+    // This loopback journey establishes UI supersession and approval identity.
+    // Native reads and immutable revision retention belong to the live journey.
+    assert.deepEqual(await captureQaCompactionProjectPlan(projectFixture),expectedProjectPlan);
+    fixture.configureNextPrompt(sessionID,{responseText:'<!--plan-->\n'+projectPlan,chunks:1,intervalMs:10});
+    const freshRequest=await send('QA present the complete unchanged current plan as a fresh Plan card for explicit approval.');
+    await idle(sessionID);
+    const freshPlan=await captureSavedPlan('fixture-fresh-current-plan');
+    const freshRows=await rows(sessionID);
+    const freshSource=freshRows.find(row=>row.info.id===freshPlan.sourceMessageID);
+    assertQaSubmittedPlanMode(freshRows.find(row=>row.info.id===freshRequest.messageID),true);
+    assert.equal(freshSource.info.parentID,freshRequest.messageID);
+    assert.equal(freshSource.info.sessionID,sessionID);
+    assert.notEqual(freshPlan.sourceMessageID,previousPlan.sourceMessageID);
+    assert.equal(freshSource.parts.find(part=>part.type==='text').text,'<!--plan-->\n'+projectPlan);
+    assert.equal((await readFile(freshPlan.path,'utf8')).trim(),projectPlan.trim());
+    assert.deepEqual(await captureQaCompactionProjectPlan(projectFixture),expectedProjectPlan);
+    const prepared={savedPlan:freshPlan,evidence:{requestedUserMessageID:freshRequest.messageID,
+      previousUISourceMessageID:previousPlan.sourceMessageID,freshUISourceMessageID:freshPlan.sourceMessageID,
+      completeCurrentPlan:true,projectUnchanged:true,freshSourceParentID:freshSource.info.parentID}};
     const selector=`[data-plan-source-message-id=${JSON.stringify(prepared.savedPlan.sourceMessageID)}] button`;
     await ui.reveal(selector,'Implement Plan',{scrollContainer:'[data-scrollbar="chat"]',direction:'up'});
     await screenshot('fixture-fresh-current-plan-actionable');
@@ -541,7 +555,7 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
       }
     });
   }
-  await setVariant(null);
+  await setVariant('low');
 
   if(cell.scenarioId==='mobile') {
     fixture.configureNextPrompt(sessionID,{reasoning:'text',reasoningText:'Check narrow viewports, touch targets and the reachable composer.',hold:true});

@@ -3,6 +3,7 @@ import { evaluate } from './cdp.mjs';
 import { revealQaFixtureTool } from './fixture-failures.mjs';
 import { createQaManagedTaskReadModel, installQaManagedTaskReadModel } from './fixture-managed-tasks.mjs';
 import { PERF_PARENT_SESSION_ID } from '../perf/loopback-opencode-fixture.mjs';
+import { selectQaThinkingLevel } from './thinking-control.mjs';
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const row = id => `[data-message-id=${JSON.stringify(id)}]`;
@@ -202,11 +203,11 @@ export async function runQaFixtureMobileCoverage({ cell, fixture, projectFixture
     if (await evaluate(cdp, `Boolean(document.querySelector('#mobile-overlay-root button[aria-label="Show Thinking Modes"]'))`)) {
       await ui.click({ label: 'Show Thinking Modes', touch: true });
     }
-    for (const label of ['Default', 'Low', 'High']) await ui.waitVisibleText(label, '#mobile-overlay-root');
+    await ui.waitExpression('mobile thinking slider visible', `document.querySelector('#mobile-overlay-root [role="slider"][aria-label="Thinking Level"]')?.getBoundingClientRect().width>0`);
   };
   const choose = async label => {
     await openEfforts();
-    await ui.click({ selector: '#mobile-overlay-root button[aria-pressed]', text: label, touch: true });
+    await selectQaThinkingLevel({ cdp, ui, value: label.toLowerCase(), open: false });
     await ui.waitExpression(`mobile ${label} selection applied`, `!document.querySelector(${JSON.stringify(panel)})&&document.querySelector(${JSON.stringify(modelButton)})?.title==='Fixture model · ${label}'`);
   };
   const mobileViewport = async () => {
@@ -245,7 +246,7 @@ export async function runQaFixtureMobileCoverage({ cell, fixture, projectFixture
   await send('QA show the completed tool output in narrow layouts.');await idle(sessionID);
   const toolAssistant = await latestAssistant(sessionID);
   await revealQaFixtureTool({ cdp, ui, assistant: toolAssistant, expectedText: 'Fixture tests passed.' });
-  await check('mobile High to Default selection submits explicit default and survives reload', async () => {
+  await check('mobile High to Low selection submits the explicit effort and survives reload', async () => {
     await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
@@ -258,26 +259,30 @@ export async function runQaFixtureMobileCoverage({ cell, fixture, projectFixture
     const high = await send('QA submit the explicit High choice from the native mobile model sheet.');
     await idle(sessionID);
     await assertSubmittedVariant(high, 'high');
-    await choose('Default');
+    await choose('Low');
     await openEfforts();
-    await ui.waitExpression('mobile Default chip pressed', `Boolean([...document.querySelectorAll('#mobile-overlay-root button[aria-pressed="true"]')].find(e=>e.innerText.trim()==='Default'))`);
-    await capture('fixture-mobile-default-selected', 'light', 390, 844, { selection: 'Default', pressed: true });
+    await ui.waitExpression('mobile Low slider selected', `document.querySelector('#mobile-overlay-root [data-thinking-level]')?.getAttribute('data-thinking-level')==='low'`);
+    await capture('fixture-mobile-low-selected', 'light', 390, 844, { selection: 'Low', sliderSelected: true });
     await ui.key('Escape', { code: 'Escape', windowsVirtualKeyCode: 27 });
     fixture.configureNextPrompt(sessionID, { chunks: 1, intervalMs: 10 });
-    const providerDefault = await send('QA clear High through the native mobile Default choice and preserve that choice after reload.');
+    const selectedLow = await send('QA select Low through the native mobile thinking slider and preserve that choice after reload.');
     await idle(sessionID);
-    await assertSubmittedVariant(providerDefault, '');
+    await assertSubmittedVariant(selectedLow, 'low');
     await ui.reload();
-    await ui.waitExpression('mobile Default label restored after reload', `document.querySelector(${JSON.stringify(modelButton)})?.title==='Fixture model · Default'`);
+    await ui.waitExpression('mobile Low label restored after reload', `document.querySelector(${JSON.stringify(modelButton)})?.title==='Fixture model · Low'`);
     await openEfforts();
-    await ui.waitExpression('mobile Default chip remains pressed after reload', `Boolean([...document.querySelectorAll('#mobile-overlay-root button[aria-pressed="true"]')].find(e=>e.innerText.trim()==='Default'))`);
-    await capture('fixture-mobile-default-restored', 'light', 390, 844, { selection: 'Default', pressed: true,
-      userMessageID: providerDefault.messageID, canonicalVariant: providerDefault.model.variant });
+    await ui.waitExpression('mobile Low slider remains selected after reload', `document.querySelector('#mobile-overlay-root [data-thinking-level]')?.getAttribute('data-thinking-level')==='low'`);
+    await capture('fixture-mobile-low-restored', 'light', 390, 844, { selection: 'Low', sliderSelected: true,
+      userMessageID: selectedLow.messageID, canonicalVariant: selectedLow.model.variant });
     await ui.key('Escape', { code: 'Escape', windowsVirtualKeyCode: 27 });
+    await choose('High');
+    fixture.configureNextPrompt(sessionID, { chunks: 1, intervalMs: 10 });
+    const highBaseline = await send('QA establish canonical High before testing the unsent Low choice across responsive layouts.');
+    await idle(sessionID);await assertSubmittedVariant(highBaseline, 'high');
     await choose('Low');
-    evidence.mobileDefault = { highUserMessageID: high.messageID, highVariant: high.variant,
-      defaultUserMessageID: providerDefault.messageID, defaultVariant: providerDefault.variant,
-      defaultChipPressed: true, labelAndPressedStateRestoredAfterReload: true, restoredSceneSelection: 'Low',
+    evidence.mobileThinking = { highUserMessageID: high.messageID, highVariant: high.variant,
+      lowUserMessageID: selectedLow.messageID, lowVariant: selectedLow.variant, highBaselineUserMessageID: highBaseline.messageID,
+      sliderSelected: true, labelAndSliderStateRestoredAfterReload: true, restoredSceneSelection: 'Low',
       source: 'native mobile choices and actual canonical submissions before installing any managed-task read fixture' };
   });
   evidence.selectionResilience = {};
@@ -294,14 +299,14 @@ export async function runQaFixtureMobileCoverage({ cell, fixture, projectFixture
     fixture.configureNextPrompt(sessionID, { chunks: 1, intervalMs: 10 });
     const submitted = await send('QA preserve the unsent Low choice through desktop, mobile, and desktop before this actual send.');
     await idle(sessionID);
-    evidence.selectionResilience.responsive = { route: 'desktop to mobile to desktop', previousCanonicalVariant: '',
+    evidence.selectionResilience.responsive = { route: 'desktop to mobile to desktop', previousCanonicalVariant: 'high',
       ...await assertSubmittedVariant(submitted, 'low') };
   });
   await check('unsent Low survives session A to B to A and the actual native send', async () => {
-    await mobileViewport();await choose('Default');
+    await mobileViewport();await choose('High');
     fixture.configureNextPrompt(sessionID, { chunks: 1, intervalMs: 10 });
-    const baseline = await send('QA restore canonical Default before the independent unsent session-choice check.');
-    await idle(sessionID);const canonicalBaseline = await assertSubmittedVariant(baseline, '');
+    const baseline = await send('QA restore canonical High before the independent unsent session-choice check.');
+    await idle(sessionID);const canonicalBaseline = await assertSubmittedVariant(baseline, 'high');
     await pause(600);await choose('Low');
     await screenshot('fixture-unsent-low-before-session-roundtrip');
     await selectSession(PERF_PARENT_SESSION_ID);
@@ -311,7 +316,7 @@ export async function runQaFixtureMobileCoverage({ cell, fixture, projectFixture
     await ui.waitExpression('comparison session history mounted', `Boolean(document.querySelector(${JSON.stringify(row(otherUser.info.id))}))`);
     await screenshot('fixture-unsent-low-other-session');
     await selectSession(sessionID);
-    await ui.waitExpression('original session canonical Default history mounted', `Boolean(document.querySelector(${JSON.stringify(row(baseline.messageID))}))`);
+    await ui.waitExpression('original session canonical High history mounted', `Boolean(document.querySelector(${JSON.stringify(row(baseline.messageID))}))`);
     await pause(600);
     await ui.waitExpression('mobile unsent Low after session return', `document.querySelector(${JSON.stringify(modelButton)})?.title==='Fixture model · Low'`);
     await screenshot('fixture-unsent-low-after-session-roundtrip');
@@ -409,7 +414,12 @@ export async function runQaFixtureMobileCoverage({ cell, fixture, projectFixture
             const selector = `[data-managed-task-id="${record.task.taskId}"]`;
             await ui.reveal(selector, undefined, { scrollContainer: chat, direction: 'down' });
             const displayedLabel = await evaluate(cdp, `document.querySelector(${JSON.stringify(selector + ' h4')})?.innerText`);
-            assert.equal(displayedLabel?.toLowerCase(), record.task.label.toLowerCase());
+            const canonicalChild = await api(`/api/session/${record.child.sessionID}?directory=${encodeURIComponent(directory)}`);
+            assert.equal(canonicalChild.id, record.child.sessionID);
+            assert.equal(canonicalChild.parentID, sessionID);
+            assert.equal(typeof canonicalChild.title, 'string');
+            assert.ok(canonicalChild.title.trim(), 'Canonical child title must be present');
+            assert.equal(displayedLabel, canonicalChild.title);
             await ui.revealText(displayedLabel, selector, { scrollContainer: chat, direction: 'down' });
             await capture(prefix + `-task-${record.task.status}`, theme, width, height, { taskId: record.task.taskId, childSessionID: record.child.sessionID });
           }
@@ -446,14 +456,15 @@ export async function runQaFixtureMobileCoverage({ cell, fixture, projectFixture
                 if (await evaluate(cdp, `Boolean(document.querySelector('#mobile-overlay-root button[aria-label="Show Thinking Modes"]'))`)) {
                   await ui.click({ label: 'Show Thinking Modes', touch: true });
                 }
-                for (const label of ['Default', 'Low', 'High']) await ui.waitVisibleText(label, '#mobile-overlay-root');
+                await ui.waitExpression('responsive mobile thinking slider visible', `document.querySelector('#mobile-overlay-root [role="slider"][aria-label="Thinking Level"]')?.getBoundingClientRect().width>0`);
               }
             } else await ui.click({ selector, touch: true });
-            const panel = mobileControls ? '#mobile-overlay-root .pwa-overlay-panel' : '[role="menu"]';
+            const panel = mobileControls ? '#mobile-overlay-root .pwa-overlay-panel'
+              : name === 'effort' ? '[aria-label="Thinking Options"]' : '[role="menu"]';
             const menu = await ui.waitExpression('responsive selector settled and visible', `(() => {const e=[...document.querySelectorAll(${JSON.stringify(panel)})].find(e=>e.getBoundingClientRect().width>0);if(!e||e.getAnimations({subtree:true}).some(a=>a.playState==='running'))return null;const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};})()`);
             assert.ok(menu.left >= -1 && menu.right <= width + 1 && menu.top >= -1 && menu.bottom <= height + 1, `${name} menu must fit the viewport`);
             let tabSteps = 0;
-            if (mobileControls) {
+            if (mobileControls || name === 'effort') {
               while (!await evaluate(cdp, `Boolean(document.activeElement?.closest(${JSON.stringify(panel)}))`) && tabSteps < 12) {
                 await ui.key('Tab', { code: 'Tab', windowsVirtualKeyCode: 9 });tabSteps += 1;
               }

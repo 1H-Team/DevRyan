@@ -383,8 +383,15 @@ export function createBotStore({ supabase, logger = null } = {}) {
     filters = {},
     cursor = null,
     limit,
+    fields = null,
   } = {}) => {
     const config = configFor(tableName);
+    if (fields !== null && (!Array.isArray(fields) || fields.length === 0
+      || fields.some((field) => !config.columns.includes(field)))) {
+      throw new BotStoreError('Bot repository projection is invalid', 'bot_request_invalid', 400);
+    }
+    // Cursor fields are always present, including on narrow discovery pages.
+    const select = fields === null ? config.select : [...new Set([...fields, ...config.cursor])].join(',');
     const pageLimit = normalizePageLimit(limit);
     const query = filterQuery(config, filters);
     const [timestampField, identifierField] = config.cursor;
@@ -397,7 +404,7 @@ export function createBotStore({ supabase, logger = null } = {}) {
       query.or = `(${timestampField}.lt.${timestamp},and(${timestampField}.eq.${timestamp},${identifierField}.lt.${identifier}))`;
     }
     log('list', tableName, Object.keys(filters));
-    const rows = await requireSupabase().rest(tableName, { query, select: config.select });
+    const rows = await requireSupabase().rest(tableName, { query, select });
     const items = Array.isArray(rows) ? rows : [];
     return {
       items,

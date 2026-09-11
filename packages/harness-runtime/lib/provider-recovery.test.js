@@ -10,7 +10,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 const timeout = { name: 'UnknownError', data: { message: 'The operation timed out.' } };
 const identity = { sessionID: 'ses_test', userMessageID: 'msg_user', assistantMessageID: 'msg_failed', instanceID: 'runtime-test' };
 
-async function fixture(overrides = {}, providerID = 'openai') {
+async function fixture(overrides = {}, providerID = 'openai', agent = 'orchestrator') {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-recovery-'));
   cleanups.push(() => fs.rm(directory, { recursive: true, force: true }));
   let time = 10_000;
@@ -31,7 +31,7 @@ async function fixture(overrides = {}, providerID = 'openai') {
   cleanups.push(() => controller.drain());
   await controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version: '1.18.25' });
   await controller.admit({ sessionID: identity.sessionID, directory: '/project', primary: true,
-    body: { messageID: 'msg_user', agent: 'orchestrator', model: { providerID, modelID: providerID === 'anthropic' ? 'claude-opus-5' : 'gpt-5.6-sol' }, variant: 'xhigh' } });
+    body: { messageID: 'msg_user', agent, model: { providerID, modelID: providerID === 'anthropic' ? 'claude-opus-5' : 'gpt-5.6-sol' }, variant: 'xhigh' } });
   let requestHook;
   const fail = async () => {
     const r = await controller.readRecord(identity.sessionID);
@@ -43,6 +43,48 @@ async function fixture(overrides = {}, providerID = 'openai') {
 }
 
 describe('failure classification', () => {
+  test.each(['openai', 'xai'])('stops exact rejected-input cycles for %s without replaying or spending transport attempts', async (provider) => {
+    const f = await fixture({}, provider);
+    await f.controller.plugin({ action: 'step', ...identity });
+    const reject = (callID) => f.controller.plugin({ action: 'rejected', ...identity, callID,
+      fingerprint: 'a'.repeat(64), reason: 'binary_read_blocked' });
+    expect(await reject('call_1')).toMatchObject({ state: 'correct-input', count: 1 });
+    expect(await reject('call_1')).toMatchObject({ state: 'duplicate', count: 1 });
+    expect(await reject('call_2')).toMatchObject({ state: 'corrective-replan', count: 2 });
+    await f.controller.admit({ sessionID: identity.sessionID, primary: true, body: {
+      parts: [{ type: 'text', synthetic: true, metadata: { compaction_continue: true }, text: 'Continue' }],
+    } });
+    expect(await reject('call_3')).toMatchObject({ state: 'blocked', count: 3 });
+    expect((await f.snapshot()).record).toMatchObject({ state: 'needs_attention', reason: 'managed_repeated_preexecution_rejection', attemptCount: 0 });
+    await expect(f.controller.plugin({ action: 'step', ...identity, assistantMessageID: 'msg_again' })).rejects.toThrow('fenced');
+    expect(f.sent).toHaveLength(0); expect(f.aborted).toHaveLength(0);
+  });
+
+  test('records long useful work and deliberate failed-check evidence without semantic termination or budget refill', async () => {
+    const f = await fixture();
+    await f.controller.plugin({ action: 'step', ...identity });
+    for (let i = 0; i < 180; i++) {
+      f.advance(30_000);
+      await f.controller.observeProgress({ sessionID: identity.sessionID, messageID: identity.assistantMessageID,
+        kind: i % 2 ? 'required-check' : 'tool-evidence', identity: `evidence_${i}` });
+    }
+    await f.controller.observeProgress({ sessionID: identity.sessionID, kind: 'tool-evidence', identity: 'evidence_178' });
+    const record = (await f.snapshot()).record;
+    expect(record.state).toBe('observing');
+    expect(record.attemptCount).toBe(0);
+    expect(record.progress).toMatchObject({ policy: 'report-only', counts: { 'tool-evidence': 90, 'required-check': 90 } });
+    expect(f.sent).toEqual([]);
+  });
+
+  test('does not count streaming tokens or an earlier objective as authoritative progress', async () => {
+    const f = await fixture();
+    await f.controller.plugin({ action: 'step', ...identity });
+    for (let i = 0; i < 100; i++) f.controller.observe({ type: 'message.part.delta', properties: {
+      sessionID: identity.sessionID, messageID: identity.assistantMessageID, partID: 'part_text', field: 'text', delta: 'still thinking',
+    } });
+    await f.controller.observeProgress({ sessionID: identity.sessionID, messageID: 'msg_old', kind: 'tool-evidence', identity: 'old' });
+    expect((await f.snapshot()).record.progress).toMatchObject({ lastUsefulAt: null, counts: {} });
+  });
   test('version-pins the lossy current runtime error and rejects generic wording', () => {
     expect(classifyPrimaryTransportError(timeout, '1.18.25')?.source).toBe('opencode_1.18.25_compatibility');
     expect(classifyPrimaryTransportError(timeout, '1.18.26')?.source).toBe('opencode_1.18.26_compatibility');
@@ -256,6 +298,181 @@ test('managed continuation and primary recovery share the admission boundary', a
   expect(f.sent).toHaveLength(1);
 });
 
+describe('managed objective continuation ownership', () => {
+  const continuation = (overrides = {}) => ({ action: 'continuation', ...identity, userMessageID: 'msg_wake',
+    anchorUserMessageID: 'msg_user', directory: '/project', kind: 'collect',
+    execution: { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'orchestrator', variant: 'xhigh' }, ...overrides });
+  const land = (f, id) => {
+    f.state.messages.push({ info: { id, role: 'user' }, parts: [{ type: 'text', synthetic: true,
+      text: '[devryan-open-todo-continuation:v1]\nContinue current work.' }] },
+    { info: { id: `msg_answer${id}`, role: 'assistant', parentID: id, time: { completed: 10_000 } }, parts: [] });
+  };
+  test('reports missing pre-upgrade objective ownership without manufacturing an owner or budget', async () => {
+    const f = await fixture({ mode: 'off' });
+    await expect(f.controller.plugin(continuation({ sessionID: 'ses_unowned' }))).rejects.toMatchObject({ code: 'managed_objective_unavailable' });
+    expect(f.incidents).toContainEqual(expect.objectContaining({ event: 'managed_objective_unavailable', sessionID: 'ses_unowned', reason: 'new_user_input_required' }));
+    expect(await f.controller.readRecord('ses_unowned')).toBeNull();
+  });
+
+  test('preserves the Builder stagnation guard across restart and permits new authoritative progress', async () => {
+    const f = await fixture({ mode: 'off' }, 'xai', 'builder');
+    delete f.state.messages.at(-1).info.error;
+    f.state.todos = [{ content: 'Finish the implementation', status: 'in_progress', priority: 'high' }];
+    f.state.messages.at(-1).parts.push({ type: 'tool', tool: 'todowrite', callID: 'call_todos',
+      state: { status: 'completed', input: { todos: structuredClone(f.state.todos) } } });
+    const builder = (id) => continuation({ userMessageID: id, kind: 'builder_todo',
+      execution: { providerID: 'xai', modelID: 'gpt-5.6-sol', agent: 'builder', variant: 'xhigh' } });
+    for (let i = 0; i < 2; i++) {
+      await f.controller.plugin(builder(`msg_builder${i}`));
+      land(f, `msg_builder${i}`);
+    }
+    await expect(f.controller.plugin(builder('msg_stagnant'))).rejects.toMatchObject({ code: 'managed_builder_todo_stagnant' });
+    expect((await f.controller.readRecord(identity.sessionID)).todoContinuationCount).toBe(2);
+    await f.controller.drain();
+    const restarted = createPrimaryRecoveryController({ directory: f.directory, mode: 'off', isManaged: () => true,
+      authorize: async () => true, observeTurn: async () => structuredClone(f.state), abortSession: async () => {}, promptSession: async () => {} });
+    await restarted.initialize(); cleanups.push(() => restarted.drain());
+    await restarted.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version: '1.18.30' });
+    await expect(restarted.plugin(builder('msg_restart'))).rejects.toMatchObject({ code: 'managed_builder_todo_stagnant' });
+    await restarted.observeProgress({ sessionID: identity.sessionID, kind: 'artifact-changed', identity: 'verified-file-change' });
+    await expect(restarted.plugin(builder('msg_progress'))).resolves.toMatchObject({ allowed: true, todoContinuationCount: 3 });
+    expect((await restarted.readRecord(identity.sessionID)).builderTodoGuard.stagnantCount).toBe(0);
+  });
+
+  test('varying tool output cannot refill Builder stagnation allowance', async () => {
+    const f = await fixture({ mode: 'off' }, 'xai', 'builder');
+    delete f.state.messages.at(-1).info.error;
+    f.state.todos = [{ content: 'Finish the implementation', status: 'in_progress', priority: 'high' }];
+    f.state.messages.at(-1).parts.push({ type: 'tool', tool: 'todowrite', callID: 'call_todos',
+      state: { status: 'completed', input: { todos: structuredClone(f.state.todos) } } });
+    const builder = id => continuation({ userMessageID: id, kind: 'builder_todo',
+      execution: { providerID: 'xai', modelID: 'gpt-5.6-sol', agent: 'builder', variant: 'xhigh' } });
+    for (let index = 0; index < 2; index++) {
+      await f.controller.plugin(builder(`msg_noisy${index}`));
+      land(f, `msg_noisy${index}`);
+      await f.controller.observeProgress({ sessionID: identity.sessionID, kind: 'tool-evidence',
+        identity: `same-failed-test-output-with-duration-${index + 1}ms` });
+    }
+    await expect(f.controller.plugin(builder('msg_noisythird'))).rejects.toMatchObject({ code: 'managed_builder_todo_stagnant' });
+    const record = await f.controller.readRecord(identity.sessionID);
+    expect(record.todoContinuationCount).toBe(2);
+    expect(record.progress.counts['tool-evidence']).toBe(2);
+  });
+
+  test.each(['earlier-objective', 'changed-canonical-todos', 'all-complete'])('does not nudge Builder from %s TODO evidence', async scenario => {
+    const f = await fixture({ mode: 'off' }, 'xai', 'builder');
+    delete f.state.messages.at(-1).info.error;
+    f.state.todos = [{ content: 'Old unfinished work', status: 'pending', priority: 'high' }];
+    const write = { type: 'tool', tool: 'todowrite', callID: 'call_todos', state: { status: 'completed', input: { todos: structuredClone(f.state.todos) } } };
+    if (scenario === 'earlier-objective') f.state.messages.unshift({ info: { role: 'assistant', id: 'msg_prior' }, parts: [write] });
+    else {
+      f.state.messages.at(-1).parts.push(write);
+      if (scenario === 'changed-canonical-todos') f.state.todos[0].content = 'Different current task';
+      else { f.state.todos[0].status = 'completed'; write.state.input.todos[0].status = 'completed'; }
+    }
+    await expect(f.controller.plugin(continuation({ kind: 'builder_todo',
+      execution: { providerID: 'xai', modelID: 'gpt-5.6-sol', agent: 'builder', variant: 'xhigh' } }))).rejects.toMatchObject({ code: expect.stringMatching(/^managed_builder_todo/) });
+    expect((await f.controller.readRecord(identity.sessionID)).todoContinuationCount).toBeUndefined();
+  });
+
+  test.each(['off', 'observe', 'enforce'])('serializes competing hooks even in %s mode', async (mode) => {
+    const f = await fixture({ mode });
+    delete f.state.messages.at(-1).info.error;
+    const results = await Promise.allSettled([
+      f.controller.plugin(continuation()), f.controller.plugin(continuation({ userMessageID: 'msg_otherwake' })),
+    ]);
+    expect(results.filter((entry) => entry.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((entry) => entry.status === 'rejected')).toHaveLength(1);
+    expect((await f.controller.readRecord(identity.sessionID)).anchorID).toBe('msg_user');
+    expect((await f.controller.readRecord(identity.sessionID)).attemptCount).toBe(0);
+  });
+
+  test('tracks other providers for ownership without enabling transport recovery', async () => {
+    const f = await fixture({ mode: 'off' }, 'xai');
+    delete f.state.messages.at(-1).info.error;
+    const input = continuation({ execution: { providerID: 'xai', modelID: 'gpt-5.6-sol', agent: 'orchestrator', variant: 'xhigh' } });
+    await expect(f.controller.plugin(input)).resolves.toMatchObject({ allowed: true, anchorUserMessageID: 'msg_user' });
+    expect((await f.snapshot()).enforced).toBe(false);
+    await f.controller.admit({ sessionID: identity.sessionID, directory: '/project', primary: true,
+      body: { messageID: 'msg_newuser', agent: 'orchestrator', model: { providerID: 'xai', modelID: 'gpt-5.6-sol' } } });
+    await expect(f.controller.plugin({ action: 'message', ...identity, userMessageID: 'msg_wake' })).rejects.toThrow('fenced');
+  });
+
+  test('does not spend the repair budget on result delivery and cannot refill TODO limits', async () => {
+    const f = await fixture({ mode: 'off' });
+    delete f.state.messages.at(-1).info.error;
+    for (let i = 0; i < 8; i++) {
+      const id = `msg_collect${i}`;
+      await f.controller.plugin(continuation({ userMessageID: id }));
+      land(f, id);
+    }
+    expect((await f.controller.readRecord(identity.sessionID)).todoContinuationCount).toBe(0);
+    for (let i = 0; i < 3; i++) {
+      const id = `msg_todo${i}`;
+      await f.controller.plugin(continuation({ userMessageID: id, kind: 'orchestrator_todo' }));
+      land(f, id);
+    }
+    await expect(f.controller.plugin(continuation({ userMessageID: 'msg_capped', kind: 'orchestrator_todo' }))).rejects.toThrow('budget exhausted');
+    expect((await f.controller.readRecord(identity.sessionID)).attemptCount).toBe(0);
+    await f.controller.drain();
+    const restarted = createPrimaryRecoveryController({ directory: f.directory, mode: 'off', isManaged: () => true,
+      authorize: async () => true, observeTurn: async () => f.state, abortSession: async () => {}, promptSession: async () => {} });
+    await restarted.initialize(); cleanups.push(() => restarted.drain());
+    await restarted.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version: '1.18.30' });
+    await expect(restarted.plugin(continuation({ userMessageID: 'msg_restart', kind: 'orchestrator_todo' }))).rejects.toThrow('budget exhausted');
+  });
+
+  test('requires the registered objective, model and permissions, and respects user questions', async () => {
+    const f = await fixture();
+    delete f.state.messages.at(-1).info.error;
+    await expect(f.controller.plugin(continuation({ instanceID: 'unknown' }))).rejects.toThrow('owner mismatch');
+    await expect(f.controller.plugin(continuation({ anchorUserMessageID: 'msg_synthetic' }))).rejects.toThrow('objective mismatch');
+    await expect(f.controller.plugin(continuation({ execution: { providerID: 'xai', modelID: 'different', agent: 'builder' } }))).rejects.toThrow('objective mismatch');
+    f.state.blocked = true;
+    f.state.blockedByRequests = true;
+    f.state.managedBarrierState = 'awaiting_acknowledgement';
+    await expect(f.controller.plugin(continuation())).rejects.toThrow('continuation blocked');
+    f.state.blockedByRequests = false;
+    await expect(f.controller.plugin(continuation())).resolves.toMatchObject({ allowed: true, tools: {} });
+  });
+
+  test.each([false, true])('preserves the objective and TODO budget across two native compactions (auto=%s)', async (auto) => {
+    const f = await fixture({ mode: 'off' });
+    delete f.state.messages.at(-1).info.error;
+    await f.controller.plugin(continuation({ userMessageID: 'msg_todo', kind: 'orchestrator_todo' }));
+    land(f, 'msg_todo');
+    for (let i = 0; i < 2; i++) {
+      f.state.messages.push({ info: { id: `msg_compact${i}`, role: 'user' }, parts: [{ type: 'compaction', auto }] },
+        { info: { id: `msg_summary${i}`, role: 'assistant', parentID: `msg_compact${i}`, summary: true }, parts: [{ type: 'text', text: 'Derived summary' }] },
+        { info: { id: `msg_native${i}`, role: 'user' }, parts: [{ type: 'text', synthetic: true, metadata: { compaction_continue: true }, text: 'Continue.' }] });
+      await f.controller.plugin({ action: 'step', ...identity, userMessageID: `msg_native${i}`, assistantMessageID: `msg_step${i}` });
+      f.state.messages.push({ info: { id: `msg_step${i}`, role: 'assistant', parentID: `msg_native${i}`, time: { completed: 10_000 } }, parts: [] });
+      const record = await f.controller.readRecord(identity.sessionID);
+      expect(record).toMatchObject({ anchorID: 'msg_user', activeUserID: `msg_native${i}`, todoContinuationCount: 1, attemptCount: 0 });
+    }
+    await expect(f.controller.plugin(continuation({ userMessageID: 'msg_nexttodo', kind: 'orchestrator_todo' }))).resolves.toMatchObject({ todoContinuationCount: 2 });
+  });
+
+  test('native compaction cannot restore writes during guarded recovery', async () => {
+    const f = await fixture();
+    await f.fail();
+    f.state.messages.push({ info: { id: 'msg_recovery', role: 'user' }, parts: [] },
+      { info: { id: 'msg_compact', role: 'user' }, parts: [{ type: 'compaction', auto: true }] },
+      { info: { id: 'msg_native', role: 'user' }, parts: [{ type: 'text', synthetic: true, metadata: { compaction_continue: true }, text: 'Continue.' }] });
+    await f.controller.plugin({ action: 'step', ...identity, userMessageID: 'msg_native', assistantMessageID: 'msg_step' });
+    await expect(f.controller.plugin({ action: 'tool_before', ...identity, userMessageID: 'msg_native', tool: 'write', callID: 'call_unsafe' })).rejects.toThrow('requires user action');
+    expect((await f.controller.readRecord(identity.sessionID)).attemptCount).toBe(1);
+  });
+
+  test('an arbitrary synthetic message cannot take ownership or refill a budget', async () => {
+    const f = await fixture({ mode: 'off' });
+    delete f.state.messages.at(-1).info.error;
+    f.state.messages.push({ info: { id: 'msg_foreign', role: 'user' }, parts: [{ type: 'text', synthetic: true, text: 'Continue work.' }] });
+    await expect(f.controller.plugin({ action: 'step', ...identity, userMessageID: 'msg_foreign' })).rejects.toThrow('fenced');
+    expect((await f.controller.readRecord(identity.sessionID)).anchorID).toBe('msg_user');
+  });
+});
+
 test.each(['openai', 'anthropic'])('rollback keeps accepted recovery read-only after restart (%s)', async (providerID) => {
   const f = await fixture({ isAnthropicConformant: () => true }, providerID); await f.fail(); await f.controller.drain();
   f.state.messages.push({ info: { id: 'msg_recovery', role: 'user' }, parts: [] },
@@ -321,7 +538,8 @@ test('explicit provider change supersedes an undispatched OpenAI recovery', asyn
   const f = await fixture();
   await f.controller.admit({ sessionID: identity.sessionID, directory: '/project', primary: true,
     body: { messageID: 'msg_newuser', agent: 'orchestrator', model: { providerID: 'anthropic', modelID: 'other' } } });
-  await f.fail();
+  await expect(f.fail()).rejects.toThrow('fenced');
+  await f.controller.observe({ type: 'session.error', properties: { sessionID: identity.sessionID, error: timeout } });
   expect(f.sent).toHaveLength(0);
   expect((await f.snapshot()).enforced).toBe(false);
 });

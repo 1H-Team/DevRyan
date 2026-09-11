@@ -35,7 +35,7 @@ async function setup(overrides = {}) {
     authorize: async () => true, managedBarrier: async () => ({ state: 'clear' }), ...overrides });
   await host.initialize(); cleanup.push(() => host.drain());
   await host.plugin({ action: 'hello', policyVersion: 1, instanceID: 'fixture', transport: 'fetch' });
-  const body = { messageID: 'msg_user', model: { providerID: 'openai', modelID: 'gpt-5.6-sol' }, agent: 'orchestrator', variant: 'xhigh' };
+  const body = { messageID: 'msg_user', model: { providerID: 'openai', modelID: 'gpt-5.6-sol' }, agent: overrides.agent ?? 'orchestrator', variant: 'xhigh' };
   const admit = await host.handleRequest('POST', '/api/session/ses_test/prompt_async?directory=/project', body);
   expect(admit).toBeNull();
   return { host, calls, messages, body, fail: async () => {
@@ -45,6 +45,22 @@ async function setup(overrides = {}) {
     return host.observe({ type: 'session.error', properties: { sessionID: 'ses_test', error: messages.at(-1).info.error } });
   } };
 }
+
+test('Builder admission fetches canonical TODOs in the same bounded observation and requires a current-objective write', async () => {
+  const todos = [{ content: 'Finish implementation', status: 'pending', priority: 'high' }];
+  const f = await setup({ agent: 'builder', response: url => url.pathname.endsWith('/todo') ? Response.json(todos) : null });
+  delete f.messages.at(-1).info.error;
+  f.messages.at(-1).parts.push({ type: 'tool', tool: 'todowrite', callID: 'call_todos',
+    state: { status: 'completed', input: { todos } } });
+  const result = await f.host.plugin({ action: 'continuation', instanceID: 'fixture', sessionID: 'ses_test',
+    directory: '/project', anchorUserMessageID: 'msg_user', userMessageID: 'msg_builder', kind: 'builder_todo',
+    execution: { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'builder', variant: 'xhigh' } });
+  expect(result.allowed).toBe(true);
+  const read = f.calls.find(call => call.url.pathname.endsWith('/todo'));
+  expect(read.url.searchParams.get('directory')).toBe('/project');
+  expect(read.init.signal).toBeInstanceOf(AbortSignal);
+  expect(read.init.includeTodos).toBeUndefined();
+});
 
 test.each(['/api/session/ses_test/recovery', '/session/ses_test/recovery'])(
   'web/Electron path contract: %s', async (endpoint) => {

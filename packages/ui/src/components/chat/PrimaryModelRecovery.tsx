@@ -38,7 +38,8 @@ export const PrimaryModelRecovery = React.memo(({
   const providers = useConfigStore((state) => state.providers);
   const hostEnforced = usePrimaryRecoveryStore((state) => {
     const snapshot = state.snapshots[sessionId];
-    return Boolean(snapshot?.record && (snapshot.enforced || snapshot.record.readOnly));
+    return Boolean(snapshot?.record && (snapshot.enforced || snapshot.record.readOnly
+      || snapshot.record.reason === 'managed_repeated_preexecution_rejection'));
   });
 
   React.useLayoutEffect(() => {

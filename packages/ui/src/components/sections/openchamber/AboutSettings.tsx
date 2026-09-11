@@ -1,3 +1,4 @@
+import { SupabaseConnectionSettings } from './SupabaseConnectionSettings';
 import React from 'react';
 import { RiDiscordFill, RiDownloadLine, RiGithubFill, RiLoaderLine } from '@remixicon/react';
 import { useUpdateStore } from '@/stores/useUpdateStore';
@@ -136,7 +137,8 @@ export const AboutSettings: React.FC = () => {
           runtimeType={updateStore.runtimeType}
         />
         <div className="border-t border-border/40 pt-6">
-          <SessionRetentionSettings />
+          <SupabaseConnectionSettings />
+        <SessionRetentionSettings />
         </div>
       </div>
     );
@@ -227,6 +229,7 @@ export const AboutSettings: React.FC = () => {
         runtimeType={updateStore.runtimeType}
       />
       <div className="border-t border-border/40 pt-6">
+        <SupabaseConnectionSettings />
         <SessionRetentionSettings />
       </div>
     </div>

@@ -101,6 +101,7 @@ export function createBotApprovalService({
   eventStream,
   audit = async () => {},
   onRunSettled = async () => {},
+  onPending = () => {},
   logger = console,
   now = () => new Date(),
   uuid = randomUUID,
@@ -529,11 +530,14 @@ export function createBotApprovalService({
       });
     },
 
-    notifyPending: async (action) => eventStream.publish({
+    notifyPending: async (action) => {
+      onPending();
+      return eventStream.publish({
       kind: 'action.pending_approval',
       botId: action.bot_id,
       audienceUserIds: await audienceForAction(action),
       payload: { action: publicBotActionAttempt(action) },
-    }),
+      });
+    },
   });
 }

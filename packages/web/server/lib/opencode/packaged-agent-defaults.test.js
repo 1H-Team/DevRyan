@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 38_724;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 40_644;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -284,7 +284,7 @@ describe('packaged agent defaults', () => {
       'preserve the configured agent, model, and thinking level',
       'do not retry again or enter Model Recovery solely for prompt rejection',
       '**Managed dispatch barrier.**',
-      'Only after every result is dispositioned may you resume local work',
+      'Workspace writes, general execution, dependent implementation, and final completion remain gated.',
       'Allowed subagents: `explorer`, `librarian`, `oracle`, `designer`, `fixer`, `council`.',
       '<Git Command Boundary>',
       'Do not run git commands as a default finalization or safety routine.',
@@ -357,20 +357,25 @@ describe('packaged agent defaults', () => {
     }
   });
 
-  it('requires managed dispatches to be waited, collected, and dispositioned before local work', () => {
+  it('permits negotiated reads and wait-any while preserving mutation and disposition gates', () => {
     const content = readPackagedAgent('orchestrator').content;
 
-    expect(content).toContain('Start all independent managed tasks first');
-    expect(content).toContain('wait for every dispatched task');
-    expect(content).toContain('Disposition every collected result that does not require manual recovery');
-    expect(content).toContain(
-      'Each `wait` stays attached while DevRyan repeats bounded polling slices internally',
-    );
-    expect(content).toContain('use `status` only when a non-blocking live snapshot is explicitly needed');
-    expect(content).toContain('call `read_result` with that exact cursor and each returned next cursor in order');
-    expect(content).toContain('`read_result` never acknowledges the envelope');
-    expect(content).toContain('Only after every result is dispositioned may you resume local work');
-    expect(content).toContain('successful result requires `continue` after `wait`');
+    expect(content).toContain('Start independent managed tasks, then collect and reconcile their results.');
+    expect(content).toContain('capabilities.policies.readOverlap');
+    expect(content).toContain('These reads are provisional: reread affected files after the barrier clears before building a mutation.');
+    expect(content).toContain('Workspace writes, general execution, dependent implementation, and final completion remain gated.');
+    expect(content).toContain('capabilities.policies.waitAny');
+    expect(content).toContain('Omit the cursor when changing the selected tasks.');
+    expect(content).toContain('Waits remain attached across internal transport slices');
+    expect(content).toContain('use `status` only for an intentional nonblocking snapshot');
+    expect(content).toContain('Read each legacy `resultReference.nextCursor` page in order until complete, then disposition the result.');
+    expect(content).toContain('Completed results require `continue`');
+    expect(content).toContain('Leave scheduled or manual recovery pending');
+    expect(content).toContain('Follow-up attempts remain in the same dispatch group and require collection and disposition too.');
+    expect(content).toContain('Follow legacy paging when no versioned header is present.');
+    expect(content).toContain('Canonical failure and check evidence outrank child prose, including facts outside the first detail page.');
+    expect(content).toContain('a pass followed by relevant edits needs another check');
+    expect(content).toContain('`continue` reconciles a result and never converts unverified work into a pass.');
   });
 
   it('keeps managed deadlines as exceptional recovery boundaries', () => {

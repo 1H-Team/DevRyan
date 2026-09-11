@@ -7,6 +7,9 @@ import path from 'node:path';
 import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
 
 import { resolveMultiUserConfig } from './config.js';
+import { createPrincipalCache } from './principal-cache.js';
+import { createSupabaseConnection, isDirectLocalRequest } from './supabase-connection.js';
+import { createDisconnectedAuth } from './disconnected-auth.js';
 import {
   ensureOpenCodeProjectId,
   getBranches,
@@ -43,7 +46,6 @@ import {
 import { normalizeNotificationTemplates } from '../opencode/notification-settings.js';
 import { runWithRequestPrincipal } from './request-context.js';
 import { createSupabaseServerClient, SupabaseRequestError } from './supabase-client.js';
-import { createSessionVault } from './vault.js';
 import { createBranchPreviewVault } from './branch-preview-vault.js';
 import { createBranchPreviewService } from './branch-previews.js';
 import { createSessionOwnershipIndex } from './session-ownership-index.js';
@@ -525,13 +527,17 @@ export async function createMultiUserRuntime({
   oauthCoordinator = null,
 } = {}) {
   const config = resolveMultiUserConfig({ dataDirectory });
+  const connection = await createSupabaseConnection({ config, fetchImpl });
+  // A failed explicit reconnect uses the same closed local boundary as Off.
+  config.enabled = connection.enabled;
 
   const getGitHubAuthById = githubAuthStore.getGitHubAuthById || getStoredGitHubAuthById;
   const getAllGitHubAuthAccounts = githubAuthStore.getAllGitHubAuthAccounts || getAllStoredGitHubAuthAccounts;
   const clearGitHubAuthById = githubAuthStore.clearGitHubAuthById || clearStoredGitHubAuthById;
   const verifiedGitHubAccountId = createVerifiedGitHubAccountId(getGitHubAuthById);
 
-  const wrapLegacyAuthController = (legacy) => ({
+  const wrapLegacyAuthController = (legacy) => connection.configured && !connection.enabled
+    ? createDisconnectedAuth(connection) : ({
     ...legacy,
     multiUser: false,
     async resolvePrincipal(req, res) {
@@ -587,22 +593,28 @@ export async function createMultiUserRuntime({
     });
     return {
       enabled: false,
+      connection,
       config,
-      getControlPlaneStatus: () => ({ state: 'disabled', lastErrorCode: null, lastSuccessAt: null }),
+      getControlPlaneStatus: () => ({ state: connection.configured ? connection.status().state : 'disabled', lastErrorCode: connection.status().errorCode, lastSuccessAt: null }),
       localAdminPrincipal,
       wrapLegacyAuthController,
       botsRuntime,
       registerRoutes(app) { botsRuntime.registerRoutes(app); },
       filterEventForPrincipal: () => true,
-      recordOpenCodeActivity: async () => false,
+      recordOpenCodeActivity: async (payload) => payload?.type === 'session.created'
+        ? connection.recordLocalSession(payload.properties?.info) : false,
       canSessionTokenHashAccess: async () => true,
       resolveBrowserLeaseContext: async () => null,
       getPublicPrincipal: publicPrincipal,
-      resolveScheduledTaskAccess: async () => ({ state: 'runnable' }),
+      resolveScheduledTaskAccess: async ({ ownerUserId } = {}) => ownerUserId && connection.configured
+        ? { state: 'dormant', reason: 'supabase_disconnected' } : { state: 'runnable' },
     };
   }
 
-  const supabase = createSupabaseServerClient({ ...config, fetchImpl });
+  const supabase = createSupabaseServerClient({
+    ...config, fetchImpl, traffic: connection.traffic,
+    isConnectionEnabled: () => connection.enabled,
+  });
   const notifyManagedProjectMetadataChanged = (projectId) => {
     if (typeof onManagedProjectMetadataChanged !== 'function') return;
     try {
@@ -644,7 +656,7 @@ export async function createMultiUserRuntime({
     : SESSION_OWNERSHIP_RETRY_DELAYS_MS;
   const analyticsRetention = createAnalyticsRetentionService({ supabase });
   const readUserPolicy = createUserPolicyReader({ supabase, logger });
-  const vault = await createSessionVault({ dataDirectory: config.dataDirectory });
+  const vault = connection.vault;
   const branchPreviewVault = await createBranchPreviewVault({ dataDirectory: config.dataDirectory });
   const branchPreviews = createBranchPreviewService({
     supabase,
@@ -718,7 +730,11 @@ export async function createMultiUserRuntime({
   };
 
   await refreshOwnershipIndex({ timeoutMs: INITIAL_CONTROL_PLANE_TIMEOUT_MS });
-  const principalCache = new Map();
+  const principalCache = createPrincipalCache({
+    ttlMs: PRINCIPAL_CACHE_MS,
+    onAvoided: () => supabase.traffic.avoided('GET rest/app_sessions'),
+  });
+  const lastSeenWrites = new Map();
   const loginAttempts = new Map();
   const connectionsByUser = new Map();
   const connectionsBySession = new Map();
@@ -964,11 +980,12 @@ export async function createMultiUserRuntime({
   const resolveBotPrincipal = async (userId) => {
     const profile = await supabase.rest('user_profiles', {
       query: { id: `eq.${escapeFilterValue(userId)}`, limit: 1 }, maybeSingle: true,
+      select: 'id,role,status',
     });
     if (!profile || profile.status !== 'active') return null;
     const [rolePolicy, userPolicy] = await Promise.all([
       supabase.rest('role_policies', { query: { role: `eq.${profile.role}`, limit: 1 }, maybeSingle: true }),
-      readUserPolicy(userId),
+      readUserPolicy(userId, { includeSettings: false }),
     ]);
     const policy = normalizeRolePolicy(profile.role, rolePolicy, userPolicy);
     if (policy.bots !== true) return null;
@@ -988,6 +1005,7 @@ export async function createMultiUserRuntime({
     encryption,
     recordDiagnostic,
     executionEnabled: botsExecutionEnabled,
+    isAdmissionPaused: () => connection.admissionPaused,
     withAuditDeliveryBarrier: auditOutbox.withFlushedDeliveryBarrier,
   });
   void botsRuntime.start().catch((error) => {
@@ -1058,7 +1076,7 @@ export async function createMultiUserRuntime({
   };
 
   const loadActivityPrincipal = async (userId) => {
-    const principal = await loadPrincipal(userId);
+    const principal = await loadPrincipal(userId, null, { includeSettings: false });
     if (principal) return principal;
     const profile = await supabase.rest('user_profiles', {
       query: {
@@ -1281,22 +1299,24 @@ export async function createMultiUserRuntime({
     res.once('close', recordOutcome);
   };
 
-  const loadPrincipal = async (userId, appSession = null) => {
+  const loadPrincipal = async (userId, appSession = null, { includeSettings = true } = {}) => {
     const profile = await supabase.rest('user_profiles', {
       query: { id: `eq.${escapeFilterValue(userId)}`, limit: 1 },
+      select: 'id,email,display_name,role,status,github_account_id',
       maybeSingle: true,
     });
     if (!profile || profile.status !== 'active') return null;
     const [rolePolicy, userPolicy, accessRows, branchRows] = await Promise.all([
       supabase.rest('role_policies', { query: { role: `eq.${profile.role}`, limit: 1 }, maybeSingle: true }),
-      readUserPolicy(userId),
-      supabase.rest('user_project_access', { query: { user_id: `eq.${userId}` } }),
-      supabase.rest('user_project_branches', { query: { user_id: `eq.${userId}` } }),
+      readUserPolicy(userId, { includeSettings }),
+      supabase.rest('user_project_access', { query: { user_id: `eq.${userId}` }, select: 'project_id,is_default' }),
+      supabase.rest('user_project_branches', { query: { user_id: `eq.${userId}` }, select: 'project_id,branch_name,is_default' }),
     ]);
     const projectIds = Array.from(new Set((accessRows || []).map((row) => row.project_id).filter(Boolean)));
     const projects = projectIds.length > 0
       ? await supabase.rest('managed_projects', {
           query: { id: `in.(${projectIds.map(escapeFilterValue).join(',')})`, status: 'eq.active' },
+          select: 'id,label,repository_path,remote_url,icon,color,icon_background,icon_image',
         })
       : [];
     const projectById = new Map((projects || []).map((row) => [row.id, row]));
@@ -1342,7 +1362,7 @@ export async function createMultiUserRuntime({
       status: profile.status,
       githubAccountId: profile.github_account_id || null,
       policy: normalizeRolePolicy(profile.role, rolePolicy, userPolicy),
-      settingsOverrides: userPolicy?.settings_overrides || {},
+      settingsOverrides: includeSettings ? userPolicy?.settings_overrides || {} : undefined,
       assignments,
       appSessionId: appSession?.id || null,
     };
@@ -1448,7 +1468,7 @@ export async function createMultiUserRuntime({
   const clearInviteCookie = (req, res) => setInviteCookie(req, res, '', 0);
 
   const resolveRememberedOfflinePrincipal = (req, tokenHash) => {
-    if (!isLoopbackRequest(req)) return null;
+    if (!isDirectLocalRequest(req)) return null;
     const stored = vault.findByTokenHash(tokenHash);
     const value = stored?.value;
     const now = Date.now();
@@ -1466,18 +1486,14 @@ export async function createMultiUserRuntime({
     };
   };
 
-  const resolvePrincipal = async (req, res = null) => {
+  const refreshPrincipal = async (req, res = null) => {
     const token = sessionTokenFromRequest(req);
     if (!token) return null;
     const tokenHash = sha256(token);
-    const cached = principalCache.get(tokenHash);
-    if (cached && cached.cacheUntil > Date.now()) {
-      req.principal = cached.principal;
-      return cached.principal;
-    }
     let appSession;
     try {
       appSession = await supabase.rest('app_sessions', {
+        select: 'id,user_id,expires_at,active_project_id,active_branch',
         query: {
           session_token_hash: `eq.${tokenHash}`,
           revoked_at: 'is.null',
@@ -1489,7 +1505,6 @@ export async function createMultiUserRuntime({
     } catch (error) {
       const offlinePrincipal = resolveRememberedOfflinePrincipal(req, tokenHash);
       if (!offlinePrincipal) throw error;
-      principalCache.set(tokenHash, { principal: offlinePrincipal, cacheUntil: Date.now() + PRINCIPAL_CACHE_MS });
       req.principal = offlinePrincipal;
       return offlinePrincipal;
     }
@@ -1521,7 +1536,6 @@ export async function createMultiUserRuntime({
       } catch (error) {
         const offlinePrincipal = resolveRememberedOfflinePrincipal(req, tokenHash);
         if (offlinePrincipal && !isDefinitiveRefreshRejection(error)) {
-          principalCache.set(tokenHash, { principal: offlinePrincipal, cacheUntil: Date.now() + PRINCIPAL_CACHE_MS });
           req.principal = offlinePrincipal;
           return offlinePrincipal;
         }
@@ -1542,7 +1556,7 @@ export async function createMultiUserRuntime({
       }
     }
 
-    const principal = await loadPrincipal(appSession.user_id, appSession);
+    const principal = await loadPrincipal(appSession.user_id, appSession, { includeSettings: false });
     if (!principal) {
       await supabase.rest('app_sessions', {
         method: 'PATCH',
@@ -1566,16 +1580,36 @@ export async function createMultiUserRuntime({
         appExpiresAt: new Date(appSession.expires_at).getTime(),
         rememberedLoopbackAdmin: storedTokens?.rememberedLoopbackAdmin === true,
         lastValidatedAt: validatedAt,
-        principalSnapshot: principal,
+        principalSnapshot: { ...principal, settingsOverrides: storedTokens?.principalSnapshot?.settingsOverrides || {} },
       }).catch((error) => logger.warn?.('[MultiUser] Failed to checkpoint validated session:', error?.message || error));
     }
-    principalCache.set(tokenHash, { principal, cacheUntil: Date.now() + PRINCIPAL_CACHE_MS });
     req.principal = principal;
-    void supabase.rest('app_sessions', {
-      method: 'PATCH', query: { id: `eq.${appSession.id}` },
-      body: { last_seen_at: new Date().toISOString() }, prefer: 'return=minimal',
-    }).catch(() => {});
+    const lastSeenAt = Date.now();
+    if (lastSeenAt - (lastSeenWrites.get(appSession.id) || 0) >= 60_000) {
+      lastSeenWrites.set(appSession.id, lastSeenAt);
+      if (lastSeenWrites.size > 2_000) lastSeenWrites.delete(lastSeenWrites.keys().next().value);
+      void supabase.rest('app_sessions', {
+        method: 'PATCH', query: { id: `eq.${appSession.id}` },
+        body: { last_seen_at: new Date(lastSeenAt).toISOString() }, prefer: 'return=minimal',
+      }).catch(() => {});
+    } else {
+      supabase.traffic.avoided('PATCH rest/app_sessions');
+    }
     return principal;
+  };
+
+  const resolvePrincipal = async (req, res = null) => {
+    const token = sessionTokenFromRequest(req);
+    if (!token) return null;
+    const principal = await principalCache.resolve(
+      sha256(token), isDirectLocalRequest(req) ? 'local' : 'remote',
+      () => refreshPrincipal(req, res),
+    );
+    const needsSettings = /^(?:\/api)?\/config\/(?:settings|mcp)(?:[/?]|$)/.test(req.originalUrl || req.url || req.path || '');
+    const resolved = principal && needsSettings && !principal.offlineGrace
+      ? { ...principal, settingsOverrides: await readSettingsOverrides(principal.id) } : principal;
+    if (resolved) req.principal = resolved;
+    return resolved;
   };
 
   const profilesExist = async () => {
@@ -2562,6 +2596,7 @@ export async function createMultiUserRuntime({
       return runWithRequestPrincipal(principal, next);
     },
     async dispose() {
+      await connection.dispose();
       controlPlaneDisposed = true;
       if (controlPlaneRetryTimer) {
         clearTimeout(controlPlaneRetryTimer);
@@ -2572,6 +2607,7 @@ export async function createMultiUserRuntime({
       for (const userId of [...connectionsByUser.keys()]) revokeConnections({ userId });
       principalCache.clear();
       loginAttempts.clear();
+      lastSeenWrites.clear();
       projectedActivityKeys.clear();
       recentAssistantContextByMessage.clear();
       recentAssistantContextBySession.clear();
@@ -2782,7 +2818,7 @@ export async function createMultiUserRuntime({
       maybeSingle: true,
     });
     if (!appSession) return false;
-    const principal = await loadPrincipal(appSession.user_id, appSession);
+    const principal = await loadPrincipal(appSession.user_id, appSession, { includeSettings: false });
     return principal ? ownsSession(principal, sessionId) : false;
   };
 
@@ -2959,6 +2995,7 @@ export async function createMultiUserRuntime({
 
   const resolveScheduledTaskAccess = async ({ ownerUserId, projectId, branchName }) => {
     if (!ownerUserId) return { state: 'runnable' };
+    if (connection.admissionPaused) return { state: 'dormant' };
     if (!validUuid(projectId)) return { state: 'revoked' };
     const logicalBranch = normalizeLogicalBranchName(branchName);
     if (!logicalBranch) return { state: 'revoked' };
@@ -3412,7 +3449,17 @@ export async function createMultiUserRuntime({
         if (!session?.id || provisionalSessionIds.has(session.id) || await sessionOwnership(session.id)) return false;
         const resolvedDirectory = await canonicalDirectory(session.directory);
         if (!resolvedDirectory) return false;
-        const candidate = selectUniqueOwnershipCandidate(candidates, resolvedDirectory);
+        const localOwner = connection.localSessionOwner(session.id);
+        let candidate;
+        if (localOwner) {
+          // Explicit offline provenance wins over ambiguous shared-project grants.
+          // Never replace existing durable ownership or revive a revoked account.
+          const owner = await loadPrincipal(localOwner.userId);
+          if (owner?.role !== 'admin' || await canonicalDirectory(localOwner.directory) !== resolvedDirectory) return false;
+          const access = await ensureAdminProjectAccess(owner, resolvedDirectory);
+          if (!access) return false;
+          candidate = { userId: owner.id, ...access };
+        } else candidate = selectUniqueOwnershipCandidate(candidates, resolvedDirectory);
         if (!candidate) return false;
         const proposed = {
           session_id: session.id,
@@ -4893,11 +4940,13 @@ export async function createMultiUserRuntime({
         if (req.principal?.scope !== 'managed') return next();
         try {
           const hostSettings = await readSettingsFromDiskMigrated();
-          return res.json(buildEffectiveSettings({
-            principal: req.principal,
-            hostSettings,
-            userOverrides: req.principal.settingsOverrides,
-          }));
+          const userOverrides = req.principal.settingsOverrides ?? await readSettingsOverrides(req.principal.id);
+          const effective = buildEffectiveSettings({ principal: req.principal, hostSettings, userOverrides });
+          if (connection.authenticateLocalOwner(req)?.id === req.principal.id) {
+            const paths = new Set((effective.projects || []).map((project) => project.path));
+            effective.projects = [...(effective.projects || []), ...(hostSettings.projects || []).filter((project) => !paths.has(project.path))];
+          }
+          return res.json(effective);
         } catch (error) { return jsonError(res, 500, error.message); }
       });
 
@@ -5497,6 +5546,7 @@ export async function createMultiUserRuntime({
 
   return {
     enabled: true,
+    connection,
     config,
     botsRuntime,
     getControlPlaneStatus: () => ({ ...controlPlaneStatus }),
@@ -5505,6 +5555,7 @@ export async function createMultiUserRuntime({
     wrapLegacyAuthController,
     registerRoutes,
     resolvePrincipal,
+    readOwnerSettings: readSettingsOverrides,
     filterEventForPrincipal,
     recordOpenCodeActivity,
     registerConnection,

@@ -185,6 +185,7 @@ export function createBotRunDispatcher({
   runtimeOwner = `devryan-web:${process.pid}`,
   isRuntimeOwnerAlive = defaultIsRuntimeOwnerAlive,
   autoDispatch = true,
+  isAdmissionPaused = () => false,
   recordDiagnostic = () => {},
   logger = console,
 } = {}) {
@@ -2018,6 +2019,7 @@ export function createBotRunDispatcher({
 
   const startScopeDrain = (computerScopeKey, initialClaim = null) => {
     if (shuttingDown) return Promise.resolve();
+    if (isAdmissionPaused() && !initialClaim) { pendingWakes.add(computerScopeKey); return Promise.resolve(); }
     const existing = drains.get(computerScopeKey);
     if (existing) {
       pendingWakes.add(computerScopeKey);
@@ -2026,6 +2028,7 @@ export function createBotRunDispatcher({
     const promise = (async () => {
       let claimed = initialClaim;
       while (!shuttingDown) {
+        if (!claimed && isAdmissionPaused()) { pendingWakes.add(computerScopeKey); break; }
         if (!claimed) {
           pendingWakes.delete(computerScopeKey);
           try {
@@ -2082,7 +2085,7 @@ export function createBotRunDispatcher({
       }
     })().finally(() => {
       drains.delete(computerScopeKey);
-      if (!shuttingDown && pendingWakes.delete(computerScopeKey)) {
+      if (!shuttingDown && !isAdmissionPaused() && pendingWakes.delete(computerScopeKey)) {
         void startScopeDrain(computerScopeKey);
       }
     });
@@ -2108,6 +2111,7 @@ export function createBotRunDispatcher({
       }
     },
     async enqueueMessage({ principal, channelId, message, admission, timing = null } = {}) {
+      if (isAdmissionPaused()) fail('Supabase connection is changing', 'supabase_change_pending', 503);
       if (shuttingDown) fail('Bot dispatcher is shutting down', 'bots_unavailable', 503);
       const normalizedMessage = normalizeMessage(message);
       markDiagnostic('request_received', {
@@ -2408,6 +2412,7 @@ export function createBotRunDispatcher({
     },
 
     async retryRun({ principal, runId } = {}) {
+      if (isAdmissionPaused()) fail('Supabase connection is changing', 'supabase_change_pending', 503);
       if (shuttingDown) fail('Bot dispatcher is shutting down', 'bots_unavailable', 503);
       if (typeof store.retryRun !== 'function') {
         fail('Bot run retry is unavailable', 'bots_unavailable', 503);
@@ -2582,6 +2587,8 @@ export function createBotRunDispatcher({
       await retryPendingTerminalSettlements().catch(() => undefined);
       cancelRequests.clear();
     },
+    resumeAdmissions: () => { for (const scope of [...pendingWakes]) void startScopeDrain(scope); },
+    getActiveWorkCount: () => drains.size + executionControllers.size + pendingTerminalSettlements.size,
     retryPendingTerminalSettlements,
     get pendingTerminalSettlementCount() {
       return pendingTerminalSettlements.size;

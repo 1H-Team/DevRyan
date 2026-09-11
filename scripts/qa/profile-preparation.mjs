@@ -14,6 +14,7 @@ const execute = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const { parse: parseJsonc } = createRequire(new URL('../../packages/web/package.json', import.meta.url))('jsonc-parser');
 const allowedProviders = ['openai', 'anthropic', 'xai'];
+const managedSpecialistProviders = [...allowedProviders, 'opencode'];
 const homeShim = fileURLToPath(new URL('./isolated-home.mjs', import.meta.url));
 const providerObserver = fileURLToPath(new URL('./provider-observer.mjs', import.meta.url));
 
@@ -81,10 +82,13 @@ const installedFingerprints = async (config, plugins, opencodeBinary) => {
         source: 'prepared-private-installation; effective request metadata is recorded separately' };
 };
 
-export const projectQaAuth = (auth, now = Date.now()) => {
+export const projectQaAuth = (auth, now = Date.now(), providerIds = allowedProviders) => {
+    if (!Array.isArray(providerIds) || providerIds.some(id => !managedSpecialistProviders.includes(id))) {
+        throw new Error('QA credential projection requires explicit supported providers');
+    }
     const records = {};
     const evidence = {};
-    for (const provider of allowedProviders) {
+    for (const provider of new Set(providerIds)) {
         const record = auth?.[provider];
         if (record?.type === 'api' && typeof record.key === 'string' && record.key) {
             records[provider] = { type: 'api', key: record.key };
@@ -135,25 +139,28 @@ export const assertQaSelectedProviderDuration = (providerId, evidence, timeoutMs
     return { providerId, checkedAt: now, expires, timeoutMs, marginMs, requiredUntil, remainingMs: expires - now, expiryCheck: 'passed' };
 };
 
-const validateQaAgentAssignments = (assignments, providerId) => {
+const validateQaAgentAssignments = (assignments, providerId, allowCrossProviderAssignments = false) => {
+    if (typeof allowCrossProviderAssignments !== 'boolean') throw new Error('QA cross-provider assignments must be explicitly enabled');
     if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) {
         throw new Error('QA specialist assignments must be an object');
     }
     const specialists = new Set(['oracle', 'council', 'fixer', 'designer', 'explorer', 'librarian']);
+    if (allowCrossProviderAssignments) specialists.add('builder');
     for (const [name, selection] of Object.entries(assignments)) {
         if (!specialists.has(name) || !selection || typeof selection !== 'object' || Array.isArray(selection)
             || Object.keys(selection).some(key => !['providerId', 'modelId', 'variant'].includes(key))
-            || selection.providerId !== providerId || !allowedProviders.includes(selection.providerId)
+            || (!allowCrossProviderAssignments && selection.providerId !== providerId)
+            || !(allowCrossProviderAssignments ? managedSpecialistProviders : allowedProviders).includes(selection.providerId)
             || typeof selection.modelId !== 'string' || !selection.modelId.trim() || selection.modelId !== selection.modelId.trim()
             || selection.modelId.includes('/') || (selection.variant !== null
                 && (typeof selection.variant !== 'string' || !selection.variant.trim() || selection.variant !== selection.variant.trim()))) {
-            throw new Error('QA specialist assignments require a known specialist, the primary provider, a model ID and explicit null or nonempty effort');
+            throw new Error('QA specialist assignments require a known specialist, an admitted provider, a model ID and explicit null or nonempty effort');
         }
     }
 };
 
-export const pinQaAgents = (slim, { providerId, modelId, variant, agentAssignments = {} }) => {
-    validateQaAgentAssignments(agentAssignments, providerId);
+export const pinQaAgents = (slim, { providerId, modelId, variant, agentAssignments = {}, allowCrossProviderAssignments = false }) => {
+    validateQaAgentAssignments(agentAssignments, providerId, allowCrossProviderAssignments);
     if (Array.isArray(slim.disabled_agents) && Object.keys(agentAssignments).some(name => slim.disabled_agents.includes(name))) {
         throw new Error('QA specialist assignments cannot pin a disabled agent');
     }
@@ -214,13 +221,15 @@ export const prepareQaPluginHomeWrapper = async (entry) => {
 };
 
 export async function prepareQaProfile({ runtimeRoot, workspace, providerId, modelId, variant = null, agentAssignments = {},
+    allowCrossProviderAssignments = false,
     sourceHome = os.homedir(), opencodeBinary = path.join(repositoryRoot, '.cache/qa/opencode-1.18.30/package/bin/opencode') }) {
     const cacheRoot = path.join(repositoryRoot, '.cache');
     if (!path.isAbsolute(runtimeRoot) || !isInside(cacheRoot, path.resolve(runtimeRoot))) throw new Error('QA runtime root must be inside this repository cache');
     if (!path.isAbsolute(workspace) || !isInside(cacheRoot, path.resolve(workspace))) throw new Error('QA workspace must be inside this repository cache');
     if (!allowedProviders.includes(providerId) || typeof modelId !== 'string' || !modelId.trim() || modelId.includes('/')) throw new Error('QA model must use OpenAI, Anthropic, or xAI');
     if (variant !== null && (typeof variant !== 'string' || !variant.trim())) throw new Error('QA thinking must be null or a nonempty variant');
-    validateQaAgentAssignments(agentAssignments, providerId);
+    validateQaAgentAssignments(agentAssignments, providerId, allowCrossProviderAssignments);
+    const admittedProviders = [...new Set([...allowedProviders, ...Object.values(agentAssignments).map(selection => selection.providerId)])];
     await validateOwnedPaths(runtimeRoot, workspace, cacheRoot);
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
     const home = path.join(runtimeRoot, 'home');
@@ -266,22 +275,26 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
     const base = await readOptionalJson(path.join(config, 'opencode.json'));
     const sourceConfigs = await Promise.all(['opencode.json', 'config.json', 'opencode.jsonc'].map((file) => readOptionalJson(path.join(sourceConfig, file))));
     const providers = Object.assign({}, ...sourceConfigs.map((value) => value.provider ?? {}));
-    await writePrivateJson(path.join(config, 'opencode.json'), { ...base, model: `${providerId}/${modelId}`, enabled_providers: allowedProviders,
-        provider: Object.fromEntries(Object.entries(providers).filter(([id]) => allowedProviders.includes(id))), mcp: {} });
+    await writePrivateJson(path.join(config, 'opencode.json'), { ...base, model: `${providerId}/${modelId}`, enabled_providers: admittedProviders,
+        provider: Object.fromEntries(Object.entries(providers).filter(([id]) => admittedProviders.includes(id))), mcp: {} });
     const slim = await readOptionalJson(path.join(sourceConfig, 'oh-my-opencode-slim.json'));
-    const pinnedAgents = pinQaAgents(slim, { providerId, modelId, variant, agentAssignments });
+    const pinnedAgents = pinQaAgents(slim, { providerId, modelId, variant, agentAssignments, allowCrossProviderAssignments });
     await writePrivateJson(path.join(config, 'oh-my-opencode-slim.json'), pinnedAgents);
     try { await cp(path.join(sourceConfig, 'AGENTS.md'), path.join(config, 'AGENTS.md')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
 
     // Private package entry wrappers evaluate the same home shim before their
     // actual dependencies. The compiled OpenCode executable does not honor
     // NODE_OPTIONS preloads, while its own config honors OPENCODE_TEST_HOME.
-    for (const plugin of base.plugin.filter((entry) => entry.startsWith('./node_modules/') && !entry.startsWith('./node_modules/context-mode/'))) {
+    // Context Mode and imagegen resolve their data paths from explicit XDG
+    // variables. Keep imagegen's reviewed executable intact so the ordinary
+    // provisioning hash check remains valid when the private host boots.
+    for (const plugin of base.plugin.filter((entry) => entry.startsWith('./node_modules/')
+        && !entry.startsWith('./node_modules/context-mode/') && !entry.startsWith('./node_modules/opencode-gpt-imagegen/'))) {
         const entry = await realpath(path.join(config, plugin));
         if (!isInside(path.join(config, 'node_modules'), entry)) throw new Error('QA plugin escaped the copied installation');
         await prepareQaPluginHomeWrapper(entry);
     }
-    const projectedAuth = projectQaAuth(await readOptionalJson(path.join(sourceHome, '.local/share/opencode/auth.json')));
+    const projectedAuth = projectQaAuth(await readOptionalJson(path.join(sourceHome, '.local/share/opencode/auth.json')), Date.now(), admittedProviders);
     await writePrivateJson(path.join(authDirectory, 'auth.json'), projectedAuth.records);
     const claude = await readClaudeAccess(sourceHome);
     const credentialsEnvironment = {};
@@ -296,6 +309,7 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
         activeProjectId: 'qa-project', opencodeBinary: opencodeBinary, messageStreamTransport: 'sse', showReasoningTraces: true,
         desktopWindowState: { width: 1280, height: 800, maximized: false } });
     const evidence = { providerId, modelId, variant, credentials: projectedAuth.evidence,
+        allowCrossProviderAssignments, admittedProviders,
         appearanceOverrides: { showReasoningTraces: true },
         dependencies: { installPerformed: Boolean(provisioning.install), degraded: provisioning.installDegraded === true },
         meridianHttpHotfix: provisioning.meridianHttpHotfix,

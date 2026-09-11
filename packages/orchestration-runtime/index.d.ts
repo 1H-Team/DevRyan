@@ -53,6 +53,7 @@ export type ManagedTaskResultAction = 'continue' | 'resume' | 'retry' | 'recover
 export type ManagedTaskFailureKind =
   | 'provider_transport'
   | 'provider_usage_limit'
+  | 'provider_authentication'
   | 'provider_prompt_rejected'
   | 'model_unavailable'
   | 'deadline_exceeded'
@@ -165,6 +166,8 @@ export interface ManagedTaskWaitingReason {
 }
 
 export interface ManagedTaskRecord {
+  requiredChecks?: RequiredCheck[];
+  requiredCheckReceipts?: RequiredCheckReceipt[];
   transportRecovery?: ManagedTransportRecovery | null;
   owner: 'devryan';
   taskId: string;
@@ -228,6 +231,8 @@ export type ManagedTaskEventRecord = Omit<ManagedTaskRecord,
     dispatchWaveId?: string | null;
     failureKind: ManagedTaskFailureKind;
     agentRetryAvailable: boolean;
+    /** Authoritative when a result envelope is available; absent on older hosts. */
+    manualRecoveryRequired?: boolean;
   };
 
 export interface ManagedTaskResultEnvelope {
@@ -238,6 +243,7 @@ export interface ManagedTaskResultEnvelope {
   parentTaskId: string | null;
   childSessionId: string | null;
   directory: string;
+  /** Durable order of creation or the latest collection/disposition change. */
   sequence: number;
   status: ManagedTaskTerminalStatus;
   partial: boolean;
@@ -257,7 +263,7 @@ export interface ManagedTaskResultEnvelope {
   autoResume: ManagedTaskAutoResume | null;
 }
 
-export type ManagedResultMode = 'eager' | 'reference';
+export type ManagedResultMode = 'eager' | 'reference' | 'compact';
 
 export interface ManagedResultReference {
   taskId: string;
@@ -298,6 +304,7 @@ export interface ManagedTaskRemovalEvent {
 export type ManagedOrchestrationEvent = ManagedTaskEvent | ManagedTaskRemovalEvent;
 
 export interface ManagedTaskSubmitInput {
+  requiredChecks?: RequiredCheck[];
   idempotencyKey: string;
   rootSessionId: string;
   dispatchGroupId?: string | null;
@@ -540,6 +547,8 @@ export type ManagedTaskLaunchAdmissionDecision =
     };
 
 export interface ManagedTaskSchedulerOptions {
+  onBarrierChange?(input: { rootSessionId: string; state: string; at: number; taskCount: number }): void;
+  onRequiredCheckReceipt?(input: { task: ManagedTaskRecord; receipt: RequiredCheckReceipt }): void;
   executor: ManagedTaskExecutor;
   persistence?: ManagedOrchestrationPersistence;
   now?: () => number;
@@ -618,8 +627,44 @@ export interface ManagedProviderRecoveryContinuation {
   kind: 'collect';
 }
 
+export interface HarnessPolicies {
+  readOverlap: boolean;
+  waitAny: boolean;
+  compactResults: boolean;
+  contextProjection: boolean;
+}
+export const HARNESS_POLICY_ENV: Readonly<Record<keyof HarnessPolicies, string>>;
+export const MANAGED_OVERLAP_READ_TOOLS: readonly string[];
+export function resolveHarnessPolicies(environment?: Record<string, string | undefined>): HarnessPolicies;
+export interface ManagedWaitSnapshot {
+  schemaVersion: 2;
+  rootSessionId: string;
+  cursor: string;
+  cursorReset: boolean;
+  readyTaskIds: string[];
+  attention: Array<{ taskId: string; state: 'scheduled' | 'attention' }>;
+  pendingTaskIds: string[];
+  unacknowledgedTaskIds: string[];
+  changedTaskIds: string[];
+  dispositioned: Array<{ taskId: string; action: ManagedTaskResultAction; followUpTaskId: string | null }>;
+  availableTaskIds: string[];
+  activeWork: boolean;
+  settled: boolean;
+}
+export function managedResultCollectionState(task: ManagedTaskRecord | null, envelope: ManagedTaskResultEnvelope | null):
+  'pending' | 'ready' | 'scheduled' | 'attention' | 'dispositioned';
+export function createManagedWaitCursor(rootSessionId: string, envelope: Pick<ManagedTaskResultEnvelope, 'sequence' | 'envelopeId'> | null, taskIds?: string[] | null): string;
+export function resolveManagedWaitCursor(cursor: string | null | undefined, rootSessionId: string, envelopes: ManagedTaskResultEnvelope[], taskIds?: string[] | null): { sequence: number; reset: boolean };
+export function projectManagedWaitSnapshot(input: { rootSessionId: string; tasks: ManagedTaskRecord[]; envelopes: ManagedTaskResultEnvelope[]; afterCursor?: string | null; allTasks?: ManagedTaskRecord[] }): ManagedWaitSnapshot;
+
 export interface ManagedTaskScheduler {
+  waitForResultCommit(options: { directory: string; afterCursor?: string | null; signal?: AbortSignal; timeoutMs?: number }): Promise<{ cursor: string; cursorReset: boolean; rootSessionIds: string[] }>;
+  waitForAnyTask(options: { rootSessionId: string; taskIds: string[]; afterCursor?: string | null;
+    signal?: AbortSignal; timeoutMs?: number }): Promise<ManagedWaitSnapshot>;
   initialize(): Promise<void>;
+  getRequiredCheckTask(childSessionId: string, directory: string): Pick<ManagedTaskRecord, 'taskId' | 'leaseToken' | 'directory' | 'requiredChecks'> | null;
+  recordRequiredCheck(taskId: string, leaseToken: string, receipt: RequiredCheckReceipt, phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
+  recordRequiredChecks(taskId: string, leaseToken: string, receipts: RequiredCheckReceipt[], phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
   submit(input: ManagedTaskSubmitInput): Promise<ManagedTaskRecord>;
   cancelTask(taskId: string, options?: { cascade?: false; reason?: string }): Promise<ManagedTaskRecord>;
   cancelTask(taskId: string, options: { cascade: true; reason?: string }): Promise<ManagedTaskRecord[]>;
@@ -688,6 +733,9 @@ export interface ManagedTaskScheduler {
   listResultEnvelopes(options?: { rootSessionId?: string }): ManagedTaskResultEnvelope[];
   getDiagnostics(): ManagedTaskSchedulerDiagnostics;
 }
+
+export function projectManagedCommitSnapshot(input: { directory: string; tasks: ManagedTaskRecord[];
+  envelopes: ManagedTaskResultEnvelope[]; afterCursor?: string | null }): { cursor: string; cursorReset: boolean; rootSessionIds: string[] };
 
 export class ManagedOrchestrationError extends Error {
   code: string;
@@ -949,3 +997,23 @@ export function normalizeManagedAgentContractRole(agent: unknown): ManagedAgentC
  * compatibility mode. Always at most `MANAGED_AGENT_CONTRACT_MAX_LINES` lines. */
 export function buildManagedAgentContract(input?: { agent?: string | null }): string;
 export function createManagedTaskScheduler(options: ManagedTaskSchedulerOptions): ManagedTaskScheduler;
+
+export interface RequiredCheck { name: string; command: string; paths: string[] }
+export interface RequiredCheckReceipt { name: string; callId: string; messageId: string | null; identityConflict?: true; exitCode: number | null; observedAt: number; status: 'passed' | 'failed' | 'not-observed'; contentHash: string | null }
+export interface RequiredCheckEvidence { name: string; status: 'passed' | 'failed' | 'not-observed'; coverage: { kind: 'declared-files'; paths: string[]; contentHash: string | null }; reason: string; evidence: { callId: string; messageId: string | null; exitCode: number | null; observedAt: number; checkedContentHash: string | null } | null }
+export interface CompactResultHeader {
+  schemaVersion: 1; taskId: string; envelopeId: string;
+  outcome: { status: ManagedTaskTerminalStatus; partial: boolean; disposition: ManagedTaskResultAction | null };
+  reported: { source: 'retained-child-preview'; authoritative: false; terminalMarker: 'complete' | 'blocked' | 'missing' | 'ambiguous'; routing: string | null };
+  criticalFailures: string[];
+  recovery: { restriction: string | null; resumable: boolean; autoResume: ManagedTaskAutoResume | null; failureKind: ManagedTaskFailureKind };
+  verification: { status: 'passed' | 'failed' | 'not-observed'; checks: RequiredCheckEvidence[]; observedAt: number; coverage: 'declared-files-only' | 'no-required-checks-declared' };
+  detail: { source: 'canonical-managed-result'; taskId: string; envelopeId: string; bytes: number; canonicalRefs: ManagedTaskCanonicalRef[]; requiredBeforeDisposition: boolean };
+}
+export function validateRequiredChecks(value?: unknown): RequiredCheck[];
+export function validateRequiredCheckReceipts(receipts?: unknown, checks?: RequiredCheck[]): RequiredCheckReceipt[];
+export function projectRequiredCheckEvidence(checks?: RequiredCheck[], receipts?: RequiredCheckReceipt[], identities?: Record<string, string | null>): RequiredCheckEvidence[];
+export function createCompactResultHeader(input: { task: ManagedTaskRecord; envelope: ManagedTaskResultEnvelope; checks?: RequiredCheckEvidence[]; observedAt: number }): CompactResultHeader;
+
+export const PROVIDER_AUTHENTICATION_FAILURE_KIND: 'provider_authentication';
+export function isProviderAuthenticationFailure(value: unknown): boolean;

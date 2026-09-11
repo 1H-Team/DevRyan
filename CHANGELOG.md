@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-09-11
+
+- Supabase connection: add a host-scoped administrator control for secure disconnect and reconnect, preserve local projects and preferences while offline, coordinate idle Electron/runtime restarts, expose bounded local traffic estimates, and reduce idle Telegram, principal, session, and Bot polling traffic.
+- Harness configuration: replace stale project copies of standard roles with the maintained packaged definitions, preserve project-owned overrides and model choices, and record resolved runtime, role, catalog, and plugin-load fingerprints for diagnosis.
+- Managed orchestration: add durable root-scoped wait-any collection, bounded dispatch briefs, compact result headers, authoritative required-check observation, and task/project context checkpoints with explicit retrieval and recovery contracts.
+- Continuation safety: retain real-user objective identity, monotonic progress and recovery accounting, require current native TODO evidence for Builder continuation, and bound repeated deterministic input failures without replaying uncertain writes.
+- Provider recovery and UI: strengthen shared failure classification, scheduled-recovery state, retry ownership, and managed-task presentation while keeping unresolved or ambiguous outcomes manual.
+- Diagnostics and evaluation: add bounded sanitized trace export, retention and timing metadata, a deterministic 30-case golden catalog, paired evaluation support, and stricter admission/reporting for inconclusive measurements.
+- Quality: expand orchestration, harness, web, UI, evaluation, performance-protocol, and responsive QA coverage; optional retrieval, wait-any, compact-result, and context-projection policies remain disabled pending complete native promotion gates.
+- Database: deploy and verify all repository migrations and the required Production Bots schema marker before release publication.
+- Release: update all DevRyan package and desktop metadata to 1.2.2.
+
 ## [1.2.1] - 2026-09-10
 
 - Session changes: reconcile delayed and interrupted capture evidence, retain stronger exact receipts and native Cursor task diffs, and keep incomplete or conflicting changes unavailable for Undo while recoverable states remain retryable.

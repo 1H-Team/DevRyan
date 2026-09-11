@@ -807,7 +807,15 @@ const listBaseAgentSources = async (workingDirectory, packagedAgentDirectory) =>
   const agentsByName = new Map();
 
   for (const agent of await listAgentFiles(packagedAgentDirectory, 'packaged')) {
-    agentsByName.set(agent.name, agent);
+    // A model-only companion may outlive a migrated stock prompt. Preserve the
+    // project's councillors without requiring another copy of the role body.
+    const councillors = workingDirectory
+      ? await readAgentModelsCompanion(path.join(workingDirectory, '.opencode', 'agents', `${agent.name}.md`))
+      : [];
+    agentsByName.set(agent.name, councillors.length > 0
+      ? { ...agent, frontmatter: { ...agent.frontmatter, councillors,
+        modelRefs: councillors.map((entry) => entry.model) } }
+      : agent);
   }
 
   if (workingDirectory) {

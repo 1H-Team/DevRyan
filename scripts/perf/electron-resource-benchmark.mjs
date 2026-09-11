@@ -243,7 +243,7 @@ export const lifecycleProtocolIdentity = async (readProtocolFile = file => readF
   const hash = createHash('sha256');
   hash.update(JSON.stringify({ startupMode }));
   for (const file of ['electron-resource-benchmark.mjs', 'electron-lifecycle-benchmark.mjs', 'electron-run-evidence.mjs', 'loopback-opencode-fixture.mjs',
-    '../journal.mjs', '../qa/cdp.mjs', '../qa/ui-driver.mjs', '../qa/host-readiness.mjs', '../qa/fixture-scenarios.mjs',
+    '../journal.mjs', '../qa/cdp.mjs', '../qa/ui-driver.mjs', '../qa/host-readiness.mjs', '../qa/history-scroll.mjs', '../qa/fixture-scenarios.mjs',
     '../qa/packaged-artifact.mjs', '../qa/artifact-evidence.mjs', '../qa/project-fixture.mjs', '../qa/isolated-home.mjs',
     '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs']) {
     hash.update(file).update(await readProtocolFile(file));

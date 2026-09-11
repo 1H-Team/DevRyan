@@ -55,10 +55,14 @@ Its protocol version, source hash, scope and startup mode must match across
 three fresh runs per package; earlier failed or full-protocol runs cannot be
 pooled into this study. The separate session-memory scenario retains all four
 180-turn histories and its existing natural/forced-GC windows. Its pagination
-prerequisite now requires fresh contiguous progress from each actual Load Older
-click plus the returned first message ID and canonical text visibly committed
-in the selected session, using ordinary reveal scrolling before sampling.
-Virtualized scroll height and HTTP completion alone are insufficient.
+prerequisite distinguishes a buffered turn reveal from a fresh HTTP page.
+Each actual Load Older click must expose a strictly older canonical message
+and its visible text in the selected session. The full 360-message HTTP chain
+is checked separately, including initial snapshots already fetched by the UI
+sidebar. Single-message canonical verification reads do not count toward that
+coverage. Trusted scrolling accounts for nested message scrollers and the
+anchor restoration after a prepend. Virtualized scroll height and HTTP
+completion alone are insufficient.
 
 `interactive.json` retains every action, canonical history page/anchor proof,
 input cadence, correctness result, browser observation and natural memory sample.

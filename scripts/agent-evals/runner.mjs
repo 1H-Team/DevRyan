@@ -1,6 +1,8 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 import { executeEvaluationCase } from './cases.mjs';
+import { executeGoldenCase } from './golden-cases.mjs';
+import { runPairedEvaluation } from './paired.mjs';
 import { createEvaluationClient } from './client.mjs';
 import {
   allocateRunFiles,
@@ -38,11 +40,13 @@ const mergeCleanup = (aggregate, cleanup) => {
 };
 
 export const runEvaluation = async (config, dependencies = {}) => {
+  if (config.pairing) return await runPairedEvaluation(config, { createRunId: dependencies.createRunId ?? createEvaluationRunId,
+    runSingle: (single) => runEvaluation(single, dependencies) });
   // This is intentionally the first IO operation: dirty tracked state creates no sessions or reports.
   const startingManifest = assertFixtureReady(config.fixtureRoot);
   const runId = (dependencies.createRunId ?? createEvaluationRunId)();
   const client = dependencies.client ?? createEvaluationClient({ baseUrl: config.devRyanBaseUrl });
-  const caseExecutor = dependencies.caseExecutor ?? executeEvaluationCase;
+  const caseExecutor = dependencies.caseExecutor ?? (config.executionMode === 'deterministic' ? executeGoldenCase : executeEvaluationCase);
   const memoryProfileRunner = dependencies.memoryProfileRunner ?? runRetryMemoryProfile;
   const selection = {
     providerId: config.providerId,
@@ -154,6 +158,9 @@ export const runEvaluation = async (config, dependencies = {}) => {
     sessionIds: [...sessionIds],
     caseResults,
     resources,
+    fixtureHash: createHash('sha256').update(JSON.stringify(startingManifest)).digest('hex'),
+    executionMode: config.executionMode ?? 'live',
+    environmentHash: createHash('sha256').update(JSON.stringify({ node: process.version, platform: process.platform, arch: process.arch })).digest('hex'),
     cleanup,
   });
   const reportPath = writeSchemaV1Report(config.reportDirectory, report);

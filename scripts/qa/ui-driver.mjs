@@ -55,7 +55,7 @@ export function createQaUiDriver(cdp, { timeoutMs = 30000, checkAlive = () => {}
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
     }
   };
-  const click = async ({ label, text, selector = 'button,[role="button"],[role="menuitem"],[role="option"]', exact = true, touch = false }) => {
+  const click = async ({ label, text, selector = 'button,[role="button"],[role="menuitem"],[role="option"]', exact = true, touch = false, timeout }) => {
     const point = await waitExpression(`visible control ${label ?? text ?? selector}`, `(async () => {
       const matches=[...document.querySelectorAll(${JSON.stringify(selector)})].filter(${visible}).filter(e=>!e.disabled);
       const expected=${JSON.stringify(label ?? text ?? '')};
@@ -65,7 +65,7 @@ export function createQaUiDriver(cdp, { timeoutMs = 30000, checkAlive = () => {}
       const r=target.getBoundingClientRect();if(Math.abs(r.x-before.x)>0.5||Math.abs(r.y-before.y)>0.5)return null;
       const point={x:r.x+r.width/2,y:r.y+r.height/2};const hit=document.elementFromPoint(point.x,point.y);
       if(!hit||!target.contains(hit))return null;return point;
-    })()`);
+    })()`, timeout);
     await pointer(point, { touch });
   };
   const key = async (key, { code = key, modifiers = 0, windowsVirtualKeyCode } = {}) => {
@@ -78,7 +78,7 @@ export function createQaUiDriver(cdp, { timeoutMs = 30000, checkAlive = () => {}
     await cdp.send('Input.insertText', { text });
     await waitExpression('input content committed', `document.activeElement?.value===${JSON.stringify(text)}`);
   };
-  const send = async (text) => { await type(text); await click({ label: 'Send Message' }); };
+  const send = async (text, { timeout } = {}) => { await type(text); await click({ label: 'Send Message', timeout }); };
   const reveal = (selector, text, { scrollContainer, direction = 'up', allowDisabled = false, fullyVisible = false } = {}) => waitFor(`scroll control into viewport ${text ?? selector}`, async () => {
     const geometry = await evaluate(cdp, `(() => {
       const target=[...document.querySelectorAll(${JSON.stringify(selector)})].filter(${visible})

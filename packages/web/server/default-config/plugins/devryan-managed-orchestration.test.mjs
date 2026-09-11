@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createOpencodeClient } from '@opencode-ai/sdk';
+import { createCompactResultHeader } from '@openchamber/orchestration-runtime';
 
 vi.mock('@opencode-ai/plugin', () => {
   const makeSchema = () => {
@@ -18,6 +19,8 @@ vi.mock('@opencode-ai/plugin', () => {
   };
   const mockTool = (definition) => definition;
   mockTool.schema = {
+    array: makeSchema,
+    object: makeSchema,
     boolean: makeSchema,
     enum: makeSchema,
     number: makeSchema,
@@ -26,7 +29,13 @@ vi.mock('@opencode-ai/plugin', () => {
   return { tool: mockTool };
 });
 
-const { DevRyanManagedOrchestrationPlugin } = await import('./devryan-managed-orchestration.mjs');
+const { DevRyanManagedOrchestrationPlugin: createManagedPlugin } = await import('./devryan-managed-orchestration.mjs');
+// Plugin fixtures isolate protocol behavior; admission races and durable
+// objective budgets are exercised by the shared primary-controller suite.
+const DevRyanManagedOrchestrationPlugin = (options = {}) => createManagedPlugin({
+  registerContinuation: async (input) => ({ allowed: true, anchorUserMessageID: input.anchorUserMessageID, tools: {} }),
+  ...options,
+});
 
 const originalUrl = process.env.DEVRYAN_ORCHESTRATION_URL;
 const originalToken = process.env.DEVRYAN_ORCHESTRATION_TOKEN;
@@ -95,6 +104,210 @@ const createToolOwnerClient = (records) => ({
       },
     ] })),
   },
+});
+
+describe('wait-any collection protocol', () => {
+  const taskIds = ['dvr_task_fast', 'dvr_task_slow'];
+  const pending = () => ({ rootSessionId: 'ses_root', cursor: 'fixture_cursor', cursorReset: false,
+    readyTaskIds: [], attention: [], pendingTaskIds: taskIds, unacknowledgedTaskIds: [], settled: false, results: [] });
+  const ready = () => ({ ...pending(), readyTaskIds: [taskIds[0]], pendingTaskIds: [taskIds[1]],
+    unacknowledgedTaskIds: [taskIds[0]], results: [{ task: { taskId: taskIds[0], rootSessionId: 'ses_root', status: 'completed' },
+      resultEnvelope: { taskId: taskIds[0], action: null } }] });
+
+  it('keeps expired cursors and unchanged slices inside one model-facing call', async () => {
+    const replies = [{ ...pending(), cursorReset: true }, pending(), ready()];
+    const calls = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      calls.push(request);
+      return rpcResponse(request.method === 'acknowledge' ? { acknowledged: true } : replies.shift());
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+    const result = JSON.parse(await plugin.tool.devryan_task.execute({ action: 'wait_any', task_ids: taskIds }, context()));
+    expect(result.readyTaskIds).toEqual([taskIds[0]]);
+    expect(calls.map((call) => call.method)).toEqual(['wait_any', 'wait_any', 'wait_any']);
+    expect(calls[1].params.afterCursor).toBe('fixture_cursor');
+    await plugin.tool.devryan_task.execute({ action: 'continue', task_id: taskIds[0] }, context());
+    expect(calls.at(-1).method).toBe('acknowledge');
+  });
+
+  it.each(['foreign-pending', 'missing-result', 'foreign-root', 'duplicate', 'false-settled'])('rejects %s replies before accepting collection', async (kind) => {
+    const value = ready();
+    if (kind === 'foreign-pending') value.pendingTaskIds = ['dvr_task_foreign'];
+    if (kind === 'missing-result') value.results = [];
+    if (kind === 'foreign-root') value.results[0].task.rootSessionId = 'ses_other';
+    if (kind === 'duplicate') value.results.push(value.results[0]);
+    if (kind === 'false-settled') value.settled = true;
+    vi.stubGlobal('fetch', vi.fn(async () => rpcResponse(value)));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+    await expect(plugin.tool.devryan_task.execute({ action: 'wait_any', task_ids: taskIds }, context())).rejects.toThrow('Managed wait_any');
+  });
+
+  it('aborts an attached wait without making a cancellation RPC', async () => {
+    const controller = new AbortController();
+    const methods = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      methods.push(JSON.parse(init.body).method);
+      controller.abort(new Error('stop waiting'));
+      return rpcResponse(pending());
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+    await expect(plugin.tool.devryan_task.execute({ action: 'wait_any', task_ids: taskIds }, context({ abort: controller.signal }))).rejects.toThrow('stop waiting');
+    expect(methods).toEqual(['wait_any']);
+  });
+  it('keeps unchanged parked results inside transport slices while selected work remains active', async () => {
+    const parkedTask = { taskId: taskIds[0], rootSessionId: 'ses_root', status: 'failed', attempt: 1,
+      childSessionId: 'ses_parked', failureReason: 'Usage limit reached', failureKind: 'provider_usage_limit', agentRetryAvailable: false };
+    const parked = { ...pending(), schemaVersion: 2, changedTaskIds: [], dispositioned: [], availableTaskIds: [], activeWork: true,
+      attention: [{ taskId: taskIds[0], state: 'attention' }], pendingTaskIds: [taskIds[1]],
+      results: [{ task: parkedTask, resultEnvelope: { ...parkedTask, action: null, resumable: true } }] };
+    const replies = [parked, structuredClone(parked), { ...parked, cursor: 'changed_cursor', changedTaskIds: [taskIds[1]],
+      readyTaskIds: [taskIds[1]], pendingTaskIds: [], unacknowledgedTaskIds: [taskIds[1]], settled: true, activeWork: false,
+      results: [...parked.results, { task: { taskId: taskIds[1], rootSessionId: 'ses_root', status: 'completed' },
+        resultEnvelope: { taskId: taskIds[1], action: null } }] }];
+    const calls = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => { calls.push(JSON.parse(init.body)); return rpcResponse(replies.shift()); }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+    const result = JSON.parse(await plugin.tool.devryan_task.execute({ action: 'wait_any', task_ids: taskIds, after_cursor: 'fixture_cursor' }, context()));
+    expect(calls.map(call => call.method)).toEqual(['wait_any', 'wait_any', 'wait_any']);
+    expect(result.readyTaskIds).toEqual([taskIds[1]]);
+    expect(result.attention).toEqual(parked.attention);
+    expect(result.instruction).toContain('end this turn');
+  });
+  it.each([
+    { failureReason: 'Usage limit reached', failureKind: 'provider_usage_limit' },
+    { failureReason: 'Connection closed', failureKind: 'other', transportRecovery: { phase: 'exhausted' } },
+    { failureReason: 'A future host recovery class', failureKind: 'future-host-class', manualRecoveryRequired: true },
+  ])('releases an all-parked selection even with an unchanged cursor so the idle recovery wake can run: $failureReason', async recovery => {
+    const task = { taskId: taskIds[0], rootSessionId: 'ses_root', status: 'failed', attempt: 1,
+      childSessionId: 'ses_parked', agentRetryAvailable: false, ...recovery };
+    const value = { ...pending(), schemaVersion: 2, changedTaskIds: [], dispositioned: [], availableTaskIds: [],
+      activeWork: false, settled: true, pendingTaskIds: [], attention: [{ taskId: task.taskId, state: 'attention' }],
+      results: [{ task, resultEnvelope: { ...task, action: null, resumable: true } }] };
+    vi.stubGlobal('fetch', vi.fn(async () => rpcResponse(value)));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+    const result = JSON.parse(await plugin.tool.devryan_task.execute({ action: 'wait_any', task_ids: [task.taskId], after_cursor: 'fixture_cursor' }, context()));
+    expect(result.activeWork).toBe(false);
+    expect(result.instruction).toContain('end this turn');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('gives explicit no-repeat guidance for an already dispositioned selection', async () => {
+    const value = { ...pending(), schemaVersion: 2, changedTaskIds: [], dispositioned: [{ taskId: taskIds[0], action: 'continue', followUpTaskId: null }],
+      availableTaskIds: [], activeWork: false, settled: true, pendingTaskIds: [] };
+    vi.stubGlobal('fetch', vi.fn(async () => rpcResponse(value)));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+    const result = JSON.parse(await plugin.tool.devryan_task.execute({ action: 'wait_any', task_ids: [taskIds[0]], after_cursor: 'fixture_cursor' }, context()));
+    expect(result.instruction).toContain('do not repeat wait_any');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('host-owned read overlap', () => {
+  it('identifies a rejected private bridge without echoing its response body or permitting parent writes', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => rpcResponse({ message: 'private server detail' }, 401)));
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client: createToolOwnerClient([toolCallRecord('call_write', 'orchestrator')]), directory: '/workspace' });
+    const operation = plugin['tool.execute.before']({ sessionID: 'ses_root', tool: 'write', callID: 'call_write' }, { args: {} });
+    await expect(operation).rejects.toMatchObject({ code: 'managed_bridge_authentication_failed', statusCode: 401 });
+    await expect(operation).rejects.toThrow('Reconnect the managed OpenCode runtime');
+    await expect(operation).rejects.not.toThrow('private server detail');
+  });
+  it('rejects a write when the host barrier changes after a clear snapshot', async () => {
+    const client = createToolOwnerClient([toolCallRecord('call_write', 'orchestrator')]);
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => rpcResponse(JSON.parse(init.body).method === 'barrier_status'
+      ? { state: 'clear', capabilities: { policies: { readOverlap: true } } } : { allowed: false, provisional: true })));
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client, directory: '/workspace' });
+    await expect(plugin['tool.execute.before']({ sessionID: 'ses_root', tool: 'write', callID: 'call_write' }, { args: {} })).rejects.toThrow('barrier changed');
+  });
+  it.each(['orchestrator', 'builder'])('requires authoritative ownership after restart with an unavailable bridge: %s', async (agent) => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('bridge unavailable'); }));
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client: createToolOwnerClient([toolCallRecord('call_write', agent)]), directory: '/workspace' });
+    const operation = plugin['tool.execute.before']({ sessionID: 'ses_root', tool: 'write', callID: 'call_write' }, { args: {} });
+    if (agent === 'builder') await expect(operation).resolves.toBeUndefined();
+    else await expect(operation).rejects.toThrow('remains blocked');
+  });
+  it.each(['read', 'grep', 'ctx_search'])('admits %s only when the host explicitly authorizes it', async (toolName) => {
+    const client = createToolOwnerClient([toolCallRecord('call_read', 'orchestrator')]);
+    const methods = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      methods.push(request.method);
+      return rpcResponse(request.method === 'barrier_status'
+        ? { state: 'active', taskIds: ['dvr_task_live'], capabilities: { policies: { readOverlap: true }, overlapReadTools: ['read', 'grep', 'ctx_search'] } }
+        : { allowed: true, provisional: true });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client, directory: '/workspace' });
+    const input = { sessionID: 'ses_root', tool: toolName, callID: 'call_read', args: { filePath: 'source.txt' } };
+    await plugin['tool.execute.before'](input, { args: input.args });
+    expect(methods).toEqual(['barrier_status', 'parent_tool']);
+    if (toolName === 'read') {
+      await plugin['tool.execute.after'](input, {});
+      expect(methods.at(-1)).toBe('parent_tool');
+    }
+  });
+
+  it.each(['bash', 'ctx_execute', 'edit', 'mcp_untrusted_read'])('keeps %s blocked despite a read-only annotation', async (toolName) => {
+    vi.stubGlobal('fetch', vi.fn(async () => rpcResponse({ state: 'active', taskIds: ['dvr_task_live'],
+      capabilities: { policies: { readOverlap: true }, overlapReadTools: ['read', 'grep'] } })));
+    const client = createToolOwnerClient([toolCallRecord('call_read', 'orchestrator')]);
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client, directory: '/workspace' });
+    await expect(plugin['tool.execute.before']({ sessionID: 'ses_root', tool: toolName, callID: 'call_read', annotations: { readOnlyHint: true } }, { args: {} })).rejects.toThrow('blocked');
+  });
+});
+
+describe('committed result notifications', () => {
+  it.each([false, true])('closes the late-commit wake window when busy=%s and disposes its watcher', async (initiallyBusy) => {
+    const scheduled = [];
+    const methods = [];
+    let busy = initiallyBusy;
+    let committed = false;
+    let deliver;
+    let watchAborted = false;
+    const records = [{ info: { id: 'msg_objective', role: 'user', agent: 'orchestrator',
+      model: { providerID: 'openai', modelID: 'gpt-6-astra' } }, parts: [{ type: 'text', text: 'Review source.' }] }];
+    const client = { session: {
+      status: vi.fn(async () => ({ data: { ses_root: { type: busy ? 'busy' : 'idle' } } })),
+      messages: vi.fn(async () => ({ data: records })),
+      promptAsync: vi.fn(async (request) => {
+        records.push({ info: { id: request.body.messageID, role: 'user' }, parts: request.body.parts });
+        return { data: true };
+      }),
+    } };
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      methods.push(request.method);
+      if (request.method === 'watch_result_commits') return await new Promise((resolve, reject) => {
+        deliver = () => resolve(rpcResponse({ cursor: 'committed_cursor', cursorReset: false, rootSessionIds: ['ses_root'] }));
+        init.signal.addEventListener('abort', () => { watchAborted = true; reject(init.signal.reason); }, { once: true });
+      });
+      if (request.method === 'list_provider_recovery_continuations') return rpcResponse({ resultCommitWatch: true,
+        continuations: committed ? [{ taskId: 'dvr_task_late', rootSessionId: 'ses_root', childSessionId: 'ses_child', directory: '/workspace', kind: 'collect' }] : [] });
+      if (request.method === 'status') return rpcResponse(collectableTaskResult('dvr_task_late'));
+      if (request.method === 'claim_provider_recovery_continuation') return rpcResponse({ claimed: true, expiresAt: Date.now() + 60_000 });
+      throw new Error(`Unexpected ${request.method}`);
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client, directory: '/workspace',
+      scheduleTimeout(callback) { scheduled.push(callback); return { unref() {} }; } });
+    scheduled.shift()();
+    await vi.waitFor(() => expect(deliver).toBeTypeOf('function'));
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
+    committed = true;
+    deliver();
+    await vi.waitFor(() => expect(scheduled.length).toBeGreaterThan(0));
+    scheduled.shift()();
+    if (initiallyBusy) {
+      await vi.waitFor(() => expect(client.session.status).toHaveBeenCalled());
+      expect(client.session.promptAsync).not.toHaveBeenCalled();
+      busy = false;
+      plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'ses_root' } } });
+      await vi.waitFor(() => expect(scheduled.length).toBeGreaterThan(0));
+      scheduled.shift()();
+    }
+    await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledOnce());
+    expect(methods.filter((method) => method === 'claim_provider_recovery_continuation')).toHaveLength(1);
+    plugin.event({ event: { type: 'server.instance.disposed', properties: { directory: '/workspace' } } });
+    await vi.waitFor(() => expect(watchAborted).toBe(true));
+    expect(methods).not.toContain('cancel');
+  });
 });
 
 const toolCallRecord = (callID, mode, overrides = {}) => ({
@@ -2128,6 +2341,39 @@ describe('DevRyan managed orchestration plugin', () => {
     });
   });
 
+  it.each(['complete', 'blocked', 'missing'])('requires all retained detail before reconciling an uncertain compact result: %s', async marker => {
+    const preview = 'x'.repeat(8_200) + (marker === 'missing' ? '' : `\n**Status:** ${marker}`);
+    const task = { taskId: 'dvr_task_header', rootSessionId: 'ses_root', status: 'completed', partial: false, failureReason: null };
+    const envelope = { ...task, envelopeId: 'dvr_result_header', action: null, resumable: false, canonicalRefs: [], recoverablePreview: preview };
+    const resultHeader = createCompactResultHeader({ task, envelope, observedAt: 1, checks: [{ name: 'unit', status: 'passed',
+      coverage: { contentHash: 'a'.repeat(64) }, evidence: { exitCode: 0, checkedContentHash: 'a'.repeat(64) } }] });
+    const reference = { taskId: task.taskId, envelopeId: envelope.envelopeId, totalBytes: preview.length };
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body); requests.push(request);
+      if (request.method === 'wait') return rpcResponse({ task, resultEnvelope: envelope, resultHeader,
+        capabilities: { policies: { compactResults: true } },
+        resultReference: { ...reference, text: '', returnedBytes: 0, nextCursor: 'page_1', complete: false } });
+      if (request.method === 'read_result') return rpcResponse({ resultReference: request.params.resultCursor === 'page_1'
+        ? { ...reference, text: preview.slice(0, 8192), returnedBytes: 8192, nextCursor: 'page_2', complete: false }
+        : { ...reference, text: preview.slice(8192), returnedBytes: preview.length, nextCursor: null, complete: true } });
+      return rpcResponse({ accepted: true });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+    await plugin.tool.devryan_task.execute({ action: 'wait', task_id: task.taskId }, context());
+    if (marker !== 'complete') {
+      for (const cursor of ['page_1', 'page_2']) {
+        await expect(plugin.tool.devryan_task.execute({ action: 'continue', task_id: task.taskId }, context()))
+          .rejects.toMatchObject({ code: 'DEVRYAN_TOOL_INPUT_INVALID', details: { state: 'result_detail_required', nextCursor: cursor } });
+        expect(requests.some(request => request.method === 'acknowledge')).toBe(false);
+        await plugin.tool.devryan_task.execute({ action: 'read_result', task_id: task.taskId, result_cursor: cursor }, context());
+      }
+    }
+    await plugin.tool.devryan_task.execute({ action: 'continue', task_id: task.taskId }, context());
+    expect(requests.at(-1).method).toBe('acknowledge');
+    expect(requests.filter(request => request.method === 'read_result')).toHaveLength(marker === 'complete' ? 0 : 2);
+  });
+
   it.each([
     [
       'premature completion',
@@ -2660,6 +2906,7 @@ describe('DevRyan managed orchestration plugin', () => {
   it('allows direct work when no dispatch is known, but fails closed after a local barrier is known', async () => {
     const plugin = await DevRyanManagedOrchestrationPlugin();
     delete process.env.DEVRYAN_ORCHESTRATION_URL;
+    delete process.env.DEVRYAN_ORCHESTRATION_TOKEN;
 
     await expect(plugin['tool.execute.before'](
       { tool: 'read', sessionID: 'ses_direct', callID: 'call_direct' },
@@ -2667,6 +2914,7 @@ describe('DevRyan managed orchestration plugin', () => {
     )).resolves.toBeUndefined();
 
     process.env.DEVRYAN_ORCHESTRATION_URL = 'http://127.0.0.1:43210/rpc';
+    process.env.DEVRYAN_ORCHESTRATION_TOKEN = 'test-token';
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       const request = JSON.parse(init.body);
       if (request.method === 'submit') {
@@ -4070,7 +4318,7 @@ describe('open-todo continuation safety net', () => {
       info: {
         id: 'msg_user_1',
         role: 'user',
-        agent: 'orchestrator',
+        agent,
         model: { providerID: 'openai', modelID: 'gpt-5.5', variant: 'medium' },
       },
       parts: [{ type: 'text', text: 'Implement the saved plan.' }],
@@ -4128,7 +4376,7 @@ describe('open-todo continuation safety net', () => {
     return requests;
   };
 
-  const startPlugin = async (client) => {
+  const startPlugin = async (client, options = {}) => {
     const scheduled = [];
     const plugin = await DevRyanManagedOrchestrationPlugin({
       client,
@@ -4137,6 +4385,7 @@ describe('open-todo continuation safety net', () => {
         scheduled.push({ callback, delayMs });
         return { unref() {} };
       },
+      ...options,
     });
     return { plugin, scheduled };
   };
@@ -4194,7 +4443,6 @@ describe('open-todo continuation safety net', () => {
   it.each([
     ['no open todos', { todos: [{ id: 'todo_1', content: 'done', status: 'completed', priority: 'high' }] }],
     ['a pending question', { questions: [{ id: 'q_1', sessionID: 'ses_root', questions: [] }] }],
-    ['a builder turn', { records: openTodoRecords({ agent: 'builder' }) }],
     ['a manual Model Recovery result', { records: openTodoRecords({ text: 'Result has manualRecoveryRequired: true; waiting for Try Again.' }) }],
     ['a provider-recovery wake', { records: openTodoRecords({ text: 'Handling [devryan-provider-recovery:v1:dvr_task_1] now.' }) }],
     ['a child session', { session: { id: 'ses_root', directory: '/workspace', parentID: 'ses_parent' } }],
@@ -4209,6 +4457,34 @@ describe('open-todo continuation safety net', () => {
     await drainScans(scheduled);
 
     expect(client.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it('routes Builder TODO continuation through the same objective owner', async () => {
+    stubOpenTodoRpc();
+    const registerContinuation = vi.fn(async (input) => ({ allowed: true,
+      anchorUserMessageID: input.anchorUserMessageID, tools: { edit: false } }));
+    const client = createOpenTodoClient({ records: openTodoRecords({ agent: 'builder' }) });
+    const { plugin, scheduled } = await startPlugin(client, { registerContinuation });
+    idle(plugin);
+    await drainScans(scheduled);
+    await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledOnce());
+    expect(registerContinuation).toHaveBeenCalledWith(expect.objectContaining({ kind: 'builder_todo',
+      anchorUserMessageID: expect.any(String), execution: expect.objectContaining({ agent: 'builder' }) }));
+    expect(client.session.promptAsync.mock.calls[0][0].body.tools).toEqual({ edit: false });
+  });
+
+  it('does not prompt when the real primary owner has not registered', async () => {
+    stubOpenTodoRpc();
+    const key = Symbol.for('devryan.primary-recovery.ready.v1');
+    const previous = globalThis[key];
+    delete globalThis[key];
+    try {
+      const client = createOpenTodoClient();
+      const { plugin, scheduled } = await startPlugin(client, { registerContinuation: undefined });
+      idle(plugin);
+      await drainScans(scheduled);
+      expect(client.session.promptAsync).not.toHaveBeenCalled();
+    } finally { if (previous !== undefined) globalThis[key] = previous; }
   });
 
   it('does not query the barrier when no todo is open', async () => {

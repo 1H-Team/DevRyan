@@ -36,6 +36,32 @@ const event = (type, properties = {}, sessionID = 'ses_1') => ({
   payload: { type, properties },
 });
 describe('diagnostic journal trimming', () => {
+  test('aggregates identical historical failures while preserving live failures and changed reasons', () => {
+    const trimmer = createJournalTrimmer();
+    const historical = { type: 'log', event: 'session_changes_capture', sessionID: 'ses_1', at: 1,
+      payload: { code: 'invalid_change_receipt', phase: 'history', callID: 'call_1', reason: 'missing_identity' } };
+    expect(trimmer.admit(historical)).toEqual([]);
+    expect(trimmer.admit({ ...historical, at: 2 })).toEqual([]);
+    const changed = { ...historical, payload: { ...historical.payload, reason: 'changed_identity' } };
+    expect(trimmer.admit(changed)).toEqual([]);
+    const live = { ...historical, payload: { ...historical.payload, phase: 'receipt' } };
+    expect(trimmer.admit(live)).toEqual([live]);
+    expect(trimmer.flushAll()).toEqual([{ ...historical, at: 2, coalesced: 2 }, { ...changed, coalesced: 1 }]);
+    expect(trimmer.stats().ses_1.coalescedDiagnostics).toBe(1);
+  });
+
+  test('keeps recovery generations and state transitions distinct from repeated observations', () => {
+    const trimmer = createJournalTrimmer();
+    const failure = { type: 'lifecycle', event: 'provider_recovery_observation_failed', sessionID: 'ses_1', at: 1,
+      payload: { assistantMessageID: 'msg_1', generation: 1, reason: 'owner_unavailable' } };
+    trimmer.admit(failure);
+    trimmer.admit({ ...failure, at: 2 });
+    trimmer.admit({ ...failure, payload: { ...failure.payload, generation: 2 } });
+    const transition = { ...failure, event: 'objective_state' };
+    expect(trimmer.admit(transition)).toEqual([transition]);
+    expect(trimmer.flushAll().map((row) => [row.payload.generation, row.coalesced])).toEqual([[1, 2], [2, 1]]);
+  });
+
   test('drops deltas without gaps and counts the intentional trim', () => {
     const trimmer = createJournalTrimmer();
     expect(trimmer.admit(event('message.part.delta'))).toEqual([]);

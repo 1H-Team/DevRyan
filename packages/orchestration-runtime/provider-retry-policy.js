@@ -13,6 +13,9 @@ const PROVIDER_USAGE_LIMIT_ACTION_REASONS = new Set([
 ]);
 
 export const PROVIDER_USAGE_LIMIT_FAILURE_KIND = 'provider_usage_limit';
+export const PROVIDER_AUTHENTICATION_FAILURE_KIND = 'provider_authentication';
+export const isProviderAuthenticationFailure = (value) => typeof value === 'string'
+  && /\b(?:authentication(?:error)?|authorization(?:error)?|unauthorized|forbidden|invalid (?:api key|credentials?|access token)|missing api key|expired (?:access |refresh )?token|http[ :]+401)\b/i.test(value);
 export const PROVIDER_PROMPT_REJECTED_FAILURE_KIND = 'provider_prompt_rejected';
 export const MODEL_UNAVAILABLE_FAILURE_KIND = 'model_unavailable';
 export const DEADLINE_EXCEEDED_FAILURE_KIND = 'deadline_exceeded';
@@ -79,6 +82,7 @@ export const classifyProviderTransportFailure = (name, detail) => {
   const normalizedName = normalizeTransportFailureText(name);
   const normalizedDetail = normalizeTransportFailureText(detail);
   const combined = [normalizedName, normalizedDetail].filter(Boolean).join(': ');
+  if (isProviderAuthenticationFailure(combined)) return null;
   const compactName = normalizedName.replace(/[^a-z0-9]+/gi, '');
   // Checked first: these strings can legitimately contain "abort"/"cancelled".
   if (combined && PROVIDER_QUEUE_FAILURE_PATTERN.test(combined)) {
@@ -112,7 +116,7 @@ export const classifyProviderTransportFailure = (name, detail) => {
 
 export const classifyProviderRetryFailure = (value) => {
   const message = normalizeProviderRetryMessage(value);
-  if (!message) return null;
+  if (!message || isProviderAuthenticationFailure(value)) return null;
   if (
     message.includes('invalid prompt')
     && message.includes('prompt')
@@ -166,7 +170,8 @@ export const isManagedTaskModelUnavailable = (value) => (
 );
 
 export const classifyManagedTaskFailure = (value) => (
-  classifyProviderRetryFailure(value)
+  (isProviderAuthenticationFailure(value) ? PROVIDER_AUTHENTICATION_FAILURE_KIND : null)
+  ?? classifyProviderRetryFailure(value)
   ?? (isManagedTaskModelUnavailable(value) ? MODEL_UNAVAILABLE_FAILURE_KIND : null)
   ?? (isManagedTaskDeadlineExceeded(value) ? DEADLINE_EXCEEDED_FAILURE_KIND : null)
   ?? (classifyProviderTransportFailure(null, value) ? PROVIDER_TRANSPORT_FAILURE_KIND : null)

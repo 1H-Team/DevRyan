@@ -457,7 +457,12 @@ function getDevRyanBaseConfigAgents(workingDirectory) {
   const agentsByName = new Map();
 
   for (const agent of listPackagedConfigAgents()) {
-    agentsByName.set(agent.name, agent);
+    const councillors = workingDirectory
+      ? readAgentModelsCompanion(getProjectAgentPath(workingDirectory, agent.name))
+      : [];
+    agentsByName.set(agent.name, councillors.length > 0
+      ? { ...agent, councillors, modelRefs: councillors.map((entry) => entry.model) }
+      : agent);
   }
 
   for (const agent of listProjectAgents(workingDirectory)) {

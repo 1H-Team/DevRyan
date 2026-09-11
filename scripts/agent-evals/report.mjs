@@ -227,6 +227,42 @@ const projectResources = (resources) => {
   };
 };
 
+const safeHash = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value) ? value : null;
+const runtimeVersion = (value) => typeof value === 'string'
+  && /^[a-zA-Z0-9][a-zA-Z0-9.+_-]{0,127}$/.test(value.trim()) && !identifierLooksUnsafe(value.trim())
+  ? value.trim() : 'unknown';
+const projectFingerprint = (value) => value?.schemaVersion === 1 ? {
+  schemaVersion: 1, configurationHash: safeHash(value.configurationHash), runtimeVersion: runtimeVersion(value.runtimeVersion),
+  selection: { providerId: opaqueIdentifier(value.selection?.providerID, 'provider'), modelId: opaqueIdentifier(value.selection?.modelID, 'model'),
+    agent: opaqueIdentifier(value.selection?.agent, 'agent'), variant: value.selection?.variant === null ? null : opaqueIdentifier(value.selection?.variant, 'variant') },
+  role: { source: normalizeStatus(value.role?.source), sourceHash: safeHash(value.role?.sourceHash), contentHash: safeHash(value.role?.contentHash), bytes: finiteNumber(value.role?.bytes) },
+  catalog: { contentHash: safeHash(value.catalog?.contentHash), idsHash: safeHash(value.catalog?.idsHash), count: finiteNumber(value.catalog?.count), availability: normalizeStatus(value.catalog?.availability) },
+  plugins: { configured: Array.isArray(value.plugins?.configured) ? value.plugins.configured.slice(0, 128).map((entry) => ({ name: opaqueIdentifier(entry.name, 'plugin'), sourceHash: safeHash(entry.sourceHash) })) : null,
+    observed: Array.isArray(value.plugins?.observed) ? value.plugins.observed.slice(0, 128).map((entry) => ({ name: opaqueIdentifier(entry.name, 'plugin'), contentHash: safeHash(entry.contentHash), factoryCalls: nonNegativeInteger(entry.factoryCalls), ownership: normalizeStatus(entry.ownership) })) : null },
+  policies: Object.fromEntries(['readOverlap', 'waitAny', 'compactResults', 'contextProjection'].map((key) => [key, value.policies?.[key] === true])),
+} : null;
+
+const measured = (value) => ({ observed: nonNegativeInteger(value?.observed), unknown: nonNegativeInteger(value?.unknown), total: finiteNumber(value?.total) });
+export const projectHarnessEvidence = (value) => ({
+  startFingerprint: projectFingerprint(value?.startFingerprint), finishFingerprint: projectFingerprint(value?.finishFingerprint),
+  availability: value?.availability ? { available: typeof value.availability.available === 'boolean' ? value.availability.available : null,
+    variantAvailable: typeof value.availability.variantAvailable === 'boolean' ? value.availability.variantAvailable : null } : null,
+  evidence: value?.trace?.schemaVersion === 1 ? { source: 'retained-journal', incomplete: value.trace.incomplete === true,
+    sourceRecords: nonNegativeInteger(value.trace.sourceRecords), omittedRecords: nonNegativeInteger(value.trace.omittedRecords), omittedEvents: nonNegativeInteger(value.trace.omittedEvents),
+    roots: Array.isArray(value.trace.roots) ? value.trace.roots.slice(0, 2048).map((root) => ({ rootSessionId: opaqueIdentifier(root.rootSessionId, 'session'),
+      queueMs: measured(root.measurements?.queueMs), firstActivityMs: measured(root.measurements?.firstResponseMs),
+      toolExecutionMs: measured(root.measurements?.toolExecutionMs), resultConsumptionMs: measured(root.measurements?.resultConsumptionMs),
+      workspaceBarrierMs: measured(root.measurements?.workspaceBarrierMs), recoveryMs: measured(root.measurements?.recoveryMs),
+      objectiveDurationMs: finiteNumber(root.totalObjectiveCriticalPathMs),
+      usage: Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'cost'].map((key) => [key, measured(root.measurements?.[key])])),
+      costProvenance: ['native-runtime-reported', 'native-provider-reported'].includes(root.costProvenance)
+        ? 'native-runtime-reported' : 'unavailable',
+      toolVolumeBytes: measured(root.measurements?.toolVolumeBytes), retrievedPages: nonNegativeInteger(root.retrievedPages),
+      context: Array.isArray(root.projections) ? root.projections.slice(0, 512).map((entry) => ({ beforeBytes: finiteNumber(entry.beforeBytes), projectedBytes: finiteNumber(entry.projectedBytes), dynamicBytes: finiteNumber(entry.dynamicBytes) })) : [],
+    })) : [],
+  } : null,
+});
+
 export const buildSchemaV1Report = (input = {}) => {
   const results = Array.isArray(input.caseResults) ? input.caseResults : [];
   const passed = results.filter((result) => result?.status === 'passed').length;
@@ -242,6 +278,14 @@ export const buildSchemaV1Report = (input = {}) => {
   const executionFailed = input.executionFailed === true || failed > 0;
   const report = {
     schemaVersion: 1,
+    executionMode: input.executionMode === 'deterministic' ? 'deterministic' : 'live',
+    fixtureHash: safeHash(input.fixtureHash),
+    environmentHash: safeHash(input.environmentHash),
+    runs: results.map((result) => ({ caseId: normalizeStatus(result.caseId), repetition: nonNegativeInteger(result.repetition),
+      status: normalizeStatus(result.status), durationMs: finiteNumber(result.durationMs),
+      errorCode: result.errorCode ? normalizeStatus(result.errorCode) : null,
+      contract: result.contractEvidence ? { sourceHash: safeHash(result.contractEvidence.sourceHash), selected: nonNegativeInteger(result.contractEvidence.selected), mode: 'deterministic' } : null,
+      harness: projectHarnessEvidence(result.harnessEvidence) })),
     runId: normalizeRunId(input.runId),
     selection: {
       providerId: opaqueIdentifier(input.selection?.providerId, 'provider'),

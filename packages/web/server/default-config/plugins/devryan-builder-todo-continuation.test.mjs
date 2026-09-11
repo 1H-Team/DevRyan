@@ -66,13 +66,21 @@ const createPlugin = async () => {
 
 describe('DevRyan Builder todo continuation plugin', () => {
   beforeEach(() => {
+    vi.stubEnv('DEVRYAN_ORCHESTRATION_URL', '');
+    vi.stubEnv('DEVRYAN_ORCHESTRATION_TOKEN', '');
     vi.useFakeTimers();
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it.each(['DEVRYAN_ORCHESTRATION_URL', 'DEVRYAN_ORCHESTRATION_TOKEN'])('defers to managed ownership with complete or partial %s configuration', async (key) => {
+    vi.stubEnv(key, 'fixture');
+    expect(await DevRyanBuilderTodoContinuationPlugin()).toEqual({});
   });
 
   it('continues the same Builder model after a premature 3/5 completion', async () => {

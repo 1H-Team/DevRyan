@@ -61,17 +61,42 @@ export const validateQaMatrixConfig = (value, { repoRoot = REPO_ROOT } = {}) => 
   const ids = new Set();
   let runCount = 0;
   const cells = value.cells.map((cell) => {
-    objectWithFields(cell, CELL_FIELDS, 'cell', ['projectCompaction']);
+    objectWithFields(cell, CELL_FIELDS, 'cell', ['projectCompaction', 'agentAssignments', 'allowCrossProviderAssignments', 'windowSize']);
     const id = pinned(cell.id, 'cell.id', /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/);
     if (ids.has(id)) fail('cell IDs must be unique');
     ids.add(id);
     const runtime = oneOf(cell.runtime, ['web', 'electron'], 'runtime');
+    let windowSize;
+    if (Object.hasOwn(cell, 'windowSize')) {
+      if (runtime !== 'electron') fail('windowSize requires Electron');
+      objectWithFields(cell.windowSize, ['width', 'height'], 'windowSize');
+      windowSize = Object.freeze({ width: integer(cell.windowSize.width, 600, 2560, 'window width'),
+        height: integer(cell.windowSize.height, 600, 1600, 'window height') });
+    }
     const transport = oneOf(cell.transport, ['fixture', 'live'], 'transport');
     const providerId = oneOf(cell.providerId, transport === 'live' ? ['openai', 'anthropic', 'xai'] : ['fixture'], 'providerId for transport');
     const modelId = pinned(cell.modelId, 'modelId');
     const agent = oneOf(cell.agent, ['builder', 'orchestrator'], 'agent');
     if (typeof cell.planMode !== 'boolean') fail('planMode must be a boolean');
     const variant = cell.variant === null ? null : pinned(cell.variant, 'variant');
+    const assignments = {};
+    if (Object.hasOwn(cell, 'allowCrossProviderAssignments') && typeof cell.allowCrossProviderAssignments !== 'boolean') {
+      fail('allowCrossProviderAssignments must be an explicit boolean');
+    }
+    if (Object.hasOwn(cell, 'agentAssignments')) {
+      if (transport !== 'live') fail('agentAssignments require live transport');
+      objectWithFields(cell.agentAssignments, [], 'agentAssignments',
+        ['oracle', 'council', 'fixer', 'designer', 'explorer', 'librarian', ...(cell.allowCrossProviderAssignments ? ['builder'] : [])]);
+      for (const [name, selected] of Object.entries(cell.agentAssignments)) {
+        objectWithFields(selected, ['providerId', 'modelId', 'variant'], `agentAssignments.${name}`);
+        const assignedProvider = oneOf(selected.providerId, cell.allowCrossProviderAssignments
+          ? ['openai', 'anthropic', 'xai', 'opencode'] : [providerId], 'assigned provider');
+        const assignedModel = pinned(selected.modelId, 'assigned modelId');
+        if (assignedModel.includes('/')) fail('assigned modelId must not include a provider prefix');
+        assignments[name] = Object.freeze({ providerId: assignedProvider, modelId: assignedModel,
+          variant: selected.variant === null ? null : pinned(selected.variant, 'assigned variant') });
+      }
+    }
     if (!Array.isArray(cell.scenarioIds) || !cell.scenarioIds.length) fail('scenarioIds must be a nonempty array');
     const scenarioIds = cell.scenarioIds.map((scenario) => oneOf(scenario, QA_SCENARIO_IDS, 'scenarioId'));
     if (new Set(scenarioIds).size !== scenarioIds.length) fail('scenarioIds must be unique');
@@ -92,6 +117,9 @@ export const validateQaMatrixConfig = (value, { repoRoot = REPO_ROOT } = {}) => 
     runCount += repetitions * scenarioIds.length;
     return Object.freeze({ id, runtime, transport, providerId, modelId, agent, planMode: cell.planMode,
       variant, scenarioIds: Object.freeze(scenarioIds), repetitions, timeoutMs,
+      ...(windowSize ? { windowSize } : {}),
+      ...(Object.hasOwn(cell, 'agentAssignments') ? { agentAssignments: Object.freeze(assignments) } : {}),
+      ...(Object.hasOwn(cell, 'allowCrossProviderAssignments') ? { allowCrossProviderAssignments: cell.allowCrossProviderAssignments } : {}),
       ...(Object.hasOwn(cell, 'projectCompaction') ? { projectCompaction: cell.projectCompaction } : {}) });
   });
   if (runCount > 10_000) fail('matrix may not expand beyond 10000 runs');

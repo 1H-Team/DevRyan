@@ -155,6 +155,13 @@ export const gradeToolRequirements = (caseId, toolEvents = []) => {
         && !hasFamily(events, 'mutation'),
     );
   }
+  if (caseId === 'managed-independent') {
+    return result('managed-independent.tools',
+      hasFamily(events.filter(event => event.sessionScope === 'root'), 'managed', { final: true })
+        && hasFamily(events.filter(event => event.sessionScope === 'root'), 'read', { final: true })
+        && hasFamily(events.filter(event => event.sessionScope === 'child'), 'read', { final: true })
+        && !hasFamily(events, 'mutation'));
+  }
   if (caseId === 'context-bounded-lookup') {
     const rootEvents = events.filter((event) => event?.sessionScope === 'root');
     return result(
@@ -228,6 +235,7 @@ export const gradeCaseOutcome = (input = {}) => {
     caseId === 'context-large-analysis'
     || caseId === 'context-explorer-analysis'
     || caseId === 'context-bounded-lookup'
+    || caseId === 'managed-independent'
   ) {
     return result(
       `${caseId}.filesystem-test`,
@@ -329,6 +337,19 @@ export const gradeManagedTaskOutcome = (input = {}) => {
       envelope?.status === 'completed' && envelope?.action === 'continue'
     ));
   return result('managed.task-disposition', passed);
+};
+
+export const gradeManagedIndependentFacts = ({ sessionTree = [], rootSessionId, childSessionIds = [] }) => {
+  const root = sessionTree.find(entry => entry.sessionId === rootSessionId);
+  const answer = root?.messages?.filter(row => row.info?.role === 'assistant' && row.info.time?.completed
+    && !row.info.error && row.info.finish === 'stop').at(-1);
+  const text = answer?.parts?.filter(part => part.type === 'text').map(part => part.text ?? '').join('\n') ?? '';
+  const values = [...text.matchAll(/\{[^{}]*"identity"\s*:[^{}]*\}/g)].map(match => {
+    try { return JSON.parse(match[0]); } catch { return null; }
+  });
+  return [result('managed-independent.facts', values.some(value => value?.identity === 60 && value.session === 60
+    && value.billing === 60 && value.elevated === 36 && value.standard === 144 && value.sentinel === 'bounded-context-control')),
+  result('managed-independent.children', childSessionIds.length === 3 && new Set(childSessionIds).size === 3)];
 };
 
 export const summarizeGraders = (graders = []) => {

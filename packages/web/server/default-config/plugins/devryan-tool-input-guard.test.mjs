@@ -70,8 +70,6 @@ describe('DevRyan tool input guard plugin', () => {
 
   test.each(['read', 'oc_read'])('rejects known binary paths before %s executes', async (tool) => {
     for (const readPath of [
-      '/tmp/project/image.png',
-      '/tmp/project/IMAGE.JPEG',
       '/tmp/project/report.pdf',
       '/tmp/project/archive.zip',
       '/tmp/project/font.woff2',
@@ -84,6 +82,17 @@ describe('DevRyan tool input guard plugin', () => {
         message: expect.stringContaining('read cannot load binary files'),
       });
     }
+  });
+
+  test.each(['.png', '.JPEG', '.gif', '.webp'])('uses native image attachment reads for %s and keeps text-only readers blocked', async (extension) => {
+    const filePath = `/tmp/project/image${extension}`;
+    await expect(beforeTool('read', { filePath })).resolves.toBeUndefined();
+    await expect(beforeTool('oc_read', { path: filePath })).rejects.toMatchObject({ code: 'DEVRYAN_TOOL_INPUT_INVALID' });
+    const hooks = await DevRyanToolInputGuardPlugin();
+    const result = { output: 'Image read successfully', attachments: [{ type: 'file', mime: 'image/png', url: 'data:image/png;base64,AQID' }] };
+    await hooks['tool.execute.after']({ tool: 'read', args: { filePath } }, result);
+    expect(result.attachments).toHaveLength(1);
+    expect(result.output).toBe('Image read successfully');
   });
 
   test.each(['read', 'oc_read'])('allows textual paths through %s', async (tool) => {
@@ -642,7 +651,7 @@ describe('DevRyan tool path guard', () => {
     await expect(before('read', { path: path.join(root, 'nowhere', 'image.png') })).rejects.toMatchObject(
       invalid('read.path points to a directory that does not exist'),
     );
-    await expect(before('read', { path: path.join(project, 'image.png') })).rejects.toMatchObject(
+    await expect(before('read', { path: path.join(project, 'archive.zip') })).rejects.toMatchObject(
       invalid('read cannot load binary files'),
     );
     await expect(before('grep', { path: `${project}/src ${project}/pages`, pattern: 'x' })).rejects.toMatchObject(

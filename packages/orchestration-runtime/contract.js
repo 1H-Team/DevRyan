@@ -1,5 +1,7 @@
+import { validateRequiredChecks, validateRequiredCheckReceipts } from './required-checks.js';
 import {
   MODEL_UNAVAILABLE_FAILURE_KIND,
+  isProviderAuthenticationFailure,
   PROVIDER_USAGE_LIMIT_FAILURE_KIND,
   classifyManagedTaskFailure,
   classifyProviderRetryFailure,
@@ -254,6 +256,8 @@ export const validateManagedTaskRecord = (task) => {
   if (task.status !== 'queued' && task.waitingReason !== null) {
     throw new TypeError('waitingReason must be null unless the task is queued');
   }
+  validateRequiredChecks(task.requiredChecks);
+  validateRequiredCheckReceipts(task.requiredCheckReceipts, task.requiredChecks);
   assertJsonCompatible(task, 'task');
   return task;
 };
@@ -293,6 +297,7 @@ const resolveManagedTaskAgentRetryAvailable = (task, failureKind) => (
   && task.attempt < 2
   && failureKind !== PROVIDER_USAGE_LIMIT_FAILURE_KIND
   && failureKind !== MODEL_UNAVAILABLE_FAILURE_KIND
+  && !isProviderAuthenticationFailure(task.failureReason)
   && !task.transportRecovery
 );
 
@@ -318,12 +323,13 @@ export const requiresManualModelRecovery = (task, resultEnvelope) => Boolean(
   && (
     isDefiniteProviderUsageLimit(task.failureReason)
     || isManagedTaskModelUnavailable(task.failureReason)
+    || isProviderAuthenticationFailure(task.failureReason)
     || Boolean(task.transportRecovery)
     || (task.mode === 'orchestrator' && task.dispatchGroupId !== null && task.attempt >= 2)
   )
 );
 
-const projectTaskForEvent = (task) => {
+const projectTaskForEvent = (task, resultEnvelope) => {
   const failureKind = classifyManagedTaskFailure(task.failureReason);
   return {
     owner: task.owner,
@@ -365,6 +371,7 @@ const projectTaskForEvent = (task) => {
     recoverablePreview: task.recoverablePreview,
     canonicalRefs: task.canonicalRefs,
     agentRetryAvailable: resolveManagedTaskAgentRetryAvailable(task, failureKind),
+    ...(resultEnvelope ? { manualRecoveryRequired: resultEnvelope.action === null && requiresManualModelRecovery(task, resultEnvelope) } : {}),
   };
 };
 
@@ -385,7 +392,7 @@ export const toManagedTaskEvent = (task, resultEnvelope = null) => {
     properties: {
       owner: MANAGED_TASK_OWNER,
       directory: task.directory,
-      task: projectTaskForEvent(task),
+      task: projectTaskForEvent(task, resultEnvelope),
       ...(resultEnvelope ? { resultEnvelope: structuredClone(resultEnvelope) } : {}),
     },
   };

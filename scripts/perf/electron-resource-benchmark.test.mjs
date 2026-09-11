@@ -164,7 +164,7 @@ describe('Electron resource benchmark metrics', () => {
 
   it('invalidates every scenario protocol when the fixture or owned-process dependencies change', async () => {
     const original = await lifecycleProtocolIdentity(async () => 'original module bytes');
-    for (const changed of ['loopback-opencode-fixture.mjs', '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs']) {
+    for (const changed of ['loopback-opencode-fixture.mjs', '../qa/history-scroll.mjs', '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs']) {
       const current = await lifecycleProtocolIdentity(async file => file === changed ? 'changed module bytes' : 'original module bytes');
       assert.notEqual(current, original, `Missing protocol dependency: ${changed}`);
     }

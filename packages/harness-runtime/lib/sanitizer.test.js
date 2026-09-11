@@ -3,6 +3,18 @@ import { describe, expect, test } from 'bun:test';
 import { createDiagnosticSanitizer } from './sanitizer.js';
 
 describe('diagnostic sanitizer', () => {
+  test('retains only the fixed managed owner identity used by scoped exports', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    const record = sanitizer.sanitizeRecord({ type: 'open_code_event', payload: {
+      type: 'openchamber:managed-task', properties: { owner: 'devryan',
+        task: { owner: 'devryan', rootSessionId: 'root', childSessionId: 'child' },
+        resultEnvelope: { owner: 'private-account-name' } },
+    } });
+    expect(record.payload.properties.owner).toBe('devryan');
+    expect(record.payload.properties.task.owner).toBe('devryan');
+    expect(record.payload.properties.resultEnvelope).toEqual({});
+  });
+
   test('keeps bounded memory extraction diagnostics and excludes conversation content', () => {
     const record = createDiagnosticSanitizer().sanitizeRecord({
       type: 'lifecycle', event: 'bot.memory.extraction.terminal_failure', payload: {

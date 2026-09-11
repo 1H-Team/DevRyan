@@ -48,11 +48,12 @@ export const HostPrimaryRecovery = React.memo(({ sessionId, showAvailability = f
       window.removeEventListener('openchamber:primary-recovery', onProjection); };
   }, [sessionId]);
   const record = snapshot?.record;
-  if (showAvailability && !snapshot?.enforced && !record?.readOnly) return <p className="mb-2 text-sm text-muted-foreground">
+  const repeatedInput = record?.reason === 'managed_repeated_preexecution_rejection';
+  if (showAvailability && !snapshot?.enforced && !record?.readOnly && !repeatedInput) return <p className="mb-2 text-sm text-muted-foreground">
     {snapshot?.supported ? 'Automatic recovery is in observe mode. Manual recovery remains available.'
       : 'Automatic recovery safeguards are unavailable for this runtime. Manual recovery remains available.'}
   </p>;
-  if (!record || (!snapshot.enforced && !record.readOnly)
+  if (!record || (!snapshot.enforced && !record.readOnly && !repeatedInput)
     || (record.state === 'observing' && record.reason !== 'provider_input_progress_unavailable') || record.state === 'superseded'
     || (record.state === 'completed' && !record.attemptCount)) return null;
   const act = async (action: 'cancel' | 'continue') => {
@@ -62,11 +63,15 @@ export const HostPrimaryRecovery = React.memo(({ sessionId, showAvailability = f
     finally { setPending(false); }
   };
   return <div role="status" aria-live="polite" className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
-    <p className="font-medium">{record.reason === 'provider_input_progress_unavailable' ? 'Provider argument progress cannot be verified' : labels[record.state]}</p>
+    <p className="font-medium">{repeatedInput ? 'Paused after repeated invalid tool input'
+      : record.reason === 'provider_input_progress_unavailable' ? 'Provider argument progress cannot be verified' : labels[record.state]}</p>
     <p className="mt-1 text-muted-foreground">{record.providerID}/{record.modelID} · {record.agent}{record.variant ? ` · ${record.variant}` : ''}</p>
-    <p className="mt-1">Completed work and the original error remain in this session. Automatic recovery can only inspect files.</p>
+    <p className="mt-1">{repeatedInput ? 'The same input was rejected before execution three times. Review the input or send a corrected instruction to continue.'
+      : 'Completed work and the original error remain in this session. Automatic recovery can only inspect files.'}</p>
     {record.reason === 'provider_input_progress_unavailable' && <p className="mt-1">This runtime does not report incremental tool arguments. The watchdog will not interrupt this phase automatically. Stop remains available.</p>}
-    {record.reason && <p className="mt-1 text-muted-foreground">{record.reason === 'recovery_tool_outcome_unknown'
+    {record.reason && !repeatedInput && <p className="mt-1 text-muted-foreground">{record.failureKind === 'provider_authentication'
+      ? 'Provider sign-in failed. Reconnect the provider before continuing.'
+      : record.reason === 'recovery_tool_outcome_unknown'
       ? 'A tool may have changed files before the timeout. Automatic retry is paused; review the outcome before continuing.'
       : record.providerID === 'anthropic' && record.reason === 'chunk_timeout' ? 'Claude stopped sending data.'
       : record.reason.replaceAll('_', ' ')}</p>}

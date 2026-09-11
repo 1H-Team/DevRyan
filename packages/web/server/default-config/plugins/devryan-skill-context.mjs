@@ -141,8 +141,8 @@ const buildSkillAliasIndex = (skills) => {
 
     for (const alias of [name, slug]) {
       const key = normalizeSkillKey(alias);
-      // First writer wins so a slug collision cannot steal another skill's key.
       if (key && !byNormalized.has(key)) byNormalized.set(key, name);
+      else if (key && byNormalized.get(key) !== name) byNormalized.set(key, null);
     }
   }
 
@@ -158,13 +158,17 @@ const resolveSkillAlias = (requested, index) => {
   if (!key) return null;
 
   const exact = index.byNormalized.get(key);
+  if (index.byNormalized.has(key) && exact === null) return null;
   if (exact) return exact;
 
   // "accessibility" -> "Accessibility (a11y)": the request is a prefix of the
   // registered key. Only accept an unambiguous single match.
   const prefixed = [];
   for (const [candidateKey, name] of index.byNormalized) {
-    if (candidateKey.startsWith(key) || key.startsWith(candidateKey)) prefixed.push(name);
+    if (candidateKey.startsWith(key) || key.startsWith(candidateKey)) {
+      if (name === null) return null;
+      prefixed.push(name);
+    }
   }
   const unique = Array.from(new Set(prefixed));
   return unique.length === 1 ? unique[0] : null;

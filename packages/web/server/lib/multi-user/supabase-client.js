@@ -1,3 +1,5 @@
+import { createSupabaseTraffic, supabaseTrafficOperation } from './supabase-traffic.js';
+
 const isLegacyJwtKey = (value) => typeof value === 'string' && value.split('.').length === 3;
 
 const DEFAULT_STORAGE_TIMEOUT_MS = 30_000;
@@ -14,8 +16,9 @@ export class SupabaseRequestError extends Error {
     this.payload = payload;
   }
 }
-const parseResponse = async (response) => {
+const parseResponse = async (response, onBody = () => {}) => {
   const text = await response.text();
+  onBody(Buffer.byteLength(text, 'utf8'));
   if (!text) return null;
   try {
     return JSON.parse(text);
@@ -109,7 +112,22 @@ const validateStorageObjectLimit = (maximumBytes) => {
   return maximumBytes;
 };
 
-export function createSupabaseServerClient({ url, publishableKey, secretKey, fetchImpl = fetch }) {
+export function createSupabaseServerClient({
+  url, publishableKey, secretKey, fetchImpl = fetch,
+  isConnectionEnabled = () => true,
+  traffic = createSupabaseTraffic(),
+}) {
+  const beginRequest = (pathname, method) => {
+    const operation = supabaseTrafficOperation(pathname, method);
+    if (!isConnectionEnabled()) {
+      traffic.blocked(operation);
+      const error = new SupabaseRequestError('Supabase is disconnected on this host', { status: 503 });
+      error.code = 'supabase_disconnected';
+      throw error;
+    }
+    traffic.requested(operation);
+    return operation;
+  };
   const request = async (pathname, {
     method = 'GET',
     body,
@@ -131,13 +149,17 @@ export function createSupabaseServerClient({ url, publishableKey, secretKey, fet
     if (body !== undefined) requestHeaders['Content-Type'] = 'application/json';
     if (prefer) requestHeaders.Prefer = prefer;
 
+    const operation = beginRequest(pathname, method);
     const response = await fetchImpl(`${url}${pathname}`, {
       method,
       headers: requestHeaders,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
+    }).catch((error) => {
+      traffic.received(operation, 0, 0);
+      throw error;
     });
-    const payload = await parseResponse(response);
+    const payload = await parseResponse(response, (bytes) => traffic.received(operation, bytes, response.status));
     if (!response.ok) {
       throw new SupabaseRequestError(errorMessage(payload, `Supabase request failed (${response.status})`), {
         status: response.status,
@@ -199,13 +221,18 @@ export function createSupabaseServerClient({ url, publishableKey, secretKey, fet
       ...(contentType ? { 'Content-Type': contentType } : {}),
     };
     if (isLegacyJwtKey(secretKey)) headers.Authorization = `Bearer ${secretKey}`;
+    const operation = beginRequest(pathname, method);
     const response = await fetchImpl(`${url}${pathname}`, {
       method,
       headers,
       body,
       signal: AbortSignal.timeout(validateStorageTimeout(timeoutMs)),
+    }).catch((error) => {
+      traffic.received(operation, 0, 0);
+      throw error;
     });
     const responseBody = await readBoundedBody(response, maximumResponseBytes);
+    traffic.received(operation, responseBody.byteLength, response.status);
     if (!response.ok) {
       const payload = parseBoundedJson(responseBody);
       throw new SupabaseRequestError(
@@ -217,6 +244,7 @@ export function createSupabaseServerClient({ url, publishableKey, secretKey, fet
   };
 
   return {
+    traffic,
     rest,
     rpc,
     async storageUpload(bucket, objectName, bytes, {

@@ -1,4 +1,5 @@
 import { resolveProviderPromptTools } from '../../packages/orchestration-runtime/provider-prompt-tools.js';
+import { createManagedRecoveryMessageId } from '../../packages/orchestration-runtime/transport-recovery.js';
 import { redactUrl } from './report.mjs';
 import { retainPrivateToolInterval } from './tool-evidence.mjs';
 
@@ -176,6 +177,25 @@ export const createEvaluationClient = (options = {}) => {
 
   return Object.freeze({
     pollIntervalMs,
+    async getHarnessPreflight(directory, selection, signal) {
+      return await request(appendQuery('/diagnostics/harness/preflight', { directory, providerID: selection.providerId,
+        modelID: selection.modelId, agent: selection.agent, ...(selection.variant === null ? {} : { variant: selection.variant }) }),
+      { signal, label: 'harness.preflight' });
+    },
+    async getAdvertisedAvailability(directory, selection, signal) {
+      const catalog = await request(appendQuery('/provider', { directory }), { signal, label: 'provider.catalog' });
+      if (!Array.isArray(catalog?.all) || !Array.isArray(catalog?.connected)) return { available: null, variantAvailable: null };
+      const provider = catalog.all.find((entry) => entry?.id === selection.providerId);
+      const model = provider?.models?.[selection.modelId];
+      return { available: Boolean(model && catalog.connected.includes(selection.providerId)),
+        variantAvailable: selection.variant === null ? true : model?.variants && typeof model.variants === 'object'
+          ? Object.hasOwn(model.variants, selection.variant) : null };
+    },
+    async getHarnessTrace(sessionId, directory, signal) {
+      const trace = await request('/diagnostics/export', { method: 'POST', body: { scope: 'task', sessionID: sessionId,
+        directory, format: 'chrome-trace' }, signal, label: 'diagnostics.trace' });
+      return trace?.metadata ?? null;
+    },
     async createSession(directory, title, signal) {
       const session = await request(appendQuery('/session', { directory }), {
         method: 'POST',
@@ -199,6 +219,9 @@ export const createEvaluationClient = (options = {}) => {
       return await request(appendQuery(`/session/${encodeURIComponent(sessionId)}/prompt_async`, { directory }), {
         method: 'POST',
         body: {
+          // Reserve the real-user anchor before the single submission. A lost
+          // acknowledgement is reconciled by runSessionTurn, never replayed.
+          messageID: createManagedRecoveryMessageId(Date.now()),
           agent: selection.agent,
           model: {
             providerID: selection.providerId,
@@ -886,7 +909,16 @@ export const runSessionTurn = async (options = {}) => {
   const statuses = [];
   const knownSessionIds = new Set();
   let rootSessionId = '';
+  let harnessEvidence = { startFingerprint: null, finishFingerprint: null, availability: null, trace: null };
   try {
+    const metadata = await Promise.allSettled([
+      client.getHarnessPreflight?.(directory, selection, signal), client.getAdvertisedAvailability?.(directory, selection, signal),
+    ]);
+    harnessEvidence.startFingerprint = metadata[0].status === 'fulfilled' ? metadata[0].value?.runFingerprint ?? null : null;
+    harnessEvidence.availability = metadata[1].status === 'fulfilled' ? metadata[1].value ?? null : null;
+    if (harnessEvidence.availability?.available === false || harnessEvidence.availability?.variantAvailable === false) {
+      throw Object.assign(new Error('Pinned evaluation model or variant is not advertised'), { code: 'evaluation_model_unavailable' });
+    }
     const session = await client.createSession(directory, title, signal);
     rootSessionId = session.id;
     knownSessionIds.add(rootSessionId);
@@ -902,7 +934,13 @@ export const runSessionTurn = async (options = {}) => {
     });
     const timingPayload = await client.getTurnTiming(rootSessionId, signal);
     const { sessionTree, managedPayload, terminalEvidence } = terminal;
+    const diagnostics = await Promise.allSettled([
+      client.getHarnessPreflight?.(directory, selection, signal), client.getHarnessTrace?.(rootSessionId, directory, signal),
+    ]);
+    harnessEvidence.finishFingerprint = diagnostics[0].status === 'fulfilled' ? diagnostics[0].value?.runFingerprint ?? null : null;
+    harnessEvidence.trace = diagnostics[1].status === 'fulfilled' ? diagnostics[1].value ?? null : null;
     return {
+      harnessEvidence,
       rootSessionId,
       childSessionIds: sessionTree.slice(1).map((entry) => entry.sessionId),
       sessionTree,
@@ -934,6 +972,7 @@ export const runSessionTurn = async (options = {}) => {
       : options.signal?.aborted
         ? new EvaluationAbortedError()
         : error;
+    normalizedError.harnessEvidence = harnessEvidence;
     if (rootSessionId) {
       normalizedError.cleanup = await abortSessionTree(client, rootSessionId, directory, {
         timeoutMs: options.cleanupTimeoutMs,

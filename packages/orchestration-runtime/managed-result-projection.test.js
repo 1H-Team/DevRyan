@@ -55,7 +55,7 @@ describe('managed result projection and paging', () => {
     expect(resolveManagedResultMode('eager')).toBe('eager');
     expect(resolveManagedResultMode('reference')).toBe('reference');
     for (const value of [null, '', 'lazy', true, 1]) {
-      expect(() => resolveManagedResultMode(value)).toThrow('resultMode must be eager or reference');
+      expect(() => resolveManagedResultMode(value)).toThrow('resultMode must be eager, reference or compact');
     }
   });
 

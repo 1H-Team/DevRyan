@@ -20,3 +20,6 @@ export * from './lib/session-changes.js';
 export * from './lib/session-changes-host.js';
 export * from './lib/session-changes-tools.js';
 export * from './lib/worktree-bootstrap.js';
+export * from './lib/task-context.js';
+export * from './lib/objective-progress.js';
+export { createHarnessTraceCollector } from './lib/trace.js';

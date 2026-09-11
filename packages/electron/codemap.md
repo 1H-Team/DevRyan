@@ -260,3 +260,10 @@ and desktop-host broker bridges.
 
 - **Extracted native boundaries**: `desktop-settings.mjs` owns serialized settings and host/window persistence with live data-root/window access; `desktop-menu.mjs` owns menu templates and dispatch; `native-notifications.mjs` owns focus-aware notification lifetime/click behavior. Factories receive services and callbacks; main preserves startup/IPC ordering.
 - **Prepared packaging**: `scripts/stage-bot-manifest.mjs` stages/verifies the required release manifest. `scripts/package-prepared.mjs` enforces it before the builder and checks runtime-service artifacts after success. `prepare:native` can run before release images finish. See [release pipeline](../../docs/RELEASE_PIPELINE.md).
+
+## Supabase mode restart
+
+`supabase-host-restart.mjs` drains the web owner and releases its runtime-service
+lock before app relaunch or launchd recovery. `main.mjs` restores the enrolled local
+owner through native startup/bootstrap and refreshes attached windows after a
+service generation change. See [connection behavior](../../docs/SUPABASE_CONNECTION.md).

@@ -1,3 +1,4 @@
+import { restartSupabaseHost } from './supabase-host-restart.mjs';
 import { createDesktopMenu } from './desktop-menu.mjs';
 import { createNativeNotifications } from './native-notifications.mjs';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, safeStorage, session, shell, systemPreferences, WebContentsView } from 'electron';
@@ -899,6 +900,19 @@ const spawnLocalServer = async () => {
     host: bindHost,
     attachSignals: false,
     exitOnShutdown: false,
+    onRestartHost: () => restartSupabaseHost({
+      handle: state.serverHandle,
+      coordinator: state.runtimeServiceCoordinator,
+      serviceMode: isRuntimeServiceMode,
+      relaunch: () => app.relaunch(),
+      exit: (code) => app.exit(code),
+      onStopped: () => {
+        state.serverHandle = null;
+        state.sidecarUrl = null;
+        state.runtimeServiceCoordinator = null;
+        state.runtimeServiceOwnsServer = false;
+      },
+    }),
     onDesktopNotification: (payload) => {
       if (!isRuntimeServiceMode) return maybeShowNativeNotification(payload);
       return desktopHostBrokerClient.notify(payload).catch(() => undefined);
@@ -1060,6 +1074,13 @@ const spawnLocalServer = async () => {
   const url = buildLocalUrl(port);
 
   state.serverHandle = handle;
+  if (!isRuntimeServiceMode) {
+    const ownerCookie = await handle.issueLocalOwnerSession?.();
+    if (ownerCookie) await session.defaultSession.cookies.set({
+      url, name: ownerCookie.name, value: ownerCookie.value, path: '/', httpOnly: true,
+      secure: false, sameSite: 'strict', expirationDate: Math.floor(Date.now() / 1_000) + ownerCookie.maxAge,
+    });
+  }
   state.sidecarUrl = url;
   state.runtimeServiceOwnsServer = isRuntimeServiceMode;
 
@@ -1137,7 +1158,7 @@ const shutdownOwnedRuntimeService = () => {
 const runtimeServiceModeEnabled = () => readSettingsRoot().productionBotsRuntimeMode === 'service';
 
 const setRuntimeServiceCookie = async (url, setCookieHeader) => {
-  const match = /^devryan_runtime_service=([^;]+)/.exec(setCookieHeader || '');
+  const match = /(?:^|,\s*)devryan_runtime_service=([^;]+)/.exec(setCookieHeader || '');
   if (!match) {
     const error = new Error('Runtime service did not issue a renderer session');
     error.code = 'runtime_service_cookie_missing';
@@ -1152,6 +1173,11 @@ const setRuntimeServiceCookie = async (url, setCookieHeader) => {
     secure: false,
     sameSite: 'strict',
     expirationDate: Math.floor(Date.now() / 1_000) + (12 * 60 * 60),
+  });
+  const owner = /(?:^|,\s*)devryan_local_owner=([^;]+)/.exec(setCookieHeader || '');
+  if (owner) await session.defaultSession.cookies.set({
+    url, name: 'devryan_local_owner', value: owner[1], path: '/', httpOnly: true,
+    secure: false, sameSite: 'strict', expirationDate: Math.floor(Date.now() / 1_000) + (30 * 24 * 60 * 60),
   });
 };
 
@@ -1224,7 +1250,8 @@ const stopDesktopHostBroker = async ({ notifyService = true } = {}) => {
   await broker?.close().catch(() => undefined);
 };
 
-const connectToRuntimeService = async () => {
+let runtimeServiceReconnectPromise = null;
+const connectToRuntimeService = async ({ reconnecting = false } = {}) => {
   const descriptor = await readRuntimeServiceDescriptor({ dataDirectory: dataRootDirectory() });
   if (!isRuntimeServiceProtocolSupported(descriptor.protocolVersion)) {
     const error = new Error('The background runtime protocol is not supported by this app version');
@@ -1273,17 +1300,33 @@ const connectToRuntimeService = async () => {
     }
     state.runtimeServiceClient = true;
     state.sidecarUrl = url;
+    if (state.desktopHostLeaseRefreshTimer) clearInterval(state.desktopHostLeaseRefreshTimer);
     state.desktopHostLeaseRefreshTimer = setInterval(() => {
       void registerDesktopHostLease(url, broker).catch((error) => {
         log.warn('[runtime-service] desktop host lease refresh failed', {
           code: error?.code || 'desktop_host_registration_failed',
         });
+        if (runtimeServiceReconnectPromise) return;
+        runtimeServiceReconnectPromise = (async () => {
+          const fresh = await readRuntimeServiceDescriptor({ dataDirectory: dataRootDirectory() });
+          if (fresh.instanceId === descriptor.instanceId) return;
+          const nextUrl = await connectToRuntimeService({ reconnecting: true });
+          // Refresh only app windows attached to the replaced local owner.
+          for (const window of BrowserWindow.getAllWindows()) {
+            if (window.isDestroyed()) continue;
+            const previous = window.webContents.getURL();
+            if (!previous.startsWith(`${url}/`)) continue;
+            await window.loadURL(`${nextUrl}${previous.slice(url.length)}`);
+          }
+        })().catch((failure) => {
+          log.warn('[runtime-service] reconnect deferred', { code: failure?.code || 'runtime_service_unavailable' });
+        }).finally(() => { runtimeServiceReconnectPromise = null; });
       });
     }, 10_000);
     state.desktopHostLeaseRefreshTimer.unref?.();
     return url;
   } catch (error) {
-    await stopDesktopHostBroker({ notifyService: false });
+    if (!reconnecting) await stopDesktopHostBroker({ notifyService: false });
     throw error;
   }
 };

@@ -68,7 +68,11 @@ export const registerDiagnosticsRoutes = (app, options = {}) => {
 
   app.post('/api/diagnostics/export', async (req, res) => {
     try {
+      if (req.body?.format !== undefined && !['zip', 'chrome-trace'].includes(req.body.format)) {
+        return res.status(400).json({ error: 'Diagnostic format must be zip or chrome-trace' });
+      }
       const scope = normalizeScope(req.body || {});
+      await runtime.journal.flush?.();
       const bundle = await createDiagnosticsExport({
         journal: runtime.journal,
         sanitizer: runtime.sanitizer,
@@ -76,6 +80,12 @@ export const registerDiagnosticsRoutes = (app, options = {}) => {
         receipts: await runtime.getWorktreeReceipts(),
         evidence: await options.getEvidenceRecords?.(scope) ?? [],
       });
+      if (req.body?.format === 'chrome-trace') {
+        const trace = bundle.files.find((file) => file.name === 'DevRyan-trace.json');
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('Content-Disposition', 'attachment; filename="DevRyan-trace.json"');
+        return res.json(JSON.parse(trace.data));
+      }
       const archive = await writeDiagnosticsZip(bundle, {
         createArchive: () => new yazl.ZipFile(),
       });

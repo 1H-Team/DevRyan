@@ -16,6 +16,7 @@ import {
 import {
   gradeCaseOutcome,
   gradeManagedTaskOutcome,
+  gradeManagedIndependentFacts,
   gradeOracleReviewOutcome,
   gradeToolRequirements,
 } from './graders.mjs';
@@ -145,6 +146,7 @@ const CONTEXT_ANALYSIS_CASE_IDS = new Set([
   'context-large-analysis',
   'context-explorer-analysis',
   'context-bounded-lookup',
+  'managed-independent',
 ]);
 
 const isOracleReviewCase = (caseId) => ORACLE_REVIEW_CASE_IDS.has(caseId);
@@ -168,6 +170,19 @@ export const buildCaseDefinition = (caseId, runFiles) => {
         `Analyze the generated route inventory across ${runFiles.sourceRelativePath} and ${runFiles.testRelativePath} without changing either file.`,
         'Derive exact counts grouped by domain and risk, identify the sentinel contract, and return a concise summary.',
         'This is broad, multi-file derived analysis: use at least one applicable ctx_* tool. Do not delegate, write, edit, patch, or create files.',
+      ].join(' '),
+    };
+  }
+  if (caseId === 'managed-independent') {
+    return {
+      caseId,
+      prompt: [
+        `Inspect only ${runFiles.sourceRelativePath} and ${runFiles.testRelativePath}; preserve every file.`,
+        'Launch three independent read-only managed children through devryan_task before collecting: Explorer counts routes by domain; Librarian counts elevated and standard routes; Oracle checks the inventory test contract and sentinel declaration.',
+        'Give each its exact owned question and these two file paths, no dependencies, no edits, at most three concise facts, and stop as soon as the answer is established. Do not ask for sleeps or prolonged work.',
+        `After dispatch, independently read the CONTEXT_SENTINEL declaration in ${runFiles.sourceRelativePath} yourself while children run if the host permits read overlap; otherwise perform that read after the barrier clears.`,
+        'Use wait_any when advertised, otherwise wait. Collect and disposition every result with continue before finishing. Do not start extra children or run repeated checks.',
+        'Finish with this JSON object filled from the observed evidence: {"identity":number,"session":number,"billing":number,"elevated":number,"standard":number,"sentinel":string}.',
       ].join(' '),
     };
   }
@@ -425,12 +440,15 @@ export const executeEvaluationCase = async (options = {}) => {
         finalTest,
       }),
     ];
-    if (caseId === 'managed-change') {
+    if (caseId === 'managed-change' || caseId === 'managed-independent') {
       graders.push(gradeManagedTaskOutcome({
         rootSessionId: sessionResult?.rootSessionId,
         childSessionIds: sessionResult?.childSessionIds,
         snapshot: sessionResult?.managedSnapshot,
       }));
+    }
+    if (caseId === 'managed-independent') {
+      graders.push(...gradeManagedIndependentFacts(sessionResult ?? {}));
     }
     if (isOracleReviewCase(caseId)) {
       graders.push(...gradeOracleReviewOutcome({
@@ -448,6 +466,7 @@ export const executeEvaluationCase = async (options = {}) => {
         : Date.now() - startedAt,
       tools,
       graders,
+      harnessEvidence: sessionResult?.harnessEvidence ?? sessionError?.harnessEvidence ?? null,
       turnTiming: sessionResult?.turnTiming ?? { records: [] },
       managedSnapshot: sessionResult?.managedSnapshot ?? { tasks: [], resultEnvelopes: [] },
       sessionIds: [

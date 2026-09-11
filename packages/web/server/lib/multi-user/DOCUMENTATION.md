@@ -791,3 +791,13 @@ Apply `20260830023917_purge_user_analytics.sql`, followed by
 per-user Clear Analytics action. The latter installs the exact-target trigger
 bypass and complete-snapshot RPC contract. Both RPC revisions are security
 invoker and grant execution exclusively to `service_role`.
+
+## Persistent Supabase disconnection
+
+The connection controller separates configured credentials from effective network
+access. Its direct-local owner boundary precedes private capability routes and
+ordinary authentication. See [Supabase connection](../../../../../docs/SUPABASE_CONNECTION.md)
+for restart ownership, offline authentication, local continuity, telemetry and
+recovery. The session vault also stores encrypted local-owner sessions and explicit
+provenance for chats created while disconnected. Authentication reads omit personal
+settings; settings routes load those separately without extending policy freshness.

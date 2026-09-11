@@ -178,13 +178,13 @@ export const createUserPolicyReader = ({ supabase, logger = console } = {}) => {
   let warnedAboutLegacySchema = false;
   let warnedAboutFeatureOverridesSchema = false;
 
-  return async (userId) => {
+  return async (userId, { includeSettings = true } = {}) => {
     const baseQuery = {
       user_id: `eq.${String(userId || '').replace(/[(),]/g, '')}`,
       limit: 1,
     };
     const select = async (columns) => supabase.rest('user_policies', {
-      query: { ...baseQuery, select: columns },
+      query: { ...baseQuery, select: includeSettings ? columns : columns.split(',').filter((column) => column !== 'settings_overrides').join(',') },
       maybeSingle: true,
     });
     try {

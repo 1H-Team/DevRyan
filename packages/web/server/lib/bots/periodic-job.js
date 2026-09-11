@@ -11,6 +11,7 @@ export function createBotPeriodicJob({
   name,
   run,
   intervalMs,
+  idleIntervalMs = intervalMs,
   maxBackoffMs = DEFAULT_MAX_BACKOFF_MS,
   logger = null,
   random = Math.random,
@@ -20,6 +21,7 @@ export function createBotPeriodicJob({
   if (typeof name !== 'string' || !JOB_NAME.test(name) || typeof run !== 'function'
     || !Number.isInteger(intervalMs) || intervalMs < 10
     || !Number.isInteger(maxBackoffMs) || maxBackoffMs < intervalMs
+    || !Number.isInteger(idleIntervalMs) || idleIntervalMs < intervalMs
     || typeof random !== 'function') {
     throw new Error('Bot periodic job configuration is invalid');
   }
@@ -29,6 +31,7 @@ export function createBotPeriodicJob({
   let consecutiveFailures = 0;
   let currentDelay = intervalMs;
   let lastLoggedCode = null;
+  let wakeRequested = false;
 
   const schedule = (delayMs) => {
     if (!started || timer) return;
@@ -66,15 +69,17 @@ export function createBotPeriodicJob({
     inFlight = (async () => {
       let delayMs = intervalMs;
       try {
-        await run();
+        const result = await run();
         delayMs = onSuccess();
+        if (result?.idle === true) delayMs = idleIntervalMs;
       } catch (error) {
         delayMs = onFailure(error);
       }
       return delayMs;
     })().then((delayMs) => {
       inFlight = null;
-      if (started) schedule(delayMs);
+      if (started) schedule(wakeRequested ? intervalMs : delayMs);
+      wakeRequested = false;
     });
     return inFlight;
   };
@@ -93,7 +98,12 @@ export function createBotPeriodicJob({
       timer = null;
       if (inFlight) await inFlight;
     },
-    trigger: () => tick(),
+    trigger: () => {
+      if (timer) clearTimeoutImpl(timer);
+      timer = null;
+      if (inFlight) wakeRequested = true;
+      return tick();
+    },
     get running() {
       return started;
     },

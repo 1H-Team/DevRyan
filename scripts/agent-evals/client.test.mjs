@@ -750,7 +750,9 @@ describe('DevRyan loopback evaluation client', () => {
     }]);
     assert.equal(result.sessionTree[0].messages[0].parts[1].text, 'secret assistant response');
     const promptRequest = requests.find((item) => item.pathname.endsWith('/prompt_async'));
+    assert.match(promptRequest.body.messageID, /^msg_[a-f0-9]{26}$/);
     assert.deepEqual(promptRequest.body, {
+      messageID: promptRequest.body.messageID,
       agent: 'builder',
       model: { providerID: 'provider-pinned', modelID: 'model-pinned' },
       variant: 'high',
@@ -829,6 +831,21 @@ describe('DevRyan loopback evaluation client', () => {
     assert.equal(bodies[4].tools.oc_write, undefined);
     assert.equal(bodies[4].tools.shell, undefined);
     assert.equal(bodies[4].tools.devryan_task, undefined);
+    assert.equal(new Set(bodies.map(body => body.messageID)).size, bodies.length);
+  });
+
+  test('does not resubmit an anchored prompt after losing its acknowledgement', async () => {
+    const submissions = [];
+    const { baseUrl } = await startServer(async (request, response) => {
+      submissions.push(await readJson(request));
+      response.destroy();
+    });
+    const client = createEvaluationClient({ baseUrl });
+    await assert.rejects(client.promptSession('ses_owned', '/tmp/fixture', {
+      providerId: 'openai', modelId: 'gpt-6-astra', agent: 'orchestrator', variant: 'medium',
+    }, 'Inspect the owned fixture.', undefined));
+    assert.equal(submissions.length, 1);
+    assert.match(submissions[0].messageID, /^msg_[a-f0-9]{26}$/);
   });
 
   test('fetches parent and recursive child messages once with cycle protection', async () => {

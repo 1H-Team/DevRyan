@@ -54,6 +54,7 @@ export function createPrimaryRecoveryHost(options) {
     return data;
   };
   const observeTurn = async (record, init = {}) => {
+    const { includeTodos, ...requestInit } = init;
     const started = Date.now();
     const messages = [];
     let cursor;
@@ -63,7 +64,7 @@ export function createPrimaryRecoveryHost(options) {
     // A bound is a failure, never proof that a partial transcript is complete.
     while (!complete && messages.length < 10_000 && Date.now() - started < 15_000) {
       const query = new URLSearchParams({ limit: '100', ...(cursor ? { before: cursor } : {}) });
-      const { data, response, bytes } = await request(`/session/${record.sessionID}/message?${query}`, record.directory, init);
+      const { data, response, bytes } = await request(`/session/${record.sessionID}/message?${query}`, record.directory, requestInit);
       totalBytes += bytes;
       if (totalBytes > 32 * 1024 * 1024) throw recoveryError('recovery_transcript_too_large');
       if (!Array.isArray(data) || data.some((m) => !object(m.info) || !Array.isArray(m.parts))) {
@@ -75,10 +76,11 @@ export function createPrimaryRecoveryHost(options) {
       if (!cursor || seen.has(cursor)) break;
       seen.add(cursor);
     }
-    const [currentSession, statuses, permissions, questions, barrier] = await Promise.all([
-      session(record.sessionID, record.directory, init), request('/session/status', record.directory, init),
-      request('/permission', record.directory, init), request('/question', record.directory, init),
+    const [currentSession, statuses, permissions, questions, barrier, todos] = await Promise.all([
+      session(record.sessionID, record.directory, requestInit), request('/session/status', record.directory, requestInit),
+      request('/permission', record.directory, requestInit), request('/question', record.directory, requestInit),
       options.managedBarrier(record.sessionID),
+      includeTodos ? request(`/session/${record.sessionID}/todo`, record.directory, requestInit) : null,
     ]);
     if (!object(statuses.data) || Object.values(statuses.data).some((s) => !object(s) || !['idle', 'busy', 'retry'].includes(s.type))
       || !Array.isArray(permissions.data) || !Array.isArray(questions.data) || !object(barrier) || typeof barrier.state !== 'string') {
@@ -87,9 +89,11 @@ export function createPrimaryRecoveryHost(options) {
     // OpenCode 1.18.25 removes idle entries from a successful status map. A
     // missing entry alone is insufficient: existence, transcript and blockers
     // are independently checked here and by inspectRecoveryTurn.
-    return { session: currentSession, messages, complete,
+    const blockedByRequests = [...permissions.data, ...questions.data].some((p) => p.sessionID === record.sessionID);
+    return { session: currentSession, messages, complete, blockedByRequests, managedBarrierState: barrier.state,
+      ...(includeTodos ? { todos: todos?.data } : {}),
       status: statuses.data[record.sessionID]?.type ?? 'idle',
-      blocked: barrier.state !== 'clear' || [...permissions.data, ...questions.data].some((p) => p.sessionID === record.sessionID) };
+      blocked: barrier.state !== 'clear' || blockedByRequests };
   };
   const abortSession = (r) => request(`/session/${r.sessionID}/abort`, r.directory, { method: 'POST', body: '{}' });
   const controller = createPrimaryRecoveryController({
@@ -99,7 +103,7 @@ export function createPrimaryRecoveryHost(options) {
     isAnthropicConformant: options.isAnthropicConformant,
     progressTimeoutMs: options.progressTimeoutMs ?? (process.env.DEVRYAN_PROVIDER_PROGRESS_TIMEOUT_MS === '0' ? false
       : process.env.DEVRYAN_PROVIDER_PROGRESS_TIMEOUT_MS ? Number(process.env.DEVRYAN_PROVIDER_PROGRESS_TIMEOUT_MS) : undefined),
-    isManaged: options.isManaged, authorize: options.authorize,
+    isManaged: options.isManaged, authorize: options.authorize, classifyFailure: options.classifyFailure,
     publishEvent: options.publishEvent, recordIncident: options.recordIncident,
     observeTurn, abortSession,
     getToolPolicy: async (record) => {

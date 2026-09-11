@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,9 @@ const CONTEXT_EXECUTE_TOOLS = new Set([
 ]);
 
 const READ_TOOLS = new Set(['read', 'oc_read']);
+// Pinned OpenCode 1.18.30 native ReadTool returns these as typed image
+// attachments. Text-only compatibility readers still cannot load their bytes.
+const NATIVE_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 const SHELL_TOOLS = new Set(['bash', 'shell']);
 
 const BINARY_READ_EXTENSIONS = new Set([
@@ -172,12 +176,13 @@ const validateGrepInput = (args) => {
   );
 };
 
-const validateReadInput = (args) => {
+const validateReadInput = (args, tool) => {
   const readPath = getReadPath(args);
   if (!readPath) throw inputError('read.path must be a non-empty string.');
   if (!isKnownBinaryReadPath(readPath)) return;
+  if (tool === 'read' && NATIVE_IMAGE_EXTENSIONS.has(getPathExtension(readPath))) return;
   throw inputError(
-    `read cannot load binary files${getPathExtension(readPath) ? ` with extension ${getPathExtension(readPath)}` : ''} as text. Use an appropriate image, document, archive, media, or metadata inspection tool; do not retry the raw read.`,
+    `read cannot load binary files${getPathExtension(readPath) ? ` with extension ${getPathExtension(readPath)}` : ''} as text. Use native read with filePath for PNG/JPEG/GIF/WebP image attachments when available, or devryan_document for supported documents. Do not retry this raw read.`,
   );
 };
 
@@ -590,22 +595,37 @@ export const DevRyanToolInputGuardPlugin = async (pluginInput = {}, testOptions 
 
   return {
     'tool.execute.before': async (input, output) => {
-      validateToolPathInput(input?.tool, output?.args, { directory });
-      if (READ_TOOLS.has(input?.tool)) {
-        validateReadInput(output?.args);
-        return;
-      }
-      if (input?.tool === 'grep') {
-        validateGrepInput(output?.args);
-        return;
-      }
-      if (CONTEXT_EXECUTE_TOOLS.has(input?.tool)) {
-        validateContextExecuteInput(output?.args);
-        return;
-      }
-      if (SHELL_TOOLS.has(input?.tool)) {
-        enforceShellTimeout(output?.args);
-        await shellPolicies.before(input, output?.args);
+      try {
+        validateToolPathInput(input?.tool, output?.args, { directory });
+        if (READ_TOOLS.has(input?.tool)) {
+          validateReadInput(output?.args, input.tool);
+          return;
+        }
+        if (input?.tool === 'grep') {
+          validateGrepInput(output?.args);
+          return;
+        }
+        if (CONTEXT_EXECUTE_TOOLS.has(input?.tool)) {
+          validateContextExecuteInput(output?.args);
+          return;
+        }
+        if (SHELL_TOOLS.has(input?.tool)) {
+          enforceShellTimeout(output?.args);
+          await shellPolicies.before(input, output?.args);
+        }
+      } catch (error) {
+        const reason = error?.code === 'DEVRYAN_TOOL_INPUT_INVALID' ? 'tool_input_invalid'
+          : error?.code === 'DEVRYAN_BINARY_READ_BLOCKED' ? 'binary_read_blocked' : null;
+        const observer = globalThis[Symbol.for('devryan.preexecution-rejection.v1')]?.get(directory);
+        if (reason && typeof observer === 'function') {
+          const ordered = (value) => Array.isArray(value) ? value.map(ordered) : isRecord(value)
+            ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, ordered(value[key])])) : value;
+          const fingerprint = crypto.createHash('sha256').update(JSON.stringify([input?.tool, ordered(output?.args), reason])).digest('hex');
+          const result = await observer(input, { fingerprint, reason });
+          if (result?.state === 'corrective-replan') error.message += ' This identical input has been rejected twice before execution. Choose a usable tool or correct its arguments; one corrective replan is allowed.';
+          if (result?.state === 'blocked') error.message += ' Repeated unchanged pre-execution rejection: automatic continuation is paused for this objective. No rejected tool was executed.';
+        }
+        throw error;
       }
     },
     'tool.execute.after': async (input, output) => {

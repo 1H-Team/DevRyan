@@ -252,7 +252,11 @@ export async function runQaNaturalCompaction({ cell, projectFixture, ui, api, ch
   // exact submitted user text and settle the whole session, not a user count.
   const ordinaryTurn = async (text, priorIds) => {
     const startedAt = Date.now();
-    await ui.send(text);
+    // A child may finish after the preceding canonical idle observation and
+    // claim an ordinary collection turn. Keep the draft intact until the real
+    // send control returns, within the existing absolute cell deadline. The
+    // strict native brackets still reject a witness collected before summary.
+    await ui.send(text, { timeout: cell.timeoutMs });
     return ui.waitFor('ordinary workload turn and automatic continuation settled', async () => {
       const sessionError = (await readProviderObservation()).find(item => item.kind === 'native.session.error'
         && item.sessionID === getSessionID() && item.at >= startedAt);

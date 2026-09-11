@@ -119,8 +119,12 @@ export async function runQaFixtureFailureRecovery({ cell, fixture, cdp, ui, api,
   await check('a documented ten-second idle interval permits reconnect and a new send', async () => {
     const before = fixture.getState();
     const startedAt = Date.now();
-    await pause(10000);
-    const elapsedMs = Date.now() - startedAt;
+    const monotonicStart = performance.now();
+    // Wall-clock adjustments and early timer wakeups cannot shorten this witness.
+    for (let remaining = 10000; remaining > 0; remaining = 10000 - (performance.now() - monotonicStart)) {
+      await pause(Math.ceil(remaining));
+    }
+    const elapsedMs = performance.now() - monotonicStart;
     assert.ok(elapsedMs >= 10000);
     assert.equal(fixture.getState().receivedPrompts.length, before.receivedPrompts.length);
     fixture.disconnectEvents();

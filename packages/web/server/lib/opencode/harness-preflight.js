@@ -906,6 +906,7 @@ function buildPreflightResult({
   runtimeMode,
   anthropicUsage,
   claudeRuntime,
+  runFingerprint,
 }) {
   const findings = lintAgentHarness({
     agents,
@@ -961,6 +962,7 @@ function buildPreflightResult({
     promptAudit,
     contextBudget: resolvedContextBudget,
     promptTools: context.promptTools || null,
+    ...(runFingerprint ? { runFingerprint } : {}),
   }, harness);
   return maybePromise(contextBudget) ? contextBudget.then(finish) : finish(contextBudget);
 }
@@ -1030,6 +1032,7 @@ function createHarnessPreflight(dependencies = {}) {
       const promptTools = resolveProviderPromptTools(context.providerID, context.agent);
       const resolvedContext = promptTools ? { ...context, promptTools } : context;
       const values = {
+        runFingerprint: typeof dependencies.getRunFingerprint === 'function' ? dependencies.getRunFingerprint(resolvedContext) : null,
         agents: read('getAgents', resolvedContext),
         skills: read('getSkills', resolvedContext),
         hiddenSkills: read('getHiddenSkills', resolvedContext),
@@ -1110,6 +1113,7 @@ function registerHarnessPreflightRoute(app, preflight) {
     const modelID = readRequestString(req, 'modelID');
     const agent = readRequestString(req, 'agent');
     const sessionID = readRequestString(req, 'sessionID');
+    const variant = readRequestString(req, 'variant');
     if (Boolean(providerID) !== Boolean(modelID)) {
       const message = 'providerID and modelID must be provided together';
       res.status(400).json(withHarnessResult({
@@ -1133,6 +1137,7 @@ function registerHarnessPreflightRoute(app, preflight) {
     }
     try {
       const context = { directory, providerID, modelID, agent };
+      if (variant) context.variant = variant;
       if (sessionID) context.sessionID = sessionID;
       const result = await preflight.run(context);
       res.json(result);

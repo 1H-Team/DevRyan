@@ -12,7 +12,7 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise((resolve) => server.close(resolve))));
 });
 
-const startFixture = async () => {
+const startFixture = async (options = {}) => {
   const sessions = new Set();
   const leases = [];
   let bootstrap = 'a'.repeat(43);
@@ -47,6 +47,7 @@ const startFixture = async () => {
     server,
     now: () => new Date('2026-08-27T10:00:00.000Z'),
     onDesktopHostLease: async (lease) => leases.push(lease),
+    ...options,
   });
   app.get('/health', (_req, res) => res.json({ ok: true }));
   app.get('/private', (_req, res) => res.json({ ok: true }));
@@ -61,6 +62,22 @@ const startFixture = async () => {
 };
 
 describe('runtime-service HTTP handshake', () => {
+  it('issues local owner recovery only after the native bootstrap proof succeeds', async () => {
+    let issued = 0;
+    const fixture = await startFixture({ onLocalOwnerBootstrap: async (res) => {
+      issued += 1;
+      res.setHeader('Set-Cookie', [res.getHeader('Set-Cookie'), 'devryan_local_owner=fixture; Path=/; HttpOnly; SameSite=Strict']);
+    } });
+    const post = (token) => fetch(`${fixture.baseUrl}/auth/runtime-service-bootstrap`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' }, body: JSON.stringify({ token }),
+    });
+    assert.equal((await post('invalid')).status, 401); assert.equal(issued, 0);
+    const response = await post(fixture.bootstrap);
+    assert.equal(response.status, 204); assert.equal(issued, 1);
+    assert.match(response.headers.get('set-cookie'), /devryan_runtime_service=/);
+    assert.match(response.headers.get('set-cookie'), /devryan_local_owner=fixture/);
+  });
+
   it('mints a strict HttpOnly cookie once and gates the renderer surface', async () => {
     const fixture = await startFixture();
     const unauthenticated = await fetch(`${fixture.baseUrl}/private`);

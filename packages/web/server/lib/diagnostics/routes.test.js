@@ -3,6 +3,30 @@ import { describe, expect, test } from 'vitest';
 import { normalizeClearRange, registerDiagnosticsRoutes } from './routes.js';
 
 describe('diagnostics clear ranges', () => {
+  test('exports a bounded Chrome Trace through the existing scoped export route after flushing', async () => {
+    let exportHandler;
+    const order = [];
+    const app = { get() {}, delete() {}, post(path, handler) { if (path === '/api/diagnostics/export') exportHandler = handler; } };
+    registerDiagnosticsRoutes(app, { runtime: {
+      journal: { async flush() { order.push('flush'); }, async readRecords() { order.push('read'); return [
+        { type: 'lifecycle', event: 'objective_state', at: 20, sessionID: 'ses_root', directory: '/repo',
+          payload: { messageID: 'msg_root', state: 'completed', createdAt: 10 } },
+        { type: 'lifecycle', event: 'objective_state', at: 20, sessionID: 'ses_other', directory: '/other',
+          payload: { messageID: 'msg_other', state: 'completed', createdAt: 10 } },
+      ]; } }, async getWorktreeReceipts() { return []; },
+    } });
+    const response = { statusCode: 200, headers: {}, setHeader(key, value) { this.headers[key] = value; },
+      status(code) { this.statusCode = code; return this; }, json(value) { this.payload = value; return this; } };
+    await exportHandler({ body: { scope: 'task', sessionID: 'ses_root', directory: '/repo', format: 'chrome-trace' } }, response);
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['Content-Disposition']).toContain('DevRyan-trace.json');
+    expect(order[0]).toBe('flush');
+    expect(response.payload.metadata.roots.map((root) => root.rootSessionId)).toEqual(['ses_root']);
+    expect(JSON.stringify(response.payload)).not.toContain('ses_other');
+    await exportHandler({ body: { format: 'unbounded' } }, response);
+    expect(response.statusCode).toBe(400);
+  });
+
   test('normalizes supported ranges to an inclusive cutoff', () => {
     const now = 20 * 24 * 60 * 60 * 1000;
     expect(normalizeClearRange('24h', now)).toEqual({

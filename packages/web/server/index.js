@@ -1,3 +1,5 @@
+import { attachSupabaseConnectionBoundary, registerSupabaseConnectionRoutes } from './lib/multi-user/connection-routes.js';
+import { createHarnessTaskContextHost } from './lib/opencode/harness-task-context.js';
 import { recordContextModeDiagnostic } from './lib/opencode/context-mode-diagnostics.js';
 import { createCompressionPolicy } from './lib/http-compression-policy.js';
 import { createHarnessSkillDiscovery } from './lib/opencode/harness-skill-discovery.js';
@@ -101,6 +103,7 @@ import { createProjectPrewarmRuntime } from './lib/opencode/project-prewarm-runt
 import { createXaiToolCatalogRuntime } from './lib/opencode/xai-tool-catalog-runtime.js';
 import { createStandardSessionTitleRuntime } from './lib/opencode/standard-session-title-runtime.js';
 import { createHarnessPreflight, registerHarnessPreflightRoute } from './lib/opencode/harness-preflight.js';
+import { createHarnessRunFingerprintReader } from './lib/opencode/harness-run-fingerprint.js';
 import { inspectClaudeRuntimeCompatibility } from './lib/opencode/claude-runtime-compatibility.js';
 import { resolveApprovedSkills } from './lib/opencode/skill-policy.js';
 import {
@@ -1384,9 +1387,28 @@ const primaryRecoveryRuntime = createWebPrimaryRecoveryRuntime({
     sessionID: incident.sessionID, messageID: incident.messageID, payload: incident }),
 });
 harnessRuntime.setPrimaryRecoveryRuntime(primaryRecoveryRuntime);
+const harnessFingerprintReader = createHarnessRunFingerprintReader({
+  buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl: fetch,
+  getAgentSource: (agent, directory) => getAgentSources(agent, directory).md,
+  recordDiagnostic: (entry) => harnessRuntime.record(entry),
+});
+const harnessTaskContext = createHarnessTaskContextHost({
+  dataDirectory: OPENCHAMBER_DATA_DIR, buildOpenCodeUrl, getOpenCodeAuthHeaders,
+  readPrimaryRecord: (sessionID) => primaryRecoveryRuntime.readRecord(sessionID),
+  getManagedRuntime: () => managedOrchestrationRuntime,
+  sanitizeText: (text) => harnessRuntime.sanitizer.sanitizeContextText(text),
+  recordDiagnostic: (entry) => harnessRuntime.record(entry),
+});
+harnessRuntime.setTaskContextRuntime(harnessTaskContext);
 const sessionChangeHost = createSessionChangeHost({
   dataDirectory: OPENCHAMBER_DATA_DIR,
-  onDiagnostic: (event) => harnessRuntime.record({ type: 'log', event: 'session_changes_capture', sessionID: event.sessionID, payload: event }),
+  onDiagnostic: (event) => {
+    harnessRuntime.record({ type: 'log', event: 'session_changes_capture', sessionID: event.sessionID, payload: event });
+    if (event.code === 'exact_tool_receipt' && event.phase === 'receipt' && event.hasChanges) {
+      return primaryRecoveryRuntime.observeProgress({ sessionID: event.sessionID, messageID: event.messageID,
+        kind: 'artifact-changed', identity: event.callID });
+    }
+  },
   publishEvent: emitSyntheticOpenCodeEvent,
   buildOpenCodeUrl: (pathname) => buildOpenCodeUrl(pathname, ''),
   getOpenCodeAuthHeaders,
@@ -1781,6 +1803,7 @@ async function main(options = {}) {
     sayTTSCapabilityPromise,
   ]);
   multiUserRuntime = nextMultiUserRuntime;
+  const getConnectionActiveRequests = attachSupabaseConnectionBoundary(app, server, multiUserRuntime.connection);
   if (multiUserRuntime.enabled) {
     console.log('Supabase multi-user identity and policy enforcement enabled');
   }
@@ -1923,6 +1946,9 @@ async function main(options = {}) {
       if (options.runtimeServiceController) {
         registerRuntimeServiceRoutes(privateApp, {
           controller: options.runtimeServiceController,
+          onLocalOwnerBootstrap: async (res) => {
+            if (!multiUserRuntime.connection.enabled) multiUserRuntime.connection.setOwnerCookie(res, await multiUserRuntime.connection.issueLocalOwnerSession());
+          },
           server,
           onDesktopHostLease: options.onDesktopHostLease,
           onDesktopHostRelease: options.onDesktopHostRelease,
@@ -1931,6 +1957,23 @@ async function main(options = {}) {
           onPrepareRuntimeServiceUpdate: options.onPrepareRuntimeServiceUpdate,
         });
       }
+      registerSupabaseConnectionRoutes(privateApp, {
+        runtime: multiUserRuntime,
+        preserveLocalContext: async (principal) => {
+          const settings = await readSettingsFromDiskMigrated();
+          const projects = [...sanitizeProjects(settings.projects)];
+          for (const entry of principal.assignments || []) {
+            if (!entry.repositoryPath || projects.some((project) => project.path === entry.repositoryPath)) continue;
+            projects.push({ id: entry.projectId, label: entry.label, path: entry.repositoryPath });
+          }
+          const personal = principal.settingsOverrides || {};
+          const preserved = { ...settings, projects };
+          for (const key of ['themeId', 'agentModelSelections', 'favoriteModels', 'hiddenModels', 'notificationTemplates']) {
+            if (Object.hasOwn(personal, key)) preserved[key] = personal[key];
+          }
+          await writeSettingsToDisk(preserved);
+        },
+      });
     },
   });
   uiAuthController = bootstrapResult.uiAuthController;
@@ -1944,7 +1987,7 @@ async function main(options = {}) {
     next();
   });
   multiUserRuntime.registerRoutes(app, {
-    isSessionCreationRestarting: () => isRestartingOpenCode || !isOpenCodeReady,
+    isSessionCreationRestarting: () => isRestartingOpenCode || !isOpenCodeReady || multiUserRuntime.connection?.status().restartRequired,
     recordCreationTiming: (entry) => harnessRuntime.record(entry),
     readSettingsFromDiskMigrated,
     buildOpenCodeUrl,
@@ -2006,6 +2049,16 @@ async function main(options = {}) {
     ),
   });
   managedOrchestrationRuntime = createWebManagedOrchestrationRuntime({
+    onRequiredCheckReceipt: ({ task, receipt }) => {
+      harnessRuntime.record({ type: 'lifecycle', event: 'required_check_observed', sessionID: task.rootSessionId,
+        payload: { taskId: task.taskId, messageID: receipt.messageId, callID: receipt.callId, name: receipt.name, status: receipt.status, exitCode: receipt.exitCode, contentHash: receipt.contentHash } });
+      if (receipt.status !== 'not-observed') {
+        void primaryRecoveryRuntime.observeProgress({ sessionID: task.rootSessionId, taskCreatedAt: task.createdAt,
+          kind: 'required-check', identity: `${task.taskId}:${receipt.name}:${receipt.callId}:${receipt.status}` });
+      }
+    },
+    onBarrierChange: (state) => harnessRuntime.record({ type: 'lifecycle', event: 'managed_workspace_barrier',
+      sessionID: state.rootSessionId, at: state.at, payload: { state: state.state, count: state.taskCount } }),
     onFirstAssistantActivity: (activity) => {
       harnessRuntime.record({
         type: 'lifecycle', event: 'managed_task.first_assistant_activity',
@@ -2023,7 +2076,9 @@ async function main(options = {}) {
       || ENV_SKIP_OPENCODE_START
       || ENV_CONFIGURED_OPENCODE_HOST
     ),
-    getWorkAdmissionBlock: harnessRuntime.getPromptAdmissionBlock,
+    getWorkAdmissionBlock: () => multiUserRuntime.connection?.status().restartRequired
+      ? { code: 'supabase_change_pending', message: 'DevRyan is waiting to restart' }
+      : harnessRuntime.getPromptAdmissionBlock(),
     resolveAgentExecution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
       ?? params.fallbackExecution,
     // Auto-resume hooks: managed sessions key breakers per owning user and use
@@ -2040,6 +2095,9 @@ async function main(options = {}) {
     auxiliaryRpcHandlers: {
       context_mode_diagnostic: (params) => recordContextModeDiagnostic(params, harnessRuntime.record),
       primary_recovery: (params) => primaryRecoveryRuntime.plugin(params),
+      harness_run: (params) => harnessFingerprintReader.capture(params),
+      harness_context_observation: (params) => harnessFingerprintReader.observeContext(params),
+      harness_context: (params) => harnessTaskContext.handleRpc(params),
       session_changes: (params) => sessionChangeHost.plugin(params),
       resolve_agent_execution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
         ?? params.fallbackExecution,
@@ -2164,6 +2222,7 @@ async function main(options = {}) {
     },
     getStaleOverrides: ({ directory } = {}) => (directory ? listStaleAgentModelOverrides(directory) : []),
     getLatestWarmup: () => agentRuntimeWarmup.getLatestResult(),
+    getRunFingerprint: (context) => harnessFingerprintReader.read(context),
     getRuntimeMode: () => (isExternalOpenCode || ENV_SKIP_OPENCODE_START ? 'external' : 'managed'),
     getPackagedAgents: () => listPackagedAgents(),
     readSkillBody: (skill) => parseMdFile(skill.path).body,
@@ -2366,9 +2425,32 @@ async function main(options = {}) {
     console.warn('[ScheduledTasks] Failed to start runtime:', error?.message || error);
   }
 
+  multiUserRuntime.connection?.configureDriver({
+    pauseAdmissions: () => scheduledTasksRuntime.stop(),
+    resumeAdmissions: async () => {
+      await scheduledTasksRuntime.start();
+      await multiUserRuntime.botsRuntime?.resumeAdmissions?.();
+    },
+    getBlockers: async () => {
+      const blockers = [...(multiUserRuntime.botsRuntime?.getRestartBlockers?.() || [])];
+      try { if (await getAuthoritativeActiveSessionCount()) blockers.push('active_chats'); }
+      catch { blockers.push('chat_status_unavailable'); }
+      if (getConnectionActiveRequests()) blockers.push('active_requests');
+      const orchestration = managedOrchestrationRuntime?.getDiagnostics()?.scheduler;
+      if (orchestration?.activeLaunchCount || orchestration?.activeHandoffCount || orchestration?.pendingAcknowledgementCount) blockers.push('managed_tasks');
+      if (scheduledTasksRuntime.getStatus().runningScheduledTasksCount) blockers.push('scheduled_tasks');
+      return blockers;
+    },
+    prepare: async () => { await multiUserRuntime.botsRuntime?.checkpointBotRuns?.(); },
+    restart: typeof options.onRestartHost === 'function' ? options.onRestartHost
+      : process.env.DEVRYAN_SUPERVISED_RESTART === '1'
+        ? async () => { await gracefulShutdown({ exitProcess: false }); process.exit(1); } : undefined,
+  });
+
   reportStartupPhase('ready', 'DevRyan is ready.');
 
   return {
+    issueLocalOwnerSession: () => !multiUserRuntime.connection.enabled ? multiUserRuntime.connection.issueLocalOwnerSession() : null,
     expressApp: app,
     httpServer: server,
     getPort: () => tunnelRuntimeContext.getActivePort(),

@@ -92,6 +92,7 @@ export const createJournalTrimmer = (options = {}) => {
         coalescedParts: 0,
         coalescedSessionUpdates: 0,
         coalescedRuntimeSyncs: 0,
+        coalescedDiagnostics: 0,
       };
       counters.set(sessionKey, counter);
     }
@@ -109,6 +110,7 @@ export const createJournalTrimmer = (options = {}) => {
     if (entry.kind === 'part') counter.coalescedParts += eliminated;
     else if (entry.kind === 'session') counter.coalescedSessionUpdates += eliminated;
     else if (entry.kind === 'runtime-sync') counter.coalescedRuntimeSyncs += eliminated;
+    else if (entry.kind === 'diagnostic') counter.coalescedDiagnostics += eliminated;
     return addCoalescedCount(entry.record, entry.count);
   };
 
@@ -174,6 +176,21 @@ export const createJournalTrimmer = (options = {}) => {
   };
 
   const admit = (record) => {
+    if (record?.type === 'lifecycle' && ['provider_recovery_observation_failed', 'provider_recovery_owner_unavailable'].includes(record.event)) {
+      const sessionKey = sessionKeyOf(record);
+      const key = JSON.stringify(['recovery-diagnostic', sessionKey, record.event, record.payload?.assistantMessageID,
+        record.payload?.recoveryMessageID, record.payload?.generation, record.payload?.reason, record.payload?.code]);
+      return hold(key, 'diagnostic', record, sessionKey);
+    }
+    if (record?.type === 'log' && record.event === 'session_changes_capture'
+      && record.payload?.code === 'invalid_change_receipt' && record.payload?.phase === 'history') {
+      // Only identical historical receipt failures coalesce. First-time live
+      // failures, changed reasons and recovery state transitions remain intact.
+      const sessionKey = sessionKeyOf(record);
+      const key = JSON.stringify(['diagnostic', sessionKey, record.payload.callID, record.payload.messageID,
+        record.payload.code, record.payload.phase, record.payload.reason]);
+      return hold(key, 'diagnostic', record, sessionKey);
+    }
     const eventType = eventTypeOf(record);
     if (!eventType) return [record];
     const sessionKey = sessionKeyOf(record);

@@ -268,6 +268,10 @@ describe('session-partitioned diagnostic journal', () => {
     second.enqueue({ type: 'prompt', at: current, sessionID: 'ses_new', payload: {} });
     await second.close();
     expect(await fs.stat(path.join(directory, 'sessions/ses_new'))).not.toBeNull();
+    const eviction = (await second.readRecords()).find((record) => record.event === 'journal_retention');
+    expect(eviction).toMatchObject({ type: 'lifecycle', payload: { phase: 'before_delete', reason: 'age_limit', targetKind: 'session' } });
+    expect(eviction.payload.sourceHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(eviction)).not.toContain(directory);
   });
 
   test('prunes an inactive LRU-evicted session even when its plain chunk can be reopened', async () => {

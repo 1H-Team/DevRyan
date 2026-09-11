@@ -419,7 +419,7 @@ describe('web managed orchestration runtime', () => {
     await expect(runtime.handleRpc({
       method: 'list_provider_recovery_continuations',
       params: { sessionId: 'ses_child' },
-    })).resolves.toEqual({ continuations });
+    })).resolves.toEqual({ continuations, resultCommitWatch: true });
     expect(scheduler.listReadyProviderRecoveryContinuations).toHaveBeenCalledWith({
       sessionId: 'ses_child',
     });
@@ -500,6 +500,30 @@ describe('web managed orchestration runtime', () => {
     }
     expect(scheduler.waitForTask).toHaveBeenCalledTimes(3);
     await runtime.shutdown();
+  });
+
+  it.each([false, true])('negotiates compact headers without changing legacy or canonical evidence when enabled=%s', async (enabled) => {
+    const { task, resultEnvelope } = createTerminalPair('compact', 'Child prose claims all checks passed.', {
+      status: 'failed', failureReason: 'Required test exited 1', partial: true,
+    });
+    task.requiredChecks = [{ name: 'unit', command: 'bun test unit.test.js', paths: ['source.js'] }];
+    const scheduler = { initialize: async () => {}, getTask: () => task, getResultEnvelope: () => resultEnvelope,
+      shutdown: async () => {}, flush: async () => {}, getDiagnostics: () => ({}) };
+    const runtime = createWebManagedOrchestrationRuntime({ scheduler, persistence: createPersistence(), executor: {},
+      harnessPolicies: { compactResults: enabled } });
+    const scope = { taskId: task.taskId, rootSessionId: task.rootSessionId, directory: task.directory, resultMode: 'reference' };
+    try {
+      const legacy = await runtime.handleRpc({ method: 'status', params: scope });
+      expect(legacy).not.toHaveProperty('resultHeader');
+      const result = await runtime.handleRpc({ method: 'status', params: { ...scope, resultContractVersion: 1 } });
+      if (!enabled) { expect(result).toEqual(legacy); return; }
+      expect(result.resultHeader).toMatchObject({ schemaVersion: 1, criticalFailures: ['Required test exited 1'],
+        outcome: { status: 'failed', partial: true }, verification: { status: 'not-observed', checks: [{ name: 'unit', status: 'not-observed' }] } });
+      expect(result.resultReference).toMatchObject({ text: '', returnedBytes: 0, complete: false });
+      const detail = await runtime.handleRpc({ method: 'read_result', params: { ...scope, resultCursor: result.resultReference.nextCursor } });
+      expect(detail.resultReference.text).toBe(resultEnvelope.recoverablePreview);
+      expect(resultEnvelope.action).toBeNull();
+    } finally { await runtime.shutdown(); }
   });
 
   it('keeps private results eager by default, pages explicit references, and leaves UI snapshots eager', async () => {

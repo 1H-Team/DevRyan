@@ -331,6 +331,7 @@ export function createWorktreeBootstrapRuntime(options: {
 export interface DiagnosticSanitizer {
   sanitizeRecord(record: unknown): Record<string, unknown>;
   sanitizeText(value: string): string;
+  sanitizeContextText(value: string): string;
   sanitizeExportValue(value: unknown): unknown;
   addKnownSecret(value: string): void;
   addPathMapping(path: string, placeholder: string): void;
@@ -450,6 +451,8 @@ export interface JournalTrimStats {
   trimmedDeltas: number;
   coalescedParts: number;
   coalescedSessionUpdates: number;
+  coalescedRuntimeSyncs: number;
+  coalescedDiagnostics: number;
 }
 
 export function createJournalTrimmer(options?: {
@@ -471,6 +474,56 @@ export interface DiagnosticsExportScope {
   sessionID?: string;
   directory?: string;
 }
+
+export interface HarnessTraceMeasurement {
+  observed: number;
+  unknown: number;
+  total: number | null;
+}
+
+export interface HarnessTraceRoot {
+  rootSessionId: string;
+  measurements: Record<string, HarnessTraceMeasurement>;
+  retrievedPages: number;
+  projections: Array<{ beforeBytes: number | null; projectedBytes: number | null; dynamicBytes: number | null }>;
+  objectiveDurations: Array<{ anchorID: string; state: string | null; durationMs: number | null }>;
+  totalObjectiveCriticalPathMs: number | null;
+  wireFirstResponseMs: null;
+  costProvenance: 'native-runtime-reported' | 'unavailable';
+}
+
+export interface HarnessChromeTrace {
+  traceEvents: Array<{
+    ph: 'M' | 'X' | 'I' | 's' | 'f';
+    name: string;
+    pid: number;
+    tid: number;
+    cat?: string;
+    ts?: number;
+    dur?: number;
+    id?: string;
+    s?: 't';
+    bp?: 'e';
+    args?: Record<string, string | number | null>;
+  }>;
+  displayTimeUnit: 'ms';
+  metadata: {
+    schemaVersion: 1;
+    product: 'DevRyan';
+    source: 'retained-journal';
+    sourceRecords: number;
+    omittedRecords: number;
+    omittedEvents: number;
+    incomplete: boolean;
+    measurementScope: string;
+    roots: HarnessTraceRoot[];
+  };
+}
+
+export function createHarnessTraceCollector(options?: { maxEvents?: number; maxBytes?: number }): {
+  add(record: Record<string, unknown>): void;
+  finish(): HarnessChromeTrace;
+};
 
 export interface DiagnosticsExportBundle {
   fileName: string;
@@ -685,10 +738,13 @@ export interface PrimaryRecoverySnapshot {
     sessionID: string; anchorID: string; failedID: string | null; recoveryID: string | null;
     state: PrimaryRecoveryState; revision: number; attemptCount: number; maxAttempts: 1;
     readOnly: boolean; providerID: string; modelID: string; agent: string; variant: string | null;
-    reason: string | null; updatedAt: number;
+    reason: string | null; updatedAt: number; failureKind: string | null;
+    progress: { policy: 'report-only'; lastUsefulAt: number | null; counts: Partial<Record<ObjectiveProgressKind, number>>; relevance: string };
   };
 }
 export interface PrimaryRecoveryController {
+  observeProgress(input: { sessionID: string; messageID?: string; taskCreatedAt?: number; kind: ObjectiveProgressKind; identity: string }): Promise<unknown>;
+  readRecord(sessionID: string): Promise<PrimaryRecoveryExecutionRecord | null>;
   initialize(): Promise<void>;
   drain(): Promise<void>;
   observe(payload: unknown): void;
@@ -701,6 +757,7 @@ export interface PrimaryRecoveryHost extends PrimaryRecoveryController {
   handleRequest(method: string, path: string, body: unknown, context?: { owner?: string | null }): Promise<null | { status: number; body: unknown }>;
 }
 export interface PrimaryRecoveryHostOptions {
+  classifyFailure?(error: unknown): string | null;
   dataDirectory: string;
   mode?: 'off' | 'observe' | 'enforce';
   anthropicMode?: 'off' | 'observe' | 'enforce';
@@ -813,18 +870,23 @@ export function isPrimaryRecoveryProvider(providerID: unknown): providerID is 'o
 export function primaryRecoveryMode(providerID: unknown, options: Pick<PrimaryRecoveryHostOptions, 'mode' | 'anthropicMode'>): 'off' | 'observe' | 'enforce';
 export function classifyPrimaryTransportError(error: unknown, runtimeVersion: string): null | { kind: string; source: string };
 export interface PrimaryRecoveryExecutionRecord {
+  rejections?: ObjectiveRejection[]; progress?: ObjectiveProgress; failureKind?: string | null;
+  continuationID?: string; activeUserID?: string; recoverySourceUserID?: string; todoContinuationCount?: number;
+  builderTodoGuard?: { taskSetHash: string; progressHash: string; stagnantCount: number; progressCounts: Partial<Record<ObjectiveProgressKind, number>> };
   sessionID: string; directory: string; anchorID: string; providerID: string; modelID: string;
   agent: string; variant: string | null; tools: Record<string, boolean>; owner: string | null;
   recoveryID: string | null; failedID: string | null; state: PrimaryRecoveryState; attemptCount: number;
+  cancellationGeneration: number; reason?: string | null;
   revision: number; guardedIDs: string[]; createdAt: number; updatedAt: number;
 }
 export function createPrimaryRecoveryController(options: {
+  classifyFailure?(error: unknown): string | null;
   directory: string; mode?: 'off' | 'observe' | 'enforce'; progressTimeoutMs?: number | false;
   anthropicMode?: PrimaryRecoveryHostOptions['anthropicMode'];
   isAnthropicConformant?: PrimaryRecoveryHostOptions['isAnthropicConformant'];
   isManaged(): boolean;
   authorize(record: PrimaryRecoveryExecutionRecord): Promise<boolean>;
-  observeTurn(record: PrimaryRecoveryExecutionRecord, options?: { signal: AbortSignal }): Promise<unknown>;
+  observeTurn(record: PrimaryRecoveryExecutionRecord, options?: { signal: AbortSignal; includeTodos?: boolean }): Promise<unknown>;
   abortSession(record: PrimaryRecoveryExecutionRecord): Promise<unknown>;
   promptSession(record: PrimaryRecoveryExecutionRecord, body: unknown): Promise<unknown>;
   publishEvent?: PrimaryRecoveryHostOptions['publishEvent'];
@@ -836,3 +898,69 @@ export function createPrimaryRecoveryController(options: {
   admit(input: { sessionID: string; directory: string; primary: boolean; owner?: string | null; body: unknown }): Promise<unknown>;
   readRecord(sessionID: string): Promise<PrimaryRecoveryExecutionRecord | null>;
 };
+
+export interface TaskContextMessage {
+  info: { id: string; sessionID?: string; role: string };
+  parts: Array<{ type: string; text?: string; synthetic?: boolean; metadata?: Record<string, unknown> }>;
+}
+export interface TaskContextSession { id: string; directory: string; parentID?: string; time?: { archived?: number } }
+export interface ProjectDecision {
+  id: string; statement: string;
+  source: { sessionID: string; messageID: string; kind: 'canonical-user-quote' };
+  state: 'active' | 'superseded'; paths: string[]; contentHash: string | null;
+  createdAt: number; validUntil: number | null; supersedes: string | null; supersededBy?: string;
+  validity?: 'active' | 'stale' | 'expired' | 'superseded';
+}
+export interface TaskContextChild {
+  taskId: string; rootSessionId: string; childSessionId: string | null; status: string; failureReason?: string | null;
+  requiredChecks?: Array<{ name: string }>;
+  requiredCheckReceipts?: Array<{ name: string; status: 'passed' | 'failed' | 'not-observed'; callId: string; messageId: string }>;
+}
+export interface TaskContextEnvelope { taskId: string; rootSessionId: string; envelopeId: string; action: string | null; autoResume?: { state: string; nextAttemptAt: number | null } | null }
+export interface TaskCheckpoint {
+  schemaVersion: 1; kind: 'task'; sessionID: string; projectKey: string; updatedAt: number;
+  anchor: { messageID: string; objective: string; complete: boolean; reference: { sessionID: string; messageID: string } };
+  selectedPlan: { sourceSessionId: string; sourceMessageId: string; planIndex: number } | null;
+  decisions: ProjectDecision[];
+  unresolvedWork: Array<{ id: string | null; status: string; content: string }>;
+  children: Array<{ taskId: string; childSessionId: string | null; status: string; envelopeId: string | null; action: string | null;
+    failureReason: string | null; recovery: { state: string; nextAttemptAt: number | null } | null;
+    checks: Array<{ name: string; status: 'failed' | 'not-observed'; lastObservation: string; callId: string | null; messageId: string | null }> }>;
+  childCoverage: { returned: number; total: number; complete: boolean };
+  recovery: { state: string; reason: string | null; attemptCount: number; todoContinuationCount: number; cancellationGeneration: number; readOnly: boolean; activeUserID: string } | null;
+  nextAction: { kind: 'retrieve-objective' | 'continue-current-objective'; messageID: string } | { kind: 'inspect-managed-barrier'; rootSessionId: string };
+  authority: string;
+}
+export interface ProjectContextRecord { schemaVersion: 1; kind: 'project'; projectKey: string; updatedAt: number; decisions: ProjectDecision[] }
+export type TaskContextRecord = TaskCheckpoint | ProjectContextRecord;
+export interface TaskContextScope { session: TaskContextSession; projectDirectory: string; projectIdentity: string; projectKey?: string }
+export interface TaskContextState {
+  anchor: TaskContextMessage; primary?: PrimaryRecoveryExecutionRecord | null; tasks?: TaskContextChild[]; envelopes?: TaskContextEnvelope[];
+  todos?: Array<{ id?: string; status: string; content: string }>;
+}
+export interface TaskContextRequest { sessionID: string; directory: string; query?: string }
+export function validateTaskContextRecord(record: unknown): TaskContextRecord;
+export function deriveTaskCheckpoint(input: TaskContextState & { session: TaskContextSession; projectKey: string; now?: number; sanitizeText?(value: string): string; decisions?: ProjectDecision[] }): TaskCheckpoint;
+export function createTaskContextRuntime(options: {
+  dataDirectory: string; store?: RecordStore<TaskContextRecord>; now?(): number; logger?: Pick<Console, 'warn'>;
+  sanitizeText?(value: string): string; recordDiagnostic?(entry: Record<string, unknown>): unknown;
+  withLock?<T>(key: string, run: () => Promise<T>): Promise<T>;
+  readScope(input: TaskContextRequest): Promise<TaskContextScope>;
+  readTaskState(scope: TaskContextScope): Promise<TaskContextState>;
+  readMessage(input: TaskContextRequest & { messageID: string }): Promise<TaskContextMessage>;
+  fingerprintFiles(directory: string, paths: string[]): Promise<string | null>;
+}): {
+  checkpoint(input: TaskContextRequest): Promise<{ available: true; checkpoint: TaskCheckpoint } | { available: false; reason: string }>;
+  rememberDecision(input: TaskContextRequest & { statement: string; sourceMessageID: string; paths?: string[]; validUntil?: number | null; supersedes?: string }): Promise<ProjectDecision>;
+  decisions(input: TaskContextRequest): Promise<ProjectDecision[]>;
+  drain(): Promise<void>;
+};
+
+export type ObjectiveProgressKind = 'tool-evidence' | 'child-completed' | 'artifact-changed' | 'required-check';
+export interface ObjectiveProgress { lastUsefulAt: number; counts: Partial<Record<ObjectiveProgressKind, number>>; seen: string[] }
+export interface ObjectiveRejection { fingerprint: string; reason: 'tool_input_invalid' | 'binary_read_blocked'; count: number; callIDs: string[]; lastObservedAt: number }
+export function validateObjectiveRejections(value?: unknown): ObjectiveRejection[];
+export function validateObjectiveProgress(value: unknown): void;
+export function applyObjectiveRejection(previous: ObjectiveRejection[] | undefined, input: { fingerprint: string; reason: ObjectiveRejection['reason']; callID: string; at: number }): { receipts: ObjectiveRejection[]; state: 'blocked' | 'duplicate' | 'tracking-capacity' | 'corrective-replan' | 'correct-input'; count: number | null };
+export function applyObjectiveProgress(previous: ObjectiveProgress | undefined, input: { kind: ObjectiveProgressKind; fingerprint: string; at: number }): ObjectiveProgress;
+export function projectObjectiveProgress(value: ObjectiveProgress | undefined): { policy: 'report-only'; lastUsefulAt: number | null; counts: Partial<Record<ObjectiveProgressKind, number>>; relevance: string };

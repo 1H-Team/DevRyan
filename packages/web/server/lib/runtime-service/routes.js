@@ -80,6 +80,7 @@ export const registerRuntimeServiceRoutes = (app, {
   botRuntimeControl,
   onDisableRuntimeService,
   onPrepareRuntimeServiceUpdate,
+  onLocalOwnerBootstrap,
   now = () => new Date(),
 } = {}) => {
   if (!controller
@@ -106,6 +107,7 @@ export const registerRuntimeServiceRoutes = (app, {
         'Set-Cookie',
         `${SESSION_COOKIE}=${session.token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200`,
       );
+      await onLocalOwnerBootstrap?.(res);
       return res.status(204).end();
     } catch {
       return unauthorized(res, 'runtime_service_bootstrap_rejected');

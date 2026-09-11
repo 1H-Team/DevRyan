@@ -1,3 +1,4 @@
+import { validateRequiredCheckReceipts } from './required-checks.js';
 import {
   MAX_MANAGED_TASK_FAILURE_BYTES,
   MAX_MANAGED_TASK_PREVIEW_BYTES,
@@ -10,6 +11,7 @@ import {
   validateManagedTaskRecord,
 } from './contract.js';
 import { assertManagedTaskTransition } from './transitions.js';
+import { managedResultCollectionState, projectManagedWaitSnapshot, projectManagedCommitSnapshot } from './managed-wait.js';
 import { validateManagedTransportRecovery } from './transport-recovery.js';
 import {
   assertManagedTaskResultEnvelopeMatchesTask,
@@ -68,6 +70,8 @@ const resolveFollowUpTimeoutAt = (sourceTask, requestedTimeoutAt, now) => {
 
 const cloneTask = (task) => task ? {
   ...task,
+  ...(task.requiredChecks ? { requiredChecks: structuredClone(task.requiredChecks) } : {}),
+  ...(task.requiredCheckReceipts ? { requiredCheckReceipts: structuredClone(task.requiredCheckReceipts) } : {}),
   transportRecovery: task.transportRecovery ? { ...task.transportRecovery } : null,
   waitingReason: task.waitingReason ? { ...task.waitingReason } : null,
   canonicalRefs: task.canonicalRefs.map((reference) => ({ ...reference })),
@@ -126,6 +130,7 @@ const dispatchFingerprint = (input) => {
     input?.directory ?? '',
     input?.agent ?? '',
     normalized,
+    JSON.stringify(input?.requiredChecks ?? []),
   ].join('\u0000');
 };
 
@@ -215,6 +220,8 @@ export const createManagedTaskScheduler = (options = {}) => {
   const handoffLocks = new Map();
   const taskWaiters = new Map();
   const resultActionWaiters = new Map();
+  const resultCollectionWaiters = new Map();
+  const resultCommitWaiters = new Set();
   const timeoutTimers = new Map();
   const startingLeaseTimers = new Map();
   const reconciliationRetryTimers = new Map();
@@ -268,8 +275,19 @@ export const createManagedTaskScheduler = (options = {}) => {
     }
   };
 
+  const publishedBarriers = new Map();
   const queueTaskPublication = (task) => {
     const event = toManagedTaskEvent(task, resultEnvelopes.get(task.taskId) ?? null);
+    if (typeof options.onBarrierChange === 'function') {
+      const barrier = getDispatchBarrierStateLocked(task.rootSessionId);
+      const previous = publishedBarriers.get(task.rootSessionId);
+      if (previous !== barrier.state) {
+        publishedBarriers.set(task.rootSessionId, barrier.state);
+        while (publishedBarriers.size > 512) publishedBarriers.delete(publishedBarriers.keys().next().value);
+        try { options.onBarrierChange({ rootSessionId: task.rootSessionId, state: barrier.state, at: now(), taskCount: barrier.taskIds.length }); }
+        catch { /* A diagnostic failure cannot alter committed task state. */ }
+      }
+    }
     publicationTail = publicationTail.then(
       () => publishManagedEvent(event),
       () => publishManagedEvent(event),
@@ -363,6 +381,11 @@ export const createManagedTaskScheduler = (options = {}) => {
     if (!waiters || waiters.size === 0) return;
     resultActionWaiters.delete(envelope.taskId);
     for (const waiter of waiters) waiter.resolve(structuredClone(envelope));
+  };
+
+  const notifyResultCollectionWaiters = (rootSessionId) => {
+    for (const waiter of [...(resultCollectionWaiters.get(rootSessionId) ?? [])]) waiter.check();
+    for (const waiter of [...resultCommitWaiters]) waiter.check();
   };
 
   const clearTaskTimeout = (taskId) => {
@@ -537,9 +560,16 @@ export const createManagedTaskScheduler = (options = {}) => {
     clearReconciliationRetry(next.taskId);
     if (tasks.has(next.taskId)) queueTaskPublication(next);
     notifyTaskWaiters(next);
+    notifyResultCollectionWaiters(next.rootSessionId);
   };
 
   const commitEnvelopeUpdateLocked = async (previous, next) => {
+    const task = tasks.get(next.taskId);
+    const changed = previous.action !== next.action || previous.followUpTaskId !== next.followUpTaskId
+      || managedResultCollectionState(task, previous) !== managedResultCollectionState(task, next);
+    // Creation and meaningful collection changes share one durable sequence.
+    // Recovery reschedule/probe bookkeeping must not wake the parent model.
+    next = { ...next, sequence: changed ? nextResultSequenceLocked() : previous.sequence };
     validateManagedTaskResultEnvelope(next);
     if (previous.taskId !== next.taskId || previous.envelopeId !== next.envelopeId) {
       throw new ManagedOrchestrationError('result_identity_changed', 'result envelope identity is immutable');
@@ -551,9 +581,9 @@ export const createManagedTaskScheduler = (options = {}) => {
       resultEnvelopes.set(previous.taskId, previous);
       throw error;
     }
-    const task = tasks.get(next.taskId);
     if (task) queueTaskPublication(task);
     notifyResultActionWaiters(next);
+    if (task) notifyResultCollectionWaiters(task.rootSessionId);
   };
 
   const getActiveModeForRootLocked = (rootSessionId) => {
@@ -1878,6 +1908,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         variant: input.variant ?? null,
         label: input.label,
         prompt: input.prompt,
+        ...(input.requiredChecks?.length ? { requiredChecks: structuredClone(input.requiredChecks) } : {}),
         attempt: input.attempt ?? 1,
         priorTaskId: input.priorTaskId ?? null,
         executionKind: input.executionKind ?? 'start',
@@ -2229,6 +2260,109 @@ export const createManagedTaskScheduler = (options = {}) => {
     });
   };
 
+  const waitForResultCommit = async ({ directory, afterCursor, signal, timeoutMs } = {}) => {
+    if (typeof directory !== 'string' || !directory.trim()) throw new TypeError('directory is required');
+    if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1)) {
+      throw new RangeError('timeoutMs must be a positive safe integer');
+    }
+    await ensureInitialized();
+    const registered = await runExclusive(() => {
+      if (shutDown) throw new ManagedOrchestrationError('scheduler_shut_down', 'managed orchestration scheduler is shut down');
+      if (signal?.aborted) throw signal.reason ?? new Error('Result watch aborted');
+      const snapshot = () => projectManagedCommitSnapshot({ directory, afterCursor,
+        tasks: [...tasks.values()], envelopes: [...resultEnvelopes.values()] });
+      const canReturn = (value) => value.cursorReset || value.rootSessionIds.length > 0;
+      const initial = snapshot();
+      if (canReturn(initial)) return { value: initial };
+      let resolve;
+      let reject;
+      const promise = new Promise((onResolve, onReject) => { resolve = onResolve; reject = onReject; });
+      let settled = false;
+      let timer;
+      const settle = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        resultCommitWaiters.delete(waiter);
+        if (timer !== undefined) cancelTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        callback(value);
+      };
+      const waiter = {
+        check() { const value = snapshot(); if (canReturn(value)) settle(resolve, value); },
+        reject(error) { settle(reject, error); },
+      };
+      const onAbort = () => waiter.reject(signal.reason ?? new Error('Result watch aborted'));
+      resultCommitWaiters.add(waiter);
+      signal?.addEventListener('abort', onAbort, { once: true });
+      if (timeoutMs !== undefined) timer = unrefTimer(scheduleTimeout(() => {
+        void runExclusive(() => settle(resolve, snapshot())).catch((error) => waiter.reject(error));
+      }, timeoutMs));
+      return { promise };
+    });
+    return registered.promise ? await registered.promise : registered.value;
+  };
+
+  const waitForAnyTask = async ({ rootSessionId, taskIds, afterCursor, signal, timeoutMs } = {}) => {
+    if (typeof rootSessionId !== 'string' || !rootSessionId.trim()) throw new TypeError('rootSessionId is required');
+    if (!Array.isArray(taskIds) || taskIds.length === 0 || taskIds.some((id) => typeof id !== 'string' || !id.trim())) {
+      throw new TypeError('taskIds must contain managed task identifiers');
+    }
+    if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1)) {
+      throw new RangeError('timeoutMs must be a positive safe integer');
+    }
+    await ensureInitialized();
+    // Do not await the wait promise inside the mutation queue. Register under
+    // that queue so no caller can observe terminal state before its save commits.
+    const registered = await runExclusive(() => {
+      if (shutDown) throw new ManagedOrchestrationError('scheduler_shut_down', 'managed orchestration scheduler is shut down');
+      if (signal?.aborted) throw signal.reason ?? new Error('Task wait aborted');
+      const ids = [...new Set(taskIds)];
+      for (const id of ids) {
+        const task = tasks.get(id);
+        if (!task) throw new ManagedOrchestrationError('task_not_found', `managed task ${id} was not found`);
+        if (task.rootSessionId !== rootSessionId) throw new ManagedOrchestrationError('task_scope_mismatch', 'managed wait tasks must belong to the requested root');
+      }
+      const snapshot = () => projectManagedWaitSnapshot({ rootSessionId, afterCursor,
+        tasks: ids.map((id) => tasks.get(id)).filter(Boolean), envelopes: [...resultEnvelopes.values()], allTasks: [...tasks.values()] });
+      const canReturn = (value) => value.cursorReset || value.changedTaskIds.length > 0 || value.settled;
+      const initial = snapshot();
+      if (canReturn(initial)) return { value: initial };
+      const waiters = resultCollectionWaiters.get(rootSessionId) ?? new Set();
+      let resolve;
+      let reject;
+      const promise = new Promise((onResolve, onReject) => { resolve = onResolve; reject = onReject; });
+      let settled = false;
+      let timer;
+      const settle = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        waiters.delete(waiter);
+        if (waiters.size === 0) resultCollectionWaiters.delete(rootSessionId);
+        if (timer !== undefined) cancelTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        callback(value);
+      };
+      const waiter = {
+        check() {
+          const value = snapshot();
+          if (canReturn(value)) settle(resolve, value);
+        },
+        reject(error) { settle(reject, error); },
+      };
+      const onAbort = () => waiter.reject(signal.reason ?? new Error('Task wait aborted'));
+      waiters.add(waiter);
+      resultCollectionWaiters.set(rootSessionId, waiters);
+      signal?.addEventListener('abort', onAbort, { once: true });
+      if (timeoutMs !== undefined) {
+        timer = unrefTimer(scheduleTimeout(() => {
+          void runExclusive(() => settle(resolve, snapshot())).catch((error) => waiter.reject(error));
+        }, timeoutMs));
+      }
+      return { promise };
+    });
+    return registered.promise ? await registered.promise : registered.value;
+  };
+
   const waitForResultAction = async (taskId, { signal } = {}) => {
     await ensureInitialized();
     if (shutDown) {
@@ -2348,7 +2482,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         // An envelope that already carries an action was disposed of, or was
         // superseded by a follow-up attempt that is tracked in its own right.
         if (!resultEnvelope || resultEnvelope.action !== null) return false;
-        return !requiresManualModelRecovery(task, resultEnvelope);
+        return managedResultCollectionState(task, resultEnvelope) === 'ready';
       })
       .sort(compareManagedTaskQueueOrder)
       .map((task) => ({
@@ -2460,6 +2594,11 @@ export const createManagedTaskScheduler = (options = {}) => {
         for (const waiter of waiters) waiter.reject(shutdownError);
       }
       taskWaiters.clear();
+      for (const waiters of resultCollectionWaiters.values()) {
+        for (const waiter of [...waiters]) waiter.reject(shutdownError);
+      }
+      resultCollectionWaiters.clear();
+      for (const waiter of [...resultCommitWaiters]) waiter.reject(shutdownError);
       for (const waiters of resultActionWaiters.values()) {
         for (const waiter of waiters) waiter.reject(shutdownError);
       }
@@ -2663,6 +2802,7 @@ export const createManagedTaskScheduler = (options = {}) => {
           variant: actionOptions.variant === undefined ? sourceTask.variant : actionOptions.variant,
           label: actionOptions.label ?? sourceTask.label,
           prompt: actionOptions.prompt ?? sourceTask.prompt,
+          ...(sourceTask.requiredChecks ? { requiredChecks: structuredClone(sourceTask.requiredChecks) } : {}),
           attempt: sourceTask.attempt + 1,
           priorTaskId: sourceTask.taskId,
           executionKind: action,
@@ -2909,11 +3049,78 @@ export const createManagedTaskScheduler = (options = {}) => {
     }
   };
 
+  const recordRequiredChecks = async (taskId, leaseToken, receipts, phase) => {
+    if (!['start', 'bind', 'complete'].includes(phase)) throw new TypeError('Required check phase must be start, bind or complete');
+    if (!Array.isArray(receipts) || receipts.length === 0) throw new TypeError('Required check receipts are required');
+    await ensureInitialized();
+    return await runExclusive(async () => {
+      const previous = tasks.get(taskId);
+      if (!previous || previous.leaseToken !== leaseToken || !ACTIVE_STATUSES.has(previous.status)) return false;
+      validateRequiredCheckReceipts(receipts, previous.requiredChecks);
+      if (receipts.some(receipt => receipt.callId !== receipts[0].callId || receipt.messageId !== receipts[0].messageId)) {
+        throw new TypeError('Required check receipts must belong to one invocation');
+      }
+      const current = new Map((previous.requiredCheckReceipts ?? []).map(receipt => [receipt.name, receipt]));
+      let accepted = true;
+      let updates = receipts.map(receipt => structuredClone(receipt));
+      if (phase === 'start') {
+        if (receipts.some(receipt => receipt.status !== 'not-observed' || receipt.exitCode !== null || receipt.contentHash !== null)) {
+          throw new TypeError('A required check must start with an unverified receipt');
+        }
+        // Reserve every name in one save. A duplicate may heal a pre-upgrade
+        // partially reserved group, but cannot reconstruct lost before-content
+        // evidence or authorize a completion after observer eviction/restart.
+        updates = receipts.map(receipt => current.get(receipt.name)?.callId === receipt.callId
+          ? current.get(receipt.name) : structuredClone(receipt));
+        accepted = updates.every((receipt, index) => receipt !== current.get(receipts[index].name));
+        if (updates.every(receipt => receipt === current.get(receipt.name))) return false;
+      } else {
+        if (receipts.some(receipt => !current.has(receipt.name) || current.get(receipt.name).callId !== receipt.callId
+          || current.get(receipt.name).identityConflict === true)) return false;
+        if (phase === 'bind') {
+          if (receipts.some(receipt => receipt.status !== 'not-observed' || receipt.exitCode !== null || receipt.contentHash !== null
+            || typeof receipt.messageId !== 'string' || !receipt.messageId)) throw new TypeError('A check identity must bind to an unverified receipt');
+          if (receipts.some(receipt => { const prior = current.get(receipt.name);
+            return prior.status !== 'not-observed' || prior.exitCode !== null || prior.contentHash !== null; })) return false;
+          if (receipts.every(receipt => current.get(receipt.name).messageId === receipt.messageId)) return true;
+          if (receipts.some(receipt => current.get(receipt.name).messageId !== null && current.get(receipt.name).messageId !== receipt.messageId)) {
+            updates = receipts.map(receipt => ({ ...receipt, messageId: null, identityConflict: true }));
+            accepted = false;
+          }
+        } else if (receipts.some(receipt => current.get(receipt.name).messageId === null || current.get(receipt.name).messageId !== receipt.messageId)) {
+          return false;
+        }
+      }
+      const names = new Set(receipts.map(receipt => receipt.name));
+      const nextReceipts = [...(previous.requiredCheckReceipts ?? []).filter(receipt => !names.has(receipt.name)), ...updates];
+      validateRequiredCheckReceipts(nextReceipts, previous.requiredChecks);
+      await commitTaskUpdateLocked(previous, { ...previous, requiredCheckReceipts: nextReceipts });
+      for (const receipt of updates) {
+        try { options.onRequiredCheckReceipt?.({ task: cloneTask(previous), receipt: structuredClone(receipt) }); }
+        catch { /* Diagnostics do not change durable check evidence. */ }
+      }
+      return accepted;
+    });
+  };
+
   return {
     initialize,
     submit,
     cancelTask,
+    getRequiredCheckTask(childSessionId, directory) {
+      for (const task of tasks.values()) {
+        if (task.childSessionId !== childSessionId || task.directory !== directory
+          || !ACTIVE_STATUSES.has(task.status) || !task.requiredChecks?.length) continue;
+        return { taskId: task.taskId, leaseToken: task.leaseToken, directory: task.directory,
+          requiredChecks: structuredClone(task.requiredChecks) };
+      }
+      return null;
+    },
+    recordRequiredChecks,
+    recordRequiredCheck: (taskId, leaseToken, receipt, phase) => recordRequiredChecks(taskId, leaseToken, [receipt], phase),
     waitForTask,
+    waitForAnyTask,
+    waitForResultCommit,
     waitForResultAction,
     waitForDispatchBarrier,
     inspectDispatchBarrier,
@@ -2947,8 +3154,8 @@ export const createManagedTaskScheduler = (options = {}) => {
         pendingCancellationCount: cancellationPromises.size,
         pendingAcknowledgementCount: acknowledgementPromises.size,
         activeHandoffCount: handoffLocks.size,
-        pendingWaiterCount: [...taskWaiters.values(), ...resultActionWaiters.values()]
-          .reduce((sum, waiters) => sum + waiters.size, 0),
+        pendingWaiterCount: [...taskWaiters.values(), ...resultActionWaiters.values(), ...resultCollectionWaiters.values()]
+          .reduce((sum, waiters) => sum + waiters.size, resultCommitWaiters.size),
         pendingTimeoutCount: timeoutTimers.size,
         pendingLeaseCount: startingLeaseTimers.size,
         pendingReconciliationRetryCount: reconciliationRetryTimers.size,

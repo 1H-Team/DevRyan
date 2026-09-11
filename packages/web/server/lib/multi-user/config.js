@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { readSupabaseConnectionPreference } from './connection-preference.js';
 
 const readPrivateJson = (filePath) => {
   if (!fs.existsSync(filePath)) return {};
@@ -44,7 +45,8 @@ export function resolveMultiUserConfig({ dataDirectory, env = process.env } = {}
   }
 
   return {
-    enabled: configuredValues === 3,
+    configured: configuredValues === 3,
+    enabled: configuredValues === 3 && readSupabaseConnectionPreference(root).enabled,
     url: url.replace(/\/+$/, ''),
     publishableKey,
     secretKey,

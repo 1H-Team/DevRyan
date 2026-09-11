@@ -1,3 +1,4 @@
+import { scrollQaHistoryTop } from '../qa/history-scroll.mjs';
 import assert from 'node:assert/strict';
 import { evaluate } from '../qa/cdp.mjs';
 import { createQaUiDriver } from '../qa/ui-driver.mjs';
@@ -240,14 +241,6 @@ export async function captureMemoryCheckpoint({ name, cdp, readHostMemory, measu
     gcPolicy: 'natural samples first; one explicit CDP collection before the separate postGc sample' };
 }
 
-async function scrollHistoryTop(cdp, ui) {
-  const event = await evaluate(cdp, `(() => {const e=document.querySelector('[data-scrollbar="chat"]');
-    if(!e)return null;const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2,deltaY:-e.scrollHeight,deltaX:0};})()`);
-  assert.ok(event, 'Fixture transcript scroll surface is unavailable');
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...event });
-  await ui.waitExpression('history scroll reaches top', `document.querySelector('[data-scrollbar="chat"]')?.scrollTop <= 1`);
-}
-
 export async function loadOlderHistoryPage({ session, ui, fixture, messagePageRequestOffset }) {
   const before = fixture.getState().messagePageRequests;
   assert.ok(Number.isSafeInteger(messagePageRequestOffset) && messagePageRequestOffset >= 0
@@ -256,11 +249,29 @@ export async function loadOlderHistoryPage({ session, ui, fixture, messagePageRe
   const previousCoverage = historyCoverage(previousPages);
   assert.ok(previousCoverage > 0, 'Load Older requires this session’s initial UI page');
   await ui.click({ text: 'LOAD OLDER MESSAGES' });
-  const page = await ui.waitFor('fresh contiguous older history page', () =>
-    fixture.getState().messagePageRequests.slice(before.length).find(candidate => candidate.sessionID === session.id
-      && candidate.before !== null && candidate.returned > 0
-      && historyCoverage([...previousPages, candidate]) > previousCoverage));
-  const coveredMessages = historyCoverage([...previousPages, page]);
+  const committedPage = await ui.waitFor('fresh contiguous older history page', () => {
+    const fresh = fixture.getState().messagePageRequests.slice(before.length)
+      .filter(candidate => candidate.sessionID === session.id);
+    // A selected session can expand its prefetched 50-message snapshot to 100
+    // before servicing this click's cursor page. That fresh snapshot belongs
+    // to the chain, but cannot itself qualify as an older-page response.
+    for (let index = 0; index < fresh.length; index++) {
+      const page = fresh[index];
+      if (page.before === null || page.returned <= 0) continue;
+      const prefix = [...previousPages, ...fresh.slice(0, index)];
+      const coveredMessages = historyCoverage([...prefix, page]);
+      if (coveredMessages > previousCoverage && coveredMessages > historyCoverage(prefix)) return { page, coveredMessages };
+    }
+    return null;
+  }).catch(error => {
+    // Keep the failed page-chain witness inspectable without retaining response
+    // bodies or relaxing the fresh-request and canonical-visibility checks.
+    const candidates = fixture.getState().messagePageRequests.slice(before.length)
+      .filter(candidate => candidate.sessionID === session.id).slice(0, 16);
+    throw new Error(`${error.message}; history witness ${JSON.stringify({ sessionID: session.id, previousCoverage,
+      requestOffset: before.length, previousPages: previousPages.slice(-16), candidates })}`, { cause: error });
+  });
+  const { page, coveredMessages } = committedPage;
   assert.ok(coveredMessages <= session.expectedMessages, 'Older page exceeds the prescribed history');
   // This single-message read supplies canonical text only; it never contributes
   // to the UI's page-coverage evidence or loads anything into the renderer.
@@ -283,26 +294,77 @@ export async function loadOlderHistoryPage({ session, ui, fixture, messagePageRe
   return { ...page, coveredMessages, canonicalText };
 }
 
+export function assertEarlierCanonicalHistory(before, after, sessionID) {
+  for (const row of [before, after]) {
+    assert.equal(row?.info?.sessionID, sessionID, 'History reveal crossed the selected session');
+    assert.ok(typeof row.info.id === 'string' && row.info.id, 'History reveal lacks a canonical message identity');
+    assert.ok(Number.isFinite(row.info.time?.created), 'History reveal lacks canonical chronological evidence');
+    assert.ok(row.parts?.some(part => part.type === 'text' && part.text?.trim()), 'History reveal lacks canonical text');
+  }
+  assert.notEqual(after.info.id, before.info.id, 'Load Older did not reveal a new canonical message');
+  assert.ok(after.info.time.created < before.info.time.created, 'Load Older did not advance toward older canonical history');
+}
+
+async function revealEarlierHistoryWindow({ session, cdp, ui, fixture }) {
+  const readHead = () => evaluate(cdp, `(() => {
+    if(new URL(location.href).searchParams.get('session')!==${JSON.stringify(session.id)}) return null;
+    return document.querySelector('[data-scrollbar="chat"] [data-message-id]')?.getAttribute('data-message-id') ?? null;
+  })()`);
+  const canonical = async messageID => {
+    assert.ok(messageID, 'Selected history has no mounted canonical head');
+    const response = await fetch(`${fixture.origin}/session/${session.id}/message/${messageID}`, { signal: AbortSignal.timeout(5000) });
+    assert.equal(response.status, 200, 'Mounted history head is absent from canonical storage');
+    const row = await response.json();
+    assert.equal(row.info?.id, messageID, 'Canonical lookup returned a different message');
+    return row;
+  };
+  const beforeID = await readHead();
+  const before = await canonical(beforeID);
+  const requestOffset = fixture.getState().messagePageRequests.length;
+  await ui.click({ text: 'LOAD OLDER MESSAGES' });
+  const afterID = await ui.waitFor('older visible history window', async () => {
+    await scrollQaHistoryTop(cdp, ui);
+    const current = await readHead();
+    return current && current !== beforeID ? current : null;
+  });
+  const after = await canonical(afterID);
+  assertEarlierCanonicalHistory(before, after, session.id);
+  const text = after.parts.filter(part => part.type === 'text').map(part => part.text).join('\n');
+  const selector = `[data-scrollbar="chat"] [data-message-id=${JSON.stringify(afterID)}]`;
+  await ui.waitVisibleText(text, selector);
+  const freshPages = fixture.getState().messagePageRequests.slice(requestOffset).filter(page => page.sessionID === session.id);
+  return { beforeMessageID: beforeID, firstMessageID: afterID, canonicalText: text,
+    kind: freshPages.some(page => page.before !== null) ? 'fetched-and-revealed' : 'buffered-reveal', freshPages };
+}
+
 async function loadHistory({ session, cdp, ui, fixture }) {
   const messagePageRequestOffset = fixture.getState().messagePageRequests.length;
+  const prefetchedPages = fixture.getState().messagePageRequests.filter(page => page.sessionID === session.id);
   await ui.click({ selector: `[data-session-row="${session.id}"] button`, text: session.title });
   await ui.waitExpression('owned session selected', `new URL(location.href).searchParams.get('session') === ${JSON.stringify(session.id)}`);
   await ui.waitVisibleText(`History response ${SESSION_MEMORY_FIXTURE.turns}.`, '[data-scrollbar="chat"]');
   let pageClicks = 0;
   const commits = [];
-  while (pageClicks < 12) {
-    await scrollHistoryTop(cdp, ui);
+  // Load Older first expands the buffered turn window, then fetches when that
+  // window reaches its oldest loaded turn. Require canonical visible progress
+  // for every click and complete contiguous HTTP coverage independently.
+  while (pageClicks < SESSION_MEMORY_FIXTURE.turns) {
+    await scrollQaHistoryTop(cdp, ui);
     const hasOlder = await evaluate(cdp, `[...document.querySelectorAll('button')].some(e=>e.innerText.trim()==='LOAD OLDER MESSAGES')`);
     if (!hasOlder) break;
-    commits.push(await loadOlderHistoryPage({ session, ui, fixture, messagePageRequestOffset }));
+    commits.push(await revealEarlierHistoryWindow({ session, cdp, ui, fixture }));
     pageClicks += 1;
   }
-  await scrollHistoryTop(cdp, ui);
+  await scrollQaHistoryTop(cdp, ui);
   await ui.waitVisibleText('History response 1.', '[data-scrollbar="chat"]');
-  const pages = fixture.getState().messagePageRequests.slice(messagePageRequestOffset).filter(page => page.sessionID === session.id);
+  // Sidebar prefetch may have supplied this session's initial snapshot before
+  // selection. Retain that observed UI response as the start of the chain;
+  // every reveal above still requires new canonical visible progress.
+  const pages = [...prefetchedPages, ...fixture.getState().messagePageRequests.slice(messagePageRequestOffset)
+    .filter(page => page.sessionID === session.id)];
   const coveredMessages = historyCoverage(pages);
   assert.equal(coveredMessages, session.expectedMessages, 'UI did not materialize the full prescribed history');
-  return { ...session, pageClicks, coveredMessages, pages, commits, messagePageRequestOffset };
+  return { ...session, pageClicks, coveredMessages, pages, prefetchedPages, commits, messagePageRequestOffset };
 }
 
 async function rowAction({ session, action, cdp, ui, acknowledged }) {

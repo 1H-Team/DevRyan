@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { GOLDEN_CASE_IDS } from './golden-cases.mjs';
 
 export const EVALUATION_CASE_IDS = Object.freeze([
   'inspect',
@@ -9,6 +10,7 @@ export const EVALUATION_CASE_IDS = Object.freeze([
   'context-bounded-lookup',
   'repair-and-test',
   'managed-change',
+  'managed-independent',
   'oracle-review-focused',
   'oracle-review-deep',
 ]);
@@ -27,7 +29,7 @@ const REQUIRED_FIELDS = Object.freeze([
   'reportDirectory',
 ]);
 
-const OPTIONAL_FIELDS = Object.freeze(['processSampling']);
+const OPTIONAL_FIELDS = Object.freeze(['processSampling', 'executionMode', 'pairing']);
 const PROCESS_SAMPLING_FIELDS = Object.freeze([
   'electronPid',
   'caseId',
@@ -242,9 +244,22 @@ export const validateEvaluationConfig = (value, options = {}) => {
     throw new EvaluationConfigError('caseIds config entries must be unique');
   }
   for (const caseId of caseIds) {
-    if (!EVALUATION_CASE_IDS.includes(caseId)) {
+    if (!(value.executionMode === 'deterministic' ? GOLDEN_CASE_IDS : EVALUATION_CASE_IDS).includes(caseId)) {
       throw new EvaluationConfigError(`caseIds config contains unknown case: ${caseId}`);
     }
+  }
+  if (value.executionMode !== undefined && !['live', 'deterministic'].includes(value.executionMode)) throw new EvaluationConfigError('executionMode must be live or deterministic');
+  if (value.executionMode === 'deterministic' && value.processSampling) throw new EvaluationConfigError('processSampling requires live execution');
+  let pairing;
+  if (value.pairing !== undefined) {
+    const p = value.pairing;
+    if (!isPlainObject(p) || Object.keys(p).some((key) => !['baselineConfig', 'pairs', 'factor', 'targetMetric'].includes(key))
+      || ![3, 10].includes(p.pairs) || value.executionMode === 'deterministic' || value.processSampling
+      || !['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'role'].includes(p.factor)
+      || !['objectiveDurationMs', 'input', 'workspaceBarrierMs', 'resultConsumptionMs', 'toolExecutionMs', 'toolVolumeBytes'].includes(p.targetMetric)) {
+      throw new EvaluationConfigError('Invalid paired live comparison');
+    }
+    pairing = Object.freeze({ baselineConfig: resolveRepoPath(p.baselineConfig, repoRoot, 'pairing.baselineConfig'), pairs: p.pairs, factor: p.factor, targetMetric: p.targetMetric });
   }
   if (value.variant !== null && (typeof value.variant !== 'string' || !value.variant.trim())) {
     throw new EvaluationConfigError('variant config must be a non-empty string or null');
@@ -252,6 +267,8 @@ export const validateEvaluationConfig = (value, options = {}) => {
 
   return Object.freeze({
     schemaVersion: 1,
+    ...(value.executionMode ? { executionMode: value.executionMode } : {}),
+    ...(pairing ? { pairing } : {}),
     fixtureRoot,
     devRyanBaseUrl: normalizeLoopbackUrl(value.devRyanBaseUrl),
     providerId: requirePinnedIdentifier(value.providerId, 'providerId'),
@@ -276,5 +293,11 @@ export const loadEvaluationConfig = (configPath, options = {}) => {
     const kind = error?.code === 'ENOENT' ? 'does not exist' : 'is not valid JSON';
     throw new EvaluationConfigError(`Evaluation config ${kind}`);
   }
-  return validateEvaluationConfig(parsed, options);
+  const config = validateEvaluationConfig(parsed, options);
+  if (!config.pairing) return config;
+  let baselineValue;
+  try { baselineValue = JSON.parse(readFileSync(config.pairing.baselineConfig, 'utf8')); }
+  catch { throw new EvaluationConfigError('Paired baseline config is unavailable or invalid'); }
+  if (baselineValue.pairing || baselineValue.processSampling || baselineValue.executionMode === 'deterministic') throw new EvaluationConfigError('Paired baseline must be an unpaired live config');
+  return Object.freeze({ ...config, pairing: Object.freeze({ ...config.pairing, baseline: validateEvaluationConfig(baselineValue, options) }) });
 };

@@ -280,6 +280,7 @@ export function createBotMemoryRuntime({
   extractionConcurrency = EXTRACTION_JOB_CONCURRENCY,
   extractionLeaseMs = EXTRACTION_JOB_LEASE_MS,
   extractionPollMs = EXTRACTION_JOB_POLL_MS,
+  isAdmissionPaused = () => false,
   extractionRetryDelaysMs = EXTRACTION_JOB_RETRY_DELAYS_MS,
   extractionTimeoutMs = EXTRACTION_TIMEOUT_MS,
   prepareExtraction = async () => {},
@@ -1341,6 +1342,7 @@ export function createBotMemoryRuntime({
 
   const runExtractionPump = async () => {
     if (stopped) return;
+    if (isAdmissionPaused()) { scheduleExtractionPump(5_000); return; }
     if (typeof store.listMemoryExtractionRecoveryCandidates === 'function' && now().getTime() >= nextRecoveryAt) {
       nextRecoveryAt = now().getTime() + 60_000;
       try {
@@ -1359,7 +1361,7 @@ export function createBotMemoryRuntime({
       }
     }
     if (stopped) return;
-    while (activeExtractionWorkers < extractionConcurrency) {
+    while (!isAdmissionPaused() && activeExtractionWorkers < extractionConcurrency) {
       let job;
       try {
         job = await store.claimMemoryExtractionJob({
@@ -1381,7 +1383,9 @@ export function createBotMemoryRuntime({
         return;
       }
       if (!job) {
-        scheduleExtractionPump(extractionPollMs);
+        // Local enqueue/requeue and worker completion wake this immediately.
+        // Only cross-host discovery needs the idle fallback poll.
+        scheduleExtractionPump(Math.max(extractionPollMs, 60_000));
         return;
       }
       activeExtractionWorkers += 1;

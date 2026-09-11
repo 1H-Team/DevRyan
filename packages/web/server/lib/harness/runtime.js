@@ -42,6 +42,7 @@ export const createWebHarnessRuntime = (options = {}) => {
   let commandDeadlineRuntime = null;
   let primaryRecoveryRuntime = null;
   let sessionChangeHost = null;
+  let taskContextRuntime = null;
 
   const initialize = () => {
     initialization ??= Promise.all([
@@ -174,12 +175,14 @@ export const createWebHarnessRuntime = (options = {}) => {
       commandDeadlineRuntime?.drain?.(),
       primaryRecoveryRuntime?.drain?.(),
       sessionChangeHost?.drain(),
+      taskContextRuntime?.drain(),
       worktreeStore.drain(),
       commandDeadlineStore.drain(),
     ]);
   };
 
   return {
+    setTaskContextRuntime: (runtime) => { taskContextRuntime = runtime; },
     paths,
     sanitizer,
     journal,

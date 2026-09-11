@@ -64,6 +64,9 @@ const continuationModel = (info) => {
 };
 
 export const DevRyanBuilderTodoContinuationPlugin = async ({ client, directory } = {}) => {
+  // The managed plugin's canonical TODO scan owns Builder as well as
+  // Orchestrator. Partial bridge configuration cannot authorize a second owner.
+  if (process.env.DEVRYAN_ORCHESTRATION_URL || process.env.DEVRYAN_ORCHESTRATION_TOKEN) return {};
   const sessions = new Map();
 
   const getSession = (sessionID) => {

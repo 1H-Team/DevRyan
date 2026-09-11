@@ -30,6 +30,36 @@ test('selected-provider availability cannot silently fall back to private owner 
     assert.doesNotThrow(() => assertQaSelectedProviderAccess('anthropic', { anthropic: { state: 'available', type: 'claude-cli-access-only' } }));
 });
 
+test('explicit managed specialist assignments preserve each requested model and effort without widening primary adapters', () => {
+    const agentAssignments = {
+        oracle: { providerId: 'openai', modelId: 'gpt-6-astra', variant: 'high' },
+        builder: { providerId: 'xai', modelId: 'grok-4.6', variant: 'high' },
+        fixer: { providerId: 'xai', modelId: 'grok-4.6', variant: 'high' },
+        designer: { providerId: 'anthropic', modelId: 'claude-opus-5', variant: 'medium' },
+        explorer: { providerId: 'opencode', modelId: 'deepseek-v4-flash', variant: 'high' },
+        librarian: { providerId: 'opencode', modelId: 'deepseek-v4-flash', variant: 'high' },
+        council: { providerId: 'openai', modelId: 'gpt-5.6-sol', variant: 'medium' },
+    };
+    const source = { agents: { explorer: { skills: ['*'] } } };
+    const request = { providerId: 'openai', modelId: 'gpt-6-astra', variant: 'medium', agentAssignments };
+    assert.throws(() => pinQaAgents(source, request), /specialist assignments/);
+    const result = pinQaAgents(source, { ...request, allowCrossProviderAssignments: true });
+    assert.equal(result.agents.orchestrator.model, 'openai/gpt-6-astra');
+    for (const [role, selection] of Object.entries(agentAssignments)) {
+        assert.equal(result.agents[role].model, `${selection.providerId}/${selection.modelId}`);
+        assert.equal(result.agents[role].variant, selection.variant);
+    }
+    assert.deepEqual(source, { agents: { explorer: { skills: ['*'] } } });
+    assert.throws(() => pinQaAgents(source, { ...request, allowCrossProviderAssignments: true,
+        agentAssignments: { explorer: { ...agentAssignments.explorer, providerId: 'unknown' } } }), /specialist assignments/);
+    const auth = { opencode: { type: 'api', key: 'synthetic-key' }, google: { type: 'api', key: 'excluded' } };
+    assert.equal(Object.hasOwn(projectQaAuth(auth).records, 'opencode'), false);
+    const projected = projectQaAuth(auth, 1_000_000, ['openai', 'opencode']);
+    assert.deepEqual(Object.keys(projected.records), ['opencode']);
+    assert.equal(JSON.stringify(projected.evidence).includes('synthetic-key'), false);
+    assert.throws(() => projectQaAuth(auth, 1_000_000, ['google']), /supported providers/);
+});
+
 test('copied access must cover the full cell timeout and ten-minute margin at admission', () => {
     const now = 1_000_000;
     const timeoutMs = 420_000;

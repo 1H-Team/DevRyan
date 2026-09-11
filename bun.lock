@@ -39,19 +39,19 @@
     },
     "packages/bot-computer": {
       "name": "@openchamber/bot-computer",
-      "version": "1.2.1",
+      "version": "1.2.2",
     },
     "packages/bot-egress": {
       "name": "@openchamber/bot-egress",
-      "version": "1.2.1",
+      "version": "1.2.2",
     },
     "packages/bot-engine-proxy": {
       "name": "@openchamber/bot-engine-proxy",
-      "version": "1.2.1",
+      "version": "1.2.2",
     },
     "packages/bot-indexer": {
       "name": "@openchamber/bot-indexer",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "dependencies": {
         "@xenova/transformers": "2.17.2",
         "better-sqlite3": "12.11.1",
@@ -59,15 +59,15 @@
     },
     "packages/bot-supervisor": {
       "name": "@openchamber/bot-supervisor",
-      "version": "1.2.1",
+      "version": "1.2.2",
     },
     "packages/bots-runtime": {
       "name": "@openchamber/bots-runtime",
-      "version": "1.2.1",
+      "version": "1.2.2",
     },
     "packages/cursor-sdk-runtime": {
       "name": "@openchamber/cursor-sdk-runtime",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "dependencies": {
         "@cursor/sdk": "1.0.28",
         "@modelcontextprotocol/sdk": "1.29.0",
@@ -76,7 +76,7 @@
     },
     "packages/desktop": {
       "name": "@openchamber/desktop",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "devDependencies": {
         "@tauri-apps/cli": "^2",
         "@types/node": "^24.3.1",
@@ -85,7 +85,7 @@
     },
     "packages/electron": {
       "name": "@openchamber/electron",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "dependencies": {
         "@openchamber/bot-egress": "workspace:*",
         "@openchamber/web": "workspace:*",
@@ -103,22 +103,22 @@
     },
     "packages/harness-runtime": {
       "name": "@openchamber/harness-runtime",
-      "version": "1.2.1",
+      "version": "1.2.2",
     },
     "packages/orchestration-runtime": {
       "name": "@openchamber/orchestration-runtime",
-      "version": "1.2.1",
+      "version": "1.2.2",
     },
     "packages/shared-runtime": {
       "name": "@openchamber/shared-runtime",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "dependencies": {
         "adm-zip": "^0.6.0",
       },
     },
     "packages/ui": {
       "name": "@openchamber/ui",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "dependencies": {
         "@base-ui/react": "^1.8.0",
         "@codemirror/autocomplete": "^6.20.3",
@@ -211,7 +211,7 @@
     },
     "packages/web": {
       "name": "@openchamber/web",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "bin": {
         "openchamber": "./bin/cli.js",
       },

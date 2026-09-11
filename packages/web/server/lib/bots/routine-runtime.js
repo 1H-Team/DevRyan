@@ -477,6 +477,7 @@ export function createBotRoutineRuntime({
   retryMs = DEFAULT_RETRY_MS,
   claimStaleMs = DEFAULT_CLAIM_STALE_MS,
   logger = console,
+  isAdmissionPaused = () => false,
 } = {}) {
   if (!store?.repositories?.bot_routines || !store.repositories.bot_routine_occurrences
     || !store.repositories.bots || !store.repositories.bot_revisions
@@ -501,11 +502,11 @@ export function createBotRoutineRuntime({
   let sweepPromise = null;
   let checkpointStatus = 'idle';
 
-  const listAll = async (repository, filters = {}) => {
+  const listAll = async (repository, filters = {}, fields = null) => {
     const items = [];
     let cursor = null;
     do {
-      const page = await repository.list({ filters, cursor, limit: 100 });
+      const page = await repository.list({ filters, cursor, limit: 100, ...(fields ? { fields } : {}) });
       items.push(...page.items);
       if (items.length > MAX_ROUTINES) fail('Bot routine collection is too large', 'bot_routine_limit_exceeded', 413);
       cursor = page.nextCursor;
@@ -727,7 +728,7 @@ export function createBotRoutineRuntime({
 
   const scheduleNextWake = async (retry = false) => {
     clearWake();
-    if (!started || shuttingDown) return;
+    if (!started || shuttingDown || isAdmissionPaused()) return;
     if (retry) {
       wakeTimer = setTimer(() => {
         wakeTimer = null;
@@ -763,7 +764,7 @@ export function createBotRoutineRuntime({
       });
     let retry = false;
     for (const routine of routines) {
-      if (shuttingDown) break;
+      if (shuttingDown || isAdmissionPaused()) break;
       try {
         const complete = await processRoutine(routine, currentMs, startup);
         retry ||= !complete;
@@ -779,7 +780,7 @@ export function createBotRoutineRuntime({
   };
 
   const tick = ({ startup = false } = {}) => {
-    if (shuttingDown) return Promise.resolve();
+    if (shuttingDown || isAdmissionPaused()) return Promise.resolve();
     if (sweepPromise) return sweepPromise;
     sweepPromise = runSweep({ startup }).catch(async (error) => {
       logger?.warn?.('[BotsRoutines] scheduler sweep deferred', {
@@ -1000,8 +1001,9 @@ export function createBotRoutineRuntime({
       }
     },
 
+    getActiveWorkCount: () => Number(Boolean(sweepPromise)),
     async getStatus() {
-      const active = await listAll(store.repositories.bot_routines, { status: 'active' });
+      const active = await listAll(store.repositories.bot_routines, { status: 'active' }, ['id', 'next_occurrence_at']);
       const currentMs = now().getTime();
       return Object.freeze({
         activeRoutineCount: active.length,

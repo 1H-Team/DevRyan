@@ -7,12 +7,26 @@ import { describe, test } from 'node:test';
 import {
   assertSchemaV1ReportSafe,
   buildSchemaV1Report,
+  projectHarnessEvidence,
   redactHeaders,
   redactUrl,
   writeSchemaV1Report,
 } from './report.mjs';
 
 describe('evaluation report safety', () => {
+  test('retains numeric runtime versions without admitting paths or credential-shaped values', () => {
+    const project = (runtimeVersion) => projectHarnessEvidence({
+      startFingerprint: { schemaVersion: 1, runtimeVersion },
+    }).startFingerprint.runtimeVersion;
+    for (const version of ['1.18.30', '1.18.30-dev.4+build7', 'v1.18.30']) {
+      assert.equal(project(version), version);
+    }
+    for (const value of [null, '', '/Users/private/version', 'https://private/version',
+      'Bearer_SECRET', 'token=secret', '1.18.30\nsecret']) {
+      assert.equal(project(value), 'unknown');
+    }
+  });
+
   test('redacts URL credentials, ports, queries, and fragments from diagnostics', () => {
     assert.equal(
       redactUrl('http://user:secret@127.0.0.1:4310/api/session/ses_1?directory=/private/path&token=abc#secret'),
@@ -98,6 +112,10 @@ describe('evaluation report safety', () => {
 
     assert.deepEqual(Object.keys(report), [
       'schemaVersion',
+      'executionMode',
+      'fixtureHash',
+      'environmentHash',
+      'runs',
       'runId',
       'selection',
       'plan',

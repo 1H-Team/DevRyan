@@ -346,6 +346,21 @@ describe('skill alias resolution', () => {
     expect(await runBefore('1Health Vitest')).toBe('1Health Vitest');
   });
 
+  it('does not select an arbitrary skill when normalized aliases collide', async () => {
+    const hooks = await DevRyanSkillContextPlugin({ client: { app: { skills: async () => ({ data: [
+      { name: 'Code Review', location: '/a/skills/review/SKILL.md' },
+      { name: 'Code-Review', location: '/b/skills/review/SKILL.md' },
+    ] }) } } });
+    for (const name of ['code-review', 'review', 'code']) {
+      const output = { args: { name } };
+      await hooks['tool.execute.before']({ tool: 'skill' }, output);
+      expect(output.args.name).toBe(name);
+    }
+    const exact = { args: { name: 'Code Review' } };
+    await hooks['tool.execute.before']({ tool: 'skill' }, exact);
+    expect(exact.args.name).toBe('Code Review');
+  });
+
   it('leaves an unknown name untouched so the tool reports it honestly', async () => {
     expect(await runBefore('definitely-not-a-skill')).toBe('definitely-not-a-skill');
   });

@@ -5,6 +5,7 @@ import { collectSanitizedTools } from './client.mjs';
 import {
   gradeCaseOutcome,
   gradeManagedTaskOutcome,
+  gradeManagedIndependentFacts,
   gradeOracleReviewOutcome,
   gradeToolRequirements,
   summarizeGraders,
@@ -13,6 +14,20 @@ import {
 const tools = (...names) => names.map((tool) => ({ tool, status: 'completed', final: true }));
 const ownedTestRelativePath = 'src/devryan-eval-causal.test.mjs';
 const ownedTestCommand = `node --test ${ownedTestRelativePath}`;
+
+test('independent-child outcome requires final root facts and three distinct children', () => {
+  const text = JSON.stringify({ identity: 60, session: 60, billing: 60, elevated: 36, standard: 144, sentinel: 'bounded-context-control' });
+  const answer = { info: { role: 'assistant', finish: 'stop', time: { completed: 100 } }, parts: [{ type: 'text', text }] };
+  const input = { rootSessionId: 'ses_root', childSessionIds: ['ses_a', 'ses_b', 'ses_c'],
+    sessionTree: [{ sessionId: 'ses_root', messages: [answer] }] };
+  assert.equal(gradeManagedIndependentFacts(input).every(grader => grader.passed), true);
+  for (const changed of [
+    { ...input, rootSessionId: 'ses_foreign' },
+    { ...input, childSessionIds: ['ses_a', 'ses_a', 'ses_c'] },
+    { ...input, sessionTree: [{ sessionId: 'ses_root', messages: [{ ...answer, parts: [{ type: 'text', text: text.replace('144', '145') }] }] }] },
+    { ...input, sessionTree: [{ sessionId: 'ses_root', messages: [{ ...answer, info: { ...answer.info, finish: 'tool-calls' } }] }] },
+  ]) assert.equal(gradeManagedIndependentFacts(changed).every(grader => grader.passed), false);
+});
 
 const repairPart = ({ kind, start, end, tool, syntheticWorkspacePatch = false }) => {
   const state = {

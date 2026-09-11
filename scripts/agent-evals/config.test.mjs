@@ -144,6 +144,7 @@ describe('agent evaluation CLI configuration', () => {
       'context-bounded-lookup',
       'repair-and-test',
       'managed-change',
+      'managed-independent',
       'oracle-review-focused',
       'oracle-review-deep',
     ]);

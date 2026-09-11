@@ -43,6 +43,29 @@ test('matrix fails closed on unknown fields, duplicate IDs/scenarios, and non-ca
   for (const evidenceRoot of ['docs/audits','../escape','.cache']) assert.throws(() => validateQaMatrixConfig({...config(),evidenceRoot}), /evidenceRoot/);
 });
 
+test('live matrix preserves explicit cross-provider specialist selections and rejects implicit substitutions', () => {
+  const value = config();
+  value.cells[0].agentAssignments = { explorer: { providerId: 'opencode', modelId: 'deepseek-v4-flash', variant: 'high' },
+    builder: { providerId: 'xai', modelId: 'grok-4.6', variant: 'high' } };
+  assert.throws(() => validateQaMatrixConfig(value), { code: 'invalid_qa_matrix' });
+  value.cells[0].allowCrossProviderAssignments = true;
+  assert.deepEqual(expandQaMatrix(value)[0].agentAssignments, value.cells[0].agentAssignments);
+  for (const patch of [{ providerId: 'unknown' }, { modelId: 'opencode/model' }, { variant: undefined }, { extra: true }]) {
+    const invalid = structuredClone(value);
+    Object.assign(invalid.cells[0].agentAssignments.explorer, patch);
+    assert.throws(() => validateQaMatrixConfig(invalid), { code: 'invalid_qa_matrix' });
+  }
+});
+
+test('native window dimensions are explicit, bounded and Electron-only', () => {
+  const value = config(); value.cells[0].windowSize = { width: 600, height: 800 };
+  assert.deepEqual(expandQaMatrix(value)[0].windowSize, { width: 600, height: 800 });
+  for (const windowSize of [{ width: 599, height: 800 }, { width: 600, height: Infinity }, { width: 600 }, { width: 600, height: 800, extra: true }]) {
+    const invalid = structuredClone(value); invalid.cells[0].windowSize = windowSize;
+    assert.throws(() => validateQaMatrixConfig(invalid), { code: 'invalid_qa_matrix' });
+  }
+});
+
 test('manual compaction composes into each selected Electron project run without matrix expansion', () => {
   const value = config();
   value.cells[0].scenarioIds = ['project-work'];

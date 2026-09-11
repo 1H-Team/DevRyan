@@ -37,6 +37,10 @@ describe('diagnostics export preparation', () => {
       },
       { type: 'log', at: 4, directory: '/repo', payload: { text: 'runtime' } },
       { type: 'prompt', at: 5, directory: '/other', sessionID: 'unrelated', payload: { text: 'skip' } },
+      { type: 'lifecycle', event: 'objective_state', at: 6, directory: '/repo', sessionID: 'root',
+        payload: { messageID: 'msg_root', state: 'completed', createdAt: 1 } },
+      { type: 'lifecycle', event: 'objective_state', at: 6, directory: '/other', sessionID: 'unrelated',
+        payload: { messageID: 'msg_unrelated', state: 'completed', createdAt: 1 } },
     ];
     const sanitizer = createDiagnosticSanitizer({ knownSecrets: ['second-pass-secret'] });
     const bundle = await createDiagnosticsExport({
@@ -73,6 +77,9 @@ describe('diagnostics export preparation', () => {
       typeof file.data === 'string' ? file.data : readStream(file.openStream())
     )));
     expect(fileData.join('\n')).not.toContain('second-pass-secret');
+    const trace = JSON.parse(bundle.files.find((file) => file.name === 'DevRyan-trace.json').data);
+    expect(trace.metadata.roots.map((root) => root.rootSessionId)).toEqual(['root']);
+    expect(JSON.stringify(trace)).not.toContain('unrelated');
   });
 
   test('passes session, runtime, and blob entries to the ZIP writer as streams', async () => {
@@ -102,7 +109,7 @@ describe('diagnostics export preparation', () => {
       }),
     });
 
-    expect(buffered).toBe(6);
+    expect(buffered).toBe(7); // Includes the bounded DevRyan Chrome Trace projection.
     expect(streamed.map((entry) => entry.name)).toEqual([
       'sessions/ses_1.ndjson',
       'runtime.ndjson',
@@ -125,4 +132,29 @@ describe('diagnostics export preparation', () => {
     expect(bundle.files.map((file) => file.name)).toContain('sessions/%2E%2E.ndjson');
     expect(bundle.files.map((file) => file.name)).not.toContain('sessions/...ndjson');
   });
+});
+
+test('task export retains native-shaped managed timings and exact child scope from runtime records', async () => {
+  const event = (rootSessionId, childSessionId) => ({ type: 'open_code_event', at: 60, sessionID: null, directory: null,
+    payload: { type: 'openchamber:managed-task', properties: { owner: 'devryan',
+      task: { owner: 'devryan', taskId: `task_${rootSessionId}`, rootSessionId, childSessionId,
+        sequence: 1, status: 'completed', createdAt: 10, startedAt: 14, finishedAt: 40,
+        childPromptedAt: 15, firstAssistantPartAt: 18 },
+      resultEnvelope: { envelopeId: `envelope_${rootSessionId}`, createdAt: 41, acknowledgedAt: 51 } } } });
+  const sanitizer = createDiagnosticSanitizer();
+  const records = [event('root', 'child'), event('unrelated', 'other-child'),
+    { type: 'prompt', at: 20, sessionID: 'child', directory: '/repo', payload: { text: 'included-child' } },
+    { type: 'prompt', at: 20, sessionID: 'other-child', directory: '/repo', payload: { text: 'excluded-child' } }]
+    .map(record => sanitizer.sanitizeRecord(record));
+  const bundle = await createDiagnosticsExport({ scope: { scope: 'task', sessionID: 'root', directory: '/repo' },
+    journal: { readRecords: async () => records } });
+  expect(bundle.manifest.includedSessionIDs).toEqual(['child', 'root']);
+  const trace = JSON.parse(bundle.files.find(file => file.name === 'DevRyan-trace.json').data);
+  expect(trace.metadata.roots).toHaveLength(1);
+  expect(trace.metadata.roots[0]).toMatchObject({ rootSessionId: 'root', measurements: {
+    queueMs: { observed: 1, unknown: 0, total: 4 }, firstResponseMs: { observed: 1, unknown: 0, total: 3 },
+    resultConsumptionMs: { observed: 1, unknown: 0, total: 10 } } });
+  const rootRows = await readStream(bundle.files.find(file => file.name === 'sessions/root.ndjson').openStream());
+  expect(rootRows).toContain('task_root'); expect(rootRows).not.toContain('unrelated');
+  expect(bundle.files.some(file => file.name.includes('other-child') || file.name.includes('unrelated'))).toBe(false);
 });

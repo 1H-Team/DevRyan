@@ -3222,7 +3222,7 @@ describe('multi-user authentication runtime', () => {
     expect(harness.getUserPolicy(USER_IDS.admin).settings_overrides.agentModelSelections.Orchestrator.modelId)
       .toBe('admin-model');
 
-    const refreshed = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+    const refreshed = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie, path: '/api/config/settings' }));
     expect(refreshed.settingsOverrides.agentModelSelections.Builder.modelId).toBe('claude-sonnet-4-6');
     const settingsResponse = makeResponse();
     await handlers.get('GET /api/config/settings')({ principal: refreshed }, settingsResponse, vi.fn());
