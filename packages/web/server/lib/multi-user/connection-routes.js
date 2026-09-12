@@ -1,3 +1,4 @@
+import express from 'express';
 import { isDirectLocalRequest } from './supabase-connection.js';
 
 const safeMethods = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -23,7 +24,8 @@ export function registerSupabaseConnectionRoutes(app, { runtime, preserveLocalCo
       return res.json(connection.status());
     } catch { return res.status(503).json({ error: 'Local owner could not be verified' }); }
   });
-  app.patch('/api/system/supabase-connection', async (req, res) => {
+  // /api/system is not in the shared body-parser allowlist, so parse inline.
+  app.patch('/api/system/supabase-connection', express.json({ limit: '16kb' }), async (req, res) => {
     if (req.headers?.['x-devryan-csrf'] !== '1') return res.status(403).json({ error: 'Missing CSRF request header' });
     if (!req.body || Object.keys(req.body).length !== 1 || typeof req.body.enabled !== 'boolean') {
       return res.status(400).json({ error: 'Expected an enabled boolean' });

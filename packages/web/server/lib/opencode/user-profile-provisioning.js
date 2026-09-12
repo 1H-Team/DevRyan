@@ -22,6 +22,7 @@ import { applyMeridianHttpHotfix } from './meridian-http-hotfix.js';
 import { applyImagegenModelHotfix } from './imagegen-model-hotfix.js';
 import {
   CLAUDE_RUNTIME_MANAGED_OVERRIDES,
+  CLAUDE_RUNTIME_SELECTION,
   COMPATIBILITY_MARKER_RELATIVE_PATH,
   buildClaudeRuntimeCompatibilityMarker,
   inspectClaudeRuntimeCompatibility,
@@ -557,7 +558,8 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       );
     } else if (result.claudeRuntime.compatibilityStatus === 'upstream_blocked') {
       result.warnings.push(
-        'Claude Code 2.1.215 is selected for Meridian compatibility; the broader cross-provider context target remains upstream-blocked.',
+        `Claude Code ${CLAUDE_RUNTIME_SELECTION.versions.claudeCode} is selected for Meridian compatibility; `
+        + 'the broader cross-provider context target remains upstream-blocked.',
       );
     }
 

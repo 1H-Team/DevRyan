@@ -4,8 +4,11 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  CLAUDE_RUNTIME_CANDIDATE,
+  CLAUDE_RUNTIME_CONTROL,
   CLAUDE_RUNTIME_MANAGED_DEPENDENCIES,
   CLAUDE_RUNTIME_MANAGED_OVERRIDES,
+  CLAUDE_RUNTIME_SELECTION,
   inspectClaudeRuntimeCompatibility,
   mergeManagedClaudeRuntimeDependencies,
   mergeManagedClaudeRuntimeOverrides,
@@ -25,6 +28,16 @@ describe('Claude runtime compatibility', () => {
 
   afterEach(() => {
     fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('selects Claude Code 2.1.251 while preserving the historical control tuple', () => {
+    expect(CLAUDE_RUNTIME_CONTROL.claudeCode).toBe('2.1.215');
+    expect(CLAUDE_RUNTIME_CANDIDATE.claudeCode).toBe('2.1.251');
+    expect(CLAUDE_RUNTIME_SELECTION).toMatchObject({
+      channel: 'candidate',
+      compatibilityStatus: 'upstream_blocked',
+      versions: CLAUDE_RUNTIME_CANDIDATE,
+    });
   });
 
   it('updates a previously managed override while preserving unrelated overrides', () => {
