@@ -16,6 +16,18 @@ specifications and other signed inputs. It rejects duplicate object keys before
 ordinary parsing, caps bytes/depth/collection sizes, and preserves the same
 canonical JSON representation used for hashing and signing.
 
+`event-snapshot.js` owns the `parts-v1` Bot snapshot transport. Aggregate
+projections remain plain JSON with application-owned keys. Encoding measures
+escaped UTF-8 bytes before serialization and rejects snapshots above 16 MiB,
+depth 32, or one million values. A snapshot exceeding the 256 KiB ordinary event
+budget is split into ordered, surrogate-safe parts of at most 32,768 UTF-16 code
+units. Each `snapshot.part` envelope has exactly `id`, `sequence`, `kind`, and
+`payload`; the payload has exactly `index`, `total`, and `text`. All parts use
+the same epoch's sequence-zero id. The assembler enforces ordering and the
+aggregate byte cap, releases incomplete state on reset/failure, and returns
+one ordinary snapshot only after the last part. This transport does not replace
+the existing principal filtering or application snapshot validation.
+
 ## Scope ownership
 
 - Team computer: `bot:<botId>` (the production runtime always resolves here)

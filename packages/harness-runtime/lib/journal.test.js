@@ -42,6 +42,27 @@ afterEach(async () => {
 });
 
 describe('session-partitioned diagnostic journal', () => {
+  test('retains Bot subscription sizes and correlation through storage without snapshot content', async () => {
+    const journal = createJournal(await temporaryDirectory());
+    const payload = {
+      subscriptionId: 'd32c15a7-632c-47f9-a82a-c9c45981fd31',
+      stage: 'snapshot.serialize', snapshotBytes: 524_288, elapsedMs: 4_321,
+      code: 'bot_event_too_large', statusCode: 413,
+      headersSent: false, name: 'BotEventStreamError', status: 413,
+    };
+    journal.enqueue({ type: 'connection', event: 'bot.events.failed', payload: {
+      ...payload, snapshot: { text: 'private-input' }, body: 'private-input', userId: 'private-input',
+    } });
+    journal.enqueue({ type: 'connection', event: 'bot.events.closed', payload: {
+      subscriptionId: payload.subscriptionId, snapshotBytes: 'private-input', elapsedMs: -1,
+    } });
+    await journal.flush();
+    const records = await journal.readRecords();
+    expect(records[0]).toMatchObject({ payload });
+    expect(records[1].payload).toEqual({ subscriptionId: payload.subscriptionId });
+    expect(JSON.stringify(records)).not.toContain('private-input');
+    await journal.close();
+  });
   test('retains Context Mode call correlation, timing and delivery gaps through storage', async () => {
     const journal = createJournal(await temporaryDirectory());
     const workerCallID = 'd32c15a7-632c-47f9-a82a-c9c45981fd31';

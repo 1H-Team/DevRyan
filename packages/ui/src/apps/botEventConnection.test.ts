@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { BOT_SNAPSHOT_PART_KIND, encodeBotSnapshot, splitBotSnapshot } from '../../../bots-runtime/event-snapshot.js';
 
 import {
   createBotCapabilityConnectionController,
@@ -28,6 +29,61 @@ class FakeEventSource implements BotEventSource {
 }
 
 describe('Bot event connection controller', () => {
+  test('applies snapshot parts atomically and discards partial snapshots across reconnect generations', () => {
+    const sources: FakeEventSource[] = [];
+    const ingested: unknown[] = [];
+    const states: string[] = [];
+    let recovered = 0;
+    const controller = createBotEventConnectionController({
+      eventKinds: ['snapshot'],
+      createSource: () => { const source = new FakeEventSource(); sources.push(source); return source; },
+      ingest: (value) => { ingested.push(value); return { accepted: true, reason: 'snapshot' }; },
+      setConnectionState: (state) => states.push(state),
+      onReconnectedSnapshot: () => { recovered += 1; },
+    });
+    const snapshot = { channels: [{ id: 'channel', title: '界'.repeat(100_000) }] };
+    const parts = splitBotSnapshot(encodeBotSnapshot(snapshot).text);
+    const emit = (source: FakeEventSource, part: typeof parts[number]) => source.emit(BOT_SNAPSHOT_PART_KIND,
+      JSON.stringify({ id: 'epoch:0', sequence: 0, kind: BOT_SNAPSHOT_PART_KIND, payload: part }));
+    controller.start();
+    emit(sources[0], parts[0]);
+    expect(ingested).toEqual([]);
+    expect(states.at(-1)).toBe('connecting');
+    controller.retry();
+    for (const part of parts.slice(1)) emit(sources[0], part);
+    expect(ingested).toEqual([]);
+    for (const part of parts) emit(sources[1], part);
+    expect(ingested).toEqual([{ id: 'epoch:0', sequence: 0, kind: 'snapshot', payload: snapshot }]);
+    expect(states.at(-1)).toBe('connected');
+    expect(recovered).toBe(0);
+    controller.retry();
+    for (const part of parts.slice(0, -1)) emit(sources[2], part);
+    expect(recovered).toBe(0);
+    emit(sources[2], parts.at(-1)!);
+    expect(recovered).toBe(1);
+    controller.dispose();
+  });
+
+  test('reconnects without applying an incomplete snapshot when a live event interrupts its parts', () => {
+    const source = new FakeEventSource();
+    const ingested: unknown[] = [];
+    const states: Array<[string, string | null | undefined]> = [];
+    const controller = createBotEventConnectionController({
+      eventKinds: ['snapshot', 'run.completed'],
+      createSource: () => source,
+      ingest: (value) => { ingested.push(value); return { accepted: true, reason: 'snapshot' }; },
+      setConnectionState: (state, code) => states.push([state, code]),
+    });
+    controller.start();
+    source.emit(BOT_SNAPSHOT_PART_KIND, JSON.stringify({ id: 'epoch:0', sequence: 0,
+      kind: BOT_SNAPSHOT_PART_KIND, payload: { index: 0, total: 2, text: '{' } }));
+    source.emit('run.completed', '{}');
+    expect(ingested).toEqual([]);
+    expect(source.closeCount).toBe(1);
+    expect(states.at(-1)).toEqual(['reconnecting', 'bot_event_snapshot_invalid']);
+    controller.dispose();
+  });
+
   test('closes a malformed source, schedules one reconnect, and requires a fresh snapshot', () => {
     const sources: FakeEventSource[] = [];
     const timers: Array<() => void> = [];
@@ -137,16 +193,18 @@ describe('Bot event connection controller', () => {
     });
 
     controller.start();
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 8; index += 1) {
       sources.at(-1)?.onerror?.(new Event('error'));
       timers.at(-1)?.();
     }
-    expect(delays).toEqual([250, 1_000, 2_000, 5_000, 5_000]);
+    expect(delays).toEqual([250, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000, 60_000]);
 
     const current = sources.at(-1)!;
     controller.retry();
     expect(current.closeCount).toBe(1);
-    expect(sources).toHaveLength(7);
+    expect(sources).toHaveLength(10);
+    sources.at(-1)?.onerror?.(new Event('error'));
+    expect(delays.at(-1)).toBe(250);
     controller.dispose();
     expect(sources.at(-1)?.closeCount).toBe(1);
   });

@@ -13,7 +13,13 @@ export const createWebSupabaseConnectionAPI = (): SupabaseConnectionAPI => ({
       headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
       body: JSON.stringify({ enabled }),
     });
-    if (!response.ok) throw new Error('Unable to change the Supabase connection');
+    if (!response.ok) {
+      const detail = await response.json().then((body: unknown) => (
+        body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string'
+          ? (body as { error: string }).error : null
+      )).catch(() => null);
+      throw new Error(detail ? `Unable to change the Supabase connection: ${detail}` : 'Unable to change the Supabase connection');
+    }
     return response.json();
   },
 });

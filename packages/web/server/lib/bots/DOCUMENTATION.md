@@ -1061,6 +1061,43 @@ epoch/sequence order. Audience filtering happens before Bot/channel identifiers
 or payloads are constructed; an unauthorized principal therefore receives no
 private identifiers. This stream does not enter the ordinary OpenCode SSE
 reducers.
+
+Clients opt into `?snapshot=parts-v1` to receive aggregate snapshots up to
+16 MiB. Snapshots within 256 KiB keep their ordinary envelope; larger ones use
+ordered `snapshot.part` envelopes from `@openchamber/bots-runtime`, followed by
+the queued live events. Clients without this capability retain the original
+single-event limit. The UI assembles parts privately and updates canonical
+stores only after the complete snapshot passes validation. A disconnect,
+malformed/interleaved part, or generation change discards partial assembly.
+
+Disconnect listeners are installed before snapshot loading. Snapshot sources
+receive an abort signal and stop additional reads after cancellation; existing
+request deadlines bound an already running database read. Snapshot loading and
+encoding have a 30-second deadline. Transfer allows 15 seconds plus one second
+per 64 KiB of encoded snapshot, with a separate 15-second limit on each send.
+Each subscriber has at most 256 outstanding live publications and 4 MiB of
+queued wire data, including pending visibility checks and active writes.
+Publication acknowledges authorized queue admission; one independent pump
+awaits socket drain, so slow viewers do not block durable Bot operations.
+Queued full-text streaming revisions and non-final assistant checkpoints may
+replace earlier queued revisions for the same message. Replacements retain
+their new sequence position; in-flight frames and lifecycle events remain
+ordered. A stalled subscriber closes independently and recovers through a fresh
+snapshot. Sustained connection failures back off to 60 seconds; manual retry
+is immediate. Shutdown destroys connected responses and releases timers and
+queued data. Approval dependency failures surface instead of publishing a
+false empty approval list; repeated catalog cursors fail deterministically.
+
+Catalog revision reads request only public metadata columns. Repository list
+reads that exceed the decoded response limit may retry with at most four rows,
+then one row. The cursor uses the successful page limit and last returned row,
+so callers can continue the keyset traversal. Single-record reads, mutations
+and RPCs are never replayed by this fallback.
+Snapshot construction retains only public run/action projections and one short
+preview per channel. Full encrypted message pages and private run contexts are
+released between channel reads. Encryption key buffers clear on success,
+failure and cancellation.
+
 The chat snapshot includes only Bots with an active revision; setup-only Bots
 remain visible in Settings but cannot enter chat. Paused and retired Bots keep
 their active revision in the snapshot so historical channels remain visible.

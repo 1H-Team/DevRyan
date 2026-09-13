@@ -18,13 +18,13 @@ const CLAUDE_RUNTIME_CANDIDATE = Object.freeze({
   opencodeWithClaude: '1.8.0',
   meridian: '1.62.6',
   agentSdk: '0.2.141',
-  claudeCode: '2.1.215',
+  claudeCode: '2.1.251',
 });
 
 // Claude Code 2.1.98 reduced the measured prefix, but Meridian 1.62.6 requires
-// Claude Code ^2.1.198. Keep the compatible 2.1.215 control selected so stateful
-// resume usage and session lineage use the runtime contract Meridian was built
-// against. The broader cross-provider context ratio remains upstream-blocked.
+// Claude Code ^2.1.198. Claude Fable 5.1 additionally requires 2.1.251 or newer,
+// so select the exact compatible release while keeping the historical control
+// tuple unchanged. The broader cross-provider context ratio remains upstream-blocked.
 const CLAUDE_RUNTIME_SELECTION = Object.freeze({
   channel: 'candidate',
   compatibilityStatus: 'upstream_blocked',

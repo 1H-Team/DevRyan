@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
-import type { Session } from '@opencode-ai/sdk/v2';
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { createOpencodeClient, type Session } from '@opencode-ai/sdk/v2';
+import { opencodeClient } from '@/lib/opencode/client';
 import {
   applyGlobalSessionLifecycleEvent,
   beginGlobalSessionMembershipMutation,
   captureGlobalSessionLifecycleRevision,
+  ensureGlobalSessionsLoaded,
   isGlobalSessionDeletionPending,
   queueGlobalSessionsRefreshAfterMutation,
   resetGlobalSessionLifecycleOverlayForTest,
@@ -18,7 +20,7 @@ const session = (id: string, directory: string, parentID?: string, archivedAt?: 
   time: {
     created: 1,
     updated: 2,
-    ...(archivedAt ? { archived: archivedAt } : {}),
+    ...(archivedAt !== undefined ? { archived: archivedAt } : {}),
   },
   directory,
   ...(parentID ? { parentID } : {}),
@@ -59,6 +61,80 @@ describe('useGlobalSessionsStore snapshot helpers', () => {
     mutationHandles.push(handle);
     return handle;
   };
+
+  test('loads zero-timestamp unarchived chats from the complete history and separates actual archives', async () => {
+    const requests: URL[] = [];
+    const sdk = createOpencodeClient({
+      baseUrl: 'http://history.fixture',
+      fetch: async (request) => {
+        requests.push(new URL(request instanceof Request ? request.url : String(request)));
+        return Response.json([
+          session('active', '/repo'), session('unarchived', '/repo', undefined, 0),
+          session('archived', '/repo', undefined, 100),
+        ]);
+      },
+    });
+    const mock = spyOn(opencodeClient, 'getSdkClient').mockImplementation(() => sdk);
+    try {
+      await useGlobalSessionsStore.getState().loadSessions();
+      const state = useGlobalSessionsStore.getState();
+      expect(state.activeSessions.map((item) => item.id).sort()).toEqual(['active', 'unarchived']);
+      expect(state.archivedSessions.map((item) => item.id)).toEqual(['archived']);
+      expect(state.sessionsByDirectory.get('/repo')?.map((item) => item.id).sort()).toEqual(['active', 'unarchived']);
+      expect(state.status).toBe('ready');
+      expect(requests).toHaveLength(1);
+      expect(requests[0].searchParams.get('archived')).toBe('true');
+    } finally {
+      mock.mockRestore();
+    }
+  });
+
+  test('keeps an SDK HTTP error retryable without erasing saved history', async () => {
+    const existing = session('saved', '/repo', undefined, 0);
+    useGlobalSessionsStore.getState().applySnapshot([existing], []);
+    let requests = 0;
+    const sdk = createOpencodeClient({
+      baseUrl: 'http://history.fixture',
+      fetch: async () => ++requests === 1
+        ? Response.json({ error: 'not available' }, { status: 404 })
+        : Response.json([existing, session('recovered', '/repo')]),
+    });
+    const mock = spyOn(opencodeClient, 'getSdkClient').mockImplementation(() => sdk);
+    try {
+      await useGlobalSessionsStore.getState().loadSessions();
+      expect(useGlobalSessionsStore.getState().activeSessions).toEqual([existing]);
+      expect(useGlobalSessionsStore.getState().status).toBe('error');
+      await ensureGlobalSessionsLoaded();
+      expect(useGlobalSessionsStore.getState().activeSessions.map((item) => item.id).sort()).toEqual(['recovered', 'saved']);
+      expect(useGlobalSessionsStore.getState().status).toBe('ready');
+      expect(requests).toBe(2);
+    } finally {
+      mock.mockRestore();
+    }
+  });
+
+  test('discards an incomplete paginated history instead of replacing the previous snapshot', async () => {
+    const existing = session('saved', '/repo', undefined, 0);
+    const archived = session('saved-archive', '/repo', undefined, 100);
+    useGlobalSessionsStore.getState().applySnapshot([existing], [archived]);
+    let requests = 0;
+    const sdk = createOpencodeClient({
+      baseUrl: 'http://history.fixture',
+      fetch: async () => ++requests === 1
+        ? Response.json(Array.from({ length: 200 }, (_, index) => session(`partial-${index}`, '/repo')))
+        : Response.json({ error: 'unavailable page' }, { status: 403 }),
+    });
+    const mock = spyOn(opencodeClient, 'getSdkClient').mockImplementation(() => sdk);
+    try {
+      await useGlobalSessionsStore.getState().loadSessions();
+      expect(requests).toBe(2);
+      expect(useGlobalSessionsStore.getState().activeSessions).toEqual([existing]);
+      expect(useGlobalSessionsStore.getState().archivedSessions).toEqual([archived]);
+      expect(useGlobalSessionsStore.getState().status).toBe('error');
+    } finally {
+      mock.mockRestore();
+    }
+  });
 
   test('archiveSessionSnapshots moves captured active sessions into archived sessions', () => {
     const parent = session('parent', '/repo');

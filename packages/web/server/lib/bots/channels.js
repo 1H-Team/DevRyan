@@ -153,6 +153,9 @@ const publicRevision = (row) => Object.freeze({
   activatedAt: row.activated_at || null,
   retiredAt: row.retired_at || null,
 });
+const REVISION_SUMMARY_FIELDS = Object.freeze([
+  'id', 'bot_id', 'revision_number', 'compiled_hash', 'created_at', 'activated_at', 'retired_at',
+]);
 
 const publicMembership = (row) => Object.freeze({
   botId: row.bot_id,
@@ -205,21 +208,28 @@ export function createBotChannels({
 
   // Catalog bootstrap must not depend on conversation decryption, operations,
   // or execution health. Both HTTP and SSE use this same membership boundary.
-  const loadAssignedCatalog = async (principal) => {
+  const loadAssignedCatalog = async (principal, { signal } = {}) => {
+    signal?.throwIfAborted();
     if (!principal?.id) fail('Authentication required', 'bot_authentication_required', 401);
     const bots = new Map();
     const revisions = new Map();
     const memberships = [];
-    const listRows = async (repository, filters) => {
+    const listRows = async (repository, filters, fields) => {
       if (typeof repository?.list !== 'function') {
         fail('Bot catalog is unavailable', 'bot_catalog_unavailable', 503);
       }
       const rows = [];
+      const cursors = new Set();
       let cursor = null;
       do {
-        const page = await repository.list({ filters, limit: 100, cursor });
+        signal?.throwIfAborted();
+        const page = await repository.list({ filters, limit: 100, cursor,
+          ...(fields ? { fields } : {}), ...(signal ? { signal } : {}) });
+        signal?.throwIfAborted();
         rows.push(...page.items);
         cursor = page.nextCursor;
+        if (cursor && cursors.has(cursor)) fail('Bot catalog pagination stalled', 'bot_catalog_unavailable', 503);
+        if (cursor) cursors.add(cursor);
       } while (cursor);
       return rows;
     };
@@ -227,6 +237,7 @@ export function createBotChannels({
       user_id: principal.id, revoked_at: null,
     });
     for (const membership of membershipRows) {
+      signal?.throwIfAborted();
       if (membership.revoked_at !== null
         || (membership.activated_at && Date.parse(membership.activated_at) > now().getTime())) continue;
       let decision;
@@ -239,13 +250,15 @@ export function createBotChannels({
         throw error;
       }
       const bot = decision.bot;
+      signal?.throwIfAborted();
       if (!bot.active_revision_id) continue;
       bots.set(bot.id, bot);
       memberships.push(decision.membership);
-      const revisionRows = await listRows(store.repositories.bot_revisions, { bot_id: bot.id });
+      const revisionRows = await listRows(store.repositories.bot_revisions, { bot_id: bot.id }, REVISION_SUMMARY_FIELDS);
       for (const revision of revisionRows) revisions.set(revision.id, revision);
     }
     const visible = await filterCatalog(principal, [...bots.values()]);
+    signal?.throwIfAborted();
     const visibleIds = new Set(visible.map((bot) => bot.id));
     const hiddenIds = new Set([...bots.keys()].filter((id) => !visibleIds.has(id)));
     for (const id of hiddenIds) bots.delete(id);
@@ -797,17 +810,19 @@ export function createBotChannels({
       return (await loadAssignedCatalog(principal)).catalog;
     },
 
-    async snapshotForPrincipal(principal) {
+    async snapshotForPrincipal(principal, { signal } = {}) {
+      signal?.throwIfAborted();
       if (!principal?.id) fail('Authentication required', 'bot_authentication_required', 401);
       const channels = new Map();
-      const { catalog, bots, hiddenIds } = await loadAssignedCatalog(principal);
+      const { catalog, bots, hiddenIds } = await loadAssignedCatalog(principal, { signal });
       const runs = new Map();
-      const previewCandidates = [];
       const own = await store.repositories.bot_channels.list({
         filters: { owner_user_id: principal.id, lifecycle: 'active' },
         limit: 100,
+        ...(signal ? { signal } : {}),
       });
       for (const row of own.items) {
+        signal?.throwIfAborted();
         if (hiddenIds.has(row.bot_id)) continue;
         try {
           await authorization.requireChannelRead(principal, row.bot_id, row.id, null);
@@ -815,12 +830,16 @@ export function createBotChannels({
         } catch {
         }
       }
+      signal?.throwIfAborted();
       const grants = await store.repositories.bot_channel_acl?.list?.({
         filters: { user_id: principal.id, revoked_at: null },
         limit: 100,
+        ...(signal ? { signal } : {}),
       });
       for (const grant of grants?.items || []) {
+        signal?.throwIfAborted();
         const row = await store.get('bot_channels', { id: grant.channel_id });
+        signal?.throwIfAborted();
         if (!row || hiddenIds.has(row.bot_id) || row.lifecycle !== 'active' || row.archived_at !== null) continue;
         try {
           await authorization.requireChannelRead(principal, row.bot_id, row.id, null);
@@ -828,48 +847,61 @@ export function createBotChannels({
         } catch {
         }
       }
-      for (const { row: channel } of channels.values()) {
-        const [runPage, messagePage] = await Promise.all([
-          store.repositories.bot_runs?.list?.({
-            filters: { channel_id: channel.id },
-            limit: 100,
-          }),
-          store.repositories.bot_messages.list({
-            filters: { channel_id: channel.id },
-            limit: 8,
-          }),
-        ]);
-        for (const run of runPage?.items || []) runs.set(run.id, run);
-        previewCandidates.push(messagePage.items.filter((message) => (
-          message.finalized_at !== null
-          && (message.role === 'user' || message.role === 'assistant')
-          && message.assistant_phase !== 'acknowledgment'
-        )));
-      }
-      const channelPreviews = await withKey(async (key) => previewCandidates
-        .map((rows) => rows
-          .map((row) => decryptMessage(row, key))
-          .find((message) => (
-            message.body.text.trim().length > 0 || message.attachmentCount > 0
-          )))
-        .filter(Boolean)
-        .map(publicBotChannelPreview)
-        .sort((left, right) => right.createdAt.localeCompare(left.createdAt)
-          || right.sequence - left.sequence
-          || left.messageId.localeCompare(right.messageId)));
+      signal?.throwIfAborted();
+      // One key spans these bounded reads so ciphertext pages can be released
+      // per channel; withKey clears both buffers when the reads settle or fail.
+      const channelPreviews = await withKey(async (key) => {
+        signal?.throwIfAborted();
+        const previews = [];
+        for (const { row: channel } of channels.values()) {
+          signal?.throwIfAborted();
+          const [runPage, messagePage] = await Promise.all([
+            store.repositories.bot_runs?.list?.({
+              filters: { channel_id: channel.id },
+              limit: 100,
+              ...(signal ? { signal } : {}),
+            }),
+            store.repositories.bot_messages.list({
+              filters: { channel_id: channel.id },
+              limit: 8,
+              ...(signal ? { signal } : {}),
+            }),
+          ]);
+          signal?.throwIfAborted();
+          // Retain only public projections between channels, never the full
+          // encrypted transcript pages or private run context snapshots.
+          for (const run of runPage?.items || []) runs.set(run.id, publicRun(run));
+          let preview = null;
+          for (const row of messagePage.items) {
+            if (row.finalized_at === null || !['user', 'assistant'].includes(row.role)
+              || row.assistant_phase === 'acknowledgment') continue;
+            const message = decryptMessage(row, key);
+            if (!preview && (message.body.text.trim().length > 0 || message.attachmentCount > 0)) {
+              preview = publicBotChannelPreview(message);
+            }
+          }
+          if (preview) previews.push(preview);
+        }
+        return previews.sort((left, right) => right.createdAt.localeCompare(left.createdAt)
+          || right.sequence - left.sequence || left.messageId.localeCompare(right.messageId));
+      });
       const accessibleRunIds = new Set(runs.keys());
       const recentActions = [];
       if (store.repositories.bot_action_attempts?.list) {
         for (const botRow of bots.values()) {
+          signal?.throwIfAborted();
           const actionPage = await store.repositories.bot_action_attempts.list({
             filters: { bot_id: botRow.id },
             limit: 100,
+            ...(signal ? { signal } : {}),
           });
+          signal?.throwIfAborted();
           for (const action of actionPage.items) {
-            if (accessibleRunIds.has(action.run_id)) recentActions.push(action);
+            if (accessibleRunIds.has(action.run_id)) recentActions.push(publicBotActionAttempt(action));
           }
         }
       }
+      signal?.throwIfAborted();
       return Object.freeze({
         ...catalog,
         channels: Object.freeze([...channels.values()]
@@ -878,13 +910,11 @@ export function createBotChannels({
           .map(({ row, accessRole }) => publicChannel(row, accessRole))),
         channelPreviews: Object.freeze(channelPreviews),
         runs: Object.freeze([...runs.values()]
-          .sort((left, right) => Number(left.queue_sequence || 0) - Number(right.queue_sequence || 0)
-            || left.id.localeCompare(right.id))
-          .map(publicRun)),
+          .sort((left, right) => Number(left.queueSequence || 0) - Number(right.queueSequence || 0)
+            || left.id.localeCompare(right.id))),
         recentActions: Object.freeze(recentActions
-          .sort((left, right) => right.created_at.localeCompare(left.created_at)
-            || left.id.localeCompare(right.id))
-          .map(publicBotActionAttempt)),
+          .sort((left, right) => right.createdAt.localeCompare(left.createdAt)
+            || left.id.localeCompare(right.id))),
       });
     },
 

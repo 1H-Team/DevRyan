@@ -38,14 +38,16 @@ export function createBotComputerActivity({ audienceForChannel, authorization, p
       const previous = current.get(botId);
       if (previous) await this.endRun({ bot_id: botId, id: previous.runId });
     },
-    async snapshotForPrincipal(principal) {
+    async snapshotForPrincipal(principal, { signal } = {}) {
       const activities = [];
       for (const activity of current.values()) {
+        signal?.throwIfAborted();
         try {
           await authorization.requireChannelRead(principal, activity.botId, activity.channelId);
           if (current.get(activity.botId) === activity) activities.push(activity);
         } catch { /* Revoked or unrelated channels have no activity projection. */ }
       }
+      signal?.throwIfAborted();
       return { computerActivity: activities };
     },
     clear() { current.clear(); },

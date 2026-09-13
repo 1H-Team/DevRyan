@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { decryptBotJson, encryptBotJson } from './encryption.js';
 import { createBotChannels, messageAssociatedData } from './channels.js';
 import { createBotAuthorization } from './authorization.js';
+import { encodeBotSnapshot } from '@openchamber/bots-runtime/event-snapshot.js';
 
 const BOT_ID = 'b0000000-0000-4000-8000-000000000001';
 const CHANNEL_ID = 'c0000000-0000-4000-8000-000000000001';
@@ -735,6 +736,7 @@ describe('Production Bot continuous channels', () => {
     });
 
     const snapshot = await channels.snapshotForPrincipal({ id: USER_ID });
+    expect(JSON.parse(encodeBotSnapshot(snapshot).text)).toEqual(snapshot);
 
     expect(snapshot).toMatchObject({
       bots: [{
@@ -810,14 +812,22 @@ describe('assigned Bot catalog bootstrap', () => {
     const assigned = await channels.assignedForPrincipal({ id: USER_ID });
     expect(assigned).toMatchObject({ bots: [{ id: BOT_ID }], revisions: [{ id: REVISION_ID }], memberships: [{ userId: USER_ID }] });
     expect(assigned.revisions[0]).not.toHaveProperty('contract');
+    const revisionFields = store.repositories.bot_revisions.list.mock.calls[0][0].fields;
+    expect(revisionFields).toContain('compiled_hash');
+    expect(revisionFields).not.toContain('contract');
+    expect(revisionFields).not.toContain('portable_spec');
     expect(encryption.getKey).not.toHaveBeenCalled();
     expect(store.repositories.bot_channels.list).not.toHaveBeenCalled();
     expect(store.repositories.bot_messages.list).not.toHaveBeenCalled();
     expect(store.repositories.bot_runs.list).not.toHaveBeenCalled();
     await expect(channels.snapshotForPrincipal({ id: USER_ID })).rejects.toThrow('fixture key unavailable');
     expect(await channels.assignedForPrincipal({ id: USER_ID })).toEqual(assigned);
+    // Exercise one failed dependency at a time, independently of read order.
+    const providedKey = Buffer.from(KEY);
+    encryption.getKey.mockResolvedValueOnce(providedKey);
     store.repositories.bot_runs.list.mockRejectedValueOnce(new Error('fixture operations unavailable'));
     await expect(channels.snapshotForPrincipal({ id: USER_ID })).rejects.toThrow('fixture operations unavailable');
+    expect(providedKey.every((byte) => byte === 0)).toBe(true);
     expect(await channels.assignedForPrincipal({ id: USER_ID })).toEqual(assigned);
   });
 
@@ -826,6 +836,42 @@ describe('assigned Bot catalog bootstrap', () => {
     encryption.getKey.mockResolvedValue(Buffer.from(KEY));
     const catalog = await channels.assignedForPrincipal({ id: USER_ID });
     expect(await channels.snapshotForPrincipal({ id: USER_ID })).toMatchObject(catalog);
+  });
+
+  it('clears the snapshot encryption key when cancellation occurs during a channel read', async () => {
+    const { channels, encryption, store } = setup();
+    const controller = new AbortController();
+    const providedKey = Buffer.from(KEY);
+    encryption.getKey.mockResolvedValueOnce(providedKey);
+    store.repositories.bot_runs.list.mockImplementationOnce(async () => {
+      controller.abort(new Error('fixture disconnected'));
+      return { items: [], nextCursor: null };
+    });
+    await expect(channels.snapshotForPrincipal({ id: USER_ID }, { signal: controller.signal }))
+      .rejects.toThrow('fixture disconnected');
+    expect(providedKey.every((byte) => byte === 0)).toBe(true);
+    expect(store.repositories.bot_runs.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops snapshot pagination and downstream reads when its connection is aborted', async () => {
+    const { channels, store, encryption } = setup();
+    const controller = new AbortController();
+    store.repositories.bot_memberships.list.mockImplementationOnce(async () => {
+      controller.abort(new Error('fixture disconnected'));
+      return { items: [], nextCursor: 'next-page' };
+    });
+    await expect(channels.snapshotForPrincipal({ id: USER_ID }, { signal: controller.signal }))
+      .rejects.toThrow('fixture disconnected');
+    expect(store.repositories.bot_memberships.list).toHaveBeenCalledTimes(1);
+    expect(store.repositories.bot_channels.list).not.toHaveBeenCalled();
+    expect(encryption.getKey).not.toHaveBeenCalled();
+  });
+
+  it('rejects repeated catalog cursors instead of growing the snapshot indefinitely', async () => {
+    const { channels, store } = setup();
+    store.repositories.bot_memberships.list.mockResolvedValue({ items: [], nextCursor: 'same-page' });
+    await expect(channels.assignedForPrincipal({ id: USER_ID })).rejects.toMatchObject({ code: 'bot_catalog_unavailable' });
+    expect(store.repositories.bot_memberships.list).toHaveBeenCalledTimes(2);
   });
 
   it('does not grant administrator chat access without membership', async () => {

@@ -8,6 +8,62 @@ const jsonResponse = (payload = [], status = 200) => new Response(JSON.stringify
 });
 
 describe('Supabase server client', () => {
+  it.each([
+    ['REST', (client) => client.rest('user_profiles')],
+    ['RPC', (client) => client.rpc('fixture_function')],
+  ])('cancels an oversized declared %s response before reading or parsing it', async (_name, invoke) => {
+    const cancelled = vi.fn();
+    const response = new Response(new ReadableStream({ cancel: cancelled }), {
+      headers: { 'Content-Length': String(16 * 1024 * 1024 + 1) },
+    });
+    const client = createSupabaseServerClient({ url: 'https://fixture.invalid',
+      fetchImpl: async () => response });
+    await expect(invoke(client)).rejects.toMatchObject({ status: 502, code: 'supabase_response_too_large', payload: null });
+    expect(cancelled).toHaveBeenCalledTimes(1);
+    expect(response.body.locked).toBe(false);
+  });
+
+  it.each([
+    ['undeclared', {}],
+    ['understated', { 'Content-Length': '16' }],
+    ['decoded gzip', { 'Content-Length': '16', 'Content-Encoding': 'gzip' }],
+  ])('bounds the actual bytes of an %s JSON response and cancels the remainder', async (_name, headers) => {
+    const cancelled = vi.fn();
+    let pulls = 0;
+    const chunk = new Uint8Array(1024 * 1024).fill(32);
+    // Fetch exposes decoded chunks even when the headers describe compression.
+    const response = new Response(new ReadableStream({
+      pull(controller) { pulls += 1; controller.enqueue(chunk); },
+      cancel: cancelled,
+    }), { headers });
+    const traffic = { requested: vi.fn(), blocked: vi.fn(), received: vi.fn() };
+    const client = createSupabaseServerClient({ url: 'https://fixture.invalid', traffic,
+      fetchImpl: async () => response });
+    await expect(client.rest('user_profiles')).rejects.toMatchObject({ status: 502, code: 'supabase_response_too_large' });
+    expect(cancelled).toHaveBeenCalledTimes(1);
+    expect(pulls).toBeLessThanOrEqual(18);
+    expect(response.body.locked).toBe(false);
+    expect(traffic.received).toHaveBeenCalledTimes(1);
+    expect(traffic.received.mock.calls[0][1]).toBe(17 * 1024 * 1024);
+  });
+
+  it('preserves empty responses, plaintext errors and JSON error payloads within the bound', async () => {
+    const responses = [new Response(null, { status: 204 }), new Response('fixture unavailable', { status: 503 }),
+      jsonResponse({ message: 'fixture denied', code: 'fixture_denied' }, 403)];
+    const client = createSupabaseServerClient({ url: 'https://fixture.invalid',
+      fetchImpl: async () => responses.shift() });
+    await expect(client.rest('fixture')).resolves.toBeNull();
+    await expect(client.rest('fixture')).rejects.toMatchObject({ status: 503, message: 'fixture unavailable', payload: 'fixture unavailable' });
+    await expect(client.rest('fixture')).rejects.toMatchObject({ status: 403, payload: { code: 'fixture_denied' } });
+  });
+
+  it('preserves Fetch UTF-8 decoding for a JSON body with a byte-order mark', async () => {
+    const body = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('{"ready":true}')]);
+    const client = createSupabaseServerClient({ url: 'https://fixture.invalid',
+      fetchImpl: async () => new Response(body) });
+    await expect(client.rest('fixture')).resolves.toEqual({ ready: true });
+  });
+
   it('uses modern keys only as apikey values and never as bearer tokens', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse([]));
     const client = createSupabaseServerClient({

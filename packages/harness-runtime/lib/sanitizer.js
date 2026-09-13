@@ -42,14 +42,14 @@ const NESTED_FIELDS = new Set([
   'files', 'metadata', 'summary', 'diff', 'patch', 'before', 'after', 'head',
   'branch', 'remote', 'stage', 'stages', 'operationID', 'operationId', 'checkpointID',
   'checkpointId', 'turnID', 'turnId', 'userMessageID', 'assistantMessageID',
-  'statusCode', 'success', 'failed', 'aborted', 'retry', 'attempt', 'count',
+  'statusCode', 'headersSent', 'success', 'failed', 'aborted', 'retry', 'attempt', 'count',
   'durationMs', 'startedAt', 'finishedAt', 'createdAt', 'updatedAt', 'warnings',
   'content', 'body', 'headers', 'method', 'kind', 'format', 'language',
   'binary', 'truncated', 'exitCode', 'stdout', 'stderr', 'data', 'value',
   'projectDirectory', 'idempotencyKey', 'fingerprint', 'tombstone', 'result',
   'contended', 'gapReason', 'ref', 'commit', 'tree', 'parent', 'reusedTree',
   'model', 'system', 'noReply', 'tools', 'tokens', 'cost', 'snapshot',
-  'streamId', 'sequence', 'generation', 'observedAt', 'origin', 'requestType',
+  'streamId', 'subscriptionId', 'snapshotBytes', 'sequence', 'generation', 'observedAt', 'origin', 'requestType',
   'firstMissingSequence', 'lastMissingSequence', 'failureCode',
   'workerCallID', 'contextModeWorkerCallID', 'sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents', 'failureCategory', 'exitCode', 'signal',
   'schemaVersion', 'configurationHash', 'runtimeVersion', 'selection', 'catalog', 'contentHash', 'sourceHash', 'idsHash',
@@ -87,7 +87,7 @@ const STABLE_IDENTIFIER_FIELDS = new Set([
   'operationID', 'operationId', 'checkpointID', 'checkpointId', 'turnID', 'turnId',
   'userMessageID', 'assistantMessageID', 'idempotencyKey', 'fingerprint',
   'sha256', 'hash', 'head', 'commit', 'tree', 'ref', 'parent',
-  'streamId',
+  'streamId', 'subscriptionId',
   'workerCallID', 'contextModeWorkerCallID',
   'configurationHash', 'contentHash', 'sourceHash', 'idsHash',
   'anchorUserMessageID', 'continuationMessageID', 'activeUserMessageID',
@@ -105,6 +105,9 @@ const BROWSER_NETWORK_FIELDS = new Set([
   'path', 'requestType', 'statusCode', 'reason', 'failureCode',
   'firstMissingSequence', 'lastMissingSequence',
 ]);
+
+const BOT_EVENT_FIELDS = new Set(['subscriptionId', 'snapshotBytes', 'stage', 'elapsedMs', 'statusCode', 'headersSent', 'code', 'reason', 'name', 'status']);
+const BOT_EVENT_NUMBERS = new Set(['snapshotBytes', 'elapsedMs', 'statusCode', 'status']);
 
 const SECRET_PATTERNS = [
   { kind: 'pem', regex: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/gi },
@@ -331,7 +334,16 @@ export const createDiagnosticSanitizer = (options = {}) => {
       // records: even otherwise permitted headers/body/input fields are dropped.
       const contextMode = key === 'payload' && typeof object.event === 'string' && object.event.startsWith('context_mode.')
         && ['lifecycle', 'gap'].includes(type);
-      const projected = contextMode && asObject(value)
+      const botEvents = key === 'payload' && type === 'connection'
+        && typeof object.event === 'string' && object.event.startsWith('bot.events.');
+      const projected = botEvents && asObject(value)
+        ? Object.fromEntries(Object.entries(value).filter(([field, nested]) => (
+          BOT_EVENT_FIELDS.has(field) && (BOT_EVENT_NUMBERS.has(field)
+            ? Number.isSafeInteger(nested) && nested >= 0
+            : field === 'headersSent' ? typeof nested === 'boolean'
+              : typeof nested === 'string' && /^[a-zA-Z0-9_.:-]{1,160}$/.test(nested))
+        )))
+        : contextMode && asObject(value)
         ? Object.fromEntries(Object.entries(value).filter(([field]) => CONTEXT_MODE_FIELDS.has(field)))
         : browserNetwork && asObject(value)
         ? Object.fromEntries(Object.entries(value).filter(([field, nested]) => (

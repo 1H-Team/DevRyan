@@ -384,6 +384,7 @@ export function createBotStore({ supabase, logger = null } = {}) {
     cursor = null,
     limit,
     fields = null,
+    signal,
   } = {}) => {
     const config = configFor(tableName);
     if (fields !== null && (!Array.isArray(fields) || fields.length === 0
@@ -392,7 +393,7 @@ export function createBotStore({ supabase, logger = null } = {}) {
     }
     // Cursor fields are always present, including on narrow discovery pages.
     const select = fields === null ? config.select : [...new Set([...fields, ...config.cursor])].join(',');
-    const pageLimit = normalizePageLimit(limit);
+    let pageLimit = normalizePageLimit(limit);
     const query = filterQuery(config, filters);
     const [timestampField, identifierField] = config.cursor;
     query.order = `${timestampField}.desc,${identifierField}.desc`;
@@ -404,7 +405,20 @@ export function createBotStore({ supabase, logger = null } = {}) {
       query.or = `(${timestampField}.lt.${timestamp},and(${timestampField}.eq.${timestamp},${identifierField}.lt.${identifier}))`;
     }
     log('list', tableName, Object.keys(filters));
-    const rows = await requireSupabase().rest(tableName, { query, select });
+    let rows;
+    while (true) {
+      signal?.throwIfAborted();
+      try {
+        rows = await requireSupabase().rest(tableName, { query: { ...query, limit: pageLimit }, select });
+        signal?.throwIfAborted();
+        break;
+      } catch (error) {
+        if (error?.code !== 'supabase_response_too_large' || pageLimit === 1) throw error;
+        // These are read-only keyset pages. At most two retries (4, then 1)
+        // preserve the original filters/cursor without replaying any mutation.
+        pageLimit = pageLimit > 4 ? 4 : 1;
+      }
+    }
     const items = Array.isArray(rows) ? rows : [];
     return {
       items,

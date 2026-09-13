@@ -432,7 +432,9 @@ const createHarness = async ({
     if (table === 'opencode_session_ownership') {
       const sessionFilter = url.searchParams.get('session_id');
       const matching = mutableOwnershipRows.filter((row) => (
-        !sessionFilter || row.session_id === sessionFilter.replace(/^eq\./, '')
+        !sessionFilter || (sessionFilter.startsWith('gt.')
+          ? row.session_id > sessionFilter.slice(3)
+          : row.session_id === sessionFilter.replace(/^eq\./, ''))
       ));
       if (method === 'POST') {
         ownershipWriteAttemptCount += 1;
@@ -472,7 +474,11 @@ const createHarness = async ({
         }
         return jsonResponse([]);
       }
-      return jsonResponse(matching);
+      if (url.searchParams.get('order') === 'session_id.asc') {
+        matching.sort((left, right) => left.session_id < right.session_id ? -1 : left.session_id > right.session_id ? 1 : 0);
+      }
+      const limit = Number(url.searchParams.get('limit')) || 1_000;
+      return jsonResponse(matching.slice(0, Math.min(limit, 1_000)));
     }
     if (table === 'activity_logs') {
       if (body) auditEvents.push(body);
@@ -3941,6 +3947,32 @@ describe('multi-user authentication runtime', () => {
     expect(listResponse.payload.projects).toEqual([
       expect.objectContaining({ id: project.id, status: 'active' }),
     ]);
+  });
+
+  it('hydrates durable ownership beyond the Supabase row cap before authorizing saved sessions', async () => {
+    const ownershipRows = Array.from({ length: 1_205 }, (_, index) => ({
+      session_id: `session-${String(index).padStart(4, '0')}`,
+      user_id: USER_IDS.developer,
+      project_id: 'project-history',
+      branch_name: 'main',
+      public_directory: '/project',
+      archived_at: null,
+    }));
+    const harness = await createHarness({ ownershipRows });
+    expect(harness.runtime.getControlPlaneStatus().state).toBe('ready');
+    await expect(harness.runtime.resolveOwnedSessionPlanContext({
+      id: USER_IDS.developer,
+      scope: 'managed',
+      assignments: [{
+        projectId: 'project-history',
+        branchName: 'main',
+        repositoryPath: '/tmp/project-history',
+      }],
+    }, 'session-1204')).resolves.toEqual({
+      directory: '/tmp/project-history',
+      projectId: 'project-history',
+      branchName: 'main',
+    });
   });
 
   it('starts in a fail-closed degraded state and preserves the local ownership index during an outage', async () => {

@@ -21,3 +21,8 @@ Runtime selects an app entry, mounts providers, then renders feature components.
 Integrates contexts, stores, styles, and major view modules.
 
 - `botCatalogConnection.ts` owns assigned-catalog HTTP bootstrap and capped retry backoff alongside the Bot event connection. `BotsEventOwner.tsx` installs one combined Retry/disposal owner per principal; capability probing does not gate catalog loading.
+- `botEventConnection.ts` assembles negotiated `snapshot.part` events using the
+  pure `packages/bots-runtime/event-snapshot.js` contract before reconciling a
+  complete snapshot. It bounds incoming frames, discards partial state on
+  disconnect/retry, and fences late events by connection generation. Sustained
+  outages back off to 60 seconds while manual retry remains immediate.

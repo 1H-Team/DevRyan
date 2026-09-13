@@ -1,4 +1,5 @@
 export type BotJsonPrimitive = string | number | boolean | null;
+export * from './event-snapshot.js';
 export type BotJsonValue = BotJsonPrimitive | BotJsonValue[] | BotJsonObject;
 export interface BotJsonObject {
   [key: string]: BotJsonValue;

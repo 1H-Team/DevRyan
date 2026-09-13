@@ -13,6 +13,8 @@ export function SupabaseConnectionSettings() {
   const { supabaseConnection } = useRuntimeAPIs();
   const [status, setStatus] = React.useState<SupabaseConnectionStatus | null>(null);
   const [busy, setBusy] = React.useState(false);
+  // Mirrors `busy` for the poll, which closes over the initial render.
+  const busyRef = React.useRef(false);
   const effectiveMode = React.useRef<boolean | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   React.useEffect(() => {
@@ -22,7 +24,8 @@ export function SupabaseConnectionSettings() {
     const refresh = async () => {
       try {
         const next = await supabaseConnection.getStatus();
-        if (!disposed) {
+        // A refresh that resolves mid-change would overwrite the PATCH result with stale state.
+        if (!disposed && !busyRef.current) {
           if (next && effectiveMode.current !== null && effectiveMode.current !== next.effectiveEnabled) {
             window.location.reload();
             return;
@@ -38,10 +41,14 @@ export function SupabaseConnectionSettings() {
   }, [supabaseConnection]);
   if (!status?.configured || !supabaseConnection) return null;
   const change = async (enabled: boolean) => {
-    setBusy(true); setError(null);
-    try { setStatus(await supabaseConnection.setEnabled(enabled)); }
+    busyRef.current = true; setBusy(true); setError(null);
+    try {
+      const next = await supabaseConnection.setEnabled(enabled);
+      effectiveMode.current = next.effectiveEnabled;
+      setStatus(next);
+    }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Connection change failed'); }
-    finally { setBusy(false); }
+    finally { busyRef.current = false; setBusy(false); }
   };
   return (
     <section className="mb-4 space-y-2 rounded-lg border border-border p-3" aria-label="Supabase Connection">

@@ -1303,7 +1303,7 @@ describe('Anthropic context budget projection', () => {
           opencodeWithClaude: '1.8.0',
           meridian: '1.62.6',
           agentSdk: '0.2.141',
-          claudeCode: '2.1.215',
+          claudeCode: '2.1.251',
         },
         managementSources: {
           opencodeWithClaude: 'managed',
@@ -1350,7 +1350,7 @@ describe('Anthropic context budget projection', () => {
           opencodeWithClaude: '1.8.0',
           meridian: '1.62.6',
           agentSdk: '0.2.141',
-          claudeCode: '2.1.215',
+          claudeCode: '2.1.251',
         },
         managementSources: {
           opencodeWithClaude: 'managed',

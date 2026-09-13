@@ -36,7 +36,8 @@ Electron shell.
   execution-health middleware so historical diagnostics survive degradation.
   `createBotHostStatusCache` reuses one `botHost.getStatus()` Docker probe for
   sixty seconds (`?refresh=1` bypasses it; failed probes are never cached).
-- `store.js`: one explicit-select repository per Bot table, cursor paging,
+- `store.js`: one explicit-select repository per Bot table, cursor paging with
+  cancellation-aware smaller-page retries for oversized reads,
   optimistic `updated_at` writes, fixed exact-version publish RPCs, durable
   extraction-job lease/deferral transactions, idempotent terminal-run
   settlement, checkpoint-CAS summaries, and private Storage delegation.
@@ -197,7 +198,8 @@ Electron shell.
   canonical messages/checkpoints (body version 2 only when a finalized result
   carries a quick-reply question), atomic message/run/Shared admission, and authorized
   safe catalog/channel/run/finalized-preview snapshot plus audience projection. Public runs omit
-  adapter-specific execution identity.
+  adapter-specific execution identity. Snapshot construction retains only public
+  projections between channel reads and releases full encrypted message pages.
 - `context-assembler.js`: bounded revision/checkpoint/message/memory and retained
   legacy-Library context (excluding acknowledgments), plus the runtime-owned
   register guide (talk like a person, one Soul-voice line before tool work,
@@ -241,7 +243,11 @@ Electron shell.
 - `catalog-visibility.js`: shared `agent_test` creator-based catalog filtering for
   human viewers, with batched account-kind reads and bounded event decisions.
 - `event-stream.js`: snapshot-first, monotonic, principal-filtered Bot SSE kept
-  separate from ordinary OpenCode event state.
+  separate from ordinary OpenCode event state. Negotiates bounded snapshot
+  parts, owns pre-load disconnect/timeout cancellation, limits pending delivery
+  count and bytes, and isolates socket drain in a delivery pump after authorized
+  queue admission. Snapshot sources accept an
+  optional subscription `signal`; shutdown closes their HTTP responses.
 - `event-diagnostics.js`: content-free subscription correlation, snapshot-stage
   and byte measurements, failure codes, and HTTP/response lifetime diagnostics.
 - `connector-registry.js`: complete connector interface with isolated-workspace

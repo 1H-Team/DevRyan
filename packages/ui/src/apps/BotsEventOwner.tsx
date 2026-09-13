@@ -1,4 +1,5 @@
 import React from 'react';
+import { BOT_SNAPSHOT_FORMAT } from '../../../bots-runtime/event-snapshot.js';
 
 import { parseBot, isRevision, isMembership, parseBotAssignedCatalog } from '@/lib/botCatalog';
 
@@ -646,7 +647,7 @@ export const BotsEventOwner: React.FC = () => {
       createConnection: (initialRecoveryErrorCode) => createBotEventConnectionController({
         eventKinds: BOT_EVENT_KINDS,
         createSource: () => new EventSource(
-          '/api/bots/events',
+          `/api/bots/events?snapshot=${BOT_SNAPSHOT_FORMAT}`,
           { withCredentials: true },
         ) as BotEventSource,
         ingest: (value) => reconciler.ingest(value),

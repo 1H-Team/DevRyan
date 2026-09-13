@@ -17,6 +17,15 @@ behavior without weakening managed-host checks. That compatibility principal is
 never eligible for Managed Remote, which requires separately attributable managed
 accounts before connector startup or public-host API access.
 
+`supabase-client.js` bounds REST, RPC and Auth responses to 16 MiB of decoded
+body bytes before JSON parsing. It rejects oversized declared lengths and
+counts streamed chunks independently of compression or missing/incorrect
+length headers, cancelling an oversized body with `supabase_response_too_large`
+(502). Existing per-request deadlines, empty/plaintext error compatibility,
+traffic accounting, and the separate private Storage limits still apply.
+The Bot repository may retry oversized list reads using smaller keyset pages;
+the HTTP client never replays a request or mutation itself.
+
 ## Production Bots persistence
 
 Migrations `20260822120000_production_bots.sql`,
@@ -256,7 +265,11 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - `policy.js`: role defaults, per-page Read/Edit evaluation, capability merging,
   settings field ownership, and settings-route ownership.
 - `request-context.js`: authoritative request principal context for Git/GitHub.
-- `session-ownership-index.js`: private hot-path ownership mirror rebuilt from Supabase.
+- `session-ownership-index.js`: private hot-path ownership mirror rebuilt from
+  ordered Supabase keyset pages until an empty page confirms completion, including
+  when the server caps pages below the requested limit. A failed page preserves
+  the existing index; publication preserves local ownership commits and revocations
+  made while pages were loading. The startup deadline covers the entire refresh.
 - `session-visibility.js`: ownership-filtered global pagination and strict
   canonical assignment matching for reconciliation.
 - `session-folders.js`: bounded validation for per-principal server-backed folder state.

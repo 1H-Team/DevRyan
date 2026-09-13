@@ -30,6 +30,8 @@ API contracts.
 - Session attribution: `lib/session-id.js`. Exact DevRyan-owned managed-task events resolve to their root and establish their canonical child relation even when native session-created history has expired. Conflicting explicit session IDs and unknown ownership cannot add child scope; same-directory foreign roots remain excluded from task exports.
 - Hot-event trim/coalescing policy: `lib/journal-trim.js`
 - Sanitization/session-partitioned journal/export: `lib/sanitizer.js`, `lib/journal.js`, `lib/export.js`
+  Bot event connection records retain subscription correlation, snapshot bytes,
+  stage/timing and safe failure metadata through a narrow content-free allowlist.
 - Git evidence: `lib/evidence-git.js`, `lib/evidence-ledger.js`,
   `lib/evidence-runtime.js`
 - Diagnostic export selection/ZIP adapter: `lib/export.js`

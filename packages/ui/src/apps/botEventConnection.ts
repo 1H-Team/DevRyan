@@ -1,4 +1,5 @@
 import type { BotEventsConnectionState } from '@/stores/useBotOperationsStore';
+import { BOT_EVENT_MAX_BYTES, BOT_SNAPSHOT_PART_KIND, createBotSnapshotAssembler } from '../../../bots-runtime/event-snapshot.js';
 
 export type BotEventSource = {
   addEventListener(type: string, listener: (event: MessageEvent<string>) => void): void;
@@ -23,7 +24,7 @@ type ConnectionControllerOptions = {
   clearTimeoutImpl?: typeof clearTimeout;
 };
 
-const RECONNECT_DELAYS_MS = Object.freeze([250, 1_000, 2_000, 5_000]);
+const RECONNECT_DELAYS_MS = Object.freeze([250, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000]);
 
 export const createBotEventConnectionController = ({
   eventKinds,
@@ -43,10 +44,14 @@ export const createBotEventConnectionController = ({
   let disposed = false;
   let hasSnapshot = false;
   let lastFailureCode = initialRecoveryErrorCode;
+  const snapshotAssembler = createBotSnapshotAssembler();
+  let receivingSnapshot = false;
 
   const closeSource = () => {
     source?.close();
     source = null;
+    snapshotAssembler.reset();
+    receivingSnapshot = false;
   };
 
   const clearReconnectTimer = () => {
@@ -77,16 +82,30 @@ export const createBotEventConnectionController = ({
       if (disposed || generation !== currentGeneration || source !== nextSource) return;
       let value: unknown;
       try {
+        if (message.data.length > BOT_EVENT_MAX_BYTES + 4_096) {
+          scheduleReconnect('bot_event_too_large');
+          return;
+        }
         value = JSON.parse(message.data);
+        if (kind === BOT_SNAPSHOT_PART_KIND) {
+          receivingSnapshot = true;
+          const complete = snapshotAssembler.push(value);
+          if (!complete) return;
+          receivingSnapshot = false;
+          value = complete;
+        } else if (receivingSnapshot) {
+          scheduleReconnect('bot_event_snapshot_invalid');
+          return;
+        }
       } catch {
-        scheduleReconnect('bot_event_json_invalid');
+        scheduleReconnect(kind === BOT_SNAPSHOT_PART_KIND ? 'bot_event_snapshot_invalid' : 'bot_event_json_invalid');
         return;
       }
       const result = ingest(value);
       if (!result.accepted) {
         if (result.reason === 'stale') return;
         scheduleReconnect(
-          kind === 'snapshot'
+          kind === 'snapshot' || kind === BOT_SNAPSHOT_PART_KIND
             ? 'bot_event_snapshot_invalid'
             : result.reason === 'wrong_epoch'
               ? 'bot_event_epoch_invalid'
@@ -103,7 +122,7 @@ export const createBotEventConnectionController = ({
       if (reconnected) onReconnectedSnapshot();
     };
 
-    for (const kind of eventKinds) {
+    for (const kind of new Set([...eventKinds, BOT_SNAPSHOT_PART_KIND])) {
       nextSource.addEventListener(kind, (message) => ingestMessage(kind, message));
     }
     nextSource.onopen = () => {

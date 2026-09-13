@@ -291,7 +291,7 @@ export function createBotsRuntime({
   });
   const eventStream = createBotEventStream({
     recordDiagnostic,
-    loadSnapshot: (principal) => channels.snapshotForPrincipal(principal),
+    loadSnapshot: (principal, options) => channels.snapshotForPrincipal(principal, options),
     filterSnapshot: catalogVisibility.filterSnapshot,
     canDeliver: catalogVisibility.isVisible,
   });
@@ -388,7 +388,7 @@ export function createBotsRuntime({
     audit: botAudit,
     recordDiagnostic,
   });
-  eventStream.addSnapshotSource('computer_activity', (principal) => browserService.activity.snapshotForPrincipal(principal));
+  eventStream.addSnapshotSource('computer_activity', (principal, options) => browserService.activity.snapshotForPrincipal(principal, options));
   const evidenceService = createBotEvidenceService({
     store,
     blobStore,
@@ -429,8 +429,8 @@ export function createBotsRuntime({
     },
   });
   gatewayOperationHandler = actionGateway.handleGatewayOperation;
-  eventStream.addSnapshotSource('operations', async (principal) => ({
-    ...(await approvalService.snapshotForPrincipal(principal)),
+  eventStream.addSnapshotSource('operations', async (principal, options) => ({
+    ...(await approvalService.snapshotForPrincipal(principal, options)),
     computers: [],
   }));
   let modelCredentialBroker = null;

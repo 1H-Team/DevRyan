@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-09-12
+
+- Supabase connection: parse reconnect requests at the system route boundary, preserve the accepted connection state across overlapping status polls, and surface actionable server errors in Settings.
+- Claude runtime: upgrade the managed Claude Code candidate to `2.1.251` for Claude Fable 5.1 compatibility while preserving the historical control tuple and explicit user overrides.
+- Quality: add deterministic reconnect authorization, managed-runtime upgrade, stale-install repair, and compatibility-selection coverage.
+- Database: deploy and verify all repository migrations and the required Production Bots schema marker before release publication.
+- Release: update all DevRyan package and desktop metadata to 1.2.3.
+
 ## [1.2.2] - 2026-09-11
 
 - Supabase connection: add a host-scoped administrator control for secure disconnect and reconnect, preserve local projects and preferences while offline, coordinate idle Electron/runtime restarts, expose bounded local traffic estimates, and reduce idle Telegram, principal, session, and Bot polling traffic.

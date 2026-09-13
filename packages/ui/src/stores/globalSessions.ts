@@ -74,12 +74,22 @@ export async function listGlobalSessionPages(
 
     while (true) {
         const response = await retry(
-            () => apiClient.experimental.session.list({
-                archived: options.archived,
-                limit: options.pageSize,
-                ...(cursor !== undefined ? { cursor } : {}),
-            }),
-            { attempts: 3, delay: 500, retryIf: () => true },
+            async () => {
+                const result = await apiClient.experimental.session.list({
+                    archived: options.archived,
+                    limit: options.pageSize,
+                    ...(cursor !== undefined ? { cursor } : {}),
+                });
+                if (result.error !== undefined || result.response?.ok === false) {
+                    const status = result.response?.status ?? 502;
+                    throw Object.assign(new Error(`Failed to load session history (${status})`), { status });
+                }
+                if (!Array.isArray(result.data)) {
+                    throw new Error('Session history response was not a session list');
+                }
+                return result;
+            },
+            { attempts: 5, delay: 500, maxDelay: 4000 },
         );
 
         const payload = Array.isArray(response.data) ? (response.data as GlobalSessionRecord[]) : [];

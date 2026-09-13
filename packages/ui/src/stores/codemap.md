@@ -34,7 +34,9 @@ Zustand store layer for persisted and session-local client state: UI preferences
 - **Provider stall projection**: `useProviderStallStore.ts` owns the low-frequency actionable identity for a confirmed empty pending tool-input stall; semantic activity and lifecycle cleanup clear it without adding timestamps to hot session stores.
 - **Long-running tool projection**: `useLongRunningToolStore.ts` owns exact active `ctx_execute`/MCP-alias/`bash`/`shell` identity, first-observed/last-activity timestamps, five-minute confirmation, one-shot diagnostic attribution, and Stop action state. It stays outside hot session stores, resets confirmation on progress, excludes managed child dispatch, and never treats legitimate tool execution as a provider failure or retry candidate.
 - **Global session lifecycle projection**: `useGlobalSessionsStore.ts` merges complete global listings
-  with low-frequency cross-directory session lifecycle events and protects remote creates, updates,
+  from one inclusive archive query (zero archive timestamps remain active) with low-frequency
+  cross-directory session lifecycle events. Failed pages preserve the complete prior snapshot.
+  It protects remote creates, updates,
   archive moves, and deletes from stale HTTP snapshots via a bounded, request-revisioned non-Zustand
   overlay that also lets later authoritative listings prune orphaned events.
 - **Session plan-file pointer**: `useSessionPlanFileStore.ts` owns the narrow non-persisted `saving | saved | error` record for the latest plan revision in each session plus the atomic one-time auto-reveal claim for that revision. Permanent session deletion clears the pointer/claim but intentionally leaves the Markdown artifact intact; archive preserves both.

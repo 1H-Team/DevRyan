@@ -10,6 +10,9 @@ Dependency-free, JSON-only policy contracts shared by every Production Bots host
 - `contract.js`: strict JSON boundary primitives, public enums/error codes, canonical JSON/SHA-256, and reasoning/computer scope keys.
 - `strict-json.js`: bounded textual JSON parser that rejects duplicate object
   keys before portable-spec verification.
+- `event-snapshot.js` / `.d.ts`: browser-safe snapshot size preflight, bounded
+  `parts-v1` transport and atomic assembly. Shared UI imports this pure module
+  directly; hosts can also consume its public index exports.
 - `lifecycle.js`: Bot lifecycle graph and immutable activated-revision policy.
 - `policy.js`: channel ACL/member decisions, approval classes, and exact action hashing.
 - `run-state.js`: run/action transition graphs including durable `waiting_control`, unknown-write classification, and one-lease admission.

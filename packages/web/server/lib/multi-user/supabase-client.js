@@ -6,6 +6,8 @@ const DEFAULT_STORAGE_TIMEOUT_MS = 30_000;
 const MAX_STORAGE_TIMEOUT_MS = 60_000;
 const DEFAULT_STORAGE_RESPONSE_LIMIT = 64 * 1024;
 const MAX_STORAGE_OBJECT_BYTES = 25 * 1024 * 1024;
+const MAX_JSON_RESPONSE_BYTES = 16 * 1024 * 1024;
+const responseDecoder = new TextDecoder();
 const STORAGE_BUCKET_PATTERN = /^[a-z0-9][a-z0-9._-]{0,62}$/;
 
 export class SupabaseRequestError extends Error {
@@ -17,14 +19,10 @@ export class SupabaseRequestError extends Error {
   }
 }
 const parseResponse = async (response, onBody = () => {}) => {
-  const text = await response.text();
-  onBody(Buffer.byteLength(text, 'utf8'));
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
+  const body = await readBoundedBody(response, MAX_JSON_RESPONSE_BYTES, {
+    label: 'Supabase', onBody,
+  });
+  return parseBoundedJson(body);
 };
 
 const errorMessage = (payload, fallback) => {
@@ -49,46 +47,50 @@ const storagePath = (bucket, objectName = '') => {
   return `${encodeURIComponent(bucket)}/${segments.map(encodeURIComponent).join('/')}`;
 };
 
-const readBoundedBody = async (response, maximumBytes) => {
+const readBoundedBody = async (response, maximumBytes, {
+  label = 'Supabase Storage', onBody = () => {},
+} = {}) => {
   if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 0) {
     throw new SupabaseRequestError('Supabase response limit is invalid', { status: 500 });
   }
-  const contentLength = Number(response.headers.get('content-length'));
-  if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
-    throw new SupabaseRequestError('Supabase Storage response is too large', { status: 502 });
-  }
-
-  if (!response.body?.getReader) {
-    const body = Buffer.from(await response.arrayBuffer());
-    if (body.byteLength > maximumBytes) {
-      throw new SupabaseRequestError('Supabase Storage response is too large', { status: 502 });
-    }
-    return body;
-  }
-
-  const reader = response.body.getReader();
-  const chunks = [];
   let total = 0;
+  let reader = null;
+  const tooLarge = () => {
+    const error = new SupabaseRequestError(`${label} response is too large`, { status: 502 });
+    error.code = 'supabase_response_too_large';
+    return error;
+  };
   try {
+    const contentLength = Number(response.headers.get('content-length'));
+    if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
+      await response.body?.cancel('response limit exceeded').catch(() => undefined);
+      throw tooLarge();
+    }
+    if (!response.body) return Buffer.alloc(0);
+    reader = response.body.getReader();
+    const chunks = [];
+    // Fetch exposes decoded chunks: this also bounds compressed and chunked
+    // responses whose Content-Length does not describe the JSON being parsed.
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
       if (total > maximumBytes) {
         await reader.cancel('response limit exceeded').catch(() => undefined);
-        throw new SupabaseRequestError('Supabase Storage response is too large', { status: 502 });
+        throw tooLarge();
       }
       chunks.push(Buffer.from(value));
     }
+    return Buffer.concat(chunks, total);
   } finally {
-    reader.releaseLock();
+    reader?.releaseLock();
+    onBody(total);
   }
-  return Buffer.concat(chunks, total);
 };
 
 const parseBoundedJson = (body) => {
   if (body.byteLength === 0) return null;
-  const text = body.toString('utf8');
+  const text = responseDecoder.decode(body);
   try {
     return JSON.parse(text);
   } catch {
@@ -231,8 +233,9 @@ export function createSupabaseServerClient({
       traffic.received(operation, 0, 0);
       throw error;
     });
-    const responseBody = await readBoundedBody(response, maximumResponseBytes);
-    traffic.received(operation, responseBody.byteLength, response.status);
+    const responseBody = await readBoundedBody(response, maximumResponseBytes, {
+      onBody: (bytes) => traffic.received(operation, bytes, response.status),
+    });
     if (!response.ok) {
       const payload = parseBoundedJson(responseBody);
       throw new SupabaseRequestError(

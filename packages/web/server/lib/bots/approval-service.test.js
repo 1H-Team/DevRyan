@@ -154,6 +154,24 @@ const request = (overrides = {}) => ({
 });
 
 describe('Bot durable approvals', () => {
+  it('surfaces snapshot dependency failures instead of publishing an empty approval list', async () => {
+    const harness = createHarness();
+    harness.store.repositories.bot_action_attempts.list.mockRejectedValueOnce(new Error('fixture unavailable'));
+    await expect(harness.service.snapshotForPrincipal({ id: REQUESTER_ID })).rejects.toThrow('fixture unavailable');
+  });
+
+  it('stops reading pending approvals when the snapshot connection is cancelled', async () => {
+    const harness = createHarness();
+    const controller = new AbortController();
+    harness.store.repositories.bot_action_attempts.list.mockImplementationOnce(async () => {
+      controller.abort(new Error('fixture disconnected'));
+      return { items: [action()], nextCursor: null };
+    });
+    await expect(harness.service.snapshotForPrincipal({ id: REQUESTER_ID }, { signal: controller.signal }))
+      .rejects.toThrow('fixture disconnected');
+    expect(harness.store.repositories.bot_runs.get).not.toHaveBeenCalled();
+  });
+
   it('publishes and settles only approvals atomically expired by the store', async () => {
     const expiredAction = action({
       state: 'cancelled',

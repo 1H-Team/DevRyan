@@ -48,7 +48,7 @@ import { runWithRequestPrincipal } from './request-context.js';
 import { createSupabaseServerClient, SupabaseRequestError } from './supabase-client.js';
 import { createBranchPreviewVault } from './branch-preview-vault.js';
 import { createBranchPreviewService } from './branch-previews.js';
-import { createSessionOwnershipIndex } from './session-ownership-index.js';
+import { createSessionOwnershipIndex, loadSessionOwnershipRows } from './session-ownership-index.js';
 import { createAuditOutbox } from './audit-outbox.js';
 import { createAnalyticsRetentionService } from './analytics-retention.js';
 import {
@@ -692,9 +692,17 @@ export async function createMultiUserRuntime({
     if (controlPlaneDisposed) return Promise.resolve(controlPlaneStatus);
     if (controlPlaneSyncPromise) return controlPlaneSyncPromise;
     const current = (async () => {
+      const refresh = ownershipIndex.beginRefresh();
       try {
-        const durableOwnershipRows = await supabase.rest('opencode_session_ownership', { timeoutMs });
-        await ownershipIndex.rebuild(durableOwnershipRows);
+        const deadline = timeoutMs === undefined ? null : Date.now() + timeoutMs;
+        const durableOwnershipRows = await loadSessionOwnershipRows((query) => {
+          const remainingMs = deadline === null ? undefined : deadline - Date.now();
+          if (remainingMs !== undefined && remainingMs <= 0) {
+            throw new DOMException('Session ownership refresh timed out', 'TimeoutError');
+          }
+          return supabase.rest('opencode_session_ownership', { query, timeoutMs: remainingMs });
+        });
+        await refresh.rebuild(durableOwnershipRows);
         if (controlPlaneRetryTimer) {
           clearTimeout(controlPlaneRetryTimer);
           controlPlaneRetryTimer = null;
@@ -720,6 +728,8 @@ export async function createMultiUserRuntime({
         );
         scheduleControlPlaneSync();
         return controlPlaneStatus;
+      } finally {
+        refresh.dispose();
       }
     })();
     controlPlaneSyncPromise = current;

@@ -133,6 +133,10 @@ OpenChamber event stream reconnects, recovering changes missed while disconnecte
 `useGlobalSessionsStore.ts` combines complete global HTTP listings with low-frequency
 `session.created`, `session.updated`, and `session.deleted` events from the sync pipeline. Lifecycle
 events from unopened directories update the sidebar cache without allocating a directory child store.
+HTTP hydration fetches one inclusive `archived: true` listing and partitions it by
+`time.archived`, keeping the zero timestamp used by unarchive in the active list.
+SDK error responses and failed pages preserve both existing lists and leave the load
+retryable; a partial response never replaces the complete history snapshot.
 A bounded module-level lifecycle overlay protects those events from stale in-flight HTTP snapshots.
 Each global list request captures the current lifecycle revision and replays only newer events, so a
 later complete active+archived snapshot can authoritatively remove an orphaned create while a request

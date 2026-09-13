@@ -117,7 +117,7 @@ describe('user profile provisioning', () => {
     });
     expect(packageJson.overrides).toEqual({
       '@anthropic-ai/claude-agent-sdk': '0.2.141',
-      '@anthropic-ai/claude-code': '2.1.215',
+      '@anthropic-ai/claude-code': '2.1.251',
     });
     expect(JSON.stringify(slim)).not.toContain('"mcps"');
     expect(fs.existsSync(path.join(configDir, 'agents', 'orchestrator.md'))).toBe(true);
@@ -151,7 +151,7 @@ describe('user profile provisioning', () => {
         opencodeWithClaude: '1.8.0',
         meridian: '1.62.6',
         agentSdk: '0.2.141',
-        claudeCode: '2.1.215',
+        claudeCode: '2.1.251',
       },
       managementSources: {
         opencodeWithClaude: 'managed',
@@ -164,7 +164,7 @@ describe('user profile provisioning', () => {
       'Superpowers skills are not installed; the optional adapter will remain disabled.',
     );
     expect(result.warnings).toContain(
-      'Claude Code 2.1.215 is selected for Meridian compatibility; the broader cross-provider context target remains upstream-blocked.',
+      'Claude Code 2.1.251 is selected for Meridian compatibility; the broader cross-provider context target remains upstream-blocked.',
     );
     expect(commands).toEqual([{
       command: 'bun',
@@ -496,7 +496,7 @@ describe('user profile provisioning', () => {
     });
   });
 
-  it('reinstalls when managed Claude runtime overrides change', async () => {
+  it('upgrades the previously managed Claude Code 2.1.215 override', async () => {
     const runtime = createRuntime();
     await runtime.provision();
     commands = [];
@@ -510,15 +510,15 @@ describe('user profile provisioning', () => {
       'claude-runtime-compatibility.json',
     );
     const packageJson = readJson(packagePath);
-    packageJson.overrides['@anthropic-ai/claude-code'] = '2.1.200';
+    packageJson.overrides['@anthropic-ai/claude-code'] = '2.1.215';
     writeJson(packagePath, packageJson);
     const marker = readJson(markerPath);
-    marker.managedOverrides['@anthropic-ai/claude-code'] = '2.1.200';
+    marker.managedOverrides['@anthropic-ai/claude-code'] = '2.1.215';
     writeJson(markerPath, marker);
 
     const result = await runtime.provision();
 
-    expect(readJson(packagePath).overrides['@anthropic-ai/claude-code']).toBe('2.1.215');
+    expect(readJson(packagePath).overrides['@anthropic-ai/claude-code']).toBe('2.1.251');
     expect(result.claudeRuntime).toMatchObject({
       source: 'managed',
       runtimeStatus: 'ready',
@@ -536,16 +536,16 @@ describe('user profile provisioning', () => {
     commands = [];
 
     const configDirectory = path.join(home, '.config', 'opencode');
-    const installedMeridianPath = path.join(
+    const installedClaudeCodePath = path.join(
       configDirectory,
       'node_modules',
-      '@rynfar',
-      'meridian',
+      '@anthropic-ai',
+      'claude-code',
       'package.json',
     );
-    writeJson(installedMeridianPath, {
-      name: '@rynfar/meridian',
-      version: '1.62.5',
+    writeJson(installedClaudeCodePath, {
+      name: '@anthropic-ai/claude-code',
+      version: '2.1.215',
     });
 
     const result = await runtime.provision();
@@ -554,7 +554,7 @@ describe('user profile provisioning', () => {
     expect(result.claudeRuntime).toMatchObject({
       source: 'managed',
       runtimeStatus: 'ready',
-      installed: { meridian: '1.62.6' },
+      installed: { claudeCode: '2.1.251' },
     });
     expect(commands).toEqual([{
       command: 'bun',
@@ -570,8 +570,8 @@ describe('user profile provisioning', () => {
 
     const configDirectory = path.join(home, '.config', 'opencode');
     writeJson(
-      path.join(configDirectory, 'node_modules', '@rynfar', 'meridian', 'package.json'),
-      { name: '@rynfar/meridian', version: '1.62.5' },
+      path.join(configDirectory, 'node_modules', '@anthropic-ai', 'claude-code', 'package.json'),
+      { name: '@anthropic-ai/claude-code', version: '2.1.215' },
     );
     const driftedRuntime = createRuntime({
       runCommand: async (command, args, options) => {
@@ -587,8 +587,8 @@ describe('user profile provisioning', () => {
     expect(result.claudeRuntime).toMatchObject({
       source: 'managed',
       runtimeStatus: 'drifted',
-      installed: { meridian: '1.62.5' },
-      versionMismatches: ['meridian'],
+      installed: { claudeCode: '2.1.215' },
+      versionMismatches: ['claudeCode'],
     });
     expect(commands).toEqual([{
       command: 'bun',
@@ -635,7 +635,7 @@ describe('user profile provisioning', () => {
     });
     expect(upgraded.overrides).toMatchObject({
       '@anthropic-ai/claude-agent-sdk': '0.2.141',
-      '@anthropic-ai/claude-code': '2.1.215',
+      '@anthropic-ai/claude-code': '2.1.251',
     });
     expect(result.claudeRuntime).toMatchObject({
       source: 'managed',

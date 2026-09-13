@@ -17,7 +17,7 @@ ownership, directory opacity, and audit control plane.
 - `user-profile-visibility.js`: authoritative account-kind constants and the
   human-only profile query used by User Management.
 - `config.js`, `supabase-client.js`, `vault.js`: private configuration,
-  server-only Supabase/PostgREST plus bounded private Storage transport, and
+  server-only Supabase/PostgREST plus bounded JSON and private Storage transport, and
   encrypted token persistence. `runtime.js` injects that transport into the
   focused sibling `../bots/` control-plane module.
 - `branch-preview-vault.js`, `branch-previews.js`: dedicated encrypted
@@ -38,8 +38,9 @@ ownership, directory opacity, and audit control plane.
   Managed developers require Host Settings plus Agents Read/Edit; Council and
   host-level agent mutation remain outside this personal path.
 - `session-ownership-index.js`, `session-visibility.js`, `session-folders.js`:
-  private hot-path ownership enforcement, managed global-list pagination and
-  strict reconciliation matching, and server-backed per-principal folder state.
+  private hot-path ownership enforcement with complete, paginated Supabase
+  hydration that preserves concurrent commits/revocations; managed global-list
+  pagination and strict reconciliation matching; server-backed per-principal folder state.
 - `branch-target.js`: logical branch normalization/provenance and idempotent
   assigned-branch worktree resolution shared by chat and scheduled execution.
 - `runtime.js` also exposes authoritative scheduled-task access classification

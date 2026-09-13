@@ -620,33 +620,20 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
 
       try {
         const sdk = opencodeClient.getSdkClient();
-        const [activeResult, archivedResult] = await Promise.allSettled([
-          listGlobalSessionPages(sdk, { archived: false, pageSize: PAGE_SIZE }),
-          listGlobalSessionPages(sdk, { archived: true, pageSize: PAGE_SIZE }),
-        ]);
-
-        const fallbackSnapshot = mergeSessionLists(current.activeSessions, fallbackActive);
-        const nextActiveSessions = activeResult.status === 'fulfilled'
-          ? activeResult.value
-          : fallbackSnapshot;
-        const nextArchivedSessions = archivedResult.status === 'fulfilled'
-          ? archivedResult.value
-          : current.archivedSessions;
-
-        if (activeResult.status === 'rejected') {
-          console.warn('[GlobalSessions] Failed to load active sessions, preserving existing snapshot with fallback merge:', activeResult.reason);
-        }
-        if (archivedResult.status === 'rejected') {
-          console.warn('[GlobalSessions] Failed to load archived sessions, preserving current snapshot:', archivedResult.reason);
+        // `archived: true` includes all sessions. Active-only upstream listings
+        // omit the zero archive timestamp used when DevRyan unarchives a chat.
+        const sessions = await listGlobalSessionPages(sdk, { archived: true, pageSize: PAGE_SIZE });
+        const nextActiveSessions: Session[] = [];
+        const nextArchivedSessions: Session[] = [];
+        for (const session of sessions) {
+          if (session.time?.archived) nextArchivedSessions.push(session);
+          else nextActiveSessions.push(session);
         }
 
         const reconciled = reconcileSnapshotShadows(
           nextActiveSessions,
           nextArchivedSessions,
-          {
-            activeComplete: activeResult.status === 'fulfilled',
-            archivedComplete: archivedResult.status === 'fulfilled',
-          },
+          COMPLETE_GLOBAL_SNAPSHOT,
           requestLifecycleRevision,
         );
         set((state) => applySnapshot(

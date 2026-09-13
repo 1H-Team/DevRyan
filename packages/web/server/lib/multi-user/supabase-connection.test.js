@@ -123,10 +123,11 @@ describe('persistent Supabase connection', () => {
   });
 
   it('blocks remote HTTP and cloud routes before private routes and requires CSRF', async () => {
-    const { connection } = await fixture(false);
+    const { connection, fetchImpl } = await fixture(false);
     const cookie = await enroll(connection);
     const app = express(); const server = http.createServer(app); servers.push(server);
-    attachSupabaseConnectionBoundary(app, server, connection); app.use(express.json());
+    // No app-level JSON parser: production routes /api/system past the shared allowlist, so the route must parse itself.
+    attachSupabaseConnectionBoundary(app, server, connection);
     registerSupabaseConnectionRoutes(app, { runtime: { connection } });
     app.get('/private', (_req, res) => res.send('private'));
     await new Promise((done) => server.listen(0, '127.0.0.1', done));
@@ -137,6 +138,14 @@ describe('persistent Supabase connection', () => {
     const status = await fetch(`${url}/api/system/supabase-connection`, { headers: { cookie } });
     expect(status.status).toBe(200); expect((await status.json()).effectiveEnabled).toBe(false);
     expect((await fetch(`${url}/api/system/supabase-connection`, { method: 'PATCH', headers: { cookie, 'Content-Type': 'application/json' }, body: '{"enabled":true}' })).status).toBe(403);
+    // A well-formed body must reach authorization (403), never fail body validation (400).
+    const unauthenticated = await fetch(`${url}/api/system/supabase-connection`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-devryan-csrf': '1' }, body: '{"enabled":true}' });
+    expect(unauthenticated.status).toBe(403);
+    expect((await unauthenticated.json()).error).toBe('Local administrator authentication required');
+    fetchImpl.mockImplementation(async (url) => new Response(JSON.stringify(url.includes('/rpc/') ? PRODUCTION_BOTS_MIGRATION : [{ id: 'owner', role: 'admin', status: 'active' }])));
+    const accepted = await fetch(`${url}/api/system/supabase-connection`, { method: 'PATCH', headers: { cookie, 'Content-Type': 'application/json', 'x-devryan-csrf': '1' }, body: '{"enabled":true}' });
+    expect(accepted.status).toBe(202);
+    expect(await accepted.json()).toMatchObject({ desiredEnabled: true, effectiveEnabled: false, state: 'connecting' });
   });
 });
 

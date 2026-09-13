@@ -4187,19 +4187,17 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         </div>
                     </div>
                 )}
-                {!canCapturePlanChoice && currentSessionId ? (
-                    <div className="flex items-center gap-2 px-2 pb-2 typography-ui-label text-muted-foreground" role={messageLoadState.planSelectionStatus === 'error' ? 'alert' : 'status'}>
-                        <span>{messageLoadState.planSelectionError?.message ?? 'Restoring the session’s Plan choice…'}</span>
-                        {messageLoadState.planSelectionStatus === 'error' ? (
-                            <button
-                                type="button"
-                                className="shrink-0 cursor-pointer text-foreground underline underline-offset-2"
-                                onClick={() => {
-                                    const directory = useSessionUIStore.getState().getDirectoryForSession(currentSessionId) || opencodeClient.getDirectory();
-                                    if (directory) void messageLoader.ensure({ directory, sessionID: currentSessionId }, { reason: 'selected' });
-                                }}
-                            >Retry</button>
-                        ) : null}
+                {!canCapturePlanChoice && currentSessionId && messageLoadState.planSelectionStatus === 'error' ? (
+                    <div className="flex items-center gap-2 px-2 pb-2 typography-ui-label text-muted-foreground" role="alert">
+                        <span>{messageLoadState.planSelectionError?.message ?? 'The session’s Plan choice could not be restored. Retry or choose Plan explicitly before sending.'}</span>
+                        <button
+                            type="button"
+                            className="shrink-0 cursor-pointer text-foreground underline underline-offset-2"
+                            onClick={() => {
+                                const directory = useSessionUIStore.getState().getDirectoryForSession(currentSessionId) || opencodeClient.getDirectory();
+                                if (directory) void messageLoader.ensure({ directory, sessionID: currentSessionId }, { reason: 'selected' });
+                            }}
+                        >Retry</button>
                     </div>
                 ) : null}
                 <QueuedMessageTab

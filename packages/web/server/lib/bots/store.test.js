@@ -18,6 +18,50 @@ const createSupabase = () => ({
 });
 
 describe('Production Bots Supabase repositories', () => {
+  it('retries oversized read pages with a smaller limit and keeps the cursor for the actual returned page', async () => {
+    const supabase = createSupabase();
+    const oversized = Object.assign(new Error('bounded response'), { code: 'supabase_response_too_large', status: 502 });
+    supabase.rest.mockRejectedValueOnce(oversized).mockResolvedValueOnce(
+      Array.from({ length: 4 }, (_, id) => ({ id: `${BOT_ID.slice(0, -1)}${id + 1}`, created_at: CREATED_AT })),
+    );
+    const store = createBotStore({ supabase });
+    const first = await store.list('bots', { limit: 100, filters: { lifecycle: 'active' } });
+    expect(supabase.rest.mock.calls.slice(0, 2).map(([, options]) => options.query.limit)).toEqual([100, 4]);
+    expect(first.items).toHaveLength(4);
+    expect(first.nextCursor).toEqual(expect.any(String));
+    expect(JSON.parse(Buffer.from(first.nextCursor, 'base64url').toString()).identifier).toBe(first.items[3].id);
+    await store.list('bots', { limit: 100, cursor: first.nextCursor, filters: { lifecycle: 'active' } });
+    expect(supabase.rest.mock.calls[2][1].query).toMatchObject({ lifecycle: 'eq.active', order: 'created_at.desc,id.desc' });
+    expect(supabase.rest.mock.calls[2][1].query.or).toContain(first.items[3].id);
+  });
+
+  it('stops oversized page retries when the caller cancels the read', async () => {
+    const supabase = createSupabase();
+    const controller = new AbortController();
+    const reason = new Error('fixture cancelled');
+    supabase.rest.mockImplementation(async () => {
+      controller.abort(reason);
+      throw Object.assign(new Error('bounded response'), { code: 'supabase_response_too_large', status: 502 });
+    });
+    const store = createBotStore({ supabase });
+    await expect(store.list('bots', { limit: 100, signal: controller.signal })).rejects.toBe(reason);
+    expect(supabase.rest).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds oversized page retries and never retries single reads or mutations', async () => {
+    const supabase = createSupabase();
+    const oversized = Object.assign(new Error('bounded response'), { code: 'supabase_response_too_large', status: 502 });
+    supabase.rest.mockRejectedValue(oversized);
+    const store = createBotStore({ supabase });
+    await expect(store.list('bots', { limit: 100 })).rejects.toBe(oversized);
+    expect(supabase.rest.mock.calls.map(([, options]) => options.query.limit)).toEqual([100, 4, 1]);
+    supabase.rest.mockClear();
+    await expect(store.get('bots', { id: BOT_ID })).rejects.toBe(oversized);
+    expect(supabase.rest).toHaveBeenCalledTimes(1);
+    supabase.rest.mockClear();
+    await expect(store.insert('bots', { name: 'Fixture' })).rejects.toBe(oversized);
+    expect(supabase.rest).toHaveBeenCalledTimes(1);
+  });
   it('validates narrow projections and retains fields needed for pagination', async () => {
     const supabase = createSupabase(); const store = createBotStore({ supabase });
     const page = await store.repositories.bot_runs.list({ fields: ['id'], limit: 1 });

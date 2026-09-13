@@ -184,7 +184,8 @@ export function createBotApprovalService({
     requireDistinctApprover: action.requires_distinct_approver === true,
   });
 
-  const listPendingForPrincipal = async ({ principal, limit = 100, approvableOnly }) => {
+  const listPendingForPrincipal = async ({ principal, limit = 100, approvableOnly, signal }) => {
+    signal?.throwIfAborted();
     if (!principal?.id) fail('Authentication required', 'bot_authentication_required', 401);
     const pageLimit = Number(limit);
     if (!Number.isSafeInteger(pageLimit) || pageLimit < 1 || pageLimit > 100) {
@@ -193,19 +194,23 @@ export function createBotApprovalService({
     const page = await store.repositories.bot_action_attempts.list({
       filters: { state: 'pending_approval' },
       limit: pageLimit,
+      ...(signal ? { signal } : {}),
     });
     const actions = [];
     for (const action of page.items) {
+      signal?.throwIfAborted();
       try {
         const run = await store.repositories.bot_runs.get({
           id: action.run_id,
           bot_id: action.bot_id,
         });
+        signal?.throwIfAborted();
         if (!run || TERMINAL_RUN_STATES.has(run.state)) {
           if (run) await cancelPendingForRun({ run });
           continue;
         }
         const { membership } = await authorization.requireActiveMembership(principal, action.bot_id);
+        signal?.throwIfAborted();
         if ((!approvableOnly && action.initiated_by === principal.id)
           || mayApprove(action, principal, membership)) {
           actions.push(publicBotActionAttempt(action));
@@ -214,6 +219,7 @@ export function createBotApprovalService({
         if (error?.statusCode !== 403) throw error;
       }
     }
+    signal?.throwIfAborted();
     return Object.freeze({ actions: Object.freeze(actions), nextCursor: page.nextCursor || null });
   };
 
@@ -468,12 +474,13 @@ export function createBotApprovalService({
 
     expirePending,
 
-    snapshotForPrincipal: async (principal) => ({
+    snapshotForPrincipal: async (principal, { signal } = {}) => ({
       pendingApprovals: (await listPendingForPrincipal({
         principal,
         limit: 100,
         approvableOnly: false,
-      }).catch(() => ({ actions: [] }))).actions,
+        signal,
+      })).actions,
     }),
 
     async waitForDecision(actionAttemptId, { signal, timeoutMs = MAX_WAIT_MS } = {}) {
