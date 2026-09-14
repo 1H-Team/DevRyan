@@ -19,6 +19,8 @@ const bunTestHooks = (await import("bun:test")) as unknown as {
 
 // Mock SDK client that records permission.reply / question.reply calls
 const replyCalls: Array<{ method: string; params: Record<string, unknown> }> = []
+let questionSettlementConfirmed = true
+beforeEach(() => { questionSettlementConfirmed = true })
 const sessionCreateCalls: Array<Record<string, unknown>> = []
 const sessionUpdateCalls: Array<Record<string, unknown>> = []
 const sessionDeleteCalls: Array<Record<string, unknown>> = []
@@ -113,11 +115,11 @@ const mockScopedClient = {
   question: {
     reply: mock((params: Record<string, unknown>) => {
       replyCalls.push({ method: "question.reply", params })
-      return Promise.resolve({ data: true })
+      return Promise.resolve({ data: questionSettlementConfirmed })
     }),
     reject: mock((params: Record<string, unknown>) => {
       replyCalls.push({ method: "question.reject", params })
-      return Promise.resolve({ data: true })
+      return Promise.resolve({ data: questionSettlementConfirmed })
     }),
   },
 }
@@ -3493,6 +3495,38 @@ describe("respondToQuestion passes directory", () => {
     replyCalls.length = 0
     mockConfigStoreState = {}
   })
+
+  for (const action of ["respondToQuestion", "rejectQuestion"] as const) {
+    test(`${action} retains the question when the server does not confirm settlement`, async () => {
+      const questions = [{ id: "q-unconfirmed", sessionID: "session-a", questions: [] }]
+      const store = createStore({})
+      store.setState({ question: { "session-a": questions } })
+      const actions = await import("./session-actions")
+      actions.setActionRefs(mockSdk as unknown as OpencodeClient,
+        createChildStores([["/test/project", store]]), () => "/test/project")
+      questionSettlementConfirmed = false
+      const result = action === "respondToQuestion"
+        ? actions.respondToQuestion("session-a", "q-unconfirmed", [["Finish locally"]])
+        : actions.rejectQuestion("session-a", "q-unconfirmed")
+      await expect(result).rejects.toThrow("failed")
+      expect(store.getState().question["session-a"]).toBe(questions)
+    })
+
+    test(`${action} clears only the confirmed request without waiting for SSE`, async () => {
+      const answered = { id: "q-answered", sessionID: "session-a", questions: [] }
+      const pending = { id: "q-pending", sessionID: "session-a", questions: [] }
+      const unrelated = [{ id: "q-other", sessionID: "session-b", questions: [] }]
+      const store = createStore({})
+      store.setState({ question: { "session-a": [answered, pending], "session-b": unrelated } })
+      const childStores = createChildStores([["/test/project", store]])
+      const actions = await import("./session-actions")
+      actions.setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+      if (action === "respondToQuestion") await actions.respondToQuestion("session-a", answered.id, [["Finish locally"]])
+      else await actions.rejectQuestion("session-a", answered.id)
+      expect(store.getState().question["session-a"]).toEqual([pending])
+      expect(store.getState().question["session-b"]).toBe(unrelated)
+    })
+  }
 
   test("passes directory to question.reply", async () => {
     const childStores = createChildStores([])

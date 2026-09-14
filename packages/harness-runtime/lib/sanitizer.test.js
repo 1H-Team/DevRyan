@@ -3,6 +3,16 @@ import { describe, expect, test } from 'bun:test';
 import { createDiagnosticSanitizer } from './sanitizer.js';
 
 describe('diagnostic sanitizer', () => {
+  test('retains question settlement identity without admitting credentials', () => {
+    const record = createDiagnosticSanitizer().sanitizeRecord({
+      type: 'open_code_event', payload: {
+        type: 'question.replied',
+        properties: { sessionID: 'ses_1', requestID: 'que_1', apiKey: 'fixture-secret' },
+      },
+    });
+    expect(record.payload.properties).toEqual({ sessionID: 'ses_1', requestID: 'que_1' });
+  });
+
   test('retains only the fixed managed owner identity used by scoped exports', () => {
     const sanitizer = createDiagnosticSanitizer();
     const record = sanitizer.sanitizeRecord({ type: 'open_code_event', payload: {

@@ -344,10 +344,12 @@ export interface ManagedTaskControl {
   recordTransportRecovery?(recovery: ManagedTransportRecovery, expectedRevision: number): Promise<boolean>;
   setChildSessionId(childSessionId: string): Promise<boolean>;
   markAccepted(): Promise<boolean>;
-  /** Lease-checked; fills only fields that are still null. */
+  /** Lease-checked; fills startup fields only when null. Recent, changed
+   * transcript observations renew writable Fixer/Designer execution deadlines. */
   recordProgress(progress: {
     childPromptedAt?: number;
     firstAssistantPartAt?: number;
+    assistantProgressAt?: number;
   }): Promise<boolean>;
 }
 

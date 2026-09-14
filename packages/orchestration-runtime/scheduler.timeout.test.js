@@ -50,6 +50,132 @@ const createClock = () => {
 };
 
 describe('managed scheduler timeouts', () => {
+  test('renews a progressing implementation under its lease, then expires it when progress stops', async () => {
+    const clock = createClock();
+    const aborts = [];
+    let control;
+    const scheduler = createManagedTaskScheduler({
+      executor: {
+        async start(_task, nextControl) {
+          control = nextControl;
+          await control.setChildSessionId('ses_child');
+          await control.markAccepted();
+          return await new Promise(() => {});
+        },
+        async abort(task) { aborts.push(task.taskId); return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return { recoverablePreview: 'retained implementation' }; },
+      },
+      now: clock.now,
+      scheduleTimeout: clock.schedule,
+      cancelTimeout: clock.cancel,
+    });
+    const submitted = await scheduler.submit(input(1, { agent: 'fixer', timeoutAt: 1_500 }));
+    await scheduler.flush();
+    await clock.advance(400);
+    for (const assistantProgressAt of [-1, clock.now() - 60_001, clock.now() + 1]) {
+      await control.recordProgress({ assistantProgressAt });
+      expect(scheduler.getTask(submitted.taskId).timeoutAt).toBe(1_500);
+    }
+    await control.recordProgress({ assistantProgressAt: clock.now() });
+    const renewed = scheduler.getTask(submitted.taskId);
+    expect(renewed.timeoutAt).toBe(1_400 + 15 * 60_000);
+    await clock.advance(100);
+    await scheduler.flush();
+    expect(aborts).toEqual([]);
+    expect(scheduler.getTask(submitted.taskId).status).toBe('running');
+    await clock.advance(renewed.timeoutAt - clock.now());
+    await scheduler.flush();
+    expect(aborts).toEqual([submitted.taskId]);
+    expect(scheduler.getTask(submitted.taskId)).toMatchObject({ status: 'failed', partial: true });
+    expect(await control.recordProgress({ assistantProgressAt: clock.now() })).toBe(false);
+    await scheduler.shutdown();
+  });
+
+  for (const scenario of ['successful', 'failed', 'shutdown']) {
+    const persistenceFails = scenario === 'failed';
+    test(`waits for renewal persistence before an old timer cancels (${scenario})`, async () => {
+      const clock = createClock();
+      const aborts = [];
+      let control;
+      let holdRenewal = false;
+      let releaseSave;
+      let signalSaveStarted;
+      const saveGate = new Promise((resolve) => { releaseSave = resolve; });
+      const saveStarted = new Promise((resolve) => { signalSaveStarted = resolve; });
+      const scheduler = createManagedTaskScheduler({
+        executor: {
+          async start(_task, nextControl) {
+            control = nextControl;
+            await control.markAccepted();
+            return await new Promise(() => {});
+          },
+          async abort(task) { aborts.push(task.taskId); return { aborted: true }; },
+          async reconcile() { return { state: 'unavailable' }; },
+          async readRecoverableResult() { return {}; },
+        },
+        persistence: {
+          async load() { return null; },
+          async save() {
+            if (!holdRenewal) return;
+            holdRenewal = false;
+            signalSaveStarted();
+            await saveGate;
+            if (persistenceFails) throw new Error('fixture persistence unavailable');
+          },
+        },
+        now: clock.now,
+        scheduleTimeout: clock.schedule,
+        cancelTimeout: clock.cancel,
+      });
+      const submitted = await scheduler.submit(input(1, { agent: 'designer', timeoutAt: 1_500 }));
+      await scheduler.flush();
+      await clock.advance(400);
+      holdRenewal = true;
+      const renewal = control.recordProgress({ assistantProgressAt: clock.now() });
+      const outcome = renewal.then(() => null, (error) => error.message);
+      await saveStarted;
+      await clock.advance(100);
+      expect(aborts).toEqual([]);
+      const shutdown = scenario === 'shutdown' ? scheduler.shutdown() : null;
+      releaseSave();
+      expect(await outcome).toBe(persistenceFails ? 'fixture persistence unavailable' : null);
+      if (shutdown) await shutdown;
+      await scheduler.flush();
+      expect(scheduler.getTask(submitted.taskId).status).toBe(persistenceFails ? 'failed' : 'running');
+      expect(aborts).toEqual(persistenceFails ? [submitted.taskId] : []);
+      if (shutdown) expect(clock.count()).toBe(0);
+      await scheduler.shutdown();
+    });
+  }
+
+  for (const agent of ['explorer', 'oracle', 'council']) {
+    test(`keeps the ${agent} deadline fixed despite activity`, async () => {
+      const clock = createClock();
+      let control;
+      const scheduler = createManagedTaskScheduler({
+        executor: {
+          async start(_task, nextControl) {
+            control = nextControl;
+            await control.markAccepted();
+            return await new Promise(() => {});
+          },
+          async abort() { return { aborted: true }; },
+          async reconcile() { return { state: 'unavailable' }; },
+          async readRecoverableResult() { return {}; },
+        },
+        now: clock.now,
+        scheduleTimeout: clock.schedule,
+        cancelTimeout: clock.cancel,
+      });
+      const submitted = await scheduler.submit(input(1, { agent, timeoutAt: 1_500 }));
+      await scheduler.flush();
+      await control.recordProgress({ assistantProgressAt: clock.now() });
+      expect(scheduler.getTask(submitted.taskId).timeoutAt).toBe(1_500);
+      await scheduler.shutdown();
+    });
+  }
+
   test('aborts only the timed-out active task and records a failed result', async () => {
     const clock = createClock();
     const aborts = [];
@@ -160,6 +286,8 @@ describe('managed scheduler timeouts', () => {
     const warnings = [];
     const resumedTasks = [];
     let abortSignal = null;
+    let resolveAbortStarted;
+    const abortStarted = new Promise((resolve) => { resolveAbortStarted = resolve; });
     let taskCounter = 0;
     let leaseCounter = 0;
     const scheduler = createManagedTaskScheduler({
@@ -179,6 +307,7 @@ describe('managed scheduler timeouts', () => {
         },
         async abort(_task, options) {
           abortSignal = options.signal;
+          resolveAbortStarted();
           return await never;
         },
         async reconcile() { return { state: 'unavailable' }; },
@@ -197,6 +326,7 @@ describe('managed scheduler timeouts', () => {
 
     const task = await scheduler.submit(input(1, { timeoutAt: 1_500 }));
     await clock.advance(500);
+    await abortStarted;
     await clock.advance(10);
     const settled = await scheduler.waitForTask(task.taskId);
     const envelope = scheduler.getResultEnvelope(task.taskId);

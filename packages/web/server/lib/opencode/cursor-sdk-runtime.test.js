@@ -389,7 +389,8 @@ describe('Cursor SDK runtime', () => {
 
     const records = await waitFor(async () => {
       const current = await runtime.getSessionMessages('ses_open_stream_edit');
-      return current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
+      return runtime.getSessionStatus().ses_open_stream_edit?.type === 'idle'
+        && current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
         ? current
         : null;
     });
@@ -1649,7 +1650,8 @@ describe('Cursor SDK runtime', () => {
 
     await waitFor(async () => {
       const current = await runtime.getSessionMessages('ses_duplicate_tool');
-      return current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
+      return runtime.getSessionStatus().ses_duplicate_tool?.type === 'idle'
+        && current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
         ? current
         : null;
     });
@@ -3710,7 +3712,8 @@ describe('Cursor SDK runtime', () => {
 
     await waitFor(async () => {
       const current = await runtime.getSessionMessages('ses_1');
-      return current.some((record) => record.info?.role === 'assistant' && record.info?.finish);
+      return runtime.getSessionStatus().ses_1?.type === 'idle'
+        && current.some((record) => record.info?.role === 'assistant' && record.info?.finish);
     });
 
     const patchEventIndex = emitted.findIndex((event) => (

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { appendManagedAssignment, stripManagedAssignment } from './continuation-assignment.js';
 
 import {
   createManagedOpenCodeExecutor,
@@ -805,7 +806,7 @@ describe('managed OpenCode executor', () => {
       // The durable receipt uses a fresh OpenCode-sortable ID.
       messageId: expect.stringMatching(/^msg_[0-9a-f]{26}$/),
       signal: expect.any(AbortSignal),
-      prompt: MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
+      prompt: appendManagedAssignment(task(), MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT),
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
@@ -873,7 +874,7 @@ describe('managed OpenCode executor', () => {
       variant: 'fast',
       messageId: expect.stringMatching(/^msg_[0-9a-f]{26}$/),
       signal: expect.any(AbortSignal),
-      prompt: MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
+      prompt: appendManagedAssignment(task(), MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT),
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
@@ -988,7 +989,7 @@ describe('managed OpenCode executor', () => {
       modelId: 'gpt-4.1',
       agent: 'explorer',
       variant: 'fast',
-      prompt: MANAGED_RESUME_CONTINUATION_PROMPT,
+      prompt: appendManagedAssignment(task(), MANAGED_RESUME_CONTINUATION_PROMPT),
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
@@ -1054,7 +1055,7 @@ describe('managed OpenCode executor', () => {
     }), { async markAccepted() { return true; } });
 
     expect(prompts).toHaveLength(1);
-    expect(prompts[0].prompt).toBe(MANAGED_RESUME_CONTINUATION_PROMPT);
+    expect(prompts[0].prompt).toBe(appendManagedAssignment(task(), MANAGED_RESUME_CONTINUATION_PROMPT));
     expect(result).toMatchObject({
       status: 'completed',
       recoverablePreview: 'Finished the remaining work',
@@ -1386,9 +1387,41 @@ describe('managed OpenCode executor', () => {
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toMatchObject({
       sessionId: 'ses_child',
-      prompt: MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
+      prompt: appendManagedAssignment(task(), MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT),
       tools: { ...WRITABLE_CONTEXT_MODE_TOOLS, task: false },
     });
+  });
+
+  test('reports deadline progress only after a changed live transcript, not startup history or busy heartbeats', async () => {
+    let clock = 1_000;
+    let statusReads = 0;
+    const progress = [];
+    const executor = createManagedOpenCodeExecutor({
+      transport: {
+        async createSession() { throw new Error('must not create'); },
+        async promptSession() { throw new Error('must not prompt'); },
+        async readSession() { return { id: 'ses_child' }; },
+        async readStatus() { return { type: ++statusReads <= 3 ? 'busy' : 'idle' }; },
+        async readMessages() {
+          return [assistant({
+            info: statusReads <= 3 ? { finish: undefined, time: {} } : {},
+            parts: [{ type: 'text', text: statusReads < 3 ? 'Retained work' : 'Retained work and new verification' }],
+          })];
+        },
+        async abortSession() { throw new Error('must not abort'); },
+        deleteSession,
+      },
+      now: () => clock,
+      sleep: async () => { clock += 100; },
+      pollIntervalMs: 0,
+      liveTranscriptRefreshMs: 0,
+    });
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {
+      async recordProgress(value) { progress.push(value); return true; },
+    });
+    expect(result.status).toBe('completed');
+    expect(progress.filter((value) => 'assistantProgressAt' in value)).toEqual([{ assistantProgressAt: 1_200 }]);
+    await executor.shutdown();
   });
 
   test('continues a busy child whose provider stalls while constructing blank tool input', async () => {
@@ -1464,7 +1497,7 @@ describe('managed OpenCode executor', () => {
     });
     expect(abortCount).toBe(1);
     expect(prompts).toHaveLength(1);
-    expect(prompts[0].prompt).toBe(MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT);
+    expect(prompts[0].prompt).toBe(appendManagedAssignment(task(), MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT));
   });
 
   test('ignores an abandoned in-flight tool from an earlier same-child attempt', async () => {
@@ -1810,7 +1843,7 @@ describe('managed OpenCode executor', () => {
       modelId: 'gpt-4.1',
       agent: 'explorer',
       variant: 'fast',
-      prompt: MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT,
+      prompt: appendManagedAssignment(task(), MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT),
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
@@ -2853,14 +2886,14 @@ describe('managed task prompt preamble', () => {
       acceptOnly,
     );
     expect(resumed.status).toBe('completed');
-    expect(prompts.map((entry) => entry.prompt)).toEqual([MANAGED_RESUME_CONTINUATION_PROMPT]);
+    expect(prompts.map((entry) => stripManagedAssignment(entry.prompt))).toEqual([MANAGED_RESUME_CONTINUATION_PROMPT]);
 
     const retried = await executor.retryInPlace(
       task({ childSessionId: 'ses_child', executionKind: 'retry_in_place', attempt: 2 }),
       acceptOnly,
     );
     expect(retried.status).toBe('completed');
-    expect(prompts.map((entry) => entry.prompt)).toEqual([
+    expect(prompts.map((entry) => stripManagedAssignment(entry.prompt))).toEqual([
       MANAGED_RESUME_CONTINUATION_PROMPT,
       `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}github-copilot/gpt-4.1 · fast to continue the previous task.`,
     ]);
@@ -2974,7 +3007,7 @@ describe('managed task progress stamps', () => {
 
     expect(result).toMatchObject({ status: 'completed', recoverablePreview: 'continued on the new model' });
     expect(prompts).toHaveLength(1);
-    expect(prompts[0].prompt).toBe(
+    expect(stripManagedAssignment(prompts[0].prompt)).toBe(
       `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}openai/gpt-5.6 after a provider usage limit.`,
     );
     expect(isManagedRetryInPlacePrompt(prompts[0].prompt)).toBe(true);
@@ -3014,7 +3047,7 @@ describe('managed task progress stamps', () => {
     const result = await executor.resume(task({ childSessionId: 'ses_child', executionKind: 'resume' }), control);
 
     expect(result.status).toBe('completed');
-    expect(prompts.map((entry) => entry.prompt)).toEqual([MANAGED_RESUME_CONTINUATION_PROMPT]);
+    expect(prompts.map((entry) => stripManagedAssignment(entry.prompt))).toEqual([MANAGED_RESUME_CONTINUATION_PROMPT]);
     expect(stamps[0]).toEqual({ childPromptedAt: 7_000 });
     expect(stamps.filter((stamp) => 'firstAssistantPartAt' in stamp)).toHaveLength(1);
   });
@@ -3078,7 +3111,7 @@ describe('managed task turn budget', () => {
     expect(result).toMatchObject({ status: 'completed', recoverablePreview: 'Wrapped up' });
     expect(state.abortCount).toBe(0);
     expect(state.prompts).toHaveLength(2);
-    const budgetPrompts = state.prompts.filter((entry) => entry.prompt === MANAGED_TURN_BUDGET_PROMPT);
+    const budgetPrompts = state.prompts.filter((entry) => stripManagedAssignment(entry.prompt) === MANAGED_TURN_BUDGET_PROMPT);
     expect(budgetPrompts).toHaveLength(1);
     // Sent on the read that reached the budget (3 assistant turns), and never again
     // even though the child produced further turns before wrapping up.
@@ -3106,7 +3139,7 @@ describe('managed task turn budget', () => {
     expect(result.recoverablePreview).toContain('Step 22');
     expect(state.abortCount).toBe(1);
     expect(state.reads).toBe(2 + MANAGED_TURN_BUDGET_ABORT_GRACE_TURNS);
-    const budgetPrompts = state.prompts.filter((entry) => entry.prompt === MANAGED_TURN_BUDGET_PROMPT);
+    const budgetPrompts = state.prompts.filter((entry) => stripManagedAssignment(entry.prompt) === MANAGED_TURN_BUDGET_PROMPT);
     expect(budgetPrompts).toHaveLength(1);
     expect(budgetPrompts[0].atRead).toBe(2);
   });
@@ -3177,7 +3210,7 @@ describe('managed task turn budget', () => {
       status: 'completed',
       recoverablePreview: 'Completed after managed resume',
     });
-    expect(prompts.map((entry) => entry.prompt)).toEqual([MANAGED_RESUME_CONTINUATION_PROMPT]);
+    expect(prompts.map((entry) => stripManagedAssignment(entry.prompt))).toEqual([MANAGED_RESUME_CONTINUATION_PROMPT]);
   });
 
   test('rejects an invalid executor-wide budget up front', () => {

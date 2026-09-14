@@ -310,7 +310,7 @@ describe('web managed OpenCode executor transport', () => {
     });
   });
 
-  it('reserves one same-child continuation after a finalized operation timeout', async () => {
+  it.each([true, false])('recovers a finalized timeout only with the original assignment (available: %s)', async (hasAssignment) => {
     const requests = [];
     let statusReads = 0;
     const timeoutMessage = {
@@ -360,6 +360,9 @@ describe('web managed OpenCode executor transport', () => {
 
     const result = await executor.observe({
       taskId: 'dvr_task_1',
+      rootSessionId: 'ses_root',
+      label: 'Inspect project',
+      prompt: hasAssignment ? 'Inspect the project.' : '',
       childSessionId: 'ses_child',
       directory: '/workspace',
       providerId: 'github-copilot',
@@ -368,10 +371,17 @@ describe('web managed OpenCode executor transport', () => {
       variant: 'high',
     }, { async recordTransportRecovery() { return true; } });
 
-    expect(result.status).toBe('completed');
     const promptRequests = requests.filter(({ url }) => (
       new URL(url).pathname.endsWith('/prompt_async')
     ));
+    if (!hasAssignment) {
+      expect(result).toMatchObject({ status: 'failed', resumable: false,
+        failureReason: 'Managed continuation requires the original task identity and assignment',
+        recoverablePreview: 'partial' });
+      expect(promptRequests).toHaveLength(0);
+      return;
+    }
+    expect(result.status).toBe('completed');
     expect(promptRequests).toHaveLength(1);
     const continuationBody = JSON.parse(promptRequests[0].init.body);
     expect(continuationBody).toMatchObject({
@@ -384,7 +394,11 @@ describe('web managed OpenCode executor transport', () => {
         ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
-      parts: [{ type: 'text', text: MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT }],
+      parts: [{ type: 'text', text: expect.stringContaining(MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT) }],
+    });
+    expect(JSON.parse(continuationBody.parts[0].text.split('\n').at(-1))).toEqual({
+      taskId: 'dvr_task_1', rootSessionId: 'ses_root', agent: 'fixer',
+      label: 'Inspect project', prompt: 'Inspect the project.',
     });
     // The persisted correlation ID is fresh and sorts like an OpenCode message.
     expect(continuationBody.messageID).toMatch(/^msg_[0-9a-f]{26}$/);
@@ -610,7 +624,11 @@ describe('web managed OpenCode executor host hooks', () => {
     expect(result.status).toBe('completed');
     expect(prompts.map((body) => body.parts[0].text)).toEqual([
       `Contract.\n\n${MANAGED_CONTEXT_MODE_WRITABLE_PROMPT}\n\nInspect the project.`,
-      MANAGED_TURN_BUDGET_PROMPT,
+      expect.stringContaining(MANAGED_TURN_BUDGET_PROMPT),
     ]);
+    expect(JSON.parse(prompts[1].parts[0].text.split('\n').at(-1))).toEqual({
+      taskId: 'dvr_task_hooks', rootSessionId: 'ses_root', agent: 'explorer',
+      label: 'Hooked child', prompt: 'Inspect the project.',
+    });
   });
 });

@@ -23,6 +23,7 @@ import {
 import { createCursorQuestionRuntime } from './cursor-question-runtime.js';
 import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
 import { assertCursorSdkNodeCompatibility } from './node-version.js';
+import { credentialCacheIdentity } from './credential-cache-identity.js';
 import { cursorToolReceiptMetadata } from './cursor-tool-receipts.js';
 import { createCursorChangeOutbox, cursorSessionChangeObservation } from './cursor-session-changes.js';
 import {
@@ -908,7 +909,8 @@ const cloneCursorMcpServers = (servers) => {
   }
 };
 
-const createAgentRuntimeFingerprint = ({ directory, model, agents, mcpServerIdentity }) => stableJson({
+const createAgentRuntimeFingerprint = ({ directory, model, agents, mcpServerIdentity, apiKey }) => stableJson({
+  credentialIdentity: credentialCacheIdentity(apiKey),
   directory: trimString(directory),
   model: cloneCursorSdkModelSelection(model),
   agents: cloneCursorSdkAgentDefinitions(agents),
@@ -1951,7 +1953,7 @@ export function createCursorSdkRuntime(options = {}) {
     const model = cloneCursorSdkModelSelection(modelSelection) || createFallbackCursorSdkModelSelection(modelID);
     const agents = pinCursorSdkSubagentModels(cloneCursorSdkAgentDefinitions(agentDefinitions), model);
     const normalizedMcpServers = cloneCursorMcpServers(mcpServers);
-    const fingerprint = createAgentRuntimeFingerprint({ directory, model, agents, mcpServerIdentity });
+    const fingerprint = createAgentRuntimeFingerprint({ directory, model, agents, mcpServerIdentity, apiKey });
     const cached = agentsBySession.get(sessionID);
     if (cached?.fingerprint === fingerprint && cached?.agent) {
       agentsBySession.delete(sessionID);

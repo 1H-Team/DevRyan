@@ -2074,6 +2074,21 @@ export async function dismissPermission(
 
 const SLOW_QUESTION_REPLY_WARN_MS = 1000
 
+function clearConfirmedQuestion(directory: string | undefined, sessionId: string, requestId: string) {
+  const store = directory ? _childStores?.children.get(directory) : undefined
+  if (!store) return
+  store.setState((state) => {
+    const questions = state.question[sessionId]
+    if (!questions?.some((question) => question.id === requestId)) return state
+    return {
+      question: {
+        ...state.question,
+        [sessionId]: questions.filter((question) => question.id !== requestId),
+      },
+    }
+  })
+}
+
 export async function respondToQuestion(
   sessionId: string,
   requestId: string,
@@ -2090,6 +2105,7 @@ export async function respondToQuestion(
     if (!result.data) {
       throw new Error("Question reply failed")
     }
+    clearConfirmedQuestion(directory, sessionId, requestId)
   } finally {
     const elapsed = Math.round(performance.now() - startedAt)
     if (elapsed >= SLOW_QUESTION_REPLY_WARN_MS) {
@@ -2112,6 +2128,7 @@ export async function rejectQuestion(
     if (!result.data) {
       throw new Error("Question rejection failed")
     }
+    clearConfirmedQuestion(directory, sessionId, requestId)
   } finally {
     const elapsed = Math.round(performance.now() - startedAt)
     if (elapsed >= SLOW_QUESTION_REPLY_WARN_MS) {

@@ -23,6 +23,36 @@ const createState = (questions: QuestionRequest[]): State => ({
 })
 
 describe("question bootstrap snapshots", () => {
+  for (const partial of [false, true]) {
+    test(`does not restore an answered question from an in-flight ${partial ? "partial" : "complete"} snapshot`, async () => {
+      const answered = buildQuestion("req_answered")
+      const newer = buildQuestion("req_newer")
+      let state = createState([answered])
+      const sdk = {
+        question: {
+          list: async () => {
+            state = { ...state, question: { ses_a: [newer] } }
+            return {
+              data: [answered],
+              response: new Response(null, {
+                headers: partial ? { "X-DevRyan-Question-Partial": "opencode" } : {},
+              }),
+            }
+          },
+        },
+      } as unknown as OpencodeClient
+      const sync = syncQuestionSnapshot({
+        directory: "/repo",
+        sdk,
+        getState: () => state,
+        set: (patch) => { state = { ...state, ...patch } },
+      })
+      if (partial) await expect(sync).rejects.toThrow("partial snapshot")
+      else await sync
+      expect(state.question.ses_a).toEqual([newer])
+    })
+  }
+
   test("retains existing source records and merges Cursor records for a partial OpenCode response", async () => {
     const existing = buildQuestion("req_open")
     const cursor = buildQuestion("req_cursor")

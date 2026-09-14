@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-09-14
+
+- Managed orchestration: surface first-attempt provider authentication failures as actionable Model Recovery, including failures restored from snapshots or reloads.
+- Recovery safety: preserve terminal authentication failures and recovery controls when stale startup activity arrives afterward.
+- Managed continuations: preserve the complete delegated assignment across recovery, model switches, turn-budget prompts, and retained project-history retrieval.
+- Task reliability: renew active Fixer and Designer deadlines only from durable transcript progress, while fencing stale timers, shutdown, and persistence races.
+- Question handling: remove confirmed replies immediately and prevent delayed bootstrap or reconnect snapshots from resurrecting answered questions.
+- Cursor SDK: include a non-reversible credential identity in Agent cache keys so credential changes cannot reuse stale authenticated agents.
+- Context retrieval: label shared search results as project-index context and explicitly prevent treating retrieved history as the current assignment.
+- Quality: add deterministic store and mounted UI coverage for authentication recovery and retry acknowledgment.
+- Release: update all DevRyan package and desktop metadata to 1.2.4.
+
 ## [1.2.3] - 2026-09-12
 
 - Supabase connection: parse reconnect requests at the system route boundary, preserve the accepted connection state across overlapping status polls, and surface actionable server errors in Settings.

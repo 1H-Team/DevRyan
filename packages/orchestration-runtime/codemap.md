@@ -13,6 +13,8 @@ Transport-neutral DevRyan-managed task contracts and scheduler policy shared by 
 
 ## Entrypoints
 
+- `continuation-assignment.js`: lossless ledger assignment context on every same-child recovery and turn-budget prompt; strict envelope recognition preserves legacy continuation markers and prevents malformed context from becoming a recovery marker. Missing identity or brief fails before prompt dispatch.
+
 - `assistant-activity.js`: semantic startup-output predicate and bounded active-child event subscriptions; correlates assistant metadata with text/reasoning/tool activity without retaining transcript content.
 
 - `index.js` / `index.d.ts`: runtime exports and JSON-compatible TypeScript contract.
@@ -23,7 +25,7 @@ Transport-neutral DevRyan-managed task contracts and scheduler policy shared by 
 - `compact-result-header.js`: canonical compact result facts plus explicitly non-authoritative retained-child terminal markers. Uncertain, partial, blocked or unverified results require full detail paging; only a complete verified header permits selective retrieval.
 - `managed-wait.js`: terminal-envelope collection classification and persisted root/directory-scoped version-2 cursors with exact selected-set identity. Meaningful collection transitions advance the existing envelope sequence; unchanged attention or recovery rescheduling does not repeatedly wake the parent. Snapshots expose dispositions, follow-ups and other available root tasks. Scheduler subscriptions register under the existing mutation queue, publish only after persistence, and clean up without cancelling children.
 - `harness-policies.js`: four independent default-off optimization flags and the fixed trusted parent read/retrieval allowlist. Arbitrary shell/code and self-advertised read-only tools never enter the overlap list.
-- `open-code-executor.js`: injected canonical child create/prompt/observe/abort/delete/reconcile state machine, including lease-ownership checkpoints, stale fresh-child cleanup, live provider-retry observation, transient polling and reconciliation recovery, retained interruption output, bounded same-child recovery after normalized transport failures or missing final output, same-child manual model continuation, exact shared recognition of its transcript-recorded transport continuation prompts, and an initial-only writable/read-only Context Mode routing contract that is never repeated on continuations.
+- `open-code-executor.js`: injected canonical child create/prompt/observe/abort/delete/reconcile state machine, including lease-ownership checkpoints, stale fresh-child cleanup, live provider-retry observation, transient polling and reconciliation recovery, retained interruption output, bounded same-child recovery after normalized transport failures or missing final output, same-child manual model continuation with ledger assignment context, exact shared recognition of its transcript-recorded transport continuation prompts, and an initial-only writable/read-only Context Mode routing contract that is never repeated on continuations.
 - `provider-capabilities.js`: shared managed read-only provider and agent compatibility predicates, including the implementation-only Designer boundary and stable pre-admission failure contracts.
 - `provider-prompt-tools.js`: shared provider, UI Plan Mode, and managed read-only tool profiles. Plan Mode restricts only Context Mode execution/administration while preserving the parent's other capabilities; verified managed health opens `ctx_index`. Managed children retain wildcard-deny inspection policy with the safe direct/MCP Context aliases.
 - `xai-tool-catalog.js`: dependency-free Grok catalog reduction policy. It disables an MCP-prefixed alias only when the canonical tool has the same normalized description and parameter schema, then caches that evidence under an exact directory/provider/model key.
@@ -38,6 +40,8 @@ Transport-neutral DevRyan-managed task contracts and scheduler policy shared by 
 - `*.test.js`: dependency-free Bun contract and scheduler conformance tests.
 
 ## Integration
+
+Writable Fixer/Designer deadline renewal is owned by `scheduler.js` and guarded by `transitions.js`. The executor reports only changed live transcript observations through `recordProgress`; startup history and busy heartbeats do not renew execution.
 
 Web/Electron each own one scheduler instance and inject provider execution, persistence, clocks, identifiers, and event publication. Shared UI imports the public provider prompt-tool policy; UI presentation consumes only safe task projections and authoritative compaction removals.
 

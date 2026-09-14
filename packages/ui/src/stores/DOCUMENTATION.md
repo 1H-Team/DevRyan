@@ -293,8 +293,9 @@ Ownership and safety rules:
    so a stale response cannot resurrect an evicted projection.
 10. `manualRecoveryTaskIdByChildSessionId` contains only failed/interrupted,
     resumable, unacknowledged tasks whose `agentRetryAvailable` flag is false
-    and whose safe policy projection is either a definite provider limit or a
-    grouped Orchestrator attempt at/after attempt 2. The private group ID never
+    and whose safe policy projection is a definite provider limit, provider
+    authentication failure, unavailable model, transport recovery, or a grouped
+    Orchestrator attempt at/after attempt 2. The private group ID never
     enters the store; only the immutable `dispatchGrouped` boolean does. The
     display-only `dispatchWaveId` is kept when it carries the `dvr_wave_`
     prefix (absent or malformed reads as null) and is immutable after the
@@ -308,6 +309,10 @@ Ownership and safety rules:
     terminal attempt. Manual recovery is therefore indexed immediately, even
     while the child still reports provider `retry` during cleanup. Accepting a
     user `retry_in_place` removes the index; another failed attempt restores it.
+    `failureKind: provider_authentication` is accepted and preserved in both
+    events and snapshots, including failures before the first assistant part.
+    Its first resumable failure replaces startup state with manual recovery;
+    a stale startup event cannot hide the terminal result or recovery controls.
     Scheduler hard deadlines use the stable
     `failureKind: deadline_exceeded` projection; their final grouped attempt
     remains actionable even while the killed child is still tearing down.

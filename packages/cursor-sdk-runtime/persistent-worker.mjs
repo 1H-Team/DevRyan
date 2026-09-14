@@ -11,6 +11,7 @@ import {
 import { createAgentCache } from './agent-cache.js';
 import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
 import { assertCursorSdkNodeCompatibility } from './node-version.js';
+import { credentialCacheIdentity } from './credential-cache-identity.js';
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 
@@ -174,7 +175,8 @@ const { Agent } = cursorSdk;
 
 writeEvent({ type: 'ready' });
 
-const getAgentCacheKey = (sessionID, directory, model, agents, mcpServerIdentity) => `${trimString(sessionID)}\u0000${trimString(directory)}\u0000${stableJson({
+const getAgentCacheKey = (sessionID, directory, model, agents, mcpServerIdentity, apiKey) => `${trimString(sessionID)}\u0000${trimString(directory)}\u0000${stableJson({
+  credentialIdentity: credentialCacheIdentity(apiKey),
   model: normalizeModelSelection(model),
   agents: normalizeCursorSdkAgentDefinitions(agents),
   mcpServerIdentity: trimString(mcpServerIdentity),
@@ -194,7 +196,7 @@ const getOrCreateAgent = async ({
 }) => {
   const normalizedAgents = pinCursorSdkSubagentModels(normalizeCursorSdkAgentDefinitions(agents), model);
   const normalizedMcpServers = isPlainObject(mcpServers) ? mcpServers : null;
-  const key = getAgentCacheKey(sessionID, directory, model, normalizedAgents, mcpServerIdentity);
+  const key = getAgentCacheKey(sessionID, directory, model, normalizedAgents, mcpServerIdentity, apiKey);
   const cached = agentCache.get(key);
   if (cached) {
     if (active) agentCache.markActive(key);

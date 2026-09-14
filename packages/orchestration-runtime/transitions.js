@@ -36,7 +36,6 @@ const IMMUTABLE_FIELDS = Object.freeze([
   'priorTaskId',
   'executionKind',
   'createdAt',
-  'timeoutAt',
   'recoveryLineageId',
 ]);
 
@@ -63,6 +62,19 @@ export const assertManagedTaskTransition = (previous, next) => {
     if (!Object.is(previous[field], next[field])) {
       throw new Error(`${field} is immutable`);
     }
+  }
+
+  if (previous.timeoutAt !== next.timeoutAt && !(
+    previous.status === 'running'
+    && next.status === 'running'
+    && !previous.readOnly
+    && ['fixer', 'designer'].includes(previous.agent)
+    && Number.isFinite(previous.timeoutAt)
+    && Number.isFinite(next.timeoutAt)
+    && next.timeoutAt > previous.timeoutAt
+    && next.timeoutAt - previous.timeoutAt <= 15 * 60_000
+  )) {
+    throw new Error('timeoutAt may only advance for a running implementation task');
   }
 
   // `waitingReason` is mutable only while the task is queued; leaving `queued`

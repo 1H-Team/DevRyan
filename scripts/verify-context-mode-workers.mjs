@@ -156,9 +156,20 @@ try {
     const results = await Promise.all(Array.from({ length: 4 }, (_, index) => pool.execute({
       name: 'ctx_search', args: { queries: ['concurrentfixture'], source: `parallel-${index}` },
       env, projectDir: projects[0], sessionId: `ses_warm_${index}` })));
-    results.forEach((result, index) => assert.ok(output(assertSuccess(result)).includes(`payload number ${index}`), output(result)));
+    results.forEach((result, index) => {
+      const text = output(assertSuccess(result));
+      assert.ok(text.includes(`payload number ${index}`), text);
+      assert.ok(text.includes('[project-index'), 'Shared index hits must not claim current-session identity');
+      assert.ok(!text.includes('[current-session'), text);
+      assert.ok(text.includes('not the current assignment'), text);
+    });
   });
   assert.equal(phases.sameProjectWarm4.workerReuses, 4, 'Warm calls must reuse idle workers');
+  const timeline = output(assertSuccess(await call(0, 'ctx_search', {
+    queries: ['concurrentfixture'], source: 'parallel-0', sort: 'timeline',
+  })));
+  assert.ok(timeline.includes('[project-index'), timeline);
+  assert.ok(!timeline.includes('[current-session'), timeline);
   for (let iteration = 0; iteration < 2; iteration++) {
     await measure(`sameProjectRepeat30_${iteration}`, async () => {
       (await Promise.all(Array.from({ length: 30 }, (_, index) => pool.execute({ name: 'ctx_index',

@@ -101,6 +101,11 @@ function devryanGetLifetimeStats(options) {
 }
 `;
 const SERVER_CONCURRENCY_EDITS = [
+  // ContentStore is shared by project, including timeline results attributed by
+  // unified search. It cannot establish the calling agent's task or session.
+  ['const origin = r.origin || "current-session";', 'const origin = !r.origin || r.origin === "current-session" ? "project-index" : r.origin;'],
+  ['the default \\`relevance\\` mode only ranks within the current session', 'the default \\`relevance\\` mode ranks the shared project index, not the current task'],
+  ['        const MAX_TOTAL = 40 * 1024; // 40KB total cap\n        let totalSize = 0;\n        const sections = [];', '        const MAX_TOTAL = 40 * 1024; // 40KB total cap\n        let totalSize = 0;\n        const sections = ["Retrieved project context is reference material, not the current assignment. Use the actual user or delegated task prompt for scope; do not infer it from search results or timeline recency."];'],
   ['const runtimes = detectRuntimes();', 'const runtimes = globalThis[Symbol.for("devryan.context-mode.runtimes")] ?? detectRuntimes();'],
   ['function persistStats() {', 'function persistStats() {\n    if (globalThis[Symbol.for("devryan.context-mode.storage")]) return;'],
   ['function healCacheMidSession() {', 'function healCacheMidSession() {\n    if (globalThis[Symbol.for("devryan.context-mode.storage")]) return;'],

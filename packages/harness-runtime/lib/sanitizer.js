@@ -29,6 +29,7 @@ const RECORD_FIELDS = Object.freeze({
 const NESTED_FIELDS = new Set([
   'type', 'properties', 'payload', 'actor', 'info', 'part', 'status', 'state', 'time',
   'id', 'helperSessionID', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
+  'requestID', 'requestId',
   'botID', 'botId', 'channelID', 'channelId', 'runID', 'runId',
   'role', 'scope', 'finish', 'completed', 'created', 'updated', 'started', 'ended',
   'version', 'phase', 'outcome', 'settledAt',

@@ -31,6 +31,20 @@ const task = (status = 'queued') => ({
 });
 
 describe('managed task transitions', () => {
+  test('permits only bounded forward deadline renewal for active writable implementations', () => {
+    const previous = { ...task('running'), agent: 'fixer', timeoutAt: 2_000 };
+    expect(assertManagedTaskTransition(previous, { ...previous, timeoutAt: 902_000 }).timeoutAt).toBe(902_000);
+    for (const timeoutAt of [null, 1_999, 902_001]) {
+      expect(() => assertManagedTaskTransition(previous, { ...previous, timeoutAt }))
+        .toThrow('timeoutAt may only advance');
+    }
+    for (const overrides of [{ readOnly: true }, { agent: 'oracle' }, { status: 'starting' }, { timeoutAt: null }]) {
+      const source = { ...previous, ...overrides };
+      expect(() => assertManagedTaskTransition(source, { ...source, timeoutAt: 3_000 }))
+        .toThrow('timeoutAt may only advance');
+    }
+  });
+
   test('allows only the explicit lifecycle graph', () => {
     expect(canTransitionManagedTaskStatus('queued', 'starting')).toBe(true);
     expect(canTransitionManagedTaskStatus('queued', 'aborted')).toBe(true);

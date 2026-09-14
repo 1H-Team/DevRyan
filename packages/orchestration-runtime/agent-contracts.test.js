@@ -13,6 +13,8 @@ const SHARED_RULES = [
   'exactly one terminal marker line: **Status:** complete or **Status:** blocked',
   'edit only the files the task names',
   'unrelated work back to the parent',
+  'the original delegated brief remains authoritative after compaction or model switches',
+  'stop and report blocked instead of guessing',
   'no git commands (no status, diff, add, commit, stash, checkout)',
   'at most 2 focused test runs and 1 type-check',
   'one final acceptance check',

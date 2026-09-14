@@ -171,6 +171,16 @@ describe("foreground recovery", () => {
 })
 
 describe("resyncBlockingRequestsForDirectory", () => {
+  test("does not resurrect an answered question from a delayed reconnect snapshot", async () => {
+    const question = buildQuestion()
+    const store = createDirectoryStore({ question: { ses_a: [question] } })
+    pendingQuestionsResponse = [question]
+    const promise = resyncBlockingRequestsForDirectory("/repo", store)
+    store.setState({ question: { ses_a: [] } })
+    await promise
+    expect(store.getState().question.ses_a).toEqual([])
+  })
+
   beforeEach(() => {
     listPendingQuestionsCalls.length = 0
     listPendingPermissionsCalls.length = 0

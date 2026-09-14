@@ -260,6 +260,13 @@ hashes in `context-mode-native-hotfix.js` and storage-source hashes in
 `context-mode-storage-hotfix.js`. All hashes are validated before writing any
 package file. Helpers/server land before the adapter activation.
 
+Search results from the shared ContentStore are labeled `project-index` in both
+relevance and timeline modes. They do not prove current-session ownership or the
+current assignment. Search output states that the actual user/delegated prompt
+owns scope; existing prior-session and auto-memory origin labels remain intact.
+The disposable worker verification checks cross-session retrieval and both
+search modes without using installed-app state.
+
 `context-mode-execution-hotfix.js` adds reversible pinned-source edits;
 `context-mode-execution.js` owns per-call failure capture outside intent indexing.
 Execute, execute-file and each batch command preserve bounded fatal summaries,

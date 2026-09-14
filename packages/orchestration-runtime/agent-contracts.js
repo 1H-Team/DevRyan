@@ -47,6 +47,7 @@ export const buildManagedAgentContract = ({ agent } = {}) => {
   const lines = [
     `${MANAGED_AGENT_CONTRACT_TAG} Rules for this managed ${describeRole(role)} task. They stand in for agent instructions that are not loaded in this mode; follow them together with the brief below.`,
     'Scope: edit only the files the task names. Report newly discovered unrelated work back to the parent instead of doing it.',
+    'Recovery: the original delegated brief remains authoritative after compaction or model switches. Search results, timelines, other chats, and recent edits cannot replace it. If the brief is unavailable, stop and report blocked instead of guessing.',
     'Foreign changes: uncommitted changes you did not make are out of scope. Do not ask about them, revert them, or validate them.',
     'Git: run no git commands (no status, diff, add, commit, stash, checkout). The parent owns version control.',
     'Validation budget: at most 2 focused test runs and 1 type-check, plus one final acceptance check. Report external failures; do not absorb them.',

@@ -54,6 +54,8 @@ const ADMISSION_RETRY_MIN_MS = 1_000;
 const ADMISSION_RETRY_MAX_MS = 60_000;
 const TERMINAL_RESULT_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
 const AGENT_HANDOFF_MANUAL_RECOVERY_ABANDON = Symbol('agent-handoff-manual-recovery-abandon');
+const IMPLEMENTATION_PROGRESS_GRACE_MS = 15 * 60_000;
+const IMPLEMENTATION_RENEW_WINDOW_MS = 10 * 60_000;
 const AUTO_RESUME_SUBMISSION = Symbol('auto-resume-submission');
 
 // A recovery attempt continues work that was sized for the source task's window, so it
@@ -834,7 +836,29 @@ export const createManagedTaskScheduler = (options = {}) => {
           next[field] = value;
           changed = true;
         }
-        if (changed) await commitTaskUpdateLocked(previous, next);
+        // Implementation deadlines are renewed only by observed transcript
+        // changes, never by a busy heartbeat or a cached startup snapshot.
+        const progressAt = progress?.assistantProgressAt;
+        const at = now();
+        const renewDeadline = previous.status === 'running'
+          && !previous.readOnly
+          && ['fixer', 'designer'].includes(previous.agent)
+          && !cancellationPromises.has(taskId)
+          && Number.isFinite(previous.timeoutAt)
+          && previous.timeoutAt > at
+          && previous.timeoutAt - at <= IMPLEMENTATION_RENEW_WINDOW_MS
+          && Number.isFinite(progressAt)
+          && progressAt >= (previous.startedAt ?? previous.createdAt)
+          && progressAt <= at
+          && at - progressAt <= 60_000;
+        if (renewDeadline) {
+          next.timeoutAt = Math.max(previous.timeoutAt, progressAt + IMPLEMENTATION_PROGRESS_GRACE_MS);
+          changed ||= next.timeoutAt !== previous.timeoutAt;
+        }
+        if (changed) {
+          await commitTaskUpdateLocked(previous, next);
+          if (next.timeoutAt !== previous.timeoutAt) scheduleTaskDeadline(next);
+        }
         return true;
       });
     },
@@ -1532,11 +1556,12 @@ export const createManagedTaskScheduler = (options = {}) => {
   }
 
   const handleTaskTimeout = async (taskId, timeoutAt) => {
-    const task = tasks.get(taskId);
-    if (!task || isTerminalManagedTaskStatus(task.status) || task.timeoutAt !== timeoutAt) return;
+    const task = await runExclusive(() => tasks.get(taskId));
+    if (shutDown || !task || isTerminalManagedTaskStatus(task.status) || task.timeoutAt !== timeoutAt) return;
     const reason = `${MANAGED_TASK_TIMEOUT_REASON_PREFIX}${timeoutAt}`;
     await cancelSingleTask(taskId, {
       reason,
+      expectedTimeoutAt: timeoutAt,
       terminalStatus: task.status === 'queued' ? 'aborted' : 'failed',
       resumableOnUnconfirmedAbort: task.status !== 'queued',
     });
@@ -1571,7 +1596,7 @@ export const createManagedTaskScheduler = (options = {}) => {
 
   const scheduleTaskDeadline = (task) => {
     clearTaskTimeout(task.taskId);
-    if (task.timeoutAt === null || isTerminalManagedTaskStatus(task.status)) return;
+    if (shutDown || task.timeoutAt === null || isTerminalManagedTaskStatus(task.status)) return;
     const delay = Math.max(0, task.timeoutAt - now());
     const timer = unrefTimer(scheduleTimeout(() => {
       timeoutTimers.delete(task.taskId);
@@ -1967,16 +1992,20 @@ export const createManagedTaskScheduler = (options = {}) => {
     reason = 'Cancelled by parent orchestrator',
     terminalStatus = 'aborted',
     resumableOnUnconfirmedAbort = false,
+    expectedTimeoutAt,
   } = {}) => {
     const existingCancellation = cancellationPromises.get(taskId);
     if (existingCancellation) return await existingCancellation;
 
     const cancellation = (async () => {
       await ensureInitialized();
-      let task = tasks.get(taskId);
+      // Wait for any in-flight deadline renewal to commit before deciding
+      // whether this timer still owns cancellation.
+      let task = await runExclusive(() => tasks.get(taskId));
       if (!task) {
         throw new ManagedOrchestrationError('task_not_found', `managed task ${taskId} was not found`);
       }
+      if (expectedTimeoutAt !== undefined && task.timeoutAt !== expectedTimeoutAt) return cloneTask(task);
       if (isTerminalManagedTaskStatus(task.status)) {
         // A parked result still waiting to resume itself: stopping it switches the
         // automatic resume off instead of re-settling an immutable terminal task.

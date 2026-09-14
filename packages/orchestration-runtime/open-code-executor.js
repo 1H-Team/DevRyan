@@ -1,4 +1,5 @@
 import { resolveProviderPromptTools } from './provider-prompt-tools.js';
+import { appendManagedAssignment, stripManagedAssignment } from './continuation-assignment.js';
 import { isManagedAssistantActivityPart } from './assistant-activity.js';
 import { createManagedRecoveryMessageId } from './transport-recovery.js';
 import {
@@ -139,6 +140,10 @@ const resolveTaskPrompt = (task, prompt) => (
   task.readOnly
     ? `${MANAGED_READ_ONLY_PROMPT}\n\n${prompt}`
     : prompt
+);
+
+const resolveContinuationTaskPrompt = (task, prompt) => (
+  resolveTaskPrompt(task, appendManagedAssignment(task, prompt))
 );
 
 const taskHasContextMode = (task) => (
@@ -346,9 +351,14 @@ const buildModelContinuationNotice = (task, failureReason) => (
 );
 
 const matchesManagedUserPrompt = (value, prompt) => {
-  const normalized = trimString(value).replace(MODEL_CONTINUATION_NOTICE_PATTERN, '');
+  const candidate = trimString(value);
+  const readOnlyPrompt = `${MANAGED_READ_ONLY_PROMPT}\n\n${prompt}`;
+  // Transcript observation checks several continuation kinds. Parse the full
+  // assignment only for a matching prefix, never once for every candidate kind.
+  if (!candidate.startsWith(prompt) && !candidate.startsWith(readOnlyPrompt)) return false;
+  const normalized = stripManagedAssignment(candidate).replace(MODEL_CONTINUATION_NOTICE_PATTERN, '');
   return normalized === prompt
-    || normalized === `${MANAGED_READ_ONLY_PROMPT}\n\n${prompt}`;
+    || normalized === readOnlyPrompt;
 };
 
 export const isManagedTransientTransportContinuationPrompt = (value) => (
@@ -838,6 +848,16 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   });
 
   const sendTransportRecovery = async (task, control, observation, event = null, backup = false) => {
+    let prompt;
+    try {
+      prompt = resolveContinuationTaskPrompt(task, backup
+        ? `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${buildModelContinuationNotice(task, observation.failureReason)}`
+        : MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT);
+    } catch (error) {
+      // Invalid local context is not an ambiguous transport submission. Settle
+      // before reserving an attempt instead of waiting for a POST never made.
+      return { ...transportRecoveryResult(observation, error.message, 'failed'), resumable: false };
+    }
     const reservedAt = now();
     const recoveryMessageId = createManagedRecoveryMessageId(reservedAt, observation.latestMessageId);
     try {
@@ -879,9 +899,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         variant: task.variant,
         messageId: recoveryMessageId,
         signal,
-        prompt: resolveTaskPrompt(task, backup
-          ? `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${buildModelContinuationNotice(task, observation.failureReason)}`
-          : MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT),
+        prompt,
         tools: resolveTaskPromptTools(task),
       });
       await saveTransportRecovery(task, control, { phase: 'submitted', submittedAt: now() });
@@ -1175,7 +1193,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
           modelId: task.modelId,
           agent: task.agent,
           variant: task.variant,
-          prompt: resolveTaskPrompt(task, MANAGED_TURN_BUDGET_PROMPT),
+          prompt: resolveContinuationTaskPrompt(task, MANAGED_TURN_BUDGET_PROMPT),
           tools: resolveTaskPromptTools(task),
         });
       }
@@ -1241,6 +1259,9 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
             const turnBudgetResult = await enforceTurnBudget(liveObservation);
             if (turnBudgetResult) return turnBudgetResult;
             if (liveObservation.progressSignature !== lastLiveProgressSignature) {
+              if (lastLiveProgressSignature !== null && liveStatus.statusType === 'busy') {
+                await recordProgress(waitOptions.control, { assistantProgressAt: observedAt });
+              }
               lastLiveProgressSignature = liveObservation.progressSignature;
               lastLiveProgressAt = observedAt;
             } else if (
@@ -1468,7 +1489,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
             modelId: task.modelId,
             agent: task.agent,
             variant: task.variant,
-            prompt: resolveTaskPrompt(task, staleTailPrompt),
+            prompt: resolveContinuationTaskPrompt(task, staleTailPrompt),
             tools: resolveTaskPromptTools(task),
           });
           await sleep(pollIntervalMs, { signal: shutdownController.signal });
@@ -1499,7 +1520,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
           modelId: task.modelId,
           agent: task.agent,
           variant: task.variant,
-          prompt: resolveTaskPrompt(task, MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT),
+          prompt: resolveContinuationTaskPrompt(task, MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT),
           tools: resolveTaskPromptTools(task),
         });
         await sleep(pollIntervalMs, { signal: shutdownController.signal });
@@ -1661,7 +1682,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         modelId: task.modelId,
         agent: task.agent,
         variant: task.variant,
-        prompt: resolveTaskPrompt(task, MANAGED_RESUME_CONTINUATION_PROMPT),
+        prompt: resolveContinuationTaskPrompt(task, MANAGED_RESUME_CONTINUATION_PROMPT),
         tools: resolveTaskPromptTools(task),
       });
       await recordProgress(control, { childPromptedAt: now() });
@@ -1722,7 +1743,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       modelId: task.modelId,
       agent: task.agent,
       variant: task.variant,
-      prompt: resolveTaskPrompt(
+      prompt: resolveContinuationTaskPrompt(
         task,
         `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${buildModelContinuationNotice(task, priorObservation.failureReason)}`,
       ),

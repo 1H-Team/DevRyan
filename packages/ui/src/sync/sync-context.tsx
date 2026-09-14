@@ -2341,9 +2341,6 @@ export async function resyncBlockingRequestsForDirectory(
   // Re-fetch pending questions that may have been asked during an SSE gap,
   // reconnect window, or directory materialization gap.
   try {
-    const beforeSignatures = new Map(
-      candidates.map((sessionId) => [sessionId, requestSignature(before.question[sessionId])]),
-    )
     const pendingQuestions = await opencodeClient.listPendingQuestions({ directories: [directory] })
     await materializeBlockingRequestSessions(directory, store, pendingQuestions.map((q) => q?.sessionID))
     knownSessionIds = getKnownBlockingRequestSessionIds(store.getState())
@@ -2351,6 +2348,7 @@ export async function resyncBlockingRequestsForDirectory(
     for (const q of pendingQuestions) {
       if (!q?.id || !q.sessionID) continue
       if (!knownSessionIds.has(q.sessionID)) continue
+      if (store.getState().question[q.sessionID] !== before.question[q.sessionID]) continue
       const list = grouped[q.sessionID]
       if (list) list.push(q)
       else grouped[q.sessionID] = [q]
@@ -2393,13 +2391,12 @@ export async function resyncBlockingRequestsForDirectory(
     store.setState((state: DirectoryStore) => {
       const merged = { ...state.question }
       for (const [sessionId, questions] of Object.entries(grouped)) {
+        if (state.question[sessionId] !== before.question[sessionId]) continue
         merged[sessionId] = questions
       }
       for (const sessionId of candidates) {
         if (grouped[sessionId]) continue
-        const beforeSignature = beforeSignatures.get(sessionId) ?? ""
-        const currentSignature = requestSignature(state.question[sessionId])
-        if (currentSignature !== beforeSignature) continue
+        if (state.question[sessionId] !== before.question[sessionId]) continue
         delete merged[sessionId]
       }
       return { question: merged }

@@ -75,7 +75,9 @@ A managed child that remains `busy` with no transcript progress for five minutes
 
 Resume waits up to 30 seconds for a just-aborted `busy` turn to finish teardown, then anchors its continuation to the pre-prompt assistant tail. Resume and `retry_in_place` ignore that stale tail until a new assistant message appears, re-post a continuation at most once after a two-minute start grace, and then settle honestly instead of waiting to the hard deadline. Transcript observation restores authoritative `info.time.created` order when complete timestamps expose mixed legacy Cursor and native OpenCode ID ordering, so a newer recovery tail cannot be mistaken for stale work or trigger duplicate prompts. The anchor is per dispatch rather than transcript-lifetime, so a child may be recovered again after an earlier continuation. Aborted-tool boilerplate is excluded from preview selection so the latest substantive assistant text remains visible while canonical references are retained.
 
-Runtime owners give focused Oracle attempts 15 minutes, preserve an explicitly requested 30-minute deep-review window, keep Designer and Fixer at a 60-minute floor, and retain 30 minutes for other ordinary specialists. The specialist floor is a recovery boundary for one closed work unit, not permission to widen a task or replace decomposition. Packaged Orchestrator guidance reserves larger explicit deadlines for closed, inherently indivisible build, browser, or release-verification work. Every retry, resume, and retry-in-place follow-up inherits at least the source task's full `timeoutAt - createdAt` window, transitively across attempts; an explicit larger recovery timeout wins, while a source without a deadline keeps the owner-supplied floor. The scheduler's hard deadline remains the upper bound for observation. Historical recovery-in-place attempts retain the same agent-aware default during reconciliation. Council submits use a private deadline class that preserves the separate three-minute councillor limit.
+Runtime owners give focused Oracle attempts 15 minutes, preserve an explicitly requested 30-minute deep-review window, keep Designer and Fixer at a 60-minute floor, and retain 30 minutes for other ordinary specialists. The specialist floor is a recovery boundary for one closed work unit, not permission to widen a task or replace decomposition. Packaged Orchestrator guidance reserves larger explicit deadlines for closed, inherently indivisible build, browser, or release-verification work. Every retry, resume, and retry-in-place follow-up inherits at least the source task's full `timeoutAt - createdAt` window, transitively across attempts; an explicit larger recovery timeout wins, while a source without a deadline keeps the owner-supplied floor. Historical recovery-in-place attempts retain the same agent-aware default during reconciliation. Council submits use a private deadline class that preserves the separate three-minute councillor limit.
+
+Running writable Fixer/Designer tasks renew their deadline when a changed live transcript is observed with ten minutes or less remaining. The scheduler persists fifteen minutes from that observation under the current execution lease and re-arms the timer only after persistence succeeds. Startup/history baselines, unchanged busy heartbeats, provider retry status, stale/future observations, read-only work, cancellation, and terminal tasks cannot renew it. Renewal uses the existing bounded transcript refresh cadence and adds no streaming subscription or per-poll transcript fetch. Stopped progress still reaches its deadline; the existing five-minute silent-provider recovery remains independent. Review, exploration, and Council deadlines stay fixed. An old timer must recheck the persisted deadline after any in-flight renewal before cancelling.
 
 When a hard deadline expires, the deadline remains the task's primary failure reason even if provider abort cleanup is slow or unconfirmed. The scheduler aborts the transport request at its own bounded cleanup deadline and logs cleanup failure separately. If the timed-out task has a canonical child session, the result remains resumable so the parent can use its one managed `resume` attempt: a still-live child remains under observation, while an idle terminal child receives one same-child continuation from its saved progress. The original prompt is never replayed. Manual cancellation and agent-handoff cleanup do not gain this timeout-specific resumability fallback.
 
@@ -122,6 +124,20 @@ probe quota reset times, or enter the quota backoff ladder.
 
 The September 9 incident and verification are recorded in
 [the investigation](../../docs/audits/2026-09-09-managed-transport-recovery.md).
+
+### Assignment preservation during recovery
+
+Every same-child resume, model switch, transport recovery, empty-output recovery,
+stale-tail re-post, and turn-budget prompt carries a versioned assignment context
+from the durable task ledger: task/root identity, agent, label, and the complete
+original brief. This restores scope, owned targets, exclusions, and acceptance
+checks even when earlier conversation context is unavailable. It is reference
+context for completing remaining work, not a request to replay completed tools
+or restart the original assignment. Missing identity or brief rejects dispatch;
+the executor never reconstructs the assignment from search, recent edits, or
+another conversation. The context remains private prompt content and is absent
+from task projections. Recognition accepts the complete envelope and older bare
+continuations, preserving bounded recovery and restart reconciliation.
 
 ### Automatic resume after a provider usage limit
 

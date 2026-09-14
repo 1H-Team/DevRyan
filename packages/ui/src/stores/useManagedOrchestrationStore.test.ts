@@ -215,6 +215,64 @@ const usageLimitFailure = () => {
 };
 
 describe('managed orchestration store', () => {
+  for (const delivery of ['event', 'snapshot', 'reload'] as const) {
+    test(`reconciles a first-attempt authentication failure through ${delivery} into manual recovery`, async () => {
+      const running = taskRecord(1, 'running', {
+        childSessionId: 'ses_child_auth',
+        providerId: 'cursor-acp',
+        modelId: 'grok-4.6',
+        dispatchGrouped: true,
+        childPromptedAt: 2_100,
+        firstAssistantPartAt: null,
+      });
+      const failed = {
+        ...running,
+        status: 'failed' as const,
+        finishedAt: 3_000,
+        failureReason: 'Authentication error If you are logged in, try logging out and back in.',
+      };
+      const envelope = createManagedTaskResultEnvelope(failed, {
+        sequence: 2,
+        createdAt: 3_000,
+        resumable: true,
+      });
+      const terminal = toManagedTaskEvent(failed, envelope);
+      const store = createManagedOrchestrationStore({
+        api: fakeApi({
+          async getSnapshot() {
+            return emptySnapshot({ tasks: [terminal.properties.task, sibling], resultEnvelopes: [envelope] });
+          },
+        }),
+      });
+      const sibling = projectedTask(2, 'running', { childSessionId: 'ses_sibling' });
+      store.getState().ingestEvent(taskEvent(sibling));
+      const siblingBefore = store.getState().tasksById[sibling.taskId];
+      if (delivery !== 'reload') store.getState().ingestEvent(toManagedTaskEvent(running));
+
+      if (delivery === 'event') store.getState().ingestEvent(terminal);
+      else await store.getState().loadSnapshot({ rootSessionId: 'ses_root' });
+
+      const recoveredState = store.getState();
+      expect(recoveredState.snapshotError).toBeNull();
+      expect(recoveredState.tasksById[failed.taskId]?.status).toBe('failed');
+      expect(recoveredState.tasksById[failed.taskId]?.failureKind).toBe('provider_authentication');
+      expect(recoveredState.resultEnvelopesByTaskId[failed.taskId]?.resumable).toBe(true);
+      expect(managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession('ses_child_auth')(
+        recoveredState,
+      )).toBe(failed.taskId);
+      expect(managedOrchestrationSelectors.hasManualRecoveryForRoot('ses_root')(recoveredState)).toBe(true);
+      expect(recoveredState.tasksById[sibling.taskId]).toBe(siblingBefore);
+
+      // A late startup event must not hide the failure or its recovery controls.
+      store.getState().ingestEvent(toManagedTaskEvent(running));
+      expect(store.getState().tasksById[failed.taskId]).toBe(recoveredState.tasksById[failed.taskId]);
+      store.getState().ingestEvent(taskEvent(terminal.properties.task, {
+        ...envelope, acknowledgedAt: 4_000, action: 'retry_in_place', followUpTaskId: 'dvr_task_retry_auth',
+      }));
+      expect(managedOrchestrationSelectors.hasManualRecoveryForRoot('ses_root')(store.getState())).toBe(false);
+    });
+  }
+
   test('indexes the latest task lineage by exact child session and falls back after compaction', () => {
     const store = createManagedOrchestrationStore({ api: fakeApi() });
     const initial = projectedTask(1, 'running', { childSessionId: 'ses_child' });

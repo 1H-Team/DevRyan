@@ -125,6 +125,7 @@ describe('Cursor question execution wiring', () => {
 
   it('uses sanitized MCP identity in direct Agent caching while passing current credentials to create and resume', async () => {
     const agentOptions = [];
+    let apiKey = 'fixture-cursor-key-a';
     let currentDescriptor = descriptor('identity-a', 'token-a');
     const makeAgent = () => ({
       agentId: 'cursor_agent_1',
@@ -138,7 +139,7 @@ describe('Cursor question execution wiring', () => {
     });
     const runtime = createCursorSdkRuntime({
       storageDir: await makeStorage(),
-      readAuth: () => ({ 'cursor-acp': { key: 'cursor-key' } }),
+      readAuth: () => ({ 'cursor-acp': { key: apiKey } }),
       env: {},
       getWorkspaceDiff: async () => '',
       questionRuntime: {
@@ -184,6 +185,14 @@ describe('Cursor question execution wiring', () => {
     expect(agentOptions).toHaveLength(2);
     expect(agentOptions[1][0]).toBe('resume');
     expect(agentOptions[1][1].mcpServers.devryan_question.headers.Authorization).toBe('Bearer token-c');
+    apiKey = 'fixture-cursor-key-b';
+    await send('msg_4');
+    expect(agentOptions).toHaveLength(3);
+    expect(agentOptions[2][0]).toBe('resume');
+    expect(agentOptions[2][1].apiKey).toBe(apiKey);
+    await send('msg_5');
+    expect(agentOptions).toHaveLength(3);
+    expect(JSON.stringify(runtime.getRuntimeStatus())).not.toContain('fixture-cursor-key');
     expect(JSON.stringify(runtime.getRuntimeStatus())).not.toContain('token-');
   });
 });

@@ -4,6 +4,8 @@ import { useStore } from 'zustand';
 import {
   createManagedAssistantActivityRegistry,
   createManagedOpenCodeExecutor,
+  createManagedTaskRecord,
+  createManagedTaskResultEnvelope,
   createManagedTaskScheduler,
   toManagedTaskEvent,
   type ManagedOpenCodeTransport,
@@ -46,6 +48,43 @@ const deferred = <T,>() => {
   const promise = new Promise<T>((complete) => { resolve = complete; });
   return { promise, resolve };
 };
+
+test('authentication failure before the first assistant part replaces startup with actionable Model Recovery', async () => {
+  const running = {
+    ...createManagedTaskRecord({
+      taskId: 'dvr_task_auth', idempotencyKey: 'auth', rootSessionId: 'ses_root', parentTaskId: null,
+      directory: '/workspace', sequence: 1, mode: 'orchestrator', dispatchGroupId: 'msg_parent',
+      providerId: 'cursor-acp', modelId: 'grok-4.6', agent: 'fixer', variant: 'high',
+      label: 'Verify browser fixtures', prompt: 'Verify the fixtures.', attempt: 1,
+      priorTaskId: null, executionKind: 'start', createdAt: 1_000, timeoutAt: null,
+    }),
+    status: 'running' as const, childSessionId: 'ses_child', startedAt: 2_000, childPromptedAt: 2_100,
+  };
+  const failed = {
+    ...running, status: 'failed' as const, finishedAt: 3_000,
+    failureReason: 'Authentication error If you are logged in, try logging out and back in.',
+  };
+  const envelope = createManagedTaskResultEnvelope(failed, { sequence: 2, createdAt: 3_000, resumable: true });
+  await withDom(async (container) => {
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(container as unknown as Element);
+    try {
+      store.getState().ingestEvent(toManagedTaskEvent(running));
+      await act(async () => { root.render(<I18nProvider><ManagedTaskRow taskId="dvr_task_auth" /></I18nProvider>); });
+      expect(container.textContent).toContain('Starting model…');
+      await act(async () => { store.getState().ingestEvent(toManagedTaskEvent(failed, envelope)); });
+      expect(container.textContent).not.toContain('Starting model');
+      expect(container.textContent).toContain('Model Recovery');
+      expect(container.textContent).toContain('Try Again');
+      expect(container.textContent).toContain('Provider sign-in failed');
+      await act(async () => { store.getState().ingestEvent(toManagedTaskEvent(running)); });
+      expect(container.textContent).toContain('Model Recovery');
+      expect(container.textContent).not.toContain('Starting model');
+    } finally {
+      await act(async () => { root.unmount(); store.getState().reset(); });
+    }
+  });
+});
 
 test('first Claude activity reaches the subscribed card and child copy before a blocked transcript completes', async () => {
   const registry = createManagedAssistantActivityRegistry();

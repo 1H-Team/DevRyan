@@ -62,9 +62,6 @@ export async function syncQuestionSnapshot(input: {
 }) {
   const { directory, sdk, getState, set } = input
   const before = getState()
-  const beforeSignatures = new Map(
-    Object.entries(before.question ?? {}).map(([sessionID, questions]) => [sessionID, requestSignature(questions)]),
-  )
   const x = await sdk.question.list(directory ? { directory } : undefined)
   if (x.error) {
     const status = x.response?.status
@@ -80,6 +77,9 @@ export async function syncQuestionSnapshot(input: {
   const current = getState()
   const merged = { ...current.question }
   for (const [sessionID, questions] of Object.entries(grouped)) {
+    // A reply or a new question received after this fetch started wins over
+    // the snapshot, including an asked/replied cycle with the same empty IDs.
+    if (current.question[sessionID] !== before.question[sessionID]) continue
     if (partialSource) {
       const byID = new Map((current.question[sessionID] ?? []).map((question) => [question.id, question]))
       for (const question of questions) byID.set(question.id, question)
@@ -91,11 +91,9 @@ export async function syncQuestionSnapshot(input: {
       .sort((a, b) => cmp(a.id, b.id))
   }
   if (!partialSource) {
-    for (const sessionID of beforeSignatures.keys()) {
+    for (const sessionID of Object.keys(before.question)) {
       if (grouped[sessionID]) continue
-      const beforeSignature = beforeSignatures.get(sessionID) ?? ""
-      const currentSignature = requestSignature(current.question[sessionID])
-      if (currentSignature !== beforeSignature) continue
+      if (current.question[sessionID] !== before.question[sessionID]) continue
       delete merged[sessionID]
     }
   }
