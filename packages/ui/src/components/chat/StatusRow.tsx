@@ -141,6 +141,7 @@ const TodoItemRow: React.FC<TodoItemRowProps> = ({ todo, displayContent }) => {
 const EMPTY_TODOS: TodoItem[] = [];
 
 interface StatusRowProps {
+  assistantStatusKey?: string;
   // Working state
   isWorking?: boolean;
   statusText?: string | null;
@@ -178,6 +179,7 @@ interface StatusRowProps {
 }
 
 export const StatusRow: React.FC<StatusRowProps> = ({
+  assistantStatusKey,
   isWorking = false,
   statusText = null,
   isGenericStatus,
@@ -609,7 +611,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
             leftAccessory
           ) : showAssistantStatus && !suppressAssistantStatusText && shouldRenderPlaceholder ? (
             <WorkingPlaceholder
-              key={currentSessionId ?? "no-session"}
+              key={`${currentSessionId ?? "no-session"}:${assistantStatusKey ?? ""}`}
               isWorking={isWorking}
               statusText={statusText}
               isGenericStatus={isGenericStatus}

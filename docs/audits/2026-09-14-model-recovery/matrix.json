@@ -1,0 +1,1426 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-15T01:06:41.824Z",
+  "purpose": "Correctness and recovery verification, not a paired performance comparison.",
+  "records": [
+    {
+      "runId": "eval-20260914151742-e223e6cbb4a0",
+      "phase": "baseline",
+      "runtimeVersion": "1.18.30",
+      "selection": {
+        "providerId": "cursor-acp",
+        "modelId": "composer-2.5",
+        "agent": "builder",
+        "variant": null
+      },
+      "caseId": "repair-and-test",
+      "reportedStatus": "failed",
+      "graders": {
+        "total": 3,
+        "passed": 2,
+        "failed": 1,
+        "byId": {
+          "repair-and-test.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.tools": {
+            "passed": 0,
+            "failed": 1
+          }
+        }
+      },
+      "tools": {
+        "total": 5,
+        "byName": {
+          "edit": 1,
+          "read": 2,
+          "shell": 2
+        },
+        "byStatus": {
+          "completed": 5
+        }
+      },
+      "managed": {
+        "tasks": 0,
+        "byStatus": {},
+        "dispositions": {}
+      },
+      "durationMs": 12683,
+      "sessionIds": [
+        "ses_f5f81269fffexiJLrixbPbKtEu"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "original",
+      "finalToolGrader": {
+        "passed": false
+      }
+    },
+    {
+      "runId": "eval-20260914151121-371bed96e2fb",
+      "phase": "baseline",
+      "runtimeVersion": "1.18.30",
+      "selection": {
+        "providerId": "openai",
+        "modelId": "gpt-6-astra",
+        "agent": "builder",
+        "variant": "medium"
+      },
+      "caseId": "repair-and-test",
+      "reportedStatus": "failed",
+      "graders": {
+        "total": 3,
+        "passed": 2,
+        "failed": 1,
+        "byId": {
+          "repair-and-test.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.tools": {
+            "passed": 0,
+            "failed": 1
+          }
+        }
+      },
+      "tools": {
+        "total": 9,
+        "byName": {
+          "apply_patch": 1,
+          "bash": 2,
+          "read": 2,
+          "todowrite": 4
+        },
+        "byStatus": {
+          "completed": 9
+        }
+      },
+      "managed": {
+        "tasks": 0,
+        "byStatus": {},
+        "dispositions": {}
+      },
+      "durationMs": 60541,
+      "sessionIds": [
+        "ses_f5f86f608ffeULadjEx3BtZd0y"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "original",
+      "finalToolGrader": {
+        "passed": true
+      }
+    },
+    {
+      "runId": "eval-20260914151453-e6288b46b80f",
+      "phase": "baseline",
+      "runtimeVersion": "1.18.30",
+      "selection": {
+        "providerId": "openai",
+        "modelId": "gpt-6-astra",
+        "agent": "orchestrator",
+        "variant": "medium"
+      },
+      "caseId": "managed-change",
+      "reportedStatus": "passed",
+      "graders": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "byId": {
+          "managed-change.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "managed-change.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "managed-change.tools": {
+            "passed": 1,
+            "failed": 0
+          },
+          "managed.task-disposition": {
+            "passed": 1,
+            "failed": 0
+          }
+        }
+      },
+      "tools": {
+        "total": 24,
+        "byName": {
+          "bash": 1,
+          "ctx_execute": 1,
+          "ctx_search": 1,
+          "devryan_task": 6,
+          "edit": 1,
+          "glob": 3,
+          "read": 7,
+          "todowrite": 4
+        },
+        "byStatus": {
+          "completed": 24
+        }
+      },
+      "managed": {
+        "tasks": 2,
+        "byStatus": {
+          "completed": 2
+        },
+        "dispositions": {
+          "continue": 2
+        }
+      },
+      "durationMs": 131062,
+      "sessionIds": [
+        "ses_f5f83bccbffeFCDiVoLfhXfEw7",
+        "ses_f5f839c1bffec6pqCy8qPDDUBC",
+        "ses_f5f82edc7ffez5so3pqo153ivJ"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "original",
+      "finalToolGrader": {
+        "unavailable": true
+      }
+    },
+    {
+      "runId": "eval-20260914151346-1aaeaaa092a6",
+      "phase": "baseline",
+      "runtimeVersion": "1.18.30",
+      "selection": {
+        "providerId": "xai",
+        "modelId": "grok-4.6",
+        "agent": "builder",
+        "variant": "high"
+      },
+      "caseId": "repair-and-test",
+      "reportedStatus": "failed",
+      "graders": {
+        "total": 3,
+        "passed": 2,
+        "failed": 1,
+        "byId": {
+          "repair-and-test.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.tools": {
+            "passed": 0,
+            "failed": 1
+          }
+        }
+      },
+      "tools": {
+        "total": 10,
+        "byName": {
+          "bash": 2,
+          "edit": 1,
+          "read": 2,
+          "todowrite": 5
+        },
+        "byStatus": {
+          "completed": 10
+        }
+      },
+      "managed": {
+        "tasks": 0,
+        "byStatus": {},
+        "dispositions": {}
+      },
+      "durationMs": 33286,
+      "sessionIds": [
+        "ses_f5f84c170ffelXJZy1m9b7U5j2"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "original",
+      "finalToolGrader": {
+        "passed": true
+      }
+    },
+    {
+      "runId": "eval-20260914152014-36aded193484",
+      "phase": "baseline",
+      "runtimeVersion": "1.18.30",
+      "selection": {
+        "providerId": "xai",
+        "modelId": "grok-4.6",
+        "agent": "orchestrator",
+        "variant": "high"
+      },
+      "caseId": "managed-change",
+      "reportedStatus": "passed",
+      "graders": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "byId": {
+          "managed-change.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "managed-change.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "managed-change.tools": {
+            "passed": 1,
+            "failed": 0
+          },
+          "managed.task-disposition": {
+            "passed": 1,
+            "failed": 0
+          }
+        }
+      },
+      "tools": {
+        "total": 19,
+        "byName": {
+          "bash": 2,
+          "ctx_execute": 1,
+          "ctx_execute_file": 1,
+          "devryan_task": 6,
+          "edit": 3,
+          "read": 6
+        },
+        "byStatus": {
+          "completed": 19
+        }
+      },
+      "managed": {
+        "tasks": 2,
+        "byStatus": {
+          "completed": 2
+        },
+        "dispositions": {
+          "continue": 2
+        }
+      },
+      "durationMs": 118504,
+      "sessionIds": [
+        "ses_f5f7ed3e7ffeYucImULDNft6xH",
+        "ses_f5f7e74f1ffe0h9zR1OOoAaZIH",
+        "ses_f5f7df390ffegNuFvGhcWXtA5N"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "original",
+      "finalToolGrader": {
+        "unavailable": true
+      }
+    },
+    {
+      "runId": "eval-20260915002428-c22905219e35",
+      "phase": "candidate",
+      "runtimeVersion": "1.18.30",
+      "selection": {
+        "providerId": "cursor-acp",
+        "modelId": "composer-2.5",
+        "agent": "builder",
+        "variant": null
+      },
+      "caseId": "repair-and-test",
+      "reportedStatus": "failed",
+      "graders": {
+        "total": 3,
+        "passed": 2,
+        "failed": 1,
+        "byId": {
+          "repair-and-test.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.tools": {
+            "passed": 0,
+            "failed": 1
+          }
+        }
+      },
+      "tools": {
+        "total": 8,
+        "byName": {
+          "edit": 1,
+          "read": 2,
+          "shell": 2,
+          "updatetodos": 3
+        },
+        "byStatus": {
+          "completed": 8
+        }
+      },
+      "managed": {
+        "tasks": 0,
+        "byStatus": {},
+        "dispositions": {}
+      },
+      "durationMs": 15067,
+      "sessionIds": [
+        "ses_f5d8c9215ffe7Poe2brE5rrCRi"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "explicit-sequencing",
+      "finalToolGrader": {
+        "passed": true
+      }
+    },
+    {
+      "runId": "eval-20260915003816-cc0b48c592fe",
+      "phase": "candidate",
+      "runtimeVersion": "1.18.30",
+      "selection": {
+        "providerId": "cursor-acp",
+        "modelId": "composer-2.5",
+        "agent": "builder",
+        "variant": null
+      },
+      "caseId": "repair-and-test",
+      "reportedStatus": "passed",
+      "graders": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "byId": {
+          "repair-and-test.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.tools": {
+            "passed": 1,
+            "failed": 0
+          }
+        }
+      },
+      "tools": {
+        "total": 5,
+        "byName": {
+          "edit": 1,
+          "read": 2,
+          "shell": 2
+        },
+        "byStatus": {
+          "completed": 5
+        }
+      },
+      "managed": {
+        "tasks": 0,
+        "byStatus": {},
+        "dispositions": {}
+      },
+      "durationMs": 8921,
+      "sessionIds": [
+        "ses_f5d7ff132ffeZYYfkehPyLo8Bo"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "explicit-sequencing",
+      "finalToolGrader": {
+        "passed": true
+      }
+    },
+    {
+      "runId": "eval-20260915004056-2c7c3ba580c9",
+      "phase": "candidate",
+      "runtimeVersion": "1.18.30",
+      "selection": {
+        "providerId": "cursor-acp",
+        "modelId": "claude-fable-5-1",
+        "agent": "builder",
+        "variant": "extra-high"
+      },
+      "caseId": "repair-and-test",
+      "reportedStatus": "failed",
+      "graders": {
+        "total": 3,
+        "passed": 1,
+        "failed": 2,
+        "byId": {
+          "repair-and-test.filesystem-test": {
+            "passed": 0,
+            "failed": 1
+          },
+          "repair-and-test.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.tools": {
+            "passed": 0,
+            "failed": 1
+          }
+        }
+      },
+      "tools": {
+        "total": 20,
+        "byName": {
+          "glob": 1,
+          "grep": 1,
+          "read": 10,
+          "shell": 6,
+          "task": 1,
+          "updatetodos": 1
+        },
+        "byStatus": {
+          "completed": 20
+        }
+      },
+      "managed": {
+        "tasks": 0,
+        "byStatus": {},
+        "dispositions": {}
+      },
+      "durationMs": 204156,
+      "sessionIds": [
+        "ses_f5d7d7eadffegZe8Sv06dpwJ54"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "explicit-sequencing",
+      "finalToolGrader": {
+        "passed": false
+      }
+    },
+    {
+      "runId": "cursor-native-1789432544547",
+      "phase": "candidate",
+      "selection": {
+        "providerId": "cursor-acp",
+        "modelId": "composer-2.5",
+        "variant": null,
+        "agent": "orchestrator"
+      },
+      "caseId": "cursor-native-change",
+      "reportedStatus": "failed",
+      "rootSessionId": "ses_f5d823f9cffegn9mfpYwjL7p2C",
+      "errorCode": "evaluation_session_terminal_failure",
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0
+      },
+      "promptVariant": "native-discovery-implementation"
+    },
+    {
+      "runId": "cursor-native-1789432695050",
+      "phase": "candidate",
+      "selection": {
+        "providerId": "cursor-acp",
+        "modelId": "composer-2.5",
+        "variant": null,
+        "agent": "orchestrator"
+      },
+      "caseId": "cursor-native-change",
+      "reportedStatus": "passed",
+      "rootSessionId": "ses_f5d7ff567ffevwbPWU5OE76wL6",
+      "childSessionIds": [],
+      "nativeTasks": [
+        {
+          "callId": "tool_3e67cec4-0157-4a28-aeb2-92a7c4ddbe9",
+          "status": "completed",
+          "projection": {
+            "schemaVersion": 1,
+            "source": "cursor-native",
+            "stepCount": 7,
+            "truncated": false,
+            "entries": [
+              {
+                "tool": "read",
+                "status": "completed"
+              },
+              {
+                "tool": "read",
+                "status": "completed"
+              }
+            ]
+          }
+        },
+        {
+          "callId": "tool_1fad32a9-e78b-4cda-9137-5903a913deb",
+          "status": "completed",
+          "projection": {
+            "schemaVersion": 1,
+            "source": "cursor-native",
+            "stepCount": 10,
+            "truncated": false,
+            "entries": [
+              {
+                "tool": "read",
+                "status": "completed"
+              },
+              {
+                "tool": "read",
+                "status": "completed"
+              },
+              {
+                "tool": "edit",
+                "status": "completed"
+              },
+              {
+                "tool": "shell",
+                "status": "completed"
+              }
+            ]
+          }
+        }
+      ],
+      "durationMs": 36049,
+      "finalTestExit": 0,
+      "sourceChanged": true,
+      "testUnchanged": true,
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0
+      },
+      "promptVariant": "native-discovery-implementation"
+    },
+    {
+      "runId": "cursor-native-1789432857687",
+      "phase": "candidate",
+      "selection": {
+        "providerId": "cursor-acp",
+        "modelId": "claude-fable-5-1",
+        "variant": "extra-high",
+        "agent": "orchestrator"
+      },
+      "caseId": "cursor-native-change",
+      "reportedStatus": "passed",
+      "rootSessionId": "ses_f5d7d7a6bffeNMgz87TGS63dSC",
+      "childSessionIds": [],
+      "nativeTasks": [
+        {
+          "callId": "toolu_01SkoJ5N7HiqXwPcoB52L89W",
+          "status": "completed",
+          "projection": {
+            "schemaVersion": 1,
+            "source": "cursor-native",
+            "stepCount": 7,
+            "truncated": false,
+            "entries": [
+              {
+                "tool": "read",
+                "status": "completed"
+              },
+              {
+                "tool": "read",
+                "status": "completed"
+              }
+            ]
+          }
+        },
+        {
+          "callId": "toolu_01BBJUqANR8LMLncM9LPrTKe",
+          "status": "completed",
+          "projection": {
+            "schemaVersion": 1,
+            "source": "cursor-native",
+            "stepCount": 6,
+            "truncated": false,
+            "entries": [
+              {
+                "tool": "read",
+                "status": "completed"
+              },
+              {
+                "tool": "read",
+                "status": "completed"
+              },
+              {
+                "tool": "edit",
+                "status": "completed"
+              },
+              {
+                "tool": "shell",
+                "status": "completed"
+              }
+            ]
+          }
+        }
+      ],
+      "durationMs": 115220,
+      "finalTestExit": 0,
+      "sourceChanged": true,
+      "testUnchanged": true,
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0
+      },
+      "promptVariant": "native-discovery-implementation"
+    },
+    {
+      "runId": "eval-20260915003108-3d438cb5f354",
+      "phase": "candidate",
+      "runtimeVersion": "1.18.30",
+      "selection": {
+        "providerId": "openai",
+        "modelId": "gpt-6-astra",
+        "agent": "builder",
+        "variant": "medium"
+      },
+      "caseId": "repair-and-test",
+      "reportedStatus": "passed",
+      "graders": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "byId": {
+          "repair-and-test.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.tools": {
+            "passed": 1,
+            "failed": 0
+          }
+        }
+      },
+      "tools": {
+        "total": 9,
+        "byName": {
+          "apply_patch": 1,
+          "bash": 2,
+          "read": 2,
+          "todowrite": 4
+        },
+        "byStatus": {
+          "completed": 9
+        }
+      },
+      "managed": {
+        "tasks": 0,
+        "byStatus": {},
+        "dispositions": {}
+      },
+      "durationMs": 62067,
+      "sessionIds": [
+        "ses_f5d86767dffeMmspmhGlaaQP9j"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "explicit-sequencing",
+      "finalToolGrader": {
+        "passed": true
+      }
+    },
+    {
+      "runId": "eval-20260915003356-c56db26555f3",
+      "phase": "candidate",
+      "runtimeVersion": "1.18.30",
+      "selection": {
+        "providerId": "xai",
+        "modelId": "grok-4.6",
+        "agent": "builder",
+        "variant": "high"
+      },
+      "caseId": "repair-and-test",
+      "reportedStatus": "passed",
+      "graders": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "byId": {
+          "repair-and-test.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.tools": {
+            "passed": 1,
+            "failed": 0
+          }
+        }
+      },
+      "tools": {
+        "total": 10,
+        "byName": {
+          "bash": 2,
+          "edit": 1,
+          "read": 2,
+          "todowrite": 5
+        },
+        "byStatus": {
+          "completed": 10
+        }
+      },
+      "managed": {
+        "tasks": 0,
+        "byStatus": {},
+        "dispositions": {}
+      },
+      "durationMs": 34182,
+      "sessionIds": [
+        "ses_f5d83e639ffeoEj8Xc6YxfCdl6"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "explicit-sequencing",
+      "finalToolGrader": {
+        "passed": true
+      }
+    },
+    {
+      "runId": "eval-20260915004923-01badef1b077",
+      "phase": "final",
+      "runtimeVersion": "1.18.31",
+      "selection": {
+        "providerId": "openai",
+        "modelId": "gpt-6-astra",
+        "agent": "builder",
+        "variant": "medium"
+      },
+      "caseId": "repair-and-test",
+      "reportedStatus": "passed",
+      "graders": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "byId": {
+          "repair-and-test.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.tools": {
+            "passed": 1,
+            "failed": 0
+          }
+        }
+      },
+      "tools": {
+        "total": 9,
+        "byName": {
+          "apply_patch": 1,
+          "bash": 2,
+          "read": 2,
+          "todowrite": 4
+        },
+        "byStatus": {
+          "completed": 9
+        }
+      },
+      "managed": {
+        "tasks": 0,
+        "byStatus": {},
+        "dispositions": {}
+      },
+      "durationMs": 64887,
+      "sessionIds": [
+        "ses_f5d75c04effengCv9aQLyAS3Yj"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "explicit-sequencing",
+      "finalToolGrader": {
+        "passed": true
+      }
+    },
+    {
+      "runId": "eval-20260915004359-8334e340d20b",
+      "phase": "final",
+      "runtimeVersion": "1.18.31",
+      "selection": {
+        "providerId": "openai",
+        "modelId": "gpt-6-astra",
+        "agent": "orchestrator",
+        "variant": "medium"
+      },
+      "caseId": "managed-change",
+      "reportedStatus": "passed",
+      "graders": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "byId": {
+          "managed-change.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "managed-change.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "managed-change.tools": {
+            "passed": 1,
+            "failed": 0
+          },
+          "managed.task-disposition": {
+            "passed": 1,
+            "failed": 0
+          }
+        }
+      },
+      "tools": {
+        "total": 23,
+        "byName": {
+          "bash": 1,
+          "ctx_execute": 1,
+          "ctx_execute_file": 1,
+          "ctx_search": 1,
+          "devryan_task": 6,
+          "edit": 1,
+          "glob": 4,
+          "read": 4,
+          "todowrite": 4
+        },
+        "byStatus": {
+          "completed": 23
+        }
+      },
+      "managed": {
+        "tasks": 2,
+        "byStatus": {
+          "completed": 2
+        },
+        "dispositions": {
+          "continue": 2
+        }
+      },
+      "durationMs": 171094,
+      "sessionIds": [
+        "ses_f5d7ab446ffeVFd1Sp1aVTU07v",
+        "ses_f5d7a83d2ffe8wMuTTxJqtiVz2",
+        "ses_f5d79ead2ffeMAqJ9VdMYTTk7O"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "original",
+      "finalToolGrader": {
+        "unavailable": true
+      }
+    },
+    {
+      "runId": "eval-20260915005029-06842b48efea",
+      "phase": "final",
+      "runtimeVersion": "1.18.31",
+      "selection": {
+        "providerId": "xai",
+        "modelId": "grok-4.6",
+        "agent": "builder",
+        "variant": "high"
+      },
+      "caseId": "repair-and-test",
+      "reportedStatus": "passed",
+      "graders": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "byId": {
+          "repair-and-test.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.tools": {
+            "passed": 1,
+            "failed": 0
+          }
+        }
+      },
+      "tools": {
+        "total": 10,
+        "byName": {
+          "bash": 2,
+          "edit": 1,
+          "read": 2,
+          "todowrite": 5
+        },
+        "byStatus": {
+          "completed": 10
+        }
+      },
+      "managed": {
+        "tasks": 0,
+        "byStatus": {},
+        "dispositions": {}
+      },
+      "durationMs": 34032,
+      "sessionIds": [
+        "ses_f5d74c0d4ffeh76hodMzrrLf68"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "explicit-sequencing",
+      "finalToolGrader": {
+        "passed": true
+      }
+    },
+    {
+      "runId": "eval-20260915004651-ab0bd9b07185",
+      "phase": "final",
+      "runtimeVersion": "1.18.31",
+      "selection": {
+        "providerId": "xai",
+        "modelId": "grok-4.6",
+        "agent": "orchestrator",
+        "variant": "high"
+      },
+      "caseId": "managed-change",
+      "reportedStatus": "passed",
+      "graders": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "byId": {
+          "managed-change.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "managed-change.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "managed-change.tools": {
+            "passed": 1,
+            "failed": 0
+          },
+          "managed.task-disposition": {
+            "passed": 1,
+            "failed": 0
+          }
+        }
+      },
+      "tools": {
+        "total": 20,
+        "byName": {
+          "bash": 1,
+          "ctx_execute": 3,
+          "devryan_task": 6,
+          "edit": 3,
+          "glob": 1,
+          "grep": 2,
+          "read": 4
+        },
+        "byStatus": {
+          "completed": 20
+        }
+      },
+      "managed": {
+        "tasks": 2,
+        "byStatus": {
+          "completed": 2
+        },
+        "dispositions": {
+          "continue": 2
+        }
+      },
+      "durationMs": 151280,
+      "sessionIds": [
+        "ses_f5d7812b2ffeBNGmdL8Yu1MDeT",
+        "ses_f5d77b40effeSC26k91HKeoQE0",
+        "ses_f5d76e1e4ffeAyjCMb8R8l0tTf"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "original",
+      "finalToolGrader": {
+        "unavailable": true
+      }
+    },
+    {
+      "runId": "eval-20260915005938-c03e0018d12c",
+      "phase": "verified",
+      "runtimeVersion": "1.18.31",
+      "selection": {
+        "providerId": "cursor-acp",
+        "modelId": "claude-fable-5-1",
+        "agent": "builder",
+        "variant": "extra-high"
+      },
+      "caseId": "repair-and-test",
+      "reportedStatus": "failed",
+      "graders": {
+        "total": 3,
+        "passed": 0,
+        "failed": 3,
+        "byId": {
+          "repair-and-test.filesystem-test": {
+            "passed": 0,
+            "failed": 1
+          },
+          "repair-and-test.session": {
+            "passed": 0,
+            "failed": 1
+          },
+          "repair-and-test.tools": {
+            "passed": 0,
+            "failed": 1
+          }
+        }
+      },
+      "tools": {
+        "total": 0,
+        "byName": {},
+        "byStatus": {}
+      },
+      "managed": {
+        "tasks": 0,
+        "byStatus": {},
+        "dispositions": {}
+      },
+      "durationMs": 2213,
+      "sessionIds": [],
+      "cleanup": {
+        "restored": false,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": false,
+        "sessionDiscoveryComplete": false,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": "evaluation_model_unavailable"
+    },
+    {
+      "runId": "eval-20260915010204-3fd4fe831ba4",
+      "phase": "verified",
+      "runtimeVersion": "1.18.31",
+      "selection": {
+        "providerId": "cursor-acp",
+        "modelId": "claude-fable-5-1",
+        "agent": "builder",
+        "variant": "extra-high"
+      },
+      "caseId": "repair-and-test",
+      "reportedStatus": "passed",
+      "graders": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "byId": {
+          "repair-and-test.filesystem-test": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.session": {
+            "passed": 1,
+            "failed": 0
+          },
+          "repair-and-test.tools": {
+            "passed": 1,
+            "failed": 0
+          }
+        }
+      },
+      "tools": {
+        "total": 9,
+        "byName": {
+          "edit": 1,
+          "read": 2,
+          "shell": 2,
+          "updatetodos": 4
+        },
+        "byStatus": {
+          "completed": 9
+        }
+      },
+      "managed": {
+        "tasks": 0,
+        "byStatus": {},
+        "dispositions": {}
+      },
+      "durationMs": 56905,
+      "sessionIds": [
+        "ses_f5d6a2710ffeTl7vBdKenbFh3N"
+      ],
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0,
+        "sessionComplete": true,
+        "sessionDiscoveryComplete": true,
+        "sessionAbortFailureCount": 0
+      },
+      "errorCode": null,
+      "promptVariant": "original",
+      "finalToolGrader": {
+        "passed": true
+      }
+    },
+    {
+      "runId": "cursor-native-1789433981532",
+      "phase": "verified",
+      "selection": {
+        "providerId": "cursor-acp",
+        "modelId": "composer-2.5",
+        "variant": null,
+        "agent": "orchestrator"
+      },
+      "caseId": "cursor-native-change",
+      "reportedStatus": "passed",
+      "rootSessionId": "ses_f5d6c4df3ffeLwsAIfaeZ5aR6z",
+      "childSessionIds": [],
+      "nativeTasks": [
+        {
+          "callId": "tool_1002025d-4543-4687-aeb2-a923ce92154",
+          "status": "completed",
+          "projection": {
+            "schemaVersion": 1,
+            "source": "cursor-native",
+            "stepCount": 7,
+            "truncated": false,
+            "entries": [
+              {
+                "tool": "read",
+                "status": "completed"
+              },
+              {
+                "tool": "read",
+                "status": "completed"
+              }
+            ]
+          }
+        },
+        {
+          "callId": "tool_5d18f536-8865-444f-a35f-80a72d8c4b5",
+          "status": "completed",
+          "projection": {
+            "schemaVersion": 1,
+            "source": "cursor-native",
+            "stepCount": 13,
+            "truncated": false,
+            "entries": [
+              {
+                "tool": "read",
+                "status": "completed"
+              },
+              {
+                "tool": "read",
+                "status": "completed"
+              },
+              {
+                "tool": "edit",
+                "status": "completed"
+              },
+              {
+                "tool": "shell",
+                "status": "completed"
+              },
+              {
+                "tool": "edit",
+                "status": "completed"
+              },
+              {
+                "tool": "shell",
+                "status": "completed"
+              }
+            ]
+          }
+        }
+      ],
+      "durationMs": 41018,
+      "finalTestExit": 0,
+      "sourceChanged": true,
+      "testUnchanged": true,
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0
+      },
+      "promptVariant": "native-discovery-implementation"
+    }
+  ],
+  "journals": [
+    {
+      "phase": "baseline",
+      "sessions": 14,
+      "records": 6095,
+      "gaps": 0,
+      "cleanup": {
+        "hostStopped": true,
+        "privateProfileRemoved": true,
+        "journalRetained": true
+      }
+    },
+    {
+      "phase": "candidate",
+      "sessions": 10,
+      "records": 1443,
+      "gaps": 0,
+      "cleanup": {
+        "hostStopped": true,
+        "privateProfileRemoved": true,
+        "journalRetained": true
+      }
+    },
+    {
+      "phase": "final",
+      "sessions": 12,
+      "records": 2519,
+      "gaps": 0,
+      "cleanup": {
+        "hostStopped": true,
+        "privateProfileRemoved": true,
+        "journalRetained": true
+      }
+    },
+    {
+      "phase": "verified",
+      "sessions": 2,
+      "records": 171,
+      "gaps": 0,
+      "cleanup": {
+        "hostStopped": true,
+        "privateProfileRemoved": true,
+        "journalRetained": true
+      }
+    }
+  ],
+  "unavailable": [
+    {
+      "provider": "anthropic",
+      "reason": "No usable native Claude credential was available to the isolated profiles. Claude Desktop review and Cursor-routed Fable are separate evidence."
+    }
+  ]
+}

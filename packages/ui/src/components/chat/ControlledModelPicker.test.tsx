@@ -83,3 +83,27 @@ test('recovery controls retain paired Fast capability and display the base model
   expect(html).toContain('Fixture model');
   expect(html).not.toContain('>model-fast<');
 });
+
+
+test('Composer 2.5 keeps a single base label when restoring and toggling Fast', async () => {
+  const { getModelVariantControlState, resolveModelVariantSelection } = await import('@/lib/providers/variantControls');
+  const catalog = [{ id: 'cursor-acp', models: [
+    { id: 'composer-2.5', name: 'Composer 2.5' },
+    { id: 'composer-2.5-fast', name: 'Composer 2.5 Fast' },
+  ] }];
+  const options = getControlledModelOptions(catalog, []);
+  expect(options.map((option) => option.modelId)).toEqual(['composer-2.5']);
+  for (const enabled of [false, true]) {
+    const modelId = enabled ? 'composer-2.5-fast' : 'composer-2.5';
+    const state = getModelVariantControlState(catalog[0], modelId, undefined);
+    expect(state?.fastEnabled).toBe(enabled);
+    expect(state?.canToggleFast).toBe(true);
+    expect(resolveModelVariantSelection(catalog[0], modelId, undefined, { fastEnabled: !enabled }).modelId)
+      .toBe(enabled ? 'composer-2.5' : 'composer-2.5-fast');
+    const html = renderToStaticMarkup(<I18nProvider><ControlledModelPicker providers={catalog}
+      value={{ providerId: 'cursor-acp', modelId, variant: null }} onChange={() => {}} /></I18nProvider>);
+    expect(html).toContain('Composer 2.5');
+    expect(html).not.toContain('Composer 2.5 Fast');
+    expect(html).not.toContain('>composer-2.5-fast<');
+  }
+});

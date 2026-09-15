@@ -26,3 +26,9 @@ part gaps, cancellation/completion focus and expansion retention, lazy collapsed
 content, ownership release, and reload. It captures expanded content at 390×844,
 844×390, and 768×1024 in both themes. Review captured images before marking visual
 acceptance. This fixture is component acceptance, not provider or full-host QA.
+
+`?status` mounts `status-fixture.tsx`: production assistant selection, delegation
+phase resolver, and animated status label with synthetic prompt/lifecycle input.
+Controls cover an old wait → Send → empty assistant, running → completed, and
+provisional wait → confirmed empty snapshot. Verify the label immediately after
+each click; the minimum-display timer must not retain the old waiting label.

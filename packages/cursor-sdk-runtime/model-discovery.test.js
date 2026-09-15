@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import path from 'node:path';
 import { createCursorSdkRuntime } from './index.js';
 
 const createRuntimeForModels = (models) => createCursorSdkRuntime({
@@ -485,4 +487,106 @@ describe('Cursor SDK model discovery', () => {
       },
     });
   });
+});
+
+
+describe('Composer 2.5 mode normalization', () => {
+  for (const id of ['composer-2.5', 'composer-2.5-fast']) {
+    for (const fast of [undefined, 'false', 'true']) {
+      test(`normalizes ${id} with fast=${fast} and preserves discovered metadata`, async () => {
+        const provider = await createRuntimeForModels([{
+          id,
+          displayName: 'Composer 2.5 Fast',
+          description: 'Discovered description',
+          variants: [{
+            isDefault: true,
+            params: [
+              { id: 'context', value: '200k' },
+              { id: 'effort', value: 'high' },
+              ...(fast === undefined ? [] : [{ id: 'fast', value: fast }]),
+            ],
+          }],
+        }]).getVirtualProvider();
+        expect(Object.keys(provider.models).sort()).toEqual(['composer-2.5', 'composer-2.5-fast']);
+        for (const enabled of [false, true]) {
+          const model = provider.models[enabled ? 'composer-2.5-fast' : 'composer-2.5'];
+          expect(model.name).toBe(enabled ? 'Composer 2.5 Fast' : 'Composer 2.5');
+          expect(model.description).toBe('Discovered description');
+          expect(model.limit).toEqual({ context: 200000 });
+          expect(model.variants.high.limit).toEqual({ context: 200000 });
+          const expected = { id: 'composer-2.5', params: [
+            { id: 'context', value: '200k' },
+            { id: 'effort', value: 'high' },
+            { id: 'fast', value: String(enabled) },
+          ] };
+          expect(model.options.cursorSdkModel).toEqual(expected);
+          expect(model.variants.high.cursorSdkModel).toEqual(expected);
+        }
+      });
+    }
+    test(`normalizes misleading labels without variant metadata for ${id}`, async () => {
+      const provider = await createRuntimeForModels([{ id, displayName: 'Composer 2.5 Fast' }]).getVirtualProvider();
+      expect(provider.models['composer-2.5'].name).toBe('Composer 2.5');
+      for (const enabled of [false, true]) {
+        expect(provider.models[enabled ? 'composer-2.5-fast' : 'composer-2.5'].options.cursorSdkModel).toEqual({
+          id: 'composer-2.5', params: [{ id: 'fast', value: String(enabled) }],
+        });
+      }
+    });
+  }
+});
+
+
+test('Composer 2.5 sequential prompts switch SDK mode and restore saved Fast selection', async () => {
+  const cacheRoot = path.resolve(import.meta.dir, '../../.cache');
+  await mkdir(cacheRoot, { recursive: true });
+  const storageDir = await mkdtemp(path.join(cacheRoot, 'composer-mode-test-'));
+  const selections = [];
+  const makeAgent = () => ({
+    agentId: 'fixture_composer_agent',
+    send: async () => ({
+      status: 'finished',
+      wait: async () => ({ status: 'finished', result: 'done' }),
+      async *stream() { yield { type: 'status', status: 'FINISHED' }; },
+    }),
+  });
+  const createRuntime = () => createCursorSdkRuntime({
+    storageDir, env: { CURSOR_API_KEY: 'fixture-key' }, readAuth: () => ({}), writeAuth: () => {},
+    getWorkspaceDiff: async () => '',
+    loadSdk: async () => ({
+      Cursor: { models: { list: async () => [{
+        id: 'composer-2.5-fast', displayName: 'Composer 2.5 Fast',
+        variants: [{ params: [{ id: 'effort', value: 'high' }, { id: 'context', value: '200k' }] }],
+      }] } },
+      Agent: {
+        create: async (options) => { selections.push(options.model); return makeAgent(); },
+        resume: async (_id, options) => { selections.push(options.model); return makeAgent(); },
+      },
+    }),
+  });
+  let runtime = createRuntime();
+  try {
+    for (const [index, enabled] of [false, true, false, true, true].entries()) {
+      if (index === 4) {
+        await runtime.dispose();
+        runtime = createRuntime();
+      }
+      await runtime.getVirtualProvider();
+      await runtime.handlePromptAsync({ sessionID: 'ses_composer_modes', directory: storageDir, body: {
+        model: { providerID: 'cursor-acp', modelID: enabled ? 'composer-2.5-fast' : 'composer-2.5' },
+        variant: 'high', messageID: `msg_composer_${index}`, parts: [{ type: 'text', text: 'Fixture prompt' }],
+      } });
+      const deadline = Date.now() + 3000;
+      while (selections.length <= index || runtime.getSessionStatus().ses_composer_modes?.type !== 'idle') {
+        if (Date.now() > deadline) throw new Error('Composer fixture prompt did not finish');
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(selections[index]).toEqual({ id: 'composer-2.5', params: [
+        { id: 'effort', value: 'high' }, { id: 'context', value: '200k' }, { id: 'fast', value: String(enabled) },
+      ] });
+    }
+  } finally {
+    await runtime.dispose();
+    await rm(storageDir, { recursive: true, force: true });
+  }
 });

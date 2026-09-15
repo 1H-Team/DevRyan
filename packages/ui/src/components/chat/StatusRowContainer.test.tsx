@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   resolveManagedChildGenericStatusText,
   resolveManagedDelegationStatusPhase,
+  shouldManagedDelegationOwnStatus,
   resolveLongRunningToolPresentation,
   resolveProviderWaitingStatusText,
   resolveStatusRowAssistantDisplay,
@@ -29,12 +30,12 @@ describe('resolveManagedDelegationStatusPhase', () => {
     })).toBe('waiting');
   });
 
-  test('treats explicit managed control calls as waiting, even while children start', () => {
+  test('keeps queued children in startup during a wait call', () => {
     expect(resolveManagedDelegationStatusPhase({
       rootPhase: 'starting',
       activeToolName: 'devryan_task',
       activeToolAction: 'wait',
-    })).toBe('waiting');
+    })).toBe('starting');
   });
 
   test('does not replace an unrelated active tool status', () => {
@@ -219,4 +220,30 @@ describe('resolveLongRunningToolPresentation', () => {
       actionable: true,
     });
   });
+});
+
+
+describe('managed status authority', () => {
+  test('clears provisional waiting when an empty snapshot confirms the root', () => {
+    const input = { rootPhase: null, activeToolName: 'devryan_task', activeToolAction: 'wait', isLoadingSnapshot: true } as const;
+    expect(resolveManagedDelegationStatusPhase(input)).toBe('waiting');
+    expect(resolveManagedDelegationStatusPhase({ ...input, isLoadingSnapshot: false })).toBe('managing');
+    expect(resolveManagedDelegationStatusPhase({ ...input, hasConfirmedSnapshot: true })).toBe('managing');
+  });
+
+  test('uses neutral copy for control and result operations without claiming children run', () => {
+    for (const activeToolAction of ['status', 'cancel', 'continue', 'resume', 'recover_in_place', 'retry_in_place', 'abandon', 'read_result', undefined]) {
+      expect(resolveManagedDelegationStatusPhase({ rootPhase: null, activeToolName: 'devryan_task', activeToolAction })).toBe('managing');
+    }
+  });
+});
+
+
+test('managed children preserve primary text/tools and keep recovered idle roots visible', () => {
+  for (const activePartType of ['text', 'tool', 'editing'] as const) {
+    expect(shouldManagedDelegationOwnStatus({ isWorking: true, hasActiveTasks: true, activePartType, activeToolName: 'bash' })).toBe(false);
+  }
+  expect(shouldManagedDelegationOwnStatus({ isWorking: false, hasActiveTasks: true })).toBe(true);
+  expect(shouldManagedDelegationOwnStatus({ isWorking: true, hasActiveTasks: false, activePartType: 'reasoning' })).toBe(false);
+  expect(shouldManagedDelegationOwnStatus({ isWorking: true, hasActiveTasks: false })).toBe(false);
 });

@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 40_644;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 40_312;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -143,8 +143,8 @@ describe('packaged agent defaults', () => {
 
     expect(orchestrator.body).toContain('Orchestrator owns the grounded design approach and decision-complete implementation brief.');
     expect(orchestrator.body).toContain('Designer owns the approved design implementation end to end');
-    expect(orchestrator.body).toContain('route that work back to Designer in normal mode');
-    expect(orchestrator.body).toContain('UI correctness bugs and UI behavior changes with no open visual decision route to `fixer`');
+    expect(orchestrator.body).toContain('route that work to Designer in normal mode');
+    expect(orchestrator.body).toContain('UI correctness bugs and UI behavior changes under an unchanged presentation route to `fixer`');
     expect(orchestrator.body).toContain('For mixed work, create disjoint scopes');
     expect(orchestrator.body).toContain('If Designer remains unavailable after the existing managed recovery, report the blocker');
     expect(orchestrator.body).toContain('Orchestrator owns design-change planning in plan mode.');
@@ -275,7 +275,8 @@ describe('packaged agent defaults', () => {
       '**DevRyan-managed delegation.**',
       'at most one managed recovery',
       'never change its model automatically',
-      'choose a model and thinking level in Model Recovery and click Try Again',
+      'at most one brief status sentence',
+      'Do not repeat recovery instructions',
       'DevRyan sends one synthetic continuation to the idle parent',
       'Any collected result with `manualRecoveryRequired: true`',
       'sends one transcript-marked same-child continuation when the child is already terminal',

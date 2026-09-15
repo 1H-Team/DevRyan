@@ -24,11 +24,15 @@ import { createCursorQuestionRuntime } from './cursor-question-runtime.js';
 import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
 import { assertCursorSdkNodeCompatibility } from './node-version.js';
 import { credentialCacheIdentity } from './credential-cache-identity.js';
+import { cursorRunUsageObservation, normalizeCursorUsageObservation, mergeCursorUsageObservation } from './cursor-usage.js';
 import { cursorToolReceiptMetadata } from './cursor-tool-receipts.js';
 import { createCursorChangeOutbox, cursorSessionChangeObservation } from './cursor-session-changes.js';
 import {
   CURSOR_NATIVE_TASK_METADATA_KEY,
+  CURSOR_UNREPORTED_TOOL_RESULT,
   mergeCursorNativeTaskActivity,
+  settleCursorNativeTaskActivity,
+  settleCursorNativeTaskPart,
   sanitizeCursorTaskResult,
 } from './cursor-native-task.js';
 
@@ -200,9 +204,9 @@ const sdkStatusFromRunStatus = (status) => {
 };
 
 const finishToToolStatus = (finish) => {
-  if (finish === 'error') return 'error';
   if (finish === 'cancelled') return 'cancelled';
-  return 'completed';
+  // A finished turn cannot certify a tool whose terminal result never arrived.
+  return 'error';
 };
 
 const normalizeToolCallStatus = (status) => {
@@ -1088,29 +1092,43 @@ const addNativeUltraCursorVariants = (records) => {
 };
 
 const addSdkModelRecord = (records, model) => {
-  const sdkModelId = trimString(model.id);
+  const discoveredId = trimString(model.id);
+  const isComposer25 = discoveredId === 'composer-2.5' || discoveredId === 'composer-2.5-fast';
+  const sdkModelId = isComposer25 ? 'composer-2.5' : discoveredId;
   if (!sdkModelId) return;
-  const name = trimString(model.displayName) || trimString(model.name) || sdkModelId;
+  const name = isComposer25 && discoveredId === sdkModelId
+    ? 'Composer 2.5'
+    : trimString(model.displayName) || trimString(model.name) || sdkModelId;
   const description = model.description;
   const variants = Array.isArray(model.variants) ? model.variants : [];
 
   if (variants.length === 0) {
-    records[sdkModelId] = createCursorModelRecord({
-      id: sdkModelId,
+    records[discoveredId] = createCursorModelRecord({
+      id: discoveredId,
       name,
       description,
-      options: { cursorSdkModel: createFallbackCursorSdkModelSelection(sdkModelId) },
+      options: { cursorSdkModel: createFallbackCursorSdkModelSelection(discoveredId) },
     });
     return;
   }
 
   for (const sdkVariant of variants) {
     if (!isPlainObject(sdkVariant)) continue;
-    const params = normalizeModelSelectionParams(sdkVariant.params);
+    let params = normalizeModelSelectionParams(sdkVariant.params);
+    if (isComposer25) {
+      const fast = getModelParamValue(params, CURSOR_MODEL_PARAM_FAST)
+        || (discoveredId.endsWith('-fast') ? 'true' : 'false');
+      params = [
+        ...params.filter((param) => param.id !== CURSOR_MODEL_PARAM_FAST),
+        { id: CURSOR_MODEL_PARAM_FAST, value: fast.toLowerCase() === 'true' ? 'true' : 'false' },
+      ];
+    }
     const variantKey = createCursorVariantKeyFromParams(params);
     const fastEnabled = getModelParamValue(params, CURSOR_MODEL_PARAM_FAST).toLowerCase() === CURSOR_MODEL_TRUE_VALUE;
     const targetModelId = fastEnabled ? `${sdkModelId}-fast` : sdkModelId;
-    const targetName = fastEnabled && !/\bfast\b/i.test(name) ? `${name} Fast` : name;
+    const targetName = isComposer25
+      ? fastEnabled ? 'Composer 2.5 Fast' : 'Composer 2.5'
+      : fastEnabled && !/\bfast\b/i.test(name) ? `${name} Fast` : name;
     mergeCursorSdkModelCandidate(records, {
       id: targetModelId,
       sdkModelId,
@@ -1125,6 +1143,28 @@ const addSdkModelRecord = (records, model) => {
 
 const addCompatibilityModelPair = (records, id, pairedId, pairedName) => {
   if (!records[id] || records[pairedId]) return records;
+  if (pairedId === 'composer-2.5' || pairedId === 'composer-2.5-fast') {
+    const source = records[id];
+    const selectionForPair = (selection) => createCursorSdkModelSelection('composer-2.5', [
+      ...normalizeModelSelectionParams(selection?.params).filter((param) => param.id !== CURSOR_MODEL_PARAM_FAST),
+      { id: CURSOR_MODEL_PARAM_FAST, value: pairedId.endsWith('-fast') ? 'true' : 'false' },
+    ]);
+    return {
+      ...records,
+      [pairedId]: createCursorModelRecord({
+        ...source,
+        id: pairedId,
+        name: pairedName,
+        options: { ...source.options, cursorSdkModel: selectionForPair(source.options?.cursorSdkModel) },
+        variants: isPlainObject(source.variants) ? Object.fromEntries(
+          Object.entries(source.variants).map(([key, variant]) => [key, {
+            ...variant,
+            cursorSdkModel: selectionForPair(variant.cursorSdkModel),
+          }]),
+        ) : undefined,
+      }),
+    };
+  }
   return {
     ...records,
     [pairedId]: createCursorModelRecord({ id: pairedId, name: pairedName }),
@@ -1545,13 +1585,18 @@ const normalizeStoredSessionState = (state) => {
     if (info.role === 'assistant' && trimString(info.finish) && typeof completed === 'number') {
       const finalStatus = finishToToolStatus(info.finish);
       const nextParts = parts.map((part) => {
-        if (part?.type !== 'tool' || part?.state?.status !== 'running') return part;
+        if (part?.type !== 'tool') return part;
+        const settled = settleCursorNativeTaskPart(part, finalStatus);
+        if (settled !== part) recordChanged = true;
+        part = settled;
+        if (!['running', 'pending'].includes(part.state?.status)) return part;
         recordChanged = true;
         return {
           ...part,
           state: {
             ...part.state,
             status: finalStatus,
+            ...(finalStatus === 'error' ? { error: part.state?.error || CURSOR_UNREPORTED_TOOL_RESULT } : {}),
             time: {
               ...(part.state?.time || {}),
               end: completed,
@@ -2039,7 +2084,8 @@ export function createCursorSdkRuntime(options = {}) {
       ? { text: prompt, images }
       : { text: prompt };
     const deltaQueue = createAsyncQueue();
-    const run = await agent.send(message, {
+    let run;
+    run = await agent.send(message, {
       model,
       onDelta: (event) => {
         const sdkMessage = normalizeInteractionUpdateToSdkMessage(event);
@@ -2047,25 +2093,32 @@ export function createCursorSdkRuntime(options = {}) {
           deltaQueue.push(sdkMessage.type === 'usage'
             ? { type: 'usage', tokens: sdkMessage.tokens }
             : { type: 'message', message: sdkMessage });
+          if (sdkMessage.type === 'usage') queueMicrotask(() => {
+            if (run) deltaQueue.push({ type: 'usage-observation', observation: cursorRunUsageObservation(run) });
+          });
         }
       },
     });
+    deltaQueue.push({ type: 'usage-observation', observation: cursorRunUsageObservation(run) });
     const waitPromise = typeof run.wait === 'function'
       ? run.wait()
         .then((result) => ({
           ok: true,
           result,
+          usageObservation: cursorRunUsageObservation(run, result),
           finalStatus: finalStatusFromSdkStatus(sdkStatusFromRunStatus(result?.status || run.status)),
           finalText: trimString(result?.result),
         }))
         .catch((error) => ({
           ok: false,
           error,
+          usageObservation: cursorRunUsageObservation(run),
           finalStatus: 'error',
           finalText: '',
         }))
       : null;
     return {
+      getUsageObservation: () => cursorRunUsageObservation(run),
       async cancel() {
         if (typeof run.cancel === 'function') {
           await run.cancel();
@@ -2101,6 +2154,9 @@ export function createCursorSdkRuntime(options = {}) {
 
         async function* yieldWaitResult(result) {
           if (!result) return;
+          if (result.usageObservation) {
+            yield { type: 'usage-observation', observation: result.usageObservation };
+          }
           if (result.ok === false) {
             throw result.error || new Error('Cursor SDK run failed.');
           }
@@ -2169,7 +2225,7 @@ export function createCursorSdkRuntime(options = {}) {
     };
   };
 
-  const generateDirectTitle = async ({ text, directory }) => {
+  const generateDirectTitle = async ({ text, directory, onUsage }) => {
     const promptText = trimString(text);
     if (!promptText) return null;
     const apiKey = getCursorSdkApiKey({ env, readAuth });
@@ -2181,10 +2237,11 @@ export function createCursorSdkRuntime(options = {}) {
       apiKey,
       text: promptText,
       directory,
+      onUsage,
     });
   };
 
-  const generateNodeWorkerTitle = async ({ text, directory }) => {
+  const generateNodeWorkerTitle = async ({ text, directory, onUsage }) => {
     const promptText = trimString(text);
     if (!promptText) return null;
     const apiKey = getCursorSdkApiKey({ env, readAuth });
@@ -2230,6 +2287,8 @@ export function createCursorSdkRuntime(options = {}) {
       }
       if (payload?.type === 'title-result') {
         title = normalizeCursorSessionTitle(payload.title);
+      } else if (payload?.type === 'usage-observation') {
+        onUsage?.(payload.observation);
       } else if (payload?.type === 'error') {
         workerError = trimString(payload.error) || 'Cursor SDK title generation failed.';
       }
@@ -2329,6 +2388,7 @@ export function createCursorSdkRuntime(options = {}) {
     });
 
     const eventQueue = createAsyncQueue();
+    let latestUsageObservation = null;
     let resolveFinalResult = null;
     let finalResultSettled = false;
     const finalResultPromise = new Promise((resolve) => {
@@ -2388,9 +2448,13 @@ export function createCursorSdkRuntime(options = {}) {
               eventQueue.push({ type: 'agent', agentID: trimString(payload.agentID) });
             } else if (payload?.type === 'usage') {
               eventQueue.push({ type: 'usage', tokens: payload.tokens });
+            } else if (payload?.type === 'usage-observation') {
+              latestUsageObservation = normalizeCursorUsageObservation(payload.observation);
+              eventQueue.push({ type: 'usage-observation', observation: payload.observation });
             } else if (payload?.type === 'message') {
               eventQueue.push({ type: 'message', message: payload.message });
             } else if (payload?.type === 'final-result') {
+              latestUsageObservation = normalizeCursorUsageObservation(payload.result?.usageObservation) || latestUsageObservation;
               settleFinalResult(payload.result || null);
             } else if (payload?.type === 'done') {
               sawDone = true;
@@ -2454,6 +2518,7 @@ export function createCursorSdkRuntime(options = {}) {
     };
 
     return {
+      getUsageObservation: () => latestUsageObservation,
       async cancel() {
         cancelWorker();
       },
@@ -2641,6 +2706,16 @@ export function createCursorSdkRuntime(options = {}) {
         return;
       }
 
+      if (payload.type === 'usage-observation') {
+        if (request.kind === 'title') {
+          request.onUsage?.(payload.observation);
+          return;
+        }
+        request.latestUsageObservation = normalizeCursorUsageObservation(payload.observation);
+        request.eventQueue.push({ type: 'usage-observation', observation: payload.observation });
+        return;
+      }
+
       if (payload.type === 'message') {
         request.eventQueue.push({ type: 'message', message: payload.message });
         return;
@@ -2648,6 +2723,7 @@ export function createCursorSdkRuntime(options = {}) {
 
       if (payload.type === 'final-result') {
         const result = payload.result || null;
+        request.latestUsageObservation = normalizeCursorUsageObservation(result?.usageObservation) || request.latestUsageObservation;
         if (result?.ok === false && !(result.error instanceof Error)) {
           setRequestFinalResult(request, {
             ...result,
@@ -2815,6 +2891,7 @@ export function createCursorSdkRuntime(options = {}) {
         let eventQueue = null;
         let resolveFinalResult = null;
         let finalResultPromise = null;
+        let promptRequest = null;
         try {
           await waitUntilReady();
           const state = await readSessionState(input.sessionID);
@@ -2836,6 +2913,7 @@ export function createCursorSdkRuntime(options = {}) {
             modelID: input.modelID,
             directory: input.directory,
           };
+          promptRequest = request;
           requests.set(requestID, request);
           releaseAdmission();
           if (runtimeWorkerReady) {
@@ -2864,6 +2942,7 @@ export function createCursorSdkRuntime(options = {}) {
         }
 
         return {
+          getUsageObservation: () => promptRequest?.latestUsageObservation || null,
           async cancel() {
             try {
               writeCommand({ type: 'cancel', requestID });
@@ -2902,6 +2981,7 @@ export function createCursorSdkRuntime(options = {}) {
           });
           requests.set(requestID, {
             kind: 'title',
+            onUsage: input.onUsage,
             requestID,
             resolve: resolveTitle,
             reject: rejectTitle,
@@ -3120,6 +3200,16 @@ export function createCursorSdkRuntime(options = {}) {
       text,
       directory: trimString(input.directory),
       apiKey,
+      onUsage: (value) => {
+        const observation = normalizeCursorUsageObservation(value);
+        if (!observation) return;
+        try {
+          options.onTitleUsageObservation?.({ sessionID: trimString(input.sessionID) || null,
+            directory: trimString(input.directory), observation });
+        } catch {
+          logger.warn?.('[CursorSDK] Title usage observation could not be recorded.');
+        }
+      },
     };
     if (!useNodeWorkerForPrompts) {
       return generateDirectTitle(titleInput);
@@ -3957,6 +4047,7 @@ export function createCursorSdkRuntime(options = {}) {
       if (!run || typeof run.waitFinalResult !== 'function') return null;
       const result = await run.waitFinalResult({ timeoutMs });
       if (!result) return null;
+      observeRunUsage(result.usageObservation);
       if (result.ok === false) {
         throw result.error || new Error('Cursor SDK run failed.');
       }
@@ -3965,13 +4056,28 @@ export function createCursorSdkRuntime(options = {}) {
 
     const applyFinalRunResult = (result) => {
       if (!result) return null;
+      observeRunUsage(result.usageObservation);
       applyFinalAssistantText(result.finalText);
       return result.finalStatus || null;
     };
 
+    let run = null;
     let lastUsageTokens = null;
+    let lastUsageObservation = null;
+    const observeRunUsage = (value) => {
+      const observation = mergeCursorUsageObservation(lastUsageObservation, value);
+      if (!observation || observation === lastUsageObservation) return;
+      lastUsageObservation = observation;
+      try {
+        options.onUsageObservation?.({ sessionID, messageID: assistantMessageID, userMessageID, directory, observation });
+      } catch {
+        logger.warn?.('[CursorSDK] Usage observation could not be recorded.');
+      }
+    };
     const finalizeAssistantRun = async (finalStatus, completed = now(), failureReason = '') => {
-      const finish = normalizeFinish(finalStatus);
+      observeRunUsage(run?.getUsageObservation?.());
+      // A final-result/stream-close race cannot undo an accepted Stop request.
+      const finish = normalizeFinish(cancellationSource ? 'cancelled' : finalStatus);
       if (finish === 'cancelled' || cancellationSource) {
         lastCancellation = {
           sessionID,
@@ -4018,6 +4124,7 @@ export function createCursorSdkRuntime(options = {}) {
       const finalToolStatus = finishToToolStatus(finish);
       assistantRecord.parts = assistantRecord.parts.map((part) => {
         if (part?.type === 'tool') {
+          part = settleCursorNativeTaskPart(part, finalToolStatus);
           if (part?.state?.status !== 'running' && part?.state?.status !== 'pending') {
             const terminalStatus = normalizeToolCallStatus(part?.state?.status);
             if (
@@ -4041,7 +4148,7 @@ export function createCursorSdkRuntime(options = {}) {
             state: {
               ...part.state,
               status: finalToolStatus,
-              ...(finalToolStatus === 'error' && failureReason ? { error: failureReason } : {}),
+              ...(finalToolStatus === 'error' ? { error: part.state?.error || failureReason || CURSOR_UNREPORTED_TOOL_RESULT } : {}),
               time: {
                 ...(part.state?.time || {}),
                 end: completed,
@@ -4082,6 +4189,7 @@ export function createCursorSdkRuntime(options = {}) {
         ...assistantRecord.info,
         finish,
         ...(lastUsageTokens ? { tokens: lastUsageTokens } : {}),
+        ...(lastUsageObservation ? { cursorUsage: lastUsageObservation } : {}),
         time: {
           ...assistantRecord.info.time,
           completed,
@@ -4178,7 +4286,6 @@ export function createCursorSdkRuntime(options = {}) {
       };
     }
 
-    let run = null;
     try {
       run = await createPromptRun({
         sessionID,
@@ -4400,7 +4507,10 @@ export function createCursorSdkRuntime(options = {}) {
           };
           const current = cursorTaskActivityByPartId.get(partID)
             || existingMetadata[CURSOR_NATIVE_TASK_METADATA_KEY];
-          const projection = mergeCursorNativeTaskActivity(current, message);
+          const merged = mergeCursorNativeTaskActivity(current, message);
+          const status = normalizeToolCallStatus(existingState.status);
+          const projection = status === 'running' || status === 'pending'
+            ? merged : settleCursorNativeTaskActivity(merged, status);
           if (!projection) return false;
           cursorTaskActivityByPartId.set(partID, projection);
           if (!existing || existing.type !== 'tool') return false;
@@ -4470,6 +4580,10 @@ export function createCursorSdkRuntime(options = {}) {
           }
           if (next?.done) break;
           const event = next?.value;
+          if (event?.type === 'usage-observation') {
+            observeRunUsage(event.observation);
+            continue;
+          }
           if (event?.type === 'agent') {
             await updateAgentId(sessionID, event.agentID);
             continue;
@@ -4573,9 +4687,12 @@ export function createCursorSdkRuntime(options = {}) {
             const startedAt = existingTime.start || now();
             const existingSummary = cursorTaskSummariesByPartId.get(partID);
             const isCursorTask = isCursorTaskTool(message.name || existing?.tool);
-            const cursorNativeTask = isCursorTask
+            const currentNativeTask = isCursorTask
               ? cursorTaskActivityByPartId.get(partID)
               : null;
+            const cursorNativeTask = incomingIsTerminal
+              ? settleCursorNativeTaskActivity(currentNativeTask, status) : currentNativeTask;
+            if (isCursorTask && cursorNativeTask) cursorTaskActivityByPartId.set(partID, cursorNativeTask);
             const existingOutput = typeof existing?.output === 'string'
               ? existing.output
               : (typeof existingState.output === 'string' ? existingState.output : '');

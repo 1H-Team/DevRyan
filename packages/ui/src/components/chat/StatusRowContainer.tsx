@@ -15,6 +15,7 @@ import { isManagedTaskToolName } from './message/parts/toolRenderUtils';
 import {
     managedOrchestrationSelectors,
     useManagedOrchestrationStore,
+    type ManagedOrchestrationStore,
 } from '@/stores/useManagedOrchestrationStore';
 import { getToolMetadata } from '@/lib/toolHelpers';
 import { useProviderRecoveryStore } from '@/stores/useProviderRecoveryStore';
@@ -37,39 +38,45 @@ import { formatElapsedDuration } from '@/lib/duration';
 import { useDocumentAnimationState } from '@/hooks/useDocumentAnimationState';
 import { useHasActiveReasoningDisclosure } from './message/parts/reasoningDisclosureStatus';
 
-type ManagedDelegationStatusPhase = 'starting' | 'waiting' | null;
+type ManagedDelegationStatusPhase = 'starting' | 'waiting' | 'managing' | null;
 
 const MANAGED_START_ACTIONS = new Set(['start', 'retry']);
-const MANAGED_WAIT_ACTIONS = new Set([
-    'status',
-    'wait',
-    'cancel',
-    'continue',
-    'resume',
-    'recover_in_place',
-    'retry_in_place',
-    'abandon',
-]);
 
-// Exported for focused regression tests. The scheduler phase wins once a
-// child is actually running; before its first durable task event, the live
-// start call keeps the status truthful while the Agent Dispatch card prepares.
 // eslint-disable-next-line react-refresh/only-export-components
 export const resolveManagedDelegationStatusPhase = ({
     rootPhase,
     activeToolName,
     activeToolAction,
+    hasConfirmedSnapshot = false,
+    isLoadingSnapshot = false,
 }: {
-    rootPhase: ManagedDelegationStatusPhase;
+    rootPhase: 'starting' | 'waiting' | null;
     activeToolName?: string;
     activeToolAction?: string;
+    hasConfirmedSnapshot?: boolean;
+    isLoadingSnapshot?: boolean;
 }): ManagedDelegationStatusPhase => {
-    if (rootPhase === 'waiting') return 'waiting';
     if (!isManagedTaskToolName(activeToolName ?? '')) return rootPhase;
     const action = activeToolAction?.trim().toLowerCase();
-    if (action && MANAGED_WAIT_ACTIONS.has(action)) return 'waiting';
-    if (action && MANAGED_START_ACTIONS.has(action)) return 'starting';
-    return rootPhase ?? 'starting';
+    if (action && MANAGED_START_ACTIONS.has(action)) return rootPhase === 'waiting' ? 'waiting' : 'starting';
+    if (action === 'wait') {
+        if (rootPhase) return rootPhase;
+        return !hasConfirmedSnapshot && isLoadingSnapshot ? 'waiting' : 'managing';
+    }
+    return 'managing';
+};
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const shouldManagedDelegationOwnStatus = ({
+    isWorking, hasActiveTasks, activePartType, activeToolName,
+}: {
+    isWorking: boolean;
+    hasActiveTasks: boolean;
+    activePartType?: 'text' | 'tool' | 'reasoning' | 'editing';
+    activeToolName?: string;
+}): boolean => {
+    if (activePartType === 'tool' && isManagedTaskToolName(activeToolName ?? '')) return true;
+    return hasActiveTasks && (!isWorking || activePartType === 'reasoning' || activePartType === undefined);
 };
 
 const useElapsedToolLabel = (startedAt: number | undefined): string | null => {
@@ -228,10 +235,16 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             return state.sessionAbortFlags?.get(currentSessionId) ?? null;
         }, [currentSessionId]),
     );
-    const { working } = useAssistantStatus();
+    const { working, currentPromptId } = useAssistantStatus();
     const currentAgentName = useConfigStore((state) => state.currentAgentName);
-    const managedBarrierLocked = useManagedOrchestrationStore(React.useMemo(
-        () => managedOrchestrationSelectors.hasUndispositionedTasksForRoot(currentSessionId ?? ''),
+    const hasAuthoritativeManagedState = useManagedOrchestrationStore(React.useMemo(
+        () => (state: ManagedOrchestrationStore) => managedOrchestrationSelectors.hasConfirmedSnapshotForRoot(currentSessionId ?? '')(state)
+            || (state.taskIdsByRootId[currentSessionId ?? '']?.length ?? 0) > 0,
+        [currentSessionId],
+    ));
+
+    const isLoadingManagedSnapshot = useManagedOrchestrationStore(React.useMemo(
+        () => managedOrchestrationSelectors.isLoadingSnapshotForRoot(currentSessionId ?? ''),
         [currentSessionId],
     ));
 
@@ -253,16 +266,16 @@ export const StatusRowContainer: React.FC = React.memo(() => {
     // so a builder that legitimately keeps working alongside a managed child
     // still reports its own activity.
     const managedChildOwnsIdleStatus = !working.isWorking && managedChildActive;
-    const managedBarrierOwnsStatus = managedChildOwnsIdleStatus || (managedBarrierLocked && (
-        working.activePartType === 'reasoning'
-        || working.activePartType === undefined
-        || (
-            working.activePartType === 'tool'
-            && isManagedTaskToolName(working.activeToolName ?? '')
-        )
-    ));
+    const managedDelegationOwnsStatus = shouldManagedDelegationOwnStatus({
+        isWorking: working.isWorking,
+        hasActiveTasks: managedChildActive,
+        activePartType: working.activePartType,
+        activeToolName: working.activeToolName,
+    });
     const managedDelegationPhase = resolveManagedDelegationStatusPhase({
         rootPhase: managedRootDelegationPhase,
+        hasConfirmedSnapshot: hasAuthoritativeManagedState,
+        isLoadingSnapshot: isLoadingManagedSnapshot,
         activeToolName: working.activeToolName,
         activeToolAction: working.activeToolAction,
     });
@@ -292,13 +305,12 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         assistantStatusText = managedChildGenericStatusText;
         assistantIsGenericStatus = false;
     }
-    if (managedBarrierOwnsStatus || (
-        working.activePartType === 'tool'
-        && isManagedTaskToolName(working.activeToolName ?? '')
-    )) {
+    if (managedDelegationOwnsStatus) {
         assistantStatusText = managedDelegationPhase === 'starting'
             ? t('chat.statusRow.managedTasks.starting')
-            : t('chat.statusRow.managedTasks.waiting');
+            : managedDelegationPhase === 'waiting'
+                ? t('chat.statusRow.managedTasks.waiting')
+                : t('chat.statusRow.managedTasks.managing');
         assistantIsGenericStatus = false;
     }
     if (longRunningPresentation && !longRunningPresentation.actionable) {
@@ -380,6 +392,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
     }, [childStores, currentSessionId, resyncSession]);
     return (
         <StatusRow
+            assistantStatusKey={`${currentPromptId ?? ''}:${managedDelegationPhase ?? ''}`}
             isWorking={display.isWorking}
             statusText={display.statusText}
             isGenericStatus={display.isGenericStatus}

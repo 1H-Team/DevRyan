@@ -4,6 +4,14 @@ import { describe, expect, it } from 'vitest';
 const readAgent = (name) => readFileSync(new URL(`./${name}.md`, import.meta.url), 'utf8');
 
 describe('bundled agent tool recovery guidance', () => {
+  it('keeps parked Orchestrator output brief while the task card owns recovery controls', () => {
+    const prompt = readAgent('orchestrator');
+    expect(prompt).toContain('at most one brief status sentence');
+    expect(prompt).toContain('Do not repeat recovery instructions');
+    expect(prompt).toContain('DevRyan owns automatic recovery');
+    expect(prompt).not.toContain('tell the user to choose a model');
+    expect(prompt).not.toContain('click Try Again');
+  });
   it('requires Explorer to use exact discovered paths and one bounded ENOENT correction', () => {
     const explorer = readAgent('explorer');
     expect(explorer).toContain('Never synthesize an exact path from a naming convention');

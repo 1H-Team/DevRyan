@@ -1,5 +1,6 @@
 export const CURSOR_NATIVE_TASK_METADATA_KEY = 'cursorNativeTask';
 export const CURSOR_NATIVE_TASK_SCHEMA_VERSION = 1;
+export const CURSOR_UNREPORTED_TOOL_RESULT = 'Cursor ended without reporting a result for this tool.';
 
 const MAX_TEXT_CHARS = 8000;
 const MAX_ENTRIES = 24;
@@ -62,6 +63,8 @@ const mergeToolEntry = (projection, update) => {
     ...(isPlainObject(update.args) ? { input: update.args } : {}),
     ...(update.result !== undefined ? { output: update.result } : {}),
   };
+  if (['completed', 'error', 'cancelled'].includes(update.status)
+    && nextState.error === CURSOR_UNREPORTED_TOOL_RESULT) delete nextState.error;
   const nextEntry = {
     id: entryID,
     tool: trimString(update.name) || trimString(existing.tool) || 'tool',
@@ -126,6 +129,30 @@ export const mergeCursorNativeTaskActivity = (stored, message) => {
     };
   }
   return projection;
+};
+
+export const settleCursorNativeTaskActivity = (projection, terminalStatus) => {
+  if (!isPlainObject(projection) || !Array.isArray(projection.entries)) return projection;
+  let changed = projection.thinking === true || projection.currentStep !== undefined;
+  const status = terminalStatus === 'cancelled' ? 'cancelled' : 'error';
+  const entries = projection.entries.map(entry => {
+    if (!['running', 'pending'].includes(entry?.state?.status)) return entry;
+    changed = true;
+    return { ...entry, state: { ...entry.state, status,
+      ...(status === 'error' ? { error: CURSOR_UNREPORTED_TOOL_RESULT } : {}),
+    } };
+  });
+  return changed ? { ...projection, entries, thinking: false, currentStep: undefined } : projection;
+};
+
+export const settleCursorNativeTaskPart = (part, terminalStatus) => {
+  const current = part?.state?.metadata?.[CURSOR_NATIVE_TASK_METADATA_KEY];
+  const projection = settleCursorNativeTaskActivity(current, terminalStatus);
+  if (projection === current) return part;
+  return { ...part,
+    ...(part.metadata ? { metadata: { ...part.metadata, [CURSOR_NATIVE_TASK_METADATA_KEY]: projection } } : {}),
+    state: { ...part.state, metadata: { ...part.state.metadata, [CURSOR_NATIVE_TASK_METADATA_KEY]: projection } },
+  };
 };
 
 export const sanitizeCursorTaskResult = (value) => {

@@ -90,8 +90,8 @@ are cached per proxy for 60 s with single-flight coalescing.
 
 The `attempt` callback re-enters `handleRpcInternal` with the scheduler's
 `retry_in_place` acknowledgement under an internal `{ autoResume: true }`
-context; only that context forwards `autoResumeGeneration` to the scheduler, so
-routes and the private bridge can never replay a stale generation. A work
+context. Every backup attempt, including quota recovery, revalidates the current configured model and thinking level plus model availability before acknowledgement. A changed or removed backup returns `backup_changed`: the scheduler replans immediately without spending a provider attempt, retains the same child and cancellation generation, and counts repeated changes toward the five-host-failure cap. Only that context forwards `autoResumeGeneration` to the scheduler, so
+routes and the private bridge can never replay a stale generation. Planning excludes backups confirmed absent from the catalog. If a quota backup disappears between planning and dispatch, the host rejects it and replans toward the primary reset; transient unknown catalog availability defers 30 seconds without consuming provider attempts or host failures. These catalog checks stop after 90 seconds or when the primary reset arrives, then skip the unverified backup and retain primary reset/backoff scheduling. Transport recovery retains its single-backup and host-failure bounds. A work
 admission block (context-mode recovery) or any 503 answers `deferred` (30 s);
 `auto_resume_stale`, `result_already_acknowledged`, and
 `result_already_acknowledging` answer `started` without a follow-up because the
@@ -101,7 +101,7 @@ and `session.deleted` OpenCode events cancel every active plan for that session
 once the scheduler is initialized. The packaged plugin marks such results
 `manualRecoveryRequired` with an `autoResume: { scheduled, state, nextAttemptAt, target }`
 summary and an instruction to leave the result parked, so the orchestrator
-reports the automatic retry instead of asking for Try Again.
+ends with at most one brief status sentence. Recovery instructions and model-selection steps stay in the task card.
 
 ## Launch admission
 

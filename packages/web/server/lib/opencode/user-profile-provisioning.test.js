@@ -103,7 +103,7 @@ describe('user profile provisioning', () => {
     expect(config).not.toHaveProperty('mcp');
     expect(packageJson.dependencies).toMatchObject({
       '@ai-sdk/openai-compatible': '^2.0.47',
-      '@opencode-ai/plugin': '1.18.30',
+      '@opencode-ai/plugin': '1.18.31',
       '@rama_nigg/open-cursor': '2.5.8',
       '@rynfar/meridian': '1.62.6',
       'context-mode': '1.0.169',
@@ -228,6 +228,29 @@ describe('user profile provisioning', () => {
     expect(config.agent.custom).toEqual({ description: 'keep' });
     expect(config.plugin).toContain('custom-plugin');
     expect(commands).toHaveLength(1);
+  });
+
+  it('upgrades managed routing prompts to the canonical visual ownership rules', async () => {
+    const runtime = createRuntime();
+    expect((await runtime.provision()).ok).toBe(true);
+    const configDir = path.join(home, '.config', 'opencode');
+    const manifestPath = path.join(configDir, '.openchamber', 'user-profile-manifest.json');
+    const manifest = readJson(manifestPath);
+    const roles = ['orchestrator', 'designer', 'fixer'];
+    for (const role of roles) {
+      const relative = `agents/${role}.md`;
+      const previous = `Previous managed ${role} routing rules\n`;
+      fs.writeFileSync(path.join(configDir, relative), previous);
+      manifest.files[relative].hash = hashContent(previous);
+    }
+    writeJson(manifestPath, manifest);
+    const result = await runtime.provision();
+    expect(result).toMatchObject({ ok: true, changed: true, conflicts: [] });
+    for (const role of roles) {
+      expect(fs.readFileSync(path.join(configDir, `agents/${role}.md`), 'utf8'))
+        .toBe(fs.readFileSync(new URL(`../../default-config/agents/${role}.md`, import.meta.url), 'utf8'));
+    }
+    expect((await runtime.provision()).changed).toBe(false);
   });
 
   it('preserves untracked personal Slim JSON, higher-precedence JSONC and prompt overrides', async () => {

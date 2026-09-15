@@ -24,9 +24,9 @@ describe("getAssistantToolStatusPhrase", () => {
         expect(getAssistantToolStatusPhrase("oc_read")).toBe("reading file");
     });
 
-    test("uses the subagent waiting phrase for managed task tools case-insensitively", () => {
-        expect(getAssistantToolStatusPhrase("devryan_task")).toBe("waiting for subagent output");
-        expect(getAssistantToolStatusPhrase("DEVRYAN_TASK")).toBe("waiting for subagent output");
+    test("uses the neutral subagent management phrase for managed task tools case-insensitively", () => {
+        expect(getAssistantToolStatusPhrase("devryan_task")).toBe("managing subagent tasks");
+        expect(getAssistantToolStatusPhrase("DEVRYAN_TASK")).toBe("managing subagent tasks");
     });
 
     test("keeps managed browser activity generic", () => {

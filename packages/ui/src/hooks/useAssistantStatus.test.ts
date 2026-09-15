@@ -200,3 +200,34 @@ describe("assistant status message selection", () => {
         expect(selected?.info.id).toBe("msg_assistant_tools");
     });
 });
+
+
+describe('current prompt status isolation', () => {
+    test('clears an old running wait immediately on send and while the new assistant is empty', () => {
+        const old = message('old', 'assistant');
+        const user = message('new-user', 'user');
+        const records = [
+            { info: old, parts: [toolPart('wait', 'devryan_task', 'running', 'wait')] },
+            { info: user, parts: [] },
+        ];
+        expect(selectAssistantStatusRecord(records)).toBeNull();
+        const empty = { info: message('new-assistant', 'assistant'), parts: [] };
+        expect(selectAssistantStatusRecord([...records, empty])).toBe(empty);
+    });
+
+    test('rejects a late previous-turn event by parent and session identity', () => {
+        const old = message('old', 'assistant');
+        if (old.role !== 'assistant') throw new Error('Invalid fixture');
+        old.parentID = 'previous-user';
+        old.time.created = 20;
+        const user = message('new-user', 'user');
+        user.time.created = 10;
+        expect(selectAssistantStatusRecord([
+            { info: user, parts: [] },
+            { info: old, parts: [toolPart('wait', 'devryan_task', 'running', 'wait')] },
+        ])).toBeNull();
+        old.parentID = user.id;
+        old.sessionID = 'another-session';
+        expect(selectAssistantStatusRecord([{ info: user, parts: [] }, { info: old, parts: [] }])).toBeNull();
+    });
+});

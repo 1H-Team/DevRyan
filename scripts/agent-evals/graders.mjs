@@ -1,3 +1,4 @@
+import { isRoutingCase, ROUTING_CASES } from './routing-cases.mjs';
 import { consumePrivateToolIntervals } from './tool-evidence.mjs';
 
 const TOOL_FAMILIES = Object.freeze({
@@ -191,6 +192,14 @@ export const gradeToolRequirements = (caseId, toolEvents = []) => {
     chain.forEach((event, index) => { event.ordinal = index + 1; });
     return result(id, true);
   }
+  if (isRoutingCase(caseId)) {
+    const root = events.filter(event => event.sessionScope === 'root');
+    const child = events.filter(event => event.sessionScope === 'child');
+    return result(`${caseId}.tools`,
+      root.some(event => event.tool === 'devryan_task' && isFinalEvent(event))
+      && !hasFamily(root, 'mutation')
+      && hasFamily(child, 'mutation', { final: true }));
+  }
   if (caseId === 'managed-change') {
     const childEvents = events.filter((event) => event?.sessionScope === 'child');
     return result(
@@ -245,7 +254,7 @@ export const gradeCaseOutcome = (input = {}) => {
         && finalTestPassed,
     );
   }
-  if (caseId === 'repair-and-test' || caseId === 'managed-change') {
+  if (caseId === 'repair-and-test' || caseId === 'managed-change' || isRoutingCase(caseId)) {
     return result(
       `${caseId}.filesystem-test`,
       manifestSafe
@@ -373,4 +382,14 @@ export const summarizeGraders = (graders = []) => {
     failed,
     byId: Object.fromEntries(Object.entries(byId).sort(([left], [right]) => left.localeCompare(right))),
   };
+};
+
+export const gradeRoutingOutcome = ({ caseId, rootSessionId, snapshot } = {}) => {
+  const expected = ROUTING_CASES[caseId]?.agent;
+  const tasks = Array.isArray(snapshot?.tasks) ? snapshot.tasks : [];
+  return result(`${caseId}.specialist`, Boolean(expected && rootSessionId)
+    && snapshot?.available !== false
+    && tasks.length === 1
+    && tasks[0].rootSessionId === rootSessionId
+    && tasks[0].agent === expected);
 };

@@ -250,6 +250,13 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           }
         }
       : null;
+  const resolvePlannedAutoResumeBackup = async (params) => {
+    const backup = await resolveAutoResumeBackupExecution(params);
+    if (backup && validateAgentExecution && await validateAgentExecution({
+      directory: params.directory, providerId: backup.providerId, modelId: backup.modelId,
+    }) === false) return null;
+    return backup;
+  };
   const executor = options.executor ?? createWebManagedOpenCodeExecutor({
     buildOpenCodeUrl: options.buildOpenCodeUrl,
     getOpenCodeAuthHeaders: options.getOpenCodeAuthHeaders,
@@ -283,14 +290,14 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     try {
       const task = scheduler.getTask(params.taskId);
       const envelope = scheduler.getResultEnvelope(params.taskId);
-      if (task && envelope?.autoResume?.trigger === 'provider_transport') {
+      if (task && (envelope?.autoResume?.trigger === 'provider_transport' || envelope?.autoResume?.target?.kind === 'backup')) {
         const backup = await resolveAutoResumeBackupExecution({
           rootSessionId: task.rootSessionId, directory: task.directory, agent: task.agent,
           providerId: task.providerId, modelId: task.modelId,
         });
         if (!backup || backup.providerId !== params.providerId || backup.modelId !== params.modelId
           || (backup.variant ?? null) !== (params.variant ?? null)) {
-          return { outcome: 'rejected', code: 'backup_unavailable', message: 'The configured backup changed or is unavailable' };
+          return { outcome: 'rejected', code: 'backup_changed', message: 'The configured backup changed or was removed' };
         }
         if (validateAgentExecution) {
           const available = await validateAgentExecution({ directory: task.directory, providerId: params.providerId, modelId: params.modelId });
@@ -298,6 +305,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             return { outcome: 'rejected', code: 'backup_unavailable', message: 'The configured backup model is unavailable' };
           }
           if (available === null && params.providerId !== 'cursor-acp') {
+            if (envelope.autoResume.trigger !== 'provider_transport') {
+              return { outcome: 'deferred', retryAfterMs: AUTO_RESUME_HOST_DEFER_MS, reason: 'backup_availability_unknown' };
+            }
             return { outcome: 'rejected', code: 'backup_availability_unknown', message: 'The backup model catalog could not be verified' };
           }
         }
@@ -334,7 +344,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     ...(options.createLeaseToken ? { createLeaseToken: options.createLeaseToken } : {}),
     autoResume: {
       resolveOwnerKey: resolveAutoResumeOwnerKey,
-      resolveBackupExecution: resolveAutoResumeBackupExecution,
+      resolveBackupExecution: resolvePlannedAutoResumeBackup,
       resolveProviderReset: resolveAutoResumeProviderReset,
       attempt: attemptAutoResume,
     },

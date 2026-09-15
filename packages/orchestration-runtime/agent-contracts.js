@@ -22,9 +22,11 @@ const READ_ONLY_ROLE_LINE = 'Read-only role: do not edit files, and do not run t
 const ROLE_LINES = Object.freeze({
   designer: Object.freeze([
     'Designer: validate what users actually see: layout, states, dark and light themes, mobile and desktop. Do not run tsc for a UI-only task unless the task asks for it.',
-    'Designer: if the brief names no open visual or UX decision, implement it anyway and add one line **Routing:** better suited to fixer - <reason> above your status marker; never block for this.',
+    'Designer: implement approved visual or UX changes, even when fully specified; approval does not transfer ownership to Fixer. Do not take planning-only or standalone review work.',
+    'Designer: if assigned only behavior work under an unchanged presentation, implement it anyway and add one line **Routing:** better suited to fixer - <reason> above your status marker; never block for this.',
   ]),
   fixer: Object.freeze([
+    'Fixer: own behavior work under an unchanged presentation. Approved or fully specified visual changes belong to Designer; make no design edits and report a routing mismatch if assigned them.',
     'Fixer: verification means the focused acceptance check you were assigned, run once at the end; no broad sweeps.',
   ]),
   explorer: Object.freeze([READ_ONLY_ROLE_LINE]),

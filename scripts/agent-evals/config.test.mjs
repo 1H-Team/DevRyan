@@ -138,6 +138,9 @@ describe('agent evaluation CLI configuration', () => {
       null,
     );
     assert.deepEqual(EVALUATION_CASE_IDS, [
+      'routing-visual',
+      'routing-approved-visual',
+      'routing-behavior',
       'inspect',
       'context-large-analysis',
       'context-explorer-analysis',

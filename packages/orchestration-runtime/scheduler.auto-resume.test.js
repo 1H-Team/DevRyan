@@ -29,6 +29,71 @@ const transportFailed = async (_task, control) => {
 };
 
 describe('managed transport backup policy', () => {
+  test('an unknown backup does not postpone a primary reset that arrives during catalog deferral', async () => {
+    const h = createHarness({ startResult: limited(START + 45_000), attemptOutcome: async () => ({
+      outcome: 'deferred', retryAfterMs: 30_000, reason: 'backup_availability_unknown',
+    }) });
+    try {
+      const original = await h.park();
+      await h.runDue();
+      await h.advance(30_000);
+      await h.advance(15_000);
+      expect(h.state(original.taskId)).toMatchObject({ state: 'scheduled', target: { kind: 'original' },
+        nextAttemptAt: START + 45_000 + AUTO_RESUME_RESET_JITTER_MS, hostFailures: 0, attemptCount: 0 });
+      expect(h.attempts).toHaveLength(3);
+    } finally {
+      await h.scheduler.shutdown();
+    }
+  });
+
+  test.each([null, START + 60 * MINUTE])('bounds unknown backup availability and preserves the primary reset: %s', async (resetAt) => {
+    const h = createHarness({ startResult: limited(resetAt), attemptOutcome: async (params, harness) => {
+      if (params.providerId === BACKUP.providerId) return { outcome: 'deferred', retryAfterMs: 30_000, reason: 'backup_availability_unknown' };
+      const result = await harness.scheduler.acknowledgeResult(params.taskId, {
+        action: params.action, idempotencyKey: params.idempotencyKey,
+        providerId: params.providerId, modelId: params.modelId, variant: params.variant,
+        autoResumeGeneration: params.autoResumeGeneration,
+      });
+      return { outcome: 'started', followUpTaskId: result.followUpTask.taskId };
+    } });
+    try {
+      const original = await h.park();
+      await h.runDue();
+      for (let i = 0; i < 3; i++) await h.advance(30_000);
+      expect(h.attempts).toHaveLength(4);
+      expect(h.inPlaceRetries).toHaveLength(0);
+      const state = h.state(original.taskId);
+      expect(state).toMatchObject({ state: 'scheduled', target: { kind: 'original' }, attemptCount: 0, hostFailures: 0 });
+      if (resetAt !== null) expect(state.nextAttemptAt).toBe(resetAt + AUTO_RESUME_RESET_JITTER_MS);
+      await h.advance(state.nextAttemptAt - h.readClock());
+      expect(h.inPlaceRetries).toHaveLength(1);
+      expect(h.inPlaceRetries[0]).toMatchObject({ providerId: original.providerId, modelId: original.modelId, childSessionId: original.childSessionId });
+      expect(h.state(original.taskId)).toMatchObject({ state: 'succeeded', attemptCount: 1, hostFailures: 0 });
+    } finally {
+      await h.scheduler.shutdown();
+    }
+  });
+
+  test.each(['quota', 'transport'])('bounds repeated %s backup changes without consuming provider attempts', async (trigger) => {
+    const h = createHarness({ startResult: trigger === 'quota' ? limited() : transportFailed, attemptOutcome: async () => ({
+      outcome: 'rejected', code: 'backup_changed', message: 'The configured backup changed',
+    }) });
+    try {
+      const original = await h.park();
+      await h.runDue();
+      expect(h.attempts).toHaveLength(AUTO_RESUME_MAX_HOST_FAILURES);
+      expect(h.inPlaceRetries).toHaveLength(0);
+      expect(h.state(original.taskId)).toMatchObject({
+        state: 'exhausted', reason: 'host_failures', attemptCount: 0,
+        hostFailures: AUTO_RESUME_MAX_HOST_FAILURES,
+      });
+      await h.advance(7 * 60 * MINUTE);
+      expect(h.attempts).toHaveLength(AUTO_RESUME_MAX_HOST_FAILURES);
+    } finally {
+      await h.scheduler.shutdown();
+    }
+  });
+
   test('uses one configured backup without quota probes, breakers, or reset scheduling', async () => {
     let quotaProbes = 0;
     const h = createHarness({ startResult: transportFailed, providerReset() { quotaProbes++; return null; } });

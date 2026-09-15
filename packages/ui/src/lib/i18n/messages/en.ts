@@ -1931,6 +1931,7 @@ export const dict = {
   'chat.statusRow.managedChild.waitingForModel': 'Waiting for model',
   'chat.statusRow.managedChild.recovering': 'Recovering subtask',
   'chat.statusRow.managedTasks.starting': 'Starting subagent delegation',
+  'chat.statusRow.managedTasks.managing': 'Managing subagent tasks',
   'chat.statusRow.managedTasks.waiting': 'Waiting for subagent output',
   'chat.statusRow.longRunningTool.running': 'Using {tool}',
   'chat.statusRow.longRunningTool.status': '{tool} has been running for {elapsed} without progress updates.',

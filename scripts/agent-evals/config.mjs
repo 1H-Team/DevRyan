@@ -1,9 +1,11 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { ROUTING_CASES } from './routing-cases.mjs';
 import { GOLDEN_CASE_IDS } from './golden-cases.mjs';
 
 export const EVALUATION_CASE_IDS = Object.freeze([
+  ...Object.keys(ROUTING_CASES),
   'inspect',
   'context-large-analysis',
   'context-explorer-analysis',

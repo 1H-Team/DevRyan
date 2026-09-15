@@ -407,7 +407,7 @@ describe('Cursor SDK runtime', () => {
     expect(runtime.getSessionStatus?.().ses_open_stream_edit).toEqual({ type: 'idle' });
     expect(assistant?.info.finish).toBe('stop');
     expect(assistant?.parts?.find((part) => part.type === 'text')?.text).toBe('Edited the file and finished.');
-    expect(editTool?.state?.status).toBe('completed');
+    expect(editTool?.state).toMatchObject({ status: 'error', error: 'Cursor ended without reporting a result for this tool.' });
     expect(typeof editTool?.state?.time?.end).toBe('number');
     expect(idleEvents).toHaveLength(1);
   });
@@ -1467,7 +1467,7 @@ describe('Cursor SDK runtime', () => {
     });
 
     const tool = records?.[1]?.parts?.find((part) => part.type === 'tool');
-    expect(tool?.state?.status).toBe('completed');
+    expect(tool?.state).toMatchObject({ status: 'error', error: 'Cursor ended without reporting a result for this tool.' });
     expect(typeof tool?.state?.time?.end).toBe('number');
   });
 
@@ -1660,7 +1660,7 @@ describe('Cursor SDK runtime', () => {
       event?.type === 'message.part.updated'
       && event.properties?.part?.tool === 'read'
     ));
-    expect(readEvents.map((event) => event.properties.part.state.status)).toEqual(['running', 'completed']);
+    expect(readEvents.map((event) => event.properties.part.state.status)).toEqual(['running', 'error']);
   });
 
   it('finishes the assistant turn when Cursor emits a terminal status before closing the stream', async () => {
@@ -1724,7 +1724,9 @@ describe('Cursor SDK runtime', () => {
     expect(runtime.getRuntimeStatus().activeRuns).toBe(0);
     expect(records?.[1]?.info.finish).toBe('stop');
     expect(records?.[1]?.parts?.find((part) => part.type === 'text')?.text).toBe('done');
-    expect(records?.[1]?.parts?.find((part) => part.type === 'tool')?.state?.status).toBe('completed');
+    expect(records?.[1]?.parts?.find((part) => part.type === 'tool')?.state).toMatchObject({
+      status: 'error', error: 'Cursor ended without reporting a result for this tool.',
+    });
   });
 
   it('finishes quiet Cursor streams after substantial assistant text and completed tool activity', async () => {
@@ -3334,7 +3336,7 @@ describe('Cursor SDK runtime', () => {
     expect(tailForwarded).toBe(false);
   });
 
-  it('repairs persisted SDK assistant parent ids and stale running tools on read', async () => {
+  it.each(['running', 'pending'])('repairs persisted SDK assistant parent ids and stale %s tools on read', async (status) => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     writeFileSync(
       join(tempDir, 'ses_1.json'),
@@ -3368,7 +3370,14 @@ describe('Cursor SDK runtime', () => {
                 tool: 'grep',
                 input: { pattern: 'Open request form' },
                 output: 'src/a.ts:1:Open request form',
-                state: { status: 'running', time: { start: 12 } },
+                state: { status, time: { start: 12 } },
+              },
+              {
+                id: 'nested_task', type: 'tool', tool: 'task',
+                state: { status: 'completed', metadata: { cursorNativeTask: {
+                  schemaVersion: 1, source: 'cursor-native', thinking: true, currentStep: 1,
+                  entries: [{ id: 'nested_read', tool: 'read', state: { status, output: 'Partial output' } }],
+                } } },
               },
             ],
           },
@@ -3390,10 +3399,14 @@ describe('Cursor SDK runtime', () => {
 
     expect(records[1]?.info.parentID).toBe('msg_e999_user');
     expect(records[1]?.parts?.[0]?.state).toMatchObject({
-      status: 'completed',
+      status: 'error',
+      error: 'Cursor ended without reporting a result for this tool.',
       input: { pattern: 'Open request form' },
       output: 'src/a.ts:1:Open request form',
       time: { start: 12, end: 20 },
+    });
+    expect(records[1].parts[1].state.metadata.cursorNativeTask).toMatchObject({ thinking: false,
+      entries: [{ state: { status: 'error', output: 'Partial output' } }],
     });
   });
 

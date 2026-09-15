@@ -126,6 +126,7 @@ export type ManagedOrchestrationStore = {
   bridgeReady: boolean;
   recoveryWarning: string | null;
   isLoadingSnapshot: boolean;
+  snapshotStateByScope: Readonly<Record<string, 'loading' | 'confirmed' | 'unavailable'>>;
   snapshotError: string | null;
   pendingActionByTaskId: Readonly<Record<string, ManagedTaskPendingAction>>;
   actionErrorByTaskId: Readonly<Record<string, string>>;
@@ -151,6 +152,7 @@ const initialState = () => ({
   bridgeReady: false,
   recoveryWarning: null as string | null,
   isLoadingSnapshot: false,
+  snapshotStateByScope: {} as Readonly<Record<string, 'loading' | 'confirmed' | 'unavailable'>>,
   snapshotError: null as string | null,
   pendingActionByTaskId: {} as Readonly<Record<string, ManagedTaskPendingAction>>,
   actionErrorByTaskId: {} as Readonly<Record<string, string>>,
@@ -961,7 +963,11 @@ export const createManagedOrchestrationStore = (options: {
         }>();
         const loadGeneration = generation;
         const baseline = new Map(Object.entries(get().tasksById));
-        set((state) => ({ ...state, isLoadingSnapshot: true, snapshotError: null }));
+        set((state) => ({
+          ...state, isLoadingSnapshot: true, snapshotError: null,
+          snapshotStateByScope: state.snapshotStateByScope[scopeKey] === 'confirmed'
+            ? state.snapshotStateByScope : { ...state.snapshotStateByScope, [scopeKey]: 'loading' },
+        }));
         const operation = Promise.resolve().then(async () => {
           try {
             const snapshot = parseSnapshot(await api.getSnapshot(
@@ -1059,6 +1065,9 @@ export const createManagedOrchestrationStore = (options: {
                 ...withChildTaskIndexes(state, tasksById, resultEnvelopesByTaskId, affectedChildSessionIds),
                 pendingActionByTaskId: mutablePendingActions ?? state.pendingActionByTaskId,
                 actionErrorByTaskId: mutableActionErrors ?? state.actionErrorByTaskId,
+                snapshotStateByScope: state.snapshotStateByScope[scopeKey] === 'confirmed'
+                  ? state.snapshotStateByScope
+                  : { ...state.snapshotStateByScope, [scopeKey]: snapshot.available && snapshot.bridgeReady && !snapshot.recoveryWarning ? 'confirmed' : 'unavailable' },
                 available: snapshot.available === true,
                 bridgeReady: snapshot.bridgeReady === true,
                 recoveryWarning: snapshot.recoveryWarning,
@@ -1068,7 +1077,11 @@ export const createManagedOrchestrationStore = (options: {
             removedTaskIds.forEach(markTaskRemoved);
           } catch (error) {
             if (generation === loadGeneration) {
-              set((state) => ({ ...state, snapshotError: errorMessage(error) }));
+              set((state) => ({
+                ...state, snapshotError: errorMessage(error),
+                snapshotStateByScope: state.snapshotStateByScope[scopeKey] === 'confirmed'
+                  ? state.snapshotStateByScope : { ...state.snapshotStateByScope, [scopeKey]: 'unavailable' },
+              }));
             }
           } finally {
             if (snapshotLoads.get(scopeKey)?.token === loadToken) snapshotLoads.delete(scopeKey);
@@ -1405,12 +1418,17 @@ export const managedOrchestrationSelectors = {
       return Boolean(task && !isTerminalManagedTaskStatus(task.status));
     });
   },
+  hasConfirmedSnapshotForRoot: (rootSessionId: string) => (state: ManagedOrchestrationStore) => (
+    state.snapshotStateByScope['*'] === 'confirmed' || state.snapshotStateByScope[rootSessionId] === 'confirmed'
+  ),
+  isLoadingSnapshotForRoot: (rootSessionId: string) => (state: ManagedOrchestrationStore) => (
+    state.snapshotStateByScope['*'] === 'loading' || state.snapshotStateByScope[rootSessionId] === 'loading'
+  ),
   delegationPhaseForRoot: (rootSessionId: string) => (
     state: ManagedOrchestrationStore
   ): ManagedRootDelegationPhase => {
     const taskIds = state.taskIdsByRootId[rootSessionId] ?? EMPTY_TASK_IDS;
     let hasStartingTask = false;
-    let hasUndispositionedTerminalTask = false;
     for (const taskId of taskIds) {
       const task = state.tasksById[taskId];
       if (!task) continue;
@@ -1419,13 +1437,9 @@ export const managedOrchestrationSelectors = {
         hasStartingTask = true;
         continue;
       }
-      const envelope = state.resultEnvelopesByTaskId[taskId];
-      if (!envelope || envelope.action === null) {
-        hasUndispositionedTerminalTask = true;
-      }
     }
     if (hasStartingTask) return 'starting';
-    return hasUndispositionedTerminalTask ? 'waiting' : null;
+    return null;
   },
   hasManualRecoveryForRoot: (rootSessionId: string) => (
     state: ManagedOrchestrationStore

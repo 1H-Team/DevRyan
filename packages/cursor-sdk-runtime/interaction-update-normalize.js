@@ -213,13 +213,15 @@ export const normalizeInteractionUpdateToSdkMessage = (input) => {
   if (update.type === 'turn-ended') {
     const usage = isPlainObject(update.usage) ? update.usage : null;
     if (!usage) return null;
+    const output = readTokenCount(usage.outputTokens);
+    const reasoning = Math.min(output, readTokenCount(usage.reasoningTokens));
     const tokens = {
       input: readTokenCount(usage.inputTokens),
-      output: readTokenCount(usage.outputTokens),
-      reasoning: 0,
+      output: output - reasoning,
+      reasoning,
       cache: { read: readTokenCount(usage.cacheReadTokens), write: readTokenCount(usage.cacheWriteTokens) },
     };
-    const hasUsage = tokens.input || tokens.output || tokens.cache.read || tokens.cache.write;
+    const hasUsage = tokens.input || tokens.output || tokens.reasoning || tokens.cache.read || tokens.cache.write;
     return hasUsage ? { type: 'usage', tokens } : null;
   }
 

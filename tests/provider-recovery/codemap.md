@@ -1,6 +1,6 @@
 # Provider recovery transport fixture
 
-`runtime-conformance.mjs` launches an explicitly selected OpenCode 1.18.25 binary,
+`runtime-conformance.mjs` launches an explicitly selected OpenCode binary,
 the bundled guard plugin, the real shared host, and a loopback fake provider. It
 isolates XDG storage, the OpenCode test home, project config, and provider keys.
 It does not connect to a running application. OpenCode may populate its own SDK

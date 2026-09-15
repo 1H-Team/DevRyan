@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "checks": [
+    {
+      "command": "bun test packages/orchestration-runtime",
+      "status": "passed",
+      "tests": 452
+    },
+    {
+      "command": "bun test packages/cursor-sdk-runtime",
+      "status": "passed",
+      "tests": 137
+    },
+    {
+      "command": "Cursor owner and packaged agent contract tests",
+      "status": "passed",
+      "tests": 88
+    },
+    {
+      "command": "node --test scripts/agent-evals/client.test.mjs scripts/agent-evals/graders.test.mjs",
+      "status": "passed",
+      "tests": 50
+    },
+    {
+      "command": "node --test scripts/qa/live-task-evidence.test.mjs",
+      "status": "passed",
+      "tests": 12
+    },
+    {
+      "command": "bun run validate:full",
+      "status": "passed",
+      "exitCode": 0
+    },
+    {
+      "command": "bun run build",
+      "status": "passed",
+      "exitCode": 0
+    },
+    {
+      "command": "bun run bundle:check",
+      "status": "passed",
+      "exitCode": 0
+    },
+    {
+      "command": "bun run docs:validate",
+      "status": "passed",
+      "exitCode": 0,
+      "note": "Passed with warnings about missing source references in historical planning documents."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "exitCode": 0
+    }
+  ],
+  "cleanup": {
+    "allOwnedListenersClosed": true,
+    "remainingOwnedProcesses": 0,
+    "privateProfilesRemoved": true,
+    "journalsRetained": true
+  }
+}

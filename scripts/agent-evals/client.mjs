@@ -1,3 +1,4 @@
+import { isRoutingCase } from './routing-cases.mjs';
 import { resolveProviderPromptTools } from '../../packages/orchestration-runtime/provider-prompt-tools.js';
 import { createManagedRecoveryMessageId } from '../../packages/orchestration-runtime/transport-recovery.js';
 import { redactUrl } from './report.mjs';
@@ -183,6 +184,20 @@ export const createEvaluationClient = (options = {}) => {
       { signal, label: 'harness.preflight' });
     },
     async getAdvertisedAvailability(directory, selection, signal) {
+      if (selection.providerId === 'cursor-acp') {
+        const [catalog, runtime] = await Promise.all([
+          request(appendQuery('/config/providers', { directory }), { signal, label: 'provider.catalog' }),
+          request('/provider/cursor-acp/runtime-status', { signal, label: 'cursor.runtime-status' }),
+        ]);
+        if (!Array.isArray(catalog?.providers) || typeof runtime?.sdkAuthConfigured !== 'boolean') {
+          return { available: null, variantAvailable: null };
+        }
+        const provider = catalog.providers.find((entry) => entry?.id === selection.providerId);
+        const model = provider?.models?.[selection.modelId];
+        return { available: Boolean(model && runtime.sdkAuthConfigured),
+          variantAvailable: selection.variant === null ? true : model?.variants && typeof model.variants === 'object'
+            ? Object.hasOwn(model.variants, selection.variant) : null };
+      }
       const catalog = await request(appendQuery('/provider', { directory }), { signal, label: 'provider.catalog' });
       if (!Array.isArray(catalog?.all) || !Array.isArray(catalog?.connected)) return { available: null, variantAvailable: null };
       const provider = catalog.all.find((entry) => entry?.id === selection.providerId);
@@ -499,6 +514,7 @@ const waitForTerminalGraph = async ({
   statuses,
   knownSessionIds,
   requireManaged,
+  previousRootMessageIds = new Set(),
 }) => {
   const stateBySessionId = new Map();
   let settledSignature = '';
@@ -535,7 +551,10 @@ const waitForTerminalGraph = async ({
       }
       if (FAILURE_STATUSES.has(statusType)) throw new EvaluationSessionTerminalError();
       if (statusType && statusType !== SUCCESS_STATUS) state.sawActive = true;
-      const assistant = terminalAssistantEvidence(session.messages);
+      const messages = session.sessionId === rootSessionId
+        ? session.messages.filter(message => !previousRootMessageIds.has(message?.info?.id))
+        : session.messages;
+      const assistant = terminalAssistantEvidence(messages);
       if (assistant.failed) throw new EvaluationSessionTerminalError();
       const proof = assistant.terminal
         ? 'assistant'
@@ -602,10 +621,21 @@ export const buildOwnedTestEvidenceCommand = (ownedTestRelativePath) => {
   return `devryan_eval_test_exit=0; node --test ${expected} || devryan_eval_test_exit=$?; printf '\\nDEVRYAN_EVAL_TEST_EXIT_CODE=%s\\n' "$devryan_eval_test_exit"`;
 };
 
-const ownedTestCommandKind = (command, ownedTestRelativePath) => {
+const ownedTestCommandKind = (command, ownedTestRelativePath, workingDirectory) => {
   if (typeof command !== 'string') return '';
   const expected = normalizeOwnedTestRelativePath(ownedTestRelativePath);
   if (!expected) return '';
+  // Some provider shells add their working directory to the command. Accept
+  // only the fixture supplied by the runner, followed by the same exact test.
+  if (typeof workingDirectory === 'string' && workingDirectory.startsWith('/')
+    && !/[\r\n\0]/.test(workingDirectory)) {
+    const quoted = "'" + workingDirectory.replaceAll("'", "'\\''") + "'";
+    const doubleQuoted = '"' + workingDirectory.replace(/[\\$\x60"]/g, '\\$&') + '"';
+    const forms = [quoted, doubleQuoted];
+    if (/^[a-zA-Z0-9_./-]+$/.test(workingDirectory)) forms.push(workingDirectory);
+    const prefix = forms.map(directory => 'cd ' + directory + ' && ').find(value => command.startsWith(value));
+    if (prefix) command = command.slice(prefix.length);
+  }
   const normalized = command.trim().replace(/\s+/g, ' ');
   if ([
     `node --test ${expected}`,
@@ -672,15 +702,23 @@ const parseOwnedTestExitMarker = (output) => {
   return match ? normalizeOwnedTestExitCode(Number(match[1])) : null;
 };
 
+const readOwnedTestMetadataExit = (metadata) => {
+  let exitCode = null;
+  for (const key of ['exit', 'exitCode']) {
+    if (!isRecord(metadata) || !Object.hasOwn(metadata, key)) continue;
+    const value = normalizeOwnedTestExitCode(metadata[key]);
+    if (value === null || (exitCode !== null && value !== exitCode)) return { valid: false, exitCode: null };
+    exitCode = value;
+  }
+  return { valid: true, exitCode };
+};
+
 const ownedTestExitCode = (part, commandKind, status) => {
   if (status !== 'completed') return null;
+  const metadata = readOwnedTestMetadataExit(part.state?.metadata);
+  if (!metadata.valid) return null;
+  const metadataExit = metadata.exitCode;
   if (commandKind === 'direct') {
-    const metadata = part.state?.metadata;
-    const hasMetadataExit = metadata && Object.hasOwn(metadata, 'exitCode');
-    const metadataExit = hasMetadataExit
-      ? normalizeOwnedTestExitCode(metadata.exitCode)
-      : null;
-    if (hasMetadataExit && metadataExit === null) return null;
     const cursorResult = parseCursorShellResult(part.state?.output);
     if (cursorResult.kind === 'invalid') return null;
     if (
@@ -693,12 +731,6 @@ const ownedTestExitCode = (part, commandKind, status) => {
     return metadataExit ?? (cursorResult.kind === 'valid' ? cursorResult.exitCode : null);
   }
   if (commandKind !== 'wrapper') return null;
-  const metadata = part.state?.metadata;
-  const hasMetadataExit = metadata && Object.hasOwn(metadata, 'exitCode');
-  const metadataExit = hasMetadataExit
-    ? normalizeOwnedTestExitCode(metadata.exitCode)
-    : null;
-  if (hasMetadataExit && metadataExit === null) return null;
   const cursorResult = parseCursorShellResult(part.state?.output);
   if (cursorResult.kind === 'invalid') return null;
   const cursorExit = cursorResult.kind === 'valid' ? cursorResult.exitCode : null;
@@ -754,7 +786,7 @@ const isSyntheticWorkspacePatchPart = (part) => {
   return files.map((file) => file.patch).join('\n') === patchText;
 };
 
-const sanitizeToolEvent = (part, ownedTestRelativePath, sessionScope) => {
+const sanitizeToolEvent = (part, ownedTestRelativePath, sessionScope, workingDirectory) => {
   if (part?.type !== 'tool') return null;
   if (isSyntheticWorkspacePatchPart(part)) return null;
   const tool = normalizeString(part.tool || part.name).toLowerCase();
@@ -769,6 +801,7 @@ const sanitizeToolEvent = (part, ownedTestRelativePath, sessionScope) => {
   const commandKind = ownedTestCommandKind(
     part.state?.input?.command,
     ownedTestRelativePath,
+    workingDirectory,
   );
   const exitCode = ownedTestExitCode(part, commandKind, status);
   if (
@@ -792,6 +825,7 @@ export const collectSanitizedTools = (sessionTree, options = {}) => {
           part,
           options.ownedTestRelativePath,
           session?.sessionId === options.rootSessionId ? 'root' : 'child',
+          options.workingDirectory,
         );
         if (!event) continue;
         retainPrivateToolInterval(event, {
@@ -884,6 +918,7 @@ const sanitizeManagedSnapshot = (payload) => ({
     rootSessionId: normalizeString(task?.rootSessionId),
     childSessionId: normalizeString(task?.childSessionId) || null,
     status: normalizeString(task?.status).toLowerCase(),
+    agent: ['designer', 'fixer', 'explorer', 'librarian', 'oracle', 'council'].includes(task?.agent) ? task.agent : null,
   })),
   resultEnvelopes: (
     Array.isArray(payload?.resultEnvelopes)
@@ -923,15 +958,27 @@ export const runSessionTurn = async (options = {}) => {
     rootSessionId = session.id;
     knownSessionIds.add(rootSessionId);
     await client.promptSession(rootSessionId, directory, selection, prompt, signal);
-    const terminal = await waitForTerminalGraph({
+    let terminal = await waitForTerminalGraph({
       client,
       rootSessionId,
       directory,
       signal,
       statuses,
       knownSessionIds,
-      requireManaged: options.caseId === 'managed-change',
+      requireManaged: options.caseId === 'managed-change' || isRoutingCase(options.caseId),
     });
+    if (options.followUpPrompt) {
+      const previousMessages = terminal.sessionTree.find(entry => entry.sessionId === rootSessionId)?.messages ?? [];
+      if (previousMessages.length === 0 || previousMessages.some(message => !normalizeString(message?.info?.id))) {
+        throw Object.assign(new Error('Follow-up requires identifiable prior messages'), { code: 'evaluation_missing_turn_identity' });
+      }
+      const previousRootMessageIds = new Set(previousMessages.map(message => message.info.id));
+      await client.promptSession(rootSessionId, directory, selection, options.followUpPrompt, signal);
+      terminal = await waitForTerminalGraph({
+        client, rootSessionId, directory, signal, statuses, knownSessionIds,
+        requireManaged: isRoutingCase(options.caseId), previousRootMessageIds,
+      });
+    }
     const timingPayload = await client.getTurnTiming(rootSessionId, signal);
     const { sessionTree, managedPayload, terminalEvidence } = terminal;
     const diagnostics = await Promise.allSettled([
@@ -948,6 +995,7 @@ export const runSessionTurn = async (options = {}) => {
       tools: collectSanitizedTools(sessionTree, {
         rootSessionId,
         ownedTestRelativePath: options.runFiles?.testRelativePath,
+        workingDirectory: directory,
       }),
       oracleReviewEvidence: collectOracleReviewEvidence(sessionTree, {
         rootSessionId,

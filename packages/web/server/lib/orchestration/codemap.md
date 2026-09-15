@@ -19,7 +19,7 @@ Web/Electron owner adapter for the transport-neutral DevRyan-managed task schedu
   agent handoff, atomic parent-recovery continuation claims, external-runtime gating, event publication, and exact-owner
   shutdown. It wires the scheduler's automatic-resume hooks (`resolveOwnerKey`,
   `resolveBackupExecution`, `resolveProviderReset`, and an `attempt` that re-enters
-  the acknowledge RPC under an internal context, with transport-backup configuration/catalog revalidation), exposes the scoped
+  the acknowledge RPC under an internal context, with quota/transport backup configuration/catalog revalidation and bounded replanning after selection changes and a 90-second quota catalog deferral window), exposes the scoped
   `set_auto_resume` RPC, and cancels plans on `session.deleted` events. Optional `auxiliaryRpcHandlers` dispatch named bridge methods before
   scheduler initialization or availability gating, so lightweight private
   integrations can reuse the loopback bridge without touching managed-task state.

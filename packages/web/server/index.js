@@ -621,6 +621,14 @@ const cursorSdkRuntime = createCursorSdkRuntime({
   env: process.env,
   emitEvent: emitSyntheticOpenCodeEvent,
   onSessionChangeExecution: (input) => sessionChangeHost.acceptExecution(input),
+  onUsageObservation: ({ sessionID, messageID, userMessageID, directory, observation }) => harnessRuntime.record({
+    type: 'lifecycle', sessionID, directory,
+    payload: { event: 'cursor.usage', sessionID, messageID, userMessageID, observation },
+  }),
+  onTitleUsageObservation: ({ sessionID, directory, observation }) => harnessRuntime.record({
+    type: 'lifecycle', sessionID: sessionID || undefined, directory,
+    payload: { event: 'cursor.title.usage', sessionID, observation },
+  }),
   recordTimingMark: (input) => turnTimingRuntime.recordClientMark(input),
   logger: console,
   resolveAgentPrompt: async ({ agent, directory }) => {
