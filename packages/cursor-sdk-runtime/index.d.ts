@@ -1,3 +1,28 @@
+/** Consumption across an SDK run; reasoning is already included in output. */
+export type CursorTokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  reasoningTokens?: number;
+};
+/** Additive assistant info.cursorUsage and cursor.usage journal metadata.
+ * A snapshot can be partial; reported does not mean settled billing.
+ * Message.tokens retains the last reported SDK turn measurement. */
+export type CursorRunUsageObservation = {
+  schemaVersion: 1;
+  scope: 'run';
+  source: 'sdk-run-result' | 'sdk-run-snapshot';
+  availability: 'reported' | 'unavailable';
+  agentID: string;
+  runID: string;
+  requestID: string;
+  status: 'running' | 'finished' | 'error' | 'cancelled' | 'unknown';
+  model: CursorSdkModelSelection | null;
+  tokens: CursorTokenUsage | null;
+};
+
 export type CursorRuntimeStatus = {
   providerId: string;
   bridge: { kind: 'cursor-sdk' };
@@ -137,6 +162,7 @@ export type CursorSdkRuntime = {
   generateTitle(input: {
     text: string;
     directory?: string | null;
+    sessionID?: string | null;
   }): Promise<string | null>;
   handlePromptAsync(input: {
     sessionID: string;
@@ -201,6 +227,13 @@ export function resolveCursorSdkWorkerRuntimeConfig(options?: {
   workerEnv: Record<string, string>;
 };
 export function createCursorSdkRuntime(options: Record<string, unknown> & {
+  onTitleUsageObservation?: (input: {
+    sessionID: string | null; directory: string; observation: CursorRunUsageObservation;
+  }) => void;
+  onUsageObservation?: (input: {
+    sessionID: string; messageID: string; userMessageID: string; directory: string;
+    observation: CursorRunUsageObservation;
+  }) => void;
   onSessionChangeExecution?: (input: {
     directory: string; sessionID: string; messageID?: string; userMessageID?: string;
     phase: 'tool' | 'stream-gap' | 'run-settled' | 'interrupted'; callID?: string; parentCallID?: string;

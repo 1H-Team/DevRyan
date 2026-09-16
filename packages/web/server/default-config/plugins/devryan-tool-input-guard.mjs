@@ -9,7 +9,7 @@ const CONTEXT_EXECUTE_TOOLS = new Set([
 ]);
 
 const READ_TOOLS = new Set(['read', 'oc_read']);
-// Pinned OpenCode 1.18.30 native ReadTool returns these as typed image
+// OpenCode 1.18.30 native ReadTool returns these as typed image
 // attachments. Text-only compatibility readers still cannot load their bytes.
 const NATIVE_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 const SHELL_TOOLS = new Set(['bash', 'shell']);

@@ -71,6 +71,30 @@ const sendJson = (response, status, value) => {
 };
 
 describe('DevRyan loopback evaluation client', () => {
+  test('uses the host Cursor catalog and SDK auth status for pinned model availability', async () => {
+    const selection = { providerId: 'cursor-acp', modelId: 'composer-2.5', agent: 'builder', variant: null };
+    for (const [sdkAuthConfigured, models, expected] of [
+      [true, { 'composer-2.5': { variants: { high: {} } } }, { available: true, variantAvailable: true }],
+      [false, { 'composer-2.5': {} }, { available: false, variantAvailable: true }],
+      [true, {}, { available: false, variantAvailable: true }],
+      [undefined, { 'composer-2.5': {} }, { available: null, variantAvailable: null }],
+    ]) {
+      const requests = [];
+      const client = createEvaluationClient({ baseUrl: 'http://127.0.0.1:3000', fetchImpl: async (url) => {
+        requests.push(new URL(url).pathname);
+        return Response.json(url.includes('/config/providers')
+          ? { providers: [{ id: 'cursor-acp', models }] }
+          : { sdkAuthConfigured });
+      } });
+      assert.deepEqual(await client.getAdvertisedAvailability('/fixture', selection), expected);
+      assert.deepEqual(requests.sort(), ['/api/config/providers', '/api/provider/cursor-acp/runtime-status']);
+      if (sdkAuthConfigured === true && models['composer-2.5']) {
+        assert.deepEqual(await client.getAdvertisedAvailability('/fixture', { ...selection, variant: 'missing' }),
+          { available: true, variantAvailable: false });
+      }
+    }
+  });
+
   test('extracts only whitelisted Oracle finding signals from root assistant text', () => {
     const evidence = collectOracleReviewEvidence([
       {
@@ -271,6 +295,57 @@ describe('DevRyan loopback evaluation client', () => {
       { tool: 'bash', status: 'completed', final: true, sessionScope: 'root' },
       { tool: 'bash', status: 'error', final: true, sessionScope: 'root' },
     ]);
+  });
+
+  test('accepts an exact owned test after changing to the known fixture directory only', () => {
+    const workingDirectory = '/fixture with spaces';
+    const ownedTestRelativePath = 'src/devryan-eval-run.test.mjs';
+    const wrapper = buildOwnedTestEvidenceCommand(ownedTestRelativePath);
+    const samples = [
+      ["cd '/fixture with spaces' && " + wrapper, 'completed', 'failed'],
+      ['cd "/fixture with spaces" && ' + wrapper, 'completed', 'failed'],
+      ["cd '/other fixture' && " + wrapper, 'completed', null],
+      ["cd '/fixture with spaces' && echo hidden; " + wrapper, 'completed', null],
+      ["cd '/fixture with spaces' && " + wrapper + '; true', 'completed', null],
+      ["cd '/fixture with spaces' && " + wrapper, 'error', null],
+      ["cd '/fixture with spaces' || " + wrapper, 'completed', null],
+    ];
+    const tree = [{ sessionId: 'ses_parent', messages: [{ parts: samples.map(([command, status]) => ({
+      type: 'tool', tool: 'shell', state: { status, input: { command }, metadata: { exit: 0 },
+        output: 'Test failed\nDEVRYAN_EVAL_TEST_EXIT_CODE=1\n' },
+    })) }] }];
+    const tools = collectSanitizedTools(tree, { rootSessionId: 'ses_parent', ownedTestRelativePath, workingDirectory });
+    assert.deepEqual(tools.map(event => event.ownedTestOutcome ?? null), samples.map(sample => sample[2]));
+    assert.ok(collectSanitizedTools(tree, { rootSessionId: 'ses_parent', ownedTestRelativePath })
+      .every(event => event.ownedTestOutcome === undefined));
+  });
+
+  test('accepts native OpenCode exit metadata only when all reported exit channels agree', () => {
+    const ownedTestRelativePath = 'src/devryan-eval-run.test.mjs';
+    const direct = `node --test ${ownedTestRelativePath}`;
+    const wrapper = buildOwnedTestEvidenceCommand(ownedTestRelativePath);
+    const samples = [
+      [direct, { exit: 1 }, 'failed'],
+      [direct, { exit: 0 }, 'passed'],
+      [wrapper, { exit: 0 }, 'failed'],
+      [wrapper, { exit: 0, exitCode: 0 }, 'failed'],
+      [wrapper, { exit: 137, exitCode: 0 }, null],
+      [direct, { exit: 1, exitCode: 0 }, null],
+      [wrapper, { exit: '0', exitCode: 0 }, null],
+      [wrapper, { exit: 0, exitCode: null }, null],
+      [direct, { exit: -1 }, null],
+      [direct, { exit: 256 }, null],
+    ];
+    const tools = collectSanitizedTools([{
+      sessionId: 'ses_parent',
+      messages: [{ parts: samples.map(([command, metadata]) => ({
+        type: 'tool', tool: 'bash', state: {
+          status: 'completed', input: { command }, metadata,
+          output: 'Native test output\nDEVRYAN_EVAL_TEST_EXIT_CODE=1\n',
+        },
+      })) }],
+    }], { rootSessionId: 'ses_parent', ownedTestRelativePath });
+    assert.deepEqual(tools.map((event) => event.ownedTestOutcome ?? null), samples.map((sample) => sample[2]));
   });
 
   test('uses the exact canonical wrapper marker after successful carrier evidence', () => {

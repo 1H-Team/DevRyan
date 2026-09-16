@@ -38,7 +38,7 @@ recovery remains the fallback until host enforcement is advertised.
 Enforcement requires a live managed runtime, exclusive private file-lock owner,
 healthy durable storage, an allow-listed OpenCode version verified through
 `/global/health` (`PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS` in
-`provider-recovery-policy.js`: 1.18.25, 1.18.26, 1.18.27, 1.18.29 and 1.18.30, the current host target
+`provider-recovery-policy.js`: 1.18.25, 1.18.26, 1.18.27, 1.18.29, 1.18.30 and 1.18.31, the current host target
 pin), and the bundled plugin handshake. Unsupported versions, external
 runtimes, and opt-in WebSocket/native transports remain manual. Do not expand
 this allowlist without transport and hook conformance tests.
@@ -127,7 +127,7 @@ bounded to 30 seconds with bounded individual observations. Idle, an abort
 acknowledgement, a failed read, and renderer-forced idle are not sufficient.
 Healthy status-map omission is accepted only with independent session,
 transcript and blocker checks. Generic timeout wording is ineligible; a bounded, valid JSON envelope with `type: upstream_timeout` and the exact `Upstream stalled: no data for <positive milliseconds>ms` message is classified as a chunk timeout on verified runtime versions. The presentation classifier maps the same envelope to `stream_idle_timeout`. The exact
-`UnknownError` timeout shape of an allow-listed runtime (1.18.25, 1.18.26, 1.18.27, 1.18.29, 1.18.30) has
+`UnknownError` timeout shape of an allow-listed runtime (1.18.25, 1.18.26, 1.18.27, 1.18.29, 1.18.30, 1.18.31) has
 a version-specific compatibility rule.
 
 With no prior work, recovery reuses original text and safe file/data attachment
@@ -226,6 +226,13 @@ isolated loopback-provider fixture. Heartbeat-only OpenAI traffic and the exact
 Anthropic upstream-timeout envelope each completed one recovery with two provider
 requests. Semantic cutoff and interrupted Anthropic tool input each made one
 provider request and zero recovery attempts; both stopped for user attention.
+
+OpenCode 1.18.31 compatibility was verified on September 14, 2026 with the
+isolated loopback-provider fixture. Heartbeat, silent-SSE, non-SSE, and
+missing-header traffic each completed one recovery with two provider requests.
+The Anthropic upstream-timeout envelope also completed one recovery. Semantic
+cutoff and interrupted Anthropic tool input each made one provider request and
+zero recovery attempts; both stopped for user attention.
 
 The opt-in executable fixture is `tests/provider-recovery/runtime-conformance.mjs`.
 It requires `DEVRYAN_TEST_OPENCODE_BIN` and has no access to the user's provider

@@ -134,6 +134,7 @@ const state = (
   bridgeReady: true,
   recoveryWarning: null,
   isLoadingSnapshot: false,
+  snapshotStateByScope: { '*': 'confirmed' },
   snapshotError: null,
   pendingActionByTaskId: {},
   actionErrorByTaskId: {},

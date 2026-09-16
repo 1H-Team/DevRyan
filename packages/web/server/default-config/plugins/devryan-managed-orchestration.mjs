@@ -1130,8 +1130,8 @@ const rememberCollectedResult = (state, result, expectedTaskId) => {
       : { envelopeId: null, totalBytes: null, returnedBytes: 0, expectedNextCursor: null, complete: true } });
 };
 
-const MANUAL_MODEL_RECOVERY_INSTRUCTION = 'This task is terminal and awaiting user action. Leave its result unacknowledged, tell the user to choose a model and thinking level in Model Recovery, and do not claim that it is still running or will resume automatically.';
-const SCHEDULED_AUTO_RESUME_INSTRUCTION = 'This task hit a provider usage limit and DevRyan has scheduled an automatic resume (see autoResume). Leave its result unacknowledged, do not retry or change its model, and end the turn; DevRyan will continue the same child automatically, or the user can pick a model in Model Recovery.';
+const MANUAL_MODEL_RECOVERY_INSTRUCTION = 'This task is terminal and awaiting user action. Leave its result unacknowledged and end the turn with at most one brief status sentence. Do not repeat recovery instructions; the task card already provides the controls. Do not claim the task is running or will resume automatically.';
+const SCHEDULED_AUTO_RESUME_INSTRUCTION = 'DevRyan is handling automatic recovery (see autoResume). Leave this result unacknowledged, do not retry or change its model, and end the turn with at most one brief status sentence. Do not repeat recovery instructions; the task card already shows progress and controls.';
 const AUTO_RESUME_ACTIVE_STATES = new Set(['planning', 'scheduled', 'attempting']);
 
 // Mirrors the scheduler's isAutoResumeActive: enabled and still planning,

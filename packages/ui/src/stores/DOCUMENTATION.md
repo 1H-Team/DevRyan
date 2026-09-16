@@ -613,3 +613,14 @@ After meaningful Git/PR store changes, verify manually:
 `useConfigStore.cycleCurrentVariant` cycles only native thinking stops using the
 same displayed fallback as the chat slider; it never inserts a Default stop.
 Cursor compound values are encoded through the shared dimension adapter.
+
+### Managed delegation status authority
+
+`delegationPhaseForRoot` describes active queued/starting/running tasks only.
+Terminal envelopes continue to drive `hasUndispositionedTasksForRoot`, never live
+activity copy. `hasConfirmedSnapshotForRoot` records successful available,
+bridge-ready snapshots per root (or globally); another root's snapshot cannot
+resolve this root's provisional wait. `isLoadingSnapshotForRoot` permits the
+fallback only during that root's or a global snapshot load; failed/unavailable
+loads stop it. Confirmation survives refreshes and clears
+on store reset. Snapshot/event ordering and barrier enforcement are unchanged.

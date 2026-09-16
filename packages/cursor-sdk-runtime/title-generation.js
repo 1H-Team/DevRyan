@@ -1,3 +1,5 @@
+import { cursorRunUsageObservation } from './cursor-usage.js';
+
 export const CURSOR_SESSION_TITLE_MAX_LENGTH = 80;
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
@@ -66,18 +68,29 @@ export const normalizeCursorSessionTitle = (value, sourceText = '') => {
   return `${normalized.slice(0, CURSOR_SESSION_TITLE_MAX_LENGTH - 3).trimEnd()}...`;
 };
 
-export const generateCursorSessionTitle = async ({ Agent, apiKey, text, directory }) => {
+export const generateCursorSessionTitle = async ({ Agent, apiKey, text, directory, onUsage }) => {
   const promptText = trimString(text);
   if (!promptText || !trimString(apiKey) || typeof Agent?.prompt !== 'function') return null;
   const normalizedDirectory = trimString(directory);
-  const result = await Agent.prompt(buildCursorSessionTitlePrompt(promptText), {
-    apiKey: trimString(apiKey),
-    model: { id: 'auto' },
-    local: {
-      ...(normalizedDirectory ? { cwd: normalizedDirectory } : {}),
-      settingSources: [],
-    },
-    ...(normalizedDirectory ? { platform: { workspaceRef: normalizedDirectory } } : {}),
-  });
+  const report = (observation) => {
+    try { onUsage?.(observation); }
+    catch { /* Accounting must not trigger another generation. */ }
+  };
+  let result;
+  try {
+    result = await Agent.prompt(buildCursorSessionTitlePrompt(promptText), {
+      apiKey: trimString(apiKey),
+      model: { id: 'auto' },
+      local: {
+        ...(normalizedDirectory ? { cwd: normalizedDirectory } : {}),
+        settingSources: [],
+      },
+      ...(normalizedDirectory ? { platform: { workspaceRef: normalizedDirectory } } : {}),
+    });
+  } catch (error) {
+    report(cursorRunUsageObservation({ model: { id: 'auto' }, status: 'error' }));
+    throw error;
+  }
+  report(cursorRunUsageObservation(null, result));
   return normalizeCursorSessionTitle(result?.result, promptText);
 };

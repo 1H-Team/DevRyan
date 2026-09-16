@@ -89,15 +89,15 @@ test('npm suite evidence fails when the test script or original tests were chang
 test('strict QA acceptance cannot be bypassed by quoted argv or weaker legacy evidence', () => withProject(async project => {
   const quoted = chain('npm test'); quoted[1].state.input.command = '"npm test"';
   assert.equal((await capture(project, reader({ parts: quoted }))).passed, false);
-  for (const mutate of [
-    parts => { parts[0].state.status = 'error'; },
-    parts => { parts[1].state.metadata.exit = 0; },
+  for (const [mutate, canonicalPassed] of [
+    [parts => { parts[0].state.status = 'error'; }, true],
+    [parts => { parts[1].state.metadata.exit = 0; }, false],
   ]) {
     const parts = chain('node --test test/tasks.test.mjs');
     parts[1].state.metadata = { exitCode: 1 }; parts[3].state.metadata = { exitCode: 0 };
     mutate(parts);
     const evidence = await capture(project, reader({ parts }));
-    assert.equal(evidence.repair.canonical.passed, true, 'Legacy evidence is retained as a diagnostic');
+    assert.equal(evidence.repair.canonical.passed, canonicalPassed, 'Canonical diagnostics reject conflicting exit metadata too');
     assert.equal(evidence.repair.suite.passed, false);
     assert.equal(evidence.passed, false);
   }

@@ -1804,6 +1804,117 @@ describe('web managed orchestration runtime', () => {
     await runtime.shutdown();
   });
 
+  it.each([
+    { providerId: 'openai', modelId: 'gpt-5.6-sol', variant: 'high' },
+    { providerId: 'openai', modelId: 'gpt-5.4', variant: 'xhigh' },
+    null,
+  ])('replans a quota backup changed after scheduling without dispatching the stale selection: %j', async (replacement) => {
+    const planned = { providerId: 'openai', modelId: 'gpt-5.4', variant: 'high' };
+    const retries = [];
+    let lookups = 0;
+    const runtime = createWebManagedOrchestrationRuntime({
+      persistence: createPersistence(),
+      now: () => 1_000,
+      resolveBackupExecution: async () => ++lookups === 1 ? planned : replacement,
+      resolveProviderReset: async () => null,
+      executor: {
+        async start(_task, control) {
+          await control.setChildSessionId('ses_backup_race');
+          await control.markAccepted();
+          return { status: 'failed', failureReason: 'out of usage', resumable: true };
+        },
+        async retryInPlace(task, control) {
+          retries.push(task);
+          await control.markAccepted();
+          return { status: 'completed', recoverablePreview: 'recovered' };
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return {}; },
+      },
+    });
+    try {
+      const submitted = await runtime.handleRpc({ method: 'submit', params: submitParams(1) });
+      const envelope = await waitFor(async () => {
+        const current = await runtime.handleRpc({ method: 'status', params: { taskId: submitted.task.taskId, rootSessionId: 'ses_root' } });
+        const state = current.resultEnvelope?.autoResume;
+        return state?.state === 'succeeded' || (state?.state === 'scheduled' && state.target?.kind === 'original')
+          ? current.resultEnvelope : null;
+      });
+      expect(envelope.autoResume).toMatchObject({ hostFailures: 1, lastError: { code: 'backup_changed' } });
+      if (replacement) {
+        expect(retries).toHaveLength(1);
+        expect(retries[0]).toMatchObject({ ...replacement, childSessionId: 'ses_backup_race' });
+        expect(envelope.autoResume).toMatchObject({ attemptCount: 1, state: 'succeeded' });
+      } else {
+        expect(retries).toHaveLength(0);
+        expect(envelope).toMatchObject({ action: null, autoResume: { attemptCount: 0, state: 'scheduled', target: { kind: 'original' } } });
+      }
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
+  it.each([null, false])('preserves quota recovery when backup catalog availability is %s', async (availability) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const backup = { providerId: 'openai', modelId: 'gpt-5.4', variant: 'high' };
+    const retries = [];
+    let backupChecks = 0;
+    let available = availability;
+    const runtime = createWebManagedOrchestrationRuntime({
+      persistence: createPersistence(),
+      resolveBackupExecution: async () => backup,
+      resolveProviderReset: async () => ({ limited: true, resetAt: 3_601_000 }),
+      validateAgentExecution: async ({ providerId }) => {
+        if (providerId !== backup.providerId) return true;
+        // The catalog changes after planning, before dispatch.
+        return ++backupChecks === 1 ? true : available;
+      },
+      executor: {
+        async start(_task, control) {
+          await control.setChildSessionId('ses_backup_catalog');
+          await control.markAccepted();
+          return { status: 'failed', failureReason: 'out of usage', resumable: true, providerResetAt: 3_601_000 };
+        },
+        async retryInPlace(task, control) {
+          retries.push(task);
+          await control.markAccepted();
+          return { status: 'completed', recoverablePreview: 'recovered' };
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return {}; },
+      },
+    });
+    try {
+      const { task } = await runtime.handleRpc({ method: 'submit', params: submitParams('catalog') });
+      const status = () => runtime.handleRpc({ method: 'status', params: { taskId: task.taskId, rootSessionId: 'ses_root' } });
+      await vi.advanceTimersByTimeAsync(10);
+      expect(retries).toHaveLength(0);
+      const parked = (await status()).resultEnvelope.autoResume;
+      expect(parked).toMatchObject({ state: 'scheduled', attemptCount: 0 });
+      if (availability === null) {
+        expect(parked).toMatchObject({ hostFailures: 0, target: { kind: 'backup' } });
+        expect(parked.nextAttemptAt).toBeGreaterThan(Date.now());
+        available = true;
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(retries).toHaveLength(1);
+        expect(retries[0]).toMatchObject({ ...backup, childSessionId: 'ses_backup_catalog' });
+        expect((await status()).resultEnvelope.autoResume).toMatchObject({ state: 'succeeded', attemptCount: 1, hostFailures: 0 });
+      } else {
+        expect(parked).toMatchObject({ hostFailures: 1, lastError: { code: 'backup_unavailable' }, target: { kind: 'original' } });
+        expect(parked.nextAttemptAt).toBeGreaterThanOrEqual(3_601_000);
+        await vi.advanceTimersByTimeAsync(parked.nextAttemptAt - Date.now() + 1);
+        expect(retries).toHaveLength(1);
+        expect(retries[0]).toMatchObject({ providerId: task.providerId, modelId: task.modelId, childSessionId: 'ses_backup_catalog' });
+      }
+    } finally {
+      await runtime.shutdown();
+      vi.useRealTimers();
+    }
+  });
+
   it('defers automatic resume attempts while work admission is blocked, then resumes on the backup model', async () => {
     let block = null;
     const starts = [];

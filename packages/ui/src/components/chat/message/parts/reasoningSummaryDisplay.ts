@@ -1,4 +1,5 @@
 import type { ResponseStyleLevel } from '@/lib/responseStyle';
+import { stripKnownClippedXaiReasoningPrefix } from '../reasoningRenderPolicy';
 
 const BLOCK_SEPARATOR_PATTERN = /(\n[ \t]*\n+)/;
 const TERMINAL_PUNCTUATION_PATTERN = /[.!?…:;](?:["'’”)}\]])?$/;
@@ -56,7 +57,7 @@ export const formatReasoningText = (
     providerID?: string | null,
     responseStyleLevel: ResponseStyleLevel = 'provider',
 ): string => {
-    const cleaned = cleanReasoningText(text);
+    const cleaned = stripKnownClippedXaiReasoningPrefix(cleanReasoningText(text), providerID);
     if (!cleaned || providerID?.trim().toLowerCase() !== 'openai') return cleaned;
 
     const projected = responseStyleLevel === 'actions'

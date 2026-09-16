@@ -45,12 +45,17 @@ describe('managed agent contracts', () => {
     expect(designer).toContain('managed designer task');
     expect(designer).toContain('layout, states, dark and light themes, mobile and desktop');
     expect(designer).toContain('Do not run tsc for a UI-only task unless the task asks for it');
+    expect(designer).toContain('implement approved visual or UX changes, even when fully specified');
+    expect(designer).toContain('if assigned only behavior work under an unchanged presentation');
+    expect(designer).not.toContain('no open visual');
     expect(designer).toContain('better suited to fixer');
     expect(designer).toContain('never block for this');
 
     const fixer = buildManagedAgentContract({ agent: 'fixer' });
     expect(fixer).toContain('managed fixer task');
     expect(fixer).toContain('focused acceptance check you were assigned');
+    expect(fixer).toContain('Approved or fully specified visual changes belong to Designer');
+    expect(fixer).toContain('make no design edits and report a routing mismatch');
 
     for (const agent of ['explorer', 'librarian', 'oracle']) {
       const contract = buildManagedAgentContract({ agent });

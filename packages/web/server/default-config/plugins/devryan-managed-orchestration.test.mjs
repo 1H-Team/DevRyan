@@ -3276,6 +3276,8 @@ describe('DevRyan managed orchestration plugin', () => {
         resumable: true,
       },
     });
+    expect(parsed.manualRecoveryInstruction).toContain('Do not repeat recovery instructions');
+    expect(parsed.manualRecoveryInstruction).not.toContain('tell the user to choose');
     await expect(plugin.tool.devryan_task.execute({
       action: 'continue',
       task_id: 'dvr_task_limited',
@@ -3287,7 +3289,7 @@ describe('DevRyan managed orchestration plugin', () => {
     }, context())).rejects.toThrow('Unsupported managed task action');
   });
 
-  it('reports a scheduled automatic resume instead of asking for Try Again', async () => {
+  it.each(['provider_usage_limit', 'provider_transport'])('keeps %s recovery status brief without model-selection instructions', async (trigger) => {
     const parkedTask = (taskId) => ({
       taskId,
       status: 'failed',
@@ -3295,7 +3297,8 @@ describe('DevRyan managed orchestration plugin', () => {
       mode: 'orchestrator',
       attempt: 1,
       agentRetryAvailable: false,
-      failureKind: 'provider_usage_limit',
+      failureKind: trigger === 'provider_transport' ? 'provider_error' : 'provider_usage_limit',
+      ...(trigger === 'provider_transport' ? { transportRecovery: { phase: 'exhausted' } } : {}),
     });
     const envelopes = {
       dvr_task_scheduled: {
@@ -3304,6 +3307,7 @@ describe('DevRyan managed orchestration plugin', () => {
         resumable: true,
         autoResume: {
           revision: 2,
+          trigger,
           enabled: true,
           state: 'scheduled',
           nextAttemptAt: 1_760_000_000_000,
@@ -3335,7 +3339,7 @@ describe('DevRyan managed orchestration plugin', () => {
     }, context()));
     expect(scheduled).toMatchObject({
       manualRecoveryRequired: true,
-      manualRecoveryInstruction: expect.stringContaining('scheduled an automatic resume'),
+      manualRecoveryInstruction: expect.stringContaining('DevRyan is handling automatic recovery'),
       autoResume: {
         scheduled: true,
         state: 'scheduled',
@@ -3345,6 +3349,8 @@ describe('DevRyan managed orchestration plugin', () => {
       resultEnvelope: { taskId: 'dvr_task_scheduled', action: null },
     });
     expect(scheduled.manualRecoveryInstruction).not.toContain('Try Again');
+    expect(scheduled.manualRecoveryInstruction).not.toContain('usage limit');
+    expect(scheduled.manualRecoveryInstruction).toContain('Do not repeat recovery instructions');
     await expect(plugin.tool.devryan_task.execute({
       action: 'continue',
       task_id: 'dvr_task_scheduled',

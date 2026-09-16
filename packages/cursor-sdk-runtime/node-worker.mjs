@@ -8,6 +8,7 @@ import {
   generateCursorSessionTitle,
 } from './title-generation.js';
 import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
+import { cursorRunUsageObservation } from './cursor-usage.js';
 import { assertCursorSdkNodeCompatibility } from './node-version.js';
 
 const readStdin = async () => {
@@ -81,6 +82,13 @@ const sdkStatusFromRunStatus = (status) => {
   if (status === 'error') return 'ERROR';
   if (status === 'cancelled') return 'CANCELLED';
   return 'RUNNING';
+};
+
+const finalStatusFromSdkStatus = (status) => {
+  if (status === 'FINISHED') return 'success';
+  if (status === 'ERROR') return 'error';
+  if (status === 'CANCELLED') return 'cancelled';
+  return null;
 };
 
 const getSdkMessageTextFingerprint = (message) => {
@@ -157,6 +165,7 @@ const main = async () => {
       apiKey,
       text: prompt,
       directory,
+      onUsage: (observation) => writeEvent({ type: 'usage-observation', observation }),
     });
     writeEvent({ type: 'title-result', title });
     setTimeout(() => process.exit(0), 25).unref?.();
@@ -202,19 +211,24 @@ const main = async () => {
   const message = images.length > 0 ? { text: prompt, images } : { text: prompt };
   const shouldSkipDuplicateMessage = createCrossSourceMessageDedupe();
   writeTiming('cursor_provider_send_started');
-  const run = await agent.send(message, {
+  let run;
+  run = await agent.send(message, {
     model,
     onDelta: (event) => {
       const sdkMessage = normalizeInteractionUpdateToSdkMessage(event);
       if (!sdkMessage) return;
       if (sdkMessage.type === 'usage') {
         writeEvent({ type: 'usage', tokens: sdkMessage.tokens });
+        queueMicrotask(() => {
+          if (run) writeEvent({ type: 'usage-observation', observation: cursorRunUsageObservation(run) });
+        });
         return;
       }
       writeSdkMessage(sdkMessage, 'delta');
     },
   });
   writeTiming('cursor_provider_send_accepted');
+  writeEvent({ type: 'usage-observation', observation: cursorRunUsageObservation(run) });
   let doneEmitted = false;
   function writeSdkMessage(sdkMessage, source = 'stream') {
     if (shouldSkipDuplicateMessage(source, sdkMessage)) return;
@@ -266,6 +280,7 @@ const main = async () => {
         type: 'final-result',
         result: {
           ok: true,
+          usageObservation: cursorRunUsageObservation(run, result),
           finalStatus,
           finalText,
         },
@@ -290,6 +305,7 @@ const main = async () => {
         type: 'final-result',
         result: {
           ok: false,
+          usageObservation: cursorRunUsageObservation(run),
           finalStatus: 'error',
           finalText: '',
           error: error instanceof Error ? error.message : 'Cursor SDK run failed.',
@@ -311,10 +327,11 @@ const main = async () => {
     if (shuttingDown) return;
     shuttingDown = true;
     try {
-      if (typeof run.cancel === 'function') {
+      if (typeof run.cancel === 'function' && !finalStatusFromSdkStatus(sdkStatusFromRunStatus(run.status))) {
         await run.cancel();
       }
     } finally {
+      writeEvent({ type: 'usage-observation', observation: cursorRunUsageObservation(run) });
       process.exit(130);
     }
   };

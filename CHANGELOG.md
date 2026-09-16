@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-09-14
+
+- OpenCode: update the managed host runtime, SDK, packaged plugin, provider-recovery compatibility, and QA target to 1.18.31 while retaining the independently pinned Production Bot runtime image.
+- Managed orchestration: revalidate backup model configuration before recovery, bound unknown availability deferrals, and preserve deterministic retry and cancellation ownership.
+- Cursor SDK: settle nested and unfinished tool projections conservatively, preserve partial output, and prevent late task events from reopening terminal tool states.
+- Agent evaluation: accept consistent native exit metadata and runner-owned fixture directory prefixes while continuing to fail closed on missing or conflicting evidence.
+- Quality: retain deterministic and isolated live coverage across OpenAI, xAI, Composer, and Fable Builder and Orchestrator paths, including recovery races and cleanup evidence.
+- Database: verify all repository migrations and the required Production Bots schema marker before release publication.
+- Release: update all DevRyan package and desktop metadata to 1.2.5.
+
 ## [1.2.4] - 2026-09-14
 
 - Managed orchestration: surface first-attempt provider authentication failures as actionable Model Recovery, including failures restored from snapshots or reloads.

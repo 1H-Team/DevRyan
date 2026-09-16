@@ -57,6 +57,11 @@ const AGENT_HANDOFF_MANUAL_RECOVERY_ABANDON = Symbol('agent-handoff-manual-recov
 const IMPLEMENTATION_PROGRESS_GRACE_MS = 15 * 60_000;
 const IMPLEMENTATION_RENEW_WINDOW_MS = 10 * 60_000;
 const AUTO_RESUME_SUBMISSION = Symbol('auto-resume-submission');
+const AUTO_RESUME_CATALOG_RETRY_WINDOW_MS = 90_000;
+const skipUnverifiedBackup = (state, at) => state.trigger !== 'provider_transport'
+  && state.lastError?.code === 'backup_availability_unknown'
+  && (at >= state.lastError.at + AUTO_RESUME_CATALOG_RETRY_WINDOW_MS
+    || (Number.isFinite(state.resetAt) && at >= state.resetAt));
 
 // A recovery attempt continues work that was sized for the source task's window, so it
 // inherits that window instead of silently dropping to the caller's default. Without this a
@@ -1094,7 +1099,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         now: at,
         task: current,
         state,
-        backup,
+        backup: skipUnverifiedBackup(state, at) ? null : backup,
         breakerUntil: (providerId) => breakerUntilLocked(providerId, ownerKey),
         providerReset,
         origin,
@@ -1202,13 +1207,25 @@ export const createManagedTaskScheduler = (options = {}) => {
         const retryAfterMs = Number.isFinite(outcome.retryAfterMs)
           ? Math.max(0, outcome.retryAfterMs)
           : AUTO_RESUME_HOST_RETRY_MS;
-        const nextAttemptAt = at + retryAfterMs;
+        const catalogUnknown = state.trigger !== 'provider_transport' && state.target?.kind === 'backup'
+          && outcome.reason === 'backup_availability_unknown';
+        const lastError = catalogUnknown ? {
+          code: 'backup_availability_unknown', message: 'Backup model availability could not be verified',
+          at: state.lastError?.code === 'backup_availability_unknown' ? state.lastError.at : at,
+        } : state.lastError;
+        const replan = catalogUnknown && skipUnverifiedBackup({ ...state, lastError }, at);
+        const nextAttemptAt = catalogUnknown
+          ? Math.min(at + retryAfterMs, lastError.at + AUTO_RESUME_CATALOG_RETRY_WINDOW_MS,
+            Number.isFinite(state.resetAt) ? state.resetAt : Infinity)
+          : at + retryAfterMs;
         await commitAutoResumeStateLocked(previous, {
-          state: 'scheduled',
+          state: replan ? 'planning' : 'scheduled',
           attemptCount: Math.max(0, state.attemptCount - 1),
-          nextAttemptAt,
+          lastError,
+          nextAttemptAt: replan ? null : nextAttemptAt,
         });
-        scheduleAutoResumeAttempt(taskId, generation, nextAttemptAt);
+        if (replan) scheduleAutoResumePlanning(taskId, generation, 0);
+        else scheduleAutoResumeAttempt(taskId, generation, nextAttemptAt);
         return;
       }
       // Rejected, threw, or claimed `started` without acknowledging the result.
@@ -1235,14 +1252,18 @@ export const createManagedTaskScheduler = (options = {}) => {
         return;
       }
       const nextAttemptAt = at + AUTO_RESUME_HOST_RETRY_MS;
+      const replanBackup = outcome?.outcome === 'rejected'
+        && (outcome.code === 'backup_changed' || outcome.code === 'backup_unavailable')
+        && state.target?.kind === 'backup';
       await commitAutoResumeStateLocked(previous, {
-        state: 'scheduled',
+        state: replanBackup ? 'planning' : 'scheduled',
         attemptCount: Math.max(0, state.attemptCount - 1),
         hostFailures,
         lastError,
-        nextAttemptAt,
+        nextAttemptAt: replanBackup ? null : nextAttemptAt,
       });
-      scheduleAutoResumeAttempt(taskId, generation, nextAttemptAt);
+      if (replanBackup) scheduleAutoResumePlanning(taskId, generation, 0);
+      else scheduleAutoResumeAttempt(taskId, generation, nextAttemptAt);
     });
   };
 

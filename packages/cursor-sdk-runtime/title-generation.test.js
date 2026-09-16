@@ -3,6 +3,21 @@ import { describe, expect, test } from 'bun:test';
 import { createCursorSdkRuntime } from './index.js';
 
 describe('Cursor SDK session title generation', () => {
+  test('reports unavailable title consumption after SDK rejection without inventing zero tokens', async () => {
+    const observations = [];
+    const runtime = createCursorSdkRuntime({
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }), env: {},
+      onTitleUsageObservation: (value) => observations.push(value),
+      loadSdk: async () => ({ Agent: { prompt: async () => { throw new Error('fixture rejection'); } } }),
+    });
+    await expect(runtime.generateTitle({ text: 'A title', sessionID: 'ses_title' })).rejects.toThrow('fixture rejection');
+    expect(observations).toHaveLength(1);
+    expect(observations[0]).toMatchObject({ sessionID: 'ses_title', observation: {
+      status: 'error', availability: 'unavailable', tokens: null, model: { id: 'auto' },
+    } });
+    await runtime.dispose();
+  });
+
   test('uses an ephemeral Cursor Auto prompt and normalizes the returned title', async () => {
     const promptCalls = [];
     const runtime = createCursorSdkRuntime({

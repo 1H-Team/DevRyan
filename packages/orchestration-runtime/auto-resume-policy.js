@@ -240,6 +240,15 @@ export const planAutoResumeAttempt = ({
     );
   }
 
+  if (state.lastError?.code === 'backup_availability_unknown'
+    && Number.isFinite(state.resetAt) && state.resetAt <= now) {
+    return scheduleOriginal(
+      Math.max(now + AUTO_RESUME_MIN_DELAY_MS, state.resetAt + AUTO_RESUME_RESET_JITTER_MS),
+      state.resetAt,
+      state.resetSource ?? 'opencode_status',
+    );
+  }
+
   const ladderIndex = Math.min(
     Math.max(state.noSignalProbes, 1) - 1,
     AUTO_RESUME_BACKOFF_MS.length - 1,

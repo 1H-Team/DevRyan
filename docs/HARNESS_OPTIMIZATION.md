@@ -76,3 +76,24 @@ The existing `agent:eval` CLI accepts a deterministic 30-case golden catalog and
 Run `bun run validate:full`, `bun run build`, `bun run bundle:check`, and applicable isolated checks from `QA.md`. Fixture compaction and UI replay do not prove live native compaction. A complete memory/performance comparison requires the repaired canonical-to-visible long-history witness, matched baseline measurements and inspection of every captured PNG.
 
 The [2026-09-10 implementation audit](audits/2026-09-10-harness-optimization.md) records the completed local checks, matched whole-package observations and unresolved native acceptance gates. Optional policies remain off by default.
+
+
+## Designer routing regression
+
+The agent evaluation harness includes `routing-visual`, `routing-approved-visual`,
+and `routing-behavior`. Run them with the existing `bun run agent:eval -- --config
+<path>` interface against a separately prepared, isolated loopback verification
+host and disposable fixture repository. Pin `agent` to `orchestrator` and choose
+an advertised provider, model, and variant. Do not point these implementation
+cases at a user's active project or runtime.
+
+The approved case first asks for a plan without edits, then sends exactly
+"implement plan" in the same session. Prior root messages cannot satisfy the
+second turn's terminal evidence. Visual cases expect Designer; the zero-price
+behavior control expects Fixer and preserves the existing presentation. Expected
+roles remain outside model prompts. Grading checks the recorded managed agent,
+exactly one implementation child, completed/dispositioned work, unchanged tests
+and unrelated files, and failing-before/passing-after source acceptance tests.
+These checks establish routing and source behavior, not rendered visual quality.
+Deterministic tests exercise the fixtures, wrong-role rejection, and stale-turn
+handling without calling a provider; live model results must be reported separately.

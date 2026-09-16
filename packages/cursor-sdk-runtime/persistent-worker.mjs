@@ -12,6 +12,7 @@ import { createAgentCache } from './agent-cache.js';
 import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
 import { assertCursorSdkNodeCompatibility } from './node-version.js';
 import { credentialCacheIdentity } from './credential-cache-identity.js';
+import { cursorRunUsageObservation } from './cursor-usage.js';
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 
@@ -303,6 +304,7 @@ const handleTitle = async (command) => {
       apiKey,
       text,
       directory,
+      onUsage: (observation) => writeRequestEvent(requestID, { type: 'usage-observation', observation }),
     });
     writeRequestEvent(requestID, {
       type: 'title-result',
@@ -386,6 +388,9 @@ const handlePrompt = async (command) => {
         if (!sdkMessage) return;
         if (sdkMessage.type === 'usage') {
           writeRequestEvent(requestID, { type: 'usage', tokens: sdkMessage.tokens });
+          queueMicrotask(() => {
+            if (state.run) writeRequestEvent(requestID, { type: 'usage-observation', observation: cursorRunUsageObservation(state.run) });
+          });
           return;
         }
         if (!sawSdkDelta) {
@@ -396,6 +401,7 @@ const handlePrompt = async (command) => {
       },
     });
     state.run = run;
+    writeRequestEvent(requestID, { type: 'usage-observation', observation: cursorRunUsageObservation(run) });
     writeTiming('cursor_provider_send_accepted');
     if (state.cancelRequested && typeof run.cancel === 'function') {
       await run.cancel();
@@ -424,6 +430,7 @@ const handlePrompt = async (command) => {
     // never settles, so the host stream is never left hanging mid-tool. writeDone
     // is idempotent, so this is safe alongside the natural completion path.
     state.finishCancelled = () => {
+      writeRequestEvent(requestID, { type: 'usage-observation', observation: cursorRunUsageObservation(run) });
       writeDone('cancelled');
       void closeStreamIterator();
     };
@@ -436,6 +443,7 @@ const handlePrompt = async (command) => {
           type: 'final-result',
           result: {
             ok: true,
+            usageObservation: cursorRunUsageObservation(run, result),
             finalStatus,
             finalText,
           },
@@ -459,6 +467,7 @@ const handlePrompt = async (command) => {
           type: 'final-result',
           result: {
             ok: false,
+            usageObservation: cursorRunUsageObservation(run),
             finalStatus: 'error',
             finalText: '',
             error: error instanceof Error ? error.message : 'Cursor SDK run failed.',

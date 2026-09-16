@@ -16,10 +16,13 @@ import {
 import {
   gradeCaseOutcome,
   gradeManagedTaskOutcome,
+  gradeRoutingOutcome,
   gradeManagedIndependentFacts,
   gradeOracleReviewOutcome,
   gradeToolRequirements,
 } from './graders.mjs';
+
+import { buildRoutingDefinition, isRoutingCase, routingSource, routingTest } from './routing-cases.mjs';
 
 const OUTPUT_LIMIT_BYTES = 4 * 1024 * 1024;
 
@@ -153,6 +156,7 @@ const isOracleReviewCase = (caseId) => ORACLE_REVIEW_CASE_IDS.has(caseId);
 const isContextAnalysisCase = (caseId) => CONTEXT_ANALYSIS_CASE_IDS.has(caseId);
 
 export const buildCaseDefinition = (caseId, runFiles) => {
+  if (isRoutingCase(caseId)) return buildRoutingDefinition(caseId, runFiles);
   if (caseId === 'inspect') {
     return {
       caseId,
@@ -249,6 +253,13 @@ export const buildCaseDefinition = (caseId, runFiles) => {
 };
 
 export const prepareCaseFixture = (caseId, runFiles) => {
+  if (isRoutingCase(caseId)) {
+    const baselineSource = routingSource;
+    const baselineTest = routingTest(caseId, path.basename(runFiles.sourcePath));
+    writeRunOwnedFile(runFiles.sourcePath, baselineSource, runFiles);
+    writeRunOwnedFile(runFiles.testPath, baselineTest, runFiles);
+    return { baselineSource, baselineTest };
+  }
   if (caseId === 'inspect') return { baselineSource: null, baselineTest: null };
   if (isContextAnalysisCase(caseId)) {
     const baselineSource = contextAnalysisSource;
@@ -402,6 +413,7 @@ export const executeEvaluationCase = async (options = {}) => {
         directory: fixtureRoot,
         selection,
         prompt: definition.prompt,
+        followUpPrompt: definition.followUpPrompt,
         timeoutMs,
         caseId,
         repetition,
@@ -440,12 +452,15 @@ export const executeEvaluationCase = async (options = {}) => {
         finalTest,
       }),
     ];
-    if (caseId === 'managed-change' || caseId === 'managed-independent') {
+    if (caseId === 'managed-change' || caseId === 'managed-independent' || isRoutingCase(caseId)) {
       graders.push(gradeManagedTaskOutcome({
         rootSessionId: sessionResult?.rootSessionId,
         childSessionIds: sessionResult?.childSessionIds,
         snapshot: sessionResult?.managedSnapshot,
       }));
+    }
+    if (isRoutingCase(caseId)) {
+      graders.push(gradeRoutingOutcome({ caseId, rootSessionId: sessionResult?.rootSessionId, snapshot: sessionResult?.managedSnapshot }));
     }
     if (caseId === 'managed-independent') {
       graders.push(...gradeManagedIndependentFacts(sessionResult ?? {}));

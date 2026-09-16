@@ -7,8 +7,39 @@ type ReasoningPreviewPart = Part & {
 };
 
 const XAI_PROVIDER_ID = 'xai';
-const XAI_CLIPPED_REASONING_LENGTH = 203;
+const XAI_CLIPPED_REASONING_PREFIX_LENGTH = 200;
 const XAI_CLIPPED_REASONING_SUFFIX = '...';
+
+const clippedXaiPreviewEnd = (text: string, providerID?: string | null): number | null => {
+    if (text.length < XAI_CLIPPED_REASONING_PREFIX_LENGTH + XAI_CLIPPED_REASONING_SUFFIX.length
+        || providerID?.trim().toLowerCase() !== XAI_PROVIDER_ID) return null;
+
+    // Count characters without allocating an array for the entire streamed text.
+    let offset = 0;
+    let characters = 0;
+    for (const character of text) {
+        offset += character.length;
+        characters += 1;
+        if (characters === XAI_CLIPPED_REASONING_PREFIX_LENGTH) break;
+    }
+    if (characters !== XAI_CLIPPED_REASONING_PREFIX_LENGTH
+        || !text.startsWith(XAI_CLIPPED_REASONING_SUFFIX, offset)
+        || text[offset + XAI_CLIPPED_REASONING_SUFFIX.length] === '.') return null;
+
+    return offset + XAI_CLIPPED_REASONING_SUFFIX.length;
+};
+
+/** Keep the fuller summary xAI sometimes appends directly to its clipped preview. */
+export const stripKnownClippedXaiReasoningPrefix = (
+    text: string,
+    providerID?: string | null,
+): string => {
+    const end = clippedXaiPreviewEnd(text, providerID);
+    if (end === null) return text;
+    const summary = text.slice(end).trim();
+    // A preview alone is still live text; the part lifecycle owns its visibility.
+    return summary || text;
+};
 
 /**
  * Grok 4.6 can finalize its plaintext reasoning summary as a 200-character
@@ -31,8 +62,7 @@ export const isKnownClippedXaiReasoningPreview = (
 
     const text = reasoningPart.text || reasoningPart.content || '';
     const normalizedText = text.trim();
-    return normalizedText.length === XAI_CLIPPED_REASONING_LENGTH
-        && normalizedText.endsWith(XAI_CLIPPED_REASONING_SUFFIX);
+    return normalizedText.length === clippedXaiPreviewEnd(normalizedText, providerID);
 };
 
 export const filterGroupedActivityReasoning = <T extends { kind: string }>(parts: T[]): T[] => {

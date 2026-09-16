@@ -45,6 +45,7 @@ interface FormingSummary {
 }
 
 export interface AssistantStatusSnapshot {
+    currentPromptId?: string;
     forming: FormingSummary;
     working: WorkingSummary;
 }
@@ -129,7 +130,24 @@ const hasAssistantStatusContext = (record: AssistantSessionMessageRecord): boole
 export const selectAssistantStatusRecord = (
     records: readonly SessionMessageRecord[],
 ): AssistantSessionMessageRecord | null => {
+    // Optimistic user messages establish the boundary before any assistant event
+    // arrives. Parent identity also excludes late events from the previous turn.
+    let userIndex = -1;
+    for (let index = 0; index < records.length; index += 1) {
+        const info = records[index].info;
+        if (info.role !== 'user') continue;
+        if (userIndex < 0 || info.time.created >= records[userIndex].info.time.created) userIndex = index;
+    }
+    const user = userIndex >= 0 ? records[userIndex].info : null;
     const assistantMessages = records
+        .filter((record, index) => {
+            if (!user || record.info.role !== 'assistant') return true;
+            if (record.info.sessionID !== user.sessionID) return false;
+            if (record.info.parentID) return record.info.parentID === user.id;
+            // Older compatibility records may lack parent identity.
+            return record.info.time.created > user.time.created
+                || (record.info.time.created === user.time.created && index > userIndex);
+        })
         .filter(
             (msg): msg is AssistantSessionMessageRecord =>
                 isAssistantMessage(msg.info) && !isFullySyntheticMessage(msg.parts as Part[])
@@ -338,6 +356,12 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
         }, [effectiveSessionId]),
         effectiveDirectory ?? undefined,
     );
+
+    const currentPromptId = React.useMemo(() => rawSessionMessages.reduce<Message | undefined>(
+        (latest, message) => message.role === 'user' && (!latest || message.time.created >= latest.time.created)
+            ? message : latest,
+        undefined,
+    )?.id, [rawSessionMessages]);
 
     // Subscribe to the latest assistant that has renderable status context.
     // This skips trailing zero-part assistant shells that can arrive after
@@ -635,5 +659,6 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
     return {
         forming,
         working,
+        currentPromptId,
     };
 }

@@ -1421,6 +1421,61 @@ describe('Cursor SDK worker runtime config', () => {
     await runtime.dispose();
   });
 
+  test.each(['finished', 'error', 'cancelled'])('settles unreported parent and nested tool results honestly after %s', async (finish) => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-unreported-tools-'));
+    const capture = { calls: [], children: [], commands: [] };
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir, readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }),
+      env: { OPENCHAMBER_RUNTIME: 'desktop' }, useNodeWorkerForPrompts: true,
+      spawnImpl: createFakePersistentWorkerSpawn(capture, { autoRespond: false }),
+    });
+    try {
+      await runtime.handlePromptAsync({ sessionID: 'ses_missing_results', directory: '/tmp/project', body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+        messageID: 'msg_missing_results', parts: [{ type: 'text', text: 'Inspect and edit the fixture.' }],
+      } });
+      const prompt = await waitFor(() => capture.commands.find(entry => entry.type === 'prompt'));
+      const child = capture.children[0];
+      const emitMessage = message => child.emitWorkerEvent({ requestID: prompt.requestID, type: 'message', message });
+      emitMessage({ type: 'tool_call', call_id: 'parent_edit', name: 'edit', status: 'running', args: { path: 'fixture.ts' } });
+      emitMessage({ type: 'tool_call', call_id: 'parent_task', name: 'task', status: 'running' });
+      for (const [call_id, status] of [['known_read', 'completed'], ['missing_shell', 'running']]) {
+        emitMessage({ type: 'task_activity', call_id: 'parent_task', update: {
+          type: 'tool-call', call_id, name: call_id === 'known_read' ? 'read' : 'shell', status,
+          result: 'Retained partial output',
+        } });
+      }
+      const taskStatus = finish === 'finished' ? 'completed' : finish;
+      emitMessage({ type: 'tool_call', call_id: 'parent_task', name: 'task', status: taskStatus, result: 'Task ended.' });
+      const settledTask = await waitFor(async () => {
+        const rows = await runtime.getSessionMessages('ses_missing_results');
+        return rows.flatMap(row => row.parts).find(part => part.callID === 'parent_task' && part.state?.status === taskStatus);
+      });
+      // A delayed start must not reopen the preview of an already settled task.
+      emitMessage({ type: 'task_activity', call_id: 'parent_task', update: {
+        type: 'tool-call', call_id: 'late_read', name: 'read', status: 'running',
+      } });
+      emitMessage({ type: 'assistant', message: { content: [{ type: 'text', text: 'Task ended.' }] } });
+      child.emitWorkerEvent({ requestID: prompt.requestID, type: 'done', status: finish });
+      const records = await waitFor(async () => {
+        const rows = await runtime.getSessionMessages('ses_missing_results');
+        return rows.some(row => row.info?.role === 'assistant' && row.info?.finish) ? rows : null;
+      });
+      const expectedStatus = finish === 'cancelled' ? 'cancelled' : 'error';
+      const parentEdit = records[1].parts.find(part => part.callID === 'parent_edit');
+      expect(parentEdit.state.status).toBe(expectedStatus);
+      if (expectedStatus === 'error') expect(parentEdit.state.error).toContain('without reporting a result');
+      const initialEntries = settledTask.state.metadata.cursorNativeTask.entries;
+      expect(initialEntries[0].state).toMatchObject({ status: 'completed', output: 'Retained partial output' });
+      expect(initialEntries[1].state).toMatchObject({ status: expectedStatus, output: 'Retained partial output' });
+      const task = records[1].parts.find(part => part.callID === 'parent_task');
+      expect(task.state.metadata.cursorNativeTask.entries.at(-1).state.status).toBe(expectedStatus);
+      expect(capture.commands.filter(entry => entry.type === 'prompt')).toHaveLength(1);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
   test('routes persistent-worker Cursor subagent activity into the parent task metadata', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-task-activity-'));
     const capture = { calls: [], children: [], commands: [] };

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 const CURSOR_PROVIDER_ID = 'cursor-acp';
 const GENERATED_NEW_SESSION_TITLE_PATTERN = /^new session\s*-\s*\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z$/i;
 const CURSOR_ERROR_TITLE_PATTERN = /^cursor-acp\s+error\s*:/i;
@@ -47,6 +49,7 @@ export const createCursorSessionTitleRuntime = ({
   logger = console,
 } = {}) => {
   const pendingBySession = new Map();
+  const generatedBySession = new Map();
 
   const buildSessionUrl = (sessionID, directory) => {
     if (typeof buildOpenCodeUrl !== 'function') return null;
@@ -97,17 +100,37 @@ export const createCursorSessionTitleRuntime = ({
 
     const before = await readSession(sessionID, directory);
     const observedTitle = trimString(before?.title);
-    if (!before || !isEligibleCursorTitle(observedTitle, firstUserText)) return false;
+    if (!before) return false;
+    if (!isEligibleCursorTitle(observedTitle, firstUserText)) {
+      generatedBySession.delete(sessionID);
+      return false;
+    }
 
-    const generatedTitle = trimString(await cursorSdkRuntime.generateTitle({
-      text: firstUserText,
-      directory: trimString(directory) || undefined,
-    }));
+    const fingerprint = createHash('sha256').update(JSON.stringify([trimString(directory), firstUserText])).digest('hex');
+    const retained = generatedBySession.get(sessionID);
+    const generatedTitle = retained?.fingerprint === fingerprint ? retained.title
+      : trimString(await cursorSdkRuntime.generateTitle({
+        sessionID,
+        text: firstUserText,
+        directory: trimString(directory) || undefined,
+      }));
     if (!generatedTitle || generatedTitle === observedTitle) return false;
 
+    // A failed read/PATCH must not purchase the same title again on the next
+    // interaction. Retain only a bounded result and source hash until saved.
+    generatedBySession.delete(sessionID);
+    generatedBySession.set(sessionID, { fingerprint, title: generatedTitle });
+    if (generatedBySession.size > 128) generatedBySession.delete(generatedBySession.keys().next().value);
+
     const current = await readSession(sessionID, directory);
-    if (!current || trimString(current.title) !== observedTitle) return false;
-    return updateSessionTitle(sessionID, directory, generatedTitle);
+    if (!current) return false;
+    if (trimString(current.title) !== observedTitle) {
+      generatedBySession.delete(sessionID);
+      return false;
+    }
+    const saved = await updateSessionTitle(sessionID, directory, generatedTitle);
+    if (saved) generatedBySession.delete(sessionID);
+    return saved;
   };
 
   const schedule = (input = {}) => {

@@ -9,6 +9,7 @@ import { useHasActiveReasoningDisclosure } from '@/components/chat/message/parts
 import { createWebAPIs } from '../../packages/web/src/api';
 import '../../packages/ui/src/index.css';
 import './style.css';
+import { StatusFixture } from './status-fixture';
 
 const stages = ['empty', 'whitespace', 'first', 'second', 'gap', 'complete', 'cancel', 'empty-cancel'] as const;
 type Stage = typeof stages[number];
@@ -75,5 +76,5 @@ export function Fixture() {
 }
 
 createRoot(document.getElementById('root')!).render(
-    <RuntimeAPIProvider apis={createWebAPIs()}><I18nProvider><Fixture /></I18nProvider></RuntimeAPIProvider>,
+    <RuntimeAPIProvider apis={createWebAPIs()}><I18nProvider>{new URLSearchParams(window.location.search).has('status') ? <StatusFixture /> : <Fixture />}</I18nProvider></RuntimeAPIProvider>,
 );

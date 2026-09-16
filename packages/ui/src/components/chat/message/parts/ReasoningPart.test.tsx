@@ -281,6 +281,23 @@ describe("ReasoningPart", () => {
     expect(formatReasoningText(`${noisy}\n\n${useful}`)).toBe(`${noisy}\n\n${useful}`)
   })
 
+  test("shows the complete xAI summary appended to a clipped preview during streaming and after reload", () => {
+    const summary = "The navbar is covered by the chat.\n\n- Check the bottom navigation.\n- Preserve keyboard access."
+    for (const active of [true, false]) {
+      const part = createReasoningPart({
+        id: "reasoning-preview-and-summary",
+        text: `${clippedXaiPreview}${summary}`,
+        active,
+      })
+      const canonicalSnapshot = JSON.stringify(part)
+      const html = renderReasoning(part, { providerID: "xai" })
+      expect(html).toContain(summary)
+      expect(html).not.toContain(clippedXaiPreview)
+      expect(JSON.stringify(part)).toBe(canonicalSnapshot)
+      expect(renderReasoning(JSON.parse(canonicalSnapshot), { providerID: "xai" })).toBe(html)
+    }
+  })
+
   test("preserves provider-authored Markdown paragraphs and blockquotes", () => {
     const reasoning = "First paragraph.\n\n> Browser measurement quoted by the model.\n> Second quoted line.\n\nFinal paragraph."
 

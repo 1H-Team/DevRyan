@@ -1023,7 +1023,7 @@ describe('managed orchestration store', () => {
       resumable: false,
     });
     terminalStore.getState().ingestEvent(taskEvent(completed, envelope));
-    expect(selector(terminalStore.getState())).toBe('waiting');
+    expect(selector(terminalStore.getState())).toBeNull();
 
     terminalStore.getState().ingestEvent(taskEvent(completed, {
       ...envelope,
@@ -1877,4 +1877,48 @@ describe('managed orchestration store', () => {
     await store.getState().setAutoResume('dvr_task_missing', true);
     expect(managedOrchestrationSelectors.actionError('dvr_task_missing')(store.getState())).toBe('Managed task result was not found');
   });
+});
+
+
+test('terminal results never imply active delegation but keep their acknowledgement barrier', () => {
+  for (const status of ['completed', 'failed', 'aborted', 'interrupted'] as const) {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    store.getState().ingestEvent(taskEvent(projectedTask(1, status)));
+    expect(managedOrchestrationSelectors.delegationPhaseForRoot('ses_root')(store.getState())).toBeNull();
+    expect(managedOrchestrationSelectors.hasUndispositionedTasksForRoot('ses_root')(store.getState())).toBe(true);
+    expect(managedOrchestrationSelectors.hasActiveTasksForRoot('ses_root')(store.getState())).toBe(false);
+    store.getState().ingestEvent(taskEvent(projectedTask(9, 'running')));
+    expect(managedOrchestrationSelectors.delegationPhaseForRoot('ses_root')(store.getState())).toBeNull();
+    expect(managedOrchestrationSelectors.delegationPhaseForRoot('ses_other')(store.getState())).toBe('waiting');
+  }
+});
+
+test('snapshot confirmation is scoped, stable on repeated snapshots, and cleared on reset', async () => {
+  const store = createManagedOrchestrationStore({ api: fakeApi() });
+  const confirmed = managedOrchestrationSelectors.hasConfirmedSnapshotForRoot('ses_root');
+  expect(confirmed(store.getState())).toBe(false);
+  await store.getState().loadSnapshot({ rootSessionId: 'ses_other' });
+  expect(confirmed(store.getState())).toBe(false);
+  await store.getState().loadSnapshot({ rootSessionId: 'ses_root' });
+  expect(confirmed(store.getState())).toBe(true);
+  const scopes = store.getState().snapshotStateByScope;
+  await store.getState().loadSnapshot({ rootSessionId: 'ses_root' });
+  expect(store.getState().snapshotStateByScope).toBe(scopes);
+  store.getState().reset();
+  expect(confirmed(store.getState())).toBe(false);
+});
+
+test('only a successful authoritative snapshot clears the loading-only wait fallback', async () => {
+  for (const snapshot of [emptySnapshot({ available: false }), emptySnapshot({ bridgeReady: false }), emptySnapshot({ recoveryWarning: 'Recovery pending' })]) {
+    const store = createManagedOrchestrationStore({ api: fakeApi({ getSnapshot: async () => snapshot }) });
+    await store.getState().loadSnapshot();
+    expect(managedOrchestrationSelectors.hasConfirmedSnapshotForRoot('ses_root')(store.getState())).toBe(false);
+  }
+  const snapshot = deferred<ManagedOrchestrationSnapshot>();
+  const store = createManagedOrchestrationStore({ api: fakeApi({ getSnapshot: async () => snapshot.promise }) });
+  const loading = store.getState().loadSnapshot({ rootSessionId: 'ses_root' });
+  expect(managedOrchestrationSelectors.hasConfirmedSnapshotForRoot('ses_root')(store.getState())).toBe(false);
+  snapshot.resolve(emptySnapshot());
+  await loading;
+  expect(managedOrchestrationSelectors.hasConfirmedSnapshotForRoot('ses_root')(store.getState())).toBe(true);
 });
